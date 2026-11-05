@@ -311,6 +311,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "project.coding.start": "a valid call starts a coding session in the project, which starts its chat process",
   "project.setup.open": "a valid call starts the project's Setup chat, a coding session whose chat process starts",
   "project.setup.get": "a valid call reads the project's runtime, which runs the supervisor's status and git",
+  "project.setup.merge": "the user's own page only: a valid call merges or lands a branch",
 };
 
 /**
@@ -326,7 +327,7 @@ function anchors(c: CommandEntry): Anchor[] {
   if (c.id.startsWith("project.verb.")) return [{ anchor: { project: join(outside, "no-project") }, refuse: true, kind: "refused" }];
   // An unknown project: refused before anything starts (a valid call would start a coding session's chat).
   if (c.id === "project.coding.start") return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }];
-  if (c.id === "project.setup.open" || c.id === "project.setup.get") return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }];
+  if (c.id === "project.setup.open" || c.id === "project.setup.get" || c.id === "project.setup.merge") return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }];
   // A real folder too, but only wrong-typed values: a string profile would start a chat.
   if (c.id === "session.create") return [{ anchor: { cwd: join(outside, "no-dir") }, refuse: true, kind: "refused" }, { anchor: { cwd: workDir() }, refuse: false, kind: "real", onlyWrongTypes: true }];
   if (c.id === "project.services.view") return [{ anchor: { pid: "no-such-project" }, refuse: false, kind: "real" }];

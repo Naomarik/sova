@@ -228,7 +228,8 @@
     "project.verb.merge.hold",
     "project.verb.merge.try",
     "project.setup.get",
-    "project.setup.open"
+    "project.setup.open",
+    "project.setup.merge"
   ],
   "retired": [
     "settings.agents.get",

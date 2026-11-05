@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { basename, dirname, join } from "node:path";
 import type { MergeRun, MergeTrial } from "../../shared/merge-queue";
 import { CONTRACT_FILE } from "../../shared/project-contract";
-import type { ProjectRuntimeView } from "../../shared/project-runtime";
+import type { RuntimeRunReview } from "../../shared/project-runtime";
+import type { PlaybookReviewFact } from "./playbook-review";
 import type { SetupChatView, SetupHistoryItem, SetupOpened, SetupProposal, SetupState, SetupStatus, SetupTrial, SetupTrialCheck } from "../../shared/setup-chat";
 import { isArchived } from "../archived-sessions";
 import { OrgError } from "../org-error";
@@ -10,7 +11,7 @@ import type { Envelope } from "../org-envelope";
 import { realGit } from "../project-services/engine";
 import { stateRoot } from "../state-root";
 import { SETUP_PLAYBOOK_ID } from "./onboard";
-import { readProject } from "./spaces";
+import { projectArchived, readProject } from "./spaces";
 
 /**
  * The Setup chat (§app.project-setup/chat, /start): one standing chat per project, title "Setup · {folder}". It is a
@@ -183,21 +184,29 @@ export function trialView(t: MergeTrial, run: MergeRun | null): SetupTrial {
   return { id: t.run, commit: t.commit, at: t.endedAt ?? t.startedAt, pass: t.verdict === "passed", state: t.verdict, ...(t.why ? { why: t.why } : {}), checks };
 }
 
-/** The proposal from the runtime's run review and the queue's trials. Pure. */
-export function proposalOf(view: ProjectRuntimeView, served: boolean, trials: readonly MergeTrial[], readRun: (id: string) => MergeRun | null, untried: string | null, files: SetupProposal["files"] = []): SetupProposal | null {
-  const pb = view.playbook;
-  if (!pb || view.playbookState !== "proposed" || pb.proposes !== "pipeline" || !pb.branch || !pb.commit) return null;
-  const r = pb.review;
-  const t = trials.find((x) => x.commit === pb.commit);
+/** What the proposal is read from: the Setup branch at its head, as Git has it (never the worktree's files). */
+export interface SetupBranchRead {
+  branch: string;
+  target: string;
+  commit: string;
+  /** The head's pipeline hash (observe.ts pipelineHashOf); absent: no valid definition at the head. */
+  hash?: string;
+  review: RuntimeRunReview | null;
+}
+
+/** The proposal from the branch's read and the queue's trials. Pure. */
+export function proposalOf(b: SetupBranchRead, served: boolean, trials: readonly MergeTrial[], readRun: (id: string) => MergeRun | null, untried: string | null, files: SetupProposal["files"] = []): SetupProposal {
+  const r = b.review;
+  const t = trials.find((x) => x.commit === b.commit);
   const trial = t ? trialView(t, readRun(t.run)) : null;
-  const problem = r?.def.state === "invalid" ? r.def.error : r?.def.state === "absent" ? `${pb.branch} has no ${CONTRACT_FILE}` : r?.release?.problem;
-  const why = !pb.branchHash ? (problem ?? "its branch has no valid setup") : untried;
+  const problem = r?.def.state === "invalid" ? r.def.error : r?.def.state === "absent" ? `${b.branch} has no ${CONTRACT_FILE}` : r?.release?.problem;
+  const why = !b.hash ? (problem ?? "its branch has no valid setup") : untried;
   return {
-    branch: pb.branch,
-    target: pb.target ?? "main",
-    commit: pb.commit,
+    branch: b.branch,
+    target: b.target,
+    commit: b.commit,
     served,
-    ...(pb.branchHash ? { hash: pb.branchHash } : {}),
+    ...(b.hash ? { hash: b.hash } : {}),
     ...(problem ? { problem } : {}),
     services: r?.services ?? [],
     merge: r?.merge ?? null,
@@ -219,32 +228,98 @@ function stillOpen(c: SetupCurrent | undefined): c is SetupCurrent {
   return !!c && !!c.path && existsSync(c.path) && !isArchived(c.sessionId);
 }
 
+const git1 = async (root: string, args: string[]): Promise<string> => {
+  const r = await realGit(args, root);
+  return r.code === 0 ? r.stdout.trim() : "";
+};
+
+/** The Setup branch's head and how many commits it has beyond the target; null when the branch is gone. */
+export async function branchStateOf(root: string, branch: string, target: string): Promise<{ head: string; ahead: number } | null> {
+  const head = await git1(root, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}^{commit}`]);
+  if (!head) return null;
+  const n = Number(await git1(root, ["rev-list", "--count", `${target}..${head}`]));
+  return { head, ahead: Number.isFinite(n) ? n : 0 };
+}
+
+/** The Setup branch read at its head: its pipeline hash and review. */
+async function readBranch(root: string, branch: string, target: string, head: string): Promise<SetupBranchRead> {
+  const [{ branchFacts }, { branchReview }] = await Promise.all([import("../project-services/observe"), import("./playbook-review")]);
+  const facts = await branchFacts(root, head).catch(() => null);
+  const review = await branchReview(root, head, null, false, realGit, false, true).catch(() => null);
+  return { branch, target, commit: head, ...(facts?.pipeline?.hash ? { hash: facts.pipeline.hash } : {}), review };
+}
+
+/** The open proposal of a project's Setup chat: its branch has commits beyond the target and no turn runs. */
+async function openProposal(projectId: string, cur: SetupCurrent, target: string): Promise<{ read: SetupBranchRead; ahead: number } | null> {
+  const root = readProject(projectId).root;
+  if (!cur.branch) return null;
+  const st = await branchStateOf(root, cur.branch, target);
+  if (!st || st.ahead === 0) return null;
+  return { read: await readBranch(root, cur.branch, target, st.head), ahead: st.ahead };
+}
+
+// ---- Needs you and the banner: the proposal as a verb playbook review (§app.project-runtime/review) -------------
+
+const reviewCache = new Map<string, PlaybookReviewFact>();
+
+/** The Setup chat's proposal as the attention row and the banner read it (kept from the last read); null: none. */
+export function setupReviewOf(projectId: string): PlaybookReviewFact | null {
+  return reviewCache.get(projectId) ?? null;
+}
+
+/** Every project's Setup proposal waiting on the operator, by its project. */
+export function setupReviews(): PlaybookReviewFact[] {
+  return [...reviewCache.values()];
+}
+
+function noteReview(projectId: string, cur: SetupCurrent | null, p: SetupProposal | null, since: number): void {
+  if (!cur || !p) {
+    reviewCache.delete(projectId);
+    return;
+  }
+  reviewCache.set(projectId, {
+    projectId,
+    sessionId: cur.run,
+    // Needs you lists it on the chat the user talks to now (after Start Fresh, the carry-on chat).
+    path: cur.path,
+    label: "Project setup",
+    branch: p.branch,
+    target: p.target,
+    ...(p.hash ? { hash: p.hash } : {}),
+    commit: p.commit,
+    proposes: "pipeline",
+    since,
+    setup: true,
+  });
+}
+
+/** Read the project's Setup chat again for Needs you and the banner (the runtime's tick and moves call it). */
+export async function refreshSetupReview(projectId: string): Promise<void> {
+  await readSetup(projectId).catch(() => undefined);
+}
+
 /** The Setup chat as the tabs read it (GET /api/projects/:pid/setup). */
 export async function readSetup(projectId: string): Promise<SetupStatus> {
   const p = readProject(projectId);
-  const { readRuntime } = await import("./runtime");
-  const view = await readRuntime(projectId);
   const facts = await contextFacts(projectId, {});
   const rec = setupRecordOf(projectId);
   const setUp = setUpOf(facts.definition, facts.served);
   const cur = stillOpen(rec.current) ? rec.current : null;
-  const can = p.root ? cannotOpen(projectId, view) : "This project has no folder.";
   let chat: SetupChatView | null = null;
+  let proposal: SetupProposal | null = null;
   if (cur) {
-    const pb = view.playbook && view.playbook.sessionId === cur.run && view.playbook.playbookId === SETUP_PLAYBOOK_ID ? view.playbook : null;
-    const live = pb && view.playbookState !== "idle" ? view.playbookState : "idle";
     const { runLive } = await import("./playbook-review");
     const now = await runLive(cur.path);
-    let proposal: SetupProposal | null = null;
-    if (pb && live === "proposed") {
-      const q = await (await import("../merge-queue/wire")).setupTrialsAt(p.root);
-      const untried = pb.commit ? await (await import("../merge-queue/wire")).setupUntriedAt(p.root, pb.commit) : null;
+    const open = now?.working ? null : await openProposal(projectId, cur, facts.target);
+    if (open) {
+      const wire = await import("../merge-queue/wire");
+      const q = await wire.setupTrialsAt(p.root);
+      const untried = await wire.setupUntriedAt(p.root, open.read.commit);
       const { changedFilesOf } = await import("../merge-queue/setup-branch");
-      const files = pb.commit ? ((await changedFilesOf(realGit, p.root, pb.target ?? facts.target, pb.commit).catch(() => null)) ?? []) : [];
-      proposal = proposalOf(view, facts.served, q?.trials ?? [], q?.readRun ?? (() => null), untried, files);
+      const files = (await changedFilesOf(realGit, p.root, facts.target, open.read.commit).catch(() => null)) ?? [];
+      proposal = proposalOf(open.read, facts.served, q?.trials ?? [], q?.readRun ?? (() => null), untried, files);
     }
-    // A standing run between turns reads "running" in the registry: what its session does now decides working or idle.
-    const state: SetupChatView["state"] = now?.working ? "working" : now?.questions ? "waiting" : live === "proposed" ? "proposed" : live === "waiting" ? "waiting" : live === "running" && !now ? "working" : "idle";
+    const state: SetupChatView["state"] = now?.working ? "working" : now?.questions ? "waiting" : proposal ? "proposed" : "idle";
     chat = {
       sessionId: cur.sessionId,
       path: cur.path,
@@ -252,18 +327,50 @@ export async function readSetup(projectId: string): Promise<SetupStatus> {
       state,
       ...(now?.questions ? { questions: now.questions } : {}),
       startedAt: cur.startedAt,
-      ...((pb?.branch ?? cur.branch) ? { branch: pb?.branch ?? cur.branch } : {}),
+      ...(cur.branch ? { branch: cur.branch } : {}),
       proposal,
       setUp,
     };
   }
-  return { chat, setUp, can: chat || !can ? { open: true } : { open: false, why: can }, history: rec.history };
+  noteReview(projectId, cur, proposal, Date.now());
+  const can = !p.root ? "This project has no folder." : projectArchived(projectId) ? `${p.name || p.id} is archived. Unarchive it first.` : null;
+  return { chat, setUp, can: can ? { open: false, why: can } : { open: true }, history: rec.history };
 }
 
-/** Why a new Setup chat can't start (an archived project, or another playbook run is live), or null. */
-function cannotOpen(projectId: string, view: ProjectRuntimeView): string | null {
-  if (view.can.onboard) return null;
-  return view.can.onboardWhy ?? null;
+// ---- Merge Branch (POST /api/projects/:pid/setup/merge) --------------------------------------------------
+
+export const NO_SETUP_PROPOSAL = "The Setup chat proposes nothing now.";
+export const SETUP_CHANGED_SINCE = "The proposed setup changed since it was shown: look again.";
+export const SETUP_BRANCH_MOVED = "The branch has a newer commit than the one shown: look again.";
+
+/** What Merge Branch on the Setup proposal needs from the server (live ones in runtime-routes.ts). */
+export interface SetupMergeDeps {
+  /** Land through the queue at that commit (the operator's approval); false: the queue doesn't serve the project. */
+  land: (projectId: string, root: string, sessionId: string, commit: string) => Promise<boolean>;
+  /** Merge the build's worktree into its target (a project the queue doesn't serve). */
+  merge: (projectId: string, sessionId: string) => Promise<void>;
+}
+
+/**
+ * Merge Branch on the Setup chat's proposal, the operator's alone: refused unless `hash` is the head's and `commit`
+ * the head; then the land gate (a passing trial of that head). A project the queue serves gets Land: the operator's
+ * approval of that exact commit, landed by the queue; never a move of the target here. Otherwise the build's worktree
+ * is merged, as Merge Branch on any run. Answers whether it was queued.
+ */
+export async function mergeSetup(projectId: string, hash: string, commit: string | undefined, deps: SetupMergeDeps): Promise<{ queued: boolean }> {
+  const root = readProject(projectId).root;
+  const rec = setupRecordOf(projectId);
+  const cur = rec.current;
+  const target = (await targetOf(root)) ?? "main";
+  const open = cur ? await openProposal(projectId, cur, target) : null;
+  if (!cur || !open) throw new OrgError(NO_SETUP_PROPOSAL, 409);
+  if (!open.read.hash || open.read.hash !== hash) throw new OrgError(SETUP_CHANGED_SINCE, 409);
+  if (commit && commit !== open.read.commit) throw new OrgError(SETUP_BRANCH_MOVED, 409);
+  const untried = await (await import("../merge-queue/wire")).setupUntriedAt(root, open.read.commit);
+  if (untried) throw new OrgError(untried, 409);
+  if (await deps.land(projectId, root, cur.run, open.read.commit)) return { queued: true };
+  await deps.merge(projectId, cur.run);
+  return { queued: false };
 }
 
 // ---- open, reopen, Start Fresh ----------------------------------------------------------------------------
@@ -278,60 +385,67 @@ export interface OpenSetupInput {
 
 /** What starting needs from the server (the live ones in runtime-routes.ts; tests stand them in). */
 export interface SetupDeps {
-  /** A verb playbook run (startOnboard). */
-  startRun: (projectId: string, input: { playbook: string; context: string; title: string; why?: string; model?: string; thinking?: string }, envelope?: Envelope) => Promise<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string; held?: unknown }>;
-  /** A plain chat in `cwd` with its first message (Start Fresh carrying on in the earlier run's folder). */
+  /** A coding build on its own worktree and branch, its first message and mode given (never a verb playbook run). */
+  startRun: (projectId: string, input: { prompt: string; title: string; model: string; thinking: string }, envelope?: Envelope) => Promise<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string; held?: unknown }>;
+  /** A plain chat in `cwd` with its first message (carrying on in an earlier chat's folder). */
   startChat: (cwd: string, text: string, title: string, model?: { model: string; thinking?: string }) => Promise<{ id: string; path: string }>;
   /** Archive a chat; a refusal says why. */
   archive: (path: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** The chat's turn runs now. */
   working: (path: string) => Promise<boolean>;
-  /** The runtime's playbook run now. */
-  runtime: (projectId: string) => Promise<ProjectRuntimeView>;
+  /** Remove a build's empty worktree and its branch (no commits beyond the target). */
+  removeEmpty: (projectId: string, sessionId: string, branch: string) => Promise<void>;
   now?: () => number;
 }
 
 export const STILL_WORKING = "The Setup chat is working: wait for its turn to end (or stop it), then Start Fresh.";
 
-/** Set Up with a Chat / Change Setup / Start Fresh (POST /api/projects/:pid/setup). */
+/**
+ * Set Up with a Chat / Change Setup / Start Fresh (POST /api/projects/:pid/setup). The open chat is reopened. Start
+ * Fresh archives it. A chat that is archived (or Start Fresh'd) leaves its branch behind: with no commits beyond the
+ * target, its empty worktree and branch are removed and a new chat starts on a fresh branch; with commits, a new chat
+ * carries on in its folder on that branch, and its proposal stays. Never refused as already running.
+ */
 export async function openSetup(projectId: string, input: OpenSetupInput, deps: SetupDeps, envelope?: Envelope): Promise<SetupOpened> {
   const p = readProject(projectId);
+  if (projectArchived(projectId)) throw new OrgError(`${p.name || p.id} is archived. Unarchive it first.`, 409);
   const iso = () => new Date(deps.now?.() ?? Date.now()).toISOString();
   const rec = setupRecordOf(projectId);
   const cur = stillOpen(rec.current) ? rec.current : undefined;
   if (cur && !input.fresh) return { sessionId: cur.sessionId, path: cur.path, reopened: true, ...(cur.worktree && cur.branch ? { worktree: { path: cur.worktree, branch: cur.branch } } : {}) };
-  const view = await deps.runtime(projectId);
-  const pb = view.playbook;
-  // The run this chat carries, while its proposal (or its questions, or its turn) is still open.
-  const liveRun = cur && pb && pb.sessionId === cur.run && view.playbookState !== "idle" ? pb : null;
+  const old = rec.current;
   if (cur && input.fresh) {
     if (await deps.working(cur.path)) throw new OrgError(STILL_WORKING, 409);
     const a = await deps.archive(cur.path);
     if (!a.ok) throw new OrgError(`The Setup chat couldn't be archived: ${a.error}`, 409);
-    rec.history.push({ sessionId: cur.sessionId, path: cur.path, startedAt: cur.startedAt, endedAt: iso(), why: "fresh", ...(cur.branch ? { branch: cur.branch } : {}) });
-    delete rec.current;
-  } else if (rec.current) {
-    // The recorded chat was archived or removed: it is history now.
-    const old = rec.current;
-    rec.history.push({ sessionId: old.sessionId, path: old.path, startedAt: old.startedAt, endedAt: iso(), why: "ended", ...(old.branch ? { branch: old.branch } : {}) });
+  }
+  if (old) {
+    rec.history.push({ sessionId: old.sessionId, path: old.path, startedAt: old.startedAt, endedAt: iso(), why: cur && input.fresh ? "fresh" : "ended", ...(old.branch ? { branch: old.branch } : {}) });
     delete rec.current;
   }
   saveRecord(projectId, rec);
+  const target = (await targetOf(p.root)) ?? "main";
+  const st = old?.branch ? await branchStateOf(p.root, old.branch, target) : null;
   const title = setupTitle(p.root, p.name);
-  const model = input.model ? { model: input.model, ...(input.thinking ? { thinking: input.thinking } : {}) } : undefined;
-  if (liveRun && cur?.worktree) {
-    // Start Fresh with a proposal open: the new chat carries on in its folder and branch; the proposal stays the run's.
-    const facts = await contextFacts(projectId, { carryOn: { ...(cur.branch ? { branch: cur.branch } : {}), worktree: cur.worktree, from: cur.path }, ...(input.why ? { why: input.why } : {}), ...(input.from ? { from: input.from } : {}) });
-    const { onboardStart } = await import("./onboard");
+  const { onboardStart } = await import("./onboard");
+  const startOf = async (carryOn?: SetupContextFacts["carryOn"]) => {
+    const facts = await contextFacts(projectId, { ...(carryOn ? { carryOn } : {}), ...(input.why ? { why: input.why } : {}), ...(input.from ? { from: input.from } : {}) });
     const start = await onboardStart(projectId, { playbook: SETUP_PLAYBOOK_ID, context: setupContext(facts), title, ...(input.model ? { model: input.model } : {}), ...(input.thinking ? { thinking: input.thinking } : {}) });
     if (start.invalid) throw new OrgError(start.invalid, 409);
-    const made = await deps.startChat(cur.worktree, start.prompt, title, model ?? { model: start.model, thinking: start.thinking });
-    const next: SetupCurrent = { sessionId: made.id, path: made.path, startedAt: iso(), run: cur.run, ...(cur.branch ? { branch: cur.branch } : {}), worktree: cur.worktree };
+    return start;
+  };
+  // The earlier chat's branch has commits and its folder is there: the new chat carries on in it; the proposal stays.
+  if (old && st && st.ahead > 0 && old.worktree && existsSync(old.worktree)) {
+    const start = await startOf({ ...(old.branch ? { branch: old.branch } : {}), worktree: old.worktree, from: old.path });
+    const made = await deps.startChat(old.worktree, start.prompt, title, { model: start.model, thinking: start.thinking });
+    const next: SetupCurrent = { sessionId: made.id, path: made.path, startedAt: iso(), run: old.run, ...(old.branch ? { branch: old.branch } : {}), worktree: old.worktree };
     saveRecord(projectId, { current: next, history: setupRecordOf(projectId).history });
-    return { sessionId: made.id, path: made.path, reopened: false, worktree: { path: cur.worktree, branch: cur.branch ?? "" } };
+    return { sessionId: made.id, path: made.path, reopened: false, worktree: { path: old.worktree, branch: old.branch ?? "" } };
   }
-  const facts = await contextFacts(projectId, { ...(input.why ? { why: input.why } : {}), ...(input.from ? { from: input.from } : {}) });
-  const made = await deps.startRun(projectId, { playbook: SETUP_PLAYBOOK_ID, context: setupContext(facts), title, ...(input.why ? { why: input.why } : {}), ...(input.model ? { model: input.model } : {}), ...(input.thinking ? { thinking: input.thinking } : {}) }, envelope);
+  // No commits beyond the target: its empty worktree and branch go (nothing is lost), and a new chat starts.
+  if (old?.branch && st && st.ahead === 0) await deps.removeEmpty(projectId, old.run, old.branch).catch(() => undefined);
+  const start = await startOf();
+  const made = await deps.startRun(projectId, { prompt: start.prompt, title, model: start.model, thinking: start.thinking }, envelope);
   if (made.held || !made.sessionId || !made.path) throw new OrgError("The Setup chat didn't start.", 409);
   const next: SetupCurrent = { sessionId: made.sessionId, path: made.path, startedAt: iso(), run: made.sessionId, ...(made.worktree ? { branch: made.worktree.branch, worktree: made.worktree.path } : {}) };
   saveRecord(projectId, { current: next, history: setupRecordOf(projectId).history });

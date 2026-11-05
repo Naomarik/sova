@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 538 |
-| Routes a catalogue entry points at | 166 |
-| Catalogue entries | 228 |
+| Routes registered | 539 |
+| Routes a catalogue entry points at | 167 |
+| Catalogue entries | 229 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -161,6 +161,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.coding.start` | New Chat in Project | changes | `POST /api/projects/:pid/overseer/coding` | admin |
 | `project.setup.get` | Show Setup Chat | looks | `GET /api/projects/:pid/setup` | sessions |
 | `project.setup.open` | Set Up with a Chat | changes | `POST /api/projects/:pid/setup` | admin |
+| `project.setup.merge` | Merge Setup Branch | changes | `POST /api/projects/:pid/setup/merge` | admin |
 | `project.icon.get` | Show Project Icon | looks | `GET /api/projects/:pid/icon/info` | sessions |
 | `project.icon.upload` | Upload Project Icon | changes | `PUT /api/projects/:pid/icon` | admin |
 | `project.icon.letters` | Use Project Letters | changes | `PATCH /api/projects/:pid/icon` | admin |
@@ -866,6 +867,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/projects/:pid/settings/undo` | admin | `project.settings.undo` |
 | `GET /api/projects/:pid/setup` | sessions | `project.setup.get` |
 | `POST /api/projects/:pid/setup` | admin | `project.setup.open` |
+| `POST /api/projects/:pid/setup/merge` | admin | `project.setup.merge` |
 | `POST /api/projects/:pid/unarchive` | admin | `project.unarchive` |
 | `POST /api/push/test` | admin | `push.test` |
 | `POST /api/sandbox` | sessions | `session.sandbox.set` |

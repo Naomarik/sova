@@ -123,6 +123,7 @@ export type CommandId =
   | "project.coding.start"
   | "project.setup.get"
   | "project.setup.open"
+  | "project.setup.merge"
   | "project.icon.get"
   | "project.icon.upload"
   | "project.icon.letters"
@@ -3025,6 +3026,15 @@ export interface CommandParams {
     /** Its thinking level */
     "thinking"?: string;
   };
+  /** Merge Branch (or Land, on a project the merge queue serves) on the Setup chat's proposal at the commit shown: refused unless that head has a passing trial. The user's own page only: a chat, an Overseer or a script is refused. (changes something; needs the card's owner trusted) */
+  "project.setup.merge": {
+    /** The project's id */
+    "pid": string;
+    /** The proposal's hash as shown */
+    "hash": string;
+    /** The branch head shown (Land pins it) */
+    "commit"?: string;
+  };
   /** What a project's icon is: an uploaded picture, one found in its folder, or letters (rescans the folder). (only looks; needs the card's owner trusted) */
   "project.icon.get": {
     /** The project's id */
@@ -3784,6 +3794,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.coding.start": "changes",
   "project.setup.get": "looks",
   "project.setup.open": "changes",
+  "project.setup.merge": "changes",
   "project.icon.get": "looks",
   "project.icon.upload": "changes",
   "project.icon.letters": "changes",

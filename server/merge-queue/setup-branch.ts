@@ -109,9 +109,10 @@ export function trialReleaseChecks(branch: readonly MergeCheckDecl[], target: re
 }
 
 /** One file a branch changes, as the Setup chat's proposal lists it: `setup` by the land gate's own rule. */
+export type FileChange = "A" | "M" | "D" | "R";
 export interface ChangedFile {
   path: string;
-  status: "A" | "M" | "D" | "R";
+  status: FileChange;
   setup: boolean;
 }
 
@@ -133,7 +134,7 @@ export async function changedFilesOf(git: Git, root: string, base: string, head:
     const code = (parts[0] ?? "").trim();
     if (!code) continue;
     const path = (code.startsWith("R") ? parts[2] : parts[1]) ?? "";
-    const status = (code[0] === "A" || code[0] === "D" || code[0] === "R" ? code[0] : "M") as ChangedFile["status"];
+    const status = (code[0] === "A" || code[0] === "D" || code[0] === "R" ? code[0] : "M") as FileChange;
     const setup = path === CONTRACT_FILE ? !!change && change.sections.length > 0 : setupFiles.has(path) || (code.startsWith("R") && setupFiles.has(parts[1] ?? ""));
     out.push({ path, status, setup });
   }

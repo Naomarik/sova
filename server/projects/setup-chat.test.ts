@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { MergeRun, MergeTrial } from "../../shared/merge-queue";
-import type { ProjectRuntimeView } from "../../shared/project-runtime";
-import { proposalOf, setupContext, setupTitle, trialView } from "./setup-chat";
+import { proposalOf, setupContext, setupTitle, trialView, type SetupBranchRead } from "./setup-chat";
 import { FOLDED_PLAYBOOKS, onboardRunMode, resolvePlaybookId, SETUP_MODE, SETUP_PLAYBOOK_ID } from "./onboard";
 import { playbookRunMode } from "../project-coding-mode";
 import type { ProjectCodingMode } from "../../shared/project-overseer";
@@ -93,17 +92,17 @@ describe("the proposal the tab shows", () => {
     assert.equal(v.checks[0]!.step, "check:unit");
   });
 
-  test("read from the run's review; Land waits on the gate's reason", () => {
-    const view = {
-      playbookState: "proposed",
-      playbook: { sessionId: "s1", playbookId: "project-setup", label: "Project setup", proposes: "pipeline", startedBy: "operator", startedAt: "", branch: "setup/x", target: "main", commit, branchHash: "sha256:abc", review: { def: { state: "present", hash: "h" }, services: [], data: [], share: null, open: null, proof: null, merge: { checks: "none" } } },
-    } as unknown as ProjectRuntimeView;
-    const p = proposalOf(view, true, [trial], () => run, "This setup branch's trial at ccccccc did not pass (E2E fails): fix it and run a trial again.")!;
+  test("read from the branch at its head; Land waits on the gate's reason", () => {
+    const read = { branch: "setup/x", target: "main", commit, hash: "sha256:abc", review: { def: { state: "present", hash: "h" }, services: [], data: [], share: null, open: null, proof: null, merge: { checks: "none" } } } as unknown as SetupBranchRead;
+    const files = [{ path: ".sova/project.json", status: "M" as const, setup: true }];
+    const p = proposalOf(read, true, [trial], () => run, "This setup branch's trial at ccccccc did not pass (E2E fails): fix it and run a trial again.", files);
     assert.equal(p.hash, "sha256:abc");
     assert.deepEqual(p.merge, { checks: "none" });
+    assert.deepEqual(p.files, files);
     assert.equal(p.trial?.id, "mr_t");
     assert.deepEqual(p.land, { can: false, why: "This setup branch's trial at ccccccc did not pass (E2E fails): fix it and run a trial again." });
-    assert.deepEqual(proposalOf(view, true, [], () => null, null)!.land, { can: true });
-    assert.equal(proposalOf({ ...view, playbookState: "running" } as ProjectRuntimeView, true, [], () => null, null), null);
+    assert.deepEqual(proposalOf(read, true, [], () => null, null).land, { can: true });
+    assert.deepEqual(proposalOf({ ...read, hash: undefined } as SetupBranchRead, true, [], () => null, null).land.can, false, "no valid setup at the head: nothing to merge");
   });
+
 });

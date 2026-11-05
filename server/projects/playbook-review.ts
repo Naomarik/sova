@@ -11,6 +11,7 @@ import { getSessionSummary } from "../sessions-index";
 import { deployReviewAt } from "../project-services/deploy-recipe";
 import type { PlaybookProposes } from "../../shared/protocol";
 import { releaseSetupAt } from "./release-proposal";
+import { setupReviewOf } from "./setup-chat";
 
 /**
  * A proposed verb playbook run waits on the operator (§app.project-runtime/review): the facts its
@@ -30,6 +31,9 @@ export interface PlaybookReviewFact extends PlaybookReviewWords {
   proposes: PlaybookProposes;
   /** The branch tip the proposal (its hash) was read at. */
   commit?: string;
+  /** The Setup chat's proposal (server/projects/setup-chat.ts), not the registry's run: Merge Branch goes to
+      POST /api/projects/:pid/setup/merge, the user's own click. */
+  setup?: true;
 }
 
 export const DEFAULT_PLAYBOOK_LABEL = "Project verbs";
@@ -42,6 +46,11 @@ const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
 /** The proposed run of one project, or null (no registry open here, or nothing proposed). */
 export function playbookReviewOf(projectId: string): PlaybookReviewFact | null {
+  return registryReviewOf(projectId) ?? setupReviewOf(projectId);
+}
+
+/** The registry's proposed run (the Project verbs playbook's), or null. */
+function registryReviewOf(projectId: string): PlaybookReviewFact | null {
   const engine = engineOf(projectId);
   if (!engine || !isOrgHostOpen(engine)) return null;
   const host = hostOf(engine);
@@ -74,8 +83,11 @@ export function playbookReviewOf(projectId: string): PlaybookReviewFact | null {
 export function playbookReviews(): Map<string, PlaybookReviewFact> {
   const out = new Map<string, PlaybookReviewFact>();
   for (const p of listProjects()) {
-    const r = playbookReviewOf(p.id);
+    const r = registryReviewOf(p.id);
     if (r?.path) out.set(r.path, r);
+    // The Setup chat's proposal, beside a Project verbs run's (they never block each other).
+    const s = setupReviewOf(p.id);
+    if (s?.path && !out.has(s.path)) out.set(s.path, s);
   }
   return out;
 }

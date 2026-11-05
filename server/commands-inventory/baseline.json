@@ -407,6 +407,7 @@
     "POST /api/projects/:pid/settings/cards/:card/withdraw": {"need":"admin","is":"command","ids":["project.settings.propose.withdraw"]},
     "POST /api/projects/:pid/settings/undo": {"need":"admin","is":"command","ids":["project.settings.undo"]},
     "POST /api/projects/:pid/setup": {"need":"admin","is":"command","ids":["project.setup.open"]},
+    "POST /api/projects/:pid/setup/merge": {"need":"admin","is":"command","ids":["project.setup.merge"]},
     "POST /api/projects/:pid/unarchive": {"need":"admin","is":"command","ids":["project.unarchive"]},
     "POST /api/projects/:pid/verbs/onboard": {"need":"admin","is":"pending"},
     "POST /api/public-links/verify": {"need":"admin","is":"opted-out"},

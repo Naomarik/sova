@@ -195,12 +195,28 @@ onOrgChange((engine, change) => {
     } else if (sid.startsWith("runtime/") || sid.startsWith("build/")) {
       const pid = str(host.data(sid)?.projectId);
       if (!pid) continue;
-      if (sid.startsWith("build/") && obj(host.data(runtimeSid(pid))?.playbook).sid !== sid) continue;
+      // Any other build may be the Setup chat's: its proposal (Needs you, the banner) is read again soon.
+      if (sid.startsWith("build/") && obj(host.data(runtimeSid(pid))?.playbook).sid !== sid) {
+        setupSoon(pid);
+        continue;
+      }
       projects.add(pid);
     }
   }
   for (const pid of projects) observeSoon(pid);
 });
+
+const setupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+/** Read the project's Setup proposal again soon (several moves in a row read once). */
+function setupSoon(projectId: string): void {
+  if (setupTimers.has(projectId)) return;
+  const t = setTimeout(() => {
+    setupTimers.delete(projectId);
+    void import("./setup-chat").then((m) => m.refreshSetupReview(projectId)).catch(() => undefined);
+  }, SETTLE_MS);
+  t.unref?.();
+  setupTimers.set(projectId, t);
+}
 
 let tick: ReturnType<typeof setInterval> | null = null;
 /** Every 5 minutes, every project's facts again (main's HEAD may have moved), and onMerge's HEAD check (§app.project-services/on-merge). */
@@ -208,7 +224,10 @@ export function startRuntimeTick(): void {
   if (tick) return;
   startOnMergeTick();
   tick = setInterval(() => {
-    for (const p of listProjects()) void observe(p.id);
+    for (const p of listProjects()) {
+      void observe(p.id);
+      setupSoon(p.id);
+    }
   }, OBSERVE_EVERY_MS);
   tick.unref?.();
 }
@@ -437,7 +456,8 @@ export interface MergeRunOutcome {
 export async function mergeRun(projectId: string, hash: string, commit?: string): Promise<MergeRunOutcome> {
   await readRuntime(projectId);
   const review = playbookReviewOf(projectId);
-  if (!review) throw new RuntimeRefusal(NO_RUN_PROPOSED, 409);
+  // The Setup chat's proposal merges only through its own route (the user's click): never here.
+  if (!review || review.setup) throw new RuntimeRefusal(NO_RUN_PROPOSED, 409);
   // Never main's hash by mistake: only the one the branch proposes now.
   if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(review.proposes === "deploy" ? DEPLOY_CHANGED_SINCE : review.proposes === "release" ? RELEASE_CHANGED_SINCE : review.proposes === "pipeline" ? PIPELINE_CHANGED_SINCE : CHANGED_SINCE, 409);
   // A setup branch merges (or lands) only once a trial of its exact head passed (§app.project-setup/land-gate): the
@@ -549,6 +569,8 @@ export function resetRuntimeForTest(): void {
   sent.clear();
   for (const t of timers.values()) clearTimeout(t);
   timers.clear();
+  for (const t of setupTimers.values()) clearTimeout(t);
+  setupTimers.clear();
 }
 
 /**

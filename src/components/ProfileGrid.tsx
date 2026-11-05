@@ -6,6 +6,7 @@ import { EffortRing } from "./EffortRing";
 import { foldFit } from "./fold-fit";
 import { ModeGlyph } from "./ModeGlyph";
 import { Icon } from "./ui";
+import { SearchField } from "./form";
 
 /** Where focus goes when the grid mounts again after a pick (the runtime reopens and remounts the
     picker): the card that was picked, by session path. Module state, like the board's. */
@@ -89,14 +90,7 @@ export function ProfileGrid(props: {
   return (
     <div class="profile-grid-wrap">
       <Show when={filtering()}>
-        <input
-          class="input profile-grid-filter"
-          type="search"
-          placeholder="Find a profile"
-          aria-label="Find a profile"
-          value={query()}
-          onInput={(e) => setQuery(e.currentTarget.value)}
-        />
+        <SearchField inputClass="profile-grid-filter" label="Find a profile" placeholder="Find a profile" value={query()} onInput={setQuery} />
       </Show>
       <div class="profile-grid-groups" role="radiogroup" aria-label="Profile" ref={root} onKeyDown={move} onFocusIn={(e) => setFocused((e.target as HTMLElement).dataset.key ?? null)}>
         <For each={sections()}>

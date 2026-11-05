@@ -1,0 +1,43 @@
+---
+// The landing page's "Usage and costs" section (§site.landing/usage): what Sova counts and where
+// it shows, with two live captures by shot id. Self-contained so index.astro places it with one line.
+import Icon from "./Icon.astro";
+import ShotFrame from "./screens/ShotFrame.astro";
+---
+<section class="section" id="usage" aria-labelledby="usage-title">
+  <div class="wrap">
+    <div class="section-head section-head-center">
+      <span class="eyebrow">Usage and costs</span>
+      <h2 class="h-section" id="usage-title">See what your agents spend.</h2>
+      <p class="lead">Sova records every model call on this computer once, when it ends, and prices it at each provider's API prices. Beside that, each subscription's limits and how fast you're using them.</p>
+    </div>
+
+    <article class="feature">
+      <div class="feature-copy">
+        <span class="eyebrow">Costs</span>
+        <h3 class="h-feature">Every call, by model, project and day.</h3>
+        <div class="prose">
+          <p>The Agents page's <strong>Costs</strong> tab splits the total into your main sessions, their workers and one-shot side calls, each with its cache hit rate. Below it: the cost per day, and tables by provider, model, kind and project, then the costliest sessions. Pick 7 days, 30 days or all of it, and filter by provider or model.</p>
+          <p>A project's <strong>Cost</strong> tab shows what its sessions cost and who started them. A session's <strong>Usage</strong> tab shows its own spend, its workers' included.</p>
+        </div>
+        <p class="limit"><Icon name="info" size={18} /><span>These are API prices, not your bill: subscriptions bill differently. Each computer counts its own calls.</span></p>
+        <p class="feature-more"><a href="/docs/usage/">Usage and costs docs<Icon name="arrow-right" size={14} /></a></p>
+      </div>
+      <div class="feature-visual"><ShotFrame shot="usage-costs" alt="The Agents page's Costs tab over the last 30 days: the total and its split into main sessions, workers and one-shots, each with its cache hit rate, the cost per day, and tokens, hit rate and cost by provider and by kind." /></div>
+    </article>
+
+    <article class="feature feature-flip">
+      <div class="feature-copy">
+        <span class="eyebrow">Subscription limits</span>
+        <h3 class="h-feature">Know when a limit runs out, before it does.</h3>
+        <div class="prose">
+          <p>The <strong>Usage</strong> page shows each provider's windows: how much is used and when it resets. Sova keeps a history, so it can say your pace per day, when the window runs out at that pace, and where you were at this point last week.</p>
+          <p>Claude, OpenAI, Ollama Cloud, Z.ai and DeepSeek each get a card, with every login of a Claude account together. The foot of the session list keeps a glance of the same bars.</p>
+        </div>
+        <p class="limit"><Icon name="info" size={18} /><span>The percentages are the provider's own, read on this computer and refreshed every few minutes.</span></p>
+        <p class="feature-more"><a href="/docs/usage/#subscription-limits">Subscription limits<Icon name="arrow-right" size={14} /></a></p>
+      </div>
+      <div class="feature-visual"><ShotFrame shot="usage-limits" alt="One Claude account on the Usage page: each 7-day window's share used, when it resets, the pace per day and when it runs out at that pace, last week for comparison, the week's burn chart, and the account's logins." /></div>
+    </article>
+  </div>
+</section>

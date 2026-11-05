@@ -1,0 +1,66 @@
+---
+// Teams: one team at work, drawn from the app's parts. The roster on the left (a coordinator, 3
+// members with the folders they own, a monitor), and on the right the team's traffic as inbox
+// items: members asking and answering each other by role, the checker and the builder going back
+// and forth, the monitor's notice, and the coordinator's one report back to the main chat. An
+// illustration, not one screen: the app shows each member's inbox on its own, in the side pane.
+import Frame from "../Frame.astro";
+import Icon from "../Icon.astro";
+
+const roster = [
+  { role: "coordinator", note: "Routes, answers, reports", state: "Working", tag: "Coordinator" },
+  { role: "api", note: "Owns api/orders", state: "Working" },
+  { role: "web", note: "Owns web/checkout", state: "Working" },
+  { role: "checker", note: "Owns tests/checkout", state: "Idle" },
+  { role: "monitor", note: "Next check in 5m", state: "Idle", tag: "Monitor" },
+];
+
+const traffic = [
+  { from: "web", to: "api", kind: "Question", subject: "Is the order total in cents or dollars?", status: "Addressed" },
+  { from: "api", to: "web", kind: "Message", subject: "Integer cents. The type is in api/orders/types.ts.", status: "Addressed" },
+  { from: "checker", to: "api", kind: "Message", subject: "2 refund tests fail on a partial refund", status: "Addressed" },
+  { from: "api", to: "checker", kind: "Message", subject: "Fixed the rounding. Run them again?", status: "Read" },
+  { from: "monitor", to: "coordinator", kind: "Notice", subject: "Wrap up: api at 78% of its context", status: "New", urgent: true },
+  { from: "coordinator", to: "your chat", kind: "Report", subject: "Milestone: checkout passes end to end", status: "", main: true },
+];
+---
+<figure class="teammock">
+  <Frame path="checkout-flow · team" class="m-frame" caption="">
+    <div class="tm-body">
+      <div class="tm-roster">
+        <div class="m-group-label">Checkout flow · 5 members</div>
+        {roster.map((m) => (
+          <div class={`m-row${m.tag === "Coordinator" ? " m-row-sel" : ""}`}>
+            <div class="m-row-main">
+              <div class="m-row-title">
+                {m.state === "Working" && <span class="live-dot"></span>}
+                <span>{m.role}</span>
+                {m.tag && <span class="m-tag">{m.tag}</span>}
+              </div>
+              <div class="m-row-meta"><span>{m.note}</span><span>{m.state}</span></div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div class="tm-feed">
+        <div class="m-group-label">Between members</div>
+        <ul class="tm-items">
+          {traffic.map((t) => (
+            <li class={`tm-item${t.main ? " tm-item-main" : ""}`}>
+              <div class="tm-route">
+                <span class="tm-who">{t.from}</span>
+                <Icon name="arrow-right" size={11} class="m-muted" />
+                <span class="tm-who">{t.to}</span>
+                <span class="m-muted">· {t.kind}</span>
+                {t.urgent && <span class="chip chip-warn"><span class="chip-dot"></span>Urgent</span>}
+                {t.status && <span class={`chip tm-status${t.status === "Addressed" ? " chip-success" : ""}`}>{t.status}</span>}
+              </div>
+              <p class="tm-subject">{t.subject}</p>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  </Frame>
+  <figcaption class="visually-hidden">An illustration of a team at work. On the left, its roster: a coordinator, three members named api, web and checker, each owning one folder, and a monitor. On the right, the team's messages: web asks api whether the order total is in cents, and api answers; checker tells api that 2 refund tests fail, and api fixes them and asks for another run; the monitor sends the coordinator an urgent notice that api is at 78% of its context; and the coordinator reports a milestone to your chat.</figcaption>
+</figure>

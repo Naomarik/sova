@@ -1064,6 +1064,9 @@ export const fetchMesh = (init?: RequestInit) => request<MeshInfo>("/api/mesh", 
 /** This host's own hello: its version and wire-contract fingerprint. */
 export const fetchMeshHello = () => request<MeshHello>("/api/mesh/hello", meshReadInit(true));
 
+/** Reconnect Here: bind peers.json to this folder and machine; the answer is the mesh after it. */
+export const reconnectMeshHere = () => request<MeshInfo>("/api/mesh/home", { method: "POST" });
+
 /** Replace peers.json's list; the answer is the mesh as it stands after the write. An entry
     without `nodeId` is resolved by its name on the tailnet. `grants` names the preset of a peer this
     write pairs (by id; §mesh.peers/grants). */

@@ -76,7 +76,8 @@ links". When nothing answers in time, it replies with the state as it stands.
   when that pin is valid; the pin never makes a host a gateway by itself.
 - Only a gateway advertises itself, in its hello, as an optional field outside the fingerprint:
   `shareGateway: {publicUrl}`. That is discovery only. Another host lists it as a choice when the
-  peer answers `up` and the URL is exactly a bare `https` origin.
+  peer answers `up`, that host doesn't read it as Update needed (§mesh.compatibility/host-acts), and
+  the URL is exactly a bare `https` origin.
 - `acceptFrom` is `"all"` or a list of StableIDs. `GET /api/peer/share-gateway/info` tells the
   calling peer `{publicUrl, accepting, seq}` (`seq`: the last snapshot stored for it, null when not
   accepting); a host that is no gateway answers 404 `{error: "not-gateway"}`. Asked with
@@ -404,7 +405,9 @@ mesh off. Copy is §design.copy-deck/public-links.
   (§app.settings-dialog/save-bar), which sends only what changed (the whole gateway block when any
   of its fields did). A field an environment variable pins is read-only with the pinned hint, and
   isn't checked. An address that isn't a bare `https` host, a port outside 1–65535, or a Through
-  without a gateway shows its error on the field and holds Save. A failed save shows "Couldn't save
+  without a gateway shows its error on the field and holds Save: every wrong field at once, each
+  red with its own sentence (the form kit's, §design/forms). The save (`PUT /api/public-links`)
+  refuses the same fields in the same sentences, from one table (`shared/public-links-limits.ts`). A failed save shows "Couldn't save
   the public links setting." and keeps the saved setting.
 - **Verify** acts on the saved address: it is disabled, saying why beside it, until the gateway
   setting and any new address are saved. A pass shows "Verified {time}. {url} reaches this

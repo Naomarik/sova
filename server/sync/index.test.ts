@@ -19,6 +19,10 @@ process.env.PI_CODING_AGENT_DIR = join(root, "default-agent");
 let seq = 0;
 
 interface FakeHost {
+  /** Peers this host reads as Update needed. */
+  updateNeeded: Set<string>;
+  /** Every call this host sent a peer. */
+  calls: string[];
   id: string;
   app: Hono;
   rt: SyncRuntime;
@@ -38,6 +42,8 @@ function host(id: string, others: Map<string, FakeHost>): FakeHost {
   app.use("/api/peer/*", async (c, next) => ((c.env as { meshPeer?: unknown } | undefined)?.meshPeer ? next() : c.json({ error: "Not found" }, 404)));
   const hooks = { start: [] as Array<() => void>, stop: [] as Array<() => void>, up: [] as Array<(id: string) => void>, settings: [] as Array<() => void> };
   let statusProvider: () => SyncStatus[] = () => [];
+  const updateNeeded = new Set<string>();
+  const calls: string[] = [];
   const settings: MeshSettings = { hostLabel: id, sync: { settings: true, themes: true, extensions: true, logins: true }, frontDoor: null };
   const peerEntry = (pid: string) => ({ id: pid, label: pid, nodeId: `n-${pid}`, dnsName: `${pid}.lab` });
   const mesh = {
@@ -45,7 +51,9 @@ function host(id: string, others: Map<string, FakeHost>): FakeHost {
     peers: () => [...others.keys()].filter((k) => k !== id).map(peerEntry),
     self: () => ({ id, label: id }),
     settings: () => settings,
+    updateNeeded: async (peerId: string) => (updateNeeded.has(peerId) ? `${peerId} runs another version of Sova` : null),
     peerFetch: async (peerId: string, path: string, init?: RequestInit) => {
+      calls.push(`${peerId} ${path}`);
       const target = others.get(peerId);
       if (!target) throw new Error(`unknown peer ${peerId}`);
       // As mesh-core's gate does: a peer's own call is proof it is up.
@@ -79,6 +87,8 @@ function host(id: string, others: Map<string, FakeHost>): FakeHost {
     },
     status: () => statusProvider(),
     seen: new Set(),
+    updateNeeded,
+    calls,
   };
   others.set(id, h);
   return h;
@@ -342,5 +352,38 @@ test("api-keys mode over the real routes: set in settings or pinned by env; OAut
     if (prior === undefined) delete process.env.SOVA_SYNC_LOGIN_KINDS;
     else process.env.SOVA_SYNC_LOGIN_KINDS = prior;
     for (const h of [a, b, c]) h.fire.stop();
+  }
+});
+
+test("a peer in Update needed is neither pushed to nor pulled from, and what it sends anyway stops at the door (§mesh.sync/categories)", async () => {
+  const others = new Map<string, FakeHost>();
+  const a = host("a", others);
+  const b = host("b", others);
+  writeAuth(a, { zai: { type: "api_key", key: "sk-a" } });
+  a.updateNeeded.add("b");
+  b.updateNeeded.add("a");
+  for (const h of [a, b]) h.fire.start();
+  try {
+    await a.rt.credentials!.syncAll();
+    await a.rt.docs!.syncAll();
+    await a.rt.extensions!.syncAll();
+    assert.deepEqual(a.calls, [], "nothing went to the other host");
+    assert.equal(existsSync(join(b.agentDir, "auth.json")), false);
+    // A sender on another host-to-host number, as a host that read things otherwise would be.
+    const push = (n: string) => b.app.request("/api/peer/sync/push", { method: "POST", body: JSON.stringify({ hostId: "a", now: Date.now(), docs: {} }), headers: { "content-type": "application/json", "X-Sova-Peer-Area": n } }, { meshPeer: { id: "a", label: "a", nodeId: "n-a", dnsName: "a.lab" } });
+    const refused = await push("99");
+    assert.equal(refused.status, 409);
+    assert.match(((await refused.json()) as { error: string }).error, /^B needs an update/);
+    const manifest = await b.app.request("/api/peer/credentials/manifest", { headers: { "X-Sova-Peer-Area": "99" } }, { meshPeer: { id: "a", label: "a", nodeId: "n-a", dnsName: "a.lab" } });
+    assert.equal(manifest.status, 409, "a pull stops too");
+    // A host that lists no areas states nothing and stays as it was.
+    assert.notEqual((await push("")).status, 409);
+    // The hosts match again: the next exchange carries it over.
+    a.updateNeeded.clear();
+    b.updateNeeded.clear();
+    await a.rt.credentials!.syncAll();
+    assert.equal(await until(() => existsSync(join(b.agentDir, "auth.json")) && !!auth(b).zai), true);
+  } finally {
+    for (const h of [a, b]) h.fire.stop();
   }
 });

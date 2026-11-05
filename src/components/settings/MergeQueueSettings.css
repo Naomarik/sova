@@ -1,6 +1,7 @@
 /* Settings → Merge Queue (MergeQueueSettings.tsx): groups of 3-cell rows (label, value, where it
    lives or its action). MergeQueueLandHow.tsx uses the same row classes. Rows stack under 640px. */
 .mqs-project {
+  flex-direction: row;
   display: flex;
   align-items: center;
   gap: var(--space-2);

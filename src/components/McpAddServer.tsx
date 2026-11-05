@@ -2,7 +2,9 @@ import { createSignal, For, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { McpServerRow } from "../../shared/mcp";
 import { addMcpServer, editMcpServer } from "../lib/api";
-import { ADD_WAYS, type AddFields, type AddWay, canSend, editedServer, isReservedName, newServer, pastedName, RESERVED_FIELD, SECRET_HINT } from "../lib/mcp";
+import { ADD_WAYS, type AddFields, type AddWay, canSend, editedServer, nameTaken, newServer, pastedName, SECRET_HINT } from "../lib/mcp";
+import { SECRET_NAME_RULE, SERVER_NAME_RULE } from "../../shared/mcp-limits";
+import { TextArea, TextField } from "./form";
 import { McpRow } from "./McpServerRow";
 import { trapFocus } from "./ui";
 import { sentence } from "./WorkerSlotRow";
@@ -12,7 +14,7 @@ import { sentence } from "./WorkerSlotRow";
  * tool. Sending saves it, counts as approving it and runs a Check, and the dialog then shows the
  * result on the new row. Edit has no Paste tab: its name is fixed and what it changes is the entry.
  */
-export function McpServerDialog(props: { editing?: McpServerRow; onClose: () => void; onChanged: () => void }) {
+export function McpServerDialog(props: { editing?: McpServerRow; taken?: readonly string[]; onClose: () => void; onChanged: () => void }) {
   const e = props.editing;
   const [way, setWay] = createSignal<AddWay>(e?.kind ?? "address");
   const [name, setName] = createSignal(e?.name ?? "");
@@ -24,10 +26,11 @@ export function McpServerDialog(props: { editing?: McpServerRow; onClose: () => 
   const [result, setResult] = createSignal<McpServerRow | null>(null);
   const set = (k: keyof AddFields, v: string) => setFields({ ...fields(), [k]: v });
   const ways = () => (e ? ADD_WAYS.filter((w) => w.id !== "paste") : ADD_WAYS);
-  const ready = () => canSend(way(), fields(), e ? null : name());
+  const ready = () => canSend(way(), fields(), e ? null : name(), props.taken ?? []);
+  /** Why the Name can't be sent beyond its rule (reserved): taken, or what the server last said. */
+  const nameProblem = () => nameError() ?? (e ? null : nameTaken(name(), props.taken ?? []));
   const title = e ? `Edit ${e.name}` : "Add Server";
   const send = async () => {
-    if (!e && isReservedName(name())) return setNameError(RESERVED_FIELD);
     if (!ready() || sending()) return;
     setError(null);
     setSending(true);
@@ -87,69 +90,41 @@ export function McpServerDialog(props: { editing?: McpServerRow; onClose: () => 
                   </For>
                 </div>
                 <Show when={!e}>
-                  <div class="field">
-                    <label class="field">
-                      <span class="field-label">Name</span>
-                      <input
-                        class="input"
-                        value={name()}
-                        autocomplete="off"
-                        aria-invalid={nameError() ? "true" : undefined}
-                        aria-describedby={nameError() ? "mcp-name-error" : undefined}
-                        onInput={(ev) => {
-                          setName(ev.currentTarget.value);
-                          setNameError(isReservedName(ev.currentTarget.value) ? RESERVED_FIELD : null);
-                        }}
-                      />
-                    </label>
-                    <Show when={nameError()}>
-                      {(t) => (
-                        <span class="field-error" id="mcp-name-error">
-                          {t()}
-                        </span>
-                      )}
-                    </Show>
-                  </div>
+                  <TextField
+                    id="mcp-name"
+                    label="Name"
+                    rule={SERVER_NAME_RULE}
+                    error={nameProblem()}
+                    value={name()}
+                    autocomplete="off"
+                    onInput={(raw) => (setName(raw), setNameError(null))}
+                  />
                 </Show>
                 <Show when={way() === "address"}>
-                  <label class="field">
-                    <span class="field-label">Address</span>
-                    <input class="input input-mono" value={fields().address} autocomplete="off" spellcheck={false} onInput={(ev) => set("address", ev.currentTarget.value)} />
-                  </label>
+                  <TextField label="Address" inputClass="input-mono" value={fields().address} autocomplete="off" spellcheck={false} onInput={(raw) => set("address", raw)} />
                 </Show>
                 <Show when={way() === "command"}>
-                  <label class="field">
-                    <span class="field-label">Command</span>
-                    <input class="input input-mono" value={fields().command} autocomplete="off" spellcheck={false} onInput={(ev) => set("command", ev.currentTarget.value)} />
-                  </label>
+                  <TextField label="Command" inputClass="input-mono" value={fields().command} autocomplete="off" spellcheck={false} onInput={(raw) => set("command", raw)} />
                 </Show>
                 <Show when={way() === "paste"}>
-                  <label class="field">
-                    <span class="field-label">Paste from Another Tool</span>
-                    <textarea class="textarea input-mono" rows={6} spellcheck={false} value={fields().paste} onInput={(ev) => {
-                        const text = ev.currentTarget.value;
-                        set("paste", text);
-                        const named = pastedName(text);
-                        if (named && !name().trim()) setName(named);
-                      }} />
-                  </label>
+                  <TextArea
+                    label="Paste from Another Tool"
+                    inputClass="input-mono"
+                    rows={6}
+                    spellcheck={false}
+                    value={fields().paste}
+                    onInput={(text) => {
+                      set("paste", text);
+                      const named = pastedName(text);
+                      if (named && !name().trim()) setName(named);
+                    }}
+                  />
                 </Show>
                 <Show when={way() !== "paste"}>
                   <Show when={way() === "command"}>
-                    <label class="field">
-                      <span class="field-label">Secret's Name</span>
-                      <input class="input input-mono" value={fields().secretName} autocomplete="off" spellcheck={false} onInput={(ev) => set("secretName", ev.currentTarget.value)} />
-                    </label>
+                    <TextField id="mcp-secret-name" label="Secret's Name" rule={SECRET_NAME_RULE} inputClass="input-mono" value={fields().secretName} autocomplete="off" spellcheck={false} onInput={(raw) => set("secretName", raw)} />
                   </Show>
-                  <div class="field">
-                    <label class="field">
-                      <span class="field-label">Secret</span>
-                      <input class="input input-mono" type="password" value={fields().secret} autocomplete="off" aria-describedby="mcp-secret-hint" onInput={(ev) => set("secret", ev.currentTarget.value)} />
-                    </label>
-                    <span class="field-hint" id="mcp-secret-hint">
-                      {SECRET_HINT}
-                    </span>
-                  </div>
+                  <TextField id="mcp-secret" label="Secret" hint={SECRET_HINT} inputClass="input-mono" type="password" value={fields().secret} autocomplete="off" onInput={(raw) => set("secret", raw)} />
                 </Show>
                 <Show when={error()}>{(t) => <p class="field-error">{t()}</p>}</Show>
               </div>

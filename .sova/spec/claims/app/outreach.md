@@ -110,11 +110,18 @@ start as Start Sender (§app.outreach/overseer-sender).
 - **Manage.** One entry at a time shows its heading ({label} …123), state, facts and controls under
   the list (the default when the tab opens; **Manage** on another row shows its), with its
   **Label** field (at most 24 characters, never 4 digits in a row, so a label never holds a number:
-  "A short name for this number, like Office. Never the number itself."). The managed entry's row
+  "A short name for this number, like Office. Never the number itself."), a form kit box
+  (§design/forms) that keeps a longer label whole with its count "{n} / 24", red with "Label can be
+  at most 24 characters." under it. A bad phone number's sentence is under its own box too. The managed entry's row
   follows the state the page reads every 5 seconds; the others are as of the list's last read.
 - **Add a Number** adds a sender on this host: a **Name** (lowercase letters, digits and dashes, at
   most 32) and its **Socket** path (absolute; another sender process's, with its own
-  `SOVA_WA_HOME`: the sender stays one number per process). Until saved its row says "Added when
+  `SOVA_WA_HOME`: the sender stays one number per process). Each box is red with its sentence while
+  it's wrong ("A number's name is lowercase letters, digits and dashes, at most 32.", "The socket
+  path must be absolute.", as This host's own socket box), and **Add Number** waits until both are
+  right. The server's save refuses each in the form's words, from one table
+  (`shared/outreach-limits.ts`); an added number's socket is "{name}: the socket path must be
+  absolute.". Until saved its row says "Added when
   you save." and can already be made the default. **Remove Number** (the managed added number's, or
   an unsaved row's) takes an added one off the list, never its sender or its credentials; the
   default can't be removed ("It is the default: make another number the default first.").

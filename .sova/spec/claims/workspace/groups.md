@@ -304,6 +304,10 @@ apply verbatim. What changes is scoping and chrome:
   pane. A `Working` chip (live dot) sits in the head while the member is mid-turn: in split mode
   there is no single place that says who is still running, and the tab strip's dot only covers
   tabs mode.
+- **A member on another host keeps its host's state.** In split and tabs alike, a pane does what the
+  single-session view does for that state (§mesh.compatibility/states): the Read only notice in place
+  of its composer, the warning bar over its transcript, or the Update needed page in place of its
+  chat.
 - **The accessible name of the pane is that same string, in both modes.** The pane carries
   `aria-label="{label or title} · {model}"` whether it is a `region` or a `tabpanel` — it is not
   labelled by its tab. Pointing a tabpanel at its tab is the usual convention, and here it breaks

@@ -117,7 +117,10 @@ its standing chip, and its controls; with more than one login in the account, it
 **Down** move it inside the account only. The name is renamed in place: **Rename** turns it into a
 field with **Save Name** and **Cancel**; Enter or **Save Name** saves it as the login's `label`
 (`PATCH /api/claude/accounts/:id` `{label}`), Escape or **Cancel** leaves it (and Settings stays
-open), and an empty name goes back to "Login N". A login's controls are named with its account
+open), and an empty name goes back to "Login N". The field is the form kit's (§design/forms): a
+name past 80 characters is kept whole, never cut, with its count "{n} / 80" red and "Login name
+can be at most 80 characters." under it, and Save Name (and Enter) waits until it fits; the server
+refuses such a name in the same sentence, both reading one rule (`shared/account-limits.ts`). A login's controls are named with its account
 ("Rename Login 1 of a@example.com"), so two accounts' "Login 1" never share a name. A login can be
 switched off or on (**Use**, `enabled`; off = never chosen automatically) and removed. A login
 that a project or organization here uses (§app.claude-logins/project-login) says so on its row:
@@ -411,7 +414,7 @@ what goes away and what stays, and on a login a project or organization uses, fi
 {names}: they go back to No preference." (§app.claude-logins/project-login). Under the list, **Add a login** (§app.claude-logins/add-remove) is
 a panel with four states: starting ("Starting Claude Code's sign-in…"); waiting for the code (the
 URL as a link with **Copy Link**, a **Code** field, **Finish Sign-In** and **Cancel**, and the
-reason when Claude Code refused a code); done (**Added**, the new login's email, organization and
+reason when Claude Code refused a code, as the Code field's one sentence under it); done (**Added**, the new login's email, organization and
 plan, whether it shares an account already here, and **Done**); failed (the reason, "Nothing was
 added.", **Close** and **Try Again**). Closing Settings cancels a flow still waiting for its code.
 No token or credential is ever shown or sent to the browser.

@@ -1,11 +1,12 @@
 import { createEffect, createResource, onMount, Show } from "solid-js";
-import { FILE_MB, MESSAGES_CAP, MESSAGES_MIN, PHOTO_MB, PHOTOS_PER_CONVERSATION, PHOTOS_PER_MESSAGE } from "../../shared/baton";
+import { BATON_RULES } from "../../shared/baton-limits";
 import { getBatonSettings } from "../lib/api";
-import { batonDraft, batonSaved, batonSaveError, batonSaving as saving, parseFileMb, parseLimit, photoFields, samePick, setBatonDraft, setBatonSaved, type BatonDraft } from "../lib/baton-settings-draft";
+import { batonDraft, batonSaved, batonSaveError, batonSaving as saving, samePick, setBatonDraft, setBatonSaved, type BatonDraft } from "../lib/baton-settings-draft";
 import { ensureModels, modelByRef, modelList } from "../lib/models";
 import { ensureModelPolicy, modelEnabled, modelPolicy } from "../lib/model-policy";
 import { priceLine } from "./OwnerCardAssistant";
 import { ModelPickButton, pickLabel } from "./ModelPickButton";
+import { NumberField, Toggle } from "./form";
 import { Banner } from "./ui";
 import "./BatonSettings.css";
 import { RetryButton, sentence } from "./WorkerSlotRow";
@@ -23,7 +24,6 @@ export function BatonSettingsSection() {
     const i = info.error ? undefined : info();
     if (i) setBatonSaved(i);
   });
-  const valid = () => parseLimit(batonDraft()?.messagesMax ?? "") !== null;
   // The default's warnings read the model list and Settings → Models, as the picker does.
   onMount(() => {
     void ensureModels().catch(() => {});
@@ -51,25 +51,22 @@ export function BatonSettingsSection() {
     const d = batonDraft();
     if (d) setBatonDraft({ ...d, ...patch });
   };
-  const photoField = (label: string, key: "perMessage" | "mb" | "perConversation", bounds: { min: number; max: number }) => (
-    <label class="field">
-      <span class="field-label">{label}</span>
-      <input
-        class="input"
-        type="number"
-        min={bounds.min}
-        max={bounds.max}
-        step="1"
+  /** Photo boxes are off while photos are; an accessor, so a draft edit never rebuilds the box (and steals its focus). */
+  const photosOff = () => !batonDraft()?.photosOn;
+  /** A number box; its range is its hint, and its rule's sentence when it is out of it. */
+  const box = (key: keyof typeof BATON_RULES, label: string, opts: { hint?: string; off?: () => boolean } = {}) => {
+    const r = BATON_RULES[key];
+    return (
+      <NumberField
+        label={label}
+        hint={opts.hint ?? `${r.min}–${r.max}`}
+        rule={r}
         value={batonDraft()?.[key] ?? ""}
-        disabled={saving() || !batonDraft()?.photosOn}
-        aria-invalid={batonDraft() ? photoFields[key](batonDraft()!) === null : false}
-        onInput={(e) => edit({ [key]: e.currentTarget.value })}
+        disabled={saving() || !!opts.off?.()}
+        onInput={(v) => edit({ [key]: v })}
       />
-      <span class="field-hint">
-        {bounds.min}–{bounds.max}
-      </span>
-    </label>
-  );
+    );
+  };
   return (
     <section class="settings-delegate" aria-labelledby="settings-orgs-title">
       <div class="settings-type-head">
@@ -85,58 +82,22 @@ export function BatonSettingsSection() {
         <Banner tone="error" title="Couldn't load the hand-off settings." body="Nothing was changed." action={<RetryButton label="Try Again" onClick={() => void refetch()} />} />
       </Show>
       <Show when={batonDraft() !== null}>
-        <label class="field">
-          <span class="field-label">Message limit</span>
-          <input
-            class="input"
-            type="number"
-            min={MESSAGES_MIN}
-            max={MESSAGES_CAP}
-            step="1"
-            value={batonDraft()?.messagesMax ?? ""}
-            disabled={saving()}
-            aria-invalid={!valid()}
-            onInput={(e) => edit({ messagesMax: e.currentTarget.value })}
-          />
-          <span class="field-hint">
-            {valid() ? `New sessions only; sessions already started keep theirs.` : `A whole number from ${MESSAGES_MIN} to ${MESSAGES_CAP.toLocaleString("en-US")}.`}
-          </span>
-        </label>
+        {box("messagesMax", "Message limit", { hint: "New sessions only; sessions already started keep theirs." })}
         <h4 class="settings-type-title" id="settings-orgs-photos">
           Photos in gathering chats
         </h4>
-        <label class="toggle toggle-switch">
-          <input type="checkbox" checked={batonDraft()?.photosOn ?? true} disabled={saving()} onChange={(e) => edit({ photosOn: e.currentTarget.checked })} />
-          <span class="toggle-box" />
-          <span>People can send photos</span>
-        </label>
+        <Toggle switch label="People can send photos" checked={batonDraft()?.photosOn ?? true} disabled={saving()} onChange={(on) => edit({ photosOn: on })} />
         <div class="orgs-fields" role="group" aria-labelledby="settings-orgs-photos">
-          {photoField("Per message", "perMessage", PHOTOS_PER_MESSAGE)}
-          {photoField("Largest photo, MB", "mb", PHOTO_MB)}
-          {photoField("Per conversation", "perConversation", PHOTOS_PER_CONVERSATION)}
+          {box("perMessage", "Per message", { off: photosOff })}
+          {box("mb", "Largest photo (MB)", { off: photosOff })}
+          {box("perConversation", "Per conversation", { off: photosOff })}
         </div>
         <p class="field-hint">Applies to every gathering session on this host, from its next message.</p>
         <h4 class="settings-type-title" id="settings-orgs-files">
           Files in gathering chats
         </h4>
         <div class="orgs-fields" role="group" aria-labelledby="settings-orgs-files">
-          <label class="field">
-            <span class="field-label">Largest file, MB</span>
-            <input
-              class="input"
-              type="number"
-              min={FILE_MB.min}
-              max={FILE_MB.max}
-              step="1"
-              value={batonDraft()?.fileMb ?? ""}
-              disabled={saving()}
-              aria-invalid={batonDraft() ? parseFileMb(batonDraft()!) === null : false}
-              onInput={(e) => edit({ fileMb: e.currentTarget.value })}
-            />
-            <span class="field-hint">
-              {FILE_MB.min}–{FILE_MB.max}
-            </span>
-          </label>
+          {box("fileMb", "Largest file (MB)")}
         </div>
         <p class="field-hint">Applies to gathering sessions that take files, from the next upload.</p>
         <h4 class="settings-type-title" id="settings-orgs-assistant">

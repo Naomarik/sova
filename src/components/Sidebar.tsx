@@ -123,6 +123,7 @@ import {
   passesHostFilter,
   peerInfo,
   peerUnavailable,
+  readingOf,
   SELF_FILTER,
   sessionHrefOn,
   sessionsHiddenBy,
@@ -194,8 +195,8 @@ export const sessionHref = (path: string) => sessionHrefOn(hostOf(path), path);
 
 /** A peer row's host state: the host menu's word and tone, or null for a peer that can be used. */
 const rowHostOf = (host: string) => {
-  const peer = peerInfo(host);
-  return peer ? rowHostState(peer.state, !!peerUnavailable(peer)) : null;
+  const reading = readingOf(host);
+  return reading ? rowHostState(reading) : null;
 };
 
 /**
@@ -211,6 +212,8 @@ function HostMark(props: { host: string }) {
       class="session-host"
       classList={{ "session-host-warn": state()?.tone === "warn", "session-host-error": state()?.tone === "error" }}
       title={why() ?? `On ${hostLabel(props.host)}`}
+      data-testid={readingOf(props.host) ? "session-row-host" : undefined}
+      data-host-state={readingOf(props.host) ?? undefined}
     >
       <Show when={state()}>
         <span class="chip-dot" />
@@ -1992,7 +1995,7 @@ export function Sidebar(props: {
           title={glanceText() || undefined}
           aria-label={glanceName() || undefined}
         >
-          <Icon name="gauge" />
+          <Icon name="usage-coin" />
           <span class="insights-row-text" classList={{ "usage-glance": glance().length > 0 }}>
             <UsageGlance parts={glance()} />
           </span>
@@ -2116,7 +2119,7 @@ export function Sidebar(props: {
           onClick={(e) => hold.suppressed() && e.preventDefault()}
           onContextMenu={(e) => hold.suppressed() && e.preventDefault()}
         >
-          <Icon name="worker" />
+          <Icon name="agents-working" />
           {/* Two lines (§app.insights/token-velocity): who is working and the 5-minute readout, then
               the 30-minute chart under them. The row's name says it all in words. */}
           <span class="agents-ticker">
@@ -2170,7 +2173,7 @@ export function Sidebar(props: {
 
   /**
    * Folded (<768): the foot as one 44px bar under the list (§app.insights/sidebar-foot-phone) —
-   * the mesh's connected count (while the mesh is on), the working count (the worker icon and the
+   * the mesh's connected count (while the mesh is on), the working count (the agents icon and the
    * Agents row's own figure), the load average, and every provider's usage cap as the glance shows it. Tapping the bar opens the
    * rows as a bottom sheet, verbatim. Focus leaves and returns with the sheet (trapFocus).
    */
@@ -2207,7 +2210,7 @@ export function Sidebar(props: {
             </span>
           </Show>
           <span class="sidebar-footbar-seg">
-            <Icon name="worker" small />
+            <Icon name="agents-working" small />
             <span class="text-num">{work().figure}</span>
           </span>
           <span class="sidebar-footbar-seg sidebar-footbar-velocity">
@@ -2400,7 +2403,7 @@ export function Sidebar(props: {
                 aria-label={workSentence()}
                 onClick={() => toast(workSentence())}
               >
-                <Icon name="worker" />
+                <Icon name="agents-working" />
                 <span class="spine-count text-num">{work().figure}</span>
               </button>
             </Show>
@@ -2422,7 +2425,7 @@ export function Sidebar(props: {
             title={glanceText() || "Usage"}
             aria-label={glanceName() || "Usage"}
           >
-            <Icon name="gauge" />
+            <Icon name="usage-coin" />
           </a>
           <button type="button" class="button button-icon spine-item" title="Resource monitor" aria-label="Resource monitor" onClick={() => openMonitor()}>
             <Icon name="activity" />
@@ -2434,7 +2437,7 @@ export function Sidebar(props: {
             title={agentsLabel()}
             aria-label={agentsLabel()}
           >
-            <Icon name="worker" />
+            <Icon name="agents-working" />
           </a>
           <button type="button" class="button button-icon spine-item" title={settingsLabel()} aria-label={settingsLabel()} onClick={() => props.onOpenSettings()}>
             <Icon name="settings" />

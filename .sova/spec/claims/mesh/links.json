@@ -80,7 +80,10 @@
       "server/link-delivery.test.ts",
       "server/test-wait.ts",
       "server/mesh/links-transfer-test-fixtures.ts",
-      "server/app.ts"
+      "server/app.ts",
+      "server/wire-gate.ts",
+      "shared/wire-areas.ts",
+      "server/mesh/hello.ts"
     ],
     "requires": [
       "§mesh.links/record",
@@ -92,7 +95,12 @@
       "§chat/model-menu",
       "§app/baton",
       "§app/project-overseer"
-    ]
+    ],
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:12Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
   },
   "§mesh.links/host-names": {
     "kind": "behavior",

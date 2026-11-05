@@ -242,7 +242,7 @@ label a person reads says "sessions pane".
     <div class="spine-stats">
       <button class="button button-icon spine-item spine-stat" type="button"
               aria-label="7 agents working now: 2 sessions and 5 subagents. Output tokens a minute: 48k over the last 5 minutes, 12k over 30. Replies still being written aren't counted yet."
-              title="{the same}">…worker…<span class="spine-count">7</span></button>
+              title="{the same}">…agents-working…<span class="spine-count">7</span></button>
       <button class="button button-icon spine-item spine-stat" type="button"
               aria-label="2 sessions open in a TUI" title="2 sessions open in a TUI">…terminal…<span class="spine-count">2</span></button>
     </div>
@@ -251,11 +251,11 @@ label a person reads says "sessions pane".
       <button class="button button-icon spine-item landing-spine" type="button" aria-haspopup="dialog" aria-expanded="false"
               aria-label="{the landing bar's title}. {its sub line}. {its count in words}" title="{the same}">…icon…<span class="landing-spine-dot landing-spine-dot-{tone}" aria-hidden="true"></span></button>
       <a class="button button-icon spine-item" href="#/usage"
-         aria-label="{the usage glance sentence, else Usage}" title="{the same}">…gauge…</a>
+         aria-label="{the usage glance sentence, else Usage}" title="{the same}">…usage-coin…</a>
       <!-- §app.resource-monitor/entry-button -->
       <button class="button button-icon spine-item" type="button" aria-label="Resource monitor" title="Resource monitor">…activity…</button>
       <a class="button button-icon spine-item" href="#/agents"
-         aria-label="{the Agents row's full sentence}" title="{the same}">…worker…</a>
+         aria-label="{the Agents row's full sentence}" title="{the same}">…agents-working…</a>
       <!-- while an update this copy can install is waiting (§app.updates/indicator): the name reads
            "Settings · update available" and an accent .update-dot sits at the button's top right -->
       <button class="button button-icon spine-item" type="button" aria-label="Settings" title="Settings">…settings…</button>
@@ -344,8 +344,8 @@ label a person reads says "sessions pane".
   opens. Pointer users get the sentence as the `title`; a tap raises the same sentence as a toast,
   the rail's precedent (§app.session-list/accessibility — there is no hover on touch).
 - **The foot** — Usage (`#/usage`), Resource monitor, Agents (`#/agents`) and Settings, the
-  expanded foot's two doorways and two buttons, in that order: the monitor sits right after the
-  gauge, as it sits beside the Usage glance. Above Usage, only while the landing bar has something
+  expanded foot's two doorways and two buttons, in that order: the monitor sits right after
+  Usage, as it sits beside the Usage glance. Above Usage, only while the landing bar has something
   to show, the **landing item**: one icon with a status dot in the bar's tone, named by the bar's
   title, sub line and count in words, which opens the bar's detail as a popover (§app.merge-queue/landing-bar). Resource monitor opens the monitor modal, exactly as
   the foot's button does (§app.resource-monitor/entry-button). The glance sentences are not dropped at 64px, only unprinted: Usage's `title` and

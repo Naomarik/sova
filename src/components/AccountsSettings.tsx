@@ -17,6 +17,9 @@ import {
 import { type AccountGroup, accountGroups, addedText, type LoginFacts, loginName, moveAccount, moveLogin, sharedQuotaText } from "../lib/claude-login-groups";
 import { holderChip, movingText, poolActions, usageText } from "../lib/claude-pool";
 import { stampTime } from "../lib/format";
+import { LOGIN_NAME_RULE } from "../../shared/account-limits";
+import { problemOf } from "../../shared/form-rules";
+import { Select, TextField, Toggle } from "./form";
 import { Banner, Chip, Icon } from "./ui";
 import { RetryButton, sentence } from "./WorkerSlotRow";
 
@@ -160,6 +163,7 @@ function LoginRow(props: {
     queueMicrotask(() => renameButton?.focus());
   };
   const save = () => {
+    if (problemOf(LOGIN_NAME_RULE, draft())) return;
     const next = draft().trim();
     if (next !== (props.label ?? "")) props.onRename(next || null);
     stopRename();
@@ -185,14 +189,14 @@ function LoginRow(props: {
               save();
             }}
           >
-            <input
-              class="input"
-              maxlength={80}
+            <TextField
+              label={`Name of ${called()}`}
+              hideLabel
+              rule={LOGIN_NAME_RULE}
               value={draft()}
               placeholder={props.name}
-              aria-label={`Name of ${called()}`}
-              ref={(el) => queueMicrotask(() => el.select())}
-              onInput={(e) => setDraft(e.currentTarget.value)}
+              ref={(el: HTMLInputElement) => queueMicrotask(() => el.select())}
+              onInput={setDraft}
               onKeyDown={(e) => {
                 if (e.key === "Escape") {
                   e.stopPropagation();
@@ -201,7 +205,7 @@ function LoginRow(props: {
               }}
             />
             <span class="button-row">
-              <button type="submit" class="button button-primary button-sm" disabled={props.busy}>
+              <button type="submit" class="button button-primary button-sm" disabled={props.busy || !!problemOf(LOGIN_NAME_RULE, draft())}>
                 Save Name
               </button>
               <button type="button" class="button button-ghost button-sm" onClick={stopRename}>
@@ -238,11 +242,7 @@ function LoginRow(props: {
             Down
           </button>
         </Show>
-        <label class="toggle toggle-switch accounts-login-toggle">
-          <span>Use</span>
-          <input type="checkbox" checked={props.enabled} disabled={props.busy} aria-label={`Use ${called()}`} onChange={(e) => props.onToggle(e.currentTarget.checked)} />
-          <span class="toggle-box" />
-        </label>
+        <UseSwitch name={called()} checked={props.enabled} disabled={props.busy} onChange={props.onToggle} />
         <Show when={props.clearable}>
           <button type="button" class="button button-sm" disabled={props.busy} onClick={() => props.onClear()}>
             Clear
@@ -315,31 +315,28 @@ function PoolLogins(props: LoginActions & {
   return (
     <>
       <div class="accounts-keeper">
-        <label class="field accounts-keeper-field">
-          <span class="field-label">Keeper</span>
-          <span class="select-wrap">
-            <select
-              class="select"
-              aria-describedby="accounts-keeper-hint"
-              disabled={props.busy}
-              onChange={(e) => props.act("keeper", () => setClaudePoolKeeper(e.currentTarget.value))}
-            >
-              <Show when={!props.pool.keeper.id}>
-                <option value="" selected>
-                  Choose a device
-                </option>
-              </Show>
-              <For each={props.pool.devices}>
-                {(d) => (
-                  <option value={d.id} selected={d.id === props.pool.keeper.id}>
-                    {d.label}
-                    {d.self ? " (this device)" : d.up ? "" : " (offline)"}
-                  </option>
-                )}
-              </For>
-            </select>
-          </span>
-        </label>
+        <Select
+          class="accounts-keeper-field"
+          label="Keeper"
+          value={props.pool.keeper.id ?? ""}
+          describedBy="accounts-keeper-hint"
+          disabled={props.busy}
+          onChange={(v) => props.act("keeper", () => setClaudePoolKeeper(v))}
+        >
+          <Show when={!props.pool.keeper.id}>
+            <option value="" selected>
+              Choose a device
+            </option>
+          </Show>
+          <For each={props.pool.devices}>
+            {(d) => (
+              <option value={d.id} selected={d.id === props.pool.keeper.id}>
+                {d.label}
+                {d.self ? " (this device)" : d.up ? "" : " (offline)"}
+              </option>
+            )}
+          </For>
+        </Select>
         <p class="field-hint" id="accounts-keeper-hint">
           <Show
             when={props.pool.keeper.id && !props.pool.keeper.up}
@@ -394,27 +391,15 @@ function PoolLogins(props: LoginActions & {
                         before={
                           <>
                             <Show when={acts().pinnable}>
-                              <label class="accounts-pin">
-                                <span class="select-wrap">
-                                  <select
-                                    class="select"
-                                    aria-label={`Always give ${name()}${l.identity?.email ? ` of ${l.identity.email}` : ""} to`}
-                                    disabled={props.busy}
-                                    onChange={(e) => props.act(`pin-${l.id}`, () => pinClaudePoolLogin(l.id, e.currentTarget.value || null))}
-                                  >
-                                    <option value="" selected={!l.pin}>
-                                      No pin
-                                    </option>
-                                    <For each={props.pool.devices}>
-                                      {(d) => (
-                                        <option value={d.id} selected={d.id === l.pin}>
-                                          Pin to {d.label}
-                                        </option>
-                                      )}
-                                    </For>
-                                  </select>
-                                </span>
-                              </label>
+                              <Select
+                                class="accounts-pin"
+                                label={`Always give ${name()}${l.identity?.email ? ` of ${l.identity.email}` : ""} to`}
+                                hideLabel
+                                value={l.pin ?? ""}
+                                options={[{ value: "", label: "No pin" }, ...props.pool.devices.map((d) => ({ value: d.id, label: `Pin to ${d.label}` }))]}
+                                disabled={props.busy}
+                                onChange={(v) => props.act(`pin-${l.id}`, () => pinClaudePoolLogin(l.id, v || null))}
+                              />
                             </Show>
                             <Show when={acts().returnable}>
                               <button
@@ -705,17 +690,7 @@ export function AccountsSettingsSection() {
                       </div>
                       <Standing login={l()} />
                       <div class="accounts-login-actions">
-                        <label class="toggle toggle-switch accounts-login-toggle">
-                          <span>Use</span>
-                          <input
-                            type="checkbox"
-                            checked={l().enabled}
-                            disabled={!!busy()}
-                            aria-label={`Use ${nameOf(l())}`}
-                            onChange={(e) => actions.onToggle("default", e.currentTarget.checked)}
-                          />
-                          <span class="toggle-box" />
-                        </label>
+                        <UseSwitch name={nameOf(l())} checked={l().enabled} disabled={!!busy()} onChange={(on) => actions.onToggle("default", on)} />
                         <Show when={l().standing.state !== "ready"}>
                           <button type="button" class="button button-sm" disabled={!!busy()} onClick={() => actions.onClear("default")}>
                             Clear
@@ -777,21 +752,19 @@ export function AccountsSettingsSection() {
                                 </button>
                               </p>
                             </Show>
-                            <label class="field">
-                              <span class="field-label">Code</span>
-                              <input
-                                class="input input-mono"
-                                value={code()}
-                                autocomplete="off"
-                                spellcheck={false}
-                                disabled={f().state === "finishing"}
-                                onInput={(e) => setCode(e.currentTarget.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") void finishFlow();
-                                }}
-                              />
-                            </label>
-                            <Show when={(f() as { error?: string }).error}>{(e) => <p class="field-error">{e()}</p>}</Show>
+                            <TextField
+                              label="Code"
+                              inputClass="input-mono"
+                              value={code()}
+                              error={(f() as { error?: string }).error}
+                              autocomplete="off"
+                              spellcheck={false}
+                              disabled={f().state === "finishing"}
+                              onInput={setCode}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") void finishFlow();
+                              }}
+                            />
                             <span class="button-row">
                               <button type="button" class="button button-sm button-ghost" onClick={() => void cancelFlow()}>
                                 Cancel
@@ -854,3 +827,20 @@ export function AccountsSettingsSection() {
     </section>
   );
 }
+
+/** A login's Use switch: "Use" on screen, "Use {login}" read aloud. */
+const UseSwitch = (p: { name: string; checked: boolean; disabled: boolean; onChange(on: boolean): void }) => (
+  <Toggle
+    switch
+    class="accounts-login-toggle"
+    label={
+      <>
+        <span aria-hidden="true">Use</span>
+        <span class="visually-hidden">Use {p.name}</span>
+      </>
+    }
+    checked={p.checked}
+    disabled={p.disabled}
+    onChange={p.onChange}
+  />
+);

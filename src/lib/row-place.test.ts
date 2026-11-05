@@ -85,7 +85,7 @@ describe("a chip", () => {
   });
 
   test("a chip may not take one of Sova's own words on a row", () => {
-    for (const w of ["TUI", "tui", "Draft", "restart pending", "Restart Pending", "1 follow-up", "12 follow-ups", "merged", "stale", "in progress", "blocked", "ready to merge", "waiting for your OK", "removed", "down", "refused", "hidden", "other version", "Other Version", "2 of 3", "0 of 1"]) {
+    for (const w of ["TUI", "tui", "Draft", "restart pending", "Restart Pending", "1 follow-up", "12 follow-ups", "merged", "stale", "in progress", "blocked", "ready to merge", "waiting for your OK", "removed", "down", "refused", "hidden", "read only", "Read Only", "display may be wrong", "update needed", "2 of 3", "0 of 1"]) {
       assert.equal(isRowSovaWord(w), true, w);
       assert.equal(validRowChip({ label: w, tone: "ok" }, ext), null, w);
     }

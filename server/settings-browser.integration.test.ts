@@ -1,6 +1,6 @@
 // Run: pnpm test:int -- server/settings-browser.integration.test.ts
-// Chrome's sockets need a short temp dir: the file picks its own (settings-browser-temp.ts), so a long
-// TMPDIR never fails it; with no short writable one at all it skips, saying why.
+// The harness (build, throwaway server, Chrome, short temp dir, cookie sign-in) is
+// forms-browser.integration.fixture.ts, shared by every area file of the "forms" group.
 // Settings in a real browser (§app.settings-dialog/save-bar), against a throwaway server
 // (server/testing/hermetic-server.ts) serving this tree's frontend, built fresh into the scratch root
 // (a stale dist/ would test old code). Per tab: the dialog opens clean; an edit says "Unsaved: <form>";
@@ -9,68 +9,30 @@
 // saves; a reload shows the default. The forms' every field is src/lib/settings-forms-roundtrip.test.ts
 // (unit) and every route server/settings-roundtrip.integration.test.ts: this file is the seams between
 // them (the boxes, the footer, the reload), which only a browser sees.
-// Its own slow group ("settings", scripts/test-groups.mjs): a landing runs it only when settings code
-// changes. Chrome is found as the tour tests find it (discoverTourBrowser): none installed fails.
+// In the "forms" slow group (scripts/test-groups.mjs): a landing runs it only when form code changes.
+// Chrome is found as the tour tests find it (discoverTourBrowser): none installed fails.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { after, before, describe, test } from "node:test";
-import { chromium, type Browser, type Page } from "playwright-core";
-import { startHermeticServer, type HermeticServer } from "./testing/hermetic-server";
-import { discoverTourBrowser } from "./tours/browser";
-import { chooseBrowserTemp } from "./settings-browser-temp";
-import { scratchRoot } from "./test-scratch";
+import { join } from "node:path";
+import { before, describe, test } from "node:test";
+import type { Page } from "playwright-core";
+import { formsBrowser, until as untilSeen } from "./forms-browser.integration.fixture";
 
-const ROOT = resolve(import.meta.dirname, "..");
-let s: HermeticServer;
-let browser: Browser;
+const h = formsBrowser("sova-settings-browser-");
+const skip = h.skip;
 let page: Page;
-const temp = chooseBrowserTemp();
-const skip = "skip" in temp ? temp.skip : undefined;
-const shortTmp = "dir" in temp ? temp.dir : undefined;
-const keptTmpdir = process.env.TMPDIR;
-
-before(async () => {
-  if (skip) return;
-  // Chrome (and Playwright's profile for it) put their sockets under TMPDIR: the short one chosen.
-  process.env.TMPDIR = shortTmp;
-  const dist = join(scratchRoot("sova-settings-browser-"), "dist");
-  mkdirSync(dist, { recursive: true });
-  execFileSync("node", [join(ROOT, "node_modules", "vite", "bin", "vite.js"), "build", "--outDir", dist, "--emptyOutDir", "--logLevel", "error"], { cwd: ROOT, stdio: ["ignore", "ignore", "inherit"] });
-  s = await startHermeticServer({ env: { SOVA_DIST: dist } });
-  browser = await chromium.launch({ executablePath: discoverTourBrowser(), headless: true, env: { ...process.env, TMPDIR: shortTmp! } });
-  // Signed in as the operator's browser is: the server's cookie, never the script header (some
-  // saves, Merge Queue's to master among them, refuse a script).
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
-  const { authCookieName } = await import("./auth");
-  await ctx.addCookies([{ name: authCookieName(s.agentDir), value: s.token, url: s.base }]);
-  page = await ctx.newPage();
-}, { timeout: 180_000 });
-after(async () => {
-  await browser?.close();
-  // The server's scratch root is under the short temp dir: stop it (and check its HOME) first.
-  const changed = await s?.stop();
-  if (keptTmpdir === undefined) delete process.env.TMPDIR;
-  else process.env.TMPDIR = keptTmpdir;
-  if ("cleanup" in temp) temp.cleanup();
-  assert.deepEqual(changed ?? [], [], "the sentinel HOME changed");
-});
+let s: typeof h.s;
+// After the harness's own before (registered first): its server and page.
+before(() => ({ page, s } = h));
 
 const NAMES: Record<string, string> = { general: "General", models: "Models", subagents: "Subagents", alignment: "Alignment", overseer: "Overseer", notifications: "Notifications", decisions: "Decisions", summaries: "Summaries", memory: "Memory", organizations: "Organizations", mesh: "Mesh", "public-links": "Public links" };
 /** The Settings dialog (the close-hold asks in a dialog of its own). */
 const dialog = () => page.locator('[role="dialog"]:has(#settings-foot-status)');
 const status = async () => ((await page.locator("#settings-foot-status").textContent()) ?? "").replace(/\s+/g, " ").trim();
 const saveButton = () => dialog().getByRole("button", { name: "Save Changes", exact: true });
-/** Polls until `check` holds (the page settles on its own time), else fails saying what it last saw. */
-async function until(what: string, check: () => Promise<boolean>, timeoutMs = 15_000): Promise<void> {
-  const end = Date.now() + timeoutMs;
-  while (Date.now() < end) {
-    if (await check().catch(() => false)) return;
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  assert.fail(`${what}: never happened (footer: "${await status().catch(() => "?")}")`);
-}
+/** Polls until `check` holds, else fails saying what the footer last read. */
+const until = (what: string, check: () => Promise<boolean>, timeoutMs = 15_000) => untilSeen(what, check, timeoutMs, async () => `footer: "${await status()}"`);
 const statusIs = (want: string | RegExp) => until(`footer reads ${want}`, async () => (typeof want === "string" ? (await status()) === want : want.test(await status())));
 
 /** A fresh page load (every draft forgotten), Settings open on `tab`, its forms loaded and clean. */

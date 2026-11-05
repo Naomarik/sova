@@ -121,15 +121,21 @@ export const GROUPS = [
     ],
   },
   {
-    name: "settings",
-    title: "Settings in a browser",
-    // The Settings dialog driven in Chrome: every tab's edit, save, reload, invalid box and Reset to
-    // Defaults. Settings code only: its forms, their drafts and checks, and the routes and stores
-    // they save through (decision q4 of the settings QA: not every package bump).
-    files: ["server/settings-browser.integration.test.ts"],
+    name: "forms",
+    title: "Forms in a browser",
+    // Sova's forms driven in Chrome, one file per area (Settings first): every box's valid, half-typed,
+    // too-long and pasted text, its red state and message, save, reload and Reset to Defaults. Form
+    // code only: the form kit and its limits, each migrated surface, their drafts and checks, and the
+    // routes and stores they save through (decision q4 of the settings QA: not every package bump).
+    files: ["server/settings-browser.integration.test.ts", "server/forms-*browser.integration.test.ts"],
     except: [],
     landing: "triggered",
     triggers: [
+      "src/components/form/**",
+      "shared/form-rules*",
+      "shared/*-limits.ts",
+      "server/*browser.integration.fixture.ts",
+      "server/settings-browser-temp.ts",
       "src/components/*Settings*.tsx",
       "src/components/settings/**",
       "src/lib/merge-queue-settings*.ts",

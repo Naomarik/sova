@@ -43,8 +43,10 @@ environment every runner starts in, and the hermetic dev server.
 - **Slow groups** (`scripts/test-groups.mjs`, one list for landing and `--changed`): **Chat
   processes** (`trial`, `server/chat-runtime/trial-*.integration.test.ts`) and **Tours** (`tours`,
   the `server/tours/*.integration.test.ts` files that drive Chrome), **Merge queue** (`merge-queue`) and
-  **Settings in a browser** (`settings`, `server/settings-browser.integration.test.ts`: the Settings
-  dialog in Chrome, triggered by settings code only, run at landing when triggered; it picks its own
+  **Forms in a browser** (`forms`, `server/settings-browser.integration.test.ts` and one
+  `server/forms-*browser.integration.test.ts` per area, helpers in a `*browser.integration.fixture.ts`:
+  Sova's forms in Chrome, triggered by form code only (the form kit, its limits, each migrated
+  surface), run at landing when triggered; it picks its own
   short temp dir for Chrome's sockets, `server/settings-browser-temp.ts`, and skips saying why only
   when none is writable). Each lists its triggers: the
   areas whose change can break it (chats, workers, teams, the Overseer, batons, Claude Code and their

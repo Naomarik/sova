@@ -1,4 +1,6 @@
 import type { DelegateOptions, SessionTitleSettings } from "../../shared/protocol";
+import { check, firstIssue } from "../../shared/form-rules";
+import { TITLE_RULES } from "../../shared/session-title-limits";
 import { sameChoice, type DraftChoice } from "./delegate-form";
 
 /**
@@ -16,9 +18,6 @@ export interface SessionTitleDraft {
   fallback: DraftChoice | null;
 }
 
-export const INTERVAL = { min: 1, max: 1440 } as const;
-export const QUIET = { min: 0, max: 1440 } as const;
-
 export const toTitleDraft = (s: SessionTitleSettings): SessionTitleDraft => ({
   version: 1,
   enabled: s.enabled,
@@ -28,46 +27,50 @@ export const toTitleDraft = (s: SessionTitleSettings): SessionTitleDraft => ({
   fallback: s.fallback ? { ...s.fallback } : null,
 });
 
-/** A whole number of minutes in range, or null. */
-export function minutesOf(text: string, range: { min: number; max: number }): number | null {
-  if (!/^\s*\d+\s*$/.test(text)) return null;
-  const n = Number(text);
-  return n >= range.min && n <= range.max ? n : null;
-}
-
-/** Why a minute field can't be saved, in the words under it, or null. */
-export function minutesIssue(text: string, range: { min: number; max: number }): string | null {
-  return minutesOf(text, range) === null ? `A whole number of minutes, ${range.min} to ${range.max}.` : null;
-}
+/** A minute box's number once its rule takes it, else null. */
+const minutes = (d: SessionTitleDraft, key: keyof typeof TITLE_RULES): number | null => {
+  const r = check(TITLE_RULES[key], d[key]);
+  return r.ok ? r.value : null;
+};
 
 export function sameTitleSettings(d: SessionTitleDraft, s: SessionTitleSettings): boolean {
   return (
     d.enabled === s.enabled &&
-    minutesOf(d.intervalMinutes, INTERVAL) === s.intervalMinutes &&
-    minutesOf(d.quietMinutes, QUIET) === s.quietMinutes &&
+    minutes(d, "intervalMinutes") === s.intervalMinutes &&
+    minutes(d, "quietMinutes") === s.quietMinutes &&
     sameChoice(d.primary, s.primary) &&
     sameChoice(d.fallback, s.fallback)
   );
 }
 
-/** Why the draft can't be saved, one sentence naming the form (the dialog's footer), or null. */
-export function titleDraftProblem(d: SessionTitleDraft): string | null {
-  if (minutesOf(d.intervalMinutes, INTERVAL) === null) return `Session titles needs a whole number of minutes between checks, ${INTERVAL.min} to ${INTERVAL.max}.`;
-  if (minutesOf(d.quietMinutes, QUIET) === null) return `Session titles needs a whole number of quiet minutes, ${QUIET.min} to ${QUIET.max}.`;
-  if (!d.primary.model) return "Session titles needs a primary model.";
-  if (!d.primary.effort) return "Session titles needs an effort for its primary model.";
-  if (d.fallback && !d.fallback.model) return "Session titles needs a fallback model.";
-  if (d.fallback && !d.fallback.effort) return "Session titles needs an effort for its fallback model.";
-  if (d.fallback && sameChoice(d.primary, d.fallback)) return "Session titles has a fallback that's the same model as its primary.";
-  return null;
-}
+/** The form's boxes in page order, then the model rows' problem (the draft store's `fields`). */
+export const titleFields = (d: SessionTitleDraft) => [
+  { rule: TITLE_RULES.intervalMinutes, value: d.intervalMinutes },
+  { rule: TITLE_RULES.quietMinutes, value: d.quietMinutes },
+  {
+    message: !d.primary.model
+      ? "Choose a primary model."
+      : !d.primary.effort
+        ? "Choose an effort for the primary model."
+        : d.fallback && !d.fallback.model
+          ? "Choose a fallback model, or no fallback."
+          : d.fallback && !d.fallback.effort
+            ? "Choose an effort for the fallback model."
+            : d.fallback && sameChoice(d.primary, d.fallback)
+              ? "The fallback is the same as the primary. Choose another model, or no fallback."
+              : null,
+  },
+];
 
-/** The PUT body; only called once titleDraftProblem is null. */
+/** Why the draft can't be saved, or null. */
+export const titleDraftProblem = (d: SessionTitleDraft): string | null => firstIssue(titleFields(d))?.message ?? null;
+
+/** The PUT body; only called once the draft has no problem. */
 export const toTitleSettings = (d: SessionTitleDraft): SessionTitleSettings => ({
   version: 1,
   enabled: d.enabled,
-  intervalMinutes: minutesOf(d.intervalMinutes, INTERVAL)!,
-  quietMinutes: minutesOf(d.quietMinutes, QUIET)!,
+  intervalMinutes: minutes(d, "intervalMinutes")!,
+  quietMinutes: minutes(d, "quietMinutes")!,
   primary: { ...d.primary },
   fallback: d.fallback ? { ...d.fallback } : null,
 });

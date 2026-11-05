@@ -73,6 +73,7 @@ interface Limit {
 const long = (n: number) => "x".repeat(n);
 const limits = await import("../shared/overseer-limits");
 const batonLimits = await import("../shared/baton-limits");
+const titleLimits = await import("../shared/session-title-limits");
 const { firstIssue } = await import("../shared/form-rules");
 /** A rule's edges: the values at it (taken) and just past it (refused). */
 function ruled(rule: Rule): Pick<Limit, "name" | "rule" | "takes" | "refuses"> {
@@ -137,16 +138,9 @@ const LIMITS: Limit[] = [
       server: (v) => putStatus("/api/baton/settings", put(v as number)),
     };
   }),
-  ...(
-    [
-      ["intervalMinutes", titles.INTERVAL],
-      ["quietMinutes", titles.QUIET],
-    ] as const
-  ).map(
-    ([key, range]): Limit => ({
-      name: `Session titles ${key} (${range.min} to ${range.max})`,
-      takes: [range.min, range.max],
-      refuses: [range.min - 1, range.max + 1, 1.5],
+  ...(["intervalMinutes", "quietMinutes"] as const).map(
+    (key): Limit => ({
+      ...ruled(titleLimits.TITLE_RULES[key]),
       client: (v) => titles.titleDraftProblem({ ...titles.toTitleDraft(fresh.titles.settings), [key]: String(v) }),
       server: (v) => putStatus("/api/settings/session-titles", { ...fresh.titles.settings, [key]: v }),
     }),

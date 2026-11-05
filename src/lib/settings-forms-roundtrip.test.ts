@@ -73,6 +73,7 @@ const links = await import("./public-links");
 const push = await import("./push-draft");
 const titles = await import("./session-title-settings-draft");
 const titleForm = await import("./session-title-settings-form");
+const { TITLE_RULES } = await import("../../shared/session-title-limits");
 const profiles = await import("./subagent-profiles-draft");
 const summarizer = await import("./summarizer-draft");
 const summarizerForm = await import("./summarizer-form");
@@ -542,8 +543,8 @@ const NUMBER_BOXES: NumberBox[] = [
   ...overseer.CAP_KEYS.map((k): NumberBox => ({ label: "Overseer", path: `settings.caps.${k}`, max: overseer.CAP_MAX, reset: "Limits" })),
   { label: "Request limits", path: "zai", max: 999, blankOk: true },
   { label: "Request limits", path: "ollama-cloud", max: 999, blankOk: true },
-  { label: "Session titles", path: "intervalMinutes", max: titleForm.INTERVAL.max, reset: "Session titles" },
-  { label: "Session titles", path: "quietMinutes", max: titleForm.QUIET.max, reset: "Session titles" },
+  { label: "Session titles", path: "intervalMinutes", max: TITLE_RULES.intervalMinutes.max, reset: "Session titles" },
+  { label: "Session titles", path: "quietMinutes", max: TITLE_RULES.quietMinutes.max, reset: "Session titles" },
   { label: "Organizations", path: "messagesMax", max: 1000 },
   { label: "Organizations", path: "perMessage", max: 8 },
   { label: "Organizations", path: "mb", max: 10 },

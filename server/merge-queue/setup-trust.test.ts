@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { recordGoAhead } from "../../pi-config/extensions/worktrees/landing.ts";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { definitionAt } from "../project-services/deploy-recipe";
 import type { Caller } from "../project-services/engine";
 import { checksOf } from "./checks";
+import { type IngestDeps, ingestOnce } from "./ingest";
 import { merger } from "./routes";
 import { ServedRule } from "./served";
 import type { RunInput } from "./contract";
@@ -287,6 +290,44 @@ describe("Land on a setup branch waits for a passing trial of its exact head", (
         assert.equal(r.ok, true, `${name}: ${JSON.stringify(r.error)}`);
       }
     } finally {
+      await t.done();
+    }
+  });
+});
+
+describe("the user's typed \"land it\" on a setup branch (worktree land, served)", () => {
+  test("its go-ahead is refused to the chat with the land gate's words and queues nothing; after a passing trial of that head it queues", async () => {
+    const t = realKit();
+    const dir = mkdtempSync(join(tmpdir(), "mq-setup-typed-"));
+    try {
+      const b = setupBranch(t.repo, "sova/setup-x", (d) => d.merge.checks.push(CHECK("lint")));
+      const refused: { session: string; text: string }[] = [];
+      const deps: IngestDeps = {
+        file: join(dir, "landing.json"),
+        seenFile: join(dir, "seen.json"),
+        roots: () => [t.repo.root],
+        served: async () => true,
+        repoOf: async () => t.repo.root,
+        queue: (root) => t.k.queues.get(root),
+        refused: (session, text) => void refused.push({ session, text }),
+      };
+      assert.deepEqual(await ingestOnce(deps), [], "the first read is a baseline");
+      recordGoAhead({ branch: "sova/setup-x", commit: b.head, session: "s-setup", at: "2026-11-05T10:00:00Z", by: "owner-chat" }, deps.file);
+      const did = await ingestOnce(deps);
+      assert.match(did[0] ?? "", /refused: This setup branch has no passing trial/);
+      assert.deepEqual(refused, [{ session: "s-setup", text: `sova/setup-x at ${b.head.slice(0, 7)} couldn't be queued to land: This setup branch has no passing trial at ${b.head.slice(0, 7)}: run a trial of it first.` }]);
+      const q = await t.k.q();
+      assert.equal(q.entries().length, 0, "nothing queued");
+      // A passing trial of that exact head: the same word, typed again, queues it.
+      await t.call("merge.try", { project: t.repo.root, branch: "sova/setup-x" }, chatOf(t.repo.root));
+      await q.tryingNow();
+      recordGoAhead({ branch: "sova/setup-x", commit: b.head, session: "s-setup", at: "2026-11-05T10:00:01Z", by: "owner-chat" }, deps.file);
+      const did2 = await ingestOnce(deps);
+      assert.match(did2[0] ?? "", /^queued sova\/setup-x/);
+      assert.equal(q.entries().find((e) => e.branch === "sova/setup-x")?.approval.commit, b.head, "pinned to the tried head");
+      assert.equal(refused.length, 1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
       await t.done();
     }
   });

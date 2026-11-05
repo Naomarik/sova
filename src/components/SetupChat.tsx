@@ -285,7 +285,8 @@ export function SetupProposalCard(props: { projectId: string; chat: SetupChatVie
       </Section>
       <Section title="What it brings in">
         {(() => {
-          const f = () => changedFiles(p().files);
+          // `files` is always sent; an older host (or a stub) without it reads as none rather than taking the card down.
+          const f = () => changedFiles(p().files ?? []);
           return (
             <>
               <p class="project-card-note">

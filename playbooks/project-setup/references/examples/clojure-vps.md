@@ -100,9 +100,8 @@ paths, plus what is worth noting on a landing here ("touches `deps.edn`: restart
 app"). Services, `test`, `share` and `deploy` stay byte for byte, so no conformance is needed.
 
 Then `fmt`, `check --base master` (0), commit by explicit path, `merge.try` on the head, a fix if the
-trial finds one (the usual: a launcher missing its mise line), a trial again. The trial runs `skill` in full too (every check is told every file
-changed), so its skip path is the only part the trial doesn't show: the chat reads it once by hand.
-Then the proposal: the
+trial finds one (the usual: a launcher missing its mise line), a trial again. The trial runs `skill` in full too: every check is told every file
+changed and that it was picked. Then the proposal: the
 drawing with "Landing" and "Required checks" marked changed, the measured times, the trial's result,
 the open note about the sibling libraries, and Land (offered now that the head passed; the project
 is already served through its `test` fallback, so it lands through the queue, checked by that

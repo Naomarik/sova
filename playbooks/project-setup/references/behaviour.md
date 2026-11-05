@@ -94,7 +94,8 @@ trial and its run (`mr_…`) and goes on in the background.
   any check `requires` in the copy's own slot, then runs **every** merge check, required and
   optional. Release-only checks are long, so it runs a `release.checks` entry only when it is **new
   or changed** against the target's release section, or **named** in the trial's `checks`
-  (`merge.try {checks: ["release-site"]}`); every other one is reported "Not run (unchanged)". A
+  (`merge.try {checks: ["release-site"]}`); every other one is listed in the wake as "not run
+  (unchanged release check; name it in checks to run it)". A
   failed check is rerun once: a pass then is noted flaky. No install step, no spec land, no review,
   no blame.
 - So a setup that changes what a release check depends on without changing the check itself (its
@@ -108,7 +109,8 @@ trial and its run (`mr_…`) and goes on in the background.
 - It saves nothing, lands nothing, pushes nothing, tags nothing. Deploy steps and release steps
   never run in a trial: only the checks do.
 - It works on a project the queue doesn't serve yet. It is `invalid-request` when the commit has no
-  valid `.sova/project.json` or declares no merge or release checks.
+  valid `.sova/project.json`. A commit that declares no merge checks is tried as "no automated
+  tests": it passes once the copy and the setup steps do (plus any release checks it runs).
 - It is refused (`busy`, "a landing or a run is using the merge copy now: try again when it ends")
   while a landing run or another trial holds the copy; a landing that queues meanwhile waits for it.
 - Commit first: the trial runs the commit, never your working tree.

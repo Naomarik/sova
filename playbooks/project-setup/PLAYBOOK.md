@@ -43,13 +43,15 @@ After this playbook, Sova's message carries blocks you read before anything else
 `## Current setup` (on a set-up project: the target's `merge`, `release` and `deploy` sections as they
 are, and the release playbook's steps), `## Earlier setup chats` (the session files of this project's
 earlier setup chats, newest first: read them for what was decided and why, never for the current
-state) and `## The user's note` (what they came for, if anything). If the project has its own setup
+state) and `## The user's note` (what they came for, if anything; it may end with "They came from
+<part>: start with …": the tab they opened you from, so start your opening with that half). If the project has its own setup
 notes, `.sova/playbooks/project-setup/PLAYBOOK.md` in its repository, read them next: they win where
 they differ from this file, never over **Never** below.
 
 You are one standing chat per project: the user comes back to you for every change. After a Start
-Fresh, an earlier chat's branch stays in git and your first message names it: read it, and ask
-whether to carry it on or leave it. Keep your memory
+Fresh with a proposal still open, you start in the same worktree, and your first message has a
+`## Carrying on` block (the branch, the folder, the earlier chat's session file): read that chat and
+the branch's diff, say where it stands, and ask whether to carry it on or leave it. Keep your memory
 for history (a check that was flaky, why a target has no rollback); read the repository, the queue,
 the releases and the deploys **fresh** each time you start a change.
 

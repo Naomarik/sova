@@ -350,7 +350,23 @@ test("providerProblem expired: soft only when the token timed out and the refres
   assert.deepEqual(expired(claudeAuth({ expiresAt: NOW - 2 * H, refreshExpired: true })), hard, "refresh flag without a time");
   assert.deepEqual(expired(claudeAuth({ expiresAt: NOW + 2 * H })), hard, "refused before its expiry: revoked");
   assert.deepEqual(expired(claudeAuth({})), hard, "no expiry known");
-  assert.deepEqual(expired({ kind: "oauth", source: "pi", expiresAt: NOW + H }, "openai"), { ...hard, code: "pi /login" });
+  assert.deepEqual(expired({ kind: "oauth", source: "pi", expiresAt: NOW + H }, "openai"), { rest: "Sign-in expired. Sign in again under Settings → Accounts." });
+});
+
+test("OpenAI's sign-in notes point to Settings → Accounts, never a terminal command", () => {
+  const lines = [
+    providerProblem(provider({ id: "openai", state: "nologin" }), NOW),
+    providerProblem(provider({ id: "openai", state: "expired" }), NOW),
+    authCaption(provider({ id: "openai", windows: [{ label: "5h", pct: 10 }], auth: { kind: "oauth", source: "pi", expiresAt: NOW + H, refreshExpired: true } }), NOW),
+  ];
+  assert.deepEqual(lines, [
+    { rest: "Not signed in. Sign in under Settings → Accounts and it'll show at the next refresh." },
+    { rest: "Sign-in expired. Sign in again under Settings → Accounts." },
+    { rest: "Sign-in can't renew. Sign in again under Settings → Accounts." },
+  ]);
+  for (const l of lines) assert.equal((l as { code?: string } | null)?.code, undefined, "no command to run");
+  // Claude's keep their command.
+  assert.equal(providerProblem(provider({ id: "claude", state: "nologin" }), NOW)?.code, "claude /login");
 });
 
 const login = (over: Partial<UsageClaudeLogin> & Pick<UsageClaudeLogin, "id">): UsageClaudeLogin => ({

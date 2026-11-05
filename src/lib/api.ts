@@ -33,6 +33,8 @@ import type {
   ClaudePoolInfo,
   ClaudeCliStatus,
   ClaudeLoginFlowState,
+  OpenAiAccountInfo,
+  OpenAiLoginFlow,
   ContextInfo,
   ExtensionInfo,
   ExplanationInfo,
@@ -324,6 +326,16 @@ export const getChatClaudeAccounts = (path: string) =>
 /** Add a login, or (with `login`) sign an existing one in again on this device. */
 export const startClaudeLogin = (login?: string) =>
   request<ClaudeLoginFlowState>("/api/claude/accounts/flow", { method: "POST", ...(login ? { body: JSON.stringify({ login }) } : {}) });
+/** The OpenAI (ChatGPT subscription) sign-in of Settings → Accounts (§app.openai-login). */
+export const getOpenAiAccount = () => request<OpenAiAccountInfo>("/api/settings/accounts/openai");
+export const signOutOpenAi = () => request<OpenAiAccountInfo>("/api/settings/accounts/openai", { method: "DELETE" });
+/** Start pi's sign-in, the code route first; answers once the code (or the browser route's link) is out. */
+export const startOpenAiLogin = () => request<OpenAiLoginFlow>("/api/settings/accounts/openai/login", { method: "POST" });
+export const getOpenAiLogin = () => request<OpenAiLoginFlow | null>("/api/settings/accounts/openai/login");
+/** The browser route: the address the sign-in page ended on. */
+export const sendOpenAiLoginAnswer = (text: string) =>
+  request<OpenAiLoginFlow>("/api/settings/accounts/openai/login/answer", { method: "POST", body: JSON.stringify({ text }) });
+export const cancelOpenAiLogin = () => request<OpenAiAccountInfo>("/api/settings/accounts/openai/login", { method: "DELETE" });
 export const setClaudePoolKeeper = (device: string) =>
   request<ClaudePoolInfo>("/api/claude/pool/keeper", { method: "PUT", body: JSON.stringify({ device }) });
 export const pinClaudePoolLogin = (id: string, pin: string | null) =>

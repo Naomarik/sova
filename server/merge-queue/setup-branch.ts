@@ -1,6 +1,6 @@
 /**
  * A setup branch (§app.merge-queue/setup): one whose changes reach the project's pipeline, the sections of
- * `.sova/project.json` the merge queue, releases and deploys act on (`services`, `merge`, `release`, `deploy`), or
+ * `.sova/project.json` the merge queue, releases and deploys act on (`merge`, `release`, `deploy`; services are proven by conformance), or
  * the files of the project's release playbook folder. The queue checks a branch with the target's checks, not the
  * branch's own, so such a branch is offered Land only once a trial (merge.try) of its exact head passed.
  *
@@ -11,7 +11,7 @@ import { CONTRACT_FILE, type MergeCheckDecl } from "../../shared/project-contrac
 import type { Git } from "./guard";
 
 /** The definition's sections a setup branch changes. */
-export const PIPELINE_SECTIONS = ["services", "merge", "release", "deploy"] as const;
+export const PIPELINE_SECTIONS = ["merge", "release", "deploy"] as const;
 /** The release playbook folder when the definition names none. */
 export const DEFAULT_RELEASE_PLAYBOOK = ".sova/playbooks/release";
 

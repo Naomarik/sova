@@ -1,5 +1,5 @@
 ---
-watches: ["scripts/run-tests.mjs", "scripts/test-groups.mjs", "scripts/test-tier-guard.mjs", "scripts/test-changed.mjs", "scripts/test-sentinel.mjs", "scripts/test-temp-root.mjs", "scripts/hermetic-agent-dir.mjs", "pi-config/extensions/claude-code/tests/hermetic-env.mjs", "server/test-scratch.ts", "scripts/sova-scenario.mjs", "server/testing/hermetic-server.ts"]
+watches: ["scripts/run-tests.mjs", "scripts/test-env.mjs", "scripts/test-cache.mjs", "scripts/test-groups.mjs", "scripts/test-tier-guard.mjs", "scripts/test-changed.mjs", "scripts/test-sentinel.mjs", "scripts/test-temp-root.mjs", "scripts/hermetic-agent-dir.mjs", "pi-config/extensions/claude-code/tests/hermetic-env.mjs", "server/test-scratch.ts", "scripts/sova-scenario.mjs", "server/testing/hermetic-server.ts"]
 alsoUpdate: ["agents/testing/overview.md"]
 ---
 # Testing
@@ -12,12 +12,16 @@ environment every runner starts in, and the hermetic dev server.
 - `scripts/run-tests.mjs`: the runner (`pnpm test`, `pnpm test:int`, `pnpm test:all`, the project's
   `test.run`); its header comment documents the runner in full. GLOBS there is the file list.
 - `scripts/test-tier-guard.mjs`: the tier guard, the runner's second preload.
+- `scripts/test-env.mjs`: the one list of settings a test sees (`testEnv`, `TEST_SWITCHES`).
+- `scripts/test-cache.mjs`: the tree fingerprint and the store of remembered passes; `scripts/checked.mjs`
+  does the same for the type check (`pnpm run typecheck`, Build's first step).
 - `scripts/test-changed.mjs`: the `--changed` selection.
 - `scripts/test-groups.mjs`: the slow groups and their triggers (`--landing`, `--changed`, `--groups`).
 - `pi-config/extensions/claude-code/tests/hermetic-env.mjs`: the throwaway-home preload.
 - `scripts/test-sentinel.mjs`, `server/test-scratch.ts` (`scratchRoot`).
 - `scripts/hermetic-agent-dir.mjs`: builds the hermetic `.agent` for `pnpm run dev:hermetic`.
-- Spec: §app.server-runtime/test-tiers, §app.server-runtime/test-repo-fence.
+- Spec: §app.server-runtime/test-tiers, §app.server-runtime/test-reuse, §app.server-runtime/test-env,
+  §app.server-runtime/test-repo-fence.
 - Related guides: Bun runtime [agents/server/overview.md](../server/overview.md); the fake `claude`
   CLI, Claude login fixtures and the multi-host pool run
   [agents/extensions/claude-code/overview.md](../extensions/claude-code/overview.md); pi-config's own
@@ -95,7 +99,39 @@ environment every runner starts in, and the hermetic dev server.
   a turn spawned `claude` (a tier-guard failure only on slow runs). `server/outline-no-claude.test.ts`
   proves both.
 
+### Passes already proven aren't run again (§app.server-runtime/test-reuse)
+
+- On Bun, a test file that already passed on identical inputs isn't run again: the runner reports its
+  earlier pass, in one line for all of them ("568 of 980 files already passed on identical code at
+  14:02 and weren't run again (--fresh runs them)"), and says why the others ran ("not reused: …").
+  The inputs are every file on disk (uncommitted and untracked included; gitignored files,
+  `.sova/spec/claims/**` and `.sova/spec/manifest.json` left out), the test env, runner flags, tool
+  versions and installed packages; commits play no part. The store is
+  `<git common dir>/sova-test-results/v1`, shared by every worktree and the merge copy; deleting it
+  costs only speed. The runner's header comment has the full rule.
+- `pnpm test -- --fresh` (or `SOVA_FRESH=1`) runs everything and still remembers the passes. Only a
+  full pass is kept (no failing or skipped test, the guard refused nothing, not killed at its limit,
+  no edit of the tree while it ran); a narrowed run (`-t`, another `--timeout`, `SOVA_TEST_GUARD`
+  other than enforce) reuses and keeps nothing; nor does `--runtime node` or a run started from
+  inside a test.
+- **A test that runs git on this checkout's own repository** (its commits, index, branches, master:
+  `git show HEAD:…`, `ls-files`, `merge-base HEAD master`, `status`) always runs: the tier guard
+  notes it (`history` in `.cache/test-audit.json`) and its pass is never kept. Only `rev-parse` asking
+  for HEAD or where the repository is, `init`, `clone` of another repository, `var`, `config` and
+  `--version` don't count. A git command inside `sh -c "cd … && git …"` isn't seen: run git directly.
+- The merge queue reuses the same passes at landing, re-checks about 1 in 20 of them
+  (`SOVA_REUSE_SAMPLE`), and runs its reruns and every release check fresh (`SOVA_FRESH=1`).
+
 ### The hermetic test environment
+
+- **One list of settings** (§app.server-runtime/test-env): a test process gets `scripts/test-env.mjs`'s
+  list and nothing else of the shell the runner started in, so a chat, a worker (sandboxed or not)
+  and the merge queue give tests the same settings, and a remembered pass is keyed by exactly those.
+  PATH is built (stand-in `claude`, node's and mise's directories, then the system's), never
+  inherited; no credential (`*TOKEN*`, `*KEY*`, …) ever reaches a test; `XDG_RUNTIME_DIR` reaches
+  integration files only. A test that reads a new switch from its environment (`SLOW=1`,
+  `*_UPDATE=1`) adds it to `TEST_SWITCHES`, or it never reaches the test; one that points tests at
+  files outside the tree (a dist built elsewhere) goes in `RECORDS_NOTHING`.
 
 - Every test runner starts in a throwaway home (`hermetic-env.mjs`: `pnpm test` loads it with
   `--import`, the extension runners import it first). A session that itself runs on an added Claude
@@ -204,7 +240,10 @@ Each is data a change may regenerate only on purpose, never to hide a regression
 | a unit file's chats need pi-config's extensions | `linkPiConfigExtensions(agentDir)` from `server/testing/agent-dir.ts` |
 | a tool's wording an agent sees | re-take the loadout snapshot (`SOVA_LOADOUT_UPDATE=1`) in the same commit |
 | a route, or a catalogue entry | regenerate the inventory baseline and `docs/commands.md`; add the entry's fuzz case |
-| the runner, tier guard or preload | the runner's header comment, this guide, and §app.server-runtime/test-tiers or /test-repo-fence through a spec draft |
+| the runner, tier guard or preload | the runner's header comment, this guide, and §app.server-runtime/test-tiers, /test-reuse, /test-env or /test-repo-fence through a spec draft |
+| a test reads a new environment switch | add it to `TEST_SWITCHES` in `scripts/test-env.mjs` (`RECORDS_NOTHING` if it names files outside the tree) |
+| a test reads the checkout's own spec documents (`.sova/spec/claims/**`, `manifest.json`) | take that path off `SPEC_EXCLUDED` in `scripts/test-cache.mjs`, or the test's pass is reused across a landing's spec commit |
+| a test reads this checkout's git history through a child program or a shell | run git directly from the test, so the tier guard sees it and the file always runs |
 
 While working: `pnpm test` constantly, `pnpm test:int --changed` before asking to land. Landing (the
 merge queue) runs `pnpm test`, then `pnpm test:int -- --landing` (the everyday set plus the slow

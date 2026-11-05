@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ALWAYS_PHRASES, POWER_INFO, POWERS, powersView, readStoredPowers, type PowerMap } from "../../shared/powers";
-import { ALWAYS_LINE, NONE_TIP, alwaysItems, assistantGroups, brakeBody, cellState, columnsFor, expandName, nextOn, onCount, powerGroups, powersButtonName, powersNote, noneName, powersPatch, stateChip, switchDone, switchLabel, switchName } from "./powers-view";
+import { ALWAYS_LINE, NONE_TIP, alwaysItems, assistantGroups, brakeBody, cellState, columnsFor, expandName, nextOn, onCount, powerGroups, powersButtonName, noneName, powersPatch, stateChip, switchDone, switchLabel, switchName } from "./powers-view";
 
 const off = (): PowerMap => Object.fromEntries(POWERS.map((p) => [p, false])) as PowerMap;
 const models = { overseer: {}, assistant: {}, assistantSource: { reply: "org" as const, coding: "org" as const, gathering: "org" as const } };
@@ -79,17 +79,6 @@ test("the head chip: Working wins, Paused carries the brake's reason, nothing ot
   assert.deepEqual(stateChip(true, { kind: "paused", reason: "x" }), { tone: "accent", text: "Working" });
   assert.deepEqual(stateChip(false, { kind: "paused", reason: "Attached here 2h ago." }), { tone: "warn", text: "Paused", title: "Attached here 2h ago." });
   assert.equal(stateChip(false, null), null);
-});
-
-test("the one-time note: shown only while unseen; the carry-over states the loosening (q2), never 'nothing changed'", () => {
-  assert.equal(powersNote(null), null);
-  assert.equal(powersNote({ kind: "carried-over", from: "L1", at: "", seen: true }), null);
-  const n = powersNote({ kind: "carried-over", from: "L1", at: "", seen: false })!;
-  assert.equal(n.title, "Levels are now switches.");
-  assert.match(n.body, /level L1/);
-  assert.match(n.body, /no longer approves its own waiting acts/);
-  assert.doesNotMatch(n.body, /nothing changed|nothing changes/i);
-  assert.match(powersNote({ kind: "rederived", from: "L3", at: "", seen: false })!.body, /older Sova/);
 });
 
 test("the assistant's own list (owner page card): only acts it can ever set, groups with none left out", () => {

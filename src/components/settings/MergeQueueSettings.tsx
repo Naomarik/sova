@@ -409,6 +409,15 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
             </button>
           </Show>
         </Show>
+        <Show when={s().checks.mode !== "none" && s().checks.mode !== "unset"}>
+          <Row
+            label="Reuse passes from identical code"
+            end={<Tag source="project" />}
+            hint={draft().reuse ? "A test file that already passed on exactly this code isn't run again; a few are re-checked at each landing. Reruns and releases always run in full." : "Every check runs in full."}
+          >
+            <Toggle label={draft().reuse ? "On" : "Off"} checked={draft().reuse} disabled={locked()} onChange={(on) => setDraft({ ...draft(), reuse: on })} />
+          </Row>
+        </Show>
         <Row label="Longest a check runs" end={<Tag source="sova" />}>
           {s().fixed.checkMaxMin} min
         </Row>

@@ -465,7 +465,7 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   from, and Upload, Replace, Remove, Use Letters or Use Picture; only for a project on this host); **Settings changes waiting** (only while a project overseer's Settings
   change card or the folder's uncommitted settings edits wait, §app.project-overseer/settings); **Overseer** (the Watch switch and its hint); **What may happen
   without you** (§design.copy-deck/project-powers: the always-allowed line, the Paused banner with
-  Resume while braked, the one-time note until dismissed, and the switches in groups, one column for
+  Resume while braked, and the switches in groups, one column for
   the overseer on its own and, while an organization places the project, one for the Project
   Assistant from a client); **Sessions it starts** (the gathering and coding sessions'
   model, thinking, abilities and mode selects, three to a row where they fit); **Claude login**
@@ -634,7 +634,7 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   the never-looser level beside them. When a host whose Sova doesn't know switches saves that file (it
   writes `confirmKinds`/`confirmKindsKnown`, or leaves the switches' `stamp` stale, whatever level it
   writes, the same one included), this host reads the overseer column again from that level by the
-  carry-over, with the one-time note (§app.project-overseer/autonomy-levels).
+  carry-over, with no note (§app.project-overseer/autonomy-levels).
 - **This host's view is derived again.** For each baton session the attach sets its listing title
   to the public title, and for each overseer conversation "Overseer · <project>" (a title the
   operator already gave one here stays); marks them as web sessions; and records their files'

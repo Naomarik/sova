@@ -59,6 +59,7 @@ import { DecisionSettingsSection } from "./DecisionSettings";
 import { SubagentProfilesSettings } from "./SubagentProfilesSettings";
 import { MeshSettingsSection } from "./MeshSettings";
 import { AccountsSettingsSection } from "./AccountsSettings";
+import { OpenAiAccountSection } from "./OpenAiAccount";
 import { McpSettingsSection } from "./McpSettings";
 import { OverseerSettingsSection } from "./OverseerSettings";
 import { PublicLinksSettingsSection } from "./PublicLinksSettings";
@@ -235,6 +236,7 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
             <div class="settings-panel" role="tabpanel" id="settings-panel-accounts" aria-labelledby="settings-tab-accounts">
               <AccountsSettingsSection />
               <ClaudeCliStatusLine />
+              <OpenAiAccountSection />
             </div>
           </Show>
           {/* Mounted only while its tab is: it reads its servers while it shows, and saves on its own. */}

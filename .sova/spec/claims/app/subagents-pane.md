@@ -302,41 +302,63 @@ sent. Each part is read as the chat's folder and the chat hold it now (`GET
   from that worker's own session. A picked worker that leaves the list falls back to this chat.
 - **The top line**, under **Context window**, is the fill as of the last reply, counted as the
   context readout counts it (§chat.context-window/last-reply): `{n} of {window} tokens · {p}%`,
-  then the room left (`· {free} left`). With no known window it reads `{n} tokens · this model's
-  limit is unknown`. Before the chat (or the picked worker) has a reply that measured it, it reads
-  "Nothing sent yet". A note under it says the sizes are estimates and what Other is; for a chat
-  this server isn't running, it adds that its mode, rules and tools are unknown and fall under Other.
-- **The lines**, biggest first: one per instruction file in the window, named by its path, relative
-  inside the chat's folder, `~/...` under the home folder and whole elsewhere, the reading window's
-  title too (a file
-  switched off for this chat, §chat.transcript/setup-card-toggles, isn't in it; a subfolder file is,
-  once it has loaded), then **Mode**, **Rules and docs** (the rest of the system prompt), **Skills
-  offered** and **Tools**, each summed, and **Conversation** (the messages since the latest
-  compaction, its kept part included, less the loaded subfolder files, which have their own lines).
-  Once a reply has given a total, **Other** joins them: the total minus every other line, never
-  below 0, what the estimates don't explain (Claude Code's own prompt, for example). A line at 0 is
-  left out. **Free** comes last, the window minus the total, once both are known. Every size but
-  Free is an estimate, shown with ≈: text at 4 characters a token, a skill as the model is offered
-  it (name, description, location), a tool as its declaration. So the lines add up to the total
-  whenever the estimates don't overshoot it.
-- **Reading a part.** A line of one part (each instruction file's line, and a summed line holding
-  only one) opens it in the reading window (§app/markdown-viewer) directly. A line grouping several
-  (Mode, Rules and docs, Skills offered or Tools, when it holds several) opens the explorer list
-  first: the folder viewer (§app/folder-viewer) under the lines, titled with the line's name and
-  holding that line's parts alone, each a plain name with its ≈ size. The line reads as expanded
-  while its list is open, and pressing another replaces the list. Conversation, Other and Free open
-  nothing. Picking a part opens it in the reading window, which shows it by its type (a tool's
-  declaration as JSON, a file by its name, a part Sova composed as markdown), and closing that
-  returns to the list as it was. A file is read through the setup card's file read
-  (§chat.transcript/setup-card-open-file), as it is on disk now, at every open. A fresh read of the
-  tab lists the parts again and never reads an open file again. The list's **Close** puts it away;
-  picking another chat does too.
-- **Subfolder instructions.** When the chat's folder has instruction files in folders below it
-  (§chat/subfolder-instructions), a section lists each: its path, its folder and its ≈ size, and a
-  **Loaded** or **Not yet loaded** chip. A loaded file is already in the total; one not yet loaded
-  shows only what it would cost. Pressing one opens it in the reading window. The folder walk follows the
-  loading's skip rule and stops after 5,000 folders; then the section says "This list may be
+  then the room left (`· {free} left`). Under it, once the window and the total are known, a fill
+  bar spans the whole window: one part per line, each as wide as its share, and the room left as
+  the bar's empty end. With no known window it reads `{n} tokens · this model's limit is unknown`.
+  Before the chat (or the picked worker) has a reply that measured it, it reads "Nothing sent yet".
+  A note under it says the sizes are estimates and what Other is; for a chat this server isn't
+  running, it adds that its mode, rules and tools are unknown and fall under Other.
+- **The lines**, biggest first, each a group: **Instruction files**, **Mode**, **Rules and docs**
+  (the rest of the system prompt), **Skills offered** and **Tools**, each summed, and
+  **Conversation** (the messages since the latest compaction, its kept part included, less the
+  loaded subfolder files, which count under Instruction files). A line at 0 is left out, except
+  Instruction files while it lists a file not yet loaded. Once a reply has given a total, **Other**
+  sits apart below them: the total minus every other line, never below 0, what the estimates don't
+  explain (Claude Code's own prompt, for example), with that explanation on its row. Free has no
+  line: the room left is the headline's `{free} left` and the fill bar's empty end. Every size is an
+  estimate, shown with ≈: text at 4 characters a token, a skill as the model is offered it (name,
+  description, location), a tool as its declaration. So the lines add up to the total whenever the
+  estimates don't overshoot it.
+- **One row.** Every line, and every part inside a group, is the same row: its name (a path or a
+  tool's name in mono), a short line under it saying what it holds, a thin bar for its share of the
+  window, and its ≈ size, right-aligned, with a line between rows. A row that opens is a button and ends in an arrow; a row
+  that doesn't open (Other, and Conversation's counts) has no arrow, no hover and a muted name. A
+  group opens the same way whatever it holds, one part or many.
+- **Instruction files** is the one place files are listed, each once, named by its path: relative
+  inside the chat's folder, `~/...` under the home folder and whole elsewhere. Its line says how
+  many are loaded and how many aren't yet. Each file in the window, a subfolder file once it has
+  loaded (§chat/subfolder-instructions), shows its folder and a **Loaded** chip; a file switched off
+  for this chat (§chat.transcript/setup-card-toggles) isn't listed. Files in folders below the
+  chat's folder that haven't loaded yet come last, under **Not yet loaded · not counted**: each shows
+  what it would cost (`+≈{n}`), draws no share bar and isn't in any total. The folder walk follows
+  the loading's skip rule and stops after 5,000 folders; then the group says "This list may be
   incomplete."
+- **Skills offered** lists each skill by its name, its description under it, and a **Read** or
+  **Not read yet** chip: Read when the conversation since the latest compaction loads the skill: a
+  read of its `SKILL.md`, a `/skill:` invocation of it, or a shell command reading its `SKILL.md`.
+  A skill loaded before the latest compaction shows Not read yet; its
+  text has left the window.
+- **Conversation** opens to its parts: **Tool results**, **Replies** and **Your messages**, each
+  with its count and ≈ size, then **Other messages** (an extension's messages and branch summaries)
+  only while there are some, and, once the chat has compacted, the **Compaction summary** the
+  window keeps, which opens like any part, saying when that compaction was. The counts are worked out at each read of the tab; nothing is stored.
+- **The sheet.** Pressing a row that opens opens one sheet over the tab; it fades in. Its head is a breadcrumb,
+  Context › {group} › {part}, with a **Back** button before it, then the title and its ≈ size. A
+  group lists its parts there, its short line on top; pressing a part goes one level in. A part is
+  read right in the sheet, shown by its type as the reading window shows a file (§app/markdown-viewer:
+  a tool's declaration as JSON, a file by its name, a part Sova composed as markdown), with
+  **Source** (markdown only) and **Copy**. Its subtitle is the full path for a file or a skill, the
+  group's name for anything else. A file not yet loaded says when it would load; a skill says that
+  its size counts only what the model is offered. Back and Escape go back one level, a breadcrumb
+  step goes to that level, and leaving the last level closes the sheet; Escape in the sheet never
+  closes the pane. Focus moves to Back as a
+  level opens and returns to the row it was opened from. Narrower than 640px the sheet covers the
+  tab; wider, it is a 520px drawer over the dimmed list, and pressing the list closes it. A file is
+  read through the setup card's file read (§chat.transcript/setup-card-open-file), as it is on disk
+  now, at every open; a read that fails is a toast, "Couldn't open that file." and the reason, and
+  the sheet stays where it was. A fresh read of the tab updates the lines and an open group's list,
+  keeping each row and the focus on it, and never reads an open file again. Picking another chat, or another window in Whose context,
+  closes the sheet.
 - **Fresh, without a timer.** It reads once when it opens, and again each time this chat's
   session file has changed and settled (a reply or a tool result written), never on a timer.
 - **When it can't read.** While the first read is out: "Reading this chat's context." A chat on

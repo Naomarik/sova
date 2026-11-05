@@ -337,7 +337,8 @@ export interface MergeCheckDecl {
  *  main checkout's). `push`: absent means push when an `origin` remote exists. `install`: run in the merge copy when
  *  a merged branch changes one of its `inputs` (an offline install). `review`: the review kit's folder. `land`: how a
  *  branch lands (al_3; absent: merged locally; this computer's own choice wins over it). `request`: the request skill
- *  folder (how a pull or merge request's title and description are written, and their checks). */
+ *  folder (how a pull or merge request's title and description are written, and their checks). `reuse`: false runs
+ *  every check in full (SOVA_FRESH=1); absent or true lets a check's runner reuse passes from identical code. */
 export interface MergeDecl {
   target?: string;
   push?: boolean;
@@ -346,6 +347,7 @@ export interface MergeDecl {
   review?: string;
   land?: import("./merge-queue").LandHow;
   request?: string;
+  reuse?: boolean;
 }
 
 /** The endpoints a copy may share (`"<service>.<port>"`, checkout services only; none when absent), at most `maxDays` per link, and whether at all. */
@@ -488,7 +490,7 @@ export const DEFINITION_KEYS = {
   rollback: [["steps"], ["none"]],
   credential: ["name", "kind", "check"],
   requires: ["tests"],
-  merge: ["target", "push", "checks", "install", "review", "land", "request"],
+  merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse"],
   mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional"],
   mergeInstall: ["run", "inputs", "timeout"],
   release: ["playbook", "tag", "scheme", "channels", "commit", "checks", "quietMin"],
@@ -944,6 +946,10 @@ function mergeDecl(v: unknown, services: readonly ServiceDecl[]): MergeDecl {
     out.land = o.land as (typeof MERGE_LAND_HOWS)[number];
   }
   if (o.request !== undefined) out.request = relPath(o.request, "$.merge.request", true);
+  if (o.reuse !== undefined) {
+    if (typeof o.reuse !== "boolean") throw new DefinitionError("$.merge.reuse", "must be true or false");
+    out.reuse = o.reuse;
+  }
   return out;
 }
 

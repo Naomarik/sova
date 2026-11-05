@@ -4,9 +4,8 @@
 One read-only list of a folder's files, app-wide, that any screen can open. It knows nothing
 about who opens it: the caller gives it one or more **labelled groups**, each a folder of a
 registered project at a commit or ref, a folder Sova itself ships, or items the caller lists and
-reads itself. The merge queue's settings (§app.merge-queue/settings) and the Context tab
-(§app.subagents-pane/context-tab) open it; spec folders, skills and playbooks can open it the same
-way.
+reads itself. The merge queue's settings (§app.merge-queue/settings) open it; spec folders, skills
+and playbooks can open it the same way.
 
 **A list, in place.** The viewer is a part a screen embeds where it is needed, never a dialog of
 its own, and it has no reading area: each group's label with a caption saying where its files come
@@ -25,8 +24,7 @@ stays shut. Closing the window returns to the list as it was. There are no next 
 - The caller may keep its own order: the list isn't sorted into reading order.
 - The caller may give a refresh key: when it changes, every group is listed again. A file open in
   the reading window isn't read again.
-- A group brings its own list and read (the Context tab reads parts as they are now, through
-  §chat.transcript/setup-card-open-file).
+- A group brings its own list and read.
 
 **Each file as what it is.** The reading window shows a picked file by its type, a script as code;
 nothing in the folder ever runs. A binary file or one past the size cap is listed; picking it opens

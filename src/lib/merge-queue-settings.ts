@@ -64,6 +64,8 @@ export function modelWords(m: EffectiveModel): { value: string; today?: string; 
 export interface ProjectDraft {
   push: boolean;
   review: boolean;
+  /** Reuse passes from identical code. */
+  reuse: boolean;
   checks: Record<string, { timeoutSec: number; rerun: boolean; optional: boolean }>;
   /** Each time-limit box as typed, once edited (blank, half-typed, out of range kept as is):
       never sent; a box whose text isn't a time limit holds the save (draftProblem). */
@@ -98,7 +100,7 @@ export const draftHolds = (d: ProjectDraft, s: MergeQueueSettings, hasOrigin: bo
 export function toProjectDraft(s: MergeQueueSettings, hasOrigin: boolean): ProjectDraft {
   const checks: ProjectDraft["checks"] = {};
   for (const c of s.checks.list) checks[c.id] = { timeoutSec: c.timeoutSec, rerun: c.rerun, optional: c.optional };
-  return { push: pushes(s, hasOrigin), review: s.review.on, checks };
+  return { push: pushes(s, hasOrigin), review: s.review.on, reuse: s.reuse !== false, checks };
 }
 
 /** Only what the user changed: an untouched field is never written (absent push stays absent). Pure. */
@@ -107,6 +109,7 @@ export function changesOf(d: ProjectDraft, s: MergeQueueSettings, hasOrigin: boo
   const out: MergeSettingsChange = {};
   if (d.push !== base.push) out.push = d.push;
   if (d.review !== base.review) out.review = d.review;
+  if (typeof d.reuse === "boolean" && d.reuse !== base.reuse) out.reuse = d.reuse;
   const checks: NonNullable<MergeSettingsChange["checks"]> = {};
   for (const [id, c] of Object.entries(d.checks)) {
     const b = base.checks[id];
@@ -126,6 +129,7 @@ export function changeLines(ch: MergeSettingsChange, s: MergeQueueSettings): str
   const lines: string[] = [];
   if (ch.push !== undefined) lines.push(ch.push ? "Push after each landing: on" : "Push after each landing: off");
   if (ch.review !== undefined) lines.push(ch.review ? "Review each landing: on" : "Review each landing: off");
+  if (ch.reuse !== undefined) lines.push(ch.reuse ? "Reuse passes from identical code: on" : "Reuse passes from identical code: off");
   for (const c of s.checks.list) {
     const x = ch.checks?.[c.id];
     if (!x) continue;
@@ -154,7 +158,7 @@ export function rebaseDraft(d: ProjectDraft, base: ProjectDraft, fresh: ProjectD
   }
   // What was typed stays in its box (for checks still there).
   const kept = Object.entries(d.minutesText ?? {}).filter(([id]) => id in checks);
-  return { push: pick(d.push, base.push, fresh.push), review: pick(d.review, base.review, fresh.review), checks, ...(kept.length ? { minutesText: Object.fromEntries(kept) } : {}) };
+  return { push: pick(d.push, base.push, fresh.push), review: pick(d.review, base.review, fresh.review), reuse: pick(d.reuse, base.reuse, fresh.reuse), checks, ...(kept.length ? { minutesText: Object.fromEntries(kept) } : {}) };
 }
 
 /** A refused call's words: the server's `{error: {code, message}}` envelope, a plain `{error}`, or the error's own message. Pure. */

@@ -7,19 +7,22 @@
 //    declared (`declaredTools`), so they are unknown (`prompt: false`) for a chat this server doesn't hold;
 //  - the instruction files below cwd: the deeper-context engine's own walk (server/deeper-context.ts);
 //  - the total and the window: the transcript head's rule (contextOfBranch, resolveContext).
-// The conversation is estimated from the branch's messages since the latest compaction.
+// The conversation is estimated from the branch's messages since the latest compaction, and tallied by
+// kind (`talk`); a skill counts as read when the Skills tab's own rules (server/skills.ts) find it loaded
+// in what the model still sees.
 
 import { homedir } from "node:os";
 import { relative, sep } from "node:path";
 import type { HBlock, HEntry, HarnessToolInfo } from "../shared/harness";
-import { CHARS_PER_TOKEN, type SessionContextNested, type SessionContextPart, type SessionContextView, type SessionSetup } from "../shared/protocol";
+import { CHARS_PER_TOKEN, type SessionContextNested, type SessionContextPart, type SessionContextTalk, type SessionContextView, type SessionSetup } from "../shared/protocol";
 import type { SpecialSpec } from "../shared/chat-runtime";
 import { chatHandle } from "./chat-handle";
 import { deeperContextAllow } from "./chat-special";
-import { listSubfolderInstructions } from "./deeper-context";
+import { listSubfolderInstructions, resolveToolPath, visiblePart } from "./deeper-context";
 import { resolveContext } from "./models";
 import { estimateTokens, getSessionSetup } from "./session-setup";
 import { toolTokens } from "./session-tools";
+import { collectSkills, skillLinesOf } from "./skills";
 import { readBranch } from "./harness/pi/reader";
 import { contextOfBranch, resetsContext } from "./harness/pi/usage";
 
@@ -91,20 +94,72 @@ function entryChars(h: HEntry): number {
   }
 }
 
-/** ≈ tokens of the messages in context: those after the latest compaction, plus the part it kept. */
-export function conversationTokens(branch: readonly HEntry[]): number {
-  let from = 0;
+/** Where what the model sees starts: the latest compaction's kept part (or the compaction itself), and that
+    compaction's index; 0 and -1 with none. */
+function windowStart(branch: readonly HEntry[]): { from: number; reset: number } {
   for (let i = branch.length - 1; i >= 0; i--) {
     const h = branch[i]!;
     if (!resetsContext(h)) continue;
     const kept = h.kind === "compaction" ? (h as { firstKeptEntryId?: string }).firstKeptEntryId : undefined;
     const k = kept ? branch.findIndex((e) => e.id === kept) : -1;
-    from = k !== -1 && k < i ? k : i;
-    break;
+    return { from: k !== -1 && k < i ? k : i, reset: i };
   }
+  return { from: 0, reset: -1 };
+}
+
+/** ≈ tokens of the messages in context: those after the latest compaction, plus the part it kept. */
+export function conversationTokens(branch: readonly HEntry[]): number {
   let chars = 0;
-  for (let i = from; i < branch.length; i++) chars += entryChars(branch[i]!);
+  for (let i = windowStart(branch).from; i < branch.length; i++) chars += entryChars(branch[i]!);
   return Math.ceil(chars / CHARS_PER_TOKEN);
+}
+
+const tokensOf = (chars: number): number => Math.ceil(chars / CHARS_PER_TOKEN);
+
+/** The conversation in context by kind: your messages, replies, tool results (less `loadedNested`, the
+    subfolder files they carry), the rest; and the latest compaction's summary. Walks the same span as
+    conversationTokens. */
+export function conversationTalk(branch: readonly HEntry[], loadedNested = 0): SessionContextTalk {
+  const { from, reset } = windowStart(branch);
+  const chars = { user: 0, replies: 0, toolResults: 0, other: 0 };
+  const count = { user: 0, replies: 0, toolResults: 0, other: 0 };
+  let summary: SessionContextTalk["summary"];
+  for (let i = from; i < branch.length; i++) {
+    const h = branch[i]!;
+    const c = entryChars(h);
+    const kind =
+      h.kind === "user" || h.kind === "shell" ? "user"
+      : h.kind === "assistant" ? "replies"
+      : h.kind === "tool-result" ? "toolResults"
+      : (h.kind === "note" || h.kind === "summary") && c > 0 ? "other"
+      : null;
+    if (h.kind === "compaction" && i === reset) {
+      if (h.summary) summary = { text: h.summary, tokens: tokensOf(h.summary.length), ...(h.at ? { at: h.at } : {}) };
+    } else if (kind) {
+      chars[kind] += c;
+      count[kind]++;
+    }
+  }
+  const tally = (k: keyof typeof chars, less = 0) => ({ count: count[k], tokens: Math.max(0, tokensOf(chars[k]) - less) });
+  return {
+    user: tally("user"),
+    replies: tally("replies"),
+    toolResults: tally("toolResults", loadedNested),
+    other: tally("other"),
+    ...(summary ? { summary } : {}),
+  };
+}
+
+/** The skills loaded in what the model still sees, by name and by resolved SKILL.md path: the Skills tab's
+    own evidence (a read, an invocation, or a shell command reading the file), since the latest compaction. */
+export function skillsRead(branch: readonly HEntry[], cwd: string): { names: Set<string>; paths: Set<string> } {
+  const names = new Set<string>();
+  const paths = new Set<string>();
+  for (const u of collectSkills(skillLinesOf(visiblePart(branch), cwd)).used) {
+    names.add(u.name);
+    if (u.location) paths.add(resolveToolPath(cwd, u.location));
+  }
+  return { names, paths };
 }
 
 /** The text pi lists one offered skill with (pi formatSkillsForPrompt): its name, description and location. */
@@ -124,9 +179,17 @@ export async function getContextView(path: string, deps: ContextViewDeps = {}): 
   const instructions: SessionContextPart[] = setup.context
     .filter((f) => !f.off)
     .map((f) => ({ id: `file:${f.path}`, label: labelOf(cwd, f.path), path: f.path, tokens: f.tokens ?? Math.ceil(f.bytes / CHARS_PER_TOKEN) }));
+  const loads = skillsRead(branch, cwd);
   const skills: SessionContextPart[] = setup.skills
     .filter((k) => !k.off)
-    .map((k) => ({ id: `skill:${k.name}`, label: k.name, ...(k.description ? { detail: k.description } : {}), path: k.path, tokens: estimateTokens(skillListing(k.name, k.description, k.path)) }));
+    .map((k) => ({
+      id: `skill:${k.name}`,
+      label: k.name,
+      ...(k.description ? { detail: k.description } : {}),
+      path: k.path,
+      tokens: estimateTokens(skillListing(k.name, k.description, k.path)),
+      read: loads.names.has(k.name) || loads.paths.has(resolveToolPath(cwd, k.path)),
+    }));
 
   let mode: SessionContextPart | null = null;
   const rules: SessionContextPart[] = [];
@@ -162,6 +225,7 @@ export async function getContextView(path: string, deps: ContextViewDeps = {}): 
     skills,
     tools,
     conversation: Math.max(0, conversationTokens(branch) - loadedNested),
+    talk: conversationTalk(branch, loadedNested),
     nested,
     ...(walk.incomplete ? { nestedIncomplete: true as const } : {}),
     checkedAt: now(),

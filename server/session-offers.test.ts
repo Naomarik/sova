@@ -3,6 +3,7 @@
 // the asks-you fold. What the rest of the server answers (summaries, readiness, git, the routes a button
 // calls) is stubbed through setOfferDeps; the store and the files are real, in a throwaway agent dir.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,6 +25,7 @@ const def = (over: Record<string, unknown> = {}) => ({ when: "When it is time.",
 const writeOffers = (o: Record<string, unknown>) => writeFileSync(join(project, ".sova", "offers.json"), JSON.stringify({ version: 1, offers: o }));
 
 let head = "a".repeat(40);
+let mergedOn = true;
 let summaryOver: Partial<SessionSummary> = {};
 let readinessState: string | null = null;
 const requests: { url: string; body: unknown }[] = [];
@@ -63,6 +65,7 @@ beforeEach(() => {
       return [{ id: "p_1", root: project }];
     },
     async git(args) {
+      if (args[0] === "merge-base") return { code: mergedOn ? 0 : 1, stdout: "" };
       if (args[0] === "rev-parse" && args[1] === "HEAD") return { code: 0, stdout: `${head}\n` };
       // The branch's own head (a once-per-commit card's check, §chat.offers/card).
       if (args.includes("refs/heads/feat/x^{commit}")) return { code: 0, stdout: `${head}\n` };
@@ -241,6 +244,42 @@ describe("showing an offer", () => {
     readinessState = "ready";
     assert.equal((await show(id, "ready")).state, "open");
     assert.equal((await offers.sessionOffers(id, project)).cards.length, 1, "only the one that showed was recorded");
+  });
+
+  test("specs-promoted agrees with the Worktrees row: a landed draft counts as promoted, and {drafts} leaves it out", async () => {
+    writeOffers({ spec: def({ buttons: [send("Go", "go", { onlyIf: ["specs-promoted"] }), send("Later", "later", { confirm: "Left: [{drafts}]" })] }) });
+    // A folder holding one draft not official in its own spec: unofficial by the draft tool's rule alone.
+    const d = join(project, ".sova/spec/drafts/lost");
+    mkdirSync(join(d, "spec/claims/a"), { recursive: true });
+    mkdirSync(join(d, "base/claims/a"), { recursive: true });
+    const said = "# §a/x\n\nNew text.\n";
+    const was = "# §a/x\n\nOld text.\n";
+    writeFileSync(join(d, "spec/claims/a/x.md"), said);
+    writeFileSync(join(d, "base/claims/a/x.md"), was);
+    const hex = createHash("sha256").update(was).digest("hex");
+    const draft = { format: 1, name: "lost", base: { specExisted: true, files: { "claims/a/x.md": hex } }, evidence: [], promotions: [] };
+    writeFileSync(join(d, "draft.json"), JSON.stringify(draft));
+    try {
+      const id = sid();
+      const before = await show(id, "spec");
+      assert.deepEqual(before.buttons.map((b) => b.label), ["Later"], "not landed: not promoted");
+      assert.equal(before.buttons[0]!.confirm, "Left: [lost]");
+      await offers.chooseOffer(pathOf(id), id, before.id, 0);
+      const hash = createHash("sha256").update(`lost/claims/a/x.md ${createHash("sha256").update(said).digest("hex")}`).digest("hex");
+      writeFileSync(join(d, "draft.json"), JSON.stringify({ ...draft, landed: { commit: "e".repeat(40), target: "master", hash, at: "", by: "t" } }));
+      const after = await show(sid(), "spec");
+      assert.deepEqual(after.buttons.map((b) => b.label), ["Go", "Later"], "landed: promoted");
+      assert.doesNotMatch(after.buttons[1]!.confirm ?? "", /lost/, "{drafts} leaves a landed draft out");
+      // A receipt whose commit isn't on its target speaks for nothing: the draft reads as it did.
+      mergedOn = false;
+      try {
+        assert.deepEqual((await show(sid(), "spec")).buttons.map((b) => b.label), ["Later"]);
+      } finally {
+        mergedOn = true;
+      }
+    } finally {
+      rmSync(join(project, ".sova/spec"), { recursive: true, force: true });
+    }
   });
 
   test("Not Now: the open card reads Not now and the offer is refused for the rest of the session; unsnooze lets it back", async () => {

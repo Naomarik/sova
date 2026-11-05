@@ -4,7 +4,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseDefinition, type ProjectDef } from "../../shared/project-contract";
 import { scratchRoot } from "../test-scratch";
-import { checksOf, envOf, failingFilesIn, planChecks, readCheckOut, rerunArgvOf, templateVarsOf, testKey } from "./checks";
+import { checksOf, envOf, failingFilesIn, freshOf, planChecks, readCheckOut, rerunArgvOf, reusedWords, templateVarsOf, testKey } from "./checks";
+import { isReleaseRun, passedEnd } from "./run";
 
 const svc = { web: { cmd: ["node", "web.js"], ports: { http: { base: 5100 } } } };
 const def = (extra: Record<string, unknown>): ProjectDef => parseDefinition(JSON.stringify({ version: 1, services: svc, ...extra }));
@@ -146,5 +147,69 @@ describe("a rerun of named files", () => {
     expect(readCheckOut(f)?.ranFiles).toEqual(["a.test.ts"]);
     writeFileSync(f, JSON.stringify({ passed: 1, failed: 0 }));
     expect(readCheckOut(f)?.ranFiles).toBeUndefined();
+  });
+});
+
+describe("reuse of passes from identical code", () => {
+  test("reuse: fresh on a rerun, a release, or merge.reuse false; else the 5% re-check; only a check is told", () => {
+    expect(freshOf(declared, {})).toBe(false);
+    expect(freshOf(declared, { rerun: true })).toBe(true);
+    expect(freshOf(declared, { release: true })).toBe(true);
+    const off = def({ merge: { checks: [{ id: "unit", run: ["node", "t.mjs"] }], reuse: false } });
+    expect(off.merge?.reuse).toBe(false);
+    expect(freshOf(off, {})).toBe(true);
+    expect(freshOf(def({ merge: { checks: [{ id: "unit", run: ["node", "t.mjs"] }], reuse: true } }), {})).toBe(false);
+    expect(() => def({ merge: { reuse: "no" } })).toThrow(/reuse/);
+    const scope = { project: "/p", projectId: "p", copy: "/c", slot: 1, data: "/d", target: "master", base: "b" };
+    expect(envOf(declared, scope, { fresh: true })).toMatchObject({ SOVA_FRESH: "1" });
+    expect(envOf(declared, scope, { fresh: true }).SOVA_REUSE_SAMPLE).toBeUndefined();
+    expect(envOf(declared, scope, { fresh: false })).toMatchObject({ SOVA_REUSE_SAMPLE: "0.05" });
+    expect(envOf(declared, scope, { fresh: false }).SOVA_FRESH).toBeUndefined();
+    // A setup or install step (no `fresh`) is told nothing; the server's own value never leaks through.
+    process.env.SOVA_FRESH = "1";
+    process.env.SOVA_REUSE_SAMPLE = "0.9";
+    try {
+      const e = envOf(declared, scope, { step: "install" });
+      expect(e.SOVA_FRESH).toBeUndefined();
+      expect(e.SOVA_REUSE_SAMPLE).toBeUndefined();
+      expect(envOf(declared, scope, { fresh: false }).SOVA_REUSE_SAMPLE).toBe("0.05");
+    } finally {
+      delete process.env.SOVA_FRESH;
+      delete process.env.SOVA_REUSE_SAMPLE;
+    }
+    // A release entry: by its release id, gates or none.
+    expect(isReleaseRun({ entry: { release: "rl_1" } as never })).toBe(true);
+    expect(isReleaseRun({ entry: {} as never, releaseChecks: [] })).toBe(true);
+    expect(isReleaseRun({ entry: {} as never })).toBe(false);
+  });
+
+  test("reuse: SOVA_OUT's `reused` is read; a string `skipped` keeps the skipped-test count", () => {
+    const dir = scratchRoot("mq-checks-reused-");
+    mkdirSync(dir, { recursive: true });
+    const f = join(dir, "out.json");
+    writeFileSync(f, JSON.stringify({ passed: 900, failed: 0, skipped: 3, ranFiles: ["a.test.ts"], reused: { files: 540, of: 980, rechecked: 28, at: "2026-11-05T14:02:00Z", from: "feat/x's chat", list: [{ file: "b.test.ts", at: "2026-11-05T14:02:00Z", from: "feat/x's chat", run: "r1" }, { nope: 1 }] } }));
+    expect(readCheckOut(f)!.reused).toEqual({ files: 540, of: 980, rechecked: 28, at: "2026-11-05T14:02:00Z", from: "feat/x's chat", list: [{ file: "b.test.ts", at: "2026-11-05T14:02:00Z", from: "feat/x's chat", run: "r1" }] });
+    writeFileSync(f, JSON.stringify({ passed: 9, failed: 0, skipped: "already passed on identical code at 14:02", skippedTests: 2, reused: { files: 4, of: 4 } }));
+    expect(readCheckOut(f)).toMatchObject({ passed: 9, failed: 0, skipped: 2, skippedWhy: "already passed on identical code at 14:02", reused: { files: 4, of: 4, rechecked: 0, list: [] } });
+    // Unreadable `reused` (more reused than selected, not numbers): absent.
+    writeFileSync(f, JSON.stringify({ passed: 1, reused: { files: 5, of: 4 } }));
+    expect(readCheckOut(f)!.reused).toBeUndefined();
+    writeFileSync(f, JSON.stringify({ passed: 1, reused: { files: "5", of: 9 } }));
+    expect(readCheckOut(f)!.reused).toBeUndefined();
+  });
+
+  test("reuse: a passed check's detail, never Skipped while the re-check ran a file", () => {
+    expect(reusedWords({ files: 540, of: 980, rechecked: 28 })).toBe("412 ran, 568 already passed on identical code (28 re-checked)");
+    expect(reusedWords({ files: 3, of: 10, rechecked: 0 })).toBe("7 ran, 3 already passed on identical code");
+    expect(reusedWords({ files: 0, of: 10, rechecked: 0 })).toBeNull();
+    const rep = (o: object) => ({ report: { passed: 1, failed: 0, skipped: null, failures: [], failingFiles: [], failingNames: [], notes: [], ...o } });
+    const counts = { passed: 1, failed: 0, skipped: null };
+    expect(passedEnd(rep({ reused: { files: 540, of: 980, rechecked: 28, list: [] } }), counts)).toEqual(["passed", { counts, detail: "412 ran, 568 already passed on identical code (28 re-checked)", reused: 568 }]);
+    // Everything reused but one re-checked file: passed, never Skipped, whatever the runner's why.
+    expect(passedEnd(rep({ skippedWhy: "already passed on identical code at 14:02", reused: { files: 9, of: 10, rechecked: 1, list: [] } }), counts)[0]).toBe("passed");
+    // Everything reused, nothing re-checked (a fresh-less run outside the queue's sample): Skipped with its why.
+    expect(passedEnd(rep({ skippedWhy: "already passed on identical code at 14:02", reused: { files: 10, of: 10, rechecked: 0, list: [] } }), counts)).toEqual(["skipped", { counts, detail: "skipped: already passed on identical code at 14:02", reused: 10 }]);
+    expect(passedEnd(rep({}), counts)).toEqual(["passed", { counts }]);
+    expect(passedEnd(rep({ skippedWhy: "no change to its paths" }), counts)).toEqual(["skipped", { counts, detail: "skipped: no change to its paths" }]);
   });
 });

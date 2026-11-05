@@ -311,8 +311,9 @@ its menu), which asks once before it queues anything, its confirmation right-ali
 (§chat.composer/land-confirm), laid out as the modal's rows are (§chat.composer/worktrees-control, "Row
 layout"), on Ready or Drafts changed (on Needs a fix only once its chat has fixed it: at the same
 commit for a branch sent back for its drafts once they fit, else at a newer commit,
-§chat.composer/worktrees-control), Land This Commit Again and Remove from Queue on every Needs a fix
-row, Cancel on a queued row, Accept and Send Back on Behaviour differs, Land Anyway and Send Back on
+§chat.composer/worktrees-control), the re-land button (Land This Commit Again, or Land Newest
+Commit once the branch moved, landing the newest commit, §app.merge-queue/approve) and Remove from
+Queue on every Needs a fix row, Cancel on a queued row, Accept and Send Back on Behaviour differs, Land Anyway and Send Back on
 Review flagged and on Can't tell whose failure. While the branch's review runs, and after it ends,
 the row adds a line for its run's newest reviewer chat: "Review running" or "Review: {verdict}"
 ("no verdict" when it failed), then **Open Reviewer Chat**, or "· Reviewer chat cleared" with no
@@ -560,16 +561,39 @@ they are now finds nothing that doesn't fit, the head reads Ready to land at tha
 commit and Land is offered on it (§chat.composer/worktrees-control). An edit that leaves something
 unfit keeps it sent back. A branch sent back for any other reason is never Ready to land at the
 sent-back commit; a newer commit is. Either way, "land it" typed in its chat at the sent-back commit
-is still the user's approval of that commit, with its drafts as they are then
-(§app.merge-queue/approve).
+is still the user's approval of that commit, with its drafts as they are then, and the re-land
+button on its row and card lands the branch's newest commit (§app.merge-queue/approve).
+
+**Why a sent-back branch's newest commit isn't.** A sent-back branch that has moved says why its newest
+commit isn't Ready to land, on its row and card ("The newest commit isn't Ready to land: {why}.",
+§app.merge-queue/view). {why} comes from the reading of that worktree its owning chat last published,
+read only, never a fresh read, and kept for a few seconds:
+- the reading's own words when the worktree isn't ready: "this chat's last test run failed: …",
+  "conflicts with master: 2 files", "2 open questions", "working now", "temporary commit: …", or
+  another of the worktree's reasons;
+- "its spec drafts don't fit" when it reads Landing specs at that commit;
+- "{n} uncommitted files in its folder: commit or remove them first", or "its chat hasn't said the work
+  is finished", when the code conditions alone hold but it isn't Ready to land;
+- nothing when it is Ready to land at that commit.
+
+When no reading can say (no owning chat, an archived one, a chat not read yet, no such worktree in the
+reading, a merged or gone worktree, or a reading that is Ready to land at another commit), the queue's
+own checks answer: "its newest commit is a temporary commit ("…")" or "{n} uncommitted files in its
+folder: commit or remove them first", else nothing.
 
 **What still blocks landing.** When the session's latest turn outcome says its work is finished
 but a worktree it tracks isn't Ready to land at its head for reasons the session can fix itself
 (uncommitted files, conflicts with its base, a temporary commit subject,
-a failing check run), and the merge queue serves its repository (§app.merge-queue/served), Sova
+the chat's own last test run failing), and the merge queue serves its repository (§app.merge-queue/served), Sova
 tells the session once per head commit, as a
 merge queue message in its chat (§chat.merge-queue/chat-turns), what still blocks its landing, each blocker counted ("1 uncommitted file,
-conflicts with master in 2 files"): to fix them on its branch, and that once nothing does, the
+conflicts with master in 2 files"). A failing check run is named as whose run it is and what failed,
+never as "a failing check run", here and in the worktree's readiness reason alike, so the chat reruns
+or fixes it rather than taking it for the queue's run: "this chat's last test run failed: 1 failing
+file, server/x.test.ts". The run is a "test run", a "typecheck" or, when its output doesn't say, a
+"check run"; what failed is what its output names: "{n} failing files" with up to three named ("+{n}
+more" past them), "{n} failing tests", "{n} type errors" with their files, or nothing ("this chat's last
+check run failed"). It is told to fix them on its branch, and that once nothing does, the
 user's go-ahead lands it through the merge queue: they press Land, or type "land it" in that chat,
 which the session records with `worktree land` (§chat.worktrees/tool). That message names no card. Nothing is sent while a turn runs, for an archived or
 terminal session, or when the outcome doesn't say the work is finished (or no outcome is ever

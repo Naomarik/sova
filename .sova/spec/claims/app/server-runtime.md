@@ -166,6 +166,8 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   file?}]`) and `ranFiles` (every test file it actually ran, repo-relative), the shape the project
   verbs read (§app.project-services/test), so a merge check or a `test` verb run has real counts,
   the failing files to rerun, and the proof of which files a rerun ran (§app.merge-queue/blame).
+  A usage error (exit 2: a flag with no value, an unknown group, a folder named) writes a report
+  counting nothing, so a merge check can tell "no test ran" from a crash, which writes none.
   A file reused from an earlier pass counts as passed and run; `reused` says how many were
   (§app.server-runtime/test-reuse).
 - **The tier guard.** A second test preload (`scripts/test-tier-guard.mjs`) records, for each file

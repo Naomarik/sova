@@ -291,6 +291,10 @@ straight back. Its outcome reaches the release: running, then **Done** ("passed;
 operator may Retry Step (the entry runs again) or abandon. A **tag-only** release has no commit: once
 its last prepare step is done, the same entry runs check-only on the frozen tip, and nothing moves.
 
+**A release never skips a check.** A test check the queue would skip for a branch as broken on the
+target (§app.merge-queue/blame) is never skipped on a release's run: the same failure waits on the user
+as Can't tell whose failure, its gates unrun, and the release can't pass with them unrun.
+
 **The gates of Publish**, all of them, never overridable: the checks step is done; every prepare and
 check step is done or skipped; notes are set; a version and its tag exist; the release commit is on
 the target; and, for a project that pushes, its private names are set up (the queue's leak-scan gate,

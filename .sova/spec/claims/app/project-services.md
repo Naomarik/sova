@@ -656,14 +656,15 @@ the one result shape with its own `merge` key (§app.project-services/result).
 
 - **Reads**: `merge.status` (a project: the queue's view, its state and why it is paused, the
   current run, the waiting line with estimates, what needs the user, what needs a fix, recent
-  landings with their runs, and the target's and pushed heads) and `merge.logs` (a run, optionally
+  landings with their runs, the target's and pushed heads, and the test checks flagged broken on the
+  target) and `merge.logs` (a run, optionally
   one step and a line count).
 - **Setting it up**: `merge.setup` (a project's checks, one test command with its time and what
   starts first, or no automated tests; a dry run tries them, and a save commits them:
   §app.merge-queue/setup), the user's only.
 - **The user's**: `merge.add` (a branch or checkout, its commit by default the head, and the
-  options without its specs and without review: §app.merge-queue/approve; at a sent-back entry's
-  commit it is Land This Commit Again), `merge.cancel` (an entry: one in line, checking or
+  options without its specs and without review: §app.merge-queue/approve; at a sent-back branch's
+  head it is the re-land button, Land This Commit Again or Land Newest Commit), `merge.cancel` (an entry: one in line, checking or
   waiting is taken out of the line; a Needs a fix one is Remove from Queue, cancelled as
   "removed by you", deleting nothing), `merge.pause` and `merge.resume` (a project, with an optional why), and `merge.answer`
   (an entry waiting for the user: `accept` a resolution, `land-anyway` over a blocking review or a failure
@@ -671,7 +672,10 @@ the one result shape with its own `merge` key (§app.project-services/result).
   and the user's answer: §chat.merge-queue/asks), `merge.fresh` (a project: Start Fresh,
   §chat.merge-queue/thread-life) and `merge.clear` (a queue chat's id, or `all`: §app.merge-queue/chats).
 - **The merge thread's**: `merge.note` (an entry and at most 300 characters; empty clears it),
-  `merge.extend` (an entry, the check ids it adds and why; never removes one), `merge.resolve` (an
+  `merge.extend` (an entry, the check ids it adds, why, and a selection, `select`, for a check that
+  takes one: the slow test group, files or walkthroughs it runs; never removes one; the tool's help
+  for `checks` and `select` names the full pick and says a check that takes a selection runs bare
+  without one and fails), `merge.resolve` (an
   entry, its judgement, no behaviour change or behaviour differs, the files, both sides and the
   proposal in plain words, and the commit of its resolution), `merge.retry` (a project or entry
   paused for the machine), `merge.ask` (the question for the user, and the entry it is about:

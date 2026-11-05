@@ -96,11 +96,13 @@ function PeekCard(props: { model: LandingBarModel; x: number; y: number; touch: 
       <div ref={el} class="landing-peek" classList={{ "landing-peek-below": at().y > props.y }} style={{ transform: `translate3d(${at().x}px, ${at().y}px, 0)` }} aria-hidden="true">
         <div class="float-card float-card-neutral landing-peek-card">
           <span class="landing-peek-title">{top().title}</span>
-          <span class="landing-peek-sub">{top().sub}</span>
+          <span class="landing-peek-sub landing-peek-line">{top().sub}</span>
           <For each={top().peek}>{(l) => <span class={`landing-peek-line${l.mono ? " landing-line-mono" : ""}${l.tone ? ` landing-line-${l.tone}` : ""}`}>{l.text}</span>}</For>
           <Show when={top().count}>{(c) => <span class="landing-peek-line">{c().label[0]!.toUpperCase() + c().label.slice(1)}</span>}</Show>
           <Show when={props.model.more > 0}>
-            <span class="landing-peek-line">Also busy: {props.model.all.slice(1).map((b) => b.name).join(", ")}</span>
+            <span class="landing-peek-line">
+              {props.model.more} more project{props.model.more === 1 ? "" : "s"} busy
+            </span>
           </Show>
         </div>
       </div>
@@ -354,6 +356,9 @@ export function LandingBarRow(props: { model: LandingBarModel }) {
               aria-label={props.model.top.title}
               style={{ left: `${o().left}px`, width: `${o().width}px`, bottom: `${o().bottom}px`, "max-height": `${o().maxHeight}px` }}
             >
+              <div class="landing-popover-head">
+                <Face model={props.model} open chevron={false} full />
+              </div>
               <LandingDetail model={props.model} onNavigate={() => close()} />
             </div>
           </Portal>

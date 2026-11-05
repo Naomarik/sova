@@ -190,7 +190,7 @@
   overflow-y: auto;
   padding: 0;
 }
-.landing-float .landing-detail { background: transparent; padding-top: var(--space-3); }
+.landing-float .landing-detail { background: transparent; border-top: var(--stroke-thin) solid var(--color-border); }
 
 /* ---- the hover card: the floating card, neutral edge, above the row --------------------------------- */
 .landing-peek { position: fixed; top: 0; left: 0; z-index: 66; pointer-events: none; will-change: transform; }

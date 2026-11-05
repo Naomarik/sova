@@ -167,11 +167,34 @@ async function nextReport(from: number): Promise<Report | null> {
   return null;
 }
 
-function denialsSince(at: Date): number {
-  const stamp = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")} ${at.toTimeString().slice(0, 8)}`;
-  const r = spawnSync("/usr/bin/log", ["show", "--start", stamp, "--style", "compact", "--predicate", 'process == "tccd" AND composedMessage CONTAINS "kTCCServiceMicrophone" AND composedMessage CONTAINS "Policy disallows prompt"'], { encoding: "utf8", maxBuffer: 1 << 26 });
-  if (r.status !== 0) throw new Fatal(`log show failed (${r.stderr.trim() || r.status}): is this a sandbox?`);
-  return r.stdout.split("\n").filter((l) => l.includes("Policy disallows prompt") && !l.startsWith("Filtering")).length;
+// tccd's denials as they happen. `log show` can't be the instrument: a hanging launch draws over a
+// thousand of them and macOS keeps next to none, so it reads the bug as clean.
+const denialLog = spawn("/usr/bin/log", ["stream", "--style", "compact", "--predicate", 'process == "tccd" AND composedMessage CONTAINS "kTCCServiceMicrophone" AND composedMessage CONTAINS "Policy disallows prompt"'], { stdio: ["ignore", "pipe", "ignore"] });
+denialLog.on("error", () => {});
+let denialLogLines = 0;
+let denials = 0;
+let denialLogRest = "";
+denialLog.stdout.on("data", (d) => {
+  const lines = (denialLogRest + d).split("\n");
+  denialLogRest = lines.pop()!;
+  denialLogLines += lines.length;
+  denials += lines.filter((l) => l.includes("Policy disallows prompt") && !l.startsWith("Filtering")).length;
+});
+
+/** Its first line says the stream is on: a denial logged from then on is delivered. */
+async function denialLogOn(): Promise<void> {
+  const end = Date.now() + 10_000;
+  while (!denialLogLines) {
+    if (denialLog.exitCode !== null || Date.now() > end) throw new Fatal("log stream didn't start: is this a sandbox?");
+    await Bun.sleep(20);
+  }
+}
+
+/** Denials after a count taken before the launch, once any still on their way have arrived. */
+async function denialsSince(seen: number): Promise<number> {
+  await Bun.sleep(1000);
+  if (denialLog.exitCode !== null) throw new Fatal("log stream stopped during the check");
+  return denials - seen;
 }
 
 /** Quits the browser named by this check's own profile's lock, by that pid and nothing else. */
@@ -182,6 +205,19 @@ async function quit(profile: string): Promise<void> {
   for (let i = 0; i < 100 && runningPid(profile) === pid; i++) await Bun.sleep(200);
   if (runningPid(profile) === pid) process.kill(pid, "SIGKILL");
   rmSync(join(profile, "SingletonLock"), { force: true });
+}
+
+/** Waits without blocking: the install fetches the page from this process's server, which a spawnSync would keep from answering. */
+function run(cmd: string, args: string[], env: Record<string, string>): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((done) => {
+    let stdout = "";
+    let stderr = "";
+    const child = spawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"] });
+    child.stdout.on("data", (d) => (stdout += d));
+    child.stderr.on("data", (d) => (stderr += d));
+    child.on("error", (e) => done({ status: null, stdout, stderr: `${stderr}${e.message}` }));
+    child.on("close", (status) => done({ status, stdout, stderr }));
+  });
 }
 
 let failed = 0;
@@ -195,16 +231,17 @@ const appIdIn = (profile: string) => (JSON.parse(readFileSync(join(profile, "sov
 
 let controlProves = false;
 try {
+  await denialLogOn();
   console.log(`install, over its pipe, on a throwaway profile (port ${port})`);
   const profile = seedProfile("app profile");
-  const inst = spawnSync(process.execPath, [MAC_APP, "install", "--browser", EXE, "--profile", profile, "--port", port], { encoding: "utf8", env: env() });
+  const inst = await run(process.execPath, [MAC_APP, "install", "--browser", EXE, "--profile", profile, "--port", port], env());
   held(inst.status === 0, `installed the app (${inst.stdout.trim().split("\n").at(-1) ?? ""})`);
   if (inst.status !== 0) throw new Fatal(`the install failed: ${inst.stdout}${inst.stderr}`);
   const appId = appIdIn(profile);
   const openApp = (hash: string) => ({ argv: [process.execPath, MAC_APP, "open", "--browser", EXE, "--profile", profile, "--port", port, "--url", `${origin}/#t=check-${hash}`], detached: false });
 
   console.log("the app, opened by this tree's mac-app.ts, from a launchd job of Bun's");
-  let at = new Date();
+  let seen = denials;
   let from = reports.length;
   await fromLaunchd("app", openApp("app"));
   let r = await nextReport(from);
@@ -212,7 +249,7 @@ try {
   held(live(r), "the mic went live");
   held(r?.url === `${origin}/#t=check-app`, "the unlock link reached the window");
   held(r?.standalone === true, "in the installed app's own window");
-  held(denialsSince(at) === 0, 'no "Policy disallows prompt" from tccd');
+  held((await denialsSince(seen)) === 0, 'no "Policy disallows prompt" from tccd');
 
   console.log("opened again while that browser runs: the handover");
   const running = runningPid(profile);
@@ -232,7 +269,6 @@ try {
 
   console.log("the bare window, by the launcher's arguments");
   const bareProfile = seedProfile("bare profile");
-  at = new Date();
   from = reports.length;
   const bare = spawnSync(join(openDir, "open"), ["-n", "-a", bundle!, "--args", `--app=${origin}/#t=check-bare`, `--user-data-dir=${bareProfile}`, "--no-first-run", "--no-default-browser-check", ...OFF_SCREEN.split(" ")], { env: env() });
   held(bare.status === 0, "open accepted it");
@@ -242,16 +278,16 @@ try {
   await quit(bareProfile);
 
   console.log("the control, the old launch: a detached child of Bun, on the app's profile");
-  at = new Date();
+  seen = denials;
   from = reports.length;
   await fromLaunchd("old", {
     argv: [EXE, `--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", ...OFF_SCREEN.split(" "), `--app-id=${appId}`, `--app-launch-url-for-shortcuts-menu-item=${origin}/#t=check-old`],
     detached: true,
   });
   r = await nextReport(from);
-  const denials = denialsSince(at);
-  console.log(`       ${said(r)}; ${denials} denial(s) from tccd`);
-  controlProves = r?.gum.result === "pending" && denials > 0;
+  const denied = await denialsSince(seen);
+  console.log(`       ${said(r)}; ${denied} denial(s) from tccd`);
+  controlProves = r?.gum.result === "pending" && denied > 0;
   console.log(controlProves ? "  ok   it hangs with the denial, so this check can tell the bug from its fix" : "  NOTE it didn't hang with the denial, so on this Mac the cases above don't prove the fix");
   await quit(profile);
   removeJobs();
@@ -263,6 +299,7 @@ try {
   failed = -1;
 } finally {
   removeJobs();
+  denialLog.kill();
   await Promise.allSettled(["app profile", "bare profile"].map((n) => quit(join(root, n))));
   void server.stop(true);
   rmSync(root, { recursive: true, force: true });

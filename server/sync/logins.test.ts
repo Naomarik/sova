@@ -407,6 +407,18 @@ test("a fresh `{}` auth.json after a missing one is not a logout: no tombstone, 
   assert.ok(b!.auth()["openai-codex"], "B pulled it back");
 });
 
+test("auth.json deleted and recreated as `{}` within one debounce window is not a logout", async () => {
+  const [a, b] = makeMesh(2);
+  await a!.piLogin();
+  await converge([a!, b!]);
+  rmSync(b!.authPath);
+  writeFileSync(b!.authPath, "{}");
+  await b!.sync.observe("pi");
+  assert.equal(b!.sync.recordsSnapshot()[CODEX]?.tombstone, undefined);
+  await converge([a!, b!]);
+  assert.ok(a!.auth()["openai-codex"], "A keeps its login");
+});
+
 test("a restarted host whose auth.json is `{}` at start, with a sidecar, logs nothing out", async () => {
   const [a, b] = makeMesh(2);
   await a!.piLogin();

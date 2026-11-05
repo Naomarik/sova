@@ -1,4 +1,4 @@
-import { readFileSync, watch, type FSWatcher } from "node:fs";
+import { readFileSync, statSync, watch, type FSWatcher } from "node:fs";
 import { basename, dirname } from "node:path";
 import {
   admissible,
@@ -140,6 +140,8 @@ export class CredentialSync {
   private records: Records = {};
   private readonly stores = new Map<StoreId, CredentialStore>();
   private readonly storeState = new Map<StoreId, StoreSnapshot["state"]>();
+  /** The store file's identity at the last scan or Sova's own write: a new one means it was recreated. */
+  private readonly storeFileId = new Map<StoreId, string>();
   private readonly queues = new Map<StoreId, Promise<unknown>>();
   private readonly expectRefresh = new Map<EntryKey, number>();
   private readonly lastRefreshAt = new Map<EntryKey, number>();
@@ -313,9 +315,15 @@ export class CredentialSync {
     const out = { pushed: [] as EntryKey[], pull: false, dirty: false };
     // An empty pi file right after a missing one, or at start with a sidecar, is a fresh file (pi
     // writes `{}` when it finds none), never a logout of everything: treated as missing.
+    // So is one that replaced the file since the last scan (deleted and recreated between two
+    // reads): pi's own logout rewrites the file in place.
+    const prevFileId = this.storeFileId.get(store.id);
+    const fileId = this.fileIdentity(store.path);
+    this.storeFileId.set(store.id, fileId);
     const emptyAsMissing =
       store.id === "pi" && snap.state === "ok" && snap.entries.size === 0 && snap.localOnly.size === 0 &&
-      (this.storeState.get(store.id) === "missing" || (this.initialScan && !this.firstRun));
+      (this.storeState.get(store.id) === "missing" || (this.initialScan && !this.firstRun) ||
+        (prevFileId !== undefined && prevFileId !== fileId));
     this.storeState.set(store.id, snap.state);
     if (snap.state === "invalid" || snap.state === "refused") return out;
     const now = this.now();
@@ -355,6 +363,16 @@ export class CredentialSync {
       else if (!logout) out.pull = true;
     }
     return out;
+  }
+
+  /** dev, inode and birth time: an in-place rewrite keeps all three, a recreated file doesn't. */
+  private fileIdentity(path: string): string {
+    try {
+      const s = statSync(path);
+      return `${s.dev}:${s.ino}:${s.birthtimeMs}`;
+    } catch {
+      return "";
+    }
   }
 
   private stamp(store: CredentialStore, key: EntryKey, entry: StoreEntry, prev: EntryMeta | undefined, now: number): EntryMeta {
@@ -408,11 +426,14 @@ export class CredentialSync {
           }
         }
         if (changes.size) this.storeState.set(id, "ok"); // written now: no longer missing
+        if (changes.size) this.storeFileId.delete(id); // our write replaces the file: re-read below
         dirty = r.dirty || JSON.stringify(this.records) !== before;
         if (dirty) this.persist();
         return { result, changes };
       }),
     ).then((result) => {
+      const store = this.stores.get(id);
+      if (store && !this.storeFileId.has(id)) this.storeFileId.set(id, this.fileIdentity(store.path));
       if (dirty) this.afterChange();
       if (found.pushed.length || found.pull) this.scheduleSync();
       return result;

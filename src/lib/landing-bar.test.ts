@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MergeEntry, MergeRun, RunStep } from "../../shared/merge-queue";
 import type { ReleaseRecord, ReleaseStep } from "../../shared/release";
-import { INVALID_TITLE, reduceLanding, runSegments, runNow, SHOWN_MS, type LandingProjectInput, type LandingQueueCut, type LandingReleaseCut } from "./landing-bar";
+import { INVALID_TITLE, reduceLanding, splitActions, runSegments, runNow, SHOWN_MS, type LandingProjectInput, type LandingQueueCut, type LandingReleaseCut } from "./landing-bar";
 
 const NOW = Date.parse("2026-11-05T12:00:00Z");
 const iso = (msAgo: number) => new Date(NOW - msAgo).toISOString();
@@ -75,7 +75,7 @@ test("nothing running, nothing waiting: no bar", () => {
   assert.equal(bar([]), null);
 });
 
-test("a landing running: title, check N of M, time left, +N in line", () => {
+test("a landing running: title, step N of M, time left, +N in line", () => {
   const r = run([step("copy", "copy", "passed"), step("merge", "merge", "passed"), step("check:unit", "check", "passed"), step("check:test:int", "check", "running")], {
     checks: [
       { id: "unit", label: "unit", source: "required" },
@@ -86,7 +86,7 @@ test("a landing running: title, check N of M, time left, +N in line", () => {
   const q = queue({ state: "running", current: r, checking: [entry({ id: "me_1", state: "checking", eta: { startsInMs: 0, takesMs: 4 * 60_000 } })], waiting: [entry({ id: "me_2", branch: "feat/y" }), entry({ id: "me_3", branch: "feat/z" })] });
   const b = bar([proj({ queue: q })])!;
   assert.equal(b.top.title, "Landing feat/mesh-bar");
-  assert.equal(b.top.sub, "check 2 of 3 · test:int · ~3 min left");
+  assert.equal(b.top.sub, "step 7 of 11 · test:int · ~3 min left");
   assert.deepEqual(b.top.count, { text: "+2", label: "2 in line" });
   // The hover card: the step running now (with its time when it has a start) and the next in line.
   assert.equal(b.top.peek.length, 2);
@@ -97,14 +97,14 @@ test("a landing running: title, check N of M, time left, +N in line", () => {
     ["copy:passed", "merge:passed", "setup:skipped", "install:skipped", "docs:skipped", "check:unit:passed", "check:test:int:running", "check:build:waiting", "land:waiting", "main-checkout:waiting", "push:waiting"],
   );
   assert.equal(b.top.lines[0]!.text, "master 3f2a1c0 + feat/mesh-bar → 9b81e44");
-  assert.ok(b.top.actions.some((a) => a.kind === "link" && a.label === "View Checks" && a.href === "#/projects/prj_a/merge-queue/mr_1"));
-  assert.ok(b.top.actions.some((a) => a.kind === "link" && a.label === "Open Queue" && a.href === "#/projects/prj_a/merge-queue"));
+  assert.ok(b.top.actions.some((a) => a.kind === "link" && a.label === "Checks" && a.href === "#/projects/prj_a/merge-queue/mr_1"));
+  assert.ok(b.top.actions.some((a) => a.kind === "link" && a.label === "Queue" && a.href === "#/projects/prj_a/merge-queue"));
 });
 
 test("no eta, or an eta already passed: no 'left'", () => {
   const r = run([step("check:unit", "check", "running")], { checks: [{ id: "unit", label: "unit", source: "required" }] });
-  assert.equal(runNow(r, undefined, NOW), "check 1 of 1 · unit");
-  assert.equal(runNow(r, { startsInMs: 0, takesMs: 1000 }, NOW), "check 1 of 1 · unit");
+  assert.equal(runNow(r, undefined, NOW), "step 6 of 9 · unit");
+  assert.equal(runNow(r, { startsInMs: 0, takesMs: 1000 }, NOW), "step 6 of 9 · unit");
 });
 
 test("reruns fold into their check's segment, which runs again; never a segment of their own", () => {
@@ -118,7 +118,7 @@ test("reruns fold into their check's segment, which runs again; never a segment 
   const masterDone = run([step("check:unit", "check", "failed"), step("rerun-master:unit", "rerun-master", "passed")], { checks: [{ id: "unit", label: "unit", source: "required" }] });
   assert.deepEqual(checkSegs(masterDone).map((s) => s.state), ["failed"]);
   // While the rerun runs, the sub line still names its check.
-  assert.equal(runNow(r, undefined, NOW), "check 1 of 1 · unit");
+  assert.equal(runNow(r, undefined, NOW), "step 6 of 9 · unit");
 });
 
 test("fixed steps: waiting before they run, skipped once a later step started; no push without origin; none after the checks for a request run", () => {
@@ -142,13 +142,13 @@ test("review is never a segment nor in the row: the detail and the hover card sa
 test("a check added mid-run adds a segment and grows the total", () => {
   const checks = [{ id: "unit", label: "unit", source: "required" as const }];
   const before = run([step("check:unit", "check", "running")], { checks });
-  assert.equal(runNow(before, undefined, NOW), "check 1 of 1 · unit");
+  assert.equal(runNow(before, undefined, NOW), "step 6 of 9 · unit");
   const after = run([step("check:unit", "check", "running")], { checks: [...checks, { id: "e2e", label: "e2e", source: "picked" as const }] });
-  assert.equal(runNow(after, undefined, NOW), "check 1 of 2 · unit");
+  assert.equal(runNow(after, undefined, NOW), "step 6 of 10 · unit");
   assert.deepEqual(checkSegs(after).map((s) => s.id), ["check:unit", "check:e2e"]);
   // Started but not in the run's list (the list came before the pick): still counted, once.
   const started = run([step("check:unit", "check", "passed"), step("check:e2e", "check", "running")], { checks });
-  assert.equal(runNow(started, undefined, NOW), "check 2 of 2 · e2e");
+  assert.equal(runNow(started, undefined, NOW), "step 7 of 10 · e2e");
   assert.equal(checkSegs(started).length, 2);
 });
 
@@ -176,6 +176,10 @@ test("merge needs-you with nothing running takes the whole bar, in the tab's wor
   assert.deepEqual(labels.slice(0, 2), ["Accept", "Send Back"]);
   for (const a of b.top.actions) assert.equal(a.kind, "link");
   assert.ok(b.top.actions.some((a) => a.kind === "link" && a.href === "#/projects/prj_a/merge-queue/mr_7"));
+  const { doing, places } = splitActions(b.top.actions);
+  assert.deepEqual(doing.map((a) => a.label), ["Accept", "Send Back"], "the things that do something: buttons, their own row");
+  assert.deepEqual(places.map((a) => a.label), ["Queue"], "the places to go: one row of links");
+  assert.ok(places.every((a) => a.aria?.startsWith("Open")), "each place keeps a full accessible name");
 });
 
 test("several merge needs-you with nothing running: the first takes the bar, the rest one short count", () => {
@@ -200,18 +204,18 @@ test("paused: always shown, even with nothing in line, with Resume Queue", () =>
   assert.equal(b.top.kind, "paused");
   assert.equal(b.top.title, "Paused by you");
   assert.ok(b.top.actions.some((a) => a.kind === "resume" && a.root === "/r/a"));
-  assert.ok(b.top.actions.some((a) => a.label === "Open Queue"));
+  assert.ok(b.top.actions.some((a) => a.label === "Queue"));
   const moved = bar([proj({ queue: queue({ state: "paused", paused: { kind: "master-moved", why: "master moved outside the queue: the run was voided", at: iso(0) } }) })])!;
   assert.equal(moved.top.sub, "master moved outside the queue: the run was voided");
   assert.ok(!moved.top.lines.some((l) => l.text.includes("the run was voided")), "the reason is said once");
 });
 
-test("definition-invalid: its own words, Open Queue only, no Resume", () => {
+test("definition-invalid: its own words, Queue only, no Resume", () => {
   const q = queue({ state: "paused", invalid: "$.merge: unknown key", paused: { kind: "definition-invalid", why: "x", at: iso(0) } });
   const b = bar([proj({ queue: q })])!;
   assert.equal(b.top.title, INVALID_TITLE);
   assert.equal(b.top.title, "Queue settings are broken: nothing runs until they are fixed");
-  assert.deepEqual(b.top.actions.map((a) => a.label), ["Open Queue"]);
+  assert.deepEqual(b.top.actions.map((a) => a.label), ["Queue"]);
 });
 
 test("just landed: ~1 minute, pushed or not, the thread's note word for word; gone after", () => {
@@ -250,6 +254,9 @@ test("PR projects: 'Pull request opened · #N' for the minute; an open request w
   assert.equal(bar([proj({ queue: queue({ waitingOnHost: [old] }) })]), null);
   // A host check bumping updatedAt later doesn't bring it back: the first sight starts its minute.
   assert.equal(bar([proj({ queue: queue({ waitingOnHost: [req] }) })], new Map([["host:me_p:requested", NOW - SHOWN_MS - 1]])), null);
+  assert.deepEqual(splitActions(b.top.actions).places.map((a) => a.label), ["On GitHub", "Queue"]);
+  const mr = entry({ ...req, id: "me_m", request: { how: "gitlab-mr", branch: "feat/pr", base: "main", url: "https://gitlab.example/o/r/-/merge_requests/3" } });
+  assert.equal(bar([proj({ queue: queue({ waitingOnHost: [mr] }) })])!.top.actions[0]!.label, "On GitLab");
   const pushed = entry({ id: "me_q", branch: "feat/q", state: "pushed", updatedAt: iso(1_000), request: { how: "push-branch", branch: "feat/q", base: "main" } });
   const pb = bar([proj({ queue: queue({ waitingOnHost: [pushed] }) })])!;
   assert.equal(pb.top.title, "Pushed feat/q");
@@ -279,8 +286,8 @@ test("release running: its step track in plan order, withdraw steps never; Step 
   assert.equal(alone.top.count, undefined, "nothing waiting: no count");
   assert.ok(alone.top.peek.some((l) => l.text === "Landings wait until it publishes"));
   assert.deepEqual(b.top.segments.map((s) => s.id), ["version", "changelog", "commit", "checks", "tryout", "publish", "announce"]);
-  assert.ok(b.top.actions.some((a) => a.label === "Open Releases" && a.kind === "link" && a.href === "#/projects/prj_a/releases"));
-  assert.ok(b.top.actions.some((a) => a.label === "Open Release Chat"));
+  assert.ok(b.top.actions.some((a) => a.label === "Releases" && a.kind === "link" && a.href === "#/projects/prj_a/releases"));
+  assert.ok(b.top.actions.some((a) => a.label === "Release Chat"));
   const unnamed = bar([proj({ release: release({ open: record({ version: null, tag: null, steps: plan({ version: "running", changelog: "waiting" }) }) }) })])!;
   assert.equal(unnamed.top.title, "Releasing a new version");
 });
@@ -290,7 +297,7 @@ test("release gating checks: the segment carries the queue run's progress and th
   const rec = record({ entry: "me_rel", state: "checking", steps: plan({ changelog: "done", commit: "done", checks: "running" }).map((s) => (s.id === "checks" ? { ...s, run: "mr_r" } : s)) });
   const b = bar([proj({ queue: queue({ state: "running", current: r }), release: release({ open: rec }) })])!;
   assert.equal(b.top.kind, "release");
-  assert.equal(b.top.sub, "Step 4 of 7 · Gating checks · check 2 of 2 · build");
+  assert.equal(b.top.sub, "Step 4 of 7 · Gating checks · build");
   assert.equal(b.top.segments.find((s) => s.id === "checks")?.progress, 0.5);
 });
 
@@ -362,5 +369,36 @@ test("the accessible name says the title and the sub line", () => {
   assert.equal(b.name, "Paused by you. Nothing in line");
   const r = run([step("check:unit", "check", "running")], { checks: [{ id: "unit", label: "unit", source: "required" }] });
   const l = bar([proj({ queue: queue({ state: "running", current: r, waiting: [entry({ id: "w" })] }) })])!;
-  assert.equal(l.name, "Landing feat/mesh-bar. check 1 of 1 · unit. 1 in line");
+  assert.equal(l.name, "Landing feat/mesh-bar. step 6 of 9 · unit. 1 in line");
+});
+
+/** The counter counts every segment drawn: M is the track's length, N the running (or next waiting) one's place. */
+function assertCounter(r: MergeRun, o: { landsLocally?: boolean; push?: boolean }, id: string) {
+  const segs = runSegments(r, o);
+  const m = /^step (\d+) of (\d+) · (.+)$/.exec(runNow(r, undefined, NOW, o));
+  assert.ok(m, runNow(r, undefined, NOW, o));
+  assert.equal(Number(m[2]), segs.length);
+  const i = segs.findIndex((s) => s.id === id);
+  assert.ok(i >= 0, id);
+  assert.equal(Number(m[1]), i + 1);
+  assert.equal(m[3], segs[i]!.label);
+}
+
+test("the counter counts every segment: usual run, installing, no push, a check added mid-run, between steps", () => {
+  const checks = [{ id: "unit", label: "unit", source: "required" as const }, { id: "build", label: "build", source: "required" as const }];
+  const usual = run([step("copy", "copy", "passed"), step("merge", "merge", "passed"), step("check:unit", "check", "running")], { checks });
+  assertCounter(usual, {}, "check:unit");
+  assert.deepEqual(runSegments(usual).filter((s) => s.state === "skipped").map((s) => s.id), ["setup", "install", "docs"]);
+  const installs = run([step("copy", "copy", "passed"), step("merge", "merge", "passed"), step("install", "install", "running")], { checks });
+  assertCounter(installs, {}, "install");
+  const noPush = run([step("copy", "copy", "passed"), step("check:unit", "check", "passed"), step("check:build", "check", "running")], { checks });
+  assertCounter(noPush, { push: false }, "check:build");
+  assert.equal(runSegments(noPush, { push: false }).at(-1)!.state, "skipped");
+  const before = runSegments(usual).length;
+  const added = run(usual.steps, { checks: [...checks, { id: "e2e", label: "e2e", source: "picked" as const }] });
+  assertCounter(added, {}, "check:unit");
+  assert.equal(runSegments(added).length, before + 1);
+  const between = run([step("copy", "copy", "passed"), step("merge", "merge", "passed"), step("check:unit", "check", "passed")], { checks });
+  assertCounter(between, {}, "check:build");
+  assert.equal(runNow(run([], { checks }), undefined, NOW), "Starting");
 });

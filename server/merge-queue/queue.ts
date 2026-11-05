@@ -25,7 +25,7 @@ import {
 } from "../../shared/merge-queue";
 import { HOOK_TIMEOUT_MAX, parseDefinition, type ProjectDef } from "../../shared/project-contract";
 import type { ChecksOf, EstimateRun, RunInput, RunMerge, RunOutcome, WakeThread } from "./contract";
-import { countBetween, type Git, isAncestor, realGit, revParse, statusArgs, worktreesOf } from "./guard";
+import { countBetween, type Git, isAncestor, ownCommitsPast, realGit, revParse, statusArgs, worktreesOf } from "./guard";
 import { canLand, checkoutOf, dirtyWhy, firstParents, landTip, pushTip } from "./land";
 import { recordLandedDrafts } from "./landed-drafts";
 import type { MergeNoticeKind } from "./notices";
@@ -94,6 +94,9 @@ export interface QueueDeps {
   listed?: (root: string) => boolean;
   /** A queue's view changed. */
   publish?: (view: MergeQueueView) => void;
+  /** A test check was found broken on the target (heads.targetBroken): one notification for the user, so a session
+   *  can be started to fix the target. Called once per check until a later run lifts it. */
+  flagBroken?: (b: import("../../shared/merge-queue").TargetBroken, root: string) => void;
   /** Tell the branch's chat (server/merge-queue/notices.ts). */
   notify?: (kind: MergeNoticeKind, entry: MergeEntry, extra: { run?: MergeRun; root: string; logDir?: string }) => void;
   /** Wake the merge thread; false: none was asked. */
@@ -344,12 +347,24 @@ export class ProjectQueue {
         .slice(0, 20)
         .map((e) => e.id),
     );
+    // Sent back (the newest 20 still to fix): Land This Commit Again lands the branch's newest commit, so its row says how
+    // many of the branch's own commits it brings in, and why that commit can't be landed yet when it can't.
+    const recentSentBack = new Set(
+      this.q.entries
+        .filter((e) => e.state === "needs-fix")
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .slice(0, 20)
+        .map((e) => e.id),
+    );
     for (const e of this.q.entries) {
-      if (isFinal(e) && !recentLanded.has(e.id)) continue;
+      if (isFinal(e) && !recentLanded.has(e.id) && !recentSentBack.has(e.id)) continue;
       const tip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
-      const n = tip && tip !== e.commit && (await isAncestor(this.git, this.root, e.commit, tip)) ? await countBetween(this.git, this.root, e.commit, tip) : 0;
+      const n = tip && tip !== e.commit && (await isAncestor(this.git, this.root, e.commit, tip)) ? await ownCommitsPast(this.git, this.root, e.commit, tip, head || undefined) : 0;
       if (n) e.newerCommits = n;
       else delete e.newerCommits;
+      const blocked = n && tip && e.state === "needs-fix" ? await this.newestBlocked(e.branch, tip) : null;
+      if (blocked) e.newerBlocked = blocked;
+      else delete e.newerBlocked;
     }
     const takes = this.deps.estimate ? this.deps.estimate(this.id, this.root) : this.estimateFromHistory();
     const redrafted = await this.redraftedFacts();
@@ -898,6 +913,20 @@ export class ProjectQueue {
   private docsChecked(): void {
     this.viewCache = null;
     void this.redraftedFacts().catch((err) => this.log(`docs check: ${err instanceof Error ? err.message : err}`));
+  }
+
+  /** Why the branch's newest commit `tip` can't be landed now (what Land would refuse: a temporary commit, uncommitted
+   *  files in its folder), or null when it can. Read only. */
+  private async newestBlocked(branch: string, tip: string): Promise<string | null> {
+    const subject = (await this.git(["log", "-1", "--format=%s", tip], this.root)).stdout.trim();
+    if (/^temp\b/i.test(subject)) return `its newest commit is a temporary commit ("${subject.slice(0, 60)}")`;
+    const wt = (await worktreesOf(this.git, this.root)).find((w) => w.branch === branch && w.path !== this.root)?.path;
+    if (wt && existsSync(wt)) {
+      const st = await this.git(statusArgs("--porcelain"), wt);
+      const n = st.code === 0 ? st.stdout.split("\n").filter(Boolean).length : 0;
+      if (n) return `${n} uncommitted file${n === 1 ? "" : "s"} in its folder: commit or remove them first`;
+    }
+    return null;
   }
 
   private estimateCache: { at: number; ms: number | null } | null = null;
@@ -1824,6 +1853,8 @@ export class ProjectQueue {
     if (out.why) run.why = out.why;
     if (out.targetRed) this.q.heads.targetRed = out.targetRed;
     else if (out.verdict === "passed") delete this.q.heads.targetRed;
+    // A run the queue voided (the target moved, a stop, a cancel) proves nothing about a broken check.
+    this.noteBroken(run, cur.voidWhy ? { ...out, verdict: "void", broken: [] } : out);
     const e = this.entry(cur.entry);
     this.current = null;
     if (!e) {
@@ -1971,6 +2002,26 @@ export class ProjectQueue {
         await this.landTested(e, run);
         return;
       }
+    }
+  }
+
+  /**
+   * The broken-on-target flags (heads.targetBroken): one this run found is added (and the user told once, by
+   * notification), one it ran tests with again is lifted. A void or cancelled run proves nothing either way.
+   */
+  private noteBroken(run: MergeRun, out: RunOutcome): void {
+    const had = this.q.heads.targetBroken ?? [];
+    const found = out.broken ?? [];
+    const ranTests = (id: string) =>
+      run.steps.some((s) => s.id === `check:${id}` && (s.result === "passed" || (s.counts && (s.counts.passed ?? 0) + (s.counts.failed ?? 0) > 0)));
+    const kept = out.verdict === "void" ? had : had.filter((b) => found.some((f) => f.check === b.check) || !ranTests(b.check));
+    const fresh = found.filter((f) => !kept.some((b) => b.check === f.check));
+    const next = [...kept.map((b) => ({ ...b, ...(found.find((f) => f.check === b.check) ? { why: found.find((f) => f.check === b.check)!.why, run: run.id } : {}) })), ...fresh.map((f) => ({ check: f.check, label: f.label, why: f.why, run: run.id, step: f.step, at: this.iso() }))];
+    if (next.length) this.q.heads.targetBroken = next;
+    else delete this.q.heads.targetBroken;
+    for (const f of fresh) {
+      this.log(`${f.why} (run ${run.id})`);
+      this.deps.flagBroken?.({ ...f, run: run.id, at: this.iso() }, this.root);
     }
   }
 
@@ -2372,7 +2423,7 @@ export class ProjectQueue {
     e.landed = { sha: tip, from: run.base, at: this.iso(), pushed: "pending" };
     e.updatedAt = this.iso();
     const branchTip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
-    const newer = branchTip && branchTip !== e.commit && (await isAncestor(this.git, this.root, e.commit, branchTip)) ? await countBetween(this.git, this.root, e.commit, branchTip) : 0;
+    const newer = branchTip && branchTip !== e.commit && (await isAncestor(this.git, this.root, e.commit, branchTip)) ? await ownCommitsPast(this.git, this.root, e.commit, branchTip, tip) : 0;
     if (newer) e.newerCommits = newer;
     else delete e.newerCommits;
     // Before the intent goes: a stop here finishes the landing at the next start, and with it this (idempotent) write.

@@ -83,3 +83,20 @@ test("the Overseer's coding-worktree menu (no readiness): Land is off on a sent-
   assert.equal(entryLandBlock(undefined), undefined);
   assert.equal(entryLandBlock(sentBack({ state: "drafts-changed" })), undefined);
 });
+
+test("the re-land takes the branch's newest commit: Land This Commit Again at the sent-back head, Land Newest Commit once the branch has commits of its own past it, with what it brings in and why the newest isn't ready", async () => {
+  const { landAgainOf } = await import("./merge-queue");
+  assert.deepEqual(landAgainOf(sentBack()), { label: "Land This Commit Again", included: null, blocked: null });
+  assert.deepEqual(landAgainOf(sentBack({ newerCommits: 1 })), { label: "Land Newest Commit", included: "1 newer commit included", blocked: null });
+  assert.deepEqual(landAgainOf(sentBack({ newerCommits: 2, newerBlocked: "3 uncommitted files in its folder: commit or remove them first" })), {
+    label: "Land Newest Commit",
+    included: "2 newer commits included",
+    blocked: "The newest commit isn't Ready to land: 3 uncommitted files in its folder: commit or remove them first.",
+  });
+  // The row draws the same words: the one button relabelled, its line in place of "not included".
+  const r = queueRow(wt({ queue: sentBack({ newerCommits: 2, newerBlocked: "its newest commit is a temporary commit (\"temp\")" }) }));
+  assert.deepEqual(rowButtons(r, "prj_1"), ["Land Newest Commit", "Remove from Queue"], "still one re-land button");
+  assert.equal(r.newer, "2 newer commits included The newest commit isn't Ready to land: its newest commit is a temporary commit (\"temp\").");
+  assert.doesNotMatch(r.newer ?? "", /not included/);
+  assert.deepEqual(rowButtons(queueRow(wt({ queue: sentBack() })), "prj_1"), ["Land This Commit Again", "Remove from Queue"]);
+});

@@ -37,8 +37,46 @@ export interface LandingTree {
 export interface LandingSession {
   running: boolean;
   openQuestions: number;
-  lastCheck?: { at: number; ok: boolean };
+  lastCheck?: LastCheck;
 }
+
+/** The chat's newest check run (test, typecheck, build): when, whether it passed, and for a failed one what kind of
+    run it was and what it names as failing (checkFailureOf), when its output says. */
+export interface LastCheck {
+  at: number;
+  ok: boolean;
+  /** "test run" | "typecheck" | "build" | "check run". */
+  what?: string;
+  /** "1 failing file, server/a.test.ts"; absent when the output names nothing. */
+  failed?: string;
+}
+
+const listed = (xs: readonly string[], n = 3) => `${xs.slice(0, n).join(", ")}${xs.length > n ? `, +${xs.length - n} more` : ""}`;
+
+/**
+ * What a failed check's output (its tail) says failed, in a few words: Sova's runner's "N failing files" and its
+ * FAIL lines, a node:test or vitest count, or the type errors and their files. Pure; nothing found, `what` alone.
+ */
+export function checkFailureOf(output: string): { what: string; failed?: string } {
+  const summary = [...output.matchAll(/\b(\d+) failing files?\b/g)].pop();
+  const fails = [...new Set([...output.matchAll(/^\s*FAIL\s+(\S+\.[cm]?[jt]sx?)\b/gm)].map((m) => m[1]!.replace(/^\.\//, "")))];
+  if (summary || fails.length) {
+    const n = summary ? Number(summary[1]) : fails.length;
+    if (n > 0) return { what: "test run", failed: `${plural(n, "failing file")}${fails.length ? `, ${listed(fails)}` : ""}` };
+  }
+  const tests = /(?:^|\n)\s*(?:#|ℹ)\s*fail\s+([1-9]\d*)|Tests?:\s+([1-9]\d*)\s+failed|\b([1-9]\d*)\s+(?:failed|failing)\b/.exec(output);
+  if (tests) return { what: "test run", failed: plural(Number(tests[1] ?? tests[2] ?? tests[3]), "failing test") };
+  const ts = [...output.matchAll(/^(\S+?)\(\d+,\d+\): error TS\d+/gm)];
+  if (ts.length || /\berror TS\d+/.test(output)) {
+    const files = [...new Set(ts.map((m) => m[1]!))];
+    const n = ts.length || (output.match(/\berror TS\d+/g) ?? []).length;
+    return { what: "typecheck", failed: `${plural(n, "type error")}${files.length ? `, ${listed(files)}` : ""}` };
+  }
+  return { what: "check run" };
+}
+
+/** Whose run failed and what it names: "this chat's last test run failed: 1 failing file, server/a.test.ts". */
+export const lastCheckWords = (c: Pick<LastCheck, "what" | "failed">): string => `this chat's last ${c.what ?? "check run"} failed${c.failed ? `: ${c.failed}` : ""}`;
 
 /** "yes": the latest turn outcome says the work is done; "no": it doesn't, or there is none for the
     last reply; "off": no outcome is ever recorded for this session (attention off, or its folder
@@ -80,7 +118,7 @@ export function landingBlockers(t: LandingTree, s: LandingSession): LandingBlock
   }
   if (t.conflicts) out.push({ kind: "conflicts", text: `conflicts with ${t.base ?? "its base"} in ${plural(t.conflicts, "file")}`, fix: `merge ${t.base ?? "its base"} in and resolve them` });
   if (t.tempCommit) out.push({ kind: "temp", text: `a temporary commit ("${t.tempCommit.slice(0, 60)}")`, fix: "reword or squash the temporary commit" });
-  if (s.lastCheck && !s.lastCheck.ok) out.push({ kind: "check", text: "a failing check run", fix: "fix what the check reports and run it again" });
+  if (s.lastCheck && !s.lastCheck.ok) out.push({ kind: "check", text: lastCheckWords(s.lastCheck), fix: "fix what the check reports and run it again" });
   return out;
 }
 

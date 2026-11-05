@@ -10,6 +10,7 @@
  *   `hang` (sleeps until killed): the `unit` check, which names its failing files in SOVA_OUT and reruns
  *   only the files passed as argv.
  *   `gate <name>` (held until the test opens the gate) | `forbid <w>...` (fails when src/list.txt holds every word).
+ * - `unit.usage`: the `unit` check refuses its arguments (a usage line, exit 2, no test run, no report).
  * - `deps.lock`: the `merge.install` step's input (an offline install when a branch changes it); `broken` fails it.
  *
  * Every script appends one JSON line per run to `<root>/state/calls.jsonl` ({script, cwd, head, argv,
@@ -35,6 +36,8 @@ export interface FixtureOptions {
   remote?: boolean;
   /** Ship a review kit at `.sova/playbooks/review/` and declare it. */
   review?: boolean;
+  /** declared only: also declare `test.run` as the unit check's own command, so `unit` is the project's test check. */
+  unitIsTestCommand?: boolean;
   /** Extra `merge` section keys (merged over the defaults). */
   merge?: Record<string, unknown>;
   /** The repo's folder name (default `demo`). */
@@ -112,6 +115,9 @@ log("pass");
 `;
 
 const UNIT = (s: string) => `${prelude(s, "unit")}
+// unit.usage at the root: the runner refuses its own arguments before running anything (as run-tests does on a bare
+// --groups): a usage line, exit 2, no report, no test run.
+if (existsSync("unit.usage")) { console.error("unit: --groups needs a value"); console.error("usage: unit [--groups <name>] [files]"); log("fail"); process.exit(2); }
 const sel = process.argv.slice(2);
 const all = existsSync("tests") ? readdirSync("tests").filter((f) => f.endsWith(".txt")).sort().map((f) => "tests/" + f) : [];
 const files = sel.length ? all.filter((f) => sel.includes(f)) : all;
@@ -240,6 +246,7 @@ export class Fixture {
     if (checks === "test-command") {
       def.test = { run: ["node", "runner.mjs"], ...(this.opts.requireService ? { requires: ["svc"] } : {}), timeout: 60, smoke: ["tests/a.txt"] };
     }
+    if (checks === "declared" && this.opts.unitIsTestCommand) def.test = { run: ["node", "checks/unit.mjs"], timeout: 60, smoke: ["tests/a.txt"] };
     if (checks === "unset") return def;
     const merge: Record<string, unknown> = {
       target: this.target,

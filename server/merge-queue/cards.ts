@@ -370,6 +370,7 @@ export class MergeCards {
     setOpt(card, "eta", e.state === "queued" || e.state === "checking" ? e.eta : undefined);
     setOpt(card, "reason", e.reason);
     setOpt(card, "newerCommits", e.newerCommits);
+    setOpt(card, "newerBlocked", e.state === "needs-fix" ? e.newerBlocked : undefined);
     setOpt(card, "run", e.run);
     setOpt(card, "progress", e.state === "checking" ? (progress ?? card.progress) : undefined);
     card.notes = structuredClone(e.notes);

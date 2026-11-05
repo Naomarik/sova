@@ -49,3 +49,28 @@ test("every git status the queue runs goes through statusArgs", () => {
   for (const f of files) assert.doesNotMatch(readFileSync(new URL(f, here), "utf8"), /\[\s*"status"/, `${f}: a git status without statusArgs`);
   assert.deepEqual(statusArgs("--porcelain").slice(0, 4), ["--no-optional-locks", "-c", "core.fsmonitor=false", "status"]);
 });
+
+test("a branch's own newer commits: first-parent only, so a merge of the target counts once and the target's commits never count", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { scratchRoot } = await import("../test-scratch");
+  const { ownCommitsPast, countBetween, realGit } = await import("./guard");
+  const dir = scratchRoot("mq-own-commits-");
+  const g = (...a: string[]) => execFileSync("git", ["-c", "commit.gpgsign=false", "-c", "user.name=t", "-c", "user.email=t@example.invalid", ...a], { cwd: dir, encoding: "utf8" }).trim();
+  const commit = (f: string, m: string) => (writeFileSync(join(dir, f), m), g("add", f), g("commit", "-q", "-m", m), g("rev-parse", "HEAD"));
+  g("init", "-q", "-b", "master");
+  commit("a", "base");
+  g("checkout", "-q", "-b", "feat/x");
+  const sent = commit("b", "the sent-back commit");
+  g("checkout", "-q", "master");
+  for (let i = 0; i < 5; i++) commit(`m${i}`, `master ${i}`);
+  const head = g("rev-parse", "HEAD");
+  g("checkout", "-q", "feat/x");
+  g("merge", "-q", "--no-edit", "master");
+  const tip = commit("c", "the fix");
+  const git = realGit;
+  assert.equal(await countBetween(git, dir, sent, tip), 7, "plain counting brings the target's commits in");
+  assert.equal(await ownCommitsPast(git, dir, sent, tip, head), 2, "the merge of master and the fix");
+  assert.equal(await ownCommitsPast(git, dir, sent, sent, head), 0);
+});

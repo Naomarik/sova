@@ -109,6 +109,9 @@ export interface RunOutcome {
   unclear?: { check: string; label: string; step: string; why?: string }[];
   /** Checks red on the target alone (shown on the strip). */
   targetRed?: string[];
+  /** Test checks broken on the target (attribute.ts brokenOnTarget): skipped for this branch; the queue flags each
+   *  until a later run of it runs tests again. `why`: "<label> is broken on <target>: no test ran (<first line>)". */
+  broken?: { check: string; label: string; why: string; step: string }[];
   /** The project declares no automated tests. */
   noChecks?: true;
   /** The checks it ran, with sources. */

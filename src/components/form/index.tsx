@@ -158,6 +158,7 @@ export function Toggle(props: {
   disabled?: boolean;
   class?: string;
   id?: string;
+  title?: string;
 }) {
   const hintId = createUniqueId();
   const input = () => (
@@ -165,7 +166,7 @@ export function Toggle(props: {
   );
   return (
     <>
-      <label class={cls("toggle", props.switch && "toggle-switch", props.class)}>
+      <label class={cls("toggle", props.switch && "toggle-switch", props.class)} title={props.title}>
         <Show when={props.switch} fallback={[input(), <span class="toggle-box" aria-hidden="true" />, <span>{props.label}</span>]}>
           <span>{props.label}</span>
           {input()}
@@ -230,7 +231,8 @@ export function Choice(props: {
   );
 }
 
-/** A search box: its label is read aloud, its placeholder says what it finds. */
-export function SearchField(props: Omit<TextFieldProps, "hideLabel" | "rule">) {
-  return <TextField type="search" autocomplete="off" hideLabel {...props} />;
-}
+/** A search box in the design system's `.search` look (the magnifier inside it); its label is read
+    aloud, its placeholder says what it finds. */
+export const SearchField = (props: Omit<TextFieldProps, "hideLabel" | "rule">) => (
+  <TextField type="search" autocomplete="off" hideLabel afterClass="search" after={<span class="icon" style={{ "--icon": "url(/icons/search.svg)" }} aria-hidden="true" />} {...props} />
+);

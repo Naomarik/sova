@@ -86,5 +86,7 @@ describe("fields", () => {
     assert.equal((ch.match(/checked/g) ?? []).length, 1);
     const search = html(() => kit.SearchField({ label: "Search sessions", value: "", onInput() {} }));
     assert.equal(attr(search, "input", "type"), "search");
+    assert.match(search, /<div class="search"><input[^>]*><span class="icon"/);
+    assert.match(html(() => kit.Toggle({ label: "Enable zai", title: "zai is off", checked: false, onChange() {} })), /<label class="toggle" title="zai is off">/);
   });
 });

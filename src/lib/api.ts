@@ -1532,11 +1532,11 @@ export const mergeProjectRun = (projectId: string, hash: string, commit?: string
 /** A project's Setup chat (the one standing chat that sets up its merge queue, releases and deploys): its state and its
     branch's proposal, and whether it may open now. */
 export const getSetupChat = (projectId: string) =>
-  request<import("./setup-chat").SetupRead>(`${projectPath(projectId)}/setup`);
+  request<import("../../shared/setup-chat").SetupStatus>(`${projectPath(projectId)}/setup`);
 /** Opens the project's Setup chat, starting it the first time; `from`: the part the user came from (the chat starts
     there). `fresh`: Start Fresh (this chat is archived once its turn ends; the next open starts a new one). */
 export const openSetupChat = (projectId: string, opts: { from?: "merge-queue" | "releases" | "deploy" | "settings"; fresh?: boolean } = {}) =>
-  request<{ sessionId: string; path: string; reopened: boolean }>(`${projectPath(projectId)}/setup`, jsonInit("POST", { ...(opts.from ? { from: opts.from } : {}), ...(opts.fresh ? { fresh: true } : {}) }));
+  request<import("../../shared/setup-chat").SetupOpened>(`${projectPath(projectId)}/setup`, jsonInit("POST", { ...(opts.from ? { from: opts.from } : {}), ...(opts.fresh ? { fresh: true } : {}) }));
 /** Run the Project verbs playbook on the project: a coding session on its own branch. */
 export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
   request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));

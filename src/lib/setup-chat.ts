@@ -1,70 +1,9 @@
 // A project's Setup chat as the pages draw it: the one standing chat per project that investigates it, asks what it
 // can't find, draws the merge, release and deploy plan, trial-runs the proposed checks on its own branch, and proposes
 // the whole pipeline there for you to land. The words each surface says, and whether Land is offered. Pure.
-import type { DeployReview } from "../../shared/project-contract";
-import type { ReleaseSetupReview, RuntimeRunReview } from "../../shared/project-runtime";
+import type { SetupChatView, SetupProposal, SetupStatus, SetupTrial, SetupTrialCheck } from "../../shared/setup-chat";
 
-// The wire shapes the Setup chat's routes answer with. They move to shared/ with the server's routes; until then
-// they are the frontend's reading of GET /api/projects/:id/setup.
-
-/** One proposed check's result in a trial (merge.try) of the setup branch. */
-export interface SetupTrialCheck {
-  name: string;
-  kind: "merge" | "release";
-  command?: string;
-  /** skipped: a release-only check unchanged against the target, not run. */
-  state: "waiting" | "running" | "passed" | "failed" | "skipped";
-  durationMs?: number;
-  /** The trial's run (mr_…): View Log opens it. */
-  run?: string;
-}
-export interface SetupTrial {
-  run: string;
-  /** The commit tried: the result counts for it alone. */
-  commit: string;
-  at: string;
-  pass: boolean;
-  checks: SetupTrialCheck[];
-}
-/** What the setup branch proposes, read by Sova from its files at `commit` (its head), never from the chat's words. */
-export interface SetupProposal {
-  branch: string;
-  target: string;
-  commit: string;
-  /** The proposal's own hash: Merge Branch merges the branch that proposes it (§app.project-runtime/merge). */
-  hash?: string;
-  /** The merge queue serves the project: Land; else Merge Branch. */
-  served: boolean;
-  /** The branch's definition doesn't read. */
-  problem?: string;
-  services: RuntimeRunReview["services"];
-  merge: { checks: { name: string; command: string; timeoutMin?: number; optional?: boolean }[] } | null;
-  release?: ReleaseSetupReview;
-  deploy?: DeployReview;
-  /** The files the branch changes against the target. */
-  files?: string[];
-  /** The newest trial of this branch (any commit of it). */
-  trial: SetupTrial | null;
-  /** A refusal the host adds beyond the trial (the branch conflicts, it moved). */
-  land?: { can: boolean; why?: string };
-}
-/** The project's one standing Setup chat. */
-export interface SetupChatView {
-  sessionId: string;
-  path?: string;
-  title: string;
-  state: "idle" | "working" | "waiting" | "proposed";
-  questions?: number;
-  startedAt: string;
-  proposal: SetupProposal | null;
-}
-/** GET /api/projects/:id/setup. */
-export interface SetupRead {
-  chat: SetupChatView | null;
-  setUp: { merge: boolean; release: boolean; deploy: boolean };
-  /** Whether Set Up with a Chat / Change Setup may open the chat now, and why not (archived, folder elsewhere, no model). */
-  can: { open: boolean; why?: string };
-}
+export type { SetupChatView, SetupProposal, SetupStatus, SetupTrial, SetupTrialCheck };
 
 /** The surfaces that offer the Setup chat. */
 export type SetupSurface = "merge-queue" | "releases" | "deploy" | "settings";
@@ -116,7 +55,7 @@ export function trialChip(c: SetupTrialCheck): { word: string; tone: "success" |
   if (c.state === "passed") return { word: "Passed", tone: "success" };
   if (c.state === "failed") return { word: "Failed", tone: "error" };
   if (c.state === "running") return { word: "Running", tone: "accent", live: true };
-  if (c.state === "skipped") return { word: "Not run (unchanged)", tone: "neutral" };
+  if (c.state === "skipped" || c.state === "not-run") return { word: "Not run (unchanged)", tone: "neutral" };
   return { word: "Waiting", tone: "neutral" };
 }
 
@@ -134,27 +73,30 @@ export function trialLine(p: Pick<SetupProposal, "trial">): string | null {
   const t = p.trial;
   if (!t) return null;
   const sha = t.commit.slice(0, 7);
-  if (t.checks.some((c) => c.state === "running" || c.state === "waiting")) return `Trial of ${sha}: running`;
-  return `Trial of ${sha}: ${t.pass ? "passed" : "failed"}`;
+  if (t.state === "running") return `Trial of ${sha}: running`;
+  if (t.state === "passed") return `Trial of ${sha}: passed`;
+  if (t.state === "failed") return `Trial of ${sha}: failed`;
+  // Stopped by the machine, or called off: no result for the branch either way.
+  return `Trial of ${sha}: didn't finish${t.why ? `, ${t.why.replace(/[.]\s*$/, "")}` : ""}`;
 }
 
-/** The newest trial tried an older commit than the branch's head. */
+/** The trial shown tried an older commit than the branch's head (the host sends the head's own, so this is a guard). */
 export const trialStale = (p: Pick<SetupProposal, "trial" | "commit">): boolean => !!p.trial && p.trial.commit !== p.commit;
 
 /**
  * What the proposal's main button is now, and the line beside it. A setup branch can be landed (a served project) or
  * merged (one the queue doesn't serve) only once a trial of its exact head passed: the queue checks a branch with the
- * target's checks, not the branch's own. Until then Run Trial stands in its place.
+ * target's checks, not the branch's own. Until then Run Trial stands in its place. The host's own word (`land`) has
+ * the last say after that.
  */
 export function landState(p: SetupProposal): { action: "land" | "merge" | "trial" | "wait"; can: boolean; why?: string } {
   const merge = p.served ? "land" : "merge";
   const sha = p.commit.slice(0, 7);
   if (p.problem) return { action: merge, can: false, why: `The setup on its branch doesn't read: ${p.problem.replace(/[.]\s*$/, "")}.` };
-  const t = p.trial;
-  const head = t && t.commit === p.commit ? t : null;
-  if (head && head.checks.some((c) => c.state === "running" || c.state === "waiting")) return { action: "wait", can: false, why: `Trial of ${sha}: running` };
-  if (!head || !head.pass) return { action: "trial", can: true, why: `Run a trial of ${sha} first: it lands only once its own checks pass.` };
-  if (p.land && !p.land.can) return { action: merge, can: false, why: p.land.why ?? "Not ready to land." };
+  const t = p.trial && p.trial.commit === p.commit ? p.trial : null;
+  if (t?.state === "running") return { action: "wait", can: false, why: `Trial of ${sha}: running` };
+  if (!t || t.state !== "passed") return { action: "trial", can: true, why: `Run a trial of ${sha} first: it lands only once its own checks pass.` };
+  if (!p.land.can) return { action: merge, can: false, why: p.land.why ?? "Not ready to land." };
   return { action: merge, can: true };
 }
 

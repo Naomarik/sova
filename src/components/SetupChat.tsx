@@ -11,6 +11,7 @@ import { chatLine, durationWords, landState, notSetUpWords, setupButtonLabel, tr
 import { announce, toast } from "../lib/ui-state";
 import { DeployRecipeSteps } from "./ProjectDeployPanel";
 import { ReleaseSetupSteps } from "./ReleasesTab";
+import type { MergeSetupReview } from "../../shared/project-runtime";
 import { Banner, Chip, Icon } from "./ui";
 import { QueueChip } from "./WorktreesModal";
 
@@ -213,10 +214,29 @@ export function SetupProposalCard(props: { projectId: string; chat: SetupChatVie
       <Section title="Merge checks">
         <Show when={p().merge} fallback={<p class="project-card-note">No merge queue in this proposal.</p>}>
           {(m) => (
-            <Show when={m().checks.length} fallback={<p class="project-card-note">No checks: each branch lands once it merges cleanly, said as "No checks declared".</p>}>
-              <ul class="deploy-steps setup-checks">
-                <For each={m().checks}>{(c) => <CheckRow projectId={props.projectId} name={c.name} command={c.command} limit={c.timeoutMin} optional={c.optional} proposal={p()} kind="merge" />}</For>
-              </ul>
+            <Show
+              when={Array.isArray(m().checks) && (m().checks as unknown[]).length ? (m().checks as Exclude<MergeSetupReview["checks"], "none" | null>) : null}
+              fallback={<p class="project-card-note">No automated tests declared: each branch lands once it merges cleanly, said as "No checks declared".</p>}
+            >
+              {(checks) => (
+                <ul class="deploy-steps setup-checks">
+                  <For each={checks()}>
+                    {(c) => (
+                      <CheckRow
+                        projectId={props.projectId}
+                        name={c.label}
+                        id={c.id}
+                        command={c.run.join(" ")}
+                        limit={c.timeoutSec ? Math.round(c.timeoutSec / 60) : undefined}
+                        optional={c.optional}
+                        requires={c.requires}
+                        proposal={p()}
+                        kind="merge"
+                      />
+                    )}
+                  </For>
+                </ul>
+              )}
             </Show>
           )}
         </Show>
@@ -291,8 +311,8 @@ function Section(props: { title: string; children: JSX.Element }) {
 }
 
 /** One proposed check with its command and its trial result: "{label} · {time}", its chip, View Log. */
-function CheckRow(props: { projectId: string; name: string; command?: string; limit?: number; optional?: boolean; proposal: SetupProposal; kind: "merge" | "release" }) {
-  const res = () => props.proposal.trial?.checks.find((c) => c.kind === props.kind && c.name === props.name);
+function CheckRow(props: { projectId: string; name: string; id?: string; command?: string; limit?: number; optional?: boolean; requires?: string[]; proposal: SetupProposal; kind: "merge" | "release" }) {
+  const res = () => props.proposal.trial?.checks.find((c) => c.kind === props.kind && (c.name === props.name || (!!props.id && c.name === props.id)));
   return (
     <li class="deploy-step setup-check" data-check={props.name}>
       <span class="setup-check-head">
@@ -300,9 +320,9 @@ function CheckRow(props: { projectId: string; name: string; command?: string; li
           {props.name}
           <Show when={durationWords(res()?.durationMs)}>{(d) => <span class="text-mono"> · {d()}</span>}</Show>
         </span>
-        <Show when={props.limit || props.optional}>
+        <Show when={props.limit || props.optional || props.requires?.length}>
           <span class="text-caption text-muted">
-            {[props.limit ? `${props.limit} min limit` : "", props.optional ? "optional" : ""].filter(Boolean).join(" · ")}
+            {[props.limit ? `${props.limit} min limit` : "", props.optional ? "optional" : "", props.requires?.length ? `starts ${props.requires.join(", ")} first` : ""].filter(Boolean).join(" · ")}
           </span>
         </Show>
         <span class="setup-check-result">

@@ -17,7 +17,9 @@ watcher, the price seed and the share listener. The pi harness boundary has its 
   launchd examples, the Node switch), [docs/bun-quirks.md](../../docs/bun-quirks.md) (the Bun quirk
   registry), [server/harness/pi/README.md](../../server/harness/pi/README.md) and
   [QUIRKS.md](../../server/harness/pi/QUIRKS.md). The restart rules every task follows are in
-  [AGENTS.md](../../AGENTS.md#live-server-restart).
+  [AGENTS.md](../../AGENTS.md#live-server-restart), with its one exception: Sova's own merge thread restarts
+  the live unit after landings, once the queue is idle (`.sova/playbooks/merge-queue/PLAYBOOK.md`; the
+  path rule is `server/restart-paths.ts`).
 - Spec: `§app/server-runtime`.
 - The command catalogue, the `scripts/sova.mjs` command line and what extensions may add:
   [commands/overview.md](commands/overview.md).
@@ -165,7 +167,8 @@ nothing heavy) and writes `<state root>/stalls/stalls.jsonl`, 1 MiB then rotated
 | `bun` in `mise.toml` | `scripts/bun-release.txt` checksum lines; `mise trust <worktree>` |
 | `scripts/dev-server.mjs` watch set | this guide's watcher paragraph and the extensions guide's "not watched" list |
 | `shared/protocol.ts` | coordinate with the frontend first; `shared/wire-v1.ts` if v1 frames are affected |
-| anything in `server/**` or `shared/**` | say the live server needs a restart (AGENTS.md) |
+| anything in `server/**` or `shared/**` | say the live server needs a restart (AGENTS.md); the merge thread does it after the landing |
+| a new runtime import of a `src/` file from `server/` or `shared/` | add it to `SERVER_SRC_IMPORTS` in `server/restart-paths.ts` (`restart-paths.test.ts` fails until you do) and to the frontend guide's list |
 
 While working: `pnpm test` constantly, `pnpm test:int --changed` before asking to land, `pnpm run
 typecheck`. Landing (the merge queue) runs both tiers in full.

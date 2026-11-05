@@ -129,12 +129,14 @@ test("fixed steps: waiting before they run, skipped once a later step started; n
   assert.ok(!runSegments(setup, { landsLocally: false }).some((s) => s.id === "land"));
 });
 
-test("review runs beside the track, never a segment; notice never shows", () => {
+test("review is never a segment nor in the row: the detail and the hover card say it; notice never shows", () => {
   const r = run([step("check:unit", "check", "running"), step("review", "review", "running"), step("notice", "notice", "passed")], { checks: [{ id: "unit", label: "unit", source: "required" }] });
   const b = bar([proj({ queue: queue({ state: "running", current: r }) })])!;
   assert.deepEqual(b.top.segments.filter((s) => s.id.startsWith("check:")).map((s) => s.id), ["check:unit"]);
   assert.ok(!b.top.segments.some((s) => s.id === "review" || s.id === "notice"));
-  assert.equal(b.top.review?.label, "Review running");
+  assert.ok(!("review" in b.top));
+  assert.ok(b.top.lines.some((l) => l.text === "Review running"));
+  assert.ok(b.top.peek.some((l) => l.text === "Review running"));
 });
 
 test("a check added mid-run adds a segment and grows the total", () => {
@@ -343,7 +345,7 @@ test("priority across projects: release needs-you > merge needs-you > release > 
   assert.equal(two.top.project, "p_land");
   assert.equal(two.more, 1);
   assert.equal(two.top.count, undefined, "the other projects are no count on the row");
-  assert.ok(two.name.endsWith("1 more project busy"), two.name);
+  assert.ok(!two.name.includes("project"), "the other projects are in the hover card and the detail only");
   assert.deepEqual(two.all.map((b) => b.project), ["p_land", "p_done"]);
   assert.equal(bar([landed, landing, paused])!.more, 2);
 });

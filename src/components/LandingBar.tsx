@@ -31,16 +31,15 @@ function stable<T>(list: () => readonly T[]): () => T[] {
   });
 }
 
-/** The step track: one rounded segment per step; the review's marker beside it, never a segment. */
+/** The step track: one rounded segment per step. The review is never on it (the detail and the hover card say it). */
 function Track(props: { bar: LandingProjectBar }) {
   const segments = stable(() => props.bar.segments);
   return (
-    <Show when={props.bar.segments.length > 0 || props.bar.review}>
+    <Show when={props.bar.segments.length > 0}>
       <span class="landing-track-row" aria-hidden="true">
         <span class="landing-track">
           <For each={segments()}>{(s: LandingSegment) => <span class={`landing-seg landing-seg-${s.state}`} style={s.progress !== undefined ? { "--landing-progress": `${Math.round(s.progress * 100)}%` } : undefined} title={s.label} />}</For>
         </span>
-        <Show when={props.bar.review}>{(r) => <span class={`landing-review landing-review-${r().state}`}>{r().label}</span>}</Show>
       </span>
     </Show>
   );

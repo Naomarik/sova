@@ -70,8 +70,6 @@ export interface LandingProjectBar {
   /** The one count at the row's end: branches in line, or waiting for the release. */
   count?: LandingCount;
   segments: LandingSegment[];
-  /** The review step's own marker beside the track (never a segment). */
-  review?: { label: string; state: SegmentState };
   lines: LandingLine[];
   /** The hover card's few lines under the title and sub line: the step and its elapsed time, the next in line, the
       note (the card cuts it at two lines). */
@@ -240,8 +238,8 @@ export function runNow(run: Pick<MergeRun, "steps" | "checks" | "startedAt">, et
   return `Starting${tail}`;
 }
 
-/** The review's marker beside the track: running, or its verdict. */
-function reviewMarker(run: Pick<MergeRun, "steps">, reviewing: boolean): LandingProjectBar["review"] {
+/** The review's state, for the detail and the hover card (never the row): running, or its verdict. */
+function reviewMarker(run: Pick<MergeRun, "steps">, reviewing: boolean): { label: string; state: SegmentState } | undefined {
   const r = [...run.steps].reverse().find((s) => s.kind === "review");
   if (reviewing || r?.result === "running") return { label: "Review running", state: "running" };
   if (!r) return undefined;
@@ -319,9 +317,9 @@ function landingBar(p: LandingProjectInput, q: LandingQueueCut, run: MergeRun, n
     sub: runNow(run, entry?.eta, now),
     count: waitingCount(q),
     segments: runSegments(run, { landsLocally: (entry?.approval.how ?? "local") === "local" && !entry?.approval.via, push: q.heads.hasOrigin !== false }),
-    review: reviewMarker(run, q.reviewing?.run === run.id),
     lines,
-    peek: [...(currentStepLine(run, now) ? [{ text: currentStepLine(run, now)!, mono: true as const }] : []), ...nextLines(q).slice(0, 1)],
+    // The review is never in the row: the detail says it (reviewLine), and the hover card.
+    peek: [...(currentStepLine(run, now) ? [{ text: currentStepLine(run, now)!, mono: true as const }] : []), ...(reviewLine(q, run) ? [{ text: reviewLine(q, run)!.text }] : []), ...nextLines(q).slice(0, 1)],
     actions,
     oneLine: `${p.name} · Landing ${run.branch}`,
   };
@@ -547,9 +545,9 @@ function openReleaseBar(p: LandingProjectInput, rv: LandingReleaseCut, r: Releas
     name: p.name,
     count: frozenCount(q),
     segments: releaseSegments(r, run),
-    ...(run ? { review: reviewMarker(run, q?.reviewing?.run === run.id) } : {}),
-    lines: releaseLines(rv, r, now),
-    peek: releasePeek(r, q, now),
+    // The gating checks' review: in the detail and the hover card, never in the row.
+    lines: [...releaseLines(rv, r, now), ...(run && q && reviewLine(q, run) ? [reviewLine(q, run)!] : [])],
+    peek: [...releasePeek(r, q, now), ...(run && q && reviewLine(q, run) ? [{ text: reviewLine(q, run)!.text }] : [])],
   };
   if (needs) {
     const step = needs.step;
@@ -685,7 +683,8 @@ export function reduceLanding(projects: readonly LandingProjectInput[], now: num
       top,
       all,
       more,
-      name: [top.title, top.sub, top.count?.label, more > 0 ? `${plural(more, "more project")} busy` : null].filter(Boolean).join(". "),
+      // The other busy projects are in the hover card and the detail only.
+      name: [top.title, top.sub, top.count?.label].filter(Boolean).join(". "),
     },
     ...out,
   };

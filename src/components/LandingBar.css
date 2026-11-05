@@ -84,7 +84,7 @@
 .landing-row .landing-count { margin-left: auto; }
 .landing-strip { border-top: var(--stroke-thin) solid var(--color-border); background: var(--color-surface); }
 
-/* ---- the step track: 4px segments, 3px apart, rounded; the review's marker beside it ------------- */
+/* ---- the step track: 4px segments, 3px apart, rounded --------------------------------------------- */
 .landing-track-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; margin-top: 3px; }
 
 .landing-track { flex: 1; min-width: 0; display: flex; gap: 3px; }
@@ -112,17 +112,6 @@
   border-radius: inherit;
   background: var(--color-accent);
 }
-.landing-review {
-  flex: none;
-  font-size: var(--fs-micro);
-  line-height: var(--lh-micro);
-  color: var(--color-ink-muted);
-  white-space: nowrap;
-}
-.landing-review::before { content: ""; display: inline-block; width: 5px; height: 5px; margin-right: 4px; border-radius: var(--r-full); background: currentColor; vertical-align: 1px; }
-.landing-review-running { color: var(--color-accent); }
-.landing-review-passed  { color: var(--status-success); }
-.landing-review-failed  { color: var(--status-error); }
 
 /* ---- the detail: floating above the row (desktop), in the sheet (phone), in the popover (spine) ---- */
 .landing-detail {

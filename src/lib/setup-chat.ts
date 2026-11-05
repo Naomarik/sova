@@ -1,9 +1,9 @@
 // A project's Setup chat as the pages draw it: the one standing chat per project that investigates it, asks what it
 // can't find, draws the merge, release and deploy plan, trial-runs the proposed checks on its own branch, and proposes
 // the whole pipeline there for you to land. The words each surface says, and whether Land is offered. Pure.
-import type { SetupChatView, SetupProposal, SetupStatus, SetupTrial, SetupTrialCheck } from "../../shared/setup-chat";
+import type { SetupChatView, SetupProposal, SetupProposalFile, SetupStatus, SetupTrial, SetupTrialCheck } from "../../shared/setup-chat";
 
-export type { SetupChatView, SetupProposal, SetupStatus, SetupTrial, SetupTrialCheck };
+export type { SetupChatView, SetupProposal, SetupProposalFile, SetupStatus, SetupTrial, SetupTrialCheck };
 
 /** The surfaces that offer the Setup chat. */
 export type SetupSurface = "merge-queue" | "releases" | "deploy" | "settings";
@@ -102,32 +102,11 @@ export function landState(p: SetupProposal): { action: "land" | "merge" | "trial
 }
 
 /**
- * A path the setup itself owns, when the host doesn't say: the project's definition, a playbook under
- * .sova/playbooks/, or the release playbook folder the proposal names (`playbookDir`). The fallback only: the host's
- * own mark (the land gate's rule) wins.
- */
-export const isSetupFile = (path: string, playbookDir?: string): boolean => {
-  const dir = playbookDir?.replace(/^\.\//, "").replace(/\/+$/, "");
-  return path === ".sova/project.json" || path.startsWith(".sova/playbooks/") || (!!dir && path.startsWith(`${dir}/`));
-};
-
-/** One changed file as the host may send it: a bare path, or the path with its status and the gate's own mark. */
-export type ChangedFile = string | { path: string; status?: string; setup?: boolean };
-
-/**
  * What Land or Merge Branch brings in, as the card lists it: every file the branch changes against its target, the
- * setup's own first, then the rest, which the card flags (they land too). null while the host hasn't said.
+ * setup's own first (the host marks them by the land gate's rule), then the rest, which the card flags: they land too.
  */
-export function changedFiles(files: readonly ChangedFile[] | undefined, playbookDir?: string): { setup: string[]; other: string[]; count: number } | null {
-  if (!files) return null;
-  const setup: string[] = [];
-  const other: string[] = [];
-  for (const f of files) {
-    const path = typeof f === "string" ? f : f.path;
-    const mine = typeof f === "object" && typeof f.setup === "boolean" ? f.setup : isSetupFile(path, playbookDir);
-    (mine ? setup : other).push(path);
-  }
-  return { setup, other, count: files.length };
+export function changedFiles(files: readonly SetupProposalFile[]): { setup: string[]; other: string[]; count: number } {
+  return { setup: files.filter((f) => f.setup).map((f) => f.path), other: files.filter((f) => !f.setup).map((f) => f.path), count: files.length };
 }
 
 /** The heading's count: "Changes 3 files". */

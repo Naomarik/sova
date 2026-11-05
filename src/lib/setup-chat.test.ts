@@ -22,6 +22,7 @@ const proposal = (o: Partial<SetupProposal> = {}): SetupProposal => ({
   hash: "h1",
   services: [],
   merge: { checks: [{ id: "unit", label: "Unit tests", run: ["pnpm", "test"], timeoutSec: 600, optional: false, requires: [] }] },
+  files: [],
   trial: trial("passed"),
   land: { can: true },
   ...o,
@@ -98,19 +99,17 @@ test("no automated tests: a trial of the merge copy alone passes with no checks,
   assert.deepEqual(landState(p), { action: "land", can: true });
 });
 
-test("what it brings in: every changed file, the setup's own first, the rest flagged; unknown is not none", () => {
-  assert.equal(changedFiles(undefined), null);
+test("what it brings in: every changed file, the host's setup ones first, the rest flagged", () => {
   assert.deepEqual(changedFiles([]), { setup: [], other: [], count: 0 });
-  const f = changedFiles([".sova/spec/claims/app/x.md", ".sova/project.json", { path: ".sova/playbooks/release/PLAYBOOK.md", status: "A" }, "scripts/ci.sh"])!;
-  assert.deepEqual(f.setup, [".sova/project.json", ".sova/playbooks/release/PLAYBOOK.md"]);
-  assert.deepEqual(f.other, [".sova/spec/claims/app/x.md", "scripts/ci.sh"]);
+  const f = changedFiles([
+    { path: ".sova/project.json", status: "M", setup: true },
+    { path: ".sova/spec/claims/app/x.md", status: "A", setup: false },
+    { path: "ops/release/run.sh", status: "A", setup: true },
+    { path: "README.md", status: "M", setup: false },
+  ]);
+  assert.deepEqual(f.setup, [".sova/project.json", "ops/release/run.sh"]);
+  assert.deepEqual(f.other, [".sova/spec/claims/app/x.md", "README.md"]);
   assert.equal(f.count, 4);
   assert.equal(changesHead(1), "Changes 1 file");
   assert.equal(changesHead(4), "Changes 4 files");
-});
-
-test("the host's setup mark wins; the fallback knows the proposal's own release playbook folder", () => {
-  const f = changedFiles([{ path: "release/steps.md", setup: true }, { path: ".sova/playbooks/x.md", setup: false }, "ops/release/run.sh", "README.md"], "./ops/release/")!;
-  assert.deepEqual(f.setup, ["release/steps.md", "ops/release/run.sh"]);
-  assert.deepEqual(f.other, [".sova/playbooks/x.md", "README.md"]);
 });

@@ -10,6 +10,8 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
+import { readdirSync } from "node:fs";
+import type { Rule } from "../shared/form-rules";
 import { scratchRoot } from "./test-scratch";
 
 const agentDir = scratchRoot("sova-settings-parity-");
@@ -35,7 +37,6 @@ const decision = await import("../src/lib/decision-draft");
 const push = await import("../src/lib/push-draft");
 const links = await import("../src/lib/public-links");
 const meshDraft = await import("../src/lib/mesh-draft");
-const store = await import("./overseer-store");
 const { MB } = await import("../shared/baton");
 
 type Json = any;
@@ -55,6 +56,9 @@ async function putStatus(url: string, body: unknown): Promise<{ ok: boolean; err
 
 interface Limit {
   name: string;
+  /** The shared rule both sides read (shared/*-limits.ts): its edges are the values below, and the
+      server refuses in the rule's own words. */
+  rule?: Rule;
   /** Values at the limit (taken) and past it (refused). `v` is what the user types or the list they build. */
   takes: unknown[];
   refuses: unknown[];
@@ -65,6 +69,16 @@ interface Limit {
 }
 
 const long = (n: number) => "x".repeat(n);
+const limits = await import("../shared/overseer-limits");
+/** A rule's edges: the values at it (taken) and just past it (refused). */
+function ruled(rule: Rule): Pick<Limit, "name" | "rule" | "takes" | "refuses"> {
+  if (rule.kind === "whole") return { name: `${rule.label} (${rule.min} to ${rule.max}, whole)`, rule, takes: [rule.min, rule.max], refuses: [rule.min - 1, rule.max + 1, rule.min + 0.5] };
+  if (rule.kind === "text") {
+    const min = rule.min ?? 0;
+    return { name: `${rule.label} (${min} to ${rule.max} characters)`, rule, takes: [long(Math.max(min, 1)), long(rule.max), ...(min ? [] : [""])], refuses: [long(rule.max + 1), ...(min ? [""] : [])] };
+  }
+  throw new Error(`no edges for a ${rule.kind} rule (${rule.label}): give takes and refuses`);
+}
 const fresh = { mesh: await get("/api/mesh/settings"), overseer: await get("/api/settings/overseer"), baton: await get("/api/baton/settings"), titles: await get("/api/settings/session-titles"), subagents: await get("/api/settings/subagents"), decisions: await get("/api/settings/decisions"), push: await get("/api/push"), links: await get("/api/public-links") };
 const ovSettings = (): Json => JSON.parse(JSON.stringify(fresh.overseer.settings));
 /** The Overseer's form check over settings `s` (its boxes hold text, as the form keeps them). */
@@ -84,38 +98,19 @@ const withActions = (n: number) => {
 const LIMITS: Limit[] = [
   ...overseer.CAP_KEYS.map(
     (k): Limit => ({
-      name: `Overseer limit ${k} (0 to 1000, whole)`,
-      takes: [0, 1, 1000],
-      refuses: [1001, -1, 1.5],
-      client: (v) => {
-        const s = ovSettings();
-        s.caps[k] = v;
-        // The box holds what was typed: the text of the number.
-        const form = overseer.toOverseerForm({ settings: s, notes: "" });
-        return overseer.overseerDraftProblem(form);
-      },
-      server: (v) => {
-        const s = ovSettings();
-        s.caps[k] = v;
-        return ovServer(s);
-      },
+      ...ruled(limits.CAP_RULES[k]),
+      // The box holds what was typed: the text of the number.
+      client: (v) => ovClient({ ...ovSettings(), caps: { ...ovSettings().caps, [k]: v } }),
+      server: (v) => ovServer({ ...ovSettings(), caps: { ...ovSettings().caps, [k]: v } }),
     }),
   ),
-  { name: "Overseer quick action label (1 to 40 characters)", takes: [long(1), long(40)], refuses: ["", long(41)], client: (v) => ovClient(withAction({ label: v })), server: (v) => ovServer(withAction({ label: v })) },
-  { name: "Overseer quick action description (at most 120)", takes: ["", long(120)], refuses: [long(121)], client: (v) => ovClient(withAction({ description: v })), server: (v) => ovServer(withAction({ description: v })) },
-  { name: "Overseer quick action prompt (1 to 2000)", takes: [long(1), long(2000)], refuses: ["", long(2001)], client: (v) => ovClient(withAction({ prompt: v })), server: (v) => ovServer(withAction({ prompt: v })) },
+  ...(["label", "description", "prompt"] as const).map(
+    (k): Limit => ({ ...ruled(limits.QA_RULES[k]), client: (v) => ovClient(withAction({ [k]: v })), server: (v) => ovServer(withAction({ [k]: v })) }),
+  ),
   { name: "Overseer quick actions (at most 12)", takes: [1, 12], refuses: [13], client: (v) => ovClient(withActions(v as number)), server: (v) => ovServer(withActions(v as number)) },
+  { ...ruled(limits.EXTRA_PROMPT_RULE), client: (v) => ovClient({ ...ovSettings(), extraSystemPrompt: v }), server: (v) => ovServer({ ...ovSettings(), extraSystemPrompt: v }) },
   {
-    name: "Overseer extra instructions (at most 8000)",
-    takes: ["", long(8000)],
-    refuses: [long(8001)],
-    client: (v) => ovClient({ ...ovSettings(), extraSystemPrompt: v }),
-    server: (v) => ovServer({ ...ovSettings(), extraSystemPrompt: v }),
-  },
-  {
-    name: "Overseer standing notes (at most 8000)",
-    takes: ["", long(8000)],
-    refuses: [long(8001)],
+    ...ruled(limits.NOTES_RULE),
     client: (v) => ovClient(ovSettings(), v as string),
     server: async (v) => putStatus("/api/overseer/notes", { text: v, base: (await get("/api/overseer/notes")).text }),
   },
@@ -218,24 +213,21 @@ describe("each settings limit: the form and the server agree on both sides of it
         assert.ok(s.ok, `${limit.name}: the server refuses ${shown(v)}, a value at the limit: ${s.error}`);
       }
       for (const v of limit.refuses) {
-        assert.notEqual(await limit.client(v), null, `${limit.name}: the form takes ${shown(v)}, past the limit (it would fail only at Save)`);
+        const said = await limit.client(v);
+        assert.notEqual(said, null, `${limit.name}: the form takes ${shown(v)}, past the limit (it would fail only at Save)`);
         const s = await limit.server(v);
         assert.ok(!s.ok, `${limit.name}: the server takes ${shown(v)}, past the limit`);
+        if (limit.rule) assert.equal(s.error, said, `${limit.name}: the server refuses ${shown(v)} in other words than the form`);
       }
     });
   }
-  test("the form's Overseer limits, defaults and labels are the server's", () => {
-    assert.equal(overseer.CAP_MAX, store.CAP_MAX);
-    assert.equal(overseer.QUICK_ACTIONS_MAX, store.QUICK_ACTIONS_MAX);
-    assert.equal(overseer.QA_LABEL_MAX, store.QA_LABEL_MAX);
-    assert.equal(overseer.QA_DESC_MAX, store.QA_DESC_MAX);
-    assert.equal(overseer.QA_PROMPT_MAX, store.QA_PROMPT_MAX);
-    assert.equal(overseer.NOTES_MAX, store.NOTES_MAX);
-    assert.equal(overseer.EXTRA_PROMPT_MAX, store.EXTRA_PROMPT_MAX);
-    assert.deepEqual(overseer.CAP_DEFAULTS, store.DEFAULT_CAPS);
-    assert.deepEqual(fresh.overseer.defaults.caps, store.DEFAULT_CAPS, "the route's defaults are the store's");
-    for (const k of overseer.CAP_KEYS) assert.equal(overseer.CAP_LABEL[k].label, store.CAP_LABELS[k], `${k}'s label`);
-    assert.deepEqual([...overseer.CAP_KEYS].sort(), Object.keys(store.DEFAULT_CAPS).sort(), "the form has a box for every server limit");
+  test("every rule in a shared limits table (shared/*-limits.ts) has a row above", async () => {
+    const tested = new Set(LIMITS.map((l) => l.rule));
+    const rulesIn = (v: unknown): Rule[] =>
+      v && typeof v === "object" ? ("kind" in v && "label" in v ? [v as Rule] : Object.values(v).flatMap(rulesIn)) : [];
+    for (const file of readdirSync(join(import.meta.dirname, "../shared")).filter((f) => f.endsWith("-limits.ts"))) {
+      for (const rule of rulesIn(await import(`../shared/${file}`))) assert.ok(tested.has(rule), `${file}: "${rule.label}" has no row in LIMITS`);
+    }
   });
   test("MCP Servers: the Add form's secret-name rule is the route's (D12)", async () => {
     const { secretNameIssue } = await import("../src/lib/mcp");

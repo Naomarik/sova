@@ -143,7 +143,9 @@ import {
   overseerAutonomy,
   revokePermit,
 } from "./overseer";
-import { readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
+import { readNotes, writeNotes } from "./overseer-store";
+import { problemOf } from "../shared/form-rules";
+import { NOTES_RULE } from "../shared/overseer-limits";
 import { pathOfId, promptSession } from "./session-prompt";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
 import { checkRename, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea, type IdeaUpdate } from "./overseer-ideas";
@@ -1666,7 +1668,8 @@ export function buildApp(deps: AppDeps) {
       return c.json({ error: "Expected JSON body { text }" }, 400);
     }
     if (typeof body?.text !== "string") return c.json({ error: "text must be a string" }, 400);
-    if (body.text.length > NOTES_MAX) return c.json({ error: `Standing notes can be at most ${NOTES_MAX.toLocaleString("en-US")} characters` }, 400);
+    const tooLong = problemOf(NOTES_RULE, body.text);
+    if (tooLong) return c.json({ error: tooLong }, 400);
     if (body.base !== undefined && typeof body.base !== "string") return c.json({ error: "base must be a string" }, 400);
     const current = readNotes();
     if (typeof body.base === "string" && body.base !== current)

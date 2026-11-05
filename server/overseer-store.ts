@@ -14,6 +14,8 @@ import { canonicalClaudeId, latestClaude, resolveClaude } from "../pi-config/ext
 import { type Redactor, serverRedactor } from "./overseer-redact";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
+import { check, problemOf } from "../shared/form-rules";
+import { CAP_KEYS, CAP_RULES, DEFAULT_CAPS, EXTRA_PROMPT_RULE, NOTES_MAX, QA_RULES, qaLabel, QUICK_ACTIONS_MAX } from "../shared/overseer-limits";
 
 /**
  * The Overseer's Sova-owned files under the state root. Same store rules as web-sessions.ts:
@@ -32,34 +34,11 @@ export const overseerTurnFile = () => join(stateRoot(), "overseer-turn.json");
 
 /** How many previous Overseer files are kept (hidden, openable read-only). Older ones are deleted. */
 export const HISTORY_MAX = 20;
-/** Standing notes: what the prompt carries is capped, and so is what a save accepts. */
-export const NOTES_MAX = 8000;
-export const EXTRA_PROMPT_MAX = 8000;
-export const QUICK_ACTIONS_MAX = 12;
-export const QA_LABEL_MAX = 40;
-export const QA_DESC_MAX = 120;
-export const QA_PROMPT_MAX = 2000;
-/** A limit's most: the same as Settings → Overseer's boxes (src/lib/overseer-draft.ts CAP_MAX). */
-export const CAP_MAX = 1000;
-const count = (n: number) => n.toLocaleString("en-US");
+// The limits a save checks are the form's (shared/overseer-limits.ts), refused in its words.
+export { CAP_MAX, DEFAULT_CAPS, EXTRA_PROMPT_MAX, NOTES_MAX, QUICK_ACTIONS_MAX } from "../shared/overseer-limits";
 
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const PROACTIVITY: readonly OverseerProactivity[] = ["off", "badge", "brief"];
-
-/** Each limit as Settings names it (src/lib/overseer-draft.ts CAP_LABEL), so a refusal reads like the form. */
-export const CAP_LABELS: Record<keyof OverseerCaps, string> = {
-  createPerTurn: "Sessions created",
-  promptsPerTurn: "Prompts to other sessions",
-  archivesPerTurn: "Sessions archived",
-  concurrentSessions: "Running at once",
-  explorePerTurn: "Ideas explored",
-  linksPerTurn: "Links made",
-  orgWritesPerTurn: "Organization changes",
-  gatherPerTurn: "Gathering sessions started",
-  extRunsPerTurn: "Extension commands run",
-};
-
-export const DEFAULT_CAPS: OverseerCaps = { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 10, explorePerTurn: 2, linksPerTurn: 3, orgWritesPerTurn: 20, gatherPerTurn: 3, extRunsPerTurn: 5 };
 
 /** Claude Opus 5 by any spelling (its catalog id, a 1M variant, a pi ref), never Opus 5.5 (`claude-opus-5-5`). */
 const isOpus5 = (model: string): boolean => resolveClaude(model)?.id === "claude-opus-5";
@@ -130,20 +109,18 @@ function readJson(file: string): unknown {
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const isCap = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= CAP_MAX;
-
 // ---- settings --------------------------------------------------------------------------------
 
 /** A quick action as stored, or an error sentence. `strict` refuses what `tolerant` would drop. */
 function parseQuickAction(raw: unknown, i: number): OverseerQuickAction | string {
   const n = `Quick action ${i + 1}`;
   if (!isObj(raw)) return `${n} must be an object`;
-  const label = typeof raw.label === "string" ? raw.label.trim() : "";
-  const prompt = typeof raw.prompt === "string" ? raw.prompt.trim() : "";
-  const description = typeof raw.description === "string" ? raw.description.trim() : "";
-  if (!label || label.length > QA_LABEL_MAX) return `${n}'s label must be 1–${count(QA_LABEL_MAX)} characters`;
-  if (!prompt || prompt.length > QA_PROMPT_MAX) return `${n}'s prompt must be 1–${count(QA_PROMPT_MAX)} characters`;
-  if (description.length > QA_DESC_MAX) return `${n}'s description can be at most ${count(QA_DESC_MAX)} characters`;
+  const text = (k: keyof typeof QA_RULES) => (typeof raw[k] === "string" ? raw[k] : "");
+  for (const k of ["label", "description", "prompt"] as const) {
+    const why = problemOf(QA_RULES[k], text(k), qaLabel(i + 1, k));
+    if (why) return why;
+  }
+  const [label, description, prompt] = [text("label").trim(), text("description").trim(), text("prompt").trim()];
   const id = typeof raw.id === "string" && /^[\w-]{1,40}$/.test(raw.id) ? raw.id : `qa-${i}`;
   return { id, label, description, prompt };
 }
@@ -173,9 +150,10 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
     }
   }
   if (raw.extraSystemPrompt !== undefined) {
-    if (typeof raw.extraSystemPrompt === "string" && raw.extraSystemPrompt.length <= EXTRA_PROMPT_MAX) out.extraSystemPrompt = raw.extraSystemPrompt;
+    const why = problemOf(EXTRA_PROMPT_RULE, raw.extraSystemPrompt);
+    if (!why) out.extraSystemPrompt = raw.extraSystemPrompt as string;
     else {
-      const e = fail(`Extra instructions can be at most ${count(EXTRA_PROMPT_MAX)} characters`);
+      const e = fail(why);
       if (e) return e;
     }
   }
@@ -211,11 +189,12 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
       const e = fail("caps must be an object");
       if (e) return e;
     } else {
-      for (const key of Object.keys(DEFAULT_CAPS) as (keyof OverseerCaps)[]) {
+      for (const key of CAP_KEYS) {
         const v = raw.caps[key];
         if (v === undefined) continue;
-        if (isCap(v)) out.caps[key] = v;
-        else if (strict) return { error: `${CAP_LABELS[key]} must be a whole number from 0 to ${CAP_MAX}` };
+        const r = check(CAP_RULES[key], typeof v === "number" ? v : null);
+        if (r.ok) out.caps[key] = r.value!;
+        else if (strict) return { error: r.message };
       }
     }
   }

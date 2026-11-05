@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { OverseerSaveResult, OverseerSettings } from "../../shared/protocol";
+import { QA_RULES } from "../../shared/overseer-limits";
 import {
   cloneOverseer,
   mergeNotes,
@@ -30,9 +31,6 @@ import {
   CAP_MAX,
   CAP_DEFAULTS,
   QUICK_ACTIONS_MAX,
-  QA_LABEL_MAX,
-  QA_DESC_MAX,
-  QA_PROMPT_MAX,
   NOTES_MAX,
   EXTRA_PROMPT_MAX,
   atDefaults,
@@ -40,7 +38,6 @@ import {
   capOf,
   completeCaps,
   formToDraft,
-  lengthCount,
   overseerProblem,
   saveOverseer,
   toOverseerForm,
@@ -86,7 +83,7 @@ test("a draft that can't be saved says why", () => {
   assert.match(overseerDraftProblem({ ...ok, settings: { ...settings(), caps: { ...settings().caps, promptsPerTurn: Number.NaN } } })!, /whole number/);
   const blank = settings();
   blank.quickActions.push(newQuickAction(blank.quickActions));
-  assert.equal(overseerDraftProblem({ ...ok, settings: blank }), "Quick action 2 needs a label and a prompt.");
+  assert.equal(overseerDraftProblem({ ...ok, settings: blank }), "Quick action 2's label can't be empty.");
 });
 
 test("new quick actions get unused ids; moves stay in range", () => {
@@ -274,7 +271,7 @@ test("the reason Save waits says where it is, so the folded group holding that f
   assert.deepEqual(at({ ...base, caps: { ...base.caps, concurrentSessions: 1.5 } })?.at, { group: "running" }, "Running at once is never folded");
   const qa = at({ ...base, quickActions: [...base.quickActions, { id: "custom-2", label: "", description: "", prompt: "x" }] });
   assert.deepEqual(qa?.at, { group: "quick-action", index: 1 });
-  assert.equal(qa?.message, "Quick action 2 needs a label and a prompt.");
+  assert.equal(qa?.message, "Quick action 2's label can't be empty.");
   const ex = at({ ...base, explorer: { backend: "pi", model: "", effort: "" } });
   assert.deepEqual(ex?.at, { group: "advanced" });
   assert.equal(ex?.message, "The idea explorer needs a model and an effort.");
@@ -367,14 +364,14 @@ test("a limit missing from what the server sent is filled from the defaults, nev
 test("the form checks every server limit on quick actions, notes and extra instructions before anything is sent", () => {
   const ok = settings();
   const qa = (patch: Partial<OverseerSettings["quickActions"][number]>) => ({ settings: { ...ok, quickActions: [ok.quickActions[0]!, { ...ok.quickActions[0]!, id: "b", ...patch }] }, notes: "" });
-  assert.equal(overseerDraftProblem(qa({ label: "x".repeat(QA_LABEL_MAX) })), null);
-  assert.equal(overseerDraftProblem(qa({ label: "x".repeat(QA_LABEL_MAX + 1) })), "Quick action 2's label can be at most 40 characters.");
-  assert.equal(overseerDraftProblem(qa({ label: ` ${"x".repeat(QA_LABEL_MAX)} ` })), null, "the server trims before it counts");
-  assert.equal(overseerDraftProblem(qa({ description: "x".repeat(QA_DESC_MAX) })), null);
-  assert.equal(overseerDraftProblem(qa({ description: "x".repeat(QA_DESC_MAX + 1) })), "Quick action 2's description can be at most 120 characters.");
-  assert.equal(overseerDraftProblem(qa({ prompt: "x".repeat(QA_PROMPT_MAX) })), null);
-  assert.equal(overseerDraftProblem(qa({ prompt: "x".repeat(QA_PROMPT_MAX + 1) })), "Quick action 2's prompt can be at most 2,000 characters.");
-  assert.deepEqual(overseerDraftIssue(qa({ prompt: "x".repeat(QA_PROMPT_MAX + 1) }))?.at, { group: "quick-action", index: 1 });
+  assert.equal(overseerDraftProblem(qa({ label: "x".repeat(QA_RULES.label.max) })), null);
+  assert.equal(overseerDraftProblem(qa({ label: "x".repeat(QA_RULES.label.max + 1) })), "Quick action 2's label can be at most 40 characters.");
+  assert.equal(overseerDraftProblem(qa({ label: ` ${"x".repeat(QA_RULES.label.max)} ` })), null, "the server trims before it counts");
+  assert.equal(overseerDraftProblem(qa({ description: "x".repeat(QA_RULES.description.max) })), null);
+  assert.equal(overseerDraftProblem(qa({ description: "x".repeat(QA_RULES.description.max + 1) })), "Quick action 2's description can be at most 120 characters.");
+  assert.equal(overseerDraftProblem(qa({ prompt: "x".repeat(QA_RULES.prompt.max) })), null);
+  assert.equal(overseerDraftProblem(qa({ prompt: "x".repeat(QA_RULES.prompt.max + 1) })), "Quick action 2's prompt can be at most 2,000 characters.");
+  assert.deepEqual(overseerDraftIssue(qa({ prompt: "x".repeat(QA_RULES.prompt.max + 1) }))?.at, { group: "quick-action", index: 1 });
 
   const many = (n: number) => ({ settings: { ...ok, quickActions: Array.from({ length: n }, (_, i) => ({ id: `q${i}`, label: `Q${i}`, description: "", prompt: "p" })) }, notes: "" });
   assert.equal(overseerDraftProblem(many(QUICK_ACTIONS_MAX)), null);
@@ -389,7 +386,6 @@ test("the form checks every server limit on quick actions, notes and extra instr
   assert.equal(overseerDraftProblem({ settings: { ...ok, extraSystemPrompt: "x".repeat(EXTRA_PROMPT_MAX) }, notes: "" }), null);
   assert.equal(overseerDraftProblem({ settings: { ...ok, extraSystemPrompt: "x".repeat(EXTRA_PROMPT_MAX + 1) }, notes: "" }), "Extra instructions can be at most 8,000 characters.");
   assert.deepEqual(overseerDraftIssue({ settings: { ...ok, extraSystemPrompt: "x".repeat(EXTRA_PROMPT_MAX + 1) }, notes: "" })?.at, { group: "advanced" });
-  assert.equal(lengthCount("x".repeat(8001), 8000), "8,001 / 8,000");
 });
 
 test("over-long notes never half-save: the dialog's save is skipped before any settings are written", async () => {

@@ -2,6 +2,8 @@ import type { DelegateOptions, OverseerCaps, OverseerQuickAction, OverseerSaveRe
 import { ApiError, getOverseerNotes, getOverseerSettings, putOverseerNotes, putOverseerSettings } from "./api";
 import type { BackendsInfo } from "./delegate-form";
 import { createDraftStore, failureOf, SaveFailed } from "./settings-draft";
+import { check, type FieldCheck, firstIssue, type WholeRule } from "../../shared/form-rules";
+import { CAP_KEYS, CAP_MAX, CAP_RULES, DEFAULT_CAPS as CAP_DEFAULTS, EXTRA_PROMPT_RULE, NOTES_MAX, NOTES_RULE, QA_RULES, qaLabel, QUICK_ACTIONS_MAX } from "../../shared/overseer-limits";
 
 /**
  * Settings → Overseer's unsaved edits: the settings file and the standing notes, edited together
@@ -28,24 +30,14 @@ export interface OverseerForm {
   notes: string;
 }
 
-// The server's limits (server/overseer-store.ts), checked by the form before anything is sent.
-export const CAP_MAX = 1000;
-export const QUICK_ACTIONS_MAX = 12;
-export const QA_LABEL_MAX = 40;
-export const QA_DESC_MAX = 120;
-export const QA_PROMPT_MAX = 2000;
-export const NOTES_MAX = 8000;
-export const EXTRA_PROMPT_MAX = 8000;
+// The server's limits and labels (shared/overseer-limits.ts), checked by the form before anything is sent.
+export { CAP_KEYS, CAP_LABEL, CAP_MAX, DEFAULT_CAPS as CAP_DEFAULTS, EXTRA_PROMPT_MAX, NOTES_MAX, QUICK_ACTIONS_MAX } from "../../shared/overseer-limits";
 
-/** The limits' shipped defaults (the server's DEFAULT_CAPS), for a limit the server didn't send. */
-export const CAP_DEFAULTS: OverseerCaps = { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 10, explorePerTurn: 2, linksPerTurn: 3, orgWritesPerTurn: 20, gatherPerTurn: 3, extRunsPerTurn: 5 };
-
+const ANY_CAP: WholeRule = { kind: "whole", label: "A limit", min: 0, max: CAP_MAX };
 /** A limit's value: a whole number from 0 to CAP_MAX, typed or stored; null when it isn't one. */
 export function capOf(v: CapEntry | undefined): number | null {
-  if (typeof v === "number") return Number.isInteger(v) && v >= 0 && v <= CAP_MAX ? v : null;
-  if (typeof v !== "string" || !/^\d+$/.test(v.trim())) return null;
-  const n = Number(v.trim());
-  return n <= CAP_MAX ? n : null;
+  const r = check(ANY_CAP, v);
+  return r.ok ? r.value : null;
 }
 
 /** Settings with every limit present: one missing (or not a number) takes `defaults`', else the form's own default. */
@@ -232,10 +224,7 @@ const store = createDraftStore<OverseerForm, OverseerDraft, OverseerSaveResult>(
   toDraft: toOverseerForm,
   same: sameOverseer,
   rebase: rebaseOverseer,
-  problem: (d) => {
-    const p = overseerDraftProblem(d);
-    return p ? `Overseer: ${p}` : null;
-  },
+  fields: (d) => overseerFields(d),
   write: async (cur, base) => {
     let wrote = false;
     try {
@@ -282,37 +271,8 @@ export const overseerWarnings = store.warnings;
 /** The dialog closed: drop the draft, so the next open reads the saved file afresh. */
 export const resetOverseerDraft = store.reset;
 
-export const CAP_KEYS = ["createPerTurn", "promptsPerTurn", "archivesPerTurn", "concurrentSessions", "explorePerTurn", "linksPerTurn", "orgWritesPerTurn", "gatherPerTurn", "extRunsPerTurn"] as const satisfies readonly (keyof OverseerCaps)[];
-
-export const CAP_LABEL: Record<keyof OverseerCaps, { label: string; hint: string }> = {
-  createPerTurn: { label: "Sessions created", hint: "New sessions it may create, per message you send." },
-  promptsPerTurn: { label: "Prompts to other sessions", hint: "Messages it may send to other sessions, per message you send." },
-  archivesPerTurn: { label: "Sessions archived", hint: "Sessions it may archive, per message you send." },
-  concurrentSessions: {
-    label: "Running at once",
-    hint:
-      "How many sessions the Overseer started or messaged may be working at the same time. Starting a session, or messaging one " +
-      "that isn't already counted, needs a free slot; when none is free, the Overseer waits or asks you. Sessions you started " +
-      "count only once the Overseer messages them.",
-  },
-  explorePerTurn: { label: "Ideas explored", hint: "Idea explorers it may launch, per message you send." },
-  linksPerTurn: { label: "Links made", hint: "Sessions it may link across hosts, per message you send." },
-  orgWritesPerTurn: { label: "Organization changes", hint: "Changes it may make to organizations, projects, rosters and project overseers, per message you send." },
-  gatherPerTurn: { label: "Gathering sessions started", hint: "Gathering sessions and offers it may start, per message you send." },
-  extRunsPerTurn: { label: "Extension commands run", hint: "Extension commands it may run, per message you send." },
-};
-
 /** The eight limits counted per message: the folded group under Running at once. */
 export const PER_MESSAGE_CAP_KEYS = CAP_KEYS.filter((k) => k !== "concurrentSessions");
-
-/** A limit the form can take: a whole number from 0 to 1000, typed or stored. */
-export const capValid = (v: CapEntry): boolean => capOf(v) !== null;
-
-/** "1,234": a count as the form shows it. */
-const count = (n: number) => n.toLocaleString("en-US");
-
-/** A long text box's count: "8,001 / 8,000". */
-export const lengthCount = (text: string, max: number): string => `${count(text.length)} / ${count(max)}`;
 
 /** Where the draft's problem is, so the form can open the folded group that holds the field. */
 export type OverseerIssueAt =
@@ -324,48 +284,31 @@ export type OverseerIssueAt =
 
 type AnyDraft = OverseerDraft | OverseerForm;
 
-/** Why the quick action can't be saved, a sentence after "Quick action {n}", or null (the server's checks, trimmed as it trims). */
-function quickActionIssue(a: OverseerQuickAction, n: number): string | null {
-  const label = a.label.trim();
-  const prompt = a.prompt.trim();
-  if (!label || !prompt) return `Quick action ${n} needs a label and a prompt.`;
-  if (label.length > QA_LABEL_MAX) return `Quick action ${n}'s label can be at most ${count(QA_LABEL_MAX)} characters.`;
-  if (a.description.trim().length > QA_DESC_MAX) return `Quick action ${n}'s description can be at most ${count(QA_DESC_MAX)} characters.`;
-  if (prompt.length > QA_PROMPT_MAX) return `Quick action ${n}'s prompt can be at most ${count(QA_PROMPT_MAX)} characters.`;
-  return null;
-}
-
-/** Which of a quick action's fields are over the server's limit (each box goes red). */
-export const quickActionTooLong = (a: OverseerQuickAction) => ({
-  label: a.label.trim().length > QA_LABEL_MAX,
-  description: a.description.trim().length > QA_DESC_MAX,
-  prompt: a.prompt.trim().length > QA_PROMPT_MAX,
-});
-
 /** Add Quick Action stops at the most the server keeps. */
 export const canAddQuickAction = (list: readonly OverseerQuickAction[]): boolean => list.length < QUICK_ACTIONS_MAX;
 
+export const EXPLORER_NEEDS = "The idea explorer needs a model and an effort.";
+
 /**
- * Why the draft can't be saved, one sentence, and where; null when it can. First match wins, in
- * page order. Every limit the server's strict PUT checks is checked here first, so Save never
- * sends what the server refuses, and never writes the settings and then fails on the notes.
+ * The form's fields in page order, each with its rule (or the explorer's own sentence) and where
+ * it is, so the form can open the folded group that holds the first bad one. Every limit the
+ * server's strict PUT checks is here, so Save never sends what the server refuses, and never
+ * writes the settings and then fails on the notes.
  */
-export function overseerDraftIssue(d: AnyDraft): { message: string; at: OverseerIssueAt } | null {
-  for (const k of CAP_KEYS) {
-    if (!capValid((d.settings.caps as FormCaps)[k]))
-      return { message: `${CAP_LABEL[k].label} must be a whole number from 0 to ${CAP_MAX}.`, at: k === "concurrentSessions" ? { group: "running" } : { group: "per-message", key: k } };
-  }
+export function overseerFields(d: AnyDraft): (FieldCheck<OverseerIssueAt> | { message: string | null; at: OverseerIssueAt })[] {
   const actions = d.settings.quickActions;
-  if (actions.length > QUICK_ACTIONS_MAX) return { message: `There can be at most ${QUICK_ACTIONS_MAX} quick actions.`, at: { group: "quick-action", index: QUICK_ACTIONS_MAX } };
-  for (const [i, a] of actions.entries()) {
-    const message = quickActionIssue(a, i + 1);
-    if (message) return { message, at: { group: "quick-action", index: i } };
-  }
-  if (d.notes.length > NOTES_MAX) return { message: `Standing notes can be at most ${count(NOTES_MAX)} characters.`, at: { group: "notes" } };
-  if (!d.settings.explorer.model || !d.settings.explorer.effort) return { message: "The idea explorer needs a model and an effort.", at: { group: "advanced" } };
-  if (d.settings.extraSystemPrompt.length > EXTRA_PROMPT_MAX) return { message: `Extra instructions can be at most ${count(EXTRA_PROMPT_MAX)} characters.`, at: { group: "advanced" } };
-  return null;
+  return [
+    ...CAP_KEYS.map((k) => ({ rule: CAP_RULES[k], value: (d.settings.caps as FormCaps)[k], at: k === "concurrentSessions" ? { group: "running" as const } : { group: "per-message" as const, key: k } })),
+    { message: actions.length > QUICK_ACTIONS_MAX ? `There can be at most ${QUICK_ACTIONS_MAX} quick actions.` : null, at: { group: "quick-action", index: QUICK_ACTIONS_MAX } },
+    ...actions.flatMap((a, i) => (["label", "description", "prompt"] as const).map((k) => ({ rule: QA_RULES[k], value: a[k], label: qaLabel(i + 1, k), at: { group: "quick-action" as const, index: i } }))),
+    { rule: NOTES_RULE, value: d.notes, at: { group: "notes" } },
+    { message: !d.settings.explorer.model || !d.settings.explorer.effort ? EXPLORER_NEEDS : null, at: { group: "advanced" } },
+    { rule: EXTRA_PROMPT_RULE, value: d.settings.extraSystemPrompt, at: { group: "advanced" } },
+  ];
 }
+
+/** The first problem and where it is, or null. */
+export const overseerDraftIssue = (d: AnyDraft) => firstIssue(overseerFields(d)) as { message: string; at: OverseerIssueAt } | null;
 
 /** Why the draft can't be saved, one sentence, or null. */
 export const overseerDraftProblem = (d: AnyDraft): string | null => overseerDraftIssue(d)?.message ?? null;

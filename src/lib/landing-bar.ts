@@ -205,37 +205,20 @@ function foldedSteps(run: Pick<MergeRun, "steps" | "checks">): LandingSegment[] 
   return segs;
 }
 
-/** The run's checks, in order: every check step and every check in the run's list (a check added mid-run counts). */
-function runChecks(run: Pick<MergeRun, "steps" | "checks">): { id: string; label: string; step?: RunStep }[] {
-  const out: { id: string; label: string; step?: RunStep }[] = [];
-  const seen = new Set<string>();
-  for (const s of run.steps)
-    if (s.kind === "check") {
-      const id = s.id.replace(/^check:/, "");
-      seen.add(id);
-      out.push({ id, label: s.label, step: s });
-    }
-  for (const c of run.checks) if (!seen.has(c.id)) out.push({ id: c.id, label: c.label });
-  return out;
-}
-
-/** What the run is doing now, in the sub line's words: "check 4 of 11 · test:int · ~3 min left", or the step. */
-export function runNow(run: Pick<MergeRun, "steps" | "checks" | "startedAt">, eta: MergeEntry["eta"] | undefined, now: number): string {
-  const checks = runChecks(run);
-  const running = run.steps.filter((s) => s.result === "running" && s.kind !== "review" && s.kind !== "notice");
-  // A rerun running counts as its check.
-  const cur = running[running.length - 1];
+/** What the run is doing now, in the sub line's words: "step 7 of 11 · test:int · ~3 min left". It counts every
+    segment the track draws (runSegments, same options): N is the running one's place, or between steps the next
+    waiting one's; a segment joining mid-run grows M. */
+export function runNow(run: Pick<MergeRun, "steps" | "checks" | "startedAt">, eta: MergeEntry["eta"] | undefined, now: number, o: { landsLocally?: boolean; push?: boolean } = {}): string {
+  const segs = runSegments(run, o);
   const left = eta && eta.takesMs > 0 ? eta.takesMs - (now - at(run.startedAt)) : NaN;
   const tail = Number.isFinite(left) && left > 0 ? ` · ~${mins(left)} left` : "";
-  if (cur) {
-    const t = cur.kind === "check" ? cur.id.replace(/^check:/, "") : cur.kind === "rerun-tip" || cur.kind === "rerun-master" ? rerunTarget(cur)?.replace(/^check:/, "") : null;
-    const i = t ? checks.findIndex((c) => c.id === t) : -1;
-    if (i >= 0) return `check ${i + 1} of ${checks.length} · ${checks[i]!.label}${tail}`;
-    return `${cur.label}${tail}`;
+  let i = segs.map((s) => s.state).lastIndexOf("running");
+  if (i < 0) {
+    const last = segs.reduce((n, s, k) => (s.state !== "waiting" && s.state !== "skipped" ? k : n), -1);
+    i = last < 0 ? -1 : segs.findIndex((s, k) => k > last && s.state === "waiting");
   }
-  const next = checks.findIndex((c) => !c.step || c.step.result === "pending");
-  if (next >= 0 && run.steps.some((s) => s.kind === "check")) return `check ${next + 1} of ${checks.length} · ${checks[next]!.label}${tail}`;
-  return `Starting${tail}`;
+  if (i < 0) return `Starting${tail}`;
+  return `step ${i + 1} of ${segs.length} · ${segs[i]!.label}${tail}`;
 }
 
 /** The review's state, for the detail and the hover card (never the row): running, or its verdict. */
@@ -293,6 +276,7 @@ function nextLines(q: LandingQueueCut): LandingLine[] {
 
 function landingBar(p: LandingProjectInput, q: LandingQueueCut, run: MergeRun, now: number): LandingProjectBar {
   const entry = q.checking.find((e) => e.id === run.entry);
+  const segOpts = { landsLocally: (entry?.approval.how ?? "local") === "local" && !entry?.approval.via, push: q.heads.hasOrigin !== false };
   const needs = needsYouOf(q);
   const lines: LandingLine[] = [
     { text: `${q.target} ${short(run.base)} + ${run.branch} → ${short(run.tip ?? run.mergeSha ?? run.commit)}`, mono: true },
@@ -314,9 +298,9 @@ function landingBar(p: LandingProjectInput, q: LandingQueueCut, run: MergeRun, n
     tone: "accent",
     icon: "branch",
     title: `Landing ${run.branch}`,
-    sub: runNow(run, entry?.eta, now),
+    sub: runNow(run, entry?.eta, now, segOpts),
     count: waitingCount(q),
-    segments: runSegments(run, { landsLocally: (entry?.approval.how ?? "local") === "local" && !entry?.approval.via, push: q.heads.hasOrigin !== false }),
+    segments: runSegments(run, segOpts),
     lines,
     // The review is never in the row: the detail says it (reviewLine), and the hover card.
     peek: [...(currentStepLine(run, now) ? [{ text: currentStepLine(run, now)!, mono: true as const }] : []), ...(reviewLine(q, run) ? [{ text: reviewLine(q, run)!.text }] : []), ...nextLines(q).slice(0, 1)],
@@ -537,7 +521,7 @@ function openReleaseBar(p: LandingProjectInput, rv: LandingReleaseCut, r: Releas
   let sub = `Step ${idx} of ${plan.length}${cur ? ` · ${cur.label}` : ""}`;
   if (cur?.id === "checks" && run) {
     const entry = q?.checking.find((e) => e.id === run.entry);
-    sub += ` · ${runNow(run, entry?.eta, now)}`;
+    sub += ` · ${runNow(run, entry?.eta, now, { landsLocally: false })}`;
   }
   const needs = releaseNeeds(rv, r, now);
   const base = {

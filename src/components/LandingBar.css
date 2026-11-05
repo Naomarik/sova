@@ -98,7 +98,9 @@
 .landing-seg-passed  { background: var(--status-success); }
 .landing-seg-failed  { background: var(--status-error); }
 .landing-seg-held    { background: var(--status-warn); }
-.landing-seg-skipped { background: transparent; box-shadow: inset 0 0 0 1px var(--color-border); }
+.landing-seg-skipped { background: transparent; position: relative; }
+/* Skipped: a short centred dash, clearly not a step still to come. */
+.landing-seg-skipped::after { content: ""; position: absolute; left: 30%; right: 30%; top: 1px; height: 2px; border-radius: var(--r-full); background: var(--color-border-strong); }
 .landing-seg-waiting { background: var(--color-border-strong); opacity: .45; }
 /* Running is the live-run indicator: the accent, pulsing (motion is one of the two exceptions). A gating
    checks segment fills to its run's progress. */

@@ -90,7 +90,7 @@ export interface ReleaseRequestRecord {
 export interface ReleaseThreadDeps {
   start(input: { root: string; checkout: string; text: string; title: string }): Promise<{ id: string; path: string } | { error: string }>;
   wake(path: string, text: string): Promise<{ ok: true } | { ok: false; error: string }>;
-  /** Name the chat (Sova's own title, never over one the user set). */
+  /** Name the chat: Sova's own name for it (server/sova-chat-names.ts), which no rename changes. */
   retitle?(session: string, title: string): void;
 }
 

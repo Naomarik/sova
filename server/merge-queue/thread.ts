@@ -552,8 +552,11 @@ export async function createChat(request: AppRequest, cwd: string, profile: stri
   });
   const json = (await res.json().catch(() => null)) as { id?: string; path?: string; error?: string } | null;
   if (res.status !== 201 || !json?.id || !json.path) return { ok: false, error: json?.error ?? `HTTP ${res.status}` };
-  const { writeAutoTitle } = await import("../session-titles");
-  writeAutoTitle(json.id, title);
+  // The name Sova gives it, in its own store: no rename (the user's, the Overseer's, the namer's) reaches it.
+  const [{ setSovaChatName }, { sovaNamedKind }] = await Promise.all([import("../sova-chat-names"), import("../../shared/fixed-names")]);
+  const kind = sovaNamedKind({ source: "sova", id: profile });
+  if (kind) setSovaChatName(json.id, kind, title);
+  else (await import("../session-titles")).writeAutoTitle(json.id, title);
   return { ok: true, id: json.id, path: json.path };
 }
 

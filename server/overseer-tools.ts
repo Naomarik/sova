@@ -16,6 +16,7 @@ import type {
 import type { PeerStateView } from "../shared/mesh-access";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { fixedNameRefusal } from "../shared/fixed-names";
 import { relativeTime } from "../pi-config/extensions/stamp/format.ts";
 import { newestTopics, topicTime } from "../shared/outline-order";
 import { whereOf } from "./attention";
@@ -1582,6 +1583,8 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         if (p.mode === "create") throw new Refusal(createNotNamed("the Overseer"));
         if (Array.isArray(p.minor_modes) && p.minor_modes.includes("memory")) throw new Refusal(`${MEMORY_CODING_REFUSAL}. Nothing was changed.`);
         const s = await resolveWritable(p.session);
+        // A chat Sova names itself keeps that name: no title, no alias (shared/fixed-names.ts).
+        if ((p.title !== undefined || p.alias !== undefined) && s.fixedName) throw new Refusal(`${fixedNameRefusal(s.fixedName)} Nothing was changed.`);
         // A session waiting on the user's alignment answers keeps align on (§app.project-overseer/coding-mode): checked first.
         const drop = alignDropRefusal(!!s.align, p.minor_modes);
         if (drop) throw new Refusal(`${drop} Nothing was changed.`);

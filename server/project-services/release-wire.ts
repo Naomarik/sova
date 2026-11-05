@@ -4,6 +4,7 @@ import type { ReleaseView } from "../../shared/release";
 import type { ProjectDef } from "../../shared/project-contract";
 import type { MergeQueues, ReleaseQueueEvent } from "../merge-queue/queue";
 import { type ReleaseAttention, Releaser } from "./release";
+import { RELEASE_THREAD_PROFILE } from "../../shared/fixed-names";
 
 /**
  * The server's one releaser (server/project-services/release.ts), wired by the merge queue's start (it needs the
@@ -11,7 +12,7 @@ import { type ReleaseAttention, Releaser } from "./release";
  * release chat's start and wake, and the stall watch.
  */
 
-export const RELEASE_THREAD_PROFILE = "release-thread";
+export { RELEASE_THREAD_PROFILE };
 
 let current: Releaser | null = null;
 
@@ -52,7 +53,8 @@ export async function startReleaser(d: ReleaseWireDeps): Promise<Releaser> {
         return out.ok ? { id: out.id, path: out.path } : { error: out.error };
       },
       retitle(session, title) {
-        void import("../session-titles").then(({ writeAutoTitle }) => writeAutoTitle(session, title, { redo: true })).catch(() => {});
+        // Sova's own name for its release chat (server/sova-chat-names.ts): a rename never reaches it.
+        void import("../sova-chat-names").then(({ setSovaChatName }) => setSovaChatName(session, "release", title)).catch(() => {});
       },
       async wake(path, text) {
         const { promptSession } = await import("../session-prompt");

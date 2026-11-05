@@ -62,6 +62,55 @@
       "server/merge-queue/scenarios-blame.integration.test.ts"
     ]
   },
+  "§app.merge-queue/branch-summary": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/served",
+      "§app.merge-queue/view",
+      "§app.merge-queue/owner",
+      "§chat.worktrees/ready-to-land",
+      "§app.settings-dialog/summaries",
+      "§chat.composer/worktrees-control",
+      "§chat.worktrees/pane",
+      "§app.insights/usage-ledger",
+      "§app/commands"
+    ],
+    "code": [
+      "server/merge-queue/branch-summaries.ts",
+      "server/merge-queue/branch-summaries.test.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/queue.test.ts",
+      "server/merge-queue/routes.ts",
+      "server/merge-readiness.ts",
+      "server/merge-readiness.test.ts",
+      "server/app.ts",
+      "server/topic-outline-settings.ts",
+      "shared/merge-queue.ts",
+      "shared/protocol.ts",
+      "shared/commands/projects.ts",
+      "shared/commands-ids.json",
+      "pi-config/extensions/llm-inflight/usage-record.ts",
+      "src/components/BranchSummary.tsx",
+      "src/lib/branch-summary.ts",
+      "src/lib/branch-summary.test.ts",
+      "src/components/MergeQueueTab.tsx",
+      "src/components/WorktreesModal.tsx",
+      "src/lib/merge-queue-client.ts",
+      "src/lib/merge-queue-requests-client.ts",
+      "src/app.css",
+      "server/merge-queue-ui.integration.test.ts",
+      "server/merge-queue/summary-sweep.ts",
+      "server/merge-queue/summary-sweep.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T04:24Z",
+      "source": "pi-session:01a1a9da-15c8-731e-9587-23927c9ff121#9c4c7735"
+    }
+  },
   "§app.merge-queue/chats": {
     "kind": "behavior",
     "authority": "accepted",
@@ -349,7 +398,8 @@
       "server/worker-sessions.ts",
       "server/worker-sessions.test.ts",
       "server/sessions-index.ts",
-      "shared/protocol.ts"
+      "shared/protocol.ts",
+      "src/components/WorktreesModal.tsx"
     ],
     "agreed": {
       "by": "user",
@@ -720,12 +770,14 @@
       "§app.merge-queue/owner",
       "§chat.changes/viewer",
       "§chat.changes/endpoint",
-      "§chat.composer/land-confirm"
+      "§chat.composer/land-confirm",
+      "§app.merge-queue/branch-summary",
+      "§chat.worktrees/readiness"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T03:18Z",
-      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#2d7267d2"
+      "at": "2026-11-05T04:24Z",
+      "source": "pi-session:01a1a9da-15c8-731e-9587-23927c9ff121#9c4c7735"
     },
     "code": [
       "server/merge-queue/view.ts",
@@ -762,7 +814,8 @@
       "server/merge-queue/settled.test.ts",
       "src/lib/merge-run.ts",
       "src/lib/merge-run.browser.test.ts",
-      "src/components/ui.tsx"
+      "src/components/ui.tsx",
+      "src/components/BranchSummary.tsx"
     ]
   },
   "§app/merge-queue": {

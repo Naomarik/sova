@@ -3,7 +3,7 @@ import { MergeThreadCard, QueueHistory, ReviewerLinks, ReviewRunningButton } fro
 import type { ChatRef } from "../lib/merge-chat";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
-import { mins, notesOf, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, SENT_BACK_LINE, stillSentBack } from "../lib/merge-queue";
+import { headWhen, mins, notesOf, readyFactsWords, readyRowChip, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, SENT_BACK_LINE, stillSentBack } from "../lib/merge-queue";
 import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
 import { createPoll } from "../lib/poll";
 import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
@@ -18,7 +18,7 @@ import { Banner, Icon } from "./ui";
 import { createLandConfirm, LandConfirms, LandSplit, QueueChip, UnclearChecks } from "./WorktreesModal";
 import type { LandHow, MergeReady } from "../../shared/merge-queue";
 import { BranchSummaryView } from "./BranchSummary";
-import type { DiffScope } from "../../shared/protocol";
+import type { DiffScope, WorktreeReadiness } from "../../shared/protocol";
 import { ReviewChangesButton } from "./ReviewChanges";
 
 /** How often the tab reads the queue while it shows (a run's steps move by the second). */
@@ -31,7 +31,7 @@ const POLL_MS = 4000;
  * with no merge setup gets what the queue does and Set Up with a Chat instead. `run`: one run's page
  * (`…/merge-queue/<run>`). `setup`: the page's read of the Setup chat (one of its own when absent).
  */
-export function MergeQueueTab(props: { projectId: string; root: string; name: string; run?: string; chatOf?: ChatOf; setup?: SetupPoll }) {
+export function MergeQueueTab(props: { projectId: string; root: string; name: string; run?: string; chatOf?: ChatOf; treesOf?: TreesOf; setup?: SetupPoll }) {
   const setup = props.setup ?? createSetupPoll(props.projectId);
   const poll = createPoll(() => readQueue(props.root), POLL_MS, { cacheKey: `project:${props.projectId}:merge-queue` });
   createEffect(on(mergeChanged, () => poll.refetch(), { defer: true }));
@@ -55,7 +55,7 @@ export function MergeQueueTab(props: { projectId: string; root: string; name: st
           >
             {/* An invalid definition reads "unset" too: its error is said, never the not-set-up words. */}
             <Show when={!notSetUp(v())} fallback={<NotSetUp projectId={props.projectId} view={v()} setup={setup} />}>
-              <QueueBody projectId={props.projectId} view={v()} chatOf={props.chatOf} setup={setup} onChanged={() => poll.refetch()} />
+              <QueueBody projectId={props.projectId} view={v()} chatOf={props.chatOf} treesOf={props.treesOf} setup={setup} onChanged={() => poll.refetch()} />
             </Show>
           </Show>
         )}
@@ -116,6 +116,8 @@ export function HeadsStrip(props: { view: MergeQueueView }) {
     (lib/merge-chat chatRefOf: a worker is named as its chat's). */
 export type { ChatRef };
 export type ChatOf = (id: string) => ChatRef | undefined;
+/** A chat's readiness readings of its worktrees, by its id (lib/merge-queue chatTreesOf); undefined: not known. */
+export type TreesOf = (id: string) => WorktreeReadiness[] | undefined;
 
 /** Where a chat recorded by its id opens: its own route when the list carries it, else the id route the app resolves. */
 export const chatHref = (projectId: string, id: string, chatOf?: ChatOf): string => {
@@ -231,7 +233,7 @@ export function useAct(onChanged: () => void) {
   return { busy, error, run };
 }
 
-function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: ChatOf; setup: SetupPoll; onChanged(): void }) {
+function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: ChatOf; treesOf?: TreesOf; setup: SetupPoll; onChanged(): void }) {
   const v = () => props.view;
   const chip = () => (v().release && v().state !== "paused" && !v().invalid ? { label: "Frozen for a release", tone: "warn" as const } : queueStateChip(v()));
   const head = useAct(props.onChanged);
@@ -345,7 +347,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
         <div class="stack-2">
           <h3 class="text-heading-s">Ready to land, not approved</h3>
           <ul class="list mq-list">
-            <For each={v().ready}>{(r) => <ReadyRow projectId={props.projectId} root={v().root} target={v().target} how={v().settings?.how?.effective} ready={r} review={v().review} chatOf={props.chatOf} onChanged={props.onChanged} />}</For>
+            <For each={v().ready}>{(r) => <ReadyRow projectId={props.projectId} root={v().root} target={v().target} how={v().settings?.how?.effective} ready={r} review={v().review} chatOf={props.chatOf} treesOf={props.treesOf} onChanged={props.onChanged} />}</For>
           </ul>
         </div>
       </Show>
@@ -707,7 +709,7 @@ function SentBackRow(props: { projectId: string; root: string; entry: MergeEntry
 }
 
 /** A branch ready to land that nobody approved yet: Review Changes, and Land with its ▾. Land names the row's chat. */
-function ReadyRow(props: { projectId: string; root: string; target?: string; how?: LandHow; ready: MergeReady; review: boolean; chatOf?: ChatOf; onChanged(): void }) {
+function ReadyRow(props: { projectId: string; root: string; target?: string; how?: LandHow; ready: MergeReady; review: boolean; chatOf?: ChatOf; treesOf?: TreesOf; onChanged(): void }) {
   const r = () => props.ready;
   const act = useAct(props.onChanged);
   const confirm = createLandConfirm();
@@ -715,16 +717,30 @@ function ReadyRow(props: { projectId: string; root: string; target?: string; how
   // (server/merge-queue/owners.ts).
   const doLand = (o: LandOptions = {}) =>
     void act.run("land", () => landBranch(props.root, r().branch, { ...o, commit: r().commit }), `Queued ${r().branch}${o.withoutReview ? " without review" : ""}${o.withoutSpecs ? " without its specs" : ""}.`);
-  const lines = () => (r().added !== undefined && r().removed !== undefined ? ` · +${r().added} −${r().removed}` : "");
+  // The chip is the branch's chat's own readiness reading (Land's offer doesn't rest on it: the row is Ready to land,
+  // not approved, by git's reading of the branch).
+  const chip = () => readyRowChip(r(), r().session ? props.treesOf?.(r().session!) : undefined);
+  const when = () => headWhen(r().headAt);
   return (
     <li class="list-row mq-row mq-row-grid" classList={{ "mq-tap": !!r().session, "wt-queue-asking": !!confirm.ask() }} data-branch={r().branch} data-state="ready" ref={confirm.rowRef} onClick={rowOpens(() => r().session && chatHref(props.projectId, r().session!, props.chatOf))}>
       <div class="list-main">
         <RowHead projectId={props.projectId} branch={r().branch} session={r().session} archived={r().sessionArchived} chatOf={props.chatOf} />
         <p class="mq-facts">
-          <QueueChip row={{ label: "Ready", tone: "success" }} />
+          <QueueChip row={chip()} title={chip().title} />
           <span class="text-mono text-muted">{short(r().commit)}</span>
           <span>
-            {r().ahead} {r().ahead === 1 ? "commit" : "commits"} ahead{lines()}
+            {readyFactsWords(r())}
+            {/* When the branch last changed, in full on hover. */}
+            <Show when={when()}>
+              {(w) => (
+                <>
+                  {" · "}
+                  <time class="mq-when" dateTime={w().iso} title={w().full} aria-label={`last commit ${w().full}`}>
+                    {w().text}
+                  </time>
+                </>
+              )}
+            </Show>
           </span>
         </p>
         <BranchSummaryView summary={r().summary} projectId={props.projectId} branch={r().branch} />

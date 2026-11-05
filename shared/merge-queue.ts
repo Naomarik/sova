@@ -538,6 +538,9 @@ export interface MergeReady {
   /** Lines added and removed on the branch's side (target...branch), when read. */
   added?: number;
   removed?: number;
+  /** When the branch last changed: its head's committer date (ISO 8601, `git log -1 --format=%cI`), when read.
+   *  Additive. */
+  headAt?: string;
 }
 
 /** SessionWorktreeInfo.mergeStats: the branch against the target, for the row's "N commits · +a −r". */
@@ -549,6 +552,8 @@ export interface WorktreeMergeStats {
   /** Lines added and removed, the branch's side only (target...branch). */
   added: number;
   removed: number;
+  /** When the branch last changed: its head's committer date (ISO 8601), when read. Additive. */
+  headAt?: string;
 }
 
 /** SessionWorktreeInfo.mergeProject: the project a worktree lands into, whatever its entry. */

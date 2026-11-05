@@ -9,6 +9,7 @@ import { DEF, makeKit, makeRepo, sh, tryGit, until, untilAborted } from "./testi
 import { WorktreeOwners } from "./owners";
 import { BranchSummaries, readBranchFacts } from "./branch-summaries";
 import { realGit } from "./guard";
+import { SummarySweep } from "./summary-sweep";
 import type { SessionSummary } from "../../shared/protocol";
 
 /** Landed, and its push answered (pushed or not). */
@@ -1405,6 +1406,66 @@ describe("the view's extras", () => {
       assert.equal(asked, 2);
       // Never stored with the queue's records.
       assert.ok(!readFileSync(join(q.store.dir, "queue.json"), "utf8").includes("Adds the ready file"));
+    } finally {
+      await k.done();
+    }
+  });
+  test("the sweep, not a view, writes a Ready row's bullets: no chat or an idle one is written, a busy chat's waits; the row carries its date", async () => {
+    let asked = 0;
+    let summaries: BranchSummaries | null = null;
+    const busy = new Set(["c-busy"]);
+    const k = makeKit({
+      deps: {
+        summaryOf: (root, branch, commit) => summaries!.summaryOf(root, branch, commit),
+        ownerOf: async (_r, branch) => (branch === "feat/busy" ? "c-busy" : branch === "feat/idle" ? "c-idle" : null),
+      },
+    });
+    try {
+      const q = await k.q();
+      summaries = new BranchSummaries({
+        fileOf: () => join(q.store.dir, "branch-summaries.json"),
+        facts: async (root, branch, commit) => readBranchFacts(realGit, root, { branch, commit, target: q.target, targetHead: (await q.declared()).head ?? "" }),
+        writer: () => async () => (asked++, { bullets: ["Adds a file"], model: "prov/a" }),
+        projectOf: () => "p1",
+        changed: () => q.republish(),
+      });
+      await q.pause("hold");
+      const none = k.repo.branch("feat/nochat", { "n.txt": "n\n" });
+      const idle = k.repo.branch("feat/idle", { "i.txt": "i\n" });
+      const b = k.repo.branch("feat/busy", { "b.txt": "b\n" });
+      // Two page reads: no model call.
+      await q.view();
+      const v0 = await q.view({ fresh: true });
+      assert.equal(asked, 0, "a view never starts a write");
+      assert.ok(v0.ready!.every((r) => r.summary === undefined));
+      const row = v0.ready!.find((r) => r.branch === "feat/nochat")!;
+      assert.equal(row.headAt, sh(k.repo.root, "log", "-1", "--format=%cI", none.head), "the head's committer date");
+      const sweep = new SummarySweep({
+        roots: () => [q.root],
+        readyOf: () => q.readyRows(),
+        targetHead: async () => (await q.declared()).head || null,
+        chatIdle: async (s) => !busy.has(s),
+        summaries,
+      });
+      await sweep.tick();
+      await until(async () => asked === 2, "the idle rows written");
+      await until(async () => !summaries!.isWriting(q.root, idle.head), "the writes ended");
+      const v = await q.view({ fresh: true });
+      const of = (br: string) => v.ready!.find((r) => r.branch === br)!.summary;
+      assert.deepEqual(of("feat/nochat"), { commit: none.head, state: "ready", bullets: ["Adds a file"] });
+      assert.deepEqual(of("feat/idle"), { commit: idle.head, state: "ready", bullets: ["Adds a file"] });
+      assert.equal(of("feat/busy"), undefined, "a busy chat's branch waits");
+      // Nothing moved: the next look passes over nothing; once the chat is idle and pokes, it is written.
+      await sweep.tick();
+      assert.equal(asked, 2);
+      busy.clear();
+      sweep.poke(q.root);
+      await sweep.tick();
+      await until(async () => asked === 3 && !summaries!.isWriting(q.root, b.head), "the busy chat's branch written once idle");
+      // Reads after the writes still start none.
+      await q.view({ fresh: true });
+      await q.view({ fresh: true });
+      assert.equal(asked, 3);
     } finally {
       await k.done();
     }

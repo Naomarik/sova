@@ -18,6 +18,7 @@ import { engineServices, makeRunMerge } from "./run";
 import { worktreeQueueInfo } from "./view";
 import type { SessionBranchQueue, SessionBranchRow, SessionWorktreeInfo } from "../../shared/protocol";
 import { BranchSummaries, branchBulletWriter, readBranchFacts } from "./branch-summaries";
+import { SummarySweep } from "./summary-sweep";
 import { projectKey } from "./store";
 import { sessionsChanged } from "../list-generation";
 import { LandingNotes, SERVED_FILE_NAME, ServedRule, servedKey, servedRule, setServedRule, type SetupOf, startServedWriter } from "./served";
@@ -34,10 +35,14 @@ import { gitRefsStamp } from "../worktrees";
 let queues: MergeQueues | null = null;
 /** The branch summaries (branch-summaries.ts), one store for every queue. */
 let summaries: BranchSummaries | null = null;
+/** The summaries' background sweep (summary-sweep.ts): every Ready row's bullets once its chat is idle. */
+let sweep: SummarySweep | null = null;
 type RowFields = { queue?: WorktreeQueueInfo; mergeProject?: WorktreeMergeProject; mergeStats?: WorktreeMergeStats; mergeServed?: true; mergeSummary?: BranchSummary; mergeOwner?: SessionWorktreeInfo["mergeOwner"] };
 let servedWriter: { refresh(): Promise<void>; stop(): void } | null = null;
 /** The served roots as last computed (the writer's pass): the thread wake's synchronous check. */
 let servedNow = new Set<string>();
+/** The served roots as the served rule names them (queues are made by these). */
+let servedRootsNow: string[] = [];
 let rowsOf: ((path: string, branch: string) => Promise<RowFields>) | null = null;
 
 /** A worktree row's queue fields (SessionWorktreeInfo.queue / mergeProject / mergeServed): mergeProject for a
@@ -569,7 +574,9 @@ export async function statsOf(root: string, targetHead: string, branch: string):
   const short = await realGit(["diff", "--shortstat", `${targetHead}...${head}`], root);
   const added = Number(/(\d+) insertion/.exec(short.stdout)?.[1] ?? 0);
   const removed = Number(/(\d+) deletion/.exec(short.stdout)?.[1] ?? 0);
-  const out = short.code === 0 ? { head, ahead, added, removed } : null;
+  // When the branch last changed: its head's committer date (the Ready rows' own).
+  const when = (await realGit(["log", "-1", "--format=%cI", head], root)).stdout.trim();
+  const out = short.code === 0 ? { head, ahead, added, removed, ...(when ? { headAt: when } : {}) } : null;
   if (statsCache.size > 500) statsCache.clear();
   statsCache.set(key, out);
   return out;
@@ -603,6 +610,7 @@ export async function startMergeQueue(
     onRoots: (roots) => {
       const was = servedNow;
       servedNow = new Set(roots.map((r) => servedKey(r.root)));
+      servedRootsNow = roots.map((r) => r.root);
       // A root gaining service: its rows have no root to join by, and an archived one has no read coming.
       if (listDeps && [...servedNow].some((r) => !was.has(r))) void rereadUnrooted();
     },
@@ -711,9 +719,16 @@ export async function startMergeQueue(
     log: (line) => console.warn(line),
   });
   summaries = bs;
-  const summaryFor = (root: string, branch: string, commit: string) => {
+  const summaryFor = (root: string, branch: string, commit: string, front = false) => {
     if (!servedNow.has(servedKey(root))) return;
-    bs.ensure(root, branch, commit);
+    bs.ensure(root, branch, commit, { front });
+  };
+  // A chat is idle read as the worktree readiness reads it (server/merge-readiness.ts runningNow: busy, working, or a
+  // worker working); an unknown chat counts as idle.
+  const chatIdle = async (session: string): Promise<boolean> => {
+    const { listSessions } = await import("../sessions-index");
+    const x = (await listSessions()).find((y) => y.id === session);
+    return !x || !(x.busy || x.activity?.state === "working" || (x.workers?.working ?? x.live?.workers?.working ?? 0) > 0);
   };
   const cardsDo = (p: Promise<void>) => void p.catch((err) => console.warn(`[merge-queue] card: ${err instanceof Error ? err.stack : err}`));
   queues = new MergeQueues({
@@ -742,7 +757,8 @@ export async function startMergeQueue(
     // The branch's card in its own chat: raised at the approval, a revision at each outcome (cards.ts).
     notify: (kind, e, extra) => {
       // An approved branch was Ready to land at its commit: its summary is written if it has none yet.
-      if (kind === "approved") summaryFor(extra.root, e.branch, e.commit);
+      // An approval's goes to the front of the line.
+      if (kind === "approved") summaryFor(extra.root, e.branch, e.commit, true);
       cardsDo(kind === "approved" ? mc.approved(e, extra.root) : mc.outcome(kind, e, { ...(extra.run ? { run: extra.run } : {}), root: extra.root }));
     },
     summaryOf: (root, branch, commit): BranchSummary | undefined => bs.summaryOf(root, branch, commit),
@@ -759,11 +775,7 @@ export async function startMergeQueue(
     // Landing by request (al_3): the docs commit goes into a chat's folder only while it is idle, read as the worktree
     // readiness reads it (server/merge-readiness.ts runningNow: busy, working, or a worker working); an unknown chat
     // can't be interrupted. A request's title is its chat's.
-    chatIdle: async (session) => {
-      const { listSessions } = await import("../sessions-index");
-      const x = (await listSessions()).find((y) => y.id === session);
-      return !x || !(x.busy || x.activity?.state === "working" || (x.workers?.working ?? x.live?.workers?.working ?? 0) > 0);
-    },
+    chatIdle,
     chatTitle: async (session) => {
       const { listSessions } = await import("../sessions-index");
       const t = (await listSessions()).find((y) => y.id === session)?.title;
@@ -790,7 +802,23 @@ export async function startMergeQueue(
       void projectOf(t.path)
         .then((p) => (p.state === "ok" && p.git ? summaryFor(p.root, t.branch, t.commit) : undefined))
         .catch(() => {}),
+    // A served tree's chat read idle: the sweep's next look passes over its project.
+    treeIdle: (t) =>
+      void projectOf(t.path)
+        .then((p) => (p.state === "ok" && p.git && servedNow.has(servedKey(p.root)) ? sweep?.poke(servedRootsNow.find((r) => servedKey(r) === servedKey(p.root)) ?? p.root) : undefined))
+        .catch(() => {}),
   });
+  // Every branch on a served project's Ready list gets its bullets once its chat is idle; its first pass is the
+  // backfill. Never started by a view or a page read.
+  sweep = new SummarySweep({
+    roots: () => servedRootsNow,
+    readyOf: async (root) => (await q.get(root)).readyRows(),
+    targetHead: async (root) => (await (await q.get(root)).declared()).head || null,
+    chatIdle,
+    summaries: bs,
+    log: (line) => console.warn(line),
+  });
+  sweep.start();
   // Releases (server/project-services/release.ts): their verbs, the queue's hold and Publish go through these queues.
   await releaseWire.startReleaser({
     stateRoot: stateRoot(),
@@ -915,10 +943,15 @@ export async function retryBranchSummary(projectId: string, branch: string, comm
   return r.ok ? { ok: true } : r;
 }
 
+/** Tests: the summaries' sweep the server runs. */
+export const summarySweepNow = (): SummarySweep | null => sweep;
+
 /** Tests: the store the server writes branch summaries with. */
 export const branchSummariesNow = (): BranchSummaries | null => summaries;
 
 export async function stopMergeQueue(): Promise<void> {
+  sweep?.stop();
+  sweep = null;
   summaries = null;
   rowsOf = null;
   listDeps = null;
@@ -928,6 +961,7 @@ export async function stopMergeQueue(): Promise<void> {
   servedWriter = null;
   setServedRule(null);
   servedNow = new Set();
+  servedRootsNow = [];
   cards = null;
   bareSettingsOf = null;
   setMergeCardNoteSource(null);

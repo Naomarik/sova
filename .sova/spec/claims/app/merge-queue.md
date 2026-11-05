@@ -17,6 +17,7 @@ fast-forwards the target to exactly the commit it tested (§app.merge-queue/land
 (§app.merge-queue/push); a project may instead open a pull request on GitHub or a merge request on
 GitLab (§app.merge-queue/requests), or only push the branch (§app.merge-queue/publish).
 Every setting the queue uses shows in Settings → Merge Queue (§app.merge-queue/settings).
+Each branch's row says what the branch does, in a few bullets (§app.merge-queue/branch-summary).
 A failure goes to the branch's chat only once the same check passed on the target alone
 (§app.merge-queue/blame).
 
@@ -791,8 +792,19 @@ shows, top to bottom:
   at the same commit once they changed and fit, or once removed from the queue,
   §chat.composer/worktrees-control;
   the list is read at most every 15 seconds, so that row may take that long to appear).
-  Each shows its branch, commit, Ready chip, its chat, worktree and "{n} commits ahead · +{a} −{d}",
+  Each shows its chat and branch, then its chip, commit and "{n} commits ahead · +{a} −{d} · {when}",
   and **Land** with the same menu as the modal's (Land Without Review, Land Without Its Specs…).
+  {when} is when the branch last changed, its head commit's committer date, said relative to now
+  ("2h ago", "yesterday", "3d ago", then the day, "Nov 2", after a week), with the full date and time
+  as its hover and for a screen reader. The chip is the readiness reading (§chat.worktrees/readiness)
+  that the row's chat holds for the branch's worktree (a worker's chat: its own, then its top chat's),
+  with its reason as its hover: **Ready to land** or **Ready to merge** or **Waiting for your OK**
+  (success), **Landing specs** (info, or warn when it can't land them), **In progress** (neutral),
+  **Conflicts with {target}** or **Blocked** or **Stale** (warn), **Merged** (success). A branch with
+  no known chat shows a neutral **No chat**; one whose chat holds no reading of it (the chat works in
+  it without tracking it, or isn't among the chats Sova lists) a neutral **No reading**. The chip
+  only reports: the row stays on this list, and Land and its menu are offered as before, whatever it
+  says.
   Land here asks once as the modal's does, its confirmation right-aligned under the row
   (§chat.composer/land-confirm), and only Land {n} Commits queues the branch.
   Land there names no chat: the queue records the branch's owner by the same rule the row shows
@@ -803,13 +815,17 @@ shows, top to bottom:
 
 **Every row's chat.** Every row of Checking now, Waiting, Needs you, Sent back, Recent and Ready to
 land names its chat by title: a row in the line or landed names the chat its entry recorded; a
-Ready row names the branch's owner (§app.merge-queue/owner). A click or tap anywhere on the row
+Ready row names the branch's owner (§app.merge-queue/owner). The row's top line is that chat's
+title first, then the branch name in small mono, then an "archived" tag when the chat is archived;
+its second line is its state chip, its short commit and "{n} commits ahead · +{a} −{d}" (or the
+row's own facts; a Ready row's end with " · {when}", above); its branch summary sits under that (§app.merge-queue/branch-summary). A row
+names no worktree folder and carries no "Chat" label. A click or tap anywhere on the row
 outside its buttons, links and menus opens that chat; a click with a modifier key, or one that ends
 a text selection, does nothing. The chat's title is also a real link to it, so it opens in a new
 tab too, and it is never wrapped around the row's buttons. The chat opens whatever form its
 recorded id takes (the link reaches the chat, never an empty "not found" view). An archived chat
-still opens, with "archived" after its title. A row with no known chat reads "No chat found for
-this worktree", opens nothing when tapped, and keeps its buttons. A row whose chat is a worker
+still opens, with its "archived" tag. A row with no known chat leads with "No chat found for this
+worktree" in place of the title, opens nothing when tapped, and keeps its buttons. A row whose chat is a worker
 never uses the worker's first message (its instructions) as a title: it reads "Worker {name} of
 “{chat title}”" ("Worker of “…”" with no name), naming and linking the chat that runs it, up to the
 top chat when workers run workers; when no such chat is known it reads "A worker's chat" and links
@@ -834,15 +850,15 @@ closing the sidebar can change it.
 - **Under about 600px of room** the tab loses its outer card frame, and the strip, the Merge thread
   card, Checking now, the lists and the run page's cards run edge to edge, split by hairlines, with
   12px side padding. Banners stay boxed, their button under their words. Each row stacks: the
-  branch on its own line, wrapping anywhere; a facts line led by the state chip, then the commit and
-  "{n} commits ahead · +{a} −{d}" (or the row's own facts); the chat line, where the worktree is
-  named by its folder's last name, with the full path as its `title`; and the row's actions
+  chat's title and the branch, wrapping anywhere; a facts line led by the state chip, then the
+  commit and "{n} commits ahead · +{a} −{d}" (or the row's own facts), wrapping; the summary's
+  bullets, wrapping; and the row's actions
   (Review Changes, Land ▾ or the row's other actions) on their own line under it, Review Changes at
   the line's left and the row's other actions at its right, each button the same size as with room.
   A card's head (Checking now, the Merge thread, History) puts its buttons on their own line under
   its title. Nothing scrolls sideways at 360px.
 - **With room**, every row of the tab alike (Checking now, Waiting, Needs you, Ready to land, Sent
-  back, Recent and History) shows the full path and puts its actions in a column at its top right,
+  back, Recent and History) puts its actions in a column at its top right,
   each button at its own width; an open Land confirmation spans the row, at its right. A card's head
   keeps its title and its buttons on one line.
 
@@ -896,15 +912,71 @@ to fit its panel counts as at its bottom, and keeps following as it grows past i
 stops following; scrolling back to the end resumes it.
 
 Every action here is a catalogue command: Land, Land This Commit Again, Cancel, Remove from Queue,
-Pause, Resume, Accept, Send Back, Land Anyway, Start Fresh, Send Answer, Clear and Clear All over the merge verbs (§app.project-services/merge-verbs), Update Local Main and Publish over
-the queue's own routes, which the merge thread can't call. Queue Settings and Open on GitHub only
+Pause, Resume, Accept, Send Back, Land Anyway, Start Fresh, Send Answer, Clear and Clear All over the merge verbs (§app.project-services/merge-verbs), Update Local Main, Publish and a
+branch summary's Try Again over the queue's own routes, which the merge thread can't call. Queue Settings and Open on GitHub only
 open a place. The view follows the queue live,
 from the session feed's merge-queue frames, at desktop and phone widths.
+
+## §app.merge-queue/branch-summary — What a branch does, in a few bullets
+
+**Each branch row of a project the merge queue serves (§app.merge-queue/served) says what the
+branch does in up to 5 short bullets, written in the background for every branch on the Ready to
+land, not approved list (§app.merge-queue/view) once its chat is idle, and for every branch
+approved at a commit.** A repository the queue doesn't serve gets no bullets.
+
+- **What they say.** Plain words, most important first: what the branch adds, changes or fixes.
+  They never name files or commit ids. A small branch may get 1 or 2.
+- **Who writes them.** The summary-line model of Settings → Summaries
+  (§app.settings-dialog/summaries): its Primary, then its Fallback when the Primary can't run or
+  gives nothing usable; never the Session titles model. Settings → Models' switch applies as it
+  does to the summary line: a model turned off there is skipped.
+- **When.** Every branch on the Ready to land, not approved list gets bullets for its commit once
+  the chat that owns it (§app.merge-queue/owner) is idle; a branch with no known chat, or whose chat
+  is archived, counts as idle. Not at every commit: while its chat works, the row keeps the bullets
+  it has. A sweep in the background does it, whether or not anyone is looking: about 30 seconds
+  after Sova starts, then at least every 5 minutes, and within about a minute of the target moving
+  or of a branch's chat being read idle. Its first run after Sova starts writes every branch
+  already on the list, those with no chat included. A branch that reads Ready to land
+  (§chat.worktrees/ready-to-land) or is approved at a commit gets bullets for that commit too.
+  Writes go one at a time on this computer, whatever started them and across every project; an
+  approved branch's and a Try Again go ahead of the ones waiting (the one being written finishes
+  first), and a waiting one already reads "Summarizing…". A commit is written at most once at a
+  time. Opening or refreshing a view never starts a write, and a finished write
+  doesn't start the next one by being shown. Once written, every view shows them at once.
+- **What they're written from.** The branch's commit messages and the parts it changed, with
+  lines added and removed, against the target; never the code change itself. On a large branch
+  the newest messages are read in full and older ones by their subject only, and the list of parts
+  is capped, so a summary costs about the same however large the branch is; when commits were left
+  out, the ask says so ("the newest 200 of {n} commits").
+- **Where.** Always shown, with no switch to hide them, under the row's facts line: on every row of
+  a branch not yet landed on the Merge Queue tab (Ready to land, In line, Checking, Needs you, Sent
+  back; §app.merge-queue/view) and on the Worktrees rows, in the composer's modal and the session
+  pane (§chat.composer/worktrees-control, §chat.worktrees/pane). A landed row under Recent keeps
+  the bullets it had. On a phone they wrap; nothing scrolls sideways.
+- **While writing**, the row says "Summarizing…", busy to a screen reader.
+- **A newer commit.** The bullets of an earlier commit stay up, marked "From an earlier commit",
+  until new ones are written for the new commit.
+- **When it fails**, the row says "Couldn't summarize this branch" with **Try Again**, which writes
+  it again for the same commit. Try Again shows only after a failure: a summary that worked offers no
+  rewrite. Nothing else on the row changes, and Land works as before. Try Again is a catalogue
+  command (§app/commands). A failure because no model answered (none could run or was signed in, a
+  timeout, the model service failing) is tried once more by the sweep, by itself, about 10 minutes
+  later, while the branch is still on the list with its chat idle; a failure whose models answered
+  with nothing usable (a reply that isn't bullets) never is. After that one retry it waits for Try
+  Again.
+- **Kept** per project and commit on this computer, so a restart doesn't write them again; a
+  failure is kept too, with whether its retry was spent, and waits as above. Once
+  the branch has landed or is gone they are dropped, unless a queue row still shows them; a live
+  branch keeps only its newest few.
+- **Spend.** Each write's calls are recorded in the usage ledger (§app.insights/usage-ledger) as
+  one-shots under a purpose of their own, `git-branch-summary`, with the project set, so they are
+  never counted as a conversation's `branch-summary`.
 
 ## §app.merge-queue/owner — Which chat owns a branch
 
 One rule says which chat owns a worktree's branch, and Sova uses it everywhere the queue needs a
-chat it wasn't told: the chat a Ready row names and opens (§app.merge-queue/view), and the chat an
+chat it wasn't told: the chat a Ready row names and opens (§app.merge-queue/view), the chat a
+Worktrees row names first (§chat.composer/worktrees-control), and the chat an
 approval records, hears about its outcomes and shows its queue card (§chat.merge-queue/chat-card).
 The owner is, the first that holds:
 1. the chat that created the worktree and still tracks it (its own record, not dropped;

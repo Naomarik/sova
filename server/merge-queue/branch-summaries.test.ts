@@ -12,7 +12,9 @@ import { currentUsageContext } from "../../pi-config/extensions/llm-inflight/att
 import type { LlmRuntime } from "../decide-llm";
 import { scratchRoot } from "../test-scratch";
 import {
+  AUTO_RETRY_AFTER_MS,
   BODY_BUDGET,
+  bulletsFromChain,
   BRANCH_SUMMARY_PURPOSE,
   type BranchFacts,
   branchSummaryPrompt,
@@ -274,4 +276,127 @@ test("a branch past 200 commits: the ask says how many were left out, from git's
   assert.ok(p.includes("Step 205") && !p.includes("Step 5\n"));
   // Under the cap: no note.
   assert.doesNotMatch(branchSummaryPrompt({ ...f, messages: f.messages.slice(0, 3), commits: 3 }), /the newest/);
+});
+
+/** A store whose writer holds every reply until the test releases it, by commit. */
+function heldStore(name: string, answer: (commit: string, call: number) => Awaited<ReturnType<BulletWriter>> = () => ({ bullets: ["Adds it"], model: "prov/a" })) {
+  const file = join(root, name, "branch-summaries.json");
+  const asks: string[] = [];
+  const held = new Map<string, () => void>();
+  let clock = Date.parse("2026-11-01T00:00:00Z");
+  const calls = new Map<string, number>();
+  const s = new BranchSummaries({
+    fileOf: () => file,
+    facts: async (_root, branch, commit) => ({ ...facts(1), branch, commit, messages: [{ subject: `commit ${commit}`, body: "" }] }),
+    writer: () => async (prompt) => {
+      const commit = /commit ([0-9a-f]{40})/.exec(prompt)![1]!;
+      asks.push(commit);
+      const n = (calls.get(commit) ?? 0) + 1;
+      calls.set(commit, n);
+      await new Promise<void>((r) => held.set(commit, r));
+      return answer(commit, n);
+    },
+    projectOf: () => "p1",
+    changed: () => {},
+    now: () => clock,
+  });
+  return { s, asks, release: (c: string) => held.get(c)?.(), tick: (ms: number) => (clock += ms), file };
+}
+const settle = () => new Promise((r) => setImmediate(r));
+
+test("one write at a time: three commits asked for, one model call until the first is released; an approval goes next", async () => {
+  const t = heldStore("serial");
+  const a = t.s.ensure("/r", "feat/a", sha(101));
+  const b = t.s.ensure("/r", "feat/b", sha(102));
+  const c = t.s.ensure("/r2", "feat/c", sha(103));
+  assert.deepEqual([a.result, b.result, c.result], ["started", "started", "started"]);
+  await settle();
+  assert.deepEqual(t.asks, [sha(101)], "only the first is asked while it runs");
+  assert.equal(t.s.waiting(), 2);
+  // All three read Summarizing… while queued or written.
+  assert.equal(t.s.summaryOf("/r", "feat/b", sha(102))?.state, "writing");
+  // An approval of c (another project) jumps the line.
+  assert.equal(t.s.ensure("/r2", "feat/c", sha(103), { front: true }).result, "busy");
+  const d = t.s.ensure("/r", "feat/d", sha(104), { front: true });
+  assert.equal(d.result, "started");
+  await settle();
+  assert.equal(t.asks.length, 1, "still one call in flight");
+  t.release(sha(101));
+  await a.done;
+  await settle();
+  assert.deepEqual(t.asks, [sha(101), sha(104)], "the newest approval's write is next");
+  t.release(sha(104));
+  await d.done;
+  await settle();
+  assert.deepEqual(t.asks, [sha(101), sha(104), sha(103)]);
+  t.release(sha(103));
+  await c.done;
+  await settle();
+  t.release(sha(102));
+  await b.done;
+  assert.deepEqual(t.asks, [sha(101), sha(104), sha(103), sha(102)]);
+  assert.equal(t.s.waiting(), 0);
+  for (const [r, br, n] of [["/r", "feat/a", 101], ["/r", "feat/b", 102], ["/r2", "feat/c", 103], ["/r", "feat/d", 104]] as const) assert.equal(t.s.summaryOf(r, br, sha(n))?.state, "ready");
+});
+
+test("a model service that didn't answer: one automatic retry after the cool-down; unusable bullets are never retried by themselves", async () => {
+  // The first call of each commit fails: 201's as unavailable, 202's as unusable. Later calls work.
+  const t = heldStore("retry", (commit, call) => (call > 1 ? { bullets: ["Works now"], model: "prov/a" } : commit === sha(202) ? { failed: "unusable" } : { failed: "unavailable" }));
+  const run = async (r: { done: Promise<void> }, c: string) => {
+    await settle();
+    t.release(c);
+    await r.done;
+  };
+  await run(t.s.ensure("/r", "feat/x", sha(201)), sha(201));
+  await run(t.s.ensure("/r", "feat/y", sha(202)), sha(202));
+  assert.equal(t.s.summaryOf("/r", "feat/x", sha(201))?.state, "failed");
+  assert.equal(t.s.summaryOf("/r", "feat/y", sha(202))?.state, "failed");
+  const rec = readSummaryFile(t.file);
+  const causeOf = (r: (typeof rec)[string] | undefined) => (r && "failed" in r ? r.cause : null);
+  assert.deepEqual([causeOf(rec[sha(201)]), causeOf(rec[sha(202)])], ["unavailable", "unusable"]);
+  // Before the cool-down: nothing.
+  assert.equal(t.s.autoRetry("/r", "feat/x", sha(201), 60_000).result, "no-retry");
+  t.tick(61_000);
+  assert.equal(t.s.autoRetry("/r", "feat/y", sha(202), 60_000).result, "no-retry", "unusable bullets wait for Try Again");
+  const again = t.s.autoRetry("/r", "feat/x", sha(201), 60_000);
+  assert.equal(again.result, "started");
+  await run(again, sha(201));
+  assert.deepEqual(t.s.summaryOf("/r", "feat/x", sha(201)), { commit: sha(201), state: "ready", bullets: ["Works now"] });
+  assert.equal(t.asks.filter((c) => c === sha(202)).length, 1);
+});
+
+test("the automatic retry is spent once: a second unavailable failure waits for Try Again", async () => {
+  const t = heldStore("retry-once", () => ({ failed: "unavailable" }));
+  const r1 = t.s.ensure("/r", "feat/x", sha(301));
+  await settle();
+  t.release(sha(301));
+  await r1.done;
+  t.tick(AUTO_RETRY_AFTER_MS);
+  const r2 = t.s.autoRetry("/r", "feat/x", sha(301));
+  assert.equal(r2.result, "started");
+  await settle();
+  t.release(sha(301));
+  await r2.done;
+  const rec = readSummaryFile(t.file)[sha(301)];
+  assert.ok(rec && "failed" in rec && rec.retried, "kept as retried");
+  t.tick(AUTO_RETRY_AFTER_MS * 10);
+  assert.equal(t.s.autoRetry("/r", "feat/x", sha(301)).result, "no-retry");
+  assert.equal(t.asks.length, 2);
+  // Try Again still works.
+  assert.ok(t.s.retry("/r", "feat/x", sha(301)).ok);
+});
+
+test("the chain says why it wrote nothing: unavailable when no model answered, unusable when one answered badly", async () => {
+  const chain = [{ choice: { backend: "pi" as const, model: "prov/a", effort: "off" as const } }];
+  const runtime = (text: string | null): LlmRuntime =>
+    ({
+      getModel: (_p: string, id: string) => ({ id, reasoning: false }),
+      hasConfiguredAuth: () => text !== null,
+      completeSimple: async () => ({ content: [{ type: "text", text: text ?? "" }], stopReason: "stop", usage: { input: 1, output: 1 } }) as never,
+    }) as unknown as LlmRuntime;
+  const deps = (text: string | null) => ({ runtime: async () => runtime(text), agentDir: () => root });
+  assert.deepEqual(await bulletsFromChain(chain, "ask", deps(null)), { failed: "unavailable" }, "no auth: the service, not the answer");
+  assert.deepEqual(await bulletsFromChain(chain, "ask", deps('{"bullets": []}')), { failed: "unusable" });
+  assert.deepEqual(await bulletsFromChain(chain, "ask", deps("")), { failed: "unusable" }, "an empty reply is a bad answer");
+  assert.deepEqual(await bulletsFromChain([], "ask", deps("x")), { failed: "unavailable" }, "no model at all");
 });

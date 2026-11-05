@@ -576,6 +576,9 @@ export interface ReadinessDeps {
   /** A served tree read Ready to land at a commit (each reading; the listener dedupes): the merge queue writes its
       branch summary (server/merge-queue/branch-summaries.ts). Absent: nothing is told. */
   readyToLand?: (t: { path: string; branch: string; commit: string }) => void;
+  /** A served tree read with its chat idle (each reading; the listener dedupes): the merge queue's summaries sweep
+      looks at its project again (server/merge-queue/summary-sweep.ts). Absent: nothing is told. */
+  treeIdle?: (t: { path: string; branch: string }) => void;
   /** Sova's message to a session (the specs nudge); absent: never sent. */
   nudge?: (sessionPath: string, text: string) => Promise<void>;
   /** The branches the merge queue landed for a chat (its Landed cards), by session id. */
@@ -838,6 +841,7 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
       }
       if (writes) {
         if (landing?.state === "ready") deps.readyToLand?.({ path: t.path, branch: tf.branch, commit: landing.commit });
+        if (!running && tf.branch) deps.treeIdle?.({ path: t.path, branch: tf.branch });
         if (landing) deps.landing.hold(s.id, t.path, { branch: tf.branch, commit: landing.commit, at: deps.now() });
         else if (held && (tf.merged || (tf.readable && tf.head !== held.commit))) deps.landing.drop(s.id, t.path);
       }

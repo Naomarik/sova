@@ -322,12 +322,14 @@
       "§chat.composer/land-confirm",
       "§chat.merge-queue/chat-card",
       "§app.merge-queue/run",
-      "§chat.worktrees/ready-to-land"
+      "§chat.worktrees/ready-to-land",
+      "§app.merge-queue/owner",
+      "§app.merge-queue/branch-summary"
     ],
     "agreed": {
-      "by": "Omar",
-      "at": "2026-11-05T02:42Z",
-      "source": "pi-session:ca4bcdc5-a6ff-4dbd-bf8b-509ecc177885#bcd45c06"
+      "by": "user",
+      "at": "2026-11-05T04:24Z",
+      "source": "pi-session:01a1a9da-15c8-731e-9587-23927c9ff121#9c4c7735"
     },
     "code": [
       "src/components/WorktreesControl.tsx",
@@ -354,7 +356,10 @@
       "shared/merge-queue.ts",
       "server/merge-queue/view.ts",
       "server/docs-preview.ts",
-      "server/spec-drafts-state.ts"
+      "server/spec-drafts-state.ts",
+      "src/components/BranchSummary.tsx",
+      "shared/protocol.ts",
+      "server/merge-queue/verbs.test.ts"
     ]
   },
   "§chat/composer": {

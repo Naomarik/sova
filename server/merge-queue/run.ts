@@ -21,6 +21,8 @@ import { render } from "../../shared/project-contract";
 import { slotLayoutOf } from "../../shared/project-slots";
 import { NO_BACKGROUND_CLEANUP } from "../git-no-background";
 import { agentRoot } from "../state-root";
+import { draftSpecHash } from "../spec-drafts-state";
+import { LANDED_DRAFTS_FILE, type LandedDraftsRecord } from "./landed-drafts";
 import { blameCheck, blameFile, blameSetup, type CheckBlame, summarize } from "./attribute";
 import { type CheckRun, checksOf, countsOf, type CopyScope, envOf, freshOf, type PlannedCheck, picksOf, planChecks, reusedWords, runCheck, templateVarsOf } from "./checks";
 import type { RunHooks, RunInput, RunMerge, RunOutcome } from "./contract";
@@ -854,8 +856,33 @@ async function landDrafts(o: { input: RunInput; copy: string; ident: Record<stri
   const c = await gitProc(o.copy, [...NO_BACKGROUND_CLEANUP, "commit", "--no-verify", "-m", subject, "-m", String(j.commitMessage?.body || verification), "-m", `Sova-Spec-Landing: merge-queue ${o.input.runId}`], { env: o.ident, log: st.log });
   if (c.code !== 0) return (st.end("failed", { detail: tail(c.out) }), { kind: "machine", why: `committing the docs failed: ${tail(c.out)}` });
   const sha = await gitOut(o.copy, ["rev-parse", "HEAD"]);
+  keepLandedDrafts(o.input.runDir, o.copy, sha, names, st.log);
   st.end("passed", { detail: `${short(sha)}: ${subject}` });
   return { kind: "made", sha };
+}
+
+/** What the docs step made official, kept in the run folder (its merge copy's drafts are put back right after); the
+ *  queue writes it onto the branch folder's drafts only once the target is at the tested tip (landed-drafts.ts). */
+function keepLandedDrafts(runDir: string, copy: string, commit: string, names: readonly string[], log: (s: string) => void): void {
+  const dir = join(copy, ".sova", "spec", "drafts");
+  const drafts: LandedDraftsRecord["drafts"] = {};
+  for (const n of names) {
+    const hash = draftSpecHash(dir, n);
+    if (!hash) continue;
+    let promotions: unknown[] = [];
+    try {
+      const d = JSON.parse(readFileSync(join(dir, n, "draft.json"), "utf8")) as { promotions?: unknown };
+      if (Array.isArray(d.promotions)) promotions = d.promotions;
+    } catch {
+      /* no receipt to copy: the landing marker alone */
+    }
+    drafts[n] = { hash, promotions };
+  }
+  try {
+    writeFileSync(join(runDir, LANDED_DRAFTS_FILE), JSON.stringify({ commit, drafts } satisfies LandedDraftsRecord, null, 2) + "\n");
+  } catch (err) {
+    log(`couldn't keep what landed for the branch folder's drafts: ${err instanceof Error ? err.message : String(err)}\n`);
+  }
 }
 
 /** The run folder's step logs, for merge.logs: the step's lines (newest last), at most `lines`. */

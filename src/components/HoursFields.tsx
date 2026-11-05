@@ -1,6 +1,15 @@
 import { createSignal, createUniqueId, For, Show } from "solid-js";
 import type { PersonHours } from "../../shared/orgs";
+import { type CustomRule, problemOf } from "../../shared/form-rules";
 import { DEFAULT_HOURS, knownZones, validZone, WEEK } from "../lib/working-hours";
+import { TextField, Toggle } from "./form";
+
+/** The zone box's rule: an IANA name this browser knows, or blank. */
+const ZONE_RULE: CustomRule = {
+  kind: "custom",
+  label: "Time zone",
+  issue: (zone) => (validZone(zone) ? null : `"${zone}" isn't a time zone this browser knows. Use an IANA name, like Europe/Istanbul.`),
+};
 
 /** A zone and working hours being edited (r7 a person's, r13 the company's): hours only once turned on. */
 export function createHoursDraft(init: { tz?: string; hours?: PersonHours | null } | undefined) {
@@ -12,18 +21,12 @@ export function createHoursDraft(init: { tz?: string; hours?: PersonHours | null
   const [error, setError] = createSignal<string | null>(null);
   return {
     tz, setTz, on, setOn, days, setDays, from, setFrom, to, setTo, error, setError,
-    /** The form's problem, said under the fields; null when it can be saved. */
+    /** The form's problem; null when it can be saved. The zone's is said under its box, the rest under the fields. */
     check(): string | null {
-      const zone = tz().trim();
-      const problem = !validZone(zone)
-        ? `"${zone}" isn't a time zone this browser knows. Use an IANA name, like Europe/Istanbul.`
-        : on() && !days().length
-          ? "Pick at least one working day, or turn working hours off."
-          : on() && (!from() || !to())
-            ? "Working hours need a start and an end."
-            : null;
+      const zone = problemOf(ZONE_RULE, tz());
+      const problem = on() && !days().length ? "Pick at least one working day, or turn working hours off." : on() && (!from() || !to()) ? "Working hours need a start and an end." : null;
       setError(problem);
-      return problem;
+      return zone ?? problem;
     },
     zone: () => tz().trim(),
     hours: (): PersonHours | null => (on() ? { days: days(), from: from(), to: to() } : null),
@@ -35,57 +38,23 @@ export type HoursDraft = ReturnType<typeof createHoursDraft>;
 export function HoursFieldset(props: { draft: HoursDraft; hint: string; toggle?: string; timesHint?: string; noZone?: string }) {
   const d = props.draft;
   const zonesId = createUniqueId();
-  const zones = knownZones();
   const toggleDay = (day: number, on: boolean) => d.setDays((ds) => (on ? [...new Set([...ds, day])] : ds.filter((x) => x !== day)).sort((a, b) => a - b));
   return (
     <fieldset class="person-hours">
       <legend class="field-label">Working hours</legend>
       <p class="field-hint person-hours-hint">{props.hint}</p>
-      <label class="field">
-        <span class="field-label">Time zone</span>
-        <input
-          class="input"
-          value={d.tz()}
-          list={zonesId}
-          placeholder="Europe/Istanbul"
-          autocomplete="off"
-          spellcheck={false}
-          aria-invalid={!validZone(d.tz()) ? "true" : undefined}
-          onInput={(e) => {
-            d.setTz(e.currentTarget.value);
-            d.setError(null);
-          }}
-        />
-        <datalist id={zonesId}>
-          <For each={zones}>{(z) => <option value={z} />}</For>
-        </datalist>
-      </label>
-      <label class="toggle person-hours-toggle">
-        <input type="checkbox" checked={d.on()} onChange={(e) => d.setOn(e.currentTarget.checked)} />
-        <span class="toggle-box" />
-        <span>{props.toggle ?? "Set working hours"}</span>
-      </label>
+      <TextField label="Time zone" rule={ZONE_RULE} value={d.tz()} list={zonesId} placeholder="Europe/Istanbul" autocomplete="off" spellcheck={false} onInput={d.setTz} />
+      <datalist id={zonesId}>
+        <For each={knownZones()}>{(z) => <option value={z} />}</For>
+      </datalist>
+      <Toggle class="person-hours-toggle" label={props.toggle ?? "Set working hours"} checked={d.on()} onChange={d.setOn} />
       <Show when={d.on()}>
         <div class="person-hours-days" role="group" aria-label="Working days">
-          <For each={WEEK}>
-            {(w) => (
-              <label class="toggle person-hours-day" title={w.long}>
-                <input type="checkbox" checked={d.days().includes(w.day)} aria-label={w.long} onChange={(e) => toggleDay(w.day, e.currentTarget.checked)} />
-                <span class="toggle-box" />
-                <span aria-hidden="true">{w.short}</span>
-              </label>
-            )}
-          </For>
+          <For each={WEEK}>{(w) => <Toggle class="person-hours-day" label={<><span aria-hidden="true" title={w.long}>{w.short}</span><span class="visually-hidden">{w.long}</span></>} checked={d.days().includes(w.day)} onChange={(on) => toggleDay(w.day, on)} />}</For>
         </div>
         <div class="orgs-fields person-hours-times">
-          <label class="field">
-            <span class="field-label">From</span>
-            <input class="input text-num" type="time" value={d.from()} onInput={(e) => d.setFrom(e.currentTarget.value)} />
-          </label>
-          <label class="field">
-            <span class="field-label">To</span>
-            <input class="input text-num" type="time" value={d.to()} onInput={(e) => d.setTo(e.currentTarget.value)} />
-          </label>
+          <TextField label="From" type="time" inputClass="text-num" value={d.from()} onInput={(v) => (d.setFrom(v), d.setError(null))} />
+          <TextField label="To" type="time" inputClass="text-num" value={d.to()} onInput={(v) => (d.setTo(v), d.setError(null))} />
         </div>
         <p class="field-hint">{props.timesHint ?? "In their time zone. An end before the start runs overnight."}</p>
         {/* r13: hours count only with a zone; without one, the caller says what applies instead. */}

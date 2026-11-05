@@ -114,6 +114,7 @@ import { setSummaryWriter, summaryFromChain } from "./version-summaries";
 import { parseSessionTitleSettings, readSessionTitleSettings, sessionTitleSettingsInfo, writeSessionTitleSettings } from "./session-titles-settings";
 import type { LlmRuntime } from "./decide-llm";
 import { claudeLoginEnv, registerClaudeAccountRoutes } from "./claude-accounts";
+import { OpenAiLoginService, registerOpenAiLoginRoutes } from "./openai-login";
 import { chatOnlyModes, CREATE_NOT_TAKEN, modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { defaultMemoryChoice } from "./memory/settings";
 import { registerMemoryRoutes } from "./memory/routes";
@@ -144,7 +145,9 @@ import {
   overseerAutonomy,
   revokePermit,
 } from "./overseer";
-import { readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
+import { readNotes, writeNotes } from "./overseer-store";
+import { problemOf } from "../shared/form-rules";
+import { NOTES_RULE } from "../shared/overseer-limits";
 import { pathOfId, promptSession } from "./session-prompt";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
 import { checkRename, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea, type IdeaUpdate } from "./overseer-ideas";
@@ -1246,6 +1249,16 @@ export function buildApp(deps: AppDeps) {
   // through Claude Code's own `claude auth login`. The registry is the claude-code extension's.
   const claudeAccounts = registerClaudeAccountRoutes(app);
 
+  // Settings → Accounts' OpenAI sign-in (§app.openai-login): the ChatGPT subscription through pi's own
+  // login. A change re-checks the shared runtime's providers, so the model menu and opening choices
+  // see it at once, and asks for a usage reading.
+  const openAiLogin = registerOpenAiLoginRoutes(app, new OpenAiLoginService({
+    afterChange: async () => {
+      await (await getModelRuntime()).getAvailable().catch(() => []);
+      await refreshUsageInsight().catch(() => undefined);
+    },
+  }));
+
   // The mode is per session. ~/.pi/agent/mode.json is the default new sessions
   // start from; GET reads it, POST without ?path= writes it and changes no open chat. A switch never writes
   // it (chat-manager switchMode): the default moves when a caller asks for exactly that.
@@ -1675,7 +1688,8 @@ export function buildApp(deps: AppDeps) {
       return c.json({ error: "Expected JSON body { text }" }, 400);
     }
     if (typeof body?.text !== "string") return c.json({ error: "text must be a string" }, 400);
-    if (body.text.length > NOTES_MAX) return c.json({ error: `Notes must be at most ${NOTES_MAX} characters` }, 400);
+    const tooLong = problemOf(NOTES_RULE, body.text);
+    if (tooLong) return c.json({ error: tooLong }, 400);
     if (body.base !== undefined && typeof body.base !== "string") return c.json({ error: "base must be a string" }, 400);
     const current = readNotes();
     if (typeof body.base === "string" && body.base !== current)
@@ -2022,7 +2036,7 @@ export function buildApp(deps: AppDeps) {
     return spaIndex(c, next);
   });
 
-  return { app, autoTitleSweep, claudeAccounts, meshResync };
+  return { app, autoTitleSweep, claudeAccounts, openAiLogin, meshResync };
 }
 
 export type BuiltApp = ReturnType<typeof buildApp>;

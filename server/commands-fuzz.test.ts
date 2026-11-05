@@ -636,6 +636,7 @@ const FIXTURES: Record<string, Fixture> = {
   "project.overseer.todo.reorder": { values: () => { const v: Record<string, unknown> = {}; pendingSetup.push(async () => { const d = join(root, `pf-${Math.random().toString(36).slice(2)}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d, name: "Fuzz fixture" }))).body as { project: { id: string } }).project.id; /* its runtime registry's first read, done now: no write lands after the hash */ await (await import("./projects/runtime")).observe(String(v.pid)); await (await import("./org-engine")).hostOf(String(v.pid)).idle(); for (const text of ["Kept", "Done one"]) await sendTo(app, "POST", `/api/projects/${v.pid}/overseer/todos`, JSON.stringify({ text })); const ids = ((await read("GET", `/api/projects/${v.pid}/overseer/todos`)).todos as { id: string }[]).map((t) => t.id); v.id = ids[1]; v.ids = [...ids].reverse(); }); return v; }, status: 200, oracle: async (_b, v) => assert.deepEqual(((await read("GET", `/api/projects/${v.pid}/overseer/todos`)).todos as { id: string; text: string }[]).map((t) => t.id), v.ids) },
   "project.overseer.todo.clear-done": { values: () => { const v: Record<string, unknown> = {}; pendingSetup.push(async () => { const d = join(root, `pf-${Math.random().toString(36).slice(2)}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d, name: "Fuzz fixture" }))).body as { project: { id: string } }).project.id; /* its runtime registry's first read, done now: no write lands after the hash */ await (await import("./projects/runtime")).observe(String(v.pid)); await (await import("./org-engine")).hostOf(String(v.pid)).idle(); for (const text of ["Kept", "Done one"]) await sendTo(app, "POST", `/api/projects/${v.pid}/overseer/todos`, JSON.stringify({ text })); const ids = ((await read("GET", `/api/projects/${v.pid}/overseer/todos`)).todos as { id: string }[]).map((t) => t.id); v.id = ids[1]; v.ids = [...ids].reverse(); await sendTo(app, "PATCH", `/api/projects/${v.pid}/overseer/todo?id=${v.id}`, JSON.stringify({ done: true })); }); return v; }, status: 200, oracle: async (_b, v) => assert.ok(!JSON.stringify(await read("GET", `/api/projects/${v.pid}/overseer/todos`)).includes("Done one")) },
   "project.list": { values: () => ({}), status: 200 },
+  "project.glance": { values: () => ({}), status: 200 },
   "project.get": {
     values: () => {
       const v: Record<string, unknown> = {};
@@ -872,6 +873,7 @@ const FIXTURES: Record<string, Fixture> = {
   "playbook.list": { values: () => ({}), status: 200 },
   "draft-spec.list": { values: () => ({}), status: 200 },
   "mcp.servers.list": { values: () => ({}), status: 200 },
+  "project.merge-queue.landing-summary": { values: () => ({}), status: 200 },
   "mcp.server.status": { values: () => ({ id: "no-such-row" }), status: 404 },
 };
 /** A registered project (its overseer's settings read their defaults), made in the set-up. */

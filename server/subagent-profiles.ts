@@ -6,7 +6,9 @@ import {
   footprint, profileProviders, profileSlots, writeSubagentProfiles, writeProfilesDefault, OFF_FOOTPRINT,
   profileWorkers, shortModel as workerModelName,
 } from "../pi-config/extensions/subagents/subagent-profiles.ts";
-import type { SubagentProfilesInfo, SubagentProfilesReplaced } from "../shared/subagent-profiles";
+import type { SubagentProfile, SubagentProfilesInfo, SubagentProfilesReplaced } from "../shared/subagent-profiles";
+import { firstIssue } from "../shared/form-rules";
+import { profileFields } from "../shared/subagent-profile-checks";
 import { delegateOptions, verifySlots, type DelegateSources } from "./delegate";
 
 export function subagentProfilesInfo(pick?: string, dir = agentRoot()): SubagentProfilesInfo {
@@ -90,6 +92,10 @@ export function requireSubagentProfile(id: unknown, dir = agentRoot()): string {
 export async function saveSubagentProfiles(body: unknown, sources: DelegateSources, dir = agentRoot()): Promise<SubagentProfilesInfo | { error: string }> {
   const old = subagentProfilesInfo(undefined, dir);
   if (old.error) return { error: old.error };
+  // The editor's boxes' rules first, so a bad box is refused in the words the editor shows it in.
+  const sent = body && typeof body === "object" ? (body as { profiles?: unknown }).profiles : undefined;
+  const bad = Array.isArray(sent) ? firstIssue(sent.flatMap((p) => (p && typeof p === "object" ? profileFields(p as SubagentProfile).filter((f) => f.value !== undefined) : []))) : null;
+  if (bad) return { error: bad.message };
   const parsed = parseSubagentProfiles(body);
   if (!parsed.ok) return { error: parsed.errors.join("; ") };
   const options = await delegateOptions(sources);

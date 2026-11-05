@@ -91,6 +91,7 @@ p code, li code, td code, dd code {
   display: inline-flex; align-items: center; min-height: var(--tap-min); padding: 0 var(--space-3);
   border-radius: var(--r-md);
   color: var(--color-ink-muted); text-decoration: none; font-size: var(--fs-body); font-weight: var(--fw-medium);
+  white-space: nowrap;
 }
 .nav-links a:hover { color: var(--color-ink); background: var(--color-sunken); }
 .nav-spacer { flex: 1; }
@@ -101,7 +102,7 @@ p code, li code, td code, dd code {
 :root[data-theme="light"] .theme-toggle .icon-moon { display: inline-block; }
 :root[data-theme="light"] .theme-toggle .icon-sun { display: none; }
 /* The Mesh and Organizations pages get nav links only where the bar has room for them. */
-@media (max-width: 1099px) { .nav-links .nav-link-extra { display: none; } }
+@media (max-width: 1179px) { .nav-links .nav-link-extra { display: none; } }
 .nav-links a[aria-current="page"] { color: var(--color-ink); }
 /* Narrow bars keep one link, Docs. */
 @media (max-width: 767px) {
@@ -595,3 +596,8 @@ p code, li code, td code, dd code {
 .footer-links a { color: var(--color-ink-2); text-decoration: none; display: inline-flex; align-items: center; min-height: var(--tap-min); }
 .footer-links a:hover { color: var(--color-ink); text-decoration: underline; }
 .footer-meta { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-5); max-width: 72ch; }
+
+/* Landing and releases: the four steps from approval to landing, then the two features under them. */
+.landing-steps { margin-bottom: clamp(56px, 7vw, 96px); }
+.teams-perks { margin-top: clamp(56px, 7vw, 96px); }
+.landing-steps .perk h3 { gap: var(--space-3); }

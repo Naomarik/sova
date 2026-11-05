@@ -44,6 +44,7 @@ import {
 import { NO_BACKGROUND_CLEANUP } from "../git-no-background";
 import { type Git, isAncestor, realGit as queueGit, revParse } from "../merge-queue/guard";
 import type { ProjectQueue, ReleaseQueueEvent } from "../merge-queue/queue";
+import type { LandingReleaseCut } from "../../shared/merge-queue";
 import { MergeFailure } from "../merge-queue/queue";
 import { changelogSection } from "../updates/check";
 import { callerTag, type Caller } from "./engine";
@@ -380,6 +381,11 @@ export class Releaser {
     // A published (or withdrawn) release's chat still reports its after (or withdraw) steps.
     const last = this.lastRecord(root);
     return !!last && last.thread?.session === caller.id && (last.state === "published" || last.state === "withdrawn");
+  }
+
+  /** The open record and the newest settled one, as a view carries them (the start of the cards' kept copy). */
+  keptRecords(root: string): { open: ReleaseRecord | null; last: ReleaseRecord | null } {
+    return { open: this.openRecord(root), last: this.lastRecord(root) };
   }
 
   private lastRecord(root: string): ReleaseRecord | null {
@@ -1188,6 +1194,31 @@ export class Releaser {
       gates: open ? this.gatesOf(open) : null,
       quiet: open ? this.quietOf(open) : null,
       note: this.savedNote(root),
+    };
+  }
+
+  /**
+   * The landing bar's starting picture of `root`'s releases (GET /api/merge-queue/landing-summary): null when it has no
+   * open or last record. Reads the records and the queue's declared definition, never the tag history; each step's
+   * `detail` is left out (its `summary` stays).
+   */
+  async landingCut(root: string): Promise<LandingReleaseCut | null> {
+    const open = this.openRecord(root);
+    const last = this.lastRecord(root);
+    if (!open && !last) return null;
+    const q = await this.deps.queue(root);
+    const d = await q.declared();
+    const pushes = d.def?.merge?.push !== false && (await this.git(["remote"], root)).stdout.split("\n").includes("origin");
+    const slim = (r: ReleaseRecord | null): ReleaseRecord | null => (r ? { ...r, steps: r.steps.map(({ detail: _d, ...s }) => s) } : null);
+    return {
+      project: root,
+      initialized: !!d.def?.release,
+      open: slim(open),
+      last: slim(last),
+      gates: open ? this.gatesOf(open) : null,
+      quiet: open ? this.quietOf(open) : null,
+      target: q.target,
+      remote: pushes,
     };
   }
 

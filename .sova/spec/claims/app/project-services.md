@@ -359,8 +359,9 @@ nothing (§app.project-services/adopt).
 
 Both are reads. `status` of an instance reports each service as observed now (stopped, starting,
 ready, degraded, failed, or `external` when something else holds its port) with its unit, pid,
-ports and, while a process service runs, `rssBytes` (the resident memory of its unit's
-processes now), each data resource's existence, the definition's hash, and the supervisor in use
+ports and, while a process service runs, `rssBytes` (the memory its unit's processes use now,
+each process's own memory as the resource monitor measures it, §app.resource-monitor/sampling-and-history:
+on Linux resident less shared pages, on macOS resident memory), each data resource's existence, the definition's hash, and the supervisor in use
 as the one check `supervisor` (informational: it never makes `ok` false). A service the definition
 no longer declares whose unit (or static serve) still runs is listed too, after the declared ones,
 as `degraded` with its unit and pid and the detail "no longer in the definition" (a shared one:
@@ -736,7 +737,8 @@ hash. Every other slot runs the service as usual, on its allocated ports.
 On an adopted slot 0, Sova only reads the unit (`systemctl --user show`; on macOS `launchctl print
 gui/<uid>/<label>`, with when its main process started and the memory of that process's tree read
 from `ps`), whatever its supervisor:
-status shows the service with the unit's name, its main pid, resident memory and readiness on the
+status shows the service with the unit's name, its main pid, its memory (its processes' own memory,
+measured as for any other service, §app.project-services/status-logs) and readiness on the
 unit's ports, `ready` once that answers, else from the unit's state, and a detail saying it is the
 adopted unit and when it started (for the server's own unit, "this server" and the commit it
 loaded); the copy is wanted running. Logs read the unit's journal (on macOS, the last lines of the
@@ -797,7 +799,9 @@ The operator sees and drives every running copy from two places, both on this ho
   null), usable (how many slots of 1 to 16 the layout can use), unavailable (one sentence per unusable slot), estimate (what a copy takes, or null), host: {totalBytes, availableBytes}}`. It is read every 5 seconds while the tab shows. One row per copy: the main checkout's (slot 0) first, named
   `main`, then each branch copy by slot. A row shows the branch, `slot {n}`, each checkout service's
   ports (a port with HTTP readiness is a link to the site at `http://<this page's host>:<port>/`, never the readiness check's path), the copy's
-  memory (the sum of its services' resident memory, "—" when none reports one), its state as a chip
+  memory (the sum of its services' memory, each process's own memory as the resource monitor
+  measures it, so it reads what a project card's Memory in use counts for that copy,
+  §app.projects/home-glance; "—" when none reports one), its state as a chip
   (Running, Starting, Degraded, Stopped, Absent; Starting while the copy is degraded only because a
   service is still starting, none failed or degraded; a service that is not ready is named under the
   row with its state), and who created it ("by you", "by a coding session", "by its overseer", "by the Overseer",

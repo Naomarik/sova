@@ -12,8 +12,10 @@ import {
   titleSettingsSaveResult,
   titleSettingsSaving as saving,
 } from "../lib/session-title-settings-draft";
-import { INTERVAL, minutesIssue, QUIET, sameTitleSettings, toTitleDraft, withoutSubagentMarks, type SessionTitleDraft } from "../lib/session-title-settings-form";
+import { sameTitleSettings, toTitleDraft, withoutSubagentMarks, type SessionTitleDraft } from "../lib/session-title-settings-form";
 import { home } from "../lib/ui-state";
+import { TITLE_RULES } from "../../shared/session-title-limits";
+import { NumberField, Toggle } from "./form";
 import { Banner } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
 
@@ -95,37 +97,31 @@ export function SessionTitleSettingsSection() {
       <Show when={loaded() && draft()}>
         <fieldset class="settings-delegate-profile">
           <legend class="visually-hidden">Session titles</legend>
-          <label class="toggle toggle-switch settings-delegate-fallback-toggle">
-            <span>Name sessions automatically</span>
-            <input
-              type="checkbox"
-              checked={draft()!.enabled}
-              disabled={saving()}
-              aria-describedby="session-titles-auto-hint"
-              onChange={(e) => edit({ enabled: e.currentTarget.checked })}
-            />
-            <span class="toggle-box" />
-          </label>
-          <p class="field-hint" id="session-titles-auto-hint">
-            Names each session once, from its summary line, after it has been quiet for the time below. A title you or the
-            Overseer set is never changed.
-          </p>
+          <Toggle
+            switch
+            class="settings-delegate-fallback-toggle"
+            label="Name sessions automatically"
+            checked={draft()!.enabled}
+            disabled={saving()}
+            onChange={(on) => edit({ enabled: on })}
+            hint="Names each session once, from its summary line, after it has been quiet for the time below. A title you or the Overseer set is never changed."
+          />
           <div class="settings-team-numbers">
-            <MinutesField
+            <NumberField
               id="session-titles-interval"
               label="Check every (minutes)"
               hint="How often the sweep looks for sessions to name."
               value={draft()!.intervalMinutes}
-              range={INTERVAL}
+              rule={TITLE_RULES.intervalMinutes}
               disabled={saving()}
               onInput={(v) => edit({ intervalMinutes: v })}
             />
-            <MinutesField
+            <NumberField
               id="session-titles-quiet"
               label="After quiet for (minutes)"
               hint="A session is named once nothing was written in it for this long."
               value={draft()!.quietMinutes}
-              range={QUIET}
+              rule={TITLE_RULES.quietMinutes}
               disabled={saving()}
               onInput={(v) => edit({ quietMinutes: v })}
             />
@@ -142,16 +138,14 @@ export function SessionTitleSettingsSection() {
             otherwise="the session keeps its title"
             onChange={(next) => update("primary", next)}
           />
-          <label class="toggle toggle-switch settings-delegate-fallback-toggle">
-            <span>Fallback</span>
-            <input
-              type="checkbox"
-              checked={draft()!.fallback !== null}
-              disabled={saving()}
-              onChange={(e) => update("fallback", fallbackFor(draft()!.primary, e.currentTarget.checked))}
-            />
-            <span class="toggle-box" />
-          </label>
+          <Toggle
+            switch
+            class="settings-delegate-fallback-toggle"
+            label="Fallback"
+            checked={draft()!.fallback !== null}
+            disabled={saving()}
+            onChange={(on) => update("fallback", fallbackFor(draft()!.primary, on))}
+          />
           <Show when={draft()!.fallback} fallback={<p class="field-hint">No fallback: when the primary can't run, sessions keep their titles until it can.</p>}>
             {(fallback) => (
               <WorkerSlotRow
@@ -228,35 +222,6 @@ function ShortenLongTitles() {
         Renames automatic, Overseer and older titles with the saved models. Titles you typed are never changed.
       </p>
       <Show when={error()}>{(e) => <Banner tone="error" title="Couldn't shorten the titles." body={sentence(e())} />}</Show>
-    </div>
-  );
-}
-
-/** A whole-minute field, Teams' number field: its hint, or what's wrong with the value in its place. */
-function MinutesField(props: { id: string; label: string; hint: string; value: string; range: { min: number; max: number }; disabled: boolean; onInput(v: string): void }) {
-  const issue = () => minutesIssue(props.value, props.range);
-  return (
-    <div class="field">
-      <label class="field-label" for={props.id}>
-        {props.label}
-      </label>
-      <input
-        class="input text-num"
-        id={props.id}
-        type="number"
-        inputmode="numeric"
-        min={props.range.min}
-        max={props.range.max}
-        step="1"
-        value={props.value}
-        disabled={props.disabled}
-        aria-invalid={issue() ? "true" : undefined}
-        aria-describedby={`${props.id}-hint`}
-        onInput={(e) => props.onInput(e.currentTarget.value)}
-      />
-      <span class={issue() ? "field-error" : "field-hint"} id={`${props.id}-hint`}>
-        {issue() ?? props.hint}
-      </span>
     </div>
   );
 }

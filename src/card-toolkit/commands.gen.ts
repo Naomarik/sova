@@ -117,6 +117,7 @@ export type CommandId =
   | "project.overseer.actions"
   | "project.overseer.memory.get"
   | "project.list"
+  | "project.glance"
   | "project.get"
   | "project.create"
   | "project.update"
@@ -153,6 +154,7 @@ export type CommandId =
   | "project.merge-queue.land-how.set"
   | "project.merge-queue.land-how.clear"
   | "project.merge-queue.branch-summary.retry"
+  | "project.merge-queue.landing-summary"
   | "overseer.attention"
   | "overseer.abilities"
   | "overseer.todo.list"
@@ -2909,6 +2911,8 @@ export interface CommandParams {
   };
   /** Every registered project, in an organization or not. (only looks; needs the card's owner trusted) */
   "project.list": Record<string, never>;
+  /** Every listed project's runtime figures, as the overview's cards show them: ready to merge, running copies, memory in use, a landing or release moving. (only looks; needs the card's owner trusted) */
+  "project.glance": Record<string, never>;
   /** One registered project. (only looks; needs the card's owner trusted) */
   "project.get": {
     /** The project's id */
@@ -3181,6 +3185,8 @@ export interface CommandParams {
     /** The full commit id the row shows */
     "commit": string;
   };
+  /** Every project's merge queue and open release in one quick read: the run checking now, the line, what waits for you, the newest landings and the release's steps. (only looks; needs the card's owner trusted) */
+  "project.merge-queue.landing-summary": Record<string, never>;
   /** What needs the user now, as the Overseer's digest has it. (only looks; needs the card's owner trusted) */
   "overseer.attention": Record<string, never>;
   /** What the Overseer can do: its built-in abilities, its limits and the commands its extensions offer it. (only looks; needs the card's owner trusted) */
@@ -3710,6 +3716,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.overseer.actions": "looks",
   "project.overseer.memory.get": "looks",
   "project.list": "looks",
+  "project.glance": "looks",
   "project.get": "looks",
   "project.create": "changes",
   "project.update": "changes",
@@ -3746,6 +3753,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.merge-queue.land-how.set": "changes",
   "project.merge-queue.land-how.clear": "changes",
   "project.merge-queue.branch-summary.retry": "changes",
+  "project.merge-queue.landing-summary": "looks",
   "overseer.attention": "looks",
   "overseer.abilities": "looks",
   "overseer.todo.list": "looks",

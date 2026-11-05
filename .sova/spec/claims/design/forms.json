@@ -1,0 +1,103 @@
+{
+  "§design.forms/field": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§design.overview/class-index",
+      "§app.settings-dialog/toggle-target"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T09:47Z",
+      "source": "pi-session:01a1a855-6f5f-72d2-b9d3-59fb661e925b#267965d9"
+    },
+    "code": [
+      "shared/form-rules.ts",
+      "src/components/form/index.tsx",
+      "src/lib/form-kit.test.ts"
+    ]
+  },
+  "§design.forms/inventory": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§design.forms/field"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T09:47Z",
+      "source": "pi-session:01a1a855-6f5f-72d2-b9d3-59fb661e925b#267965d9"
+    },
+    "code": [
+      "server/form-inventory.test.ts",
+      "server/form-inventory-baseline.test.json"
+    ]
+  },
+  "§design.forms/limits": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§design.forms/field",
+      "§design.copy-deck/forms"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T09:47Z",
+      "source": "pi-session:01a1a855-6f5f-72d2-b9d3-59fb661e925b#267965d9"
+    },
+    "code": [
+      "shared/form-rules.ts",
+      "shared/overseer-limits.ts",
+      "server/overseer-store.ts",
+      "server/app.ts",
+      "server/settings-limits-parity.test.ts",
+      "src/lib/form-kit.test.ts"
+    ]
+  },
+  "§design.forms/saving": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§design.forms/field",
+      "§app.settings-dialog/save-bar",
+      "§app.settings-dialog/general"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T09:47Z",
+      "source": "pi-session:01a1a855-6f5f-72d2-b9d3-59fb661e925b#267965d9"
+    },
+    "code": [
+      "src/lib/settings-draft.ts",
+      "src/lib/settings-draft.test.ts",
+      "src/lib/form-kit.test.ts"
+    ]
+  },
+  "§design.forms/typed-text": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§design.forms/field"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T09:47Z",
+      "source": "pi-session:01a1a855-6f5f-72d2-b9d3-59fb661e925b#267965d9"
+    },
+    "code": [
+      "shared/form-rules.ts",
+      "src/components/form/index.tsx",
+      "src/lib/form-kit.test.ts"
+    ]
+  },
+  "§design/forms": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed"
+  }
+}

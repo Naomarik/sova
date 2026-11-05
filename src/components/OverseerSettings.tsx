@@ -6,9 +6,18 @@ import { loadModelPolicy, usableModels } from "../lib/model-policy";
 import { loadModels, modelList, thinkingLevelsFor } from "../lib/models";
 import { PROACTIVITY, PROACTIVITY_HINT, PROACTIVITY_LABEL } from "../lib/overseer";
 import {
+  atDefaults,
   CAP_LABEL,
+  canAddQuickAction,
+  type CapEntry,
   capsChangedFromDefault,
-  capValid,
+  completeInfo,
+  EXPLORER_NEEDS,
+  NOTES_TOO_LONG_MESSAGE,
+  QUICK_ACTIONS_MAX,
+  resetExplorer,
+  resetLimits,
+  resetQuickActions,
   explorerOptions,
   moveQuickAction,
   newQuickAction,
@@ -26,6 +35,8 @@ import {
 } from "../lib/overseer-draft";
 import { clearSettingsSection, settingsSection } from "../lib/settings-nav";
 import { home } from "../lib/ui-state";
+import { CAP_RULES, EXTRA_PROMPT_RULE, NOTES_RULE, QA_RULES, qaLabel } from "../../shared/overseer-limits";
+import { Choice, NumberField, Select, TextArea, TextField, Toggle } from "./form";
 import { Banner, Icon } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
 
@@ -58,7 +69,11 @@ export function OverseerSettingsSection() {
   const autonomyTimer = setInterval(readAutonomy, 15_000);
   onCleanup(() => clearInterval(autonomyTimer));
 
-  const loaded = () => (info.error ? undefined : info());
+  // A limit the server didn't send (an older server) is filled from the defaults, never left blank and red.
+  const loaded = createMemo(() => {
+    const i = info.error ? undefined : info();
+    return i ? completeInfo(i) : undefined;
+  });
   const loadedNotes = () => (notes.error ? undefined : notes());
   // Both are fetched afresh each time the section mounts (each open of the dialog, each return to
   // this tab); a kept draft is rebased onto them, never left on an older copy.
@@ -69,6 +84,8 @@ export function OverseerSettingsSection() {
   });
 
   const d = () => draft();
+  /** The last save stopped because the merged notes ran over the limit: said beside the notes too. */
+  const notesTooLong = () => overseerSaveError()?.message === NOTES_TOO_LONG_MESSAGE;
 
   // Opened from the composer's "3 of 10 running": bring Limits into view once the form renders.
   let limits: HTMLFieldSetElement | undefined;
@@ -120,7 +137,7 @@ export function OverseerSettingsSection() {
     }),
   );
 
-  const edit = (patch: Partial<OverseerSettings>) => {
+  const edit = (patch: Partial<Omit<OverseerSettings, "caps">> & { caps?: Record<keyof OverseerCaps, CapEntry> }) => {
     const cur = d();
     if (!cur) return;
     setOverseerDraft({ ...cur, settings: { ...cur.settings, ...patch } });
@@ -130,7 +147,7 @@ export function OverseerSettingsSection() {
     if (!cur) return;
     edit({ quickActions: cur.settings.quickActions.map((a, j) => (j === i ? { ...a, ...patch } : a)) });
   };
-  const editCap = (k: keyof OverseerCaps, v: number) => {
+  const editCap = (k: keyof OverseerCaps, v: string) => {
     const cur = d();
     if (cur) edit({ caps: { ...cur.settings.caps, [k]: v } });
   };
@@ -146,52 +163,39 @@ export function OverseerSettingsSection() {
   const listed = (ref: string | null) => !ref || groups().some(([, refs]) => refs.includes(ref));
   const levels = () => thinkingLevelsFor(d()?.settings.model);
 
-  const numberOf = (v: string) => (v.trim() === "" ? Number.NaN : Number(v));
-
-  /** A group's Reset to Defaults: in the group's head row, every one worded the same; it fills the draft only. */
-  const ResetButton = (p: { onClick: () => void }) => (
-    <button type="button" class="button button-sm button-ghost overseer-reset" disabled={saving()} onClick={() => p.onClick()}>
+  /** A group's Reset to Defaults: in the group's head row, every one worded the same; it fills the
+      draft only, and is greyed out while the group already holds its defaults. */
+  const ResetButton = (p: { onClick: () => void; atDefault: boolean }) => (
+    <button type="button" class="button button-sm button-ghost overseer-reset" disabled={saving() || p.atDefault} onClick={() => p.onClick()}>
       Reset to Defaults
     </button>
   );
 
   /** One limit's field; `wide` is Running at once, which leads the group alone. */
-  const CapField = (p: { k: keyof OverseerCaps; wide?: boolean; now?: string | null }) => {
-    const v = () => d()!.settings.caps[p.k];
-    return (
-      <div class="field" classList={{ "overseer-cap-wide": !!p.wide }}>
-        <label class="field-label" for={`overseer-cap-${p.k}`}>
-          {CAP_LABEL[p.k].label}
-        </label>
-        <div class="overseer-cap-row">
-          <input
-            class="input text-num overseer-cap-input"
-            id={`overseer-cap-${p.k}`}
-            type="number"
-            inputmode="numeric"
-            min="0"
-            max="1000"
-            step="1"
-            value={Number.isNaN(v()) ? "" : v()}
-            aria-invalid={!capValid(v()) ? "true" : undefined}
-            aria-describedby={`${p.now ? `overseer-cap-${p.k}-now ` : ""}overseer-cap-${p.k}-hint`}
-            disabled={saving()}
-            onInput={(e) => editCap(p.k, numberOf(e.currentTarget.value))}
-          />
-          <Show when={p.now}>
-            {(line) => (
-              <span class="overseer-cap-now text-num" id={`overseer-cap-${p.k}-now`}>
-                {line()}
-              </span>
-            )}
-          </Show>
-        </div>
-        <span class="field-hint" id={`overseer-cap-${p.k}-hint`}>
-          {CAP_LABEL[p.k].hint}
-        </span>
-      </div>
-    );
-  };
+  const CapField = (p: { k: keyof OverseerCaps; wide?: boolean; now?: string | null }) => (
+    <NumberField
+      id={`overseer-cap-${p.k}`}
+      class={p.wide ? "overseer-cap-wide" : undefined}
+      label={CAP_LABEL[p.k].label}
+      hint={CAP_LABEL[p.k].hint}
+      rule={CAP_RULES[p.k]}
+      value={String(d()!.settings.caps[p.k] ?? "")}
+      inputClass="overseer-cap-input"
+      disabled={saving()}
+      onInput={(v) => editCap(p.k, v)}
+      describedBy={p.now ? `overseer-cap-${p.k}-now` : undefined}
+      afterClass="overseer-cap-row"
+      after={
+        <Show when={p.now}>
+          {(line) => (
+            <span class="overseer-cap-now text-num" id={`overseer-cap-${p.k}-now`}>
+              {line()}
+            </span>
+          )}
+        </Show>
+      }
+    />
+  );
 
   return (
     <section class="settings-delegate overseer-settings" aria-labelledby="settings-overseer-title">
@@ -226,6 +230,7 @@ export function OverseerSettingsSection() {
           const cur = () => d()!;
           const defaults = () => loaded()!.defaults;
           const changed = () => capsChangedFromDefault(cur().settings.caps, defaults().caps);
+          const atDefault = () => atDefaults(cur(), defaults());
           const now = () => {
             const a = autonomy();
             return a ? runningNowLine(a.running, cur().settings.caps.concurrentSessions, a.cap) : null;
@@ -234,108 +239,69 @@ export function OverseerSettingsSection() {
             <>
               <fieldset class="settings-delegate-profile">
                 <legend class="settings-delegate-legend">Proactivity</legend>
-                <div role="radiogroup" aria-label="Proactivity" class="overseer-radios">
-                  <For each={PROACTIVITY}>
-                    {(p: OverseerProactivity) => (
-                      <label class="toggle">
-                        <input
-                          type="radio"
-                          name="overseer-proactivity"
-                          checked={cur().settings.proactivity === p}
-                          disabled={saving()}
-                          onChange={() => edit({ proactivity: p })}
-                        />
-                        <span class="toggle-box" aria-hidden="true" />
-                        <span>
-                          {PROACTIVITY_LABEL[p]}
-                          <span class="field-hint"> · {PROACTIVITY_HINT[p]}</span>
-                        </span>
-                      </label>
-                    )}
-                  </For>
-                </div>
+                <Choice
+                  label="Proactivity"
+                  class="overseer-radios"
+                  value={cur().settings.proactivity}
+                  options={PROACTIVITY.map((p) => ({ value: p, label: PROACTIVITY_LABEL[p], hint: PROACTIVITY_HINT[p] }))}
+                  disabled={saving()}
+                  onChange={(p) => edit({ proactivity: p as OverseerProactivity })}
+                />
               </fieldset>
 
               <fieldset class="settings-delegate-profile">
                 <legend class="settings-delegate-legend">Model and thinking</legend>
                 <div class="settings-delegate-fields overseer-model-fields">
-                  <div class="field">
-                    <label class="field-label" for="overseer-model">
-                      Model
-                    </label>
-                    <div class="select-wrap">
-                      <select
-                        class="select text-mono"
-                        id="overseer-model"
-                        disabled={saving()}
-                        onChange={(e) => {
-                          const ref = e.currentTarget.value || null;
-                          const ladder = thinkingLevelsFor(ref);
-                          const thinking = cur().settings.thinking;
-                          edit({ model: ref, thinking: thinking && ladder.length && !ladder.includes(thinking) ? null : thinking });
-                        }}
-                      >
-                        <option value="" selected={cur().settings.model === null}>
-                          pi's default
-                        </option>
-                        <Show when={!listed(cur().settings.model)}>
-                          <option value={cur().settings.model!} selected>
-                            {cur().settings.model} (not available)
-                          </option>
-                        </Show>
-                        <For each={groups()}>
-                          {([provider, refs]) => (
-                            <optgroup label={provider}>
-                              <For each={refs}>
-                                {(ref) => (
-                                  <option value={ref} selected={ref === cur().settings.model}>
-                                    {ref}
-                                  </option>
-                                )}
-                              </For>
-                            </optgroup>
-                          )}
-                        </For>
-                      </select>
-                      <span class="select-caret" aria-hidden="true">
-                        ▾
-                      </span>
-                    </div>
-                  </div>
-                  <div class="field">
-                    <label class="field-label" for="overseer-thinking">
-                      Thinking
-                    </label>
-                    <div class="select-wrap">
-                      <select
-                        class="select"
-                        id="overseer-thinking"
-                        disabled={saving() || levels().length <= 1}
-                        onChange={(e) => edit({ thinking: e.currentTarget.value || null })}
-                      >
-                        <option value="" selected={cur().settings.thinking === null}>
-                          Model default
-                        </option>
-                        <For each={levels()}>
-                          {(level) => (
-                            <option value={level} selected={level === cur().settings.thinking}>
-                              {level}
-                            </option>
-                          )}
-                        </For>
-                      </select>
-                      <span class="select-caret" aria-hidden="true">
-                        ▾
-                      </span>
-                    </div>
-                  </div>
+                  <Select
+                    id="overseer-model"
+                    label="Model"
+                    selectClass="text-mono"
+                    value={cur().settings.model ?? ""}
+                    disabled={saving()}
+                    onChange={(v) => {
+                      const ref = v || null;
+                      const ladder = thinkingLevelsFor(ref);
+                      const thinking = cur().settings.thinking;
+                      edit({ model: ref, thinking: thinking && ladder.length && !ladder.includes(thinking) ? null : thinking });
+                    }}
+                  >
+                    <option value="" selected={cur().settings.model === null}>
+                      pi's default
+                    </option>
+                    <Show when={!listed(cur().settings.model)}>
+                      <option value={cur().settings.model!} selected>
+                        {cur().settings.model} (not available)
+                      </option>
+                    </Show>
+                    <For each={groups()}>
+                      {([provider, refs]) => (
+                        <optgroup label={provider}>
+                          <For each={refs}>
+                            {(ref) => (
+                              <option value={ref} selected={ref === cur().settings.model}>
+                                {ref}
+                              </option>
+                            )}
+                          </For>
+                        </optgroup>
+                      )}
+                    </For>
+                  </Select>
+                  <Select
+                    id="overseer-thinking"
+                    label="Thinking"
+                    value={cur().settings.thinking ?? ""}
+                    options={[{ value: "", label: "Model default" }, ...levels().map((l) => ({ value: l, label: l }))]}
+                    disabled={saving() || levels().length <= 1}
+                    onChange={(v) => edit({ thinking: v || null })}
+                  />
                 </div>
                 <p class="field-hint">Applies when the Overseer is idle. It never changes the model new sessions start with.</p>
               </fieldset>
 
               <fieldset class="settings-delegate-profile overseer-group" ref={limits}>
                 <legend class="settings-delegate-legend">Limits</legend>
-                <ResetButton onClick={() => edit({ caps: { ...defaults().caps } })} />
+                <ResetButton atDefault={atDefault().limits} onClick={() => setOverseerDraft(resetLimits(cur(), defaults()))} />
                 <p class="field-hint settings-delegate-desc">
                   Before acting, the Overseer checks these. When one is reached it stops and asks you instead. "Per message" counts
                   restart each time you message it.
@@ -355,7 +321,7 @@ export function OverseerSettingsSection() {
 
               <fieldset class="settings-delegate-profile overseer-group">
                 <legend class="settings-delegate-legend">Quick actions</legend>
-                <ResetButton onClick={() => edit({ quickActions: defaults().quickActions.map((q) => ({ ...q })) })} />
+                <ResetButton atDefault={atDefault().quickActions} onClick={() => setOverseerDraft(resetQuickActions(cur(), defaults()))} />
                 <p class="field-hint settings-delegate-desc">
                   The Quick Actions button in the Overseer's composer foot lists these. Picking one sends its prompt.
                 </p>
@@ -385,46 +351,35 @@ export function OverseerSettingsSection() {
                           <Show when={open()}>
                             <div class="overseer-action-edit" id={`overseer-qa-edit-${i}`}>
                               <div class="settings-delegate-fields">
-                                <div class="field">
-                                  <label class="field-label" for={`overseer-qa-label-${i}`}>
-                                    Label
-                                  </label>
-                                  <input
-                                    class="input"
-                                    id={`overseer-qa-label-${i}`}
-                                    value={a().label}
-                                    disabled={saving()}
-                                    aria-invalid={!a().label.trim() ? "true" : undefined}
-                                    onInput={(e) => editAction(i, { label: e.currentTarget.value })}
-                                  />
-                                </div>
-                                <div class="field">
-                                  <label class="field-label" for={`overseer-qa-desc-${i}`}>
-                                    Description
-                                  </label>
-                                  <input
-                                    class="input"
-                                    id={`overseer-qa-desc-${i}`}
-                                    value={a().description}
-                                    disabled={saving()}
-                                    onInput={(e) => editAction(i, { description: e.currentTarget.value })}
-                                  />
-                                </div>
-                              </div>
-                              <div class="field">
-                                <label class="field-label" for={`overseer-qa-prompt-${i}`}>
-                                  Prompt
-                                </label>
-                                <textarea
-                                  class="input textarea"
-                                  id={`overseer-qa-prompt-${i}`}
-                                  rows={2}
-                                  value={a().prompt}
+                                <TextField
+                                  id={`overseer-qa-label-${i}`}
+                                  label="Label"
+                                  rule={QA_RULES.label}
+                                  ruleLabel={qaLabel(i + 1, "label")}
+                                  value={a().label}
                                   disabled={saving()}
-                                  aria-invalid={!a().prompt.trim() ? "true" : undefined}
-                                  onInput={(e) => editAction(i, { prompt: e.currentTarget.value })}
+                                  onInput={(v) => editAction(i, { label: v })}
+                                />
+                                <TextField
+                                  id={`overseer-qa-desc-${i}`}
+                                  label="Description"
+                                  rule={QA_RULES.description}
+                                  ruleLabel={qaLabel(i + 1, "description")}
+                                  value={a().description}
+                                  disabled={saving()}
+                                  onInput={(v) => editAction(i, { description: v })}
                                 />
                               </div>
+                              <TextArea
+                                id={`overseer-qa-prompt-${i}`}
+                                label="Prompt"
+                                rule={QA_RULES.prompt}
+                                ruleLabel={qaLabel(i + 1, "prompt")}
+                                rows={2}
+                                value={a().prompt}
+                                disabled={saving()}
+                                onInput={(v) => editAction(i, { prompt: v })}
+                              />
                               <div class="overseer-action-tools">
                                 <button
                                   type="button"
@@ -465,8 +420,10 @@ export function OverseerSettingsSection() {
                   <button
                     type="button"
                     class="button button-sm"
-                    disabled={saving()}
+                    disabled={saving() || !canAddQuickAction(cur().settings.quickActions)}
+                    aria-describedby="overseer-qa-max"
                     onClick={() => {
+                      if (!canAddQuickAction(cur().settings.quickActions)) return;
                       const added = newQuickAction(cur().settings.quickActions);
                       setActionOpen(added.id, true);
                       edit({ quickActions: [...cur().settings.quickActions, added] });
@@ -476,28 +433,26 @@ export function OverseerSettingsSection() {
                     <Icon name="plus" small />
                     Add Quick Action
                   </button>
+                  <span class="field-hint" id="overseer-qa-max">
+                    {cur().settings.quickActions.length} of at most {QUICK_ACTIONS_MAX}.
+                  </span>
                 </div>
               </fieldset>
 
               <fieldset class="settings-delegate-profile">
                 <legend class="settings-delegate-legend">Standing notes</legend>
-                <div class="field">
-                  <label class="visually-hidden" for="overseer-notes">
-                    Standing notes
-                  </label>
-                  <textarea
-                    class="input textarea"
-                    id="overseer-notes"
-                    rows={3}
-                    value={cur().notes}
-                    disabled={saving()}
-                    aria-describedby="overseer-notes-hint"
-                    onInput={(e) => setOverseerDraft({ ...cur(), notes: e.currentTarget.value })}
-                  />
-                  <span class="field-hint" id="overseer-notes-hint">
-                    The Overseer reads these every turn and can add to them. They survive /clear.
-                  </span>
-                </div>
+                <TextArea
+                  id="overseer-notes"
+                  label="Standing notes"
+                  hideLabel
+                  hint="The Overseer reads these every turn and can add to them. They survive /clear."
+                  rule={NOTES_RULE}
+                  error={notesTooLong() ? `${NOTES_TOO_LONG_MESSAGE}.` : null}
+                  rows={3}
+                  value={cur().notes}
+                  disabled={saving()}
+                  onInput={(v) => setOverseerDraft({ ...cur(), notes: v })}
+                />
               </fieldset>
 
               <details class="overseer-fold overseer-advanced" open={advancedOpen()} onToggle={(e) => setAdvancedOpen(e.currentTarget.open)}>
@@ -509,7 +464,7 @@ export function OverseerSettingsSection() {
                 <div class="overseer-fold-body">
                   <fieldset class="settings-delegate-profile overseer-group">
                     <legend class="settings-delegate-legend">Idea explorer</legend>
-                    <ResetButton onClick={() => edit({ explorer: { ...defaults().explorer } })} />
+                    <ResetButton atDefault={atDefault().explorer} onClick={() => setOverseerDraft(resetExplorer(cur(), defaults()))} />
                     <p class="field-hint settings-delegate-desc">
                       When you keep working on an idea, the Overseer can launch an agent to plan it with you. It reads, never edits a
                       repository, and reports back to the Overseer.
@@ -548,51 +503,41 @@ export function OverseerSettingsSection() {
                         />
                       )}
                     </Show>
+                    <Show when={issue()?.message === EXPLORER_NEEDS}>
+                      <p class="field-error">{EXPLORER_NEEDS}</p>
+                    </Show>
                   </fieldset>
 
                   <fieldset class="settings-delegate-profile">
                     <legend class="settings-delegate-legend">Extra instructions</legend>
-                    <div class="field">
-                      <label class="visually-hidden" for="overseer-extra-prompt">
-                        Extra instructions
-                      </label>
-                      <textarea
-                        class="input textarea"
-                        id="overseer-extra-prompt"
-                        rows={4}
-                        value={cur().settings.extraSystemPrompt}
-                        disabled={saving()}
-                        aria-describedby="overseer-extra-prompt-hint"
-                        onInput={(e) => edit({ extraSystemPrompt: e.currentTarget.value })}
-                      />
-                      <span class="field-hint" id="overseer-extra-prompt-hint">
-                        Added after the Overseer's own prompt. Applies from its next run.
-                      </span>
-                    </div>
+                    <TextArea
+                      id="overseer-extra-prompt"
+                      label="Extra instructions"
+                      hideLabel
+                      hint="Added after the Overseer's own prompt. Applies from its next run."
+                      rule={EXTRA_PROMPT_RULE}
+                      rows={4}
+                      value={cur().settings.extraSystemPrompt}
+                      disabled={saving()}
+                      onInput={(v) => edit({ extraSystemPrompt: v })}
+                    />
                   </fieldset>
 
                   <fieldset class="settings-delegate-profile">
                     <legend class="settings-delegate-legend">After a restart</legend>
-                    <label class="toggle toggle-switch settings-team-enable">
-                      <span>Resume interrupted sessions</span>
-                      <input
-                        type="checkbox"
-                        checked={cur().settings.autoResume !== false}
-                        disabled={saving()}
-                        aria-describedby="overseer-auto-resume-hint"
-                        onChange={(e) => edit({ autoResume: e.currentTarget.checked })}
-                      />
-                      <span class="toggle-box" />
-                    </label>
-                    <p class="field-hint" id="overseer-auto-resume-hint">
-                      A session whose turn the server's restart cut off gets one message to continue. Sessions a usage limit or you stopped
-                      stay stopped.
-                    </p>
+                    <Toggle
+                      switch
+                      class="settings-team-enable"
+                      label="Resume interrupted sessions"
+                      checked={cur().settings.autoResume !== false}
+                      disabled={saving()}
+                      onChange={(on) => edit({ autoResume: on })}
+                      hint="A session whose turn the server's restart cut off gets one message to continue. Sessions a usage limit or you stopped stay stopped."
+                    />
                   </fieldset>
                 </div>
               </details>
 
-              <Show when={issue()}>{(p) => <p class="field-error">{p().message}</p>}</Show>
               <Show when={overseerSaveError()}>
                 {(e) => (
                   <Banner

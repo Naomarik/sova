@@ -42,4 +42,8 @@ extensions, logins), under Logins a "Sync subscriptions to this host" switch tha
 mode on or off (§mesh.sync/api-keys-only), and the front-door address. The switch shows only while
 the mesh and login sync are on — login sync as set on the form. The section is Save-gated: every
 field and switch is staged and written by the dialog's Save Changes, which sends only what changed
-(§app.settings-dialog/save-bar).
+(§app.settings-dialog/save-bar). The two typed fields are checked before Save, by the same rule
+the server's save applies: the name can't be blank and is at most 80 characters; the front door,
+when set, is an http:// or https:// address of a scheme, host and port only. While either fails,
+its box is red, its line says why and Save waits ("Mesh: {why}"); a save that reaches the server
+anyway is refused in the same words.

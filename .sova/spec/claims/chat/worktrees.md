@@ -346,10 +346,11 @@ no model call (`server/merge-readiness.ts`):
   source, never the merge card: a branch merged by someone else reads merged, and a card whose
   branch git no longer finds merged does not. A worktree still tracked active once git finds it
   merged is merged with a **cleanup** follow-up. A merged tree whose folder still holds spec
-  drafts that aren't official (§tools.spec/draft-official), as when a catch-up merge took the
-  base's spec and the drafts were never promoted again, is still merged, but its reason never
-  says plain Merged: it reads "Nothing left to land, but its spec drafts didn't make it · 2
-  drafts", the count of those drafts.
+  drafts that aren't promoted (below), as when a catch-up merge took the base's spec and the
+  drafts were never promoted again, or the branch landed without its specs, is still merged, but
+  its reason never says plain Merged: it reads "Nothing left to land, but its spec drafts didn't
+  make it · 2 drafts", the count of those drafts. Drafts a queue landing made official stay in the
+  folder, marked landed, and never read that way.
 - **stale** — merged, but the tree has uncommitted changes while nothing runs in the session:
   never "merged". A branch with no commit of its own is never merged, dirty or not.
 - **in progress** — a turn is running or subagents are working in the session, the tree has
@@ -476,16 +477,19 @@ merge (it started after it, or the merge changed no file the server runs, the se
 restart owed; spec from
 the merged worktree's own `.sova/spec/drafts/`, while that folder still exists: a draft counts as
 promoted when it is official (§tools.spec/draft-official), the one rule the merge queue's docs
-step reads too; a draft that rule can't read counts as not promoted. The
+step reads too, or when it is marked landed: it carries the receipt of a queue landing
+(§app.merge-queue/land), its `spec/` is unchanged since by hash, and the commit the receipt names
+is on the receipt's target. A draft edited after its landing counts as not promoted again, as does
+one with no receipt on a branch merged any other way, and a draft that rule can't read. The
 line is the first line of the badge's `title` (§app.session-list/anatomy) and travels with the
 row (`SessionSummary.readiness.status`).
 
 Routine session-list and merge-readiness refreshes never run a spec tool, including for idle
 merged worktrees.
-The spec facts readiness carries are which drafts aren't official (an unreadable one included), for the status line's count,
+The spec facts readiness carries are which drafts aren't promoted (an unreadable one included), for the status line's count,
 a merged tree's reason and the landing (§chat.worktrees/ready-to-land), worked out by the draft
 rule's own function in the server's process from the drafts' files and kept until one of them
-changes. Readiness carries no other spec observation, and the row and its title display none. Ordinary git readiness, bash checks,
+changes; a receipt adds one ancestry question to Git and no spec tool. Readiness carries no other spec observation, and the row and its title display none. Ordinary git readiness, bash checks,
 attention items, and routine follow-ups keep the rules above.
 
 **In the attention digest** (§app.overseer/attention-digest), decide tier, never Needs you, a brief
@@ -528,7 +532,9 @@ stops holding (a new uncommitted file, a failing check, an open question, a turn
 
 **Docs land with the branch.** Spec drafts in the worktree don't keep it from Ready to land: the
 merge queue makes them official in its merge copy before the checks run (§app.merge-queue/run;
-whether a draft is official is §tools.spec/draft-official). Each promise in them still needs its chat's
+whether a draft is official is §tools.spec/draft-official). A draft marked landed
+(§chat.worktrees/readiness) has landed already: on a branch with newer commits it is neither tried
+again nor counted as docs that land. Each promise in them still needs its chat's
 own short verification note (the draft tool's `evidence --note`, §tools.spec/land) before the head
 counts as Ready to land. Once per head commit and set of drafts (their files and verification notes
 alike, so a note added later is tried again), Sova tries the drafts the way the

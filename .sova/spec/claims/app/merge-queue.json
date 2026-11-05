@@ -299,8 +299,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:30Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-03T21:25Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#7ee12135"
     },
     "code": [
       "server/merge-queue/land.ts",
@@ -310,8 +310,96 @@
       "server/merge-queue/queue.test.ts",
       "server/merge-queue/cards.ts",
       "server/merge-queue/guard.ts",
-      "server/merge-queue/guard.test.ts"
+      "server/merge-queue/guard.test.ts",
+      "server/merge-queue/landed-drafts.ts",
+      "server/merge-queue/scenarios-landed-drafts.integration.test.ts",
+      "scripts/mark-landed-drafts.ts",
+      "server/merge-queue/scenarios-landed-drafts-edges.integration.test.ts"
     ]
+  },
+  "§app.merge-queue/landing-bar": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/landing-bar-states",
+      "§app.merge-queue/landing-bar-detail",
+      "§app.merge-queue/view",
+      "§app.release/tab",
+      "§app.insights/sidebar-foot",
+      "§app/commands"
+    ],
+    "code": [
+      "src/lib/landing-bar.ts",
+      "src/lib/landing-bar-store.ts",
+      "src/components/LandingBar.tsx",
+      "src/components/Sidebar.tsx",
+      "server/merge-queue/routes.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/queue.ts",
+      "server/project-services/release.ts",
+      "shared/merge-queue.ts",
+      "src/components/LandingBar.css",
+      "src/lib/landing-bar.test.ts",
+      "server/merge-queue/landing-summary.integration.test.ts",
+      "src/lib/api.ts",
+      "src/lib/session-feed.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T12:51Z",
+      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#f26ee75a"
+    }
+  },
+  "§app.merge-queue/landing-bar-detail": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/view",
+      "§app.release/tab",
+      "§app.insights/sidebar-foot-phone",
+      "§app.session-list/spine",
+      "§app.project-services/merge-verbs",
+      "§app.release/verbs"
+    ],
+    "code": [
+      "src/components/LandingBar.tsx",
+      "src/components/Sidebar.tsx",
+      "src/lib/landing-bar-store.ts",
+      "src/components/LandingBar.css",
+      "src/lib/landing-bar.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T13:06Z",
+      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#f7922f69"
+    }
+  },
+  "§app.merge-queue/landing-bar-states": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/view",
+      "§app.merge-queue/blame",
+      "§app.merge-queue/strategies",
+      "§app.merge-queue/requests",
+      "§app.release/tab",
+      "§app.release/checks",
+      "§app.release/quiet",
+      "§app.release/power"
+    ],
+    "code": [
+      "src/lib/landing-bar.ts",
+      "src/components/LandingBar.tsx",
+      "src/lib/landing-bar.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T13:06Z",
+      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#f7922f69"
+    }
   },
   "§app.merge-queue/master-moved": {
     "kind": "behavior",
@@ -430,12 +518,14 @@
       "server/merge-queue/strategy-run.ts",
       "server/merge-queue/strategy-run.test.ts",
       "server/merge-queue/queue.ts",
-      "server/merge-queue/queue-requests.test.ts"
+      "server/merge-queue/queue-requests.test.ts",
+      "server/merge-queue/landed-drafts.ts",
+      "server/merge-queue/scenarios-landed-drafts.integration.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:30Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-03T21:25Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#7ee12135"
     }
   },
   "§app.merge-queue/push": {
@@ -570,8 +660,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T03:57Z",
-      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
+      "at": "2026-11-05T10:48Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#7ee12135"
     },
     "code": [
       "server/merge-queue/run.ts",
@@ -590,7 +680,10 @@
       "server/merge-queue/testing/scenario-kit.ts",
       "server/merge-queue/checks.ts",
       "server/project-services/release.test.ts",
-      "shared/merge-queue.ts"
+      "shared/merge-queue.ts",
+      "server/merge-queue/landed-drafts.ts",
+      "server/merge-queue/scenarios-landed-drafts.integration.test.ts",
+      "server/merge-queue/scenarios-landed-drafts-edges.integration.test.ts"
     ]
   },
   "§app.merge-queue/served": {

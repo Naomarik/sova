@@ -181,7 +181,7 @@ words, in the composer, the session pane, the chat's queue cards and the project
 | Start failure banner (in thread, §chat.transcript/states) | **This chat didn't start.** {message}. Your message is back in the composer. Send again to retry. · more than one: Your messages are back in the composer. · none came back: {message}. |
 | Mic (§chat/voice) | `aria-label`/`title`: Dictate · recording: Stop Recording · transcribing: Transcribing · setting up: `Dictate — setting up voice, {n}%` · not set up: `title` "Dictate · Voice isn't set up on this host yet" · unsupported: `title` "Voice needs HTTPS or localhost." (no microphone API: "This browser can't record audio.") |
 | Dictation strip | Starting the mic… · `Recording {m:ss}` · `Recording {m:ss} · {s} s left` · `Transcribing {m:ss}…` · Cancel Recording · group label "Dictation" |
-| Dictation errors (strip; `Try Again` where the clip is kept, then Dismiss) | Mic blocked: "The browser blocked the microphone. Allow it for this site, then try again." · no mic: "No microphone found." · other: "Couldn't start the microphone. {message}." · nothing heard: "Didn't catch any speech. Nothing was inserted." · empty transcript: "Heard audio but no words. Nothing was inserted." · failed: "Couldn't transcribe the clip. {reason}. Your recording is kept." · voice removed meanwhile: "Voice isn't set up on this host anymore." |
+| Dictation errors (strip; `Try Again` where the clip is kept, then Dismiss) | Mic blocked: "The browser blocked the microphone. Allow it for this site, then try again." · no mic: "No microphone found." · didn't start in time (§chat.voice/capture): "The microphone didn't start within 10 seconds. Quit and reopen Sova or your browser, then try again." · other: "Couldn't start the microphone. {message}." · nothing heard: "Didn't catch any speech. Nothing was inserted." · empty transcript: "Heard audio but no words. Nothing was inserted." · failed: "Couldn't transcribe the clip. {reason}. Your recording is kept." · voice removed meanwhile: "Voice isn't set up on this host anymore." |
 | Dictation, backgrounded (toast and announcement) | Recording stopped when the app went to the background. Transcribed {m:ss}. |
 | Dictation announcements | Recording. · Recording cancelled. · Transcribing. · `Inserted {n} words.` (1: `Inserted 1 word.`) · `{s} seconds left.` at 0:30 |
 | SR announcements | Working. · Reply finished. · The turn stopped with an error. (once per error, and it replaces that turn's "Reply finished." — an errored turn still settles, and two endings would read as two turns) · This chat didn't start. Your message is back in the composer. (once; the second sentence only when one came back) |
@@ -520,10 +520,10 @@ the person clicks.
 | Usage file missing (`reason:"missing"`) | **No usage data yet.** Nothing has fetched provider usage on this machine. Refresh Usage fetches it now. · button: `Refresh Usage` |
 | Usage file corrupt (`reason:"corrupt"`) | **Couldn't read usage.** `usage-status.json` isn't valid JSON right now. Nothing was changed. It's rewritten at the next refresh. · button: `Retry` |
 | Request failed | Usage: **Couldn't load usage.** (poll) · **Couldn't refresh usage.** (Refresh Usage, data not stale) · Agents: **Couldn't load agents.** Then: Nothing was changed. {server message} · button: `Retry` |
-| Provider `nologin` | Not signed in. Run `claude /login` and it'll show at the next refresh. (OpenAI: `pi /login`) |
+| Provider `nologin` | Not signed in. Run `claude /login` and it'll show at the next refresh. (OpenAI: Not signed in. Sign in under Settings → Accounts and it'll show at the next refresh.) |
 | Provider `expired`, token timed out (refresh token not known expired) | Sign-in token expired {2h ago}. It renews the next time Claude Code runs; usage updates after that. (OpenAI through pi: … the next time pi uses OpenAI; …) |
-| Provider `expired`, otherwise (refresh token expired, no sign-in data, or revoked early) | Sign-in expired. Run `claude /login` to renew it. (OpenAI: `pi /login`) |
-| Sign-in caption (OAuth rows, `.usage-caption`) | Sign-in renews by `{11:09 PM}` · last renewed {3h ago} (second part only when known; `Sep 27 11:09 PM` on another day) · Codex CLI only: Sign-in last renewed {Jul 29} · token expired, row still showing a reading: the timed-out sentence above · refresh token expired: Sign-in can't renew. Run `claude /login` to sign in again. (OpenAI: `pi /login`) · API keys: none |
+| Provider `expired`, otherwise (refresh token expired, no sign-in data, or revoked early) | Sign-in expired. Run `claude /login` to renew it. (OpenAI: Sign-in expired. Sign in again under Settings → Accounts.) |
+| Sign-in caption (OAuth rows, `.usage-caption`) | Sign-in renews by `{11:09 PM}` · last renewed {3h ago} (second part only when known; `Sep 27 11:09 PM` on another day) · Codex CLI only: Sign-in last renewed {Jul 29} · token expired, row still showing a reading: the timed-out sentence above · refresh token expired: Sign-in can't renew. Run `claude /login` to sign in again. (OpenAI: Sign-in can't renew. Sign in again under Settings → Accounts.) · API keys: none |
 | Provider `nokey` | No Ollama Cloud key in `~/.pi/agent/auth.json`. · Z.ai: No Z.ai API key in `~/.pi/agent/auth.json`. |
 | Provider `badkey` | Ollama Cloud refused the key in `~/.pi/agent/auth.json`. · Z.ai: Z.ai refused the API key in `~/.pi/agent/auth.json`. |
 | Provider `na` | This account doesn't report usage. |
@@ -577,9 +577,14 @@ the person clicks.
 | Picker | label: Whose context · This chat · each worker by its name |
 | Top line | heading: Context window · `{n}` of `{window}` tokens · `{p}`% · `{free}` left · no window: `{n}` tokens · this model's limit is unknown · before a reply: Nothing sent yet |
 | Note | As of the last reply. Each part is an estimate (≈); Other is what the estimates don't explain. · before a reply: Each size below is an estimate (≈). · a chat not running here, added: This chat isn't running here, so its mode, rules and tools are unknown and fall under Other. |
-| Lines | each instruction file by its path (relative in the chat's folder, `~/...` under home, else whole) · Mode · Rules and docs · Skills offered · Tools · Conversation · Other · Free; sizes `≈{n}`, Free's without ≈ |
-| Explorer list | title: the line's name · subtitle: Read-only. Sizes are estimates. · item size `≈{n}` |
-| Subfolder instructions | heading: Subfolder instructions · note: Each loads the first time the agent reads, edits or writes a file in its folder. A loaded file counts toward the total. · cut walk, added: This list may be incomplete. · row: its path, `{folder} · ≈{n} tokens`, chip Loaded or Not yet loaded |
+| Lines | Instruction files · Mode · Rules and docs · Skills offered · Tools · Conversation; sizes `≈{n}` · apart, below them: Other, under it: What the estimates don't explain, such as Claude Code's own prompt. |
+| Fill bar | under the top line, no words: a part per line, the room left as its empty end |
+| Line's short line | Instruction files: `{n}` loaded · `{m}` not yet loaded (none not yet loaded: `{n}` loaded) · Skills offered: `{n}` skills · `{r}` read (1: 1 skill) · Tools: `{n}` tools (1: 1 tool) · Rules and docs: `{n}` sections (1: 1 section) · Mode: its parts' names, joined with · · Conversation: Since the last compaction · `{n}` messages (no compaction yet: `{n}` messages; 1: 1 message) |
+| Instruction files | each file by its path (relative in the chat's folder, `~/...` under home, else whole) · its folder: This chat's folder · Your home folder · `{folder}/` · chip Loaded · heading: Not yet loaded · not counted · note: Each loads the first time the agent reads, edits or writes a file in its folder. · size `+≈{n}` · cut walk: This list may be incomplete. |
+| Skills offered | each skill by its name · its description under it · chip Read or Not read yet |
+| Conversation | Tool results, `{n}` results · Replies, `{n}` replies · Your messages, `{n}` messages · Other messages, `{n}` messages, only while there are some (1: 1 result, 1 reply, 1 message) · Compaction summary, Kept from the compaction at `{HH:MM}` (local 24-hour time; no readable time: Kept from the latest compaction) |
+| Sheet | breadcrumb (accessible name Breadcrumb): Context › `{group}` › `{part}`, the current step not a button · Back (an arrow button, accessible name Back) · title: the row's name · size `≈{n}` · subtitle: the full path (a file, a skill) or the group's name · Source · Copy |
+| Sheet notes | a file not yet loaded: Not counted yet. It loads the first time the agent reads, edits or writes a file in `{folder}`. · a skill: Its size counts only what the model is offered: name and description. The full SKILL.md loads when the agent reads it, then counts under Conversation. · a failed read (toast): Couldn't open that file. `{reason}` |
 | States | Reading this chat's context. · This chat runs on another machine, so its context can't be read here. · Couldn't read this chat's context. `{reason}` |
 | Session tab | after the Context sentence: See what fills it |
 
@@ -625,7 +630,7 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Section heading button (small, ghost) | Reset to Defaults — Summaries only; it fills the draft and saves nothing |
 | Dialog footer (every tab) | {status line} · Save Changes (Saving…) · Cancel (discards and closes) — with nothing unsaved: {status line} · Close. The one Save for every Save-gated form on every tab (§app.settings-dialog/save-bar) |
 | Footer status line (first match; the outcome of a save is also announced in the same words) | Saving… · {why Save waits} · Saved {forms}; {forms} failed. · {forms} failed. · Unsaved: {Form}, {Form} · Saved {forms}. · (nothing) — {forms} joined with commas and "and", "Unsaved:" with commas only |
-| Why Save waits (footer status, error; Save Changes disabled) | Subagents: {name}'s {section} rows each need a model and an effort. · Subagents: {name}'s {section} fallback is its primary; choose another worker, or none. · Subagents: {name}'s members default needs a model and an effort. · Subagents needs unique, single-line names of at most 48 characters (never "Off"). · Subagents: {name}: {threshold issue}. · Subagents: {name}'s coordinator and monitor need different role names. Other forms retain their own problem sentences (§app.settings-dialog/save-bar) |
+| Why Save waits (footer status, error; Save Changes disabled) | Subagents: {name}'s {section} rows each need a model and an effort. · Subagents: {name}'s {section} fallback is its primary; choose another worker, or none. · Subagents: {name}'s members default needs a model and an effort. · Subagents: {a name, role, instructions or team box's sentence} (§chat.subagent-profiles/settings) · Subagents: {name}'s coordinator and monitor need different role names. Other forms retain their own problem sentences (§app.settings-dialog/save-bar) |
 | Discarded (announced only) | Discarded your {forms} changes. |
 | Changed by another device (banner-info, list only, §chat.subagent-profiles/replaced) | **Replaced by {device}'s copy at {stamp}.** or **{device}'s copy added {names} at {stamp}.** {Added {names}; changed {names}; removed {names}.} Your previous library is kept on this device. [Restore Previous Library] (Restoring… while it runs) |
 | Restore failed (banner-error) | **Couldn't restore your previous library.** {reason}. Your library is unchanged. |
@@ -663,6 +668,22 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Save failed (banner-error at the end of the form; the unsaved changes stay) | **Couldn't save the decision settings.** {reason}. Your saved settings are unchanged. |
 | Footnote | Stored in `~/.pi/agent/sova/decisions.json`. The key is stored separately, readable by you only. |
 
+## §design.copy-deck/forms — Forms · the shared sentences (§design/forms)
+
+One sentence per rule, the same under the box, in a Save's status line ("{Form}: {sentence}") and
+in the server's refusal. {Label} is the field's label, or the form's own name for one of many
+("Quick action 2's label"). Every number in a sentence, a range's ends included, is written with
+en-US separators ("from 0 to 1,000", "at most 8,000 characters").
+
+| Rule | Copy |
+|---|---|
+| A whole number (blank, half-typed "1e", "1.", "-3", a fraction, or out of range) | {Label} must be a whole number from {min} to {max}. |
+| Text, blank where it's needed | {Label} can't be empty. · or the form's own sentence ("This host needs a name.") |
+| Text, too short · too long | {Label} must be at least {n} characters. · {Label} can be at most {n} characters. |
+| A fixed set of values | {Label} must be one of {a}, {b}. |
+| A time of day | {Label} must be a time from 00:00 to 23:59. |
+| The count under a limited text box | `{n} / {max}` · grey, red past the most |
+
 ## §design.copy-deck/settings-overseer — Settings · Overseer and Notifications (§app.settings-dialog/overseer, §app.notifications/settings)
 
 | Where | Copy |
@@ -677,14 +698,17 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Per-message fields (label · hint) | Sessions created · New sessions it may create, per message you send. — Prompts to other sessions · Messages it may send to other sessions, per message you send. — Sessions archived · Sessions it may archive, per message you send. — Ideas explored · Idea explorers it may launch, per message you send. — Links made · Sessions it may link across hosts, per message you send. — Organization changes · Changes it may make to organizations, projects, rosters and project overseers, per message you send. — Gathering sessions started · Gathering sessions and offers it may start, per message you send. — Extension commands run · Extension commands it may run, per message you send. |
 | Quick actions hint | The Quick Actions button in the Overseer's composer foot lists these. Picking one sends its prompt. |
 | Quick action line | {label} · {description} (none: No description) · `Edit` / `Done` · opened: Label · Description · Prompt · `Move Up` · `Move Down` · `Remove` · a blank label reads Untitled action |
-| Quick actions buttons | `Add Quick Action` (under the list) · `Reset to Defaults` (head row) |
+| Quick actions buttons | `Add Quick Action` (under the list, beside it {n} of at most 12.; disabled at 12) · `Reset to Defaults` (head row) |
+| Counts (Standing notes · Extra instructions, under the hint) | `{n} / 8,000` · `{n} / 8,000`; red past the most |
 | Standing notes hint | The Overseer reads these every turn and can add to them. They survive /clear. |
 | Advanced (folded head · summary) | Advanced · Idea explorer, extra instructions, resume after a restart |
 | Idea explorer (legend · hint) | Idea explorer · When you keep working on an idea, the Overseer can launch an agent to plan it with you. It reads, never edits a repository, and reports back to the Overseer. |
 | Extra instructions (label · hint) | Extra instructions · Added after the Overseer's own prompt. Applies from its next run. |
 | After a restart (switch · hint) | Resume interrupted sessions · A session whose turn the server's restart cut off gets one message to continue. Sessions a usage limit or you stopped stay stopped. |
-| Reset buttons (Limits, Quick actions, Idea explorer; small ghost, at the end of the group's head row) | `Reset to Defaults` — fills the draft, saves nothing |
-| Why Save waits (footer, "Overseer: {issue}") | {limit} must be a whole number from 0 to 1000. · Quick action {n} needs a label and a prompt. · The idea explorer needs a model and an effort. |
+| Reset buttons (Limits, Quick actions, Idea explorer; small ghost, at the end of the group's head row) | `Reset to Defaults` — fills the draft, saves nothing; disabled while the group already shows the defaults |
+| Counts (a quick action's Label · Description · Prompt, under each box) | `{n} / 40` · `{n} / 120` · `{n} / 2,000`; red past the most |
+| Why Save waits (under the box, and the footer's "Overseer: {issue}", first in page order; the explorer's under the Idea explorer row) | {limit} must be a whole number from 0 to 1,000. · There can be at most 12 quick actions. · Quick action {n}'s label can't be empty. · Quick action {n}'s prompt can't be empty. · Quick action {n}'s label can be at most 40 characters. · Quick action {n}'s description can be at most 120 characters. · Quick action {n}'s prompt can be at most 2,000 characters. · Standing notes can be at most 8,000 characters. · The idea explorer needs a model and an effort. · Extra instructions can be at most 8,000 characters. |
+| Save refused by the server (the strict PUT's reason) | the same sentence as the box's, word for word: {limit label} must be a whole number from 0 to 1,000. (never `caps.{key}`) · Quick action {n}'s label can't be empty. · Quick action {n}'s label can be at most 40 characters. · … (every line of Why Save waits but the explorer's) |
 | Footnote | Stored in `~/.pi/agent/sova/overseer.json`. |
 
 ## §design.copy-deck/settings-models — Settings · Models (§app.settings-dialog/models)
@@ -707,7 +731,7 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Computer row replaced in a project | "Replaced in {project} by that project's {name}." (several: one line each) |
 | Remove (inline confirm) | "Remove {name}? Its approval, secrets and sign-in go with it." · Remove · Keep |
 | Add Server | title Add Server · tabs Address · Command · Paste from Another Tool · fields Name · Address · Command · Secret · Secret's Name (Command only) · Secret hint: "Saved on this computer only. Never shown again and never copied to your other computers." · Cancel · Add and Check · after Add and Check: Close |
-| Add Server refused | "Give the server a name." · "Give the server's address, starting with https://." · "Give the command that starts the server." · "That isn't an entry Sova can read: {reason}" · "This paste has {names}, and none is named {name}. Use one of those names." · "There's already a server named {name}." · "A secret's name is letters, digits and underscores." |
+| Add Server refused (the last two also under their field before the press, the press disabled) | "Give the server a name." · "Give the server's address, starting with https://." · "Give the command that starts the server." · "That isn't an entry Sova can read: {reason}" · "This paste has {names}, and none is named {name}. Use one of those names." · "There's already a server named {name}." · "A secret's name is letters, digits and underscores." |
 | Edit | title Edit {name} · Cancel · Save and Check |
 | Reserved name (field error, and a file entry's row) | "The name sova is Sova's own. Pick another." · in a file: "This entry uses the name sova, which is Sova's own, so it won't run." |
 | Check failed | "{name} didn't start." · its error lines · Check Again |
@@ -730,7 +754,8 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Where | Copy |
 |---|---|
 | Load failed (banner-error) | **Couldn't read the mesh settings.** Nothing was changed. {message} |
-| Host name hint · issue (replaces the hint, blocks Save; the footer: "Mesh: This host needs a name.") | Shown beside its sessions on every host, and in New Session's Host field. · This host needs a name. |
+| Host name hint · issue (replaces the hint, blocks Save; the footer: "Mesh: This host needs a name.") | Shown beside its sessions on every host, and in New Session's Host field. · This host needs a name. · This host's name can be at most 80 characters. |
+| Front door issue (replaces its hint, blocks Save; the footer "Mesh: {issue}"; the server's 400 says the same) | The front door must be a web address, like https://sova.example.ts.net. · The front door must start with http:// or https://. · The front door is a scheme, host and port only, with no path. |
 | Buttons | none in the tab — the dialog footer's Save Changes · Cancel (§design.copy-deck/settings-modes-delegate); Enter in a field does nothing |
 | Save failed (banner-error at the end of the tab; the unsaved changes stay) | **Couldn't save the mesh settings.** {reason}. Your saved settings are unchanged. |
 
@@ -1003,7 +1028,7 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Lightbox buttons | Close Photo · Previous Photo · Next Photo · counter {i} / {n} |
 | Owner page, Preview as, overseer reads (count instead of pixels) | 1 photo · {n} photos |
 | Operator's strip and the project page's gathering-model picker, a model without vision | This model can't see photos: people won't get an attach button. |
-| Settings → Organizations, section | Photos in gathering chats · `People can send photos` · `Per message` (1–8) · `Largest photo, MB` (1–10) · `Per conversation` (1–200) · hint "Applies to every gathering session on this host, from its next message." · invalid: "Organizations needs photo limits within their ranges." |
+| Settings → Organizations, section | Photos in gathering chats · `People can send photos` · `Per message` (1–8) · `Largest photo (MB)` (1–10) · `Per conversation` (1–200) · hint "Applies to every gathering session on this host, from its next message." · invalid (under the box; the footer "Organizations: {sentence}"): "Photos per message must be a whole number from 1 to 8." · "Largest photo (MB) must be a whole number from 1 to 10." · "Photos per conversation must be a whole number from 1 to 200." |
 
 ## §design.copy-deck/gathering-files — Files from people (§app/file-intake, §app.baton/files, §app.organizations/files-card)
 
@@ -1020,7 +1045,7 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Announce: added | {n} files attached. (1: "1 file attached.") |
 | Thread, a sent file's row `aria-label` | File {name}, {size} |
 | Strip, ability checkbox | Receive files |
-| Settings → Organizations, section | Files in gathering chats · `Largest file, MB` (1–25) · hint "Applies to gathering sessions that take files, from the next upload." · invalid: "Organizations needs a largest file from 1 to 25 MB." |
+| Settings → Organizations, section | Files in gathering chats · `Largest file (MB)` (1–25) · hint "Applies to gathering sessions that take files, from the next upload." · invalid (under the box; the footer "Organizations: {sentence}"): "Largest file (MB) must be a whole number from 1 to 25." |
 | Project page, card heading | Files |
 | Files card, empty | Nothing yet. Files people send in a gathering session with files on list here. |
 | Files card, row meta | from {person} · {gathering title} · {time} · {size} |
@@ -1176,7 +1201,7 @@ page never names a host or a person.
 | Routed hosts | heading "Hosts sending links here" · row `{n} links` (`1 link`) · `Last push {time}` / `Never pushed` · `Up` / `Down` / `Not accepted` · none: "No other host sends its links here yet." |
 | Through | "Links open only while {gateway} is on. Keep a client's organization on an always-on host." · Ingress port |
 | Gateway behind (warn banner, §mesh.public/share-protocol) | **{gateway} runs an older version of public links.** Some pages of this host's links may not open until {gateway} is updated. · `Resync` (the host menu's, §mesh.peers/resync; disabled with its reason) |
-| Field errors | Enter the public address. · The public address must start with https://. · Enter the public address as https://share.example.com. · The public address is a host only, with no path. · The local port is a whole number from 1 to 65535. · Pick the gateway. · The ingress port is a whole number from 1 to 65535. (the save bar: "Public links: {error}") |
+| Field errors | Enter the public address. · The public address must start with https://. · Enter the public address as https://share.example.com. · The public address is a host only, with no path. · The local port must be a whole number from 1 to 65,535. · Pick the gateway. · The ingress port must be a whole number from 1 to 65,535. (under each field; the save bar: "Public links: {first}"; the server says the same) |
 | Read and save failures (error banner) | **Couldn't read the public links setting.** Nothing was changed. {reason} · **Couldn't save the public links setting.** {reason} Your saved setting is unchanged. |
 | Mesh card chip (§mesh.ui/card) | `Public links: gateway` · `Public links: through {gateway}` |
 

@@ -1,7 +1,8 @@
-import { For, Show } from "solid-js";
+import { Show } from "solid-js";
 import { setTextSize, setTypography, textSize, typography } from "../lib/theme";
 import { fontById, type FontKind, fontsOf, isThemeDefault, TEXT_SIZES } from "../lib/typography";
 import { announce } from "../lib/ui-state";
+import { Choice, Select } from "./form";
 
 /**
  * Settings → Themes → Typography: the faces this
@@ -17,11 +18,10 @@ import { announce } from "../lib/ui-state";
  * already showing.
  */
 
-/** The `<select>` value that means "no pick". Not a font id, so it can never collide with one. */
+/** The select's value that means "no pick". Not a font id, so it can never collide with one. */
 const THEME_DEFAULT = "";
 
 function FontSelect(props: { kind: FontKind; label: string; hint: string }) {
-  const id = () => `typography-${props.kind}`;
   const value = () => (props.kind === "text" ? typography().text : typography().mono) ?? THEME_DEFAULT;
   const onChange = (raw: string) => {
     const next = raw === THEME_DEFAULT ? null : (fontById(props.kind, raw)?.id ?? null);
@@ -29,31 +29,16 @@ function FontSelect(props: { kind: FontKind; label: string; hint: string }) {
     const face = next ? fontById(props.kind, next)!.label : "the theme's font";
     announce(`${props.label} is now ${face}.`);
   };
-  const note = () => fontById(props.kind, value())?.note;
   return (
-    <div class="field settings-type-field">
-      <label class="field-label" for={id()}>
-        {props.label}
-      </label>
-      <div class="select-wrap">
-        <select
-          class="select"
-          id={id()}
-          value={value()}
-          aria-describedby={`${id()}-hint`}
-          onChange={(e) => onChange(e.currentTarget.value)}
-        >
-          <option value={THEME_DEFAULT}>Theme default</option>
-          <For each={fontsOf(props.kind)}>{(f) => <option value={f.id}>{f.label}</option>}</For>
-        </select>
-        <span class="select-caret" aria-hidden="true">
-          ▾
-        </span>
-      </div>
-      <span class="field-hint" id={`${id()}-hint`}>
-        {note() ?? props.hint}
-      </span>
-    </div>
+    <Select
+      id={`typography-${props.kind}`}
+      class="settings-type-field"
+      label={props.label}
+      hint={fontById(props.kind, value())?.note ?? props.hint}
+      value={value()}
+      options={[{ value: THEME_DEFAULT, label: "Theme default" }, ...fontsOf(props.kind).map((f) => ({ value: f.id, label: f.label }))]}
+      onChange={onChange}
+    />
   );
 }
 
@@ -65,31 +50,20 @@ function FontSelect(props: { kind: FontKind; label: string; hint: string }) {
  */
 function TextSizeField() {
   return (
-    <fieldset class="field settings-type-size" aria-describedby="typography-size-hint">
+    <fieldset class="field settings-type-size">
       <legend class="field-label">Text size</legend>
-      <div class="settings-type-size-options">
-        <For each={TEXT_SIZES}>
-          {(opt) => (
-            <label class="toggle">
-              <input
-                type="radio"
-                name="typography-size"
-                value={opt.id}
-                checked={textSize() === opt.id}
-                onChange={() => {
-                  setTextSize(opt.id);
-                  announce(`Text size is now ${opt.label}.`);
-                }}
-              />
-              <span class="toggle-box" aria-hidden="true" />
-              {opt.label}
-            </label>
-          )}
-        </For>
-      </div>
-      <span class="field-hint" id="typography-size-hint">
-        Every text on the page, in this browser. Medium is the default.
-      </span>
+      <Choice
+        label="Text size"
+        class="settings-type-size-options"
+        value={textSize()}
+        options={TEXT_SIZES.map((o) => ({ value: o.id, label: o.label }))}
+        onChange={(id) => {
+          const opt = TEXT_SIZES.find((o) => o.id === id)!;
+          setTextSize(opt.id);
+          announce(`Text size is now ${opt.label}.`);
+        }}
+      />
+      <span class="field-hint">Every text on the page, in this browser. Medium is the default.</span>
     </fieldset>
   );
 }

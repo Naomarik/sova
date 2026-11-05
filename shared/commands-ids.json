@@ -226,6 +226,8 @@
     "project.icon.letters",
     "project.icon.remove",
     "project.verb.merge.hold",
+    "project.merge-queue.landing-summary",
+    "project.glance",
     "session.pairs.list",
     "session.pairs.unpair",
     "session.pairs.resume"

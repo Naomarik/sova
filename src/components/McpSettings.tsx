@@ -42,7 +42,7 @@ export function McpSettingsSection() {
         )}
       </Show>
       <Show when={adding()}>
-        <McpServerDialog onClose={() => setAdding(false)} onChanged={poll.refetch} />
+        <McpServerDialog taken={poll.data()?.servers.map((r) => r.name) ?? []} onClose={() => setAdding(false)} onChanged={poll.refetch} />
       </Show>
       <Show when={editing()}>{(row) => <McpServerDialog editing={row()} onClose={() => setEditing(null)} onChanged={poll.refetch} />}</Show>
     </section>

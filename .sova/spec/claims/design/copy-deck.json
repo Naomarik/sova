@@ -72,6 +72,14 @@
       "§chat/create-mode"
     ]
   },
+  "§design.copy-deck/forms": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "shared/form-rules.ts"
+    ]
+  },
   "§design.copy-deck/gathering-abilities": {
     "kind": "note",
     "authority": "accepted",

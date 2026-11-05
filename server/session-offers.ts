@@ -35,7 +35,7 @@ import { sessionsChanged } from "./list-generation";
 import { projectRootOf } from "./project-root";
 import { runFingerprint, runsApproved } from "./session-offers-trust";
 import { stateRoot } from "./state-root";
-import { unofficialDrafts } from "./spec-drafts-state";
+import { draftsLeft } from "./spec-drafts-state";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
 
 /**
@@ -417,6 +417,10 @@ const CONDITION_WORDS: Record<OfferCondition, string> = {
   "specs-promoted": "the branch holds no spec draft left unpromoted",
 };
 
+/** The folder's drafts not promoted, as the Worktrees row counts them (§chat.worktrees/readiness). */
+const offeredDrafts = (folder: string): Promise<string[] | undefined> =>
+  draftsLeft(folder, async (commit, ref, cwd) => (await deps.git(["merge-base", "--is-ancestor", commit, ref], cwd).catch(() => ({ code: 1 }))).code === 0);
+
 /** The trees a condition reads: the one the offer is shown for, else every tree of the session. */
 type TreesOf = () => Promise<NonNullable<SessionSummary["readiness"]>["trees"]>;
 
@@ -427,7 +431,7 @@ async function conditionHolds(c: OfferCondition, s: SessionSummary, trees: Trees
     case "waiting-for-ok":
       return (await trees()).some((t) => t.state === "waiting-approval");
     case "specs-promoted":
-      return !unofficialDrafts(folder)?.length;
+      return !(await offeredDrafts(folder))?.length;
     case "tree-clean": {
       const r = await deps.git(["status", "--porcelain"], s.cwd).catch(() => ({ code: 1, stdout: "x" }));
       return r.code === 0 && r.stdout.trim() === "";
@@ -505,7 +509,7 @@ export async function showOffer(input: ShowInput): Promise<OfferCard> {
   }
   if (!shown.length) throw new OfferRefusal(`None of "${input.offer}"'s buttons fits now. ${projectWords}`);
   const facts = await factsOf(folder, root);
-  facts.drafts = unofficialDrafts(folder)?.join(", ");
+  facts.drafts = (await offeredDrafts(folder))?.join(", ");
   const moment = momentOf(def.repeat, facts.head, input.replyId ?? `at:${s.lastActiveAt ?? ""}`);
   if (rec.cards.some((c) => c.name === input.offer && c.moment === moment)) throw new OfferRefusal(`"${input.offer}" was already shown ${MOMENT_WORDS[def.repeat]}. ${projectWords}`, 409, true);
   // One open offer at a time: a new one never replaces it (an open card whose offer left the file is withdrawn, and a

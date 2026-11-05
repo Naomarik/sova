@@ -168,6 +168,17 @@ const MERGE_SUMMARY: CommandEntry[] = [
     sessionFile: "never",
     meshNeed: "admin",
   },
+  {
+    id: "project.merge-queue.landing-summary",
+    label: "Show Landings",
+    summary: "Every project's merge queue and open release in one quick read: the run checking now, the line, what waits for you, the newest landings and the release's steps.",
+    effect: "looks",
+    params: {},
+    route: { method: "GET", path: "/api/merge-queue/landing-summary" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
 ];
 
 /** How a branch lands (al_3): Update Local Main, a request's Publish, How it lands. The operator's own page only. */
@@ -230,6 +241,7 @@ const MERGE_LANDING: CommandEntry[] = [
 /** The projects sweep (§app.project-commands/projects-sweep): each row points at the route the web app's own control uses. */
 const PROJECTS_SWEEP: CommandEntry[] = [
   looks("project.list", "List Projects", "Every registered project, in an organization or not.", "/api/projects", {}),
+  looks("project.glance", "Show Project Glance", "Every listed project's runtime figures, as the overview's cards show them: ready to merge, running copies, memory in use, a landing or release moving.", "/api/projects/glance", {}),
   looks("project.get", "Show Project", "One registered project.", "/api/projects/:pid"),
   changes("project.create", "Add Project", "Register a folder as a project, or clone a GitHub repository and register it; on this host only.", "POST", "/api/projects", {
     root: { type: "path", description: "The folder to register", in: "body" },

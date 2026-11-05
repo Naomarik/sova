@@ -4,6 +4,8 @@ import { dirname, join } from "node:path";
 import { parseChoice } from "../pi-config/extensions/mode/delegate.ts";
 import { latestClaude } from "../pi-config/extensions/claude-code/catalog.ts";
 import type { DecisionSettings, WorkerChoice } from "../shared/protocol";
+import { EXCLUSIONS_RULE, MAX_EXCLUSIONS } from "../shared/decision-limits";
+import { problemOf } from "../shared/form-rules";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
 
@@ -12,7 +14,7 @@ import { sessionsChanged } from "./list-generation";
 
 export const decisionsFile = () => join(stateRoot(), "decisions.json");
 
-export const MAX_EXCLUSIONS = 100;
+export { MAX_EXCLUSIONS } from "../shared/decision-limits";
 
 /** Both features off, no fallback (nothing is picked for the user), Jev's own switch on. */
 export function decisionDefaults(): DecisionSettings {
@@ -50,8 +52,9 @@ export function parseDecisionSettings(value: unknown): DecisionSettings | { erro
   if (!isRecord(value.features) || typeof value.features.attention !== "boolean" || typeof value.features.tags !== "boolean")
     return { error: "features.attention and features.tags must be booleans" };
   if (value.features.reconcile !== undefined && typeof value.features.reconcile !== "boolean") return { error: "features.reconcile must be a boolean" };
-  if (!Array.isArray(value.exclusions)) return { error: "exclusions must be a list of folders" };
-  if (value.exclusions.length > MAX_EXCLUSIONS) return { error: `at most ${MAX_EXCLUSIONS} excluded folders` };
+  if (!Array.isArray(value.exclusions) || value.exclusions.some((e) => typeof e !== "string")) return { error: "exclusions must be a list of folders" };
+  const why = problemOf(EXCLUSIONS_RULE, value.exclusions.join("\n"));
+  if (why) return { error: why };
   const exclusions: string[] = [];
   for (const e of value.exclusions) {
     const p = cleanPrefix(e);

@@ -134,10 +134,17 @@ as it is.
   `chromium`, `chromium-browser`, `brave`, `brave-browser`, `microsoft-edge` and `vivaldi` on
   `PATH`. On macOS it picks the default https handler when it is one of Google Chrome, Chromium,
   Brave Browser, Microsoft Edge, Vivaldi or Helium, else the first of those found in
-  `/Applications` or `~/Applications`, and runs the bundle's executable itself. It opens
+  `/Applications` or `~/Applications`. It opens
   `--app=http://127.0.0.1:<port>/#t=<token>` with `--no-first-run --no-default-browser-check`
   and no debugging port, and returns while the window stays open. On macOS it opens Sova's installed app
   instead when there is one for that port (§app.installer/mac-app).
+- **Started through macOS's launcher.** On macOS the window's browser is started by `open -n -a
+  <the browser's bundle> --args <those arguments>`, never as a child of the launcher: macOS holds
+  whatever process starts a program responsible for its microphone use, and a browser started by
+  Sova's Bun is refused the mic without a prompt, so `getUserMedia` never answers. Started through
+  macOS's launcher, the permission is the browser's own. When `open` fails, or the browser isn't
+  inside a `.app` bundle, the executable is started directly, as on Linux. `open` says the launch
+  was accepted, not that the window appeared.
 - **A profile of its own.** The browser runs with `--user-data-dir` set to a folder reserved for
   Sova — `${XDG_CONFIG_HOME:-~/.config}/sova-browser` on Linux, `~/Library/Application
   Support/sova-browser` on macOS — so it never shares the person's browsing profile, and the
@@ -211,8 +218,13 @@ saying so.
 
 **Opening it.** When Sova is installed as an app for the port in the profile, `sova app` opens
 that app instead of the bare window: the same
-executable and profile with `--app-id=<the app's id>` and the unlock link as the app's launch
-URL (`--app-launch-url-for-shortcuts-menu-item`), still with no debugging port. The browser keeps
+browser and profile with `--app-id=<the app's id>` and the unlock link as the app's launch
+URL (`--app-launch-url-for-shortcuts-menu-item`), still with no debugging port, started through
+macOS's launcher (`open -n -a`) as the bare window is, so the mic permission is the browser's own
+(§app.installer/app-entry). A browser already running on the profile takes the launch over, and
+keeps whatever mic standing it was started with. The install's own start of the browser, over its
+DevTools pipe, stays a child of the installer: it needs the pipe, closes when it is done, and never
+takes the mic. The browser keeps
 its own launcher for the app, `~/Applications/<browser> Apps.localized/sova.app` (Chrome: "Chrome
 Apps"), which is what the Dock shows while it runs; pinned and opened from the Dock, it opens
 the app without starting the server, which `Sova.app` does. Opened either way, the window is

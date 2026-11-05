@@ -6,7 +6,6 @@ import { meshPeers } from "../lib/mesh";
 import { type MeshResync, resyncView } from "../lib/mesh-resync";
 import {
   acceptPublicLinksInfo,
-  draftIssue,
   FRONTS,
   gatewayBehind,
   gatewayBehindText,
@@ -34,6 +33,8 @@ import {
 import { copyText } from "../lib/ui-state";
 import { MeshResyncSheet } from "./MeshResyncSheet";
 import { Banner, Chip, CopyButton } from "./ui";
+import { Choice, NumberField, Select, TextField, Toggle } from "./form";
+import { INGRESS_PORT_RULE, PREVIEW_URL_RULE, PUBLIC_URL_RULE, SHARE_PORT_RULE } from "../../shared/public-links-limits";
 import { sentence } from "./WorkerSlotRow";
 
 /** One "Where links open" radio: Off, This host is the gateway, or Through one advertising peer. */
@@ -79,10 +80,6 @@ export function PublicLinksSettingsSection() {
   const edit = (patch: Partial<PublicLinksDraft>) => {
     const d = draft();
     if (d) setPublicLinksDraft({ ...d, ...patch });
-  };
-  const issue = () => {
-    const d = draft();
-    return d ? draftIssue(d, pinned()) : null;
   };
   const off = () => !draft() || saving();
 
@@ -206,47 +203,33 @@ export function PublicLinksSettingsSection() {
 
       <fieldset class="field public-links-route">
         <legend class="field-label">Where links open</legend>
-        <For each={routes()}>
-          {(r) => (
-            <label class="toggle public-links-choice">
-              <input
-                type="radio"
-                name="public-links-route"
-                value={r.key}
-                checked={checked(r)}
-                disabled={off()}
-                onChange={() => edit(r.route === "via" ? { route: "via", viaNodeId: r.nodeId! } : { route: r.route })}
-              />
-              <span class="toggle-box" aria-hidden="true" />
-              <span class="public-links-choice-main">
-                <span class="public-links-choice-name">{r.label}</span>
-                <span class="public-links-choice-meta">{r.hint}</span>
-              </span>
-            </label>
-          )}
-        </For>
+        <Choice
+          class="public-links-route public-links-choices"
+          label="Where links open"
+          value={routes().find(checked)?.key ?? null}
+          options={routes().map((r) => ({ value: r.key, label: <span class="public-links-choice-main"><span class="public-links-choice-name">{r.label}</span><span class="public-links-choice-meta">{r.hint}</span></span> }))}
+          disabled={off()}
+          onChange={(k) => {
+            const r = routes().find((x) => x.key === k)!;
+            edit(r.route === "via" ? { route: "via", viaNodeId: r.nodeId! } : { route: r.route });
+          }}
+        />
       </fieldset>
 
       <fieldset class="field public-links-route">
         <legend class="field-label">Visitor logging</legend>
         <For each={visitorSwitches}>
           {(s) => (
-            <label class="toggle public-links-choice">
-              <input
-                type="checkbox"
-                checked={visitorLoggingDraft()?.[s.key] ?? false}
-                disabled={!visitorLoggingDraft() || visitorLoggingSaving()}
-                onChange={(e) => {
-                  const d = visitorLoggingDraft();
-                  if (d) setVisitorLoggingDraft({ ...d, [s.key]: e.currentTarget.checked });
-                }}
-              />
-              <span class="toggle-box" aria-hidden="true" />
-              <span class="public-links-choice-main">
-                <span class="public-links-choice-name">{s.label}</span>
-                <span class="public-links-choice-meta">{s.hint}</span>
-              </span>
-            </label>
+            <Toggle
+              class="public-links-choice"
+              label={<span class="public-links-choice-main"><span class="public-links-choice-name">{s.label}</span><span class="public-links-choice-meta">{s.hint}</span></span>}
+              checked={visitorLoggingDraft()?.[s.key] ?? false}
+              disabled={!visitorLoggingDraft() || visitorLoggingSaving()}
+              onChange={(v) => {
+                const d = visitorLoggingDraft();
+                if (d) setVisitorLoggingDraft({ ...d, [s.key]: v });
+              }}
+            />
           )}
         </For>
         <Show when={visitorLoggingSaveError()}>
@@ -256,172 +239,88 @@ export function PublicLinksSettingsSection() {
 
       <Show when={draft()?.route === "self"}>
         <div class="stack public-links-gateway">
-          <div class="field settings-field public-links-url">
-            <label class="field-label" for="public-links-url">
-              Public address
-            </label>
-            <input
-              id="public-links-url"
-              class="input input-mono"
-              autocomplete="off"
-              spellcheck={false}
-              inputmode="url"
-              placeholder="https://share.example.com"
-              value={pinOf("publicUrl") ? (info()?.share.publicUrl ?? "") : (draft()?.publicUrl ?? "")}
-              disabled={off()}
-              readOnly={!!pinOf("publicUrl")}
-              aria-invalid={issue()?.field === "publicUrl" ? "true" : undefined}
-              aria-describedby="public-links-url-hint"
-              onInput={(e) => edit({ publicUrl: e.currentTarget.value })}
-            />
-            <Show
-              when={pinOf("publicUrl")}
-              fallback={
-                <Show when={issue()?.field === "publicUrl"}>
-                  <span class="field-error" id="public-links-url-hint">
-                    {issue()!.text}
-                  </span>
-                </Show>
-              }
-            >
-              {(v) => (
-                <span class="field-hint" id="public-links-url-hint">
-                  Set by environment ({v()}). Change it there, then restart Sova.
-                </span>
-              )}
-            </Show>
-          </div>
-
-          <div class="field settings-field public-links-url">
-            <label class="field-label" for="public-links-preview">
-              Preview address
-            </label>
-            <input
-              id="public-links-preview"
-              class="input input-mono"
-              autocomplete="off"
-              spellcheck={false}
-              inputmode="url"
-              placeholder="https://*.example.com"
-              value={pinOf("previewUrl") ? (info()?.preview?.url ?? "") : (draft()?.previewUrl ?? "")}
-              disabled={off()}
-              readOnly={!!pinOf("previewUrl")}
-              aria-invalid={issue()?.field === "previewUrl" ? "true" : undefined}
-              aria-describedby="public-links-preview-hint"
-              onInput={(e) => edit({ previewUrl: e.currentTarget.value })}
-            />
-            <Show
-              when={pinOf("previewUrl")}
-              fallback={
-                <Show
-                  when={issue()?.field === "previewUrl"}
-                  fallback={
-                    <span class="field-hint" id="public-links-preview-hint">
-                      Optional. Preview links open each app at its own name under this domain. It needs a wildcard DNS record and certificate; the steps below say how.
-                    </span>
-                  }
-                >
-                  <span class="field-error" id="public-links-preview-hint">
-                    {issue()!.text}
-                  </span>
-                </Show>
-              }
-            >
-              {(v) => (
-                <span class="field-hint" id="public-links-preview-hint">
-                  Set by environment ({v()}). Change it there, then restart Sova.
-                </span>
-              )}
-            </Show>
-          </div>
+          <TextField
+            class="settings-field public-links-url"
+            inputClass="input-mono"
+            id="public-links-url"
+            label="Public address"
+            hint={pinOf("publicUrl") && `Set by environment (${pinOf("publicUrl")}). Change it there, then restart Sova.`}
+            rule={pinOf("publicUrl") ? undefined : PUBLIC_URL_RULE}
+            autocomplete="off"
+            spellcheck={false}
+            inputmode="url"
+            placeholder="https://share.example.com"
+            value={pinOf("publicUrl") ? (info()?.share.publicUrl ?? "") : (draft()?.publicUrl ?? "")}
+            disabled={off()}
+            readOnly={!!pinOf("publicUrl")}
+            onInput={(raw) => edit({ publicUrl: raw })}
+          />
+          <TextField
+            class="settings-field public-links-url"
+            inputClass="input-mono"
+            id="public-links-preview"
+            label="Preview address"
+            hint={
+              pinOf("previewUrl") ? `Set by environment (${pinOf("previewUrl")}). Change it there, then restart Sova.`
+                : "Optional. Preview links open each app at its own name under this domain. It needs a wildcard DNS record and certificate; the steps below say how."
+            }
+            rule={pinOf("previewUrl") ? undefined : PREVIEW_URL_RULE}
+            autocomplete="off"
+            spellcheck={false}
+            inputmode="url"
+            placeholder="https://*.example.com"
+            value={pinOf("previewUrl") ? (info()?.preview?.url ?? "") : (draft()?.previewUrl ?? "")}
+            disabled={off()}
+            readOnly={!!pinOf("previewUrl")}
+            onInput={(raw) => edit({ previewUrl: raw })}
+          />
 
           <div class="public-links-row">
-            <div class="field settings-field">
-              <label class="field-label" for="public-links-front">
-                Front
-              </label>
-              <select id="public-links-front" class="select" disabled={off()} onChange={(e) => edit({ front: e.currentTarget.value as ShareFront })}>
-                <For each={FRONTS}>
-                  {(f) => (
-                    <option value={f} selected={draft()?.front === f}>
-                      {FRONT_LABELS[f]}
-                    </option>
-                  )}
-                </For>
-              </select>
-            </div>
-            <div class="field settings-field public-links-port">
-              <label class="field-label" for="public-links-port">
-                Local port
-              </label>
-              <input
-                id="public-links-port"
-                class="input input-mono"
-                type="number"
-                min="1"
-                max="65535"
-                autocomplete="off"
-                value={draft()?.sharePort ?? ""}
-                disabled={off()}
-                readOnly={!!pinOf("sharePort")}
-                aria-invalid={issue()?.field === "sharePort" ? "true" : undefined}
-                aria-describedby="public-links-port-hint"
-                onInput={(e) => edit({ sharePort: e.currentTarget.value })}
-              />
-              <Show
-                when={pinOf("sharePort")}
-                fallback={
-                  <Show when={issue()?.field === "sharePort"}>
-                    <span class="field-error" id="public-links-port-hint">
-                      {issue()!.text}
-                    </span>
-                  </Show>
-                }
-              >
-                {(v) => (
-                  <span class="field-hint" id="public-links-port-hint">
-                    Set by environment ({v()}). Change it there, then restart Sova.
-                  </span>
-                )}
-              </Show>
-            </div>
+            <Select
+              class="settings-field"
+              id="public-links-front"
+              label="Front"
+              value={draft()?.front ?? ""}
+              options={FRONTS.map((f) => ({ value: f, label: FRONT_LABELS[f] }))}
+              disabled={off()}
+              onChange={(v) => edit({ front: v as ShareFront })}
+            />
+            <NumberField
+              class="settings-field public-links-port"
+              inputClass="input-mono"
+              id="public-links-port"
+              label="Local port"
+              hint={pinOf("sharePort") && `Set by environment (${pinOf("sharePort")}). Change it there, then restart Sova.`}
+              rule={pinOf("sharePort") ? undefined : SHARE_PORT_RULE}
+              value={draft()?.sharePort ?? ""}
+              disabled={off()}
+              readOnly={!!pinOf("sharePort")}
+              onInput={(raw) => edit({ sharePort: raw })}
+            />
           </div>
 
           <fieldset class="field public-links-accept">
             <legend class="field-label">Accept links from</legend>
-            <div class="public-links-accept-modes">
-              <label class="toggle public-links-choice">
-                <input type="radio" name="public-links-accept" checked={draft()?.acceptFrom === "all"} disabled={off()} onChange={() => edit({ acceptFrom: "all" })} />
-                <span class="toggle-box" aria-hidden="true" />
-                <span class="public-links-choice-name">All hosts</span>
-              </label>
-              <label class="toggle public-links-choice">
-                <input
-                  type="radio"
-                  name="public-links-accept"
-                  checked={Array.isArray(draft()?.acceptFrom)}
-                  disabled={off()}
-                  onChange={() => edit({ acceptFrom: [] })}
-                />
-                <span class="toggle-box" aria-hidden="true" />
-                <span class="public-links-choice-name">These hosts</span>
-              </label>
-            </div>
+            <Choice
+              class="public-links-accept-modes public-links-choices"
+              label="Accept links from"
+              value={Array.isArray(draft()?.acceptFrom) ? "some" : "all"}
+              options={[{ value: "all", label: <span class="public-links-choice-name">All hosts</span> }, { value: "some", label: <span class="public-links-choice-name">These hosts</span> }]}
+              disabled={off()}
+              onChange={(v) => edit({ acceptFrom: v === "all" ? "all" : [] })}
+            />
             <Show when={Array.isArray(draft()?.acceptFrom)}>
               <ul class="public-links-accept-list">
                 <For each={acceptRows()}>
                   {(row) => (
                     <li>
-                      <label class="toggle public-links-check">
-                        <input
-                          type="checkbox"
-                          checked={(draft()?.acceptFrom as string[]).includes(row.nodeId)}
-                          disabled={off()}
-                          onChange={(e) => toggleAccept(row.nodeId, e.currentTarget.checked)}
-                        />
-                        <span class="toggle-box" aria-hidden="true" />
-                        <span class="public-links-choice-name">{row.name}</span>
-                      </label>
+                      <Toggle
+                        class="public-links-check"
+                        label={<span class="public-links-choice-name">{row.name}</span>}
+                        checked={(draft()?.acceptFrom as string[]).includes(row.nodeId)}
+                        disabled={off()}
+                        onChange={(v) => toggleAccept(row.nodeId, v)}
+                      />
                     </li>
                   )}
                 </For>
@@ -531,29 +430,16 @@ export function PublicLinksSettingsSection() {
       <Show when={draft()?.route === "via"}>
         <div class="stack public-links-gateway">
           <p class="settings-intro">Links open only while {viaName()} is on. Keep a client's organization on an always-on host.</p>
-          <div class="field settings-field public-links-port">
-            <label class="field-label" for="public-links-ingress">
-              Ingress port
-            </label>
-            <input
-              id="public-links-ingress"
-              class="input input-mono"
-              type="number"
-              min="1"
-              max="65535"
-              autocomplete="off"
-              value={draft()?.ingressPort ?? ""}
-              disabled={off()}
-              aria-invalid={issue()?.field === "ingressPort" ? "true" : undefined}
-              aria-describedby="public-links-ingress-hint"
-              onInput={(e) => edit({ ingressPort: e.currentTarget.value })}
-            />
-            <Show when={issue()?.field === "ingressPort"}>
-              <span class="field-error" id="public-links-ingress-hint">
-                {issue()!.text}
-              </span>
-            </Show>
-          </div>
+          <NumberField
+            class="settings-field public-links-port"
+            inputClass="input-mono"
+            id="public-links-ingress"
+            label="Ingress port"
+            rule={INGRESS_PORT_RULE}
+            value={draft()?.ingressPort ?? ""}
+            disabled={off()}
+            onInput={(raw) => edit({ ingressPort: raw })}
+          />
           <Show when={viaSaved() && info()?.share}>
             {(sh) => (
               <>

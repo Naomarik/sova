@@ -30,6 +30,11 @@ on {peer}" is read-only, learned from that peer's answers. The add-peer form has
 `presence` unless the user picks more. When `mesh-access.json` can't be read, the page says so, and that
 every peer gets hello only until it is fixed.
 
+When `peers.json` doesn't belong here (§mesh.peers/allowlist), the page says why in one line: it was
+moved from another folder, copied from another computer, not yet confirmed, or is a copy of a Sova
+whose folder still exists on this computer. For the first three it shows **Reconnect Here**, which
+moves the record here and turns the mesh on; for a copy whose folder still exists it shows none.
+
 ## §mesh.ui/settings — Settings → Mesh
 
 Settings has a Mesh section: this host's name, a toggle per sync category (settings, themes,

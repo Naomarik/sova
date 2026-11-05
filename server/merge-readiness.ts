@@ -569,6 +569,9 @@ export interface ReadinessDeps {
   docsPreview?: (dir: string, head: string, hash: string, done: () => void) => DocsPreview | "pending";
   /** The heads kept Ready to land. */
   landing: LandingStore;
+  /** A served tree read Ready to land at a commit (each reading; the listener dedupes): the merge queue writes its
+      branch summary (server/merge-queue/branch-summaries.ts). Absent: nothing is told. */
+  readyToLand?: (t: { path: string; branch: string; commit: string }) => void;
   /** Sova's message to a session (the specs nudge); absent: never sent. */
   nudge?: (sessionPath: string, text: string) => Promise<void>;
   /** The branches the merge queue landed for a chat (its Landed cards), by session id. */
@@ -827,6 +830,7 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
         if (blockers?.length) blocked.push({ path: t.path, branch: tf.branch, commit: tf.head, blockers });
       }
       if (writes) {
+        if (landing?.state === "ready") deps.readyToLand?.({ path: t.path, branch: tf.branch, commit: landing.commit });
         if (landing) deps.landing.hold(s.id, t.path, { branch: tf.branch, commit: landing.commit, at: deps.now() });
         else if (held && (tf.merged || (tf.readable && tf.head !== held.commit))) deps.landing.drop(s.id, t.path);
       }

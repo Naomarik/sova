@@ -294,6 +294,7 @@
     "POST /api/mcp/rows/:id/sign-in/address": {"need":"full","is":"trust-grants"},
     "POST /api/mcp/servers": {"need":"full","is":"trust-grants"},
     "POST /api/merge-queue/entries/:id/publish": {"need":"admin","is":"command","ids":["project.merge-queue.request.publish"]},
+    "POST /api/merge-queue/projects/:project/branch-summary": {"need":"admin","is":"command","ids":["project.merge-queue.branch-summary.retry"]},
     "POST /api/merge-queue/projects/:project/settings": {"need":"admin","is":"command","ids":["project.merge-queue.settings.save"]},
     "POST /api/merge-queue/projects/:project/update-local-main": {"need":"admin","is":"command","ids":["project.merge-queue.update-local-main"]},
     "POST /api/mesh/lan/key": {"need":"full","is":"opted-out"},

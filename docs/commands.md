@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 529 |
-| Routes a catalogue entry points at | 158 |
-| Catalogue entries | 218 |
+| Routes registered | 530 |
+| Routes a catalogue entry points at | 159 |
+| Catalogue entries | 219 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -181,6 +181,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.merge-queue.request.publish` | Publish Request | changes | `POST /api/merge-queue/entries/:id/publish` | admin |
 | `project.merge-queue.land-how.set` | Change How It Lands | changes | `PUT /api/merge-queue/projects/:project/land-how` | admin |
 | `project.merge-queue.land-how.clear` | Clear This Computer's Choice | changes | `DELETE /api/merge-queue/projects/:project/land-how/override` | admin |
+| `project.merge-queue.branch-summary.retry` | Try Again | changes | `POST /api/merge-queue/projects/:project/branch-summary` | admin |
 | `overseer.attention` | Show Attention | looks | `GET /api/overseer/attention` | sessions |
 | `overseer.abilities` | Show Overseer Abilities | looks | `GET /api/overseer/abilities` | sessions |
 | `overseer.todo.list` | List To-dos | looks | `GET /api/overseer/todos` | sessions |
@@ -778,6 +779,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/mcp/servers` | full | `mcp.servers.list` |
 | `GET /api/merge-queue/cards` | sessions | `session.merge-cards` |
 | `POST /api/merge-queue/entries/:id/publish` | admin | `project.merge-queue.request.publish` |
+| `POST /api/merge-queue/projects/:project/branch-summary` | admin | `project.merge-queue.branch-summary.retry` |
 | `PUT /api/merge-queue/projects/:project/land-how` | admin | `project.merge-queue.land-how.set` |
 | `DELETE /api/merge-queue/projects/:project/land-how/override` | admin | `project.merge-queue.land-how.clear` |
 | `PUT /api/merge-queue/projects/:project/models` | admin | `project.merge-queue.models.set` |

@@ -3443,6 +3443,13 @@ export interface SessionWorktreeInfo {
   /** Its branch against the project's merge target (commits ahead, lines +/−), for a registered project's worktree.
       Additive. */
   mergeStats?: import("./merge-queue").WorktreeMergeStats;
+  /** What its branch does, in a few bullets (§ the merge queue's branch summaries), once anything is known: at its
+      entry's commit while it has an open or landed entry, else at its head. Only where the queue serves the repo.
+      Additive. */
+  mergeSummary?: import("./merge-queue").BranchSummary;
+  /** The chat that owns its branch (server/merge-queue/owners.ts), for the row's title link. Only where the queue
+      serves the repo. Additive. */
+  mergeOwner?: { session: string; path?: string; title?: string; archived?: true };
   /** Present only when its repo is one the merge queue serves (on the Projects list and its merge setup done): Land,
       "Ready to land" and "Landing specs" key on it, never on `mergeProject` being missing. Absent: the repo merges
       plainly (the chat merges it into main). Additive. */

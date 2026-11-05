@@ -291,6 +291,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "project.merge-queue.request.publish": "a valid call needs a queue entry checked and waiting for its request's text, which the unit tier's app doesn't start",
   "project.merge-queue.land-how.set": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
   "project.merge-queue.land-how.clear": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
+  "project.merge-queue.branch-summary.retry": "a valid call needs the server's merge queue started with a branch whose summary failed, which the unit tier's app doesn't start",
   "project.folder.list": "a valid call needs a registered project with git history (folder-read.test.ts covers it)",
   "project.folder.read": "a valid call needs a registered project with git history (folder-read.test.ts covers it)",
   "server.restart": "a valid call schedules a restart of the service that runs this server (and in-process it is refused before any body is read: only the user's own page may)",

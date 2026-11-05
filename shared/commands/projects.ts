@@ -151,6 +151,25 @@ const MERGE_SETTINGS: CommandEntry[] = [
   },
 ];
 
+/** A branch's summary on the queue's rows: Try Again after a failed one (a summary that worked is never rewritten). */
+const MERGE_SUMMARY: CommandEntry[] = [
+  {
+    id: "project.merge-queue.branch-summary.retry",
+    label: "Try Again",
+    summary: "Write a branch's summary again after it failed, for the same commit; refused for a summary that worked.",
+    effect: "changes",
+    params: {
+      project: mqProject,
+      branch: { type: "string", description: "The branch", in: "body", required: true },
+      commit: { type: "string", description: "The full commit id the row shows", in: "body", required: true },
+    },
+    route: { method: "POST", path: "/api/merge-queue/projects/:project/branch-summary" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+];
+
 /** How a branch lands (al_3): Update Local Main, a request's Publish, How it lands. The operator's own page only. */
 const MERGE_LANDING: CommandEntry[] = [
   {
@@ -296,4 +315,5 @@ export const PROJECT_ENTRIES: CommandEntry[] = [
   ...PROJECTS_SWEEP,
   ...MERGE_SETTINGS,
   ...MERGE_LANDING,
+  ...MERGE_SUMMARY,
 ];

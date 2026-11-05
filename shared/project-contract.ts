@@ -12,7 +12,7 @@ export type Verb = (typeof VERBS)[number];
 export const DEPLOY_VERBS = ["deploy.check", "deploy.plan", "deploy.run", "deploy.status", "deploy.logs", "deploy.rollback", "deploy.request"] as const;
 export type DeployVerb = (typeof DEPLOY_VERBS)[number];
 /** The merge queue's verbs (shared/merge-queue.ts): a project's queue, its entries and runs, never an instance. */
-export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup", "merge.ask", "merge.reply", "merge.fresh", "merge.clear", "merge.hold"] as const;
+export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup", "merge.ask", "merge.reply", "merge.fresh", "merge.clear", "merge.hold", "merge.try"] as const;
 export type MergeVerb = (typeof MERGE_VERBS)[number];
 /** The merge verbs that change nothing. */
 export const MERGE_READ_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs"];
@@ -69,7 +69,7 @@ export const VERB_PARAMS: readonly VerbParam[] = [
   { wire: "project", type: "path", tool: { name: "project", description: "The project: an absolute path inside it (default: this session's project)." }, cli: { flag: "project", description: "The project's root", deployDefault: "." } },
   { wire: "instance", type: "string", tool: { name: "instance", description: "An instance id (from status)." }, cli: { flag: "instance", description: "An instance id" } },
   { wire: "checkout", type: "path", tool: { name: "checkout", description: "create/up: an existing worktree (absolute path) to run as an instance." }, cli: { flag: "checkout", description: "A checkout's path" } },
-  { wire: "branch", type: "string", tool: { name: "branch", description: "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)." }, cli: { flag: "branch", description: "A branch name" } },
+  { wire: "branch", type: "string", tool: { name: "branch", description: "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)." }, cli: { flag: "branch", description: "A branch name" } },
   { wire: "from", type: "string", tool: { name: "from", description: "create/up with a new branch: the commit it starts at (default the main checkout's HEAD)." }, cli: { flag: "from", description: "The ref a new branch starts from" } },
   { wire: "slot", type: "integer", cli: { flag: "slot", description: "A slot number" } },
   { wire: "services", type: "list", tool: { name: "services", description: "up/down/apply/logs: only these services." }, cli: { flag: "services", description: "Service names, comma-separated" } },
@@ -83,7 +83,7 @@ export const VERB_PARAMS: readonly VerbParam[] = [
   { wire: "days", type: "integer", tool: { name: "days", description: "share: how many days the link lasts (default 1, at most 7 or the definition's share.maxDays).", minimum: 1, maximum: 7 }, cli: { flag: "days", description: "How many days a share link lasts" } },
   { wire: "link", type: "string", tool: { name: "link", description: "revoke: one share link, by its id (pv_…)." }, cli: { flag: "link", description: "A share link id" } },
   { wire: "target", type: "string", tool: { name: "target", description: "deploy.*: the deploy target, by name (deploy.status lists them)." }, cli: { flag: "target", description: "A deploy target" } },
-  { wire: "commit", type: "string", tool: { name: "commit", description: "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)." }, cli: { flag: "commit", description: "A commit" } },
+  { wire: "commit", type: "string", tool: { name: "commit", description: "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial." }, cli: { flag: "commit", description: "A commit" } },
   { wire: "plan", type: "string", tool: { name: "plan", description: "deploy.run: a plan's id (pl_…); only the operator runs one." }, cli: { flag: "plan", description: "A plan id" } },
   { wire: "deploy", type: "string", tool: { name: "deploy", description: "deploy.logs: one deploy, by its id (dp_…; default the target's latest)." }, cli: { flag: "deploy", description: "A deploy id" } },
   {
@@ -105,7 +105,7 @@ export const VERB_PARAMS: readonly VerbParam[] = [
   { wire: "withoutReview", type: "boolean", mergeOnly: true, cli: { flag: "without-review", description: "Land without the review step" } },
   { wire: "chat", type: "string", mergeOnly: true, cli: { flag: "chat", description: "The chat the approval was given in" } },
   { wire: "via", type: "string", mergeOnly: true, cli: { flag: "via", description: "merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed \"open a PR\")" } },
-  { wire: "checks", type: "list", mergeOnly: true, tool: { name: "checks", description: "merge.extend: check ids from the project's merge section to add to this entry's run (never removes one)." }, cli: { flag: "checks", description: "Check ids, comma-separated" } },
+  { wire: "checks", type: "list", mergeOnly: true, tool: { name: "checks", description: "merge.extend: check ids from the project's merge section to add to this entry's run (never removes one); merge.try: release check ids to run although unchanged." }, cli: { flag: "checks", description: "Check ids, comma-separated" } },
   { wire: "verdict", type: "string", mergeOnly: true, tool: { name: "verdict", description: "merge.resolve: no-behaviour-change | behaviour-differs; merge.review: ok | notes | blocking." }, cli: { flag: "verdict", description: "A verdict" } },
   { wire: "files", type: "list", mergeOnly: true, tool: { name: "files", description: "merge.resolve: the conflicted files the judgement covers." }, cli: { flag: "files", description: "Files, comma-separated" } },
   { wire: "ours", type: "string", mergeOnly: true, tool: { name: "ours", description: "merge.resolve: what the target's side does, in plain words." }, cli: { flag: "ours", description: "The target's side, in plain words" } },

@@ -69,6 +69,8 @@ export interface QueueFile {
   /** A settings save waiting for the branch checking now (applied at the next quiet point); `failed`: why it couldn't be. */
   pendingSave?: { at: string; changes: import("../../shared/merge-queue-settings").MergeSettingsChange; failed?: string };
   seq: number;
+  /** merge.try's trials, newest first (MERGE_TRIALS_KEPT), each pinned to its commit. */
+  trials?: import("../../shared/merge-queue").MergeTrial[];
   /** A release holds the queue: only its entries land, nothing is pushed (queue.ts freezeForRelease). */
   release?: import("../../shared/merge-queue").MergeReleaseHold & { checks?: import("../../shared/project-contract").MergeCheckDecl[] };
 }

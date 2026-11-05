@@ -207,8 +207,11 @@ function result(verb: AnyVerb, root: string | null, ok: boolean, changed: boolea
   });
 }
 
+/** merge.setup's refusal to every caller but the user's own page: a chat proposes its setup on a branch instead. */
+export const SETUP_IS_THE_USERS = "only the user saves the checks, from their own page: a chat proposes the setup on its branch and runs a trial with merge.try";
+
 /** The verbs a project on the Projects list may call before its merge setup is done. */
-const SETUP_VERBS: readonly MergeVerb[] = ["merge.status", "merge.setup"];
+const SETUP_VERBS: readonly MergeVerb[] = ["merge.status", "merge.setup", "merge.try"];
 
 type Gated = ProjectQueue | { bare: string };
 
@@ -250,6 +253,8 @@ async function queueFor(deps: MergerDeps, verb: MergeVerb, req: Req, caller: Cal
 }
 
 function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, root: string, req: Req): void {
+  // merge.setup saves to the target: the user's own page only, never a chat's script on the operator's route (any dryRun).
+  if (caller.kind === "operator" && caller.fromChat && verb === "merge.setup") throw new MergeFailure("forbidden", SETUP_IS_THE_USERS);
   if (caller.kind === "operator") return;
   const reads = MERGE_READ_VERBS.includes(verb);
   const sid = sessionId(caller);
@@ -260,13 +265,19 @@ function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, root: stri
   }
   if (sid && deps.isThreadChat?.(root, sid) && THREAD_VERBS.includes(verb)) return;
   if (reads && caller.kind !== "conform") return;
+  // A trial saves and merges nothing: any chat on its own project may run one (the setup chat does); never merge.setup.
+  if (verb === "merge.try") {
+    if (caller.kind === "session") return;
+    throw new MergeFailure("forbidden", "only the user or a chat on this project runs a trial");
+  }
   // The chat a question was asked in relays the user's answer; nobody else does (the operator may, from the tab).
   if (verb === "merge.reply") {
     const ask = req.ask ? deps.askOf?.(root, req.ask) : undefined;
     if (sid && ask?.askedIn?.session === sid) return;
     throw new MergeFailure("forbidden", "only the chat the merge thread asked in relays the user's answer");
   }
-  if (verb === "merge.add" || verb === "merge.answer" || verb === "merge.cancel" || verb === "merge.pause" || verb === "merge.resume" || verb === "merge.setup" || verb === "merge.fresh" || verb === "merge.clear")
+  if (verb === "merge.setup") throw new MergeFailure("forbidden", SETUP_IS_THE_USERS);
+  if (verb === "merge.add" || verb === "merge.answer" || verb === "merge.cancel" || verb === "merge.pause" || verb === "merge.resume" || verb === "merge.fresh" || verb === "merge.clear")
     throw new MergeFailure("forbidden", "only the user lands, cancels, pauses, answers or sets up the checks: their Land button or their own word in the branch's chat");
   if (verb === "merge.review") throw new MergeFailure("forbidden", "only the run's reviewer posts its review");
   throw new MergeFailure("forbidden", `only the project's merge thread calls ${verb}`);
@@ -390,6 +401,16 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
       if (action !== "set" && action !== "clear") throw new MergeFailure("invalid-request", '"action" is "set" or "clear"');
       const r = await q.hold(action);
       return { changed: r.changed, report: { hold: r.hold, view: await viewOf() } };
+    }
+    case "merge.try": {
+      const r = await q.trial({
+        ...(req.branch ? { branch: req.branch } : {}),
+        ...(req.commit ? { commit: req.commit } : {}),
+        ...(req.checkout ? { checkout: req.checkout } : {}),
+        ...(req.checks ? { checks: req.checks } : {}),
+        by: caller.kind === "operator" && !caller.fromChat ? { kind: "operator" } : { kind: "chat", ...(sessionId(caller) ? { session: sessionId(caller)! } : {}) },
+      });
+      return { changed: true, report: { trial: r.trial, run: r.run } };
     }
     case "merge.setup": {
       const r = await q.setup({

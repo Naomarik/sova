@@ -48,6 +48,8 @@ export interface RunInput {
   /** Try It on Main (merge.setup dryRun): reset to `base`, set up, run `project.def`'s checks there; no merge, no
    *  docs, no reruns, no review. The entry is a stand-in (its branch is the target). */
   tryOnly?: true;
+  /** A trial (merge.try) of this branch or commit: the try runs on it, not on the target, and its words say so. */
+  trialOf?: string;
   /** Run the review step (the project declares a kit and the approval didn't skip it). */
   review: boolean;
   /** Aborted when the run is voided (master moved, cancelled, server stopping). */

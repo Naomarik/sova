@@ -332,6 +332,31 @@ export interface MergeRun {
   noChecks?: true;
 }
 
+/**
+ * A trial (merge.try): a setup branch's proposed checks run on its exact head in the merge copy, nothing merged and
+ * nothing saved. The checks are that commit's own `.sova/project.json` merge checks (and the services they require),
+ * then its `release.checks`. Each check's pass or fail, duration and log are the run's steps (`merge.logs {run}`).
+ * A setup branch is offered Land only once a trial of its exact head passed.
+ */
+export interface MergeTrial {
+  /** The run (mr_…) holding its steps and logs. */
+  run: string;
+  /** The commit tried (full sha): the result counts for this commit only. */
+  commit: string;
+  /** The branch it was asked for, when named by branch. */
+  branch?: string;
+  verdict: "running" | "passed" | "failed" | "machine" | "void";
+  /** One line: why the verdict. */
+  why?: string;
+  /** Release checks the trial left out: unchanged against the target's release section and not named for it. */
+  notRun?: { id: string; label: string }[];
+  /** Who started it: the operator, or a chat (its session id). */
+  by: { kind: "operator" } | { kind: "chat"; session?: string };
+  startedAt: string;
+  endedAt?: string;
+}
+export const MERGE_TRIALS_KEPT = 20;
+
 // ---- the queue ----------------------------------------------------------------------------------
 
 /** Why the queue is paused: approvals are still accepted, runs wait. */
@@ -424,6 +449,8 @@ export interface MergeQueueView {
   ready?: MergeReady[];
   /** Try It on Main (merge.setup dryRun): the run in flight, or the last one. */
   tryRun?: MergeRun;
+  /** merge.try: the setup branches' trials, newest first (at most MERGE_TRIALS_KEPT), each pinned to its commit. */
+  trials?: MergeTrial[];
   /** A release holds the queue (the freeze banner): only its entries land and nothing is pushed until it is
    *  published or abandoned. */
   release?: MergeReleaseHold;
@@ -554,6 +581,7 @@ export interface WorktreeMergeProject {
  * merge.answer  {entry, answer: accept | send-back | land-anyway, why?}          → entry (the user's)
  * merge.review  {run, verdict, text?}                         → entry (the review step's verdict)
  * merge.retry   {project | entry, note?}                      → view (rerun after a machine pause)
+ * merge.try     {project?, branch? | commit?, checks?}        → trial + run (a setup branch's checks on its head; saves nothing)
  */
 export const MERGE_ANSWERS = ["accept", "send-back", "land-anyway"] as const;
 export type MergeAnswer = (typeof MERGE_ANSWERS)[number];
@@ -570,6 +598,8 @@ export interface MergeReport {
   /** merge.fresh: whether a thread was retired; merge.clear: the chats deleted. */
   fresh?: boolean;
   cleared?: number;
+  /** merge.try: the trial as recorded (its run is `run`). */
+  trial?: MergeTrial;
   /** merge.hold: the merge thread's hold now (null: none); `until` when it lifts by itself. */
   hold?: { at: string; until: string } | null;
 }

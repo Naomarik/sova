@@ -547,6 +547,8 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
 async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise<RunOutcome> {
   const { project, base, signal } = input;
   const target = project.target;
+  // A trial (merge.try) runs on the setup branch's head, not the target: its words say whose it is.
+  const where = input.trialOf ? `${input.trialOf} at ${short(base)}` : `${target} itself`;
   const steps = new Steps(input.runDir, hooks);
   const notes: MergeNote[] = [];
   let checksShown: CheckPick[] = [];
@@ -558,7 +560,7 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   try {
     assertCopyOutsideState(copy, { root: project.root, ...(deps.state ? { state: deps.state } : {}), ...(deps.home ? { home: deps.home } : {}) });
     hooks.copy?.(copy);
-    cs.log(`copy: ${copy}\nbase: ${base} (${target}), nothing merged\n`);
+    cs.log(`copy: ${copy}\nbase: ${base} (${input.trialOf ?? target}), nothing merged\n`);
     await prepareCopy({ root: project.root, path: copy, base, log: cs.log, signal, ...(deps.state ? { state: deps.state } : {}), ...(deps.home ? { home: deps.home } : {}) });
   } catch (err) {
     if (signal.aborted) return (cs.end("failed", { detail: "aborted" }), voided("aborted"));
@@ -581,7 +583,7 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     if (failed.timedOut) return voided(`setup ${failed.failed.id} timed out`);
     const again = await runSetup({ def, scope, steps, idPrefix: "rerun-tip:setup:", labelPrefix: "Setup again: ", kind: "rerun-tip", fresh: true, signal });
     if (signal.aborted) return voided("aborted");
-    if (again) return out({ verdict: "failed", why: `setup (${again.failed.id}) fails on ${target} itself (log: ${again.step.log})`, copy });
+    if (again) return out({ verdict: "failed", why: `setup (${again.failed.id}) fails on ${where} (log: ${again.step.log})`, copy });
     notes.push({ kind: "flaky", text: `setup (${failed.failed.id}) failed, then passed on a rerun`, at: now() });
   }
   const list = planChecks(def, input.picks, input.releaseChecks);
@@ -608,7 +610,7 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       const st = steps.start(`check:${check.id}`, "check", check.label, { source: check.source });
       const r = await runCheck({ def, scope, check, stepId: check.id, logFile: st.file, signal });
       if (r.proc.aborted || signal.aborted) return (st.end("failed", { detail: "aborted" }), voided("aborted"));
-      if (r.proc.timedOut) return (st.end("failed", { detail: `timed out after ${check.timeoutSec} s` }), out({ verdict: "failed", why: `${check.label} timed out after ${check.timeoutSec} s on ${target} itself`, copy }));
+      if (r.proc.timedOut) return (st.end("failed", { detail: `timed out after ${check.timeoutSec} s` }), out({ verdict: "failed", why: `${check.label} timed out after ${check.timeoutSec} s on ${where}`, copy }));
       if (r.proc.code === 0) {
         st.end(r.report?.skippedWhy ? "skipped" : "passed", { counts: countsOf(r.report), ...(r.report?.skippedWhy ? { detail: `skipped: ${r.report.skippedWhy}` } : {}) });
         continue;
@@ -625,7 +627,7 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
         red.push(check.label);
       }
     }
-    if (red.length) return out({ verdict: "failed", why: `${red.join(", ")} fail${red.length === 1 ? "s" : ""} on ${target} itself`, copy });
+    if (red.length) return out({ verdict: "failed", why: `${red.join(", ")} fail${red.length === 1 ? "s" : ""} on ${where}`, copy });
     return out({ verdict: "passed", copy });
   } finally {
     await services?.down().catch(() => undefined);

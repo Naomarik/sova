@@ -660,6 +660,16 @@ open_app() {
 			fi
 		fi
 		chmod 700 "$profile"
+		# macOS holds a program's starter responsible for its mic use, so the window's browser starts
+		# through macOS's launcher and its mic permission is its own (scripts/mac-app.ts, launchApp).
+		# Outside a bundle, or when open fails: the direct start.
+		if [ "$os" = Darwin ]; then
+			case "$browser" in
+				*.app/Contents/MacOS/*)
+					open -n -a "${browser%/Contents/MacOS/*}" --args --app="$url" --user-data-dir="$profile" \
+						--no-first-run --no-default-browser-check >/dev/null 2>&1 </dev/null && exit 0 ;;
+			esac
+		fi
 		nohup "$browser" --app="$url" --user-data-dir="$profile" --no-first-run --no-default-browser-check \
 			>/dev/null 2>&1 </dev/null &
 		exit 0

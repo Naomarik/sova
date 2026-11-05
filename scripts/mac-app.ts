@@ -21,11 +21,13 @@
 //                               [--token-file <f>] [--no-install]
 //     Opens the installed app at <url> when it is installed for the port; installs it first when
 //     nothing was ever tried for the port and the browser on that profile is closed. --no-install
-//     (an install that passed --no-app-entry): never installs. Exit 0 opened · 10 not installed:
-//     the caller opens its bare --app window instead.
+//     (an install that passed --no-app-entry): never installs. Started through macOS's launcher
+//     (launchApp below). Exit 0 the launch was accepted, which doesn't say the window appeared
+//     (neither `open` nor a detached start can) · 10 not installed, or the browser couldn't be
+//     started: the caller opens its bare --app window instead.
 //
 // Env: SOVA_APP_BROWSER_ARGS adds arguments to every browser start (tests: --use-mock-keychain).
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, readlinkSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { appIdOf, appRecord, findAppId, loadStore, presetWco, storeDir } from "./mac-app-store";
@@ -358,12 +360,32 @@ async function install(args: Args, how: { auto: boolean; closeRunning: boolean; 
   return 0;
 }
 
-function launchApp(browser: string, profile: string, appId: string, url: string): void {
-  const child = spawn(browser, [`--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", ...extraArgs(), `--app-id=${appId}`, `--app-launch-url-for-shortcuts-menu-item=${url}`], {
-    detached: true,
-    stdio: "ignore",
+/** ".../Google Chrome.app" for ".../Google Chrome.app/Contents/MacOS/Google Chrome"; else null. */
+export const bundleOf = (exe: string): string | null => /^(.+\.app)\/Contents\/MacOS\/[^/]+$/.exec(exe)?.[1] ?? null;
+
+/** Long past any real launch: `open` that hasn't answered by now gets the direct start. */
+const OPEN_LIMIT_MS = 15_000;
+
+/**
+ * Starts the window's browser through macOS's launcher (§app.installer/app-entry). macOS holds a
+ * program's starter responsible for its mic use, and detaching doesn't change that: started as a
+ * child of Bun (hardened, no audio-input entitlement), the browser is refused the mic without a
+ * prompt and getUserMedia never answers. Started by `open`, its permission is its own. The direct
+ * start remains for an executable outside a bundle and for when `open` fails; false when it fails too.
+ * The install's start (startPiped) stays direct: it needs the pipe and never takes the mic.
+ */
+async function launchApp(browser: string, profile: string, appId: string, url: string): Promise<boolean> {
+  const args = [`--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", ...extraArgs(), `--app-id=${appId}`, `--app-launch-url-for-shortcuts-menu-item=${url}`];
+  const bundle = bundleOf(browser);
+  if (bundle && spawnSync("open", ["-n", "-a", bundle, "--args", ...args], { stdio: "ignore", timeout: OPEN_LIMIT_MS }).status === 0) return true;
+  return new Promise((resolve) => {
+    const child = spawn(browser, args, { detached: true, stdio: "ignore" });
+    child.once("error", () => resolve(false));
+    child.once("spawn", () => {
+      child.unref();
+      resolve(true);
+    });
   });
-  child.unref();
 }
 
 async function open(args: Args): Promise<number> {
@@ -383,8 +405,7 @@ async function open(args: Args): Promise<number> {
     writeMarker(profile, port, { state: "removed", appId: had.appId, browser, at: new Date().toISOString() });
     return 10;
   }
-  launchApp(browser, profile, had.appId, url);
-  return 0;
+  return (await launchApp(browser, profile, had.appId, url)) ? 0 : 10;
 }
 
 function usage(): number {

@@ -83,6 +83,11 @@ textarea. The textarea stays visible and editable throughout.
 - **Cancel** (the strip's close button, or `Esc` anywhere while recording) throws the clip away and
   inserts nothing. `Esc` never aborts a turn.
 - **Cap.** A recording stops itself at 5:00 and is transcribed.
+- **Starting gives up.** When the mic doesn't start within its time limit (§chat.voice/capture), the
+  strip goes from Starting to Error with "The microphone didn't start within 10 seconds. Quit and
+  reopen Sova or your browser, then try again." and Dismiss, and the button is back to the plain
+  mic, so a press tries again. While the browser's own question is on screen nothing gives up, and
+  Cancel works throughout: after it no error shows, even when the limit passes later.
 - **Nothing heard.** A clip whose level never rose above the speech threshold is not sent: the
   strip says so, and nothing is inserted.
 - **Errors keep the clip.** A failed transcription (server unreachable, whisper not ready, busy)
@@ -100,6 +105,19 @@ textarea. The textarea stays visible and editable throughout.
   noise gate, cut words, so the speech models get the mic's raw signal.
 - **PCM, not MediaRecorder.** An AudioWorklet (`/voice-capture-worklet.js`) posts mono Float32
   batches and their RMS; where AudioWorklet is missing a ScriptProcessorNode does the same.
+- **The time limit.** Starting never hangs for good when no one is being asked anything. The page
+  reads the site's microphone permission beside the `getUserMedia` call, never before it, so neither
+  that call nor the `AudioContext` waits on it. With the permission `granted`, `getUserMedia` has 10
+  seconds. With it `prompt` or `denied`, or when it can't be read, `getUserMedia` has no limit:
+  someone answering the browser's question is never cut off, and a denied request rejects by itself.
+  When the permission turns `granted` during the wait (the person answered Allow) the 10 seconds
+  start at that moment; when it stops being `granted` the limit is dropped. The browser's permission
+  is all a page can see: an operating-system question (macOS's first ask for the browser) reads as
+  `granted`, so its 10 seconds can run out while it is on screen, and pressing again after answering
+  it works. Once the stream has arrived, `ctx.resume()` and loading the worklet share a further 10
+  seconds. When a limit runs out, starting rejects with a named error (`MicStartTimeout`), the
+  context closes and the stream's tracks stop; a stream that arrives after that has its tracks
+  stopped as it arrives, so the OS mic indicator doesn't stay on.
 - **Stop** keeps recording for 350 ms more (post-roll, so a stop tapped on the last syllable
   doesn't cut it), then flushes the worklet, stops every mic track (which releases the OS mic indicator), closes
   the context, drops the knock of the finger tapping Stop, resamples to 16 kHz through an

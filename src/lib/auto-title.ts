@@ -11,7 +11,7 @@ import { AUTO_TITLE_MAX_PATHS, SESSION_TITLE_LABEL_MAX, type AutoTitleOutcome, t
  * Workers and Overseer files never reach a section's rows. Pure.
  */
 export const isNameable = (s: SessionSummary): boolean =>
-  s.titleBy === undefined && s.originalTitle === undefined && s.draftPreview === undefined && !s.workerSession && !s.overseer && !s.projectOverseer && !s.queueChat;
+  s.titleBy === undefined && s.originalTitle === undefined && s.draftPreview === undefined && !s.workerSession && !s.overseer && !s.projectOverseer && !s.queueChat && !s.fixedName;
 
 /** A section's nameable rows, each session once (a row can show in two places of one section). Pure. */
 export function nameableRows(rows: readonly SessionSummary[]): SessionSummary[] {

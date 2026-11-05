@@ -35,7 +35,9 @@ export const knownExplanations = (all: readonly ExplanationInfo[] | undefined, s
  * an input, so the status row's inputs trigger will show; false says nothing (a first message past
  * the head read, or none yet).
  */
-export const knownInputs = (s: Pick<SessionSummary, "title" | "originalTitle">): boolean => (s.originalTitle ?? s.title) !== "Untitled";
+export const knownInputs = (s: Pick<SessionSummary, "title" | "originalTitle"> & Partial<Pick<SessionSummary, "fixedName">>): boolean =>
+  // A chat Sova names itself shows that name, never its first message: the title says nothing here.
+  !s.fixedName && (s.originalTitle ?? s.title) !== "Untitled";
 
 /** How many subagents the session's live record counts: the settled-workers row's number. */
 export const knownWorkers = (s: Pick<SessionSummary, "workers" | "live">): number => (s.workers ?? s.live?.workers)?.total ?? 0;

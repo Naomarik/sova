@@ -37,7 +37,7 @@ import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRet
 import { bindKey, paletteKeyAction } from "./commands/keys";
 import { composerOf } from "./commands/composers";
 import { closePalette, paletteRequest, togglePaletteFromKey } from "./commands/palette-open";
-import { isOverseerHash, OVERSEER_HASH, overseerHistoryId } from "./lib/overseer";
+import { isOverseerHash, OVERSEER_HASH, overseerHistoryId, overseerRedirect } from "./lib/overseer";
 import { followListRows, onFeedPush, requestListRead, sessionFeedOpen } from "./lib/session-feed";
 import { ListRows, ROW_STAMP_SLACK_MS } from "./lib/list-rows";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
@@ -592,10 +592,19 @@ export function App() {
         onHash();
       });
   };
+  /** A session route to one of the Overseer's own files (an old bookmark, a link from another chat) is the
+      Overseer page, or an earlier conversation's History page: swapped in place, like the routes above. */
+  const redirectOverseerSession = () => {
+    const r = sessionRouteFromHash(location.hash);
+    if (!r || r.host) return;
+    const to = overseerRedirect(r.path, overseer.data());
+    if (to) history.replaceState(history.state, "", to);
+  };
   const onHash = () => {
     redirectLegacyInsights();
     openSettingsFromHash();
     resolveSessionIdRoute();
+    redirectOverseerSession();
     setRoute(pathFromHash());
     setGroupRoute(groupRouteFromHash(location.hash));
     setInsightsRoute(insightsRouteFromHash(location.hash));
@@ -610,6 +619,8 @@ export function App() {
     setAccessRoute(location.hash === "#/access");
   };
   // A `#/sid/` route opened before the first list load resolves when the lists land.
+  // A session route to an Overseer file opened before the Overseer's info was read moves once it lands.
+  createEffect(on(overseer.data, () => sessionRouteFromHash(location.hash) && onHash(), { defer: true }));
   createEffect(on([list, peerLists, meshSettled, peersSettled], () => sessionIdFromHash(location.hash) && onHash(), { defer: true }));
   /** Ctrl/⌘+K: the command palette; "?": the shortcut sheet (§app/command-palette). Each is a
       separate file the browser fetches on its first opening. On a Mac, Ctrl+K in a text field is

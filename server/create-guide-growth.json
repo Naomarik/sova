@@ -445,6 +445,7 @@
    "project.verb.merge.try": "scripts",
    "project.setup.get": "scripts",
    "project.setup.open": "scripts",
+   "project.setup.merge": "scripts",
    "project.services.view": "scripts",
    "project.overseer.idea.list": "scripts",
    "project.overseer.idea.get": "scripts",

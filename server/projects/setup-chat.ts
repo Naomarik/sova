@@ -240,7 +240,8 @@ export async function readSetup(projectId: string): Promise<SetupStatus> {
       const untried = pb.commit ? await (await import("../merge-queue/wire")).setupUntriedAt(p.root, pb.commit) : null;
       proposal = proposalOf(view, facts.served, q?.trials ?? [], q?.readRun ?? (() => null), untried);
     }
-    const state: SetupChatView["state"] = now?.working ? "working" : now?.questions ? "waiting" : live === "proposed" ? "proposed" : live === "waiting" ? "waiting" : live === "running" ? "working" : "idle";
+    // A standing run between turns reads "running" in the registry: what its session does now decides working or idle.
+    const state: SetupChatView["state"] = now?.working ? "working" : now?.questions ? "waiting" : live === "proposed" ? "proposed" : live === "waiting" ? "waiting" : live === "running" && !now ? "working" : "idle";
     chat = {
       sessionId: cur.sessionId,
       path: cur.path,

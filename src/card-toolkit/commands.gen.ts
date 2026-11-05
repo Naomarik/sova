@@ -118,6 +118,11 @@ export type CommandId =
   | "project.update"
   | "project.claude-login.get"
   | "project.claude-login.set"
+  | "project.coding.start"
+  | "project.icon.get"
+  | "project.icon.upload"
+  | "project.icon.letters"
+  | "project.icon.remove"
   | "project.archive"
   | "project.unarchive"
   | "project.preview.off"
@@ -2817,6 +2822,45 @@ export interface CommandParams {
     /** A login id (default: this computer's own), org, or none */
     "login": string;
   };
+  /** Start a coding chat in a project: in its root (or a folder inside it), on the project's coding model and mode; with worktree later it cuts its own branch once the work has a name. (changes something; needs the card's owner trusted) */
+  "project.coding.start": {
+    /** The project's id */
+    "pid": string;
+    /** Names the chat (and, with worktree now, its branch) */
+    "title"?: string;
+    /** Its model (provider/model); absent: the project's coding model */
+    "model"?: string;
+    /** Its thinking level */
+    "thinking"?: string;
+    /** now: cut its worktree at the start; later: start in the root, adopt the first worktree it makes */
+    "worktree"?: "now" | "later";
+    /** Where it starts: the root, a folder inside it, or one inside its worktrees (default: the root) */
+    "cwd"?: string;
+  };
+  /** What a project's icon is: an uploaded picture, one found in its folder, or letters (rescans the folder). (only looks; needs the card's owner trusted) */
+  "project.icon.get": {
+    /** The project's id */
+    "pid": string;
+  };
+  /** Set a project's icon to a picture: a square PNG of 64 to 1024 px, at most 1 MB, base64. Kept on this computer only. (changes something; needs the card's owner trusted) */
+  "project.icon.upload": {
+    /** The project's id */
+    "pid": string;
+    /** The picture: a square PNG, base64 */
+    "png": string;
+  };
+  /** Show a project's letters instead of its picture (true), or its picture again (false). (changes something; needs the card's owner trusted) */
+  "project.icon.letters": {
+    /** The project's id */
+    "pid": string;
+    /** true: letters; false: the uploaded or found picture */
+    "letters": boolean;
+  };
+  /** Remove a project's uploaded picture: back to the icon found in its folder, or letters. (changes something; needs the card's owner trusted) */
+  "project.icon.remove": {
+    /** The project's id */
+    "pid": string;
+  };
   /** Archive a project; refused while anything in it is open. (changes something; needs the card's owner trusted) */
   "project.archive": {
     /** The project's id */
@@ -3547,6 +3591,11 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.update": "changes",
   "project.claude-login.get": "looks",
   "project.claude-login.set": "changes",
+  "project.coding.start": "changes",
+  "project.icon.get": "looks",
+  "project.icon.upload": "changes",
+  "project.icon.letters": "changes",
+  "project.icon.remove": "changes",
   "project.archive": "changes",
   "project.unarchive": "changes",
   "project.preview.off": "changes",

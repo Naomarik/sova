@@ -380,7 +380,8 @@
       "§app.project-costs/card",
       "§app/requirements",
       "§mesh.public/preview-card",
-      "§app.owner-page/controls"
+      "§app.owner-page/controls",
+      "§app.projects/icon"
     ],
     "code": [
       "src/components/ProjectPage.tsx",
@@ -404,12 +405,15 @@
       "src/lib/powers-view.ts",
       "src/lib/projects-route.test.ts",
       "src/components/MergeQueueTab.tsx",
-      "src/components/ReleasesTab.tsx"
+      "src/components/ReleasesTab.tsx",
+      "src/components/ProjectIcon.tsx",
+      "src/components/ProjectIconCard.tsx",
+      "src/components/InsightsPage.tsx"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-04T22:53Z",
+      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
     }
   },
   "§app.organizations/projects": {

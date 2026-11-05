@@ -15,6 +15,8 @@ control sends to the route named, so every answer and refusal is the route's own
 - `project.create` (`POST /api/projects`): Add Project (a folder's `root`) or Clone from GitHub (`clone`); the operator's, on its own host.
 - `project.update` (`PATCH /api/projects/:pid`): rename a project or move its root.
 - `project.claude-login.get`, `project.claude-login.set` (`GET`/`PUT /api/projects/:pid/claude-login`): the Claude login a project's new chats start on (a login id, `org` or `none`; §app.claude-logins/project-login).
+- `project.coding.start` (`POST /api/projects/:pid/overseer/coding`): New Chat in Project, a chat started in a project as a home card's New Chat and New Session's Project tab start it (§app.project-overseer/new-coding-session; `worktree` `now` or `later`, and an optional `title`, `model`, `thinking` and `cwd`).
+- `project.icon.get`, `project.icon.upload`, `project.icon.letters`, `project.icon.remove` (`GET /api/projects/:pid/icon/info`, `PUT`/`PATCH`/`DELETE /api/projects/:pid/icon`): where a project's icon comes from, uploading a square PNG (base64 `png`), turning its letters on or off (`letters`), and removing the upload (§app.projects/icon).
 - `project.archive`, `project.unarchive` (`POST /api/projects/:pid/archive|unarchive`): archive a project (refused while anything in it is open) or bring it back.
 - `project.preview.off` (`POST /api/previews/:id/off`): turn a preview link off at once.
 - `project.worktree.list`, `project.worktree.merge`, `project.worktree.remove` (`/api/projects/:pid/overseer/worktrees…`): a project's coding sessions' worktrees; merge one's branch into its target, or remove it.
@@ -24,7 +26,8 @@ control sends to the route named, so every answer and refusal is the route's own
 
 Each entry's mesh need is what the peer listener's classifier gives its route. Reading one kept
 file (`GET /api/projects/:pid/files/:id`) is not an entry: its answer is the file's bytes as a
-download, which the command line, reading answers as text, cannot pass on intact.
+download, which the command line, reading answers as text, cannot pass on intact. Nor is reading
+a project's icon picture (`GET /api/projects/:pid/icon`): it is image bytes a page draws.
 
 Nothing that hands out a preview link is an entry: making one (`POST /api/previews`) or lengthening
 one (`POST /api/previews/:id/extend`) lets someone outside this machine reach a local app, and a

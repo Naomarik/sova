@@ -3,7 +3,7 @@ import { hostOf, isOrgHostOpen } from "../org-engine";
 import { engineOf, listProjects, runtimeSid } from "./spaces";
 import type { PlaybookReviewWords } from "../../shared/playbook-review";
 import { CONTRACT_FILE, DefinitionError, parseDefinition, type ProjectDef } from "../../shared/project-contract";
-import type { RuntimeMemory, RuntimeProof, RuntimeRunLive, RuntimeRunReview } from "../../shared/project-runtime";
+import type { MergeSetupReview, RuntimeMemory, RuntimeProof, RuntimeRunLive, RuntimeRunReview } from "../../shared/project-runtime";
 import { realGit } from "../project-services/engine";
 import { softwareOf } from "../project-services/observe";
 import { defHashOf } from "../project-services/def-hash";
@@ -35,7 +35,7 @@ export interface PlaybookReviewFact extends PlaybookReviewWords {
 export const DEFAULT_PLAYBOOK_LABEL = "Project verbs";
 
 /** What a run proposes, as its registry recorded it: anything unknown reads as a definition (the v1 runs). */
-export const proposesOf = (v: unknown): PlaybookProposes => (v === "deploy" || v === "release" ? v : "definition");
+export const proposesOf = (v: unknown): PlaybookProposes => (v === "deploy" || v === "release" || v === "pipeline" ? v : "definition");
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -55,7 +55,7 @@ export function playbookReviewOf(projectId: string): PlaybookReviewFact | null {
   const def = obj(bf.def);
   const proposes = proposesOf(pb.proposes);
   // A deploy-setup run proposes its deploy recipe, a release-setup run its release setup, each with a hash of its own.
-  const hash = proposes === "deploy" ? str(obj(bf.deploy).hash) : proposes === "release" ? str(obj(bf.release).hash) : def.state === "present" ? str(def.hash) : "";
+  const hash = proposes === "deploy" ? str(obj(bf.deploy).hash) : proposes === "release" ? str(obj(bf.release).hash) : proposes === "pipeline" ? str(obj(bf.pipeline).hash) : def.state === "present" ? str(def.hash) : "";
   return {
     projectId,
     sessionId,
@@ -106,8 +106,16 @@ export function reviewOf(def: ProjectDef | null, fact: RuntimeRunReview["def"], 
   };
 }
 
+/** A definition's merge section as the Setup chat's proposal shows it; null when it declares none. Pure. */
+export function mergeReviewOf(def: ProjectDef): MergeSetupReview | null {
+  const m = def.merge;
+  if (!m) return null;
+  const checks = m.checks === "none" ? ("none" as const) : Array.isArray(m.checks) ? m.checks.map((c) => ({ id: c.id, label: c.label, run: [...c.run], timeoutSec: c.timeout, optional: c.optional === true, requires: [...(c.requires ?? [])] })) : null;
+  return { checks, ...(m.target ? { target: m.target } : {}), ...(typeof m.push === "boolean" ? { push: m.push } : {}), ...(typeof m.land === "string" ? { land: m.land } : {}) };
+}
+
 /** What a proposed run's branch proposes, read at its tip from git (never the worktree's files). */
-export async function branchReview(root: string, branch: string, proof: RuntimeProof | null, deploy = false, git: typeof realGit = realGit, release = false): Promise<RuntimeRunReview> {
+export async function branchReview(root: string, branch: string, proof: RuntimeProof | null, deploy = false, git: typeof realGit = realGit, release = false, pipeline = false): Promise<RuntimeRunReview> {
   const shown = await git(["show", `${branch}:${CONTRACT_FILE}`], root);
   if (shown.code !== 0) return reviewOf(null, { state: "absent" }, proof);
   let review: RuntimeRunReview;
@@ -116,6 +124,12 @@ export async function branchReview(root: string, branch: string, proof: RuntimeP
     review = reviewOf(def, { state: "present", hash: defHashOf(def) }, proof);
   } catch (err) {
     return reviewOf(null, { state: "invalid", error: err instanceof DefinitionError ? err.message : String(err) }, proof);
+  }
+  // A pipeline run (the Setup chat): everything it proposes at the tip, merge, release and deploy together.
+  if (pipeline) {
+    const [r, d] = await Promise.all([releaseSetupAt(root, branch, git), deployReviewAt(root, branch, git)]);
+    const def = parseDefinition(shown.stdout);
+    return { ...review, ...(r ? { release: r } : {}), ...(d ? { deploy: d } : {}), merge: mergeReviewOf(def) };
   }
   // A release-setup run: its settings and steps at the tip (server/projects/release-proposal.ts).
   if (release) {

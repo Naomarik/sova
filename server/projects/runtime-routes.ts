@@ -4,6 +4,9 @@ import { OrgError } from "../org-error";
 import { OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerSender } from "../overseer-sender";
 import { mergeRun, readRuntime, RuntimeRefusal, startOnboard, startRuntimeTick } from "./runtime";
 import { operatorEnvelopeOf, type OperatorBy } from "./spaces";
+import { FOLDED_PLAYBOOKS, SETUP_PLAYBOOK_ID } from "./onboard";
+import { openSetup, readSetup, type SetupDeps } from "./setup-chat";
+import type { Envelope } from "../org-envelope";
 
 /**
  * The software registry's routes (§app/project-runtime): `GET /api/projects/:pid/runtime` (the registry, read
@@ -40,8 +43,41 @@ function operatorBy(c: Context): OperatorBy {
 
 const opt = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
 
+/** The live server's ways to start and archive the Setup chat (server/projects/setup-chat.ts). */
+function liveSetupDeps(app: Hono<any>): SetupDeps {
+  return {
+    startRun: (pid, input, envelope?: Envelope) => startOnboard(pid, input, envelope),
+    startChat: async (cwd, text, title, model) => {
+      const res = await app.request("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cwd, prompt: text, ...(model ? { model: model.model, ...(model.thinking ? { thinking: model.thinking } : {}) } : {}) }) });
+      const json = (await res.json().catch(() => null)) as { id?: string; path?: string; error?: string } | null;
+      if (res.status !== 201 || !json?.id || !json.path) throw new RuntimeRefusal(`The Setup chat didn't start: ${json?.error ?? `HTTP ${res.status}`}`, 409);
+      (await import("../session-titles")).writeAutoTitle(json.id, title);
+      return { id: json.id, path: json.path };
+    },
+    archive: async (path) => {
+      const r = await (await import("../sessions-index")).archiveSession(path, true);
+      return r.ok ? { ok: true } : { ok: false, error: r.error ?? "refused" };
+    },
+    working: async (path) => !!(await (await import("./playbook-review")).runLive(path))?.working,
+    runtime: (pid) => readRuntime(pid),
+  };
+}
+
 export function registerRuntimeRoutes(app: Hono<any>): void {
   startRuntimeTick();
+
+  // The Setup chat (§app.project-setup/chat, /start): its state, and Set Up with a Chat / Change Setup / Start Fresh.
+  app.get("/api/projects/:pid/setup", handle(async (c) => c.json(await readSetup(c.req.param("pid") ?? ""), 200, NO_STORE)));
+  app.post(
+    "/api/projects/:pid/setup",
+    handle(async (c) => {
+      const pid = c.req.param("pid") ?? "";
+      const b = await body(c);
+      const input = { ...(b.fresh === true ? { fresh: true } : {}), ...(opt(b.why) ? { why: opt(b.why) } : {}), ...(opt(b.model) ? { model: opt(b.model) } : {}), ...(opt(b.thinking) ? { thinking: opt(b.thinking) } : {}) };
+      const made = await openSetup(pid, input, liveSetupDeps(app), operatorEnvelopeOf(pid, operatorBy(c)));
+      return c.json(made, made.reopened ? 200 : 201, NO_STORE);
+    }),
+  );
 
   app.get("/api/projects/:pid/runtime", handle(async (c) => c.json(await readRuntime(c.req.param("pid") ?? ""), 200, NO_STORE)));
 
@@ -64,6 +100,12 @@ export function registerRuntimeRoutes(app: Hono<any>): void {
       const pid = c.req.param("pid") ?? "";
       const b = await body(c);
       const input = { ...(opt(b.why) ? { why: opt(b.why) } : {}), ...(opt(b.model) ? { model: opt(b.model) } : {}), ...(opt(b.thinking) ? { thinking: opt(b.thinking) } : {}), ...(opt(b.playbook) ? { playbook: opt(b.playbook) } : {}) };
+      // The setup playbooks folded into the Setup chat (and its own) open the Setup chat: never a second one.
+      const pbId = opt(b.playbook);
+      if (pbId && (pbId === SETUP_PLAYBOOK_ID || FOLDED_PLAYBOOKS.includes(pbId))) {
+        const opened = await openSetup(pid, { ...(input.why ? { why: input.why } : {}), ...(input.model ? { model: input.model } : {}), ...(input.thinking ? { thinking: input.thinking } : {}) }, liveSetupDeps(app), operatorEnvelopeOf(pid, operatorBy(c)));
+        return c.json({ sessionId: opened.sessionId, path: opened.path, ...(opened.worktree ? { worktree: opened.worktree } : {}), reopened: opened.reopened }, opened.reopened ? 200 : 201);
+      }
       const made = await startOnboard(pid, input, operatorEnvelopeOf(pid, operatorBy(c)));
       return c.json({ sessionId: made.sessionId, path: made.path, ...(made.worktree ? { worktree: made.worktree } : {}), ...(made.notPrompted ? { notPrompted: made.notPrompted } : {}) }, 201);
     }),

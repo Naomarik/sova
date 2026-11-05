@@ -59,7 +59,7 @@ export function observedPayload(f: RuntimeFacts): Record<string, unknown> {
 }
 
 export function branchPayload(b: BranchFacts): Record<string, unknown> {
-  return { ref: b.ref, commit: b.commit, def: b.def, proof: proofFact(b.proof), deploy: b.deploy, release: b.release };
+  return { ref: b.ref, commit: b.commit, def: b.def, proof: proofFact(b.proof), deploy: b.deploy, release: b.release, pipeline: b.pipeline ?? null };
 }
 
 /** The payload last sent per project (only a change is sent). */
@@ -284,7 +284,7 @@ function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlay
   const path = buildSessionPath(str(pb.sessionId));
   // A deploy-setup run proposes its deploy recipe, a release-setup run its release setup, each with a hash of its own.
   const proposes = proposesOf(pb.proposes);
-  const deploy = proposes === "deploy" ? obj(bf.deploy) : proposes === "release" ? obj(bf.release) : null;
+  const deploy = proposes === "deploy" ? obj(bf.deploy) : proposes === "release" ? obj(bf.release) : proposes === "pipeline" ? obj(bf.pipeline) : null;
   const build = obj(host.data(str(pb.sid)));
   return {
     sessionId: str(pb.sessionId),
@@ -317,7 +317,7 @@ async function withRun(pb: RuntimePlaybook | null, state: string, root: string):
   const live = await runLive(pb.path);
   const review =
     state === "proposed" && pb.branch
-      ? await branchReview(root, pb.branch, pb.branchProof ?? null, pb.proposes === "deploy", undefined, pb.proposes === "release").catch(() => undefined)
+      ? await branchReview(root, pb.branch, pb.branchProof ?? null, pb.proposes === "deploy", undefined, pb.proposes === "release", pb.proposes === "pipeline").catch(() => undefined)
       : undefined;
   return { ...pb, ...(live ? { live } : {}), ...(review ? { review } : {}) };
 }
@@ -417,6 +417,7 @@ export const NO_RUN_PROPOSED = "No playbook run is proposed.";
 const CHANGED_SINCE = "The definition changed since it was shown: look again.";
 const DEPLOY_CHANGED_SINCE = "The deploy recipe changed since it was shown: look again.";
 const RELEASE_CHANGED_SINCE = "The release setup changed since it was shown: look again.";
+const PIPELINE_CHANGED_SINCE = "The proposed setup changed since it was shown: look again.";
 
 /** What Merge Branch answers: the registry, read again; on a refused merge, `refused` says why. */
 export interface MergeRunOutcome {
@@ -436,7 +437,10 @@ export async function mergeRun(projectId: string, hash: string, commit?: string)
   const review = playbookReviewOf(projectId);
   if (!review) throw new RuntimeRefusal(NO_RUN_PROPOSED, 409);
   // Never main's hash by mistake: only the one the branch proposes now.
-  if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(review.proposes === "deploy" ? DEPLOY_CHANGED_SINCE : review.proposes === "release" ? RELEASE_CHANGED_SINCE : CHANGED_SINCE, 409);
+  if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(review.proposes === "deploy" ? DEPLOY_CHANGED_SINCE : review.proposes === "release" ? RELEASE_CHANGED_SINCE : review.proposes === "pipeline" ? PIPELINE_CHANGED_SINCE : CHANGED_SINCE, 409);
+  // A setup branch merges (or lands) only once a trial of its exact head passed (§app.project-setup/land-gate).
+  const untried = await (await import("../merge-queue/wire")).setupUntriedAt(readProject(projectId).root, commit ?? review.commit ?? "");
+  if (untried) throw new RuntimeRefusal(untried, 409);
   try {
     // Once the project's merge queue is set up, Merge Branch is Land: approved at the branch head in the queue.
     // It pins the tip the proposal was read at (the screen's, else the review's), never a later one.
@@ -472,6 +476,9 @@ export interface OnboardInput {
   thinking?: string;
   /** A verb playbook's id (default project-verbs). */
   playbook?: string;
+  /** The host's context after the playbook's turn (the Setup chat's, server/projects/setup-chat.ts). */
+  context?: string;
+  title?: string;
 }
 
 /**
@@ -513,7 +520,7 @@ export function softwareLines(v: ProjectRuntimeView): string[] {
   if (v.proof) out.push(`Proven: ${v.proof.pass ? "passed" : "failed"} at ${h(v.proof.hash)} (suite v${v.proof.suite}), ${v.proof.at}.`);
   if (v.playbook)
     out.push(
-      `${v.playbook.label} playbook: ${v.playbookState === "idle" ? `last run ${v.playbook.result ?? "ended"}` : v.playbookState === "proposed" ? `proposes ${v.playbook.proposes === "deploy" ? "a deploy recipe" : v.playbook.proposes === "release" ? "a release setup" : "a definition"} on ${v.playbook.branch ?? "its branch"} (the operator merges it)` : v.playbookState === "waiting" ? "waits on the operator's answers to its open questions" : "running"} (session ${v.playbook.sessionId}, started by ${v.playbook.startedBy}).`,
+      `${v.playbook.label} playbook: ${v.playbookState === "idle" ? `last run ${v.playbook.result ?? "ended"}` : v.playbookState === "proposed" ? `proposes ${v.playbook.proposes === "deploy" ? "a deploy recipe" : v.playbook.proposes === "release" ? "a release setup" : v.playbook.proposes === "pipeline" ? "the project's setup" : "a definition"} on ${v.playbook.branch ?? "its branch"} (the operator merges it)` : v.playbookState === "waiting" ? "waits on the operator's answers to its open questions" : "running"} (session ${v.playbook.sessionId}, started by ${v.playbook.startedBy}).`,
     );
   if (["unregistered", "stale", "failed"].includes(v.standing) && v.playbookState === "idle") out.push("At L3 you may start the playbook once: sova_project_verbs onboard {why}. Never merge.");
   return out;

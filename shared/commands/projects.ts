@@ -260,6 +260,15 @@ const PROJECTS_SWEEP: CommandEntry[] = [
     worktree: { type: "string", description: "now: cut its worktree at the start; later: start in the root, adopt the first worktree it makes", in: "body", enum: ["now", "later"], default: "now" },
     cwd: { type: "path", description: "Where it starts: the root, a folder inside it, or one inside its worktrees (default: the root)", in: "body" },
   }),
+  // The Setup chat (§app.project-setup/chat): one standing chat per project that sets up its merge queue, releases and deploys.
+  looks("project.setup.get", "Show Setup Chat", "A project's Setup chat: its state, the setup its branch proposes with its newest trial, what is set up already, and its earlier setup chats.", "/api/projects/:pid/setup"),
+  changes("project.setup.open", "Set Up with a Chat", "Open the project's Setup chat (Change Setup on a project already set up): the one it has, else a new one on its own branch. fresh: Start Fresh, archiving the open one.", "POST", "/api/projects/:pid/setup", {
+    pid,
+    fresh: { type: "boolean", description: "Start Fresh: archive the open Setup chat and start a new one", in: "body" },
+    why: { type: "string", description: "A note for the chat: what to set up or change", in: "body" },
+    model: { type: "string", description: "Its model (provider/model); absent: Opus through Claude Code, else gpt-6-astra", in: "body" },
+    thinking: { type: "string", description: "Its thinking level", in: "body" },
+  }),
   // A project's icon (§app.projects/icon): kept on this host only.
   looks("project.icon.get", "Show Project Icon", "What a project's icon is: an uploaded picture, one found in its folder, or letters (rescans the folder).", "/api/projects/:pid/icon/info"),
   {

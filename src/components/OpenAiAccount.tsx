@@ -50,21 +50,24 @@ export function OpenAiAccountSection() {
     if (timer) clearTimeout(timer);
     timer = undefined;
   };
+  // The server's own `finishing` (OpenAI called back by itself, pi swapping the code) is polled
+  // too, until done or failed; not while this tab's own answer is in flight (its reply settles it).
+  const [answering, setAnswering] = createSignal(false);
   createEffect(() => {
     const f = flow();
     stopPoll();
-    if (!f || (f.state !== "code" && f.state !== "browser")) return;
+    if (!f || answering() || (f.state !== "code" && f.state !== "browser" && f.state !== "finishing")) return;
     timer = setTimeout(async () => {
       try {
         const next = await getOpenAiLogin();
-        // Cancelled meanwhile (flow cleared here): ignore the answer.
-        if (!flow()) return;
+        // Moved on meanwhile (cancelled, answered, settled): this reading is stale.
+        if (flow() !== f || answering()) return;
         if (!next) settle({ state: "failed", error: "The sign-in ended." });
         else if (next.state === "browser" && f.state === "browser") setFlow({ ...next, ...(f.error && !next.error ? { error: f.error } : {}) }); // still waiting: poll again
-        else if (next.state === f.state && next.state === "code") setFlow({ ...next });
+        else if (next.state === f.state) setFlow({ ...next }); // same step: poll again
         else settle(next);
       } catch {
-        setFlow({ ...f });
+        if (flow() === f) setFlow({ ...f });
       }
     }, POLL_MS);
   });
@@ -84,14 +87,17 @@ export function OpenAiAccountSection() {
     const text = answer().trim();
     const f = flow();
     if (!text || f?.state !== "browser") return;
+    setAnswering(true);
     setFlow({ state: "finishing" });
     try {
       const next = await sendOpenAiLoginAnswer(text);
       if (next.state === "done") setAnswer("");
-      settle(next);
+      if (flow()) settle(next); // not cancelled meanwhile
     } catch (err) {
       // A refused address keeps the step waiting, with the reason.
-      setFlow({ ...f, error: message(err) });
+      if (flow()) setFlow({ ...f, error: message(err) });
+    } finally {
+      setAnswering(false);
     }
   };
   const cancel = async () => {
@@ -283,6 +289,9 @@ export function OpenAiAccountSection() {
                     </Show>
                     <Show when={f().state === "finishing"}>
                       <p class="field-hint">Signing in…</p>
+                      <span class="button-row">
+                        <CancelButton />
+                      </span>
                     </Show>
                     <Show when={f().state === "done" ? (f() as Extract<OpenAiLoginFlow, { state: "done" }>) : null}>
                       {(d) => (

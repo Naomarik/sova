@@ -13,8 +13,15 @@
       "server/commands-fuzz.test.ts",
       "server/commands-inventory/baseline.json",
       "docs/commands.md",
-      "scenarios/projects.json"
-    ]
+      "scenarios/projects.json",
+      "server/commands-inventory/scan.ts",
+      "src/card-toolkit/commands.gen.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T22:53Z",
+      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
+    }
   },
   "§app.project-commands/verb-params": {
     "kind": "behavior",

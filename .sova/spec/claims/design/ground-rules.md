@@ -115,6 +115,12 @@ theme. Add `class="icon"` (20px) or `class="icon icon-sm"` (16px) to the `<svg>`
 `aria-hidden="true"` whenever a text label sits next to it. An icon-only button gets its name from
 `aria-label`, never from the SVG.
 
+**One exception: a project's picture is content, not a glyph.** A project's icon
+(§app.projects/icon) shows its uploaded or found PNG as an `<img>` with an empty `alt` (the name
+is always beside it), on a `--color-sunken` tile so a transparent logo reads in both themes, and
+its letters as text on a coloured tile. Neither is a UI glyph, so neither goes through
+`currentColor`; every UI glyph stays a mask or inline SVG.
+
 Two supported forms, both inheriting `currentColor`:
 
 - **Mask span (used by the frontend):**

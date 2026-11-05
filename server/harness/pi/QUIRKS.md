@@ -71,7 +71,8 @@ Paths in "Where" are under `server/`.
 | P34 mcp-registered-list | ordering | `mcpExtension` (harness/pi/mcp.ts) | `ExtensionAPI.registerMcpServer`, `ExtensionAPI.unregisterMcpServer`, `createMcpExtension` | pi lets a host hand it a chat's list at each prompt |
 | P35 mcp-tool-name | semantic | `piToolNames` (mcp/tool-names.ts) | `createMcpToolDefinition` | pi records the raw names in every result, or exports its naming |
 | P36 mcp-http-transport | semantic | `AddressServer` (harness/pi/mcp-http.ts), `mcpConfigOf` (harness/pi/mcp.ts), `piLiteral` (harness/pi/mcp.ts) | `StreamableHttpTransport`, `McpSessionExpiredError`, `McpAuthRequiredError`, `McpOAuthAuthorizationRequiredError`, `McpTransportFactory`, `McpExtensionOptions.createTransport` | pi lets a host hand a server its own token source and literal values |
-| P37 base-prompt-sections | semantic | `modeCtx` (harness/pi/modes.ts), `ModeEngine.syncHostSection` (modes/engine.ts) | `ExtensionCommandContext.getSystemPromptOptions`, `BuildSystemPromptOptions.sections`, `AgentSession._baseSystemPromptOptions` | pi keeps extension sections across prompt rebuilds, or lets an extension own a section for the session's life |
+| P37 openai-codex-login | semantic | `piInteraction` (harness/pi/sign-in.ts), `piProviderSignIn` (harness/pi/sign-in.ts), `OpenAiLoginService.answer` (openai-login.ts) | `ModelRuntime.login`, `AuthInteraction.prompt`, `AuthInteraction.notify`, openai-codex `login` | pi takes the login method as an option and reports a refused method as its own error |
+| P38 base-prompt-sections | semantic | `modeCtx` (harness/pi/modes.ts), `ModeEngine.syncHostSection` (modes/engine.ts) | `ExtensionCommandContext.getSystemPromptOptions`, `BuildSystemPromptOptions.sections`, `AgentSession._baseSystemPromptOptions` | pi keeps extension sections across prompt rebuilds, or lets an extension own a section for the session's life |
 | T1 scripted-model (test-only) | private-write | `ScriptedModel.attach` (harness/pi/testing/scripted-model.ts) | `AgentSession._modelRuntime`, `Agent.getApiKey`, `Agent.streamFunction` | pi offers a public test model hook |
 
 ## What each one relies on
@@ -276,11 +277,17 @@ A chat's address server (§app.mcp/in-a-chat) runs on `StreamableHttpTransport` 
 
 Canary: `P36 mcp-http-transport: a url server's transport gets pi's auth provider, which reads the store and refreshes with an escaped secret literally; pi-mcp's HTTP client sends headers as given and reports a dropped session`.
 
-### P37 base-prompt-sections
+### P37 openai-codex-login
+
+Settings → Accounts signs the ChatGPT subscription in through `ModelRuntime.login("openai-codex", "oauth", …)` and answers pi's questions itself (§app.openai-login). It relies on the openai-codex login asking a `select` first whose option ids are `device_code` and `browser` (`PI_METHOD_IDS`); on the code route failing before it notifies `device_code` when OpenAI refuses it (HTTP 404), and with an error whose text holds `device code login is not enabled` (`PI_CODE_REFUSED`): only that is a refusal, so OpenAI down or unreachable ends the sign-in as a failure instead of offering the browser route; on the browser route notifying `auth_url` with the link's `state` parameter (a pasted address is checked against it before pi gets it, so a wrong one keeps the flow waiting instead of failing pi's login) and then prompting `manual_code` with a signal that aborts when OpenAI calls back to localhost:1455 by itself; and on an abort of the interaction's signal closing that callback server before `login` rejects, so a cancel that waits for it leaves the port free.
+
+Canary: `P37 openai-codex-login: the login asks a method menu with device_code and browser first, and a refused code route fails before any code is shown, with the not-enabled text`. The browser route's half (the link's `state`, the paste-back prompt's signal, the port freed on abort) listens on localhost:1455, so it runs in the integration tier: `server/harness/pi/sign-in.integration.test.ts`.
+
+### P38 base-prompt-sections
 
 A command context's `getSystemPromptOptions()` hands out the session's live base prompt options: the `sections` object in them builds the prompt of a turn no `before_agent_start` built (one an extension's message starts) and of a run's later requests. A tool change replaces the object. So the mode engine keeps the getter, adopted from the chat's command context at every bind (the replacement for `/mode sync`), and writes its `mode` section there again at every run start and every switch. The pi-config mode extension relies on the same through `/mode sync`, until it is retired.
 
-Canary: `P37 base-prompt-sections: a command context's getSystemPromptOptions() is the live base options, whose sections build the prompt, and a tool change replaces it`.
+Canary: `P38 base-prompt-sections: a command context's getSystemPromptOptions() is the live base options, whose sections build the prompt, and a tool change replaces it`.
 
 ### T1 scripted-model (test-only)
 

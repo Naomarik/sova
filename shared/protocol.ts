@@ -1201,6 +1201,49 @@ export interface ClaudePoolInfo {
   /** This device never holds a subscription login (it syncs API keys only). */
   apiKeysOnly?: boolean;
 }
+/**
+ * Settings → Accounts' OpenAI sign-in (§app.openai-login): the ChatGPT subscription, pi's
+ * `openai-codex`, one sign-in per device. The flow the dialog polls. A code first; when OpenAI
+ * refuses the code route, the browser route (open the link, paste back the address the page ends on).
+ */
+export type OpenAiLoginFlow =
+  | { state: "starting" }
+  /** Open `url` on any device, sign in, enter `userCode`; Sova waits (nothing to paste). */
+  | { state: "code"; userCode: string; url: string; expiresAt: number }
+  /**
+   * Open `url`, sign in, paste the address the page ends on (POST …/login/answer). `refused`: why the
+   * code route was not offered (set when this route is the fallback). `error`: the last pasted address
+   * was not one Sova could use; the flow keeps waiting.
+   */
+  | { state: "browser"; url: string; expiresAt: number; refused?: string; error?: string }
+  | { state: "finishing" }
+  | { state: "done"; email?: string }
+  /** Left alone until `expiresAt` (15 min): ended itself, nothing saved. */
+  | { state: "expired" }
+  | { state: "failed"; error: string };
+/** GET /api/settings/accounts/openai, and the answer of cancel and sign-out. */
+export interface OpenAiAccountInfo {
+  /** pi's auth.json holds an `openai-codex` sign-in. */
+  signedIn: boolean;
+  /** The signed-in ChatGPT account's email, read from its access token on the server: the one
+      string from a credential that leaves the server (§app.openai-login). */
+  email?: string;
+  /** The access token's expiry: the sign-in renews by then (pi renews it when it next uses OpenAI). */
+  expiresAt?: number;
+  /** `expiresAt` has passed. */
+  expired?: boolean;
+  /** The Codex app is signed in on this computer (~/.codex/auth.json has a sign-in). A boolean only. */
+  codexAppSignedIn: boolean;
+  /** The mesh is on and shares sign-ins: signing out here signs out the devices that share them. */
+  meshSharesLogins: boolean;
+  /** This device shares API keys only: this sign-in stays on this device. */
+  apiKeysOnly: boolean;
+  flow: OpenAiLoginFlow | null;
+}
+/** POST /api/settings/accounts/openai/login (body optional). `browser` skips the code route. */
+export interface OpenAiLoginStart { method?: "code" | "browser" }
+/** POST /api/settings/accounts/openai/login/answer: the address the browser route's page ended on. */
+export interface OpenAiLoginAnswer { text: string }
 /** PUT /api/claude/pool/keeper */
 export interface ClaudePoolKeeperRequest { device: string }
 /** PATCH /api/claude/pool/:id */
@@ -1531,6 +1574,29 @@ export interface SessionContextPart {
   tokens: number;
   path?: string;
   text?: string;
+  /** Skills only: the agent loaded the skill (read its SKILL.md, or it was invoked) since the latest
+      compaction, so its text is in the window now. */
+  read?: boolean;
+}
+
+/** One kind of message in the conversation since the latest compaction: how many, and ≈ their tokens. */
+export interface SessionContextTally {
+  count: number;
+  tokens: number;
+}
+
+/** What the conversation holds, by who sent it. The tallies add up to `conversation`, give or take rounding. */
+export interface SessionContextTalk {
+  /** Your messages (shell commands you ran included). */
+  user: SessionContextTally;
+  /** The model's replies, their tool calls and thinking included. */
+  replies: SessionContextTally;
+  /** Tool results, less the loaded subfolder files they carry (those are `nested`). */
+  toolResults: SessionContextTally;
+  /** Extension messages and branch summaries. */
+  other: SessionContextTally;
+  /** The latest compaction's summary, which stands in for what it dropped; absent before a compaction. */
+  summary?: { text: string; tokens: number; at?: string };
 }
 
 /** An instruction file in a folder below the chat's own, loaded when the agent reads, edits or writes a
@@ -1564,6 +1630,8 @@ export type SessionContextView =
       tools: SessionContextPart[];
       /** ≈ the messages in context, loaded nested files left out (they are `nested`). */
       conversation: number;
+      /** `conversation` by kind of message. Absent from an older server. */
+      talk?: SessionContextTalk;
       nested: SessionContextNested[];
       /** The walk below cwd stopped at its cap: the list may be incomplete. */
       nestedIncomplete?: true;

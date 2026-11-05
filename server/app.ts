@@ -113,6 +113,7 @@ import { setSummaryWriter, summaryFromChain } from "./version-summaries";
 import { parseSessionTitleSettings, readSessionTitleSettings, sessionTitleSettingsInfo, writeSessionTitleSettings } from "./session-titles-settings";
 import type { LlmRuntime } from "./decide-llm";
 import { claudeLoginEnv, registerClaudeAccountRoutes } from "./claude-accounts";
+import { OpenAiLoginService, registerOpenAiLoginRoutes } from "./openai-login";
 import { chatOnlyModes, CREATE_NOT_TAKEN, modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { defaultMemoryChoice } from "./memory/settings";
 import { registerMemoryRoutes } from "./memory/routes";
@@ -1241,6 +1242,16 @@ export function buildApp(deps: AppDeps) {
   // through Claude Code's own `claude auth login`. The registry is the claude-code extension's.
   const claudeAccounts = registerClaudeAccountRoutes(app);
 
+  // Settings → Accounts' OpenAI sign-in (§app.openai-login): the ChatGPT subscription through pi's own
+  // login. A change re-checks the shared runtime's providers, so the model menu and opening choices
+  // see it at once, and asks for a usage reading.
+  const openAiLogin = registerOpenAiLoginRoutes(app, new OpenAiLoginService({
+    afterChange: async () => {
+      await (await getModelRuntime()).getAvailable().catch(() => []);
+      await refreshUsageInsight().catch(() => undefined);
+    },
+  }));
+
   // The mode is per session. ~/.pi/agent/mode.json is the default new sessions
   // start from; GET reads it, POST without ?path= writes it and changes no open chat. A switch never writes
   // it (chat-manager switchMode): the default moves when a caller asks for exactly that.
@@ -2017,7 +2028,7 @@ export function buildApp(deps: AppDeps) {
     return spaIndex(c, next);
   });
 
-  return { app, autoTitleSweep, claudeAccounts, meshResync };
+  return { app, autoTitleSweep, claudeAccounts, openAiLogin, meshResync };
 }
 
 export type BuiltApp = ReturnType<typeof buildApp>;

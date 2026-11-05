@@ -119,6 +119,8 @@ export function providerChip(p: UsageProvider, now?: number): { tone?: Tone; tex
 }
 
 const signIn = (id: UsageProvider["id"]) => (id === "openai" ? "pi /login" : "claude /login");
+/** OpenAI's sign-in lives in Settings → Accounts (§app.openai-login): its notes point there, not to a terminal. */
+const OPENAI_SIGN_IN = "under Settings → Accounts";
 const keyWord = (id: UsageProvider["id"]) => (id === "zai" ? "API key" : "key");
 
 /** A note or caption: `lead`, then `code` in `<code>`, then `rest`. */
@@ -144,6 +146,17 @@ function timedOut(p: UsageProvider, now: number): UsageLine | null {
   return { rest: `Sign-in token expired ${relativeTime(a.expiresAt, now)}. It renews the next time ${RENEWER[a.source]}; usage updates after that.` };
 }
 
+/**
+ * The usage reading says pi's OpenAI sign-in stopped working: OpenAI refused it, or its renewal
+ * expired (a token that only timed out renews the next time pi uses OpenAI, so it hasn't). A
+ * reading of the Codex app's own sign-in says nothing about pi's.
+ */
+export function openAiSignInStopped(p: UsageProvider | undefined, now = Date.now()): boolean {
+  if (!p || p.id !== "openai" || p.auth?.source === "codex-cli") return false;
+  if (p.auth?.kind === "oauth" && refreshDead(p.auth, now)) return true;
+  return p.state === "expired" && timedOut(p, now) === null;
+}
+
 /** One caption replacing the meters when a provider has nothing to show. Null = render meters. */
 export function providerProblem(p: UsageProvider, now = Date.now()): UsageLine | null {
   if (p.id === "ollama" && (p.activity || p.credits)) return null;
@@ -151,8 +164,10 @@ export function providerProblem(p: UsageProvider, now = Date.now()): UsageLine |
     case "ok":
       return null;
     case "nologin":
+      if (p.id === "openai") return { rest: `Not signed in. Sign in ${OPENAI_SIGN_IN} and it'll show at the next refresh.` };
       return { lead: "Not signed in. Run ", code: signIn(p.id), rest: " and it'll show at the next refresh." };
     case "expired":
+      if (p.id === "openai") return timedOut(p, now) ?? { rest: `Sign-in expired. Sign in again ${OPENAI_SIGN_IN}.` };
       return timedOut(p, now) ?? { lead: "Sign-in expired. Run ", code: signIn(p.id), rest: " to renew it." };
     case "nokey":
       return { lead: `No ${PROVIDER_NAME[p.id]} ${keyWord(p.id)} in `, code: "~/.pi/agent/auth.json", rest: "." };
@@ -174,7 +189,10 @@ export function providerProblem(p: UsageProvider, now = Date.now()): UsageLine |
 export function authCaption(p: UsageProvider, now: number): UsageLine | null {
   const a = p.auth;
   if (a?.kind !== "oauth" || p.state === "expired") return null;
-  if (refreshDead(a, now)) return { lead: "Sign-in can't renew. Run ", code: signIn(p.id), rest: " to sign in again." };
+  if (refreshDead(a, now)) {
+    if (p.id === "openai") return { rest: `Sign-in can't renew. Sign in again ${OPENAI_SIGN_IN}.` };
+    return { lead: "Sign-in can't renew. Run ", code: signIn(p.id), rest: " to sign in again." };
+  }
   const late = timedOut(p, now);
   if (late) return late;
   const renewed = a.refreshedAt !== undefined ? `last renewed ${relativeTime(a.refreshedAt, now)}` : null;

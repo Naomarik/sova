@@ -168,6 +168,17 @@ const MERGE_SUMMARY: CommandEntry[] = [
     sessionFile: "never",
     meshNeed: "admin",
   },
+  {
+    id: "project.merge-queue.landing-summary",
+    label: "Show Landings",
+    summary: "Every project's merge queue and open release in one quick read: the run checking now, the line, what waits for you, the newest landings and the release's steps.",
+    effect: "looks",
+    params: {},
+    route: { method: "GET", path: "/api/merge-queue/landing-summary" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
 ];
 
 /** How a branch lands (al_3): Update Local Main, a request's Publish, How it lands. The operator's own page only. */

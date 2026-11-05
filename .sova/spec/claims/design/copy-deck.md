@@ -520,10 +520,10 @@ the person clicks.
 | Usage file missing (`reason:"missing"`) | **No usage data yet.** Nothing has fetched provider usage on this machine. Refresh Usage fetches it now. · button: `Refresh Usage` |
 | Usage file corrupt (`reason:"corrupt"`) | **Couldn't read usage.** `usage-status.json` isn't valid JSON right now. Nothing was changed. It's rewritten at the next refresh. · button: `Retry` |
 | Request failed | Usage: **Couldn't load usage.** (poll) · **Couldn't refresh usage.** (Refresh Usage, data not stale) · Agents: **Couldn't load agents.** Then: Nothing was changed. {server message} · button: `Retry` |
-| Provider `nologin` | Not signed in. Run `claude /login` and it'll show at the next refresh. (OpenAI: `pi /login`) |
+| Provider `nologin` | Not signed in. Run `claude /login` and it'll show at the next refresh. (OpenAI: Not signed in. Sign in under Settings → Accounts and it'll show at the next refresh.) |
 | Provider `expired`, token timed out (refresh token not known expired) | Sign-in token expired {2h ago}. It renews the next time Claude Code runs; usage updates after that. (OpenAI through pi: … the next time pi uses OpenAI; …) |
-| Provider `expired`, otherwise (refresh token expired, no sign-in data, or revoked early) | Sign-in expired. Run `claude /login` to renew it. (OpenAI: `pi /login`) |
-| Sign-in caption (OAuth rows, `.usage-caption`) | Sign-in renews by `{11:09 PM}` · last renewed {3h ago} (second part only when known; `Sep 27 11:09 PM` on another day) · Codex CLI only: Sign-in last renewed {Jul 29} · token expired, row still showing a reading: the timed-out sentence above · refresh token expired: Sign-in can't renew. Run `claude /login` to sign in again. (OpenAI: `pi /login`) · API keys: none |
+| Provider `expired`, otherwise (refresh token expired, no sign-in data, or revoked early) | Sign-in expired. Run `claude /login` to renew it. (OpenAI: Sign-in expired. Sign in again under Settings → Accounts.) |
+| Sign-in caption (OAuth rows, `.usage-caption`) | Sign-in renews by `{11:09 PM}` · last renewed {3h ago} (second part only when known; `Sep 27 11:09 PM` on another day) · Codex CLI only: Sign-in last renewed {Jul 29} · token expired, row still showing a reading: the timed-out sentence above · refresh token expired: Sign-in can't renew. Run `claude /login` to sign in again. (OpenAI: Sign-in can't renew. Sign in again under Settings → Accounts.) · API keys: none |
 | Provider `nokey` | No Ollama Cloud key in `~/.pi/agent/auth.json`. · Z.ai: No Z.ai API key in `~/.pi/agent/auth.json`. |
 | Provider `badkey` | Ollama Cloud refused the key in `~/.pi/agent/auth.json`. · Z.ai: Z.ai refused the API key in `~/.pi/agent/auth.json`. |
 | Provider `na` | This account doesn't report usage. |
@@ -577,9 +577,14 @@ the person clicks.
 | Picker | label: Whose context · This chat · each worker by its name |
 | Top line | heading: Context window · `{n}` of `{window}` tokens · `{p}`% · `{free}` left · no window: `{n}` tokens · this model's limit is unknown · before a reply: Nothing sent yet |
 | Note | As of the last reply. Each part is an estimate (≈); Other is what the estimates don't explain. · before a reply: Each size below is an estimate (≈). · a chat not running here, added: This chat isn't running here, so its mode, rules and tools are unknown and fall under Other. |
-| Lines | each instruction file by its path (relative in the chat's folder, `~/...` under home, else whole) · Mode · Rules and docs · Skills offered · Tools · Conversation · Other · Free; sizes `≈{n}`, Free's without ≈ |
-| Explorer list | title: the line's name · subtitle: Read-only. Sizes are estimates. · item size `≈{n}` |
-| Subfolder instructions | heading: Subfolder instructions · note: Each loads the first time the agent reads, edits or writes a file in its folder. A loaded file counts toward the total. · cut walk, added: This list may be incomplete. · row: its path, `{folder} · ≈{n} tokens`, chip Loaded or Not yet loaded |
+| Lines | Instruction files · Mode · Rules and docs · Skills offered · Tools · Conversation; sizes `≈{n}` · apart, below them: Other, under it: What the estimates don't explain, such as Claude Code's own prompt. |
+| Fill bar | under the top line, no words: a part per line, the room left as its empty end |
+| Line's short line | Instruction files: `{n}` loaded · `{m}` not yet loaded (none not yet loaded: `{n}` loaded) · Skills offered: `{n}` skills · `{r}` read (1: 1 skill) · Tools: `{n}` tools (1: 1 tool) · Rules and docs: `{n}` sections (1: 1 section) · Mode: its parts' names, joined with · · Conversation: Since the last compaction · `{n}` messages (no compaction yet: `{n}` messages; 1: 1 message) |
+| Instruction files | each file by its path (relative in the chat's folder, `~/...` under home, else whole) · its folder: This chat's folder · Your home folder · `{folder}/` · chip Loaded · heading: Not yet loaded · not counted · note: Each loads the first time the agent reads, edits or writes a file in its folder. · size `+≈{n}` · cut walk: This list may be incomplete. |
+| Skills offered | each skill by its name · its description under it · chip Read or Not read yet |
+| Conversation | Tool results, `{n}` results · Replies, `{n}` replies · Your messages, `{n}` messages · Other messages, `{n}` messages, only while there are some (1: 1 result, 1 reply, 1 message) · Compaction summary, Kept from the compaction at `{HH:MM}` (local 24-hour time; no readable time: Kept from the latest compaction) |
+| Sheet | breadcrumb (accessible name Breadcrumb): Context › `{group}` › `{part}`, the current step not a button · Back (an arrow button, accessible name Back) · title: the row's name · size `≈{n}` · subtitle: the full path (a file, a skill) or the group's name · Source · Copy |
+| Sheet notes | a file not yet loaded: Not counted yet. It loads the first time the agent reads, edits or writes a file in `{folder}`. · a skill: Its size counts only what the model is offered: name and description. The full SKILL.md loads when the agent reads it, then counts under Conversation. · a failed read (toast): Couldn't open that file. `{reason}` |
 | States | Reading this chat's context. · This chat runs on another machine, so its context can't be read here. · Couldn't read this chat's context. `{reason}` |
 | Session tab | after the Context sentence: See what fills it |
 

@@ -27,7 +27,6 @@ import {
   chainLine,
   cloneDecision,
   decisionDraftReady,
-  exclusionIssue,
   fallbackOn,
   jevChip,
   keyAfterProbe,
@@ -47,6 +46,8 @@ import {
 import { sameChoice, type DraftChoice } from "../lib/delegate-form";
 import { tildePath } from "../lib/format";
 import { announce, home } from "../lib/ui-state";
+import { EXCLUSIONS_RULE } from "../../shared/decision-limits";
+import { Choice, TextArea, TextField, Toggle } from "./form";
 import { Banner, Chip } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
 
@@ -158,7 +159,6 @@ export function DecisionSettingsSection() {
 
   const suggestions = createMemo(() => offeredSuggestions(loaded()?.suggestions ?? [], known(), !!options.error));
   const unanswered = () => (draft() && loaded() ? unansweredIssue(draft()!, key()) : null);
-  const exclusionsIssue = () => (draft() ? exclusionIssue(draft()!.exclusions) : null);
   const refusedHere = () => {
     const r = refused();
     return r && draft() && sameChoice(draft()!.fallback, r.choice) ? r : null;
@@ -173,27 +173,16 @@ export function DecisionSettingsSection() {
 
   /** A switch and its hint; an `issue` replaces the hint (in warn) while the switch is on. */
   const switchRow = (id: string, label: string, hint: string, checked: () => boolean, set: (on: boolean) => void, issue?: () => string | null) => (
-    <div>
-      <label class="toggle toggle-switch settings-team-enable">
-        <span>{label}</span>
-        <input type="checkbox" checked={checked()} disabled={saving()} aria-describedby={`${id}-hint`} onChange={(e) => set(e.currentTarget.checked)} />
-        <span class="toggle-box" />
-      </label>
-      <Show
-        when={checked() && issue?.()}
-        fallback={
-          <p class="field-hint" id={`${id}-hint`}>
-            {hint}
-          </p>
-        }
-      >
-        {(w) => (
-          <p class="settings-delegate-issue settings-delegate-issue-warn" id={`${id}-hint`}>
-            {w()}
-          </p>
-        )}
-      </Show>
-    </div>
+    <Toggle
+      switch
+      id={id}
+      class="settings-team-enable"
+      label={label}
+      checked={checked()}
+      disabled={saving()}
+      onChange={set}
+      hint={<Show when={checked() && issue?.()} fallback={hint}>{(w) => <span class="settings-delegate-issue settings-delegate-issue-warn">{w()}</span>}</Show>}
+    />
   );
 
   return (
@@ -229,11 +218,7 @@ export function DecisionSettingsSection() {
           <p class="field-hint settings-delegate-desc" id="decisions-jev-desc">
             TypeSafe's classifier. Fast and cheap — about $0.0001 a check.
           </p>
-          <label class="toggle toggle-switch settings-team-enable">
-            <span>Use Jev</span>
-            <input type="checkbox" checked={draft()!.jev.enabled} disabled={saving()} onChange={(e) => edit((c) => (c.jev.enabled = e.currentTarget.checked))} />
-            <span class="toggle-box" />
-          </label>
+          <Toggle switch class="settings-team-enable" label="Use Jev" checked={draft()!.jev.enabled} disabled={saving()} onChange={(on) => edit((c) => (c.jev.enabled = on))} />
           <ul class="decisions-providers">
             <li class="decisions-provider" data-testid="decisions-jev">
               <Chip tone={jev()!.tone}>{keyBusy() && !confirmRemove() ? "Checking" : jev()!.word}</Chip>
@@ -280,28 +265,25 @@ export function DecisionSettingsSection() {
               }
             >
               <div class="decisions-key">
-                <div class="field">
-                  <label class="field-label" for="decisions-key">
-                    Jev key
-                  </label>
-                  <input
-                    class="input text-mono"
-                    id="decisions-key"
-                    type="password"
-                    autocomplete="off"
-                    spellcheck={false}
-                    placeholder="Paste a key"
-                    value={keyText()}
-                    disabled={keyBusy()}
-                    onInput={(e) => {
-                      setKeyText(e.currentTarget.value);
-                      setKeyError(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void saveKey();
-                    }}
-                  />
-                </div>
+                <TextField
+                  id="decisions-key"
+                  label="Jev key"
+                  inputClass="text-mono"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck={false}
+                  placeholder="Paste a key"
+                  value={keyText()}
+                  error={keyError()}
+                  disabled={keyBusy()}
+                  onInput={(v) => {
+                    setKeyText(v);
+                    setKeyError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void saveKey();
+                  }}
+                />
                 <Show when={key().present}>
                   <button
                     type="button"
@@ -324,7 +306,9 @@ export function DecisionSettingsSection() {
               <p class="field-hint">Checked with Jev before it's stored, and kept on this machine only. Sova never shows it again.</p>
             </Show>
           </Show>
-          <Show when={keyError()}>{(m) => <p class="field-error">{m()}</p>}</Show>
+          <Show when={keyError() && !showKeyInput()}>
+            <p class="field-error">{keyError()}</p>
+          </Show>
           <Show when={!probing() && probe()}>
             {(r) => (
               <p class={`settings-delegate-issue settings-delegate-issue-${r().ok ? (r().fellBackFrom ? "warn" : "muted") : "error"}`} role="status" data-testid="decisions-probe">
@@ -348,23 +332,16 @@ export function DecisionSettingsSection() {
               action={<RetryButton label="Check Again" onClick={() => void refetchOptions()} />}
             />
           </Show>
-          <div role="radiogroup" aria-label="Fallback model">
-            <label class="toggle settings-team-enable">
-              <input type="radio" name="decisions-fallback" checked={draft()!.fallback === null} disabled={saving()} onChange={() => edit((c) => (c.fallback = null))} />
-              <span class="toggle-box" aria-hidden="true" />
-              None
-            </label>
-            <label class="toggle settings-team-enable">
-              <input
-                type="radio"
-                name="decisions-fallback"
-                checked={draft()!.fallback !== null}
-                disabled={saving()}
-                onChange={() => edit((c) => (c.fallback = c.fallback ?? fallbackOn(true)))}
-              />
-              <span class="toggle-box" aria-hidden="true" />A model
-            </label>
-          </div>
+          <Choice
+            label="Fallback model"
+            value={draft()!.fallback === null ? "none" : "model"}
+            options={[
+              { value: "none", label: "None" },
+              { value: "model", label: "A model" },
+            ]}
+            disabled={saving()}
+            onChange={(v) => edit((c) => (c.fallback = v === "none" ? null : (c.fallback ?? fallbackOn(true))))}
+          />
           <Show when={draft()!.fallback}>
             {(fallback) => (
               <WorkerSlotRow
@@ -444,26 +421,19 @@ export function DecisionSettingsSection() {
             () => draft()!.neverSendTui,
             (on) => edit((c) => (c.neverSendTui = on)),
           )}
-          <div class="field">
-            <label class="field-label" for="decisions-exclusions">
-              Folders
-            </label>
-            <textarea
-              class="input textarea text-mono"
-              id="decisions-exclusions"
-              rows={3}
-              spellcheck={false}
-              placeholder="~/work/client"
-              value={draft()!.exclusions}
-              disabled={saving()}
-              aria-invalid={exclusionsIssue() ? "true" : undefined}
-              aria-describedby="decisions-exclusions-hint"
-              onInput={(e) => setDraft({ ...draft()!, exclusions: e.currentTarget.value })}
-            />
-            <span class={exclusionsIssue() ? "field-error" : "field-hint"} id="decisions-exclusions-hint">
-              {exclusionsIssue() ?? "One per line. Sessions in these folders, and their subfolders, are never checked."}
-            </span>
-          </div>
+          <TextArea
+            id="decisions-exclusions"
+            label="Folders"
+            inputClass="text-mono"
+            rows={3}
+            spellcheck={false}
+            placeholder="~/work/client"
+            hint="One per line. Sessions in these folders, and their subfolders, are never checked."
+            rule={EXCLUSIONS_RULE}
+            value={draft()!.exclusions}
+            disabled={saving()}
+            onInput={(v) => setDraft({ ...draft()!, exclusions: v })}
+          />
         </fieldset>
 
         <Show when={decisionSaveError()}>

@@ -74,6 +74,7 @@ const long = (n: number) => "x".repeat(n);
 const limits = await import("../shared/overseer-limits");
 const batonLimits = await import("../shared/baton-limits");
 const titleLimits = await import("../shared/session-title-limits");
+const decisionLimits = await import("../shared/decision-limits");
 const { firstIssue } = await import("../shared/form-rules");
 /** A rule's edges: the values at it (taken) and just past it (refused). */
 function ruled(rule: Rule): Pick<Limit, "name" | "rule" | "takes" | "refuses"> {
@@ -175,6 +176,7 @@ const LIMITS: Limit[] = [
   }),
   {
     name: `Decisions excluded folders (at most ${decisionForm.MAX_EXCLUSIONS})`,
+    rule: decisionLimits.EXCLUSIONS_RULE,
     takes: [1, decisionForm.MAX_EXCLUSIONS],
     refuses: [decisionForm.MAX_EXCLUSIONS + 1],
     client: (v) => {

@@ -114,12 +114,14 @@
       "src/components/SessionView.tsx",
       "src/components/VoiceInput.tsx",
       "src/design/base.css",
-      "src/lib/chat-wait.ts"
+      "src/lib/chat-wait.ts",
+      "src/components/WatchView.tsx",
+      "src/components/HostStateNotices.tsx"
     ],
     "agreed": {
-      "by": "Omar (user)",
-      "at": "2026-10-28T13:24Z",
-      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+      "by": "user (omar)",
+      "at": "2026-11-03T22:11Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
     }
   },
   "§chat.composer/file-index-deadline": {

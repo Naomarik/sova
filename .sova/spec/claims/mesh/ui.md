@@ -21,6 +21,11 @@ the Claude login it holds from the pool (§app.claude-logins/pool): "Claude: {em
 holds more than one), or "No Claude login"; it opens Settings → Accounts, and its tooltip lists
 what the host holds or says that it borrows a login when it needs Claude.
 
+While the mesh is on, each peer's line also shows its state in the words every screen uses
+(§mesh.compatibility/marks). A host that works fully on another build shows no amber: its line just
+says it is on another build, with where that build sits against this host's when it can be placed
+(§mesh.peers/resync).
+
 While the mesh is on, each peer's line also carries "What {peer} can see here" (§mesh.peers/grants): its
 preset, and a list of every capability, each with its switch and what it means in plain words. Sessions
 says it can run commands on this machine. Each sync category warns that it can still reach the peer

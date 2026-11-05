@@ -24,7 +24,8 @@
       "shared/protocol.ts",
       "src/lib/api.ts",
       "server/mesh/index.ts",
-      "server/mesh/mesh.test.ts"
+      "server/mesh/mesh.test.ts",
+      "src/lib/mesh-resync.ts"
     ],
     "agreed": {
       "by": "user",

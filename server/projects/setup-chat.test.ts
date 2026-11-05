@@ -3,8 +3,9 @@ import { describe, test } from "node:test";
 import type { MergeRun, MergeTrial } from "../../shared/merge-queue";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
 import { proposalOf, setupContext, setupTitle, trialView } from "./setup-chat";
-import { FOLDED_PLAYBOOKS, resolvePlaybookId, SETUP_MODE, SETUP_PLAYBOOK_ID } from "./onboard";
+import { FOLDED_PLAYBOOKS, onboardRunMode, resolvePlaybookId, SETUP_MODE, SETUP_PLAYBOOK_ID } from "./onboard";
 import { playbookRunMode } from "../project-coding-mode";
+import type { ProjectCodingMode } from "../../shared/project-overseer";
 
 describe("the Setup chat's first message", () => {
   const base = { name: "Rakiba", root: "/w/rakiba", target: "main", served: false, releaseSteps: [], history: [] };
@@ -44,8 +45,14 @@ describe("the Setup chat's first message", () => {
     assert.match(t, /\/w\/\.worktrees\/x\) on its branch setup\/x/);
   });
 
-  test("it runs normal with align only, whatever the host's default adds (never spec for the project)", () => {
-    assert.deepEqual(playbookRunMode({ mode: SETUP_MODE.mode, minorModes: [...SETUP_MODE.minorModes] }), { mode: "normal", minorModes: ["align"] });
+  test("a Setup chat starts with spec off (normal + align); the project's other runs keep the host's default", () => {
+    const hostDefault: ProjectCodingMode = { mode: "normal", minorModes: ["spec", "visuals"] };
+    const run = (id: string) => playbookRunMode(onboardRunMode(id) ?? hostDefault);
+    assert.deepEqual(run(SETUP_PLAYBOOK_ID), { mode: "normal", minorModes: ["align"] });
+    assert.equal(run(SETUP_PLAYBOOK_ID).minorModes.includes("spec"), false);
+    assert.ok(run("project-verbs").minorModes.includes("spec"), "another playbook run keeps spec");
+    assert.ok(run("project-verbs").minorModes.includes("align"));
+    assert.deepEqual(SETUP_MODE.minorModes, ["align"]);
   });
 
   test("its title, and the folded playbooks open it", () => {

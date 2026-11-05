@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { linkedPlaybook, playbookTurnText } from "../../shared/playbooks";
 import type { PlaybookInfo, PlaybookProposes } from "../../shared/protocol";
+import type { ProjectCodingMode } from "../../shared/project-overseer";
 import { defaultRemoteOf } from "../files";
 import { listModels } from "../models";
 import { FOLDED_SETUP_PLAYBOOKS, listPlaybooks } from "../playbooks";
@@ -23,6 +24,11 @@ export const FOLDED_PLAYBOOKS: readonly string[] = FOLDED_SETUP_PLAYBOOKS;
 /** The Setup chat's mode: normal with align only, whatever this host's coding default adds (spec, visuals…). Its
     work is the project's pipeline settings, never Sova's spec procedure for the project. */
 export const SETUP_MODE = { mode: "normal", minorModes: ["align"] } as const;
+
+/** The mode a verb playbook run of `playbookId` is pinned to: the Setup chat's; undefined (every other run): the
+    host's coding default, with align added (project-coding-mode.ts playbookRunMode). Pure. */
+export const onboardRunMode = (playbookId: string): ProjectCodingMode | undefined =>
+  playbookId === SETUP_PLAYBOOK_ID ? { mode: SETUP_MODE.mode, minorModes: [...SETUP_MODE.minorModes] } : undefined;
 
 /** The playbook a start by `id` runs: a folded one's is the Setup chat's. Pure. */
 export const resolvePlaybookId = (id: string): string => (FOLDED_PLAYBOOKS.includes(id) ? SETUP_PLAYBOOK_ID : id);

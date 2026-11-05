@@ -15,12 +15,13 @@
       "scripts/install.test.sh",
       "README.md",
       "docs/getting-started.md",
-      "site/src/content/docs/install.md"
+      "site/src/content/docs/install.md",
+      "scripts/mac-app.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:41Z",
-      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#42b7b210"
+      "at": "2026-11-05T10:13Z",
+      "source": "pi-session:01a1a892-d585-769d-9cd1-84cd37d84c7a#98a32133"
     }
   },
   "§app.installer/bun": {
@@ -79,12 +80,13 @@
       "scripts/mac-app-store.test.ts",
       "scripts/mac-app.integration.test.ts",
       "docs/getting-started.md",
-      "site/src/content/docs/install.md"
+      "site/src/content/docs/install.md",
+      "scripts/mac-mic-launch-check.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:47Z",
-      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#42b7b210"
+      "at": "2026-11-05T10:13Z",
+      "source": "pi-session:01a1a892-d585-769d-9cd1-84cd37d84c7a#98a32133"
     }
   },
   "§app.installer/pi-extensions": {

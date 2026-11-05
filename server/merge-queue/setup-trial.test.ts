@@ -28,6 +28,9 @@ describe("a setup branch (pure rules)", () => {
     assert.deepEqual(changedSections({ services: [svc("db")], merge: merge(["db"]) }, { services: [], merge: merge(["db"]) }), ["services"], "a required one removed");
     // The target's checks require it, the branch's don't any more: still gated (merge changed too).
     assert.deepEqual(changedSections({ services: [svc("db")], merge: merge(["db"]) }, { services: [svc("db", 3)], merge: merge([]) }), ["services", "merge"]);
+    // The map form, keyed by name.
+    assert.deepEqual(changedSections({ services: { db: { start: ["a"] } }, merge: merge(["db"]) }, { services: { db: { start: ["b"] } }, merge: merge(["db"]) }), ["services"]);
+    assert.deepEqual(changedSections({ services: { db: { start: ["a"] } }, merge: merge(["db"]) }, { services: { db: { start: ["a"] }, web: { start: ["w"] } }, merge: merge(["db"]) }), []);
     // Only an unrequired service edited, a required one left alone: not gated.
     assert.deepEqual(changedSections({ services: [svc("db"), svc("web")], merge: merge(["db"]) }, { services: [svc("db"), svc("web", 9)], merge: merge(["db"]) }), []);
   });

@@ -45,7 +45,12 @@ export function requiredServices(def: Record<string, unknown> | null): Set<strin
 
 /** The services added, removed or edited between two raw definitions, by name. Pure. */
 export function changedServices(base: Record<string, unknown> | null, head: Record<string, unknown> | null): string[] {
-  const byName = (d: Record<string, unknown> | null) => new Map((Array.isArray(d?.services) ? (d!.services as unknown[]) : []).map((s) => [String(obj(s).name ?? ""), stable(s)] as const));
+  // Services are a list of {name, …} or a map keyed by name.
+  const byName = (d: Record<string, unknown> | null): Map<string, string> => {
+    const v = d?.services;
+    if (Array.isArray(v)) return new Map(v.map((s) => [String(obj(s).name ?? ""), stable(s)] as const));
+    return new Map(Object.entries(obj(v)).map(([n, s]) => [n, stable(s)] as const));
+  };
   const a = byName(base);
   const b = byName(head);
   return [...new Set([...a.keys(), ...b.keys()])].filter((n) => a.get(n) !== b.get(n));

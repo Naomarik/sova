@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { MB, MESSAGES_CAP, PHOTO_DEFAULTS } from "../../shared/baton";
-import { parseLimit, setBatonDraft, setBatonSaved, type BatonDraft } from "./baton-settings-draft";
+import { boxValue, setBatonDraft, setBatonSaved, type BatonDraft } from "./baton-settings-draft";
 import { dirtyForms, invalidForms, resetAllDrafts, saveAllDrafts } from "./settings-draft";
 
 test("a typed message limit: whole numbers within the shared bounds only", () => {
-  assert.equal(parseLimit("60"), 60);
-  assert.equal(parseLimit(" 1 "), 1);
-  assert.equal(parseLimit(String(MESSAGES_CAP)), MESSAGES_CAP);
-  for (const bad of ["", "0", "-5", "2.5", "1e2", "abc", String(MESSAGES_CAP + 1)]) assert.equal(parseLimit(bad), null, bad);
+  const limit = (t: string) => boxValue(form({ messagesMax: t }), "messagesMax");
+  assert.equal(limit("60"), 60);
+  assert.equal(limit(" 1 "), 1);
+  assert.equal(limit(String(MESSAGES_CAP)), MESSAGES_CAP);
+  for (const bad of ["", "0", "-5", "2.5", "1e2", "abc", String(MESSAGES_CAP + 1)]) assert.equal(limit(bad), null, bad);
 });
 
 const form = (patch: Partial<BatonDraft> = {}): BatonDraft => ({
@@ -28,7 +29,7 @@ test("the limit saves from the dialog's footer: a dirty edit is listed, an inval
   assert.deepEqual(dirtyForms().map((f) => f.label), ["Organizations"]);
   assert.deepEqual(invalidForms(), []);
   setBatonDraft(form({ messagesMax: "0" }));
-  assert.equal(invalidForms()[0]?.problem(), "Organizations needs a message limit from 1 to 1,000.");
+  assert.equal(invalidForms()[0]?.problem(), "Organizations: Message limit must be a whole number from 1 to 1000.");
   assert.deepEqual(await saveAllDrafts(), { saved: [], failed: [] }, "nothing is written while a dirty form is invalid");
   resetAllDrafts();
   assert.deepEqual(dirtyForms(), []);
@@ -40,9 +41,15 @@ test("photo limits: the saved settings read back as the form, and a number outsi
   assert.deepEqual(dirtyForms(), [], "the defaults read back unchanged");
   setBatonDraft(form({ photosOn: false }));
   assert.deepEqual(dirtyForms().map((f) => f.label), ["Organizations"]);
-  for (const bad of [{ perMessage: "9" }, { mb: "0" }, { mb: "11" }, { perConversation: "201" }, { perMessage: "2.5" }]) {
+  for (const [bad, said] of [
+    [{ perMessage: "9" }, "Photos per message must be a whole number from 1 to 8."],
+    [{ mb: "0" }, "Largest photo, MB must be a whole number from 1 to 10."],
+    [{ mb: "11" }, "Largest photo, MB must be a whole number from 1 to 10."],
+    [{ perConversation: "201" }, "Photos per conversation must be a whole number from 1 to 200."],
+    [{ perMessage: "2.5" }, "Photos per message must be a whole number from 1 to 8."],
+  ] as const) {
     setBatonDraft(form(bad));
-    assert.equal(invalidForms()[0]?.problem(), "Organizations needs photo limits within their ranges.", JSON.stringify(bad));
+    assert.equal(invalidForms()[0]?.problem(), `Organizations: ${said}`, JSON.stringify(bad));
   }
   resetAllDrafts();
 });
@@ -55,7 +62,7 @@ test("the largest file (§app.baton/files): reads back as the form, and outside 
   assert.deepEqual(dirtyForms().map((f) => f.label), ["Organizations"]);
   for (const bad of ["0", "26", "2.5", ""]) {
     setBatonDraft(form({ fileMb: bad }));
-    assert.equal(invalidForms()[0]?.problem(), "Organizations needs a largest file from 1 to 25 MB.", bad);
+    assert.equal(invalidForms()[0]?.problem(), "Organizations: Largest file, MB must be a whole number from 1 to 25.", bad);
   }
   resetAllDrafts();
 });

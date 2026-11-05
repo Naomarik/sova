@@ -72,6 +72,8 @@ interface Limit {
 
 const long = (n: number) => "x".repeat(n);
 const limits = await import("../shared/overseer-limits");
+const batonLimits = await import("../shared/baton-limits");
+const { firstIssue } = await import("../shared/form-rules");
 /** A rule's edges: the values at it (taken) and just past it (refused). */
 function ruled(rule: Rule): Pick<Limit, "name" | "rule" | "takes" | "refuses"> {
   if (rule.kind === "whole") return { name: `${rule.label} (${rule.min} to ${rule.max}, whole)`, rule, takes: [rule.min, rule.max], refuses: [rule.min - 1, rule.max + 1, rule.min + 0.5] };
@@ -123,27 +125,18 @@ const LIMITS: Limit[] = [
     client: (v) => providerLimits.limitsProblem({ zai: String(v) }),
     server: (v) => putStatus("/api/settings/provider-limits", { limits: { zai: v } }),
   },
-  ...(
-    [
-      ["messagesMax", "Organizations message limit", (s: Json, v: number) => ({ ...s, messagesMax: v }), (d: Json, t: string) => baton.parseLimit(t), 1, 1000],
-      ["perMessage", "Organizations photos per message", (s: Json, v: number) => ({ ...s, photos: { ...s.photos, perMessage: v } }), (d: Json) => baton.photoFields.perMessage(d), 1, 8],
-      ["mb", "Organizations photo size, MB", (s: Json, v: number) => ({ ...s, photos: { ...s.photos, maxBytes: v * MB } }), (d: Json) => baton.photoFields.mb(d), 1, 10],
-      ["perConversation", "Organizations photos per conversation", (s: Json, v: number) => ({ ...s, photos: { ...s.photos, perConversation: v } }), (d: Json) => baton.photoFields.perConversation(d), 1, 200],
-      ["fileMb", "Organizations largest file, MB", (s: Json, v: number) => ({ ...s, files: { ...s.files, maxBytes: v * MB } }), (d: Json) => baton.parseFileMb(d), 1, 25],
-    ] as const
-  ).map(
-    ([key, name, body, parse, min, max]): Limit => ({
-      name: `${name} (${min} to ${max})`,
-      takes: [min, max],
-      refuses: [min - 1, max + 1],
-      client: (v) => (parse({ [key]: String(v) } as Json, String(v)) === null ? `${name}: refused` : null),
+  ...(["messagesMax", "perMessage", "mb", "perConversation", "fileMb"] as const).map((key): Limit => {
+    const { assistant: _, ...file } = fresh.baton;
+    const draft = baton.batonDraftOf(file);
+    const put = (v: number) =>
+      key === "messagesMax" ? { ...file, messagesMax: v } : key === "fileMb" ? { ...file, files: { maxBytes: v * MB } } : { ...file, photos: { ...file.photos, [key === "mb" ? "maxBytes" : key]: key === "mb" ? v * MB : v } };
+    return {
+      ...ruled(batonLimits.BATON_RULES[key]),
+      client: (v) => firstIssue(baton.batonFields({ ...draft, [key]: String(v) }))?.message ?? null,
       // The PUT body as baton-settings-draft.ts sends it: no `assistant` (its own route).
-      server: (v) => {
-        const { assistant: _, ...file } = fresh.baton;
-        return putStatus("/api/baton/settings", body(file, v as number));
-      },
-    }),
-  ),
+      server: (v) => putStatus("/api/baton/settings", put(v as number)),
+    };
+  }),
   ...(
     [
       ["intervalMinutes", titles.INTERVAL],

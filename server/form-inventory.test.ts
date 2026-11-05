@@ -39,7 +39,7 @@ function scan(): Record<string, number> {
   for (const file of files("src")) {
     if (file.startsWith(KIT) || (!file.endsWith(".tsx") && !file.startsWith("src/card-toolkit/"))) continue;
     const text = readFileSync(join(ROOT, file), "utf8");
-    for (const m of text.matchAll(/<(input|textarea|select)\b|\bcontent[eE]ditable\s*=/g)) {
+    for (const m of text.matchAll(/<(input|textarea|select)\b|\scontent[eE]ditable\s*=\s*[{"]/g)) {
       const kind = m[1] ?? "contenteditable";
       const end = text.indexOf("/>", m.index);
       const tag = text.slice(m.index, end < 0 ? m.index + 600 : Math.min(end, m.index + 600));

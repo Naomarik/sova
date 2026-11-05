@@ -1,12 +1,14 @@
-import { batch, createEffect, createResource, createSignal, For, on, Show, untrack, type JSX } from "solid-js";
+import { createEffect, createResource, createSignal, For, on, Show, untrack, type JSX } from "solid-js";
 import type { SubagentProfile, SubagentProfilesInfo, TeamsSetting } from "../../shared/subagent-profiles";
 import type { WorkerChoice } from "../../shared/protocol";
 import { getDelegateOptions, getDelegateSettings, getSubagentProfiles, getTeamDefaults, restoreSubagentProfiles } from "../lib/api";
 import { replacedNotice } from "../lib/subagent-replaced";
-import { cloneProfiles, PROFILE_NAME_MAX, PROFILE_NAME_RULE, profileNameBad, profileNameCount, profilesDraft as store, savedOf } from "../lib/subagent-profiles-draft";
+import { cloneProfiles, profileNameIssue, profilesDraft as store, savedOf } from "../lib/subagent-profiles-draft";
+import { INSTRUCTIONS_RULE, PROFILE_NAME_RULE, ROLE_RULE, TEAM_NUMBERS, TEAM_RULES, type TeamNumberField } from "../../shared/subagent-limits";
+import { teamNumber } from "../../shared/subagent-profile-checks";
+import { NumberField, SearchField, Select, TextArea, TextField, Toggle } from "./form";
 import { claudeDriftNotes, fallbackFor } from "../lib/delegate-form";
 import { filterProfiles, nextSetup } from "../lib/mode-menu";
-import { numberIssue, numberOf, TEAM_NUMBER_BOUNDS, type TeamNumberField } from "../lib/team-form";
 import { tildePath } from "../lib/format";
 import { home } from "../lib/ui-state";
 import { clearSettingsSection, settingsSection, subagentSettingsPath } from "../lib/settings-nav";
@@ -32,23 +34,10 @@ import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
 import { adversarialReview } from "../lib/align-review";
 import "./SubagentProfilesSettings.css";
 
+const HOST = { value: "host", label: "Use host default" };
+const ALIGN_EAGERNESS = ["eager", "careful"] as const;
+const ALIGN_STYLES = ["pm", "simplified", "default"] as const;
 const labels = { planning: "Planning & specs", investigation: "Investigation", routine: "Routine implementation", complex: "Complex implementation" } as const;
-
-/** A number field of the teams section, with its bounds' hint and its own refusal inline. */
-const NUMBER_HINTS: Record<TeamNumberField, string> = {
-  contextPct: "Start wrap-up when a member's context is this full.",
-  everyMinutes: "How often the monitor checks in.",
-  pausePct: "Pause the team when a provider is this close to its limit.",
-  resumeMarginMinutes: "Wait this long after the limit resets before resuming.",
-  retireTimeoutMinutes: "How long a replaced member has to hand over.",
-};
-const NUMBER_LABELS: Record<TeamNumberField, string> = {
-  contextPct: "Wrap-up context %",
-  everyMinutes: "Check every (minutes)",
-  pausePct: "Pause usage %",
-  resumeMarginMinutes: "Resume margin (minutes)",
-  retireTimeoutMinutes: "Retire timeout (minutes)",
-};
 
 /**
  * Settings → Subagents: the whole library, one editor at a time. Off is built in and immutable;
@@ -294,53 +283,20 @@ export function SubagentProfilesSettings() {
       </Show>
     </button>
   );
-  const number = (field: TeamNumberField, raw: () => number, update: (n: number) => void) => {
-    const id = `subagents-${editing()}-${field}`;
-    // The draft is cloned through JSON, which keeps a NaN as null: either is "no number".
-    const value = () => {
-      const v = raw();
-      return typeof v === "number" ? v : Number.NaN;
-    };
-    const issue = () => numberIssue(field, value());
-    // The box shows what was typed ("", "-", "1e"), red, while it reads as the draft's number; the
-    // draft's own number otherwise (a load, a discard). A number box would hand back "" and wipe it.
-    const [typed, setTyped] = createSignal<string | null>(null);
-    const shown = () => {
-      const t = typed();
-      if (t !== null && Object.is(numberOf(t), value())) return t;
-      return Number.isNaN(value()) ? "" : String(value());
-    };
+  /** A teams number box: the draft holds what was typed (red, Save waits), the save its number. */
+  const number = (field: TeamNumberField) => {
+    const path = TEAM_NUMBERS[field].path;
     return (
-      <div class="field subagent-editor-number">
-        <label class="field-label" for={id}>
-          {NUMBER_LABELS[field]}
-        </label>
-        <div class="subagent-editor-number-row">
-          <input
-            class="input text-num"
-            id={id}
-            type="text"
-            autocomplete="off"
-            inputmode="numeric"
-            value={shown()}
-            aria-invalid={issue() ? "true" : undefined}
-            aria-describedby={`${id}-hint`}
-            disabled={store.saving()}
-            onInput={(e) => {
-              // Read once, and set both together: setting the text alone redraws the box from the
-              // draft's old number before the draft takes the new one.
-              const text = e.currentTarget.value;
-              batch(() => {
-                setTyped(text);
-                update(numberOf(text));
-              });
-            }}
-          />
-          <span class={issue() ? "field-error" : "field-hint"} id={`${id}-hint`}>
-            {issue() ?? NUMBER_HINTS[field]}
-          </span>
-        </div>
-      </div>
+      <NumberField
+        class="subagent-editor-number"
+        id={`subagents-${editing()}-${field}`}
+        label={TEAM_RULES[field].label}
+        hint={TEAM_NUMBERS[field].hint}
+        rule={TEAM_RULES[field]}
+        value={String(teamNumber(edit()?.teams, field) ?? "")}
+        disabled={store.saving()}
+        onInput={(raw) => change((x) => (path.slice(0, -1).reduce<any>((o, k) => o[k], x.teams)[path.at(-1)!] = raw))}
+      />
     );
   };
   /** One of the editor's sections: a fold whose closed head says what is inside. */
@@ -450,12 +406,7 @@ export function SubagentProfilesSettings() {
                 </button>
               </div>
               <Show when={(store.draft()?.profiles.length ?? 0) + 1 > 6}>
-                <div class="field">
-                  <label class="field-label" for="subagents-search">
-                    Find a subagent profile
-                  </label>
-                  <input class="input" id="subagents-search" type="search" autocomplete="off" value={search()} onInput={(e) => setSearch(e.currentTarget.value)} />
-                </div>
+                <SearchField id="subagents-search" label="Find a subagent profile" value={search()} onInput={setSearch} />
               </Show>
               <div class="list subagent-editor-list" aria-label="Subagent profiles">
                 <div class="list-row">
@@ -536,31 +487,17 @@ export function SubagentProfilesSettings() {
               <Show when={safeInfo()?.current.id === "off" && subagentSettingsPath()}>
                 <Banner tone="info" title="This chat is on Off." body="Off configures nothing: the agent picks every model. Editing a profile here doesn't switch the chat." />
               </Show>
-              <div class="field settings-team-role subagent-editor-name">
-                <label class="field-label" for="subagents-name">
-                  Profile name
-                </label>
-                <input
-                  class="input"
-                  id="subagents-name"
-                  value={p().name}
-                  aria-invalid={profileNameBad(store.draft()!, p().id) ? "true" : undefined}
-                  aria-describedby={profileNameBad(store.draft()!, p().id) ? "subagents-name-error subagents-name-count subagents-name-footprint" : "subagents-name-count subagents-name-footprint"}
-                  disabled={store.saving()}
-                  onInput={(e) => change((x) => (x.name = e.currentTarget.value))}
-                />
-                <Show when={profileNameBad(store.draft()!, p().id)}>
-                  <span class="field-error" id="subagents-name-error">
-                    {PROFILE_NAME_RULE}
-                  </span>
-                </Show>
-                <span class={`${p().name.length > PROFILE_NAME_MAX ? "field-error" : "field-hint"} text-num`} id="subagents-name-count">
-                  {profileNameCount(p().name)}
-                </span>
-                <span class="field-hint text-mono" id="subagents-name-footprint">
-                  {footprintOf(p().id) ?? "Not saved yet"}
-                </span>
-              </div>
+              <TextField
+                class="settings-team-role subagent-editor-name"
+                id="subagents-name"
+                label="Profile name"
+                hint={<span class="text-mono">{footprintOf(p().id) ?? "Not saved yet"}</span>}
+                rule={PROFILE_NAME_RULE}
+                error={profileNameIssue(store.draft()!, p().id)}
+                value={p().name}
+                disabled={store.saving()}
+                onInput={(raw) => change((x) => (x.name = raw))}
+              />
 
               {section(
                 "delegate",
@@ -613,41 +550,35 @@ export function SubagentProfilesSettings() {
                           <fieldset class="subagent-editor-route">
                             <legend class="subagent-editor-route-name">{name}</legend>
                             <Show when={shows()}>{fallbackAction(choice, update)}</Show>
-                            <label class="toggle toggle-switch settings-team-enable">
-                              <span>Add a {role} to new teams</span>
-                              <input
-                                type="checkbox"
-                                checked={on()}
-                                disabled={store.saving() || !canSwitch()}
-                                aria-describedby={role === "monitor" && !coordinatorOn(p()) ? `subagents-${editing()}-monitor-needs` : undefined}
-                                onChange={(e) =>
-                                  replace((x) => (role === "coordinator" ? withCoordinator(x, e.currentTarget.checked, teamsSeed(x.id)) : withMonitor(x, e.currentTarget.checked)))
-                                }
-                              />
-                              <span class="toggle-box" />
-                            </label>
-                            <Show when={role === "monitor" && !coordinatorOn(p())}>
-                              <p class="field-hint" id={`subagents-${editing()}-monitor-needs`}>
-                                The monitor reports to the coordinator, so it needs one.
-                              </p>
-                            </Show>
+                            <Toggle
+                              switch
+                              class="settings-team-enable"
+                              label={`Add a ${role} to new teams`}
+                              hint={role === "monitor" && !coordinatorOn(p()) ? "The monitor reports to the coordinator, so it needs one." : undefined}
+                              checked={on()}
+                              disabled={store.saving() || !canSwitch()}
+                              onChange={(v) => replace((x) => (role === "coordinator" ? withCoordinator(x, v, teamsSeed(x.id)) : withMonitor(x, v)))}
+                            />
                             <Show when={shows()}>
                               {pair(role, choice, update)}
                               <Show when={role === "monitor"}>
                                 <div class="subagent-editor-sub">
                                   <div class="settings-team-numbers">
-                                    {number("contextPct", () => t()!.monitor.contextPct, (n) => change((x) => (x.teams!.monitor.contextPct = n)))}
-                                    {number("everyMinutes", () => t()!.monitor.everyMinutes, (n) => change((x) => (x.teams!.monitor.everyMinutes = n)))}
+                                    {number("contextPct")}
+                                    {number("everyMinutes")}
                                   </div>
-                                  <label class="toggle toggle-switch settings-team-enable">
-                                    <span>Pause the team near a usage limit</span>
-                                    <input type="checkbox" checked={t()!.monitor.usage.enabled} disabled={store.saving()} onChange={(e) => change((x) => (x.teams!.monitor.usage.enabled = e.currentTarget.checked))} />
-                                    <span class="toggle-box" />
-                                  </label>
+                                  <Toggle
+                                    switch
+                                    class="settings-team-enable"
+                                    label="Pause the team near a usage limit"
+                                    checked={t()!.monitor.usage.enabled}
+                                    disabled={store.saving()}
+                                    onChange={(v) => change((x) => (x.teams!.monitor.usage.enabled = v))}
+                                  />
                                   <Show when={t()!.monitor.usage.enabled}>
                                     <div class="settings-team-numbers">
-                                      {number("pausePct", () => t()!.monitor.usage.pausePct, (n) => change((x) => (x.teams!.monitor.usage.pausePct = n)))}
-                                      {number("resumeMarginMinutes", () => t()!.monitor.usage.resumeMarginMinutes, (n) => change((x) => (x.teams!.monitor.usage.resumeMarginMinutes = n)))}
+                                      {number("pausePct")}
+                                      {number("resumeMarginMinutes")}
                                     </div>
                                   </Show>
                                 </div>
@@ -661,40 +592,30 @@ export function SubagentProfilesSettings() {
                                   </span>
                                 </summary>
                                 <div class="overseer-fold-body">
-                                  <div class="field settings-team-role">
-                                    <label class="field-label" for={`subagents-${editing()}-${role}-role`}>
-                                      Role name
-                                    </label>
-                                    <input
-                                      class="input text-mono"
-                                      id={`subagents-${editing()}-${role}-role`}
-                                      value={t()![role].role}
-                                      maxlength={64}
-                                      spellcheck={false}
-                                      autocomplete="off"
-                                      aria-invalid={t()![role].role.trim() === "" ? "true" : undefined}
-                                      disabled={store.saving()}
-                                      onInput={(e) => change((x) => (x.teams![role].role = e.currentTarget.value))}
-                                    />
-                                    <Show when={t()![role].role.trim() === ""}>
-                                      <span class="field-error">Name the role.</span>
-                                    </Show>
-                                  </div>
-                                  <div class="field">
-                                    <label class="field-label" for={`subagents-${editing()}-${role}-instructions`}>
-                                      {name} instructions
-                                    </label>
-                                    <textarea
-                                      class="input textarea"
-                                      id={`subagents-${editing()}-${role}-instructions`}
-                                      rows={3}
-                                      maxlength={4000}
-                                      value={t()![role].instructions}
-                                      disabled={store.saving()}
-                                      onInput={(e) => change((x) => (x.teams![role].instructions = e.currentTarget.value))}
-                                    />
-                                    <span class="field-hint">Added to the {role}'s standing instructions in every new team.</span>
-                                  </div>
+                                  <TextField
+                                    class="settings-team-role"
+                                    inputClass="text-mono"
+                                    id={`subagents-${editing()}-${role}-role`}
+                                    label="Role name"
+                                    rule={ROLE_RULE}
+                                    ruleLabel={`${name} role name`}
+                                    value={t()![role].role}
+                                    spellcheck={false}
+                                    autocomplete="off"
+                                    disabled={store.saving()}
+                                    onInput={(raw) => change((x) => (x.teams![role].role = raw))}
+                                  />
+                                  <TextArea
+                                    id={`subagents-${editing()}-${role}-instructions`}
+                                    label={`${name} instructions`}
+                                    hint={`Added to the ${role}'s standing instructions in every new team.`}
+                                    rule={INSTRUCTIONS_RULE}
+                                    ruleLabel={`${name} instructions`}
+                                    rows={3}
+                                    value={t()![role].instructions}
+                                    disabled={store.saving()}
+                                    onInput={(raw) => change((x) => (x.teams![role].instructions = raw))}
+                                  />
                                 </div>
                               </details>
                             </Show>
@@ -706,17 +627,20 @@ export function SubagentProfilesSettings() {
                       {(t) => (
                         <fieldset class="subagent-editor-route">
                           <legend class="subagent-editor-route-name">Handover</legend>
-                          <div class="settings-team-numbers">{number("retireTimeoutMinutes", () => t().handover.retireTimeoutMinutes, (n) => change((x) => (x.teams!.handover.retireTimeoutMinutes = n)))}</div>
+                          <div class="settings-team-numbers">{number("retireTimeoutMinutes")}</div>
                         </fieldset>
                       )}
                     </Show>
                     <fieldset class="subagent-editor-route subagent-editor-flush">
                       <legend class="subagent-editor-route-name">Members default</legend>
-                      <label class="toggle toggle-switch settings-team-enable">
-                        <span>Choose a model for ordinary members</span>
-                        <input type="checkbox" checked={p().members !== null} disabled={store.saving()} onChange={(e) => change((x) => (x.members = e.currentTarget.checked ? { backend: "pi", model: "", effort: "" } : null))} />
-                        <span class="toggle-box" />
-                      </label>
+                      <Toggle
+                        switch
+                        class="settings-team-enable"
+                        label="Choose a model for ordinary members"
+                        checked={p().members !== null}
+                        disabled={store.saving()}
+                        onChange={(v) => change((x) => (x.members = v ? { backend: "pi", model: "", effort: "" } : null))}
+                      />
                       <Show when={p().members} fallback={<p class="field-hint">A member nobody gave a model runs on its team lead's model.</p>}>
                         {(m) => tuple("members", m, () => null, (c) => change((x) => (x.members = c)), "primary", () => true)}
                       </Show>
@@ -732,16 +656,14 @@ export function SubagentProfilesSettings() {
                 () => (
                   <>
                     <div class="subagent-editor-switch-line">
-                      <label class="toggle toggle-switch settings-team-enable">
-                        <span>Use a spec writer while spec is on</span>
-                        <input
-                          type="checkbox"
-                          checked={p().specWriter !== null}
-                          disabled={store.saving()}
-                          onChange={(e) => change((x) => (x.specWriter = e.currentTarget.checked ? { primary: { backend: "pi", model: "", effort: "" }, fallback: null } : null))}
-                        />
-                        <span class="toggle-box" />
-                      </label>
+                      <Toggle
+                        switch
+                        class="settings-team-enable"
+                        label="Use a spec writer while spec is on"
+                        checked={p().specWriter !== null}
+                        disabled={store.saving()}
+                        onChange={(v) => change((x) => (x.specWriter = v ? { primary: { backend: "pi", model: "", effort: "" }, fallback: null } : null))}
+                      />
                       <Show when={p().specWriter}>{(w) => fallbackAction(w, (c) => change((x) => (x.specWriter = c)))}</Show>
                     </div>
                     <Show when={p().specWriter} fallback={<p class="field-hint">The session writes the spec itself.</p>}>
@@ -766,16 +688,14 @@ export function SubagentProfilesSettings() {
                   () => (
                     <>
                       <div class="subagent-editor-switch-line">
-                        <label class="toggle toggle-switch settings-team-enable">
-                          <span>Review alignments with a reviewer</span>
-                          <input
-                            type="checkbox"
-                            checked={!!p().reviewer}
-                            disabled={store.saving()}
-                            onChange={(e) => change((x) => (x.reviewer = e.currentTarget.checked ? { primary: { backend: "pi", model: "", effort: "" }, fallback: null } : null))}
-                          />
-                          <span class="toggle-box" />
-                        </label>
+                        <Toggle
+                          switch
+                          class="settings-team-enable"
+                          label="Review alignments with a reviewer"
+                          checked={!!p().reviewer}
+                          disabled={store.saving()}
+                          onChange={(v) => change((x) => (x.reviewer = v ? { primary: { backend: "pi", model: "", effort: "" }, fallback: null } : null))}
+                        />
                         <Show when={p().reviewer}>{(w) => fallbackAction(w, (c) => change((x) => (x.reviewer = c)))}</Show>
                       </div>
                       <Show when={p().reviewer} fallback={<p class="field-hint">No review.</p>}>
@@ -809,69 +729,30 @@ export function SubagentProfilesSettings() {
                     <>
                       <p class="field-hint settings-delegate-desc">How the align mode writes for chats on this profile; "Use host default" follows Settings → Alignment.</p>
                       <div class="public-links-row">
-                        <label class="field settings-field">
-                          <span class="field-label">Eagerness</span>
-                          <span class="select-wrap">
-                            <select class="select" disabled={store.saving()} onChange={(e) => setAlign({ eagerness: e.currentTarget.value as "host" | "eager" | "careful" })}>
-                              <option value="host" selected={p().alignment?.eagerness === undefined}>
-                                Use host default
-                              </option>
-                              <For each={["eager", "careful"] as const}>
-                                {(v) => (
-                                  <option value={v} selected={p().alignment?.eagerness === v}>
-                                    {ALIGN_EAGERNESS_NAMES[v]}
-                                  </option>
-                                )}
-                              </For>
-                            </select>
-                            <span class="select-caret" aria-hidden="true">
-                              ▾
-                            </span>
-                          </span>
-                        </label>
-                        <label class="field settings-field">
-                          <span class="field-label">Writing style</span>
-                          <span class="select-wrap">
-                            <select class="select" disabled={store.saving()} onChange={(e) => setAlign({ style: e.currentTarget.value as "host" | "default" | "simplified" | "pm" })}>
-                              <option value="host" selected={p().alignment?.style === undefined}>
-                                Use host default
-                              </option>
-                              <For each={["pm", "simplified", "default"] as const}>
-                                {(s) => (
-                                  <option value={s} selected={p().alignment?.style === s}>
-                                    {ALIGN_STYLE_NAMES[s]}
-                                  </option>
-                                )}
-                              </For>
-                            </select>
-                            <span class="select-caret" aria-hidden="true">
-                              ▾
-                            </span>
-                          </span>
-                        </label>
-                        <label class="field settings-field">
-                          <span class="field-label">Visuals</span>
-                          <span class="select-wrap">
-                            <select
-                              class="select"
-                              disabled={store.saving()}
-                              onChange={(e) => setAlign({ visuals: e.currentTarget.value === "host" ? "host" : e.currentTarget.value === "on" })}
-                            >
-                              <option value="host" selected={p().alignment?.visuals === undefined}>
-                                Use host default
-                              </option>
-                              <option value="on" selected={p().alignment?.visuals === true}>
-                                On
-                              </option>
-                              <option value="off" selected={p().alignment?.visuals === false}>
-                                Off
-                              </option>
-                            </select>
-                            <span class="select-caret" aria-hidden="true">
-                              ▾
-                            </span>
-                          </span>
-                        </label>
+                        <Select
+                          class="settings-field"
+                          label="Eagerness"
+                          value={p().alignment?.eagerness ?? "host"}
+                          options={[HOST, ...ALIGN_EAGERNESS.map((v) => ({ value: v, label: ALIGN_EAGERNESS_NAMES[v] }))]}
+                          disabled={store.saving()}
+                          onChange={(v) => setAlign({ eagerness: v as "host" | "eager" | "careful" })}
+                        />
+                        <Select
+                          class="settings-field"
+                          label="Writing style"
+                          value={p().alignment?.style ?? "host"}
+                          options={[HOST, ...ALIGN_STYLES.map((v) => ({ value: v, label: ALIGN_STYLE_NAMES[v] }))]}
+                          disabled={store.saving()}
+                          onChange={(v) => setAlign({ style: v as "host" | "default" | "simplified" | "pm" })}
+                        />
+                        <Select
+                          class="settings-field"
+                          label="Visuals"
+                          value={p().alignment?.visuals === undefined ? "host" : p().alignment?.visuals ? "on" : "off"}
+                          options={[HOST, { value: "on", label: "On" }, { value: "off", label: "Off" }]}
+                          disabled={store.saving()}
+                          onChange={(v) => setAlign({ visuals: v === "host" ? "host" : v === "on" })}
+                        />
                       </div>
                       <p class="field-hint">An eagerness or style change reaches this profile's open chats at their next message; Visuals, sessions started after saving.</p>
                     </>

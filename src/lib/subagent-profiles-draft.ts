@@ -1,7 +1,9 @@
 import type { SubagentProfile, SubagentProfilesInfo } from "../../shared/subagent-profiles";
 import { putSubagentProfileDefault, putSubagentProfiles } from "./api";
 import { createDraftStore, SaveFailed } from "./settings-draft";
-import { numberIssue, type TeamNumberField } from "./team-form";
+import { check, type FieldCheck, firstIssue } from "../../shared/form-rules";
+import { profileFields } from "../../shared/subagent-profile-checks";
+import { TEAM_NUMBERS, TEAM_RULES, type TeamNumberField } from "../../shared/subagent-limits";
 
 export const cloneProfiles = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 
@@ -25,84 +27,56 @@ const incomplete = (c: Tuple | null | undefined): boolean => !!c && (!c.model ||
 const samePair = (primary: Tuple, fallback: Tuple | null | undefined): boolean =>
   !!fallback && primary.backend === fallback.backend && primary.model === fallback.model && (primary.effort ?? "") === (fallback.effort ?? "");
 
-/** The number fields' labels, as the editor says them. */
-const NUMBER_LABELS: Record<TeamNumberField, string> = {
-  contextPct: "Wrap-up context %",
-  everyMinutes: "Check every (minutes)",
-  pausePct: "Pause usage %",
-  resumeMarginMinutes: "Resume margin (minutes)",
-  retireTimeoutMinutes: "Retire timeout (minutes)",
-};
-
-/** The first threshold in a profile's teams that can't be saved, said like its field, or null. */
-function teamsNumberError(p: SubagentProfile): string | null {
-  if (!p.teams) return null;
-  const t = p.teams;
-  const values: Record<TeamNumberField, number> = {
-    contextPct: t.monitor.contextPct,
-    everyMinutes: t.monitor.everyMinutes,
-    pausePct: t.monitor.usage.pausePct,
-    resumeMarginMinutes: t.monitor.usage.resumeMarginMinutes,
-    retireTimeoutMinutes: t.handover.retireTimeoutMinutes,
-  };
-  for (const f of Object.keys(values) as TeamNumberField[]) {
-    const issue = numberIssue(f, values[f]);
-    if (issue) return `${NUMBER_LABELS[f]}: ${issue}`;
-  }
+/** Why profile `id`'s name can't be saved, beyond its rule's length (the box's own sentence), or null. */
+export function profileNameIssue(d: LibraryDraft, id: string): string | null {
+  const p = d.profiles.find((x) => x.id === id);
+  if (!p?.name) return null;
+  if (p.name.trim() !== p.name || /[\x00-\x1f]/.test(p.name)) return "Profile name must be one line, with no spaces at either end.";
+  if (p.name.toLowerCase() === "off") return 'Profile name can\'t be "Off", the built-in profile\'s.';
+  if (d.profiles.some((x) => x.id !== id && x.name.toLowerCase() === p.name.toLowerCase())) return "Another profile has this name.";
   return null;
 }
 
-/** A name no profile may have, whatever the others are called: blank, padded, over 48, multi-line, "Off". */
-const nameBadAlone = (name: string): boolean => !name.trim() || name.trim() !== name || name.length > PROFILE_NAME_MAX || /[\r\n\x00-\x1f]/.test(name) || name.toLowerCase() === "off";
-
-/** A profile name's most characters (the server's too). */
-export const PROFILE_NAME_MAX = 48;
-/** The name box's count: "49 / 48". */
-export const profileNameCount = (name: string): string => `${name.length} / ${PROFILE_NAME_MAX}`;
-
-/** What the name box says under itself while it is red. */
-export const PROFILE_NAME_RULE = 'A unique name on one line, at most 48 characters, never "Off".';
-
-/** Whether profile `id`'s name box is red: its name can't be saved, alone or because another profile has it too. */
-export function profileNameBad(d: LibraryDraft, id: string): boolean {
-  const p = d.profiles.find((x) => x.id === id);
-  if (!p) return false;
-  return nameBadAlone(p.name) || d.profiles.some((x) => x.id !== id && x.name.toLowerCase() === p.name.toLowerCase());
-}
-
-/** The first way the draft can't be saved, as one footer sentence that names the form. */
-export function profilesProblem(d: LibraryDraft): string | null {
-  const names = new Set<string>();
-  for (const p of d.profiles) {
-    if (nameBadAlone(p.name) || names.has(p.name.toLowerCase()))
-      return `Subagents needs unique, single-line names of at most 48 characters (never "Off").`;
-    names.add(p.name.toLowerCase());
+/** Each profile's boxes and rows in page order: the first that fails is what Save waits for. */
+export function profilesFields(d: LibraryDraft): (FieldCheck | { message: string | null })[] {
+  return d.profiles.flatMap((p) => {
     const rows: [string, Tuple, Tuple | null][] = [
-      ...Object.values(p.delegate).map((r) => ["Delegate", r.primary, r.fallback] as [string, Tuple, Tuple | null]),
-      ...(p.teams
-        ? ([
-            ["Coordinator", p.teams.coordinator.primary, p.teams.coordinator.fallback],
-            ["Monitor", p.teams.monitor.primary, p.teams.monitor.fallback],
-          ] as [string, Tuple, Tuple | null][])
-        : []),
+      ...Object.values(p.delegate).map((r): [string, Tuple, Tuple | null] => ["Delegate", r.primary, r.fallback]),
+      ...(p.teams ? ([["Coordinator", p.teams.coordinator.primary, p.teams.coordinator.fallback], ["Monitor", p.teams.monitor.primary, p.teams.monitor.fallback]] as [string, Tuple, Tuple | null][]) : []),
       ...(p.specWriter ? ([["Spec writer", p.specWriter.primary, p.specWriter.fallback]] as [string, Tuple, Tuple | null][]) : []),
       ...(p.reviewer ? ([["Reviewer", p.reviewer.primary, p.reviewer.fallback]] as [string, Tuple, Tuple | null][]) : []),
     ];
-    for (const [label, primary, fallback] of rows) {
-      if (incomplete(primary) || incomplete(fallback)) return `Subagents: ${p.name}'s ${label} rows each need a model and an effort.`;
-      if (samePair(primary, fallback)) return `Subagents: ${p.name}'s ${label} fallback is its primary; choose another worker, or none.`;
+    const row = rows.find(([, a, b]) => incomplete(a) || incomplete(b) || samePair(a, b));
+    const roles = p.teams ? [p.teams.coordinator.role.trim().toLowerCase(), p.teams.monitor.role.trim().toLowerCase()] : [];
+    const [name, ...boxes] = profileFields(p);
+    return [
+      name!,
+      { message: profileNameIssue(d, p.id) },
+      { message: row ? (samePair(row[1], row[2]) ? `${p.name}'s ${row[0]} fallback is its primary; choose another worker, or none.` : `${p.name}'s ${row[0]} rows each need a model and an effort.`) : null },
+      { message: incomplete(p.members) ? `${p.name}'s members default needs a model and an effort.` : null },
+      ...boxes,
+      { message: roles[0] && roles[0] === roles[1] ? `${p.name}'s coordinator and monitor need different role names.` : null },
+    ];
+  });
+}
+
+/** The first way the draft can't be saved, as the footer says it. */
+export const profilesProblem = (d: LibraryDraft): string | null => {
+  const bad = firstIssue(profilesFields(d));
+  return bad && `Subagents: ${bad.message}`;
+};
+
+/** The draft as the file takes it: each team number box's typed text as its number. */
+function typedOut(d: LibraryDraft): LibraryDraft {
+  const out = cloneProfiles(d);
+  for (const p of out.profiles)
+    for (const f of Object.keys(TEAM_RULES) as TeamNumberField[]) {
+      const path = TEAM_NUMBERS[f].path;
+      const parent = path.slice(0, -1).reduce<any>((o, k) => o?.[k], p.teams);
+      const r = parent ? check(TEAM_RULES[f], parent[path.at(-1)!]) : null;
+      if (r?.ok) parent[path.at(-1)!] = r.value;
     }
-    if (incomplete(p.members)) return `Subagents: ${p.name}'s members default needs a model and an effort.`;
-    if (p.teams) {
-      const roles = [p.teams.coordinator.role, p.teams.monitor.role];
-      for (const role of roles) if (!role.trim() || role.length > 64 || /[\r\n]/.test(role)) return `Subagents: ${p.name}'s coordinator and monitor each need a role name on one line of at most 64 characters.`;
-      if (p.teams.coordinator.role.trim().toLowerCase() === p.teams.monitor.role.trim().toLowerCase())
-        return `Subagents: ${p.name}'s coordinator and monitor need different role names.`;
-      const n = teamsNumberError(p);
-      if (n) return `Subagents: ${p.name}: ${n}`;
-    }
-  }
-  return null;
+  return out;
 }
 
 /**
@@ -114,9 +88,10 @@ export const profilesDraft = createDraftStore<LibraryDraft, LibraryDraft, Subage
   tab: "subagents",
   label: "Subagents",
   toDraft: cloneProfiles,
-  same: (a, b) => JSON.stringify(a) === JSON.stringify(b),
-  problem: profilesProblem,
-  write: async (d, base) => {
+  same: (a, b) => JSON.stringify(typedOut(a)) === JSON.stringify(b),
+  fields: profilesFields,
+  write: async (typed, base) => {
+    const d = typedOut(typed);
     // The synced library first, then this device's default only when it moved. Two files, no
     // transaction: a default failure after the library wrote is partial, and says so.
     const profilesMoved = JSON.stringify(d.profiles) !== JSON.stringify(base.profiles);

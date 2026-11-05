@@ -594,13 +594,13 @@ describe("every number box: each raw string stays as typed, is a problem, and cl
 });
 
 // The subagent profile editor's team numbers: nested in a profile of the `profiles` array, so the
-// flat table above can't see them. The draft holds the box's parse (team-form.ts `numberOf`, what
-// the box's onInput writes; the box itself keeps the typed text, settings-browser.integration.test.ts).
+// flat table above can't see them. The draft holds what the box holds, the typed text (the save
+// writes its number).
 // Each raw string is a problem and Save waits; the bound saves and reads back. The coverage check
 // walks the whole profile, arrays and all: a new number anywhere in a profile with no row fails.
-const teamForm = await import("./team-form");
+const { TEAM_RULES } = await import("../../shared/subagent-limits");
 describe("Subagents: every team number inside a profile", () => {
-  const TEAM_BOXES: Record<string, keyof typeof teamForm.TEAM_NUMBER_BOUNDS> = {
+  const TEAM_BOXES: Record<string, keyof typeof TEAM_RULES> = {
     "teams.monitor.contextPct": "contextPct",
     "teams.monitor.everyMinutes": "everyMinutes",
     "teams.monitor.usage.pausePct": "pausePct",
@@ -633,13 +633,13 @@ describe("Subagents: every team number inside a profile", () => {
     await load();
     const d = await withTeams();
     assert.deepEqual(numbers(d.profiles[0]).sort(), Object.keys(TEAM_BOXES).sort());
-    assert.deepEqual(Object.values(TEAM_BOXES).sort(), Object.keys(teamForm.TEAM_NUMBER_BOUNDS).sort());
+    assert.deepEqual(Object.values(TEAM_BOXES).sort(), Object.keys(TEAM_RULES).sort());
   });
   for (const [path, field] of Object.entries(TEAM_BOXES)) {
     test(`profiles[0].${path}: "1." (half-typed) is a problem, as in every other number box (D14)`, async () => {
       await load();
       const d = await withTeams();
-      put(d.profiles[0], path, teamForm.numberOf("1."));
+      put(d.profiles[0], path, "1.");
       profiles.profilesDraft.setDraft(d);
       assert.notEqual(form("Subagents").problem(), null, `${path}: "1." is no problem`);
       form("Subagents").discard();
@@ -647,7 +647,7 @@ describe("Subagents: every team number inside a profile", () => {
     test(`profiles[0].${path}: each raw string is a problem; its bounds save and read back`, async () => {
       await load();
       const f = form("Subagents");
-      const { min, max } = teamForm.TEAM_NUMBER_BOUNDS[field];
+      const { min, max } = TEAM_RULES[field];
       const base = await withTeams();
       const at0 = (v: unknown) => {
         const d = clone(base);
@@ -655,14 +655,14 @@ describe("Subagents: every team number inside a profile", () => {
         return d;
       };
       for (const raw of [...RAW, String(max + 1), String(min - 1)]) {
-        profiles.profilesDraft.setDraft(at0(teamForm.numberOf(raw)));
+        profiles.profilesDraft.setDraft(at0(raw));
         assert.notEqual(f.problem(), null, `${path}: "${raw}" is no problem`);
         assert.equal(await f.save(), "skipped", `${path}: Save wrote "${raw}"`);
         profiles.profilesDraft.setDraft(at0(max));
         assert.equal(f.problem(), null, `${path}: typing ${max} over "${raw}" leaves a problem`);
       }
       for (const v of [min, max]) {
-        profiles.profilesDraft.setDraft(at0(v));
+        profiles.profilesDraft.setDraft(at0(String(v)));
         await primeClaude();
         await f.save();
         assert.equal(f.error(), null, `${path} = ${v}: the save failed`);

@@ -1,5 +1,7 @@
 import type { SubagentProfile, TeamsSetting } from "../../shared/subagent-profiles";
 import { profilesProblem } from "./subagent-profiles-draft";
+import { problemOf } from "../../shared/form-rules";
+import { ROLE_RULE } from "../../shared/subagent-limits";
 import { claudeModelName } from "./format";
 
 /**
@@ -163,5 +165,5 @@ export function roleProblem(p: SubagentProfile, role: "coordinator" | "monitor")
   const other = t[role === "coordinator" ? "monitor" : "coordinator"];
   const incomplete = (c: { model: string; effort?: string } | null) => !!c && (!c.model || !(c.effort ?? ""));
   const same = !!r.fallback && r.primary.backend === r.fallback.backend && r.primary.model === r.fallback.model && (r.primary.effort ?? "") === (r.fallback.effort ?? "");
-  return !r.role.trim() || r.role.length > 64 || /[\r\n]/.test(r.role) || r.role.trim().toLowerCase() === other.role.trim().toLowerCase() || incomplete(r.primary) || incomplete(r.fallback) || same;
+  return !!problemOf(ROLE_RULE, r.role) || r.role.trim().toLowerCase() === other.role.trim().toLowerCase() || incomplete(r.primary) || incomplete(r.fallback) || same;
 }

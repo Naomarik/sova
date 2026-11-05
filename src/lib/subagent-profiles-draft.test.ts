@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { profileNameBad, profileNameCount, profilesProblem, type LibraryDraft } from "./subagent-profiles-draft";
+import { profileNameIssue, profilesProblem, type LibraryDraft } from "./subagent-profiles-draft";
 import type { SubagentProfile, TeamsSetting } from "../../shared/subagent-profiles";
 import type { WorkerChoice } from "../../shared/protocol";
 
@@ -38,12 +38,13 @@ test("a complete draft has no problem to say", () => {
 });
 
 test("names: unique, single-line, never Off — each form of badness is its own", () => {
-  assert.match(profilesProblem(file([validProfile({ name: "off" })]))!, /never "Off"/);
-  assert.match(profilesProblem(file([validProfile({ name: "  padded" })]))!, /single-line/);
-  assert.match(profilesProblem(file([validProfile({ name: "two\nlines" })]))!, /single-line/);
-  assert.match(profilesProblem(file([validProfile({ name: "x".repeat(49) })]))!, /48/);
+  assert.equal(profilesProblem(file([validProfile({ name: "off" })])), `Subagents: Profile name can't be "Off", the built-in profile's.`);
+  assert.match(profilesProblem(file([validProfile({ name: "  padded" })]))!, /one line, with no spaces/);
+  assert.match(profilesProblem(file([validProfile({ name: "two\nlines" })]))!, /one line, with no spaces/);
+  assert.equal(profilesProblem(file([validProfile({ name: "x".repeat(49) })])), "Subagents: Profile name can be at most 48 characters.");
+  assert.equal(profilesProblem(file([validProfile({ name: "" })])), "Subagents: Profile name can't be empty.");
   const two = file([validProfile(), validProfile({ id: "other", name: "my SETUP" })]);
-  assert.match(profilesProblem(two)!, /unique/, "uniqueness ignores case, like the file's own rule");
+  assert.equal(profilesProblem(two), "Subagents: Another profile has this name.", "uniqueness ignores case, like the file's own rule");
 });
 
 test("a fallback that is its primary is refused in the form, as the server refuses it", () => {
@@ -88,11 +89,16 @@ test("teams thresholds and role names are checked before the server ever sees th
   ] as const) {
     const t = structuredClone(teams);
     (t.monitor as unknown as Record<string, number>)[path] = bad;
-    assert.match(profilesProblem(file([validProfile({ teams: t })]))!, /Enter a number\.|Use /, `${path}=${bad} is refused`);
+    assert.match(profilesProblem(file([validProfile({ teams: t })]))!, /must be a whole number from \d+ to [\d,]+\.$/, `${path}=${bad} is refused`);
   }
   const blank = structuredClone(teams);
-  blank.monitor.everyMinutes = Number.NaN; // a blank field is NaN, and no bound accepts it
-  assert.match(profilesProblem(file([validProfile({ teams: blank })]))!, /Enter a number\./);
+  (blank.monitor as unknown as Record<string, string>).everyMinutes = ""; // the draft holds the box's text
+  assert.equal(profilesProblem(file([validProfile({ teams: blank })])), "Subagents: Check every (minutes) must be a whole number from 1 to 1,440.");
+  const role = structuredClone(teams);
+  role.monitor.role = "  ";
+  assert.equal(profilesProblem(file([validProfile({ teams: role })])), "Subagents: Name the role.");
+  role.monitor.role = "x".repeat(65);
+  assert.equal(profilesProblem(file([validProfile({ teams: role })])), "Subagents: Monitor role name can be at most 64 characters.");
   const same = structuredClone(teams);
   same.monitor.role = "Coordinator";
   assert.match(profilesProblem(file([validProfile({ teams: same })]))!, /different role names/, "coordinator and monitor are two roles, never one");
@@ -111,24 +117,20 @@ test("the editor's worker rows are wired live, never as a mount-time snapshot", 
   assert.doesNotMatch(src, /\((\w)\) => (?:tuple|pair)\([^)]*?\1\(\)/, "no callback reads its accessor at mount time");
 });
 
-test("the name box itself says when its name holds Save (Settings QA D11): the edited profile's name only", () => {
+test("the name box says why its name holds Save (Settings QA D11): the edited profile's name only", () => {
   const two = file([validProfile(), validProfile({ id: "other", name: "Other" })]);
-  assert.equal(profileNameBad(two, "my-setup"), false);
-  for (const name of ["", "   ", "  padded", "off", "x".repeat(49), "two\nlines", "other"]) {
+  assert.equal(profileNameIssue(two, "my-setup"), null);
+  for (const name of ["   ", "  padded", "off", "two\nlines", "other"]) {
     const d = file([validProfile({ name }), validProfile({ id: "other", name: "Other" })]);
-    assert.equal(profileNameBad(d, "my-setup"), true, JSON.stringify(name));
-    assert.equal(profileNameBad(d, "other"), name === "other", `the other profile's box only for a clash: ${JSON.stringify(name)}`);
+    assert.notEqual(profileNameIssue(d, "my-setup"), null, JSON.stringify(name));
+    assert.equal(profileNameIssue(d, "other") !== null, name === "other", `the other profile's box only for a clash: ${JSON.stringify(name)}`);
   }
 });
 
-test("a pasted name over 48 characters stays whole in the draft, red, and Save waits (Settings QA D10)", () => {
-  const long = "x".repeat(300);
-  const d = file([validProfile({ name: long })]);
+test("a pasted name over 48 characters stays whole in the draft, and Save waits (Settings QA D10)", () => {
+  const d = file([validProfile({ name: "x".repeat(300) })]);
   assert.equal(d.profiles[0]!.name.length, 300, "nothing cuts it");
-  assert.equal(profilesProblem(d), `Subagents needs unique, single-line names of at most 48 characters (never "Off").`);
-  assert.equal(profileNameBad(d, "my-setup"), true);
-  assert.equal(profileNameCount("x".repeat(49)), "49 / 48");
-  assert.equal(profileNameCount("My setup"), "8 / 48");
+  assert.equal(profilesProblem(d), "Subagents: Profile name can be at most 48 characters.");
   // The box is not capped by the browser: a cut there is silent.
-  assert.doesNotMatch(readFileSync(new URL("../components/SubagentProfilesSettings.tsx", import.meta.url), "utf8"), /maxlength=\{48\}/);
+  assert.doesNotMatch(readFileSync(new URL("../components/SubagentProfilesSettings.tsx", import.meta.url), "utf8"), /maxlength/);
 });

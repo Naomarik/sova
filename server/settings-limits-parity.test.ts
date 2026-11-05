@@ -85,6 +85,18 @@ function ruled(rule: Rule): Pick<Limit, "name" | "rule" | "takes" | "refuses"> {
   throw new Error(`no edges for a ${rule.kind} rule (${rule.label}): give takes and refuses`);
 }
 const fresh = { mesh: await get("/api/mesh/settings"), overseer: await get("/api/settings/overseer"), baton: await get("/api/baton/settings"), titles: await get("/api/settings/session-titles"), subagents: await get("/api/settings/subagents"), decisions: await get("/api/settings/decisions"), push: await get("/api/push"), links: await get("/api/public-links") };
+const subLimits = await import("../shared/subagent-limits");
+const teamSeed = (await get("/api/settings/team")).defaults;
+/** Subagents profile 0 with its teams on (on Claude Code picks, which this process can verify), edited by `edit`. */
+const subProfile = (edit: (p: Json) => void): Json => {
+  const p: Json = JSON.parse(JSON.stringify(fresh.subagents.settings.profiles[0]));
+  const claude = { primary: { backend: "claude-code", model: "claude-sonnet-5-5", effort: "low" }, fallback: null };
+  p.teams = JSON.parse(JSON.stringify({ coordinator: { ...teamSeed.coordinator, ...claude }, monitor: { ...teamSeed.monitor, ...claude, role: "monitor" }, handover: teamSeed.handover }));
+  edit(p);
+  return p;
+};
+const subClient = (edit: (p: Json) => void) => firstIssue(profiles.profilesFields({ version: 1, default: fresh.subagents.default, profiles: [subProfile(edit)] }))?.message ?? null;
+const subServer = (edit: (p: Json) => void) => putStatus("/api/settings/subagents", { version: 1, profiles: [subProfile(edit)] });
 const ovSettings = (): Json => JSON.parse(JSON.stringify(fresh.overseer.settings));
 /** The Overseer's form check over settings `s` (its boxes hold text, as the form keeps them). */
 const ovClient = (s: Json, notes = "") => overseer.overseerDraftProblem(overseer.toOverseerForm({ settings: s, notes }));
@@ -146,12 +158,21 @@ const LIMITS: Limit[] = [
     }),
   ),
   {
-    name: "Subagents profile name (at most 48)",
-    takes: [long(1), long(48)],
-    refuses: ["", long(49)],
-    client: (v) => profiles.profilesProblem({ version: 1, default: fresh.subagents.default, profiles: [{ ...fresh.subagents.settings.profiles[0], name: v }] }),
-    server: (v) => putStatus("/api/settings/subagents", { version: 1, profiles: [{ ...fresh.subagents.settings.profiles[0], name: v }] }),
+    ...ruled(subLimits.PROFILE_NAME_RULE),
+    client: (v) => subClient((p) => (p.name = v)),
+    server: (v) => subServer((p) => (p.name = v)),
   },
+  ...([["coordinator", "Coordinator"], ["monitor", "Monitor"]] as const).flatMap(([r, name]) => [
+    { ...ruled(subLimits.ROLE_RULE), name: `${name} role name`, refuses: [long(65), ""], client: (v: unknown) => subClient((p) => (p.teams[r].role = v)), server: (v: unknown) => subServer((p) => (p.teams[r].role = v)) },
+    { ...ruled(subLimits.INSTRUCTIONS_RULE), name: `${name} instructions`, client: (v: unknown) => subClient((p) => (p.teams[r].instructions = v)), server: (v: unknown) => subServer((p) => (p.teams[r].instructions = v)) },
+  ]),
+  ...(Object.keys(subLimits.TEAM_RULES) as (keyof typeof subLimits.TEAM_RULES)[]).map((f) => {
+    const set = (v: unknown) => (p: Json) => {
+      const path = subLimits.TEAM_NUMBERS[f].path;
+      path.slice(0, -1).reduce((o: Json, k) => o[k], p.teams)[path.at(-1)!] = v;
+    };
+    return { ...ruled(subLimits.TEAM_RULES[f]), client: (v: unknown) => subClient(set(typeof v === "number" ? String(v) : v)), server: (v: unknown) => subServer(set(v)) };
+  }),
   {
     name: `Decisions excluded folders (at most ${decisionForm.MAX_EXCLUSIONS})`,
     takes: [1, decisionForm.MAX_EXCLUSIONS],

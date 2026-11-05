@@ -75,13 +75,11 @@ test("an open chat: its files, prompt and tools before the first reply; the tota
   assert.ok(afterReply.total > 0);
   assert.ok(typeof afterReply.window === "number" && afterReply.window > 0, "the model's window");
   assert.ok(afterReply.conversation > 0);
-  // The conversation by kind: the message sent and the reply, and where the transcript starts.
+  // The conversation by kind: the message sent and the reply.
   assert.equal(afterReply.talk.user.count, 1);
   assert.ok(afterReply.talk.user.tokens > 0);
   assert.ok(afterReply.talk.replies.count >= 1);
   assert.equal(afterReply.talk.summary, undefined, "no compaction yet");
-  const rows = (await api("GET", `/api/transcript?path=${encodeURIComponent(ses.path)}`)).body.items as any[];
-  assert.ok(rows.some((i) => i.id === afterReply.talk.start || String(i.id).startsWith(`${afterReply.talk.start}:`)), "the transcript has a row where the window starts");
   assert.equal(afterReply.prompt, true);
   assert.ok(afterReply.rules.some((p: any) => p.label === "Rules" && p.text.length > 0));
   assert.ok(afterReply.tools.some((p: any) => p.label === "read" && JSON.parse(p.text).name === "read"));

@@ -184,7 +184,7 @@ describe("the server's read", () => {
       mode: { id: "x", label: "Mode", tokens: 2, text: "m" },
       rules: [], skills: [{ id: "skill:pdf", label: "pdf", detail: "Read PDFs.", path: "/s/pdf/SKILL.md", tokens: 9, read: false }], tools: [{ id: "read", label: "read", tokens: 4, text: "{}" }],
       nested: [{ path: "api/AGENTS.md", abs: "/p/api/AGENTS.md", folder: "api", tokens: 1, loaded: false }],
-      talk: { user: { count: 2, tokens: 3 }, replies: { count: 1, tokens: 2 }, toolResults: { count: 0, tokens: 0 }, other: { count: 0, tokens: 0 }, summary: { text: "S", tokens: 1, at: "2026-01-01T00:00:00Z" }, start: "e1" },
+      talk: { user: { count: 2, tokens: 3 }, replies: { count: 1, tokens: 2 }, toolResults: { count: 0, tokens: 0 }, other: { count: 0, tokens: 0 }, summary: { text: "S", tokens: 1, at: "2026-01-01T00:00:00Z" } },
     };
     const ps = flatParts(v);
     assert.deepEqual(ps.map((p) => p.group), ["instructions", "subfolder", "mode", "skills", "tools", "conversation", "conversation", "conversation"]);

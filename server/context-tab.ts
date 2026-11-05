@@ -117,14 +117,13 @@ export function conversationTokens(branch: readonly HEntry[]): number {
 const tokensOf = (chars: number): number => Math.ceil(chars / CHARS_PER_TOKEN);
 
 /** The conversation in context by kind: your messages, replies, tool results (less `loadedNested`, the
-    subfolder files they carry), the rest; the latest compaction's summary; and the entry the transcript
-    shows where the window starts. Walks the same span as conversationTokens. */
+    subfolder files they carry), the rest; and the latest compaction's summary. Walks the same span as
+    conversationTokens. */
 export function conversationTalk(branch: readonly HEntry[], loadedNested = 0): SessionContextTalk {
   const { from, reset } = windowStart(branch);
   const chars = { user: 0, replies: 0, toolResults: 0, other: 0 };
   const count = { user: 0, replies: 0, toolResults: 0, other: 0 };
   let summary: SessionContextTalk["summary"];
-  let first: string | undefined;
   for (let i = from; i < branch.length; i++) {
     const h = branch[i]!;
     const c = entryChars(h);
@@ -139,10 +138,8 @@ export function conversationTalk(branch: readonly HEntry[], loadedNested = 0): S
     } else if (kind) {
       chars[kind] += c;
       count[kind]++;
-      if (!first && h.id && (kind === "user" || kind === "replies")) first = h.id;
     }
   }
-  const start = reset >= 0 ? (branch[reset]!.id ?? first) : first;
   const tally = (k: keyof typeof chars, less = 0) => ({ count: count[k], tokens: Math.max(0, tokensOf(chars[k]) - less) });
   return {
     user: tally("user"),
@@ -150,7 +147,6 @@ export function conversationTalk(branch: readonly HEntry[], loadedNested = 0): S
     toolResults: tally("toolResults", loadedNested),
     other: tally("other"),
     ...(summary ? { summary } : {}),
-    ...(start ? { start } : {}),
   };
 }
 

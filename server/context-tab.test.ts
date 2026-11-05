@@ -144,18 +144,16 @@ test("the conversation by kind: your messages, replies, tool results less the lo
   assert.deepEqual(t.toolResults, { count: 1, tokens: 100 - 30 });
   assert.deepEqual(t.other, { count: 1, tokens: 5 }); // the note sent to the model; the hidden one costs nothing
   assert.equal(t.summary, undefined);
-  assert.equal(t.start, "e0", "no compaction: the first message");
   const sum = t.user.tokens + t.replies.tokens + t.toolResults.tokens + t.other.tokens;
   assert.ok(Math.abs(sum - (conversationTokens(b) - 30)) <= 4, `${sum} against ${conversationTokens(b) - 30}`);
 });
 
-test("after a compaction: only what follows it (and the part it kept) is tallied, its summary is kept to read, and the transcript starts at it", () => {
+test("after a compaction: only what follows it (and the part it kept) is tallied, and its summary is kept to read", () => {
   const t = (n: number) => ({ kind: "user", blocks: [{ type: "text", text: "x".repeat(n) }] }) as Partial<HEntry>;
   const b = branch(t(400), t(800), { kind: "compaction", summary: "s".repeat(40), firstKeptEntryId: "e1", at: "2026-11-05T14:06:00.000Z" } as Partial<HEntry>, t(80));
   const talk = conversationTalk(b);
   assert.deepEqual(talk.user, { count: 2, tokens: 220 });
   assert.deepEqual(talk.summary, { text: "s".repeat(40), tokens: 10, at: "2026-11-05T14:06:00.000Z" });
-  assert.equal(talk.start, "e2");
   assert.equal(talk.user.tokens + talk.summary!.tokens, conversationTokens(b));
   assert.deepEqual(conversationTalk([]), { user: { count: 0, tokens: 0 }, replies: { count: 0, tokens: 0 }, toolResults: { count: 0, tokens: 0 }, other: { count: 0, tokens: 0 } });
 });

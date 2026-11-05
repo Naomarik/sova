@@ -3,7 +3,7 @@
 // group that opens one sheet over the tab, the same way whatever it holds; a part reads inside the sheet;
 // Escape and Back go back one level and focus returns to the row it came from, and the pane stays open; each
 // file is listed once, the ones not yet loaded last; skills say Read or Not read yet; Conversation opens to
-// its counts and Show in Transcript; a failed read is a toast and the sheet stays. At 390, 880 and 1440 px,
+// its counts and the kept summary, with no transcript button; a failed read is a toast and the sheet stays. At 390, 880 and 1440 px,
 // every row is a 44px target and nothing scrolls sideways.
 // SOVA_CONTEXT_TAB_SHOTS=<dir> also saves screenshots of each step, light and dark, at each width.
 // Chrome or Chromium must be installed (as the tour tests: nothing is downloaded).
@@ -90,7 +90,6 @@ const VIEW: SessionContextView = {
     toolResults: { count: 92, tokens: 38_100 },
     other: { count: 0, tokens: 0 },
     summary: { text: "# Summary\n\n## Goal\n\nPolish the Context tab.", tokens: 5_200, at: iso(30) },
-    start: "u2",
   },
   nested: [
     { path: "server/AGENTS.md", abs: `${CWD}/server/AGENTS.md`, folder: "server", tokens: 900, loaded: true },
@@ -284,7 +283,7 @@ for (const width of [390, 880, 1440]) {
       await page.keyboard.press("Escape");
       await page.locator(".context-sheet").waitFor({ state: "detached" });
 
-      // Conversation: Show in Transcript, its counts as static rows, the kept summary as a part.
+      // Conversation: its counts as static rows, the kept summary as a part, and no other button.
       await page.locator('[data-ctx-key="line:conversation"]').click();
       assert.match(await page.locator(".context-sheet-sub").first().innerText(), /^Since the last compaction · 186 messages$/);
       assert.deepEqual(await page.locator(".context-sheet .context-row-name").allInnerTexts(), ["Tool results", "Replies", "Your messages", "Compaction summary"]);
@@ -292,11 +291,7 @@ for (const width of [390, 880, 1440]) {
       assert.match(await page.locator(".context-sheet .context-row-static").first().innerText(), /92 results/);
       await targetsOk(page, "Conversation");
       await shot(page, `${width}-light-6-conversation`);
-      await page.locator(".context-sheet").getByRole("button", { name: "Show in Transcript" }).click();
-      await page.locator('.entry[data-entry="u2"] > .entry-jumped, .entry[data-entry="u2"] .entry-jumped, .entry-jumped').first().waitFor({ state: "attached", timeout: 5_000 });
-      // Where the pane is a drawer over the transcript, the jump closes it.
-      if (width < 1280) await page.locator("#session-pane").waitFor({ state: "detached" });
-      else assert.ok(await page.locator("#session-pane").isVisible());
+      assert.equal(await page.locator(".context-sheet").getByRole("button", { name: /transcript/i }).count(), 0);
     } finally {
       await page.context().close();
     }

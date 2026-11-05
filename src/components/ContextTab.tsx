@@ -23,7 +23,6 @@ import {
   type ContextPart,
 } from "../lib/context-parts";
 import { ForKey } from "../lib/for-key";
-import { jumpWhenArrived } from "../lib/jump";
 import { fileShape, type FileShape, type MarkdownView } from "../lib/markdown-viewer";
 import { OPEN_FILE_FAILED } from "../lib/session-setup";
 import { toast } from "../lib/ui-state";
@@ -31,9 +30,6 @@ import { workerLabel } from "../lib/workers";
 import { ReaderDoc, ReaderTools } from "./ReaderDoc";
 import { Icon } from "./ui";
 import "./ContextTab.css";
-
-/** Below this the session pane is a drawer over the transcript, so a jump closes it (as the Timeline's). */
-const DRAWER = "(max-width: 1279px)";
 
 /** A part as read when its level opened: never read again while it stays open. */
 interface Doc {
@@ -58,7 +54,7 @@ const monoName = (p: ContextPart) => p.group === "instructions" || p.group === "
  * insight signal) and, for a picked worker, when one of its replies ends (`workerReplyKey`); never
  * polls. A part open in the sheet isn't read again.
  */
-export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?: TeamInfo[]; changed: number; onClose?: () => void }) {
+export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?: TeamInfo[]; changed: number }) {
   const pickable = () => props.workers.filter((w) => w.sessionFile);
   const [who, setWho] = createSignal(props.path);
   /** The session read: this chat, or the picked worker while it is still listed. */
@@ -139,14 +135,6 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
     backTo(stack().length - 1);
   };
 
-  const showInTranscript = () => {
-    const start = ok()?.talk?.start;
-    if (!start) return;
-    const missing = () => toast("That message isn't in the transcript on screen.");
-    if (jumpWhenArrived(start, props.path, missing) === "missing") return;
-    if (window.matchMedia(DRAWER).matches) props.onClose?.();
-  };
-
   // ---- Rows ---------------------------------------------------------------------------------
   /** One row, the same for a group and a part: name, short line, share of the window, ≈ size, and an
       arrow only when it opens. */
@@ -221,13 +209,6 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
       <>
         <Show when={g.line.meta}>
           <p class="context-sheet-sub">{g.line.meta}</p>
-        </Show>
-        <Show when={g.line.kind === "conversation" && target() === props.path && ok()?.talk?.start}>
-          <div class="context-sheet-actions">
-            <button type="button" class="button" onClick={showInTranscript}>
-              Show in Transcript
-            </button>
-          </div>
         </Show>
         <Show when={counted().length > 0}>
           <ul class="list context-list" aria-label={g.line.label}>

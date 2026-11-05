@@ -1548,9 +1548,6 @@ export interface SessionContextTalk {
   other: SessionContextTally;
   /** The latest compaction's summary, which stands in for what it dropped; absent before a compaction. */
   summary?: { text: string; tokens: number; at?: string };
-  /** The entry where what the model sees starts in the transcript: the latest compaction, else the first
-      message. Absent when there is none. */
-  start?: string;
 }
 
 /** An instruction file in a folder below the chat's own, loaded when the agent reads, edits or writes a

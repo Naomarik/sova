@@ -20,6 +20,7 @@ after(async () => {
 for (const c of CASES.filter((c) => (c.proc === true) === false)) {
   test(`${c.name}: ${c.covers}`, async () => {
     beginCase("extension");
+    if (c.unrecorded && RECORD) return; // nothing to record (and master, where recordings are taken, lacks what it checks)
     const rec = await c.run("extension");
     if (c.unrecorded) c.unrecorded(rec);
     else matchRecording(c.name, rec, "extension", withoutA1);

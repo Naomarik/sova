@@ -25,3 +25,6 @@ Re-take them from master's code, never from a tree in the middle of the move: `g
 Review the diff as the change's effect on every case.
 
 Cases that run a program (the spec tools, a project tool) are in the integration files; the rest are unit.
+A case with `unrecorded` (c23: it needs a1's `spec` tool, which master lacks) has no file: it checks its own
+record, and the on/off byte comparison still covers it. `worker-slots.golden.test.ts` pins the worker mode
+files' single source (subagents' constants, own-code's in-place mapping).

@@ -1,1 +1,278 @@
-"@899104ccbf83de5e"
+[
+ {
+  "step": "open",
+  "calls": [],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push"
+  ],
+  "entries": [],
+  "extensions": [
+   "<mode-slot:index>",
+   "<repo>/pi-config/extensions/subagents/index.ts",
+   "<inline:sova-resource-monitor>",
+   "<inline:sova-fork-cache>",
+   "<inline:sova-shell-guard>",
+   "<inline:sova-deeper-context>",
+   "<inline:sova-mcp>",
+   "<inline:sova-worker-host>",
+   "<inline:sova-vis-check>",
+   "<inline:sova-memory>",
+   "<inline:sova-playbook>",
+   "<inline:sova-project-verbs>",
+   "<inline:sova-topics>",
+   "<inline:sova-tours>",
+   "<inline:sova-create-settings>",
+   "<inline:sova-transcript-cards>"
+  ]
+ },
+ {
+  "step": "switch {\"projectModes\":[\"rel\"],\"minorModes\":[\"spec\"]}",
+  "calls": [],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "rel__status"
+  ],
+  "entries": [
+   {
+    "type": "custom",
+    "customType": "mode",
+    "data": {
+     "minor": "spec",
+     "on": true,
+     "active": {
+      "version": 1,
+      "mode": "normal",
+      "strict": false,
+      "minorModes": [
+       "spec"
+      ]
+     }
+    }
+   },
+   {
+    "type": "custom",
+    "customType": "mode-project-snapshot",
+    "data": {
+     "v": 1,
+     "dir": "<ws:project>/.sova/minor-modes/rel",
+     "description": "Release status",
+     "workers": true,
+     "tools": [
+      {
+       "name": "status",
+       "description": "Print the release status.",
+       "params": {
+        "type": "object",
+        "properties": {
+         "verbose": {
+          "type": "boolean"
+         }
+        }
+       },
+       "command": [
+        "node",
+        "./status.mjs"
+       ],
+       "timeoutS": 60
+      }
+     ],
+     "text": "# Project minor mode: rel\nFolder: <ws:project>/.sova/minor-modes/rel\nEvery relative path in this mode is relative to that folder.\n\nUse rel__status before tagging.",
+     "toolsHash": "da907b56715d9e8c71cdaec52f471effb4679288983c44904da62e8521ff92f1",
+     "sha": "<sha:1>"
+    }
+   },
+   {
+    "type": "custom",
+    "customType": "mode",
+    "data": {
+     "project": "rel",
+     "on": true,
+     "active": {
+      "version": 1,
+      "mode": "normal",
+      "strict": false,
+      "minorModes": [
+       "spec"
+      ],
+      "projectModes": [
+       {
+        "sha": "<sha:1>"
+       }
+      ]
+     }
+    }
+   }
+  ]
+ },
+ {
+  "step": "prompt \"status?\"",
+  "calls": [
+   {
+    "keep": 0,
+    "add": [
+     {
+      "role": "system",
+      "content": "",
+      "sections": {
+       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+       "tools": "@44baa8b2ed1e6cce",
+       "rules": "@bb6b8db0787c1b6b",
+       "docs": "@0f5fabf6c3c47c4c",
+       "cwd": "<cwd>\n<ws:project>\n</cwd>",
+       "mode": "@3fbec9cdf6035e9b"
+      },
+      "toolsAdded": "@3434acc36c3eb5b8"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "status?"
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "keep": 2,
+    "add": [
+     {
+      "role": "assistant",
+      "api": "openai-completions",
+      "provider": "scripted",
+      "model": "scripted",
+      "usage": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "totalTokens": 0,
+       "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+       }
+      },
+      "content": [
+       {
+        "type": "toolCall",
+        "id": "call-1",
+        "name": "rel__status",
+        "arguments": {
+         "verbose": true
+        }
+       }
+      ],
+      "stopReason": "toolUse",
+      "thinkingLevel": "off"
+     },
+     {
+      "role": "toolResult",
+      "toolCallId": "call-1",
+      "toolName": "rel__status",
+      "content": [
+       {
+        "type": "text",
+        "text": "Exit code 0.\n\nstdout:\nrelease ok {\"verbose\":true}\n"
+       }
+      ],
+      "details": {
+       "mode": "rel",
+       "tool": "status",
+       "exitCode": 0,
+       "signal": null,
+       "truncated": {
+        "stdout": false,
+        "stderr": false
+       }
+      },
+      "isError": false
+     }
+    ]
+   }
+  ],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "rel__status"
+  ],
+  "entries": [
+   {
+    "type": "message",
+    "message": {
+     "role": "system",
+     "content": "",
+     "sections": {
+      "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+      "tools": "@44baa8b2ed1e6cce",
+      "rules": "@bb6b8db0787c1b6b",
+      "docs": "@0f5fabf6c3c47c4c",
+      "cwd": "<cwd>\n<ws:project>\n</cwd>",
+      "mode": "@3fbec9cdf6035e9b"
+     },
+     "toolsAdded": "@83ebf4f811a0879b"
+    }
+   }
+  ],
+  "headers": {
+   "# Minor mode: spec": 1,
+   "# Project minor mode: rel": 1
+  }
+ }
+]

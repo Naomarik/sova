@@ -8,6 +8,7 @@ import { after, test } from "node:test";
 
 const { beginCase, cm, matchRecording, setOwner, withoutA1 } = await import("./tests/harness.fixture");
 const { CASES } = await import("./tests/cases.fixture");
+const { RECORD } = await import("./tests/store.fixture");
 
 setOwner("extension");
 after(async () => {
@@ -17,6 +18,7 @@ after(async () => {
 for (const c of CASES.filter((c) => (c.proc === true) === true)) {
   test(`${c.name}: ${c.covers}`, async () => {
     beginCase("extension");
+    if (c.unrecorded && RECORD) return; // nothing to record (and master, where recordings are taken, lacks what it checks)
     const rec = await c.run("extension");
     if (c.unrecorded) c.unrecorded(rec);
     else matchRecording(c.name, rec, "extension", withoutA1);

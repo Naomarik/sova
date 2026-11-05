@@ -20,11 +20,15 @@ export const STORE_DIR = join(HERE, "../golden/store");
 const REF = /^@[0-9a-f]{16}$/;
 const BIG_STRING = 240;
 const BIG_OBJECT = 2000;
+/** Objects this shallow stay in the case file, so its steps, calls, entries and tool lists read there:
+    a recording (0), its steps (1), a step's fields (2), a call (3), a call's messages (4). */
+const INLINE_DEPTH = 5;
 
 /**
  * A case's recording as stored, and the big values it refers to: bottom-up, every string over 240
- * characters and every object or array whose JSON (its own big values already replaced) is over 2000
- * becomes `@<hash>`, its value in the store. Two cases sharing a system prompt or a tool share its file.
+ * characters and every object or array at least INLINE_DEPTH deep whose JSON (its own big values already
+ * replaced) is over 2000 becomes `@<hash>`, its value in the store. Two cases sharing a system prompt or a
+ * tool share its file.
  */
 export function encode(record: unknown): { text: string; blobs: Map<string, string> } {
   const blobs = new Map<string, string>();
@@ -33,12 +37,12 @@ export function encode(record: unknown): { text: string; blobs: Map<string, stri
     blobs.set(key, json);
     return key;
   };
-  const intern = (v: unknown): unknown => {
+  const intern = (v: unknown, depth = 0): unknown => {
     if (typeof v === "string") return v.length > BIG_STRING ? put(JSON.stringify(v)) : v;
     if (Array.isArray(v) || (v && typeof v === "object")) {
-      const inner = Array.isArray(v) ? v.map(intern) : Object.fromEntries(Object.entries(v as object).map(([k, x]) => [k, intern(x)]));
+      const inner = Array.isArray(v) ? v.map((x) => intern(x, depth + 1)) : Object.fromEntries(Object.entries(v as object).map(([k, x]) => [k, intern(x, depth + 1)]));
       const json = JSON.stringify(inner, null, 1);
-      return json.length > BIG_OBJECT ? put(json) : inner;
+      return depth >= INLINE_DEPTH && json.length > BIG_OBJECT ? put(json) : inner;
     }
     return v;
   };

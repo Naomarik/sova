@@ -1,1 +1,506 @@
-"@24e145be1eae3404"
+[
+ {
+  "step": "open",
+  "calls": [],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push"
+  ],
+  "entries": [],
+  "extensions": [
+   "<mode-slot:index>",
+   "<repo>/pi-config/extensions/subagents/index.ts",
+   "<inline:sova-resource-monitor>",
+   "<inline:sova-fork-cache>",
+   "<inline:sova-shell-guard>",
+   "<inline:sova-deeper-context>",
+   "<inline:sova-mcp>",
+   "<inline:sova-worker-host>",
+   "<inline:sova-vis-check>",
+   "<inline:sova-memory>",
+   "<inline:sova-playbook>",
+   "<inline:sova-project-verbs>",
+   "<inline:sova-topics>",
+   "<inline:sova-tours>",
+   "<inline:sova-create-settings>",
+   "<inline:sova-transcript-cards>"
+  ]
+ },
+ {
+  "step": "switch {\"minorModes\":[\"align\"]}",
+  "calls": [],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align"
+  ],
+  "entries": [
+   {
+    "type": "custom",
+    "customType": "mode",
+    "data": {
+     "minor": "align",
+     "on": true,
+     "active": {
+      "version": 1,
+      "mode": "normal",
+      "strict": false,
+      "minorModes": [
+       "align"
+      ]
+     }
+    }
+   }
+  ]
+ },
+ {
+  "step": "prompt \"build an export\"",
+  "calls": [
+   {
+    "keep": 0,
+    "add": [
+     {
+      "role": "system",
+      "content": "",
+      "sections": {
+       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+       "tools": "@15d31f2a78f55765",
+       "rules": "@c812aa6c1d63cb16",
+       "docs": "@0f5fabf6c3c47c4c",
+       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
+       "mode": "@762c2620222a71e2"
+      },
+      "toolsAdded": "@3fb51bb2c421c007"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "build an export"
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "keep": 2,
+    "add": [
+     {
+      "role": "assistant",
+      "api": "openai-completions",
+      "provider": "scripted",
+      "model": "scripted",
+      "usage": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "totalTokens": 0,
+       "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+       }
+      },
+      "content": [
+       {
+        "type": "toolCall",
+        "id": "call-1",
+        "name": "align",
+        "arguments": {
+         "ops": [
+          {
+           "op": "change_request"
+          },
+          {
+           "op": "create",
+           "title": "Export",
+           "summary": "Download a session.",
+           "questions": [
+            {
+             "topic": "Format",
+             "ask": "JSONL or markdown?",
+             "recommendation": {
+              "choice": "JSONL",
+              "why": "lossless"
+             }
+            }
+           ]
+          }
+         ]
+        }
+       }
+      ],
+      "stopReason": "toolUse",
+      "thinkingLevel": "off"
+     },
+     {
+      "role": "toolResult",
+      "toolCallId": "call-1",
+      "toolName": "align",
+      "content": [
+       {
+        "type": "text",
+        "text": "Marked as a change request.\nal_1 \"Export\" · aligning · 1 of 1 open · v1 · created\n  q1 Format — open (rec: JSONL)"
+       }
+      ],
+      "details": {
+       "v": 1,
+       "changes": [
+        {
+         "kind": "created"
+        }
+       ],
+       "line": "created",
+       "doc": {
+        "id": "al_1",
+        "title": "Export",
+        "summary": "Download a session.",
+        "findings": [],
+        "approach": [],
+        "rejected": [],
+        "questions": [
+         {
+          "id": "q1",
+          "topic": "Format",
+          "ask": "JSONL or markdown?",
+          "recommendation": {
+           "choice": "JSONL",
+           "why": "lossless"
+          }
+         }
+        ],
+        "phase": "open",
+        "next": {
+         "f": 0,
+         "a": 0,
+         "x": 0,
+         "q": 1
+        },
+        "rev": 1,
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "style": "pm"
+       }
+      },
+      "isError": false
+     }
+    ]
+   }
+  ],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align"
+  ],
+  "entries": [
+   {
+    "type": "custom",
+    "customType": "mode-head",
+    "data": {
+     "v": 1,
+     "style": "pm"
+    }
+   },
+   {
+    "type": "message",
+    "message": {
+     "role": "system",
+     "content": "",
+     "sections": {
+      "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+      "tools": "@15d31f2a78f55765",
+      "rules": "@c812aa6c1d63cb16",
+      "docs": "@0f5fabf6c3c47c4c",
+      "cwd": "<cwd>\n<ws:plain>\n</cwd>",
+      "mode": "@762c2620222a71e2"
+     },
+     "toolsAdded": "@48e02408b89f137b"
+    }
+   }
+  ],
+  "headers": {
+   "# Minor mode: align": 1
+  }
+ },
+ {
+  "step": "prompt \"what next?\"",
+  "calls": [
+   {
+    "keep": 4,
+    "add": [
+     {
+      "role": "assistant",
+      "api": "openai-completions",
+      "provider": "scripted",
+      "model": "scripted",
+      "usage": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "totalTokens": 0,
+       "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+       }
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "Recorded."
+       }
+      ],
+      "stopReason": "stop",
+      "thinkingLevel": "off"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "what next?"
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "@ae524d99e15092fe"
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align"
+  ],
+  "entries": [
+   {
+    "type": "custom_message",
+    "customType": "align-state",
+    "content": "@ae524d99e15092fe",
+    "display": false
+   }
+  ],
+  "headers": {
+   "# Minor mode: align": 1
+  }
+ },
+ {
+  "step": "prompt \"and the cap?\"",
+  "calls": [
+   {
+    "keep": 7,
+    "add": [
+     {
+      "role": "assistant",
+      "api": "openai-completions",
+      "provider": "scripted",
+      "model": "scripted",
+      "usage": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "totalTokens": 0,
+       "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+       }
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "ok"
+       }
+      ],
+      "stopReason": "stop",
+      "thinkingLevel": "off"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "and the cap?"
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "@ae524d99e15092fe"
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "keep": 10,
+    "add": [
+     {
+      "role": "assistant",
+      "api": "openai-completions",
+      "provider": "scripted",
+      "model": "scripted",
+      "usage": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "totalTokens": 0,
+       "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+       }
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "The plan is ready.\n\n**Open questions, with my suggested answers:**\n1. **Cap:** 400\n2. **Group:** by worker\n\nShould I go ahead with those answers?"
+       }
+      ],
+      "stopReason": "stop",
+      "thinkingLevel": "off"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "@78053c6fefca46ae"
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align"
+  ],
+  "entries": [
+   {
+    "type": "custom_message",
+    "customType": "align-state",
+    "content": "@ae524d99e15092fe",
+    "display": false
+   },
+   {
+    "type": "custom_message",
+    "customType": "align-nudge",
+    "content": "@78053c6fefca46ae",
+    "display": false
+   }
+  ],
+  "headers": {
+   "# Minor mode: align": 1
+  }
+ }
+]

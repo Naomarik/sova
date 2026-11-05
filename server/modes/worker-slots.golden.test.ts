@@ -12,7 +12,9 @@ import { test } from "node:test";
 import { modeFileOf, modesEntries, workerModePaths } from "../harness/pi/own-code";
 
 const REPO = join(import.meta.dirname, "../..");
-const { MARKER_EXTENSION, PROJECT_TOOLS_WORKER_EXTENSION, SPEC_WORKER_EXTENSION } = await import("../../pi-config/extensions/subagents/index.ts");
+// Imported by a computed path: pi-config's code is typechecked there, not by the server's tsc.
+const SUBAGENTS: string = new URL("../../pi-config/extensions/subagents/index.ts", import.meta.url).href;
+const { MARKER_EXTENSION, PROJECT_TOOLS_WORKER_EXTENSION, SPEC_WORKER_EXTENSION } = (await import(SUBAGENTS)) as { MARKER_EXTENSION: string; PROJECT_TOOLS_WORKER_EXTENSION: string; SPEC_WORKER_EXTENSION: string };
 const MODE_DIR = join(REPO, "pi-config/extensions/mode");
 const entries = modesEntries(REPO);
 

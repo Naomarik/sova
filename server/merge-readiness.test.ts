@@ -1157,7 +1157,9 @@ test("b1: idle, check ok, asks nothing and a finished turn outcome is Ready to l
   const read = async () => (await r.readReadinessScan(path, fs.statSync(path).size, null)).facts!;
   const HEAD = "a".repeat(40);
   let status: WorktreeStatus & { head?: string } = { path: "/wt/agents-row-dropdown", source: "session", exists: true, branch: "feat/agents-row-dropdown", base: "master", merged: "no", ahead: 1, behind: 0, dirty: false, head: HEAD };
-  r.configureReadiness({ insights: { treeStatus: async () => status }, git: fakeGit({}), asksUser: (sid) => (sid === SID ? { turnId: (lines.at(-1) as { id: string }).id, asks: false } : undefined), now: () => 0, processStart: 0, landing: fileLandingStore(() => store), drafts: () => undefined, nudge: undefined });
+  // The merge queue hears each Ready to land reading (its branch summary is written then).
+  const told: { path: string; branch: string; commit: string }[] = [];
+  r.configureReadiness({ insights: { treeStatus: async () => status }, git: fakeGit({}), asksUser: (sid) => (sid === SID ? { turnId: (lines.at(-1) as { id: string }).id, asks: false } : undefined), now: () => 0, processStart: 0, landing: fileLandingStore(() => store), drafts: () => undefined, nudge: undefined, readyToLand: (t) => void told.push(t) });
   try {
     const firstReply = (lines.at(-1) as { id: string }).id;
     recordTurnOutcome(SID, { turnId: firstReply, replyAt: Date.parse("2026-10-23T10:05:00.000Z"), at: 1, provider: "pi", model: "m", answers: { outcome: { type: "choice", choice: "did-what-was-asked" } } as never });
@@ -1165,6 +1167,7 @@ test("b1: idle, check ok, asks nothing and a finished turn outcome is Ready to l
     const one = await r.computeReadiness(summary(path), facts);
     assert.equal(one?.trees[0]?.state, "ready");
     assert.deepEqual(one?.trees[0]?.landing, { state: "ready", commit: HEAD }, "landing-eligible");
+    assert.deepEqual(told, [{ path: "/wt/agents-row-dropdown", branch: "feat/agents-row-dropdown", commit: HEAD }], "the queue is told it reads Ready to land");
 
     // A follow-up: the user says thanks, the agent replies, asking nothing; its outcome is a progress report.
     const more = chain([user("thanks", "2026-10-23T10:06:00.000Z"), assistant([{ type: "text", text: "Noted." }], "stop", "2026-10-23T10:07:00.000Z")]);
@@ -1181,8 +1184,10 @@ test("b1: idle, check ok, asks nothing and a finished turn outcome is Ready to l
     status = { ...status, head: "b".repeat(40), ahead: 2 };
     const three = await r.computeReadiness(summary(path), facts2);
     assert.equal(three?.trees[0]?.landing, undefined);
+    assert.ok(!told.some((t) => t.commit === "b".repeat(40)), "a head that doesn't read Ready to land isn't told");
     assert.equal(fileLandingStore(() => store).held(SID, "/wt/agents-row-dropdown"), undefined, "the moved head dropped the record");
   } finally {
+    r.configureReadiness({ readyToLand: undefined });
     writeDecisionSettings(decisionDefaults());
     servedReset();
   }
@@ -1309,6 +1314,53 @@ test("Ready to land: decisions off falls back to the code-only conditions; a run
     await r.readinessIdle();
     assert.equal(sent.length, 1, "once per commit");
   } finally {
+    servedReset();
+  }
+});
+
+test("a held head, then a reading at a new commit: Landing specs keeps it held and tells the queue nothing; Ready to land holds it and tells the queue once", async () => {
+  const { fileLandingStore } = await import("./ready-to-land");
+  const store = join(agentDir, "rtl-hold-order.json");
+  const landing = fileLandingStore(() => store);
+  const lines = chain([worktrees([tracked()], "2026-10-25T10:00:00.000Z"), assistant([{ type: "text", text: "Done." }], "stop", "2026-10-25T10:05:00.000Z")]);
+  const path = sessionFile(lines);
+  const fs = await import("node:fs");
+  const facts = { ...(await r.readReadinessScan(path, fs.statSync(path).size, null)).facts!, lastCheck: { at: 1, ok: true } };
+  const WT = "/wt/agents-row-dropdown";
+  const [A, B, C] = ["1".repeat(40), "2".repeat(40), "3".repeat(40)];
+  let status: WorktreeStatus & { head?: string } = { path: WT, source: "session", exists: true, branch: "feat/agents-row-dropdown", base: "master", merged: "no", ahead: 1, behind: 0, dirty: false, head: B };
+  let problems: string[] = ["§x/a (draft d): §x/a has no verification note from its chat"];
+  const told: string[] = [];
+  r.configureReadiness({
+    insights: { treeStatus: async () => status },
+    git: fakeGit({}),
+    asksUser: () => undefined,
+    now: () => 0,
+    processStart: 0,
+    landing,
+    drafts: () => ["d"],
+    draftsHash: () => undefined,
+    docsPreview: () => ({ drafts: ["d"], added: [], changed: [], problems }),
+    finished: () => "off",
+    nudge: undefined,
+    readyToLand: (t) => void told.push(t.commit),
+  });
+  try {
+    landing.hold(SID, WT, { branch: "feat/agents-row-dropdown", commit: A, at: 0 });
+    // Landing specs at a new commit B: held at B, never dropped; the queue isn't told.
+    const specs = await r.computeReadiness(summary(path), facts);
+    assert.equal(specs?.trees[0]?.landing?.state, "specs");
+    assert.equal(landing.held(SID, WT)?.commit, B, "a Landing specs reading keeps its head held");
+    assert.deepEqual(told, []);
+    // Ready to land at a new commit C: held at C, the queue told once.
+    status = { ...status, head: C };
+    problems = [];
+    const ready = await r.computeReadiness(summary(path), facts);
+    assert.equal(ready?.trees[0]?.landing?.state, "ready");
+    assert.equal(landing.held(SID, WT)?.commit, C);
+    assert.deepEqual(told, [C]);
+  } finally {
+    r.configureReadiness({ readyToLand: undefined, docsPreview: undefined, draftsHash: undefined });
     servedReset();
   }
 });

@@ -725,13 +725,13 @@ that holds:
 A chat with no worktrees has no control. At a narrow width the control shows the number alone, and
 its words stay in its accessible name ("Worktrees: 2 ready · 1 queued"). It is a button with
 `aria-haspopup="dialog"` and `aria-expanded`. Enter or a click opens the modal, and Escape closes it
-and returns focus to the control (with the Land menu open, Escape closes the menu first).
+and returns focus to the control (with the Land menu or a Land confirmation (§chat.composer/land-confirm) open,
+Escape closes that first).
 
 **The Worktrees modal** is titled "Worktrees", with the chat's title and a summary under it ("2 ready
-· 1 queued · 1 landed"). When a row's repository is one the merge queue serves, one line says what
-Land does: the branch is merged onto the target, checked there on its own, and lands as exactly the
-commit that was tested; while that queue is paused, a line says so with its why, and that Land still
-takes the approval. With no served row, neither line shows. Then comes one row per worktree
+· 1 queued · 1 landed"), and the header's ✕, which closes it. The body explains nothing about Land;
+while a served row's queue is paused, one line says so with its why, and that Land still takes the
+approval. Then comes one row per worktree
 (dropped ones left out):
 - the branch, in mono;
 - its state, in the one vocabulary the pane and the Merge Queue view also use: **Ready** (with its
@@ -746,7 +746,8 @@ takes the approval. With no served row, neither line shows. Then comes one row p
   head and lines added and removed: "3 commits · +40 −2"; landed, merged and removed rows show none;
 - "1 newer commit not included" when the branch moved past the approved commit;
 - its action, where one applies:
-  - **Land** on a Ready or Drafts changed row (on Needs a fix only as below), with a menu holding **Land Without
+  - **Land** on a Ready or Drafts changed row (on Needs a fix only as below), which asks once (§chat.composer/land-confirm),
+    a compact button with a ▾ menu, a narrow tab of its own beside it, holding **Land Without
     Review** (only when the project has a review kit) and **Land Without Its Specs…**, which asks
     first: "Its spec drafts stay drafts in this worktree. Only the code lands.";
   - **Set Up Queue** on a Ready to merge row of a project on the Projects list whose merge setup
@@ -806,13 +807,32 @@ Landing specs or a queue state, and none offers Land: a ready branch reads **Rea
 "Say “land it” in the chat to merge it into main.". Such a row counts as ready all the same:
 the control reads "1 ready" with its success dot, and the summary says so.
 
-On a phone (narrower than 600px) each row has 12px side padding, names its folder by its last name
-(the full path as its `title`), and puts its actions on a line of their own, Review Changes on the
-left and the row's queue action on the right, each at least 44px tall.
+**Land asks once** (§chat.composer/land-confirm): a row's Land queues nothing until its confirmation's
+Land {n} Commits.
 
-The modal ends with **View Merge Queue**, which opens the project's Merge Queue view
-(§app.merge-queue/view), and **Close**. View Merge Queue shows only when a row's repository is a
-project on the Projects list, set up or not; in a repository that isn't on the list it is left out.
+**Row layout**, here, on the session pane's Worktrees rows (§chat.worktrees/pane) and on the Merge
+Queue tab's rows (§app.merge-queue/view) alike. On an unfolded screen (768px wide or more) a row puts its actions in a column at
+its right, top-aligned, beside its title, facts and summary bullets, each button against the
+column's right edge, never stretched to the column's width. Folded (narrower), the actions
+sit on their own line under the bullets, right-aligned. Land's confirmation is right-aligned under
+the row in both.
+
+Every row action (Land and its ▾, Cancel, Accept, Land Anyway, Send Back, Land This Commit Again,
+Remove from Queue, See Why, Set Up Queue, Review Changes) and both buttons of Land's confirmation
+are one size on every screen, a phone and a touch screen included: a small button's height (36px),
+only as wide as its label.
+
+On a phone (narrower than 600px) each row has 12px side padding, names its folder by its last name
+(the full path as its `title`), and keeps its actions on their own line at that same size:
+Review Changes at the line's left and the row's other actions at its right. Land's confirmation
+stays right-aligned.
+
+The modal has no Close button in its footer (the header's ✕ closes it). The footer holds, on the
+left, one line, "Land queues a branch; it lands as the commit that was tested.", shown only when a
+row's repository is one the merge queue serves, and, on the right, **View Merge Queue**, which
+opens the project's Merge Queue view (§app.merge-queue/view). View Merge Queue shows only when a
+row's repository is a project on the Projects list, set up or not; in a repository that isn't on
+the list it is left out. With neither, the modal has no footer.
 
 The actions are the merge verbs (§app.project-services/merge-verbs). Land sends the commit the row
 showed, so a branch that moved meanwhile lands what the user saw (§app.merge-queue/approve). After one, the row is read again
@@ -821,3 +841,19 @@ row as it was. The modal, the control and the pane's Worktrees rows (§chat.work
 same state, so they always agree. The chat's row in the session list shows the control's headline
 too, by the same rule from the rows the list last read, as a symbol and its figure with these
 words in its hover; how far it can lag is §app.session-list/content-rules "Row line 3". Nothing here shows live state or offers a restart.
+
+## §chat.composer/land-confirm — Land asks once
+
+Everywhere Land appears (the composer's Worktrees modal, §chat.composer/worktrees-control, the
+session pane's Worktrees rows, §chat.worktrees/pane, and the Merge Queue tab, §app.merge-queue/view) the button reads **Land**, a
+compact button with its ▾ menu as a narrow tab beside it, and pressing it queues nothing: it replaces the row's actions with a confirmation, right-aligned
+under the row: "Land {branch}?", then "{n} commits go to the merge queue; {target} moves once checks
+pass.", with **Not Yet** on the left and **Land {n} Commits** rightmost. One commit reads "1 commit
+goes" and **Land 1 Commit**; a row whose count isn't known reads "Its commits go" and **Land
+Branch**. A project that lands by pull request, merge request or pushing the branch
+(§app.merge-queue/strategies) ends the line with what happens instead: "a pull request opens on
+GitHub once checks pass.", "a merge request opens on GitLab once checks pass.", "the branch is
+pushed once checks pass.". The confirmation's action takes focus when it opens. Only Land {n} Commits
+approves the branch, at the commit the row showed. Not Yet, or Escape, puts the row's actions back
+and queues nothing. The ▾ menu stays as it was, a narrow tab distinct from Land: its items act
+without this confirmation (Land Without Its Specs… keeps its own question).

@@ -488,6 +488,7 @@
    "project.merge-queue.request.publish": "scripts",
    "project.merge-queue.land-how.set": "scripts",
    "project.merge-queue.land-how.clear": "scripts",
+   "project.merge-queue.branch-summary.retry": "scripts",
    "overseer.attention": "overseers",
    "overseer.abilities": "overseers",
    "overseer.todo.list": "overseers",

@@ -148,6 +148,7 @@ export type CommandId =
   | "project.merge-queue.request.publish"
   | "project.merge-queue.land-how.set"
   | "project.merge-queue.land-how.clear"
+  | "project.merge-queue.branch-summary.retry"
   | "overseer.attention"
   | "overseer.abilities"
   | "overseer.todo.list"
@@ -3051,6 +3052,15 @@ export interface CommandParams {
     /** The project's id */
     "project": string;
   };
+  /** Write a branch's summary again after it failed, for the same commit; refused for a summary that worked. (changes something; needs the card's owner trusted) */
+  "project.merge-queue.branch-summary.retry": {
+    /** The project's id */
+    "project": string;
+    /** The branch */
+    "branch": string;
+    /** The full commit id the row shows */
+    "commit": string;
+  };
   /** What needs the user now, as the Overseer's digest has it. (only looks; needs the card's owner trusted) */
   "overseer.attention": Record<string, never>;
   /** What the Overseer can do: its built-in abilities, its limits and the commands its extensions offer it. (only looks; needs the card's owner trusted) */
@@ -3611,6 +3621,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.merge-queue.request.publish": "changes",
   "project.merge-queue.land-how.set": "changes",
   "project.merge-queue.land-how.clear": "changes",
+  "project.merge-queue.branch-summary.retry": "changes",
   "overseer.attention": "looks",
   "overseer.abilities": "looks",
   "overseer.todo.list": "looks",

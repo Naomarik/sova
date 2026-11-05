@@ -219,6 +219,7 @@
     "settings.cards.get",
     "settings.cards.withdraw",
     "project.verb.release.note",
+    "project.merge-queue.branch-summary.retry",
     "project.coding.start",
     "project.icon.get",
     "project.icon.upload",

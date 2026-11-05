@@ -7,6 +7,8 @@ import { MergeFailure, PUSH_HELD_NAMES, PUSH_WAITS_NEXT_LANDING, type QueueDeps 
 import { writeOverride } from "./strategy";
 import { DEF, makeKit, makeRepo, sh, tryGit, until, untilAborted } from "./testing/queue-kit";
 import { WorktreeOwners } from "./owners";
+import { BranchSummaries, readBranchFacts } from "./branch-summaries";
+import { realGit } from "./guard";
 import type { SessionSummary } from "../../shared/protocol";
 
 /** Landed, and its push answered (pushed or not). */
@@ -1363,6 +1365,46 @@ describe("the view's extras", () => {
       const v = await q.view();
       assert.deepEqual(v.ready!.map((r) => [r.branch, r.commit, r.ahead]), [["feat/ready", a.head, 1]]);
       assert.deepEqual(v.thread, { session: "t1", startedAt: "2026-11-02T00:00:00.000Z", state: "idle" });
+    } finally {
+      await k.done();
+    }
+  });
+  test("branch summaries: a Ready row and an entry carry theirs, at their commits; a write publishes the view again; none is started by a read", async () => {
+    let asked = 0;
+    let summaries: BranchSummaries | null = null;
+    const k = makeKit({
+      deps: {
+        summaryOf: (root, branch, commit) => summaries!.summaryOf(root, branch, commit),
+        pruneSummaries: (root, live, shown) => void summaries!.prune(root, live, shown),
+      },
+    });
+    try {
+      const q = await k.q();
+      summaries = new BranchSummaries({
+        fileOf: () => join(q.store.dir, "branch-summaries.json"),
+        facts: async (root, branch, commit) => readBranchFacts(realGit, root, { branch, commit, target: q.target, targetHead: (await q.declared()).head ?? "" }),
+        writer: () => async (prompt) => (asked++, { bullets: [prompt.includes("Adds the ready file") ? "Adds the ready file" : "Something else"], model: "prov/a" }),
+        projectOf: () => "p1",
+        changed: () => q.republish(),
+      });
+      await q.pause("hold");
+      const a = k.repo.branch("feat/ready", { "r.txt": "r\n" }, { message: "Adds the ready file" });
+      const b = k.repo.branch("feat/queued", { "q.txt": "q\n" });
+      await q.add({ branch: "feat/queued", by: "land-button" });
+      let v = await q.view();
+      assert.equal(v.ready![0]!.summary, undefined, "nothing before it reads Ready");
+      assert.equal(v.waiting[0]!.summary, undefined);
+      assert.equal(asked, 0, "a view never starts a write");
+      const published = k.views.length;
+      await summaries.ensure(q.root, "feat/ready", a.head).done;
+      await summaries.ensure(q.root, "feat/queued", b.head).done;
+      await until(async () => k.views.length > published, "the view published again");
+      v = await q.view();
+      assert.deepEqual(v.ready![0]!.summary, { commit: a.head, state: "ready", bullets: ["Adds the ready file"] });
+      assert.deepEqual(v.waiting[0]!.summary, { commit: b.head, state: "ready", bullets: ["Something else"] });
+      assert.equal(asked, 2);
+      // Never stored with the queue's records.
+      assert.ok(!readFileSync(join(q.store.dir, "queue.json"), "utf8").includes("Adds the ready file"));
     } finally {
       await k.done();
     }

@@ -22,6 +22,9 @@ test("checked.mjs reuses a pass on identical code only", () => {
   git("init", "-q", "-b", "feat/x");
   mkdirSync(join(root, "scripts"));
   for (const f of ["checked.mjs", "test-cache.mjs"]) copyFileSync(join(import.meta.dirname, f), join(root, "scripts", f));
+  const layout = "pi-config/extensions/spec/core/layout.mjs";
+  mkdirSync(join(root, layout, ".."), { recursive: true });
+  copyFileSync(join(import.meta.dirname, "..", layout), join(root, layout));
   mkdirSync(join(root, "node_modules/.pnpm"), { recursive: true });
   writeFileSync(join(root, "node_modules/.modules.yaml"), '{"layoutVersion": 5}\n');
   writeFileSync(join(root, ".gitignore"), "node_modules/\n");

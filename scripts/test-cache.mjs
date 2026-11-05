@@ -1,6 +1,6 @@
 // Test results kept per file, keyed by exactly what the file ran on: the reusable core behind the
 // runner's and the type check's "already passed on identical code" (scripts/run-tests.mjs,
-// scripts/checked.mjs). Builtins only, Node and Bun alike. It reads git, never writes to the object
+// scripts/checked.mjs). Builtins only (plus the spec's own layout module for its paths), Node and Bun alike. It reads git, never writes to the object
 // store or the index (`--no-optional-locks`), and writes only under its store directory.
 //
 // What a record proves: file F passed (fail 0, skip 0, pass > 0) under context C over tree T.
@@ -67,9 +67,14 @@ import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
+import { claimsRootOf, DEFAULT_SPEC, ROOT_FILE } from "../pi-config/extensions/spec/core/layout.mjs";
+
 export const STORE_VERSION = "v1";
-/** Paths landing makes official, and nothing else (a prefix ending in `/` covers a folder). */
-export const SPEC_EXCLUDED = [".sova/spec/claims/", ".sova/spec/manifest.json"];
+/**
+ * Paths landing makes official, and nothing else (a prefix ending in `/` covers a folder): the spec's
+ * claims and its root file, named as the spec's own layout module names them (default claims root).
+ */
+export const SPEC_EXCLUDED = [`${DEFAULT_SPEC}/${claimsRootOf({})}/`, `${DEFAULT_SPEC}/${ROOT_FILE}`];
 const MERGE_LEFTOVER = /(^|\/)\.merge_file_[^/]*$/;
 
 export function isExcluded(p) {

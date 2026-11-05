@@ -57,7 +57,7 @@ test("a trial check's chip says the word, never hue alone", () => {
   assert.equal(trialChip(check("failed")).word, "Failed");
   assert.equal(trialChip(check("running")).live, true);
   assert.equal(trialChip(check("not-run")).word, "Not run (unchanged)");
-  assert.equal(trialChip(check("skipped")).word, "Not run (unchanged)");
+  assert.equal(trialChip(check("skipped")).word, "Skipped", "a check that skipped itself is not an unchanged one");
 });
 
 test("durations: seconds, then minutes and seconds", () => {
@@ -90,4 +90,10 @@ test("Land and Merge Branch only once a trial of the exact head passed; else Run
   // The host's own refusal stands after a passing trial; a definition that doesn't read refuses before it.
   assert.deepEqual(landState(proposal({ land: { can: false, why: "It conflicts with main." } })), { action: "land", can: false, why: "It conflicts with main." });
   assert.equal(landState(proposal({ problem: "merge.checks[0] has no command." })).can, false);
+});
+
+test("no automated tests: a trial of the merge copy alone passes with no checks, and lands", () => {
+  const p = proposal({ merge: { checks: "none" }, trial: trial("passed", { checks: [] }) });
+  assert.equal(trialLine(p), "Trial of a1b2c3d: passed");
+  assert.deepEqual(landState(p), { action: "land", can: true });
 });

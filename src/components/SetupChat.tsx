@@ -397,6 +397,8 @@ function SetupLandButton(props: { projectId: string; proposal: SetupProposal; on
       const m = errText(err);
       setError(m);
       announce(m);
+      // A refusal can mean the branch moved ("…newer commit than the one shown: look again."): read it afresh.
+      props.onDone();
     } finally {
       setBusy(false);
       requestListRefresh();

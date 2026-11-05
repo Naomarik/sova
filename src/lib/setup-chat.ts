@@ -55,7 +55,8 @@ export function trialChip(c: SetupTrialCheck): { word: string; tone: "success" |
   if (c.state === "passed") return { word: "Passed", tone: "success" };
   if (c.state === "failed") return { word: "Failed", tone: "error" };
   if (c.state === "running") return { word: "Running", tone: "accent", live: true };
-  if (c.state === "skipped" || c.state === "not-run") return { word: "Not run (unchanged)", tone: "neutral" };
+  if (c.state === "not-run") return { word: "Not run (unchanged)", tone: "neutral" };
+  if (c.state === "skipped") return { word: "Skipped", tone: "neutral" };
   return { word: "Waiting", tone: "neutral" };
 }
 

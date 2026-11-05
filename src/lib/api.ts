@@ -1482,9 +1482,6 @@ export async function runRootVerb(root: string, verb: ServicesUiVerb, body: Reco
     throw err;
   }
 }
-/** Run the Project deploy playbook (§app.project-runtime/deploy-playbook): a verb playbook run that proposes a deploy recipe. */
-export const runDeploySetup = (projectId: string) =>
-  request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", { playbook: "project-deploy" }));
 /** A deploy verb as the operator (§app.project-services/deploy): a refusal is a result too, never thrown. */
 export async function runDeployVerb(root: string, verb: DeployVerb, body: Record<string, unknown>): Promise<VerbResult> {
   try {
@@ -1517,9 +1514,6 @@ export async function runReleaseVerb(project: string, verb: `release.${string}`,
     throw err;
   }
 }
-/** Set Up Releases: the Release playbook maker, a guided setup that proposes the project's release playbook and settings. */
-export const runReleaseSetup = (projectId: string) =>
-  request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", { playbook: "release-maker" }));
 /** A chat's merge queue cards: one per branch it owns, from its approval on (`session.merge-cards`). */
 export const getMergeCards = (sessionId: string) => request<{ cards: import("../../shared/merge-queue").MergeCard[] }>(`/api/merge-queue/cards?session=${encodeURIComponent(sessionId)}`);
 /** What runs on this host now, every project's (Running branches on `#/projects`). */

@@ -17,7 +17,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { before, describe, test } from "node:test";
 import type { Page } from "playwright-core";
-import { formsBrowser, until as untilSeen } from "./forms-browser.integration.fixture";
+import { formsBrowser, isRed, typeInto, until as untilSeen } from "./forms-browser.integration.fixture";
 
 const h = formsBrowser("sova-settings-browser-");
 const skip = h.skip;
@@ -99,6 +99,47 @@ describe("Settings in a browser: edit, save, reload, invalid, reset", { timeout:
     assert.equal(await cap().inputValue(), "10");
     assert.equal(await resetIn("Limits").isDisabled(), true, "Limits' Reset to Defaults is enabled at the defaults (D4)");
     await refused(box("#overseer-notes"), "n".repeat(8001), "Overseer");
+  });
+
+  test("Overseer on the form kit: each bad box shows one sentence in the shared words, long text keeps whole with its 'n / most', a quick action saves and reloads", async () => {
+    const cap = () => box("#overseer-cap-concurrentSessions");
+    await open("overseer", cap);
+    for (const [t, how] of [["a5", "keys"], ["-", "keys"], ["1e", "fill"], ["", "fill"], ["1001", "paste"]] as const) {
+      await typeInto(cap(), t, how);
+      assert.equal(await isRed(cap(), t, "Running at once"), "Running at once must be a whole number from 0 to 1000.");
+      assert.equal(await saveButton().isDisabled(), true, `Save Changes is enabled over "${t}"`);
+    }
+    await typeInto(cap(), "12", "keys");
+    await until("a valid limit clears its red", async () => (await cap().getAttribute("aria-invalid")) === null);
+    // A new quick action: a pasted 41-character label stays whole, red, counted; blank says it can't be.
+    await dialog().getByRole("button", { name: "Add Quick Action" }).click();
+    const label = () => dialog().locator('input[id^="overseer-qa-label-"]').last();
+    const n = Number((await label().getAttribute("id"))!.split("-").pop()) + 1;
+    await typeInto(label(), "L".repeat(41), "paste");
+    assert.equal(await isRed(label(), "L".repeat(41), "quick action label"), `Quick action ${n}'s label can be at most 40 characters.`);
+    assert.equal(await page.locator(`#${await label().getAttribute("id")}-count`).textContent(), "41 / 40");
+    assert.equal(await saveButton().isDisabled(), true);
+    await typeInto(label(), "", "fill");
+    assert.equal(await isRed(label(), "", "quick action label"), `Quick action ${n}'s label can't be empty.`);
+    await typeInto(label(), "Ship it", "keys");
+    const prompt = () => box(`#overseer-qa-prompt-${n - 1}`);
+    await typeInto(prompt(), "Land what's ready.", "fill");
+    // Notes and extra instructions over 8,000: whole, red, counted; Save waits.
+    for (const id of ["#overseer-notes", "#overseer-extra-prompt"]) {
+      if (id === "#overseer-extra-prompt") await dialog().locator(".overseer-advanced > summary").click();
+      await typeInto(box(id), "n".repeat(8001), "paste");
+      await isRed(box(id), "n".repeat(8001), id);
+      assert.equal(await page.locator(`${id}-count`).textContent(), "8,001 / 8,000");
+      assert.equal(await saveButton().isDisabled(), true, `Save Changes is enabled over ${id} at 8,001`);
+      await typeInto(box(id), "", "fill");
+    }
+    await save("Overseer");
+    await open("overseer", cap);
+    assert.equal(await cap().inputValue(), "12");
+    assert.equal(await dialog().locator('input[id^="overseer-qa-label-"]').count(), 0, "a saved quick action reopens folded");
+    await dialog().getByRole("button", { name: "Edit Ship it" }).click();
+    assert.equal(await label().inputValue(), "Ship it");
+    assert.equal(await prompt().inputValue(), "Land what's ready.");
   });
 
   test("Models: a provider switch and its At once box save together; a half-typed At once is red", async () => {
@@ -204,9 +245,10 @@ describe("Settings in a browser: edit, save, reload, invalid, reset", { timeout:
     };
     for (const [t, keys] of [["99999", false], ["1e", true], ["1.", true], ["2.5", true], ["-3", true], ["0", false], ["31", false], ["", false], ["-", true]] as const) {
       await typeIn(t, keys);
-      await until(`"${t}" turns the time limit red`, async () => (await minutes.getAttribute("aria-invalid")) === "true");
-      assert.equal(await minutes.inputValue(), t, `"${t}" isn't kept as typed`);
-      await until(`"${t}": the save row names the check and its range`, async () => /Unit tests: a time limit is whole minutes, 1 to 30\./.test((await dialog().locator("#mqs-save-problem").textContent({ timeout: 500 })) ?? ""), 5_000);
+      // The box's one sentence is the shared rule's (shared/form-rules.ts), and the save row says the same.
+      const said = await isRed(minutes, t, "Unit tests' time limit");
+      assert.equal(said, "Unit tests: the time limit in minutes must be a whole number from 1 to 30.");
+      await until(`"${t}": the save row says what the box says`, async () => ((await dialog().locator("#mqs-save-problem").textContent({ timeout: 500 })) ?? "").trim() === said, 5_000);
       assert.equal(await saveTo.isDisabled(), true, `Save to master… is enabled over "${t}"`);
     }
     // The bad box is unsaved work: the dialog's close asks first.

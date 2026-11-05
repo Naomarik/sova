@@ -68,6 +68,8 @@ export async function until(what: string, check: () => Promise<boolean>, timeout
   assert.fail(`${what}: never happened${seen ? ` (${await seen().catch(() => "?")})` : ""}`);
 }
 
+const COUNT = /^\d[\d,]* \/ \d[\d,]*$/;
+
 /** Types `text` into `box`: filled at once, key by key (what freezes a box holding a number: D2, D2b),
     or pasted (one text insertion, which a maxlength would cut). */
 export async function typeInto(box: Locator, text: string, how: "fill" | "keys" | "paste" = "fill"): Promise<void> {
@@ -79,7 +81,8 @@ export async function typeInto(box: Locator, text: string, how: "fill" | "keys" 
 }
 
 /** The kit's red state: the box keeps `text` as typed, is aria-invalid, and names exactly one visible
-    message through aria-describedby (a count, when it has one, may sit beside it). Returns the message. */
+    red sentence (`.field-error`) through aria-describedby; its hint and its "n / most" count may sit
+    beside it. No other red sentence shows in its field. Returns the sentence. */
 export async function isRed(box: Locator, text: string, what: string): Promise<string> {
   await until(`${what}: "${text}" turns its box red`, async () => (await box.getAttribute("aria-invalid")) === "true");
   assert.equal(await box.inputValue(), text, `${what}: the box doesn't keep "${text}" as typed`);
@@ -89,10 +92,14 @@ export async function isRed(box: Locator, text: string, what: string): Promise<s
   for (const id of ids) {
     const el = page.locator(`[id="${id}"]`);
     if ((await el.count()) === 0 || !(await el.isVisible())) continue;
+    if (!(await el.evaluate((n) => n.classList.contains("field-error")))) continue;
     const t = ((await el.textContent()) ?? "").replace(/\s+/g, " ").trim();
-    // A count ("12 / 48") is not a message.
-    if (t && !/^\d[\d,]* \/ \d[\d,]*$/.test(t)) messages.push(t);
+    // A count ("12 / 48") turns red over its most, but is not a sentence.
+    if (t && !COUNT.test(t)) messages.push(t);
   }
-  assert.equal(messages.length, 1, `${what}: "${text}" shows ${messages.length} messages (${JSON.stringify(messages)}), want one`);
+  assert.equal(messages.length, 1, `${what}: "${text}" names ${messages.length} red sentences (${JSON.stringify(messages)}), want one`);
+  const inField = await box.locator("xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' field ')][1]").locator(".field-error:visible").allTextContents();
+  const shown = inField.map((t) => t.replace(/\s+/g, " ").trim()).filter((t) => t && !COUNT.test(t));
+  assert.deepEqual(shown, messages, `${what}: "${text}" shows other red sentences in its field`);
   return messages[0]!;
 }

@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createResource, createSignal, For, on, type JSX, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, Index, on, type JSX, Show, untrack } from "solid-js";
 import type { FolderRef, MergeQueueSettings, MergeSettingsChange, ModelChoice, SettingSource } from "../../../shared/merge-queue-settings";
 import type { ModelPick } from "../../../shared/powers";
 import { cancelMergeSettings, listProjects, putMergeModels, saveMergeSettings } from "../../lib/api";
@@ -363,32 +363,32 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
 
       <Group title="Checks" caption={checksCaption(s().checks)}>
         <Show when={s().checks.mode === "declared" && s().checks.list.length > 0} fallback={<Row label="Checks" end={<Tag source="project" />}>{s().checks.mode === "test-command" ? "The project's test command" : "None declared"}</Row>}>
-          <For each={shownChecks()}>
+          <Index each={shownChecks()}>
             {(c) => {
-              const d = () => draft().checks[c.id] ?? { timeoutSec: c.timeoutSec, rerun: c.rerun, optional: c.optional };
+              const d = () => draft().checks[c().id] ?? { timeoutSec: c().timeoutSec, rerun: c().rerun, optional: c().optional };
               // What was typed lives in the staged edit (kept across tabs, cleared by a discard or a save),
               // so a box that isn't a time limit holds the save instead of saving the last good number.
-              const text = () => minutesTextOf(draft(), c.id, s());
+              const text = () => minutesTextOf(draft(), c().id, s());
               return (
-                <Row label={c.label} end={<Tag source="project" />}>
+                <Row label={c().label} end={<Tag source="project" />}>
                   <span class="mqs-check">
                     <NumberField
-                      label={`${c.label}: time limit in minutes`}
+                      label={`${c().label}: time limit in minutes`}
                       hideLabel
-                      rule={minutesRule(capMin(), c.label)}
+                      rule={minutesRule(capMin(), c().label)}
                       value={text()}
                       disabled={locked()}
                       afterClass="mqs-minutes"
                       after={<span class="text-caption text-muted">min</span>}
                       onInput={(v) => {
-                        setDraft(typedMinutes(draft(), c.id, v, s()));
+                        setDraft(typedMinutes(draft(), c().id, v, s()));
                         setSaid(null);
                         setSaidLink(null);
                       }}
                     />
-                    <Toggle label="Reruns failed files" checked={d().rerun} disabled={locked()} onChange={(on) => editCheck(c.id, { rerun: on })} />
+                    <Toggle label="Reruns failed files" checked={d().rerun} disabled={locked()} onChange={(on) => editCheck(c().id, { rerun: on })} />
                     <Select
-                      label={`${c.label}: when it runs`}
+                      label={`${c().label}: when it runs`}
                       hideLabel
                       value={d().optional ? "picked" : "always"}
                       options={[
@@ -396,13 +396,13 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
                         { value: "picked", label: "Only when picked" },
                       ]}
                       disabled={locked()}
-                      onChange={(v) => editCheck(c.id, { optional: v === "picked" })}
+                      onChange={(v) => editCheck(c().id, { optional: v === "picked" })}
                     />
                   </span>
                 </Row>
               );
             }}
-          </For>
+          </Index>
           <Show when={s().checks.list.length > CHECKS_SHOWN}>
             <button type="button" class="button button-sm button-ghost mqs-more" aria-expanded={showAll()} onClick={() => setShowAll(!showAll())}>
               {showAll() ? "Show Fewer" : `Show ${s().checks.list.length - CHECKS_SHOWN} More`}

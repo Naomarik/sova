@@ -246,7 +246,7 @@ export const RUN_UNSTABLE_ENV = [
   "SOVA_OUT",
 ];
 /** Never keyed, whatever list a caller passes: credentials don't belong in a key or a test env. */
-export const CREDENTIAL_ENV = /(TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|APIKEY|CREDENTIAL|AUTH|PRIVATE_KEY|SESSION_KEY)/i;
+export const CREDENTIAL_ENV = /(TOKEN|SECRET|KEY|PASSWORD|PASSWD|CREDENTIAL|AUTH)/i; // ⊇ scripts/test-env.mjs CREDENTIAL
 
 export function keyedEnv(env = {}) {
   const out = {};

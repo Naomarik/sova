@@ -157,6 +157,8 @@ describe("the context", () => {
     const noisy = { ...base.env, HOME: "/tmp/h1", TMPDIR: "/tmp/t1", PATH: "/a:/b", SOVA_CHAT_SLICE: "s", SOVA_FRESH: "1", SOVA_REUSE_SAMPLE: "0.05", TEST_BUN_JOBS: "3", SOVA_TEST_SHARED_TMP: "/x", XDG_RUNTIME_DIR: "/run/user/1", SOVA_TEST_RUNNER_PID: "9", GH_TOKEN: "t", ANTHROPIC_API_KEY: "k" };
     assert.equal(contextHash({ ...base, env: noisy }), c);
     assert.deepEqual(Object.keys(keyedEnv(noisy)), ["NODE_ENV", "SOVA_X"]);
+    for (const name of ["TLS_KEY", "SOVA_JEV_KEY", "MY_SECRET", "DB_PASSWORD", "X_AUTH", "GITHUB_TOKEN", "AWS_CREDENTIALS"])
+      assert.deepEqual(keyedEnv({ [name]: "x" }), {}, `${name} is never keyed`);
     assert.notEqual(contextHash({ ...base, env: { ...base.env, SOVA_X: "2" } }), c);
     assert.notEqual(contextHash({ ...base, env: { ...base.env, SOVA_GOLDEN_MODE: "record" } }), c);
     assert.notEqual(contextHash({ ...base, tier: "integration" }), c);

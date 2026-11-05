@@ -1,7 +1,7 @@
 // "What may happen without you" (al_3, §design.copy-deck/project-powers): the project's power
 // switches as the Settings tab and the overseer's chat head show them. Pure: no Solid, no DOM.
 
-import { POWER_COLUMNS, type Brake, type PowerColumn, type PowerGroup, type PowerId, type PowerMap, type PowersNote, type PowersView } from "../../shared/powers";
+import { POWER_COLUMNS, type Brake, type PowerColumn, type PowerGroup, type PowerId, type PowerMap, type PowersView } from "../../shared/powers";
 
 export { POWER_COLUMNS };
 export type { PowerColumn, PowerId };
@@ -119,20 +119,6 @@ export function stateChip(busy: boolean, brake: Brake | null): { tone: "accent" 
   if (busy) return { tone: "accent", text: "Working" };
   if (brake) return { tone: "warn", text: "Paused", title: brake.reason };
   return null;
-}
-
-/** The one-time note, while unseen: "Levels are now switches." and what changed, or an older Sova's level re-derived. */
-export function powersNote(note: PowersNote | null | undefined): { title: string; body: string } | null {
-  if (!note || note.seen) return null;
-  if (note.kind === "rederived")
-    return {
-      title: `The switches were set again from level ${note.from}.`,
-      body: `A computer on an older Sova changed this project's level to ${note.from}, so what that level lets it do on its own is On and everything else is Off. The Project Assistant's switches are as they were.`,
-    };
-  return {
-    title: "Levels are now switches.",
-    body: `What level ${note.from} let it do on its own is On; everything else is Off. One thing is looser: the overseer no longer approves its own waiting acts, so an act that is On goes ahead after the waiting period unless you cancel it in Needs you.`,
-  };
 }
 
 /** The Paused banner's body: the server's reason, then what the brake does to the switches. */

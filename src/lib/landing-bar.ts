@@ -206,7 +206,7 @@ function foldedSteps(run: Pick<MergeRun, "steps" | "checks">): LandingSegment[] 
 }
 
 /** The run's checks, in order: every check step and every check in the run's list (a check added mid-run counts). */
-function runChecks(run: Pick<MergeRun, "steps" | "checks">): { id: string; label: string; step?: RunStep }[] {
+export function runChecks(run: Pick<MergeRun, "steps" | "checks">): { id: string; label: string; step?: RunStep }[] {
   const out: { id: string; label: string; step?: RunStep }[] = [];
   const seen = new Set<string>();
   for (const s of run.steps)

@@ -1,25 +1,46 @@
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import type { AttentionDigest, OverseerProactivity, SessionSummary } from "../../shared/protocol";
-import { getSessionSummaryById, listProjects, startProjectCoding } from "../lib/api";
+import { getProjectGlance, getSessionSummaryById, listProjects, startProjectCoding } from "../lib/api";
 import { relativeTime, stampTime } from "../lib/format";
-import { CARD_LIMIT, CARD_LIMIT_NARROW, freezeOrder, showsFilter, projectCards, shortFolder, visibleCards, type ProjectCard } from "../lib/home-projects";
+import { cardRuntime, DASH } from "../lib/home-glance";
+import { cardLimitAt, freezeOrder, showsFilter, projectCards, shortFolder, visibleCards, type ProjectCard } from "../lib/home-projects";
 import { startInProject } from "../lib/new-session";
 import { ForKey } from "../lib/for-key";
 import { createPoll } from "../lib/poll";
-import { PROJECTS_HREF, projectHref, projectOverseerHref, projectTabHref } from "../lib/projects-route";
+import { PROJECTS_HREF, projectHref, projectOverseerHref, projectTabHref, type ProjectTab } from "../lib/projects-route";
 import { adoptSession, home, toast } from "../lib/ui-state";
 import { ActionMenu } from "./ActionMenu";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { ProjectIcon } from "./ProjectIcon";
-import { Chip, CountChip, Icon } from "./ui";
+import type { JSX } from "solid-js";
+import { Chip, Icon } from "./ui";
 import "../home.css";
 
 const PROJECTS_POLL_MS = 30_000;
-/** The overview's width under which cards are compact and fewer show (the CSS container query's). */
-const NARROW_PX = 480;
 
 const errText = (err: unknown): string => String(err instanceof Error ? err.message : err).replace(/[.\s]+$/, "");
+
+/** A Runtime row: a link with a chevron where it has a place to open, else plain (no hover, no chevron). */
+function RuntimeRow(props: { href: string | undefined; label: string; children: JSX.Element }) {
+  return (
+    <Show
+      when={props.href}
+      fallback={
+        <div class="overview-project-card-row">
+          <span class="overview-project-card-key">{props.label}</span>
+          {props.children}
+        </div>
+      }
+    >
+      <a class="overview-project-card-row overview-project-card-link" href={props.href}>
+        <span class="overview-project-card-key">{props.label}</span>
+        {props.children}
+        <Icon name="chevron-right" small class="overview-project-card-chev" />
+      </a>
+    </Show>
+  );
+}
 
 /**
  * Home's first section (§app.projects/home-cards): a grid of this host's projects, each card with its icon, where it
@@ -35,16 +56,20 @@ export function OverviewProjects(props: {
   onNewSessionIn(root: string): void;
 }) {
   const poll = createPoll(listProjects, PROJECTS_POLL_MS, { cacheKey: "home:projects" });
+  // The cards' runtime figures (§app.projects/home-glance), on the project list's own timer. A failed read keeps nothing:
+  // the rows read "—" until the next poll answers.
+  const glance = createPoll(getProjectGlance, PROJECTS_POLL_MS);
+  const glanceOf = (id: string) => (glance.error() ? undefined : glance.data()?.glances.find((g) => g.projectId === id));
   const [adding, setAdding] = createSignal(false);
   const [expanded, setExpanded] = createSignal(false);
   const [filter, setFilter] = createSignal("");
-  const [narrow, setNarrow] = createSignal(false);
+  const [limit, setLimit] = createSignal(cardLimitAt(Infinity));
   /** Each card's New Chat: starting, or the reason it couldn't. */
   const [starts, setStarts] = createStore<Record<string, { pending?: boolean; error?: string }>>({});
   let section!: HTMLElement;
 
   onMount(() => {
-    const ro = new ResizeObserver(([e]) => e && setNarrow(e.contentRect.width < NARROW_PX));
+    const ro = new ResizeObserver(([e]) => e && setLimit(cardLimitAt(e.contentRect.width)));
     ro.observe(section);
     onCleanup(() => ro.disconnect());
   });
@@ -62,8 +87,7 @@ export function OverviewProjects(props: {
     const o = order();
     return o ? freezeOrder(o, sorted()) : sorted();
   });
-  const shown = createMemo(() => visibleCards(cards(), { limit: narrow() ? CARD_LIMIT_NARROW : CARD_LIMIT, expanded: expanded(), filter: filter() }));
-  const limit = () => (narrow() ? CARD_LIMIT_NARROW : CARD_LIMIT);
+  const shown = createMemo(() => visibleCards(cards(), { limit: limit(), expanded: expanded(), filter: filter() }));
 
   const newChat = async (c: ProjectCard) => {
     const id = c.project.id;
@@ -142,64 +166,124 @@ export function OverviewProjects(props: {
                   const t = c().lastActivity;
                   return t === null ? null : new Date(t).toISOString();
                 };
+                const rt = () => cardRuntime(glanceOf(c().project.id), glance.data()?.hostTotalBytes ?? null, props.now);
+                const name = () => c().project.name;
+                const tab = (t: ProjectTab) => projectTabHref(c().project.id, t);
                 return (
                   <li>
                     <div class="card overview-project-card" classList={{ "overview-project-card-needs": c().needsYou > 0 }}>
-                      <ProjectIcon project={c().project} size={40} local class="overview-project-card-icon" />
-                      <div class="overview-project-card-names">
-                        {/* The card's one big target: its ::after covers the card, under the buttons. */}
-                        <a class="overview-project-card-name" href={projectHref(c().project.id)}>
-                          {c().project.name}
-                        </a>
-                        <span class="overview-project-card-where" title={c().project.space.kind === "org" ? undefined : c().project.root}>
-                          {where(c())}
+                      {/* The head is the Needs you band and the card's link to its page. */}
+                      <a
+                        class="overview-project-card-head overview-project-card-link"
+                        href={projectHref(c().project.id)}
+                        aria-label={`${name()}: ${c().needsYou > 0 ? `${c().needsYou} need${c().needsYou === 1 ? "s" : ""} you` : "nothing needs you"}`}
+                      >
+                        <ProjectIcon project={c().project} size={40} local class="overview-project-card-icon" />
+                        <span class="overview-project-card-names">
+                          <span class="overview-project-card-name" title={name()}>
+                            {name()}
+                          </span>
+                          <span class="overview-project-card-where" title={c().project.space.kind === "org" ? undefined : c().project.root}>
+                            {where(c())}
+                          </span>
                         </span>
-                      </div>
-                      <div class="overview-project-card-menu">
-                        <ActionMenu label={`Project actions · ${c().project.name}`} title="Project actions">
-                          {(menu) => (
-                            <div class="model-menu-list" role="menu" aria-label={`Project actions · ${c().project.name}`}>
-                              <menu.Item
-                                label="New Chat…"
-                                aria={`New Chat… in ${c().project.name}: pick a model, branch or subfolder`}
-                                icon={<Icon name="plus" small />}
-                                onRun={() => props.onNewSessionIn(c().project.root)}
-                                keepFocus
-                              />
-                              <menu.Item label="Overseer" aria={`Overseer · ${c().project.name}`} icon={<Icon name="eye" small />} href={projectOverseerHref(c().project.id)} />
-                              <menu.Item label="Merge Queue" aria={`Merge Queue · ${c().project.name}`} icon={<Icon name="branch" small />} href={projectTabHref(c().project.id, "merge-queue")} />
-                              <menu.Item label="Branches" aria={`Branches · ${c().project.name}`} icon={<Icon name="terminal" small />} href={projectTabHref(c().project.id, "branches")} />
-                              <menu.Item label="Settings" aria={`Settings · ${c().project.name}`} icon={<Icon name="settings" small />} href={projectTabHref(c().project.id, "settings")} />
-                            </div>
-                          )}
-                        </ActionMenu>
-                      </div>
-                      <div class="overview-project-card-foot">
-                        <div class="overview-project-card-status">
-                          <Show
-                            when={c().needsYou > 0 || c().working > 0}
-                            fallback={
-                              <span class="overview-project-card-when" title={activeAt() ? stampTime(activeAt()!) : undefined}>
-                                {activeAt() ? `Active ${relativeTime(activeAt()!, props.now)}` : "No chats yet"}
-                              </span>
-                            }
-                          >
-                            <Show when={c().needsYou > 0}>
-                              <Chip tone="warn">
-                                Needs you · <span class="text-num">{c().needsYou}</span>
-                              </Chip>
-                            </Show>
-                            <Show when={c().working > 0}>
-                              <CountChip>
-                                <span class="text-num">{c().working}</span> working
-                              </CountChip>
-                            </Show>
-                          </Show>
+                        <Show when={c().needsYou > 0} fallback={<span class="overview-project-card-calm">Nothing needs you</span>}>
+                          <span class="overview-project-card-needs-count">
+                            <span class="overview-project-card-needs-n text-num">{c().needsYou}</span>
+                            <span class="overview-project-card-needs-word">Needs you</span>
+                          </span>
+                        </Show>
+                        <Icon name="chevron-right" small class="overview-project-card-chev" />
+                      </a>
+                      <div class="overview-project-card-body">
+                        <p class="overview-project-card-cap">
+                          <span>Chats</span>
+                          <span class="overview-project-card-cap-note text-num">{c().open} open</span>
+                        </p>
+                        <a class="overview-project-card-row overview-project-card-link" href={projectHref(c().project.id)}>
+                          <span class="overview-project-card-key">Open chats</span>
+                          <span class="overview-project-card-val text-num" classList={{ "overview-project-card-muted": c().open === 0 }}>
+                            {c().open}
+                            {c().working > 0 ? ` · ${c().working} working` : ""}
+                          </span>
+                          <Icon name="chevron-right" small class="overview-project-card-chev" />
+                        </a>
+                        <div class="overview-project-card-row">
+                          <span class="overview-project-card-key">Archived chats</span>
+                          <span class="overview-project-card-val overview-project-card-muted text-num">{c().archived}</span>
                         </div>
+                        <p class="overview-project-card-cap">
+                          <span>Runtime</span>
+                          <span class="overview-project-card-cap-note text-num">{rt().caption}</span>
+                        </p>
+                        <a class="overview-project-card-row overview-project-card-link" href={tab("merge-queue")}>
+                          <span class="overview-project-card-key">Ready to merge</span>
+                          <span class="overview-project-card-val text-num" classList={{ "overview-project-card-muted": rt().ready.muted }}>
+                            <Show when={rt().ready.dot}>
+                              <i class="overview-project-card-dot" aria-hidden="true" />
+                            </Show>
+                            {rt().ready.count}
+                            <Show when={rt().ready.inLine}>
+                              <span class="overview-project-card-muted"> {rt().ready.inLine}</span>
+                            </Show>
+                          </span>
+                          <Icon name="chevron-right" small class="overview-project-card-chev" />
+                        </a>
+                        <RuntimeRow href={rt().slots ? tab("branches") : undefined} label="Running slots">
+                          <Show when={rt().slots} fallback={<span class="overview-project-card-val overview-project-card-muted">{DASH}</span>}>
+                            {(sl) => (
+                              <span class="overview-project-card-val text-num" classList={{ "overview-project-card-muted": sl().muted }}>
+                                <span class="overview-project-card-pips" aria-hidden="true">
+                                  {sl().pips.map((on) => (
+                                    <i classList={{ "overview-project-card-pip-on": on }} />
+                                  ))}
+                                </span>
+                                <span class="overview-project-card-fig">{sl().text}</span>
+                              </span>
+                            )}
+                          </Show>
+                        </RuntimeRow>
+                        <RuntimeRow href={rt().hasSetup ? tab("branches") : undefined} label="Memory in use">
+                          <span class="overview-project-card-val text-num" classList={{ "overview-project-card-muted": rt().memory.muted }}>
+                            <Show when={rt().memory.share !== null}>
+                              <span class="overview-project-card-bar" aria-hidden="true" style={{ "--fill": `${Math.round((rt().memory.share ?? 0) * 1000) / 10}%` }} />
+                            </Show>
+                            <span class="overview-project-card-fig">{rt().memory.text}</span>
+                          </span>
+                        </RuntimeRow>
+                      </div>
+                      <Show when={rt().progress.length > 0}>
+                        <div class="overview-project-card-progress">
+                          {rt().progress.map((p) => (
+                            <a class="overview-project-card-prog overview-project-card-link" href={tab(p.tab)}>
+                              <span class="overview-project-card-prog-top">
+                                <span class="overview-project-card-prog-text">
+                                  <b>{p.lead}</b> {p.text}
+                                </span>
+                                <Show when={p.meta}>
+                                  <span class="overview-project-card-muted text-num">{p.meta}</span>
+                                </Show>
+                                <Show when={p.chip}>{(ch) => <Chip tone={ch().tone === "info" ? undefined : ch().tone}>{ch().word}</Chip>}</Show>
+                              </span>
+                              <span class="overview-project-card-prog-sub">
+                                <Show when={p.segments.length > 0}>
+                                  <span class="overview-project-card-meter" aria-hidden="true">
+                                    {p.segments.map((st) => (
+                                      <i class={`overview-project-card-seg-${st}`} />
+                                    ))}
+                                  </span>
+                                </Show>
+                                <span class="overview-project-card-prog-detail">{p.detail}</span>
+                              </span>
+                            </a>
+                          ))}
+                        </div>
+                      </Show>
+                      <div class="overview-project-card-foot">
                         <button
                           type="button"
                           class="button button-sm overview-project-card-new"
-                          aria-label={state()?.pending ? `Starting a chat in ${c().project.name}…` : `New chat in ${c().project.name}`}
+                          aria-label={state()?.pending ? `Starting a chat in ${name()}…` : `New chat in ${name()}`}
                           disabled={!!state()?.pending}
                           onClick={() => void newChat(c())}
                         >
@@ -208,14 +292,36 @@ export function OverviewProjects(props: {
                             fallback={
                               <>
                                 <Icon name="progress" small />
-                                <span class="overview-project-card-new-label">Starting…</span>
+                                <span>Starting…</span>
                               </>
                             }
                           >
                             <Icon name="plus" small />
-                            <span class="overview-project-card-new-label">New Chat</span>
+                            <span>New Chat</span>
                           </Show>
                         </button>
+                        <span class="overview-project-card-when" title={activeAt() ? stampTime(activeAt()!) : undefined}>
+                          {activeAt() ? `Active ${relativeTime(activeAt()!, props.now)}` : "No chats yet"}
+                        </span>
+                        <div class="overview-project-card-menu">
+                          <ActionMenu label={`Project actions · ${name()}`} title="Project actions">
+                            {(menu) => (
+                              <div class="model-menu-list" role="menu" aria-label={`Project actions · ${name()}`}>
+                                <menu.Item
+                                  label="New Chat…"
+                                  aria={`New Chat… in ${name()}: pick a model, branch or subfolder`}
+                                  icon={<Icon name="plus" small />}
+                                  onRun={() => props.onNewSessionIn(c().project.root)}
+                                  keepFocus
+                                />
+                                <menu.Item label="Overseer" aria={`Overseer · ${name()}`} icon={<Icon name="eye" small />} href={projectOverseerHref(c().project.id)} />
+                                <menu.Item label="Merge Queue" aria={`Merge Queue · ${name()}`} icon={<Icon name="branch" small />} href={tab("merge-queue")} />
+                                <menu.Item label="Branches" aria={`Branches · ${name()}`} icon={<Icon name="terminal" small />} href={tab("branches")} />
+                                <menu.Item label="Settings" aria={`Settings · ${name()}`} icon={<Icon name="settings" small />} href={tab("settings")} />
+                              </div>
+                            )}
+                          </ActionMenu>
+                        </div>
                       </div>
                       <Show when={state()?.error}>
                         <p class="overview-project-card-error" role="alert">
@@ -244,7 +350,13 @@ export function OverviewProjects(props: {
         </Show>
       </Show>
       <Show when={adding()}>
-        <AddProjectDialog onCancel={() => setAdding(false)} onAdded={() => poll.refetch()} />
+        <AddProjectDialog
+          onCancel={() => setAdding(false)}
+          onAdded={() => {
+            poll.refetch();
+            glance.refetch();
+          }}
+        />
       </Show>
     </section>
   );

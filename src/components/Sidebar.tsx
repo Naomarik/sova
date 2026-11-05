@@ -55,8 +55,6 @@ import {
   groupSections,
   loadSessionGroups,
   quoted,
-  removeGroup,
-  renameGroup,
   sessionGroups,
   setSessionGroup,
 } from "../lib/session-groups";
@@ -77,7 +75,7 @@ import { monogram, setSpine, spine } from "../lib/spine";
 import { ARCHIVE_TILE, createRowPress, type DragInfo, dropAction, dropTiles, type TileId } from "../lib/drag-overlay";
 import { holdOwns, startsPress } from "../lib/context-menu";
 import { sessionArchiveRow } from "../lib/session-menu";
-import { closeContextMenuOf } from "./ContextMenu";
+import { closeContextMenuOf, openContextMenu } from "./ContextMenu";
 import { openSessionMenu, SidebarSessionMenu } from "./SessionRowMenu";
 import { bindKey } from "../commands/keys";
 import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
@@ -102,17 +100,17 @@ import { createHoldGesture } from "../lib/hold-select";
 import { sentences, workNow, workNowView, type WorkNowView, type WorkPeer } from "../lib/work-now";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
-import { ActionMenu } from "./ActionMenu";
+import { ActionMenu, type ActionMenuApi } from "./ActionMenu";
 import { ArchiveCleanup } from "./ArchiveCleanup";
 import { ContextRing } from "./ContextRing";
 import { CancelHeldButton } from "./HeldAct";
 import { MergeRunButton } from "./PlaybookReview";
 import { waitingWords } from "../lib/working-hours";
-import { groupHref } from "../lib/group-route";
-import { GroupNameField } from "./Groups";
+import { groupMenuLabel } from "../lib/group-menu";
+import { GroupMenuBody } from "./Groups";
 import { draggingPath, dragSuppressesClick, DropOverlay, openNewGroupFor, startRowDrag } from "./DropOverlay";
 import { GroupPicker } from "./GroupPicker";
-import { EMPTY_GROUP_REASON, NO_GROUPS_NOTE } from "../lib/group-picker";
+import { NO_GROUPS_NOTE } from "../lib/group-picker";
 import { RemoteGroupDot } from "./RemoteStatus";
 import { Banner, Icon, trapFocus } from "./ui";
 import { showSummaries } from "../lib/summary-line";
@@ -827,23 +825,12 @@ function GroupBlock(props: {
   const group = () => props.group;
   const count = () => props.sessions.length;
 
-  /** The confirm question, one sentence, in both its forms: what goes away, then what doesn't. */
-  const question = () =>
-    count() === 0
-      ? `Delete ${quoted(group().name)}? Nothing is in it.`
-      : `Delete ${quoted(group().name)}? Its ${sessionsWord(count())} stay${count() === 1 ? "s" : ""} in the list.`;
-
-  const deleteGroup = async () => {
-    const n = count();
-    const name = group().name;
-    if (!(await removeGroup(group().id))) return;
-    toast(
-      n === 0
-        ? `Deleted ${quoted(name)}. It had no sessions.`
-        : `Deleted ${quoted(name)}. Its ${sessionsWord(n)} ${n === 1 ? "is" : "are"} ungrouped.`,
-    );
-    props.onChanged(); // the rows it held carry a groupId that is gone
-  };
+  let summary!: HTMLElement;
+  onCleanup(() => closeContextMenuOf(summary));
+  const body = (menu: ActionMenuApi) => <GroupMenuBody menu={menu} group={group()} count={count()} onChanged={props.onChanged} />;
+  /** The name row's right-click and Shift+F10: the ⋯'s own body, at the pointer or under the row. */
+  const onContextMenu = (e: MouseEvent & { currentTarget: HTMLElement }) =>
+    openContextMenu(e, { el: e.currentTarget, menu: () => ({ label: groupMenuLabel(group().name), origin: summary, body }) });
 
   return (
     <details
@@ -853,7 +840,7 @@ function GroupBlock(props: {
     >
       {/* No folder icon here, unlike the cwd heads inside: a group is the user's own name for a set
           of sessions, not a folder on disk, and the icon claimed otherwise right above real ones. */}
-      <summary class="list-group-label group-label" title={group().name}>
+      <summary ref={summary} class="list-group-label group-label" title={group().name} onContextMenu={onContextMenu}>
         <Icon name="chevron-right" small class="icon-twist" />
         <span class="group-name">
           <bdi>{group().name}</bdi>
@@ -864,75 +851,8 @@ function GroupBlock(props: {
             <summary> possible at all: without it every click in here would toggle the section. The
             trigger is quiet until the row is hovered or something in it takes focus (base.css), and
             always visible to the keyboard. */}
-        <ActionMenu label={`Group actions · ${group().name}`} title="Group actions" class="group-actions" contain>
-          {(menu) => (
-            <Show
-              when={menu.screen()}
-              fallback={
-                <div class="model-menu-list" role="menu" aria-label={`Group actions · ${group().name}`}>
-                  {/* The workspace: every session of this group on screen at once (#/g/<id>).
-                      Purely additive — the rows above still open one session at a time. */}
-                  <menu.Item
-                    label="Open workspace"
-                    aria={`Open ${quoted(group().name)} as a workspace`}
-                    title={`Open ${quoted(group().name)} as a workspace`}
-                    icon={<Icon name="external" small />}
-                    href={groupHref(group().id)}
-                    disabled={count() === 0 ? EMPTY_GROUP_REASON : ""}
-                  />
-                  <menu.Item
-                    label="Rename…"
-                    aria={`Rename ${quoted(group().name)}`}
-                    icon={<Icon name="pencil" small />}
-                    stayOpen
-                    onRun={() => menu.show("rename")}
-                  />
-                  <menu.Item
-                    label="Delete group…"
-                    aria={`Delete ${quoted(group().name)}`}
-                    icon={<Icon name="close" small />}
-                    stayOpen
-                    onRun={() => menu.show("delete")}
-                  />
-                </div>
-              }
-            >
-              {/* The menu's second screen: one question at a time, in the menu the press came from,
-                  so nothing moves in the list below while it is answered. */}
-              <Show
-                when={menu.screen() === "delete"}
-                fallback={
-                  <div class="group-menu-screen">
-                    <GroupNameField
-                      label={`Rename ${quoted(group().name)}`}
-                      initial={group().name}
-                      onDone={(name) => {
-                        menu.dismiss();
-                        if (name !== group().name) void renameGroup(group().id, name);
-                      }}
-                      onCancel={() => menu.dismiss()}
-                    />
-                  </div>
-                }
-              >
-                <div class="group-menu-screen">
-                  <p class="group-tools-question">{question()}</p>
-                  <div class="cluster">
-                    <button
-                      type="button"
-                      class="button button-sm button-destructive"
-                      onClick={() => menu.run(() => void deleteGroup())}
-                    >
-                      Delete group
-                    </button>
-                    <button type="button" class="button button-sm button-ghost" onClick={() => menu.dismiss()}>
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              </Show>
-            </Show>
-          )}
+        <ActionMenu label={groupMenuLabel(group().name)} title="Group actions" class="group-actions" contain>
+          {body}
         </ActionMenu>
       </summary>
       <Show when={count() > 0} fallback={<p class="sidebar-region-note">No sessions yet. Drag a session to file it here.</p>}>

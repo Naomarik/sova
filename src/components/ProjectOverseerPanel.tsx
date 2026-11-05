@@ -1,5 +1,5 @@
 import { ClaudeLoginCard } from "./ClaudeLoginCard";
-import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { TODO_TEXT_MAX, type IdeaRecord, type OverseerAction, type OverseerTodosInfo } from "../../shared/protocol";
 import {
   ALLOWANCE_MAX,
@@ -50,8 +50,11 @@ import { ACTIVITY_SHOWN, LIMIT_COLUMN_LABEL, LIMIT_COLUMNS, LIMIT_ROWS, limitCel
 import { actionLine, allowanceLine, gapArea, gapWords, holdHint, holdWords, isGap, IDEA_TITLE_MAX, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
 import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { ActionMenu } from "./ActionMenu";
+import { closeContextMenuOf, openContextMenu } from "./ContextMenu";
+import { MenuRows } from "./MenuRows";
+import { worktreeMenuLabel, worktreeMenuOffered, worktreeMenuRows } from "../lib/worktree-menu";
 import { land, refusal } from "../lib/merge-queue-client";
-import { queueRow, entryLandBlock, landAgainItem, landThisAgainOf } from "../lib/merge-queue";
+import { queueRow } from "../lib/merge-queue";
 import { createProjectQueue } from "../lib/project-queue";
 import { QueueChip } from "./WorktreesModal";
 import { LinksBanner, type Links } from "./LinksBanner";
@@ -1051,8 +1054,34 @@ function CodingSessions(props: {
             // Remembered branch facts (a reopened project) show at once, but no gesture acts on them.
             const gestures = () => rowGestures(row(), po().worktrees.fresh());
             const facts = () => (row().facts && row().state !== undefined ? (row() as CodingRow & CodingWorktree) : null);
+            /** The ⋯'s rows, which a right-click on the row draws too: each acts on the row as it reads when chosen. */
+            const menuRows = () =>
+              worktreeMenuRows(
+                { row: row(), title: title(), gestures: gestures(), queued: queue.setUp(), queue: queue.info(row().branch), working: !!working() },
+                {
+                  merge: () => void act(row(), () => mergeCodingWorktree(po().projectId(), row().sessionId), `Merged ${row().branch} into ${row().target}.`),
+                  land: () => {
+                    const r = row();
+                    if (r.worktree) void landRow({ ...r, worktree: r.worktree });
+                  },
+                  remove: () => setConfirming(row().sessionId),
+                },
+              );
+            let li!: HTMLLIElement;
+            onCleanup(() => closeContextMenuOf(li));
+            /** A right-click or Shift+F10 on the row: its ⋯ menu, at the pointer or under the row. The title link is the row's own. */
+            const onContextMenu = (e: MouseEvent & { currentTarget: HTMLLIElement }) => {
+              if (!worktreeMenuOffered(gestures())) return;
+              const link = li.querySelector<HTMLElement>(":scope > .list-main > a.project-worktree-title");
+              const trigger = li.querySelector<HTMLElement>(":scope > button[aria-haspopup='menu']");
+              openContextMenu(e, {
+                el: e.currentTarget,
+                ownLink: link,
+                menu: () => ({ label: worktreeMenuLabel(title()), origin: link ?? trigger ?? li, body: (menu) => <MenuRows menu={menu} rows={menuRows()} /> }),
+              });
+            };
             return (
-              <li class="list-row orgs-row project-worktree">
+              <li ref={li} class="list-row orgs-row project-worktree" onContextMenu={onContextMenu}>
                 <span class="list-main project-worktree-main">
                   <Show when={row().path} fallback={<span class="list-title project-worktree-title" title={title()}>{title()}</span>}>
                     {(path) => (
@@ -1106,69 +1135,9 @@ function CodingSessions(props: {
                     }}
                   </Show>
                 </span>
-                <Show when={gestures().merge !== false || gestures().remove !== false}>
-                  <ActionMenu label={`Actions · ${title()}`} title="Actions" icon="more">
-                    {(menu) => (
-                      <>
-                        <Show when={gestures().merge !== false}>
-                          <Show
-                            when={queue.setUp()}
-                            fallback={
-                              <menu.Item
-                                label="Merge Branch"
-                                aria={`Merge Branch: ${row().branch} into ${row().target}`}
-                                icon={<Icon name="branch" small />}
-                                description={`${row().branch} into ${row().target}`}
-                                disabled={(gestures().merge || undefined) ?? (working() ? "Working" : undefined)}
-                                onRun={() => void act(row(), () => mergeCodingWorktree(po().projectId(), row().sessionId), `Merged ${row().branch} into ${row().target}.`)}
-                              />
-                            }
-                          >
-                            <menu.Item
-                              label="Land"
-                              aria={`Land ${row().branch} on ${row().target}`}
-                              icon={<Icon name="branch" small />}
-                              description={`Queues ${row().branch}: checked on ${row().target} first, then ${row().target} moves to it.`}
-                              disabled={
-                                (gestures().merge || undefined) ??
-                                (working() ? "Working" : !row().worktree ? "Its folder is gone: land it from its chat." : entryLandBlock(queue.info(row().branch)))
-                              }
-                              onRun={() => {
-                                const r = row();
-                                if (r.worktree) void landRow({ ...r, worktree: r.worktree });
-                              }}
-                            />
-                            <Show when={row().worktree && landThisAgainOf(queue.info(row().branch))}>
-                              {(_sentBack) => {
-                                // It lands the head this page read (landRow pins it): the words name that commit.
-                                const again = () => landAgainItem(queue.info(row().branch)!, row().head);
-                                return (
-                                  <menu.Item
-                                    label={again().label}
-                                    aria={`Land ${row().branch} at its newest commit`}
-                                    icon={<Icon name="branch" small />}
-                                    description={again().description}
-                                    disabled={(gestures().merge || undefined) ?? (working() ? "Working" : undefined)}
-                                    onRun={() => {
-                                      const r = row();
-                                      if (r.worktree) void landRow({ ...r, worktree: r.worktree });
-                                    }}
-                                  />
-                                );
-                              }}
-                            </Show>
-                          </Show>
-                        </Show>
-                        <Show when={gestures().remove !== false}>
-                          <menu.Item
-                            label="Remove Worktree…"
-                            aria={`Remove Worktree: ${title()}`}
-                            disabled={(gestures().remove || undefined) ?? (working() ? "Working" : undefined)}
-                            onRun={() => setConfirming(row().sessionId)}
-                          />
-                        </Show>
-                      </>
-                    )}
+                <Show when={worktreeMenuOffered(gestures())}>
+                  <ActionMenu label={worktreeMenuLabel(title())} title="Actions" icon="more">
+                    {(menu) => <MenuRows menu={menu} rows={menuRows()} />}
                   </ActionMenu>
                 </Show>
                 <Show when={errors()[row().sessionId]}>{(e) => <p class="field-error project-worktree-note">{e()}</p>}</Show>

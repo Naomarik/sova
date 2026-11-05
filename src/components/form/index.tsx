@@ -3,7 +3,7 @@
  * rule (shared/form-rules.ts) refuses is red with one sentence under it, limited text shows "n / most".
  * Base CSS classes only, no app state: src/card-toolkit re-exports it.
  */
-import { createMemo, createUniqueId, For, type JSX, Show, splitProps } from "solid-js";
+import { createEffect, createMemo, createUniqueId, For, type JSX, Show, splitProps } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { count, measured, problemOf, type Rule } from "../../../shared/form-rules";
 
@@ -152,9 +152,13 @@ export function Select(
 export function Toggle(props: {
   label: JSX.Element;
   checked: boolean;
-  onChange(checked: boolean): void;
+  onChange(checked: boolean, el: HTMLInputElement): void;
   hint?: JSX.Element;
   switch?: boolean;
+  /** Neither on nor off (a switch over a mixed set): drawn indeterminate. */
+  mixed?: boolean;
+  /** The control's spoken name, when the visible label is a short word. */
+  ariaLabel?: string;
   disabled?: boolean;
   class?: string;
   id?: string;
@@ -162,7 +166,16 @@ export function Toggle(props: {
 }) {
   const hintId = createUniqueId();
   const input = () => (
-    <input type="checkbox" id={props.id} checked={props.checked} disabled={props.disabled} aria-describedby={props.hint ? hintId : undefined} onChange={(e) => props.onChange(e.currentTarget.checked)} />
+    <input
+      type="checkbox"
+      id={props.id}
+      checked={props.checked}
+      ref={(el) => createEffect(() => (el.indeterminate = !!props.mixed))}
+      disabled={props.disabled}
+      aria-label={props.ariaLabel}
+      aria-describedby={props.hint ? hintId : undefined}
+      onChange={(e) => props.onChange(e.currentTarget.checked, e.currentTarget)}
+    />
   );
   return (
     <>

@@ -7,6 +7,8 @@ import { describe, test } from "node:test";
 import { definitionAt } from "../project-services/deploy-recipe";
 import type { Caller } from "../project-services/engine";
 import { checksOf } from "./checks";
+import { type Git, realGit } from "./guard";
+import { SETUP_UNREADABLE } from "./setup-branch";
 import { type IngestDeps, ingestOnce } from "./ingest";
 import { merger } from "./routes";
 import { ServedRule } from "./served";
@@ -88,14 +90,14 @@ const SERVICES = { db: { cmd: ["db-server"], ports: { pg: { base: 31000 } }, sta
 const TARGET_DEF = { version: 1, services: SERVICES, merge: { checks: [{ ...CHECK("unit"), requires: ["db"] }] }, release: { playbook: ".sova/playbooks/release", checks: [CHECK("e2e"), CHECK("smoke")] } };
 
 /** A kit whose target declares TARGET_DEF, read from Git (never a fixed stand-in definition). */
-function realKit() {
+function realKit(git?: Git) {
   const repo = makeRepo({ prefix: "mq-setup-" });
   mkdirSync(join(repo.root, ".sova"), { recursive: true });
   writeFileSync(join(repo.root, ".sova", "project.json"), `${JSON.stringify(TARGET_DEF, null, 2)}\n`);
   sh(repo.root, "add", ".sova/project.json");
   sh(repo.root, "commit", "-q", "-m", "declare");
   sh(repo.root, "push", "-q", "origin", repo.target);
-  const k = makeKit({ repo, deps: { definitionAt: (r, ref) => definitionAt(r, ref), checksOf } });
+  const k = makeKit({ repo, deps: { definitionAt: (r, ref) => definitionAt(r, ref), checksOf, ...(git ? { git } : {}) } });
   const call = merger({
     queues: k.queues,
     served: { isListed: () => true, served: async () => true, bareView: async () => { throw new Error("served"); } },
@@ -268,6 +270,27 @@ describe("Land on a setup branch waits for a passing trial of its exact head", (
     }
   });
 
+  test("the gate is the change, not the chat: a target naming its own release playbook folder (ops/release) gates a branch that edits only that folder", async () => {
+    const t = realKit();
+    try {
+      const d = structuredClone(TARGET_DEF) as Record<string, any>;
+      d.release.playbook = "ops/release";
+      t.repo.commitOn(t.repo.root, { ".sova/project.json": `${JSON.stringify(d, null, 2)}\n`, "ops/release/PLAYBOOK.md": "# steps\n" }, "release playbook in ops/release");
+      sh(t.repo.root, "push", "-q", "origin", t.repo.target);
+      const b = t.repo.branch("feat/ops-playbook", { "ops/release/PLAYBOOK.md": "# steps, changed\n" });
+      const q = await t.k.q();
+      assert.match((await q.setupUntried(t.repo.head(), b.head)) ?? "", /no passing trial/, "a setup branch: untried");
+      const r = await t.call("merge.add", { project: t.repo.root, branch: "feat/ops-playbook" }, op);
+      assert.equal(r.ok, false, "gated");
+      assert.match(r.error?.message ?? "", /no passing trial/);
+      // A file beside that folder is plain code: no trial needed.
+      const plain = t.repo.branch("feat/ops-other", { "ops/notes.md": "n\n" });
+      assert.equal(await q.setupUntried(t.repo.head(), plain.head), null);
+    } finally {
+      await t.done();
+    }
+  });
+
   test("services: a branch changing a service a merge check requires is gated; changing one no check requires lands with no trial", async () => {
     const t = realKit();
     try {
@@ -369,6 +392,26 @@ describe("the merge copy is held by one thing at a time", () => {
       h.release();
       await until(() => t.k.run.inputs.length === 2, "the landing to start after the trial");
       assert.equal(t.k.run.inputs[1]!.tryOnly, undefined, "the second run is the landing");
+    } finally {
+      await t.done();
+    }
+  });
+});
+
+describe("the gate fails closed when Git can't read a definition", () => {
+  test("a branch whose definitions Git can't read waits with SETUP_UNREADABLE, even plain code; readable again, it lands", async () => {
+    let broken = false;
+    const git: Git = (args, cwd, opts) => (broken && args[0] === "ls-tree" ? Promise.resolve({ code: 128, stdout: "", stderr: "boom" }) : realGit(args, cwd, opts));
+    const t = realKit(git);
+    try {
+      const b = t.repo.branch("feat/code", { "src.txt": "code\n" });
+      const q = await t.k.q();
+      broken = true;
+      assert.equal(await q.setupUntried(t.repo.head(), b.head), SETUP_UNREADABLE);
+      const r = await t.call("merge.add", { project: t.repo.root, branch: "feat/code" }, op);
+      assert.equal(r.ok, false, "refused while Git can't tell");
+      broken = false;
+      assert.equal(await q.setupUntried(t.repo.head(), b.head), null);
     } finally {
       await t.done();
     }

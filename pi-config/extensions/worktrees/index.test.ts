@@ -764,3 +764,32 @@ test("unserved: merge and land refuse a setup branch (pipeline sections or the r
 		r.done();
 	}
 });
+
+test("unserved: a branch editing only the release playbook folder the definition names (ops/release) is refused as a setup branch", async () => {
+	const r = repo();
+	try {
+		mkdirSync(join(r.main, ".sova"));
+		mkdirSync(join(r.main, "ops", "release"), { recursive: true });
+		writeFileSync(join(r.main, ".sova", "project.json"), JSON.stringify({ v: 1, release: { playbook: "ops/release" } }));
+		writeFileSync(join(r.main, "ops", "release", "PLAYBOOK.md"), "# steps\n");
+		sh(r.main, "add", ".");
+		sh(r.main, "commit", "-q", "-m", "def");
+		const state = join(r.root, "state");
+		await asChat(state, async () => {
+			serve(state, []);
+			const f = fakePi();
+			worktrees(f.pi, { docs: async () => ({ state: "none" }) as never });
+			const c = f.ctx(r.main);
+			await f.fire("session_start", c);
+			await f.call(c, { action: "create", name: "ops" });
+			const t = join(r.root, ".worktrees", "repo-ops");
+			writeFileSync(join(t, "ops", "release", "PLAYBOOK.md"), "# steps, changed\n");
+			sh(t, "commit", "-q", "-am", "playbook");
+			const before = sh(r.main, "rev-parse", "master");
+			await assert.rejects(f.call(c, { action: "merge", path: t }), (e: Error) => e.message === SETUP_BRANCH_REFUSED);
+			assert.equal(sh(r.main, "rev-parse", "master"), before, "nothing merged");
+		});
+	} finally {
+		r.done();
+	}
+});

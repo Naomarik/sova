@@ -33,10 +33,14 @@ export function stable(v: unknown): string {
 	return JSON.stringify(v ?? null);
 }
 
-/** The definition's raw JSON at a commit; null when absent or not JSON. */
-async function rawAt(git: SetupGit, root: string, commit: string): Promise<Record<string, unknown> | null> {
+/** The definition's raw JSON at a commit: null when the commit has none or it isn't JSON; "unreadable" when Git
+ *  can't say (the caller then can't tell either, and fails closed). */
+async function rawAt(git: SetupGit, root: string, commit: string): Promise<Record<string, unknown> | null | "unreadable"> {
+	const listed = await git(["ls-tree", "--name-only", commit, "--", SETUP_CONTRACT_FILE], root);
+	if (listed.code !== 0) return "unreadable";
+	if (!listed.stdout.trim()) return null;
 	const r = await git(["show", `${commit}:${SETUP_CONTRACT_FILE}`], root);
-	if (r.code !== 0) return null;
+	if (r.code !== 0) return "unreadable";
 	try {
 		return obj(JSON.parse(r.stdout));
 	} catch {
@@ -99,7 +103,10 @@ export async function setupChangeOf(git: SetupGit, root: string, base: string, h
 		.map((l) => l.trim())
 		.filter(Boolean);
 	if (!paths.length) return { sections: [], files: [] };
-	const [a, b] = paths.includes(SETUP_CONTRACT_FILE) ? await Promise.all([rawAt(git, root, from), rawAt(git, root, head)]) : [null, null];
+	// Both definitions, always: the release playbook folder each side names decides which files count, even when the
+	// definition itself is unchanged.
+	const [a, b] = await Promise.all([rawAt(git, root, from), rawAt(git, root, head)]);
+	if (a === "unreadable" || b === "unreadable") return null;
 	const sections = paths.includes(SETUP_CONTRACT_FILE) ? changedSections(a, b) : [];
 	const folders = releaseFolders(a, b);
 	const files = paths.filter((p) => folders.some((f) => p === f || p.startsWith(`${f}/`)));

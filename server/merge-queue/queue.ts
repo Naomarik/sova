@@ -51,7 +51,7 @@ import { gitlabAdapter } from "./hosts/gitlab";
 import { suggestLanding } from "./hosts/repo";
 import { changeWords, editSettingsText, isEmptyChange, REVIEW_KIT_DIR, SettingsEditError } from "./settings-edit";
 import { PROJECT_PLAYBOOK } from "./thread";
-import { isSetupChange, setupChangeOf, trialReleaseChecks, untriedWhy } from "./setup-branch";
+import { isSetupChange, SETUP_UNREADABLE, setupChangeOf, trialReleaseChecks, untriedWhy } from "./setup-branch";
 
 /**
  * One merge queue per project: approved branches wait in line and are checked one at a time; a passed run lands
@@ -1443,6 +1443,8 @@ export class ProjectQueue {
   /** Why `commit` can't land without a trial (a setup branch with no passing trial of that exact commit), or null. */
   async setupUntried(head: string, commit: string): Promise<string | null> {
     const change = await setupChangeOf(this.git, this.root, head, commit);
+    // Git can't tell whether it changes the setup: it waits, as a setup branch would (fail closed).
+    if (!change) return SETUP_UNREADABLE;
     return isSetupChange(change) ? untriedWhy(this.q.trials, commit) : null;
   }
 

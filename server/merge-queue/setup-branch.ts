@@ -14,6 +14,9 @@ import { setupChangeOf, stable } from "../../pi-config/extensions/worktrees/setu
 // The rule itself has one home, the worktree tool's (it refuses a plain merge of a setup branch by it).
 export { changedSections, changedServices, DEFAULT_RELEASE_PLAYBOOK, isSetupChange, PIPELINE_SECTIONS, releaseFolders, requiredServices, type SetupChange, setupChangeOf, stable } from "../../pi-config/extensions/worktrees/setup-rule.ts";
 
+/** Why a branch waits when Git can't tell whether it changes the project's setup (the gate fails closed). */
+export const SETUP_UNREADABLE = "Sova can't tell whether this branch changes the project's setup: try again in a moment.";
+
 /**
  * A trial's release checks: each one new or changed against the target's release section, or named for the trial,
  * runs; the rest are reported not run (unchanged). Pure.

@@ -224,3 +224,34 @@ describe("POST /api/projects/:pid/setup/merge: the user's own page only", () => 
     assert.equal(((await viaRuntime.json()) as { error?: string }).error, SETUP_MERGE_WORDS.chat);
   });
 });
+
+describe("Needs you follows the Setup proposal at once", () => {
+  test("a new proposal, and its going after the merge, each drop the attention digest's memo; a read with nothing new drops nothing and keeps its time", async () => {
+    const { onAttentionNotified } = await import("../attention-memo");
+    const { setupReviewOf } = await import("./setup-chat");
+    let drops = 0;
+    const off = onAttentionNotified(() => void drops++);
+    try {
+      const a = await project();
+      const s = stand(a.root);
+      const first = await openSetup(a.id, M, s.deps);
+      await readSetup(a.id);
+      assert.equal(setupReviewOf(a.id), null, "nothing proposed yet");
+      const d0 = drops;
+      commitIn(first.worktree!.path, { ".sova/project.json": DEF("none") });
+      await readSetup(a.id);
+      const item = setupReviewOf(a.id);
+      assert.ok(item, "proposed: Needs you lists it");
+      assert.equal(drops, d0 + 1, "the digest's memo dropped once");
+      await readSetup(a.id);
+      assert.equal(drops, d0 + 1, "read again: nothing changed, no drop");
+      assert.equal(setupReviewOf(a.id)?.since, item.since, "its time kept");
+      git(a.root, "merge", "-q", "--no-edit", first.worktree!.branch);
+      await readSetup(a.id);
+      assert.equal(setupReviewOf(a.id), null, "merged: Needs you lists it no more");
+      assert.equal(drops, d0 + 2, "and the memo dropped, so the row goes at the next read");
+    } finally {
+      off();
+    }
+  });
+});

@@ -6,6 +6,7 @@ import type { RuntimeRunReview } from "../../shared/project-runtime";
 import type { PlaybookReviewFact } from "./playbook-review";
 import type { SetupChatView, SetupHistoryItem, SetupOpened, SetupProposal, SetupState, SetupStatus, SetupTrial, SetupTrialCheck } from "../../shared/setup-chat";
 import { isArchived } from "../archived-sessions";
+import { attentionChanged } from "../attention-memo";
 import { OrgError } from "../org-error";
 import type { Envelope } from "../org-envelope";
 import { realGit } from "../project-services/engine";
@@ -273,11 +274,13 @@ export function setupReviews(): PlaybookReviewFact[] {
 }
 
 function noteReview(projectId: string, cur: SetupCurrent | null, p: SetupProposal | null, since: number): void {
+  const prev = reviewCache.get(projectId);
   if (!cur || !p) {
-    reviewCache.delete(projectId);
+    // Needs you lists it no more: the digest's memo is dropped, so the row goes at its next read.
+    if (reviewCache.delete(projectId)) attentionChanged();
     return;
   }
-  reviewCache.set(projectId, {
+  const next: PlaybookReviewFact = {
     projectId,
     sessionId: cur.run,
     // Needs you lists it on the chat the user talks to now (after Start Fresh, the carry-on chat).
@@ -290,7 +293,11 @@ function noteReview(projectId: string, cur: SetupCurrent | null, p: SetupProposa
     proposes: "pipeline",
     since,
     setup: true,
-  });
+  };
+  // The same proposal read again keeps its time and changes nothing Needs you shows.
+  if (prev && prev.path === next.path && prev.sessionId === next.sessionId && prev.commit === next.commit && prev.hash === next.hash && prev.branch === next.branch && prev.target === next.target) return;
+  reviewCache.set(projectId, next);
+  attentionChanged();
 }
 
 /** Read the project's Setup chat again for Needs you and the banner (the runtime's tick and moves call it). */

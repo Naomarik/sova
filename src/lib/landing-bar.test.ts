@@ -297,7 +297,7 @@ test("release gating checks: the segment carries the queue run's progress and th
   const rec = record({ entry: "me_rel", state: "checking", steps: plan({ changelog: "done", commit: "done", checks: "running" }).map((s) => (s.id === "checks" ? { ...s, run: "mr_r" } : s)) });
   const b = bar([proj({ queue: queue({ state: "running", current: r }), release: release({ open: rec }) })])!;
   assert.equal(b.top.kind, "release");
-  assert.equal(b.top.sub, "Step 4 of 7 · Gating checks · step 7 of 7 · build");
+  assert.equal(b.top.sub, "Step 4 of 7 · Gating checks · build");
   assert.equal(b.top.segments.find((s) => s.id === "checks")?.progress, 0.5);
 });
 

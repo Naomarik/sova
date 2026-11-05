@@ -222,7 +222,7 @@ function foldedSteps(run: Pick<MergeRun, "steps" | "checks">): LandingSegment[] 
 /** What the run is doing now, in the sub line's words: "step 7 of 11 · test:int · ~3 min left". It counts every
     segment the track draws (runSegments, same options): N is the running one's place, or between steps the next
     waiting one's; a segment joining mid-run grows M. */
-export function runNow(run: Pick<MergeRun, "steps" | "checks" | "startedAt">, eta: MergeEntry["eta"] | undefined, now: number, o: { landsLocally?: boolean; push?: boolean } = {}): string {
+export function runNow(run: Pick<MergeRun, "steps" | "checks" | "startedAt">, eta: MergeEntry["eta"] | undefined, now: number, o: { landsLocally?: boolean; push?: boolean; counted?: boolean } = {}): string {
   const segs = runSegments(run, o);
   const left = eta && eta.takesMs > 0 ? eta.takesMs - (now - at(run.startedAt)) : NaN;
   const tail = Number.isFinite(left) && left > 0 ? ` · ~${mins(left)} left` : "";
@@ -232,6 +232,8 @@ export function runNow(run: Pick<MergeRun, "steps" | "checks" | "startedAt">, et
     i = last < 0 ? -1 : segs.findIndex((s, k) => k > last && s.state === "waiting");
   }
   if (i < 0) return `Starting${tail}`;
+  // Inside a release the track draws the release's steps, so the queue run's own count would match nothing shown.
+  if (o.counted === false) return `${segs[i]!.label}${tail}`;
   return `step ${i + 1} of ${segs.length} · ${segs[i]!.label}${tail}`;
 }
 
@@ -535,7 +537,7 @@ function openReleaseBar(p: LandingProjectInput, rv: LandingReleaseCut, r: Releas
   let sub = `Step ${idx} of ${plan.length}${cur ? ` · ${cur.label}` : ""}`;
   if (cur?.id === "checks" && run) {
     const entry = q?.checking.find((e) => e.id === run.entry);
-    sub += ` · ${runNow(run, entry?.eta, now, { landsLocally: false })}`;
+    sub += ` · ${runNow(run, entry?.eta, now, { landsLocally: false, counted: false })}`;
   }
   const needs = releaseNeeds(rv, r, now);
   const base = {

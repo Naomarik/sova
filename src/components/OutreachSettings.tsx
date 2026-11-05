@@ -1,5 +1,8 @@
 import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
-import { LABEL_MAX, type OutreachInfo, type SenderEntry } from "../../shared/outreach";
+import { labelProblem, type OutreachInfo, type SenderEntry } from "../../shared/outreach";
+import { NUMBER_NAME_RULE, SENDER_LABEL_RULE, SOCKET_RULE } from "../../shared/outreach-limits";
+import { problemOf } from "../../shared/form-rules";
+import { Choice, TextField, Toggle } from "./form";
 import {
   acceptOutreachInfo,
   entryChoice,
@@ -224,20 +227,18 @@ export function OutreachSettingsSection() {
                     </button>
                   </Show>
                   <Show when={e.id === "local" && draft()?.sender === "local"}>
-                    <div class="field settings-field">
-                      <label class="field-label" for="outreach-socket">
-                        Socket
-                      </label>
-                      <input
-                        id="outreach-socket"
-                        class="input input-mono"
-                        autocomplete="off"
-                        placeholder="Default: the sender's own (sova/whatsapp/sender.sock)"
-                        value={draft()?.socket ?? ""}
-                        disabled={off()}
-                        onInput={(ev) => edit({ socket: ev.currentTarget.value })}
-                      />
-                    </div>
+                    <TextField
+                      class="settings-field"
+                      inputClass="input-mono"
+                      id="outreach-socket"
+                      label="Socket"
+                      rule={SOCKET_RULE}
+                      autocomplete="off"
+                      placeholder="Default: the sender's own (sova/whatsapp/sender.sock)"
+                      value={draft()?.socket ?? ""}
+                      disabled={off()}
+                      onInput={(raw) => edit({ socket: raw })}
+                    />
                   </Show>
                 </li>
               );
@@ -266,20 +267,20 @@ export function OutreachSettingsSection() {
         >
           <div class="sender-add">
             <span class="field-hint">Another sender on this host, one number each: its own SOVA_WA_HOME and socket. The guide to running a second number: docs/outreach/whatsapp.md.</span>
-            <div class="field settings-field">
-              <label class="field-label" for="outreach-new-name">
-                Name
-              </label>
-              <input id="outreach-new-name" class="input input-mono" autocomplete="off" placeholder="sales" value={newName()} onInput={(ev) => setNewName(ev.currentTarget.value)} />
-            </div>
-            <div class="field settings-field">
-              <label class="field-label" for="outreach-new-socket">
-                Socket
-              </label>
-              <input id="outreach-new-socket" class="input input-mono" autocomplete="off" placeholder="Absolute, like …/sova/whatsapp-sales/sender.sock" value={newSocket()} onInput={(ev) => setNewSocket(ev.currentTarget.value)} />
-            </div>
+            <TextField class="settings-field" inputClass="input-mono" id="outreach-new-name" label="Name" rule={newName() ? NUMBER_NAME_RULE : undefined} autocomplete="off" placeholder="sales" value={newName()} onInput={setNewName} />
+            <TextField
+              class="settings-field"
+              inputClass="input-mono"
+              id="outreach-new-socket"
+              label="Socket"
+              rule={SOCKET_RULE}
+              autocomplete="off"
+              placeholder="Absolute, like …/sova/whatsapp-sales/sender.sock"
+              value={newSocket()}
+              onInput={setNewSocket}
+            />
             <div class="button-row">
-              <button type="button" class="button button-sm" disabled={!newName().trim() || !newSocket().trim()} onClick={addNumber}>
+              <button type="button" class="button button-sm" disabled={!!problemOf(NUMBER_NAME_RULE, newName()) || !newSocket().trim() || !!problemOf(SOCKET_RULE, newSocket())} onClick={addNumber}>
                 Add Number
               </button>
               <button type="button" class="button button-sm button-ghost" onClick={() => setAdding(false)}>
@@ -303,22 +304,19 @@ export function OutreachSettingsSection() {
                   <h4 class="sender-manage-head">
                     {numberWords({ label: labelFor(id()), me: info()?.sender.me })}
                   </h4>
-                  <div class="field settings-field">
-                    <label class="field-label" for="outreach-label">
-                      Label
-                    </label>
-                    <input
-                      id="outreach-label"
-                      class="input"
-                      autocomplete="off"
-                      maxLength={LABEL_MAX}
-                      placeholder={baseLabel(id(), peers())}
-                      value={draft()?.labels[id()] ?? ""}
-                      disabled={off()}
-                      onInput={(ev) => edit({ labels: { ...(draft()?.labels ?? {}), [id()]: ev.currentTarget.value } })}
-                    />
-                    <span class="field-hint">A short name for this number, like Office. Never the number itself.</span>
-                  </div>
+                  <TextField
+                    class="settings-field"
+                    id="outreach-label"
+                    label="Label"
+                    hint="A short name for this number, like Office. Never the number itself."
+                    rule={SENDER_LABEL_RULE}
+                    error={(draft()?.labels[id()] ?? "").trim() ? labelProblem(draft()!.labels[id()]!) : null}
+                    autocomplete="off"
+                    placeholder={baseLabel(id(), peers())}
+                    value={draft()?.labels[id()] ?? ""}
+                    disabled={off()}
+                    onInput={(raw) => edit({ labels: { ...(draft()?.labels ?? {}), [id()]: raw } })}
+                  />
                   <Show when={id().startsWith("local:")}>
                     <div class="outreach-control">
                       <button type="button" class="button button-sm button-destructive" disabled={off() || draft()?.sender === id()} onClick={() => removeNumber(id())}>
@@ -413,33 +411,28 @@ export function OutreachSettingsSection() {
       <Show when={draft()?.sender === "local" || draft()?.sender.startsWith("local:")}>
         <fieldset class="field">
           <legend class="field-label">Accept sends from</legend>
-          <label class="toggle public-links-choice">
-            <input type="radio" name="outreach-accept" checked={Array.isArray(draft()?.acceptFrom) && (draft()!.acceptFrom as string[]).length === 0} disabled={off()} onChange={() => edit({ acceptFrom: [] })} />
-            <span class="toggle-box" aria-hidden="true" />
-            <span class="public-links-choice-name">No other host</span>
-          </label>
-          <label class="toggle public-links-choice">
-            <input type="radio" name="outreach-accept" checked={draft()?.acceptFrom === "all"} disabled={off()} onChange={() => edit({ acceptFrom: "all" })} />
-            <span class="toggle-box" aria-hidden="true" />
-            <span class="public-links-choice-name">All peers</span>
-          </label>
+          <Choice
+            class="public-links-choices"
+            label="Accept sends from"
+            value={draft()?.acceptFrom === "all" ? "all" : Array.isArray(draft()?.acceptFrom) && (draft()!.acceptFrom as string[]).length === 0 ? "none" : null}
+            options={[{ value: "none", label: <span class="public-links-choice-name">No other host</span> }, { value: "all", label: <span class="public-links-choice-name">All peers</span> }]}
+            disabled={off()}
+            onChange={(v) => edit({ acceptFrom: v === "all" ? "all" : [] })}
+          />
           <ul class="public-links-accept-list">
             <For each={peers()}>
               {(p) => (
                 <li>
-                  <label class="toggle public-links-check">
-                    <input
-                      type="checkbox"
-                      checked={Array.isArray(draft()?.acceptFrom) && (draft()!.acceptFrom as string[]).includes(p.nodeId)}
-                      disabled={off() || draft()?.acceptFrom === "all"}
-                      onChange={(e) => {
-                        const cur = Array.isArray(draft()?.acceptFrom) ? (draft()!.acceptFrom as string[]) : [];
-                        edit({ acceptFrom: e.currentTarget.checked ? [...cur.filter((x) => x !== p.nodeId), p.nodeId] : cur.filter((x) => x !== p.nodeId) });
-                      }}
-                    />
-                    <span class="toggle-box" aria-hidden="true" />
-                    <span>{p.label}</span>
-                  </label>
+                  <Toggle
+                    class="public-links-check"
+                    label={p.label}
+                    checked={Array.isArray(draft()?.acceptFrom) && (draft()!.acceptFrom as string[]).includes(p.nodeId)}
+                    disabled={off() || draft()?.acceptFrom === "all"}
+                    onChange={(v) => {
+                      const cur = Array.isArray(draft()?.acceptFrom) ? (draft()!.acceptFrom as string[]) : [];
+                      edit({ acceptFrom: v ? [...cur.filter((x) => x !== p.nodeId), p.nodeId] : cur.filter((x) => x !== p.nodeId) });
+                    }}
+                  />
                 </li>
               )}
             </For>
@@ -447,11 +440,7 @@ export function OutreachSettingsSection() {
         </fieldset>
       </Show>
 
-      <label class="toggle">
-        <input type="checkbox" checked={!!info()?.file.paused} disabled={!info() || pausing()} onChange={(e) => void togglePause(e.currentTarget.checked)} />
-        <span class="toggle-box" aria-hidden="true" />
-        <span>Pause all sending from this host</span>
-      </label>
+      <Toggle label="Pause all sending from this host" checked={!!info()?.file.paused} disabled={!info() || pausing()} onChange={(v) => void togglePause(v)} />
       <Show when={actionError()}>{(e) => <Banner tone="error" title={e()} />}</Show>
 
       <Show when={(info()?.protected.length ?? 0) > 0}>

@@ -92,6 +92,15 @@ const profileLimits = await import("../shared/profile-limits");
 const meshLimits = await import("../shared/mesh-limits");
 const pushLimits = await import("../shared/push-limits");
 const linkLimits = await import("../shared/public-links-limits");
+const outreachLimits = await import("../shared/outreach-limits");
+const outreach = await import("../src/lib/outreach");
+const outreachStore = await import("./outreach/settings");
+/** The save's own parse (the route also asks the senders, which the unit tier never reaches). */
+const outreachSave = async (patch: Json) => {
+  const r = outreachStore.saveOutreach(patch);
+  return "error" in r ? { ok: false, error: r.error } : { ok: true };
+};
+const outreachDraft = async () => outreach.outreachDraftOf(outreachStore.readOutreachState().file);
 const linkClient = (patch: Json) => links.draftIssue({ ...links.publicLinksDraftOf(fresh.links.file), route: "self", publicUrl: "https://share.example.com", ...patch })?.text ?? null;
 const linkServer = (patch: Json) => putStatus("/api/public-links", { route: "self", gateway: { publicUrl: "https://share.example.com", front: "vhost", sharePort: 4802, acceptFrom: "all", ...patch } });
 const { addProfile } = await import("./profiles-store");
@@ -122,6 +131,27 @@ const withActions = (n: number) => {
 };
 
 const LIMITS: Limit[] = [
+  {
+    ...ruled(outreachLimits.SENDER_LABEL_RULE),
+    client: async (v) => outreach.outreachProblem({ ...(await outreachDraft()), labels: { local: v as string } }),
+    server: (v) => outreachSave({ labels: v === "" ? {} : { local: v } }),
+  },
+  {
+    name: "Outreach socket (an absolute path)",
+    rule: outreachLimits.SOCKET_RULE,
+    takes: ["", "/srv/wa/sender.sock"],
+    refuses: ["wa/sender.sock", "./x.sock"],
+    client: async (v) => outreach.outreachProblem({ ...(await outreachDraft()), sender: "local", socket: v as string }),
+    server: (v) => outreachSave({ sender: { local: v === "" ? {} : { socket: v } } }),
+  },
+  {
+    name: "Outreach number name (lowercase, digits and dashes, at most 32)",
+    rule: outreachLimits.NUMBER_NAME_RULE,
+    takes: ["sales", `a${"-".repeat(31)}`],
+    refuses: ["Sales", "", "-x", `a${"b".repeat(32)}`],
+    client: async (v) => outreach.outreachProblem({ ...(await outreachDraft()), numbers: [{ id: v as string, socket: "/srv/wa/sales.sock" }] }),
+    server: (v) => outreachSave({ numbers: [{ id: v, socket: "/srv/wa/sales.sock" }] }),
+  },
   ...overseer.CAP_KEYS.map(
     (k): Limit => ({
       ...ruled(limits.CAP_RULES[k]),

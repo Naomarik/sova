@@ -114,6 +114,7 @@ export type CommandId =
   | "project.overseer.actions"
   | "project.overseer.memory.get"
   | "project.list"
+  | "project.glance"
   | "project.get"
   | "project.create"
   | "project.update"
@@ -2890,6 +2891,8 @@ export interface CommandParams {
   };
   /** Every registered project, in an organization or not. (only looks; needs the card's owner trusted) */
   "project.list": Record<string, never>;
+  /** Every listed project's runtime figures, as the overview's cards show them: ready to merge, running copies, memory in use, a landing or release moving. (only looks; needs the card's owner trusted) */
+  "project.glance": Record<string, never>;
   /** One registered project. (only looks; needs the card's owner trusted) */
   "project.get": {
     /** The project's id */
@@ -3690,6 +3693,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.overseer.actions": "looks",
   "project.overseer.memory.get": "looks",
   "project.list": "looks",
+  "project.glance": "looks",
   "project.get": "looks",
   "project.create": "changes",
   "project.update": "changes",

@@ -238,9 +238,10 @@
 }
 .overview-orgs-all:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
 
-/* The Projects section, Home's first (§app.projects/home-cards): a grid of project cards, four to five across on a
-   desktop, two on an open Fold; compact and two across under 480px (a phone, a folded Fold). The whole card opens the
-   project: the name link's ::after covers it, under the ⋯ menu and New Chat. The last tile is a dashed Add Project. */
+/* The Projects section, Home's first (§app.projects/home-cards): a grid of project cards, one column under 560px of
+   the overview's own width, two from 560px, three from 900px. Each card: its head (the Needs you band, a link to the
+   project), the Chats and Runtime rows, the progress zone while something moves, and the foot bar pinned to the
+   bottom. Cards in a row are the same height. The last tile is a dashed Add Project. */
 .overview-projects-head { display: flex; align-items: center; gap: var(--space-3); }
 .overview-projects-head > .explain-section-head { flex: 1; min-width: 0; }
 .overview-projects-all {
@@ -264,31 +265,45 @@
   padding: 0;
   display: grid;
   gap: var(--space-3);
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
+@container overview (min-width: 560px) { .overview-projects-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container overview (min-width: 900px) { .overview-projects-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .overview-projects-grid > li { display: flex; min-width: 0; }
 
 .overview-project-card {
-  position: relative;
   flex: 1;
   min-width: 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-areas:
-    "icon names menu"
-    "foot foot foot"
-    "error error error";
-  align-items: center;
-  column-gap: var(--space-3);
-  row-gap: var(--space-3);
-  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
   transition: border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
 }
 .overview-project-card:hover { border-color: var(--color-border-strong); box-shadow: var(--shadow-2); }
 .overview-project-card-needs,
 .overview-project-card-needs:hover { border-color: var(--status-warn); }
-.overview-project-card-icon { grid-area: icon; }
-.overview-project-card-names { grid-area: names; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+
+/* Every place a row opens: tinted on hover, a chevron; a row with nowhere to go has neither. */
+.overview-project-card-link { color: inherit; text-decoration: none; transition: background-color var(--dur-fast) var(--ease-standard); }
+.overview-project-card-link:hover { background: var(--color-accent-tint); }
+.overview-project-card-link:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1 - 2px); }
+.overview-project-card-chev { flex: none; color: var(--color-ink-muted); }
+
+/* The head: icon, name and where; the Needs you count at its right, tinted warn while above 0. */
+.overview-project-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap-min);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.overview-project-card-needs .overview-project-card-head { background: var(--status-warn-bg); border-bottom-color: var(--status-warn); }
+.overview-project-card-needs .overview-project-card-head:hover { background: var(--status-warn-bg); }
+.overview-project-card-icon { flex: none; }
+.overview-project-card-names { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .overview-project-card-name {
   min-width: 0;
   overflow: hidden;
@@ -296,39 +311,121 @@
   white-space: nowrap;
   font-weight: var(--fw-semibold);
   color: var(--color-ink);
-  text-decoration: none;
 }
-.overview-project-card-name::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
-.overview-project-card-name:focus-visible { outline: none; }
-.overview-project-card-name:focus-visible::after { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .overview-project-card-where {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--color-ink-muted);
+}
+/* The calm words stay whole (up to half the head); the name and folder are cut first, each with its whole text as title. */
+.overview-project-card-calm {
+  flex: 0 0 auto;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-micro);
+  color: var(--color-ink-muted);
+}
+.overview-project-card-needs-count { flex: none; display: flex; flex-direction: column; align-items: flex-end; line-height: 1; color: var(--status-warn); }
+.overview-project-card-needs-n { font-size: 24px; font-weight: var(--fw-semibold); }
+.overview-project-card-needs-word { font-size: var(--fs-micro); font-weight: var(--fw-semibold); letter-spacing: 0.08em; text-transform: uppercase; }
+
+/* The Chats and Runtime groups: a caption, then rows of a key and its figure. */
+.overview-project-card-body { flex: 1; padding: 0 var(--space-2) var(--space-2); }
+.overview-project-card-cap {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
+.overview-project-card-cap-note { text-transform: none; letter-spacing: 0; }
+.overview-project-card-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-sm);
+  padding: var(--space-1) var(--space-2);
+  border-top: var(--stroke-thin) solid var(--color-border);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+}
+/* A row with nowhere to go keeps the chevron's room, so the figures line up. */
+div.overview-project-card-row::after { content: ""; flex: none; width: 16px; }
+.overview-project-card-key { flex: 1; min-width: 0; color: var(--color-ink-2); }
+.overview-project-card-val { display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; color: var(--color-ink); }
+.overview-project-card-muted { color: var(--color-ink-muted); }
+.overview-project-card-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--status-success); }
+.overview-project-card-fig { min-width: 52px; text-align: right; }
+.overview-project-card-pips { display: inline-flex; gap: 2px; }
+.overview-project-card-pips > i { width: 5px; height: 9px; border-radius: 1px; background: var(--color-sunken); outline: var(--stroke-thin) solid var(--color-border-strong); }
+.overview-project-card-pips > i.overview-project-card-pip-on { background: var(--status-info); }
+.overview-project-card-bar {
+  width: 56px;
+  height: 4px;
+  border-radius: 2px;
+  border: var(--stroke-thin) solid var(--color-border);
+  background: linear-gradient(90deg, var(--status-info) var(--fill, 0%), var(--color-sunken) 0);
+}
+
+/* The progress zone: thin rows above the foot bar, only while a landing or a release moves. */
+.overview-project-card-progress { display: flex; flex-direction: column; }
+.overview-project-card-prog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+  border-top: var(--stroke-thin) solid var(--color-border);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+}
+.overview-project-card-prog-top,
+.overview-project-card-prog-sub { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.overview-project-card-prog-text,
+.overview-project-card-prog-detail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.overview-project-card-prog-detail { font-size: var(--fs-micro); color: var(--color-ink-muted); }
+.overview-project-card-meter { flex: none; display: flex; gap: 2px; width: 72px; }
+.overview-project-card-meter > i { flex: 1; height: 4px; border-radius: 1px; background: var(--color-sunken); outline: var(--stroke-thin) solid var(--color-border-strong); }
+.overview-project-card-meter > .overview-project-card-seg-passed { background: var(--status-success); }
+.overview-project-card-meter > .overview-project-card-seg-running { background: var(--status-info); }
+.overview-project-card-meter > .overview-project-card-seg-held { background: var(--status-warn); }
+.overview-project-card-meter > .overview-project-card-seg-failed { background: var(--status-error); }
+.overview-project-card-meter > .overview-project-card-seg-skipped { background: var(--color-border); }
+
+/* The foot bar, pinned to the card's bottom: New Chat, when it was last active (dropped first when tight), ⋯. */
+.overview-project-card-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-sunken);
+}
+.overview-project-card-new { flex: none; }
+.overview-project-card-when {
+  flex: 1 1 0;
+  min-width: 0;
   font-size: var(--fs-caption);
   line-height: var(--lh-caption);
   color: var(--color-ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.overview-project-card-menu { grid-area: menu; align-self: start; position: relative; z-index: 1; }
-/* The status line and New Chat share the card's last row; New Chat drops under the chips only when they can't fit. */
-.overview-project-card-foot { grid-area: foot; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.overview-project-card-status {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1);
-  min-height: var(--control-sm);
-}
-.overview-project-card-when { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.overview-project-card-new { flex: none; margin-left: auto; position: relative; z-index: 1; }
+.overview-project-card-menu { flex: none; margin-left: auto; position: relative; }
 .overview-project-card-error {
-  grid-area: error;
-  position: relative;
-  z-index: 1;
   margin: 0;
+  padding: var(--space-2) var(--space-4);
   font-size: var(--fs-caption);
   line-height: var(--lh-caption);
   color: var(--status-error);
@@ -358,26 +455,11 @@
 .overview-projects-empty-title { margin: 0; font-weight: var(--fw-semibold); color: var(--color-ink); }
 .overview-projects-empty-body { margin: 0; color: var(--color-ink-2); }
 
-/* Compact (a phone, a folded Fold): two across; the icon, + and ⋯ on top, the name under them, then the status line
-   across the whole card. New Chat is a + button. Every control is at least 44px tall. */
-@container overview (max-width: 479px) {
-  .overview-projects-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 156px), 1fr)); gap: var(--space-2); }
-  .overview-project-card {
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
-    grid-template-areas:
-      "icon . new menu"
-      "names names names names"
-      "status status status status"
-      "error error error error";
-    row-gap: var(--space-2);
-    column-gap: var(--space-1);
-    padding: var(--space-3);
-  }
-  .overview-project-card-foot { display: contents; }
-  .overview-project-card-status { grid-area: status; min-height: var(--control-sm); }
-  .overview-project-card-new { grid-area: new; margin-left: 0; min-width: var(--tap-min); min-height: var(--tap-min); padding: 0; justify-content: center; }
-  .overview-project-card-menu { align-self: center; }
-  .overview-project-card-menu .button { min-width: var(--tap-min); min-height: var(--tap-min); }
-  .overview-project-card-new-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .overview-project-card-add { min-height: 132px; }
+/* One column (a phone, a folded Fold): every row and button at least 44px tall, for a thumb. */
+@container overview (max-width: 559px) {
+  .overview-project-card-row,
+  .overview-project-card-prog,
+  .overview-project-card-new,
+  .overview-project-card-menu .button { min-height: var(--tap-min); }
+  .overview-project-card-menu .button { min-width: var(--tap-min); }
 }

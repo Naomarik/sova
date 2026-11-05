@@ -472,6 +472,7 @@
    "project.overseer.todo.reorder": "scripts",
    "project.overseer.todo.clear-done": "scripts",
    "project.list": "scripts",
+   "project.glance": "scripts",
    "project.get": "scripts",
    "project.create": "scripts",
    "project.update": "scripts",

@@ -26,6 +26,7 @@ const guards = await import("./session-guards");
 const { GAP_PARAM } = await import("./overseer-org-part");
 const { createSettingsTool } = await import("./create-settings-tool");
 const { createGuideTool } = await import("../pi-config/extensions/mode/create-guide-tool.ts");
+const { specCodingTool } = await import("./spec-coding-tool");
 
 const SNAPSHOT = new URL("./agent-loadouts.snapshot.json", import.meta.url);
 const CWD = "/work/project";
@@ -72,6 +73,7 @@ function families(): Record<string, Decl[]> {
     "project-overseer": po.projectOverseerTools(poHost({}), identity).map(decl),
     // A Create chat's settings cards (§chat.create-mode/settings-cards): prepares only, opened on purpose.
     "create-settings": [createSettingsTool({ sessionId: "s-1", mode: () => "create", cwd: () => CWD })].map(decl),
+    spec: [specCodingTool()].map(decl),
     "project-overseer+onboard": po.projectOverseerTools(poHost({ onboard: () => {} }), identity).map(decl),
     "project-overseer+gaps": po.projectOverseerTools(poHost({ gaps: () => ({ param: GAP_PARAM }) }), identity).map(decl),
     "project-overseer+copies": po.projectOverseerTools(poHost({ confirmedClicks: () => null }), identity).map(decl),

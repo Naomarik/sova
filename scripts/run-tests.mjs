@@ -112,6 +112,7 @@ const GLOBS = [
   "server/voice/*.test.ts",
   "server/usage-helper/*.test.ts",
   "server/memory/*.test.ts",
+  "server/modes/**/*.test.ts",
   "server/updates/*.test.ts",
   "server/harness/**/*.test.ts",
   "src/lib/*.test.ts",

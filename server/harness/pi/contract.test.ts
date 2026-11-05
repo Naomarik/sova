@@ -684,6 +684,22 @@ describe("pi contract", () => {
     assert.deepEqual(warm, ["start", "shutdown"]);
   });
 
+  test("P37 base-prompt-sections: a command context's getSystemPromptOptions() is the live base options, whose sections build the prompt, and a tool change replaces it", async () => {
+    let get: (() => any) | undefined;
+    const ext = (api: any) =>
+      api.registerCommand("contract-sections", { description: "contract fixture", handler: async (_args: string, ctx: any) => void (get = ctx.getSystemPromptOptions) });
+    const { session } = await quirkSession({ extensions: [ext] });
+    await session.extensionRunner.getCommand("contract-sections")!.handler("", session.extensionRunner.createCommandContext());
+    const sections = get!().sections;
+    assert.ok(sections, "the base options carry a sections object");
+    sections.mode = "CONTRACT-BASE-SECTION";
+    assert.match(session.systemPrompt, /CONTRACT-BASE-SECTION/, "the prompt is built from the live base options (the mode engine's syncHostSection)");
+    session.setActiveToolsByName(session.getActiveToolNames());
+    assert.doesNotMatch(session.systemPrompt, /CONTRACT-BASE-SECTION/, "fixed: a rebuild keeps extension sections; the engine's re-sync at every run start and switch may go");
+    assert.notEqual(get!().sections, sections, "a rebuild hands out a new base object, so the getter is read again each time");
+    session.dispose();
+  });
+
   test("P19 rebuild-prompt: setActiveToolsByName(getActiveToolNames()) re-reads the loader's appendSystemPrompt parts", async () => {
     const parts: string[] = [];
     const { session, model } = await quirkSession({

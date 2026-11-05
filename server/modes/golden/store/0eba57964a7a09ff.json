@@ -1,0 +1,145 @@
+[
+ {
+  "name": "read",
+  "description": "@491fc972ef0356ca",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "path"
+   ],
+   "properties": {
+    "path": {
+     "type": "string",
+     "description": "Path to the file to read (relative or absolute)"
+    },
+    "offset": {
+     "type": "number",
+     "description": "Line number to start reading from (1-indexed)"
+    },
+    "limit": {
+     "type": "number",
+     "description": "Maximum number of lines to read"
+    }
+   }
+  },
+  "constrainedSampling": {
+   "type": "json_schema",
+   "strict": "prefer"
+  }
+ },
+ {
+  "name": "bash",
+  "description": "@478d9ffb376862b1",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "command"
+   ],
+   "properties": {
+    "command": {
+     "type": "string",
+     "description": "Shell command to execute"
+    },
+    "timeout": {
+     "type": "number",
+     "description": "Timeout in seconds (optional, no default timeout)"
+    }
+   }
+  },
+  "constrainedSampling": {
+   "type": "json_schema",
+   "strict": "prefer"
+  }
+ },
+ {
+  "name": "edit",
+  "description": "@b5267b50ea0f1f04",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "path",
+    "edits"
+   ],
+   "properties": {
+    "path": {
+     "type": "string",
+     "description": "Path to the file to edit (relative or absolute)"
+    },
+    "edits": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "required": [
+       "oldText",
+       "newText"
+      ],
+      "properties": {
+       "oldText": {
+        "type": "string",
+        "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+       },
+       "newText": {
+        "type": "string",
+        "description": "Replacement text for this targeted edit."
+       }
+      }
+     },
+     "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+    }
+   }
+  },
+  "constrainedSampling": {
+   "type": "json_schema",
+   "strict": "prefer"
+  }
+ },
+ {
+  "name": "write",
+  "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "path",
+    "content"
+   ],
+   "properties": {
+    "path": {
+     "type": "string",
+     "description": "Path to the file to write (relative or absolute)"
+    },
+    "content": {
+     "type": "string",
+     "description": "Content to write to the file"
+    }
+   }
+  },
+  "constrainedSampling": {
+   "type": "json_schema",
+   "strict": "prefer"
+  }
+ },
+ {
+  "name": "project_verbs",
+  "description": "@92bd36452c3a5ac1",
+  "parameters": {
+   "type": "object",
+   "properties": "@98ac3403e82f7921",
+   "required": [
+    "verb"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "rel__status",
+  "description": "Print the release status.\n\n(A tool of the project mode rel.)",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "verbose": {
+     "type": "boolean"
+    }
+   }
+  }
+ }
+]

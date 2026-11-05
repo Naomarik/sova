@@ -1,0 +1,100 @@
+{
+ "op": {
+  "type": "string",
+  "const": "create"
+ },
+ "title": {
+  "type": "string",
+  "minLength": 1,
+  "description": "Short name of the concern, e.g. \"API rate limiting\"."
+ },
+ "summary": {
+  "type": "string",
+  "minLength": 1,
+  "description": "One line: what the concern is about."
+ },
+ "findings": {
+  "type": "array",
+  "items": {
+   "type": "string",
+   "minLength": 1
+  },
+  "description": "Facts you established that shape the plan; each becomes fN."
+ },
+ "approach": {
+  "type": "array",
+  "items": {
+   "type": "string",
+   "minLength": 1
+  },
+  "description": "The plan's steps, in order; each becomes aN."
+ },
+ "rejected": {
+  "type": "array",
+  "items": {
+   "type": "object",
+   "required": [
+    "option",
+    "why"
+   ],
+   "properties": {
+    "option": {
+     "type": "string",
+     "minLength": 1,
+     "description": "The alternative you considered."
+    },
+    "why": {
+     "type": "string",
+     "minLength": 1,
+     "description": "Why not."
+    }
+   },
+   "additionalProperties": false
+  },
+  "description": "Alternatives you ruled out; each becomes xN."
+ },
+ "technical": {
+  "type": "array",
+  "items": {
+   "type": "string",
+   "minLength": 1
+  },
+  "description": "Technical notes: the files, code and technical detail the other fields leave out (the writing style says when); each becomes tN."
+ },
+ "questions": {
+  "type": "array",
+  "items": {
+   "type": "object",
+   "required": [
+    "topic",
+    "ask",
+    "recommendation"
+   ],
+   "properties": "@6fc2cb5e184007cd",
+   "additionalProperties": false
+  },
+  "description": "Decisions the user must make; each becomes qN."
+ },
+ "visual": {
+  "type": "object",
+  "required": [
+   "kind",
+   "source"
+  ],
+  "properties": {
+   "kind": {
+    "type": "string",
+    "minLength": 1,
+    "description": "The vis kind, e.g. \"wireframe\", \"flow\", \"state\", \"steps\" (call vis_guide with it first).",
+    "pattern": "^[a-z]+$"
+   },
+   "source": {
+    "type": "string",
+    "minLength": 1,
+    "description": "The drawing's source, exactly what the vis fence's body would be, in the syntax vis_guide returned."
+   }
+  },
+  "additionalProperties": false,
+  "description": "A drawing on the alignment card, only when it explains faster than words; at most 3 per alignment."
+ }
+}

@@ -1,0 +1,457 @@
+[
+ {
+  "type": "object",
+  "required": [
+   "op",
+   "title",
+   "summary"
+  ],
+  "properties": "@a990a959390da72b",
+  "additionalProperties": false,
+  "description": "Start a new alignment (al_N) from the fields given here."
+ },
+ {
+  "type": "object",
+  "required": [
+   "op",
+   "path"
+  ],
+  "properties": {
+   "op": {
+    "type": "string",
+    "const": "import"
+   },
+   "path": {
+    "type": "string",
+    "minLength": 1,
+    "description": "@407a8ada755272ad"
+   }
+  },
+  "additionalProperties": false,
+  "description": "Start a new alignment from a JSON file a planning worker wrote. Never retype its content."
+ },
+ {
+  "type": "object",
+  "required": [
+   "op"
+  ],
+  "properties": {
+   "op": {
+    "type": "string",
+    "const": "add"
+   },
+   "findings": {
+    "type": "array",
+    "items": {
+     "type": "string",
+     "minLength": 1
+    },
+    "description": "Facts you established that shape the plan; each becomes fN."
+   },
+   "approach": {
+    "type": "array",
+    "items": {
+     "type": "string",
+     "minLength": 1
+    },
+    "description": "The plan's steps, in order; each becomes aN."
+   },
+   "rejected": {
+    "type": "array",
+    "items": {
+     "type": "object",
+     "required": [
+      "option",
+      "why"
+     ],
+     "properties": {
+      "option": {
+       "type": "string",
+       "minLength": 1,
+       "description": "The alternative you considered."
+      },
+      "why": {
+       "type": "string",
+       "minLength": 1,
+       "description": "Why not."
+      }
+     },
+     "additionalProperties": false
+    },
+    "description": "Alternatives you ruled out; each becomes xN."
+   },
+   "technical": {
+    "type": "array",
+    "items": {
+     "type": "string",
+     "minLength": 1
+    },
+    "description": "Technical notes: the files, code and technical detail the other fields leave out (the writing style says when); each becomes tN."
+   },
+   "questions": {
+    "type": "array",
+    "items": {
+     "type": "object",
+     "required": [
+      "topic",
+      "ask",
+      "recommendation"
+     ],
+     "properties": "@6fc2cb5e184007cd",
+     "additionalProperties": false
+    },
+    "description": "Decisions the user must make; each becomes qN."
+   }
+  },
+  "additionalProperties": false,
+  "description": "Append items to the alignment; they get the next free ids. Give at least one list.",
+  "minProperties": 2
+ },
+ {
+  "type": "object",
+  "required": [
+   "op",
+   "id",
+   "text"
+  ],
+  "properties": {
+   "op": {
+    "type": "string",
+    "const": "edit"
+   },
+   "text": {
+    "type": "string",
+    "minLength": 1,
+    "description": "Its complete new text (the whole item, not a diff)."
+   }
+  },
+  "additionalProperties": false,
+  "description": "Replace the text of a finding (fN), an approach step (aN) or a technical note (tN)."
+ },
+ {
+  "type": "object",
+  "required": [
+   "op",
+   "q"
+  ],
+  "properties": "@a834ae0c71cf133c",
+  "additionalProperties": false,
+  "description": "Change fields of a question; omitted fields stay. Does not decide it.",
+  "minProperties": 3
+ },
+ {
+  "type": "object",
+  "required": [
+   "op",
+   "id"
+  ],
+  "properties": {
+   "op": {
+    "type": "string",
+    "const": "edit_rejected"
+   },
+   "option": {
+    "type": "string",
+    "minLength": 1
+   },
+   "why": {
+    "type": "string",
+    "minLength": 1,
+    "description": "Why it was rejected."
+   }
+  },
+  "additionalProperties": false,
+  "description": "Change a rejected alternative (xN).",
+  "minProperties": 3
+ },
+ {
+  "type": "object",
+  "required": [
+   "op"
+  ],
+  "properties": {
+   "op": {
+    "type": "string",
+    "const": "edit_doc"
+   },
+   "title": {
+    "type": "string",
+    "minLength": 1
+   },
+   "summary": {
+    "type": "string",
+    "minLength": 1
+   },
+   "visual": {
+    "anyOf": [
+     {
+      "type": "object",
+      "required": [
+       "kind",
+       "source"
+      ],
+      "properties": {
+       "kind": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The vis kind, e.g. \"wireframe\", \"flow\", \"state\", \"steps\" (call vis_guide with it first).",
+        "pattern": "^[a-z]+$"
+       },
+       "source": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The drawing's source, exactly what the vis fence's body would be, in the syntax vis_guide returned."
+       }
+      },
+      "additionalProperties": false,
+      "description": "A drawing on the alignment card, only when it explains faster than words; at most 3 per alignment."
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "description": "The alignment's own drawing, under its summary; null removes it."
+   }
+  },
+  "additionalProperties": false,
+  "description": "Change the alignment's title and/or summary.",
+  "minProperties": 2
+ },
+ {
+  "type": "object",
+  "required": [
+   "op",
+   "ids"
+  ],
+  "properties": {
+   "op": {
+    "type": "string",
+    "const": "remove"
+   },
+   "ids": {
+    "type": "array",
+    "items": {
+     "type": "string",
+     "minLength": 1,
+     "pattern": "^[faxt][1-9][0-9]*$"
+    },
+    "description": "e.g. [\"f2\", \"a4\"].",
+    "minItems": 1
+   }
+  },
+  "additionalProperties": false,
+  "description": "Delete findings, approach steps, rejected alternatives or technical notes. Questions are dropped instead (drop_question)."
+ },
+ {
+  "type": "object",
+  "required": [
+   "op",
+   "q",
+   "decision"
+  ],
+  "properties": {
+   "op": {
+    "type": "string",
+    "const": "decide"
+   },
+   "q": {
+    "type": "string",
+    "minLength": 1,
+    "description": "A question id, e.g. \"q3\".",
+    "pattern": "^q[1-9][0-9]*$"
+   },
+   "decision": {
+    "type": "string",
+    "minLength": 1,
+    "description": "The user's answer, e.g. \"Yes, backfill existing rows\"."
+   }
+  },
+  "additionalProperties": false,
+  "description": "Record the user's own answer to one question, in their words. Only a question the user answered."
+ },
+ {
+  "type": "object",
+  "required": [
+   "op",
+   "qs"
+  ],
+  "properties": {
+   "op": {
+    "type": "string",
+    "const": "accept"
+   },
+   "qs": {
+    "type": "array",
+    "items": {
+     "type": "string",
+     "minLength": 1,
+     "description": "A question id, e.g. \"q3\".",
+     "pattern": "^q[1-9][0-9]*$"
+    },
+    "description": "Question ids, e.g. [\"q1\", \"q3\"].",
+    "minItems": 1
+   }
+  },
+  "additionalProperties": false,
+  "description": "The user told you to take your recommendation for exactly these questions. Only those: one they answered is decide, one they didn't mention stays open."
+ },
+ {
+  "type": "object",
+  "required": [
+   "op"
+  ],
+  "properties": {
+   "op": {
+    "type": "string",
+    "const": "accept_all"
+   }
+  },
+  "additionalProperties": false,
+  "description": "The user told you to take your recommendation for every question still open (\"your recs for all\", or a go-ahead while questions are open). Not when they answered or named only some."
+ },
+ {
+  "type": "object",
+  "required": [
+   "op",
+   "q"
+  ],
+  "properties": {
+   "op": {
+    "type": "string",
+    "const": "reopen"
+   },
+   "q": {
+    "type": "string",
+    "minLength": 1,
+    "description": "A question id, e.g. \"q3\".",
+    "pattern": "^q[1-9][0-9]*$"
+   }
+  },
+  "additionalProperties": false,
+  "description": "Make a decided or dropped question open again."
+ },
+ {
+  "type": "object",
+  "required": [
+   "op",
+   "q",
+   "reason"
+  ],
+  "properties": {
+   "op": {
+    "type": "string",
+    "const": "drop_question"
+   },
+   "q": {
+    "type": "string",
+    "minLength": 1,
+    "description": "A question id, e.g. \"q3\".",
+    "pattern": "^q[1-9][0-9]*$"
+   },
+   "reason": {
+    "type": "string",
+    "minLength": 1,
+    "description": "Why it no longer applies."
+   }
+  },
+  "additionalProperties": false,
+  "description": "Withdraw one question that no longer applies."
+ },
+ {
+  "type": "object",
+  "required": [
+   "op",
+   "reason"
+  ],
+  "properties": {
+   "op": {
+    "type": "string",
+    "const": "drop_alignment"
+   },
+   "reason": {
+    "type": "string",
+    "minLength": 1,
+    "description": "Why it is abandoned."
+   }
+  },
+  "additionalProperties": false,
+  "description": "Abandon the whole alignment."
+ },
+ {
+  "type": "object",
+  "required": [
+   "op",
+   "to"
+  ],
+  "properties": {
+   "op": {
+    "type": "string",
+    "const": "status"
+   },
+   "to": {
+    "type": "string",
+    "enum": [
+     "implementing",
+     "done",
+     "open"
+    ],
+    "description": "\"implementing\" when you start building, never while a question is open (each decided, accepted or dropped first, possibly earlier in this call); \"done\" when the work is finished and verified; \"open\" to reopen a done or dropped alignment."
+   }
+  },
+  "additionalProperties": false,
+  "description": "Move the alignment's lifecycle."
+ },
+ {
+  "type": "object",
+  "required": [
+   "op",
+   "reason"
+  ],
+  "properties": {
+   "op": {
+    "type": "string",
+    "const": "exempt"
+   },
+   "reason": {
+    "type": "string",
+    "minLength": 1,
+    "description": "Why no alignment is needed."
+   }
+  },
+  "additionalProperties": false,
+  "description": "Record that the user's request needs no alignment (a trivial or mechanical change). Must be the only op in its call; no doc."
+ },
+ {
+  "type": "object",
+  "required": [
+   "op"
+  ],
+  "properties": {
+   "op": {
+    "type": "string",
+    "const": "change_request"
+   },
+   "note": {
+    "type": "string",
+    "minLength": 1,
+    "description": "Optional: what was asked, in a few words."
+   }
+  },
+  "additionalProperties": false,
+  "description": "@01b6a6e656d19918"
+ },
+ {
+  "type": "object",
+  "required": [
+   "op"
+  ],
+  "properties": {
+   "op": {
+    "type": "string",
+    "const": "get"
+   }
+  },
+  "additionalProperties": false,
+  "description": "Return the alignment as markdown (every open one when there is no doc)."
+ }
+]

@@ -1,0 +1,173 @@
+[
+ {
+  "step": "open",
+  "calls": [],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push"
+  ],
+  "entries": [],
+  "extensions": [
+   "<mode-slot:index>",
+   "<repo>/pi-config/extensions/subagents/index.ts",
+   "<inline:sova-resource-monitor>",
+   "<inline:sova-fork-cache>",
+   "<inline:sova-shell-guard>",
+   "<inline:sova-deeper-context>",
+   "<inline:sova-mcp>",
+   "<inline:sova-worker-host>",
+   "<inline:sova-vis-check>",
+   "<inline:sova-memory>",
+   "<inline:sova-playbook>",
+   "<inline:sova-project-verbs>",
+   "<inline:sova-topics>",
+   "<inline:sova-tours>",
+   "<inline:sova-create-settings>",
+   "<inline:sova-transcript-cards>"
+  ]
+ },
+ {
+  "step": "switch {\"minorModes\":[\"align\"]}",
+  "calls": [],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align"
+  ],
+  "entries": [
+   {
+    "type": "custom",
+    "customType": "mode",
+    "data": {
+     "minor": "align",
+     "on": true,
+     "active": {
+      "version": 1,
+      "mode": "normal",
+      "strict": false,
+      "minorModes": [
+       "align"
+      ]
+     }
+    }
+   }
+  ]
+ },
+ {
+  "step": "prompt \"one\"",
+  "calls": [
+   {
+    "keep": 0,
+    "add": [
+     {
+      "role": "system",
+      "content": "",
+      "sections": {
+       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+       "tools": "@15d31f2a78f55765",
+       "rules": "@c812aa6c1d63cb16",
+       "docs": "@0f5fabf6c3c47c4c",
+       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
+       "mode": "@762c2620222a71e2"
+      },
+      "toolsAdded": "@3fb51bb2c421c007"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "one"
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align"
+  ],
+  "entries": [
+   {
+    "type": "custom",
+    "customType": "mode-head",
+    "data": {
+     "v": 1,
+     "style": "pm"
+    }
+   },
+   {
+    "type": "message",
+    "message": {
+     "role": "system",
+     "content": "",
+     "sections": {
+      "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+      "tools": "@15d31f2a78f55765",
+      "rules": "@c812aa6c1d63cb16",
+      "docs": "@0f5fabf6c3c47c4c",
+      "cwd": "<cwd>\n<ws:plain>\n</cwd>",
+      "mode": "@762c2620222a71e2"
+     },
+     "toolsAdded": "@48e02408b89f137b"
+    }
+   }
+  ],
+  "headers": {
+   "# Minor mode: align": 1
+  }
+ }
+]

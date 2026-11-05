@@ -1,0 +1,1 @@
+"This member coordinates its teammates: it additionally gets team_roster (live sibling states) and team_steer (redirect or follow-up a sibling by role). Sibling-scoped only; it can never spawn, add or stop workers. Requires the pi or claude-code backend. In a team with a coordinator, only the coordinator is the orchestrator: a member that only watches needs no mark."

@@ -1,0 +1,1 @@
+"Recall anything from earlier in this chat (a session, its full id, a branch, a number, what was said): every message is kept whole under its memory line. Opens line id+n into its two lines of n/2; n = 1 gives message id whole. Use it before searching."

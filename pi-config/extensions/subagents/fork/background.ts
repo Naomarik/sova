@@ -128,12 +128,14 @@ interface EventBusLike {
 export function workerHostOf(
 	events: EventBusLike,
 	onAnnounce?: (host: WorkerHost) => void,
-): { current(): WorkerHost | undefined; dispose(): void } {
+): { current(): WorkerHost | undefined; modes(): "sova" | undefined; dispose(): void } {
 	let host: WorkerHost | undefined;
+	let modes: "sova" | undefined;
 	const off = events.on(WORKER_HOST_EVENT, (data) => {
 		const announced = data as Partial<WorkerHostAnnouncement> | undefined;
 		if (announced?.version !== 1 || !announced.host) return;
 		host = announced.host;
+		modes = announced.modes === "sova" ? "sova" : undefined;
 		onAnnounce?.(host);
 	});
 	try {
@@ -143,6 +145,8 @@ export function workerHostOf(
 	}
 	return {
 		current: () => host,
+		/** Who runs this session's modes, as its host announced: "sova", or undefined (the pi mode extension). */
+		modes: () => modes,
 		dispose: () => off(),
 	};
 }

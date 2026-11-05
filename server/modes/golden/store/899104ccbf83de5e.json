@@ -1,0 +1,144 @@
+[
+ {
+  "step": "open",
+  "calls": [],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push"
+  ],
+  "entries": [],
+  "extensions": [
+   "<mode-slot:index>",
+   "<repo>/pi-config/extensions/subagents/index.ts",
+   "<inline:sova-resource-monitor>",
+   "<inline:sova-fork-cache>",
+   "<inline:sova-shell-guard>",
+   "<inline:sova-deeper-context>",
+   "<inline:sova-mcp>",
+   "<inline:sova-worker-host>",
+   "<inline:sova-vis-check>",
+   "<inline:sova-memory>",
+   "<inline:sova-playbook>",
+   "<inline:sova-project-verbs>",
+   "<inline:sova-topics>",
+   "<inline:sova-tours>",
+   "<inline:sova-create-settings>",
+   "<inline:sova-transcript-cards>"
+  ]
+ },
+ {
+  "step": "switch {\"projectModes\":[\"rel\"],\"minorModes\":[\"spec\"]}",
+  "calls": [],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "rel__status"
+  ],
+  "entries": [
+   {
+    "type": "custom",
+    "customType": "mode",
+    "data": {
+     "minor": "spec",
+     "on": true,
+     "active": {
+      "version": 1,
+      "mode": "normal",
+      "strict": false,
+      "minorModes": [
+       "spec"
+      ]
+     }
+    }
+   },
+   {
+    "type": "custom",
+    "customType": "mode-project-snapshot",
+    "data": {
+     "v": 1,
+     "dir": "<ws:project>/.sova/minor-modes/rel",
+     "description": "Release status",
+     "workers": true,
+     "tools": [
+      {
+       "name": "status",
+       "description": "Print the release status.",
+       "params": {
+        "type": "object",
+        "properties": {
+         "verbose": {
+          "type": "boolean"
+         }
+        }
+       },
+       "command": [
+        "node",
+        "./status.mjs"
+       ],
+       "timeoutS": 60
+      }
+     ],
+     "text": "# Project minor mode: rel\nFolder: <ws:project>/.sova/minor-modes/rel\nEvery relative path in this mode is relative to that folder.\n\nUse rel__status before tagging.",
+     "toolsHash": "da907b56715d9e8c71cdaec52f471effb4679288983c44904da62e8521ff92f1",
+     "sha": "<sha:1>"
+    }
+   },
+   {
+    "type": "custom",
+    "customType": "mode",
+    "data": {
+     "project": "rel",
+     "on": true,
+     "active": {
+      "version": 1,
+      "mode": "normal",
+      "strict": false,
+      "minorModes": [
+       "spec"
+      ],
+      "projectModes": [
+       {
+        "sha": "<sha:1>"
+       }
+      ]
+     }
+    }
+   }
+  ]
+ },
+ "@f0c4bdab22b784af"
+]

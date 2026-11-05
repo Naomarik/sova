@@ -356,9 +356,14 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "own-code-discovery",
     kind: "monkey-patch",
     relies:
-      "DefaultResourceLoader takes the extensions it discovers only from its package manager's resolve() (reload and loadCurrentExtensionSet), so rewriting the paths resolve() answers on DefaultPackageManager.prototype loads the same extensions, with pi's own enabled flags, metadata and trust, from the rewritten paths; additionalExtensionPaths never pass through resolve().",
+      "DefaultResourceLoader takes the extensions it discovers only from its package manager's resolve() (reload and loadCurrentExtensionSet), so rewriting the paths resolve() answers on DefaultPackageManager.prototype loads the same extensions, with pi's own enabled flags, metadata and trust, from the rewritten paths; additionalExtensionPaths never pass through resolve(). The same rewrite puts Sova's mode engine (modes-entry.ts) in the discovered mode extension's own slot, at that slot's position, for a build Sova runs the modes of (withModesEntry around createAgentSessionServices), so tool and prompt-section order stay as the extension had them.",
     pi: ["DefaultPackageManager.resolve", "DefaultResourceLoader.reload", "DefaultResourceLoader.loadCurrentExtensionSet", "createAgentSessionServices"],
-    where: [{ file: "server/harness/pi/own-code.ts", symbol: "patchResolve" }, { file: "server/harness/pi/own-code.ts", symbol: "installOwnCode" }],
+    where: [
+      { file: "server/harness/pi/own-code.ts", symbol: "patchResolve" },
+      { file: "server/harness/pi/own-code.ts", symbol: "installOwnCode" },
+      { file: "server/harness/pi/own-code.ts", symbol: "withModesEntry" },
+      { file: OPEN, symbol: "servicesForCwd" },
+    ],
     canary: "P24 own-code-discovery: resolve() is the loader's only source of discovered extension paths: patched, the same extensions load, Sova's from the copy",
     retireWhen: "pi's loader takes a path-mapping hook for discovered extensions",
   },
@@ -512,6 +517,20 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     where: [{ file: "server/harness/pi/mcp-http.ts", symbol: "AddressServer" }, { file: "server/harness/pi/mcp.ts", symbol: "mcpConfigOf" }, { file: "server/harness/pi/mcp.ts", symbol: "piLiteral" }],
     canary: "P36 mcp-http-transport: a url server's transport gets pi's auth provider, which reads the store and refreshes with an escaped secret literally; pi-mcp's HTTP client sends headers as given and reports a dropped session",
     retireWhen: "pi lets a host hand a server its own token source and literal values",
+  },
+  {
+    id: "P37",
+    name: "base-prompt-sections",
+    kind: "semantic",
+    relies: "A command context's getSystemPromptOptions() hands out the session's live base prompt options, whose `sections` object builds the prompt a turn no before_agent_start built (an extension's message) and a run's later requests; a tool change replaces that object. So the mode engine keeps the getter (adopted from the chat's command context at every bind) and writes its `mode` section there again at every run start and switch.",
+    pi: ["ExtensionCommandContext.getSystemPromptOptions", "BuildSystemPromptOptions.sections", "AgentSession._baseSystemPromptOptions"],
+    where: [
+      { file: "server/harness/pi/modes.ts", symbol: "modeCtx" },
+      { file: "server/modes/engine.ts", symbol: "ModeEngine.syncHostSection" },
+    ],
+    canary: "P37 base-prompt-sections: a command context's getSystemPromptOptions() is the live base options, whose sections build the prompt, and a tool change replaces it",
+    retireWhen: "pi keeps extension sections across prompt rebuilds, or lets an extension own a section for the session's life",
+    note: "The pi-config mode extension relies on the same, through its `/mode sync` (index.ts adoptHost); that reach goes when the extension is retired.",
   },
   {
     id: "T1",

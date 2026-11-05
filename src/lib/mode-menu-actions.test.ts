@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ProjectMinorInfo } from "../../shared/protocol";
-import { APPROVAL_FOOT, approvalFootFor, approvalLead, approvalLeadFor, bareProgramsNote, hookWhen, hooksLead, HOOKS_NEED_NOTE, projectRowState, runsCount } from "./mode-menu";
+import { APPROVAL_FOOT, PERSONAL_GROUP_LABEL, approvalFootFor, approvalLead, approvalLeadFor, bareProgramsNote, hookWhen, hooksLead, HOOKS_NEED_NOTE, projectRowState, runsCount } from "./mode-menu";
 
 const pm = (over: Partial<ProjectMinorInfo> = {}): ProjectMinorInfo => ({ id: "rel", description: "Release", workers: false, tools: [], dir: "/r/.sova/minor-modes/rel", ...over });
 const tool = { name: "status", description: "Status", command: ["./status.sh"] };
@@ -44,4 +44,20 @@ test("an on mode whose hooks wait for you says so; one whose hooks are paused sa
   assert.equal(projectRowState(pm({ hooks: [hook], hooksNeedApproval: true, changed: true }), true).kind, "changed");
   assert.match(hooksLead("rel"), /Someone other than you turned it on, and only you can approve its hooks/);
   assert.doesNotMatch(hooksLead("rel"), /Overseer/);
+});
+
+test("personal modes: the group label, the approval lead from your folder, and 'Replaces this project's {id}.' after the state", () => {
+  assert.equal(PERSONAL_GROUP_LABEL, "Your modes");
+  const tool = { name: "a", description: "", command: ["./a"] };
+  assert.equal(approvalLeadFor("rel", "sova", pm({ tools: [tool], personal: true })), "rel comes from your modes folder. Turning it on lets the model run this tool in this chat's folder.");
+  assert.equal(approvalLeadFor("rel", "sova", pm({ tools: [tool] })), "rel comes from sova's files. Turning it on lets the model run this tool in this chat's folder.", "a project mode's reads as before");
+  const hook = { on: "turn.ended" as const, command: ["./h"] };
+  assert.equal(
+    approvalLeadFor("rel", "sova", pm({ hooks: [hook], personal: true })),
+    "rel comes from your modes folder. Turning it on lets 1 hook run after things happen in this chat, in this chat's folder.",
+  );
+  assert.equal(projectRowState(pm({ personal: true, replaces: true }), false).note, "Replaces this project's rel.");
+  assert.equal(projectRowState(pm({ personal: true, replaces: true, tools: [tool], needsApproval: true }), false).note, "Asks before turning on: it runs 1 tool. Replaces this project's rel.");
+  assert.equal(projectRowState(pm({ personal: true }), false).note, null, "yours with no project mode of its id: no extra line");
+  assert.equal(projectRowState(pm({ personal: true, replaces: true, problem: "x" }), false).canToggle, false, "the state's own rules stand");
 });

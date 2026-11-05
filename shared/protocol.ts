@@ -1057,11 +1057,17 @@ export interface WebSettings {
   alignment: AlignmentWebSettings;
 }
 
-/** Settings → Experimental's switches, each a boolean, off unless stored `true`. None right now:
-    adversarial review moved to `alignment.review`, and the Claude Code provider is always on (an old
-    file's `claudeCodeProvider` and `adversarialReview` are ignored here). A new switch is a key here
-    and in server/web-settings.ts EXPERIMENTAL_KEYS. */
-export interface ExperimentalSettings {}
+/** Settings → Experimental's switches, each a boolean, off unless stored `true`, except `sovaModes`,
+    which is on unless stored `false` (a missing key reads on). Adversarial review moved to
+    `alignment.review`, and the Claude Code provider is always on (an old file's `claudeCodeProvider`
+    and `adversarialReview` are ignored here). A new switch is a key here and in
+    server/web-settings.ts EXPERIMENTAL_KEYS. */
+export interface ExperimentalSettings {
+  /** "Sova runs chat modes" (§chat.mode-menu/sova-runs-modes): Sova's own mode engine runs every chat's
+      modes and its workers'; off, the pi mode extension does. ON BY DEFAULT. Read at each chat's start
+      or reload; a worker takes its parent's owner at spawn or resume. */
+  sovaModes: boolean;
+}
 
 /** Settings → Alignment's switch stored in Sova's settings. */
 export interface AlignmentWebSettings {
@@ -1991,6 +1997,10 @@ export interface ProjectMinorInfo {
   hooksNeedApproval?: true;
   /** One of its hooks is over its run budget now ("Hooks paused: …"). */
   hookNote?: string;
+  /** From your own modes folder (§chat.mode-menu/personal-modes), listed under "Your modes"; approved once for every project. */
+  personal?: true;
+  /** A personal mode that replaces this project's mode of the same id ("yours wins"). */
+  replaces?: true;
 }
 
 /** POST /api/mode/command's answer (§chat.mode-menu/project-mode-commands): how its program ended (it ran, whatever its exit code). */

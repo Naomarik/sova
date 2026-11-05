@@ -1,0 +1,105 @@
+{
+ "step": "prompt \"one\"",
+ "calls": [
+  {
+   "keep": 0,
+   "add": [
+    {
+     "role": "system",
+     "content": "",
+     "sections": {
+      "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+      "tools": "@42e3b65af9a48a61",
+      "rules": "@c812aa6c1d63cb16",
+      "docs": "@0f5fabf6c3c47c4c",
+      "cwd": "<cwd>\n<ws:plain>\n</cwd>",
+      "mode": "@8f3d019596362350"
+     },
+     "toolsAdded": "@95b3d597235353e5"
+    },
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "@56d9d8cc295b5910"
+      },
+      {
+       "type": "text",
+       "text": "<chat>\n</chat>"
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "one"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "activeTools": [
+  "read",
+  "bash",
+  "edit",
+  "write",
+  "agent_resume",
+  "agent_models",
+  "agent_spawn",
+  "agent_list",
+  "agent_transcript",
+  "agent_steer",
+  "agent_kill",
+  "agent_wait",
+  "team_create",
+  "team_add",
+  "team_eject",
+  "team_succeed",
+  "team_list",
+  "project_verbs",
+  "queue_push",
+  "align",
+  "vis_guide",
+  "vis_check",
+  "record_tour",
+  "show_tour",
+  "zoom",
+  "date"
+ ],
+ "entries": [
+  {
+   "type": "custom",
+   "customType": "mode-head",
+   "data": {
+    "v": 1,
+    "style": "pm"
+   }
+  },
+  {
+   "type": "message",
+   "message": {
+    "role": "system",
+    "content": "",
+    "sections": {
+     "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+     "tools": "@42e3b65af9a48a61",
+     "rules": "@c812aa6c1d63cb16",
+     "docs": "@0f5fabf6c3c47c4c",
+     "cwd": "<cwd>\n<ws:plain>\n</cwd>",
+     "mode": "@8f3d019596362350"
+    },
+    "toolsAdded": "@e6f99f37fc0f43ec"
+   }
+  }
+ ],
+ "headers": {
+  "# Mode: delegate": 1,
+  "# Minor mode: align": 1,
+  "# Minor mode: spec": 1,
+  "# Minor mode: vis": 1
+ }
+}

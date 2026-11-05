@@ -299,6 +299,9 @@ export interface ProjectToolOptions {
 	sandboxOn(): boolean;
 	/** Whether the mode is on in this chat now (default: always). An off mode's tools refuse even if still active. */
 	isOn?(modeId: string): boolean;
+	/** The project root this mode's programs are told (default: the checkout its folder sits in). Sova sets it for a
+	    mode from the user's own folder, whose programs still work in the chat's checkout. */
+	projectRoot?: string;
 	/** Test overrides of the tool's limits. */
 	timeoutMs?: number;
 	maxOutputBytes?: number;
@@ -343,7 +346,7 @@ export function refuseCall(snapshot: Pick<ProjectModeSnapshot, "id" | "dir" | "t
  * whatever its exit code, the code stated first.
  */
 export function projectToolDefinitions(snapshot: Pick<ProjectModeSnapshot, "id" | "dir" | "tools" | "toolsHash" | "commands" | "hooks">, opts: ProjectToolOptions) {
-	const projectRoot = projectRootOfModeDir(snapshot.dir);
+	const projectRoot = opts.projectRoot ?? projectRootOfModeDir(snapshot.dir);
 	return snapshot.tools.map((tool) => {
 		const name = projectToolName(snapshot.id, tool.name);
 		return {

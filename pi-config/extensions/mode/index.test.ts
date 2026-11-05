@@ -512,6 +512,8 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	}
 	// Task reading pulls: contents, then one passage; whole-chain packet/scope remain machine inspection.
 	assert.match(short, /only reads: `where <path\|name\|topic words>`, `map`, `toc '<§id>' --dir out\|in\|down\|up\|mentions`, `read '<§id>' \[--whole\] \[--no-frame\]`, `impact '<§id>' \[--near\]`; `--cursor <next>` continues a page\./);
+	// Sova's read-only `spec` tool runs the same reads; the shell line stays for the write tools and other projects.
+	assert.match(short, /`--cursor <next>` continues a page\. A `spec` tool, if offered, runs these same reads without a shell\./);
 	assert.match(writing, /also takes `check`, `census`, and whole-chain `packet`\/`scope '<§id>'` \(machine inspection\); `--spec <dir>` reads a draft\./, "machine inspection rides with the writing procedure");
 	for (const cmd of ["foreign", "map", "where", "toc", "read"]) assert.doesNotMatch(usage("sova-spec.mjs", cmd), /unknown command/, `${cmd} is a core command`);
 	assert.doesNotMatch(spec, /--budget/, "every default budget fits a passage: the guide spends no words on it");

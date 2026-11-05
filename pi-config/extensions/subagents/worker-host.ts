@@ -39,6 +39,10 @@ export interface WorkerSpec {
 	mcp?: unknown;
 	/** Lower the process to the worker niceness (every kind but none today). */
 	lowered: true;
+	/** Who runs its modes: "sova" when its parent's modes ran on Sova at this start (spawn or resume), so
+	    the mode extension's listed files load as Sova's own in their slots; absent = the pi mode extension
+	    (as before). Stamped by Sova's worker host from the parent chat, never taken from the request. */
+	modes?: "sova";
 }
 
 /** How its session file comes to be, before the chat opens it. */
@@ -74,6 +78,9 @@ export const WORKER_HOST_DISCOVER_EVENT = "sova:worker-host-discover";
 export interface WorkerHostAnnouncement {
 	version: 1;
 	host: WorkerHost;
+	/** "sova": this session's modes run on Sova, so its workers' modes do too (a worker on its worktree's
+	    own agent dir then needs no mode extension in that tree). Absent: the pi mode extension. */
+	modes?: "sova";
 }
 
 export interface WorkerHost {

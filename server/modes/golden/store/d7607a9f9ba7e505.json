@@ -1,0 +1,1 @@
+"look(source, pages, signIn?|signInRoute?, sites?, tourId?, credentials?) → dry-run(script, tourId?, credentials?) → record(dryRunId, credentials?) → inspect(jobId, capture?) → check(jobId, verification); status/cancel(jobId). status waits until the job finishes, fails, rests for you or needs the user (up to five minutes)."

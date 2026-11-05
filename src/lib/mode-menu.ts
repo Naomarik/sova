@@ -150,6 +150,9 @@ export function projectGroupLabel(name: string | undefined): string {
   return name ? `This project · ${name}` : "This project";
 }
 
+/** The group of your personal modes (§chat.mode-menu/personal-modes), after the project's. */
+export const PERSONAL_GROUP_LABEL = "Your modes";
+
 /** What a project mode's row says and allows, besides its description. */
 export interface ProjectRowState {
   /** broken: can't be turned on · removed: on, its folder gone · changed: on, its files edited since ·
@@ -163,8 +166,21 @@ export interface ProjectRowState {
 
 const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
-/** A row's state, from the server's facts about it and whether it is on in this chat. */
+/**
+ * A row's state, from the server's facts about it and whether it is on in this chat. A personal mode that took
+ * over this project's mode of its id (`replaces`) says so after the state's own note.
+ */
 export function projectRowState(
+  m: Pick<ProjectMinorInfo, "problem" | "removed" | "changed" | "needsApproval" | "tools"> & Partial<Pick<ProjectMinorInfo, "id" | "commands" | "hooks" | "hooksNeedApproval" | "hookNote" | "replaces">>,
+  on: boolean,
+): ProjectRowState {
+  const state = projectRowStateOf(m, on);
+  if (!m.replaces || !m.id) return state;
+  const line = `Replaces this project's ${m.id}.`;
+  return { ...state, note: state.note ? `${state.note} ${line}` : line };
+}
+
+function projectRowStateOf(
   m: Pick<ProjectMinorInfo, "problem" | "removed" | "changed" | "needsApproval" | "tools"> & Partial<Pick<ProjectMinorInfo, "commands" | "hooks" | "hooksNeedApproval" | "hookNote">>,
   on: boolean,
 ): ProjectRowState {
@@ -211,15 +227,15 @@ export function hookWhen(on: string): string {
 }
 
 /** The approval's sentence above the lists: a mode with only tools reads as it always did. */
-export function approvalLeadFor(id: string, project: string | undefined, m: Pick<ProjectMinorInfo, "tools"> & Partial<Pick<ProjectMinorInfo, "commands" | "hooks">>): string {
-  if (!m.commands?.length && !m.hooks?.length) return approvalLead(id, project, m.tools);
+export function approvalLeadFor(id: string, project: string | undefined, m: Pick<ProjectMinorInfo, "tools"> & Partial<Pick<ProjectMinorInfo, "commands" | "hooks" | "personal">>): string {
+  if (!m.commands?.length && !m.hooks?.length) return approvalLead(id, project, m.tools, m.personal);
   const lets = [
     ...(m.tools.length ? [`the model run ${m.tools.length === 1 ? "1 tool" : `${m.tools.length} tools`}`] : []),
     ...(m.commands?.length ? [`you and scripts run ${count(m.commands.length, "command")}`] : []),
     ...(m.hooks?.length ? [`${count(m.hooks.length, "hook")} run after things happen in this chat`] : []),
   ];
   const list = lets.length === 1 ? lets[0]! : `${lets.slice(0, -1).join(", ")}${lets.length > 2 ? "," : ""} and ${lets[lets.length - 1]}`;
-  return `${id} comes from ${project ?? "this project"}'s files. Turning it on lets ${list}, in this chat's folder.`;
+  return `${comesFrom(id, project, m.personal)} Turning it on lets ${list}, in this chat's folder.`;
 }
 
 /** The foot line: a mode with commands or hooks says approval covers all it runs. */
@@ -236,8 +252,13 @@ export function hooksLead(id: string): string {
 export const APPROVE_HOOKS_LABEL = "Approve Hooks";
 
 /** The approval's sentence above the tool list. */
-export function approvalLead(id: string, project: string | undefined, tools: readonly ProjectMinorTool[]): string {
-  return `${id} comes from ${project ?? "this project"}'s files. Turning it on lets the model run ${tools.length === 1 ? "this tool" : `these ${tools.length} tools`} in this chat's folder.`;
+export function approvalLead(id: string, project: string | undefined, tools: readonly ProjectMinorTool[], personal?: boolean): string {
+  return `${comesFrom(id, project, personal)} Turning it on lets the model run ${tools.length === 1 ? "this tool" : `these ${tools.length} tools`} in this chat's folder.`;
+}
+
+/** Where a mode comes from, the approval's first sentence: your modes folder, or the project's files. */
+function comesFrom(id: string, project: string | undefined, personal: boolean | undefined): string {
+  return personal ? `${id} comes from your modes folder.` : `${id} comes from ${project ?? "this project"}'s files.`;
 }
 /** What an approval covers: the tools and the whole folder, so any edit there asks again. */
 export const APPROVAL_FOOT = "Approval covers its tools and every file in this folder. We ask again when any of them changes.";

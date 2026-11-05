@@ -51,7 +51,11 @@ test("a worker chat loads project_verbs with its instance note; a hidden chat ne
   setServedTools(workerServed({ kind: "worker" }, path));
   setChatHosts({ instanceNote: async () => "Your copy: slot 1." });
   const factories = workerExtensionFactories({ kind: "worker" }, path);
-  assert.deepEqual(factories.map((f) => f.name), ["sova-shell-guard", "sova-deeper-context", "sova-project-verbs"]);
+  // The spec tool comes last, so nothing before it moves.
+  assert.deepEqual(factories.map((f) => f.name), ["sova-shell-guard", "sova-deeper-context", "sova-project-verbs", "sova-spec"]);
+  const spec = fakePi();
+  factories[3]!.factory(spec.pi as never);
+  assert.deepEqual(spec.tools, ["spec"], "a worker or team member has the spec tool");
   const { pi, tools, hooks } = fakePi();
   factories[2]!.factory(pi as never);
   assert.deepEqual(tools, ["project_verbs"]);

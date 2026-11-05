@@ -368,3 +368,27 @@ test("worker extension: no hand-off file, nothing registered", () => {
 	if (before !== undefined) process.env[PROJECT_TOOLS_FILE_ENV] = before;
 	assert.equal(calls, 0);
 });
+
+test("projectToolDefinitions: SOVA_PROJECT_ROOT is the mode's checkout unless the caller names one (a personal mode's)", async () => {
+	const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs");
+	const { tmpdir } = await import("node:os");
+	const { join } = await import("node:path");
+	const { projectToolDefinitions } = await import("./project-tools.ts");
+	const { toolsHashOf } = await import("./project-discovery.ts");
+	const base = mkdtempSync(join(tmpdir(), "ptd-root-"));
+	try {
+		const dir = join(base, "repo", ".sova", "minor-modes", "env");
+		mkdirSync(dir, { recursive: true });
+		const tools = [{ name: "root", description: "d", params: { type: "object", properties: {} }, command: ["sh", "-c", 'printf %s "$SOVA_PROJECT_ROOT"'], timeoutS: 60 }];
+		const snapshot = { id: "env", dir, tools, toolsHash: toolsHashOf(dir, tools) };
+		const run = async (opts: Record<string, unknown>) => {
+			const [def] = projectToolDefinitions(snapshot as never, { cwd: () => base, sandboxOn: () => false, ...opts });
+			const out = await def!.execute("c", {});
+			return out.content[0]!.text;
+		};
+		assert.match(await run({}), new RegExp(`${join(base, "repo")}$`));
+		assert.match(await run({ projectRoot: "/the/chats/checkout" }), /\/the\/chats\/checkout$/);
+	} finally {
+		rmSync(base, { recursive: true, force: true });
+	}
+});

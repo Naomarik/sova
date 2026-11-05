@@ -1,0 +1,442 @@
+[
+ {
+  "step": "open",
+  "calls": [],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push"
+  ],
+  "entries": [],
+  "extensions": [
+   "<mode-slot:index>",
+   "<repo>/pi-config/extensions/subagents/index.ts",
+   "<inline:sova-resource-monitor>",
+   "<inline:sova-fork-cache>",
+   "<inline:sova-shell-guard>",
+   "<inline:sova-deeper-context>",
+   "<inline:sova-mcp>",
+   "<inline:sova-worker-host>",
+   "<inline:sova-vis-check>",
+   "<inline:sova-memory>",
+   "<inline:sova-playbook>",
+   "<inline:sova-project-verbs>",
+   "<inline:sova-topics>",
+   "<inline:sova-tours>",
+   "<inline:sova-create-settings>",
+   "<inline:sova-transcript-cards>"
+  ]
+ },
+ {
+  "step": "switch {\"minorModes\":[\"align\"]}",
+  "calls": [],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align"
+  ],
+  "entries": [
+   {
+    "type": "custom",
+    "customType": "mode",
+    "data": {
+     "minor": "align",
+     "on": true,
+     "active": {
+      "version": 1,
+      "mode": "normal",
+      "strict": false,
+      "minorModes": [
+       "align"
+      ]
+     }
+    }
+   }
+  ]
+ },
+ {
+  "step": "prompt \"build an export\"",
+  "calls": "@50590daab1c3fb8f",
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align"
+  ],
+  "entries": [
+   {
+    "type": "custom",
+    "customType": "mode-head",
+    "data": {
+     "v": 1,
+     "style": "pm"
+    }
+   },
+   {
+    "type": "message",
+    "message": {
+     "role": "system",
+     "content": "",
+     "sections": {
+      "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+      "tools": "@15d31f2a78f55765",
+      "rules": "@c812aa6c1d63cb16",
+      "docs": "@0f5fabf6c3c47c4c",
+      "cwd": "<cwd>\n<ws:plain>\n</cwd>",
+      "mode": "@762c2620222a71e2"
+     },
+     "toolsAdded": "@48e02408b89f137b"
+    }
+   }
+  ],
+  "headers": {
+   "# Minor mode: align": 1
+  }
+ },
+ {
+  "step": "switch {\"minorModes\":[\"align\",\"vis\"]}",
+  "calls": [],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align",
+   "vis_guide",
+   "vis_check",
+   "record_tour",
+   "show_tour"
+  ],
+  "entries": [
+   {
+    "type": "custom",
+    "customType": "mode",
+    "data": {
+     "minor": "vis",
+     "on": true,
+     "active": {
+      "version": 1,
+      "mode": "normal",
+      "strict": false,
+      "minorModes": [
+       "align",
+       "vis"
+      ]
+     },
+     "head": [
+      "align"
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "step": "prompt \"two\"",
+  "calls": [
+   {
+    "keep": 4,
+    "add": [
+     {
+      "role": "assistant",
+      "api": "openai-completions",
+      "provider": "scripted",
+      "model": "scripted",
+      "usage": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "totalTokens": 0,
+       "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+       }
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "Recorded."
+       }
+      ],
+      "stopReason": "stop",
+      "thinkingLevel": "off"
+     },
+     "@0235b526995e867d",
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "two"
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "@7433bb97fbe2edaa"
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "@ae524d99e15092fe"
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align",
+   "vis_guide",
+   "vis_check",
+   "record_tour",
+   "show_tour"
+  ],
+  "entries": [
+   {
+    "type": "message",
+    "message": "@0235b526995e867d"
+   },
+   {
+    "type": "custom_message",
+    "customType": "mode-note",
+    "content": "@7433bb97fbe2edaa",
+    "display": false,
+    "details": {
+     "v": 1,
+     "minorModes": [
+      "align",
+      "vis"
+     ],
+     "guides": [
+      "vis"
+     ]
+    }
+   },
+   {
+    "type": "custom_message",
+    "customType": "align-state",
+    "content": "@ae524d99e15092fe",
+    "display": false
+   }
+  ],
+  "headers": {
+   "# Minor mode: align": 1
+  }
+ },
+ {
+  "step": "compact",
+  "calls": [
+   {
+    "keep": 0,
+    "add": [
+     {
+      "role": "system",
+      "content": "@b909d497c68a7221"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "@1753c3f7a58a67da"
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "keep": 1,
+    "add": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "@58ca2a03d18ea63e"
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align",
+   "vis_guide",
+   "vis_check",
+   "record_tour",
+   "show_tour"
+  ],
+  "entries": [
+   {
+    "type": "custom_message",
+    "customType": "align-state",
+    "content": "@f29331d1fe5723b6",
+    "display": false
+   }
+  ],
+  "headers": {}
+ },
+ "@f8ebbba912346f9d",
+ {
+  "step": "switch {\"minorModes\":[\"align\"]}",
+  "calls": [],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align"
+  ],
+  "entries": [
+   {
+    "type": "custom",
+    "customType": "mode",
+    "data": {
+     "minor": "vis",
+     "on": false,
+     "active": {
+      "version": 1,
+      "mode": "normal",
+      "strict": false,
+      "minorModes": [
+       "align"
+      ]
+     },
+     "head": [
+      "align",
+      "vis"
+     ]
+    }
+   }
+  ]
+ },
+ "@fd13200dbaab4cce"
+]

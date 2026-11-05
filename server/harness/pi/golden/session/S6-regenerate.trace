@@ -55,8 +55,6 @@ A {"type":"event","event":{"type":"agent_settled"}}
 B {"type":"event","v":2,"event":{"type":"run.settled"}}
 step B sends {"type":"regenerate","id":"g1","entryId":"00000008:0"}
 sdk navigateTree ["00000007",{"summarize":false}]
-A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000002","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
-B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000002","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
 write {"id":"00000009","type":"custom","customType":"sova-rewind"}
 A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info","00000002 info","00000005 user","00000006:0 assistant-text"]}
 B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info","00000002 info","00000005 user","00000006:0 assistant-text"]}

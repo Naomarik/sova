@@ -7,7 +7,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, validateToolArguments } from "@earendil-works/pi-ai";
 import * as os from "node:os";
-import { CLAUDE_CODE_EXTENSION, MARKER_EXTENSION, MODEL_LEVELS_EXTENSION, PROVIDER_LIMITS_EXTENSION, SPEC_CORE_DIR, SPEC_WORKER_EXTENSION, SPEC_HOOK_STATE, MEMBER_EXTENSION, PROJECT_TOOLS_WORKER_EXTENSION, REMOTE_EXTENSION, registerSubagents, boundedText, installedPackageDir, resolveExtensionSource, type SubagentsOptions } from "./index.ts";
+import { CLAUDE_CODE_EXTENSION, MARKER_EXTENSION, MODEL_LEVELS_EXTENSION, OWN_MODE_EXTENSION, PROVIDER_LIMITS_EXTENSION, SPEC_CORE_DIR, SPEC_WORKER_EXTENSION, SPEC_HOOK_STATE, MEMBER_EXTENSION, PROJECT_TOOLS_WORKER_EXTENSION, REMOTE_EXTENSION, registerSubagents, boundedText, installedPackageDir, resolveExtensionSource, type SubagentsOptions } from "./index.ts";
 import { CLAUDE_PROVIDER_FLAG } from "../claude-code/provider/index.ts";
 import { claudeOffer } from "../claude-code/catalog.ts";
 import { placeholderDir } from "../remote/argv.ts";
@@ -21,7 +21,7 @@ import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVE
 import workerMarkExtension from "./worker-mark.ts";
 import { CLAUDE_CODE_PROVIDER_FLAG } from "./runner.ts";
 import { ChatWorker } from "./chat-worker.ts";
-import type { WorkerHost } from "./worker-host.ts";
+import { WORKER_HOST_EVENT, type WorkerHost } from "./worker-host.ts";
 import { MEMBER_ENV, awaitResponse, decodeMemberContext, memberPaths, memberToolNames, readInbox, requestId, writeRequest, type MailboxRequest } from "./mailbox.ts";
 import { readMemberItems, writeInboxCaps, type InboxItem } from "./inbox.ts";
 import { WAKE_FOOTER } from "./delivery.ts";
@@ -4464,6 +4464,43 @@ test("sandbox Off (§chat.sandbox/states): a worktree's workers start unconfined
 		assert.match(lineOf(ids.at(-1)), /· sandbox: on(\s|$|·)/, "pi on here");
 	} finally {
 		await h.close();
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("worktrees: with the session's modes on Sova, a useWorktreeConfig worker needs no mode extension in the tree; its slot is this one's own, with spec on", async () => {
+	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-wtconfig-sova-")));
+	const parentAgent = path.join(root, "parent-agent");
+	const wt = path.join(root, "wt");
+	fs.mkdirSync(path.join(wt, ".agent", "extensions"), { recursive: true }); // no mode extension at all
+	const prev = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = parentAgent;
+	const h = harness();
+	h.ctx.sessionManager.getBranch = () => worktreesBranch([{ path: wt }]);
+	try {
+		// Sova's worker host says this session's modes run on Sova (the runner is the test's own).
+		h.bus.emit(WORKER_HOST_EVENT, { version: 1, host: {} as WorkerHost, modes: "sova" });
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerLaunch: workerLaunchOf() });
+		h.bus.emit(MODE_WORKER_EVENT, SPEC_ON);
+		await h.call("agent_spawn", { prompt: "trial", cwd: wt, useWorktreeConfig: true, systemPrompt: "BRIEF" });
+		const w = h.workers[0];
+		assert.equal(w.systemPrompt, "BRIEF", "no parent block on top: the slot's own spec block is the one");
+		assert.deepEqual(w.env, { PI_CODING_AGENT_DIR: path.join(wt, ".agent") });
+		assert.deepEqual(w.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, OWN_MODE_EXTENSION, SANDBOX_DIR], "the mode slot names this pi-config's own mode extension (Sova loads its engine there)");
+		assert.deepEqual(w.flags, { major: "normal", minor: "spec", sandbox: "on", "sandbox-parent": wt }, "spec forced on, as before");
+		const record = h.appended.find((e) => e.customType === "subagents-worker-manifest" && e.data.launch);
+		assert.deepEqual(record.data.modes, ["spec"]);
+		// A tree that has its own pi-config mode extension: the slot names it, as with the switch off (the
+		// worker's line reads the same); Sova still loads its engine there, never the tree's copy.
+		const treeMode = path.join(wt, "pi-config", "extensions", "mode");
+		fs.mkdirSync(treeMode, { recursive: true });
+		fs.writeFileSync(path.join(treeMode, "index.ts"), "export default () => {};\n");
+		fs.symlinkSync(treeMode, path.join(wt, ".agent", "extensions", "mode"));
+		await h.call("agent_spawn", { prompt: "again", cwd: wt, useWorktreeConfig: true });
+		assert.equal(h.workers[1].extensions[3], treeMode, "the tree's mode directory, by its real path");
+	} finally {
+		await h.close();
+		if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;
 		fs.rmSync(root, { recursive: true, force: true });
 	}
 });

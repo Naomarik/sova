@@ -1,0 +1,91 @@
+[
+ {
+  "step": "open",
+  "calls": [],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push"
+  ],
+  "entries": [],
+  "extensions": [
+   "<mode-slot:index>",
+   "<repo>/pi-config/extensions/subagents/index.ts",
+   "<inline:sova-resource-monitor>",
+   "<inline:sova-fork-cache>",
+   "<inline:sova-shell-guard>",
+   "<inline:sova-deeper-context>",
+   "<inline:sova-mcp>",
+   "<inline:sova-worker-host>",
+   "<inline:sova-vis-check>",
+   "<inline:sova-memory>",
+   "<inline:sova-playbook>",
+   "<inline:sova-project-verbs>",
+   "<inline:sova-topics>",
+   "<inline:sova-tours>",
+   "<inline:sova-create-settings>",
+   "<inline:sova-transcript-cards>"
+  ]
+ },
+ {
+  "step": "switch {\"minorModes\":[\"spec\"]}",
+  "calls": [],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push"
+  ],
+  "entries": [
+   {
+    "type": "custom",
+    "customType": "mode",
+    "data": {
+     "minor": "spec",
+     "on": true,
+     "active": {
+      "version": 1,
+      "mode": "normal",
+      "strict": false,
+      "minorModes": [
+       "spec"
+      ]
+     }
+    }
+   }
+  ]
+ },
+ "@fc4fd5ed1c56a6cb",
+ "@be980eb1a04482f1"
+]

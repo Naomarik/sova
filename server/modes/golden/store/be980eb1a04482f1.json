@@ -1,0 +1,126 @@
+{
+ "step": "prompt \"again\"",
+ "calls": [
+  {
+   "keep": 4,
+   "add": [
+    {
+     "role": "assistant",
+     "api": "openai-completions",
+     "provider": "scripted",
+     "model": "scripted",
+     "usage": {
+      "input": 0,
+      "output": 0,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 0,
+      "cost": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "total": 0
+      }
+     },
+     "content": [
+      {
+       "type": "text",
+       "text": "ok"
+      }
+     ],
+     "stopReason": "stop",
+     "thinkingLevel": "off"
+    },
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "text",
+       "text": "again"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "keep": 6,
+   "add": [
+    {
+     "role": "assistant",
+     "api": "openai-completions",
+     "provider": "scripted",
+     "model": "scripted",
+     "usage": {
+      "input": 0,
+      "output": 0,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 0,
+      "cost": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "total": 0
+      }
+     },
+     "content": [
+      {
+       "type": "toolCall",
+       "id": "call-2",
+       "name": "write",
+       "arguments": {
+        "path": "<ws:spec>/src/New.tsx",
+        "content": "1\n"
+       }
+      }
+     ],
+     "stopReason": "toolUse",
+     "thinkingLevel": "off"
+    },
+    {
+     "role": "toolResult",
+     "toolCallId": "call-2",
+     "toolName": "write",
+     "content": [
+      {
+       "type": "text",
+       "text": "Successfully wrote to <ws:spec>/src/New.tsx"
+      },
+      {
+       "type": "text",
+       "text": "[spec census] 2 changed file(s) in the boundary, 1 unclaimed.\nNew: src/New.tsx → unclaimed"
+      }
+     ],
+     "isError": false
+    }
+   ]
+  }
+ ],
+ "activeTools": [
+  "read",
+  "bash",
+  "edit",
+  "write",
+  "agent_resume",
+  "agent_models",
+  "agent_spawn",
+  "agent_list",
+  "agent_transcript",
+  "agent_steer",
+  "agent_kill",
+  "agent_wait",
+  "team_create",
+  "team_add",
+  "team_eject",
+  "team_succeed",
+  "team_list",
+  "project_verbs",
+  "queue_push"
+ ],
+ "entries": [],
+ "headers": {
+  "# Minor mode: spec": 1
+ }
+}

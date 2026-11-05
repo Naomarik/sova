@@ -1,0 +1,1 @@
+"Backend-native tool allowlist. [] disables all tools. Pi uses lowercase built-ins and inherits active parent built-ins when omitted. claude-code takes the same names or Claude's (Read, Bash, Edit, Write, Grep, Glob, LS) and defaults to all seven."

@@ -21,6 +21,7 @@ import {
   nextProjectModes,
   noProfileMatch,
   nextSetup,
+  PERSONAL_GROUP_LABEL,
   projectGroupLabel,
   projectRowState,
   savedAnnounce,
@@ -62,7 +63,7 @@ export interface ModeControl {
 
 /** radio: the major mode; check: a minor mode; project: one of this project's own minor modes;
     action: opens a settings screen or the picker, switches nothing. */
-type Item = { kind: "radio" | "check" | "project" | "action"; id: string; description: string; label?: string };
+type Item = { kind: "radio" | "check" | "project" | "action"; id: string; description: string; label?: string; personal?: true };
 
 /** The gear actions: Delegate's, Create's and spec's rows, since all their settings live in Settings → Subagents. */
 const CONFIGURE_DELEGATE: Item = {
@@ -190,7 +191,10 @@ export function ModeMenu(props: { control: ModeControl }) {
   // A mode message that arrives later (a switch here or in another tab) is newer than the read: it wins.
   createEffect(on(() => current()?.projectMinors, () => setFreshProject(null), { defer: true }));
   const projectName = () => (freshProject() ?? current())?.project?.name;
-  const projectMinors = createMemo(() => [...((freshProject() ?? current())?.projectMinors ?? [])].sort((a, b) => a.id.localeCompare(b.id, "en")));
+  // This project's modes, then yours ("Your modes"), each by id: the roving order is the order drawn.
+  const projectMinors = createMemo(() =>
+    [...((freshProject() ?? current())?.projectMinors ?? [])].sort((a, b) => Number(!!a.personal) - Number(!!b.personal) || a.id.localeCompare(b.id, "en")),
+  );
   const projectOn = () => current()?.projectModes ?? [];
   const projectInfo = (id: string) => projectMinors().find((m) => m.id === id);
   const items = createMemo<Item[]>(() => {
@@ -215,7 +219,7 @@ export function ModeMenu(props: { control: ModeControl }) {
             : [{ kind: "check" as const, ...m }],
       ),
       ...projectMinors().flatMap((m) => {
-        const row = { kind: "project" as const, id: m.id, description: m.description };
+        const row: Item = { kind: "project" as const, id: m.id, description: m.description, ...(m.personal ? { personal: true as const } : {}) };
         return m.hooksNeedApproval && projectOn().includes(m.id) ? [row, approveHooksItem(m.id)] : [row];
       }),
       SUBAGENTS,
@@ -736,6 +740,8 @@ export function ModeMenu(props: { control: ModeControl }) {
     );
   };
   const group = (kind: Item["kind"]) => items().map((it, index) => ({ it, index })).filter((x) => x.it.kind === kind);
+  /** The project rows of one group: this project's, or yours (§chat.mode-menu/personal-modes). */
+  const projectGroup = (personal: boolean) => group("project").filter((x) => !!x.it.personal === personal);
 
   return (
     <>
@@ -1064,12 +1070,20 @@ export function ModeMenu(props: { control: ModeControl }) {
                 <For each={group("check")}>{(x) => <WithGear it={x.it} index={x.index} />}</For>
               </div>
             </Show>
-            <Show when={group("project").length > 0}>
+            <Show when={projectGroup(false).length > 0}>
               <div class="model-menu-group" role="group" aria-labelledby={paneId("mode-group-project")}>
                 <div class="list-group-label" id={paneId("mode-group-project")}>
                   {projectGroupLabel(projectName())}
                 </div>
-                <For each={group("project")}>{(x) => <WithGear it={x.it} index={x.index} />}</For>
+                <For each={projectGroup(false)}>{(x) => <WithGear it={x.it} index={x.index} />}</For>
+              </div>
+            </Show>
+            <Show when={projectGroup(true).length > 0}>
+              <div class="model-menu-group" role="group" aria-labelledby={paneId("mode-group-personal")}>
+                <div class="list-group-label" id={paneId("mode-group-personal")}>
+                  {PERSONAL_GROUP_LABEL}
+                </div>
+                <For each={projectGroup(true)}>{(x) => <WithGear it={x.it} index={x.index} />}</For>
               </div>
             </Show>
             <div class="model-menu-group" role="group" aria-labelledby={paneId("mode-group-subagents")}>

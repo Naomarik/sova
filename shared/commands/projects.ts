@@ -241,6 +241,7 @@ const MERGE_LANDING: CommandEntry[] = [
 /** The projects sweep (§app.project-commands/projects-sweep): each row points at the route the web app's own control uses. */
 const PROJECTS_SWEEP: CommandEntry[] = [
   looks("project.list", "List Projects", "Every registered project, in an organization or not.", "/api/projects", {}),
+  looks("project.glance", "Show Project Glance", "Every listed project's runtime figures, as the overview's cards show them: ready to merge, running copies, memory in use, a landing or release moving.", "/api/projects/glance", {}),
   looks("project.get", "Show Project", "One registered project.", "/api/projects/:pid"),
   changes("project.create", "Add Project", "Register a folder as a project, or clone a GitHub repository and register it; on this host only.", "POST", "/api/projects", {
     root: { type: "path", description: "The folder to register", in: "body" },

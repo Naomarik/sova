@@ -71,6 +71,46 @@
       "source": "copy",
       "taken": "2026-11-05",
       "bytes": 77714
+    },
+    "usage-limits": {
+      "file": "usage-limits.webp",
+      "width": 2556,
+      "height": 878,
+      "theme": "dark",
+      "alt": "One Claude account on the Usage page: each 7-day window's share used, when it resets, the pace per day and when it runs out at that pace, last week for comparison, the week's burn chart, and the account's logins.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 47322
+    },
+    "project-cost": {
+      "file": "project-cost.webp",
+      "width": 1824,
+      "height": 796,
+      "theme": "dark",
+      "alt": "A project's Cost tab: what its sessions would cost at API prices, as of when it was counted, split by who started them, with the breakdown by kind and model behind a disclosure.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 28176
+    },
+    "usage-costs": {
+      "file": "usage-costs.webp",
+      "width": 2752,
+      "height": 1580,
+      "theme": "dark",
+      "alt": "The Agents page's Costs tab over the last 30 days: the total and its split into main sessions, workers and one-shots, each with its cache hit rate, the cost per day, and tokens, hit rate and cost by provider and by kind.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 48606
+    },
+    "usage-models": {
+      "file": "usage-models.webp",
+      "width": 2752,
+      "height": 1622,
+      "theme": "dark",
+      "alt": "The Costs tab's By model table: one row per model with its new input, cache reads, cache hit rate, output and cost.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 37074
     }
   },
   "_generated": "by site/scripts/screens/capture-live.mjs; edit its SHOTS instead"

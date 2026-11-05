@@ -56,6 +56,7 @@ const THEME = flag("--light") ? "light" : "dark";
 // tall: a viewport height for this shot (CSS px), for a long page.
 // A project tab's own card (the Merge Queue, a run, Releases): the tab panel's first child.
 const PANEL_CARD = "#project-tabpanel > *";
+const COSTS_PRIVATE = ['section[aria-labelledby="costs-projects"]', 'section[aria-labelledby="costs-top"]', ".session-head-meta"];
 const SHOTS = [
   {
     id: "merge-queue-tab",
@@ -115,6 +116,48 @@ const SHOTS = [
     clip: ".settings-modal",
     pad: 0,
   },
+  // Usage and costs. showMoney: the user allows their real dollar figures here, so the money rule
+  // (MASK.text's last) is skipped for these shots; every other rule still runs.
+  {
+    id: "usage-costs",
+    showMoney: true,
+    // By project and Top sessions name other projects, folders and chats: left out of the page.
+    hide: COSTS_PRIVATE,
+    alt: "The Agents page's Costs tab over the last 30 days: the total and its split into main sessions, workers and one-shots, each with its cache hit rate, the cost per day, and tokens, hit rate and cost by provider and by kind.",
+    route: "#/agents/costs",
+    tall: 2400,
+    clip: [".costs-bar", ".costs-stats", "#costs-kinds"],
+    clipX: ".costs-stats",
+    endAt: ['section[aria-labelledby="costs-kinds"]', 'section[aria-labelledby="costs-providers"]'],
+  },
+  {
+    id: "usage-models",
+    showMoney: true,
+    // By project and Top sessions name other projects, folders and chats: left out of the page.
+    hide: COSTS_PRIVATE,
+    alt: "The Costs tab's By model table: one row per model with its new input, cache reads, cache hit rate, output and cost.",
+    route: "#/agents/costs",
+    tall: 2400,
+    clip: 'section[aria-labelledby="costs-models"]',
+  },
+  {
+    id: "usage-limits",
+    alt: "One Claude account on the Usage page: each 7-day window's share used, when it resets, the pace per day and when it runs out at that pace, last week for comparison, the week's burn chart, and the account's logins.",
+    route: "#/usage",
+    tall: 2400,
+    clip: ".usage-groups > section:first-child > article.usage-row:nth-of-type(2)",
+  },
+  {
+    id: "project-cost",
+    showMoney: true,
+    alt: "A project's Cost tab: what its sessions would cost at API prices, as of when it was counted, split by who started them, with the breakdown by kind and model behind a disclosure.",
+    route: "#/projects/{project}/cost",
+    tall: 2400,
+    // Its most expensive sessions are listed by chat title: left out.
+    hide: ["#project-cost ~ .orgs-h3", ".cost-sessions"],
+    clip: [".project-tabs", PANEL_CARD],
+    clipX: PANEL_CARD,
+  },
   // On a test copy seeded by scripts/e2e-release/seed-demo.ts (README.md, "Live shots"): no
   // release is open on the live server most of the time.
   {
@@ -132,6 +175,7 @@ const SHOTS = [
 // hide: removed from the page (not just hidden: the leak gate reads attributes too). blur: kept in place, unreadable. text: replacements made in every
 // text node and in title/aria-label/placeholder/value (strings, or [regex, replacement]);
 // otherProjects (added at run time) become "Another project", their folders "~/code/another".
+const MONEY_RULE = [/\$\d[\d,]*\.\d\d\b/g, "$—"];
 const MASK = {
   hide: [
     // The sidebar starts collapsed to its spine (this browser's own setting, sova:sidebar-collapsed);
@@ -153,8 +197,8 @@ const MASK = {
     // folder, and no set-up project shows it.
     [/Not ready to publish: pushes are held until this project's private names are set up \([^)]*\)\.?/g, ""],
     [/;?\s*pushes are held until this project's private names are set up \([^)]*\)/g, ""],
-    // Money spent, on the project header.
-    [/\$\d[\d,]*\.\d\d\b/g, "$—"],
+    // Money spent, on the project header (a shot with showMoney: true keeps it).
+    MONEY_RULE,
   ],
 };
 
@@ -179,7 +223,7 @@ const asRule = ([from, to]) => (typeof from === "string" ? { s: from, to } : { r
 
 /** One project's page: the project (by prj_ id, else by name, the newest of that name), the leak
     patterns (every other project's name, folder and org, held in memory only) and the text rules. */
-function scope(ref) {
+function scope(ref, showMoney = false) {
   const named = projects.filter((p) => (p.id === ref || p.name === ref) && !p.archived);
   const project = named.sort((x, y) => String(y.createdAt).localeCompare(String(x.createdAt)))[0];
   if (!project) throw new Error(`no project ${ref} on ${BASE}`);
@@ -197,7 +241,7 @@ function scope(ref) {
     [project.root, `~/code/${project.name}`],
     [tilde(project.root), `~/code/${project.name}`],
     [homedir(), "~"],
-    ...MASK.text,
+    ...(showMoney ? MASK.text.filter((r) => r !== MONEY_RULE) : MASK.text),
   ].map(asRule);
   return { project, patterns, textRules };
 }
@@ -217,8 +261,9 @@ await ctx.route("**/*", (r) => {
 });
 await ctx.addInitScript(([theme]) => { try { localStorage.setItem("sova-theme", theme); localStorage.setItem("sova:sidebar-collapsed", "1"); } catch {} }, [THEME]);
 
-async function mask(page, textRules) {
-  await page.addStyleTag({ content: `${FREEZE_CSS} ${MASK.hide.join(", ")} { display: none !important; } ${MASK.blur.length ? `${MASK.blur.join(", ")} { filter: blur(6px) !important; }` : ""}` });
+async function mask(page, textRules, extraHide = []) {
+  const hide = [...MASK.hide, ...extraHide];
+  await page.addStyleTag({ content: `${FREEZE_CSS} ${hide.join(", ")} { display: none !important; } ${MASK.blur.length ? `${MASK.blur.join(", ")} { filter: blur(6px) !important; }` : ""}` });
   // Applied now and again on every change (the page keeps updating from the live server).
   await page.evaluate(([rules, hide]) => {
     const apply = (t) => {
@@ -240,7 +285,7 @@ async function mask(page, textRules) {
     let queued = false;
     new MutationObserver(() => { if (!queued) { queued = true; queueMicrotask(() => { queued = false; run(); }); } })
       .observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
-  }, [textRules, MASK.hide]);
+  }, [textRules, hide]);
 }
 
 async function step(page, s) {
@@ -294,11 +339,11 @@ const sharp = process.env.SITE_INSTALL_DIR
   : siteSharp();
 let failed = 0;
 for (const shot of todo) {
-  const { project, patterns, textRules } = scope(shot.project ?? PROJECT);
+  const { project, patterns, textRules } = scope(shot.project ?? PROJECT, shot.showMoney);
   const page = await open(shot.route, project, shot.tall ?? 900);
   try {
     for (const s of shot.steps ?? []) await step(page, s);
-    await mask(page, textRules);
+    await mask(page, textRules, shot.hide);
     await page.waitForTimeout(300);
     await leakGate(page, patterns, shot.id).catch(async (e) => {
       // Where each hit is, for whoever runs this (printed, never written).

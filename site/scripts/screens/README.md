@@ -265,7 +265,8 @@ change the live page makes: the sidebar starts collapsed to its spine (this brow
 setting) and its lists and running-chat tiles are removed; session links lose their file paths;
 every other project's name, folder and org become "Another project", `~/code/another`, "An org"
 (read from the server at run time, never stored); this project's folder reads `~/code/<name>`,
-any home folder `~`, `~/webapps/` `~/code/`; emails read `you@example.com`; money reads `$—`;
+any home folder `~`, `~/webapps/` `~/code/`; emails read `you@example.com`; money reads `$—` (except
+in the usage shots, `showMoney: true`: the owner chose to show their real figures there);
 the merge thread's stale auto title reads "Merge thread"; a test copy's private-names push hold
 is dropped. Then the leak gate (harness.mjs's: home, user, host, tailnet; plus those projects,
 folders and orgs, and any email) refuses the shot if anything still shows. Read every new image
@@ -276,8 +277,11 @@ anyway: the gate knows names, not meaning (a chat title can say more than a name
 `{ click: { css } }`, `{ scroll: "<selector>" }` to the top of its scroller, `{ wait: ms }`,
 `{ waitFor: "<css>" }`), `clip` (a selector, or several for the box around them; `pad`; `clipX` a selector for the left and right edges; `endAt` selectors, the first present sets the bottom, `endPad`), `tall`
 (viewport height in CSS px; the width is 1440), `project`, and `copy: true` for a shot that needs
-a test copy. Find selectors and button names with `--explore`. If something private shows, add a
-rule to `MASK` rather than to the shot.
+a test copy. `showMoney: true` keeps dollar amounts (every other rule still runs); `hide`
+(selectors) removes parts of that page before the leak gate reads it, for a panel that lists
+private things on a page the shot crops away from (the Costs tab's By project and Top sessions).
+Find selectors and button names with `--explore`. If something private shows, add a rule to
+`MASK` rather than to the shot.
 
 **Test-copy shots** (`copy: true`): no release is open on the live server most of the time, so
 `release-in-progress` is shot on this worktree's own copy seeded with release demo data:

@@ -15,6 +15,78 @@
       "source": "pi-session:edb3d4e1-f79f-4177-8482-4377cb9bf1de#d95df395"
     }
   },
+  "§site.landing/landing-and-releases": {
+    "kind": "behavior",
+    "requires": [
+      "§app.merge-queue/approve",
+      "§app.merge-queue/run",
+      "§app.merge-queue/blame",
+      "§app.merge-queue/land",
+      "§app.merge-queue/setup",
+      "§app.merge-queue/strategies",
+      "§chat.merge-queue/thread",
+      "§app.release/start",
+      "§app.release/checks",
+      "§app.release/publish",
+      "§app.release/withdraw",
+      "§app.release/maker"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/pages/index.astro",
+      "site/src/components/screens/ShotFrame.astro",
+      "site/src/data/screens.ts",
+      "site/src/styles/site.css",
+      "site/src/styles/mock.css"
+    ]
+  },
+  "§site.landing/teams": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.mode-menu/delegate-teams",
+      "§app/teams",
+      "§app.teams/inbox",
+      "§app.teams/inbox-zero",
+      "§teams.defaults/coordinator",
+      "§teams.defaults/routing",
+      "§teams.defaults/team-report",
+      "§teams.defaults/monitor",
+      "§teams.defaults/handover",
+      "§app.subagents-pane/member-inbox",
+      "§chat.subagent-profiles/off",
+      "§site.docs/teams"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/pages/index.astro",
+      "site/src/components/SiteNav.astro",
+      "site/src/components/mocks/Team.astro",
+      "site/src/styles/mock.css",
+      "site/src/styles/site.css"
+    ]
+  },
+  "§site.landing/usage": {
+    "kind": "behavior",
+    "requires": [
+      "§app.insights/cost-history",
+      "§app.insights/usage-cards",
+      "§app.insights/usage-burn",
+      "§app.insights/sidebar-foot",
+      "§app.project-costs/card",
+      "§app.subagents-pane/tabs",
+      "§site.docs/usage"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "site/src/components/UsageSection.astro",
+      "site/src/pages/index.astro",
+      "site/src/components/SiteNav.astro",
+      "site/src/assets/screens/live/manifest.json"
+    ]
+  },
   "§site/landing": {
     "kind": "note",
     "authority": "accepted",

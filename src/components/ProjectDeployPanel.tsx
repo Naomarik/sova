@@ -234,7 +234,15 @@ export function ProjectDeployPanel(props: {
           </Show>
         </span>
       </div>
-      <Show when={report()} fallback={<p class="orgs-empty">{poll.error() ? `Couldn't read the deploy targets. ${poll.error()}` : poll.data()?.error ? poll.data()!.error!.message : "Reading the deploy targets."}</p>}>
+      <Show
+        when={report()}
+        fallback={
+          // No definition on main at all is a project with nothing set up: the same words and button as no deploy.
+          <Show when={!poll.error() && poll.data()?.error?.code === "not-found"} fallback={<p class="orgs-empty">{poll.error() ? `Couldn't read the deploy targets. ${poll.error()}` : poll.data()?.error ? poll.data()!.error!.message : "Reading the deploy targets."}</p>}>
+            <SetupNotSetUp projectId={props.projectId} surface="deploy" archived={props.archived} poll={setup} />
+          </Show>
+        }
+      >
         {(d) => (
           <>
             <Show when={d().targets?.length}>

@@ -716,9 +716,14 @@ export function ReleaseSetupSteps(props: { setup: ReleaseSetupReview }) {
               <For each={s().steps.filter((x) => x.phase === ph)}>
                 {(x) => (
                   <li class="deploy-step">
-                    <span class="deploy-step-kind">{x.label}</span> <span class="text-mono text-muted">{x.id}</span>
-                    {x.held ? <> · <Chip tone="warn">Held for you</Chip></> : null}
-                    {x.artifact ? " · reports a built file" : ""}
+                    <span class="deploy-step-kind">
+                      {x.label}
+                      {x.held ? <Chip tone="warn">Held for you</Chip> : null}
+                    </span>
+                    <span class="text-mono text-muted">
+                      {x.id}
+                      {x.artifact ? " · reports a built file" : ""}
+                    </span>
                   </li>
                 )}
               </For>

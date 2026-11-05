@@ -99,7 +99,3 @@ export function landState(p: SetupProposal): { action: "land" | "merge" | "trial
   if (!p.land.can) return { action: merge, can: false, why: p.land.why ?? "Not ready to land." };
   return { action: merge, can: true };
 }
-
-/** What a step of the release is marked as, in the drawing's words. */
-export const releaseStepMark = (s: { phase: string; held?: true }): string =>
-  s.held ? "Held for you" : s.phase === "after" ? "After Publish" : s.phase === "withdraw" ? "After a Withdraw" : s.phase === "check" ? "Before Publish" : "Sova";

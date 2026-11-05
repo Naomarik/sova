@@ -160,7 +160,7 @@ function SetupChatLine(props: { projectId: string; chat: SetupChatView; poll: Se
           </Show>
         </div>
       </div>
-      <p class="list-meta text-muted">Started {relativeTime(props.chat.startedAt)}. It reads the project and asks what it can't tell; nothing it proposes changes {props.chat.proposal?.target ?? "the project"} until you land it.</p>
+      <p class="list-meta text-muted">Started {relativeTime(props.chat.startedAt)}. It reads the project and asks what it can't tell; nothing it proposes changes {props.chat.proposal?.target ?? "anything"} until you land it.</p>
       <Show when={confirm()}>
         <div class="mq-confirm" role="group" aria-label="Start a fresh setup chat">
           <p class="field-hint">This chat is archived once its turn ends, and what it learned goes with it. Its setup branch and an open proposal stay; the next Set Up with a Chat or Change Setup starts a new chat that carries on from them.</p>

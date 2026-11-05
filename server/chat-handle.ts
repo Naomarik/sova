@@ -99,6 +99,7 @@ export {
   onAgentSettled,
   onAgentStarted,
   onReceiverIdle,
+  onCompacted,
   setLinkOrigin,
   setLinksSource,
   setOpeningChoice,

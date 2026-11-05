@@ -39,6 +39,7 @@ import { CardJumpContext } from "../lib/card-refs";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
+import { PairedLines } from "./PairedLines";
 import { createLimits } from "../lib/mode-menu";
 import { sandboxOffMissing, sandboxStateOf, type SandboxState } from "../lib/sandbox";
 import { approveSchedule, fetchTranscriptRows, forkSession, getAlignTriage, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
@@ -2264,6 +2265,10 @@ export function ChatView(props: {
           <div class="stack-2">
             <Show when={!archivedPane()}>
               <ConnectionBanner socket={socket} />
+            </Show>
+            {/* The Overseer's pairings this chat is in (§app.overseer/pairs): one line each. */}
+            <Show when={!props.overseer && !archivedPane()}>
+              <PairedLines sessionId={props.summary?.()?.id} />
             </Show>
             {/* A reload onto new code that didn't start: the chat keeps working on older code. */}
             <Show when={codeFailure(code())}>

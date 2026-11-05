@@ -225,7 +225,10 @@
     "project.icon.upload",
     "project.icon.letters",
     "project.icon.remove",
-    "project.verb.merge.hold"
+    "project.verb.merge.hold",
+    "session.pairs.list",
+    "session.pairs.unpair",
+    "session.pairs.resume"
   ],
   "retired": [
     "settings.agents.get",

@@ -26,7 +26,7 @@ import { startShareRuntime, stopShareRuntime } from "./share/runtime";
 import { startTourSweep } from "./tours/sweep";
 import { flushOpenVisits } from "./visits";
 import { pruneVisitorLogs } from "./visitor-identity";
-import { acquireChatHandle, chatHandle, chatHandles, disposeAllChats, onAgentSettled, onChatEvent, onReceiverIdle, warmChatRuntime } from "./chat-handle";
+import { acquireChatHandle, chatHandle, chatHandles, disposeAllChats, onAgentSettled, onChatEvent, onCompacted, onReceiverIdle, warmChatRuntime } from "./chat-handle";
 import { receiverSpecial, startTopicDelivery } from "./topic-delivery";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { stateRoot } from "./state-root";
@@ -102,12 +102,18 @@ startTopicDelivery({
   async summary(path) {
     const s = await getSessionSummary(path);
     if (!s) return null;
-    return { archived: s.archived, live: s.live, special: receiverSpecial(s, projectOverseerOfPath(path)) };
+    return { archived: s.archived, live: s.live, special: receiverSpecial(s, projectOverseerOfPath(path)), title: s.title };
   },
   acquire: (path) => acquireChatHandle(path),
   onIdle: onReceiverIdle,
   onChatEvent,
   onArchived: onSessionArchived,
+  // A paired chat's reminder after its compaction (§app.overseer/pairs): a note that starts no turn.
+  onCompacted,
+  note: async (path, noteType, text) => {
+    const held = chatHandle(path);
+    return held ? held.appendNote(noteType, text) : false;
+  },
 });
 // Outreach (§app/outreach): receipts of earlier sends find their log lines once the sender replays them.
 startOutreach();

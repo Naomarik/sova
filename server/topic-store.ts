@@ -26,7 +26,37 @@ export interface TopicRecord {
   closedAt?: string;
   /** Sessions the receiver asked to answer here: only they may push. */
   invited?: string[];
+  /** The Overseer's pairing this topic was opened for (§app.overseer/pairs): never reused by base. */
+  pairing?: string;
 }
+
+/** Notes each way a pairing takes before that direction pauses (§app.overseer/pairs). */
+export const PAIR_NOTES_EACH_WAY = 40;
+
+/** One side of a pairing: the chat, the topic it receives on, and its job in the Overseer's words. */
+export interface PairSide {
+  sessionId: string;
+  path: string;
+  topic: string;
+  job: string;
+}
+
+/** A pairing of two chats (§app.overseer/pairs). `notes.toA` counts notes pushed to `a`'s topic
+    (sent by `b`) since the last resume of that direction; at PAIR_NOTES_EACH_WAY it is paused. */
+export interface PairRecord {
+  id: string;
+  a: PairSide;
+  b: PairSide;
+  createdAt: string;
+  notes: { toA: number; toB: number };
+  endedAt?: string;
+  endedWhy?: "unpaired" | "archived" | "gone";
+}
+
+/** A direction of a pairing, named by where its notes go. */
+export type PairDirection = "toA" | "toB";
+
+export const pairPaused = (p: PairRecord, d: PairDirection): boolean => p.notes[d] >= PAIR_NOTES_EACH_WAY;
 
 export interface TopicItem {
   id: string;
@@ -80,6 +110,9 @@ export class TopicStore {
   private get pausedFile(): string {
     return join(this.dir, "paused.json");
   }
+  private get pairsFile(): string {
+    return join(this.dir, "pairs.json");
+  }
   private notesFile(name: string): string {
     return join(this.dir, `${name}.jsonl`);
   }
@@ -126,7 +159,8 @@ export class TopicStore {
   open(receiver: { sessionId: string; path: string }, name: string, project?: string | null): { name: string; reused: boolean } {
     const base = topicBase(name);
     const mine = this.openTopics().filter(([, t]) => t.receiver.sessionId === receiver.sessionId);
-    const same = mine.find(([, t]) => t.base === base);
+    // A pairing's topic is never handed out by base (§chat.topics/open): only its pairing has it.
+    const same = mine.find(([, t]) => t.base === base && !t.pairing);
     if (same) {
       if (same[1].receiver.path !== receiver.path) {
         same[1].receiver.path = receiver.path;
@@ -147,6 +181,147 @@ export class TopicStore {
     all[made] = { receiver: { ...receiver }, base, ...(project ? { project } : {}), createdAt: new Date(this.now()).toISOString() };
     this.saveTopics();
     return { name: made, reused: false };
+  }
+
+  private freshName(base: string): string {
+    const all = this.all();
+    let made = "";
+    do {
+      const bytes = this.random(SUFFIX);
+      let suffix = "";
+      for (let i = 0; i < SUFFIX; i++) suffix += ALPHABET[bytes[i]! % ALPHABET.length];
+      made = `${base}-${suffix}`;
+    } while (all[made] || existsSync(this.notesFile(made)));
+    return made;
+  }
+
+  /** Open topics `sessionId` receives on, pairings' included. */
+  openCount(sessionId: string): number {
+    return this.openTopics().filter(([, t]) => t.receiver.sessionId === sessionId).length;
+  }
+
+  // ---- pairings (§app.overseer/pairs) ----------------------------------------------------------
+
+  private pairsCache: Record<string, PairRecord> | null = null;
+
+  private allPairs(): Record<string, PairRecord> {
+    if (this.pairsCache) return this.pairsCache;
+    let pairs: Record<string, PairRecord> = {};
+    try {
+      const raw = JSON.parse(readFileSync(this.pairsFile, "utf8"));
+      if (raw && typeof raw.pairs === "object" && raw.pairs) pairs = raw.pairs;
+    } catch {
+      // missing or unreadable: no pairings
+    }
+    return (this.pairsCache = pairs);
+  }
+
+  private savePairs(): void {
+    const all = this.allPairs();
+    const cutoff = this.now() - CLOSED_KEEP_MS;
+    for (const [id, p] of Object.entries(all)) if (p.endedAt && Date.parse(p.endedAt) < cutoff) delete all[id];
+    mkdirSync(this.dir, { recursive: true });
+    const tmp = `${this.pairsFile}.${process.pid}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify({ v: 1, pairs: all }, null, 1)}\n`);
+    renameSync(tmp, this.pairsFile);
+  }
+
+  /** A pairing by id, ended or not; null for none. */
+  pair(id: string): PairRecord | null {
+    return (typeof id === "string" && this.allPairs()[id]) || null;
+  }
+
+  /** Every pairing still in force, oldest first; with `sessionId`, only that chat's. */
+  livePairs(sessionId?: string): PairRecord[] {
+    return Object.values(this.allPairs())
+      .filter((p) => !p.endedAt && (!sessionId || p.a.sessionId === sessionId || p.b.sessionId === sessionId))
+      .sort((x, y) => x.createdAt.localeCompare(y.createdAt));
+  }
+
+  /** The live pairing of these two chats, in either order. */
+  pairOf(x: string, y: string): PairRecord | null {
+    return this.livePairs(x).find((p) => (p.a.sessionId === x && p.b.sessionId === y) || (p.a.sessionId === y && p.b.sessionId === x)) ?? null;
+  }
+
+  /** The pairing a topic was opened for and the direction its notes go, or null. Closed topics too. */
+  pairOfTopic(name: string): { pair: PairRecord; dir: PairDirection } | null {
+    const t = typeof name === "string" ? this.all()[name] : undefined;
+    const p = t?.pairing ? this.pair(t.pairing) : null;
+    if (!p) return null;
+    return p.a.topic === name ? { pair: p, dir: "toA" } : p.b.topic === name ? { pair: p, dir: "toB" } : null;
+  }
+
+  /**
+   * Pair two chats: one new topic on each (base `pair`, its chat the receiver, the partner its one
+   * invited sender). Both chats' room under TOPICS_PER_SESSION is checked first, so either both
+   * topics open or neither does. The same two chats already paired get their pairing back.
+   */
+  openPair(a: Omit<PairSide, "topic">, b: Omit<PairSide, "topic">): { pair: PairRecord; existing: boolean } {
+    if (a.sessionId === b.sessionId) throw new Error("A pairing joins two different chats.");
+    const had = this.pairOf(a.sessionId, b.sessionId);
+    if (had) return { pair: had, existing: true };
+    for (const side of [a, b]) {
+      const n = this.openCount(side.sessionId);
+      if (n >= TOPICS_PER_SESSION)
+        throw new Error(`Session ${side.sessionId} already has ${TOPICS_PER_SESSION} topics open, so it can't be paired. Nothing was changed.`);
+    }
+    const all = this.all();
+    const pairs = this.allPairs();
+    let id = "";
+    do id = `pr_${this.random(6).toString("hex")}`;
+    while (pairs[id]);
+    const at = new Date(this.now()).toISOString();
+    const topicA = this.freshName("pair");
+    all[topicA] = { receiver: { sessionId: a.sessionId, path: a.path }, base: "pair", createdAt: at, invited: [b.sessionId], pairing: id };
+    const topicB = this.freshName("pair");
+    all[topicB] = { receiver: { sessionId: b.sessionId, path: b.path }, base: "pair", createdAt: at, invited: [a.sessionId], pairing: id };
+    const pair: PairRecord = { id, a: { ...a, topic: topicA }, b: { ...b, topic: topicB }, createdAt: at, notes: { toA: 0, toB: 0 } };
+    pairs[id] = pair;
+    this.saveTopics();
+    this.savePairs();
+    return { pair, existing: false };
+  }
+
+  /** End a pairing: both its topics close and their waiting notes are dropped. Returns the dropped
+      counts, or null when it was already ended or never was. */
+  endPair(id: string, why: NonNullable<PairRecord["endedWhy"]>): { pair: PairRecord; dropped: { a: number; b: number } } | null {
+    const p = this.pair(id);
+    if (!p || p.endedAt) return null;
+    p.endedAt = new Date(this.now()).toISOString();
+    p.endedWhy = why;
+    this.savePairs();
+    const dropped = { a: this.close(p.a.topic), b: this.close(p.b.topic) };
+    return { pair: p, dropped };
+  }
+
+  /** One more note accepted toward `dir`'s chat. */
+  countPairNote(id: string, dir: PairDirection): void {
+    const p = this.pair(id);
+    if (!p || p.endedAt) return;
+    p.notes[dir]++;
+    this.savePairs();
+  }
+
+  /** Lift a pause: `dir`'s count, or both, back to 0. Null for a pairing not in force. */
+  resumePair(id: string, dir?: PairDirection): PairRecord | null {
+    const p = this.pair(id);
+    if (!p || p.endedAt) return null;
+    if (!dir || dir === "toA") p.notes.toA = 0;
+    if (!dir || dir === "toB") p.notes.toB = 0;
+    this.savePairs();
+    return p;
+  }
+
+  /** A paired chat's file moved (a reopened runtime): keep the pairing's path in step. */
+  notePairPath(sessionId: string, path: string): void {
+    let changed = false;
+    for (const p of this.livePairs(sessionId))
+      for (const side of [p.a, p.b])
+        if (side.sessionId === sessionId && side.path !== path) {
+          side.path = path;
+          changed = true;
+        }
+    if (changed) this.savePairs();
   }
 
   /** Record `sessionId` as invited on the open topic `name`. Returns whether
@@ -314,12 +489,13 @@ export class TopicStore {
   /** One audit line (§chat.topics/push), never a note's text. */
   audit(line: {
     sessionId: string;
-    tool: "queue_open" | "queue_push" | "session_send";
+    tool: "queue_open" | "queue_push" | "session_send" | "sova_pair";
     topic?: string;
     outcome: "ok" | "refused" | "closed" | "invited";
     item?: string;
     error?: string;
-    reason?: "not-open" | "not-invited" | "receiver-gone";
+    reason?: "not-open" | "not-invited" | "receiver-gone" | "pairing-ended" | "pairing-paused";
+    pairing?: string;
     target?: string;
     dropped?: number;
   }): void {

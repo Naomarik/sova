@@ -27,6 +27,7 @@ import { registerProjectFileRoutes } from "./project-files-routes";
 import { registerMcpRoutes } from "./mcp/routes";
 import { registerSessionOfferRoutes } from "./session-offers-routes";
 import { registerTranscriptCardRoutes } from "./transcript-cards-routes";
+import { registerPairRoutes } from "./topic-pairs";
 import { setFileCopyGuards } from "./project-files-tool";
 import { registerProjectRoutes } from "./projects/routes";
 import { registerProjectServiceRoutes } from "./project-services/routes";
@@ -468,6 +469,14 @@ export function buildApp(deps: AppDeps) {
   // MCP servers: the Settings tab, the project page's section, Check, approval and sign-in (§app/mcp).
   registerMcpRoutes(app);
   registerTranscriptCardRoutes(app);
+  // The Overseer's pairings (§app.overseer/pairs): each paired chat's line, Unpair and Resume.
+  registerPairRoutes(app, {
+    title: async (id) => {
+      const path = await pathOfId(id);
+      return path ? (await getSessionSummary(path))?.title : undefined;
+    },
+    exists: async (id) => (await pathOfId(id)) !== null,
+  });
   // The usage ledger: every figure of spend, answered by the usage helper (§app.insights/usage-ledger).
   registerUsageRoutes(app);
   registerProjectRoutes(app);

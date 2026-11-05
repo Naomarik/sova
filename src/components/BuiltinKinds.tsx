@@ -26,7 +26,7 @@ import { resultDetails as detailsOf, toolCallArgs, toolResultView } from "../lib
 import { confirmDetails } from "../lib/overseer";
 import { CARD_TOOL, LEGACY_CONFIRM_TOOL } from "../../shared/overseer-card";
 import { profileToolCard, ProfileToolCardView } from "./ProfileCards";
-import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow } from "./OverseerCards";
+import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow, PairCard, pairDetails } from "./OverseerCards";
 import { toolContent } from "../lib/tool-content";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { AlignCard } from "./AlignCard";
@@ -337,6 +337,8 @@ function ToolRow(props: KindViewProps) {
       running or failed, the plain tool card. */
   const linked = () =>
     (item.text === "sova_link" || item.text === "sova_unlink") && status() === "done" ? linkDetails(resultDetails()) : null;
+  /** A pairing made or ended reads as a card naming both chats (§app.overseer/pairs). */
+  const paired = () => (item.text === "sova_pair" && status() === "done" ? pairDetails(resultDetails()) : null);
   /** session_send and a profile's sova_create_session read as cards (§chat.profiles/delivery). */
   /** The arguments and output its rows don't carry, asked for by the call's row id. */
   const lazy = createMemo(() => {
@@ -361,6 +363,9 @@ function ToolRow(props: KindViewProps) {
       when={linked()}
       fallback={
     <Show
+      when={paired()}
+      fallback={
+    <Show
       when={profileCard()}
       fallback={
     <ToolCard
@@ -380,6 +385,10 @@ function ToolRow(props: KindViewProps) {
       }
     >
       {(card) => <ProfileToolCardView card={card()} />}
+    </Show>
+      }
+    >
+      {(d) => <PairCard op={d().op} pair={d().pair} existing={!!d().existing} />}
     </Show>
       }
     >

@@ -39,6 +39,7 @@ import type { ArchiveWorktrees, WorktreePlan } from "./archive-worktrees";
 import { safeHttpsUrl } from "../shared/overseer-card";
 import { branchLabels } from "./overseer-run-note";
 import { linkTools, type LinksApi } from "./overseer-link-tools";
+import { pairTargets, pairTools } from "./overseer-pair-tools";
 import { projectEngine } from "./project-services/routes";
 import { overseerVerbsTool, type LooseExec } from "./project-services/tools";
 import { operatorEnvelopeOf } from "./projects/spaces";
@@ -276,6 +277,9 @@ export function actTargets(tool: string, params: any): string[] | null {
       return Array.isArray(params?.sessions) && params.sessions.length ? params.sessions.map(String) : null;
     case "sova_group":
       return (params?.op === "add" || params?.op === "remove") && Array.isArray(params?.sessions) && params.sessions.length ? params.sessions.map(String) : null;
+    case "sova_pair":
+      // pair: its two chats; unpair and resume: the pairing's two (§app.overseer/pairs).
+      return pairTargets(params);
     default:
       return null;
   }
@@ -1904,6 +1908,23 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
       });
     })(),
     ...linkTools({ act, read, links: host.links, take: () => limits.take("link", host.caps()), refusal: (m) => new Refusal(m), obj, str }),
+    ...pairTools({
+      act,
+      read,
+      lookup,
+      // The introduction goes as sova_send's messages do (the route tags it as the Overseer's),
+      // queued behind a running turn, never a steer. A chat it reaches doesn't count as one the
+      // Overseer started: the pairing, not the Overseer, keeps it working.
+      send: async (s, message) => {
+        const r = await call("POST", "/api/sessions/prompt", { path: s.path, text: message });
+        if (r.status !== 200) throw failed(r, "Sending the introduction");
+      },
+      take: (n) => limits.take("prompt", host.caps(), n),
+      give: (n) => limits.give("prompt", n),
+      refusal: (m) => new Refusal(m),
+      obj,
+      str,
+    }),
     // Project instances (§app.project-services/callers): reads free, acts through `act` (turns the user started).
     overseerVerbsTool(
       projectEngine,

@@ -100,11 +100,11 @@ trial and its run (`mr_…`) and goes on in the background.
 - So a setup that changes what a release check depends on without changing the check itself (its
   script, a service it requires, a setup step) names that check for the trial. Never name every
   release check by habit: each can take up to 30 minutes and holds the merge copy.
-- In a trial the changed-paths list (`SOVA_MERGE_CHANGED`) is empty and `${merge.base}` is the
-  commit itself, so a check that skips when its paths didn't change **skips** (shown as skipped, with
-  its reason). Prove such a check by running it in your worktree against the target
-  (`SOVA_MERGE_BASE=$(git merge-base HEAD <target>) <argv>` or its own `--base`), and say so in your
-  report.
+- In a trial **every check runs in full**, as though every file changed and the merge thread had
+  picked it: `SOVA_MERGE_CHANGED` lists every tracked file and `SOVA_MERGE_PICKED=1`. No check skips
+  for its paths, so a check that skips itself on an ordinary landing (an affected-only check, one
+  gated on its paths) is proven by the trial like the rest. Expect a trial to take longer than a
+  typical landing.
 - It saves nothing, lands nothing, pushes nothing, tags nothing. Deploy steps and release steps
   never run in a trial: only the checks do.
 - It works on a project the queue doesn't serve yet. It is `invalid-request` when the commit has no

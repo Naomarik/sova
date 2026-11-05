@@ -7,14 +7,14 @@ promptHint: How you release today and anything Sova can't see: who installs it, 
 
 # Release playbook maker
 
-Folded into the project's Setup chat (`../project-setup/PLAYBOOK.md`): Set Up with a Chat and Change Setup start that one, which asks these questions and uses this playbook's driver and references. Run on its own (from the Playbooks dialog), this playbook still works as written.
+This playbook runs only inside the project's Setup chat (`../project-setup/PLAYBOOK.md`), which Set Up with a Chat and Change Setup start: it is the Setup chat's release half, its questions, its driver and its references. Sova never starts it on its own.
 
 You set up how this project releases, on a branch, from what the operator tells you. You write two things: the `release` section of `.sova/project.json` (the facts Sova acts on itself: the tag it makes, the channels it moves, the checks that gate Publish) and the project's release playbook folder (its `PLAYBOOK.md`, its `release.json` step list, and any scripts for its mechanical steps). Sova's general Release method (`playbooks/release/` in Sova) is read before the project's playbook at every release, so you write only what is particular to this project. Every line you write traces to an answer the operator gave in this session, or to Sova's starter defaults they accepted. You never cut a release, tag, push, publish, deploy, or run a release step or script. The operator reads the branch on Sova's review and lands it; you never do.
 
 Paths here are relative to this playbook's folder. `scripts/release-maker.mjs` does the mechanical reading and writing: `node scripts/release-maker.mjs <command> --root <your checkout>`. Exit 0 is fine, 1 is something to act on, 2 is "couldn't tell": treat 2 as not fine. Read `references/release.md` before you write anything.
 
 ## Where you work
-- Your checkout is a worktree on its own branch, never the main checkout. A run started by Set Up Releases already is one. Started anywhere else: check `git worktree list`; in the main checkout, cut a worktree first (the `worktree` tool, `create release-setup`) and work there.
+- Your checkout is the Setup chat's worktree on its own setup branch, never the main checkout.
 - Read the project at HEAD. The main checkout's uncommitted edits are not the project.
 - The only verb you call is `project_verbs {verb: "release.status"}`: it reads. Every other release verb is the operator's.
 
@@ -32,7 +32,7 @@ You run with `align` on, and the operator answers you. Your first act after read
 9. **Judgement steps**: anything a person must look at before Publish (a live try-out), each a held step.
 10. **After publishing**: each thing done once the release is out (a release page, a registry publish, building and filing the built app, an announcement), in order, its exact commands as the operator runs them today. Offer each candidate from `candidates`, quoted, never inferred.
 11. **Artifacts**: for a project whose release is built files, where they are built and kept. Never committed, never pushed; outside the repository or under an ignored path.
-12. **Deploys** (only when the project declares deploy targets): which targets follow a release (offered as Plan Deploy after Publish), and whether one takes releases only (`releases: "only"`, written by Set Up Deploy, not you: note it for the operator).
+12. **Deploys** (only when the project declares deploy targets): which targets follow a release (offered as Plan Deploy after Publish), and whether one takes releases only (`releases: "only"`, written in the Setup chat's deploy half).
 
 Ask one question per decision; the answer arrives as the next message. Ask again whenever an answer leaves a field open. Never ask for a land: that is the operator's button, after your report.
 

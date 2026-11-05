@@ -87,14 +87,11 @@ a branch touches it, not only at release time."
    for byte.
 7. **Check**: `fmt`, then `check --base master` (exit 0; the carried-over deploy note stays a note);
    commit by explicit path.
-8. **Trial**: `merge.try` on your branch's head, then end your turn until its wake. A trial runs
-   optional checks too, but with an empty changed list, so the new check **skips** there ("nothing
-   under site/ changed"); the other checks prove the branch didn't break them. So run the new script
-   once more in your worktree as a landing that touches the site would
-   (`SOVA_MERGE_BASE=$(git merge-base HEAD master)` set, on a commit that changes `site/`), and put both
-   results in the report. A failed step: read `merge.logs`, fix, commit, try again.
-9. **Propose**: the drawing, what you measured, the trial's result (the new check skipped in it,
-   proven by hand), the files changed, and that Land is on the branch now that its head passed; once it lands, the next landing that touches the
+8. **Trial**: `merge.try` on your branch's head, then end your turn until its wake. The trial runs
+   every merge check in full, optional ones too, as though every file changed, so the new check
+   builds the site there even though its script skips on a landing that doesn't touch `site/`. A
+   failed step: read `merge.logs`, fix, commit, try again.
+9. **Propose**: the drawing, what you measured, the trial's result (the new check's time in it), the files changed, and that Land is on the branch now that its head passed; once it lands, the next landing that touches the
    site builds it.
 
 Never in this example: editing `.sova/project.json` on master, calling `merge.setup`, restarting or

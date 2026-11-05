@@ -108,8 +108,8 @@ the releases and the deploys **fresh** each time you start a change.
    own merge checks (optional ones too) in the merge copy, and the release-only checks that are new
    or changed against the target's (name an unchanged one in `checks` when your change touches what
    it runs: its script, a service, a setup step), and saves nothing. Start it,
-   then end your turn: Sova wakes you with each step's result. A check that skips when its paths
-   didn't change skips in a trial: prove it by hand in your worktree. Read each failed check's log
+   then end your turn: Sova wakes you with each step's result. Every check runs in full there, as though
+   every file changed, so none skips for its paths. Read each failed check's log
    (`merge.logs`), fix the cause on your branch (a command, a missing setup step, a service, a time
    limit), check, commit, and try again. A check red on the target itself is the project's: tell the
    user and let them decide; never weaken, skip or drop a check to get a pass without their word.

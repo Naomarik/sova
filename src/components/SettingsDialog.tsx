@@ -25,13 +25,14 @@ import {
   DEFAULT_RECENT_COUNT,
   MAX_RECENT_COUNT,
   MIN_RECENT_COUNT,
-  parseRecentCount,
+  RECENT_RULE,
   recentCount,
   recentCountValid,
   repairRecentCount,
   setRecentCount,
 } from "../lib/recent";
 import { setShowSummaries, showSummaries } from "../lib/summary-line";
+import { NumberField, Toggle } from "./form";
 import { compressWork, setCompressWork } from "../lib/work-compression";
 import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography } from "../lib/theme";
 import { settingsProject, type SettingsTab } from "../lib/settings-nav";
@@ -445,23 +446,6 @@ function GeneralPanel() {
    * a valid draft writes through immediately, an invalid one says why and leaves the count alone.
    */
   const [draft, setDraft] = createSignal(String(recentCount()));
-  const invalid = () => !recentCountValid(draft());
-
-  /**
-   * What is wrong with the draft, in the form the user can act on. Empty while it is fine.
-   *
-   * `parseRecentCount` is the same parse the rule uses, and it has to be: an empty field is
-   * `Number("") === 0`, so reading the raw text here once had a blank box answered with "3 is the
-   * fewest" — the floor offered as the fix for a box the user had simply cleared.
-   */
-  const problem = () => {
-    if (!invalid()) return "";
-    const n = parseRecentCount(draft());
-    if (n === null) return `Type a whole number from ${MIN_RECENT_COUNT} to ${MAX_RECENT_COUNT}.`;
-    if (n < MIN_RECENT_COUNT) return `${MIN_RECENT_COUNT} is the fewest. Below that Recent is a row, not a list.`;
-    return `${MAX_RECENT_COUNT} is the most. Past that the shortcut is the list again.`;
-  };
-
   /** Writes a valid draft the moment it is typed — the settings dialog spec's rule: a setting that needed a Save
       button would be lying about when it takes effect. */
   const onInput = (value: string) => {
@@ -473,7 +457,7 @@ function GeneralPanel() {
       that works, and the field says so rather than sitting on red. */
   const onCommit = () => {
     const n = setRecentCount(repairRecentCount(draft()));
-    const repaired = invalid();
+    const repaired = !recentCountValid(draft());
     setDraft(String(n));
     if (repaired) announce(`Recent shows ${n} ${n === 1 ? "session" : "sessions"}.`);
   };
@@ -484,71 +468,33 @@ function GeneralPanel() {
         How this browser draws Sova. The settings above stay in this browser; another device keeps
         its own. The server and its updates, below, are this machine's.
       </p>
-      <div class="field settings-field">
-        <label class="field-label" for="recent-count">
-          Sessions in Recent
-        </label>
-        <input
-          class="input input-num"
-          classList={{ "input-invalid": invalid() }}
-          id="recent-count"
-          type="number"
-          inputmode="numeric"
-          min={MIN_RECENT_COUNT}
-          max={MAX_RECENT_COUNT}
-          step={1}
-          value={draft()}
-          aria-invalid={invalid() ? "true" : undefined}
-          aria-describedby={invalid() ? "recent-count-error" : "recent-count-hint"}
-          onInput={(e) => onInput(e.currentTarget.value)}
-          onChange={onCommit}
-          onBlur={onCommit}
-        />
-        <Show
-          when={invalid()}
-          fallback={
-            <span class="field-hint" id="recent-count-hint">
-              The top of the sidebar lists this many sessions, the ones that moved last. They stay
-              in Folders, your projects, and the Archive too. {MIN_RECENT_COUNT}–{MAX_RECENT_COUNT}, {DEFAULT_RECENT_COUNT} by default.
-            </span>
-          }
-        >
-          <span class="field-error" id="recent-count-error">
-            {problem()}
-          </span>
-        </Show>
-      </div>
-      <div class="field settings-field">
-        <label class="toggle toggle-switch">
-          <span class="field-label">Compress thinking &amp; tool calls</span>
-          <input
-            type="checkbox"
-            checked={compressWork()}
-            aria-describedby="compress-work-hint"
-            onChange={(e) => setCompressWork(e.currentTarget.checked)}
-          />
-          <span class="toggle-box" />
-        </label>
-        <span class="field-hint" id="compress-work-hint">
-          Show the working as a compact timeline. Off, thinking and tool calls use their original cards.
-        </span>
-      </div>
-      <div class="field settings-field">
-        <label class="toggle toggle-switch">
-          <span class="field-label">Summary line</span>
-          <input
-            type="checkbox"
-            checked={showSummaries()}
-            aria-describedby="summary-line-hint"
-            onChange={(e) => setShowSummaries(e.currentTarget.checked)}
-          />
-          <span class="toggle-box" />
-        </label>
-        <span class="field-hint" id="summary-line-hint">
-          Under each title in the sidebar, what the session is for. Off, a row is its title and when it was last
-          active. A draft's first line still shows.
-        </span>
-      </div>
+      <NumberField
+        id="recent-count"
+        class="settings-field"
+        label="Sessions in Recent"
+        hint={`The top of the sidebar lists this many sessions, the ones that moved last. They stay in Folders, your projects, and the Archive too. ${MIN_RECENT_COUNT}–${MAX_RECENT_COUNT}, ${DEFAULT_RECENT_COUNT} by default.`}
+        rule={RECENT_RULE}
+        value={draft()}
+        onInput={onInput}
+        onChange={onCommit}
+        onBlur={onCommit}
+      />
+      <Toggle
+        switch
+        class="settings-field"
+        label="Compress thinking & tool calls"
+        hint="Show the working as a compact timeline. Off, thinking and tool calls use their original cards."
+        checked={compressWork()}
+        onChange={setCompressWork}
+      />
+      <Toggle
+        switch
+        class="settings-field"
+        label="Summary line"
+        hint="Under each title in the sidebar, what the session is for. Off, a row is its title and when it was last active. A draft's first line still shows."
+        checked={showSummaries()}
+        onChange={setShowSummaries}
+      />
       <ServerSettingsSection />
       <UpdatesSettingsSection />
     </>

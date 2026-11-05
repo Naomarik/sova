@@ -154,7 +154,11 @@
 .landing-strip .landing-sub { display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .landing-strip .landing-subrow { flex: 1 1 0; flex-wrap: nowrap; }
 .landing-strip .landing-subrow > .landing-sub { flex: 1 1 0; }
-.landing-strip .landing-chips { flex-wrap: nowrap; }
+/* The strip shows its first chip only (the warn one when there is one); the sheet shows them all. Never past the
+   chevron: the chips give way before the sub line's last 64px. */
+.landing-strip .landing-chips { flex: 0 1 auto; flex-wrap: nowrap; min-width: 0; overflow: hidden; }
+.landing-strip .landing-chips > .landing-chip:not(:first-child) { display: none; }
+.landing-strip .landing-subrow > .landing-sub { min-width: 64px; }
 .landing-strip .landing-sub::before { content: "· "; }
 .landing-strip .landing-track-row { flex: 0 0 100%; margin-top: 3px; }
 .landing-strip .landing-chip { padding-block: 0; }

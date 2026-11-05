@@ -24,7 +24,7 @@ import { join } from "node:path";
 import { after, afterEach, before, describe, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { provenanceOf } from "../lab.mjs";
-import { container, hostUrl, lab, labTokenHeaders, laptopFetch, readAgentFile, requireLab, sh, STATE, unlockPage, waitFor, writeAgentFile } from "./lib.mjs";
+import { container, hostUrl, lab, labPageHeaders, labTokenHeaders, laptopFetch, readAgentFile, requireLab, sh, STATE, unlockPage, waitFor, writeAgentFile } from "./lib.mjs";
 import { start as startFakeLlm, FAKE_MODEL } from "./fake-llm.mjs";
 import { link, linksFile, releaseLock, send, takeLock, unlink, waitIdle } from "./links-lib.mjs";
 import { commitOf, list, sameOnHost } from "./versions-builds.mjs";
@@ -172,11 +172,13 @@ const RELOAD = (host) => new RegExp(`older than ${host}\\. Reload the page to se
 const NEEDS_UPDATE = (host) => new RegExp(`${host} needs an update before it can take sends from this page`, "i");
 
 /** /ws/chat as a page has it (`composer` null: states none), directly or through `via`'s proxy. */
-function chat(node, path, { composer, via } = {}) {
+/** A /ws/chat socket. `page`: shown as the operator's page (the install's cookie, no token header), so the
+    turns it starts are the user's; a token-holding script's are not (server/page-only.ts, §app.access/your-click). */
+function chat(node, path, { composer, via, page = false } = {}) {
   const frames = [];
   const q = `path=${encodeURIComponent(path)}${composer === null ? "" : `&composer=${composer ?? composerOf(via ?? node)}`}`;
   const base = hostUrl(via ?? node).replace(/^http/, "ws");
-  const ws = new WebSocket(`${base}${via ? `/peer/${node}` : ""}/ws/chat?${q}`, { headers: labTokenHeaders() });
+  const ws = new WebSocket(`${base}${via ? `/peer/${node}` : ""}/ws/chat?${q}`, { headers: page ? labPageHeaders() : labTokenHeaders() });
   ws.onmessage = (e) => frames.push(JSON.parse(String(e.data)));
   const hello = waitFor(() => frames.some((f) => f.type === "hello"), { timeoutMs: 30000, intervalMs: 100, what: `chat hello from ${node}` }).catch((e) => {
     throw new Error(`${e.message}; socket state ${ws.readyState}; frames: ${JSON.stringify(frames).slice(0, 800)}`);
@@ -585,7 +587,8 @@ describe("3. writing differs: Read only, both ways", () => {
     okJson(await call(A, "/api/settings/overseer", { method: "PUT", body: { ...saved, model: MODEL, proactivity: "off" } }), "set the Overseer's model");
     try {
       okJson(await call(A, "/api/overseer/clear", { method: "POST" }), "clear");
-      const c = chat(A, (await call(A, "/api/overseer")).json.path);
+      // The operator's own turn: the Overseer acts only on those, so the socket is the page's.
+      const c = chat(A, (await call(A, "/api/overseer")).json.path, { page: true });
       await c.hello;
       const target = await fixture(B);
       c.send({
@@ -601,6 +604,7 @@ describe("3. writing differs: Read only, both ways", () => {
       await waitFor(() => ended("sova_read_session"), { timeoutMs: 60000, what: "the Overseer's read" }).catch((e) => assert.fail(`${e.message}; frames: ${seen()}`));
       await waitFor(() => ended("sova_create_session"), { timeoutMs: 60000, what: "the Overseer's create" }).catch((e) => assert.fail(`${e.message}; frames: ${seen()}`));
       assert.match(JSON.stringify(ended("sova_read_session")), /fixture session on lab host b/, "it reads a Read only host");
+      assert.doesNotMatch(JSON.stringify(ended("sova_create_session")), /not started by the user/, "the turn is the user's");
       assert.match(JSON.stringify(ended("sova_create_session")), /Host B \(b\) runs another version of Sova/, "refused, naming the host");
       c.close();
       assert.equal(JSON.stringify(okJson(await call(B, "/api/sessions"), "b's list")).includes("m10 overseer"), false, "nothing was created on b");

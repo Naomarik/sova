@@ -2,7 +2,7 @@ import { createEffect, createResource, createSignal, For, onCleanup, Show } from
 import { labelProblem, type OutreachInfo, type SenderEntry } from "../../shared/outreach";
 import { NUMBER_NAME_RULE, SENDER_LABEL_RULE, SOCKET_RULE } from "../../shared/outreach-limits";
 import { problemOf } from "../../shared/form-rules";
-import { Choice, TextField, Toggle } from "./form";
+import { Choice, Radio, TextField, Toggle } from "./form";
 import {
   acceptOutreachInfo,
   entryChoice,
@@ -190,9 +190,13 @@ export function OutreachSettingsSection() {
               const missing = () => e.where === "local" && st().state === "unreachable" && e.id !== selected();
               return (
                 <li class="sender-row">
-                  <label class="toggle public-links-choice">
-                    <input type="radio" name="outreach-sender" checked={entryPicked(e, draft())} disabled={off()} onChange={() => edit(entryChoice(e))} />
-                    <span class="toggle-box" aria-hidden="true" />
+                  <Radio
+                    class="public-links-choice"
+                    name="outreach-sender"
+                    checked={entryPicked(e, draft())}
+                    disabled={off()}
+                    onChange={() => edit(entryChoice(e))}
+                    label={
                     <span class="sender-row-main">
                       <span class="sender-row-head">
                         <span class="public-links-choice-name">{labelFor(e.id)}</span>
@@ -215,7 +219,8 @@ export function OutreachSettingsSection() {
                       </span>
                       <Show when={e.socket}>{(sock) => <span class="sender-row-facts input-mono">{sock()}</span>}</Show>
                     </span>
-                  </label>
+                    }
+                  />
                   <Show when={!e.unsaved && e.id !== selected()}>
                     <button type="button" class="button button-sm button-ghost sender-row-manage" onClick={() => manage(e.id)} aria-label={`Manage ${labelFor(e.id)}`}>
                       Manage
@@ -248,11 +253,7 @@ export function OutreachSettingsSection() {
             <li class="field-hint">Asking this host and its peers for their senders…</li>
           </Show>
           <li class="sender-row">
-            <label class="toggle public-links-choice">
-              <input type="radio" name="outreach-sender" checked={draft()?.sender === "off"} disabled={off()} onChange={() => edit({ sender: "off" })} />
-              <span class="toggle-box" aria-hidden="true" />
-              <span class="public-links-choice-name">Off</span>
-            </label>
+            <Radio class="public-links-choice" name="outreach-sender" checked={draft()?.sender === "off"} disabled={off()} onChange={() => edit({ sender: "off" })} label={<span class="public-links-choice-name">Off</span>} />
           </li>
         </ul>
         <Show

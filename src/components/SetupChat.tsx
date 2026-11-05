@@ -506,7 +506,7 @@ export function SetupProposalBanner(props: { projectId: string; poll: SetupPoll 
           <Banner
             tone="warn"
             icon="branch"
-            title={`The Setup chat proposes the project's setup on ${x().proposal.branch}.`}
+            title={`Project setup proposes the project's setup on ${x().proposal.branch}.`}
             body={landState(x().proposal).action === "trial" || landState(x().proposal).action === "wait" ? `Read it before it reaches ${x().proposal.target}.` : x().proposal.served ? `Read it, then land it: it's checked on ${x().proposal.target} first.` : `Read it, then merge it into ${x().proposal.target}.`}
             action={
               <span class="playbook-banner-actions">

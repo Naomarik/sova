@@ -24,7 +24,6 @@
   "src/components/MeshAccess.tsx": 3,
   "src/components/MeshDetails.tsx": 2,
   "src/components/MeshPairings.tsx": 11,
-  "src/components/MeshSettings.tsx": 4,
   "src/components/MeshView.tsx": 7,
   "src/components/ModeMenu.tsx": 2,
   "src/components/ModelMenu.tsx": 1,

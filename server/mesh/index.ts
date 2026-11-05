@@ -48,7 +48,8 @@ import { bootBuild } from "./build-id";
 import { cleanBuild } from "./lan-handoff-protocol";
 import { applyLanPairing, applyLanRelay, lanRoutes, type LanRouteDeps } from "./lan-routes";
 import { loginKindsPin } from "../sync/logins-merge";
-import { frontDoorIssue, hostLabelIssue } from "../../shared/mesh-settings-checks";
+import { problemOf } from "../../shared/form-rules";
+import { FRONT_DOOR_RULE, HOST_LABEL_RULE } from "../../shared/mesh-limits";
 import { agentRoot, stateRoot } from "../state-root";
 
 // The mesh (brief: settled decisions). ON exactly while peers.json lists a peer; OFF, nothing
@@ -915,16 +916,10 @@ export function applyMeshSettings(body: Partial<MeshLocalSettings>, opts: { dry?
     if (served.length && served.length < hosts.length && served.every((id) => body.frontDoorExclude!.includes(id)))
       return { status: 400, body: { error: "frontDoorExclude: the front door needs at least one host with a browser address" } };
   }
-  // The form's own checks and words (shared/mesh-settings-checks.ts), ahead of the file's validation,
+  // The form's own rules and words (shared/mesh-limits.ts), ahead of the file's validation,
   // whose refusals name raw keys ("self.label must be …").
-  if (body.hostLabel !== undefined) {
-    const why = typeof body.hostLabel === "string" ? hostLabelIssue(body.hostLabel) : "This host needs a name.";
-    if (why) return { status: 400, body: { error: why } };
-  }
-  if (typeof body.frontDoor === "string") {
-    const why = frontDoorIssue(body.frontDoor);
-    if (why) return { status: 400, body: { error: why } };
-  }
+  const why = (body.hostLabel !== undefined && problemOf(HOST_LABEL_RULE, body.hostLabel)) || (typeof body.frontDoor === "string" && problemOf(FRONT_DOOR_RULE, body.frontDoor));
+  if (why) return { status: 400, body: { error: why } };
   const pinned = pinnedLoginKinds();
   if (body.loginKinds !== undefined && pinned && (body.loginKinds ?? "all") !== pinned) {
     return { status: 409, body: { error: "loginKinds is pinned by SOVA_SYNC_LOGIN_KINDS on this host" } };

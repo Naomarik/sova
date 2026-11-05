@@ -75,7 +75,7 @@ const limits = await import("../shared/overseer-limits");
 const batonLimits = await import("../shared/baton-limits");
 const titleLimits = await import("../shared/session-title-limits");
 const decisionLimits = await import("../shared/decision-limits");
-const { firstIssue } = await import("../shared/form-rules");
+const { firstIssue, problemOf } = await import("../shared/form-rules");
 /** A rule's edges: the values at it (taken) and just past it (refused). */
 function ruled(rule: Rule): Pick<Limit, "name" | "rule" | "takes" | "refuses"> {
   if (rule.kind === "whole") return { name: `${rule.label} (${rule.min} to ${rule.max}, whole)`, rule, takes: [rule.min, rule.max], refuses: [rule.min - 1, rule.max + 1, rule.min + 0.5] };
@@ -87,6 +87,9 @@ function ruled(rule: Rule): Pick<Limit, "name" | "rule" | "takes" | "refuses"> {
 }
 const fresh = { mesh: await get("/api/mesh/settings"), overseer: await get("/api/settings/overseer"), baton: await get("/api/baton/settings"), titles: await get("/api/settings/session-titles"), subagents: await get("/api/settings/subagents"), decisions: await get("/api/settings/decisions"), push: await get("/api/push"), links: await get("/api/public-links") };
 const subLimits = await import("../shared/subagent-limits");
+const profileLimits = await import("../shared/profile-limits");
+const meshLimits = await import("../shared/mesh-limits");
+const { addProfile } = await import("./profiles-store");
 const teamSeed = (await get("/api/settings/team")).defaults;
 /** Subagents profile 0 with its teams on (on Claude Code picks, which this process can verify), edited by `edit`. */
 const subProfile = (edit: (p: Json) => void): Json => {
@@ -159,6 +162,19 @@ const LIMITS: Limit[] = [
     }),
   ),
   {
+    // Save Current As Profile: the route opens the chat, then adds the profile; the add is the check.
+    ...ruled(profileLimits.PROFILE_LABEL_RULE),
+    client: (v) => problemOf(profileLimits.PROFILE_LABEL_RULE, v),
+    server: async (v) => {
+      try {
+        addProfile({ label: v as string }, join(agentDir, `profiles-${Math.random()}.json`));
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: (err as Error).message };
+      }
+    },
+  },
+  {
     ...ruled(subLimits.PROFILE_NAME_RULE),
     client: (v) => subClient((p) => (p.name = v)),
     server: (v) => subServer((p) => (p.name = v)),
@@ -200,14 +216,14 @@ const LIMITS: Limit[] = [
     server: (v) => putStatus("/api/public-links", { route: "self", gateway: { publicUrl: "https://share.example.com", front: "vhost", sharePort: v, acceptFrom: "all" } }),
   },
   {
-    name: "Mesh host name (1 to 80 characters)",
-    takes: ["a", "n".repeat(80)],
+    ...ruled(meshLimits.HOST_LABEL_RULE),
     refuses: ["", "   ", "n".repeat(81)],
     client: (v) => meshDraft.meshDraftIssue({ ...meshDraft.meshDraftOf(fresh.mesh), hostLabel: v as string }),
     server: (v) => putStatus("/api/mesh/settings", { hostLabel: v }),
   },
   {
     name: "Mesh front door (a scheme, host and port only)",
+    rule: meshLimits.FRONT_DOOR_RULE,
     takes: ["", "https://sova.example.ts.net", "http://10.0.0.1:4800"],
     refuses: ["not a url", "ftp://x.example.com", "https://x.example.com/path"],
     client: (v) => meshDraft.meshDraftIssue({ ...meshDraft.meshDraftOf(fresh.mesh), frontDoor: v as string }),

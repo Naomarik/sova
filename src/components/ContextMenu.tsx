@@ -85,7 +85,11 @@ export function openContextMenu(e: MouseEvent, place: ContextPlace): ContextActi
   const focused = kind === "keyboard" && target instanceof HTMLElement ? target : null;
   const anchor: MenuAnchor = kind === "keyboard" ? { kind: "rect", rect: (focused ?? spec.origin).getBoundingClientRect(), align: "start" } : { kind: "point", x: e.clientX, y: e.clientY };
   if (panel.isOpen()) panel.close();
-  setCurrent({ ...spec, origin: focused ?? spec.origin, anchor });
+  const origin = focused ?? spec.origin;
+  setCurrent({ ...spec, origin, anchor });
+  // The panel is a popover: Escape hands focus back to what held it as the panel opened, which
+  // after a right-click is whatever the press focused. Holding the thing then makes that the thing.
+  origin.focus({ preventScroll: true });
   panel.open();
   return "open";
 }

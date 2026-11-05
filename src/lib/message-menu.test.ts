@@ -10,7 +10,7 @@ import { test } from "node:test";
 import type { TranscriptItem } from "../../shared/protocol";
 import type { MessageActionItem } from "../components/MessageActions";
 import { ACTION_CONFIRM, ACTION_LABEL, type ActionState, COPIED, COPY_PLAIN, MENU_LABEL, type MessageItemsView, messageItems, type MessageStrip, REGENERATE_WAKE_REASON, SHARE_WAIT_REASON, stripsByRow } from "./message-actions";
-import { confirmRow, confirmScreen, type MessageMenuRow, messageMenuRows, plainMarkdown, plainText, rowAct, stripBlocks } from "./message-menu";
+import { confirmRow, confirmScreen, focusOnce, menuStripOf, type MessageMenuRow, messageMenuRows, plainMarkdown, plainText, repliesByEntry, rowAct, stripBlocks } from "./message-menu";
 
 type Call = [string, ...unknown[]];
 
@@ -174,6 +174,65 @@ test("the message's blocks: your message's one row, or every text block of the r
   const older = [row("u0", "user", "Earlier"), row("a0:0", "assistant-text", "Before"), ...rows];
   assert.deepEqual(stripBlocks(older, strips[0]!).map((b) => b.id), ["u1"]);
   assert.deepEqual(stripBlocks(older, strips[1]!).map((b) => b.id), ["a1:0", "a1:2"]);
+});
+
+test("every text block of a reply opens the reply's menu; its tool calls, thinking and other rows open none", () => {
+  const rows = [
+    row("u1", "user", "Go"),
+    row("a1:0", "assistant-text", "First"),
+    row("a1:1", "tool-call"),
+    row("a1:2", "thinking", "Hmm"),
+    row("a1:3", "assistant-text", "Second"),
+    row("a1:stop", "info"),
+    row("a2:0", "assistant-text", "Next reply"),
+  ];
+  const strips = stripsByRow(rows);
+  const replies = repliesByEntry(strips.values());
+  const opens = rows.map((r, i) => menuStripOf(r, strips.get(i), replies));
+  const a1 = strips.get(4)!;
+  assert.equal(a1.entryId, "a1");
+  // The earlier block opens the very strip the last one carries (its Copy already takes both blocks).
+  assert.equal(opens[1], a1);
+  assert.equal(opens[4], a1);
+  assert.equal(opens[0], strips.get(0), "your message: its own strip");
+  assert.equal(opens[6], strips.get(6), "another reply: its own, never the one above");
+  assert.deepEqual([opens[2], opens[3], opens[5]], [undefined, undefined, undefined], "a tool call, thinking and an info row open nothing");
+  // A user message's entry never lends its strip to a text row of another kind.
+  assert.equal(replies.has("u1"), false);
+  // Without strips (a subagent transcript), nothing opens.
+  assert.equal(menuStripOf(rows[1]!, undefined, repliesByEntry([])), undefined);
+});
+
+test("after a pointer-opened menu, focus can land on the message row, never a Tab stop, and the row is left as it was once focus leaves it", () => {
+  type Blur = (e: { relatedTarget: unknown }) => void;
+  const stand = (attrs: Record<string, string> = {}) => {
+    const blur = new Set<Blur>();
+    return {
+      attrs,
+      blur,
+      leave: (to: unknown) => [...blur].forEach((fn) => fn({ relatedTarget: to })),
+      hasAttribute: (n: string) => n in attrs,
+      setAttribute: (n: string, v: string) => void (attrs[n] = v),
+      removeAttribute: (n: string) => void delete attrs[n],
+      addEventListener: (_: "blur", fn: Blur) => void blur.add(fn),
+      removeEventListener: (_: "blur", fn: Blur) => void blur.delete(fn),
+    };
+  };
+  const MENU = { menu: true };
+  const intoMenu = (to: unknown) => to === MENU;
+  const el = stand();
+  assert.equal(focusOnce(el, intoMenu), el, "the row itself is where focus goes back");
+  assert.deepEqual(el.attrs, { tabindex: "-1" }, "focusable by script, skipped by Tab");
+  // The right-click's press focused the row, then the menu took focus: the way back stays open.
+  el.leave(MENU);
+  assert.deepEqual(el.attrs, { tabindex: "-1" });
+  assert.equal(focusOnce(el, intoMenu), el);
+  assert.equal(el.blur.size, 1, "opened again before focus left: one way back, not two");
+  el.leave(null);
+  assert.deepEqual([el.attrs, el.blur.size], [{}, 0], "once focus leaves for anything else, the row is as it was");
+  const own = stand({ tabindex: "0" });
+  focusOnce(own, intoMenu);
+  assert.deepEqual([own.attrs, own.blur.size], [{ tabindex: "0" }, 0], "a row that already takes focus keeps its own");
 });
 
 test("plain text: each block as drawn, else its source without Markdown's marks, joined as Copy joins them", () => {

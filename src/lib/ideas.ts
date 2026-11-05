@@ -18,6 +18,11 @@ export const IDEA_STATUS_CHIP: Record<IdeaStatus, { label: string; tone: string 
 /** A status the ToC hides unless asked: the idea is finished with. */
 export const settled = (s: IdeaStatus) => s === "done" || s === "dropped";
 
+/** The count the Overseer head's Ideas button shows: every idea but the dropped ones (done ones
+    still count). The server counts each idea once, in its namespace, so this is the total less
+    each namespace's dropped. */
+export const headIdeasCount = (toc: IdeasToc) => toc.total - toc.namespaces.reduce((n, ns) => n + ns.counts.dropped, 0);
+
 /** Words for a count of ideas: "1 idea", "3 ideas". */
 export const ideasCount = (n: number) => `${n} ${n === 1 ? "idea" : "ideas"}`;
 

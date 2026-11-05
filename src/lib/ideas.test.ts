@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { IDEA_STATUSES, type IdeaStatus, type IdeasToc } from "../../shared/protocol";
-import { canonicalId, countsLine, exploreMessage, followRename, IDEA_STATUS_CHIP, parseTags, startMessage, tocGroups } from "./ideas";
+import { canonicalId, countsLine, exploreMessage, followRename, headIdeasCount, IDEA_STATUS_CHIP, parseTags, startMessage, tocGroups } from "./ideas";
 
 const counts = (c: Partial<Record<IdeaStatus, number>>): Record<IdeaStatus, number> => ({ open: 0, exploring: 0, started: 0, done: 0, dropped: 0, ...c });
 
@@ -96,4 +96,21 @@ test("the open idea follows a rename: its own id while live, else the idea renam
   assert.equal(followRename(ideas, "§mesh/health"), "§mesh/healthy");
   assert.equal(followRename(ideas, "§mesh/sick"), "§mesh/healthy");
   assert.equal(followRename(ideas, "§mesh/gone"), null);
+});
+
+test("headIdeasCount: two ideas, both dropped, count 0", () => {
+  const both: IdeasToc = {
+    total: 2,
+    namespaces: [
+      { ns: "a", counts: counts({ dropped: 1 }), entries: [{ id: "§a/x", title: "X", status: "dropped" }] },
+      { ns: "b", counts: counts({ dropped: 1 }), entries: [{ id: "§b/y", title: "Y", status: "dropped" }] },
+    ],
+  };
+  assert.equal(headIdeasCount(both), 0);
+});
+
+test("headIdeasCount: leaves out only dropped ideas, done ones still count", () => {
+  // toc: 6 ideas, of them 1 done and 1 dropped.
+  assert.equal(headIdeasCount(toc), 5);
+  assert.equal(headIdeasCount({ total: 0, namespaces: [] }), 0);
 });

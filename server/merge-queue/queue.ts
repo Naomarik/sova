@@ -7,6 +7,7 @@ import {
   type CheckPick,
   type ChecksDeclared,
   ENTRY_OPEN,
+  type LandingQueueCut,
   type MergeAnswer,
   type MergeApproval,
   type MergeEntry,
@@ -409,6 +410,51 @@ export class ProjectQueue {
     return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(settings ? { settings } : {}) };
   }
 
+  /**
+   * The landing bar's starting picture (GET /api/merge-queue/landing-summary): the queue's own records and its current
+   * run, with none of view()'s Git reads past the target's head (no Ready list, no newer-commit counts, no settled,
+   * origin or settings reads). `recentMax`: the newest landed entries kept, and of what waits on the host.
+   */
+  async landingCut(recentMax = 5): Promise<LandingQueueCut> {
+    const d = await this.declared();
+    const head = d.head || (await this.targetHead()) || "";
+    const takes = this.deps.estimate ? this.deps.estimate(this.id, this.root) : this.estimateFromHistory();
+    const landed = this.q.entries.filter((e) => e.state === "landed").sort((a, b) => (b.landed?.at ?? b.updatedAt).localeCompare(a.landed?.at ?? a.updatedAt));
+    const keep = new Set(landed.slice(0, recentMax).map((e) => e.id));
+    const q = { ...this.q, entries: this.q.entries.filter((e) => e.state !== "landed" || keep.has(e.id)) };
+    const v = buildView({ q, root: this.root, current: this.current?.run ?? null, checks: d.checks, review: d.review, head, takesMs: takes, now: this.now(), readRun: (id) => this.store.readRun(id) });
+    const served = (this.deps.listed?.(this.root) ?? true) && setUpOf(d.checks, d.invalid);
+    const hold = this.q.release ? (({ checks: _c, ...h }) => h)(this.q.release) : undefined;
+    if (hold) for (const w of v.waiting) if (w.release !== hold.id) delete w.eta;
+    const { reviewing } = this.deps.chatsOf?.(this.root) ?? {};
+    // What waits on the host (a request open, closed or pushed this week), as view() keeps it: the newest few.
+    const weekAgo = new Date(this.now() - 7 * 24 * 3600_000).toISOString();
+    const onHost = this.q.entries
+      .filter((e) => e.state === "requested" || ((e.state === "closed" || e.state === "pushed") && e.updatedAt >= weekAgo))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, recentMax)
+      .map(({ seq: _seq, ...rest }) => structuredClone(rest) as MergeEntry);
+    return {
+      project: v.project,
+      root: v.root,
+      target: v.target,
+      state: v.state,
+      ...(v.paused ? { paused: v.paused } : {}),
+      ...(d.invalid ? { invalid: d.invalid } : {}),
+      served,
+      ...(v.current ? { current: v.current } : {}),
+      checking: v.checking,
+      waiting: v.waiting,
+      needsYou: v.needsYou,
+      recent: v.recent,
+      ...(onHost.length ? { waitingOnHost: onHost } : {}),
+      ...(hold ? { release: structuredClone(hold) } : {}),
+      ...(reviewing ? { reviewing } : {}),
+      heads: v.heads,
+      at: v.at,
+    };
+  }
+
   /** The view is read again and published (a branch summary started, was written or failed). */
   republish(): void {
     this.viewCache = null;
@@ -761,17 +807,28 @@ export class ProjectQueue {
       if (w.branch.startsWith("sova/")) continue;
       const ahead = await countBetween(this.git, this.root, head, w.head);
       if (!ahead) continue;
-      const subject = (await this.git(["log", "-1", "--format=%s", w.head], this.root)).stdout.trim();
+      // Its subject and when it last changed (the head's committer date), in one read.
+      const [subjectRaw = "", headAtRaw = ""] = (await this.git(["log", "-1", "--format=%s%x1f%cI", w.head], this.root)).stdout.trim().split("\u001f");
+      const subject = subjectRaw.trim();
+      const headAt = headAtRaw.trim();
       if (/^temp\b/i.test(subject)) continue;
       const st = await this.git(statusArgs("--porcelain"), w.path);
       if (st.code !== 0 || st.stdout.trim()) continue;
       const owner = ownerId(await this.deps.ownerOf?.(this.root, w.branch, w.path).catch(() => null));
       const short = await this.git(["diff", "--shortstat", `${head}...${w.head}`], this.root);
       const lines = short.code === 0 ? { added: Number(/(\d+) insertion/.exec(short.stdout)?.[1] ?? 0), removed: Number(/(\d+) deletion/.exec(short.stdout)?.[1] ?? 0) } : {};
-      out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead, ...lines, ...(owner ? { session: owner.session, ...(owner.archived ? { sessionArchived: true as const } : {}) } : {}) });
+      out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead, ...lines, ...(headAt ? { headAt } : {}), ...(owner ? { session: owner.session, ...(owner.archived ? { sessionArchived: true as const } : {}) } : {}) });
     }
     this.readyCache = { at: this.now(), head, list: out };
     return this.filterReady(out, redrafted);
+  }
+
+  /** The Ready to land, not approved rows as the view lists them, read from git only: no view is built, nothing is
+   *  published, no summary is asked for (the summaries' sweep, summary-sweep.ts). */
+  async readyRows(): Promise<MergeReady[]> {
+    const head = (await this.declared()).head || (await this.targetHead()) || "";
+    if (!head) return [];
+    return this.readyList(head, await this.redraftedFacts());
   }
   /** A branch sent back (needs-fix) is Ready again at a newer commit, or at the same commit once it was sent back for
    *  its drafts and they are fixed (`redrafted`: changed since the approval, and Sova's docs check reads clean). */

@@ -172,8 +172,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-05T03:58Z",
+      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
     }
   },
   "§app.project-services/create": {
@@ -764,8 +764,14 @@
       "server/project-services/note.integration.test.ts",
       "shared/project-contract.test.ts",
       "server/project-services/adopt.test.ts",
-      "server/project-services/adopt.integration.test.ts"
-    ]
+      "server/project-services/adopt.integration.test.ts",
+      "scripts/run-tests.mjs"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T03:58Z",
+      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
+    }
   },
   "§app.project-services/up": {
     "kind": "behavior",

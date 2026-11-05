@@ -248,7 +248,7 @@
       "§mesh.peers/grants"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/project-settings-tool.ts",
       "server/project-settings.ts",

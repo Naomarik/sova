@@ -247,6 +247,9 @@ label a person reads says "sessions pane".
               aria-label="2 sessions open in a TUI" title="2 sessions open in a TUI">…terminal…<span class="spine-count">2</span></button>
     </div>
     <div class="spine-foot">
+      <!-- only while the landing bar shows (§app.merge-queue/landing-bar): opens its detail as a popover -->
+      <button class="button button-icon spine-item landing-spine" type="button" aria-haspopup="dialog" aria-expanded="false"
+              aria-label="{the landing bar's title}. {its sub line}. {its count in words}" title="{the same}">…icon…<span class="landing-spine-dot landing-spine-dot-{tone}" aria-hidden="true"></span></button>
       <a class="button button-icon spine-item" href="#/usage"
          aria-label="{the usage glance sentence, else Usage}" title="{the same}">…gauge…</a>
       <!-- §app.resource-monitor/entry-button -->
@@ -342,7 +345,9 @@ label a person reads says "sessions pane".
   the rail's precedent (§app.session-list/accessibility — there is no hover on touch).
 - **The foot** — Usage (`#/usage`), Resource monitor, Agents (`#/agents`) and Settings, the
   expanded foot's two doorways and two buttons, in that order: the monitor sits right after the
-  gauge, as it sits beside the Usage glance. Resource monitor opens the monitor modal, exactly as
+  gauge, as it sits beside the Usage glance. Above Usage, only while the landing bar has something
+  to show, the **landing item**: one icon with a status dot in the bar's tone, named by the bar's
+  title, sub line and count in words, which opens the bar's detail as a popover (§app.merge-queue/landing-bar). Resource monitor opens the monitor modal, exactly as
   the foot's button does (§app.resource-monitor/entry-button). The glance sentences are not dropped at 64px, only unprinted: Usage's `title` and
   `aria-label` are the usage glance in full words (`glanceText()`), and Agents' are the Agents
   row's own sentence (§app.insights/sidebar-foot, e.g. "Agents: 7 agents working now: 2 sessions
@@ -355,7 +360,7 @@ label a person reads says "sessions pane".
   of 44px items centred with `--space-1` between and `--space-2` above and below, split by
   `--color-border` rules. The tiles are the scroll region (`.pane`) and take the height that's
   left; the other four are pinned. They cost 721px with every item shown (each of the four region doors, two tallies and four foot items is a 44px
-  item and its 4px gap; 625px measured at 1400×1000 with three doors and three foot items, plus one door's 48px and the monitor item's 48px), so the tiles keep a floor of one tile (60px), and on a window shorter than that the whole spine scrolls instead.
+  item and its 4px gap; 625px measured at 1400×1000 with three doors and three foot items, plus one door's 48px and the monitor item's 48px), so the tiles keep a floor of one tile (60px), and on a window shorter than that the whole spine scrolls instead. The landing item, while shown, costs 48px more.
   Neither scrollbar is drawn: a 10px bar in a 64px column pushes every item off the shared axis.
   **The cost:** nothing shows that the tiles scroll, beyond the tile cut at the edge. Recent is 5
   by default and 20 at most, and every tile is also a row in the expanded pane.

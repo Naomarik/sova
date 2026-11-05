@@ -1,12 +1,13 @@
 # §app/installer — The one-shot installer
 
 `scripts/install.sh` installs Sova on a Mac or a Linux machine in one run, safe to pipe from curl.
-It needs bash, git, Node.js (>= 22.19), curl, and unzip or python3 already there, and pnpm or,
-failing that, npx to run the pnpm the repository pins. Apart from the Bun the server runs on, which it
+It needs bash, git, Node.js (>= 22.19), curl, and unzip or python3 already there, and a pnpm that
+runs or, failing that, npx to run the pnpm the repository pins (§app.installer/version-managers). Apart from the Bun the server runs on, which it
 downloads into the install directory (§app.installer/bun), it installs no toolchain and no system
 package, and it never uses sudo. It
 clones the requested ref (§app.installer/ref) into an install directory of its own (default `~/.local/share/sova`),
-installs its dependencies and builds it in a staging directory beside it, promotes the build only
+installs its dependencies and builds it in a staging directory beside it, whose path its output
+names (`staging in <path>`), promotes the build only
 after it succeeded (the previous install kept until then, and restored on failure; with
 `SOVA_KEEP_PREVIOUS=<path>` the replaced install is moved to that path instead of deleted, which is
 how an upgrade from Settings keeps it until the new version answers, §app.updates/upgrade), and writes a
@@ -262,6 +263,26 @@ named updates to that branch's latest commit.
 - **The closing message names what it installed:** "installed <ref> (<short commit>) in <install
   dir>", or "<install dir> is already at <ref> (<short commit>); nothing to rebuild".
 
+## §app.installer/version-managers — Tools behind a version manager
+
+Node or pnpm on `PATH` may be a version manager's shim, and the repository's `mise.toml` pins tools
+for developers. An installed copy runs on the user's own tools, whatever that pin says:
+
+- **mise leaves Sova's folders alone.** Before it runs anything in the clone, the installer adds the
+  staging directory and the install directory to `MISE_IGNORED_CONFIG_PATHS` for the programs it
+  runs, as physical paths, after any value already set. The launcher adds the install directory the
+  same way when it starts the server. So mise doesn't refuse a shim because it never approved
+  Sova's `mise.toml`, and doesn't download what that file pins: a shim runs the version the user's
+  own mise configuration names. Neither ever asks mise to trust a folder, so mise's trust list stays
+  as it was.
+- **A pnpm that runs.** pnpm counts only when `pnpm --version` succeeds in the clone. One that is on
+  `PATH` but doesn't run there, such as a shim with no version set, is passed over for npx running
+  the pnpm the repository pins, the same way as no pnpm at all, and the output says which of the
+  two it was. With no npx either, the install stops with a message naming both, and nothing has
+  changed.
+- **Developer copies keep the pin.** This belongs to the installer and the launcher it writes, not
+  to `scripts/start-server.sh`, so a checkout started any other way still follows `mise.toml`.
+
 ## §app.installer/portable — Stock macOS tools
 
 The installer and the launcher it writes run on macOS's bash 3.2 and BSD userland as well as on
@@ -284,7 +305,8 @@ was changed". A rebuild keeps the previous install's Bun when it is still the pi
 instead of downloading it again, and an install whose Bun is missing or not the pinned version is
 rebuilt even at the same commit.
 
-- **The launcher.** `sova` sets `SOVA_BUN` to that Bun unless the caller set one, and runs the
+- **The launcher.** `sova` sets `SOVA_BUN` to that Bun unless the caller set one, has mise ignore
+  the install directory's `mise.toml` (§app.installer/version-managers), and runs the
   clone's `scripts/start-server.sh` with its arguments, so the server runs on Bun
   (§app.server-runtime/choice). `sova --node`, or `SOVA_RUNTIME=node` in its environment, runs it
   on Node instead, with no chats or workers.

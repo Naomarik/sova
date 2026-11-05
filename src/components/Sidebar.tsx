@@ -128,6 +128,8 @@ import {
   sessionsHiddenBy,
 } from "../lib/mesh";
 import { MeshHostMenu } from "./MeshHostMenu";
+import { LandingBarRow, LandingSpineButton, LandingStrip } from "./LandingBar";
+import { useLandingBar } from "../lib/landing-bar-store";
 import { connectedCount, hostFilterAsk, rowHostState } from "../lib/mesh-details";
 import { openMonitor } from "../lib/monitor-nav";
 import { updateAvailable } from "../lib/updates";
@@ -1300,6 +1302,8 @@ export function Sidebar(props: {
 
   /** The pane as the spine on screen: the stored choice, where the viewport allows it. */
   const collapsed = () => spine() && props.unfolded;
+  /** The landing bar (al_1): this computer's merge queue landings and releases, null while nothing shows. */
+  const landing = useLandingBar();
   /** Each state's own toggle. The one pressed is unmounted by the swap, so focus would fall to
       <body>: it moves to the toggle of the new state instead, when it was in the pane at all. */
   let collapseToggle: HTMLButtonElement | undefined;
@@ -2192,6 +2196,8 @@ export function Sidebar(props: {
     };
     return (
       <>
+        {/* The landing bar's own strip, directly above the foot bar, only while it has something to show. */}
+        <Show when={landing()}>{(m) => <LandingStrip model={m()} />}</Show>
         <button
           type="button"
           class="sidebar-footbar"
@@ -2413,6 +2419,7 @@ export function Sidebar(props: {
         </Show>
 
         <div class="spine-foot">
+          <Show when={landing()}>{(m) => <LandingSpineButton model={m()} class="spine-item" />}</Show>
           <a
             class="button button-icon spine-item"
             href={usageHref()}
@@ -3005,6 +3012,8 @@ export function Sidebar(props: {
             bottom sheet, verbatim (§app.insights/sidebar-foot-phone). */}
         <Show when={props.unfolded} fallback={<PhoneFoot />}>
           <div class="sidebar-foot">
+            {/* Above the host filter row (mesh on), else above Usage; not drawn while nothing shows. */}
+            <Show when={landing()}>{(m) => <LandingBarRow model={m()} />}</Show>
             <FootRows />
           </div>
         </Show>

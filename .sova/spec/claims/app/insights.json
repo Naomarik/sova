@@ -451,7 +451,8 @@
     "evidence": "verified",
     "code": [
       "src/lib/insights.ts",
-      "src/lib/insights.test.ts"
+      "src/lib/insights.test.ts",
+      "src/components/Sidebar.tsx"
     ],
     "requires": [
       "§app.claude-logins/active-login",
@@ -461,7 +462,12 @@
       "§app.session-list/working-now",
       "§app.insights/token-velocity",
       "§chat.composer/known-on-switch"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T03:26Z",
+      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#f0aa11bd"
+    }
   },
   "§app.insights/sidebar-foot-phone": {
     "kind": "behavior",
@@ -476,7 +482,12 @@
       "§mesh.remote-sessions/host-filter",
       "§app.session-list/working-now",
       "§app.insights/token-velocity"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T03:27Z",
+      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#f0aa11bd"
+    }
   },
   "§app.insights/subagent-cards": {
     "kind": "behavior",
@@ -700,7 +711,8 @@
       "server/usage-helper/query.ts",
       "server/usage-helper/records.ts",
       "server/usage-helper/service.ts",
-      "server/app.ts"
+      "server/app.ts",
+      "server/merge-queue/branch-summaries.ts"
     ],
     "requires": [
       "§app.insights/llm-inflight",

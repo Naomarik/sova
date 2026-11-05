@@ -195,7 +195,8 @@
       "§chat.composer/worktrees-control",
       "§app.merge-queue/approve",
       "§chat.changes/entry",
-      "§chat.composer/land-confirm"
+      "§chat.composer/land-confirm",
+      "§app.merge-queue/branch-summary"
     ],
     "authority": "accepted",
     "evidence": "reviewed",
@@ -219,7 +220,8 @@
       "src/components/ReviewChanges.tsx",
       "src/lib/merge-queue-sent-back.test.ts",
       "shared/merge-queue.ts",
-      "server/merge-queue/view.ts"
+      "server/merge-queue/view.ts",
+      "src/components/BranchSummary.tsx"
     ],
     "agreed": {
       "by": "user",

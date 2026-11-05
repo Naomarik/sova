@@ -930,6 +930,7 @@ async function queuePart(projectId: string, e: Extract<SettingsEdit, { setting: 
     if (changes.review && !now.review.canTurnOn) refuse("Review can't turn on: its kit's folder isn't on the target. The kit goes by Land.");
     rows.push(queueRow("merge.review", "Review", now.review.on, changes.review, onOff));
   }
+  if (changes.reuse !== undefined && changes.reuse !== (now.reuse !== false)) rows.push(queueRow("merge.reuse", "Reuse passes from identical code", now.reuse !== false, changes.reuse, onOff));
   for (const [id, c] of Object.entries(changes.checks ?? {})) {
     const check = now.checks.list.find((x) => x.id === id);
     if (!check) refuse(`The queue has no check "${id}": ${now.checks.list.map((x) => x.id).join(", ") || "none declared"}.`);
@@ -972,6 +973,7 @@ function queuePlace(q: QueueCardPart): string {
 function queueSaved(now: MergeQueueSettings, c: MergeSettingsChange): boolean {
   if (c.push !== undefined && now.landing.push !== c.push) return false;
   if (c.review !== undefined && now.review.on !== c.review) return false;
+  if (c.reuse !== undefined && (now.reuse !== false) !== c.reuse) return false;
   for (const [id, x] of Object.entries(c.checks ?? {})) {
     const check = now.checks.list.find((k) => k.id === id);
     if (!check) return false;

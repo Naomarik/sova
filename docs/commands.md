@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 538 |
-| Routes a catalogue entry points at | 166 |
-| Catalogue entries | 227 |
+| Routes registered | 539 |
+| Routes a catalogue entry points at | 167 |
+| Catalogue entries | 228 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -34,7 +34,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Approvals and grants | 5 |
 | Pending (not yet a command) | 23 |
 | Chat socket frame types | 12 |
-| Document/window keydown listeners | 9 |
+| Document/window keydown listeners | 11 |
 | Hand-written tool specs | 130 |
 
 ## Catalogue entries
@@ -190,6 +190,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.merge-queue.land-how.set` | Change How It Lands | changes | `PUT /api/merge-queue/projects/:project/land-how` | admin |
 | `project.merge-queue.land-how.clear` | Clear This Computer's Choice | changes | `DELETE /api/merge-queue/projects/:project/land-how/override` | admin |
 | `project.merge-queue.branch-summary.retry` | Try Again | changes | `POST /api/merge-queue/projects/:project/branch-summary` | admin |
+| `project.merge-queue.landing-summary` | Show Landings | looks | `GET /api/merge-queue/landing-summary` | sessions |
 | `overseer.attention` | Show Attention | looks | `GET /api/overseer/attention` | sessions |
 | `overseer.abilities` | Show Overseer Abilities | looks | `GET /api/overseer/abilities` | sessions |
 | `overseer.todo.list` | List To-dos | looks | `GET /api/overseer/todos` | sessions |
@@ -788,6 +789,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/mcp/servers` | full | `mcp.servers.list` |
 | `GET /api/merge-queue/cards` | sessions | `session.merge-cards` |
 | `POST /api/merge-queue/entries/:id/publish` | admin | `project.merge-queue.request.publish` |
+| `GET /api/merge-queue/landing-summary` | sessions | `project.merge-queue.landing-summary` |
 | `POST /api/merge-queue/projects/:project/branch-summary` | admin | `project.merge-queue.branch-summary.retry` |
 | `PUT /api/merge-queue/projects/:project/land-how` | admin | `project.merge-queue.land-how.set` |
 | `DELETE /api/merge-queue/projects/:project/land-how/override` | admin | `project.merge-queue.land-how.clear` |
@@ -948,6 +950,7 @@ The `type` of every `ChatClientMessage` (`shared/protocol.ts`), the frames a pag
 | `src/components/ChangesViewer.tsx` | document |
 | `src/components/GroupView.tsx` | window |
 | `src/components/InsightStrip.tsx` | document |
+| `src/components/LandingBar.tsx` | document, document |
 | `src/components/Sidebar.tsx` | global |
 | `src/components/VoiceInput.tsx` | window |
 | `src/components/WorktreesModal.tsx` | document |

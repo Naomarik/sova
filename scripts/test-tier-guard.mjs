@@ -63,12 +63,145 @@ if (runner > 0 && process.ppid === runner)
 if (file && !isIntegration(file)) process.env.SOVA_PROJECT_NO_SYSTEMD ??= "1";
 if (file && mode !== "off") install(file);
 
+// ─── Git commands that read this repository's history ──────────────────────────────────────────────────────────────
+//
+// A test that runs git on this checkout's own repository (its commits, its index, its branches, master) depends on
+// more than the files on disk: uncommitted work, the spec commit landing adds, where master is. Its pass is never
+// remembered (scripts/test-cache.mjs). The repository is found as git finds it: GIT_DIR, else the directory (the
+// spawn's cwd, else this process's, then each -C) and its parents up to GIT_CEILING_DIRECTORIES, the first holding a
+// .git; it is this one when its common git dir is this checkout's. Not a read: init, --version/--help/version, var,
+// config (but --blob), a clone of another repository, and rev-parse asking only for HEAD's name or where the
+// repository is (server/app.ts asks on import).
+
+/** `node`'s internal ["K=V", ...] env, as an object; null when absent. */
+function envOfPairs(pairs) {
+  if (!Array.isArray(pairs)) return null;
+  const env = {};
+  for (const p of pairs) {
+    const i = String(p).indexOf("=");
+    if (i > 0) env[String(p).slice(0, i)] = String(p).slice(i + 1);
+  }
+  return env;
+}
+
+/** The real path of `p`, or of its nearest existing parent joined with the rest; `p` itself when nothing resolves. */
+function real(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    const up = path.dirname(p);
+    return up === p ? p : path.join(real(up), path.basename(p));
+  }
+}
+
+/** A git dir's common dir (a linked worktree's `commondir`), real. */
+function commonOf(gitDir) {
+  try {
+    const c = fs.readFileSync(path.join(gitDir, "commondir"), "utf8").trim();
+    return real(path.resolve(gitDir, c));
+  } catch {
+    return real(gitDir);
+  }
+}
+
+/** The git dir `dir` sits in, by git's upward search stopping at `ceilings`; null when none. */
+function gitDirAround(dir, ceilings) {
+  let cur = real(dir);
+  for (;;) {
+    const dot = path.join(cur, ".git");
+    try {
+      const st = fs.statSync(dot);
+      if (st.isDirectory()) return dot;
+      const m = /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(dot, "utf8"));
+      if (m) return path.resolve(cur, m[1].trim());
+    } catch {
+      // none here
+    }
+    const up = path.dirname(cur);
+    if (up === cur || ceilings.includes(up)) return null;
+    cur = up;
+  }
+}
+
+let ownCommon;
+/** This checkout's common git dir, real (computed once). */
+function ownCommonDir() {
+  if (ownCommon === undefined) {
+    const g = gitDirAround(ROOT, []);
+    ownCommon = g ? commonOf(g) : null;
+  }
+  return ownCommon;
+}
+
+/** Whether a git command run in `dir` (with `env`) reaches this checkout's repository. */
+function reachesOwnRepo(dir, env) {
+  const own = ownCommonDir();
+  if (!own) return false;
+  const gitDirVar = env?.GIT_DIR;
+  if (gitDirVar) return commonOf(path.resolve(dir, gitDirVar)) === own;
+  const ceilings = String(env?.GIT_CEILING_DIRECTORIES ?? "").split(path.delimiter).filter(Boolean).map(real);
+  const g = gitDirAround(dir, ceilings);
+  return !!g && commonOf(g) === own;
+}
+
+/** rev-parse arguments that only name HEAD or say where the repository is. */
+const IDENTITY = new Set(["HEAD", "--show-toplevel", "--git-dir", "--absolute-git-dir", "--git-common-dir", "--is-inside-work-tree", "--is-inside-git-dir", "--is-bare-repository", "--show-prefix", "--show-cdup", "--verify", "-q", "--quiet", "--short"]);
+/** git's options before the subcommand that take a separate value. */
+const GLOBAL_WITH_VALUE = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env", "--super-prefix", "--list-cmds"]);
+
+/**
+ * Whether git run with `args` and spawn options `opts` reads this repository's history: the command line when it
+ * does, else null.
+ */
+export function historyRead(args, opts = {}) {
+  const env = { ...process.env, ...(opts?.env ?? {}) };
+  let dir = path.resolve(String(opts?.cwd ?? process.cwd()));
+  let i = 0;
+  for (; i < args.length; i++) {
+    const a = args[i];
+    if (a === "--version" || a === "--help" || a === "-h" || a === "--exec-path" || a === "--html-path" || a === "--man-path" || a === "--info-path") return null;
+    if (!a.startsWith("-")) break;
+    if (a === "-C") dir = path.resolve(dir, String(args[++i] ?? "."));
+    else if (a === "--git-dir") env.GIT_DIR = path.resolve(dir, String(args[++i] ?? ""));
+    else if (a.startsWith("--git-dir=")) env.GIT_DIR = path.resolve(dir, a.slice("--git-dir=".length));
+    else if (GLOBAL_WITH_VALUE.has(a)) i++;
+  }
+  const sub = args[i];
+  const rest = args.slice(i + 1);
+  if (!sub || sub === "init" || sub === "version" || sub === "help" || sub === "var") return null;
+  // Settings, not history (a blob's config is read from the object store, so it counts).
+  if (sub === "config" && !rest.some((a) => a === "--blob" || a.startsWith("--blob="))) return null;
+  if (sub === "clone") {
+    // A clone reads its source: this repository when the source is a path into it.
+    const source = rest.find((a) => !a.startsWith("-"));
+    if (!source || /^[a-z][a-z0-9+.-]*:\/\//i.test(source) && !source.startsWith("file://")) return null;
+    const p = path.resolve(dir, source.replace(/^file:\/\//, ""));
+    return reachesOwnRepo(p, { ...env, GIT_DIR: undefined }) ? `git ${args.join(" ")}` : null;
+  }
+  if (sub === "rev-parse" && rest.every((a) => IDENTITY.has(a) || a.startsWith("--path-format"))) return null;
+  return reachesOwnRepo(dir, env) ? `git ${args.join(" ")}` : null;
+}
+
 function install(file) {
   const unit = !isIntegration(file);
   const enforce = unit && mode === "enforce";
   /** One entry per distinct thing done: `{kind, what, count, at}` (`at`: the first call's caller in this repository). */
   const seen = new Map();
   const offences = new Set();
+  const guardDir = process.env.SOVA_TEST_GUARD_DIR;
+  /** Writes this process's record (`<dir>/<pid>.json`) as it stands. Best effort. */
+  function flush() {
+    if (!guardDir) return;
+    try {
+      const record = { v: 1, file, tier: unit ? "unit" : "integration", mode, acts: [...seen.values()], offences: [...offences], history: [...history] };
+      fs.writeFileSync(path.join(guardDir, `${process.pid}.json`), `${JSON.stringify(record)}\n`);
+    } catch {
+      /* best effort */
+    }
+  }
+  /** The git commands this file ran that read this repository's history (historyRead): such a file's pass depends on
+   *  more than the files on disk, so the runner never remembers it. */
+  const history = new Set();
   // A call made inside another wrapped call (Bun's child_process runs Bun.spawn; its net runs Bun.listen) is the same act.
   let depth = 0;
   // Inside trial(): every act but git is refused, whatever the mode or tier, and none is recorded.
@@ -111,7 +244,10 @@ function install(file) {
     else if (seen.size < 200) seen.set(key, { kind, what, count: 1, at: callerOf() });
     else (seen.get("more") ?? seen.set("more", { kind: "more", what: "distinct acts not listed", count: 0 }).get("more")).count++;
     if (!unit || allowed) return;
-    if (offences.size < 200) offences.add(key);
+    if (offences.size < 200 && !offences.has(key)) {
+      offences.add(key);
+      flush();
+    }
     if (enforce) throw refusal(kind, what);
   }
   const refusal = (kind, what) =>
@@ -122,11 +258,21 @@ function install(file) {
   function program(argv) {
     const [cmd, ...args] = argv.map(String);
     const base = path.basename(cmd ?? "");
-    if (/^(ba|da|z)?sh$/.test(base) && args[0] === "-c" && args[1]) return { name: path.basename(args[1].trim().split(/\s+/)[0] ?? ""), line: args[1] };
+    if (/^(ba|da|z)?sh$/.test(base) && args[0] === "-c" && args[1]) {
+      const words = args[1].trim().split(/\s+/);
+      return { name: path.basename(words[0] ?? ""), line: args[1], args: words.slice(1).map((w) => w.replace(/^(["'])(.*)\1$/, "$2")) };
+    }
     return { name: base, line: [cmd, ...args].join(" ") };
   }
-  const spawnNote = (argv) => {
+  const spawnNote = (argv, opts) => {
     const p = program(argv);
+    if (p.name === "git") {
+      const read = historyRead(p.args ?? argv.slice(1).map(String), opts);
+      if (read && history.size < 50 && !history.has(read.slice(0, 160))) {
+        history.add(read.slice(0, 160));
+        flush();
+      }
+    }
     note("spawn", p.name === "git" ? "git" : p.line.slice(0, 160), p.name === "git");
   };
 
@@ -165,9 +311,9 @@ function install(file) {
   };
 
   // Programs. Node: every async spawn is a ChildProcess's spawn; the sync ones are each their own.
-  wrap(cp.ChildProcess.prototype, "spawn", (o) => spawnNote(o?.args?.length ? o.args : [o?.file]));
-  for (const k of ["spawnSync", "execFileSync"]) wrap(cp, k, (f, args) => spawnNote([f, ...(Array.isArray(args) ? args : [])]));
-  wrap(cp, "execSync", (cmd) => spawnNote(["/bin/sh", "-c", cmd]));
+  wrap(cp.ChildProcess.prototype, "spawn", (o) => spawnNote(o?.args?.length ? o.args : [o?.file], { cwd: o?.cwd, env: envOfPairs(o?.envPairs) ?? o?.env }));
+  for (const k of ["spawnSync", "execFileSync"]) wrap(cp, k, (f, args, opts) => spawnNote([f, ...(Array.isArray(args) ? args : [])], Array.isArray(args) ? opts : args));
+  wrap(cp, "execSync", (cmd, opts) => spawnNote(["/bin/sh", "-c", cmd], opts));
   // Sockets.
   wrap(net.Server.prototype, "listen", (...a) => note("listen", listenArgs(a)));
   // Bun's http(s) servers have their own listen (over Bun.serve), which turns a throw into an 'error' event.
@@ -182,8 +328,9 @@ function install(file) {
   if (globalThis.Bun) {
     const B = globalThis.Bun;
     const cmdOf = (a) => (Array.isArray(a[0]) ? a[0] : (a[0]?.cmd ?? []));
-    wrap(B, "spawn", (...a) => spawnNote(cmdOf(a)));
-    wrap(B, "spawnSync", (...a) => spawnNote(cmdOf(a)));
+    const optsOf = (a) => (Array.isArray(a[0]) ? a[1] : a[0]);
+    wrap(B, "spawn", (...a) => spawnNote(cmdOf(a), optsOf(a)));
+    wrap(B, "spawnSync", (...a) => spawnNote(cmdOf(a), optsOf(a)));
     wrap(B, "listen", (o) => note("listen", where(o)));
     wrap(B, "serve", (o) => note("listen", where(o)));
     wrap(B, "connect", (o) => note("connect", where(o)));
@@ -209,15 +356,10 @@ function install(file) {
   // ESM named imports of node builtins (`import { spawn } from "node:child_process"`) see the wrapped functions.
   nodeModule.syncBuiltinESMExports?.();
 
-  const dir = process.env.SOVA_TEST_GUARD_DIR;
-  if (dir) {
-    process.on("exit", () => {
-      try {
-        const record = { v: 1, file, tier: unit ? "unit" : "integration", mode, acts: [...seen.values()], offences: [...offences] };
-        fs.writeFileSync(path.join(dir, `${process.pid}.json`), `${JSON.stringify(record)}\n`);
-      } catch {
-        /* best effort */
-      }
-    });
+  // The record is written at once, again on each new offence or history read, and last at exit: `bun test` runs no
+  // exit handler for a file that imports bun:test, and the runner reads a missing record as "the guard never ran".
+  if (guardDir) {
+    flush();
+    process.on("exit", flush);
   }
 }

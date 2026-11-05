@@ -86,8 +86,11 @@ working worker is never the one it leaves out.
 ```
 
 **Unfolded (≥768)** the foot holds **two stacked rows, and both are always present**, so the layout never
-jumps: the Usage row is 44px and the Agents row 64px, the extra 20px holding the token chart
-(§app.insights/token-velocity) on a second line. Those two are the foot's only rows: it has no
+jumps under them: the Usage row is 44px and the Agents row 64px, the extra 20px holding the token chart
+(§app.insights/token-velocity) on a second line. Only the **landing bar** comes and goes, above them
+(above the host filter row while the mesh is on), while a merge queue or an open release has something
+to show (§app.merge-queue/landing-bar); it is drawn by its own claim, not here. Besides it, those two
+are the foot's only rows: it has no
 Shares row, and the spine's foot has no Shares button — the Shares page is reached from the
 overview's Shares card (§chat.transcript/landing-page) and from each Sharing section
 (§app.session-share/shares-page). **Folded (<768) none of this shows**: a
@@ -212,7 +215,7 @@ Usage glance needs the room.
   The row itself has room for the figures, not for the sentences.
 
 The rows take no chip, because the pages carry the status, and no color but the usage meters'
-fill tone. Each truncates with an ellipsis.
+fill tone (the landing bar above them has its own icon, count and tones). Each truncates with an ellipsis.
 
 ## §app.insights/sidebar-foot-phone — The foot on a phone: one bar, one sheet
 
@@ -227,7 +230,10 @@ Nothing in them is rewritten, only re-homed: the Agents row's chart scrubs in th
 too, by a 500ms hold on the row and then a drag, and the sheet never scrolls under that drag
 (§app.insights/velocity-scrub). At ≥768 the bar never shows and the foot
 is §app.insights/sidebar-foot as drawn there; the spine is untouched by either. The sheet's
-accessible name is "Hosts, usage and agents".
+accessible name is "Hosts, usage and agents". While a merge queue or an open release has something
+to show, the landing bar's own 44px strip sits directly above this bar, with its own sheet
+(§app.merge-queue/landing-bar); it is neither part of this bar nor in this sheet, and the bar
+itself stays 44px.
 
 The bar itself reads the same data as the rows, left to right:
 
@@ -422,7 +428,8 @@ host and every connected host.**
 
 **Every model call made on this device by Sova or pi (main sessions, the Overseer, org and baton
 sessions, workers at any depth, pi or Claude Code, and one-shots: decisions, titles, topic
-outlines, image descriptions, compaction, branch summaries, cache warming) writes one usage record
+outlines, image descriptions, compaction, branch summaries, cache warming, the merge queue's branch
+summaries) writes one usage record
 at its end, and every figure of spend Sova shows is read from these records and priced by one
 function.** Standalone `claude` use outside Sova and pi is not recorded.
 
@@ -430,7 +437,9 @@ function.** Standalone `claude` use outside Sova and pi is not recorded.
   1-hour part when the provider reports it), the provider, the model asked for and the model that
   answered, when the call ended, the session that owns it, that session's parent (a worker's
   session), the kind (`main`, `worker`, `overseer`, `oneshot`), the purpose of a side call
-  (`title`, `decide`, `outline`, `vision`, `branch-summary`, `compaction`, `cache-warm`, …), the
+  (`title`, `decide`, `outline`, `vision`, `branch-summary`, `compaction`, `cache-warm`, …, and
+  `git-branch-summary`, the merge queue's branch summaries, with their project set, kept apart from
+  `branch-summary`, which is a conversation's), the
   working directory and the org project when known, and a key that names the call. A call that
   reports no tokens writes nothing. Each attempt of a retried call is its own record.
 - **How a Claude process started.** The first record of each Claude Code child the provider bridge

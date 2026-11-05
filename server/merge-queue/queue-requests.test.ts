@@ -72,6 +72,8 @@ describe("how it lands, at the queue", () => {
       assert.equal(k.repo.head(), before);
       assert.equal(sh(k.repo.origin, "rev-parse", "master"), before);
       assert.deepEqual(k.notices.map((n) => n.kind), ["pushed"]);
+      // The landing bar's cut carries it too (Pushed feat/p), with no Git read past the target's head.
+      assert.deepEqual((await q.landingCut()).waitingOnHost?.map((x) => [x.id, x.state]), [[entry.id, "pushed"]]);
     } finally {
       await k.done();
     }

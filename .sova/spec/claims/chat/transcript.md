@@ -1239,25 +1239,31 @@ and the 120-second rule applies.
 ## §chat.transcript/landing-page — The overview (`#/`)
 
 With no session selected the main pane is the overview: not an empty state with a grid bolted on — it is one
-page with up to seven parts, in this order (the Mesh card, §mesh.ui/card, sits after the Sessions
-card). On a phone it is `#/overview`, under the list's head row (§app.shell/overview):
+page with up to eight parts, in this order (the Mesh card, §mesh.ui/card, sits after the Sessions
+card). On a phone it is `#/overview`, under the list's head row, and opening Sova lands on it
+(§app.shell/overview):
 
 1. **The title**: `.overview-head` holding a plain `h1.overview-title`, "Overview" (`--fs-heading-m`,
    semibold, left-aligned on the sections' own left edge and cap), at every width — no mark and no
    body line; the session count lives only in the Sessions card.
-2. **The Start section**, under a `Start` section eyebrow: one action card per way to start
+2. **The Projects section**, always (with no project too), under a `Projects` section eyebrow
+   with an `All Projects` link to `#/projects` at its right: a grid of cards, one per project on
+   this host that is not archived, the ones that need you first, each with its icon, what is
+   happening in it and a one-press `New Chat`, then a dashed `Add Project` tile
+   (§app.projects/home-cards). It is the first section at every width.
+3. **The Start section**, under a `Start` section eyebrow: one action card per way to start
    something, in a `ul.overview-actions` grid — `New Session` ("Start a chat with pi in any folder
    or on any host."), the only one. Organizations is not a Start
-   card: it has its own section, the page's last (part 7). Each card is one
+   card: it has its own section, the page's last (part 8). Each card is one
    `.card.action-card`: its icon (`plus`) on a 36px `--color-sunken` tile, the
    title (`--fs-heading-s`, semibold) and the line (`--color-ink-2`). The whole card is the control,
    a `<button>` that opens its dialog (New Session's), named by
    its title (`aria-labelledby`) and described by its line (`aria-describedby`). Hover lifts the
    border to `--color-border-strong` and the shadow to `--shadow-2`, like the extension cards; focus
    is the ring round the whole card. The grid is one column, and two once `.overview` (the
-   `overview` query container) is at least 640px wide. It is the first thing read at every width
-   after the title.
-3. **The Sessions card**, always (at every width, with no sessions too), under a `Sessions`
+   `overview` query container) is at least 640px wide. It is read right after Projects at every
+   width.
+4. **The Sessions card**, always (at every width, with no sessions too), under a `Sessions`
    section eyebrow: one `.card.home-sessions`. It reads: `{n} session(s) across {m} folder(s)` as
    its title — main threads, archived included, and their distinct folders;
    `{live} live · {working} working now` — live = every open session (open in a
@@ -1273,16 +1279,16 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
    Pressing it opens the session list: on a phone it goes back to the list (§app.shell/overview);
    at 768px and up it expands the pane if it is collapsed into the spine, and focuses the list's
    search.
-4. **The Extensions section**, shown **only when at least one extension is installed**: one card
+5. **The Extensions section**, shown **only when at least one extension is installed**: one card
    per extension, under the same section eyebrow (§app.extensions/cards).
-5. **The Explanations card**, always (with no explanations too), under an `Explanations`
+6. **The Explanations card**, always (with no explanations too), under an `Explanations`
    section eyebrow: the Mesh card's shape (§mesh.ui/card) — one full-width `a.card.ext-card` to
    `#/explanations` (§app.insights/explanations-page) with the `file` icon, the title
    `Explanations`, a count chip (`{n}`), and one line: `Latest · {topic} · {relative time}`, or,
    with none, "No explanations yet. Run `/explain` in a session to write one." Before the first
    list has loaded the line reads "Reading explanations…". It is the way to the page at every
    width, and on a phone the only one outside a session (list → Overview → the card).
-6. **The Shares card**, always (with no public link too), under a `Shares` section eyebrow, after
+7. **The Shares card**, always (with no public link too), under a `Shares` section eyebrow, after
    the Explanations card and before Organizations: the Explanations card's shape — one full-width
    `a.card.ext-card` to `#/shares` (§app.session-share/shares-page) with the `external` icon, the
    title `Shares`, a count chip (`{n}`: every live public link counted on the line), and one line:
@@ -1299,7 +1305,7 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
    while the overview is shown, and never while it isn't. It is the way to the Shares page at
    every width: the sidebar foot, its phone sheet and the spine have no Shares entry
    (§app.insights/sidebar-foot).
-7. **The Organizations section**, always and always last (below Mesh, Extensions, Explanations and Shares),
+8. **The Organizations section**, always and always last (below Mesh, Extensions, Explanations and Shares),
    under an `Organizations` section eyebrow: one full-width `.card.overview-orgs`, the entry point
    to `#/orgs` (§app/organizations). Its head is the `network` icon on the same 36px sunken tile as
    the Start cards, the title `Organizations` (`--fs-heading-s`, semibold) — a link to `#/orgs`,
@@ -1332,6 +1338,7 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
 ```html
 <div class="overview">
   <div class="overview-head"><h1 class="overview-title">Overview</h1></div>
+  <section class="explain-section" aria-labelledby="overview-projects-title">…Projects · All Projects, one .card.project-card per project, the Add Project tile (§app.projects/home-cards)…</section>
   <section class="explain-section" aria-labelledby="overview-start-title">…Start, one .card.action-card per action…</section>
   <section class="explain-section" aria-labelledby="home-sessions-title">…Sessions, the .card.home-sessions…</section>
   <!-- only when at least one extension is installed (§app.extensions/cards) -->
@@ -1361,8 +1368,8 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
   — with the count as the `.text-num` span inside it, in `--color-ink-muted` and no casing. A
   `display-l` page opener was rejected: this is the second thing on the page, not its title.
 - **Where the CSS lives.** `.overview`, `.overview-head`, `.overview-title`, `.explain-section` and
-  `.explain-section-head` are in `src/design/base.css`; the Start grid, `.action-card` and the
-  Organizations card are in `src/home.css`, beside the Sessions card; the Explanations and Shares
+  `.explain-section-head` are in `src/design/base.css`; the project cards' grid, the Start grid,
+  `.action-card` and the Organizations card are in `src/home.css`, beside the Sessions card; the Explanations and Shares
   cards are extension cards (`src/extensions.css`); `.explain-grid` and every `.explain-tile` rule are in
   `src/explain.css`, which owns the tile on the Explanations page.
 - **No grid here.** The overview no longer lists the pages themselves: the card leads to the
@@ -1375,7 +1382,7 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
 
 | State | What renders |
 |---|---|
-| No session selected (unfolded) | The landing page below, not a bare `.empty`: `.overview` fills `.app-main`: the title "Overview" in `.overview-head`, the Start section's action card (`New Session`), then the Sessions card, Mesh, the Extensions section and the Explained grid when there are any, and last the Organizations card. No composer |
+| No session selected (unfolded) | The landing page below, not a bare `.empty`: `.overview` fills `.app-main`: the title "Overview" in `.overview-head`, the Projects section's cards (§app.projects/home-cards), the Start section's action card (`New Session`), then the Sessions card, Mesh, the Extensions section and the Explained grid when there are any, and last the Organizations card. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
 | Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then, in an ordinary session, the profile cards and what the picked profile changes (§chat.profiles/picker), then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title.", then, for a local folder in a git repository with linked worktrees, the worktrees line and its `Clean Up Merged` button (§chat.transcript/empty-worktrees). The composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows, the profile entry and a Claude login note (§app.claude-logins/switch-login) draw nothing and don't count (the login note is drawn where it sits once a message is on the branch), while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state. It opens at its top (the title, then the profile cards), not at its end, and doesn't follow the end; the first rendered row puts the view back to following. Jump to Latest never shows over it: scrolling the empty state (the cards, the setup card) has no latest to jump to |

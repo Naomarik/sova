@@ -1,5 +1,6 @@
 import { join } from "node:path";
-import type { ProjectSummary } from "../../shared/projects";
+import type { ProjectIconRef, ProjectSummary } from "../../shared/projects";
+import { iconRefOf } from "./icon";
 import { actOrThrow, engineDir, envelopeFor, hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, openEngineIds, openOrgHost, type OrgHostApi } from "../org-engine";
 import type { Envelope, EnvelopeCard } from "../org-envelope";
 import type { StampWho } from "../org-stamp";
@@ -81,7 +82,14 @@ function summaryOf(engine: string, d: Record<string, unknown>, configuration: re
     createdAt: isoOf(d.createdAt),
     ...(configuration.includes("archived") && isObj(archived) ? { archived: { at: isoOf(archived.at), ...(archived.via === "overseer" ? { via: "overseer" as const } : {}) } } : {}),
     space: spaceOf(engine, id),
+    ...iconPart(id, String(d.root ?? "")),
   };
+}
+
+/** The summary's icon, when a picture is in use (§app.projects/icon): a few stats, memoised per root. */
+function iconPart(id: string, root: string): { icon?: ProjectIconRef } {
+  const icon = iconRefOf(id, root);
+  return icon ? { icon } : {};
 }
 
 /** The project as its statechart holds it, or a 404. */

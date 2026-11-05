@@ -4,6 +4,8 @@ import Docs from "../../layouts/Docs.astro";
 import { docSlug, sortedDocs, type DocEntry } from "../../data/docs";
 // The Vis page's examples, drawn by Sova's own vis code (scripts/vis-examples.mjs writes this file).
 import visExamples from "../../generated/vis-examples.html?raw";
+import { getImage } from "astro:assets";
+import { optionalShot } from "../../data/screens";
 
 export async function getStaticPaths() {
   const docs = await sortedDocs();
@@ -23,7 +25,24 @@ const html = (entry.rendered?.html ?? "").replace(/<h[23][^>]*>([\s\S]*?)<\/h[23
 // A page's `<!-- vis-examples -->` line becomes the examples (after the tables above are wrapped,
 // so a drawing's own table is left alone).
 const VIS_EXAMPLES = "<!-- vis-examples -->";
-const page = html.includes(VIS_EXAMPLES) ? html.replace(VIS_EXAMPLES, () => visExamples) : html;
+const withVis = html.includes(VIS_EXAMPLES) ? html.replace(VIS_EXAMPLES, () => visExamples) : html;
+
+// A `<!-- screen: <shot> | <alt> -->` line becomes that screenshot, a figure in the page's column, as
+// AVIF and WebP at several widths, its words from the screens manifest (else the line's own). A shot
+// not captured yet leaves nothing on the page, so a page never shows a gap or breaks the build.
+const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+const SHOT = /<!--\s*screen:\s*([a-z0-9-]+)\s*\|\s*([\s\S]*?)-->/g;
+const shots = new Map<string, string>();
+for (const [, id, alt] of withVis.matchAll(SHOT)) {
+  const s = optionalShot(id!, alt!.trim());
+  if (!s) { console.warn(`[screens] no capture yet for "${id}": ${entry.id} leaves its figure out`); shots.set(id!, ""); continue; }
+  const widths = [...new Set([480, 760, 1100, 1520].filter((w) => w < s.image.width).concat(s.image.width))];
+  const sizes = "(min-width: 1024px) 760px, 92vw";
+  const [avif, webp] = await Promise.all((["avif", "webp"] as const).map((format) => getImage({ src: s.image, format, widths, sizes })));
+  shots.set(id!, `<figure class="docs-shot"><picture><source type="image/avif" srcset="${avif!.srcSet.attribute}" sizes="${sizes}">`
+    + `<img src="${webp!.src}" srcset="${webp!.srcSet.attribute}" sizes="${sizes}" width="${s.image.width}" height="${s.image.height}" alt="${esc(s.alt)}" loading="lazy" decoding="async"></picture></figure>`);
+}
+const page = withVis.replace(SHOT, (_m, id) => shots.get(id) ?? "");
 ---
 <Docs entry={entry} docs={docs}>
   <Fragment set:html={page} />

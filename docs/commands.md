@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 546 |
-| Routes a catalogue entry points at | 168 |
-| Catalogue entries | 230 |
+| Routes registered | 547 |
+| Routes a catalogue entry points at | 169 |
+| Catalogue entries | 231 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -153,6 +153,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.overseer.actions` | List Project Overseer Actions | looks | `GET /api/projects/:pid/overseer/actions` | sessions |
 | `project.overseer.memory.get` | Show Project Overseer Memory | looks | `GET /api/projects/:pid/overseer/memory` | sessions |
 | `project.list` | List Projects | looks | `GET /api/projects` | sessions |
+| `project.glance` | Show Project Glance | looks | `GET /api/projects/glance` | sessions |
 | `project.get` | Show Project | looks | `GET /api/projects/:pid` | sessions |
 | `project.create` | Add Project | changes | `POST /api/projects` | admin |
 | `project.update` | Edit Project | changes | `PATCH /api/projects/:pid` | admin |
@@ -877,6 +878,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/projects/:pid/setup` | admin | `project.setup.open` |
 | `POST /api/projects/:pid/setup/merge` | admin | `project.setup.merge` |
 | `POST /api/projects/:pid/unarchive` | admin | `project.unarchive` |
+| `GET /api/projects/glance` | sessions | `project.glance` |
 | `POST /api/push/test` | admin | `push.test` |
 | `POST /api/sandbox` | sessions | `session.sandbox.set` |
 | `GET /api/schedules` | sessions | `schedule.list` |

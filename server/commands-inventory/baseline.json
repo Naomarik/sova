@@ -180,6 +180,7 @@
     "GET /api/projects/:pid/settings": {"need":"sessions","is":"command","ids":["project.settings.get"]},
     "GET /api/projects/:pid/settings/history": {"need":"sessions","is":"command","ids":["project.settings.history"]},
     "GET /api/projects/:pid/setup": {"need":"sessions","is":"command","ids":["project.setup.get"]},
+    "GET /api/projects/glance": {"need":"sessions","is":"command","ids":["project.glance"]},
     "GET /api/provider-limits/waiting": {"need":"sessions","is":"opted-out"},
     "GET /api/public-links": {"need":"sessions","is":"opted-out"},
     "GET /api/push": {"need":"sessions","is":"opted-out"},

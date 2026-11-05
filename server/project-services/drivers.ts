@@ -195,6 +195,84 @@ export function rssOf(pids: number[]): number | null {
   return read ? total : null;
 }
 
+/** The page size /proc's statm counts in: VmRSS (kB) against statm's resident pages for this process, rounded to a
+ *  power of two, as the resource monitor finds it; 4096 when it can't be read. */
+let pageBytes: number | null = null;
+function pageSize(): number {
+  if (pageBytes !== null) return pageBytes;
+  pageBytes = 4096;
+  try {
+    const resident = Number(readFileSync("/proc/self/statm", "utf8").trim().split(" ")[1]);
+    const m = /VmRSS:\s*(\d+)\s*kB/.exec(readFileSync("/proc/self/status", "utf8"));
+    if (m && resident > 0) pageBytes = 2 ** Math.round(Math.log2((Number(m[1]) * 1024) / resident));
+  } catch {
+    // not Linux
+  }
+  return pageBytes;
+}
+
+/** One process's own memory now, in bytes, as the resource monitor measures it: /proc/<pid>/statm's resident less
+ *  shared pages (RssAnon; never smaps). null when it is gone or this isn't Linux. */
+export function ownMemoryOfPid(pid: number): number | null {
+  try {
+    const f = readFileSync(`/proc/${pid}/statm`, "utf8").trim().split(" ");
+    const resident = Number(f[1]);
+    const shared = Number(f[2]);
+    if (!Number.isSafeInteger(resident) || !Number.isSafeInteger(shared)) return null;
+    return Math.max(0, resident - shared) * pageSize();
+  } catch {
+    return null;
+  }
+}
+
+/** The own memory of `pids` now, in bytes (§app.project-services/status-logs): on Linux each process's resident less
+ *  shared pages, as the resource monitor measures it; elsewhere `ps`'s resident memory (the monitor's measure there).
+ *  null when none could be read. */
+export function ownMemoryOf(pids: number[]): number | null {
+  if (!pids.length) return null;
+  if (process.platform !== "linux") return rssOf(pids);
+  let total = 0;
+  let read = false;
+  for (const pid of pids) {
+    const b = ownMemoryOfPid(pid);
+    if (b !== null) {
+      total += b;
+      read = true;
+    }
+  }
+  return read ? total : null;
+}
+
+/** The user manager's cgroup folder (cgroup v2), or null when this host has none to read. */
+export function userManagerCgroup(uid = process.getuid?.() ?? -1, root = "/sys/fs/cgroup"): string | null {
+  if (uid < 0) return null;
+  const dir = join(root, "user.slice", `user-${uid}.slice`, `user@${uid}.service`);
+  return existsSync(join(dir, "cgroup.procs")) ? dir : null;
+}
+
+/**
+ * A systemd user unit's processes from its own cgroup's `cgroup.procs` (one file, no process scan, nothing spawned):
+ * looked for in Sova's services slice, then `app.slice`, then the manager's top. `unit` is the whole name
+ * (`sova-runtime.service`). [] when the unit has no cgroup (it isn't running); null when the host has no user
+ * manager cgroup to read.
+ */
+export function unitCgroupPids(unit: string, manager: string | null = userManagerCgroup()): number[] | null {
+  if (!manager) return null;
+  for (const slice of [SLICE, "app.slice", ""]) {
+    let text: string;
+    try {
+      text = readFileSync(join(manager, slice, unit, "cgroup.procs"), "utf8");
+    } catch {
+      continue;
+    }
+    return text
+      .split("\n")
+      .map((l) => Number(l.trim()))
+      .filter((n) => Number.isSafeInteger(n) && n > 0);
+  }
+  return [];
+}
+
 /** systemd-run's output when it started the unit (not `--quiet`): a run that lacks it never started. */
 const LAUNCHED = /Running as unit:/;
 
@@ -342,7 +420,7 @@ export async function adoptedStatus(unit: string, exec: Exec = realExec, pidsOf:
   const st = parseShow(r.stdout);
   const enter = /^ActiveEnterTimestamp=(.*)$/m.exec(r.stdout)?.[1];
   const live = st.state === "active" || st.state === "activating";
-  return { ...st, startedAt: live ? parseEnterTimestamp(enter) : null, rssBytes: live ? rssOf(pidsOf(unit)) : null };
+  return { ...st, startedAt: live ? parseEnterTimestamp(enter) : null, rssBytes: live ? ownMemoryOf(pidsOf(unit)) : null };
 }
 
 // ---- an adopted unit under launchd (macOS) -----------------------------------------------------
@@ -398,7 +476,7 @@ export async function launchdAdoptedStatus(unit: string, exec: Exec = realExec, 
   if (st.pid === null) return { ...st, startedAt: null, rssBytes: null };
   const ps = await exec("ps", ["-o", "etime=", "-p", String(st.pid)], { timeoutMs: 5_000 });
   const age = ps.code === 0 ? parseEtime(ps.stdout) : null;
-  return { ...st, startedAt: age !== null ? new Date(Math.floor(now / 1000) * 1000 - age * 1000).toISOString() : null, rssBytes: rssOf(treeOf(st.pid)) };
+  return { ...st, startedAt: age !== null ? new Date(Math.floor(now / 1000) * 1000 - age * 1000).toISOString() : null, rssBytes: ownMemoryOf(treeOf(st.pid)) };
 }
 
 /** The pids of an adopted unit: its cgroup on Linux, the agent's process tree on macOS. */

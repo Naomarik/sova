@@ -12,6 +12,7 @@ import { hostname } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { scratchRoot } from "../server/test-scratch";
+import { bundleOf } from "./mac-app";
 import { appIdOf, appRecord, frameLogRecord, loadStore, putVarint, recordKey, storeDir, wcoOf } from "./mac-app-store";
 
 const REPO = resolve(import.meta.dirname, "..");
@@ -263,6 +264,89 @@ test("removed from the browser: open falls back and records it; --auto leaves it
 function le64(n: bigint): number[] {
   return Array.from({ length: 8 }, (_, k) => Number((n >> BigInt(8 * k)) & 0xffn));
 }
+
+// ---- the start through macOS's launcher (§app.installer/app-entry). A stand-in `open` first on PATH:
+// never the Mac's own, which would really launch. The fake bundle's executable is the stand-in browser.
+
+const bundle = join(root, "Fake Chrome.app");
+const bundleExe = join(bundle, "Contents", "MacOS", "Fake Chrome");
+mkdirSync(join(bundle, "Contents", "MacOS"), { recursive: true });
+writeFileSync(bundleExe, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(fakeTs)} "$@"\n`);
+chmodSync(bundleExe, 0o755);
+const standIns = join(root, "open-bin");
+mkdirSync(standIns);
+const openStub = join(standIns, "open");
+// Logs its arguments as JSON, one per line in the browser's log; OPEN_EXIT is its exit status.
+writeFileSync(openStub, `#!/bin/sh\n${JSON.stringify(process.execPath)} -e 'require("node:fs").appendFileSync(process.env.FAKE_BROWSER_LOG, "open " + JSON.stringify(process.argv.slice(1)) + "\\n")' -- "$@"\nexit "\${OPEN_EXIT:-0}"\n`);
+chmodSync(openStub, 0o755);
+const noOpen = join(root, "no-open-bin"); // a PATH with no `open` at all
+mkdirSync(noOpen);
+
+function runBundle(c: ReturnType<typeof newCase>, cmd: string, extra: string[] = [], env: Record<string, string> = {}, browser = bundleExe) {
+  const r = spawnSync(process.execPath, [MAC_APP, cmd, "--browser", browser, "--profile", c.profile, "--port", PORT, "--token-file", c.token, ...extra], {
+    encoding: "utf8",
+    env: { ...process.env, PATH: standIns, FAKE_BROWSER_LOG: c.log, ...env },
+    timeout: 60_000,
+  });
+  return { status: r.status, out: `${r.stdout}${r.stderr}` };
+}
+const lineOf = (c: { log: string }, kind: string) => calls(c).filter((l) => l.startsWith(`${kind} `)).map((l) => JSON.parse(l.slice(kind.length + 1)) as string[]);
+function waitLaunch(c: { log: string }) {
+  for (let i = 0; i < 50 && !lineOf(c, "launch").length; i++) spawnSync("/bin/sleep", ["0.1"]);
+  return lineOf(c, "launch");
+}
+const UNLOCK = `${MID}#t=tok-123`;
+const appArgs = (c: { profile: string }, extra: string[] = []) => [`--user-data-dir=${c.profile}`, "--no-first-run", "--no-default-browser-check", ...extra, `--app-id=${appIdOf(MID)}`, `--app-launch-url-for-shortcuts-menu-item=${UNLOCK}`];
+
+test("bundleOf: the browser's own bundle from its executable; nothing outside a bundle", () => {
+  assert.equal(bundleOf("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"), "/Applications/Google Chrome.app");
+  assert.equal(bundleOf("/x/Google Chrome.app/Contents/Frameworks/Helper.app/Contents/MacOS/Helper"), "/x/Google Chrome.app/Contents/Frameworks/Helper.app");
+  assert.equal(bundleOf("/usr/bin/chromium"), null);
+  assert.equal(bundleOf("/x/Google Chrome.app/Google Chrome"), null);
+  assert.equal(bundleOf(fakeBrowser), null);
+});
+
+test("a browser in a bundle: the app starts through macOS's launcher, with every argument, and never directly; the install stays on its pipe", () => {
+  const c = newCase();
+  assert.equal(runBundle(c, "install").status, 0);
+  assert.deepEqual(lineOf(c, "open"), [], "the install needs its DevTools pipe, so it never goes through open");
+  assert.equal(lineOf(c, "piped").length, 1);
+  const o = runBundle(c, "open", ["--url", UNLOCK], { SOVA_APP_BROWSER_ARGS: "--use-mock-keychain" });
+  assert.equal(o.status, 0, o.out);
+  assert.deepEqual(lineOf(c, "open"), [["-n", "-a", bundle, "--args", ...appArgs(c, ["--use-mock-keychain"])]]);
+  spawnSync("/bin/sleep", ["0.5"]); // what a stray direct start would need to reach the log
+  assert.deepEqual(lineOf(c, "launch"), [], "started twice");
+});
+
+test("open fails: the direct start, with the same arguments, still exit 0", () => {
+  const c = newCase();
+  assert.equal(runBundle(c, "install").status, 0);
+  const o = runBundle(c, "open", ["--url", UNLOCK], { OPEN_EXIT: "1" });
+  assert.equal(o.status, 0, o.out);
+  assert.equal(lineOf(c, "open").length, 1, "open was tried first");
+  assert.deepEqual(waitLaunch(c), [appArgs(c)]);
+});
+
+test("no open at all: the direct start", () => {
+  const c = newCase();
+  assert.equal(runBundle(c, "install").status, 0);
+  const o = runBundle(c, "open", ["--url", UNLOCK], { PATH: noOpen });
+  assert.equal(o.status, 0, o.out);
+  assert.deepEqual(waitLaunch(c), [appArgs(c)]);
+});
+
+test("open fails and the browser can't be started either: status 10, so the launcher tries its bare window", () => {
+  const c = newCase();
+  // Installed with this browser, which then goes missing: the marker still names it.
+  const gone = join(c.dir, "Gone.app", "Contents", "MacOS", "Gone");
+  mkdirSync(join(c.dir, "Gone.app", "Contents", "MacOS"), { recursive: true });
+  writeFileSync(gone, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(fakeTs)} "$@"\n`);
+  chmodSync(gone, 0o755);
+  assert.equal(runBundle(c, "install", [], {}, gone).status, 0);
+  rmSync(gone);
+  const o = runBundle(c, "open", ["--url", UNLOCK], { OPEN_EXIT: "1" }, gone);
+  assert.equal(o.status, 10, o.out);
+});
 
 test("usage: a missing or non-numeric port is refused", () => {
   const r = spawnSync(process.execPath, [MAC_APP, "install", "--browser", fakeBrowser, "--profile", root, "--port", "x"], { encoding: "utf8" });

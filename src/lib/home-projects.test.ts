@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AttentionDigest, AttentionItem, SessionSummary } from "../../shared/protocol";
 import type { ProjectSummary } from "../../shared/projects";
-import { CARD_LIMIT, CARD_LIMIT_NARROW, freezeOrder, projectCards, shortFolder, showsFilter, visibleCards } from "./home-projects";
+import { CARD_LIMIT, CARD_LIMIT_NARROW, cardLimitAt, freezeOrder, projectCards, shortFolder, showsFilter, visibleCards } from "./home-projects";
 
 const project = (id: string, name: string, createdAt = "2026-01-01T00:00:00.000Z", extra: Partial<ProjectSummary> = {}): ProjectSummary => ({
   id,
@@ -87,14 +87,14 @@ test("order: needs you first, then most recent activity (or when added), then na
 });
 
 test("freezeOrder keeps the ids seen and appends new ones in sorted order; gone ones drop out", () => {
-  const rows = (names: string[]) => names.map((name) => ({ project: project(`prj_${name}`, name), needsYou: 0, working: 0, lastActivity: null }));
+  const rows = (names: string[]) => names.map((name) => ({ project: project(`prj_${name}`, name), needsYou: 0, working: 0, open: 0, archived: 0, lastActivity: null }));
   const now = rows(["C", "A", "New1", "B", "New2"]);
   const frozen = freezeOrder(["prj_A", "prj_B", "prj_Gone", "prj_C"], now);
   assert.deepEqual(frozen.map((r) => r.project.name), ["A", "B", "C", "New1", "New2"]);
 });
 
 test("visibleCards: limit 8 (6 narrow), Show all, and a filter that shows every match", () => {
-  const rows = Array.from({ length: 12 }, (_, i) => ({ project: project(`prj_${i}`, i % 3 === 0 ? `Shop ${i}` : `Site ${i}`), needsYou: 0, working: 0, lastActivity: null }));
+  const rows = Array.from({ length: 12 }, (_, i) => ({ project: project(`prj_${i}`, i % 3 === 0 ? `Shop ${i}` : `Site ${i}`), needsYou: 0, working: 0, open: 0, archived: 0, lastActivity: null }));
   assert.equal(visibleCards(rows, { limit: CARD_LIMIT, expanded: false, filter: "" }).length, 8);
   assert.equal(visibleCards(rows, { limit: CARD_LIMIT_NARROW, expanded: false, filter: "" }).length, 6);
   assert.equal(visibleCards(rows, { limit: CARD_LIMIT, expanded: true, filter: "" }).length, 12);
@@ -116,4 +116,31 @@ test("the filter field counts live projects only: 7 live + 2 archived shows none
   assert.equal(showsFilter(projectCards([...live, ...gone], [], undefined, "badge")), false);
   const more = [...live, project("prj_l7", "Live 7"), project("prj_l8", "Live 8")];
   assert.equal(showsFilter(projectCards([...more, ...gone], [], undefined, "badge")), true);
+});
+
+test("open and archived chats: open is neither archived nor done (the sidebar's count), archived counts apart, overseer chats never", () => {
+  const a = project("prj_a", "Alpha");
+  const web = chat("prj_a");
+  const busy = chat("prj_a", { busy: true });
+  // An ended terminal chat is done: in neither row.
+  const ended = chat("prj_a", { origin: "external", project: { projectId: "prj_a", projectName: "Alpha", kind: "folder" } } as Partial<SessionSummary>);
+  const gone1 = chat("prj_a", { archived: true });
+  const gone2 = chat("prj_a", { archived: true, busy: true });
+  const eye = chat("prj_a", { project: { projectId: "prj_a", projectName: "Alpha", kind: "overseer" } } as Partial<SessionSummary>);
+  const eyeOld = chat("prj_a", { archived: true, project: { projectId: "prj_a", projectName: "Alpha", kind: "overseer", finished: true } } as Partial<SessionSummary>);
+  const worker = chat("prj_a", { workerSession: true } as Partial<SessionSummary>);
+  const c = projectCards([a], [web, busy, ended, gone1, gone2, eye, eyeOld, worker], undefined, "badge")[0]!;
+  assert.deepEqual({ open: c.open, archived: c.archived, working: c.working }, { open: 2, archived: 2, working: 1 });
+});
+
+test("a project with no chats reads 0 open, 0 archived", () => {
+  const c = projectCards([project("prj_z", "Zed")], [chat("prj_other")], undefined, "badge")[0]!;
+  assert.deepEqual({ open: c.open, archived: c.archived, working: c.working, last: c.lastActivity }, { open: 0, archived: 0, working: 0, last: null });
+});
+
+test("the card limit switches where the grid turns one column: 6 under 560px of the overview, 8 from 560px", () => {
+  assert.equal(cardLimitAt(470), 6);
+  assert.equal(cardLimitAt(559), 6);
+  assert.equal(cardLimitAt(560), 8);
+  assert.equal(cardLimitAt(1300), 8);
 });

@@ -383,6 +383,11 @@ export class Releaser {
     return !!last && last.thread?.session === caller.id && (last.state === "published" || last.state === "withdrawn");
   }
 
+  /** The open record and the newest settled one, as a view carries them (the start of the cards' kept copy). */
+  keptRecords(root: string): { open: ReleaseRecord | null; last: ReleaseRecord | null } {
+    return { open: this.openRecord(root), last: this.lastRecord(root) };
+  }
+
   private lastRecord(root: string): ReleaseRecord | null {
     const done = this.records(root).filter((r) => !isReleaseOpen(r.state));
     return done[done.length - 1] ?? null;

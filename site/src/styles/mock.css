@@ -451,6 +451,29 @@
   .meshmock-page { margin: -24px 0 0 24px; }
 }
 
+/* ---- TEAM. A team's roster beside its members' messages to each other (Team.astro). ------ */
+
+.teammock { margin: 0; }
+.tm-body { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); min-height: 340px; }
+.tm-roster { border-right: var(--stroke-thin) solid var(--color-border); padding-bottom: 12px; min-width: 0; }
+.tm-roster .m-row { padding: 8px 14px 8px 16px; }
+.tm-roster .m-row-meta > span:last-child { flex: none; }
+.tm-feed { min-width: 0; padding-bottom: 12px; background: var(--color-sunken); }
+.tm-items { display: flex; flex-direction: column; gap: 8px; padding: 2px 14px 0; list-style: none; margin: 0; }
+.tm-item { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border-radius: var(--r-md); border: var(--stroke-thin) solid var(--color-border); background: var(--color-surface); min-width: 0; }
+.tm-item-main { border-color: var(--color-accent); box-shadow: 0 0 0 3px var(--color-accent-tint); }
+.tm-route { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; font-size: 10.5px; line-height: 1.5; }
+.tm-who { font-weight: var(--fw-semibold); color: var(--color-ink-2); }
+.tm-route .chip { padding: 0 7px; }
+.tm-status { margin-left: auto; }
+.tm-route .chip-warn + .tm-status { margin-left: 0; }
+.tm-route .chip-warn { margin-left: auto; }
+.tm-subject { font-size: 12px; line-height: 1.45; color: var(--color-ink); }
+@container visual (max-width: 560px) {
+  .tm-body { grid-template-columns: minmax(0, 1fr); }
+  .tm-roster { border-right: 0; border-bottom: var(--stroke-thin) solid var(--color-border); }
+}
+
 /* ---- REDUCED MOTION: the live dot holds still. -------------------------------- */
 @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
 

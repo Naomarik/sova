@@ -11,6 +11,7 @@ import ScreenFrame from "../components/screens/ScreenFrame.astro";
 import Overseer from "../components/screens/Overseer.astro";
 import Phones from "../components/screens/Phones.astro";
 import ShotFrame from "../components/screens/ShotFrame.astro";
+import Team from "../components/mocks/Team.astro";
 import { themes } from "../data/themes";
 import { hasVideo } from "../data/screens";
 import * as site from "../data/site";
@@ -40,6 +41,22 @@ const cards = [
     icon: "external", title: "Share a session",
     body: "A read-only link to a session or part of it, as a snapshot or live. You see who opened each one.",
     limit: `Needs an address you set up (<a href="${site.publicLinksDoc}">how</a>). Recipients need no account.`,
+  },
+];
+
+// A team's standing parts, after how its members talk.
+const team = [
+  {
+    icon: "chat", title: "Members talk to each other",
+    body: "By role, straight to a teammate. The web member asks the API member what a field returns; the checker sends failures back to the builder until they pass. None of it waits on your chat.",
+  },
+  {
+    icon: "worker", title: "A coordinator, one voice back",
+    body: "It builds nothing. It sees every member's assignment, steers them by role and answers their questions. It's the only member that talks to your chat, with milestones and the questions only you can answer.",
+  },
+  {
+    icon: "gauge", title: "A monitor on a timer",
+    body: "It reads each member's context and your provider usage. A member near its context limit is told to wrap up and hand over to a successor; at a usage limit the team pauses, and resumes after the reset.",
   },
 ];
 
@@ -190,6 +207,40 @@ const beyond = [
           </div>
           <div class="feature-visual"><Phones /></div>
         </article>
+      </div>
+    </section>
+
+    <!-- TEAMS -->
+    <section class="section section-alt" id="teams" aria-labelledby="teams-title">
+      <div class="wrap">
+        <div class="section-head section-head-center">
+          <span class="eyebrow">Teams</span>
+          <h2 class="h-section" id="teams-title">Ask for a team. It works things out between its members.</h2>
+          <p class="lead">Tell the agent to have a team build it, and it starts one: a shared objective, one role per member, and who owns which files.</p>
+        </div>
+
+        <article class="feature teams-feature">
+          <div class="feature-copy">
+            <span class="eyebrow">Team inbox</span>
+            <h3 class="h-feature">Every member has an inbox. Nothing gets lost.</h3>
+            <div class="prose">
+              <p>A message to a busy teammate waits in its inbox instead of failing; an urgent one reaches it at its next step, and an idle one wakes it within seconds.</p>
+              <p>Members close what they handle. In the side pane, beside each member's transcript, you can read its inbox: who sent what, and what's still open.</p>
+            </div>
+            <p class="limit"><Icon name="info" size={18} /><span>The coordinator and monitor come from your subagent profile's <strong>Teams</strong> section; <strong>Off</strong> gives a team neither. File ownership is a plan, not a lock: members share one folder.</span></p>
+            <p class="feature-more"><a href="/docs/teams/">Teams docs<Icon name="arrow-right" size={14} /></a><a href="/docs/modes/delegate/">Delegate docs<Icon name="arrow-right" size={14} /></a></p>
+          </div>
+          <div class="feature-visual"><Team /></div>
+        </article>
+
+        <ul class="perks perks-three teams-perks">
+          {team.map((c) => (
+            <li class="perk">
+              <h3><Icon name={c.icon} size={18} />{c.title}</h3>
+              <p set:html={c.body} />
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
 

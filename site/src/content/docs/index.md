@@ -30,10 +30,12 @@ commands.
 | [project modes](/docs/modes/project-modes/) | Minor | A project's own modes, with its instructions, command-line tools, commands and hooks. None is on until someone turns it on in a chat, and only you approve its hooks. |
 
 [Subagent profiles](/docs/subagent-profiles/) hold the models every subagent uses: Delegate's
-workers, team members, the spec writer and the reviewer. Each chat picks one in its mode menu.
+workers, [team](/docs/teams/) members, the spec writer and the reviewer. Each chat picks one in its mode menu.
 
 ## Around the modes
 
+- [Teams](/docs/teams/): workers with one objective and a role each, who message each other by
+  role, with a coordinator that speaks for them and a monitor on a timer.
 - [Worktrees and changes](/docs/worktrees-and-changes/): work in a separate worktree, and read
   every change as steps before it lands.
 - [Merge queue](/docs/merge-queue/): each branch is merged onto the newest main branch in a copy,

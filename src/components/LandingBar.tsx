@@ -2,7 +2,7 @@
 // forms read one model (lib/landing-bar.ts, fed by lib/landing-bar-store.ts): the desktop row above the foot's rows,
 // whose detail opens in place under it; the phone's 44px strip above the foot bar, whose detail is a bottom sheet;
 // and the collapsed spine's icon with a status dot, whose detail is a popover beside it.
-import { createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { LandingAction, LandingBarModel, LandingChip, LandingProjectBar, LandingSegment } from "../lib/landing-bar";
 import { refusal, resumeQueue } from "../lib/merge-queue-client";
@@ -10,6 +10,23 @@ import { noteReleaseChanged, releaseRefusal, runReleaseVerb } from "../lib/relea
 import { announce, toast } from "../lib/ui-state";
 import { Icon, trapFocus } from "./ui";
 import "./LandingBar.css";
+
+/** The list with each item that is unchanged since the last read kept as the same object, so <For> keeps its DOM:
+    the model is rebuilt every second, and a rebuilt link loses focus and a rebuilt running segment restarts its pulse. */
+function stable<T>(list: () => readonly T[]): () => T[] {
+  let prev = new Map<string, T>();
+  return createMemo(() => {
+    const next = new Map<string, T>();
+    const out = list().map((x, i) => {
+      const k = `${i}:${JSON.stringify(x)}`;
+      const kept = prev.get(k) ?? x;
+      next.set(k, kept);
+      return kept;
+    });
+    prev = next;
+    return out;
+  });
+}
 
 const CHIP_TONE: Record<LandingChip["tone"], string> = { neutral: "", accent: " chip-accent", warn: " chip-warn", success: " chip-success", error: " chip-error" };
 
@@ -25,15 +42,15 @@ function Chip(props: { chip: LandingChip }) {
 }
 
 /** The step track: one rounded segment per step; the review's marker beside it, never a segment. */
-function Track(props: { bar: LandingProjectBar; chips: JSX.Element; hasChips: boolean }) {
+function Track(props: { bar: LandingProjectBar }) {
+  const segments = stable(() => props.bar.segments);
   return (
-    <Show when={props.bar.segments.length > 0 || props.bar.review || props.hasChips}>
-      <span class="landing-track-row">
-        <span class="landing-track" aria-hidden="true">
-          <For each={props.bar.segments}>{(s: LandingSegment) => <span class={`landing-seg landing-seg-${s.state}`} style={s.progress !== undefined ? { "--landing-progress": `${Math.round(s.progress * 100)}%` } : undefined} title={s.label} />}</For>
+    <Show when={props.bar.segments.length > 0 || props.bar.review}>
+      <span class="landing-track-row" aria-hidden="true">
+        <span class="landing-track">
+          <For each={segments()}>{(s: LandingSegment) => <span class={`landing-seg landing-seg-${s.state}`} style={s.progress !== undefined ? { "--landing-progress": `${Math.round(s.progress * 100)}%` } : undefined} title={s.label} />}</For>
         </span>
-        <Show when={props.bar.review}>{(r) => <span class={`landing-review landing-review-${r().state}`} aria-hidden="true">{r().label}</span>}</Show>
-        {props.chips}
+        <Show when={props.bar.review}>{(r) => <span class={`landing-review landing-review-${r().state}`}>{r().label}</span>}</Show>
       </span>
     </Show>
   );
@@ -51,19 +68,19 @@ function Face(props: { model: LandingBarModel; open: boolean; chevron?: false })
         <span class="landing-head">
           <span class="landing-title">{top().title}</span>
         </span>
-        <span class="landing-sub">{top().sub}</span>
-        {/* The chips sit on the track's row, so the title and sub line keep the bar's full width. */}
-        <Track
-          bar={top()}
-          hasChips={!!(top().needsChip || top().chip || props.model.moreChip)}
-          chips={
+        {/* The chips share the sub line's row and wrap under it when they don't fit, so the title keeps the
+            bar's width and the track stays full width under both. */}
+        <span class="landing-subrow">
+          <span class="landing-sub">{top().sub}</span>
+          <Show when={top().needsChip || top().chip || props.model.moreChip}>
             <span class="landing-chips" aria-hidden="true">
               <Show when={top().needsChip}>{(c) => <Chip chip={c()} />}</Show>
               <Show when={top().chip}>{(c) => <Chip chip={c()} />}</Show>
               <Show when={props.model.moreChip}>{(c) => <Chip chip={c()} />}</Show>
             </span>
-          }
-        />
+          </Show>
+        </span>
+        <Track bar={top()} />
       </span>
       <Show when={props.chevron !== false}>
         <span class={`landing-chevron${props.open ? " landing-chevron-open" : ""}`} aria-hidden="true">
@@ -118,7 +135,9 @@ function Action(props: { action: LandingAction; onDone?: () => void }) {
 /** The detail: the top project's lines and actions, then every other busy project, one line each. */
 export function LandingDetail(props: { model: LandingBarModel; onNavigate?: () => void; id?: string }) {
   const top = () => props.model.top;
-  const others = () => props.model.all.slice(1);
+  const others = stable(() => props.model.all.slice(1));
+  const lines = stable(() => props.model.top.lines);
+  const actions = stable(() => props.model.top.actions);
   return (
     <div class="landing-detail" id={props.id}>
       <Show when={props.model.all.length > 1}>
@@ -126,7 +145,7 @@ export function LandingDetail(props: { model: LandingBarModel; onNavigate?: () =
       </Show>
       <Show when={top().lines.length > 0}>
         <ul class="landing-detail-lines">
-          <For each={top().lines}>
+          <For each={lines()}>
             {(l) => (
               <li class={`landing-line${l.mono ? " landing-line-mono" : ""}${l.tone ? ` landing-line-${l.tone}` : ""}`}>
                 <Show when={l.href} fallback={l.text}>
@@ -142,7 +161,7 @@ export function LandingDetail(props: { model: LandingBarModel; onNavigate?: () =
         </ul>
       </Show>
       <div class="landing-actions">
-        <For each={top().actions}>{(a) => <Action action={a} onDone={props.onNavigate} />}</For>
+        <For each={actions()}>{(a) => <Action action={a} onDone={props.onNavigate} />}</For>
       </div>
       <Show when={others().length > 0}>
         <ul class="landing-detail-others" aria-label="Other busy projects">

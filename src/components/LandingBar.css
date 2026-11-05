@@ -58,7 +58,10 @@
   line-height: var(--lh-caption);
   font-weight: var(--fw-semibold);
 }
-.landing-chips { flex: none; display: inline-flex; gap: var(--space-1); }
+/* The sub line and the chips: the sub takes what is left, at least 140px, else the chips wrap under it. */
+.landing-subrow { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--space-2); min-width: 0; }
+.landing-subrow > .landing-sub { flex: 1 1 140px; }
+.landing-chips { flex: none; display: inline-flex; flex-wrap: wrap; gap: var(--space-1); }
 .landing-sub {
   min-width: 0;
   font-size: 12px;
@@ -70,8 +73,7 @@
 
 /* ---- the step track: 4px segments, 3px apart, rounded; the review's marker beside it ------------- */
 .landing-track-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; margin-top: 3px; }
-/* With no segments (paused, needs you), the chips stand alone at the row's start. */
-.landing-track:empty { display: none; }
+
 .landing-track { flex: 1; min-width: 0; display: flex; gap: 3px; }
 .landing-seg {
   flex: 1 1 0;
@@ -150,7 +152,9 @@
 .landing-strip .landing-head { flex: 0 1 auto; max-width: 70%; }
 .landing-strip .landing-title,
 .landing-strip .landing-sub { display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
-.landing-strip .landing-sub { flex: 1 1 0; }
+.landing-strip .landing-subrow { flex: 1 1 0; flex-wrap: nowrap; }
+.landing-strip .landing-subrow > .landing-sub { flex: 1 1 0; }
+.landing-strip .landing-chips { flex-wrap: nowrap; }
 .landing-strip .landing-sub::before { content: "· "; }
 .landing-strip .landing-track-row { flex: 0 0 100%; margin-top: 3px; }
 .landing-strip .landing-chip { padding-block: 0; }

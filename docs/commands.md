@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 530 |
-| Routes a catalogue entry points at | 159 |
-| Catalogue entries | 219 |
+| Routes registered | 535 |
+| Routes a catalogue entry points at | 164 |
+| Catalogue entries | 224 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -28,11 +28,11 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
 | Class: Left as is, by choice | 249 |
-| Class: Page plumbing | 10 |
+| Class: Page plumbing | 11 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
 | Class: Approvals and grants | 5 |
-| Pending (not yet a command) | 24 |
+| Pending (not yet a command) | 23 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 9 |
 | Hand-written tool specs | 129 |
@@ -156,6 +156,11 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.update` | Edit Project | changes | `PATCH /api/projects/:pid` | admin |
 | `project.claude-login.get` | Show Project Claude Login | looks | `GET /api/projects/:pid/claude-login` | sessions |
 | `project.claude-login.set` | Set Project Claude Login | changes | `PUT /api/projects/:pid/claude-login` | admin |
+| `project.coding.start` | New Chat in Project | changes | `POST /api/projects/:pid/overseer/coding` | admin |
+| `project.icon.get` | Show Project Icon | looks | `GET /api/projects/:pid/icon/info` | sessions |
+| `project.icon.upload` | Upload Project Icon | changes | `PUT /api/projects/:pid/icon` | admin |
+| `project.icon.letters` | Use Project Letters | changes | `PATCH /api/projects/:pid/icon` | admin |
+| `project.icon.remove` | Remove Project Icon | changes | `DELETE /api/projects/:pid/icon` | admin |
 | `project.archive` | Archive Project | changes | `POST /api/projects/:pid/archive` | admin |
 | `project.unarchive` | Unarchive Project | changes | `POST /api/projects/:pid/unarchive` | admin |
 | `project.preview.off` | Turn Off Preview Link | changes | `POST /api/previews/:id/off` | admin |
@@ -279,7 +284,6 @@ class, leaves it, and a new route never joins it.
 | `POST /api/projects/:pid/held/:holdId/cancel` | admin |
 | `POST /api/projects/:pid/overseer` | admin |
 | `POST /api/projects/:pid/overseer/clear` | admin |
-| `POST /api/projects/:pid/overseer/coding` | admin |
 | `POST /api/projects/:pid/overseer/items/code` | admin |
 | `PUT /api/projects/:pid/overseer/memory` | admin |
 | `POST /api/projects/:pid/overseer/message` | admin |
@@ -706,9 +710,9 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/voice/transcribe` | admin |
 | `POST /api/voice/warm` | admin |
 
-### Page plumbing (10)
+### Page plumbing (11)
 
-Requests a view, the composer or a link card makes to draw itself (attachments and uploads, a tool row's contents, a link's thread and seen mark, the remote folder picker's listing, the explanations feed, the empty list's folder name). Exactly these routes (`PAGE_PLUMBING`).
+Requests a view, the composer or a link card makes to draw itself (attachments and uploads, a tool row's contents, a link's thread and seen mark, the remote folder picker's listing, the explanations feed, the empty list's folder name, a project's icon picture). Exactly these routes (`PAGE_PLUMBING`).
 
 | Route | Mesh need |
 | --- | --- |
@@ -717,6 +721,7 @@ Requests a view, the composer or a link card makes to draw itself (attachments a
 | `GET /api/explanations` | sessions |
 | `POST /api/links/:id/seen` | sessions |
 | `GET /api/links/:id/thread` | sessions |
+| `GET /api/projects/:pid/icon` | sessions |
 | `GET /api/projects/:pid/mcp` | sessions |
 | `GET /api/sessions/dir` | sessions |
 | `GET /api/targets/:name/folders` | sessions |
@@ -826,10 +831,15 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `PUT /api/projects/:pid/claude-login` | admin | `project.claude-login.set` |
 | `GET /api/projects/:pid/costs` | sessions | `project.costs` |
 | `GET /api/projects/:pid/files` | sessions | `project.files.list` |
+| `DELETE /api/projects/:pid/icon` | admin | `project.icon.remove` |
+| `PATCH /api/projects/:pid/icon` | admin | `project.icon.letters` |
+| `PUT /api/projects/:pid/icon` | admin | `project.icon.upload` |
+| `GET /api/projects/:pid/icon/info` | sessions | `project.icon.get` |
 | `GET /api/projects/:pid/offers` | sessions | `project.offers.list` |
 | `GET /api/projects/:pid/overseer` | sessions | `project.overseer.get` |
 | `PATCH /api/projects/:pid/overseer` | admin | `project.overseer.settings.set` |
 | `GET /api/projects/:pid/overseer/actions` | sessions | `project.overseer.actions` |
+| `POST /api/projects/:pid/overseer/coding` | admin | `project.coding.start` |
 | `GET /api/projects/:pid/overseer/idea` | sessions | `project.overseer.idea.get` |
 | `PATCH /api/projects/:pid/overseer/idea` | admin | `project.overseer.idea.update` |
 | `GET /api/projects/:pid/overseer/ideas` | sessions | `project.overseer.idea.list` |

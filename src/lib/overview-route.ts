@@ -16,6 +16,38 @@ export function openOverview(): void {
   location.hash = OVERVIEW_HREF;
 }
 
+/** The tab's mark that Sova was opened in it once already: a reload keeps where it is. */
+export const LAUNCH_KEY = "sova:launched";
+
+/** Whether opening Sova at this address lands on Home: a narrow viewport (a phone, a folded Fold) at the plain address. */
+export const homeOnBoot = (hash: string, narrow: boolean): boolean => narrow && (hash === "" || hash === "#" || hash === "#/");
+
+/**
+ * A fresh launch on a narrow viewport (§app.shell/overview): once per tab, the plain address becomes the list with Home
+ * one history entry above it, as if the four-squares button had been pressed, so Back (and the Sessions card) reach the
+ * list and Back from Home never closes the app. A reload or a later visit to the list never redirects: the tab's
+ * sessionStorage mark says Sova was already opened. Returns whether it went to Home. Run before routes are read.
+ */
+export function launchHome(env: {
+  hash: string;
+  narrow: boolean;
+  storage: Pick<Storage, "getItem" | "setItem"> | null;
+  replace(hash: string): void;
+  push(hash: string): void;
+}): boolean {
+  try {
+    if (env.storage?.getItem(LAUNCH_KEY)) return false;
+    env.storage?.setItem(LAUNCH_KEY, "1");
+  } catch {
+    // No storage: every load is a launch.
+  }
+  if (!homeOnBoot(env.hash, env.narrow)) return false;
+  env.replace("#/");
+  env.push(OVERVIEW_HREF);
+  fromList = true;
+  return true;
+}
+
 /**
  * Back to the list from the overview (its Sessions card): history.back() when the list's button
  * brought us here, so Back doesn't then return to the overview; otherwise a new `#/` entry.

@@ -235,6 +235,8 @@ export interface MergeEntry {
    *  branch has a later entry for the same target; `merged`: its sent-back commit or the branch's tip is already in the
    *  target; `gone`: the branch or its worktree folder was removed. A settled entry leaves the Sent back list. */
   settled?: MergeSettled;
+  /** What the branch does at the approved commit (BranchSummary): the view's, never stored. Additive. */
+  summary?: BranchSummary;
   /** needs-fix only, stored at the hand-back: why it was sent back. Absent on entries sent back before it was kept:
    *  read as not the drafts' (the queue infers `drafts` once from a run whose docs step failed). */
   sentBackFor?: SentBackFor;
@@ -462,6 +464,7 @@ export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "
   reviewKit?: boolean;
 };
 
+
 /** A branch's entry as the session list carries it (protocol.ts SessionBranchQueue): its state, never a precomputed
  *  key, so a new state flows through, and the fields a row's words read. */
 export type BranchQueueFacts = Pick<WorktreeQueueInfo, "state" | "commit" | "position" | "reason" | "conflict" | "review" | "request" | "settled" | "redrafted">;
@@ -479,10 +482,25 @@ export const branchQueueOf = (q: WorktreeQueueInfo): BranchQueueFacts => ({
   ...(q.redrafted ? { redrafted: true as const } : {}),
 });
 
+/**
+ * What a branch does, in up to 5 plain bullets (the summary-line model writes them from the branch's commit messages
+ * and the parts it changed, once it reads Ready to land for its commit). `commit`: the commit the row is about.
+ * `writing`: the bullets for it are being written now; `failed`: they couldn't be (Try Again asks again); `ready`:
+ * `bullets` are shown. `stale`: the bullets shown were written for an earlier commit of the branch. Additive.
+ */
+export interface BranchSummary {
+  commit: string;
+  state: "ready" | "writing" | "failed";
+  bullets?: string[];
+  stale?: { commit: string };
+}
+
 export interface MergeReady {
   branch: string;
   worktree: string;
   commit: string;
+  /** What the branch does (BranchSummary), once anything is known. Additive. */
+  summary?: BranchSummary;
   /** Commits ahead of the target. */
   ahead: number;
   /** The chat the branch belongs to (its id), by the rule Land records too (server/merge-queue/owners.ts): the chat

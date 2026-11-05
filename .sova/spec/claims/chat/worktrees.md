@@ -304,7 +304,9 @@ its entry's state instead, in the words the composer's worktrees control uses
 Conflict, Behaviour differs, Review flagged, Can't tell whose failure, Drafts changed, Needs a fix, and Landed with its commit
 and its notes (§app.merge-queue/note) under it, plus "1 newer commit not included" when the branch
 moved past the approved commit. **The row's action** is the modal's, from the same row: Land (with
-its menu) on Ready or Drafts changed (on Needs a fix only once its chat has fixed it: at the same
+its menu), which asks once before it queues anything, its confirmation right-aligned under the row
+(§chat.composer/land-confirm), laid out as the modal's rows are (§chat.composer/worktrees-control, "Row
+layout"), on Ready or Drafts changed (on Needs a fix only once its chat has fixed it: at the same
 commit for a branch sent back for its drafts once they fit, else at a newer commit,
 §chat.composer/worktrees-control), Land This Commit Again and Remove from Queue on every Needs a fix
 row, Cancel on a queued row, Accept and Send Back on Behaviour differs, Land Anyway and Send Back on
@@ -320,7 +322,7 @@ uncommitted files included and marked as uncommitted; a merged branch shows what
 Ready, Landing specs or a queue state and offers no Land: a ready branch reads Ready to merge, and
 its line ends "Say “land it” in the chat to merge it into main.". A project on the Projects list
 whose merge setup isn't done keeps **Set Up Queue** on such a row, which opens its Merge Queue tab
-(§app.merge-queue/setup). The section's **View Merge Queue** shows, as the modal's does, only for
+(§app.merge-queue/setup). The section's **View Merge Queue** shows, as the modal's Merge Queue link does, only for
 a repository on the Projects list (§chat.composer/worktrees-control). The pane, the composer's control and the Merge Queue view read the same
 state and stay in sync; nothing in the section shows live state or offers a restart. Under the facts, one visible
 muted line gives the reason, so a phone gets it without hover: the readiness's `reason` ("Ready to

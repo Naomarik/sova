@@ -8,12 +8,13 @@
       "§chat.worktrees/land-own-word",
       "§chat.composer/worktrees-control",
       "§chat.worktrees/pane",
-      "§chat.worktrees/ready-to-land"
+      "§chat.worktrees/ready-to-land",
+      "§chat.composer/land-confirm"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T14:54Z",
-      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
+      "at": "2026-11-04T21:36Z",
+      "source": "pi-session:6295e4a0-38a1-4768-a7a6-2787ccf54172#23af1717"
     },
     "code": [
       "server/merge-queue/queue.ts",
@@ -112,9 +113,9 @@
       "src/app.css"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T18:31Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
+      "by": "Omar",
+      "at": "2026-11-05T02:42Z",
+      "source": "pi-session:ca4bcdc5-a6ff-4dbd-bf8b-509ecc177885#bcd45c06"
     }
   },
   "§app.merge-queue/checks": {
@@ -573,9 +574,9 @@
       "src/lib/merge-queue-initialize.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-04T00:35Z",
-      "source": "pi-session:7a7258e9-bad0-4fcd-9d36-2acd1d3e9527#1e870985"
+      "by": "Omar",
+      "at": "2026-11-05T02:42Z",
+      "source": "pi-session:ca4bcdc5-a6ff-4dbd-bf8b-509ecc177885#bcd45c06"
     }
   },
   "§app.merge-queue/settings-save": {
@@ -686,12 +687,13 @@
       "§app/commands",
       "§app.merge-queue/owner",
       "§chat.changes/viewer",
-      "§chat.changes/endpoint"
+      "§chat.changes/endpoint",
+      "§chat.composer/land-confirm"
     ],
     "agreed": {
       "by": "Omar",
-      "at": "2026-11-04T21:41Z",
-      "source": "pi-session:ca4bcdc5-a6ff-4dbd-bf8b-509ecc177885#8dd14eed"
+      "at": "2026-11-05T02:42Z",
+      "source": "pi-session:ca4bcdc5-a6ff-4dbd-bf8b-509ecc177885#bcd45c06"
     },
     "code": [
       "server/merge-queue/view.ts",

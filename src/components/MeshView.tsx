@@ -1,5 +1,5 @@
 import { createEffect, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { ApiError, claimMeshLogin, fetchFrontDoor, fetchMesh, fetchMeshAccess, fetchMeshCandidates, fetchMeshLogins, getClaudeAccounts, getMeshSettings, putMeshPeers, putMeshSettings } from "../lib/api";
+import { ApiError, claimMeshLogin, fetchFrontDoor, fetchMesh, fetchMeshAccess, fetchMeshCandidates, fetchMeshLogins, getClaudeAccounts, getMeshSettings, putMeshPeers, putMeshSettings, reconnectMeshHere } from "../lib/api";
 import { MESH_PRESETS, PRESET_HINT, PRESET_LABEL, type MeshAccessView, type MeshPreset } from "../lib/mesh-access";
 import { PeerAccess } from "./MeshAccess";
 import { MeshPairings } from "./MeshPairings";
@@ -35,6 +35,7 @@ import {
   STALE_BUILD_NOTE,
   type HelloChange,
   type MeshCandidate,
+  type MeshInfo,
   type MeshLoginEntry,
   type MeshPeerEntry,
   type PeerState,
@@ -179,6 +180,14 @@ function candidateNote(c: MeshCandidate): string {
   return "no Sova answering";
 }
 
+/** Why this Sova's mesh is off though peers.json lists peers (MeshInfo.homeMismatch). */
+const HOME_MISMATCH: Record<NonNullable<MeshInfo["homeMismatch"]>, string> = {
+  copied: "This Sova's data was copied from another folder that is still in use, so it isn't connected to your other devices.",
+  moved: "This Sova's data was moved from another folder, so it isn't connected to your other devices until you reconnect it here.",
+  "other-machine": "This Sova's data came from another computer, so it isn't connected to your other devices until you reconnect it here.",
+  unbound: "This Sova runs on a folder its mesh wasn't set up in, so it isn't connected to your other devices until you reconnect it here.",
+};
+
 /** `#/mesh`: every host, its state and why, editing peers.json, what syncs, and how to start. */
 export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement): void }) {
   // Every answer is the app's mesh state too: the sidebar's marks and New Session follow this page.
@@ -224,6 +233,21 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
     } catch (err) {
       setSaveError((err as Error).message);
       return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+  const reconnect = async () => {
+    if (saving()) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const next = await reconnectMeshHere();
+      setMeshState(next);
+      poll.set(next);
+      announce("Reconnected here.");
+    } catch (err) {
+      setSaveError((err as Error).message);
     } finally {
       setSaving(false);
     }
@@ -306,6 +330,21 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
             tone="error"
             title="peers.json can't be used, so the mesh is off."
             body={`No peer is reached until it's fixed. Saving the list below rewrites it. ${msg()}`}
+          />
+        )}
+      </Show>
+      <Show when={state()?.homeMismatch}>
+        {(kind) => (
+          <Banner
+            tone="warn"
+            title={HOME_MISMATCH[kind()]}
+            action={
+              <Show when={kind() !== "copied"}>
+                <button type="button" class="button button-sm" aria-disabled={saving() ? "true" : undefined} onClick={() => void reconnect()}>
+                  Reconnect Here
+                </button>
+              </Show>
+            }
           />
         )}
       </Show>

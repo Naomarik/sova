@@ -447,6 +447,23 @@ export function registerMergeCardRoutes(app: import("hono").Hono): void {
   registerLiveMergeSettingsRoutes(app);
   // How a branch lands (al_3): Update Local Main, a request's Publish, How it lands (routes-landing.ts).
   registerLiveMergeLandingRoutes(app);
+  // Try Again on a branch summary that failed (branch-summaries.ts): {branch, commit}; refused for one that worked.
+  app.post("/api/merge-queue/projects/:project/branch-summary", async (c) => {
+    const b = (await c.req.json().catch(() => null)) as { branch?: unknown; commit?: unknown } | null;
+    const bad = (message: string) => c.json({ error: { code: "invalid-request", message } }, 400);
+    if (!b || typeof b !== "object" || Array.isArray(b)) return bad("Expected JSON body { branch, commit }");
+    if (typeof b.branch !== "string") return bad("branch must be a string");
+    if (typeof b.commit !== "string") return bad("commit must be a string");
+    const branch = b.branch.trim();
+    const commit = b.commit.trim().toLowerCase();
+    if (!branch || branch.length > 255) return bad("name the branch");
+    if (!/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(commit)) return bad("commit is the full commit id the row shows");
+    const { retryBranchSummary } = await import("./wire");
+    const r = await retryBranchSummary(c.req.param("project"), branch, commit);
+    if (r.ok) return c.json({ ok: true, state: "writing" });
+    const status = r.code === "not-found" ? 404 : r.code === "busy" ? 409 : r.code === "unsupported" ? 501 : 400;
+    return c.json({ error: { code: r.code, message: r.message } }, status);
+  });
   app.get("/api/merge-queue/cards", async (c) => {
     const raw = (c.req.query("path") ?? c.req.query("session"))?.trim();
     if (!raw) return c.json({ error: "name the session (its file path or id)" }, 400);

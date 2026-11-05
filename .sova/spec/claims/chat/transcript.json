@@ -236,7 +236,8 @@
       "src/lib/explanations.ts",
       "src/components/OverviewSharesCard.tsx",
       "src/lib/session-shares.ts",
-      "src/lib/session-shares.test.ts"
+      "src/lib/session-shares.test.ts",
+      "src/components/OverviewProjects.tsx"
     ],
     "requires": [
       "§app.organizations/org-cards",
@@ -244,8 +245,14 @@
       "§app.session-list/needs-you",
       "§app.session-list/recent",
       "§mesh.ui/card",
-      "§app.extensions/cards"
-    ]
+      "§app.extensions/cards",
+      "§app.projects/home-cards"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T22:53Z",
+      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
+    }
   },
   "§chat.transcript/live-watch": {
     "kind": "behavior",
@@ -687,12 +694,13 @@
       "src/App.tsx",
       "src/lib/older-rows-view.ts",
       "src/lib/error-feed.ts",
-      "src/lib/error-feed.test.ts"
+      "src/lib/error-feed.test.ts",
+      "src/components/OverviewProjects.tsx"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-19T21:14Z",
-      "source": "pi-session:398db362-660a-4f63-967c-d28758e5179f#fb5aff13"
+      "by": "user",
+      "at": "2026-11-04T22:53Z",
+      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
     }
   },
   "§chat.transcript/streaming": {

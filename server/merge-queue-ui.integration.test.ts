@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { after, before, describe, test } from "node:test";
-import type { Browser, BrowserContext, Page } from "playwright-core";
+import type { Browser, BrowserContext, Locator, Page } from "playwright-core";
 import type { MergeCard, MergeEntry, MergeQueueView, MergeRun, WorktreeMergeProject, WorktreeQueueInfo } from "../shared/merge-queue";
 import type { SessionSummary, SessionWorktreeInfo } from "../shared/protocol";
 import type { ProjectSummary } from "../shared/projects";
@@ -82,7 +82,10 @@ const wt = (branch: string, x: Partial<SessionWorktreeInfo> = {}): SessionWorktr
 
 /** Every state a row can be in. */
 const ALL_ROWS = [
-  wt("feat/composer-drafts"),
+  wt("feat/composer-drafts", {
+    mergeOwner: { session: "s1", path: PATH, title: "Composer drafts survive reload" },
+    mergeSummary: { commit: sha("d"), state: "ready", bullets: ["Keeps a draft through a reload", "Restores the cursor where it was"] },
+  }),
   wt("feat/composer-shortcuts"),
   wt("fix/paste-images", { queue: qi({ id: "me_q", state: "queued", position: 2, eta: { startsInMs: 4 * 60_000, takesMs: 9 * 60_000 }, newerCommits: 1 }) }),
   wt("feat/draft-sync-tabs", { readiness: { path: "", branch: "feat/draft-sync-tabs", state: "in-progress", dirtyCount: 3 } }),
@@ -306,6 +309,10 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
       return route.fulfill(json(p.endsWith("runtime/merge") ? RUNTIME : WORKTREES));
     }
     if (p === "/api/transcript") return route.fulfill(json({ items, context: null }));
+    if (p === `/api/merge-queue/projects/${PID}/branch-summary`) {
+      calls.push({ verb: "branch-summary.retry", body: JSON.parse(route.request().postData() ?? "{}") });
+      return route.fulfill(json({ ok: true, state: "writing" }));
+    }
     if (p === "/api/merge-queue/cards") return route.fulfill(json({ cards: url.searchParams.get("session") === SESSION.id ? (o.cards ?? []) : [] }));
     if (p === "/api/insights/session") return route.fulfill(json({ outline: null, compactions: [], teams: [], workers: [], worktrees: moved ? moved(o.rows ?? ALL_ROWS) : (o.rows ?? ALL_ROWS) }));
     if (p === "/api/projects") return route.fulfill(json({ projects: [PROJECT] }));
@@ -336,6 +343,32 @@ const shot = async (page: Page, name: string) => {
   await page.screenshot({ path: join(dir, `${name}.png`), fullPage: false });
 };
 
+/** Every row action in `scope` (the rows' actions and an open confirm's two): Land's size, button-sm's height, at
+ *  its label's width, never stretched or lifted to 44px, on every width and pointer. The ▾ is checked for height. */
+async function rowActionsSized(scope: Locator, what: string) {
+  const r = await scope.evaluate((root) => {
+    const sm = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-sm"));
+    const bad: string[] = [];
+    let n = 0;
+    for (const el of root.querySelectorAll<HTMLElement>(":is(.wt-queue-act, .mq-row-act, .wt-queue-confirm-act) .button")) {
+      if (!el.getClientRects().length) continue;
+      n++;
+      const b = el.getBoundingClientRect();
+      const name = el.getAttribute("aria-label") ?? el.textContent?.trim() ?? "?";
+      if (Math.abs(b.height - sm) > 0.5) bad.push(`${name}: ${b.height}px tall, not ${sm}`);
+      if (el.getAttribute("aria-haspopup") === "menu") continue;
+      const cs = getComputedStyle(el);
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const natural = range.getBoundingClientRect().width + [cs.paddingLeft, cs.paddingRight, cs.borderLeftWidth, cs.borderRightWidth].reduce((s, v) => s + parseFloat(v), 0);
+      if (b.width > natural + 1.5) bad.push(`${name}: ${b.width}px wide, its label needs ${natural}`);
+    }
+    return { bad, n };
+  });
+  assert.ok(r.n > 0, `${what}: row actions found`);
+  assert.deepEqual(r.bad, [], `${what}: every row action at Land's size`);
+}
+
 async function until(what: string, ok: () => boolean | Promise<boolean>, ms = 10_000) {
   const t0 = Date.now();
   while (!(await ok())) {
@@ -347,6 +380,18 @@ async function until(what: string, ok: () => boolean | Promise<boolean>, ms = 10
 const words = async (l: { textContent(): Promise<string | null> }) => (await l.textContent()) ?? "";
 const called = (o: Opened, verb: string) => until(`a ${verb} call`, () => o.calls.some((c) => c.verb === verb));
 const lastCall = (o: Opened, verb: string) => [...o.calls].reverse().find((c) => c.verb === verb)!;
+/** Land asks first: it opens the row's confirm (its actions step aside) with focus on the confirm's action, and only
+    that action lands. `confirm` is the action's words: "Land 3 Commits" from the row's count. */
+async function confirmLand(o: Opened, scope: Locator, branch: string, confirm: string | RegExp = /^Land (\d+ Commits?|Branch)$/) {
+  const before = o.calls.filter((c) => c.verb === "merge.add").length;
+  await scope.getByRole("button", { name: `Land ${branch}`, exact: true }).click();
+  const ask = scope.getByRole("group", { name: `Land ${branch}`, exact: true });
+  await ask.waitFor();
+  assert.equal(o.calls.filter((c) => c.verb === "merge.add").length, before, "Land alone lands nothing");
+  const go = ask.getByRole("button", { name: confirm });
+  await until("focus on the confirm's action", () => go.evaluate((el) => el === document.activeElement));
+  await go.click();
+}
 
 /** No screen of the queue says Restart, live or not live. Notes are the merge thread's own words, so they're left out. */
 async function noRestartOrLive(page: Page, scope: string) {
@@ -459,9 +504,18 @@ const DIFF_PATCH = "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/
 /** An archived chat of the project, and the three ready rows: its chat known, none found, an archived one. */
 const ARCHIVED = { ...SESSION, id: "c3", path: "/w/sessions/c3.jsonl", title: "Old search", archived: true } as unknown as SessionSummary;
 const READY: MergeQueueView["ready"] = [
-  { branch: "feat/ready-one", worktree: "/w/.worktrees/sova-ready-one", commit: sha("9"), ahead: 3, added: 40, removed: 2, session: "c2" },
-  { branch: "feat/no-chat", worktree: "/w/.worktrees/sova-no-chat", commit: sha("8"), ahead: 1, added: 6, removed: 1 },
-  { branch: "feat/search-ab-with-a-much-longer-branch-name", worktree: "/w/.worktrees/sova-search-ab", commit: sha("7"), ahead: 12, added: 310, removed: 88, session: "c3", sessionArchived: true },
+  {
+    branch: "feat/ready-one",
+    worktree: "/w/.worktrees/sova-ready-one",
+    commit: sha("9"),
+    ahead: 3,
+    added: 40,
+    removed: 2,
+    session: "c2",
+    summary: { commit: sha("9"), state: "ready", bullets: ["Shows what each branch does in a few plain bullets", "Fixes the badge color on a narrow screen, so it no longer wraps onto a second line and overlaps the chat's title"] },
+  },
+  { branch: "feat/no-chat", worktree: "/w/.worktrees/sova-no-chat", commit: sha("8"), ahead: 1, added: 6, removed: 1, summary: { commit: sha("8"), state: "writing" } },
+  { branch: "feat/search-ab-with-a-much-longer-branch-name", worktree: "/w/.worktrees/sova-search-ab", commit: sha("7"), ahead: 12, added: 310, removed: 88, session: "c3", sessionArchived: true, summary: { commit: sha("7"), state: "failed", bullets: ["Searches the archive"], stale: { commit: sha("6") } } },
 ];
 const hashOf = (page: Page) => page.evaluate(() => location.hash);
 const box = async (l: { boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null> }) => (await l.boundingBox())!;
@@ -487,6 +541,13 @@ for (const width of [1280, 390]) {
       assert.match(await words(modal), /2 ready · 1 queued · 1 landed/);
       // Each live row carries its numbers against master; a landed one doesn't.
       assert.match(await words(modal.locator('[data-branch="feat/composer-drafts"]')), /3 commits · \+40 −2/);
+      // The row's top line: its chat's title (a link), then the branch; no folder; its bullets under the facts.
+      const drafts = modal.locator('[data-branch="feat/composer-drafts"]');
+      assert.match(await words(drafts.locator(".mq-head-line")), /^\s*Composer drafts survive reload\s*feat\/composer-drafts\s*$/);
+      assert.equal(await drafts.getByRole("link", { name: "Composer drafts survive reload" }).count(), 1);
+      assert.deepEqual(await drafts.locator(".mq-summary-bullets li").allInnerTexts(), ["Keeps a draft through a reload", "Restores the cursor where it was"]);
+      const wtFacts = await box(drafts.locator(".wt-queue-facts"));
+      assert.ok((await box(drafts.locator(".mq-summary-bullets"))).y >= wtFacts.y + wtFacts.height - 1, "the bullets under the facts");
       assert.doesNotMatch(await words(modal.locator('[data-branch="feat/composer-hints"]')), /commits ·/);
       assert.match(await words(modal), /Queued · 2nd/);
       assert.match(await words(modal), /starts in ~4 min · takes ~9 min/);
@@ -513,10 +574,37 @@ for (const width of [1280, 390]) {
       assert.match(text, /Master retries the save twice\./);
       assert.match(text, /Leaves a workaround in land\.ts/);
       await shot(page, `${width}-modal-all`);
+      await rowActionsSized(modal, "the modal");
 
       // The branch moves after the page read it: Land still pins the commit the row showed.
       o.move((rows) => rows.map((r) => ({ ...r, mergeStats: { ahead: 4, added: 41, removed: 2, head: sha("e") } as SessionWorktreeInfo["mergeStats"] })));
-      await modal.getByRole("button", { name: "Land feat/composer-drafts", exact: true }).click();
+      // Land asks first: the row's actions give way to the confirm, Not Yet and Escape each put them back with
+      // focus on Land, and Escape never closes the modal; only the confirm's own action lands.
+      const draftsRow = modal.locator('[data-branch="feat/composer-drafts"]');
+      const landAsk = draftsRow.getByRole("button", { name: "Land feat/composer-drafts", exact: true });
+      assert.equal((await words(landAsk)).trim(), "Land", "no ellipsis");
+      await shot(page, `${width}-modal-land-idle`);
+      await landAsk.click();
+      const ask = draftsRow.getByRole("group", { name: "Land feat/composer-drafts", exact: true });
+      await ask.waitFor();
+      assert.match(await words(ask), /Land feat\/composer-drafts\?/);
+      assert.match(await words(ask), /3 commits go to the merge queue; master moves once checks pass\./);
+      assert.deepEqual(await ask.getByRole("button").allTextContents(), ["Not Yet", "Land 3 Commits"], "Not Yet left, the action rightmost");
+      assert.equal(await draftsRow.locator(".wt-queue-act").count(), 0, "the confirm replaces the row's actions");
+      await rowActionsSized(draftsRow, "the modal's confirm");
+      await until("focus on Land 3 Commits", () => ask.getByRole("button", { name: "Land 3 Commits" }).evaluate((el) => el === document.activeElement));
+      await shot(page, `${width}-modal-land-confirm`);
+      await ask.getByRole("button", { name: "Not Yet" }).click();
+      await until("the confirm closed", async () => (await ask.count()) === 0);
+      await until("focus back on Land", () => landAsk.evaluate((el) => el === document.activeElement));
+      await landAsk.click();
+      await ask.waitFor();
+      await page.keyboard.press("Escape");
+      await until("Escape closed the confirm", async () => (await ask.count()) === 0);
+      assert.equal(await page.getByRole("dialog", { name: "Worktrees" }).count(), 1, "Escape on the confirm leaves the modal open");
+      await until("focus back on Land after Escape", () => landAsk.evaluate((el) => el === document.activeElement));
+      assert.equal(o.calls.filter((c) => c.verb === "merge.add").length, 0, "nothing landed yet");
+      await confirmLand(o, modal, "feat/composer-drafts", "Land 3 Commits");
       await called(o, "merge.add");
       assert.deepEqual(lastCall(o, "merge.add").body, { checkout: "/w/.worktrees/sova-composer-drafts", commit: sha("d") });
 
@@ -573,6 +661,7 @@ for (const width of [1280, 390]) {
       await modal.waitFor();
       assert.match(await words(modal), /The queue is paused: the project folder has uncommitted edits\./);
       assert.equal(await modal.getByRole("link", { name: "Set Up Queue" }).getAttribute("href"), `#/projects/${PID}/merge-queue`);
+      await rowActionsSized(modal, "Set Up Queue");
       assert.equal(await modal.getByRole("button", { name: "Land feat/other", exact: true }).count(), 0);
       // Listed, not set up: it merges plainly (al_1 a5).
       assert.match(await words(modal.locator('[data-branch="feat/other"]')), /Ready to merge.*Say “land it” in the chat to merge it into main[.]/);
@@ -602,7 +691,7 @@ for (const width of [1280, 390]) {
       const t = await words(modal);
       assert.ok(t.includes(`doesn't parse: ${bad}. Fix it on the target, or land a branch that fixes it`));
       assert.equal(await modal.getByRole("link", { name: "Set Up Queue" }).count(), 0);
-      await modal.getByRole("button", { name: "Land feat/fix-definition", exact: true }).click();
+      await confirmLand(o, modal, "feat/fix-definition");
       await until("a land", () => o.calls.some((c) => c.verb === "merge.add" && c.body.checkout === "/w/.worktrees/sova-fix-definition"));
       await o.ctx.close();
     });
@@ -622,9 +711,10 @@ for (const width of [1280, 390]) {
       assert.equal(await section.getByRole("button", { name: "More ways to land fix/draft-autosave-race" }).count(), 0, "sent back: no Land menu (al_4)");
       await section.getByRole("button", { name: "Cancel landing fix/paste-images" }).click();
       await called(o, "merge.cancel");
-      await section.getByRole("button", { name: "Land feat/composer-drafts", exact: true }).click();
+      await confirmLand(o, section, "feat/composer-drafts", "Land 3 Commits");
       await called(o, "merge.add");
       assert.equal(await section.getByRole("link", { name: "View Merge Queue" }).getAttribute("href"), `#/projects/${PID}/merge-queue`);
+      await rowActionsSized(section, "the pane");
       await noRestartOrLive(page, ".wt-queue-list");
       await shot(page, `${width}-pane`);
       await o.ctx.close();
@@ -650,6 +740,7 @@ for (const width of [1280, 390]) {
       assert.match(text, /Sent back to its chat/);
       assert.match(text, new RegExp(NOTE.replace(/[.;]/g, "\\$&")));
       await shot(page, `${width}-queue`);
+      await rowActionsSized(tab, "the tab");
       await tab.getByRole("button", { name: "Pause Queue" }).click();
       await called(o, "merge.pause");
       await tab.getByRole("button", { name: "Cancel landing feat/replay-timeouts" }).click();
@@ -660,13 +751,22 @@ for (const width of [1280, 390]) {
       await until("a send-back", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "send-back" && c.body.entry === "me_b"));
       await tab.getByRole("button", { name: "Land feat/hack anyway" }).click();
       await until("a land-anyway", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "land-anyway"));
-      // The head's and the Merge thread card's (al_7).
-      assert.equal(await tab.getByRole("link", { name: "Open Merge Thread" }).count(), 2);
-      assert.equal(await tab.locator(".mq-head").getByRole("link", { name: "Open Merge Thread" }).count(), 1);
+      // Once, in the Merge thread card; the head has Queue Settings and Pause Queue only.
+      assert.equal(await tab.getByRole("link", { name: "Open Merge Thread" }).count(), 1);
+      assert.equal(await tab.locator(".mq-thread-card").getByRole("link", { name: "Open Merge Thread" }).count(), 1);
+      assert.equal(await tab.locator(".mq-head").getByRole("link", { name: "Open Merge Thread" }).count(), 0);
+      // The head's buttons and the card's links: an even gap, on one centre line.
+      for (const scope of [".mq-head .button-row", ".mq-thread-card .button-row"]) {
+        const b = await tab.locator(scope).first().evaluate((row) => [...row.children].map((c) => c.getBoundingClientRect()).map((r) => ({ l: r.left, r: r.right, mid: r.top + r.height / 2 })));
+        for (let i = 1; i < b.length; i++) {
+          assert.ok(b[i]!.l - b[i - 1]!.r >= 7.5, `${scope}: a gap between buttons ${i - 1} and ${i}`);
+          assert.ok(Math.abs(b[i]!.mid - b[0]!.mid) < 1, `${scope}: button ${i} on the first one's centre line`);
+        }
+      }
       // Ready to land, not approved: Land and its ▾, on the queue's own page.
       const ready = tab.locator('[data-branch="feat/ready-one"]');
       assert.match(await words(ready), /3 commits ahead/);
-      await ready.getByRole("button", { name: "Land feat/ready-one", exact: true }).click();
+      await confirmLand(o, ready, "feat/ready-one", "Land 3 Commits");
       await until("a land from the ready list", () => o.calls.some((c) => c.verb === "merge.add" && c.body.branch === "feat/ready-one"));
       assert.equal(lastCall(o, "merge.add").body.project, ROOT_DIR);
       assert.equal(lastCall(o, "merge.add").body.commit, sha("9"), "the ready row's shown commit is pinned");
@@ -1008,6 +1108,27 @@ for (const width of [1280, 390]) {
       assert.match(text, /The branch changes statecharts\/merge\.ts\./);
       assert.match(text, /skipped: no change to its paths/);
       assert.match(text, /Nothing has merged from this run\./);
+      // Back to Queue is the arrow before the page's path; the actions are View Logs and Open Merge Thread, one line.
+      const back = page.locator(".mq-crumbs").getByRole("link", { name: "Back to Queue" });
+      assert.equal(await back.getAttribute("href"), `#/projects/${PID}/merge-queue`);
+      assert.equal(await page.locator(".mq-run-actions").getByRole("link", { name: "Back to Queue" }).count(), 0);
+      const acts = await page.locator(".mq-run-actions").evaluate((row) => [...row.children].map((c) => c.getBoundingClientRect().top));
+      assert.ok(acts.every((t) => Math.abs(t - acts[0]!) < 1), `the run's actions on one line (${acts})`);
+      // A tag stays on its step name's line, held to its last word: it drops under only when that word and it
+      // can't share a line of the name's column at all (a long tag at phone width).
+      const tagLines = await page.locator(".mq-run-steps .mq-step-tail").evaluateAll((tails) =>
+        tails.map((t) => {
+          const chip = t.querySelector(".chip")!.getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(t.firstChild!);
+          const word = range.getBoundingClientRect();
+          const room = t.closest(".mq-step-name")!.getBoundingClientRect().width;
+          const gap = parseFloat(getComputedStyle(t).columnGap) || 0;
+          return { word: word.top + word.height / 2, chip: chip.top + chip.height / 2, fits: word.width + gap + chip.width <= room, w: t.textContent };
+        }),
+      );
+      assert.ok(tagLines.some((l) => l.fits), "tagged steps found");
+      for (const l of tagLines) if (l.fits) assert.ok(Math.abs(l.word - l.chip) < 6, `${l.w}: its tag on its name's last line`);
       await page.getByRole("button", { name: "Show the log of Setup" }).click();
       await until("the setup log", async () => /log of setup/.test(await words(page.locator(".mq-steps"))));
       assert.equal(lastCall(o, "merge.logs").body.step, "setup");
@@ -1086,20 +1207,37 @@ for (const width of [1280, 390]) {
       const ready = tab.locator('[data-branch="feat/ready-one"]');
       await ready.waitFor({ timeout: 20_000 });
       const start = await hashOf(page);
-      // The branch on its own line; the chip first in the facts, with the commit and the numbers; then the chat line.
+      // The top line: the chat's title (a link), then the branch in small mono; no folder, no "Chat" label. The chip
+      // first in the facts, with the commit and the numbers; the branch's bullets under them.
+      const head = ready.locator(".mq-head-line");
+      assert.match(await words(head), /^\s*Fix the badge\s*feat\/ready-one\s*$/);
       assert.equal((await words(ready.locator(".mq-branch"))).trim(), "feat/ready-one");
+      assert.equal(await ready.locator(".mq-folder").count(), 0, "no worktree folder");
+      assert.doesNotMatch(await words(ready), /\bChat\b/);
       const facts = ready.locator(".mq-facts");
       assert.match(await words(facts.locator(":scope > *").first()), /Ready/);
       assert.match(await words(facts), /9999999\s*3 commits ahead · \+40 −2/);
       const chat = ready.getByRole("link", { name: "Fix the badge" });
       assert.equal(await chat.getAttribute("href"), `#/s/${encodeURIComponent(CODING_B.path)}`);
-      // The folder: its full path on a wide screen, its last name on a phone (the full path in its title).
-      const folder = ready.locator(".mq-folder");
-      assert.equal(await folder.getAttribute("title"), "/w/.worktrees/sova-ready-one");
-      assert.equal((await folder.innerText()).trim(), width < 600 ? "sova-ready-one" : "/w/.worktrees/sova-ready-one");
+      // Its bullets, under the facts, in order; the long one wraps, never scrolls sideways.
+      const bullets = ready.locator(".mq-summary-bullets li");
+      assert.equal(await bullets.count(), 2);
+      assert.equal((await words(bullets.first())).trim(), "Shows what each branch does in a few plain bullets");
+      const factsBox = await box(facts);
+      assert.ok((await box(bullets.first())).y >= factsBox.y + factsBox.height - 1, "the bullets under the facts line");
+      assert.equal(await ready.locator(".mq-summary [role=status]").count(), 0);
+      // Writing: "Summarizing…", busy to a screen reader.
+      const writing = tab.locator('[data-branch="feat/no-chat"] .mq-summary-line[aria-busy="true"]');
+      assert.equal((await words(writing)).trim(), "Summarizing…");
       // An archived chat still opens, marked; no chat found says so and isn't a target.
       const archived = tab.locator('[data-branch="feat/search-ab-with-a-much-longer-branch-name"]');
-      assert.match(await words(archived.locator(".mq-chat")), /Chat\s*Old search · archived/);
+      assert.match(await words(archived.locator(".mq-head-line")), /Old search\s*feat\/search-ab-with-a-much-longer-branch-name\s*archived/);
+      // A failure: the line and Try Again (only then), over the earlier commit's bullets, marked.
+      assert.match(await words(archived.locator(".mq-summary")), /Couldn't summarize this branch\.\s*Try Again\s*From an earlier commit\s*Searches the archive/);
+      assert.equal(await ready.getByRole("button", { name: /Try summarizing/ }).count(), 0, "no rewrite on a summary that worked");
+      await archived.getByRole("button", { name: "Try summarizing feat/search-ab-with-a-much-longer-branch-name again" }).click();
+      await until("a retry", () => o.calls.some((c) => c.verb === "branch-summary.retry" && c.body.commit === sha("7") && c.body.branch === "feat/search-ab-with-a-much-longer-branch-name"));
+      assert.equal(await hashOf(page), start, "Try Again doesn't open the chat");
       const none = tab.locator('[data-branch="feat/no-chat"]');
       assert.match(await words(none), /No chat found for this worktree/);
       assert.equal(await none.evaluate((el) => el.classList.contains("mq-tap")), false);
@@ -1133,19 +1271,32 @@ for (const width of [1280, 390]) {
       await page.keyboard.press("Escape");
       await until("the viewer closed", async () => (await viewer.count()) === 0);
 
-      // Land: queued, nothing opened.
+      // Land: its confirm, then queued, nothing opened; a tap on the confirm's words opens nothing either.
       await ready.getByRole("button", { name: "Land feat/ready-one", exact: true }).click();
+      const readyAsk = ready.getByRole("group", { name: "Land feat/ready-one", exact: true });
+      await readyAsk.locator(".wt-queue-confirm-line").click();
+      assert.equal(await hashOf(page), start, "a tap on the confirm doesn't open the chat");
+      await shot(page, `${width}-queue-land-confirm`);
+      await rowActionsSized(ready, "the tab's confirm");
+      await readyAsk.getByRole("button", { name: "Land 3 Commits" }).click();
       await until("a land", () => o.calls.some((c) => c.verb === "merge.add" && c.body.branch === "feat/ready-one"));
       assert.equal(await hashOf(page), start, "Land doesn't open the chat");
 
-      // A phone: no sideways scroll; the actions on their own line, Review Changes left of Land, both 44px tall.
+      // A phone: no sideways scroll; the actions on their own line, Review Changes left of Land, at Land's size.
       await noSideScroll(page);
       const r = await box(review);
       const land = await box(ready.getByRole("button", { name: "Land feat/ready-one", exact: true }));
-      const chatLine = await box(ready.locator(".mq-chat"));
-      assert.ok(r.x < land.x, "Review Changes before Land");
+      const chatLine = await box(ready.locator(".mq-summary"));
+      // Unfolded: the actions a column at the row's top right, Review Changes over Land; folded, one line.
+      // Land and its ▾ keep their own size: never taller than Review Changes, never stretched to its width.
+      const split = await box(ready.locator(".wt-queue-split"));
+      assert.ok(Math.abs(land.height - r.height) <= 0.5 && Math.abs(split.height - r.height) <= 0.5, `Land as tall as Review Changes (${land.height}, ${split.height}, ${r.height})`);
+      await rowActionsSized(tab, "the tab's rows");
+      if (width >= 768) {
+        assert.ok(r.y < land.y && Math.abs(r.x + r.width - (split.x + split.width)) < 2, "Review Changes over Land, one column, right edges together");
+        assert.ok(split.width < r.width - 8, `the split at its own width, not stretched (${split.width} vs ${r.width})`);
+      } else assert.ok(r.x < land.x, "Review Changes before Land");
       if (width < 600) {
-        assert.ok(r.height >= 44 && land.height >= 44, `44px controls (${r.height}, ${land.height})`);
         assert.ok(r.y >= chatLine.y + chatLine.height - 1 && Math.abs(r.y - land.y) < 2, "the actions on their own line, together");
         const row = await box(ready);
         assert.ok(land.x + land.width > row.x + row.width - 64, "Land at the row's right");
@@ -1171,12 +1322,12 @@ for (const width of [1280, 390]) {
       for (const b of ["feat/composer-drafts", "fix/paste-images", "feat/draft-sync-tabs", "fix/draft-autosave-race", "fix/conflict-chip", "feat/hack"])
         assert.equal(await modal.getByRole("button", { name: `Review Changes on ${b}` }).count(), 1, b);
       const row = modal.locator('[data-branch="feat/composer-drafts"]');
-      if (width < 600) assert.equal((await row.locator(".wt-queue-path").innerText()).trim(), "sova-composer-drafts");
+      assert.equal(await row.locator(".wt-queue-path").count(), 0, "no worktree folder");
       const review = row.getByRole("button", { name: "Review Changes on feat/composer-drafts" });
       if (width < 600) {
         const r = await box(review);
         const land = await box(row.getByRole("button", { name: "Land feat/composer-drafts", exact: true }));
-        assert.ok(r.height >= 44 && land.height >= 44, "44px controls");
+        assert.ok(Math.abs(r.height - land.height) <= 0.5, `Review Changes as tall as Land (${r.height}, ${land.height})`);
         assert.ok(r.x < land.x && Math.abs(r.y - land.y) < 2, "Review Changes left of Land on one line");
       }
       await shot(page, `${width}-modal-review-row`);

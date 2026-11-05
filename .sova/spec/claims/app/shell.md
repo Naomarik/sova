@@ -102,20 +102,33 @@ restart) and not only after the keyboard has opened once.
 - **At 768px and up nothing changes.** The overview (§chat.transcript/landing-page) is the
   main column while no session is open, beside the list. `#/overview` shows the same page, and there
   is no Overview button.
-- **Below 768px `#/` is still the list**, and a phone's first screen. The list's head row (the
+- **Below 768px `#/` is still the list**, unchanged. The list's head row (the
   `sova` brand, `New Session`) gets one more control, right after the brand: an icon-only
   `button-icon button-ghost` button (`grid`: four squares; `aria-label` and
   `title` "Overview") that opens `#/overview`, one history entry above the list.
+- **Opening Sova on a phone lands on the overview.** Below 768px, a fresh launch (opening the app,
+  or Sova's plain address in a new tab) at no hash, `#` or `#/` opens `#/overview` one history entry
+  above the list, before any route is read, so the first screen is the overview with its projects
+  first (§app.projects/home-cards). Back from it reaches the list, unchanged, and Back from the list
+  leaves it there: it never bounces to the overview. A reload keeps you where you were: a tab's
+  first load, at any width and on any route, sets `sessionStorage["sova:launched"]`, and no later
+  load in that tab lands on the overview (with no storage every load counts as a launch). It is
+  read once, before routes are, and never on a hash change: every later move to the list (Back
+  from a chat, a "Back to Sessions" link, the Sessions card) still goes to the list. Opening any
+  other route (a session, a page) opens it, as before; at 768px and up nothing is pushed.
 - **`#/overview` on a phone keeps the head.** The main column shows the same head row the list has
   (`.sidebar-head.overview-bar`: the brand, then `New Session`; no Overview button) above the
-  overview. The brand is a link to `#/`, the list, as it is in the list. Back returns to the list.
+  overview. The brand leads to `#/`, the list, as it is in the list; a plain click on it there goes
+  back to the list as the Sessions card does (below), so the list is never stacked twice. Back
+  returns to the list.
 - **Leaving by the Sessions card.** On a phone the card goes back to the list: `history.back()`
-  when the list's Overview button opened the overview in this tab (so the list isn't stacked twice and
-  Forward returns here), otherwise a new `#/` entry (a reload or a typed `#/overview`).
+  when the list's Overview button or the launch opened the overview in this tab (so the list isn't
+  stacked twice and Forward returns here), otherwise a new `#/` entry (a reload or a typed
+  `#/overview`).
 - **Everything else is as on master.** Every page's back link and "Back to Sessions" still goes to
   `#/`, the list. Organizations is reached only from the overview's Organizations card, its last
   section (§app/organizations).
-  On a phone the overview holds the Start card (New Session), the Sessions card,
+  On a phone the overview holds the Projects section, the Start card (New Session), the Sessions card,
   Mesh, Extensions, the Explanations card (the way to `#/explanations`), the Shares card (the way
   to `#/shares`) and the Organizations card; the list holds New Session in its head
   and Usage, Agents and Settings in its foot, with no Shares.

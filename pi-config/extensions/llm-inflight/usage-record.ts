@@ -62,6 +62,9 @@ export const USAGE_PURPOSES = [
 	// A script tool's classifier and image calls (models.classify / models.generateImages).
 	"classify",
 	"image",
+	// Sova's merge queue: what a branch does, in a few bullets ("Merge queue summary"; not `branch-summary`, a
+	// conversation tree's summary).
+	"git-branch-summary",
 ] as const;
 
 export interface UsageRecord {

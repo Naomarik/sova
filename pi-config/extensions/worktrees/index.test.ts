@@ -5,7 +5,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import worktrees, { queueServes } from "./index.ts";
+import worktrees, { queueServes, SETUP_BRANCH_REFUSED, SETUP_UNCONFIRMED } from "./index.ts";
+import { runGit } from "./git.ts";
 import { restoreActive, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE, WORKTREES_STATE_EVENT } from "./state.ts";
 
 // A run from inside a chat inherits these; each test says for itself which kind of chat it is.
@@ -707,6 +708,58 @@ test("land refuses a newest message the Overseer, a baton or another session sen
 		await f.call(c, { action: "land" });
 		assert.equal(recorded().length, 1);
 		assert.equal(recorded()[0].by, "owner-chat");
+	} finally {
+		r.done();
+	}
+});
+
+test("unserved: merge and land refuse a setup branch (pipeline sections or the release playbook) with Merge Branch's words, merge a plain one, and refuse when Git can't tell", async () => {
+	const r = repo();
+	try {
+		// The project as set up: a definition with a merge section and services no check requires.
+		mkdirSync(join(r.main, ".sova"));
+		writeFileSync(join(r.main, ".sova", "project.json"), JSON.stringify({ v: 1, merge: { checks: [{ id: "t", run: ["true"] }] }, services: { web: { run: ["a"] } } }));
+		sh(r.main, "add", ".sova/project.json");
+		sh(r.main, "commit", "-q", "-m", "def");
+		const state = join(r.root, "state");
+		await asChat(state, async () => {
+			serve(state, []);
+			const f = fakePi();
+			let failDiff = false;
+			const git: any = async (args: string[], cwd: string) => (failDiff && args[0] === "diff" && args.includes("--name-only") ? { code: 128, stdout: "", stderr: "boom" } : runGit(args, cwd));
+			worktrees(f.pi, { git, docs: async () => ({ state: "none" }) as never });
+			const c = f.ctx(r.main);
+			await f.fire("session_start", c);
+			const branch = async (name: string, file: string, body: string) => {
+				await f.call(c, { action: "create", name });
+				const t = join(r.root, ".worktrees", `repo-${name}`);
+				mkdirSync(join(t, file, ".."), { recursive: true });
+				writeFileSync(join(t, file), body);
+				sh(t, "add", file);
+				sh(t, "commit", "-q", "-m", name);
+				return t;
+			};
+			const before = sh(r.main, "rev-parse", "master");
+			// The merge section changed: refused, master unmoved.
+			const s1 = await branch("s1", ".sova/project.json", JSON.stringify({ v: 1, merge: { checks: [{ id: "t", run: ["false"] }] }, services: { web: { run: ["a"] } } }));
+			await assert.rejects(f.call(c, { action: "merge", path: s1 }), (e: Error) => e.message === SETUP_BRANCH_REFUSED);
+			// A release playbook file: refused through land too, on the user's own word.
+			const s2 = await branch("s2", ".sova/playbooks/release/PLAYBOOK.md", "# release\n");
+			f.entries.push({ type: "message", message: { role: "user", content: [{ type: "text", text: "land it" }] } } as never);
+			await assert.rejects(f.call(c, { action: "land", path: s2 }), (e: Error) => e.message === SETUP_BRANCH_REFUSED);
+			assert.equal(sh(r.main, "rev-parse", "master"), before, "nothing merged");
+			// A service no check requires is conformance's, not setup: it merges, as a plain file does.
+			const p1 = await branch("p1", ".sova/project.json", JSON.stringify({ v: 1, merge: { checks: [{ id: "t", run: ["true"] }] }, services: { web: { run: ["b"] } } }));
+			const out = await f.call(c, { action: "merge", path: p1 });
+			assert.match(out.content[0].text, /^Merged feat\/p1 into master/);
+			// Git can't tell: refused (fail closed), even for a plain branch.
+			const p2 = await branch("p2", "p2.txt", "p\n");
+			failDiff = true;
+			await assert.rejects(f.call(c, { action: "merge", path: p2 }), (e: Error) => e.message === SETUP_UNCONFIRMED);
+			failDiff = false;
+			await f.call(c, { action: "merge", path: p2 });
+			assert.equal(sh(r.main, "rev-parse", "master"), sh(p2, "rev-parse", "HEAD"));
+		});
 	} finally {
 		r.done();
 	}

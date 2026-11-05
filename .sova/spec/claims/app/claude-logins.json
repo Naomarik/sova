@@ -19,7 +19,11 @@
       "server/claude-pool/index.ts",
       "src/lib/claude-pool.test.ts",
       "src/lib/claude-login-groups.ts",
-      "src/lib/claude-login-groups.test.ts"
+      "src/lib/claude-login-groups.test.ts",
+      "shared/account-limits.ts",
+      "server/claude-accounts.test.ts",
+      "server/settings-limits-parity.test.ts",
+      "src/components/form/index.tsx"
     ],
     "requires": [
       "§app.claude-logins/add-remove",
@@ -140,7 +144,10 @@
       "server/insights-claude-logins.test.ts",
       "src/lib/claude-login-groups.ts",
       "src/lib/claude-login-groups.test.ts",
-      "src/design/base.css"
+      "src/design/base.css",
+      "shared/account-limits.ts",
+      "server/settings-limits-parity.test.ts",
+      "src/components/form/index.tsx"
     ],
     "agreed": {
       "by": "naomarik",

@@ -24,6 +24,7 @@ import {
 } from "../lib/mcp";
 import { clearWantedMcpRow, wantedMcpRow } from "../lib/mcp-link";
 import { Chip, Icon, trapFocus } from "./ui";
+import { TextField, Toggle } from "./form";
 import { sentence } from "./WorkerSlotRow";
 import "./McpServers.css";
 
@@ -68,7 +69,7 @@ function SecretField(props: { rowId: string; name: string; saved: boolean; busy:
             void save();
           }}
         >
-          <input class="input input-mono" type="password" autocomplete="off" aria-label={`Value of ${props.name}`} value={value()} onInput={(e) => setValue(e.currentTarget.value)} />
+          <TextField hideLabel label={`Value of ${props.name}`} inputClass="input-mono" type="password" autocomplete="off" value={value()} onInput={setValue} />
           <button type="submit" class="button button-sm" disabled={props.busy || !value()}>
             Save Secret
           </button>
@@ -176,11 +177,7 @@ function SignInDialog(props: { row: McpServerRow; onClose: () => void; onDone: (
         </div>
         <div class="modal-body stack">
           <p class="mcp-line">{SIGN_IN_BODY}</p>
-          <label class="field">
-            <span class="field-label">Address from the browser</span>
-            <input class="input input-mono" value={address()} autocomplete="off" spellcheck={false} disabled={!url() || sending()} onInput={(e) => setAddress(e.currentTarget.value)} />
-          </label>
-          <Show when={error()}>{(e) => <p class="field-error">{e()}</p>}</Show>
+          <TextField label="Address from the browser" inputClass="input-mono" error={error()} value={address()} autocomplete="off" spellcheck={false} disabled={!url() || sending()} onInput={setAddress} />
         </div>
         <div class="modal-foot">
           <button type="button" class="button button-ghost" onClick={cancel}>
@@ -278,20 +275,14 @@ export function McpRow(props: {
         </button>
         <Chip tone={stateTone(r().state)}>{stateWord(r().state)}</Chip>
         <Show when={r().refused?.why !== "reserved"}>
-          <label class="toggle toggle-switch mcp-switch">
-            <span>New Chats</span>
-            <input
-              type="checkbox"
-              checked={r().newChats}
-              disabled={busy()}
-              aria-label={`New Chats: ${r().name}`}
-              onChange={(e) => {
-                const newChats = e.currentTarget.checked;
-                void act(() => switchMcpServer(r().id, { newChats }));
-              }}
-            />
-            <span class="toggle-box" />
-          </label>
+          <Toggle
+            switch
+            class="mcp-switch"
+            label={<>New Chats<span class="visually-hidden">: {r().name}</span></>}
+            checked={r().newChats}
+            disabled={busy()}
+            onChange={(newChats) => void act(() => switchMcpServer(r().id, { newChats }))}
+          />
         </Show>
       </div>
       <For each={refusedLines(r().refused)}>{(l) => <p class="field-error mcp-note">{l}</p>}</For>
@@ -360,19 +351,7 @@ export function McpRow(props: {
                           <span class="field-hint">{t.description}</span>
                         </Show>
                       </span>
-                      <label class="toggle toggle-switch">
-                        <input
-                          type="checkbox"
-                          aria-label={`Use ${t.name}`}
-                          checked={t.on}
-                          disabled={busy()}
-                          onChange={(e) => {
-                            const on = e.currentTarget.checked;
-                            void act(() => switchMcpServer(r().id, { tool: t.name, on }));
-                          }}
-                        />
-                        <span class="toggle-box" />
-                      </label>
+                      <Toggle switch label={<span class="visually-hidden">Use {t.name}</span>} checked={t.on} disabled={busy()} onChange={(on) => void act(() => switchMcpServer(r().id, { tool: t.name, on }))} />
                     </li>
                   )}
                 </For>

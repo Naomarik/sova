@@ -47,7 +47,9 @@ import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
 import { mountOutreachRelay } from "./outreach/relay";
 import { mountOutreach } from "./outreach/routes";
-import { deliverFrames, postedFrames, POSTED_FRAMES_MAX } from "./ws";
+import { deliverFrames, framesDraft, postedFrames, POSTED_FRAMES_MAX } from "./ws";
+import { COMPOSER_HEADER, type NewSessionBody, type SessionPromptBody } from "../shared/wire-areas";
+import { mountWritingGate, refusedAnswer, writingRefused } from "./wire-gate";
 import { mountChatActions } from "./chat-actions";
 import { acquireChatHandle, type ChatHandle, chatHandle, chatHandleById, chatHandles, chatModesSwitched, getModelRuntime, ModeRefusedError, setOpeningChoice } from "./chat-handle";
 import { restorePick } from "../pi-config/extensions/subagents/subagent-profiles.ts";
@@ -58,7 +60,7 @@ import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } 
 import { setFavorite } from "./model-favorites";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
-import { draftForClient, setDraft } from "./drafts";
+import { draftForClient, putBackDraft, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
 import { getAgentsInsight, getHiddenWorkers, getMemberInbox, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
@@ -124,7 +126,7 @@ import { registerCommandsRoutes } from "./commands-routes";
 import { auditStart, registerAuditRoutes } from "./command-audit";
 import { mountDetails } from "./mesh/details";
 import { mountResync } from "./mesh/resync";
-import { probePeer } from "./mesh/hello";
+import { areasForbid, probePeer } from "./mesh/hello";
 import { LINK_LIVE, meshLinks } from "./mesh/links";
 import { mountLinks } from "./mesh/links-routes";
 import { deliverLinkMessage, heldSessionPath, notifyLinksChanged, setLinksSource } from "./link-delivery";
@@ -144,7 +146,9 @@ import {
   overseerAutonomy,
   revokePermit,
 } from "./overseer";
-import { readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
+import { readNotes, writeNotes } from "./overseer-store";
+import { problemOf } from "../shared/form-rules";
+import { NOTES_RULE } from "../shared/overseer-limits";
 import { pathOfId, promptSession } from "./session-prompt";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
 import { checkRename, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea, type IdeaUpdate } from "./overseer-ideas";
@@ -254,6 +258,9 @@ export function buildApp(deps: AppDeps) {
     }
     audited?.(c.res.status, c.req.routePath);
   });
+
+  // A writing request from another version never reaches its route (§mesh.compatibility/refusal).
+  mountWritingGate(app);
 
   // A request that may change something starts the next session listing afresh, before it runs and
   // again once it answered, so its caller's next listing shows the change (§app.session-list/listing-reuse).
@@ -391,7 +398,7 @@ export function buildApp(deps: AppDeps) {
   // `target` flag, so the remote extension runs every tool on the far side. `link: true` makes it a
   // link member session (§app.overseer/links-tools): only the Overseer's create sends it.
   app.post("/api/sessions", async (c) => {
-    let body: { cwd?: unknown; target?: unknown; remoteCwd?: unknown; profile?: unknown; prompt?: unknown; subagent_profile?: unknown; link?: unknown; model?: unknown; thinking?: unknown };
+    let body: Partial<Record<keyof NewSessionBody, unknown>>;
     try {
       body = await c.req.json();
     } catch {
@@ -1398,6 +1405,12 @@ export function buildApp(deps: AppDeps) {
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
     const frames = postedFrames(await c.req.json().catch(() => null));
     if (!frames) return c.json({ error: `Expected { frames: [...] }, 1 to ${POSTED_FRAMES_MAX} objects with a type` }, 400);
+    // The page is going, so nobody hears a refusal: what it carried goes back as the draft.
+    const refused = writingRefused(c.req.header(COMPOSER_HEADER));
+    if (refused) {
+      putBackDraft(idOf(path), framesDraft(frames));
+      return refusedAnswer(c, refused);
+    }
     sessionsChanged();
     deliverFrames(path, frames, notPage(c));
     return c.json({ accepted: frames.length }, 202);
@@ -1681,7 +1694,8 @@ export function buildApp(deps: AppDeps) {
       return c.json({ error: "Expected JSON body { text }" }, 400);
     }
     if (typeof body?.text !== "string") return c.json({ error: "text must be a string" }, 400);
-    if (body.text.length > NOTES_MAX) return c.json({ error: `Notes must be at most ${NOTES_MAX} characters` }, 400);
+    const tooLong = problemOf(NOTES_RULE, body.text);
+    if (tooLong) return c.json({ error: tooLong }, 400);
     if (body.base !== undefined && typeof body.base !== "string") return c.json({ error: "base must be a string" }, 400);
     const current = readNotes();
     if (typeof body.base === "string" && body.base !== current)
@@ -1852,7 +1866,7 @@ export function buildApp(deps: AppDeps) {
   // prompt): idle it starts a turn; mid-turn it is queued as `delivery` (followUp by default, or
   // steer). Refused TUI-live, for the Overseer's own file, or when a foreign writer holds it.
   app.post("/api/sessions/prompt", async (c) => {
-    let body: { path?: unknown; text?: unknown; delivery?: unknown };
+    let body: Partial<Record<keyof SessionPromptBody, unknown>>;
     try {
       body = await c.req.json();
     } catch {
@@ -1926,6 +1940,7 @@ export function buildApp(deps: AppDeps) {
     held: heldSessionPath,
     deliver: deliverLinkMessage,
     probe: async (peer) => (await probePeer(peer)).state,
+    updateNeeded: async (peer) => areasForbid(await probePeer(peer)),
     notify: notifyLinksChanged,
     renderPeerRead,
     // File transfers: a session's sandbox binds what the server packs and where it extracts.

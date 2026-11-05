@@ -1,3 +1,5 @@
+import { EXCLUSIONS_RULE, parseExclusions } from "../../shared/decision-limits";
+import { problemOf } from "../../shared/form-rules";
 import type {
   DecisionChainStatus,
   DecisionFailure,
@@ -37,26 +39,10 @@ export const draftOf = (s: DecisionSettings): DecisionDraft => ({
 
 export const cloneDecision = (d: DecisionDraft): DecisionDraft => JSON.parse(JSON.stringify(d));
 
-/** The exclusion lines as saved: trimmed, blanks dropped, duplicates once, in typed order. */
-export function parseExclusions(text: string): string[] {
-  const out: string[] = [];
-  for (const line of text.split("\n")) {
-    const t = line.trim();
-    if (t && !out.includes(t)) out.push(t);
-  }
-  return out;
-}
-
-/** The most folders the server keeps. */
-export const MAX_EXCLUSIONS = 100;
-
-/** The first line the server would refuse (not absolute, not `~/`), as one sentence; or null. */
-export function exclusionIssue(text: string): string | null {
-  const list = parseExclusions(text);
-  if (list.length > MAX_EXCLUSIONS) return `That's ${list.length} folders. Use at most ${MAX_EXCLUSIONS}.`;
-  const bad = list.find((p) => !(p.startsWith("/") || p === "~" || p.startsWith("~/")));
-  return bad === undefined ? null : `"${bad}" isn't a full path. Start it with / or ~/.`;
-}
+// The Folders box's rule is the server's (shared/decision-limits.ts).
+export { MAX_EXCLUSIONS, parseExclusions } from "../../shared/decision-limits";
+/** The Folders box's problem, as one sentence; or null. */
+export const exclusionIssue = (text: string): string | null => problemOf(EXCLUSIONS_RULE, text);
 
 /** What PUT sends: the draft with the exclusions parsed. Only for a complete draft. */
 export function settingsOf(d: DecisionDraft): DecisionSettings {

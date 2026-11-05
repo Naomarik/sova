@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import type { DelegateOptions } from "../../shared/protocol";
+import { Select } from "./form";
 import { effortSelectOptions, modelSelectOptions, slotIssue, withBackend, withModel, type BackendsInfo, type DraftChoice, type Slot } from "../lib/delegate-form";
 
 /**
@@ -39,90 +40,60 @@ export function WorkerSlotRow(props: {
         <span class="settings-delegate-slot-label">{slotName()}</span>
       </Show>
       <div class="settings-delegate-fields">
-        <div class="field">
-          <label class={props.compact ? "visually-hidden" : "field-label"} for={id("backend")}>
-            Backend
-          </label>
-          <div class="select-wrap">
-            <select
-              class="select"
-              id={id("backend")}
-              disabled={props.disabled}
-              onChange={(e) => props.onChange(withBackend(props.choice, e.currentTarget.value as DraftChoice["backend"]))}
-            >
-              <For each={props.info.backends}>
-                {(b) => (
-                  <option value={b.id} selected={b.id === props.choice.backend}>
-                    {b.label}
-                  </option>
-                )}
-              </For>
-            </select>
-            <span class="select-caret" aria-hidden="true">
-              ▾
-            </span>
-          </div>
-        </div>
-        <div class="field">
-          <label class={props.compact ? "visually-hidden" : "field-label"} for={id("model")}>
-            Model
-          </label>
-          <div class="select-wrap">
-            <select
-              class="select text-mono"
-              id={id("model")}
-              title={props.compact ? props.choice.model || undefined : undefined}
-              disabled={props.disabled}
-              aria-describedby={issue() ? id("issue") : undefined}
-              onChange={(e) => props.onChange(withModel(props.choice, e.currentTarget.value, props.options))}
-            >
-              <Show when={!props.choice.model}>
-                <option value="" selected disabled>
-                  {props.options ? "Choose a model" : "Checking…"}
-                </option>
-              </Show>
-              <For each={models()}>
-                {(o) => (
-                  <option value={o.value} selected={o.value === props.choice.model} title={o.title}>
-                    {o.label}
-                  </option>
-                )}
-              </For>
-            </select>
-            <span class="select-caret" aria-hidden="true">
-              ▾
-            </span>
-          </div>
-        </div>
-        <div class="field">
-          <label class={props.compact ? "visually-hidden" : "field-label"} for={id("effort")}>
-            Effort
-          </label>
-          <div class="select-wrap">
-            <select
-              class="select"
-              id={id("effort")}
-              disabled={props.disabled || !props.choice.model}
-              onChange={(e) => props.onChange({ ...props.choice, effort: e.currentTarget.value })}
-            >
-              <Show when={!props.choice.effort}>
-                <option value="" selected disabled>
-                  Choose
-                </option>
-              </Show>
-              <For each={efforts()}>
-                {(effort) => (
-                  <option value={effort} selected={effort === props.choice.effort}>
-                    {effort}
-                  </option>
-                )}
-              </For>
-            </select>
-            <span class="select-caret" aria-hidden="true">
-              ▾
-            </span>
-          </div>
-        </div>
+        <Select
+          id={id("backend")}
+          label="Backend"
+          hideLabel={props.compact}
+          value={props.choice.backend}
+          options={props.info.backends.map((b) => ({ value: b.id, label: b.label }))}
+          disabled={props.disabled}
+          onChange={(v) => props.onChange(withBackend(props.choice, v as DraftChoice["backend"]))}
+        />
+        <Select
+          id={id("model")}
+          label="Model"
+          hideLabel={props.compact}
+          selectClass="text-mono"
+          title={props.compact ? props.choice.model || undefined : undefined}
+          value={props.choice.model}
+          disabled={props.disabled}
+          describedBy={issue() ? id("issue") : undefined}
+          onChange={(v) => props.onChange(withModel(props.choice, v, props.options))}
+        >
+          <Show when={!props.choice.model}>
+            <option value="" selected disabled>
+              {props.options ? "Choose a model" : "Checking…"}
+            </option>
+          </Show>
+          <For each={models()}>
+            {(o) => (
+              <option value={o.value} selected={o.value === props.choice.model} title={o.title}>
+                {o.label}
+              </option>
+            )}
+          </For>
+        </Select>
+        <Select
+          id={id("effort")}
+          label="Effort"
+          hideLabel={props.compact}
+          value={props.choice.effort}
+          disabled={props.disabled || !props.choice.model}
+          onChange={(v) => props.onChange({ ...props.choice, effort: v })}
+        >
+          <Show when={!props.choice.effort}>
+            <option value="" selected disabled>
+              Choose
+            </option>
+          </Show>
+          <For each={efforts()}>
+            {(effort) => (
+              <option value={effort} selected={effort === props.choice.effort}>
+                {effort}
+              </option>
+            )}
+          </For>
+        </Select>
       </div>
       <Show when={issue()}>
         {(i) => (

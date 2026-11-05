@@ -209,7 +209,10 @@ run's own folder, so a failure at any step, the first included, has its log.
    deleted. A draft of the branch's own that doesn't fit hands the entry back to its chat ("your spec
    drafts don't fit…", with what to fix, then "Fix them in your drafts (no commit needed); Land comes
   back here, or type "land it" in this chat."), recorded as a send-back for its drafts, so Land can
-  come back at the same commit once they fit (§chat.composer/worktrees-control). The step is skipped, with its reason, for a project with
+  come back at the same commit once they fit (§chat.composer/worktrees-control). What it made
+   official (the spec commit, each draft's hash and the spec tool's promotion entries) is kept with
+   the run, for the landing to mark the branch's drafts with (§app.merge-queue/land,
+   §app.merge-queue/publish); nothing reaches the branch's folder here. The step is skipped, with its reason, for a project with
    no spec, an approval without its specs, or a branch with no drafts of its own ("no spec drafts
    of the branch's own").
 6. **Checks.** The checks run on that commit, in order (§app.merge-queue/checks), with the review
@@ -447,6 +450,19 @@ A branch never lands twice, and never half-lands.
 is fast-forwarded with it. If it has uncommitted edits, nothing is forced and the target isn't
 moved: the queue pauses with "The main checkout has uncommitted changes". On Resume, once the
 checkout is clean and the target hasn't moved, the tested commit lands without a rerun.
+
+**The drafts it landed are marked, never moved.** The branch's folder never receives the spec commit,
+so once the target is at the tested commit the queue writes the landing into each draft the run made
+official, in the branch folder's `draft.json`: the spec tool's own promotion entries, and a `landed`
+receipt naming the spec commit, the target and the draft's hash as it landed. Nothing is deleted or
+moved. A failed or voided run writes nothing, nor does a landing without its specs, and a draft
+edited since its approval gets nothing: it isn't what landed. A server stopped right after the target
+moved writes it when it finishes the landing at its next start. The write is atomic and takes the
+draft tool's own lock; a lock another writer holds for a few seconds leaves the draft unmarked,
+reading as lost, and is never taken over. `scripts/mark-landed-drafts.ts` writes the receipt for such
+a draft, and for one landed before receipts existed, given its spec commit: only when the draft is
+official in the spec at that commit and the commit is on the target; it changes nothing it finds
+already marked, and without `--write` only says what it would do.
 
 **After a landing**, the entry reads **Landed**, with its commit and its note
 (§app.merge-queue/note). In the branch's chat its queue card moves down as **Landed**, with the
@@ -1010,12 +1026,12 @@ the foot is as before. It covers this computer's projects only, never a peer's.
 <!-- in .sidebar-foot, before the host filter row; one 44px row, the same at every width -->
 <div class="landing-bar landing-bar-landing">
   <button type="button" class="landing-face landing-row" aria-expanded="false" aria-haspopup="dialog"
-          aria-label="Landing feat/mesh-bar. check 4 of 11 · test:int · ~3 min left. 2 in line">
+          aria-label="Landing feat/mesh-bar. step 6 of 13 · test:int · ~3 min left. 2 in line">
     <span class="landing-icon landing-tone-accent" aria-hidden="true">…</span> <!-- status icon, tinted by tone: carries the meaning -->
     <span class="landing-lines">
       <span class="landing-line1">
         <span class="landing-title">Landing feat/mesh-bar</span>   <!-- semibold, one line, ellipsis -->
-        <span class="landing-sub">check 4 of 11 · test:int · ~3 min left</span> <!-- muted, inline after "· ", ellipsis; yields first -->
+        <span class="landing-sub">step 6 of 13 · test:int · ~3 min left</span> <!-- muted, inline after "· ", ellipsis; yields first -->
         <span class="chip landing-count" aria-hidden="true">+2</span> <!-- at most one short count, never cut -->
       </span>
       <span class="landing-track-row" aria-hidden="true"><span class="landing-track"> <!-- a thin line under the words, inside the row -->
@@ -1032,7 +1048,7 @@ wrapping. In it, left to right: a **status icon** tinted by the bar's tone, the 
 short **sub line** inline after it, each on one line and cut off with an ellipsis when they don't
 fit (the sub line yields before the title); after them, at most one short **count**, and a
 **chevron** at the row's end. Under the words, inside the same row, runs the **step track** as a
-thin line: one segment per step, coloured passed, running, failed, waiting, skipped or held. The
+thin line: one segment per step, coloured passed, running, failed, waiting, skipped (a short dash) or held. The
 row never carries a note or a reason in full: those are cut short, and the status icon carries the
 meaning (done, running, waiting for you, failed, paused). The count is its only chip: never a
 "needs you" chip, never a review marker.
@@ -1087,13 +1103,16 @@ Releases tab's own words (§app.merge-queue/view, §app.release/tab). The row sh
 and a short sub line, cut with an ellipsis where they don't fit; a note or reason is cut short there,
 shows to about two lines in the hover card and in full in the detail:
 
-- **Landing** (a run checking): "Landing {branch}", sub line "check {N} of {M} · {check} · ~{n} min
-  left" ("left" only when the queue has an estimate, never a negative one), the count "+{n}" while
-  others wait in line. The track has one segment per check and per fixed step of the run (copy, merge, setup,
-  install, docs, land, main checkout, push), in their order; a step the run never needs reads
-  skipped. A check that is rerun (on the tip or on the target alone, §app.merge-queue/blame) pulses
-  its own segment again and never adds one; a check the merge thread adds mid-run adds its segment
-  and the total grows. The review runs beside the checks, so it is never a segment; its state is in
+- **Landing** (a run checking): "Landing {branch}", sub line "step {N} of {M} · {step} · ~{n} min
+  left" ("left" only when the queue has an estimate, never a negative one), {N} the running step's
+  place on the track and {M} the number of segments the track draws; the hover card and the detail
+  use the same numbers. The count "+{n}" while others wait in line. The track has one segment per
+  check and per fixed step of the run (copy, merge, setup, install, docs, land, main checkout, push),
+  in their order. Every step keeps its place for every project, and none is treated specially: a
+  step that didn't run (Install dependencies, Spec docs, or Push with no remote) is drawn as a short
+  dash, never like a step still to come. A check that is rerun (on the tip or on the target alone,
+  §app.merge-queue/blame) pulses its own segment again and never adds one; a check the merge thread
+  adds mid-run adds its segment and {M} grows by one. The review runs beside the checks, so it is never a segment; its state is in
   the detail. A project that opens a pull or merge request, or only pushes the
   branch, shows its own steps the same way (§app.merge-queue/strategies).
 - **Needs you** (warn tone): an entry waiting for the user (Behaviour differs, Review flagged, Can't
@@ -1109,12 +1128,13 @@ shows to about two lines in the hover card and in full in the detail:
   A request that is open and waiting on its host never keeps the bar.
 - **Paused** (warn tone, the stop icon): the pause's title in the tab's plain words, its reason as the
   sub line ("Nothing in line" or "{n} branches in line" when it gives none), with **Resume Queue** and
-  **Open Queue** in the detail. It shows the whole time the queue is paused, even with nothing in line. A queue whose settings don't
-  read says "Queue settings are broken: nothing runs until they are fixed" (error tone), with Open
+  **Queue** in the detail. It shows the whole time the queue is paused, even with nothing in line. A queue whose settings don't
+  read says "Queue settings are broken: nothing runs until they are fixed" (error tone), with
   Queue only and no Resume.
 - **Releasing**: "Releasing {tag}" ("Releasing a new version" before a version is picked), sub line
-  "Step {i} of {n} · {label}", and while the gating checks run, the queue run's own "check {N} of {M} ·
-  …". The track has one segment per release step in plan order, a held step in warn; withdraw steps
+  "Step {i} of {n} · {label}", and while the gating checks run, the queue run's current step after it,
+  without a count of its own ("Step 4 of 7 · Gating checks · build · ~3 min left"): the track shows the
+  release's steps, so the run's own count would match nothing on screen. The track has one segment per release step in plan order, a held step in warn; withdraw steps
   never show. The release and the landings it freezes are **one bar**: the gating checks segment
   carries the queue run's progress, and the count "+{n}" is the landings frozen until it ends
   (§app.release/checks).
@@ -1138,10 +1158,17 @@ you while a landing runs (its branch and why, with a link that opens the Merge Q
 which shows nowhere else in the bar. For a landing: "{target} {base} + branch →
 {tip}", the current step and how long it has run, the review's state (with its attempt, and a link to
 the reviewer's chat while it runs), the next three branches in line with when each should start,
-**Open Branch Chat**, **View Checks** (the run page,
-`#/projects/<pid>/merge-queue/<run>`) and **Open Queue** (`#/projects/<pid>/merge-queue`). For a
+**Branch Chat**, **Checks** (the run page,
+`#/projects/<pid>/merge-queue/<run>`) and **Queue** (`#/projects/<pid>/merge-queue`); a request just
+opened adds **On GitHub** (or **On GitLab**), the request's page. For a
 release: its base and commit, the release chat's last report, each step's one-line summary, why
-Publish isn't offered yet, **Open Release Chat** and **Open Releases**.
+Publish isn't offered yet, **Release Chat** and **Releases**.
+
+**Links and buttons.** In the floating panel, the phone sheet and the collapsed popover alike, the
+places to go (Branch Chat, Checks, Queue, Release Chat, Releases, On GitHub or On GitLab) are plain
+links on one row, which never runs past the panel's edge. The things that do something (Land Anyway,
+Accept, Send Back, Land, Resume Queue, Continue, Retry Step) are buttons on their own row above the
+links, drawn only when there are any.
 
 **Actions in place, or the tab.** Resume Queue, Retry Step and Continue act right there, through the
 same catalogue commands the tabs use (the verbs `merge.resume`, `release.retry` and `release.continue`,
@@ -1513,6 +1540,15 @@ and Sova tries again by itself. A branch that has moved past the approved commit
 its chat: "Land Again to include the newer commits".
 An approval without its specs, or a branch with no drafts of its own, gets no docs commit. The
 reviewer on the host sees the docs change with the code.
+
+**Its drafts read as landed.** Once the branch is published, each draft the run made official and
+unedited since gets the spec tool's promotion entries in the branch folder's `draft.json`, under the
+draft tool's lock, as it would have had the tool landed it there; nothing is deleted or moved. The
+folder holds the docs commit, so that is all the draft tool's own rule needs
+(§tools.spec/draft-official): a draft reads official however the host merges the request, squash
+included, and whether or not the local target has caught up. A record the landing gave
+`authority: "accepted"` needs this: without the entries it differs from the draft's, and the merged
+row would say its drafts didn't make it (§chat.worktrees/readiness).
 
 **Pushed as a fast-forward, never forced.** A branch on `origin` that has commits the published one
 lacks (someone pushed to it on the host) is refused with the reason, never overwritten, and nothing

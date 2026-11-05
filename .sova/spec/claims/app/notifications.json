@@ -44,7 +44,7 @@
       "src/lib/push-draft.ts",
       "src/lib/api.ts",
       "src/design/base.css",
-      "shared/push.ts",
+      "shared/push-limits.ts",
       "shared/protocol.ts",
       "server/push-store.ts",
       "server/push-routes.ts",
@@ -54,7 +54,8 @@
       "src/lib/push-draft.test.ts",
       "src/lib/push.test.ts",
       "server/push.test.ts",
-      "src/lib/settings-nav.ts"
+      "src/lib/settings-nav.ts",
+      "src/components/form/index.tsx"
     ],
     "requires": [
       "§app.settings-dialog/save-bar",

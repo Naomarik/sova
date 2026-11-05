@@ -155,7 +155,7 @@ try {
   ]);
   const search = app.branch("search-ui", { "src/search.txt": "search ui\n" });
   const waiting = await mergeAdd(k, app, search.branch);
-  await waitEntry(k, app, "the branch waiting on the release", (e) => e.id === waiting.id && /release/i.test(e.reason ?? ""), 60_000);
+  await waitEntry(k, app, "the branch waiting on the release", (e) => e.id === waiting.id && /release|published or abandoned/i.test(e.reason ?? ""), 60_000);
   log("acme-app v0.4.0 in progress", rec.id);
 
   // ---- acme-ready: v0.2.0 ready to publish

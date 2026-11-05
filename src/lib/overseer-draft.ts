@@ -2,6 +2,8 @@ import type { DelegateOptions, OverseerCaps, OverseerQuickAction, OverseerSaveRe
 import { ApiError, getOverseerNotes, getOverseerSettings, putOverseerNotes, putOverseerSettings } from "./api";
 import type { BackendsInfo } from "./delegate-form";
 import { createDraftStore, failureOf, SaveFailed } from "./settings-draft";
+import { check, type FieldCheck, firstIssue, type WholeRule } from "../../shared/form-rules";
+import { CAP_KEYS, CAP_MAX, CAP_RULES, DEFAULT_CAPS as CAP_DEFAULTS, EXTRA_PROMPT_RULE, NOTES_MAX, NOTES_RULE, QA_RULES, qaLabel, QUICK_ACTIONS_MAX, TOO_MANY_QUICK_ACTIONS } from "../../shared/overseer-limits";
 
 /**
  * Settings → Overseer's unsaved edits: the settings file and the standing notes, edited together
@@ -17,7 +19,61 @@ export interface OverseerDraft {
   notes: string;
 }
 
-export const cloneOverseer = (d: OverseerDraft): OverseerDraft => ({
+/** A limit as its box holds it: the text typed (a half-typed or blank entry stays as typed, red,
+    and Save waits), or a number (what a load or a test puts there). */
+export type CapEntry = number | string;
+export type FormCaps = Record<keyof OverseerCaps, CapEntry>;
+
+/** What the form edits: the saved shape, but each limit is what its box holds. */
+export interface OverseerForm {
+  settings: Omit<OverseerSettings, "caps"> & { caps: FormCaps };
+  notes: string;
+}
+
+// The server's limits and labels (shared/overseer-limits.ts), checked by the form before anything is sent.
+export { CAP_KEYS, CAP_LABEL, CAP_MAX, DEFAULT_CAPS as CAP_DEFAULTS, EXTRA_PROMPT_MAX, NOTES_MAX, QUICK_ACTIONS_MAX } from "../../shared/overseer-limits";
+
+const ANY_CAP: WholeRule = { kind: "whole", label: "A limit", min: 0, max: CAP_MAX };
+/** A limit's value: a whole number from 0 to CAP_MAX, typed or stored; null when it isn't one. */
+export function capOf(v: CapEntry | undefined): number | null {
+  const r = check(ANY_CAP, v);
+  return r.ok ? r.value : null;
+}
+
+/** Settings with every limit present: one missing (or not a number) takes `defaults`', else the form's own default. */
+export function completeCaps(settings: OverseerSettings, defaults?: Partial<OverseerCaps>): OverseerSettings {
+  const caps = { ...settings.caps };
+  for (const k of CAP_KEYS) {
+    if (typeof caps[k] === "number") continue;
+    const d = defaults?.[k];
+    caps[k] = typeof d === "number" ? d : CAP_DEFAULTS[k];
+  }
+  return { ...settings, caps };
+}
+
+/** The same, for a whole read of the settings: its defaults completed first. */
+export function completeInfo<T extends { settings: OverseerSettings; defaults: { caps: OverseerCaps } }>(info: T): T {
+  const defaults = completeCaps({ caps: info.defaults?.caps ?? {} } as OverseerSettings).caps;
+  return { ...info, settings: completeCaps(info.settings, defaults), defaults: { ...info.defaults, caps: defaults } };
+}
+
+/** A copy with every limit mapped by `f`. */
+const mapCaps = <T extends OverseerDraft | OverseerForm, V extends CapEntry>(d: T, f: (v: CapEntry) => V) => {
+  const c = cloneOverseer(d);
+  return { ...c, settings: { ...c.settings, caps: Object.fromEntries(Object.entries(c.settings.caps).map(([k, v]) => [k, f(v)])) } };
+};
+/** The form as a fresh copy of what's saved: each limit shown as text. */
+export const toOverseerForm = (d: OverseerDraft): OverseerForm => mapCaps(d, String) as OverseerForm;
+/** The form as the saved shape: each limit its number (NaN for a box that holds none). */
+export const formToDraft = (f: OverseerDraft | OverseerForm): OverseerDraft => mapCaps(f, (v) => capOf(v) ?? Number.NaN) as unknown as OverseerDraft;
+
+/** Whether a box's entry says the same as a saved number (the number typed back, "5" for 5). */
+const capSame = (a: CapEntry | undefined, b: CapEntry | undefined): boolean => Object.is(a, b) || (capOf(a) ?? Number.NaN) === capOf(b);
+
+/** A deep copy (works for the form as well as the saved shape). */
+export function cloneOverseer<T extends OverseerDraft | OverseerForm>(d: T): T;
+export function cloneOverseer(d: OverseerDraft | OverseerForm): OverseerDraft | OverseerForm {
+  return {
   settings: {
     ...d.settings,
     quickActions: d.settings.quickActions.map((a) => ({ ...a })),
@@ -25,7 +81,8 @@ export const cloneOverseer = (d: OverseerDraft): OverseerDraft => ({
     explorer: { ...d.settings.explorer },
   },
   notes: d.notes,
-});
+  } as OverseerDraft;
+}
 
 /** Deep equality for the plain JSON the drafts hold (NaN equals NaN: a cleared number field). */
 export function sameValue(a: unknown, b: unknown): boolean {
@@ -38,8 +95,9 @@ export function sameValue(a: unknown, b: unknown): boolean {
   return ka.every((k) => Object.hasOwn(b, k) && sameValue((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
 }
 
-/** Every field, the notes included: a field added to OverseerSettings later is compared too. */
-export const sameOverseer = (a: OverseerDraft, b: OverseerDraft): boolean => sameValue(a, b);
+/** Every field, the notes included: a field added to OverseerSettings later is compared too. A
+    limit compares by its value, so the saved number typed back is no change. */
+export const sameOverseer = (a: OverseerDraft | OverseerForm, b: OverseerDraft | OverseerForm): boolean => sameValue(formToDraft(a), formToDraft(b));
 
 const trimEnd = (t: string) => t.replace(/\s*$/, "");
 
@@ -67,7 +125,7 @@ export function mergeNotes(mine: string, base: string, fresh: string): string | 
  * key by key, the quick actions as one list, the notes by `mergeNotes` (a conflict keeps the user's
  * text; Save checks for it before writing). Pure.
  */
-export function rebaseOverseer(draft: OverseerDraft, base: OverseerDraft, fresh: OverseerDraft): OverseerDraft {
+export function rebaseOverseer<T extends OverseerDraft | OverseerForm>(draft: T, base: OverseerDraft, fresh: OverseerDraft): T {
   const pick = <T>(mine: T, was: T, now: T): T => (sameValue(mine, was) ? now : mine);
   const settings = { ...fresh.settings } as Record<string, unknown>;
   const d = draft.settings as unknown as Record<string, unknown>;
@@ -77,16 +135,27 @@ export function rebaseOverseer(draft: OverseerDraft, base: OverseerDraft, fresh:
     if (k === "caps") continue;
     settings[k] = pick(d[k], b[k], f[k]);
   }
-  const caps = { ...fresh.settings.caps };
-  for (const k of Object.keys(caps) as (keyof OverseerCaps)[]) caps[k] = pick(draft.settings.caps[k], base.settings.caps[k], fresh.settings.caps[k]);
+  const caps: Record<string, CapEntry> = { ...fresh.settings.caps };
+  const mine = draft.settings.caps as Record<string, CapEntry>;
+  const was = base.settings.caps as unknown as Record<string, CapEntry>;
+  // The form shows a limit the file just changed as text, like every other limit box.
+  const asDraft = (now: CapEntry) => (Object.values(mine).some((v) => typeof v === "string") ? String(now) : now);
+  for (const k of Object.keys(caps)) caps[k] = mine[k] === undefined || capSame(mine[k], was[k]) ? asDraft(caps[k]!) : mine[k]!;
   settings.caps = caps;
-  return cloneOverseer({ settings: settings as unknown as OverseerSettings, notes: mergeNotes(draft.notes, base.notes, fresh.notes) ?? draft.notes });
+  return cloneOverseer({ settings: settings as unknown as OverseerSettings, notes: mergeNotes(draft.notes, base.notes, fresh.notes) ?? draft.notes }) as T;
 }
 
 /** The Overseer rewrote its notes (sova_note replace) while the user edited them: nothing merges. */
 export class NotesConflict extends Error {
   constructor() {
     super("The standing notes changed while you were editing them");
+  }
+}
+
+/** The user's notes and what the Overseer appended meanwhile merge past NOTES_MAX: nothing is written. */
+export class NotesTooLong extends Error {
+  constructor() {
+    super("The standing notes would be too long with what the Overseer added");
   }
 }
 
@@ -107,9 +176,13 @@ export interface OverseerSaveIO {
  * the notes the user edited.
  */
 export async function saveOverseerDraft(draft: OverseerDraft, base: OverseerDraft, io: OverseerSaveIO): Promise<{ result: OverseerSaveResult; notes: string }> {
-  const [info, notes] = await Promise.all([io.getSettings(), io.getNotes()]);
+  const [read, notes] = await Promise.all([io.getSettings(), io.getNotes()]);
+  const info = completeInfo(read);
   if (mergeNotes(draft.notes, base.notes, notes) === null) throw new NotesConflict();
   const next = rebaseOverseer(draft, base, { settings: info.settings, notes });
+  // The form checked the user's notes; what the Overseer appended since can still push the merge
+  // over the server's limit. Refuse before the settings are written, so the save never half-lands.
+  if (next.notes.length > NOTES_MAX) throw new NotesTooLong();
   const result = sameValue(next.settings, info.settings) ? { ...info, warnings: [] } : await io.putSettings(next.settings);
   const savedNotes = next.notes === notes ? notes : await io.putNotes(next.notes, notes);
   return { result, notes: savedNotes };
@@ -117,29 +190,29 @@ export async function saveOverseerDraft(draft: OverseerDraft, base: OverseerDraf
 
 /** What the app's save reads and writes: the server, through src/lib/api.ts. */
 const serverIO: OverseerSaveIO = {
-  getSettings: getOverseerSettings,
+  getSettings: () => getOverseerSettings().then(completeInfo),
   getNotes: () => getOverseerNotes().then((n) => n.text),
-  putSettings: putOverseerSettings,
+  putSettings: (s) => putOverseerSettings(s).then(completeInfo),
   putNotes: (text, was) => putOverseerNotes(text, was).then((n) => n.text),
 };
 
 export const NOTES_CONFLICT_MESSAGE =
   "The Overseer rewrote its standing notes while you were editing them, so your notes weren't saved. Your edit is still in the box: Save Changes again replaces the Overseer's version, and Cancel drops your edit, so the Overseer's version shows the next time you open Settings";
 
-const store = createDraftStore<OverseerDraft, OverseerDraft, OverseerSaveResult>({
+export const NOTES_TOO_LONG_MESSAGE =
+  "The Overseer added to its standing notes while you were editing them, and together they're over 8,000 characters, so nothing was saved. Shorten the notes, then Save Changes again";
+
+const store = createDraftStore<OverseerForm, OverseerDraft, OverseerSaveResult>({
   tab: "overseer",
   label: "Overseer",
-  toDraft: cloneOverseer,
+  toDraft: toOverseerForm,
   same: sameOverseer,
   rebase: rebaseOverseer,
-  problem: (d) => {
-    const p = overseerDraftProblem(d);
-    return p ? `Overseer: ${p}` : null;
-  },
+  fields: (d) => overseerFields(d),
   write: async (cur, base) => {
     let wrote = false;
     try {
-      const { result, notes } = await saveOverseerDraft(cur, base, {
+      const { result, notes } = await saveOverseerDraft(formToDraft(cur), base, {
         ...serverIO,
         putSettings: async (settings) => {
           const r = await serverIO.putSettings(settings);
@@ -155,7 +228,7 @@ const store = createDraftStore<OverseerDraft, OverseerDraft, OverseerSaveResult>
         ([info, notes]) => store.refreshSaved(cloneOverseer({ settings: info.settings, notes })),
         () => {},
       );
-      throw new SaveFailed(conflict ? NOTES_CONFLICT_MESSAGE : failureOf(err).message, wrote);
+      throw new SaveFailed(err instanceof NotesTooLong ? NOTES_TOO_LONG_MESSAGE : conflict ? NOTES_CONFLICT_MESSAGE : failureOf(err).message, wrote);
     }
   },
 });
@@ -170,65 +243,88 @@ export const setOverseerDraft = store.setDraft;
  * the draft the saved copy.
  */
 export const setOverseerSaved = (next: OverseerDraft, opts?: { replaceDraft?: boolean }): void => store.setSaved(cloneOverseer(next), opts);
-export const acceptOverseerSave = (next: OverseerDraft): void => store.acceptSave(cloneOverseer(next));
 export const overseerDirty = store.dirty;
 export const overseerSaving = store.saving;
+/** Why the dialog's Save waits for this form ("Overseer: …"), or null. */
+export const overseerProblem = store.problem;
+/** The dialog's Save Changes for this form alone (the footer saves every form; tests use this). */
+export const saveOverseer = store.save;
 export const overseerSaveError = store.error;
 export const overseerWarnings = store.warnings;
 /** The dialog closed: drop the draft, so the next open reads the saved file afresh. */
 export const resetOverseerDraft = store.reset;
 
-export const CAP_KEYS = ["createPerTurn", "promptsPerTurn", "archivesPerTurn", "concurrentSessions", "explorePerTurn", "linksPerTurn", "orgWritesPerTurn", "gatherPerTurn", "extRunsPerTurn"] as const satisfies readonly (keyof OverseerCaps)[];
-
-export const CAP_LABEL: Record<keyof OverseerCaps, { label: string; hint: string }> = {
-  createPerTurn: { label: "Sessions created", hint: "New sessions it may create, per message you send." },
-  promptsPerTurn: { label: "Prompts to other sessions", hint: "Messages it may send to other sessions, per message you send." },
-  archivesPerTurn: { label: "Sessions archived", hint: "Sessions it may archive, per message you send." },
-  concurrentSessions: {
-    label: "Running at once",
-    hint:
-      "How many sessions the Overseer started or messaged may be working at the same time. Starting a session, or messaging one " +
-      "that isn't already counted, needs a free slot; when none is free, the Overseer waits or asks you. Sessions you started " +
-      "count only once the Overseer messages them.",
-  },
-  explorePerTurn: { label: "Ideas explored", hint: "Idea explorers it may launch, per message you send." },
-  linksPerTurn: { label: "Links made", hint: "Sessions it may link across hosts, per message you send." },
-  orgWritesPerTurn: { label: "Organization changes", hint: "Changes it may make to organizations, projects, rosters and project overseers, per message you send." },
-  gatherPerTurn: { label: "Gathering sessions started", hint: "Gathering sessions and offers it may start, per message you send." },
-  extRunsPerTurn: { label: "Extension commands run", hint: "Extension commands it may run, per message you send." },
-};
-
 /** The eight limits counted per message: the folded group under Running at once. */
 export const PER_MESSAGE_CAP_KEYS = CAP_KEYS.filter((k) => k !== "concurrentSessions");
-
-/** A limit the form can take: a whole number from 0 to 1000. */
-export const capValid = (v: number): boolean => Number.isInteger(v) && v >= 0 && v <= 1000;
 
 /** Where the draft's problem is, so the form can open the folded group that holds the field. */
 export type OverseerIssueAt =
   | { group: "running" }
   | { group: "per-message"; key: keyof OverseerCaps }
   | { group: "quick-action"; index: number }
+  | { group: "notes" }
   | { group: "advanced" };
 
-/** Why the draft can't be saved, one sentence, and where; null when it can. First match wins, in page order. */
-export function overseerDraftIssue(d: OverseerDraft): { message: string; at: OverseerIssueAt } | null {
-  for (const k of CAP_KEYS) {
-    if (!capValid(d.settings.caps[k]))
-      return { message: `${CAP_LABEL[k].label} must be a whole number from 0 to 1000.`, at: k === "concurrentSessions" ? { group: "running" } : { group: "per-message", key: k } };
-  }
-  const blank = d.settings.quickActions.findIndex((a) => !a.label.trim() || !a.prompt.trim());
-  if (blank >= 0) return { message: `Quick action ${blank + 1} needs a label and a prompt.`, at: { group: "quick-action", index: blank } };
-  if (!d.settings.explorer.model || !d.settings.explorer.effort) return { message: "The idea explorer needs a model and an effort.", at: { group: "advanced" } };
-  return null;
+type AnyDraft = OverseerDraft | OverseerForm;
+
+/** Add Quick Action stops at the most the server keeps. */
+export const canAddQuickAction = (list: readonly OverseerQuickAction[]): boolean => list.length < QUICK_ACTIONS_MAX;
+
+export const EXPLORER_NEEDS = "The idea explorer needs a model and an effort.";
+
+/**
+ * The form's fields in page order, each with its rule (or the explorer's own sentence) and where
+ * it is, so the form can open the folded group that holds the first bad one. Every limit the
+ * server's strict PUT checks is here, so Save never sends what the server refuses, and never
+ * writes the settings and then fails on the notes.
+ */
+export function overseerFields(d: AnyDraft): (FieldCheck<OverseerIssueAt> | { message: string | null; at: OverseerIssueAt })[] {
+  const actions = d.settings.quickActions;
+  return [
+    ...CAP_KEYS.map((k) => ({ rule: CAP_RULES[k], value: (d.settings.caps as FormCaps)[k], at: k === "concurrentSessions" ? { group: "running" as const } : { group: "per-message" as const, key: k } })),
+    { message: actions.length > QUICK_ACTIONS_MAX ? TOO_MANY_QUICK_ACTIONS : null, at: { group: "quick-action", index: QUICK_ACTIONS_MAX } },
+    ...actions.flatMap((a, i) => (["label", "description", "prompt"] as const).map((k) => ({ rule: QA_RULES[k], value: a[k], label: qaLabel(i + 1, k), at: { group: "quick-action" as const, index: i } }))),
+    { rule: NOTES_RULE, value: d.notes, at: { group: "notes" } },
+    { message: !d.settings.explorer.model || !d.settings.explorer.effort ? EXPLORER_NEEDS : null, at: { group: "advanced" } },
+    { rule: EXTRA_PROMPT_RULE, value: d.settings.extraSystemPrompt, at: { group: "advanced" } },
+  ];
 }
 
+/** The first problem and where it is, or null. */
+export const overseerDraftIssue = (d: AnyDraft) => firstIssue(overseerFields(d)) as { message: string; at: OverseerIssueAt } | null;
+
 /** Why the draft can't be saved, one sentence, or null. */
-export const overseerDraftProblem = (d: OverseerDraft): string | null => overseerDraftIssue(d)?.message ?? null;
+export const overseerDraftProblem = (d: AnyDraft): string | null => overseerDraftIssue(d)?.message ?? null;
 
 /** How many of the per-message limits differ from their defaults (a cleared field counts). */
-export function capsChangedFromDefault(caps: OverseerCaps, defaults: OverseerCaps): number {
-  return PER_MESSAGE_CAP_KEYS.filter((k) => !Object.is(caps[k], defaults[k])).length;
+export function capsChangedFromDefault(caps: FormCaps | OverseerCaps, defaults: OverseerCaps): number {
+  return PER_MESSAGE_CAP_KEYS.filter((k) => !capSame(caps[k], defaults[k])).length;
+}
+
+/** Limits' Reset to Defaults: every box shows its default, as text like every limit box. Pure. */
+export function resetLimits(d: OverseerForm, defaults: { caps: OverseerCaps }): OverseerForm {
+  const caps = {} as FormCaps;
+  for (const k of CAP_KEYS) caps[k] = String(defaults.caps[k] ?? CAP_DEFAULTS[k]);
+  return { ...cloneOverseer(d), settings: { ...cloneOverseer(d).settings, caps } };
+}
+/** Quick actions' Reset to Defaults: the shipped list, copied. Pure. */
+export const resetQuickActions = (d: OverseerForm, defaults: { quickActions: OverseerQuickAction[] }): OverseerForm => {
+  const c = cloneOverseer(d);
+  return { ...c, settings: { ...c.settings, quickActions: defaults.quickActions.map((q) => ({ ...q })) } };
+};
+/** The idea explorer's Reset to Defaults. Pure. */
+export const resetExplorer = (d: OverseerForm, defaults: { explorer: WorkerChoice }): OverseerForm => {
+  const c = cloneOverseer(d);
+  return { ...c, settings: { ...c.settings, explorer: { ...defaults.explorer } } };
+};
+
+/** Which groups already hold their defaults: their Reset to Defaults is greyed out. */
+export function atDefaults(d: AnyDraft, defaults: { caps: OverseerCaps; quickActions: OverseerQuickAction[]; explorer: WorkerChoice }): { limits: boolean; quickActions: boolean; explorer: boolean } {
+  return {
+    limits: CAP_KEYS.every((k) => capSame((d.settings.caps as FormCaps)[k], defaults.caps[k])),
+    quickActions: sameValue(d.settings.quickActions, defaults.quickActions),
+    explorer: sameValue(d.settings.explorer, defaults.explorer),
+  };
 }
 
 /** The folded Per-message limits group's head: "All at default", "2 changed from default". */
@@ -236,7 +332,7 @@ export const perMessageSummary = (changed: number): string => (changed === 0 ? "
 
 /** Running at once's live line: the count now, of the number in the field, or of the saved limit
     while the field doesn't hold a valid one. */
-export const runningNowLine = (running: number, field: number, saved: number): string => `Now: ${running} of ${capValid(field) ? field : saved} running.`;
+export const runningNowLine = (running: number, field: CapEntry, saved: number): string => `Now: ${running} of ${capOf(field) ?? saved} running.`;
 
 /** A fresh quick action: an id no other row has. */
 export function newQuickAction(existing: readonly OverseerQuickAction[]): OverseerQuickAction {

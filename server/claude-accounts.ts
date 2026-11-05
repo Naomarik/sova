@@ -36,6 +36,8 @@ import { readPeers } from "./mesh/peers";
 import { poolAgent } from "./claude-pool";
 import type { PoolAgent } from "./claude-pool/agent";
 import { clearLoginAssignments, loginUsedBy } from "./claude-login-store";
+import { LOGIN_NAME_RULE } from "../shared/account-limits";
+import { problemOf } from "../shared/form-rules";
 
 // Settings → Accounts (§app.claude-logins): this host's Claude logins, their order, and adding
 // one by driving Claude Code's own `claude auth login` for a new directory, with no terminal.
@@ -49,7 +51,6 @@ const FINISH_TIMEOUT_MS = 60_000;
 const FLOW_TIMEOUT_MS = 10 * 60_000;
 const LOGOUT_TIMEOUT_MS = 15_000;
 const MAX_CODE = 2048;
-const MAX_LABEL = 80;
 
 export interface ClaudeAccountsOptions {
   agentDir?: string;
@@ -215,7 +216,8 @@ export class ClaudeAccountsService {
   patch(id: string, body: unknown): ServiceResult {
     const b = (body ?? {}) as { enabled?: unknown; label?: unknown };
     if (b.enabled !== undefined && typeof b.enabled !== "boolean") return { status: 400, body: { error: "enabled must be true or false" } };
-    if (b.label !== undefined && b.label !== null && (typeof b.label !== "string" || b.label.length > MAX_LABEL)) return { status: 400, body: { error: `label must be a string of at most ${MAX_LABEL}` } };
+    const badLabel = b.label !== undefined && b.label !== null && problemOf(LOGIN_NAME_RULE, b.label);
+    if (badLabel) return { status: 400, body: { error: badLabel } };
     if (this.inPoolOnly(id)) {
       const pool = this.pool()!;
       if (typeof b.enabled === "boolean") pool.setEnabled(id, b.enabled);

@@ -123,7 +123,8 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
 ## §app.projects/home-cards — Your projects first on the overview
 
 The overview's first section (§chat.transcript/landing-page, part 2) is a grid of project cards,
-so the first thing read is which project needs you, and a chat in any of them is one press away.
+so the first thing read is which project needs you, what is waiting to land and what is running,
+and a chat in any of them is one press away.
 
 - **Which projects.** Every project registered on this host that is not archived
   (`GET /api/projects`, §app.projects/list), standalone and placed alike, in one grid: a placed
@@ -132,37 +133,87 @@ so the first thing read is which project needs you, and a chat in any of them is
   computers are not shown; the Projects page lists both.
 - **The head.** The `Projects` section eyebrow, with an `All Projects` link to `#/projects` at its
   right.
-- **A card** (`.card.project-card`): the project's icon at 40px (§app.projects/icon), its name on
-  one line (cut with an ellipsis, the whole name as its `title`), a second line, and the status
-  line. The second line is `In {org name}` for a placed project; otherwise its folder, with the
-  home folder shortened to `~` and the full root as its `title`.
-- **The status line says only what is happening.** A warn chip `Needs you · {n}` and `{n}
-  working`, each while above 0. With neither, `Active {relative time}` (the newest activity among
-  its chats, `src/lib/format.ts`, the exact stamp as its `title`), or `No chats yet` when it has
-  none. A project that needs you gets a warn border, as the Sessions card does. The card never
-  says whether a branch is ready to land, and nothing on it lands anything: approving a branch
-  stays with the places that show the commit approved (§app.merge-queue/approve).
-  - A project's chats are the main threads listed as its (`SessionSummary.project` naming its
-    id, §app.projects/folder-sessions), archived ones left out. `Needs you` counts the Needs-you
-    region's rows among them (§app.session-list/needs-you: the same rows and the same proactivity
-    rule, so it is 0 on every card while the region would list nothing). `working` counts the
-    ones a live record says are working, or a web session the server reports busy, as the Sessions
-    card counts them.
-  - The counts come from the session list and the attention digest the page already has, so they
-    add no read and update live. The project list is read when the section shows, every 30
-    seconds while it is shown, and again after Add Project.
-- **Opening a project.** A press anywhere on the card opens its page, `#/projects/<pid>`
-  (§app.organizations/project-page): the name is the card's link, stretched over it, and the
-  card's buttons sit above it, none inside the link.
-- **New Chat.** Every card has a `New Chat` button. One press starts a chat in the project at once,
-  with no dialog: exactly what New Session's Project tab starts (§app/new-session-dialog,
-  §app.project-overseer/new-coding-session: in the project root, on the project's coding model and
-  thinking, `worktree: "later"`, so it cuts its own branch once the work has a name), then opens it
-  with the composer focused. While it starts the button is disabled and reads `Starting…`; when
-  the start fails the card says `Couldn't start a chat: {reason}`.
-- **The ⋯ menu** (`Project actions · {name}`): `New Chat…` (the New Session dialog with its folder
-  set to the project's root, to pick a model, a branch or a subfolder), `Overseer` (the project's
-  overseer), `Merge Queue`, `Branches` and `Settings` (those tabs of its page).
+- **A card** (`.card.overview-project-card`), top to bottom: its head, the Chats group, the Runtime group,
+  the progress zone while something moves, and the foot bar. Cards in one row are the same height,
+  the foot bar pinned to each card's bottom.
+- **The card's head is its Needs you band.** The project's icon at 40px (§app.projects/icon), its
+  name on one line (cut with an ellipsis, the whole name as its `title`) and a second line: `In
+  {org name}` for a placed project; otherwise its folder, with the home folder shortened to `~` and
+  the full root as its `title`. On the right: while something in the project needs you, the count
+  in large figures over `Needs you`, the head tinted in the warn tone and the card's border warn,
+  as the Sessions card's is; otherwise `Nothing needs you`, muted. The head is the card's link to
+  its page, `#/projects/<pid>` (§app.organizations/project-page), with a chevron.
+  - `Needs you` counts the Needs-you region's rows among the project's chats
+    (§app.session-list/needs-you: the same rows and the same proactivity rule, so every card reads
+    `Nothing needs you` while the region would list nothing). A project's chats are the main
+    threads listed as its (`SessionSummary.project` naming its id, §app.projects/folder-sessions).
+- **Chats**, a caption with `{n} open` at its right, over two rows:
+  - **Open chats**: the project's chats still open, neither archived nor done: the same count the
+    sidebar's project heading shows (§app.projects/list). While any of them is working it reads
+    `{n} · {w} working`; working is a live record saying `working`, or a web session the server
+    reports busy, as the Sessions card counts it. It opens the project's page.
+  - **Archived chats**: how many of the project's chats are archived. It is not a link (there is no
+    list of one project's archived chats): no chevron, no hover, and a press on it opens nothing.
+  - A chat that is done but not archived (an ended terminal chat) counts in neither row.
+- **Runtime**, a caption with the project's memory in use at its right, `idle` while that is 0, or
+  `no project setup` for a project with no project file (`.sova/project.json`), over three rows:
+  - **Ready to merge**: how many branches the project's Merge Queue tab lists under `Ready to land,
+    not approved` (§app.merge-queue/view), with a success dot while above 0, then `· {k} in line`
+    while approved branches wait or are being checked. It opens the Merge Queue tab,
+    `#/projects/<pid>/merge-queue`. A muted `…` while the queue serves the project but its first
+    view since Sova started is still being read. `—` for a project the merge queue doesn't serve,
+    and then the row is not a link.
+  - **Running slots**: one pip per slot of the copy limit, one lit per running copy, and `{r} of
+    {cap}`: the running copies against the copy limit, as the Branches tab counts them (the main
+    checkout's and conformance's copies never count, §app.project-services/instances). `0 of 4`
+    while none runs. `—` for a project with no project file. It opens the Branches tab,
+    `#/projects/<pid>/branches`.
+  - **Memory in use**: a thin bar and the figure (`640 MB`, `2.4 GB`): what the project's chats
+    and running copies use now (§app.projects/home-glance). The bar fills by the project's share of
+    this machine's total memory. `0 MB idle` while nothing of it runs. A
+    project with no project file still shows what its chats use. It opens the Branches tab while
+    the project has a project file; otherwise it is not a link.
+  - A row that opens something tints on hover and carries a chevron; a row with nothing to open
+    has neither.
+- **The progress zone**, thin rows just above the foot bar, shown only while something moves; each
+  is one link, and the zone is absent when nothing moves:
+  - **Landing**, while the project's queue is checking a branch: `Landing {branch} · step {n} of
+    {m}` with `~{n} min left`, a segmented meter (the landing bar's segments, §app.merge-queue/landing-bar:
+    {m} counts every segment it draws), and `started {when} · takes ~{n} min · {k} in line` (no `in line` part while none
+    waits). It opens the Merge Queue tab.
+  - **Frozen for a release**, while a release holds the queue, landings wait on it and no run of
+    the queue's is checking: `Merge queue` `Frozen for a release`, `{n} waiting` at its right, with
+    "{target} is frozen for release {tag}" under it, as the Merge Queue tab says it. While a release's own check runs, the Landing row's last part reads `{n}
+    waiting for {tag}` instead. It opens the Merge Queue tab.
+  - **Release**, while a release is open, or published or withdrawn with steps still to finish:
+    `Release {tag} · Step {i} of {n}` (`New release` until its tag is picked), the Releases tab's
+    state chip in its words (`Preparing`, `Checking`, `Ready to publish`, `Publishing`, `Publish
+    failed`, `Published, finishing`, `Withdrawn, finishing`; `Held for you` while its step is
+    held), a segmented meter (one segment per step), and the step's name (`{label}, held for you`
+    while held) with `{k} done` (§app.release/tab). It opens the Releases tab,
+    `#/projects/<pid>/releases`.
+- **The foot bar**, pinned to the card's bottom on the sunken tone: **New Chat** on the left,
+  `Active {relative time}` beside it (the newest activity among its chats, `src/lib/format.ts`, the
+  exact stamp as its `title`; `No chats yet` when it has none), the first thing cut (with an
+  ellipsis) when the card is too narrow for it, and **⋯** on the right.
+  - **New Chat.** One press starts a chat in the project at once, with no dialog: exactly what New
+    Session's Project tab starts (§app/new-session-dialog, §app.project-overseer/new-coding-session:
+    in the project root, on the project's coding model and thinking, `worktree: "later"`, so it
+    cuts its own branch once the work has a name), then opens it with the composer focused. While
+    it starts the button is disabled and reads `Starting…`; when the start fails the card says
+    `Couldn't start a chat: {reason}`.
+  - **The ⋯ menu** (`Project actions · {name}`): `New Chat…` (the New Session dialog with its folder
+    set to the project's root, to pick a model, a branch or a subfolder), `Overseer` (the project's
+    overseer), `Merge Queue`, `Branches` and `Settings` (those tabs of its page).
+- **Nothing on the card lands anything.** Ready to merge and the progress zone only say what the
+  queue and the release hold; approving a branch stays with the places that show the commit
+  approved (§app.merge-queue/approve), and publishing a release with the Releases tab.
+- **What updates when.** The head's count and the Chats group come from the session list and the
+  attention digest the page already has: they add no read and update live. Ready to merge, Running
+  slots, Memory in use and the progress zone come from one read of every card's figures
+  (§app.projects/home-glance), made when the section shows and every 30 seconds while it is shown,
+  with the project list's own read (also after Add Project). Until that read first answers, and
+  while it fails, those three rows read `—` and the zone is absent; the next poll tries again.
 - **Order.** The projects that need you first; then the most recently active (the newest activity
   among its chats, or when it was added for a project with no chats), newest first; then by name.
   The counts update live but the cards don't move while the overview is shown: the order is set
@@ -170,10 +221,11 @@ so the first thing read is which project needs you, and a chat in any of them is
   proactivity have all been read (until then the cards keep the live order, so the ones that need
   you are never buried), and a project added meanwhile joins at the end, so a card never jumps
   under your finger. The next visit sorts afresh.
-- **Many projects.** Up to 8 cards show, 6 while the overview is narrower than 480px; under them
-  `Show all {n}` shows the rest in place and `Show fewer` folds them back. With more than 8
-  cards (an archived project has none, so it never counts) a `Filter projects` search field sits above the grid: it matches names, ignoring case,
-  and shows every match whatever the limit; with no match it reads `No project matches "{text}"`.
+- **Many projects.** Up to 8 cards show, 6 while the grid is one column; under them `Show all
+  {n}` shows the rest in place and `Show fewer` folds them back. With more than 8 cards (an
+  archived project has none, so it never counts) a `Filter projects` search field sits above the
+  grid: it matches names, ignoring case, and shows every match whatever the limit; with no match
+  it reads `No project matches "{text}"`.
 - **Add Project.** The grid's last tile is a dashed `Add Project` tile, always but while a filter
   is on. It opens the Add Project dialog (a folder, or Clone from GitHub; §app.projects/registration,
   §app.projects/clone), and the new project is listed once it is added.
@@ -181,11 +233,56 @@ so the first thing read is which project needs you, and a chat in any of them is
   folder or clone a GitHub repository and it shows up here." and an `Add Project` button. Before the
   first read answers it reads `Reading projects…`; a failed read says "Couldn't read projects.
   Trying again shortly." and the next poll tries again.
-- **Widths.** The grid fills columns of at least 240px: 4 across on a 1440px desktop, 2 on an open
-  Fold. Under 480px of `overview` width (a phone, a folded Fold) the cards are compact, two across:
-  the icon, `+` and ⋯ share the top row, the name under them and the status line across the card;
-  `New Chat` is that icon-only `+` button, named `New chat in {name}`, and every control is at
-  least 44px tall.
+- **Widths.** The columns follow the overview's own width (the `overview` container), never the
+  window's: one column under 560px (a phone, a folded Fold), two from 560px (an open Fold), three
+  from 900px (a desktop). The 8-or-6 limit changes at the same 560px. Every card has the same
+  layout at every width; there is no compact card. Nothing scrolls sideways, and in one column
+  every row and button is at least 44px tall.
+
+## §app.projects/home-glance — What the project cards' runtime figures read, and what they cost
+
+The project cards' Ready to merge, Running slots, Memory in use and progress zone
+(§app.projects/home-cards) come from one read of every listed project at once, made by the
+overview every 30 seconds while its Projects section shows and never otherwise. The read only
+gathers what Sova already keeps (but for a served queue's first view, below); it lands nothing and
+changes nothing.
+
+- **Ready to merge, in line, landing and frozen** come only from the merge queue's newest view of
+  that project, the one it already keeps for the Merge Queue tab and the landing bar
+  (§app.merge-queue/view, §app.merge-queue/landing-bar): its `Ready to land, not approved` list, its
+  waiting and checking entries, its Checking now check and estimates, and whether a release holds
+  it. A project the queue doesn't serve (not listed, or its merge setup not done, as the queue
+  last named its served projects) reads `unserved`: nothing is read for it and no queue is made. A
+  served project whose queue has kept no view yet (after Sova starts) reads `reading`, and the
+  read starts that queue's view once, in the background, deduped with any read already running;
+  once kept, the view is kept up to date as every other kept view is, with no Merge Queue tab
+  visit. Past that one first view the read asks the queue for no view and runs no git. So a card
+  is never fresher than that view.
+- **Release progress** comes from the project's release records (§app.release/record) as Sova
+  keeps them in memory: as the releaser last published them to the Releases tab, or as its start
+  read them; the read opens no record file. The record shown is the one the Releases tab shows:
+  the open one, else a published or withdrawn one while its after-steps still have work.
+- **Running slots** come from the copies' records and the copy limit's one rule
+  (§app.project-services/instances): the running copies, the main checkout's and conformance's
+  never counted, against the limit in force. No service is asked or probed for it. A project with
+  no project file has none.
+- **A project's memory in use** is two parts, each process counted once, each by its own memory as
+  the resource monitor measures it (§app.resource-monitor/sampling-and-history: on Linux resident
+  less shared pages; on macOS resident memory):
+  - **its chats**: every chat listed as the project's (§app.projects/folder-sessions) that has a
+    process, with its workers and the tools and programs they started, as the resource monitor
+    charges them to the chat (§app.resource-monitor/attribution), taken from the monitor's newest
+    sample (at most 5 seconds old); the read samples nothing itself.
+  - **its running copies**: the processes of every copy of the project that runs now, the main
+    checkout's included (an adopted main is its adopted unit, §app.project-services/adopt), and of
+    its shared services, found from each unit's own process list (its cgroup's `cgroup.procs`) and
+    measured as the monitor measures a chat's process (§app.resource-monitor/lightness-budget: no
+    `smaps`, no PSS, nothing spawned). On a host without a systemd user manager to read (macOS),
+    this part is not read and counts 0: the read never spawns `ps` for it.
+- **Cost.** No command is spawned and no service is probed by the read itself; the one background
+  view of a served queue that has none kept is the queue's own view read. Its cost is the copies'
+  memory reads, bounded by how many copies run, and a few in-memory lookups; several overviews open
+  at once share one answer, reused for up to 10 seconds.
 
 ## §app.projects/icon — A project's icon: a picture, or its letters
 

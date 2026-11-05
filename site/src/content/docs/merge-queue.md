@@ -44,6 +44,8 @@ Branches run one at a time, in the order you approved them, and each row shows i
 The branch's chat gets one card for its branch, from Land on, updated in place as it moves:
 queued, checking, landed. The worktree stays where it is: Sova never removes it.
 
+<!-- screen: landing-progress | A branch's card in its own chat, updated in place as the queue checks it: its place in line, the check running now and how long it takes. -->
+
 ## When something fails
 
 A red check is blamed on the branch only once the same check has passed on the main branch alone,
@@ -69,6 +71,12 @@ it, the queue's state with **Pause Queue** and **Queue Settings**, what is being
 check, a meter and how long it takes), the line of waiting branches, and the recent landings with
 their notes. Every row opens its chat and has **Review Changes**, which shows the change in the
 changes viewer.
+
+<!-- screen: merge-queue-tab | A project's Merge Queue tab: the main branch at its commit, the branch being checked with its meter, the branches waiting in line, and the recent landings with their notes. -->
+
+Each run has a page of its own: the branch, the commit that was tested, its verdict in plain words (and, for a red run, whose failure it is), then every check with why it ran, its time and its **Log**. Nothing merges from a run until every check passes.
+
+<!-- screen: merge-queue-run | One branch's run page: its verdict, the tested commit, and Checks and why, each check with its result, its time and its log. -->
 
 The queue pauses itself, and says why, when the main branch moved outside the queue, when the
 project folder has uncommitted edits, or when setup fails on the main branch itself. **Resume
@@ -97,7 +105,8 @@ the project's branches land through the queue.
 **Settings → Merge Queue** shows every value a project's queue uses, each tagged with where it
 lives (the project's file, this computer, or Sova), and lets you change them: how it lands, the
 checks, the review and its model, and the merge thread's model. A change to the project's file is
-saved as one commit you confirm.
+saved as one commit you confirm. [Merge queue settings](/docs/merge-queue-settings/) has the whole
+tab.
 
 While a [release](/docs/releases/) is open, the queue is frozen for it: only the release's own
 commit lands, nothing is pushed, and other branches wait in line until it is published or

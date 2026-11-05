@@ -30,9 +30,10 @@ import {
   type MeshSessionsView,
   type PeerStatusView,
 } from "../../shared/mesh-access";
+import { COMPOSER_HEADER, PEER_AREA_HEADER, WIRE_AREAS } from "../../shared/wire-areas";
 import { access, allows, capsOf, defaultPreset, deniedBy, loginsOf, mayShareLoginNode, NotShared, noteDenied, noteGranted, onAccessChange, restricted, updateAccess, validateGrant } from "./access";
 import { frontDoorConfig, noBrowserIds } from "./front-door";
-import { answered, ownHello, probeHello, probePeer, peerLastSeen, PROBE_TIMEOUT_MS } from "./hello";
+import { answered, areasForbid, ownHello, probeHello, probePeer, peerLastSeen, PROBE_TIMEOUT_MS } from "./hello";
 import { type ListenerDeps, PeerListener } from "./listener";
 import { addressIdentity, identityMode } from "./address-identity";
 import { REFUSED_HEADER } from "./hello";
@@ -48,6 +49,8 @@ import { bootBuild } from "./build-id";
 import { cleanBuild } from "./lan-handoff-protocol";
 import { applyLanPairing, applyLanRelay, lanRoutes, type LanRouteDeps } from "./lan-routes";
 import { loginKindsPin } from "../sync/logins-merge";
+import { problemOf } from "../../shared/form-rules";
+import { FRONT_DOOR_RULE, HOST_LABEL_RULE } from "../../shared/mesh-limits";
 import { agentRoot, stateRoot } from "../state-root";
 
 // The mesh (brief: settled decisions). ON exactly while peers.json lists a peer; OFF, nothing
@@ -448,6 +451,9 @@ export function peerFetch(peerId: string, path: string, init?: RequestInit): Pro
   if (outboundRefusal(peerId, path)) return Promise.reject(new NotShared(peerId));
   const headers = new Headers(init?.headers);
   headers.delete(PROXIED_HEADER); // it would make the peer treat this host's own call as a browser's
+  // Whatever runs on this host states this host's own numbers (§mesh.compatibility/every-send-states-a-version).
+  headers.set(COMPOSER_HEADER, String(WIRE_AREAS.composer));
+  headers.set(PEER_AREA_HEADER, String(WIRE_AREAS.peer));
   return fetchPeer(peer, path, { ...init, headers });
 }
 
@@ -468,6 +474,14 @@ export function updatePeers(change: (config: PeersConfig) => PeersConfig | { err
   return v;
 }
 
+/** The sentence refusing what a host does on its own with peer `id`, when both list their areas and
+    this host reads it as Update needed (§mesh.compatibility/host-acts); else null. */
+export async function peerUpdateNeeded(id: string): Promise<string | null> {
+  const peer = peerById(id);
+  if (!peer || !areasForbid(await probePeer(peer))) return null;
+  return `${peer.label} runs another version of Sova`;
+}
+
 /** The surface server/sync builds on (mountSync(app, meshApi)). */
 export const meshApi = {
   enabled: meshEnabled,
@@ -475,6 +489,7 @@ export const meshApi = {
   self: meshSelf,
   settings: () => readMeshSettings(),
   peerFetch,
+  updateNeeded: peerUpdateNeeded,
   /** The verified caller of a route under /api/peer/*; null never reaches such a route (it is 404). */
   requestPeer,
   /** Fires when peers.json goes from no peer to some (at startup too); at once if already on. */
@@ -555,6 +570,7 @@ async function peerStatuses(): Promise<PeerStatusView[]> {
     state: probes[i]!.state,
     ...(probes[i]!.error ? { error: probes[i]!.error } : {}),
     ...(probes[i]!.hello ? { hello: probes[i]!.hello } : {}),
+    ...(probes[i]!.hello?.areas ? { areas: probes[i]!.hello!.areas } : {}),
     lastSeen: peerLastSeen(p.id),
   }));
 }
@@ -914,6 +930,10 @@ export function applyMeshSettings(body: Partial<MeshLocalSettings>, opts: { dry?
     if (served.length && served.length < hosts.length && served.every((id) => body.frontDoorExclude!.includes(id)))
       return { status: 400, body: { error: "frontDoorExclude: the front door needs at least one host with a browser address" } };
   }
+  // The form's own rules and words (shared/mesh-limits.ts), ahead of the file's validation,
+  // whose refusals name raw keys ("self.label must be …").
+  const why = (body.hostLabel !== undefined && problemOf(HOST_LABEL_RULE, body.hostLabel)) || (typeof body.frontDoor === "string" && problemOf(FRONT_DOOR_RULE, body.frontDoor));
+  if (why) return { status: 400, body: { error: why } };
   const pinned = pinnedLoginKinds();
   if (body.loginKinds !== undefined && pinned && (body.loginKinds ?? "all") !== pinned) {
     return { status: 409, body: { error: "loginKinds is pinned by SOVA_SYNC_LOGIN_KINDS on this host" } };

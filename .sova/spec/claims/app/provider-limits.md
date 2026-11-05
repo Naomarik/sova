@@ -111,8 +111,12 @@ and every process on the device reads and writes them the same way.
   still be seen and cleared.
 - Like the switches it is staged: the dialog's **Save Changes** writes it, **Cancel** discards
   it and closes the dialog. Save reads the file again first and applies only the providers whose field you changed,
-  so a limit another device's sync wrote while the form was open is kept. A value outside 1–999
-  or not a whole number keeps Save from writing and says why.
+  so a limit another device's sync wrote while the form was open is kept. The field is the form
+  kit's (§design/forms): a value outside 1–999 or not a whole number keeps what was typed, is red
+  with one sentence under the provider's box, "zai's At once must be a whole number from 1 to
+  999.", and keeps Save from writing, the footer saying "Request limits: " and the same sentence.
+  The form and the server's save read one rule (`shared/provider-limits.ts`), and the save
+  (`PUT /api/settings/provider-limits`) refuses such a value in that sentence.
 - A failed save keeps every field as you left it and says so in an error banner:
   **Couldn't save the request limits.** {reason}. "Your saved limits are unchanged." A file that
   can't be read is shown in an error banner and isn't overwritten.

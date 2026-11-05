@@ -1338,7 +1338,7 @@ card). On a phone it is `#/overview`, under the list's head row, and opening Sov
 ```html
 <div class="overview">
   <div class="overview-head"><h1 class="overview-title">Overview</h1></div>
-  <section class="explain-section" aria-labelledby="overview-projects-title">…Projects · All Projects, one .card.project-card per project, the Add Project tile (§app.projects/home-cards)…</section>
+  <section class="explain-section" aria-labelledby="overview-projects-title">…Projects · All Projects, one .card.overview-project-card per project, the Add Project tile (§app.projects/home-cards)…</section>
   <section class="explain-section" aria-labelledby="overview-start-title">…Start, one .card.action-card per action…</section>
   <section class="explain-section" aria-labelledby="home-sessions-title">…Sessions, the .card.home-sessions…</section>
   <!-- only when at least one extension is installed (§app.extensions/cards) -->

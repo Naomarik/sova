@@ -163,6 +163,14 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
 - **A session the Overseer started from a profile** shows the same screen with it preselected and
   one muted line: "Started by the Overseer with {label}." It stays changeable until a message is sent.
 
+## §chat.profiles/profile-name — A profile's name
+
+Save Current As Profile's name box (§chat.profiles/picker) is the form kit's (§design/forms): a
+name past 60 characters is kept whole, its count "{n} / 60" red with "Profile name can be at most 60
+characters." under it, and Save Profile waits; a blank one is "Profile name can't be empty.". The
+server's add, and its read of a profile file, refuse in the same words, from one rule
+(`shared/profile-limits.ts`).
+
 ## §chat.profiles/applying — A pick writes the entry and reopens the runtime
 
 - `POST /api/sessions/profile {path, profile}` (`profile`: `{source, id}` or a bare id, resolved

@@ -1,5 +1,6 @@
 import { PUSH_KINDS, type PushKind, type PushSettings, type PushSettingsInfo } from "../../shared/protocol";
-import { contactProblem, HHMM } from "../../shared/push";
+import { CONTACT_RULE, HHMM } from "../../shared/push-limits";
+import { firstIssue } from "../../shared/form-rules";
 import { getPushInfo, putPushSettings } from "./api";
 import { createDraftStore, saveRebased } from "./settings-draft";
 
@@ -46,15 +47,17 @@ export function rebasePush(d: PushDraft, base: PushSettings, fresh: PushSettings
   };
 }
 
+/** The form's fields in page order: the contact, then quiet hours' own sentence. */
+const pushFields = (d: PushDraft) => {
+  const q = d.quietHours;
+  const quiet = !HHMM.test(q.start) || !HHMM.test(q.end) ? "quiet hours need a start and an end time." : q.start === q.end ? "quiet hours can't start and end at the same time." : null;
+  return [{ rule: CONTACT_RULE, value: d.contact }, { message: quiet }];
+};
+
 /** Why the draft can't be saved, naming the form, or null. Pure. */
 export function pushDraftProblem(d: PushDraft): string | null {
-  const c = d.contact.trim();
-  const bad = c ? contactProblem(c) : null;
-  if (bad) return `Phone Notifications: ${bad}`;
-  const q = d.quietHours;
-  if (!HHMM.test(q.start) || !HHMM.test(q.end)) return "Phone Notifications: quiet hours need a start and an end time.";
-  if (q.start === q.end) return "Phone Notifications: quiet hours can't start and end at the same time.";
-  return null;
+  const bad = firstIssue(pushFields(d));
+  return bad && `Phone Notifications: ${bad.message}`;
 }
 
 /** Settings → Notifications → Phone Notifications' unsaved settings (settings-draft.ts: module state, held on close). */
@@ -64,7 +67,7 @@ const store = createDraftStore<PushDraft, PushSettings, PushSettingsInfo>({
   toDraft: toPushDraft,
   same: samePush,
   rebase: rebasePush,
-  problem: (d) => pushDraftProblem(d),
+  fields: pushFields,
   write: async (d, base) => {
     const { result } = await saveRebased(d, base, {
       read: (): Promise<PushSettingsInfo> => getPushInfo(),

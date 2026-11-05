@@ -86,6 +86,7 @@ One file per document, in reading order.
 | Document | What it covers |
 |---|---|
 | [§design/ground-rules · Ground rules](ground-rules.md) | Theme, icons, voice, color budget, motion, and text-fit rules every surface follows. |
+| [§design/forms · Forms](forms.md) | The one kit for every box, list and switch: the red state, the message, the count, typed text kept, shared limits, saving, and the inventory check. |
 | [§app/shell · App shell](../app/shell.md) | Two-pane layout, folded and unfolded views, the resizable sessions pane. |
 | [§app/session-list · Session list (sidebar)](../app/session-list.md) | Session rows, rails, regions, search, archive, and cleanup. |
 | [§chat/transcript · Transcript (main pane)](../chat/transcript.md) | Transcript rows: messages, tool cards, disclosures, banners, streaming, landing page. |

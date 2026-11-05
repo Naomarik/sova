@@ -6,6 +6,7 @@ import type { Server } from "node:http";
 import { join } from "node:path";
 import { serve } from "@hono/node-server";
 import { buildApp, SERVER_HEAD, SERVER_RUNTIME } from "./app";
+import { statingOwnNumber } from "./wire-gate";
 import { readBranch } from "./harness/pi/reader";
 import { extensionEntries } from "./harness/pi/state";
 import { markShutdown } from "./wrapup-recovery";
@@ -127,6 +128,7 @@ setInterval(pruneVisitors, 24 * 60 * 60_000).unref();
 
 // The app, for whoever imports the server (routes in-process through app.request()).
 export { app };
+const internalRequest = statingOwnNumber(app);
 
 /** Where the link extension's tools call this server back: loopback for a wildcard bind. */
 const linkOrigin = (port: number) => `http://${HOST === "0.0.0.0" || HOST === "::" ? "127.0.0.1" : HOST.includes(":") ? `[${HOST}]` : HOST}:${port}`;
@@ -179,7 +181,7 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   // Project instances back to their desired state (server/project-services/routes.ts).
   void reconcileProjectServices();
   // The merge queue: its verbs, its queues recovered, the typed "land it" door (server/merge-queue/wire.ts).
-  void startMergeQueue({ request: (path, init) => app.request(path, init) }).catch((err) => console.error("[merge-queue] start failed:", err instanceof Error ? err.message : err));
+  void startMergeQueue({ request: internalRequest }).catch((err) => console.error("[merge-queue] start failed:", err instanceof Error ? err.message : err));
   // Updates: the daily check, on the schedule updates.json keeps across restarts.
   startUpdates(info.port, HOST);
 }) as Server;
@@ -206,13 +208,13 @@ try {
 }
 
 // The Overseer's tools call these same routes in-process (no socket, every guard applies).
-setOverseerDispatch((path, init) => app.request(path, init));
+setOverseerDispatch(internalRequest);
 // An offer card's buttons call the same routes in-process (§chat.offers/buttons).
-setOffersDispatch((path, init) => app.request(path, init));
-setCardsDispatch((path, init) => app.request(path, init));
+setOffersDispatch(internalRequest);
+setCardsDispatch(internalRequest);
 startOverseerLoop();
 startProjectOverseerLoop();
-startScheduleKeeper((path, init) => app.request(path, init));
+startScheduleKeeper(internalRequest);
 noteStallHead(SERVER_HEAD);
 stallGauge("chat processes", () => chatHandles().length);
 // Samples CPU and memory in the background from startup, open modal or not (§app.resource-monitor/sampling-and-history).

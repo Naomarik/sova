@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { afterEach, describe, it } from "node:test";
 import type { VoiceStatus } from "../../../shared/protocol";
+import { MIC_START_LIMIT_MS, MicStartTimeout, startCapture, type Recorder } from "./capture";
 import { backgroundSentence, clock, etaSentence, jobPercent, languagesWord, micErrorSentence, modelName, percentWer, perClip, readyLine, recordingText, roughTime, settingsWords, stepFigure, unsupportedReason, wordDiff } from "./format";
 import { spacedInsert, splice, targetRange, wordCount } from "./insert";
 import { keyboardUp, nextTallest } from "./keyboard";
@@ -172,6 +173,254 @@ describe("voice copy", () => {
     };
     assert.equal(readyLine({ ...base, activeModel: "ggml-large-v3-q5_0" } as unknown as VoiceStatus), "Ready · Vulkan · AMD Radeon 8060S Graphics · whisper.cpp large-v3 q5_0 · Loaded");
     assert.equal(readyLine({ ...base, activeModel: "parakeet-tdt-0.6b-v2-q8_0" } as unknown as VoiceStatus), "Ready · Vulkan · AMD Radeon 8060S Graphics · transcribe.cpp Parakeet TDT 0.6B v2 · q8_0 · Loaded");
+  });
+});
+
+describe("the mic's time limit (§chat.voice/capture)", () => {
+  /** A promise settled from outside. */
+  const held = <T,>() => {
+    let resolve!: (v: T) => void;
+    let reject!: (e: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  };
+  const never = <T,>() => new Promise<T>(() => {});
+  const realTimeout = setTimeout; // one test stands in for the global
+  const tick = (ms = 0) => new Promise((r) => realTimeout(r, ms));
+  /** What a pending start has come to, by now: "pending" until it settles. */
+  const standing = (p: Promise<Recorder>) => {
+    let now: "pending" | "started" | Error = "pending";
+    p.then(
+      () => (now = "started"),
+      (e: Error) => (now = e),
+    );
+    return () => now;
+  };
+  const LIMIT = 30;
+
+  class Status extends EventTarget {
+    constructor(public state: string) {
+      super();
+    }
+    move(state: string) {
+      this.state = state;
+      this.dispatchEvent(new Event("change"));
+    }
+  }
+  const stream = () => {
+    const stopped = { n: 0 };
+    const track = { stop: () => void stopped.n++, addEventListener() {}, removeEventListener() {} };
+    return { stopped, stream: { getTracks: () => [track], getAudioTracks: () => [track] } as unknown as MediaStream };
+  };
+
+  const saved = new Map<string, PropertyDescriptor | undefined>();
+  const put = (name: string, value: unknown) => {
+    if (!saved.has(name)) saved.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
+    Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
+  };
+  afterEach(() => {
+    for (const [name, d] of saved) {
+      if (d) Object.defineProperty(globalThis, name, d);
+      else delete (globalThis as Record<string, unknown>)[name];
+    }
+    saved.clear();
+  });
+
+  /** A browser of stand-ins. `order` is what happened, in order, so a test can say what came first. */
+  function browser(o: {
+    getUserMedia: () => Promise<MediaStream>;
+    permission?: () => Promise<Status>;
+    resume?: () => Promise<void>;
+    addModule?: () => Promise<void>;
+    worklet?: boolean;
+  }) {
+    const order: string[] = [];
+    let closed = 0;
+    const ctx = {
+      state: "running",
+      sampleRate: 48000,
+      destination: {},
+      resume: o.resume ?? (async () => {}),
+      close: async () => void closed++,
+      audioWorklet: o.worklet ? { addModule: o.addModule ?? (async () => {}) } : undefined,
+      createMediaStreamSource: () => ({ connect() {} }),
+      createGain: () => ({ gain: { value: 1 }, connect() {} }),
+      createScriptProcessor: () => ({ connect() {} }),
+      addEventListener() {},
+      removeEventListener() {},
+    };
+    class Ctx {
+      constructor() {
+        order.push("context");
+        return ctx;
+      }
+    }
+    put("window", { AudioContext: Ctx, addEventListener() {}, removeEventListener() {} });
+    put("document", { addEventListener() {}, removeEventListener() {}, visibilityState: "visible" });
+    put("AudioWorkletNode", o.worklet ? class { port = { onmessage: null, postMessage() {} }; connect() {} } : undefined);
+    put("navigator", {
+      mediaDevices: {
+        getUserMedia: () => {
+          order.push("getUserMedia");
+          return o.getUserMedia();
+        },
+      },
+      permissions: o.permission && {
+        query: () => {
+          order.push("permission");
+          return o.permission!();
+        },
+      },
+    });
+    return { order, closed: () => closed };
+  }
+  const events = { onLevel() {}, onInterrupt() {} };
+
+  it("granted and getUserMedia hangs: the named error at the limit, and the context closes", async () => {
+    const b = browser({ getUserMedia: never, permission: async () => new Status("granted") });
+    const at = Date.now();
+    await assert.rejects(startCapture(events, LIMIT), (e: Error) => e instanceof MicStartTimeout && e.name === "MicStartTimeout");
+    assert.ok(Date.now() - at >= LIMIT - 5, "not before the limit");
+    await tick();
+    assert.equal(b.closed(), 1);
+  });
+
+  it("the limit a press gets is the one the sentence names, and only a granted mic gets it", async () => {
+    const delays: number[] = [];
+    const started: ReturnType<typeof setTimeout>[] = [];
+    put("setTimeout", (_fn: () => void, ms: number) => {
+      delays.push(ms);
+      const held = realTimeout(() => {}, 60_000); // never fires in time: only the delay is read here
+      started.push(held);
+      return held;
+    });
+    try {
+      assert.equal(MIC_START_LIMIT_MS, 10_000);
+      browser({ getUserMedia: never, permission: async () => new Status("granted") });
+      void startCapture(events);
+      await tick();
+      assert.deepEqual(delays, [10_000], "granted");
+      delays.length = 0;
+      browser({ getUserMedia: never, permission: async () => new Status("prompt") });
+      void startCapture(events);
+      await tick();
+      assert.deepEqual(delays, [], "prompt");
+    } finally {
+      for (const h of started) clearTimeout(h);
+    }
+  });
+
+  for (const state of ["prompt", "denied"]) {
+    it(`${state} and getUserMedia hangs: no error, long past the limit`, async () => {
+      browser({ getUserMedia: never, permission: async () => new Status(state) });
+      const now = standing(startCapture(events, LIMIT));
+      await tick(LIMIT * 4);
+      assert.equal(now(), "pending");
+    });
+  }
+
+  it("the permission can't be read: no limit, whether it refuses or the browser has no such API", async () => {
+    browser({ getUserMedia: never, permission: () => Promise.reject(new TypeError("no such permission")) });
+    const refused = standing(startCapture(events, LIMIT));
+    browser({ getUserMedia: never });
+    const missing = standing(startCapture(events, LIMIT));
+    await tick(LIMIT * 4);
+    assert.equal(refused(), "pending");
+    assert.equal(missing(), "pending");
+  });
+
+  it("a denied request rejects by itself, with the browser's own error", async () => {
+    const denied = Object.assign(new Error("denied"), { name: "NotAllowedError" });
+    browser({ getUserMedia: () => Promise.reject(denied), permission: async () => new Status("denied") });
+    await assert.rejects(startCapture(events, LIMIT), (e) => e === denied);
+  });
+
+  it("answered Allow during the question: the limit starts then, however long the question took", async () => {
+    const status = new Status("prompt");
+    browser({ getUserMedia: never, permission: async () => status });
+    const now = standing(startCapture(events, LIMIT));
+    await tick(LIMIT * 3); // longer than the limit, on the question
+    assert.equal(now(), "pending", "cut off during the question");
+    status.move("granted");
+    await tick(LIMIT / 3);
+    assert.equal(now(), "pending", "the limit started at the answer, not at the press");
+    await tick(LIMIT * 2);
+    assert.ok(now() instanceof MicStartTimeout, "the hang after Allow still gives up");
+  });
+
+  it("a granted mic whose permission goes back to asking: the limit is dropped", async () => {
+    const status = new Status("granted");
+    browser({ getUserMedia: never, permission: async () => status });
+    const now = standing(startCapture(events, LIMIT));
+    await tick();
+    status.move("prompt");
+    await tick(LIMIT * 3);
+    assert.equal(now(), "pending");
+  });
+
+  it("a stream that arrives after the limit has its tracks stopped; one in time doesn't", async () => {
+    const late = held<MediaStream>();
+    const s = stream();
+    browser({ getUserMedia: () => late.promise, permission: async () => new Status("granted") });
+    await assert.rejects(startCapture(events, LIMIT), MicStartTimeout);
+    assert.equal(s.stopped.n, 0);
+    late.resolve(s.stream);
+    await tick();
+    assert.equal(s.stopped.n, 1, "the Mac's mic indicator would stay on");
+
+    const ontime = stream();
+    browser({ getUserMedia: async () => ontime.stream, permission: async () => new Status("granted") });
+    const r = await startCapture(events, LIMIT);
+    await tick(LIMIT * 2);
+    assert.equal(ontime.stopped.n, 0, "the limit must not touch a recording that started");
+    r.cancel();
+    assert.equal(ontime.stopped.n, 1);
+  });
+
+  it("a slow permission answer after the stream arrived starts no limit", async () => {
+    const answer = held<Status>();
+    const s = stream();
+    browser({ getUserMedia: async () => s.stream, permission: () => answer.promise });
+    const r = await startCapture(events, LIMIT);
+    answer.resolve(new Status("granted"));
+    await tick(LIMIT * 2);
+    assert.equal(s.stopped.n, 0);
+    r.cancel();
+  });
+
+  it("the context and getUserMedia don't wait on the permission: both happen inside the press", () => {
+    const b = browser({ getUserMedia: never, permission: never });
+    void startCapture(events, LIMIT);
+    assert.deepEqual(b.order.slice(0, 2), ["context", "getUserMedia"]);
+  });
+
+  for (const hung of ["resume", "addModule"] as const) {
+    it(`${hung} hangs after the stream: the error at the limit, whatever the permission, tracks stopped, context closed`, async () => {
+      const s = stream();
+      const b = browser({ getUserMedia: async () => s.stream, permission: async () => new Status("prompt"), worklet: true, [hung]: never });
+      await assert.rejects(startCapture(events, LIMIT), MicStartTimeout);
+      assert.equal(s.stopped.n, 1);
+      await tick();
+      assert.equal(b.closed(), 1);
+    });
+  }
+
+  it("resume and addModule share one limit, which starts when the stream arrives", async () => {
+    const s = stream();
+    browser({
+      getUserMedia: async () => s.stream,
+      resume: async () => void (await tick((LIMIT * 2) / 3)),
+      addModule: async () => void (await tick((LIMIT * 2) / 3)),
+      worklet: true,
+    });
+    await assert.rejects(startCapture(events, LIMIT), MicStartTimeout);
+  });
+
+  it("the error reads as the strip's sentence", () => {
+    assert.equal(micErrorSentence(new MicStartTimeout()), "The microphone didn't start within 10 seconds. Quit and reopen Sova or your browser, then try again.");
   });
 });
 

@@ -685,7 +685,7 @@ const host: OverseerToolHost = {
     const entry = meshApi.enabled() ? meshApi.peers().find((p) => p.id === id) : undefined;
     if (!entry) return null;
     const probe = await probePeer(entry);
-    return { id: entry.id, label: entry.label, nodeId: entry.nodeId, state: probe.state, ...(probe.error ? { error: probe.error } : {}) };
+    return { id: entry.id, label: entry.label, nodeId: entry.nodeId, state: probe.state, ...(probe.error ? { error: probe.error } : {}), ...(probe.hello?.areas ? { areas: probe.hello.areas } : {}) };
   },
   peerSession: (peerId, id) => peerSession(peerId, id),
   peerIds: () => (meshApi.enabled() ? meshApi.peers().map((p) => p.id) : []),

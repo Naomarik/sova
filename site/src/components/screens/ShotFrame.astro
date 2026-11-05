@@ -1,0 +1,30 @@
+---
+// A screenshot that may not be captured yet, in the same product frame as ScreenFrame: by shot id
+// (`shot`, such as "merge-queue-tab"), with `alt` used only when the manifest has no words for it.
+// Until the master exists in src/assets/screens/, a dashed placeholder of the same shape names the
+// shot it waits for, so a missing capture is plain to see and never breaks the build. `focus` crops a
+// tall capture to the frame's 4:3 window, at that vertical position (a CSS percentage: 0% the top).
+import { Picture } from "astro:assets";
+import Frame from "../Frame.astro";
+import { optionalShot } from "../../data/screens";
+
+interface Props { shot: string; alt: string; focus?: string; class?: string }
+const { shot, alt, focus, class: cls = "" } = Astro.props;
+const s = optionalShot(shot, alt);
+if (!s) console.warn(`[screens] no capture yet for "${shot}": the landing shows its placeholder`);
+const widths = s ? [...new Set([400, 640, 960, 1280, 1600, 2200].filter((w) => w < s.image.width).concat(s.image.width))] : [];
+---
+{s ? (
+  <Frame strip={false} class={`m-frame ${focus ? "shot-crop" : ""} ${cls}`.replace(/\s+/g, " ").trim()} caption="" decorative={false}>
+    <Picture src={s.image} alt={s.alt} formats={["avif", "webp"]} fallbackFormat="webp" widths={widths}
+      sizes="(min-width: 900px) 660px, 92vw" loading="lazy" decoding="async" class="screen-img" style={focus ? `object-position: 50% ${focus}` : undefined} />
+  </Frame>
+) : (
+  <figure class={`frame m-frame shot-pending ${cls}`.trim()} data-shot={shot}>
+    <div class="shot-pending-body">
+      <span class="shot-pending-tag">Screenshot pending</span>
+      <code>{shot}</code>
+      <span class="shot-pending-alt">{alt}</span>
+    </div>
+  </figure>
+)}

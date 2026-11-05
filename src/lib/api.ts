@@ -149,6 +149,7 @@ import type { CommandEntry } from "../../shared/commands-catalog";
 import type { AlignTriage, WorkerChecks, DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
 import { upgradeLegacyRows } from "./legacy-rows";
+import { COMPOSER_QUERY } from "./wire-stamp";
 import { onAuthorized, onUnauthorized } from "./auth";
 import type { PreviewList, PreviewMint, PreviewMinted, PreviewView } from "../../shared/preview-links";
 
@@ -1045,7 +1046,8 @@ export const removeWorktrees = (path: string, expect: string[]) =>
  * something that isn't a TUI. It never overrides a live TUI.
  */
 export function wsUrl(endpoint: "/ws/chat" | "/ws/watch", path: string, force = false, host: string | null = hostOf(path)): string {
-  return `${wsOrigin()}${peerBase(host)}${endpoint}?path=${encodeURIComponent(path)}${force ? "&force=1" : ""}&${WIRE}`;
+  // A chat socket states this page's writing number (§mesh.compatibility/every-send-states-a-version).
+  return `${wsOrigin()}${peerBase(host)}${endpoint}?path=${encodeURIComponent(path)}${force ? "&force=1" : ""}&${WIRE}${endpoint === "/ws/chat" ? `&${COMPOSER_QUERY}` : ""}`;
 }
 
 function wsOrigin(): string {
@@ -1301,6 +1303,8 @@ export const setProjectStakeholder = (id: string, pid: string, stakeholder: stri
 
 const projectPath = (pid: string) => `/api/projects/${encodeURIComponent(pid)}`;
 export const listProjects = () => request<ProjectList>("/api/projects");
+/** The overview cards' runtime figures (§app.projects/home-glance). */
+export const getProjectGlance = () => request<import("../../shared/projects").ProjectGlanceList>("/api/projects/glance");
 export const getProject = (pid: string) => request<ProjectSummary>(projectPath(pid));
 /** Register a folder as a project (Add Project, Add as Project); its checkout root, said back when it differs. */
 export const addProject = (root: string) => request<ProjectRegistered>("/api/projects", jsonInit("POST", { root }));

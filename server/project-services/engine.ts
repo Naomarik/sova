@@ -48,7 +48,7 @@ import type { PortOwner } from "../port-owner";
 import { startStaticServe, staticServes, StaticServeError, stopStaticServe } from "../preview-serve";
 import { projectOf } from "../project-root";
 import { copyContentsArgv } from "./copy-tree";
-import { adoptedLogs, adoptedPids, adoptedStatus, DriverError, rssOf, type AdoptedStatus, type Driver, type OnceSpec, type UnitSpec } from "./drivers";
+import { adoptedLogs, adoptedPids, adoptedStatus, DriverError, ownMemoryOf, type AdoptedStatus, type Driver, type OnceSpec, type UnitSpec } from "./drivers";
 import { hostPortOwner } from "./proctable";
 import type { NoteFacts } from "./note";
 import { RESTART_DELAY_SEC, scheduleRestart, SELF_APPLY_REFUSAL, serverCheckout, serverStart } from "./self-host";
@@ -2003,8 +2003,8 @@ export class ProjectEngine {
       const st = await this.driver.status(unit);
       if (st.state === "active" || st.state === "activating") {
         const p = await this.probe(def, sc, s, unit);
-        // A process service's resident memory now (a container's lives in its engine, not its unit).
-        const rss = kind === "process" ? rssOf(this.driver.pids(unit)) : null;
+        // A process service's own memory now, as the resource monitor measures it (a container's lives in its engine, not its unit).
+        const rss = kind === "process" ? ownMemoryOf(this.driver.pids(unit)) : null;
         out.push({ name: s.name, scope: s.scope, kind, state: p.ok ? "ready" : st.state === "activating" ? "starting" : "degraded", unit, pid: st.pid, ports, ready: p, ...(rss !== null ? { rssBytes: rss } : {}) });
       } else {
         const state = st.state === "failed" ? "failed" : this.heldElsewhere(sc, s, ports) ? "external" : "stopped";

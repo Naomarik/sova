@@ -46,7 +46,13 @@ environment every runner starts in, and the hermetic dev server.
   the change touches. `pnpm test:all` runs both tiers. Named files run whatever their tier.
 - **Slow groups** (`scripts/test-groups.mjs`, one list for landing and `--changed`): **Chat
   processes** (`trial`, `server/chat-runtime/trial-*.integration.test.ts`) and **Tours** (`tours`,
-  the `server/tours/*.integration.test.ts` files that drive Chrome). Each lists its triggers: the
+  the `server/tours/*.integration.test.ts` files that drive Chrome), **Merge queue** (`merge-queue`) and
+  **Forms in a browser** (`forms`, `server/settings-browser.integration.test.ts` and one
+  forms-<area>-browser integration file per later area, helpers in `server/forms-browser.test.helper.ts`:
+  Sova's forms in Chrome, triggered by form code only (the form kit, its limits, each migrated
+  surface), run at landing when triggered; it picks its own
+  short temp dir for Chrome's sockets, `server/settings-browser-temp.test.helper.ts`, and skips saying why only
+  when none is writable). Each lists its triggers: the
   areas whose change can break it (chats, workers, teams, the Overseer, batons, Claude Code and their
   extensions, the harness; tour code), any package or toolchain change, the test setup this guide
   `watches`, and the module itself. Every other integration file is the everyday set. A new slow
@@ -164,11 +170,17 @@ environment every runner starts in, and the hermetic dev server.
   `server/mesh/lan-handoff.ts` refuses it), removed when the file ends or the runner stops. A runner killed by SIGKILL leaves its roots
   (`/tmp/sova-test-home-*`) until macOS clears `/tmp`. If `/tmp` can't be written, the long `TMPDIR`
   stays, and those tests are refused.
+- `scripts/mac-mic-launch-check.ts` is in no tier and matches no glob: it starts the Mac's real Chrome
+  and opens the real microphone, so a person runs it by hand (`bun scripts/mac-mic-launch-check.ts`,
+  outside any sandbox) after changing how `scripts/mac-app.ts` or the launcher starts the window. Its
+  control case is the old launch: it must hang, or the run proves nothing.
 - The runner kills any one file after 300 s (`TEST_FILE_LIMIT_MS`), the per-file cap, under the
   integration tier's load too. Each browser launch costs seconds: split a growing Chrome file by
   scenario (as `runner-signin`, `-landed` and `-inplace` are) rather than raising its test timeouts.
 - Shared stand-in sites and probes are `*.integration.fixture.ts` beside the tests (not test files, so
-  no glob matches them). Test credentials are short fakes (`fake-pw-01`): the merge queue's leak scan
+  no glob matches them). Test code shared by test files is a `*.test.helper.ts`: no glob runs it, the
+  product line count leaves it out, and `server/test-helpers.test.ts` fails if a product file imports
+  one. Test credentials are short fakes (`fake-pw-01`): the merge queue's leak scan
   flags any `password`/`token`/`secret`/`apiKey` assigned a literal of 16+ characters with no space. A test that needs
   a long value builds it at runtime (`"x".repeat(17)`, `"fake-copy-token".padEnd(48, "x")`).
 

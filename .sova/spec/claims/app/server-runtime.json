@@ -110,6 +110,24 @@
       "§app.resource-monitor/lightness-budget"
     ]
   },
+  "§app.server-runtime/slow-groups": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "scripts/test-groups.mjs",
+      "server/test-groups.test.ts",
+      "server/settings-browser.integration.test.ts",
+      "agents/testing/overview.md",
+      "server/settings-browser-temp.test.helper.ts",
+      "server/settings-browser-temp.test.ts",
+      "server/forms-browser.test.helper.ts",
+      "server/test-helpers.test.ts"
+    ],
+    "requires": [
+      "§app.server-runtime/test-tiers"
+    ]
+  },
   "§app.server-runtime/test-env": {
     "kind": "behavior",
     "authority": "accepted",
@@ -207,7 +225,8 @@
     ],
     "requires": [
       "§app.server-runtime/choice",
-      "§app.claude-code-provider/one-program"
+      "§app.claude-code-provider/one-program",
+      "§app.server-runtime/slow-groups"
     ],
     "agreed": {
       "by": "user",

@@ -282,6 +282,9 @@ for assistive technology only (visually hidden): what the eye reads is the note 
 transcript's end (§chat.transcript/instant-open), so nothing is added to the composer. A chat
 closed for being quiet while its tab is open is none of these: its tab holds no socket, Send and
 the controls work and wake it, and they wait as "Chat connecting or starting" only from then on.
+A peer session whose host is Read only or Display may be wrong (§mesh.compatibility/states) is not
+one of the rows below: a notice takes the composer's place, Stop included
+(§mesh.compatibility/read-only).
 
 | Condition | Textarea | Buttons | Reason (with icon) |
 |---|---|---|---|

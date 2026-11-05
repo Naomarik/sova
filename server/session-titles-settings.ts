@@ -3,6 +3,8 @@ import { dirname, join } from "node:path";
 import { CLAUDE_EFFORTS, DELEGATE_BACKENDS, parseChoice, PI_EFFORTS, sameChoice } from "../pi-config/extensions/mode/delegate.ts";
 import { latestClaude } from "../pi-config/extensions/claude-code/catalog.ts";
 import type { SessionTitleSettings, SessionTitleSettingsInfo, WorkerChoice } from "../shared/protocol";
+import { problemOf } from "../shared/form-rules";
+import { TITLE_RULES } from "../shared/session-title-limits";
 import { stateRoot } from "./state-root";
 
 // Settings → Summaries → Session titles (§app.settings-dialog/summaries, §app.session-list/auto-titles):
@@ -12,8 +14,6 @@ import { stateRoot } from "./state-root";
 
 export const sessionTitleSettingsFile = () => join(stateRoot(), "session-titles-settings.json");
 
-export const INTERVAL_RANGE = { min: 1, max: 1440 } as const;
-export const QUIET_RANGE = { min: 0, max: 1440 } as const;
 
 const BACKEND_LABELS = { pi: "pi", "claude-code": "Claude Code" } as const;
 
@@ -30,8 +30,8 @@ export function sessionTitleDefaults(): SessionTitleSettings {
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
-const minutes = (v: unknown, range: { min: number; max: number }): number | null =>
-  typeof v === "number" && Number.isInteger(v) && v >= range.min && v <= range.max ? v : null;
+/** Why a stored or sent minute field fails, in the form's words, or null. */
+const why = (v: unknown, key: keyof typeof TITLE_RULES) => problemOf(TITLE_RULES[key], typeof v === "number" ? v : null);
 
 const KEYS = ["version", "enabled", "intervalMinutes", "quietMinutes", "primary", "fallback"];
 
@@ -42,10 +42,8 @@ export function parseSessionTitleSettings(value: unknown): SessionTitleSettings 
   if (extra.length) return { error: `Unknown field ${extra.map((k) => JSON.stringify(k)).join(", ")}` };
   if (value.version !== 1) return { error: "version must be 1" };
   if (typeof value.enabled !== "boolean") return { error: "enabled must be true or false" };
-  const intervalMinutes = minutes(value.intervalMinutes, INTERVAL_RANGE);
-  if (intervalMinutes === null) return { error: `intervalMinutes must be a whole number from ${INTERVAL_RANGE.min} to ${INTERVAL_RANGE.max}` };
-  const quietMinutes = minutes(value.quietMinutes, QUIET_RANGE);
-  if (quietMinutes === null) return { error: `quietMinutes must be a whole number from ${QUIET_RANGE.min} to ${QUIET_RANGE.max}` };
+  const bad = why(value.intervalMinutes, "intervalMinutes") ?? why(value.quietMinutes, "quietMinutes");
+  if (bad) return { error: bad };
   const primary = parseChoice(value.primary);
   if ("error" in primary) return { error: `primary: ${primary.error}` };
   if (!("fallback" in value)) return { error: "fallback is required (null for none)" };
@@ -56,7 +54,7 @@ export function parseSessionTitleSettings(value: unknown): SessionTitleSettings 
     if (sameChoice(parsed, primary)) return { error: "The fallback is the same as the primary. Choose another model, or no fallback." };
     fallback = parsed;
   }
-  return { version: 1, enabled: value.enabled, intervalMinutes, quietMinutes, primary, fallback };
+  return { version: 1, enabled: value.enabled, intervalMinutes: value.intervalMinutes as number, quietMinutes: value.quietMinutes as number, primary, fallback };
 }
 
 /** Tolerant: each field that doesn't parse takes its default; a missing/corrupt file is the defaults. */
@@ -67,8 +65,8 @@ export function normalizeSessionTitleSettings(value: unknown): SessionTitleSetti
   const out: SessionTitleSettings = {
     version: 1,
     enabled: typeof value.enabled === "boolean" ? value.enabled : d.enabled,
-    intervalMinutes: minutes(value.intervalMinutes, INTERVAL_RANGE) ?? d.intervalMinutes,
-    quietMinutes: minutes(value.quietMinutes, QUIET_RANGE) ?? d.quietMinutes,
+    intervalMinutes: why(value.intervalMinutes, "intervalMinutes") ? d.intervalMinutes : (value.intervalMinutes as number),
+    quietMinutes: why(value.quietMinutes, "quietMinutes") ? d.quietMinutes : (value.quietMinutes as number),
     primary: "error" in primary ? d.primary : primary,
     fallback: d.fallback,
   };

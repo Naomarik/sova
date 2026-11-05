@@ -1,9 +1,11 @@
 import { createEffect, createResource, For, Show } from "solid-js";
 import { getMeshSettings } from "../lib/api";
 import { meshOn, SYNC_CATEGORIES, type SyncCategory } from "../lib/mesh";
-import { meshDraft as draft, meshDraftIssue, meshSaveError, meshSaving as saving, setMeshDraft, setMeshSaved, type MeshDraft } from "../lib/mesh-draft";
+import { meshDraft as draft, meshSaveError, meshSaving as saving, setMeshDraft, setMeshSaved, type MeshDraft } from "../lib/mesh-draft";
 import { SYNC_LABEL } from "../lib/mesh-details";
 import { Banner } from "./ui";
+import { TextField, Toggle } from "./form";
+import { FRONT_DOOR_RULE, HOST_LABEL_RULE } from "../../shared/mesh-limits";
 import { sentence } from "./WorkerSlotRow";
 /** What each category carries between hosts, as the switch's second line. */
 const SYNC_META: Record<SyncCategory, string> = {
@@ -35,10 +37,6 @@ export function MeshSettingsSection() {
     if (!d) return;
     setMeshDraft({ ...d, ...patch });
   };
-  const issue = () => {
-    const d = draft();
-    return d ? meshDraftIssue(d) : null;
-  };
   /** "api-keys": this host neither takes nor offers subscription sign-ins; only API keys move. */
   const subscriptionsOn = () => draft()?.loginKinds !== "api-keys";
 
@@ -48,24 +46,17 @@ export function MeshSettingsSection() {
       <Show when={stored.error}>
         {(err) => <Banner tone="error" title="Couldn't read the mesh settings." body={`Nothing was changed. ${(err() as Error).message}`} />}
       </Show>
-      <div class="field settings-field">
-        <label class="field-label" for="mesh-host-label">
-          This host's name
-        </label>
-        <input
-          id="mesh-host-label"
-          class="input"
-          autocomplete="off"
-          value={draft()?.hostLabel ?? ""}
-          disabled={!draft() || saving()}
-          aria-invalid={issue() ? "true" : undefined}
-          aria-describedby="mesh-host-label-hint"
-          onInput={(e) => edit({ hostLabel: e.currentTarget.value })}
-        />
-        <span class={issue() ? "field-error" : "field-hint"} id="mesh-host-label-hint">
-          {issue() ?? "Shown beside its sessions on every host, and in New Session's Host field."}
-        </span>
-      </div>
+      <TextField
+        class="settings-field"
+        id="mesh-host-label"
+        label="This host's name"
+        hint="Shown beside its sessions on every host, and in New Session's Host field."
+        rule={draft() ? HOST_LABEL_RULE : undefined}
+        autocomplete="off"
+        value={draft()?.hostLabel ?? ""}
+        disabled={!draft() || saving()}
+        onInput={(raw) => edit({ hostLabel: raw })}
+      />
 
       <fieldset class="mesh-settings-sync">
         <legend class="field-label">Keep in sync with peers</legend>
@@ -73,46 +64,35 @@ export function MeshSettingsSection() {
           <For each={SYNC_CATEGORIES}>
             {(c) => (
               <li>
-                <label class="toggle toggle-switch mesh-sync-row">
-                  <input
-                    type="checkbox"
-                    checked={!!draft()?.sync[c]}
-                    disabled={!draft() || saving()}
-                    onChange={(e) => edit({ sync: { ...draft()!.sync, [c]: e.currentTarget.checked } })}
-                  />
-                  <span class="mesh-sync-main">
-                    <span class="mesh-sync-name">{SYNC_LABEL[c]}</span>
-                    <span class="mesh-sync-meta">{SYNC_META[c]}</span>
-                  </span>
-                  <span class="toggle-box" />
-                </label>
+                <Toggle
+                  switch
+                  class="mesh-sync-row"
+                  label={<span class="mesh-sync-main"><span class="mesh-sync-name">{SYNC_LABEL[c]}</span><span class="mesh-sync-meta">{SYNC_META[c]}</span></span>}
+                  checked={!!draft()?.sync[c]}
+                  disabled={!draft() || saving()}
+                  onChange={(v) => edit({ sync: { ...draft()!.sync, [c]: v } })}
+                />
                 {/* Only with a peer to sync with, and login sync on: nothing new while the mesh is off. */}
                 <Show when={c === "logins" && meshOn() && draft()?.sync.logins}>
-                  <label class="toggle toggle-switch mesh-sync-row mesh-sync-sub">
-                    <input
-                      type="checkbox"
-                      checked={subscriptionsOn()}
-                      disabled={!draft() || saving() || !!loaded()?.loginKindsPinned}
-                      onChange={(e) => edit({ loginKinds: e.currentTarget.checked ? "all" : "api-keys" })}
-                    />
-                    <span class="mesh-sync-main">
-                      <span class="mesh-sync-name">Sync subscriptions to this host</span>
-                      <span class="mesh-sync-meta">
-                        <Show
-                          when={!loaded()?.loginKindsPinned}
-                          fallback="Set by SOVA_SYNC_LOGIN_KINDS on this host."
-                        >
-                          <Show
-                            when={subscriptionsOn()}
-                            fallback="Only API keys come and go. Sign-ins already here stay, but nothing refreshes or shares them, so a copy from another host can go stale."
-                          >
-                            Sign-ins like Claude Code and ChatGPT move with the API keys.
-                          </Show>
-                        </Show>
+                  <Toggle
+                    switch
+                    class="mesh-sync-row mesh-sync-sub"
+                    label={
+                      <span class="mesh-sync-main">
+                        <span class="mesh-sync-name">Sync subscriptions to this host</span>
+                        <span class="mesh-sync-meta">
+                          {loaded()?.loginKindsPinned
+                            ? "Set by SOVA_SYNC_LOGIN_KINDS on this host."
+                            : subscriptionsOn()
+                              ? "Sign-ins like Claude Code and ChatGPT move with the API keys."
+                              : "Only API keys come and go. Sign-ins already here stay, but nothing refreshes or shares them, so a copy from another host can go stale."}
+                        </span>
                       </span>
-                    </span>
-                    <span class="toggle-box" />
-                  </label>
+                    }
+                    checked={subscriptionsOn()}
+                    disabled={!draft() || saving() || !!loaded()?.loginKindsPinned}
+                    onChange={(v) => edit({ loginKinds: v ? "all" : "api-keys" })}
+                  />
                 </Show>
               </li>
             )}
@@ -120,25 +100,20 @@ export function MeshSettingsSection() {
         </ul>
       </fieldset>
 
-      <div class="field settings-field">
-        <label class="field-label" for="mesh-front-door">
-          Front door
-        </label>
-        <input
-          id="mesh-front-door"
-          class="input input-mono"
-          autocomplete="off"
-          spellcheck={false}
-          placeholder="https://sova.tail1234.ts.net"
-          value={draft()?.frontDoor ?? ""}
-          disabled={!draft() || saving()}
-          aria-describedby="mesh-front-door-hint"
-          onInput={(e) => edit({ frontDoor: e.currentTarget.value })}
-        />
-        <span class="field-hint" id="mesh-front-door-hint">
-          One address that reaches whichever host is up. Leave it empty if you open each host by its own address.
-        </span>
-      </div>
+      <TextField
+        class="settings-field"
+        inputClass="input-mono"
+        id="mesh-front-door"
+        label="Front door"
+        hint="One address that reaches whichever host is up. Leave it empty if you open each host by its own address."
+        rule={FRONT_DOOR_RULE}
+        autocomplete="off"
+        spellcheck={false}
+        placeholder="https://sova.tail1234.ts.net"
+        value={draft()?.frontDoor ?? ""}
+        disabled={!draft() || saving()}
+        onInput={(raw) => edit({ frontDoor: raw })}
+      />
 
       <Show when={meshSaveError()}>
         {(e) => <Banner tone="error" title="Couldn't save the mesh settings." body={`${sentence(e().message)} Your saved settings are unchanged.`} />}

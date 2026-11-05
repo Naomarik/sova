@@ -3,6 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import type { LinkError, LinkInbox, LinkOffersList, LinksList, LinkWhoami, PeerLinkRead } from "../../shared/mesh-links";
 import type { MeshApi } from "./index";
 import { LinkActError, type LinksDeps, type MeshLinks, meshLinks as theLinks } from "./links";
+import { peerAreaRefused } from "../wire-gate";
 import { localRequest } from "./proxy";
 
 // The link routes (§mesh/links; the list and bodies: shared/mesh-links.ts). Peer routes answer
@@ -59,6 +60,8 @@ export function mountLinks(app: Hono, mesh: LinksDeps["mesh"] & Pick<MeshApi, "r
   app.post("/api/peer/links", small, async (c) => {
     const caller = mesh.requestPeer(c);
     if (!caller) return notFound(c);
+    const refused = peerAreaRefused(c, mesh.self().label);
+    if (refused) return refused;
     const r = await meshLinks.takeCopy(caller, await json(c));
     return c.json(r.body, r.status);
   });
@@ -73,6 +76,8 @@ export function mountLinks(app: Hono, mesh: LinksDeps["mesh"] & Pick<MeshApi, "r
   app.post("/api/peer/links/:id/message", message, async (c) => {
     const caller = mesh.requestPeer(c);
     if (!caller) return notFound(c);
+    const refused = peerAreaRefused(c, mesh.self().label);
+    if (refused) return refused;
     const r = await meshLinks.takeMessage(caller, c.req.param("id"), await json(c));
     return c.json(r.body, r.status);
   });
@@ -80,6 +85,8 @@ export function mountLinks(app: Hono, mesh: LinksDeps["mesh"] & Pick<MeshApi, "r
   app.post("/api/peer/links/:id/offers", offerBody, async (c) => {
     const caller = mesh.requestPeer(c);
     if (!caller) return notFound(c);
+    const refused = peerAreaRefused(c, mesh.self().label);
+    if (refused) return refused;
     const r = await meshLinks.takeOffer(caller, c.req.param("id"), await json(c));
     return c.json(r.body, r.status);
   });

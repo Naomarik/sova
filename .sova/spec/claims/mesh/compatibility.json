@@ -1,0 +1,271 @@
+{
+  "§mesh.compatibility/areas": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/wire-areas.ts",
+      "shared/wire-areas.json",
+      "server/mesh/hello.ts",
+      "shared/wire-areas.test.ts"
+    ],
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:11Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
+  },
+  "§mesh.compatibility/best-effort": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:11Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    },
+    "code": [
+      "server/wire-gate.ts"
+    ]
+  },
+  "§mesh.compatibility/declare-a-change": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/wire-areas.json",
+      "shared/wire-areas.test.ts",
+      "server/testing/wire-shape.ts",
+      "src/lib/wire-samples.test.ts",
+      "src/lib/wire-samples/sessions.v1.json",
+      "src/lib/wire-samples/transcript.v1.json",
+      "src/lib/wire-samples/composer.v1.json",
+      "src/lib/wire-samples/peer.v1.json",
+      "agents/server/overview.md"
+    ],
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:12Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
+  },
+  "§mesh.compatibility/display-warning": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/SessionView.tsx",
+      "src/components/HostStateNotices.tsx",
+      "src/lib/mesh-compat.ts",
+      "src/lib/mesh.ts",
+      "src/mesh.css",
+      "src/lib/mesh-compat.test.ts"
+    ],
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:12Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
+  },
+  "§mesh.compatibility/every-send-states-a-version": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/wire-areas.ts",
+      "src/lib/wire-stamp.ts",
+      "src/main.tsx",
+      "src/lib/api.ts",
+      "server/wire-gate.ts",
+      "server/index.ts",
+      "server/mesh/index.ts",
+      "scripts/sova.mjs",
+      "src/lib/wire-stamp.test.ts",
+      "server/mesh/mesh.test.ts",
+      "server/mesh/remote-commands.test.ts"
+    ],
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:12Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
+  },
+  "§mesh.compatibility/host-acts": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/mesh/hello.ts",
+      "server/mesh/index.ts",
+      "server/mesh/links.ts",
+      "server/sync/index.ts",
+      "server/overseer-tools.ts",
+      "server/overseer.ts",
+      "server/app.ts",
+      "server/mesh/links.test.ts",
+      "server/sync/index.test.ts",
+      "server/overseer-link-tools.test.ts"
+    ],
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:12Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
+  },
+  "§mesh.compatibility/judged-by-the-page": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/mesh-compat.ts",
+      "src/lib/mesh.ts",
+      "shared/wire-areas.ts",
+      "shared/mesh-access.ts",
+      "server/mesh/index.ts"
+    ],
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:12Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
+  },
+  "§mesh.compatibility/legacy": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/mesh/hello.ts",
+      "shared/wire-areas.ts",
+      "server/mesh/mesh.test.ts",
+      "src/lib/mesh-compat.test.ts"
+    ],
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:12Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
+  },
+  "§mesh.compatibility/marks": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/mesh-details.ts",
+      "src/lib/mesh-compat.ts",
+      "src/lib/mesh.ts",
+      "src/lib/row-place.ts",
+      "src/components/MeshView.tsx",
+      "src/components/MeshHostMenu.tsx",
+      "src/components/MeshDetails.tsx",
+      "src/components/Sidebar.tsx",
+      "src/components/HostStateMark.tsx",
+      "src/components/NewSessionDialog.tsx",
+      "src/components/SessionView.tsx",
+      "src/lib/mesh-details.test.ts",
+      "src/lib/mesh-compat.test.ts",
+      "src/lib/row-place.test.ts"
+    ],
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:12Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
+  },
+  "§mesh.compatibility/read-only": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/ChatView.tsx",
+      "src/components/WatchView.tsx",
+      "src/components/HostStateNotices.tsx",
+      "src/lib/mesh-compat.ts",
+      "src/lib/mesh.ts",
+      "src/mesh.css",
+      "src/lib/mesh-compat.test.ts"
+    ],
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:12Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
+  },
+  "§mesh.compatibility/refusal": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/wire-areas.ts",
+      "server/wire-gate.ts",
+      "server/app.ts",
+      "server/ws.ts",
+      "src/components/ChatView.tsx",
+      "src/lib/error-feed.ts",
+      "server/wire-gate.test.ts",
+      "server/wire-gate.integration.test.ts",
+      "shared/wire-areas.test.ts",
+      "src/lib/error-feed.test.ts"
+    ],
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:12Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
+  },
+  "§mesh.compatibility/states": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/wire-areas.ts",
+      "src/lib/mesh-compat.ts",
+      "src/lib/mesh.ts",
+      "shared/wire-areas.test.ts",
+      "src/lib/mesh-compat.test.ts"
+    ],
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:12Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
+  },
+  "§mesh.compatibility/update-needed": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/App.tsx",
+      "src/components/SessionView.tsx",
+      "src/components/HostStateNotices.tsx",
+      "src/lib/mesh-compat.ts",
+      "src/lib/mesh.ts",
+      "src/lib/mesh-compat.test.ts"
+    ],
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:12Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
+  },
+  "§mesh/compatibility": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/wire-areas.ts",
+      "src/lib/mesh-compat.ts",
+      "src/lib/mesh.ts",
+      "src/components/HostStateNotices.tsx"
+    ],
+    "notOwned": [
+      "§mesh.peers/hello",
+      "§mesh.peers/health",
+      "§mesh.peers/resync"
+    ],
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:12Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
+  }
+}

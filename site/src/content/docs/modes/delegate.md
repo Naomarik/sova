@@ -85,6 +85,9 @@ The profile's **members default** is the model a team member runs on when nobody
 it, such a member runs on the chat's own model. Profile **Off** gives teams no standing members and
 no members default. All of this is edited in the profile's **Teams** section.
 
+Members message each other by role through their own inboxes, and the coordinator speaks for
+them. [Teams](/docs/teams/) covers how a team talks, the coordinator, the monitor and handovers.
+
 ## Watch the workers
 
 While workers run, the composer shows a row such as "2 of 5 subagents working". Press it, or type

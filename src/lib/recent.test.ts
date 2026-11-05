@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionSummary } from "../../shared/protocol";
 import {
+  repairRecentCount,
   DEFAULT_RECENT_COUNT,
   MAX_RECENT_COUNT,
   MIN_RECENT_COUNT,
@@ -177,4 +178,17 @@ test("a project coding session the operator started is in Recent; one the overse
   const overseer = at("overseer", "03", { project: { projectId: "p", projectName: "P", kind: "overseer" } });
   const plain = session({ id: "plain", lastActiveAt: "2026-01-02T00:00:00Z" });
   assert.deepEqual(ids(recentSessions([plain, overseer, worker, placed, mineArchived, unmarked, theirs, mine], 20)), ["mine", "plain"]);
+});
+
+test("leaving Sessions in Recent repairs a typed value to the nearest count that works (Settings QA D8)", () => {
+  assert.equal(repairRecentCount("7.5"), 8, "conventional rounding");
+  assert.equal(repairRecentCount("7.4"), 7);
+  assert.equal(repairRecentCount("0"), MIN_RECENT_COUNT, "below: the fewest");
+  assert.equal(repairRecentCount("2.4"), MIN_RECENT_COUNT);
+  assert.equal(repairRecentCount("999"), MAX_RECENT_COUNT, "over: the most");
+  assert.equal(repairRecentCount("-4"), MIN_RECENT_COUNT);
+  assert.equal(repairRecentCount(""), DEFAULT_RECENT_COUNT, "no number at all: the default");
+  assert.equal(repairRecentCount("  "), DEFAULT_RECENT_COUNT);
+  assert.equal(repairRecentCount("abc"), DEFAULT_RECENT_COUNT);
+  assert.equal(repairRecentCount(" 12 "), 12);
 });

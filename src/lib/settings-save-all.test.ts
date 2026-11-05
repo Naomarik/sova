@@ -257,7 +257,7 @@ test("Summaries' and Decisions' problems match their old gates", () => {
   }
   const base = draftOf({ jev: { enabled: false }, fallback: null, features: { attention: false, tags: false, reconcile: false }, neverSendTui: true, exclusions: [] } as never);
   assert.equal(decisionDraftProblem(base), null);
-  assert.equal(decisionDraftProblem({ ...base, fallback: choice("") }), "Decisions needs a fallback model.");
-  assert.equal(decisionDraftProblem({ ...base, fallback: choice("m", "") }), "Decisions needs an effort for its fallback model.");
-  assert.equal(decisionDraftProblem({ ...base, exclusions: "work" }), 'Decisions: "work" isn\'t a full path. Start it with / or ~/.');
+  assert.equal(decisionDraftProblem({ ...base, fallback: choice("") }), "Choose a fallback model.");
+  assert.equal(decisionDraftProblem({ ...base, fallback: choice("m", "") }), "Choose an effort for the fallback model.");
+  assert.equal(decisionDraftProblem({ ...base, exclusions: "work" }), '"work" isn\'t a full path. Start it with / or ~/.');
 });

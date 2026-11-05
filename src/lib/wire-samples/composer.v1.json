@@ -1,0 +1,5 @@
+{
+  "steer": { "type": "steer", "text": "Keep the query string", "clientId": "c1" },
+  "prompt": { "type": "prompt", "text": "Now the tests", "clientId": "c2", "confirm": "c3" },
+  "abort": { "type": "abort" }
+}

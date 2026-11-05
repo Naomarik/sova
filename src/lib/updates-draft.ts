@@ -2,6 +2,8 @@ import type { UpdatesSettings, UpdatesState } from "../../shared/protocol";
 import { putUpdatesSettings } from "./api";
 import { createDraftStore } from "./settings-draft";
 import { setUpdatesState } from "./updates";
+import { BRANCH_RULE } from "../../shared/branch-name";
+import { problemOf } from "../../shared/form-rules";
 
 /**
  * Settings → General's Updates form: Update
@@ -37,7 +39,9 @@ export function sameUpdates(d: UpdatesDraft, s: UpdatesSettings): boolean {
 
 /** Why the draft can't be saved, naming the form, or null. Pure. */
 export function updatesProblem(d: UpdatesDraft): string | null {
-  return d.source === "branch" && !d.branch.trim() ? "Updates: Name the branch." : null;
+  // The server's own check (it says the same sentence), so Save waits instead of failing.
+  const why = d.source === "branch" && problemOf(BRANCH_RULE, d.branch);
+  return why ? `Updates: ${why}` : null;
 }
 
 /**

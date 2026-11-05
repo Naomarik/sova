@@ -21,6 +21,11 @@ the Claude login it holds from the pool (§app.claude-logins/pool): "Claude: {em
 holds more than one), or "No Claude login"; it opens Settings → Accounts, and its tooltip lists
 what the host holds or says that it borrows a login when it needs Claude.
 
+While the mesh is on, each peer's line also shows its state in the words every screen uses
+(§mesh.compatibility/marks). A host that works fully on another build shows no amber: its line just
+says it is on another build, with where that build sits against this host's when it can be placed
+(§mesh.peers/resync).
+
 While the mesh is on, each peer's line also carries "What {peer} can see here" (§mesh.peers/grants): its
 preset, and a list of every capability, each with its switch and what it means in plain words. Sessions
 says it can run commands on this machine. Each sync category warns that it can still reach the peer
@@ -42,4 +47,8 @@ extensions, logins), under Logins a "Sync subscriptions to this host" switch tha
 mode on or off (§mesh.sync/api-keys-only), and the front-door address. The switch shows only while
 the mesh and login sync are on — login sync as set on the form. The section is Save-gated: every
 field and switch is staged and written by the dialog's Save Changes, which sends only what changed
-(§app.settings-dialog/save-bar).
+(§app.settings-dialog/save-bar). The two typed fields are checked before Save, by the same rule
+the server's save applies: the name can't be blank and is at most 80 characters; the front door,
+when set, is an http:// or https:// address of a scheme, host and port only. While either fails,
+its box is red, its line says why and Save waits ("Mesh: {why}"); a save that reaches the server
+anyway is refused in the same words.

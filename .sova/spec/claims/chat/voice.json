@@ -24,7 +24,7 @@
   "§chat.voice/capture": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "src/lib/voice/capture.ts",
       "src/lib/voice/wav.ts",
@@ -32,7 +32,12 @@
       "src/lib/api.ts",
       "src/lib/voice/voice.test.ts"
     ],
-    "requires": []
+    "requires": [],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T10:13Z",
+      "source": "pi-session:01a1a892-d585-769d-9cd1-84cd37d84c7a#98a32133"
+    }
   },
   "§chat.voice/decoding": {
     "kind": "behavior",
@@ -128,12 +133,21 @@
       "src/design/voice.css",
       "src/lib/voice/format.ts",
       "src/lib/voice/wav.ts",
-      "src/lib/voice/voice.test.ts"
+      "src/lib/voice/voice.test.ts",
+      "src/lib/voice/capture.ts",
+      "src/lib/voice/voice-strip.test.ts",
+      "src/lib/voice/voice-strip.browser.test.ts",
+      "src/lib/voice/voice-strip.fixture.ts"
     ],
     "requires": [
       "§chat.voice/button",
       "§design.copy-deck/composer"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T10:13Z",
+      "source": "pi-session:01a1a892-d585-769d-9cd1-84cd37d84c7a#98a32133"
+    }
   },
   "§chat.voice/transcribe": {
     "kind": "behavior",

@@ -1522,6 +1522,8 @@ export const runReleaseSetup = (projectId: string) =>
   request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", { playbook: "release-maker" }));
 /** A chat's merge queue cards: one per branch it owns, from its approval on (`session.merge-cards`). */
 export const getMergeCards = (sessionId: string) => request<{ cards: import("../../shared/merge-queue").MergeCard[] }>(`/api/merge-queue/cards?session=${encodeURIComponent(sessionId)}`);
+/** Every project's queue and releases in one quick read: the landing bar's starting picture (page open, reconnect). */
+export const getLandingSummary = () => request<import("../../shared/merge-queue").LandingSummary>("/api/merge-queue/landing-summary");
 /** What runs on this host now, every project's (Running branches on `#/projects`). */
 export const getHostServices = () => request<HostServicesView>("/api/services");
 export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);

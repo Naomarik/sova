@@ -1,0 +1,172 @@
+/* The landing bar (al_1, components/LandingBar.tsx): a step-track row in the sidebar foot, a 44px strip
+   above the phone's foot bar, and an icon with a status dot in the spine's foot. Theme tokens only. */
+
+/* ---- the face: icon, title + chips, sub line, the track; chevron at the end ---------------------- */
+.landing-bar { flex: none; border-bottom: var(--stroke-thin) solid var(--color-border); }
+.landing-face,
+.landing-strip {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--tap-min);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+  border: 0;
+  background: transparent;
+  color: var(--color-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.landing-face:hover,
+.landing-strip:hover { background: var(--color-sunken); }
+.landing-face:focus-visible,
+.landing-strip:focus-visible { outline: var(--focus-ring); outline-offset: calc((var(--focus-width) + var(--focus-offset)) * -1); }
+
+.landing-icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: var(--r-xs);
+}
+.landing-tone-accent  { background: var(--color-accent-tint); color: var(--color-accent); }
+.landing-tone-warn    { background: var(--status-warn-bg);    color: var(--status-warn); }
+.landing-tone-success { background: var(--status-success-bg); color: var(--status-success); }
+.landing-tone-error   { background: var(--status-error-bg);   color: var(--status-error); }
+.landing-icon > .icon { width: 12px; height: 12px; }
+
+.landing-lines { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.landing-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.landing-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  font-weight: var(--fw-semibold);
+}
+.landing-chips { flex: none; display: inline-flex; gap: var(--space-1); }
+.landing-sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+}
+.landing-chevron { flex: none; align-self: center; color: var(--color-ink-muted); transition: transform var(--dur-fast) var(--ease-standard); }
+.landing-chevron-open { transform: rotate(180deg); }
+
+/* ---- the step track: 4px segments, 3px apart, rounded; the review's marker beside it ------------- */
+.landing-track-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; margin-top: 3px; }
+.landing-track { flex: 1; min-width: 0; display: flex; gap: 3px; }
+.landing-seg {
+  flex: 1 1 0;
+  min-width: 2px;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--color-border);
+}
+.landing-seg-passed  { background: var(--status-success); }
+.landing-seg-failed  { background: var(--status-error); }
+.landing-seg-held    { background: var(--status-warn); }
+.landing-seg-skipped { background: transparent; box-shadow: inset 0 0 0 1px var(--color-border); }
+.landing-seg-waiting { background: var(--color-border-strong); opacity: .45; }
+/* Running is the live-run indicator: the accent, pulsing (motion is one of the two exceptions). A gating
+   checks segment fills to its run's progress. */
+.landing-seg-running { background: var(--color-accent); animation: live-pulse 1.6s var(--ease-standard) infinite; }
+.landing-seg-running[style*="--landing-progress"] { position: relative; overflow: hidden; background: var(--color-accent-tint); }
+.landing-seg-running[style*="--landing-progress"]::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--landing-progress);
+  border-radius: inherit;
+  background: var(--color-accent);
+}
+.landing-review {
+  flex: none;
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  color: var(--color-ink-muted);
+  white-space: nowrap;
+}
+.landing-review::before { content: ""; display: inline-block; width: 5px; height: 5px; margin-right: 4px; border-radius: var(--r-full); background: currentColor; vertical-align: 1px; }
+.landing-review-running { color: var(--color-accent); }
+.landing-review-passed  { color: var(--status-success); }
+.landing-review-failed  { color: var(--status-error); }
+
+/* ---- the detail: under the face (desktop), in the sheet (phone), in the popover (spine) ---------- */
+.landing-detail {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  background: var(--color-sunken);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+}
+.landing-detail-project { margin: 0; font-weight: var(--fw-semibold); color: var(--color-ink); }
+.landing-detail-lines,
+.landing-detail-others { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.landing-line { overflow-wrap: anywhere; }
+.landing-line-mono { font-family: var(--font-mono); font-size: var(--fs-mono); line-height: var(--lh-mono); }
+.landing-line-warn { color: var(--status-warn); }
+.landing-line-error { color: var(--status-error); }
+.landing-line a { color: inherit; }
+.landing-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.landing-detail-others { padding-top: var(--space-2); border-top: var(--stroke-thin) solid var(--color-border); }
+.landing-other { display: flex; align-items: center; gap: var(--space-2); min-width: 0; min-height: 28px; }
+.landing-other-dot { flex: none; width: 8px; height: 8px; border-radius: var(--r-full); background: currentColor; }
+.landing-other-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.landing-other-link { flex: none; }
+
+/* ---- phone: its own strip directly above the foot bar, and the sheet ---------------------------- */
+.landing-strip {
+  flex: none;
+  align-items: center;
+  min-height: var(--tap-min);
+  padding-block: var(--space-1);
+  border-top: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-surface);
+}
+.landing-strip .landing-icon { margin-top: 0; }
+.landing-strip .landing-lines { gap: 0; }
+.landing-strip .landing-track-row { margin-top: 2px; }
+.landing-sheet { padding-bottom: env(safe-area-inset-bottom); }
+.landing-sheet-head,
+.landing-popover-head { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) var(--space-4); }
+.landing-sheet .landing-detail { background: transparent; padding-bottom: var(--space-4); }
+
+/* ---- collapsed: the spine's icon and its status dot, and the popover beside the spine ----------- */
+.landing-spine { position: relative; }
+.landing-spine-dot {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-full);
+  background: currentColor;
+  pointer-events: none;
+}
+.landing-spine-dot-live    { color: var(--color-accent); animation: live-pulse 1.6s var(--ease-standard) infinite; }
+.landing-spine-dot-warn    { color: var(--status-warn); }
+.landing-spine-dot-success { color: var(--status-success); }
+.landing-spine-dot-error   { color: var(--status-error); }
+.landing-popover {
+  position: fixed;
+  z-index: 60;
+  width: 320px;
+  max-width: calc(100vw - 80px);
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: 0;
+}
+.landing-popover .landing-detail { background: transparent; border-top: var(--stroke-thin) solid var(--color-border); }

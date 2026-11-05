@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
+import { authCookieName } from "./auth";
 import { recordTree, startHermeticServer, treeChanges, type HermeticServer } from "./testing/hermetic-server";
 
 let s: HermeticServer;
@@ -23,9 +24,10 @@ after(async () => {
 });
 
 type Json = any;
-/** As the operator's page sends it: its token, its origin, same-origin fetch metadata (the Updates
-    routes refuse anything else, server/updates/routes.ts). */
-const headers = () => ({ "x-sova-token": s.token, "content-type": "application/json", origin: s.base, "sec-fetch-site": "same-origin" });
+/** As the operator's page sends it: its sign-in cookie (never the script header: updating Sova is the
+    page's alone, server/page-only.ts), its origin, same-origin fetch metadata (the Updates routes
+    refuse anything else, server/updates/routes.ts). */
+const headers = () => ({ cookie: `${authCookieName(s.agentDir)}=${s.token}`, "content-type": "application/json", origin: s.base, "sec-fetch-site": "same-origin" });
 async function call(method: string, url: string, body?: unknown): Promise<{ status: number; json: Json }> {
   const res = await fetch(`${s.base}${url}`, { method, headers: headers(), ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   const text = await res.text();

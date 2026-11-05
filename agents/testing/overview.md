@@ -44,7 +44,7 @@ environment every runner starts in, and the hermetic dev server.
   processes** (`trial`, `server/chat-runtime/trial-*.integration.test.ts`) and **Tours** (`tours`,
   the `server/tours/*.integration.test.ts` files that drive Chrome), **Merge queue** (`merge-queue`) and
   **Forms in a browser** (`forms`, `server/settings-browser.integration.test.ts` and one
-  `server/forms-*browser.integration.test.ts` per area, helpers in `server/forms-browser.test.helper.ts`:
+  forms-<area>-browser integration file per later area, helpers in `server/forms-browser.test.helper.ts`:
   Sova's forms in Chrome, triggered by form code only (the form kit, its limits, each migrated
   surface), run at landing when triggered; it picks its own
   short temp dir for Chrome's sockets, `server/settings-browser-temp.test.helper.ts`, and skips saying why only

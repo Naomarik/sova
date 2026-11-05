@@ -301,6 +301,7 @@
     "POST /api/merge-queue/projects/:project/branch-summary": {"need":"admin","is":"command","ids":["project.merge-queue.branch-summary.retry"]},
     "POST /api/merge-queue/projects/:project/settings": {"need":"admin","is":"command","ids":["project.merge-queue.settings.save"]},
     "POST /api/merge-queue/projects/:project/update-local-main": {"need":"admin","is":"command","ids":["project.merge-queue.update-local-main"]},
+    "POST /api/mesh/home": {"need":"full","is":"opted-out"},
     "POST /api/mesh/lan/key": {"need":"full","is":"opted-out"},
     "POST /api/mesh/lan/pairings": {"need":"full","is":"opted-out"},
     "POST /api/mesh/links": {"need":"full","is":"opted-out"},

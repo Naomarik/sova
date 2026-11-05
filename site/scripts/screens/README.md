@@ -227,3 +227,79 @@ The repository is public, so:
   openai, …) that isn't part of one of the story's models' ids, names or providers.
 - The Access page's pairing response is mocked (`sova.example.ts.net`): the real one names this
   machine's tailnet.
+
+## Live shots
+
+Some screens show best with real activity that demo data can't stage: the merge queue with
+branches in it, a run's checks, the Releases history, Settings → Merge Queue. `capture-live.mjs`
+shoots those from a **running** Sova, by default the live one on 127.0.0.1:4800, into
+`src/assets/screens/live/` (lossless WebP at 2x, dark theme) with its own `manifest.json`
+(alt text, size, `source: live | copy`, date). The story's manifest and `screens:verify` don't
+read that folder; no page uses these images yet.
+
+```sh
+cd site
+node scripts/screens/capture-live.mjs                               # every live shot
+node scripts/screens/capture-live.mjs --shot merge-queue-tab        # one (repeatable)
+node scripts/screens/capture-live.mjs --explore '#/projects/{project}/releases'   # a page's buttons, links, text
+node scripts/screens/capture-live.mjs --base http://127.0.0.1:<port> --agent-dir ../.agent   # a test copy's shots
+```
+
+Options: `--project <name|prj_id>` (default `sova`), `--light`, `--png` (keeps each PNG in the
+debug dir, `SCREENS_DEBUG_DIR`), `--why` (on a leak-gate refusal, prints where each hit is; to
+your terminal only). Playwright comes from the playwright skill's `node_modules` in this checkout
+(`PLAYWRIGHT_DIR` points elsewhere), sharp from this site's install (`SITE_INSTALL_DIR` names
+another checkout's installed `site/`), the browser from `CHROMIUM_BIN` (else Playwright's own).
+It signs in like a browser on this machine: the agent dir's `sova/auth-token` as the install's
+cookie. The token is never printed or written.
+
+**Read-only, by construction.** Every request the page makes goes through a guard: GETs and the
+project-services read verbs (`*.status`, `*.logs`) pass, everything else is aborted before it
+leaves the browser (the run prints what it stopped). A shot's clicks are only those it lists, and
+one whose label reads as an action (Land, Publish, Apply, Save, Retry, Cancel, Hold, Restart,
+Continue, Start, …: `FORBIDDEN_CLICK`) is refused. Never open a chat in a live shot: a chat view
+answers some prompts over its socket on its own.
+
+**Masking, in one place** (`MASK` in the script), applied before the shot and again on every
+change the live page makes: the sidebar starts collapsed to its spine (this browser's own
+setting) and its lists and running-chat tiles are removed; session links lose their file paths;
+every other project's name, folder and org become "Another project", `~/code/another`, "An org"
+(read from the server at run time, never stored); this project's folder reads `~/code/<name>`,
+any home folder `~`, `~/webapps/` `~/code/`; emails read `you@example.com`; money reads `$—`;
+the merge thread's stale auto title reads "Merge thread"; a test copy's private-names push hold
+is dropped. Then the leak gate (harness.mjs's: home, user, host, tailnet; plus those projects,
+folders and orgs, and any email) refuses the shot if anything still shows. Read every new image
+anyway: the gate knows names, not meaning (a chat title can say more than a name).
+
+**Adding a shot:** add an entry to `SHOTS`: `id` (the file name), `alt`, `route` (a hash;
+`{project}` is the project's id), optional `steps` (`{ click: "<button text>" }` or
+`{ click: { css } }`, `{ scroll: "<selector>" }` to the top of its scroller, `{ wait: ms }`,
+`{ waitFor: "<css>" }`), `clip` (a selector, or several for the box around them; `pad`), `tall`
+(viewport height in CSS px; the width is 1440), `project`, and `copy: true` for a shot that needs
+a test copy. Find selectors and button names with `--explore`. If something private shows, add a
+rule to `MASK` rather than to the shot.
+
+**Test-copy shots** (`copy: true`): no release is open on the live server most of the time, so
+`release-in-progress` is shot on this worktree's own copy seeded with release demo data:
+
+```sh
+# from the repository root: a running copy of this checkout (project_verbs up, or pnpm run dev:hermetic
+# on another port) with its frontend built (dist/)
+bun scripts/e2e-release/seed-demo.ts --url http://127.0.0.1:<port> --token-file .agent/sova/auth-token --under "$(mktemp -d)"
+cd site && node scripts/screens/capture-live.mjs --base http://127.0.0.1:<port> --agent-dir ../.agent
+```
+
+The seeder's `--under` must be outside every git repository. A copy's projects have no private
+names set, so its pushes, and so Publish, stay held; a "ready to publish" shot needs
+`{"v":1,"privateNames":[]}` written to the copy's `.agent/sova/merge-queue/<project key>/names.json`
+first (the hold's own message names the file), then a shot of `acme-ready` (`clip: ".rel-card"`).
+
+| Shot | What | From |
+| --- | --- | --- |
+| `merge-queue-tab` | The Merge Queue tab: master and origin, the queue running, the merge thread, the branch checking now with its summary and progress, the branches waiting | live |
+| `merge-queue-run` | One run's page: the merge copy, the merge, setup, spec docs, review, each check with its time | live |
+| `landing-progress` | Cropped: the branch being checked (check N of M, progress bar, time) and the next in line (In line · 1, starts in) | live |
+| `releases-tab` | Releases: latest release, landings since, Release Note and Start Release, history with the newest's notes open | live |
+| `settings-merge-queue` | Settings → Merge Queue for one project: how it lands | live |
+| `settings-merge-queue-checks` | The same, at its checks | live |
+| `release-in-progress` | A release mid-way: done steps, gating checks passed, Try it on the staging copy held (Continue), a failed smoke test (Retry Step), Publish waiting | test copy |

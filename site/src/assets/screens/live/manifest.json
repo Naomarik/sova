@@ -1,0 +1,75 @@
+{
+  "shots": {
+    "merge-queue-tab": {
+      "file": "merge-queue-tab.webp",
+      "width": 2880,
+      "height": 2800,
+      "theme": "dark",
+      "alt": "A project's Merge Queue tab: master and origin in step, the queue running with its merge thread idle, one branch being checked with its plain-words summary, and the branches queued behind it.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 156360
+    },
+    "landing-progress": {
+      "file": "landing-progress.webp",
+      "width": 1756,
+      "height": 1478,
+      "theme": "dark",
+      "alt": "Landing progress, branch by branch: the branch being checked with its plain-words summary, the check it is on and a progress bar, and the next branch in line with when it starts.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 76166
+    },
+    "releases-tab": {
+      "file": "releases-tab.webp",
+      "width": 2880,
+      "height": 3000,
+      "theme": "dark",
+      "alt": "A project's Releases tab: the latest release and the landings since, Release Note and Start Release, and the history of published releases, the newest with its notes open.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 114976
+    },
+    "merge-queue-run": {
+      "file": "merge-queue-run.webp",
+      "width": 2880,
+      "height": 2600,
+      "theme": "dark",
+      "alt": "One merge-queue run: the branch merged onto the newest master in its own copy, each check with its state and time, and the steps still to come.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 132852
+    },
+    "settings-merge-queue": {
+      "file": "settings-merge-queue.webp",
+      "width": 1520,
+      "height": 1280,
+      "theme": "dark",
+      "alt": "Settings, Merge Queue, for one project: how a branch lands (merged locally, a pull request on GitHub, a merge request on GitLab, or the branch pushed only), each value marked with where it comes from.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 50622
+    },
+    "settings-merge-queue-checks": {
+      "file": "settings-merge-queue-checks.webp",
+      "width": 1520,
+      "height": 1280,
+      "theme": "dark",
+      "alt": "Settings, Merge Queue, further down: the checks every landing runs (Typecheck, Unit tests, Integration and more), which rerun their failed files, setup before the checks, and the review of each landing.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 31048
+    },
+    "release-in-progress": {
+      "file": "release-in-progress.webp",
+      "width": 1756,
+      "height": 1646,
+      "theme": "dark",
+      "alt": "A release in progress, step by step: the version, notes and release commit done, the gating checks passed, Try it on the staging copy held for you with Continue, a failed smoke test with Retry Step, a check still running, and Publish waiting its turn.",
+      "source": "copy",
+      "taken": "2026-11-05",
+      "bytes": 77714
+    }
+  },
+  "_generated": "by site/scripts/screens/capture-live.mjs; edit its SHOTS instead"
+}

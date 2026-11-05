@@ -5,7 +5,7 @@ import { cancelMergeSettings, listProjects, putMergeModels, saveMergeSettings } 
 import { folderGroup } from "../../lib/folder-sources";
 import { fileCount } from "../../lib/folder-viewer";
 import { tildePath } from "../../lib/format";
-import { short } from "../../lib/merge-queue";
+import { notSetUp, short } from "../../lib/merge-queue";
 import { mergeChanged, readQueue } from "../../lib/merge-queue-client";
 import { showsPushToOrigin } from "../../lib/merge-queue-requests";
 import {
@@ -31,7 +31,7 @@ import { projectTabHref } from "../../lib/projects-route";
 import { closeSettings } from "../../lib/settings-nav";
 import { announce, home, toast } from "../../lib/ui-state";
 import { FolderViewer } from "../FolderViewer";
-import { notSetUp, requestInitialize } from "../../lib/merge-queue-initialize";
+import { createSetupPoll, SetupChatButton, SetupNotSetUp } from "../SetupChat";
 import { ModelPickButton } from "../ModelPickButton";
 import { Banner } from "../ui";
 import { MergeQueueLandHow, MergeQueueLandSuggestion } from "./MergeQueueLandHow";
@@ -165,27 +165,14 @@ function ProjectQueueSettings(props: { projectId: string; root: string }) {
   );
 }
 
-/** A project the queue doesn't serve (no merge setup): the Merge Queue tab's words; Initialize opens that tab straight on its setup. */
+/** A project the queue doesn't serve (no merge setup): what the queue does and what setting it up changes, with Set Up
+    with a Chat, which opens the project's Setup chat (and closes Settings to show it). */
 function NotServed(props: { projectId: string; target: string; settings: MergeQueueSettings | undefined }) {
+  const setup = createSetupPoll(props.projectId);
   return (
-    <div class="mqs-body">
-      <Banner
-        tone="info"
-        title="No merge queue settings are set up for this project"
-        body={`Until they are, its chats merge branches into ${props.target} themselves when you ask.`}
-        action={
-          <a
-            class="button button-sm"
-            href={projectTabHref(props.projectId, "merge-queue")}
-            onClick={() => {
-              requestInitialize(props.projectId);
-              closeSettings();
-            }}
-          >
-            Initialize
-          </a>
-        }
-      />
+    // A link in the chat's card (Open Setup Chat, View Log, Read Report) leaves Settings too.
+    <div class="mqs-body" onClick={(e) => (e.target as Element).closest(".setup-unset a[href]") && closeSettings()}>
+      <SetupNotSetUp projectId={props.projectId} surface="settings" target={props.target} poll={setup} onOpen={closeSettings} />
       <MergeQueueLandSuggestion settings={props.settings} />
     </div>
   );
@@ -327,9 +314,12 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
 
   return (
     <div class="mqs-body">
-      <p class="text-caption text-muted mqs-from">
-        From {target()} at <span class="text-mono">{short(s().at)}</span>
-      </p>
+      <div class="spread mqs-from-row">
+        <p class="text-caption text-muted mqs-from">
+          From {target()} at <span class="text-mono">{short(s().at)}</span>
+        </p>
+        <SetupChatButton projectId={props.projectId} setUp from="settings" onOpen={closeSettings} />
+      </div>
       <Show when={s().projectFileDiffers}>
         <p class="mqs-note" role="note">
           The project folder's <span class="text-mono">.sova/project.json</span> differs from {target()}'s. These are {target()}'s values, which the queue uses.

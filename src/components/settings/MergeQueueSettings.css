@@ -118,3 +118,4 @@
   .mqs-end { justify-content: flex-start; }
   .mqs-row > .mqs-tag { justify-self: start; }
 }
+.mqs-from-row { flex-wrap: wrap; gap: var(--space-2); }

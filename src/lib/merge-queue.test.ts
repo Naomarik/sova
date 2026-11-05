@@ -170,15 +170,12 @@ test("whose failure: a branch's (passes on master, fails again on the tip)", () 
   assert.equal(attribution({ verdict: "passed", steps: [] } as unknown as MergeRun), null);
 });
 
-test("the onboarding's check list: Name: command per line, the rest named back", async () => {
-  const { parseCheckList } = await import("./merge-queue");
-  assert.deepEqual(parseCheckList("Typecheck: npm run typecheck\n\nUnit tests: npm test -- --ci\nbroken line\n: no name"), {
-    checks: [
-      { label: "Typecheck", command: "npm run typecheck" },
-      { label: "Unit tests", command: "npm test -- --ci" },
-    ],
-    bad: [4, 5],
-  });
+test("not set up: unserved, or checks unset; an invalid definition is a setup, said as such", async () => {
+  const { notSetUp } = await import("./merge-queue");
+  assert.equal(notSetUp({ served: false, checks: "declared" }), true);
+  assert.equal(notSetUp({ served: true, checks: "unset" }), true);
+  assert.equal(notSetUp({ served: true, checks: "declared" }), false);
+  assert.equal(notSetUp({ served: false, checks: "unset", invalid: "bad json" }), false);
 });
 
 test("row numbers: on live rows only; Land pins the head they were read at", async () => {

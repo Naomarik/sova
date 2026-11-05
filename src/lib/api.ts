@@ -1525,8 +1525,18 @@ export const getMergeCards = (sessionId: string) => request<{ cards: import("../
 /** What runs on this host now, every project's (Running branches on `#/projects`). */
 export const getHostServices = () => request<HostServicesView>("/api/services");
 export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);
-/** Merge Branch on a proposed playbook run (§app.project-runtime/merge): the hash shown; a refused merge's error says why. */
-export const mergeProjectRun = (projectId: string, hash: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/merge`, jsonInit("POST", { hash }));
+/** Merge Branch on a proposed playbook run (§app.project-runtime/merge): the hash shown (and the Setup chat's, the commit
+    its proposal was read at); a refused merge's error says why. */
+export const mergeProjectRun = (projectId: string, hash: string, commit?: string) =>
+  request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/merge`, jsonInit("POST", commit ? { hash, commit } : { hash }));
+/** A project's Setup chat (the one standing chat that sets up its merge queue, releases and deploys): its state and its
+    branch's proposal, and whether it may open now. */
+export const getSetupChat = (projectId: string) =>
+  request<import("./setup-chat").SetupRead>(`${projectPath(projectId)}/setup`);
+/** Opens the project's Setup chat, starting it the first time; `from`: the part the user came from (the chat starts
+    there). `fresh`: Start Fresh (this chat is archived once its turn ends; the next open starts a new one). */
+export const openSetupChat = (projectId: string, opts: { from?: "merge-queue" | "releases" | "deploy" | "settings"; fresh?: boolean } = {}) =>
+  request<{ sessionId: string; path: string; reopened: boolean }>(`${projectPath(projectId)}/setup`, jsonInit("POST", { ...(opts.from ? { from: opts.from } : {}), ...(opts.fresh ? { fresh: true } : {}) }));
 /** Run the Project verbs playbook on the project: a coding session on its own branch. */
 export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
   request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));

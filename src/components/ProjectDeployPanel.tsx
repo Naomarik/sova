@@ -1,13 +1,14 @@
 import { createEffect, createSignal, For, type JSX, Show } from "solid-js";
 import type { ReleaseHistoryItem } from "../../shared/release";
 import type { DeployPlanView, DeployReview, DeployTargetView, LogLine, VerbResult } from "../../shared/project-contract";
-import { ApiError, runDeploySetup, runDeployVerb } from "../lib/api";
+import { ApiError, runDeployVerb } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { createPoll } from "../lib/poll";
 import { checksLine, DEPLOY_STANDING_CHIP, DEPLOY_STATE_CHIP, hash12, overridesAsked, planDeadline, recordLine, rollbackWord, shipConfirmLine, short } from "../lib/project-deploy";
 import { announce, toast } from "../lib/ui-state";
 import { deployHandOff, takeDeployHandOff } from "../lib/releases-client";
 import { releaseAt, releaseOfTarget } from "../lib/releases";
+import { createSetupPoll, SetupChatButton, SetupChatState, SetupNotSetUp, type SetupPoll } from "./SetupChat";
 import { Chip } from "./ui";
 
 /** A deploy's record changes step by step: read often enough to follow one. */
@@ -125,8 +126,17 @@ function PlanView(props: { plan: DeployPlanView }) {
  * The project's Deploy panel (§app.project-runtime/deploy-panel): each target's standing and last deploy; per
  * target Plan Deploy, then Deploy Now after a confirm; Roll Back; the last deploy's log; an overseer's request. Only the operator sees it.
  */
-export function ProjectDeployPanel(props: { projectId: string; root: string; archived: boolean; /** The project's numbered releases: each row says which one it runs. */ releases?: () => readonly ReleaseHistoryItem[] | undefined }) {
+export function ProjectDeployPanel(props: {
+  projectId: string;
+  root: string;
+  archived: boolean;
+  /** The project's numbered releases: each row says which one it runs. */
+  releases?: () => readonly ReleaseHistoryItem[] | undefined;
+  /** The page's read of the project's Setup chat (one of its own when absent). */
+  setup?: SetupPoll;
+}) {
   const poll = createPoll(() => runDeployVerb(props.root, "deploy.status", {}), DEPLOY_POLL_MS);
+  const setup = props.setup ?? createSetupPoll(props.projectId);
   const [busy, setBusy] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [plans, setPlans] = createSignal<Record<string, DeployPlanView | { refused: VerbResult["error"] }>>({});
@@ -211,25 +221,27 @@ export function ProjectDeployPanel(props: { projectId: string; root: string; arc
       if (why) throw new Error(why);
       return `Dismissed the request to deploy ${t.name}.`;
     });
-  const setup = () =>
-    act("setup", async () => {
-      const out = await runDeploySetup(props.projectId);
-      return out.worktree ? `The Project deploy playbook started on ${out.worktree.branch}.` : "The Project deploy playbook started.";
-    });
-
   return (
     <section class="card orgs-section project-card" aria-labelledby="project-deploy" ref={card}>
       <div class="orgs-head">
         <h2 class="orgs-h2" id="project-deploy">
           Deploy
         </h2>
-        <Show when={report()?.deployHash}>{(h) => <span class="list-meta text-mono">{hash12(h())}</span>}</Show>
+        <span class="cluster">
+          <Show when={report()?.deployHash}>{(h) => <span class="list-meta text-mono">{hash12(h())}</span>}</Show>
+          <Show when={!props.archived && report()?.targets?.length}>
+            <SetupChatButton projectId={props.projectId} setUp from="deploy" poll={setup} />
+          </Show>
+        </span>
       </div>
       <Show when={report()} fallback={<p class="orgs-empty">{poll.error() ? `Couldn't read the deploy targets. ${poll.error()}` : poll.data()?.error ? poll.data()!.error!.message : "Reading the deploy targets."}</p>}>
         {(d) => (
           <>
+            <Show when={d().targets?.length}>
+              <SetupChatState projectId={props.projectId} poll={setup} proposalOnly />
+            </Show>
             <Show when={!d().targets?.length}>
-              <p class="orgs-empty">Main declares no deploy yet. Set Up Deploy asks you how each target ships, then proposes a recipe on its branch for you to merge.</p>
+              <SetupNotSetUp projectId={props.projectId} surface="deploy" archived={props.archived} poll={setup} />
             </Show>
             <ul class="deploy-targets">
               <For each={d().targets ?? []}>
@@ -380,13 +392,6 @@ export function ProjectDeployPanel(props: { projectId: string; root: string; arc
               </For>
             </ul>
             <Show when={error()}>{(e) => <p class="field-error" role="status">{e()}</p>}</Show>
-            <Show when={!props.archived && !d().targets?.length}>
-              <div class="deploy-actions">
-                <button type="button" class="button button-sm button-primary" aria-disabled={busy() ? "true" : undefined} onClick={() => void setup()}>
-                  Set Up Deploy
-                </button>
-              </div>
-            </Show>
           </>
         )}
       </Show>

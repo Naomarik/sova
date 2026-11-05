@@ -76,6 +76,9 @@ export const land = (worktree: string, o: LandOptions = {}) =>
   act(null, "merge.add", { checkout: worktree, ...opts(o) });
 /** Land on the queue's own rows, by branch. */
 export const landBranch = (project: string, branch: string, o: LandOptions = {}) => act(project, "merge.add", { branch, ...opts(o) });
+/** Run Trial on a Setup chat's proposal: `merge.try` of its setup branch at `commit` in the merge copy (its own
+    checks, from setup on, logged); it saves, merges and moves nothing. */
+export const trySetupBranch = (project: string, branch: string, commit: string) => act(project, "merge.try", { branch, commit });
 export const cancelEntry = (e: Pick<MergeEntry, "id">) => act(null, "merge.cancel", { entry: e.id });
 /** The user's answer to an entry that waits for them: Accept, Send Back, Land Anyway. */
 export const answerEntry = (e: Pick<MergeEntry, "id">, answer: MergeAnswer) => act(null, "merge.answer", { entry: e.id, answer });
@@ -103,19 +106,3 @@ export async function readLog(run: string, step?: string): Promise<string> {
   return (report(r)?.lines ?? []).join("\n");
 }
 
-/** The onboarding's checks, as the project's `merge` section takes them. */
-export type OnboardChecks =
-  | { kind: "list"; checks: { label: string; command: string }[] }
-  | { kind: "command"; command: string; takesMin?: number; requires?: string }
-  | { kind: "none" };
-/** merge.setup's params for an answer: one command (with how long and what starts first), a list, or none. */
-export function setupBody(c: OnboardChecks): Record<string, unknown> {
-  if (c.kind === "none") return { none: true };
-  // The verb's params are flat (the CLI and the catalogue take them): each check as "Label: command".
-  if (c.kind === "list") return { commands: c.checks.map((x) => `${x.label}: ${x.command}`) };
-  return { command: c.command, ...(c.takesMin ? { takesMin: c.takesMin } : {}), ...(c.requires ? { requires: [c.requires] } : {}) };
-}
-/** Try It on Main: the copy, setup and the checks on the target alone, logged; nothing saved. */
-export const tryOnMain = (project: string, c: OnboardChecks) => runMergeVerb(project, "merge.setup", { ...setupBody(c), dryRun: true });
-/** Save Checks: writes the project's merge section. */
-export const saveChecks = (project: string, c: OnboardChecks) => act(project, "merge.setup", setupBody(c));

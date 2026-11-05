@@ -5,6 +5,13 @@
 //
 //   node scripts/mesh-lab/e2e/versions-builds.mjs make [--from <rev>] [--legacy <rev>]
 //   node scripts/mesh-lab/e2e/versions-builds.mjs list | delete
+//   node scripts/mesh-lab/e2e/versions-builds.mjs same [<a> <b>]   exit 0 when what reaches a host is equal
+//   node scripts/mesh-lab/e2e/versions-builds.mjs prepare [a,b,c,d,e]   make, then each host on base (swap
+//              only where it runs another commit; a commit's images are built once, on first use)
+//
+// `make` keeps every ref while base's host-reaching tree equals <from>'s (a harness-only commit moves
+// nothing, so no image is rebuilt); otherwise it remakes them all, which is cheap: images are built
+// only when a test first swaps a host to one.
 //
 //   legacy     the fork point from master: lists no areas, same protocol fingerprint as base
 //   legacy-skewed  legacy plus a comment in shared/protocol.ts: lists no areas, another fingerprint
@@ -26,6 +33,17 @@ const PREFIX = "lab/al_1-";
 export const BUMPED = ["composer", "transcript", "sessions", "peer"];
 export const BUILDS = ["legacy", "legacy-skewed", "base", "base-merged", "unrelated", ...BUMPED];
 export const refOf = (name) => `${PREFIX}${name}`;
+
+/** What never reaches a host image, or only from the working tree at `lab up`/`swap`: the harnesses and the
+    lab CLI. Everything else in the tree is in the image (git archive), so it counts, strictly; the lab's
+    own build files (Dockerfile, host/) count too, since they shape the image. */
+export const HOST_EXCLUDES = ["scripts/mesh-lab/e2e", "scripts/mesh-lab/lab", "scripts/mesh-lab/lab.mjs", "scripts/mesh-lab/README.md", "scripts/mesh-lab/e2e.sh", "scripts/mesh-lab/headscale"];
+/** Whether two commits put the same files on a host. */
+export function sameOnHost(a, b) {
+  const r = spawnSync("git", ["-C", ROOT, "diff", "--quiet", a, b, "--", ".", ...HOST_EXCLUDES.map((x) => `:(exclude)${x}`)]);
+  if (r.status !== 0 && r.status !== 1) throw new Error(`git diff ${a} ${b}: ${r.stderr}`);
+  return r.status === 0;
+}
 
 function git(args, { env, input, allowFail = false } = {}) {
   const r = spawnSync("git", ["-C", ROOT, ...args], { encoding: "utf8", input, env: { ...process.env, ...env }, maxBuffer: 64 << 20 });
@@ -57,6 +75,8 @@ function variant(name, parent, files, otherParent) {
 export function make({ from = "HEAD", legacy } = {}) {
   const base = git(["rev-parse", "--verify", `${from}^{commit}`]);
   const fork = legacy ? git(["rev-parse", "--verify", `${legacy}^{commit}`]) : git(["merge-base", base, "master"]);
+  const had = list();
+  if (BUILDS.every((b) => had[b]) && had.legacy === fork && sameOnHost(had.base, base)) return { ...had, changed: false };
   git(["update-ref", `refs/heads/${refOf("legacy")}`, fork]);
   git(["update-ref", `refs/heads/${refOf("base")}`, base]);
   const areas = JSON.parse(git(["show", `${base}:shared/wire-areas.json`]));
@@ -71,7 +91,7 @@ export function make({ from = "HEAD", legacy } = {}) {
     next[area].version += 1;
     variant(area, base, { "shared/wire-areas.json": `${JSON.stringify(next, null, 2)}\n` });
   }
-  return Object.fromEntries(BUILDS.map((b) => [b, commitOf(b)]));
+  return { ...Object.fromEntries(BUILDS.map((b) => [b, commitOf(b)])), changed: true };
 }
 
 export function list() {
@@ -88,10 +108,27 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   const [cmd, ...args] = process.argv.slice(2);
   const opt = (n) => (args.includes(n) ? args[args.indexOf(n) + 1] : undefined);
   if (cmd === "make") console.log(JSON.stringify(make({ from: opt("--from"), legacy: opt("--legacy") }), null, 2));
+  else if (cmd === "same") process.exit(sameOnHost(args[0] ?? refOf("base"), args[1] ?? "HEAD") ? 0 : 1);
+  else if (cmd === "prepare") {
+    const made = make();
+    console.log(`builds ${made.changed ? "remade: images are built on first use" : "kept: nothing that reaches a host changed"} (base ${made.base.slice(0, 12)})`);
+    if (made.changed) rmSync(join(process.env.LAB_STATE ?? "", "versions.bundle"), { force: true });
+    const { provenanceOf } = await import("../lab.mjs");
+    for (const h of (args[0] ?? "a,b,c,d,e").split(",")) {
+      const on = provenanceOf(h)?.commit;
+      if (on === made.base) {
+        console.log(`${h}: on base already, nothing rebuilt`);
+        continue;
+      }
+      console.log(`${h}: runs ${on?.slice(0, 12) ?? "unknown"}; swapping to base ${made.base.slice(0, 12)} (builds its images only if missing)`);
+      const r = spawnSync(process.execPath, [join(ROOT, "scripts/mesh-lab/lab.mjs"), "swap", h, made.base], { stdio: "inherit" });
+      if (r.status !== 0) process.exit(1);
+    }
+  }
   else if (cmd === "list") console.log(JSON.stringify(list(), null, 2));
   else if (cmd === "delete") console.log(remove().join("\n") || "no lab/al_1-* refs");
   else {
-    console.error("usage: versions-builds.mjs make [--from <rev>] [--legacy <rev>] | list | delete");
+    console.error("usage: versions-builds.mjs make [--from <rev>] [--legacy <rev>] | list | delete | same [a b] | prepare [hosts]");
     process.exit(2);
   }
 }

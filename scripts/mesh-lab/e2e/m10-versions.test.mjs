@@ -27,7 +27,7 @@ import { provenanceOf } from "../lab.mjs";
 import { container, hostUrl, lab, labTokenHeaders, laptopFetch, readAgentFile, requireLab, sh, STATE, unlockPage, waitFor, writeAgentFile } from "./lib.mjs";
 import { start as startFakeLlm, FAKE_MODEL } from "./fake-llm.mjs";
 import { link, linksFile, releaseLock, send, takeLock, unlink, waitIdle } from "./links-lib.mjs";
-import { commitOf, list } from "./versions-builds.mjs";
+import { commitOf, list, sameOnHost } from "./versions-builds.mjs";
 
 const REPO = fileURLToPath(new URL("../../..", import.meta.url));
 const PW = process.env.PLAYWRIGHT_MODULE ?? join(REPO, ".claude/skills/playwright/scripts/node_modules/playwright/index.mjs");
@@ -376,7 +376,8 @@ before(async () => {
   cfg = requireLab();
   const refs = list();
   assert.ok(refs.base, "versions-builds.mjs make first");
-  assert.equal(refs.base, spawnSync("git", ["-C", REPO, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim(), "lab/al_1-base is HEAD: rerun make");
+  // Strict for everything that reaches a host; a harness-only commit since base changes nothing a host runs.
+  assert.ok(sameOnHost(refs.base, "HEAD"), "lab/al_1-base puts other files on a host than HEAD does: rerun make (al_1-lab-run.sh only does it)");
   if (!existsSync(PW)) throw new Error(`Playwright not found at ${PW}`);
   const { chromium } = await import(pathToFileURL(PW).href);
   browser = await chromium.launch({ headless: true, executablePath: chromiumBin() });

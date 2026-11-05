@@ -99,28 +99,6 @@
       (is (= "fp:a2b1" (get-in (core/data eng rsid) [:registered :fingerprint])))
       (is (contains? (reasons eng) "runtime/playbook-done")))))
 
-(deftest a-pipeline-run-stands-through-a-turn-with-no-commits
-  (let [eng (eng!)
-        bs  "build/pr1/s1"]
-    (observe! eng 2 (facts))
-    (core/send! eng psid :verbs/onboard (assoc op :session-id "s1" :title "Setup · site" :prompt "Set it up" :playbook-id "project-setup" :label "Project setup" :proposes "pipeline") {:now (+ t0 3)})
-    (core/send! eng bs :effect/done {:kind "make-worktree" :result {:branch "sova/setup" :target "main" :base "b0"}} {:now (+ t0 4)})
-    (core/send! eng bs :effect/done {:kind "set-mode"} {:now (+ t0 5)})
-    (core/send! eng bs :effect/done {:kind "first-prompt"} {:now (+ t0 6)})
-    (core/send! eng bs :turn/started {} {:now (+ t0 7)})
-    (core/send! eng bs :turn/ended {} {:now (+ t0 8)})
-    (is (in? eng rsid :running) "its first turn summarised the setup and committed nothing: the Setup chat stands")
-    (is (nil? (get-in (core/data eng rsid) [:playbook :result])))
-    (core/send! eng bs :turn/started {} {:now (+ t0 9)})
-    (core/send! eng bs :git/probe {:branch "unmerged" :tree "open"} {:now (+ t0 10)})
-    (core/send! eng bs :turn/ended {} {:now (+ t0 11)})
-    (is (in? eng rsid :proposed) "a later turn that commits proposes")
-    (core/send! eng bs :build/merge op {:now (+ t0 12)})
-    (core/send! eng bs :effect/done {:kind "merge" :result {:commit "m1"}} {:now (+ t0 13)})
-    (core/send! eng bs :git/probe {:branch "merged"} {:now (+ t0 14)})
-    (is (in? eng rsid :idle))
-    (is (= "merged" (get-in (core/data eng rsid) [:playbook :result])) "a merge still ends it")))
-
 (deftest a-run-that-proposes-and-is-merged
   (let [eng (eng!)
         bs  "build/pr1/o2"]

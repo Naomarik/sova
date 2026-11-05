@@ -61,7 +61,7 @@ export function check(rule: Rule, raw: unknown, label?: string): Checked;
 export function check(rule: Rule, raw: unknown, label = rule.label): Checked {
   const no = (message: string): Checked => ({ ok: false, message });
   if (rule.kind === "whole") {
-    const bad = no(`${label} must be a whole number from ${rule.min} to ${rule.max}.`);
+    const bad = no(`${label} must be a whole number from ${count(rule.min)} to ${count(rule.max)}.`);
     const text = typeof raw === "number" ? String(raw) : typeof raw === "string" ? raw.trim() : null;
     if (text === "" && rule.optional) return { ok: true, value: null };
     if (text === null || !/^-?\d+$/.test(text)) return bad;

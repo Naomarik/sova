@@ -29,7 +29,7 @@ test("the limit saves from the dialog's footer: a dirty edit is listed, an inval
   assert.deepEqual(dirtyForms().map((f) => f.label), ["Organizations"]);
   assert.deepEqual(invalidForms(), []);
   setBatonDraft(form({ messagesMax: "0" }));
-  assert.equal(invalidForms()[0]?.problem(), "Organizations: Message limit must be a whole number from 1 to 1000.");
+  assert.equal(invalidForms()[0]?.problem(), "Organizations: Message limit must be a whole number from 1 to 1,000.");
   assert.deepEqual(await saveAllDrafts(), { saved: [], failed: [] }, "nothing is written while a dirty form is invalid");
   resetAllDrafts();
   assert.deepEqual(dirtyForms(), []);

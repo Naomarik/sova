@@ -156,7 +156,7 @@ describe("overseer settings", () => {
 
   test("strict on PUT: the first bad field is the answer", () => {
     assert.deepEqual(store.parseSettings({ proactivity: "loud" }, true), { error: 'proactivity must be "off", "badge" or "brief"' });
-    assert.equal((store.parseSettings({ caps: { archivesPerTurn: 1.5 } }, true) as { error: string }).error, "Sessions archived must be a whole number from 0 to 1000.");
+    assert.equal((store.parseSettings({ caps: { archivesPerTurn: 1.5 } }, true) as { error: string }).error, "Sessions archived must be a whole number from 0 to 1,000.");
     assert.match((store.parseSettings({ quickActions: [{ label: "", prompt: "x" }] }, true) as { error: string }).error, /label/);
     const ok = store.parseSettings({ model: "p/m", proactivity: "brief", extraSystemPrompt: "Be terse." }, true);
     assert.ok(!("error" in ok) && ok.model === "p/m" && ok.proactivity === "brief" && ok.extraSystemPrompt === "Be terse.");
@@ -267,8 +267,8 @@ describe("Settings QA: the server's Overseer limits, as the form checks them (fe
     assert.equal(store.CAP_MAX, 1000);
     const ok = store.parseSettings({ caps: { createPerTurn: 1000, concurrentSessions: 501 } }, true);
     assert.ok(!("error" in ok) && ok.caps.createPerTurn === 1000 && ok.caps.concurrentSessions === 501);
-    assert.equal(err({ caps: { createPerTurn: 1001 } }), "Sessions created must be a whole number from 0 to 1000.");
-    assert.equal(err({ caps: { concurrentSessions: -1 } }), "Running at once must be a whole number from 0 to 1000.");
+    assert.equal(err({ caps: { createPerTurn: 1001 } }), "Sessions created must be a whole number from 0 to 1,000.");
+    assert.equal(err({ caps: { concurrentSessions: -1 } }), "Running at once must be a whole number from 0 to 1,000.");
     const read = store.parseSettings({ caps: { archivesPerTurn: 800 } }, false);
     assert.ok(!("error" in read) && read.caps.archivesPerTurn === 800, "a stored 800 reads back as 800, not the default");
   });

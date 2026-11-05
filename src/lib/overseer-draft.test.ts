@@ -294,8 +294,8 @@ test("a limit goes up to 1000, the same as the server: 1000 saves, 1001 waits", 
   assert.equal(at(1000), null);
   assert.equal(at("1000"), null);
   assert.equal(at(0), null);
-  assert.equal(at(1001), "Sessions created must be a whole number from 0 to 1000.");
-  assert.equal(at("1001"), "Sessions created must be a whole number from 0 to 1000.");
+  assert.equal(at(1001), "Sessions created must be a whole number from 0 to 1,000.");
+  assert.equal(at("1001"), "Sessions created must be a whole number from 0 to 1,000.");
 });
 
 test("a limit box holds the text typed: blank, half-typed or a letter stays as typed, red, and Save waits", () => {

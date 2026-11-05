@@ -21,7 +21,7 @@ describe("rules", () => {
     assert.deepEqual(check(whole, " 1000 "), { ok: true, value: 1000 });
     assert.deepEqual(check(whole, 0), { ok: true, value: 0 });
     for (const raw of ["", " ", "-", "1e", "1.", "2.5", "-3", "a5", "1001", 1.5, Number.NaN, null, undefined])
-      assert.deepEqual(check(whole, raw), { ok: false, message: "Running at once must be a whole number from 0 to 1000." }, String(raw));
+      assert.deepEqual(check(whole, raw), { ok: false, message: "Running at once must be a whole number from 0 to 1,000." }, String(raw));
     assert.deepEqual(check({ ...whole, optional: true }, ""), { ok: true, value: null });
   });
   test("text: trimmed when the rule trims, blank and too long refused, a label override names one of many", () => {
@@ -58,7 +58,7 @@ describe("fields", () => {
     assert.equal(attr(out, "input", "inputmode"), "numeric");
     assert.equal(attr(out, "input", "aria-invalid"), "true");
     assert.equal(attr(out, "input", "aria-describedby"), "n-error");
-    assert.match(out, /<span class="field-error" id="n-error">Running at once must be a whole number from 0 to 1000\.<\/span>/);
+    assert.match(out, /<span class="field-error" id="n-error">Running at once must be a whole number from 0 to 1,000\.<\/span>/);
     assert.match(out, /<label class="field-label" for="n">Running at once<\/label>/);
   });
   test("a valid value: no red, no sentence; the hint is wired", () => {

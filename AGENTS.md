@@ -140,10 +140,16 @@ goes live on `systemctl --user restart sova-runtime.service` (macOS:
   `Reload Now`). That holds for pi-config edits too, the claude-code bridge included. Reloads go one
   chat at a time and stop at the first chat that fails to start on the new code.
 - After a server-side change, say that it is not live yet and needs that restart. Then confirm with
-  `GET /api/health` (`startedAt`, `head`).
+  `GET /api/health` (`startedAt`, `head`). A change that lands through the merge queue goes live on its
+  own: the merge thread restarts Sova once the queue is idle (below).
 - A chat never restarts or updates Sova: it asks the user. Both pass only on the user's own click in
   the page (§app.access/your-click), and `server.restart` answers with where to click. The server can't
   stop raw `systemctl`, `launchctl` or `kill`, so this is a rule, not a wall.
+- **The one exception: Sova's own merge thread**, after landings, once the queue is idle (nothing queued
+  or checking), outside a release, and only as `.sova/playbooks/merge-queue/PLAYBOOK.md` "When the
+  queue is idle" says: it holds the queue (`merge.hold`), builds the main checkout, restarts
+  `sova-runtime.service` and checks `/api/health`'s head. No other chat, worker or script does;
+  `POST /api/updates/restart` still refuses every chat.
 - The operator's ways: **Restart Sova** in Settings → General, Apply on the project's Branches tab, or
   from their own terminal the raw `systemctl` or `launchctl` line above.
 - The verb form (Sova as its own project, `.sova/project.json`; slot 0 adopts `sova-runtime.service`)

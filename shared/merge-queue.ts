@@ -596,6 +596,8 @@ export interface MergeReport {
   /** merge.fresh: whether a thread was retired; merge.clear: the chats deleted. */
   fresh?: boolean;
   cleared?: number;
+  /** merge.hold: the merge thread's hold now (null: none); `until` when it lifts by itself. */
+  hold?: { at: string; until: string } | null;
 }
 
 // ---- the WS feed --------------------------------------------------------------------------------

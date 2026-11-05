@@ -23,6 +23,7 @@ import { DIRTY_TTL_MS, execGit, gitInputsStamp, gitRefsStamp, type GitRunner, li
 import { goneTreeState, type GoneState } from "./removed-worktrees";
 import { sessionsChanged } from "./list-generation";
 import { opTrack } from "./stall-recorder";
+import { needsRestart } from "./restart-paths";
 
 /**
  * Merge readiness (§chat.worktrees/readiness): for each worktree a session tracks and owns, whether
@@ -200,9 +201,9 @@ const MERGE_ASK_RE =
 export const replyBody = (reply: string): string => reply.replace(/(?:\n\s*(?:(?:Also changes|Deferred|Plumbing|Spec check override):|Also updates\b)[^\n]*)+\s*$/i, "").trimEnd();
 export const asksToMerge = (reply: string): boolean => MERGE_ASK_RE.test(replyBody(reply).slice(-ASK_TAIL));
 
-/** A changed file that needs the server restarted: server-side code, never src/, docs or tests. */
-export const needsRestart = (file: string): boolean =>
-  (/^(?:server|shared|pi-config)\//.test(file) && !/\.md$|\.test\.[cm]?[jt]sx?$/.test(file)) || file === "package.json" || file === "pnpm-lock.yaml";
+/** A changed file that needs the server restarted (restart-paths.ts): server-side code, the src/ files the server
+ *  imports, the packages and the toolchain; never the page alone, docs or tests. */
+export { needsRestart };
 
 /** The session's routine and judged follow-ups, as the badge and digest read them. */
 export interface MergeFlags {

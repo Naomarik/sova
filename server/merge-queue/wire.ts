@@ -618,7 +618,9 @@ export async function startMergeQueue(
               ? { kind: "paused" as const, why: ev.why ?? "paused" }
               : ev.kind === "names"
                 ? { kind: "names" as const, file: ev.namesFile ?? "", target: ev.target }
-                : null;
+                : ev.kind === "idle"
+                  ? { kind: "idle" as const, entry, ...(ev.lastLanded ? { lastLanded: ev.lastLanded } : {}), ...(ev.head ? { head: ev.head } : {}) }
+                  : null;
     if (!mapped) return false;
     if (!servedNow.has(servedKey(ev.root))) return false;
     if (!threadMod.hasMergeThread()) return false;

@@ -75,6 +75,17 @@ function saveRecord(projectId: string, r: ProjectRecord): void {
   writeAll(all);
 }
 
+/** Every session file that is or was a project's Setup chat (the current one, and each one Start Fresh or an end
+ *  replaced): Needs you never brings one back once it is archived. */
+export function setupChatPaths(): Set<string> {
+  const out = new Set<string>();
+  for (const r of Object.values(readAll())) {
+    if (r?.current?.path) out.add(r.current.path);
+    for (const h of Array.isArray(r?.history) ? r.history : []) if (h?.path) out.add(h.path);
+  }
+  return out;
+}
+
 export const setupTitle = (root: string, name: string): string => `Setup · ${basename(root) || name}`;
 
 // ---- what the chat is told first ------------------------------------------------------------------------

@@ -255,3 +255,18 @@ describe("Needs you follows the Setup proposal at once", () => {
     }
   });
 });
+
+describe("setupChatPaths: every Setup chat, current or replaced", () => {
+  test("the current chat and the one Start Fresh replaced are both listed; another chat isn't", async () => {
+    const { setupChatPaths } = await import("./setup-chat");
+    const a = await project();
+    const s = stand(a.root);
+    const first = await openSetup(a.id, M, s.deps);
+    commitIn(first.worktree!.path, { ".sova/project.json": DEF("none") });
+    const fresh = await openSetup(a.id, { ...M, fresh: true }, s.deps);
+    const paths = setupChatPaths();
+    assert.ok(paths.has(first.path), "the replaced chat");
+    assert.ok(paths.has(fresh.path), "the current chat");
+    assert.equal(paths.has(join(agentDir, "sessions", "other.jsonl")), false);
+  });
+});

@@ -115,6 +115,7 @@ import { notifyBlockers, pushWanted, resetPushState } from "./push";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { overseerMemoryOf } from "./memory/settings";
 import { playbookReviews } from "./projects/playbook-review";
+import { setupChatPaths } from "./projects/setup-chat";
 import { tourSignInWaits } from "./tours/sign-in-notice";
 import { deployAttentionItems } from "./project-services/deploy-attention";
 import { extensionHealth, overseerExtCommands } from "./extensions";
@@ -359,6 +360,8 @@ export function attentionDigest(list?: readonly SessionSummary[]): Promise<Retur
     const aliases = readAliases();
     // Proposed verb playbook runs (§app.project-runtime/review), by their session file.
     const reviews = playbookReviews();
+    // Every Setup chat, current or replaced: an archived one lists nothing.
+    const setupChats = setupChatPaths();
     // Tour recordings waiting for a sign-in (§app.tours/sites), by session id, from the server's memory.
     const signIns = tourSignInWaits();
     const rows: AttentionRow[] = sessions.map((s) => {
@@ -377,6 +380,7 @@ export function attentionDigest(list?: readonly SessionSummary[]): Promise<Retur
         ...(stallsOn ? teamStallField(s.id) : {}),
         ...(aliases[s.id] ? { alias: aliases[s.id] } : {}),
         ...(reviews.has(s.path) ? { playbook: reviews.get(s.path)! } : {}),
+        ...(setupChats.has(s.path) ? { setupChat: true as const } : {}),
         ...(signIns.has(s.id) ? { tourSignIn: signIns.get(s.id)! } : {}),
         ...offerField(s),
         ...cardsField(s),

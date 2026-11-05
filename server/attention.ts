@@ -51,6 +51,8 @@ export interface AttentionRow {
   /** The session is a verb playbook's run that is proposed (server/projects/playbook-review.ts): it waits on the
       operator's Merge Branch (§app.project-runtime/review). */
   playbook?: PlaybookReviewFact;
+  /** The session is or was a project's Setup chat (server/projects/setup-chat.ts): archived, it lists nothing. */
+  setupChat?: true;
   /** One of the session's tour recordings waits for a sign-in (server/tours/sign-in-notice.ts, §app.tours/sites):
       where, what it asks for, and since when (ms epoch). */
   tourSignIn?: { origin: string; code: boolean; since: number };
@@ -97,6 +99,9 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   const s = row.summary;
   // The merge queue's own chats are its tab's: never a Needs you row (a question of the thread's reaches the branch's chat).
   if (s.overseer || s.projectOverseer || s.workerSession || s.queueChat) return [];
+  // An archived Setup chat was replaced (Start Fresh) or put away: its project's Setup card speaks for the setup now,
+  // so not even a failed turn brings it back.
+  if (s.archived && row.setupChat) return [];
   const out: AttentionItem[] = [];
   const lastActive = Date.parse(s.lastActiveAt) || 0;
   const base = {

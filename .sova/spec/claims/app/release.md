@@ -513,7 +513,7 @@ hash covers the section and the playbook folder together (§app.project-runtime/
 ## §app.release/sova — Sova's own release playbook
 
 Sova's `.sova/playbooks/release/` is its project release playbook in this form: `release.json` plans
-version, notes, bump, stamps, docs and commit before the checks; try-live (held: the operator's Apply on the live server, then a health check) before Publish;
+version, notes, bump, stamps, docs and commit before the checks; try-live (held: the operator's Apply on the live server, then a health check; Sova's merge thread never restarts Sova while a release is open, nor for its commit, §chat.merge-queue/sova-restart) before Publish;
 release-page (the notes out, `gh release create --verify-tag`) and outside-checks (held) after Publish;
 and release-page-withdrawn after a Withdraw. The **docs** step runs in every release unless the operator's Release Note
 says otherwise, and finishes on its own (never held): it lists every Docs page whose spec sources

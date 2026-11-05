@@ -16,8 +16,9 @@ user's (§chat.merge-queue/chat-turns).
 follows. A project may add its own `.sova/playbooks/merge-queue/PLAYBOOK.md`. The thread reads it
 after the method, and where the two differ, the project's wins. Both are playbook folders
 (§chat.playbooks/bundles). What is worth a note on a landing is what the project's playbook says.
-- Sova's says: server, shared or pi-config code (restart Sova to pick it up), dependency or
-  lockfile changes, migrations or state-file changes, follow-ups the branch left.
+- Sova's says: server, shared or pi-config code, dependency or lockfile changes, migrations or
+  state-file changes, follow-ups the branch left. It also has the thread restart Sova itself after
+  landings that change what the server runs, and note that it did (§chat.merge-queue/sova-restart).
 - A static site's might say nothing is worth noting, since it reloads itself.
 
 Both can be read, never edited, from Settings → Merge Queue, as two labelled groups, "Sova's
@@ -43,6 +44,7 @@ approval, when:
   (§app.merge-queue/conflicts).
 - **a run failed on the branch.** It explains the failure as the entry's note.
 - **the queue paused.**
+- **the queue has nothing left to check** (§app.merge-queue/empty).
 - **a project that pushes has no private names** (below).
 
 A replaced thread keeps its merge verbs for an hour, to finish its turn (one replaced by Start Fresh
@@ -55,9 +57,11 @@ replaced within the hour, counts as the thread for the merge verbs.
 - write notes;
 - add checks (never drop one);
 - judge and resolve conflicts;
-- retry after a machine pause.
+- retry after a machine pause;
+- hold its queue's new starts for a few minutes, and clear that hold (§app.merge-queue/empty).
 
-It may not approve, cancel or land an entry, merge into the target, or push. It messages no other
+It may not approve, cancel or land an entry, pause or resume the queue, merge into the target, or
+push. It messages no other
 chat directly. When it needs the user (the names interview below, or any question it can't settle
 itself), it asks through the merge verbs, and Sova carries the question to the branch's chat
 (§chat.merge-queue/asks). Its profile has no web, no workers and no timers, grants no session
@@ -327,3 +331,55 @@ and Sova takes the question to the user. Each question gets an id (`ak_…`).
 
 Open questions are kept with the project's thread record, across a Start Fresh or a replaced
 thread. The user can always open the merge thread and talk to it directly; that is never needed.
+
+## §chat.merge-queue/sova-restart — Sova's merge thread restarts Sova after landings
+
+Sova's own project playbook (`.sova/playbooks/merge-queue/`, its "When the queue is idle") has
+Sova's merge thread restart Sova after landings that change what its server runs, so new server code
+goes live without the operator pressing Restart Sova. It is an instruction in that playbook, with
+its script (`scripts/restart-sova.mjs`), not a product setting: there is no switch and nothing on
+screen for it, and no other project's merge thread does it (each follows its own project's playbook;
+Sova's method playbook forbids restarting anything unless the project's playbook says so,
+§chat.merge-queue/thread).
+
+- **What needs a restart.** One rule (`server/restart-paths.ts`) says which landed files the server
+  loads only at its start:
+  - code under `server/`, `shared/` or `pi-config/`, but not tests (`*.test.*`) or Markdown docs;
+  - the `src/` files the server or a chat process imports at runtime (its list is held to a walk of
+    the server's imports, so a new import is caught);
+  - the package list, lockfile, workspace install settings and toolchain pin (`package.json`,
+    `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `mise.toml`), which also need an install first.
+
+  Landings of other page files (`src/`, `public/`, the page's build settings) only get the page
+  rebuilt, never a restart. A `package.json` whose only change is its `version` (a release's bump)
+  counts for neither. A session's "restart pending" and its status line's "restart owed" read the
+  same file rule (§chat.worktrees/readiness), file by file, so a release commit may still show there.
+- **When.** Only on the queue's Idle (§app.merge-queue/empty), and once: one plan covers every file
+  that changed between the commit Sova runs (`GET /api/health`'s `head`) and the target's head. With
+  anything queued or checking it waits for the next Idle. When nothing needs it, nothing happens;
+  when Sova doesn't answer, or the main checkout isn't on the target's head, it does nothing and
+  waits for the next Idle.
+- **Never during a release.** While a release is open (§app.release/checks) it builds and restarts
+  nothing. The release's hold lifting at Publish or Abandon sends Idle again, and the thread catches
+  up then. A release's own commit is never a reason to restart: trying a release live stays the
+  operator's Apply (§app.release/sova).
+- **Page files only:** it builds the page (`pnpm run build` in the main checkout), restarts nothing,
+  and on a failure notes "The page build failed after landing {branch}: {first error line}." Open
+  tabs offer the newer page.
+- **A restart, in order:**
+  1. It holds the queue's new starts (`merge.hold`, §app.merge-queue/empty).
+  2. In the main checkout it runs `pnpm install --frozen-lockfile` when an install file changed, then
+     `pnpm run build`. If either fails, nothing restarts, it clears the hold, and its note says "Not
+     restarted: {install|build} failed after landing {branch}: {first error line}."
+  3. If a run started before the hold, it clears the hold and waits for the next Idle.
+  4. It restarts `sova-runtime.service` the way the operator's own terminal does (`systemctl --user
+     restart`; on macOS `launchctl kickstart -k`), never through `POST /api/updates/restart`, which
+     still refuses it (§app.updates/restart). Chats and workers, the merge thread included, keep
+     running through it (§app.chat-processes/survives-restart).
+  5. It waits up to a minute for `GET /api/health` to answer with a new start on the target's head.
+  6. It clears the hold (the new start already lifted it) and adds to its note on the newest landing
+     (§app.merge-queue/note), keeping what the note said: "Restarted Sova after landing {branch}.",
+     or "Restart after landing {branch} didn't come back on {sha}: {why}. Check
+     sova-runtime.service." It never retries a failed restart itself: the next Idle plans again.
+
+This is the one place a chat restarts Sova (§app.access/your-click).

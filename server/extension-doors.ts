@@ -66,8 +66,10 @@ export const EXTENSION_DOORS: readonly ExtensionDoor[] = [
   { method: "WRITE", route: "/api/baton/*", promise: "approve", error: YOURS },
   { method: "WRITE", route: "/api/orgs/*", promise: "approve", error: YOURS },
   { method: "WRITE", route: "/api/outreach/*", promise: "approve", error: YOURS },
+  { method: "WRITE", route: "/api/mesh/*", promise: "approve", error: YOURS },
   // Writing rules.
   { method: "WRITE", route: "/api/settings/*", promise: "rules", error: SETTINGS },
+  { method: "WRITE", route: "/api/push/settings", promise: "rules", error: SETTINGS },
   { method: "WRITE", route: "/api/projects/:pid/settings/undo", promise: "rules", error: SETTINGS },
   { method: "WRITE", route: "/api/projects/:pid/settings/cards/:card/withdraw", promise: "rules", error: SETTINGS },
   // Writing to an overseer, or acting in its runs.

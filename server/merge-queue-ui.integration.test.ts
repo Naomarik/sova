@@ -954,6 +954,27 @@ for (const width of [1280, 390]) {
       await o.ctx.close();
     });
 
+    test("an extension's message reads as the extension's: its name, no link, no hop, never yours (§app.extensions/name-badge)", async () => {
+      const items = [
+        ...CHAT_ITEMS,
+        { id: "u3", kind: "user", text: '[from session "Alpha Bot" (ext:alpha), hop 0]\nThe build failed.', at: iso(1) },
+        { id: "mark-u3", kind: "info", at: iso(1), sessionMark: { kind: "sent", targetId: "u3", from: { sessionId: "ext:alpha", title: "Alpha Bot" }, hop: 0 } },
+      ];
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { items });
+      const { page } = o;
+      const row = page.locator(".message-from-session").last();
+      await row.waitFor({ timeout: 20_000 });
+      const t = await words(row);
+      assert.match(t, /From an extension/);
+      assert.match(t, /The build failed\./);
+      assert.doesNotMatch(t, /from session/, "the header line is the model's");
+      const sender = page.locator(".session-sender").last();
+      assert.match(await words(sender), /From Alpha Bot/);
+      assert.doesNotMatch(await words(sender), /hop/);
+      assert.equal(await sender.locator("a").count(), 0, "no session to link to");
+      await o.ctx.close();
+    });
+
     test("a turn the merge queue started reads as the queue's, not yours", async () => {
       // Sent with the "another session" marker named merge-queue, as the queue sends it: still the queue's row.
       const items = [

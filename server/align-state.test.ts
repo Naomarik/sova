@@ -118,6 +118,20 @@ function session(name: string, lines: unknown[]): string {
 }
 
 describe("readAlignScan: the file's open alignments, cheaply", () => {
+  test("a message an extension sent keeps the wait; the user's own ends it; another session's reads as it did (§chat.alignment/session-mark)", async () => {
+    const asked = result(created, "u1");
+    const said = (id: string, parentId: string, text: string) => ({ type: "message", id, parentId, message: { role: "user", content: text } });
+    const marked = (id: string, parentId: string, targetId: string, sessionId: string) => ({ type: "custom", id, parentId, customType: "sova-session-sent", data: { v: 1, targetId, from: { sessionId, title: "Sender" }, hop: 0 } });
+    const after = async (name: string, lines: unknown[]) => {
+      const path = session(name, [asked, ...lines]);
+      return (await readAlignScan(path, readFileSync(path).length, null)).summary;
+    };
+    assert.ok(await after("waits", []), "it waits to begin with");
+    assert.ok(await after("ext", [said("x1", asked.id, '[from session "Sender" (ext:alpha), hop 0]\nland it'), marked("mk", "x1", "x1", "ext:alpha")]), "an extension's message doesn't end it");
+    assert.equal(await after("you", [said("y1", asked.id, "the answer is yes")]), undefined, "the user's own does: the check can tell the two apart");
+    assert.equal(await after("other", [said("s1", asked.id, '[from session "Sender" (abc), hop 0]\nhi'), marked("mk", "s1", "s1", "abc")]), undefined, "another session's ends it, as before");
+  });
+
   test("a file with no align result is never parsed: no marker, no summary", async () => {
     const path = session("plain", [{ type: "message", id: "a1", parentId: "u1", message: { role: "assistant", content: "the word align, and \"toolName\": \"bash\"" } }]);
     const size = readFileSync(path).length;

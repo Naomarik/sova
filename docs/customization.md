@@ -57,7 +57,7 @@ project's main checkout (a branch's own copy is never read, so a branch can't gi
 { "version": 1, "offers": { "merge": {
   "when": "The branch's work is finished, committed and its checks passed.",
   "why": "Saves typing 'merge it'.",
-  "onlyIf": ["branch-ready"],
+  "onlyIf": ["branch-ready", "no-open-alignment"],
   "repeat": "once-per-commit",
   "title": "Merge {branch} into {base}?",
   "buttons": [
@@ -76,8 +76,8 @@ project's main checkout (a branch's own copy is never read, so a branch can't gi
   button needs your approval on the project page (Settings tab, **Offers**): **Approve Run Buttons**.
   Changing a run button asks again.
 - **Limits**: at most 8 offers and 4 buttons each; `onlyIf` takes `branch-ready`,
-  `waiting-for-ok`, `tree-clean` and `specs-promoted` (an older file's `no-open-alignment` is still
-  accepted and always holds: an offer shows beside an open alignment question); `repeat` is
+  `waiting-for-ok`, `tree-clean`, `no-open-alignment` and `specs-promoted` (an offer that doesn't name
+  `no-open-alignment` shows beside an open alignment question); `repeat` is
   `once-per-commit` (the default), `once-per-reply` or `once-per-session`. `"disabled": true` turns
   one off; `"shownBy": "another-chat"` keeps it for another chat to show
   (`node scripts/sova.mjs run session.offers.show --session <path> --offer <name> --from <its own session>`). A

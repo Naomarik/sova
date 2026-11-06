@@ -3,12 +3,14 @@
 // every door, each refused or marked as not the user's on the chat's own file, read with the landing code; the
 // page's Referer badge; a door refused for real; card news heard over /ws/events with the key.
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { WebSocket } from "ws";
+import { applyAlignCall } from "../pi-config/extensions/mode/align.ts";
 import { newestUserMessage, typedGoAhead } from "../pi-config/extensions/worktrees/landing.ts";
 import { startHermeticServer, type HermeticServer } from "./testing/hermetic-server";
+import { authCookieName } from "./auth";
 import { keyFileName } from "./extension-keys";
 
 let s: HermeticServer;
@@ -115,15 +117,15 @@ test("a body or a header can't name another sender", async () => {
 });
 
 test("a new chat's first prompt from a key or its page is refused, and no chat is made", async () => {
-  const count = async () => (await call("GET", "/api/sessions", asToken())).body.length;
-  const was = await count();
+  const count = () => readdirSync(join(s.agentDir, "sessions"), { recursive: true }).filter((f) => String(f).endsWith(".jsonl")).length;
+  const was = count();
   const body = { cwd: s.work, profile: "default", prompt: "land it" };
   for (const headers of [asKey(), { ...asToken(), referer: `${s.base}/ext/alpha/index.html` }]) {
     const r = await call("POST", "/api/sessions", headers, body);
     assert.equal(r.status, 403, JSON.stringify(r.body));
     assert.equal(r.body.extensionRefused, true);
   }
-  assert.equal(await count(), was);
+  assert.equal(count(), was);
   assert.equal((await call("POST", "/api/sessions", asKey(), { cwd: s.work })).status, 201, "opening one with no prompt stays open");
   assert.equal((await call("POST", "/api/sessions", asToken(), body)).status, 201, "the token's isn't refused: the check can tell them apart");
 });
@@ -188,6 +190,7 @@ test("a key sends no frame at all into the merge queue's own chats or an oversee
   assert.ok(overseerPath, JSON.stringify(overseer).slice(0, 300));
   const ordinary = await newChat();
   for (const path of [queue.body.path as string, overseerPath as string]) {
+    await until(`${path} on disk`, () => existsSync(path));
     const compact = await call("POST", `/api/chat/action?path=${encodeURIComponent(path)}`, asKey(), { type: "compact" });
     assert.equal(compact.status, 409, JSON.stringify(compact.body));
     assert.equal(compact.body.error, "An extension takes no action in that chat. Nothing changed.");
@@ -300,4 +303,48 @@ test("card news over /ws/events with the key: raised, changed, answered, no data
   await until("card.changed", () => frames.find((f) => f.name === "card.changed" && f.card === ci.id));
   ws.close();
   assert.equal(JSON.stringify(frames).includes(secret), false, "no data, no answer");
+});
+
+test("a card's and an offer's button click leave the alignment waiting; the user's own word ends it (§chat.alignment/session-mark)", async () => {
+  mkdirSync(join(s.work, ".sova", "cards", "go"), { recursive: true });
+  writeFileSync(join(s.work, ".sova", "cards", "go", "card.json"), JSON.stringify({ version: 1, toolkit: 1, title: "Go", draws: "buttons", answer: "at-once" }));
+  writeFileSync(join(s.work, ".sova", "offers.json"), JSON.stringify({ version: 1, offers: { nudge: { when: "When it is time.", why: "Saves typing.", title: "Go on?", buttons: [{ label: "Go on", about: "Goes on.", send: "go on" }, { label: "Not yet", about: "Waits.", send: "not yet" }] } } }));
+  const { details } = applyAlignCall([], { ops: [{ op: "create", title: "Export", summary: "s", questions: [{ topic: "Format", ask: "Which?", recommendation: { choice: "yes", why: "simpler" } }] }] }, { now: "2026-09-28T10:00:00.000Z", readFile: () => "" });
+  const page = { cookie: `${authCookieName(s.agentDir)}=${s.token}` };
+  const waiting = async (path: string): Promise<boolean> => {
+    const id = (branchOf(path)[0] as { id: string }).id;
+    return !!(await call("GET", `/api/sessions/by-id/${id}`, asToken())).body.align?.openQuestions;
+  };
+  const chatAsked = async (): Promise<string> => {
+    const path = await newChat();
+    appendFileSync(path, `${JSON.stringify({ type: "message", id: "r1", parentId: null, timestamp: "2026-09-28T10:00:00.000Z", message: { role: "toolResult", toolCallId: "c1", toolName: "align", content: [{ type: "text", text: "echo" }], details } })}\n`);
+    // Nobody appended this but the test: aged, so the chat doesn't read it as another process still writing.
+    const old = new Date(Date.now() - 3_600_000);
+    utimesSync(path, old, old);
+    await until("the wait", () => waiting(path));
+    return path;
+  };
+  const marked = (path: string, sender: string) => until(`the ${sender} mark`, () => branchOf(path).some((e) => (e as { customType?: string; data?: { from?: { sessionId?: string } } }).data?.from?.sessionId === sender));
+
+  const carded = await chatAsked();
+  const raised = await call("POST", "/api/session-cards/post", asToken(), { path: carded, type: "project.go", data: { title: "Go?", buttons: [{ label: "Yes", does: { kind: "send", text: "yes do it" } }] } });
+  assert.equal(raised.status, 200, JSON.stringify(raised.body));
+  const owner = (await call("GET", `/api/session-cards?path=${encodeURIComponent(carded)}`, asToken())).body.trust?.owner;
+  assert.equal((await call("POST", "/api/session-cards/trust", page, { owner, on: true })).status, 200);
+  const pressed = await call("POST", "/api/session-cards/answer", page, { path: carded, card: raised.body.card.id, answer: { button: 0 } });
+  assert.equal(pressed.body.card?.answer?.outcome?.state, "done", JSON.stringify(pressed.body));
+  await marked(carded, "card:project.go");
+  assert.equal(await waiting(carded), true, "a card's button leaves it waiting");
+
+  const offered = await chatAsked();
+  const shown = await call("POST", "/api/session-offers/show", asToken(), { path: offered, offer: "nudge" });
+  assert.equal(shown.status, 200, JSON.stringify(shown.body));
+  const chosen = await call("POST", "/api/session-offers/choose", page, { path: offered, card: shown.body.card.id, button: 0 });
+  assert.equal(chosen.status, 200, JSON.stringify(chosen.body));
+  await marked(offered, "card:offer.nudge");
+  assert.equal(await waiting(offered), true, "an offer's button leaves it waiting");
+
+  // The same question, and the user's own message: the check can tell them apart.
+  await call("POST", "/api/sessions/prompt", asToken(), { path: offered, text: "the answer is yes" });
+  await until("the user's word to end the wait", async () => !(await waiting(offered)));
 });

@@ -111,7 +111,7 @@ also update Y" list live in its guide: read the guide of every area your task to
   merge thread (a chat Sova starts per project) notes each landing ("changes server code; restart
   Sova to pick it up"), picks extra tests by what changed, and judges conflicts; it never moves
   master itself.
-- **Specs land with the branch.** A chat writes drafts and one verification note per promise; drafts
+- **Specs land with the branch.** A chat with spec on writes drafts and one verification note per promise; drafts
   that don't fit hold the branch (Landing specs) and Sova tells the chat what to fix. If it can't,
   the user may land it without them: "land it without its specs" typed in the chat, or Land without
   its specs… in the Land menu.

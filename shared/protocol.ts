@@ -1638,6 +1638,17 @@ export const CHARS_PER_TOKEN = 4;
 export interface SessionSetupSkill extends SessionSetupFile {
   name: string;
   description?: string;
+  /** Only `/skill:name` runs it: the model is never offered it. */
+  manualOnly?: true;
+}
+
+/** A skill that didn't load, and why (§chat.transcript/setup-card-skills). */
+export interface SessionSetupSkillProblem {
+  name: string;
+  path: string;
+  reason: "no-description" | "front-matter" | "unreadable" | "same-name";
+  /** `same-name`: the file that loaded under that name. */
+  winnerPath?: string;
 }
 
 export type SessionSetup =
@@ -1651,6 +1662,8 @@ export type SessionSetup =
       /** Skills, in the order pi lists them to the model. A skill is OFFERED, not loaded: it loads
           when it is used. */
       skills: SessionSetupSkill[];
+      /** Skills that didn't load; absent when none. */
+      skillProblems?: SessionSetupSkillProblem[];
       /** A `.pi/SYSTEM.md` that replaces the default prompt, when one is loaded. */
       systemPrompt?: SessionSetupFile;
       /** APPEND_SYSTEM.md sources, in the order they are appended. */
@@ -1709,6 +1722,12 @@ export interface SessionContextPart {
   /** Skills only: the agent loaded the skill (read its SKILL.md, or it was invoked) since the latest
       compaction, so its text is in the window now. */
   read?: boolean;
+  /** Skills only: only `/skill:name` runs it, so the model isn't offered it. `tokens` is its whole text. */
+  manualOnly?: true;
+  /** A skill of a folder below the chat's (`nestedSkills`): that folder, relative to cwd. */
+  folder?: string;
+  /** A skill of a folder below the chat's: the model has been offered it, on what it sees now. */
+  offered?: boolean;
 }
 
 /** One kind of message in the conversation since the latest compaction: how many, and ≈ their tokens. */
@@ -1765,6 +1784,8 @@ export type SessionContextView =
       /** `conversation` by kind of message. Absent from an older server. */
       talk?: SessionContextTalk;
       nested: SessionContextNested[];
+      /** Skills of folders below cwd, offered or not; absent from an older server. */
+      nestedSkills?: SessionContextPart[];
       /** The walk below cwd stopped at its cap: the list may be incomplete. */
       nestedIncomplete?: true;
       checkedAt: number;

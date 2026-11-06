@@ -20,6 +20,7 @@ import {
   offSets,
   OPEN_FILE_FAILED,
   openFileLabel,
+  skillProblemsLine,
   skillsHeading,
   skillsNone,
   skillsNote,
@@ -291,7 +292,7 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
                                     {k.name}
                                   </button>
                                 </span>
-                                <span class="setup-facts">{fileFacts(k)}</span>
+                                <span class="setup-facts">{k.manualOnly ? `Manual only · ${fileFacts(k)}` : fileFacts(k)}</span>
                                 <Show when={switchable()}>
                                   <label class="toggle toggle-switch setup-toggle">
                                     <input
@@ -309,6 +310,7 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
                           </For>
                         </ul>
                       </Show>
+                      <Show when={skillProblemsLine(s())}>{(line) => <p class="setup-note">{line()}</p>}</Show>
                     </div>
                   </>
                 );

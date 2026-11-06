@@ -23,6 +23,7 @@ import { agentRoot } from "../../state-root";
 import type { PiExtensionFactory, PiLoaderOptions, PiToolDefinition } from "./extension-types";
 import { installOwnCode, ownCodeLoader, withModesEntry } from "./own-code";
 import { liveRead } from "./reader";
+import { withSkillSources } from "./skill-sources";
 import { PiHarnessSession } from "./session";
 import { piSessionState } from "./state";
 import { currentTheme } from "./ui-bridge";
@@ -166,7 +167,8 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
   // A chat process on a code generation loads Sova's extensions from its own copy, discovered and
   // listed alike (§app.chat-processes/code-generations). The server: nothing.
   installOwnCode();
-  const resourceLoaderOptions = ownCodeLoader(loader);
+  // A worker's and an ordinary chat's alike; the same as the setup card's read of a folder (resources.ts).
+  const resourceLoaderOptions = ownCodeLoader(withSkillSources(cwd, loader));
   // Who runs this runtime's modes (§chat.mode-menu/sova-runs-modes): Sova's entry takes the discovered
   // mode extension's slot for this build's package manager, for the runtime's whole life (own-code.ts).
   const services = await withModesEntry(modesEntry, () =>

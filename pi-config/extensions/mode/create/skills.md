@@ -7,7 +7,7 @@ A skill or template reaches new chats only: it can't show in this chat. Project 
 ## Your skills
 
 - Change: a recipe every chat on this computer can load.
-- Lives: `<agent dir>/skills/<name>/SKILL.md`, with any helper files beside it. Name a helper by its path from the skill's folder.
+- Lives: `<agent dir>/skills/<name>/SKILL.md`, with any helper files beside it. Name a helper by its path from the skill's folder. A skill placed directly in Claude's own skills folder (`~/.claude/skills/<name>/SKILL.md`) is offered too; what Claude syncs from claude.ai isn't.
 - Approves: the person, by their OK on every file.
 - By: OK. It stays on this computer. Helper programs run with the chat's own tools.
 - Live: new chat.
@@ -27,7 +27,7 @@ List the commits since the last tag, group them by what a user notices, and leav
 ## A project's skills
 
 - Change: a recipe for chats in one project.
-- Lives: `<project>/.pi/skills/<name>/SKILL.md` or `<project>/.agents/skills/<name>/SKILL.md`.
+- Lives: `<project>/.pi/skills/<name>/SKILL.md`, `<project>/.agents/skills/<name>/SKILL.md` or `<project>/.claude/skills/<name>/SKILL.md`. A subfolder can keep its own in `.agents/skills` or `.claude/skills`: a chat is offered those the first time it reads, edits or writes a file in that folder.
 - Approves: the person, by Land.
 - By: Land.
 - Live: new chat, after landing.

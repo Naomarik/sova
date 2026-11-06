@@ -18,6 +18,7 @@ import {
   linesLabel,
   loadoutView,
   sizeLabel,
+  skillProblemsLine,
   skillsHeading,
   skillsNone,
   skillsNote,
@@ -335,4 +336,25 @@ test("git folder: stuck and overdue read differently, and each overdue count onl
   assert.equal(gitFolderView(folder({ warning: { kind: "overdue", loose: 12_400 } }), "/home/u", NOW).warning?.text, "Git hasn't cleaned up here in a while: 12,400 loose objects.");
   assert.equal(gitFolderView(folder({ warning: { kind: "overdue", packs: 51, loose: 6_701 } }), "/home/u", NOW).warning?.text, "Git hasn't cleaned up here in a while: 51 pack files and 6,701 loose objects.");
   assert.notEqual(stuck.warning?.text.split(":")[0], gitFolderView(folder({ warning: { kind: "overdue", packs: 63 } }), "/home/u", NOW).warning?.text.split(":")[0], "the two say different things");
+});
+
+test("manual-only rows are in no total; a chat with no problem says nothing, one with some names each and why", () => {
+  const base = { state: "ok", where: { kind: "local" }, cwd: "/p", checkedAt: 0, context: [], fromRuntime: true } as const;
+  const row = (name: string, bytes: number, extra = {}) => ({ name, path: `/p/.claude/skills/${name}/SKILL.md`, bytes, lines: 1, ...extra });
+  const s = { ...base, skills: [row("on", 100), row("hand", 900, { manualOnly: true })] } as never;
+  assert.equal(skillsSum(s).bytes, 100);
+  assert.equal(systemContextSum(s).bytes, 100);
+  assert.equal(skillProblemsLine(s), null);
+  const withProblems = {
+    ...base,
+    skills: [],
+    skillProblems: [
+      { name: "bare", path: "/p/.claude/skills/bare/SKILL.md", reason: "no-description" },
+      { name: "bad", path: "/p/.claude/skills/bad/SKILL.md", reason: "front-matter" },
+      { name: "gone", path: "/p/.claude/skills/gone/SKILL.md", reason: "unreadable" },
+      { name: "clojure", path: "/p/.claude/skills/clojure/SKILL.md", reason: "same-name", winnerPath: "/h/.agents/skills/clojure/SKILL.md" },
+      { name: "near", path: "/x/SKILL.md", reason: "same-name", winnerPath: "/p/svc/.agents/skills/near/SKILL.md" },
+    ],
+  } as never;
+  assert.equal(skillProblemsLine(withProblems, "/h"), "Not loaded: bare (no description) · bad (its front matter can't be read) · gone (couldn't be read) · clojure (same name as ~/.agents/skills/clojure) · near (same name as svc/.agents/skills/near)");
 });

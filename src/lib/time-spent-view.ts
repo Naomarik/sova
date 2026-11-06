@@ -37,9 +37,9 @@ export function wholeSeconds<K extends string>(values: Readonly<Partial<Record<K
 export type SpentRow = TimeSpentRow;
 
 export const READING_LABELS = [
-  { key: "reading-transcript", label: "Reading Transcript" },
-  { key: "reading-alignments", label: "Reading Alignments" },
-  { key: "reading-workers", label: "Reading Workers" },
+  { key: "reading-transcript", label: "Main Thread" },
+  { key: "reading-alignments", label: "Alignments" },
+  { key: "reading-workers", label: "Workers" },
 ] as const;
 
 const OTHER_LABELS = [

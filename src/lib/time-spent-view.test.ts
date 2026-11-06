@@ -48,9 +48,14 @@ test("a row with no time doesn't show, Reading and its parts included; the rest 
   assert.deepEqual(none.rows, []);
   const v = spentView(record({ rows: { other: 3, tours: 2, typing: 1, "reading-alignments": 4 } }), live(), 0);
   assert.deepEqual(v.rows.map((r) => r.label), ["Typing", "Viewing Tours", "Other"]);
-  assert.deepEqual(v.reading!.parts.map((p) => p.label), ["Reading Alignments"]);
+  assert.deepEqual(v.reading!.parts.map((p) => p.label), ["Alignments"]);
   const under = spentView(record({ rows: { typing: 0.4 } }), live(), 0);
   assert.deepEqual(under.rows, [], "under a second shows no 0s row");
+});
+
+test("Reading's parts are named without the word Reading, over the record's own keys", () => {
+  const v = spentView(record({ rows: { "reading-transcript": 3, "reading-alignments": 2, "reading-workers": 1 } }), live(), 0);
+  assert.deepEqual(v.reading!.parts.map((p) => [p.key, p.label]), [["reading-transcript", "Main Thread"], ["reading-alignments", "Alignments"], ["reading-workers", "Workers"]]);
 });
 
 test("Not Recording keeps the figure from before and doesn't tick; alignments' on screen with it", () => {

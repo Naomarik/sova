@@ -245,6 +245,7 @@ test("the rows add up to You, an empty row doesn't show, and Reading opens to it
     const opened = await rows();
     const openedKeys = opened.rows.map(([k]) => k);
     assert.deepEqual(openedKeys.filter((k) => k !== "other"), ["reading", "reading-transcript", "reading-alignments", "typing", "scrolling"], "no time in workers: not shown");
+    assert.deepEqual(await page.locator(".time-spent-part > span:first-child").allInnerTexts(), ["Main Thread", "Alignments"], "the parts' labels, without the word Reading");
     const at = (k: string) => opened.rows.find(([key]) => key === k)![1];
     assert.equal(at("reading-transcript") + at("reading-alignments"), at("reading"), "the parts add up to Reading");
     const text = await page.locator(".time-spent").innerText();

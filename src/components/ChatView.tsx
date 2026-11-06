@@ -147,7 +147,7 @@ import { alignRowFromDetails, foldAlignRows, isOpenDoc, openCount, recommendedOp
 import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
 import { ShellCard } from "./ShellCard";
-import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf } from "../lib/shell-runs";
+import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf, shellOffered } from "../lib/shell-runs";
 import type { ShellAnswer, ShellControl } from "../lib/shell-mode";
 import type { ShellRun } from "../../shared/protocol";
 import { HostSendNotice } from "./HostStateNotices";
@@ -2242,7 +2242,7 @@ export function ChatView(props: {
       Overseer, a project overseer or assistant, a gathering session, or a read-only box. The hello
       says (`shellMode`); before this view's first one, what the session list knows decides. */
   const shellAllowed = () =>
-    (shellMode() ?? true) && !props.overseer && !props.projectOverseer && !props.summary?.()?.projectOverseer && !props.summary?.()?.baton && !batonGate();
+    shellOffered({ helloShellMode: shellMode(), overseer: !!props.overseer, projectOverseer: !!props.projectOverseer || !!props.summary?.()?.projectOverseer, baton: !!props.summary?.()?.baton, batonHeld: !!batonGate() });
 
   const abort = () => {
     // Stop before the waking connection opened: what the tab kept never goes, and its text comes back.

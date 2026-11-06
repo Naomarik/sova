@@ -104,3 +104,11 @@ export function shellNotes(c: ShellCardData & { underReply?: boolean }, replying
     afterReply: !!c.underReply && replying && !c.private,
   };
 }
+
+/** Whether a chat's box offers shell mode (§chat.shell-mode/box). The chat's hello decides (`shellMode`):
+    false once a hello lacks it, as a project assistant's, the Overseer's or a gathering session's does, and an
+    older server's. Before this view's first hello, what the view knows of the chat: no Overseer, project
+    overseer or gathering session, and no baton holding the composer. */
+export function shellOffered(o: { helloShellMode: boolean | null; overseer?: boolean; projectOverseer?: boolean; baton?: boolean; batonHeld?: boolean }): boolean {
+  return (o.helloShellMode ?? true) && !o.overseer && !o.projectOverseer && !o.baton && !o.batonHeld;
+}

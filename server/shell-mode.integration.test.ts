@@ -135,6 +135,21 @@ test("archiving a chat stops its running command and saves it as stopped when th
   a.close();
 });
 
+test("the hello says which chats have shell mode: an ordinary chat does, the Overseer doesn't and refuses a command (§chat.shell-mode/box)", async () => {
+  const ses = await newSession();
+  const a = await chatSocket(ses);
+  assert.equal(a.hello.shellMode, true);
+  a.close();
+  const overseer = (await api("GET", "/api/overseer")).body as { id: string; path: string };
+  const o = await chatSocket({ id: overseer.id, path: overseer.path });
+  assert.equal(o.hello.shellMode, undefined, "a special kind's agent has no shell");
+  o.send({ type: "shell", command: "echo nope", clientId: "o1" });
+  const refused = await o.find("the refusal", (f) => f.type === "shell_refused" && f.clientId === "o1");
+  assert.equal(refused.reason, "unavailable");
+  assert.equal(o.frames.some((f) => f.type === "shell_start"), false);
+  o.close();
+});
+
 test("a page's handed-over frames never run a command (POST /api/chat/frames)", async () => {
   const ses = await newSession();
   const marker = join(s.work, `ran-${Date.now()}`);

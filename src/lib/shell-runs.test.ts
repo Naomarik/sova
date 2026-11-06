@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SHELL_LIVE_MAX, type ChatServerMessage, type ShellRun } from "../../shared/protocol";
-import { AFTER_REPLY, answersAtHello, SHELL_DROPPED, cardOfRow, cardOfRun, cutWords, nextShellRuns, runShell, shellAnswerOf, shellFrame, shellNotes, shellStatus } from "./shell-runs";
+import { AFTER_REPLY, answersAtHello, SHELL_DROPPED, cardOfRow, cardOfRun, cutWords, nextShellRuns, runShell, shellAnswerOf, shellFrame, shellNotes, shellOffered, shellStatus } from "./shell-runs";
 import { ALREADY_RUNNING, NOT_CONNECTED } from "./shell-mode";
 
 const run = (over: Partial<ShellRun> = {}): ShellRun => ({ id: "s1", command: "pnpm test", output: "", state: "running", startedAt: 1, ...over });
@@ -103,4 +103,17 @@ test("after a dropped connection, the hello answers a waiting Run: started when 
   const runs = [run({ clientId: "c1" }), run({ id: "s2" })];
   assert.deepEqual(answersAtHello(["c1", "c9"], runs), [{ clientId: "c1" }, { clientId: "c9", refused: SHELL_DROPPED }]);
   assert.deepEqual(answersAtHello([], runs), []);
+});
+
+test("the box offers shell mode as the chat's hello says; before it, unless the view knows the chat has none", () => {
+  // The hello's word wins: a project assistant's hello (or an older server's) carries no flag, and nothing
+  // else in the view marks it.
+  assert.equal(shellOffered({ helloShellMode: true }), true);
+  assert.equal(shellOffered({ helloShellMode: false }), false, "a chat the server says has no shell mode");
+  // Before the first hello: offered, unless the chat is one the view already knows has none.
+  assert.equal(shellOffered({ helloShellMode: null }), true);
+  for (const known of [{ overseer: true }, { projectOverseer: true }, { baton: true }, { batonHeld: true }]) {
+    assert.equal(shellOffered({ helloShellMode: null, ...known }), false, JSON.stringify(known));
+    assert.equal(shellOffered({ helloShellMode: true, ...known }), false, `${JSON.stringify(known)} even with the flag`);
+  }
 });

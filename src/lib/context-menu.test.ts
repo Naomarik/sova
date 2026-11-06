@@ -58,7 +58,7 @@ test("the input a contextmenu came from", () => {
   assert.equal(contextPointerKind({ pointerType: "mouse" }, "touch"), "mouse", "Chromium says it, whatever went down last");
   assert.equal(contextPointerKind({ pointerType: "touch" }, null), "touch");
   assert.equal(contextPointerKind({ pointerType: "pen" }, null), "pen");
-  assert.equal(contextPointerKind({ pointerType: "" }, "mouse"), "keyboard", "a key-made PointerEvent has no pointer type");
+  assert.equal(contextPointerKind({ pointerType: "" }, "mouse"), "keyboard", "an empty pointer type reads as a key");
   assert.equal(contextPointerKind({ mozInputSource: 6 }, null), "keyboard", "Firefox's keyboard source");
   assert.equal(contextPointerKind({ mozInputSource: 5 }, null), "touch");
   assert.equal(contextPointerKind({ mozInputSource: 1 }, "touch"), "mouse");

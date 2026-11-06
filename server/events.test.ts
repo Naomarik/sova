@@ -324,7 +324,7 @@ describe("card news (§app.events/card-news)", () => {
     assert.deepEqual(Object.keys(frame).sort(), ["at", "card", "cardType", "id", "name", "path", "seq", "source", "type"]);
     assert.equal(frame.name, "card.answered");
     assert.equal(frame.source, "hosted");
-    sub.leave();
+    if ("leave" in sub) sub.leave();
     hub.close();
   });
   test("sova watch prints nothing for them", () => {

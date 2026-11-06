@@ -60,6 +60,16 @@ export function shellAnswerOf(msg: ChatServerMessage): ShellAnswer | null {
 /** The connection went before the chat answered a Run: the command may or may not have started. */
 export const SHELL_DROPPED = "The connection dropped before the chat answered. Check the chat before you run it again.";
 
+/**
+ * The Runs this tab still waits on when a hello comes (its connection dropped in between): one the
+ * hello's runs carry by its id started; any other is answered with SHELL_DROPPED, since it may have
+ * run and ended meanwhile, and the command stays in the box.
+ */
+export function answersAtHello(waiting: Iterable<string>, runs: readonly ShellRun[]): ShellAnswer[] {
+  const started = new Set(runs.flatMap((r) => (r.clientId ? [r.clientId] : [])));
+  return [...waiting].map((clientId) => (started.has(clientId) ? { clientId } : { clientId, refused: SHELL_DROPPED }));
+}
+
 /** What a card draws, from a live run or a saved row. */
 export interface ShellCardData extends ShellRowInfo {
   running: boolean;

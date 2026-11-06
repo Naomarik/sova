@@ -17,6 +17,7 @@ import {
   reduce,
   reportOutcome,
   sessionsOnScreen,
+  shownFraction,
   tick,
   type ClockEvent,
   type ClockState,
@@ -89,10 +90,6 @@ describe("the idle cutoff", () => {
   test("a worker's words in view extend it too", () => {
     assert.notEqual(decide(run(page(), { type: "worker-view", session: A, view: { area: 100, words: 500 } }), T0 + 170_000), null);
   });
-  test("words of the transcript a phone's session pane covers don't extend it", () => {
-    const s = run(page(), main(A, 100, 0, 5_000), { type: "covered", session: A, on: true });
-    assert.equal(decide(s, T0 + 60_000), null);
-  });
   test("counts words, not characters", () => {
     assert.equal(countWords("  one two\n\tthree\u00a0four  "), 4);
     assert.equal(countWords(""), 0);
@@ -135,20 +132,21 @@ describe("one row per second, in the order the claim gives", () => {
     assert.equal(rowAt(run(page(), main(A, 500), worker(300)), T0 + 1), "reading-transcript");
     assert.equal(rowAt(run(page(), main(A, 0, 300), worker(300)), T0 + 1), "reading-alignments");
   });
-  test("a phone's session pane covers the chat: its rows aren't on screen, the worker view is", () => {
-    const covered = run(page(), main(A, 900, 900, 0, ["d1"]), { type: "covered", session: A, on: true });
-    assert.equal(rowAt(covered, T0 + 1), "other");
-    assert.deepEqual(decide(covered, T0 + 1)?.docs, []);
-    assert.equal(rowAt(run(covered, { type: "worker-view", session: A, view: { area: 100, words: 0 } }), T0 + 1), "reading-workers");
+  test("a session pane over the chat hides what is behind it: only the part of a row left of its edge shows", () => {
+    assert.equal(shownFraction(300, 1000, Infinity), 1, "beside the chat");
+    assert.equal(shownFraction(300, 1000, 650), 0.5);
+    assert.equal(shownFraction(300, 1000, 300), 0, "the row starts at the edge");
+    assert.equal(shownFraction(300, 1000, 0), 0, "a phone's: the whole chat");
+    assert.equal(shownFraction(300, 300, 1000), 0, "no width");
   });
-  test("a linked session open in the Agents tab is transcript rows, also on a phone where the pane covers the chat", () => {
+  test("a linked session open in the Agents tab is transcript rows", () => {
     const linked: ClockEvent = { type: "linked-view", session: A, view: { area: 400, words: 0 } };
-    assert.equal(rowAt(run(page(), { type: "covered", session: A, on: true }, linked), T0 + 1), "reading-transcript");
+    assert.equal(rowAt(run(page(), linked), T0 + 1), "reading-transcript");
     assert.equal(rowAt(run(page(), main(A, 100, 300), linked), T0 + 1), "reading-transcript", "its rows add to the transcript's share");
     assert.equal(rowAt(run(page(), main(A, 100, 600), linked), T0 + 1), "reading-alignments");
   });
   test("its words extend the cutoff too", () => {
-    const s = run(page(), { type: "covered", session: A, on: true }, { type: "linked-view", session: A, view: { area: 400, words: 500 } });
+    const s = run(page(), { type: "linked-view", session: A, view: { area: 400, words: 500 } });
     assert.equal(rowAt(s, T0 + 170_000), "reading-transcript");
   });
   test("type, read, type shows as Typing, Reading, Typing, within about 2 seconds of each change", () => {

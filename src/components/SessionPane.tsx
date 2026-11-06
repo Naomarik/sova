@@ -164,7 +164,7 @@ export function SessionPane(props: {
     tabEls[next]?.focus();
   };
 
-  trackSessionPane(props.path);
+  trackSessionPane(props.path, () => aside);
 
   return (
     <aside class="app-subagents" id="session-pane" data-time-session={props.path} aria-label="Session detail" ref={aside} onKeyDown={onKeyDown}>

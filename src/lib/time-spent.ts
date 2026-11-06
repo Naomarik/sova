@@ -6,7 +6,7 @@
 // hooks below through a shared component, and with no start they listen to nothing and count nothing. Hot paths read no layout: an event's pane comes
 // from closest() on its target, what is on screen from one IntersectionObserver per transcript.
 
-import { createEffect, createMemo, createRoot, createSignal, getOwner, onCleanup, type Accessor } from "solid-js";
+import { createEffect, createMemo, createRoot, createSignal, getOwner, onCleanup, onMount, type Accessor } from "solid-js";
 import { TIME_SPENT_MAX_DOCS, TIME_SPENT_MAX_ID_CHARS, TIME_SPENT_REPORT_ROUTE, type TimeSpentReport } from "../../shared/time-spent";
 import { hostOf, hostUrl } from "./mesh";
 import {
@@ -18,6 +18,7 @@ import {
   countedSession,
   reduce,
   reportOutcome,
+  shownFraction,
   sessionsOnScreen,
   tick,
   type ClockEvent,
@@ -72,30 +73,45 @@ export function trackSessionView(path: string, front?: () => boolean): void {
 
 const [panesOpen, setPanesOpen] = createSignal<readonly string[]>([]);
 
-const phoneCover = () => typeof matchMedia === "function" && !matchMedia("(min-width: 768px)").matches;
+/** Where the session pane begins; Infinity while it is shut. Beside the chat it hides nothing, the rows ending before it. */
+let coverLeft = Infinity;
+const coverWatchers = new Set<() => void>();
+function setCover(x: number): void {
+  if (x === coverLeft) return;
+  coverLeft = x;
+  for (const watcher of coverWatchers) watcher();
+}
 
-/** Called by the session pane: on a phone it covers the chat, whose rows are then not on screen. */
-export function trackSessionPane(path: string): void {
+/** Called by the session pane with its element: drawn over the chat, it hides the rows behind it, which no observer
+    can see. Measured when it opens, resizes or the window does, never per event. */
+export function trackSessionPane(path: string, aside: () => HTMLElement): void {
   // Open from the Agents board there is no session view: the pane is this session on screen (sessionsOnScreen).
   setPanesOpen((p) => [...p, path]);
   onCleanup(() => setPanesOpen((p) => p.filter((x) => x !== path)));
-  const set = (on: boolean) => dispatch({ type: "covered", session: path, on });
-  set(phoneCover());
-  if (typeof matchMedia !== "function") return;
-  const mq = matchMedia("(min-width: 768px)");
-  const onChange = () => set(!mq.matches);
-  mq.addEventListener("change", onChange);
-  onCleanup(() => {
-    mq.removeEventListener("change", onChange);
-    set(false);
+  onMount(() => {
+    const el = aside();
+    const measure = () => setCover(el.getBoundingClientRect().left);
+    measure();
+    const sized = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
+    sized?.observe(el);
+    window.addEventListener("resize", measure);
+    // It slides in: the first measure is off by the slide.
+    el.addEventListener("animationend", measure);
+    onCleanup(() => {
+      sized?.disconnect();
+      window.removeEventListener("resize", measure);
+      el.removeEventListener("animationend", measure);
+      setCover(Infinity);
+    });
   });
 }
 
 // ── What a transcript has on screen ──
 
 interface RowSeen {
-  area: number;
-  ratio: number;
+  left: number;
+  right: number;
+  height: number;
   words: number;
   /** The alignment document whose content this row shows, if any. */
   doc: string | null;
@@ -143,7 +159,8 @@ function observeRows(thread: HTMLElement, publish: (rows: ReadonlyMap<Element, R
           wordCounts.set(r.target, words);
           stale.delete(r.target);
         }
-        seen.set(r.target, { area, ratio: r.intersectionRatio, words: words * r.intersectionRatio, doc: docOf(r.target) });
+        const { left, right, height } = r.intersectionRect;
+        seen.set(r.target, { left, right, height, words: words * r.intersectionRatio, doc: docOf(r.target) });
         changed = true;
       }
       if (changed) publish(seen);
@@ -195,21 +212,30 @@ function observeRows(thread: HTMLElement, publish: (rows: ReadonlyMap<Element, R
 /** Called with a session transcript's `.thread`, while it mounts. */
 export function trackTranscript(path: string, thread: HTMLElement): void {
   if (!started) return;
-  observeRows(thread, (rows) => {
+  let last: ReadonlyMap<Element, RowSeen> = new Map();
+  const publish = (rows: ReadonlyMap<Element, RowSeen>) => {
+    last = rows;
     let transcript = 0;
     let alignments = 0;
     let words = 0;
     const docs = new Set<string>();
     for (const r of rows.values()) {
-      words += r.words;
-      if (r.doc === null) transcript += r.area;
+      const shown = shownFraction(r.left, r.right, coverLeft);
+      if (shown <= 0) continue;
+      const area = (r.right - r.left) * r.height * shown;
+      words += r.words * shown;
+      if (r.doc === null) transcript += area;
       else {
-        alignments += r.area;
+        alignments += area;
         if (r.doc && r.doc.length <= TIME_SPENT_MAX_ID_CHARS && docs.size < TIME_SPENT_MAX_DOCS) docs.add(r.doc);
       }
     }
     dispatch({ type: "main-view", session: path, view: { transcript, alignments, words, docs: [...docs].sort() } });
-  });
+  };
+  const again = () => publish(last);
+  coverWatchers.add(again);
+  onCleanup(() => coverWatchers.delete(again));
+  observeRows(thread, publish);
 }
 
 /** Called with the `.thread` of a worker's transcript in `parent`'s Agents tab: Reading Workers on the parent. */
@@ -219,7 +245,7 @@ export function trackWorkerTranscript(parent: string, thread: HTMLElement): void
     let area = 0;
     let words = 0;
     for (const r of rows.values()) {
-      area += r.area;
+      area += (r.right - r.left) * r.height;
       words += r.words;
     }
     dispatch({ type: "worker-view", session: parent, view: { area, words } });
@@ -233,7 +259,7 @@ export function trackLinkedTranscript(parent: string, thread: HTMLElement): void
     let area = 0;
     let words = 0;
     for (const r of rows.values()) {
-      area += r.area;
+      area += (r.right - r.left) * r.height;
       words += r.words;
     }
     dispatch({ type: "linked-view", session: parent, view: { area, words } });

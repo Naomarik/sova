@@ -62,16 +62,16 @@ interface Reported {
   slices: { row: string; docs: string[]; sec: number; id: number }[];
 }
 
-async function open(start = "#/g/g1", answer: (report: Reported, nth: number) => number = () => 200, items?: unknown[], before?: (page: Page) => Promise<void>): Promise<{ page: Page; reports: Reported[] }> {
-  const ctx = await browser.newContext({ viewport: { width: 1500, height: 900 } });
+async function open(start = "#/g/g1", answer: (report: Reported, nth: number) => number = () => 200, items?: unknown[], before?: (page: Page) => Promise<void>, width = 1500): Promise<{ page: Page; reports: Reported[] }> {
+  const ctx = await browser.newContext({ viewport: { width, height: 900 } });
   await ctx.addInitScript(() => sessionStorage.setItem("sova:launched", "1"));
   const page = await ctx.newPage();
   const reports: Reported[] = [];
   const json = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
-  await before?.(page);
   await page.routeWebSocket(/.*/, (ws) => {
     if (items && new URL(ws.url()).pathname.startsWith("/ws/chat")) ws.send(JSON.stringify({ type: "hello", items, isStreaming: false, model: "mock/m1", thinking: "off", context: null }));
   });
+  await before?.(page);
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     if (url.origin !== ORIGIN) return route.abort();
@@ -438,4 +438,63 @@ test("what a folded line keeps closed doesn't put off the idle cutoff", async ()
   const { total } = await sums(page, reports, A);
   assert.ok(total > 30 && total <= 120, `the lines' own few words extend it a little, never to 150 s: counted ${total}`);
   await page.context().close();
+});
+
+// A real worker in the Agents tab, its transcript beside rows of the chat. Between 768 and 1280 wide the pane is drawn
+// over the chat, and only the chat's rows that show count toward the largest share.
+const CHAT = Array.from({ length: 12 }, (_, i) => ({ id: `u${i}`, kind: "assistant-text", at: iso(60 - i), model: "mock/m1", text: `Answer ${i}. ${WORDS}` }));
+const WORKER_ROWS = Array.from({ length: 12 }, (_, i) => ({ id: `w${i}`, kind: "assistant-text", at: iso(30 - i), model: "mock/m1", text: `Worker ${i}. ${WORDS}` }));
+const WORKER = { id: "ag_01", name: "builder", status: "running", working: false, model: "mock/m1", sessionFile: "/w/sessions/worker.jsonl" };
+
+async function readWorker(width: number): Promise<Record<string, number>> {
+  const { page, reports } = await open(
+    `#/s/${encodeURIComponent(A)}`,
+    undefined,
+    CHAT,
+    (p) =>
+      p.routeWebSocket(/.*/, (ws) => {
+        const path = new URL(ws.url()).pathname;
+        if (path.startsWith("/ws/chat")) {
+          ws.send(JSON.stringify({ type: "hello", items: CHAT, isStreaming: false, model: "mock/m1", thinking: "off", context: null }));
+          ws.send(JSON.stringify({ type: "workers", working: 0, total: 1, workers: [WORKER] }));
+        } else if (path.startsWith("/ws/watch")) ws.send(JSON.stringify({ type: "snapshot", items: WORKER_ROWS }));
+      }),
+    width,
+  );
+  await page.locator(".thread .entry").first().waitFor({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Session details" }).first().click();
+  const aside = page.locator("#session-pane");
+  await aside.waitFor({ timeout: 20_000 });
+  await aside.getByRole("tab", { name: /Agents/ }).click();
+  // A narrow pane opens straight on its one worker, its list put away.
+  await page.waitForTimeout(400);
+  const listed = aside.locator(`.subagent-row[data-worker="${WORKER.id}"]`);
+  if (await listed.isVisible()) await listed.click();
+  const row = aside.locator(".subagents-transcript .thread > .entry").first();
+  await row.waitFor({ timeout: 20_000 });
+  await page.waitForTimeout(600);
+  const box = await aside.boundingBox();
+  assert.ok(box);
+  const worker = await aside.locator(".subagents-transcript").boundingBox();
+  assert.ok(worker);
+  await page.mouse.move(worker.x + worker.width / 2, worker.y + worker.height / 2);
+  // Only the seconds with the worker on screen: the chat alone counted as Reading Transcript up to here, rightly.
+  await page.waitForTimeout(1_100);
+  const before = (await sums(page, reports, A)).rows;
+  await page.waitForTimeout(2_500);
+  const { rows } = await sums(page, reports, A);
+  await page.context().close();
+  return Object.fromEntries(Object.entries(rows).map(([k, n]) => [k, n - (before[k] ?? 0)]).filter(([, n]) => (n as number) > 0));
+}
+
+test("a worker read in a pane drawn over the chat is Reading Workers: the rows behind the pane aren't on screen", async () => {
+  for (const width of [880, 1000, 1200]) {
+    const rows = await readWorker(width);
+    assert.ok((rows["reading-workers"] ?? 0) >= 1 && !rows["reading-transcript"], `at ${width} wide: ${JSON.stringify(rows)}`);
+  }
+});
+
+test("with the pane beside the chat nothing is hidden: the wider chat names the second", async () => {
+  const rows = await readWorker(1900);
+  assert.ok((rows["reading-transcript"] ?? 0) >= 1 && !rows["reading-workers"], JSON.stringify(rows));
 });

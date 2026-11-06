@@ -36,8 +36,6 @@ export interface SessionView {
   main: MainView;
   worker: WorkerView;
   linked: LinkedView;
-  /** The session pane covers the whole chat (a phone): what the chat's transcript has "on screen" isn't seen. */
-  covered: boolean;
 }
 
 export interface ClockState {
@@ -96,8 +94,7 @@ export type ClockEvent =
   | { type: "foreground-close"; id: number }
   | { type: "main-view"; session: string; view: MainView }
   | { type: "worker-view"; session: string; view: WorkerView }
-  | { type: "linked-view"; session: string; view: LinkedView }
-  | { type: "covered"; session: string; on: boolean };
+  | { type: "linked-view"; session: string; view: LinkedView };
 
 export const IDLE_BASE_MS = 60_000;
 export const IDLE_MAX_MS = 180_000;
@@ -115,7 +112,7 @@ export const MAX_TICK_GAP_MS = 5_000;
 
 const NO_MAIN: MainView = { transcript: 0, alignments: 0, words: 0, docs: [] };
 const NO_WORKER: WorkerView = { area: 0, words: 0 };
-const NO_VIEW: SessionView = { main: NO_MAIN, worker: NO_WORKER, linked: NO_WORKER, covered: false };
+const NO_VIEW: SessionView = { main: NO_MAIN, worker: NO_WORKER, linked: NO_WORKER };
 
 /** The clock of a page opening: visible or not, and not yet active, so it waits for the first real input. */
 export function initialClock(now: number, visible = true): ClockState {
@@ -145,6 +142,12 @@ export function initialClock(now: number, visible = true): ClockState {
     Beside a view the pane says nothing: a workspace's tab behind the front one stays behind, its pane open or not. */
 export function sessionsOnScreen(views: readonly string[], panes: readonly string[]): string[] {
   return [...new Set(views.length > 0 ? views : panes)];
+}
+
+/** How much of a chat row's width shows left of the session pane drawn over the chat, 0 to 1. `coverLeft` is the pane's
+    left edge, Infinity when it is shut. Beside the chat the row ends before it; on a phone it is 0, covering all of it. */
+export function shownFraction(left: number, right: number, coverLeft: number): number {
+  return right > left ? Math.max(0, Math.min(right, coverLeft) - left) / (right - left) : 0;
 }
 
 /** The idle cutoff for this many words in view: base, plus their reading time, capped. */
@@ -237,8 +240,6 @@ export function reduce(s: ClockState, e: ClockEvent): ClockState {
       return { ...s, views: { ...s.views, [e.session]: { ...viewOf(s, e.session), worker: e.view } } };
     case "linked-view":
       return { ...s, views: { ...s.views, [e.session]: { ...viewOf(s, e.session), linked: e.view } } };
-    case "covered":
-      return { ...s, views: { ...s.views, [e.session]: { ...viewOf(s, e.session), covered: e.on } } };
   }
 }
 
@@ -256,8 +257,8 @@ export function countedSession(s: ClockState): string | null {
 
 /** What the view says when nothing nearer does: the largest share of the screen, a tie to the alignment. */
 function viewRow(v: SessionView): TimeRow {
-  const alignments = v.covered ? 0 : v.main.alignments;
-  const transcript = (v.covered ? 0 : v.main.transcript) + v.linked.area;
+  const alignments = v.main.alignments;
+  const transcript = v.main.transcript + v.linked.area;
   const workers = v.worker.area;
   if (alignments > 0 && alignments >= transcript && alignments >= workers) return "reading-alignments";
   if (workers > 0 && workers >= transcript) return "reading-workers";
@@ -266,7 +267,7 @@ function viewRow(v: SessionView): TimeRow {
 }
 
 export function wordsInView(v: SessionView): number {
-  return v.worker.words + v.linked.words + (v.covered ? 0 : v.main.words);
+  return v.worker.words + v.linked.words + v.main.words;
 }
 
 export interface Counted {
@@ -286,7 +287,7 @@ export function decide(s: ClockState, now: number): Counted | null {
   if (s.recordings.length === 0 && now - s.lastActiveAt >= idleCutoffMs(wordsInView(v))) return null;
   const top = s.foreground[s.foreground.length - 1];
   // A foreground view is drawn over the chat: the cards under it aren't on screen, its own document is.
-  const docs = top ? (top.doc ? [top.doc] : []) : v.covered ? [] : v.main.docs;
+  const docs = top ? (top.doc ? [top.doc] : []) : v.main.docs;
   // Each of these names a second only in the pane it happened in.
   const row: TimeRow = s.recordings.some((r) => r.pane === null || r.pane === session)
     ? "dictating"

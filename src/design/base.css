@@ -2522,6 +2522,10 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
    message) stops at two lines; the row's title carries the rest. */
 .model-menu.action-menu { overflow-y: auto; overscroll-behavior: contain; }
 .action-menu > * { flex-shrink: 0; }
+/* The list's own `flex: 1` (`.model-menu-list`, later in the file) outweighs the line above and
+   gives it a 0 basis. WebKit sizes the auto-height panel from that basis, so every one of these
+   menus drew 10px tall there; a content basis is the height Chromium and Firefox already give it. */
+.action-menu > .model-menu-list { flex-basis: auto; }
 .action-menu .popover-item-label {
   display: -webkit-box;
   -webkit-box-orient: vertical;

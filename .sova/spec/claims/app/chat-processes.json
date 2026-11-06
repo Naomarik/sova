@@ -80,16 +80,20 @@
       "src/lib/unacked-sends.ts",
       "src/lib/unacked-sends.test.ts",
       "server/background-jobs-capture.ts",
-      "server/chat-runtime/trial-jobs-tj2.integration.test.ts"
+      "server/chat-runtime/trial-jobs-tj2.integration.test.ts",
+      "server/chat-runtime/mirror.ts",
+      "shared/chat-runtime.ts",
+      "server/chat-shell.ts",
+      "server/chat-runtime/host.test.ts"
     ],
     "requires": [
       "§app/chat-processes",
       "§app.chat-processes/supervision"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-04T10:59Z",
-      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+      "by": "operator",
+      "at": "2026-11-06T04:44Z",
+      "source": "pi-session:f129828b-8ab7-44b5-a8d0-28839491c2d3#41e62645"
     },
     "evidence": "verified"
   },
@@ -161,7 +165,10 @@
       "server/chat-runtime/trial-wake-tw1.integration.test.ts",
       "server/background-jobs-capture.ts",
       "server/chat-runtime/trial-jobs-tj1.integration.test.ts",
-      "server/chat-runtime/trial-jobs-tj2.integration.test.ts"
+      "server/chat-runtime/trial-jobs-tj2.integration.test.ts",
+      "server/chat-runtime/mirror.ts",
+      "shared/chat-runtime.ts",
+      "server/chat-shell.ts"
     ],
     "requires": [
       "§app/chat-processes",
@@ -169,9 +176,9 @@
       "§app.chat-processes/supervision"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-04T11:02Z",
-      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#a22a19ea"
+      "by": "operator",
+      "at": "2026-11-06T04:44Z",
+      "source": "pi-session:f129828b-8ab7-44b5-a8d0-28839491c2d3#41e62645"
     },
     "evidence": "verified"
   },

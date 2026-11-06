@@ -56,7 +56,7 @@
       "sections": {
        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
        "tools": "@44baa8b2ed1e6cce",
-       "rules": "@bb6b8db0787c1b6b",
+       "rules": "@57c540fac082b364",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>"
       },
@@ -104,7 +104,7 @@
      "sections": {
       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
       "tools": "@44baa8b2ed1e6cce",
-      "rules": "@bb6b8db0787c1b6b",
+      "rules": "@57c540fac082b364",
       "docs": "@0f5fabf6c3c47c4c",
       "cwd": "<cwd>\n<ws:plain>\n</cwd>"
      },
@@ -656,7 +656,7 @@
       "role": "system",
       "content": "",
       "sections": {
-       "mode": "@32f5b9a7dd92d10b"
+       "mode": "@4032dd1df8b07f41"
       }
      },
      {
@@ -699,7 +699,7 @@
      "role": "system",
      "content": "",
      "sections": {
-      "mode": "@32f5b9a7dd92d10b"
+      "mode": "@4032dd1df8b07f41"
      }
     }
    }
@@ -793,8 +793,8 @@
       "content": "",
       "sections": {
        "tools": "@15d31f2a78f55765",
-       "rules": "@c812aa6c1d63cb16",
-       "mode": "@435090063634d020"
+       "rules": "@4577d5bcb2505d0a",
+       "mode": "@5af30bbdfc035fa7"
       },
       "toolsAdded": [
        {
@@ -815,7 +815,7 @@
           "ops": {
            "type": "array",
            "items": {
-            "anyOf": "@2e5962457ad766ec"
+            "anyOf": "@8f0d66a627303464"
            },
            "description": "Operations, applied in order. change_request, when given, comes before every other op; create or import comes next (else first) and appears once.",
            "minItems": 1
@@ -840,7 +840,7 @@
       "content": [
        {
         "type": "text",
-        "text": "@d7ac9f8c286df53e"
+        "text": "@0be17424cf9ac08e"
        }
       ]
      }
@@ -877,8 +877,8 @@
      "content": "",
      "sections": {
       "tools": "@15d31f2a78f55765",
-      "rules": "@c812aa6c1d63cb16",
-      "mode": "@435090063634d020"
+      "rules": "@4577d5bcb2505d0a",
+      "mode": "@5af30bbdfc035fa7"
      },
      "toolsAdded": [
       {
@@ -899,7 +899,7 @@
          "ops": {
           "type": "array",
           "items": {
-           "anyOf": "@8089de1594532028"
+           "anyOf": "@efddf5ee21db1c1d"
           },
           "description": "Operations, applied in order. change_request, when given, comes before every other op; create or import comes next (else first) and appears once.",
           "minItems": 1
@@ -914,7 +914,7 @@
    {
     "type": "custom_message",
     "customType": "mode-note",
-    "content": "@d7ac9f8c286df53e",
+    "content": "@0be17424cf9ac08e",
     "display": false,
     "details": {
      "v": 1,

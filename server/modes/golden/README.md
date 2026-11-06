@@ -24,6 +24,10 @@ Re-take them from master's code, never from a tree in the middle of the move: `g
 `golden/cases` and `golden/store` back (delete both first: the store check fails on files nothing uses).
 Review the diff as the change's effect on every case.
 
+A wording-only change to the model's text can be applied to the recordings instead, as the Delegate split-first
+wording was (its exact old and new strings, through `decode` and `encode` in `store.fixture.ts`): recording from today's
+tree would also take in what `withoutA1` leaves out. The golden tests then prove the result matches the code.
+
 Cases that run a program (the spec tools, a project tool) are in the integration files; the rest are unit.
 A case with `unrecorded` (c23: it needs a1's `spec` tool, which master lacks) has no file: it checks its own
 record, and the on/off byte comparison still covers it. `worker-slots.golden.test.ts` pins the worker mode

@@ -100,12 +100,12 @@
       "sections": {
        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
        "tools": "@15d31f2a78f55765",
-       "rules": "@c812aa6c1d63cb16",
+       "rules": "@4577d5bcb2505d0a",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-       "mode": "@762c2620222a71e2"
+       "mode": "@fca6267e5f208d96"
       },
-      "toolsAdded": "@c22ce789a0f2b849"
+      "toolsAdded": "@be8382b1919b9b26"
      },
      {
       "role": "user",
@@ -265,12 +265,12 @@
      "sections": {
       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
       "tools": "@15d31f2a78f55765",
-      "rules": "@c812aa6c1d63cb16",
+      "rules": "@4577d5bcb2505d0a",
       "docs": "@0f5fabf6c3c47c4c",
       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-      "mode": "@762c2620222a71e2"
+      "mode": "@fca6267e5f208d96"
      },
-     "toolsAdded": "@98970cd3f4f7992a"
+     "toolsAdded": "@b655f6b1ed1bcc5f"
     }
    }
   ],
@@ -644,12 +644,12 @@
       "sections": {
        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
        "tools": "@42e3b65af9a48a61",
-       "rules": "@c812aa6c1d63cb16",
+       "rules": "@4577d5bcb2505d0a",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-       "mode": "@762c2620222a71e2"
+       "mode": "@fca6267e5f208d96"
       },
-      "toolsAdded": "@224e3a098e952def"
+      "toolsAdded": "@3fd774407df865c2"
      },
      {
       "role": "user",
@@ -701,7 +701,7 @@
       "role": "system",
       "content": "",
       "sections": {
-       "mode": "@ed58719ad84d53ba"
+       "mode": "@165fd69f243da0e7"
       }
      },
      {
@@ -766,7 +766,7 @@
      "role": "system",
      "content": "",
      "sections": {
-      "mode": "@ed58719ad84d53ba"
+      "mode": "@165fd69f243da0e7"
      }
     }
    },

@@ -169,6 +169,30 @@ export function createKeyEcho(now: () => number = () => Date.now()) {
   };
 }
 
+/**
+ * What a right-click's "on the selection" reads (§app.context-menus/native): the text selected when
+ * its press went down. A Mac's browser selects the word (or the link) under a right press before
+ * it sends `contextmenu`; that word was never the user's selection, so it doesn't hand the click to
+ * the browser, and Sova's menu takes it back (`madeByPress`). Before any press: what is selected now.
+ */
+export function createPressSelection<R>(read: () => R[]) {
+  let atPress: R[] | null = null;
+  return {
+    /** A pointer went down: remember what was selected before the browser handles the press. */
+    pressed() {
+      atPress = read();
+    },
+    /** The selection this right-click counts. */
+    counted(): R[] {
+      return atPress ?? read();
+    },
+    /** Whether the press itself made the selection there is now. */
+    madeByPress(): boolean {
+      return atPress !== null && atPress.length === 0 && read().length > 0;
+    },
+  };
+}
+
 // ---- a mouse's menu shows on the release ------------------------------------------------------
 
 /**

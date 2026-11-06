@@ -12,7 +12,7 @@
  */
 import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { bindKey } from "../commands/keys";
-import { contextAction, type ContextAction, contextPointerKind, createKeyEcho, createOpenOnRelease, inPopover, inTextEntry, onContentLink, pointInRects, type PointerKind, pressHeld } from "../lib/context-menu";
+import { contextAction, type ContextAction, contextPointerKind, createKeyEcho, createOpenOnRelease, createPressSelection, inPopover, inTextEntry, onContentLink, pointInRects, type PointerKind, pressHeld } from "../lib/context-menu";
 import type { MenuAnchor } from "../lib/menu-position";
 import { type ActionMenuApi, MenuPanel, type MenuPanelControls } from "./ActionMenu";
 
@@ -51,12 +51,17 @@ const echo = createKeyEcho();
 /** A mouse's menu waits for the button's release (lib/context-menu `createOpenOnRelease`); made by the host. */
 let release: ReturnType<typeof createOpenOnRelease> | null = null;
 
-/** Whether the pointer is on the text selected right now (its boxes, not merely its nodes). */
-function onSelectionAt(x: number, y: number): boolean {
+/** The ranges selected now, copied so a later change to the selection leaves them as they were. */
+function selectedRanges(): Range[] {
   const sel = getSelection();
-  if (!sel || sel.isCollapsed) return false;
-  for (let i = 0; i < sel.rangeCount; i++) if (pointInRects(x, y, Array.from(sel.getRangeAt(i).getClientRects()))) return true;
-  return false;
+  if (!sel || sel.isCollapsed) return [];
+  return Array.from({ length: sel.rangeCount }, (_, i) => sel.getRangeAt(i).cloneRange());
+}
+const pressSelection = createPressSelection(selectedRanges);
+
+/** Whether the pointer is on the text selected before this press (its boxes, not merely its nodes). */
+function onSelectionAt(x: number, y: number): boolean {
+  return pressSelection.counted().some((r) => pointInRects(x, y, Array.from(r.getClientRects())));
 }
 
 /**
@@ -83,6 +88,8 @@ export function openContextMenu(e: MouseEvent, place: ContextPlace): ContextActi
   if (action !== "open") return action;
   if (!panel || !release) return "native"; // no host on this page: the browser's menu, as before
   e.preventDefault();
+  // The word a Mac's browser selected under this press isn't left selected under Sova's menu.
+  if (kind !== "keyboard" && pressSelection.madeByPress()) getSelection()?.removeAllRanges();
   const spec = place.menu();
   // From a key: under the focused element, and focus goes back to it.
   const focused = kind === "keyboard" && target instanceof HTMLElement ? target : null;
@@ -125,6 +132,7 @@ export function ContextMenuHost() {
     const onPointerDown = (e: PointerEvent) => {
       lastPointer = e.pointerType;
       echo.pointerDown();
+      pressSelection.pressed();
     };
     // Capture, ahead of every place: the browser's own keyboard menu after a key already opened
     // Sova's is that key's echo, and reaches no place at all.

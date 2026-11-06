@@ -8,7 +8,7 @@ import { Icon } from "./ui";
 
 /**
  * Time Spent on the Session tab (§app.subagents-pane/time-spent): You and Agent, the word, the rows,
- * Alignments and the two notes. Mounted only while that tab shows, which is when it ticks; counting
+ * and Alignments. Mounted only while that tab shows, which is when it ticks; counting
  * itself is the tracker's and goes on without it. Nothing here is a live region: the tick is silent.
  */
 export function TimeSpentSection(props: { path: string; labelId: string }) {
@@ -106,7 +106,7 @@ function TimeSpentBody(props: { path: string; id: string }) {
           <Show
             when={refused()}
             fallback={
-              /* The usual section's own lines (the figures, Reading and two rows, the estimate), so
+              /* The usual section's own lines (the figures, Reading and two rows), so
                  Repository doesn't jump when the figures land; never a zero. */
               <div class="time-spent-skeleton" aria-hidden="true">
                 <div>
@@ -117,10 +117,6 @@ function TimeSpentBody(props: { path: string; id: string }) {
                   <Line class="time-spent-row" width="35%" />
                   <Line class="time-spent-row" width="30%" />
                   <Line class="time-spent-row" width="25%" />
-                </div>
-                <div>
-                  <Line class="text-caption" width="90%" />
-                  <Line class="text-caption" width="40%" />
                 </div>
               </div>
             }
@@ -218,12 +214,6 @@ function TimeSpentBody(props: { path: string; id: string }) {
               </div>
             </Show>
 
-            <div class="time-spent-notes stack-2">
-              <p class="usage-note">An estimate. Reading makes no events, so this goes by what's on screen and your last input.</p>
-              <Show when={v().older}>
-                <p class="usage-note">Your time before Time Spent arrived wasn't recorded.</p>
-              </Show>
-            </div>
           </>
         )}
       </Show>

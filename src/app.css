@@ -1914,7 +1914,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 /* Time Spent on the Session tab. Three text weights, by place and never by a figure's size or value:
    ink for what the section is read for (You, Agent, each row's time, each document's title), ink-2 for what
    names it (You and Agent, row labels, the Alignments heading, the word), muted for detail (Reading's parts, a document's
-   figures, the notes). One spacing scale: 16px between blocks, 8px between rows as Identity's, 4px inside
+   figures). One spacing scale: 16px between blocks, 8px between rows as Identity's, 4px inside
    Reading's group. Every row is one line tall; the heading and Reading keep a 44px target in a hit area that
    adds no height, so the rhythm stays even. */
 .time-spent-heading { margin: 0; font: inherit; }
@@ -1980,6 +1980,5 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .time-spent-part > .text-num { color: var(--color-ink-2); }
 .time-spent-doc-title { margin: 0; color: var(--color-ink); overflow-wrap: anywhere; }
 .time-spent-docs .text-muted { margin: 0; overflow-wrap: anywhere; }
-.time-spent-notes > .usage-note { color: var(--color-ink-muted); }
 .time-spent-skeleton { display: flex; flex-direction: column; gap: var(--space-4); }
 .time-spent-skeleton .time-spent-rows .text-skeleton { flex: none; }

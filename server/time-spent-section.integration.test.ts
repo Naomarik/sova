@@ -248,13 +248,11 @@ test("the rows add up to You, an empty row doesn't show, and Reading opens to it
     const at = (k: string) => opened.rows.find(([key]) => key === k)![1];
     assert.equal(at("reading-transcript") + at("reading-alignments"), at("reading"), "the parts add up to Reading");
     const text = await page.locator(".time-spent").innerText();
-    assert.doesNotMatch(text, /Your Time/, "the rows need no visible heading"); // the older-session note says "Your time"
+    assert.doesNotMatch(text, /Your Time/, "the rows need no visible heading");
     assert.equal(await page.getByRole("list", { name: "Your Time" }).locator("[data-time-row]").count(), opened.rows.length, "the rows keep their name for assistive technology");
     assert.match(text, /Alignments/, "that heading stays");
     assert.match(text, /4m 12s on screen · 2m 10s to read · 1h 01m 40s from first shown to decided/);
     assert.match(text, /12s on screen · 40s to read(?! ·)/);
-    assert.match(text, /An estimate\. Reading makes no events/);
-    assert.match(text, /Your time before Time Spent arrived wasn't recorded\./);
     assert.equal(await page.locator(".time-spent [aria-live], .time-spent [role=status]").count(), 0, "the tick isn't announced");
   } finally {
     await page.context().close();
@@ -280,6 +278,20 @@ test("a fresh browser shows only the heading: closed, with no figures, no placeh
     await pressHeading(page, "true");
     await word(page).waitFor();
     assert.ok((await page.locator("[data-time-you]").count()) === 1);
+  } finally {
+    await page.context().close();
+  }
+});
+
+test("the section ends after the Alignments list, with no note, on a record that once had one to say", async () => {
+  const page = await open(1440, (r) => r.fulfill(json({ ...RECORD, older: true })));
+  try {
+    await word(page).waitFor();
+    assert.equal(await page.locator("[data-time-you]").count(), 1, "open, with its figures: an absence here means something");
+    const text = await page.locator(".time-spent").innerText();
+    assert.match(text, /A plan for the pane/, "the Alignments list is there");
+    for (const words of [/An estimate/i, /makes no events/i, /last input/i, /wasn't recorded/i, /before Time Spent arrived/i]) assert.doesNotMatch(text, words);
+    assert.equal(await page.locator(".time-spent-body > :last-child .time-spent-docs").count(), 1, "the list is the section's last block");
   } finally {
     await page.context().close();
   }
@@ -340,7 +352,7 @@ test("closing leaves the heading, and is remembered for this browser, in another
   }
 });
 
-/** Each place's text colour: the sub-heading, label and figure of a row, a part, a document, a note, and You. */
+/** Each place's text colour: the sub-heading, label and figure of a row, a part, a document, and You. */
 const placeColours = (page: Page) =>
   page.locator(".time-spent").evaluate((root) => {
     const colour = (q: string) => {
@@ -362,7 +374,6 @@ const placeColours = (page: Page) =>
       partTime: colour('[data-time-row="reading-transcript"] > .text-num'),
       docTitle: colour(".time-spent-doc-title"),
       docWords: colour(".time-spent-docs .text-muted"),
-      note: colour(".time-spent-notes > .usage-note"),
     };
   });
 
@@ -450,7 +461,6 @@ for (const [width, height] of [[1440, 1300], [375, 1100]] as const) {
       const detail = counting.docWords;
       assert.notEqual(detail, named, "detail is quieter than what names it");
       assert.notEqual(detail, counting.you);
-      assert.equal(counting.note, detail);
       assert.equal(counting.partLabel, detail);
       assert.equal(counting.partTime, named, "a part's time sits a step under a row's");
       await shots("counting");

@@ -71,7 +71,6 @@ export type SpentView = {
   reading: { seconds: number; parts: SpentLine[] } | null;
   rows: SpentLine[];
   alignments: { docId: string; title: string; words: string }[];
-  older: boolean;
 };
 
 /** One document's figures, in the copy deck's words; `to decided` is left out when it has none. */
@@ -105,6 +104,5 @@ export function spentView(record: TimeSpentRecord, live: SpentLive, agentElapsed
       title: d.title,
       words: alignmentWords(d.onScreen + (counting ? (live.cards[d.docId] ?? 0) : 0), d.toRead, d.toDecided),
     })),
-    older: record.older,
   };
 }

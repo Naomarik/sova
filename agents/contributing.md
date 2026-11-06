@@ -15,7 +15,7 @@ and continue. Everyone other than the owner is a contributor, including people w
 
 ## State the policy up front
 
-As soon as they plan or ask for a pull request, tell them:
+As soon as they ask for a pull request, tell them:
 
 - Bug reports are preferred over PRs.
 - Anything that changes behaviour or UI/UX should start as an issue. Consider opening one first.

@@ -96,11 +96,17 @@ replaces the thread.
 
 ## Set it up
 
-A project on the Projects list with no checks yet shows **Initialize** on its Merge Queue tab. Give
-it its checks, one "Label: command" per line, or one test command, or say it has no automated
-tests. **Try It on Master** runs them on the main branch alone, merging nothing. After a pass,
-**Save Checks** writes them into the project's `.sova/project.json` as one commit, and from then on
-the project's branches land through the queue.
+A project on the Projects list with no checks yet shows **Set Up with a Chat** on its Merge Queue
+tab. That opens the project's Setup chat, one standing chat per project, working in a worktree of
+its own. It reads the project, asks what it can't find, and proposes the checks on a setup branch:
+listed checks, one test command, or no automated tests.
+
+The tab shows what the branch proposes, read from its files, and every file it changes. The branch
+can land only after a trial of its exact commit passed, because the queue checks a branch with the
+main branch's checks, not its own. Until then the proposal offers **Run Trial** in Land's place, and
+a newer commit needs a new trial. The same rule holds for any chat's branch that changes the
+project's merge, release or deploy setup. Once the checks are on the main branch, the project's
+branches land through the queue. **Change Setup** opens the same chat later.
 
 **Settings → Merge Queue** shows every value a project's queue uses, each tagged with where it
 lives (the project's file, this computer, or Sova), and lets you change them: how it lands, the

@@ -4,6 +4,55 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.11.0 — 2026-11-06
+
+A Setup chat for your project's pipeline, reminders and jobs that don't need a tab open, a new Home,
+and OpenAI sign-in. 352 commits since v0.10.2. The highlights:
+
+- **Set up with a chat.** A project's merge queue, releases and deploys are now set up by one
+  standing Setup chat per project, in its own worktree. It reads the project, asks what it can't
+  find, and proposes the checks on a branch. A trial of that exact commit must pass before you can
+  Land or Merge Branch it. **Set Up with a Chat** replaces the old form: Initialize, Try It on Main
+  and Save Checks are gone. Any other chat's branch that changes the same setup follows the same
+  rule.
+- **Nothing waits on a tab.** A chat's reminder now fires with no tab open, and Sova brings the chat
+  back for it. Background jobs outlive the chat that started them, and a job's end wakes its chat.
+- **A new Home.** Projects come first, as a grid of cards with icons, each with what needs you, its
+  chats, its running copies and what's in progress.
+- **The landing bar.** A branch's progress through the queue sits in one row at the foot of the
+  sidebar, with its step count, a hover card and a detail panel. On a phone it's one strip.
+- **Merge queue.** Settings → Merge Queue shows every setting for each project. Checks reuse passes
+  from identical code, so landings go faster; the Reuse passes from identical code setting turns
+  that off for a project, and a release always runs in full. Sova makes each conflict's scratch copy
+  itself and removes it. Landed spec drafts stay in their branch's folder and read as landed. After
+  landings the merge thread restarts Sova once the queue is idle, so a landed change goes live on
+  its own.
+- **Needs you.** Every chat's row has a × that dismisses it on all your devices until that chat has
+  something new. Guesses from a chat's last reply now sit in their own group, **Maybe waiting on
+  you**, and never send a phone notification.
+- **Accounts.** Sign in to your ChatGPT subscription from Settings → Accounts, which now has one tab
+  per provider. Each API key is checked before it saves, with Show, Test and Remove. Ollama Cloud's
+  model list is checked daily (or with Check Now), and its included credit is on the usage glance.
+- **The Overseer.** It can pair two chats, which then send each other short notes between turns.
+  Chats Sova names itself, such as a merge or release chat, keep a fixed name.
+- **The mesh.** A copied or moved `peers.json` now keeps the mesh off, so a copy of Sova can't pose
+  as the original. The Mesh page says why, and **Reconnect Here** turns it back on when the move was
+  yours. Mixed versions are refused writes in the areas where they don't match.
+- **Smaller changes.** The Context tab has one row per item with a drill-in sheet, and shows each
+  skill's read state. Settings forms keep focus while you type. On a Mac, dictation gives up on a
+  mic that never starts after 10 seconds, and Sova's window starts through macOS's launcher so the
+  mic permission is the browser's own. The installer runs on your own tools when a mise shim is on
+  your PATH. New Docs pages cover Usage, Teams, Merge queue settings and Release settings.
+
+**What you may need to do:** if the mesh goes off after you moved or restored Sova's state folder,
+press Reconnect Here on the Mesh page. A project not set up yet now starts from Set Up with a Chat.
+
+Going back to `v0.10.2` (`SOVA_REF=v0.10.2`) keeps your settings and sessions as they are, with two
+costs. A project where you turned Reuse passes from identical code off has `"reuse": false` in
+`.sova/project.json`, which v0.10.2 refuses as an unknown key: remove that line first, or the
+project's file won't load there. Reminders and jobs need a tab or a running chat again, and rows you
+dismissed in Needs you come back.
+
 ## v0.10.2 — 2026-11-05
 
 Branch summaries in the merge queue, a Land that asks first, and Tailscale on a Mac with no

@@ -4,7 +4,7 @@ import { toPiTool } from "./harness/pi/tools";
 import { existsSync } from "node:fs";
 import { isArchived } from "./archived-sessions";
 import { Refusal, text } from "./session-guards";
-import { pairPaused, TOPIC_TEXT_MAX, TopicStore } from "./topic-store";
+import { pairPaused, type PairRecord, TOPIC_TEXT_MAX, TopicStore } from "./topic-store";
 
 /**
  * Topic queues' tools (§chat.topics/open, §chat.topics/push). `queue_push` is in every ordinary
@@ -29,6 +29,17 @@ const pushListeners = new Set<(topic: string) => void>();
 export function onTopicPush(fn: (topic: string) => void): () => void {
   pushListeners.add(fn);
   return () => pushListeners.delete(fn);
+}
+
+/** End a pairing (§app.overseer/pairs): both topics close, their waiting notes drop, each close is
+    audited. Neither chat is told. Null when it wasn't in force. */
+export function endPairing(id: string, why: NonNullable<PairRecord["endedWhy"]>): PairRecord | null {
+  const s = topicStore();
+  const ended = s.endPair(id, why);
+  if (!ended) return null;
+  for (const side of ["a", "b"] as const)
+    s.audit({ sessionId: ended.pair[side].sessionId, tool: "queue_open", topic: ended.pair[side].topic, outcome: "closed", dropped: ended.dropped[side], pairing: id });
+  return ended.pair;
 }
 
 /** A push to a pairing's topic once the pairing ended, from the partner it was opened for. */
@@ -70,12 +81,13 @@ export interface PushingSession extends Omit<PusherContext, "title"> {
  * its text names as a whole word invites the target there, once the send is accepted. They are
  * recorded BEFORE the hand-off, since the target's turn may push before the send returns; the
  * caller then says `accepted()` (each new one is audited) or `refused()` (the new ones are taken
- * back, so a refused send invites no one; an invitation the target already had stays).
+ * back, so a refused send invites no one; an invitation the target already had stays). A pairing's
+ * topic never invites anyone this way: its partner is its one sender (§chat.topics/open).
  */
 export function inviteFromSend(senderId: string, targetId: string, sent: string): { accepted(): string[]; refused(): void } {
   const s = topicStore();
   const made: string[] = [];
-  for (const [name, t] of s.openTopics()) if (t.receiver.sessionId === senderId && namesTopic(sent, name) && s.invite(name, targetId)) made.push(name);
+  for (const [name, t] of s.openTopics()) if (t.receiver.sessionId === senderId && !t.pairing && namesTopic(sent, name) && s.invite(name, targetId)) made.push(name);
   return {
     accepted: () => {
       for (const name of made) s.audit({ sessionId: senderId, tool: "session_send", topic: name, outcome: "invited", target: targetId });
@@ -129,10 +141,8 @@ export function pushNote(ctx: PusherContext, params: { topic?: unknown; text?: u
   }
   if (receiverGone(rec!.receiver)) {
     // A paired chat gone or archived ends its pairing: both topics close together.
-    const ended = rec!.pairing ? s.endPair(rec!.pairing, isArchived(rec!.receiver.sessionId) ? "archived" : "gone") : null;
+    const ended = rec!.pairing ? endPairing(rec!.pairing, isArchived(rec!.receiver.sessionId) ? "archived" : "gone") : null;
     if (ended) {
-      for (const side of ["a", "b"] as const)
-        s.audit({ sessionId: ended.pair[side].sessionId, tool: "queue_open", topic: ended.pair[side].topic, outcome: "closed", dropped: ended.dropped[side], pairing: ended.pair.id });
       if (endedFor()) refuse(PAIRING_ENDED, "pairing-ended");
     } else {
       const dropped = s.close(topic);

@@ -171,13 +171,7 @@ export class TopicStore {
     if (mine.length >= TOPICS_PER_SESSION)
       throw new Error(`This session already has ${TOPICS_PER_SESSION} topics open (${mine.map(([n]) => n).join(", ")}); reuse one of them.`);
     const all = this.all();
-    let made = "";
-    do {
-      const bytes = this.random(SUFFIX);
-      let suffix = "";
-      for (let i = 0; i < SUFFIX; i++) suffix += ALPHABET[bytes[i]! % ALPHABET.length];
-      made = `${base}-${suffix}`;
-    } while (all[made] || existsSync(this.notesFile(made)));
+    const made = this.freshName(base);
     all[made] = { receiver: { ...receiver }, base, ...(project ? { project } : {}), createdAt: new Date(this.now()).toISOString() };
     this.saveTopics();
     return { name: made, reused: false };
@@ -310,18 +304,6 @@ export class TopicStore {
     if (!dir || dir === "toB") p.notes.toB = 0;
     this.savePairs();
     return p;
-  }
-
-  /** A paired chat's file moved (a reopened runtime): keep the pairing's path in step. */
-  notePairPath(sessionId: string, path: string): void {
-    let changed = false;
-    for (const p of this.livePairs(sessionId))
-      for (const side of [p.a, p.b])
-        if (side.sessionId === sessionId && side.path !== path) {
-          side.path = path;
-          changed = true;
-        }
-    if (changed) this.savePairs();
   }
 
   /** Record `sessionId` as invited on the open topic `name`. Returns whether

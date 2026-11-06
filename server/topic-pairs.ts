@@ -1,8 +1,7 @@
 import type { Hono } from "hono";
 import type { PairResumeDirection, PairView, SessionSummary } from "../shared/protocol";
-import { endPairing } from "./topic-delivery";
 import { PAIR_NOTES_EACH_WAY, pairPaused, type PairRecord, TOPIC_TEXT_MAX } from "./topic-store";
-import { PUSHES_PER_WINDOW, topicStore } from "./topics";
+import { endPairing, PUSHES_PER_WINDOW, topicStore } from "./topics";
 
 /**
  * The Overseer's pairings (§app.overseer/pairs): two chats on this host that may send each other

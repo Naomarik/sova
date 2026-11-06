@@ -2,9 +2,8 @@ import type { ToolSpec } from "../shared/harness";
 import type { PairView, SessionSummary } from "../shared/protocol";
 import type { ToolCall } from "./overseer-idea-tools";
 import { jobText, PAIR_ID_RE, PairError, pairIntro, pairRefusal, pairView, resumePairing, unpair } from "./topic-pairs";
-import { endPairing } from "./topic-delivery";
 import type { PairRecord } from "./topic-store";
-import { topicStore } from "./topics";
+import { endPairing, topicStore } from "./topics";
 
 /**
  * The Overseer's `sova_pair` (§app.overseer/pairs): `pair`, `unpair` and `resume` are acts (audited,

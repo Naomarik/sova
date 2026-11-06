@@ -4,7 +4,7 @@ import type { ChatLifecycleEvent, ChatTopicBatch } from "../shared/chat-runtime"
 import type { SessionSummary } from "../shared/protocol";
 import { formatTopicBatch } from "../shared/topic-message";
 import type { PairRecord } from "./topic-store";
-import { onTopicPush, topicStore } from "./topics";
+import { endPairing, onTopicPush, topicStore } from "./topics";
 
 /**
  * Topic delivery (§chat.topics/delivery): when a topic's receiver gets its next batch. A push to an
@@ -148,6 +148,9 @@ export class TopicDelivery {
 
   /** Paths whose pairing reminder waits for the chat to settle (it compacted mid-turn). */
   private reminding = new Set<string>();
+  /** Paths with a reminder on its way, each with whether a settle arrived meanwhile: one chat never
+      gets two notes for one compaction, and a refusal after that settle still tries again. */
+  private noting = new Map<string, boolean>();
 
   private compacted(path: string): void {
     if (!topicStore().livePairs().some((p) => p.a.path === path || p.b.path === path)) return;
@@ -159,6 +162,18 @@ export class TopicDelivery {
       can't take a note now. */
   private async remind(path: string): Promise<void> {
     if (!this.reminding.has(path) || !this.host.note) return;
+    if (this.noting.has(path)) return void this.noting.set(path, true);
+    this.noting.set(path, false);
+    try {
+      await this.sendReminder(path);
+    } finally {
+      const again = this.noting.get(path);
+      this.noting.delete(path);
+      if (again && this.reminding.has(path)) setTimeout(() => void this.remind(path), 0);
+    }
+  }
+
+  private async sendReminder(path: string): Promise<void> {
     const s = topicStore();
     const mine: { p: PairRecord; side: "a" | "b" }[] = [];
     for (const p of s.livePairs()) {
@@ -177,7 +192,7 @@ export class TopicDelivery {
     }
     let ok = false;
     try {
-      ok = await this.host.note(path, PAIR_REMINDER_NOTE, notes.join("\n\n"));
+      ok = await this.host.note!(path, PAIR_REMINDER_NOTE, notes.join("\n\n"));
     } catch {
       ok = false;
     }
@@ -262,17 +277,6 @@ export class TopicDelivery {
     }
     return r;
   }
-}
-
-/** End a pairing (§app.overseer/pairs): both topics close, their waiting notes drop, each close is
-    audited. Neither chat is told. Null when it wasn't in force. */
-export function endPairing(id: string, why: NonNullable<PairRecord["endedWhy"]>): PairRecord | null {
-  const s = topicStore();
-  const ended = s.endPair(id, why);
-  if (!ended) return null;
-  for (const side of ["a", "b"] as const)
-    s.audit({ sessionId: ended.pair[side].sessionId, tool: "queue_open", topic: ended.pair[side].topic, outcome: "closed", dropped: ended.dropped[side], pairing: id });
-  return ended.pair;
 }
 
 let running: TopicDelivery | null = null;

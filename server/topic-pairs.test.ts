@@ -14,8 +14,8 @@ const agentDir = mkdtempSync(join(tmpdir(), "sova-topic-pairs-"));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const { TopicStore, TOPICS_PER_SESSION, PAIR_NOTES_EACH_WAY } = await import("./topic-store");
-const { setTopicStore, topicStore, pushNote, PAIRING_ENDED, PAIRING_PAUSED, PUSHES_PER_WINDOW, PUSH_WINDOW_MS } = await import("./topics");
-const { endPairing, pairReminder } = await import("./topic-delivery");
+const { endPairing, inviteFromSend, setTopicStore, topicStore, pushNote, PAIRING_ENDED, PAIRING_PAUSED, PUSHES_PER_WINDOW, PUSH_WINDOW_MS } = await import("./topics");
+const { pairReminder, TopicDelivery, PAIR_REMINDER_NOTE } = await import("./topic-delivery");
 const { formatTopicBatch, parseTopicBatch, isTopicBatch } = await import("../shared/topic-message");
 const { unpair, resumePairing, pairRefusal, pairView, pairIntro } = await import("./topic-pairs");
 after(() => setTopicStore(null));
@@ -159,6 +159,186 @@ describe("ending a pairing", () => {
     rmSync(A.path);
     assert.equal(push(B, p.a.topic), `REFUSED: ${PAIRING_ENDED}`);
     assert.equal(topicStore().topic(p.b.topic), null, "both topics closed together");
+  });
+});
+
+describe("who may push to a pairing's topic", () => {
+  test("a paired chat's session_send naming its pair topic invites no one; the third chat's push is refused, while an ordinary topic named beside it still invites", () => {
+    const A = chat("a");
+    const B = chat("b");
+    const C = chat("c");
+    const s = topicStore();
+    const { pair } = s.openPair({ ...A, job: "Builds." }, { ...B, job: "Writes." });
+    const own = s.open(A, "merge").name;
+    const invites = inviteFromSend(A.sessionId, C.sessionId, `answer on ${pair.a.topic} or ${own}`);
+    assert.deepEqual(invites.accepted(), [own], "only the ordinary topic invited: the guard is on the pairing, not on the send");
+    assert.equal(s.invited(pair.a.topic, C.sessionId), false);
+    assert.deepEqual(s.topic(pair.a.topic)!.invited, [B.sessionId], "the partner stays its one sender");
+    assert.equal(push(C, pair.a.topic), `REFUSED: No open topic "${pair.a.topic}".`);
+    assert.match(push(C, own), /^Queued on/);
+    assert.equal(s.pending(pair.a.topic).length, 0);
+    assert.match(push(B, pair.a.topic), /^Queued on/);
+  });
+});
+
+describe("the reminder after a compaction", () => {
+  /** A delivery on a fake host: `fire` plays its events; each note is recorded, answered by `answer`. */
+  function host(answer: () => boolean | Promise<boolean>, titles: Record<string, string> = {}) {
+    const notes: { path: string; type: string; text: string }[] = [];
+    const on: { compacted?: (p: string) => void; idle?: (p: string) => void } = {};
+    const delivery = new TopicDelivery({
+      summary: async (path) => ({ special: false, title: titles[path] }),
+      acquire: async () => assert.fail("no batch is due in these tests"),
+      onIdle: (fn) => ((on.idle = fn), () => {}),
+      onChatEvent: () => () => {},
+      onArchived: () => () => {},
+      onCompacted: (fn) => ((on.compacted = fn), () => {}),
+      note: async (path, type, text) => {
+        notes.push({ path, type, text });
+        return answer();
+      },
+    });
+    delivery.start();
+    return { notes, delivery, compacted: (p: string) => on.compacted!(p), idle: (p: string) => on.idle!(p) };
+  }
+  /** Lets every timer due now and what it awaits run: the fake host never waits on anything else. */
+  const settled = async () => {
+    for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+  };
+
+  test("a compaction reminds the paired chat once, of its partner, and not its partner", async () => {
+    const A = chat("a");
+    const B = chat("b");
+    const { pair } = topicStore().openPair({ ...A, job: "Builds." }, { ...B, job: "Writes." });
+    const h = host(() => true, { [B.path]: "The writer" });
+    h.compacted(A.path);
+    await settled();
+    h.delivery.stop();
+    assert.equal(h.notes.length, 1);
+    assert.equal(h.notes[0]!.path, A.path);
+    assert.equal(h.notes[0]!.type, PAIR_REMINDER_NOTE);
+    assert.equal(h.notes[0]!.text, pairReminder(pair, "a", "The writer"));
+  });
+
+  test("an unpaired chat's compaction reminds no one", async () => {
+    const A = chat("a");
+    const B = chat("b");
+    const lone = chat("lone");
+    topicStore().openPair({ ...A, job: "Builds." }, { ...B, job: "Writes." });
+    const h = host(() => true);
+    h.compacted(lone.path);
+    h.compacted(A.path); // Ran after the lone chat's: its note shows the wait was long enough.
+    await settled();
+    h.delivery.stop();
+    assert.deepEqual(h.notes.map((n) => n.path), [A.path]);
+  });
+
+  test("a chat that can't take the note now gets it at its next settle, then never again", async () => {
+    const A = chat("a");
+    const B = chat("b");
+    topicStore().openPair({ ...A, job: "Builds." }, { ...B, job: "Writes." });
+    let open = false;
+    const h = host(() => open);
+    h.compacted(A.path);
+    await settled();
+    assert.equal(h.notes.length, 1, "tried once");
+    await settled();
+    assert.equal(h.notes.length, 1, "no retry on its own: only a settle retries");
+    h.idle(B.path);
+    await settled();
+    assert.equal(h.notes.length, 1, "another chat's settle is not this one's");
+    h.idle(A.path); // Still mid-write: refused again and still kept.
+    await settled();
+    assert.equal(h.notes.length, 2);
+    open = true;
+    h.idle(A.path);
+    await settled();
+    assert.equal(h.notes.length, 3, "taken this time");
+    h.idle(A.path);
+    await settled();
+    h.delivery.stop();
+    assert.equal(h.notes.length, 3, "taken once: a later settle adds nothing");
+    assert.ok(h.notes.every((n) => n.path === A.path));
+  });
+
+  test("a settle while the note is on its way sends no second one; if that note is refused, it is tried again", async () => {
+    const A = chat("a");
+    const B = chat("b");
+    topicStore().openPair({ ...A, job: "Builds." }, { ...B, job: "Writes." });
+    let answerFirst!: (ok: boolean) => void;
+    const first = new Promise<boolean>((r) => (answerFirst = r));
+    const answers = [first]; // The first answer waits; each later one is taken at once.
+    const h = host(() => answers.shift() ?? Promise.resolve(true));
+    h.compacted(A.path);
+    await settled();
+    assert.equal(h.notes.length, 1);
+    h.idle(A.path);
+    await settled();
+    assert.equal(h.notes.length, 1, "the note on its way is the reminder: the settle adds none");
+    answerFirst(false);
+    await settled();
+    assert.equal(h.notes.length, 2, "refused after the settle arrived: tried again, not left for a settle that already happened");
+    h.idle(A.path);
+    await settled();
+    h.delivery.stop();
+    assert.equal(h.notes.length, 2, "taken: no more");
+  });
+
+  test("a note that throws counts as refused, and is tried again at the settle", async () => {
+    const A = chat("a");
+    const B = chat("b");
+    topicStore().openPair({ ...A, job: "Builds." }, { ...B, job: "Writes." });
+    let open = false;
+    const h = host(() => {
+      if (!open) throw new Error("no writer");
+      return true;
+    });
+    h.compacted(A.path);
+    await settled();
+    open = true;
+    h.idle(A.path);
+    await settled();
+    h.delivery.stop();
+    assert.equal(h.notes.length, 2);
+  });
+
+  test("a chat in two pairings gets one note naming both; a pairing ended meanwhile is left out", async () => {
+    const A = chat("a");
+    const B = chat("b");
+    const C = chat("c");
+    const s = topicStore();
+    const ab = s.openPair({ ...A, job: "Builds." }, { ...B, job: "Writes." }).pair;
+    const ac = s.openPair({ ...A, job: "Builds." }, { ...C, job: "Tests." }).pair;
+    let open = false;
+    const h = host(() => open, { [B.path]: "The writer", [C.path]: "The tester" });
+    h.compacted(A.path);
+    await settled();
+    assert.equal(h.notes[0]!.text, `${pairReminder(ab, "a", "The writer")}\n\n${pairReminder(ac, "a", "The tester")}`);
+    endPairing(ab.id, "unpaired");
+    open = true;
+    h.idle(A.path);
+    await settled();
+    assert.equal(h.notes[1]!.text, pairReminder(ac, "a", "The tester"));
+    endPairing(ac.id, "unpaired");
+    h.idle(A.path);
+    await settled();
+    h.delivery.stop();
+    assert.equal(h.notes.length, 2);
+  });
+
+  test("every pairing ended before the retry: nothing is sent", async () => {
+    const A = chat("a");
+    const B = chat("b");
+    const { pair } = topicStore().openPair({ ...A, job: "Builds." }, { ...B, job: "Writes." });
+    const h = host(() => false);
+    h.compacted(A.path);
+    await settled();
+    assert.equal(h.notes.length, 1);
+    endPairing(pair.id, "unpaired");
+    h.idle(A.path);
+    await settled();
+    h.delivery.stop();
+    assert.equal(h.notes.length, 1);
   });
 });
 

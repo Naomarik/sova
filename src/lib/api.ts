@@ -74,6 +74,7 @@ import type {
   SessionSetupFileText,
   SessionContextView,
   SessionTools,
+  PairView,
   SessionSummary,
   ThemeList,
   TmpAttachment,
@@ -224,6 +225,16 @@ export const mintAccessCode = () =>
 export const revealAccessToken = () => request<{ token: string }>("/api/auth/token", { cache: "no-store" });
 
 export const listSessions = () => request<SessionSummary[]>("/api/sessions");
+
+/** A chat's pairings in force (§app.overseer/pairs): its Paired with lines. */
+export const listPairs = (sessionId: string) =>
+  request<{ pairs: PairView[] }>(`/api/sessions/pairs?id=${encodeURIComponent(sessionId)}`, { cache: "no-store" });
+/** Unpair: both topics close, their waiting notes drop. */
+export const unpairChats = (pairing: string) =>
+  request<{ pair: PairView }>("/api/sessions/pairs/unpair", { method: "POST", body: JSON.stringify({ pairing }) });
+/** Resume a paused pairing (both directions): their note counts go back to 0. */
+export const resumePairing = (pairing: string) =>
+  request<{ pair: PairView }>("/api/sessions/pairs/resume", { method: "POST", body: JSON.stringify({ pairing }) });
 /** The list and the feed version it is at (`X-Sova-List-Version`; null from a server without it). */
 export const listSessionsVersioned = async () => {
   const { body, headers } = await requestWithHeaders<SessionSummary[]>("/api/sessions");

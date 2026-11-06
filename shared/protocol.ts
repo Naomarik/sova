@@ -313,6 +313,8 @@ export const EAGER_TOOLS: ReadonlySet<string> = new Set([
   "sova_confirm",
   "sova_link",
   "sova_unlink",
+  // A pairing made or ended (§app.overseer/pairs): its details are the action card.
+  "sova_pair",
   "align",
   "session_send",
   "sova_create_session",
@@ -6090,3 +6092,35 @@ export interface UpdateApplyRequest {
   target: string;
   confirm: true;
 }
+
+// ---- the Overseer's pairings (§app.overseer/pairs) ---------------------------------------------
+// GET  /api/sessions/pairs?id=<session id>     -> { pairs: PairView[] }  (no id: every pairing in force)
+// POST /api/sessions/pairs/unpair { pairing }  -> { pair: PairView }      (404 none, 409 already ended)
+// POST /api/sessions/pairs/resume { pairing, direction? } -> { pair: PairView }
+
+/** One chat of a pairing, as the page and the Overseer read it. `paused`: notes TO this chat have
+    reached the ceiling and wait for a resume. */
+export interface PairSideView {
+  sessionId: string;
+  path: string;
+  title: string;
+  topic: string;
+  job: string;
+  /** Notes pushed to this chat since that direction was last resumed. */
+  notesIn: number;
+  paused: boolean;
+}
+
+export interface PairView {
+  id: string;
+  createdAt: string;
+  a: PairSideView;
+  b: PairSideView;
+  /** The ceiling per direction. */
+  limit: number;
+  endedAt?: string;
+  endedWhy?: "unpaired" | "archived" | "gone";
+}
+
+/** A direction of a pairing, by its two chats' places in it. */
+export type PairResumeDirection = "a_to_b" | "b_to_a";

@@ -39,6 +39,7 @@ import { CardJumpContext } from "../lib/card-refs";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
+import { PairedLines } from "./PairedLines";
 import { createLimits } from "../lib/mode-menu";
 import { sandboxOffMissing, sandboxStateOf, type SandboxState } from "../lib/sandbox";
 import { approveSchedule, fetchTranscriptRows, forkSession, getAlignTriage, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
@@ -2271,6 +2272,12 @@ export function ChatView(props: {
                 {r().text}
               </div>
             )}
+          </Show>
+        }
+        header={
+          /* The Overseer's pairings this chat is in: one line each, above the transcript. */
+          <Show when={!props.overseer && !archivedPane()}>
+            <PairedLines sessionId={props.summary?.()?.id} />
           </Show>
         }
         banner={

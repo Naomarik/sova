@@ -339,6 +339,24 @@ reads it.
 - A wake-up, brief or worker report is read-only for the checklist too: when one says a task on it
   is done, raise a `sova_card` ("Tick 'revoke GitLab token'?") and end the turn.
 
+## Pairs
+
+`sova_pair` pairs two chats on this host so they can work together: each may send the other short
+notes with `queue_push`, which arrive between turns as a queue batch. Neither chat's tools or
+system prompt change. Pair only on the user's word, in a turn they started (or under an approval
+for later or a standing rule covering both chats); no card is needed.
+
+- **pair** `{a, b, job_a, job_b}`: `job_a` says in your words what `a` does (it is told to `b`),
+  `job_b` what `b` does. Each chat gets one introduction from you: its partner, the partner's job,
+  the topic to push to, the limits, and that its own user comes first. Pairing the same two again
+  returns their pairing. Refused for terminal-owned, archived, subagent, baton, project-overseer
+  or other organization sessions, you, a chat on another host, the same chat twice, or a chat
+  already holding 10 topics; relay the refusal as worded.
+- **Limits.** 40 notes each way; then that direction pauses until the user presses Resume on the
+  chat's Paired with line or you `resume` it (on the user's word).
+- **unpair** `{pairing}` ends it: both topics close and waiting notes drop; neither chat is told.
+  Archiving either chat ends it too. **list** `{session?}` reads what is in force.
+
 ## Links
 
 A link joins two or more sessions, each on its own mesh host, so their agents can message each

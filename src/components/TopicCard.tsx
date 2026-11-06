@@ -5,7 +5,9 @@ import { Icon } from "./ui";
 
 /** A topic batch (§chat.topics/row): notes other sessions pushed, reusing the `.toolcard` shell
     like WakeCard. A machine row, never a "You" bubble, though pi sees it as a user message.
-    Collapsed: "Queue · {topic} · {n} notes" and who sent them; open: each note with its sender. */
+    Collapsed: "Queue · {topic} · {n} notes" and who sent them; open: each note with its sender.
+    A paired topic's batch (§app.overseer/pairs) also says Paired, and open, that its notes may be
+    acted on with this chat's own user first, and the topic replies go to. */
 export function TopicCard(props: { batch: TopicBatchInfo; time?: string }) {
   const n = () => props.batch.notes.length;
   const senders = () => [...new Map(props.batch.notes.map((it) => [it.from.sessionId, it.from])).values()];
@@ -18,6 +20,9 @@ export function TopicCard(props: { batch: TopicBatchInfo; time?: string }) {
         <span class="toolcard-name">
           Queue · {props.batch.topic} · {n()} {n() === 1 ? "note" : "notes"}
         </span>
+        <Show when={props.batch.pair}>
+          <span class="chip chip-count">Paired</span>
+        </Show>
         <span class="toolcard-arg">
           <For each={senders()}>
             {(from, i) => (
@@ -35,6 +40,15 @@ export function TopicCard(props: { batch: TopicBatchInfo; time?: string }) {
         </Show>
       </summary>
       <div class="toolcard-body">
+        <Show when={props.batch.pair}>
+          {(p) => (
+            <div class="toolcard-section">
+              <p class="text-muted">
+              Notes from this chat's paired chat, "{p().partner}". It may act on them, with your requests first. Its replies go to <code>{p().reply}</code>.
+              </p>
+            </div>
+          )}
+        </Show>
         <For each={props.batch.notes}>
           {(note) => (
             <div class="toolcard-section">

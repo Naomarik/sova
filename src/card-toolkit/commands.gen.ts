@@ -51,6 +51,9 @@ export type CommandId =
   | "session.diff.summary"
   | "session.job.list"
   | "session.job.stop"
+  | "session.pairs.list"
+  | "session.pairs.unpair"
+  | "session.pairs.resume"
   | "project.verb.create"
   | "project.verb.up"
   | "project.verb.down"
@@ -580,6 +583,23 @@ export interface CommandParams {
     "id": string;
     /** A worker's job: that worker's chat id (the job's sessionId) */
     "sessionId"?: string;
+  };
+  /** The Overseer's pairings in force: each pairing's two chats, their topics, notes each way and pauses; one chat's with a session. (only looks; needs the card's owner trusted) */
+  "session.pairs.list": {
+    /** Only this chat's pairings, by id or by path */
+    "session"?: string;
+  };
+  /** End a pairing: both of its topics close and the notes waiting on them are dropped. Neither chat is told. (changes something; needs the card's owner trusted) */
+  "session.pairs.unpair": {
+    /** The pairing id (pr_…) */
+    "pairing": string;
+  };
+  /** Lift a pairing's pause after its note limit: one direction, or both; its note count goes back to 0. (changes something; needs the card's owner trusted) */
+  "session.pairs.resume": {
+    /** The pairing id (pr_…) */
+    "pairing": string;
+    /** Only this direction (both when left out) */
+    "direction"?: "a_to_b" | "b_to_a";
   };
   /** The project verb create, as the operator (sova-project create). (changes something; needs the card's owner trusted) */
   "project.verb.create": {
@@ -3750,6 +3770,9 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "session.diff.summary": "looks",
   "session.job.list": "looks",
   "session.job.stop": "changes",
+  "session.pairs.list": "looks",
+  "session.pairs.unpair": "changes",
+  "session.pairs.resume": "changes",
   "project.verb.create": "changes",
   "project.verb.up": "changes",
   "project.verb.down": "changes",

@@ -2053,6 +2053,7 @@ class ChatSession {
           if (!this.harness.isRunning() && !this.starting) for (const m of stale) this.dropTopicMark(m);
         }, 0);
       }
+      if (event.type === "compaction.end" && event.wrote) emitChatEvent(this.path, "compacted");
       if (event.type === "run.settled" || event.type === "compaction.end") emitChatEvent(this.path, "receiverIdle");
       if (event.type === "run.settled" && this.senderMarks.length) {
         // A mark that never found its message this run (the prompt was swallowed or failed early)
@@ -4105,6 +4106,7 @@ const LISTENER_NAME: Record<ChatLifecycleEvent["type"], string> = {
   closed: "closed",
   topicEntered: "topic-entered",
   topicGone: "topic-gone",
+  compacted: "compacted",
 };
 /** Listeners run inside the event, each on its own: one that throws is logged and the rest still run. */
 export function onChatEvent(fn: (event: ChatLifecycleEvent) => void): () => void {
@@ -4134,6 +4136,8 @@ export const onAgentStarted = (fn: (path: string) => void): (() => void) => onEv
 /** A hosted runtime's turn settled or its compaction ended: a topic receiver may take its next
     batch (server/topic-delivery.ts). Called inside the event; listeners defer their own work. */
 export const onReceiverIdle = (fn: (path: string) => void): (() => void) => onEventOf("receiverIdle", fn);
+/** A hosted chat's compaction wrote its summary (a paired chat's reminder, server/topic-delivery.ts). */
+export const onCompacted = (fn: (path: string) => void): (() => void) => onEventOf("compacted", fn);
 /** A hosted chat's run settled (attention signals, tags). */
 export const onAgentSettled = (fn: (path: string) => void): (() => void) => onEventOf("settled", fn);
 

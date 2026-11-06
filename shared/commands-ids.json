@@ -235,7 +235,10 @@
     "project.setup.open",
     "project.setup.merge",
     "session.job.list",
-    "session.job.stop"
+    "session.job.stop",
+    "session.pairs.list",
+    "session.pairs.unpair",
+    "session.pairs.resume"
   ],
   "retired": [
     "settings.agents.get",

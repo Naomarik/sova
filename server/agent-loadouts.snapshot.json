@@ -1,7 +1,7 @@
 {
   "families": {
     "overseer": {
-      "bytes": 92447,
+      "bytes": 94566,
       "tools": [
         {
           "name": "sova_attention",
@@ -875,7 +875,8 @@
                                         "sova_set_session",
                                         "sova_archive",
                                         "sova_answer_dialog",
-                                        "sova_group"
+                                        "sova_group",
+                                        "sova_pair"
                                       ]
                                     },
                                     "description": "The acts it covers (default: all of them)."
@@ -1724,6 +1725,63 @@
             "type": "object",
             "properties": {},
             "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "sova_pair",
+          "label": "Pair chats",
+          "description": "Pair two chats on this host so they can work together: each may send the other short notes with queue_push (a tool every ordinary chat already has), which arrive between turns as a queue batch. Neither chat gains or loses a tool, and its system prompt is unchanged. op pair {a, b, job_a, job_b}: job_a says in your words what a does (b is told it), job_b what b does (a is told it); each chat gets one introduction from you naming its partner, the partner's job, and the topic to push to. Pairing the same two again returns the existing pairing. Refused for a terminal-owned, archived, subagent, baton, project-overseer or other organization session, your own, a chat on another host, the same chat twice, or a chat already holding 10 topics. 40 notes each way, then that direction pauses until resumed. op unpair {pairing} ends it (both topics close, neither chat is told); op resume {pairing, direction?} lifts a pause; op list {session?} lists pairings in force. pair, unpair and resume are acts: only in a turn the user started, or under an approval for later or a standing rule that covers both chats. Pair only on the user's word.",
+          "promptSnippet": "pair two chats on this host so they can send each other notes between turns",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "description": "pair, unpair, resume or list.",
+                "enum": [
+                  "pair",
+                  "unpair",
+                  "resume",
+                  "list"
+                ]
+              },
+              "a": {
+                "type": "string",
+                "description": "pair: the first chat's session id."
+              },
+              "b": {
+                "type": "string",
+                "description": "pair: the second chat's session id."
+              },
+              "job_a": {
+                "type": "string",
+                "description": "pair: what a does, in your words (told to b)."
+              },
+              "job_b": {
+                "type": "string",
+                "description": "pair: what b does, in your words (told to a)."
+              },
+              "pairing": {
+                "type": "string",
+                "description": "unpair, resume: the pairing id (pr_…, from list)."
+              },
+              "direction": {
+                "type": "string",
+                "description": "resume: a_to_b or b_to_a; both when left out.",
+                "enum": [
+                  "a_to_b",
+                  "b_to_a"
+                ]
+              },
+              "session": {
+                "type": "string",
+                "description": "list: only this chat's pairings."
+              }
+            },
+            "required": [
+              "op"
+            ],
             "additionalProperties": false
           }
         },
@@ -2899,7 +2957,7 @@
       ]
     },
     "overseer+copies": {
-      "bytes": 98232,
+      "bytes": 100351,
       "tools": [
         {
           "name": "sova_attention",
@@ -3773,7 +3831,8 @@
                                         "sova_set_session",
                                         "sova_archive",
                                         "sova_answer_dialog",
-                                        "sova_group"
+                                        "sova_group",
+                                        "sova_pair"
                                       ]
                                     },
                                     "description": "The acts it covers (default: all of them)."
@@ -4706,6 +4765,63 @@
             "type": "object",
             "properties": {},
             "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "sova_pair",
+          "label": "Pair chats",
+          "description": "Pair two chats on this host so they can work together: each may send the other short notes with queue_push (a tool every ordinary chat already has), which arrive between turns as a queue batch. Neither chat gains or loses a tool, and its system prompt is unchanged. op pair {a, b, job_a, job_b}: job_a says in your words what a does (b is told it), job_b what b does (a is told it); each chat gets one introduction from you naming its partner, the partner's job, and the topic to push to. Pairing the same two again returns the existing pairing. Refused for a terminal-owned, archived, subagent, baton, project-overseer or other organization session, your own, a chat on another host, the same chat twice, or a chat already holding 10 topics. 40 notes each way, then that direction pauses until resumed. op unpair {pairing} ends it (both topics close, neither chat is told); op resume {pairing, direction?} lifts a pause; op list {session?} lists pairings in force. pair, unpair and resume are acts: only in a turn the user started, or under an approval for later or a standing rule that covers both chats. Pair only on the user's word.",
+          "promptSnippet": "pair two chats on this host so they can send each other notes between turns",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "description": "pair, unpair, resume or list.",
+                "enum": [
+                  "pair",
+                  "unpair",
+                  "resume",
+                  "list"
+                ]
+              },
+              "a": {
+                "type": "string",
+                "description": "pair: the first chat's session id."
+              },
+              "b": {
+                "type": "string",
+                "description": "pair: the second chat's session id."
+              },
+              "job_a": {
+                "type": "string",
+                "description": "pair: what a does, in your words (told to b)."
+              },
+              "job_b": {
+                "type": "string",
+                "description": "pair: what b does, in your words (told to a)."
+              },
+              "pairing": {
+                "type": "string",
+                "description": "unpair, resume: the pairing id (pr_…, from list)."
+              },
+              "direction": {
+                "type": "string",
+                "description": "resume: a_to_b or b_to_a; both when left out.",
+                "enum": [
+                  "a_to_b",
+                  "b_to_a"
+                ]
+              },
+              "session": {
+                "type": "string",
+                "description": "list: only this chat's pairings."
+              }
+            },
+            "required": [
+              "op"
+            ],
             "additionalProperties": false
           }
         },

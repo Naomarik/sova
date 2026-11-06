@@ -519,17 +519,33 @@ export function resolveExtensionSource(source: string, cwd: string, agentDir = g
 /** Extension directories a child never loads, whichever copy: subagents (no nesting) and worktrees (the parent's tool). */
 const NEVER_IN_CHILD = new Set(["subagents", "worktrees"]);
 /**
- * What a pi worker on its worktree's own agent dir needs (§chat.worktrees/worktree-config): the
- * tree's `.agent` as PI_CODING_AGENT_DIR, that tree's mode extension by path, and its session
- * file kept in the PARENT's sessions directory (where it would be without the override), so Sova
- * lists, watches and measures it like any worker. Throws when the tree has no usable `.agent`.
+ * The mode extension beside this one (its directory), listed in a worktree-config worker's mode slot when
+ * the session's modes run on Sova and the tree has no mode extension of its own: Sova loads its own
+ * engine there, so the tree needs none.
  */
-function worktreeConfig(treePath: string, cwd: string): { env: Record<string, string>; modeExtension: string; sessionDir: string } {
+export const OWN_MODE_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "mode"));
+/**
+ * What a pi worker on its worktree's own agent dir needs (§chat.worktrees/worktree-config): the
+ * tree's `.agent` as PI_CODING_AGENT_DIR, the mode slot, and its session file kept in the PARENT's
+ * sessions directory (where it would be without the override), so Sova lists, watches and measures it
+ * like any worker. The mode slot is that tree's mode extension by path, or, when the session's modes run
+ * on Sova (`sovaModes`), OWN_MODE_EXTENSION, which Sova loads as its own (the tree's copy is never needed
+ * nor loaded). Throws when the tree has no usable `.agent` (or, the extension's way, no mode extension).
+ */
+export function worktreeConfig(treePath: string, cwd: string, sovaModes = false): { env: Record<string, string>; modeExtension: string; sessionDir: string } {
 	const agentDir = path.join(treePath, ".agent");
 	if (!fs.existsSync(agentDir) || !fs.statSync(agentDir).isDirectory()) throw new Error(`useWorktreeConfig: ${treePath} has no .agent directory (build one with scripts/hermetic-agent-dir.mjs).`);
-	const mode = realpathOr(path.join(agentDir, "extensions", "mode"));
-	if (!fs.existsSync(path.join(mode, "index.ts")) || path.basename(mode) !== "mode") throw new Error(`useWorktreeConfig: ${agentDir}/extensions/mode is not a mode extension.`);
 	const sessionDir = path.join(getAgentDir(), "sessions", sessionDirName(cwd));
+	const mode = realpathOr(path.join(agentDir, "extensions", "mode"));
+	if (sovaModes) {
+		// The slot names the tree's own mode extension whenever it has one, exactly as with the switch off (so the
+		// worker's line reads as it always did; Sova loads its engine there all the same, never the tree's copy),
+		// else this pi-config's.
+		const treeOwn = path.basename(mode) === "mode" && fs.existsSync(path.join(mode, "index.ts"));
+		fs.mkdirSync(sessionDir, { recursive: true });
+		return { env: { PI_CODING_AGENT_DIR: agentDir }, modeExtension: treeOwn ? mode : OWN_MODE_EXTENSION, sessionDir };
+	}
+	if (!fs.existsSync(path.join(mode, "index.ts")) || path.basename(mode) !== "mode") throw new Error(`useWorktreeConfig: ${agentDir}/extensions/mode is not a mode extension.`);
 	fs.mkdirSync(sessionDir, { recursive: true });
 	return { env: { PI_CODING_AGENT_DIR: agentDir }, modeExtension: mode, sessionDir };
 }
@@ -1606,7 +1622,8 @@ export function registerSubagents(
 			// names the extension itself does not load it twice.
 			// Its worktree's own agent dir (§chat.worktrees/worktree-config): that tree's mode extension,
 			// loaded by path (discovery stays off), in normal mode with the spec minor mode.
-			const treeConfig = spec.useWorktreeConfig && tree ? worktreeConfig(tree.path, cwd) : undefined;
+			// With the session's modes on Sova (its host says so), the slot is Sova's engine, never the tree's copy.
+			const treeConfig = spec.useWorktreeConfig && tree ? worktreeConfig(tree.path, cwd, workerHost?.modes() === "sova") : undefined;
 			// Spec on: a code-writing worker gets the brief (below) and the census hook; a worktree-config worker
 			// already loads the whole mode extension, and a remote one runs its tools elsewhere.
 			const specWorker = specOn && !remote && !treeConfig && writesCode(tools);

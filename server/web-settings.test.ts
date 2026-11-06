@@ -2,8 +2,8 @@
 // Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 //
 // Sova's own settings store (server/web-settings.ts): Settings → Alignment's adversarial review switch
-// (`alignment.review`, and its one-time reviewer seeding) and Settings → Experimental's switches, of
-// which there are none right now. Review used to be Experimental's `adversarialReview`: a file with only
+// (`alignment.review`, and its one-time reviewer seeding) and Settings → Experimental's switches: today
+// only `sovaModes` ("Sova runs chat modes"), on unless stored `false`. Review used to be Experimental's `adversarialReview`: a file with only
 // that key reads it, and the first write migrates it, once. The Claude Code provider used to be a switch
 // and is always on now, so an old file's `claudeCodeProvider` must be ignored — never required, never
 // written, never dropped. Damage reads as the defaults rather than throwing, and the write path is
@@ -26,8 +26,9 @@ const put = (text: string) => {
   writeFileSync(FILE, text);
 };
 const stored = () => JSON.parse(readFileSync(FILE, "utf8"));
-const NOTHING_ON = { experimental: {}, alignment: { review: false } };
-const REVIEW_ON = { experimental: {}, alignment: { review: true } };
+// "Nothing switched on" by the user: the defaults, where Sova runs chat modes.
+const NOTHING_ON = { experimental: { sovaModes: true }, alignment: { review: false } };
+const REVIEW_ON = { experimental: { sovaModes: true }, alignment: { review: true } };
 
 test("a missing file reads as nothing switched on", () => {
   rmSync(FILE, { force: true });
@@ -96,6 +97,36 @@ test("a corrupt file is replaced rather than blocking the write", () => {
   put("{ this is not json");
   assert.deepEqual(writeWebSettings({ experimental: {} }), NOTHING_ON);
   assert.deepEqual(stored(), { version: 1, experimental: {}, alignment: { review: false } });
+});
+
+// ── Sova runs chat modes (§chat.mode-menu/sova-runs-modes): on unless stored false ─────────────
+
+const { sovaRunsModesSaved } = await import("./web-settings");
+
+test("sovaModes reads on for a missing file, a missing key and anything but false; off only for a stored false", () => {
+  rmSync(FILE, { force: true });
+  assert.equal(sovaRunsModesSaved(), true, "no file");
+  put("{ broken");
+  assert.equal(sovaRunsModesSaved(), true, "a corrupt file");
+  for (const value of ['"no"', "0", "null", "true", "{}"]) {
+    put(`{"version":1,"experimental":{"sovaModes":${value}}}`);
+    assert.equal(sovaRunsModesSaved(), true, `for ${value}`);
+  }
+  put('{"version":1,"experimental":{"sovaModes":false}}');
+  assert.equal(sovaRunsModesSaved(), false);
+  assert.deepEqual(readWebSettings(), { experimental: { sovaModes: false }, alignment: { review: false } });
+});
+
+test("sovaModes is written as a boolean, merged with the rest, and a non-boolean is refused", () => {
+  put('{"version":1,"experimental":{"other":7},"alignment":{"review":true}}');
+  assert.deepEqual(writeWebSettings({ experimental: { sovaModes: false } }), { experimental: { sovaModes: false }, alignment: { review: true } });
+  assert.deepEqual(stored().experimental, { other: 7, sovaModes: false });
+  assert.equal(sovaRunsModesSaved(), false);
+  assert.deepEqual((writeWebSettings({ alignment: { review: false } }) as { experimental: unknown }).experimental, { sovaModes: false }, "a write that doesn't name it keeps it");
+  assert.deepEqual(writeWebSettings({ experimental: { sovaModes: "off" } }), { error: "Expected experimental.sovaModes to be a boolean" });
+  assert.equal(stored().experimental.sovaModes, false);
+  writeWebSettings({ experimental: { sovaModes: true } });
+  assert.equal(sovaRunsModesSaved(), true);
 });
 
 // ── The migration: Experimental's adversarialReview becomes alignment.review, once ──────────────

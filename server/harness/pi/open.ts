@@ -21,7 +21,7 @@ import { installWorkerNice, lowerToolCommands } from "../../process-priority";
 import { steerAllAtOnce } from "./queue-modes";
 import { agentRoot } from "../../state-root";
 import type { PiExtensionFactory, PiLoaderOptions, PiToolDefinition } from "./extension-types";
-import { installOwnCode, ownCodeLoader } from "./own-code";
+import { installOwnCode, ownCodeLoader, withModesEntry } from "./own-code";
 import { liveRead } from "./reader";
 import { PiHarnessSession } from "./session";
 import { piSessionState } from "./state";
@@ -160,20 +160,24 @@ export function getModelRuntime(): Promise<ModelRuntime> {
  * no extension gets no flag at all (a flag nobody registered only logs "Unknown option"), and its
  * `flags` are never read.
  */
-async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: () => OpenFlags, loader: PiLoaderOptions) {
+async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: () => OpenFlags, loader: PiLoaderOptions, modesEntry: string | null = null) {
   // Its workers and tool commands start below the server (§app.load-priority/workers).
   installWorkerNice();
   // A chat process on a code generation loads Sova's extensions from its own copy, discovered and
   // listed alike (§app.chat-processes/code-generations). The server: nothing.
   installOwnCode();
   const resourceLoaderOptions = ownCodeLoader(loader);
-  const services = await createAgentSessionServices({
-    cwd,
-    modelRuntime,
-    // A loader that loads no extension reads no flag; a worker's loads only its own sources, which do.
-    extensionFlagValues: resourceLoaderOptions.noExtensions && !resourceLoaderOptions.additionalExtensionPaths?.length ? new Map() : extensionFlagValues(flags()),
-    resourceLoaderOptions,
-  });
+  // Who runs this runtime's modes (§chat.mode-menu/sova-runs-modes): Sova's entry takes the discovered
+  // mode extension's slot for this build's package manager, for the runtime's whole life (own-code.ts).
+  const services = await withModesEntry(modesEntry, () =>
+    createAgentSessionServices({
+      cwd,
+      modelRuntime,
+      // A loader that loads no extension reads no flag; a worker's loads only its own sources, which do.
+      extensionFlagValues: resourceLoaderOptions.noExtensions && !resourceLoaderOptions.additionalExtensionPaths?.length ? new Map() : extensionFlagValues(flags()),
+      resourceLoaderOptions,
+    }),
+  );
   lowerToolCommands(services.settingsManager);
   // Steers sent while the chat is busy land together, at the agent's next step (P28 steer-all).
   steerAllAtOnce(services.settingsManager);
@@ -377,6 +381,9 @@ export interface PiBuild {
   /** Notes appended to the system prompt after every other append (the user's APPEND_SYSTEM.md and the
       loadout's own parts), each as given. */
   promptNotes?: string[];
+  /** Sova's mode entry module when Sova runs this runtime's modes (§chat.mode-menu/sova-runs-modes): it
+      takes the discovered pi mode extension's slot. Null or missing: the extension, as discovered. */
+  modesEntry?: string | null;
 }
 
 /** The loader with `notes` appended to its system prompt appends, after whatever its own override keeps
@@ -434,7 +441,7 @@ export async function openPiSession(path: string, cwdOverride: string | undefine
       onStep("loadout");
       const plan = await build({ cwd, read: openRead(sessionManager) });
       onStep("extensions load");
-      const services = await servicesForCwd(cwd, modelRuntime, plan.flags, plan.promptNotes?.length ? withPromptNotes(plan.loader, plan.promptNotes) : plan.loader);
+      const services = await servicesForCwd(cwd, modelRuntime, plan.flags, plan.promptNotes?.length ? withPromptNotes(plan.loader, plan.promptNotes) : plan.loader, plan.modesEntry ?? null);
       const present = services.resourceLoader.getExtensions().extensions.flatMap((e) => [...e.tools.keys()]);
       const excluded = plan.exclude(present);
       for (const d of services.diagnostics) console.warn(`[chat] runtime ${d.type}: ${d.message}`);

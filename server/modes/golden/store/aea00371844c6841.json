@@ -1,0 +1,1 @@
+"look, dry-run and record, optional: a login you were given for the script's signIn, keyed by sign-in origin: {\"https://app.example\": {account?, username, password, code?}} (account exactly when signIn declares an account box). Kept in memory for this tour only; never stored, echoed or put in the script."

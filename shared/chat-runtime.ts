@@ -160,6 +160,10 @@ export interface ChatStateMirror {
   attended: boolean;
   /** The confirm card whose click opened the person's part of the run in progress, or null. */
   confirmedCard: string | null;
+  /** Who runs the chat's modes, as its open decided (§chat.mode-menu/sova-runs-modes): Sova's engine or the pi
+      mode extension; null where no owner applies (a worker, a loadout that loads no extension). Absent from a
+      chat process on code from before the switch (it runs the extension, and reloads onto newer code anyway). */
+  modesOwner?: "sova" | "extension" | null;
 }
 
 /**

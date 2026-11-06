@@ -52,7 +52,11 @@ test("a worker chat loads project_verbs with its instance note; a hidden chat ne
   setChatHosts({ instanceNote: async () => "Your copy: slot 1." });
   const factories = workerExtensionFactories({ kind: "worker" }, path);
   // A worker with bash keeps what its commands leave running, and may ask for a job (background jobs).
-  assert.deepEqual(factories.map((f) => f.name), ["sova-shell-guard", "sova-deeper-context", "sova-background-jobs", "sova-project-verbs", "sova-background-job"]);
+  // The spec tool comes last, after background_job, so nothing before it moves.
+  assert.deepEqual(factories.map((f) => f.name), ["sova-shell-guard", "sova-deeper-context", "sova-background-jobs", "sova-project-verbs", "sova-background-job", "sova-spec"]);
+  const spec = fakePi();
+  factories.find((f) => f.name === "sova-spec")!.factory(spec.pi as never);
+  assert.deepEqual(spec.tools, ["spec"], "a worker or team member has the spec tool");
   const { pi, tools, hooks } = fakePi();
   factories.find((f) => f.name === "sova-project-verbs")!.factory(pi as never);
   assert.deepEqual(tools, ["project_verbs"]);

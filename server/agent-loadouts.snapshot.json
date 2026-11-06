@@ -7519,6 +7519,78 @@
         }
       ]
     },
+    "spec": {
+      "bytes": 1403,
+      "tools": [
+        {
+          "name": "spec",
+          "label": "Spec",
+          "description": "Look up this project's spec (.sova/spec: promises under § ids, each with the code files that carry it out), read-only: where (query: 3–5 task words, a path or a name), map (optional namespace or §id), toc (id, dir), read (id; whole, noFrame), impact (id; near). cursor continues a page; draft reads one of the root's drafts by name. Answers the spec tools' JSON.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "where",
+                  "map",
+                  "toc",
+                  "read",
+                  "impact"
+                ]
+              },
+              "query": {
+                "type": "string",
+                "description": "where: the words, path or name; map: a namespace"
+              },
+              "id": {
+                "type": "string",
+                "description": "A §id (toc, read, impact, map)"
+              },
+              "dir": {
+                "type": "string",
+                "enum": [
+                  "out",
+                  "in",
+                  "down",
+                  "up",
+                  "mentions"
+                ],
+                "description": "toc: which links (default out)"
+              },
+              "whole": {
+                "type": "boolean",
+                "description": "read: the whole claim"
+              },
+              "noFrame": {
+                "type": "boolean",
+                "description": "read: without the frame (every read after the first)"
+              },
+              "near": {
+                "type": "boolean",
+                "description": "impact: what relies on it, nearest first"
+              },
+              "cursor": {
+                "type": "string",
+                "description": "The previous answer's next cursor"
+              },
+              "root": {
+                "type": "string",
+                "description": "Project root (default your working directory): it or a folder below it, or a worktree you track"
+              },
+              "draft": {
+                "type": "string",
+                "description": "A draft's name, read instead of the current spec"
+              }
+            },
+            "required": [
+              "op"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
     "project-overseer+onboard": {
       "bytes": 40099,
       "tools": [

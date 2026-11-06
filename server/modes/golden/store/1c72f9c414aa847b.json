@@ -1,0 +1,1 @@
+"<tools>\n- read: Read file contents\n- project_verbs: run, reload, inspect and tear down your own worktree's running copy of the project (up, apply, logs, status…)\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>"

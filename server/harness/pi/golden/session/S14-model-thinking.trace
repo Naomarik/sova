@@ -14,8 +14,6 @@ write {"id":"00000003","type":"custom","customType":"sova-align-launch"}
 sdk setModel ["scripted/scripted-think"]
 write {"id":"00000004","type":"model_change"}
 sdk setThinkingLevel ["off"]
-A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000002","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
-B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000002","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
 A {"type":"model","model":"scripted/scripted-think"}
 B {"type":"model","model":"scripted/scripted-think"}
 A {"type":"thinking","level":"off"}
@@ -24,8 +22,6 @@ step B sends {"type":"set_thinking","level":"high"}
 sdk setThinkingLevel ["high"]
 write {"id":"00000005","type":"thinking_level_change"}
 A {"type":"event","event":{"type":"thinking_level_changed","level":"high"}}
-A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000003","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
-B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000003","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
 A {"type":"thinking","level":"high"}
 B {"type":"thinking","level":"high"}
 A {"type":"append","items":[{"id":"thinking-<ms>","kind":"info","meta":{"type":"thinking_level_change"},"text":"Thinking: high"}]}

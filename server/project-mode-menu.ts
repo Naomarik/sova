@@ -3,18 +3,30 @@
 // `projectModes`) with the version it turned on (its snapshots), and which turn-ons need the user's approval.
 // Pure apart from the discovery read; no pi.
 import { discoverProjectModes } from "../pi-config/extensions/mode/project-discovery.ts";
-import { isProjectModeId, type ProjectModeListing, type ProjectModeRef, type ProjectModeSnapshot } from "../shared/project-modes";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { isProjectModeId, PROJECT_MODE_ENTRY, type ProjectModeListing, type ProjectModeRef, type ProjectModeSnapshot } from "../shared/project-modes";
 import type { ChatProjectModes, ProjectMinorHook, ProjectMinorInfo, ProjectModeApproval } from "../shared/protocol";
+import { approvalRootFor, isPersonalDir, isPersonalId, replacesProjectMode, type MergedModeListing } from "./modes/personal";
+import { listingFor as registryListingFor } from "./modes/registry";
 
 /** Whether the user (or the Overseer) approved exactly this tool set of this mode in this checkout. */
 export type ApprovedFn = (root: string, id: string, toolsHash: string) => boolean;
 
 const NO_LISTING: ProjectModeListing = { root: null, name: "", modes: [], problems: [] };
 
-/** The project modes `cwd`'s checkout offers now; none for a remote cwd (`remote`) or a relative one. */
-export function listingFor(cwd: string | undefined, remote: boolean): ProjectModeListing {
+/**
+ * The project modes `cwd`'s checkout offers now; none for a remote cwd (`remote`) or a relative one. With
+ * `personal` (the chat runs on Sova's modes, §chat.mode-menu/sova-runs-modes), the user's own modes are merged in,
+ * yours winning on an id (§chat.mode-menu/personal-modes); without it, the listing is exactly the project's.
+ */
+export function listingFor(cwd: string | undefined, remote: boolean, personal = false): ProjectModeListing | MergedModeListing {
   if (!cwd || remote) return NO_LISTING;
-  return discoverProjectModes(cwd);
+  if (!personal) return discoverProjectModes(cwd);
+  // The engine's own merge (registry.ts), so the menu and the chat read one listing. A chat with no checkout
+  // offers no project modes, so none of yours either.
+  const merged = registryListingFor(cwd);
+  return merged.root !== null ? merged : discoverProjectModes(cwd);
 }
 
 const toolsOf = (s: Pick<ProjectModeSnapshot, "tools">) => s.tools.map((t) => ({ name: t.name, description: t.description, command: [...t.command] }));
@@ -45,9 +57,12 @@ function actionsOf(mode: Pick<ProjectModeSnapshot, "id" | "commands" | "hooks" |
   };
 }
 
-function infoOf(mode: ProjectModeSnapshot, root: string | null, approved: ApprovedFn, extra?: ActionsInfo): ProjectMinorInfo {
+function infoOf(mode: ProjectModeSnapshot, listing: ProjectModeListing, approved: ApprovedFn, extra?: ActionsInfo): ProjectMinorInfo {
+  // A personal mode's approvals are kept for the user's folder, a project mode's for its checkout.
+  const root = approvalRootFor(listing, mode.id);
   const needs = mode.toolsHash !== "" && !(root !== null && approved(root, mode.id, mode.toolsHash));
   const info: ProjectMinorInfo = {
+    ...personalMarks(listing, mode.id, mode.dir),
     id: mode.id,
     description: mode.description,
     workers: mode.workers,
@@ -57,6 +72,12 @@ function infoOf(mode: ProjectModeSnapshot, root: string | null, approved: Approv
     ...(mode.toolsHash !== "" ? { toolsHash: mode.toolsHash } : {}),
   };
   return mode.commands?.length || mode.hooks?.length ? Object.assign(info, actionsOf(mode, root, approved, extra)) : info;
+}
+
+/** `personal` (and `replaces`) for a mode from the user's own folder: by the listing, else by its saved copy's folder. */
+function personalMarks(listing: ProjectModeListing, id: string, dir: string | undefined): Partial<ProjectMinorInfo> {
+  if (isPersonalId(listing, id)) return { personal: true, ...(replacesProjectMode(listing, id) ? { replaces: true as const } : {}) };
+  return dir && isPersonalDir(dir) ? { personal: true } : {};
 }
 
 /** Drop the actions keys an info got from the folder's version (a kept copy then sets its own). */
@@ -85,12 +106,12 @@ export function projectModesInfo(
   const seen = new Set<string>();
   for (const mode of listing.modes) {
     seen.add(mode.id);
-    let info = infoOf(mode, listing.root, approved, extra);
+    let info = infoOf(mode, listing, approved, extra);
     const ref = onById.get(mode.id);
     const kept = ref ? snapshots.get(ref.sha) : undefined;
     // A mode on shows the version the chat runs: its words, tools, commands and hooks.
     if (kept) {
-      if (info.commands || info.hooks || kept.commands?.length || kept.hooks?.length) info = Object.assign(withoutActions(info), actionsOf(kept, listing.root, approved, extra));
+      if (info.commands || info.hooks || kept.commands?.length || kept.hooks?.length) info = Object.assign(withoutActions(info), actionsOf(kept, approvalRootFor(listing, mode.id), approved, extra));
       Object.assign(info, { description: kept.description, workers: kept.workers, tools: toolsOf(kept), dir: kept.dir });
     }
     if (ref && (ref.sha !== mode.sha || (kept && kept.toolsHash !== mode.toolsHash))) info.changed = true;
@@ -101,6 +122,7 @@ export function projectModesInfo(
     const ref = onById.get(p.id);
     const kept = ref ? snapshots.get(ref.sha) : undefined;
     minors.push({
+      ...personalMarks(listing, p.id, kept?.dir),
       id: p.id,
       description: kept?.description ?? "",
       workers: kept?.workers ?? false,
@@ -113,13 +135,18 @@ export function projectModesInfo(
   for (const ref of on) {
     if (seen.has(ref.id)) continue;
     const kept = snapshots.get(ref.sha);
+    const marks = personalMarks(listing, ref.id, kept?.dir);
+    // One of yours on while this chat isn't offered personal modes (Sova doesn't run its modes): it stays on from
+    // its copy and turns off like any row; it was removed only when its folder is gone.
+    const stillThere = marks.personal === true && kept !== undefined && existsSync(join(kept.dir, PROJECT_MODE_ENTRY));
     minors.push({
+      ...marks,
       id: ref.id,
       description: kept?.description ?? "",
       workers: kept?.workers ?? false,
       tools: kept ? toolsOf(kept) : [],
       dir: kept?.dir ?? "",
-      removed: true,
+      ...(stillThere ? {} : { removed: true as const }),
     });
   }
   // Absent rather than empty, so a chat with no project modes sends the frame it always did.
@@ -134,7 +161,7 @@ export function projectModesInfo(
 export type ProjectSwitchCheck =
   | { error: string }
   | { needsApproval: ProjectMinorInfo[]; stale: string[] }
-  | { ok: true; ids: string[]; record: { id: string; hash: string }[] };
+  | { ok: true; ids: string[]; record: { id: string; hash: string; root: string }[] };
 
 /**
  * Check a switch of a chat's project modes to `wanted` (its whole on set). Modes staying on and modes turned
@@ -153,7 +180,7 @@ export function checkProjectSwitch(
 ): ProjectSwitchCheck {
   const ids = [...new Set(wanted)];
   const needs: ProjectMinorInfo[] = [];
-  const record: { id: string; hash: string }[] = [];
+  const record: { id: string; hash: string; root: string }[] = [];
   const stale: string[] = [];
   for (const id of ids) {
     if (currentOn.includes(id)) continue;
@@ -161,11 +188,12 @@ export function checkProjectSwitch(
     if (problem) return { error: `Project mode "${id}" can't be turned on: ${problem.error} (${problem.path})` };
     const mode = listing.modes.find((m) => m.id === id);
     if (!mode) return { error: `No project mode "${id}" in this chat's project` };
-    if (mode.toolsHash === "" || approved(listing.root!, id, mode.toolsHash)) continue;
-    if (overseer || approve.some((a) => a.id === id && a.hash === mode.toolsHash)) record.push({ id, hash: mode.toolsHash });
+    const root = approvalRootFor(listing, id)!;
+    if (mode.toolsHash === "" || approved(root, id, mode.toolsHash)) continue;
+    if (overseer || approve.some((a) => a.id === id && a.hash === mode.toolsHash)) record.push({ id, hash: mode.toolsHash, root });
     else {
       if (approve.some((a) => a.id === id)) stale.push(id);
-      needs.push(infoOf(mode, listing.root, approved));
+      needs.push(infoOf(mode, listing, approved));
     }
   }
   if (needs.length > 0) return { needsApproval: needs, stale };

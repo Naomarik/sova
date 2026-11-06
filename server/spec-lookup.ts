@@ -32,8 +32,6 @@ export const READ_MAX = 32 * 1024;
 export const CALLS_MAX = 30;
 export const OVERVIEW_MAX = 1500;
 
-const SPEC_TOOL = join(import.meta.dirname, "..", "pi-config", "extensions", "spec", "core", "sova-spec.mjs");
-const TOOL_TIMEOUT_MS = 10_000;
 const GIT_TIMEOUT_MS = 10_000;
 
 // ---- where a project's spec and code are -----------------------------------------------------------------
@@ -228,25 +226,9 @@ export async function mainLineOf(projectId: string, root = lookupPlace(projectId
 
 // ---- running the spec tool ------------------------------------------------------------------------------
 
-export type SpecToolRunner = (specRoot: string, args: string[]) => Promise<Record<string, any>>;
-let runnerForTest: SpecToolRunner | null = null;
-export function setSpecToolForTest(f: SpecToolRunner | null): void {
-  runnerForTest = f;
-}
-
-/** `sova-spec.mjs <args> --root <specRoot> --json`, argv only. */
-export function runSpecTool(specRoot: string, args: string[]): Promise<Record<string, any>> {
-  if (runnerForTest) return runnerForTest(specRoot, args);
-  return new Promise((resolve, reject) => {
-    execFile(process.execPath, [SPEC_TOOL, ...args, "--root", specRoot, "--json"], { timeout: TOOL_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, NO_COLOR: "1" } }, (err, stdout) => {
-      try {
-        resolve(JSON.parse(stdout));
-      } catch {
-        reject(new Error(`the spec tool failed${err ? `: ${err.message.split("\n")[0]}` : ""}`));
-      }
-    });
-  });
-}
+// The runner lives in spec-runner.ts (shared with the coding chats' `spec` tool); re-exported here.
+export { runSpecTool, setSpecToolForTest, type SpecToolRunner } from "./spec-runner";
+import { runSpecTool } from "./spec-runner";
 
 /** Results per spec copy and command: a copy never changes, so neither does what it answers. */
 const results = new Map<string, Promise<Record<string, any>>>();

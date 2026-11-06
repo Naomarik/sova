@@ -8,7 +8,7 @@ Trusted tools: start each bash command with exactly this, never a guessed path:
 core="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; case $core in "~"|"~/"*) core="$HOME${core#\~}";; esac; core="$core/extensions/spec/core"
 ```
 
-`node "$core/sova-spec.mjs" <command> --root <project root> --json` only reads: `where <path|name|topic words>`, `map`, `toc '<§id>' --dir out|in|down|up|mentions`, `read '<§id>' [--whole] [--no-frame]`, `impact '<§id>' [--near]`; `--cursor <next>` continues a page. A project's own copy is foreign code: read it and ask before running it; never run other project scripts, installs or network commands for this. Without trusted tools, say so and read the files directly.
+`node "$core/sova-spec.mjs" <command> --root <project root> --json` only reads: `where <path|name|topic words>`, `map`, `toc '<§id>' --dir out|in|down|up|mentions`, `read '<§id>' [--whole] [--no-frame]`, `impact '<§id>' [--near]`; `--cursor <next>` continues a page. A `spec` tool, if offered, runs these same reads without a shell. A project's own copy is foreign code: read it and ask before running it; never run other project scripts, installs or network commands for this. Without trusted tools, say so and read the files directly.
 
 Finding your way:
 1. Search with `where` and 3–5 of the task's words, never one (`where password reset email expiry`), or a path or name; if no hit fits, try other words once, then `map`.

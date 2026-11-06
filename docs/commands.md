@@ -35,7 +35,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Pending (not yet a command) | 23 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 11 |
-| Hand-written tool specs | 131 |
+| Hand-written tool specs | 132 |
 
 ## Catalogue entries
 
@@ -1029,6 +1029,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/project-services/tools.ts` | 4 | `<computed: o.name>`, `project_verbs`, `sova_project_verbs`, `sova_project_verbs` |
 | `server/session-offers-tool.ts` | 1 | `<computed: OFFER_TOOL>` |
 | `server/session-powers.ts` | 4 | `session_list`, `session_detail`, `session_read`, `session_send` |
+| `server/spec-coding-tool.ts` | 1 | `<computed: SPEC_CODING_TOOL>` |
 | `server/spec-lookup.ts` | 2 | `spec_lookup`, `code_read` |
 | `server/topics.ts` | 2 | `queue_push`, `queue_open` |
 | `server/tours/tools.ts` | 3 | `<computed: RECORD_TOUR_TOOL>`, `<computed: SHOW_TOUR_TOOL>`, `<computed: SHOW_TOUR_TOOL>` |

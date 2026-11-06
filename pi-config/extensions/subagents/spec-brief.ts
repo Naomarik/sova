@@ -89,6 +89,7 @@ export function workerSpecBrief(coreDir: string, text: string = SPEC_BRIEF_SOURC
 		"## Spec discipline (the spawning session has spec mode on)",
 		"This project documents behavior in `.sova/spec/`. The rules below are quoted from its spec mode; they bind your part of the task.",
 		`Trusted tools: start each bash command that runs them with exactly \`core=${shellQuote(coreDir)}\`. <project root> is \`git rev-parse --show-toplevel\` of your working directory. Read-only: \`node "$core/sova-spec.mjs" <command> --root <project root> --json\`, where <command> is \`where <path|name|topic words>\`, \`map\`, \`toc '<§id>' --dir out|in|down|up|mentions\`, \`read '<§id>' [--whole] [--no-frame]\`, \`impact '<§id>' [--near]\`, \`check\`, \`census\` or \`scope '<§id>'\`.`,
+		"A `spec` tool, if offered, runs the read-only commands (where, map, toc, read, impact) without a shell; its root defaults to your working directory.",
 		...rules.map((rule) => `- ${rule}`),
 	].join("\n");
 }

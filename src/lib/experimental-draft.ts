@@ -6,8 +6,8 @@ import { createDraftStore } from "./settings-draft";
  * Settings → Experimental's unsaved switches (settings-draft.ts: module state, held on close,
  * forgotten once closed): the whole `experimental` object of WebSettings, one boolean per switch.
  * A switch is a key in ExperimentalSettings and a row in the panel, and this store saves it with
- * the rest. None right now (the tab says so): adversarial review moved to Settings → Alignment
- * (alignment-draft.ts), and the store stays for the next experiment.
+ * the rest. One switch now: `sovaModes`, Sova runs chat modes (on unless saved off; the server answers
+ * every key, so the draft never guesses a default). Adversarial review moved to Settings → Alignment.
  */
 const store = createDraftStore<ExperimentalSettings, ExperimentalSettings, WebSettings>({
   tab: "experimental",

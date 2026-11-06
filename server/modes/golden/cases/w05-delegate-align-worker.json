@@ -1,0 +1,392 @@
+{
+ "parent": [
+  {
+   "step": "open",
+   "calls": [],
+   "activeTools": [
+    "read",
+    "bash",
+    "edit",
+    "write",
+    "agent_resume",
+    "agent_models",
+    "agent_spawn",
+    "agent_list",
+    "agent_transcript",
+    "agent_steer",
+    "agent_kill",
+    "agent_wait",
+    "team_create",
+    "team_add",
+    "team_eject",
+    "team_succeed",
+    "team_list",
+    "project_verbs",
+    "queue_push"
+   ],
+   "entries": [],
+   "extensions": [
+    "<mode-slot:index>",
+    "<repo>/pi-config/extensions/subagents/index.ts",
+    "<inline:sova-resource-monitor>",
+    "<inline:sova-fork-cache>",
+    "<inline:sova-shell-guard>",
+    "<inline:sova-deeper-context>",
+    "<inline:sova-background-jobs>",
+    "<inline:sova-mcp>",
+    "<inline:sova-worker-host>",
+    "<inline:sova-vis-check>",
+    "<inline:sova-memory>",
+    "<inline:sova-playbook>",
+    "<inline:sova-project-verbs>",
+    "<inline:sova-topics>",
+    "<inline:sova-tours>",
+    "<inline:sova-create-settings>",
+    "<inline:sova-transcript-cards>"
+   ]
+  },
+  {
+   "step": "switch {\"mode\":\"delegate\",\"minorModes\":[\"align\",\"spec\"]}",
+   "calls": [],
+   "activeTools": [
+    "read",
+    "bash",
+    "edit",
+    "write",
+    "agent_resume",
+    "agent_models",
+    "agent_spawn",
+    "agent_list",
+    "agent_transcript",
+    "agent_steer",
+    "agent_kill",
+    "agent_wait",
+    "team_create",
+    "team_add",
+    "team_eject",
+    "team_succeed",
+    "team_list",
+    "project_verbs",
+    "queue_push",
+    "align"
+   ],
+   "entries": [
+    {
+     "type": "custom",
+     "customType": "mode",
+     "data": {
+      "minor": "align",
+      "on": true,
+      "active": {
+       "version": 1,
+       "mode": "normal",
+       "strict": false,
+       "minorModes": [
+        "align"
+       ]
+      }
+     }
+    },
+    {
+     "type": "custom",
+     "customType": "mode",
+     "data": {
+      "minor": "spec",
+      "on": true,
+      "active": {
+       "version": 1,
+       "mode": "normal",
+       "strict": false,
+       "minorModes": [
+        "align",
+        "spec"
+       ]
+      }
+     }
+    },
+    {
+     "type": "custom",
+     "customType": "mode",
+     "data": {
+      "mode": "delegate",
+      "active": {
+       "version": 1,
+       "mode": "delegate",
+       "strict": false,
+       "minorModes": [
+        "align",
+        "spec"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "step": "prompt \"spawn\"",
+   "calls": [
+    {
+     "keep": 0,
+     "add": [
+      {
+       "role": "system",
+       "content": "",
+       "sections": {
+        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+        "tools": "@15d31f2a78f55765",
+        "rules": "@c812aa6c1d63cb16",
+        "docs": "@0f5fabf6c3c47c4c",
+        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
+        "mode": "@e1a1a7d764975de7"
+       },
+       "toolsAdded": "@c22ce789a0f2b849"
+      },
+      {
+       "role": "user",
+       "content": [
+        {
+         "type": "text",
+         "text": "spawn"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "keep": 2,
+     "add": [
+      {
+       "role": "assistant",
+       "api": "openai-completions",
+       "provider": "scripted",
+       "model": "scripted",
+       "usage": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 0,
+        "cost": {
+         "input": 0,
+         "output": 0,
+         "cacheRead": 0,
+         "cacheWrite": 0,
+         "total": 0
+        }
+       },
+       "content": [
+        {
+         "type": "toolCall",
+         "id": "call-1",
+         "name": "agent_spawn",
+         "arguments": {
+          "prompt": "do the task",
+          "name": "w",
+          "model": "scripted/scripted"
+         }
+        }
+       ],
+       "stopReason": "toolUse",
+       "thinkingLevel": "off"
+      },
+      {
+       "role": "toolResult",
+       "toolCallId": "call-1",
+       "toolName": "agent_spawn",
+       "content": [
+        {
+         "type": "text",
+         "text": "@43eb6daf3c1faca4"
+        }
+       ],
+       "details": {
+        "groupId": "run_01",
+        "label": "run 1 · w",
+        "spawned": [
+         {
+          "id": "ag_01",
+          "name": "w",
+          "backend": "pi",
+          "model": "scripted/scripted"
+         }
+        ],
+        "retention": {
+         "maxFinished": 50,
+         "evictedWorkers": 0,
+         "evictedRuns": 0
+        }
+       },
+       "isError": false
+      }
+     ]
+    }
+   ],
+   "activeTools": [
+    "read",
+    "bash",
+    "edit",
+    "write",
+    "agent_resume",
+    "agent_models",
+    "agent_spawn",
+    "agent_list",
+    "agent_transcript",
+    "agent_steer",
+    "agent_kill",
+    "agent_wait",
+    "team_create",
+    "team_add",
+    "team_eject",
+    "team_succeed",
+    "team_list",
+    "project_verbs",
+    "queue_push",
+    "align"
+   ],
+   "entries": [
+    {
+     "type": "custom",
+     "customType": "mode-head",
+     "data": {
+      "v": 1,
+      "style": "pm"
+     }
+    },
+    {
+     "type": "message",
+     "message": {
+      "role": "system",
+      "content": "",
+      "sections": {
+       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+       "tools": "@15d31f2a78f55765",
+       "rules": "@c812aa6c1d63cb16",
+       "docs": "@0f5fabf6c3c47c4c",
+       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
+       "mode": "@e1a1a7d764975de7"
+      },
+      "toolsAdded": "@98970cd3f4f7992a"
+     }
+    }
+   ],
+   "headers": {
+    "# Mode: delegate": 1,
+    "# Minor mode: align": 1,
+    "# Minor mode: spec": 1
+   }
+  }
+ ],
+ "start": {
+  "spec": {
+   "kind": "worker",
+   "parent": {
+    "sessionId": "<sid:1>",
+    "path": "<sessions:plain>/2026-10-06T00-00-00-000Z_<sid:1>.jsonl",
+    "workerId": "ag_01"
+   },
+   "cwd": "<ws:plain>",
+   "model": "scripted/scripted",
+   "thinking": "off",
+   "builtins": [
+    "read",
+    "bash",
+    "edit",
+    "write"
+   ],
+   "extensions": [
+    "<repo>/pi-config/extensions/subagents/worker-mark.ts",
+    "<repo>/pi-config/extensions/provider-limits/index.ts",
+    "<repo>/pi-config/extensions/model-levels/index.ts",
+    "<repo>/pi-config/extensions/mode/spec-worker.ts"
+   ],
+   "flags": {},
+   "appendSystemPrompt": "@86c3b03079d98792",
+   "env": {
+    "SPEC_AGREE_SOURCE": "pi-session:<sid:1>#<entry>",
+    "SPEC_AGREE_GIVEN": "pi-session:<sid:1>#<entry>",
+    "SOVA_SPEC_LANDED_FILE": "<file>",
+    "PI_SUBAGENT_BUILTIN_TOOLS": "read,bash,edit,write"
+   },
+   "agentDir": null,
+   "lowered": true
+  },
+  "session": {
+   "new": {
+    "dir": "<agent>/sessions/--_ws_plain_--"
+   }
+  },
+  "task": "do the task"
+ },
+ "worker": [
+  {
+   "step": "prompt \"do the task\"",
+   "calls": [
+    {
+     "keep": 0,
+     "add": [
+      {
+       "role": "system",
+       "content": "",
+       "sections": {
+        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+        "tools": "@da87b165576f1968",
+        "rules": "@367a111ecea93121",
+        "docs": "@0f5fabf6c3c47c4c",
+        "addendum": "@70d04e19ea7fff81",
+        "cwd": "<cwd>\n<ws:plain>\n</cwd>"
+       },
+       "toolsAdded": "@a4dd3d9f1130e643"
+      },
+      {
+       "role": "user",
+       "content": [
+        {
+         "type": "text",
+         "text": "do the task"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "activeTools": [
+    "read",
+    "bash",
+    "edit",
+    "write",
+    "project_verbs"
+   ],
+   "entries": [
+    {
+     "type": "message",
+     "message": {
+      "role": "system",
+      "content": "",
+      "sections": {
+       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+       "tools": "@da87b165576f1968",
+       "rules": "@367a111ecea93121",
+       "docs": "@0f5fabf6c3c47c4c",
+       "addendum": "@70d04e19ea7fff81",
+       "cwd": "<cwd>\n<ws:plain>\n</cwd>"
+      },
+      "toolsAdded": "@a4dd3d9f1130e643"
+     }
+    }
+   ],
+   "headers": {
+    "# Minor mode: spec": 1
+   },
+   "extensions": [
+    "<repo>/pi-config/extensions/subagents/worker-mark.ts",
+    "<repo>/pi-config/extensions/provider-limits/index.ts",
+    "<repo>/pi-config/extensions/model-levels/index.ts",
+    "<mode-slot:spec-worker>",
+    "<inline:sova-shell-guard>",
+    "<inline:sova-deeper-context>",
+    "<inline:sova-background-jobs>",
+    "<inline:sova-project-verbs>"
+   ]
+  }
+ ]
+}

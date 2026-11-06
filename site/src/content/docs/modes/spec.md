@@ -34,6 +34,11 @@ The short part has the agent:
 4. Name the file or commit behind every finding, and report on the product, not on the spec
    procedure.
 
+In Sova the agent does these look-ups with its `spec` tool, which every chat you code in and every
+worker has, whether or not spec is on. The tool only reads: the project's spec or one of its drafts,
+in the chat's own folder or a worktree it tracks. In a project with no spec it answers "This project
+has no spec here."
+
 ## Before coding
 
 Before its first edit that changes what the product does, the agent reads the writing procedure.

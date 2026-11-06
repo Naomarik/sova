@@ -167,7 +167,9 @@ const ROWS: Row[] = [
     get: "/api/settings",
     put: "/api/settings",
     settingsOf: (r) => ({ experimental: r.experimental }),
-    fields: { experimental: { value: {}, onDisk: false } },
+    expand: ["experimental"],
+    // On unless saved off, so the edit that changes something is off; the row's PUT of defaults turns it back on.
+    fields: { "experimental.sovaModes": { value: false } },
   },
   {
     name: "Alignment",

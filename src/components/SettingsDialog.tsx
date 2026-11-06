@@ -38,7 +38,7 @@ import { NumberField, SearchField, Toggle } from "./form";
 import { compressWork, setCompressWork } from "../lib/work-compression";
 import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography } from "../lib/theme";
 import { settingsProject, type SettingsTab } from "../lib/settings-nav";
-import { setExperimentalSaved } from "../lib/experimental-draft";
+import { experimentalDraft, experimentalSaveError, experimentalSaving, setExperimentalDraft, setExperimentalSaved } from "../lib/experimental-draft";
 import { AlignmentSettings } from "./AlignmentSettings";
 import { policyDraft, policySaveError, policySaving, setPolicyDraft, setPolicySaved } from "../lib/model-policy-draft";
 import { limitsDraft, limitsSaveError, limitsSaveResult, limitsSaving, setLimitsDraft, setLimitsSaved } from "../lib/provider-limits-draft";
@@ -407,7 +407,7 @@ function ClaudeCliStatusLine() {
  * Experimental: unfinished features, staged like every server-backed form and written by Save
  * Changes. The settings are read when the tab opens (the panel is mounted only while its tab is),
  * so each switch starts from what's saved; each is bound to experimentalDraft / setExperimentalDraft.
- * None right now: the panel says so (adversarial review moved to Alignment).
+ * One switch: Sova runs chat modes (§chat.mode-menu/sova-runs-modes), on unless saved off.
  */
 function ExperimentalPanel() {
   const [webSettings] = createResource(() => getWebSettings());
@@ -420,12 +420,29 @@ function ExperimentalPanel() {
   return (
     <>
       <p class="settings-intro">
-        Unfinished features. They can change or disappear, and they apply to sessions you start
-        after switching them on — chats already open keep the setup they began with.
+        Unfinished features. They can change or disappear, and each one says when a change reaches
+        your chats.
       </p>
-      <p class="field-hint">No experimental features right now.</p>
+      <div>
+        <Toggle
+          switch
+          class="settings-team-enable"
+          label="Sova runs chat modes"
+          hint="Sova runs every chat's modes itself, instead of the pi mode extension. Turn it off to go back to the old way; nothing is lost either way. Open chats switch over at their next quiet moment; workers already running finish the way they started."
+          // The server answers every switch; before it does, the switch waits disabled (never a guessed value).
+          checked={experimentalDraft()?.sovaModes ?? false}
+          disabled={experimentalSaving() || experimentalDraft() === null}
+          onChange={(on) => {
+            const d = experimentalDraft();
+            if (d) setExperimentalDraft({ ...d, sovaModes: on });
+          }}
+        />
+      </div>
       <Show when={webSettings.error}>
         <Banner tone="error" title="Couldn't read the experimental settings." body="Nothing was changed." />
+      </Show>
+      <Show when={experimentalSaveError()}>
+        {(err) => <Banner tone="error" title="Couldn't save the change." body={`${sentence(err().message)} Your saved setting is unchanged.`} />}
       </Show>
     </>
   );

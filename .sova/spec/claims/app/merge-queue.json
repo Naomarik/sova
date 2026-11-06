@@ -175,7 +175,9 @@
       "server/merge-queue/review-step.ts",
       "server/merge-queue/thread.ts",
       "server/merge-queue-ui.integration.test.ts",
-      "src/app.css"
+      "src/app.css",
+      "server/merge-queue/reviewer.ts",
+      "shared/fixed-names.ts"
     ],
     "agreed": {
       "by": "Omar",

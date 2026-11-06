@@ -493,7 +493,11 @@
       "src/lib/api.ts",
       "src/orgs.css",
       "src/components/PowersGrid.tsx",
-      "src/lib/powers-view.ts"
+      "src/lib/powers-view.ts",
+      "server/project-overseer.ts",
+      "shared/project-overseer.ts",
+      "src/lib/overseer.ts",
+      "src/lib/overseer.test.ts"
     ],
     "requires": [
       "§app.project-overseer/identity",

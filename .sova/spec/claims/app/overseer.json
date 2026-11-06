@@ -669,7 +669,10 @@
       "src/components/ChatView.tsx",
       "src/components/SessionView.tsx",
       "shared/overseer-grants.ts",
-      "server/overseer-approvals.test.ts"
+      "server/overseer-approvals.test.ts",
+      "shared/protocol.ts",
+      "src/lib/overseer.ts",
+      "src/lib/overseer.test.ts"
     ],
     "requires": [
       "§app.session-list/regions-top-and-archive",
@@ -1269,7 +1272,8 @@
       "server/overseer-tools.ts",
       "server/push.ts",
       "shared/overseer-card.ts",
-      "shared/protocol.ts"
+      "shared/protocol.ts",
+      "server/overseer-tools.test.ts"
     ],
     "requires": [
       "§app.overseer/tools",
@@ -1496,6 +1500,32 @@
       "by": "naomarik",
       "at": "2026-10-20T12:17Z",
       "source": "pi-session:01a158a6-750f-7276-9b13-ca61fad634cd#71dfbdbc"
+    }
+  },
+  "§app.overseer/ways-in": {
+    "kind": "behavior",
+    "requires": [
+      "§app.overseer/identity-and-clear",
+      "§app.overseer/entry-button"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/App.tsx",
+      "src/components/OverseerView.tsx",
+      "src/components/ResourceMonitor.tsx",
+      "src/lib/overseer.ts",
+      "src/lib/overseer.test.ts",
+      "src/lib/monitor-view.ts",
+      "src/lib/monitor-view.test.ts",
+      "server/resource-monitor.ts",
+      "server/resource-monitor.test.ts",
+      "shared/protocol.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T10:31Z",
+      "source": "pi-session:01a1ab0e-cb20-7081-a563-521c041eafdd#51e5317f"
     }
   },
   "§app/overseer": {

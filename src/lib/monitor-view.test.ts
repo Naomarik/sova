@@ -15,6 +15,7 @@ import {
   idleSummary,
   isHeuristic,
   liveRows,
+  monitorOpenHref,
   livePids,
   mergeHistory,
   memoryParts,
@@ -499,4 +500,28 @@ test("the synthetic pid 0 (exited tool children) is never taken for a live proce
   const t = transient([point(1, {}, { top: [{ pid: 0, cmd: "(exited tool children)", kind: "other", cpuPct: 30, rssBytes: 0, group: "/s/light.jsonl" }] })], livePids(s));
   assert.equal(t[0]!.cmd, "(exited tool children)");
   assert.equal(isHeuristic(liveRows(s).find((r) => r.label === "Light")!.procs[0]!.via), true);
+});
+
+test("Open Session: the Overseer's chat opens on the Overseer page (an earlier one on its History page), from the monitor's own word", () => {
+  const ov = "/a/sessions/--ov--/2026-11-05T00-00-00-000Z_0190aaaa-0000-7000-8000-000000000001.jsonl";
+  const old = "/a/sessions/--ov--/2026-11-04T00-00-00-000Z_0190aaaa-0000-7000-8000-000000000002.jsonl";
+  const live = liveRows(
+    snapshot({
+      sessions: [
+        { sessionPath: ov, title: "Overseer", overseer: "current", hosted: true, cpuPct: 1, rssBytes: MB, swapBytes: 0, procCount: 1, own: [], ownCpuPct: 0, ownRssBytes: 0, workers: [] },
+        { sessionPath: "/s/light.jsonl", title: "Light", hosted: true, cpuPct: 1, rssBytes: MB, swapBytes: 0, procCount: 1, own: [], ownCpuPct: 0, ownRssBytes: 0, workers: [] },
+      ],
+    }),
+  );
+  const href = (path: string) => monitorOpenHref(live.find((r) => r.sessionPath === path)!);
+  assert.equal(href(ov), "#/overseer", "no session list needed: the row says it is the Overseer's");
+  assert.equal(href("/s/light.jsonl"), "#/s/%2Fs%2Flight.jsonl");
+  // A saved history's rows: labels the server relabelled say which conversation each is.
+  const at = rowsAt(point(1000, { [ov]: [1, MB], [old]: [1, MB] }, { sovaBytes: GB, mem: [0, 0, 0, 0] }), {
+    [ov]: { label: "Overseer", sessionPath: ov, overseer: "current" },
+    [old]: { label: "Overseer", sessionPath: old, overseer: "earlier" },
+  }, undefined);
+  assert.equal(monitorOpenHref(at.find((r) => r.sessionPath === ov)!), "#/overseer");
+  assert.equal(monitorOpenHref(at.find((r) => r.sessionPath === old)!), "#/overseer/h/0190aaaa-0000-7000-8000-000000000002");
+  assert.equal(monitorOpenHref({}), null, "no session, no link");
 });

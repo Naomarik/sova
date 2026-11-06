@@ -1281,8 +1281,9 @@ chat tracks which worktree, and updates it as those chats' worktree records chan
 
 The merge thread (§chat.merge-queue/thread) and every reviewer chat (§app.merge-queue/review) are
 the **queue's own chats**. Sova knows them by the profile entry in the chat's own file (Sova's
-system profile `merge-thread` or `merge-reviewer`), never by title, so a renamed chat stays one and
-a chat titled "Review · …", or started on a profile of yours with the same id, never becomes one.
+system profile `merge-thread` or `merge-reviewer`), never by title, so a chat titled "Review · …",
+or started on a profile of yours with the same id, never becomes one. Its name is Sova's too: the
+title Sova starts it with, which nothing renames (§app.session-list/fixed-names).
 The mark holds for chats started before this shipped and after a restart.
 
 **Out of every list.** No session list shows them:

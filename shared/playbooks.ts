@@ -6,6 +6,8 @@ import type { PlaybookInfo } from "./protocol";
  * Overseer's sova_create_session all send through `playbookTurnText`. Imports nothing at runtime.
  */
 
+const PATHS_LINE = "Every relative path in this playbook is relative to that directory; read its files as the playbook directs.";
+
 /**
  * The text a playbook is sent as, exactly:
  *
@@ -23,9 +25,18 @@ import type { PlaybookInfo } from "./protocol";
  * Blank or whitespace-only user text adds nothing: no separator, no filler.
  */
 export function playbookTurnText(playbook: Pick<PlaybookInfo, "title" | "dir" | "body">, userText: string): string {
-  const head = `Playbook: ${playbook.title} — ${playbook.dir}\nEvery relative path in this playbook is relative to that directory; read its files as the playbook directs.\n\n${playbook.body}`;
+  const head = `Playbook: ${playbook.title} — ${playbook.dir}\n${PATHS_LINE}\n\n${playbook.body}`;
   const own = userText.trim();
   return own ? `${head}\n---\n\n${own}\n` : head;
+}
+
+/** The folder each playbook sent in `text` names: `playbookTurnText`'s two head lines, at the message's start or after a fire's line. */
+export function playbookDirsIn(text: string): string[] {
+  const lines = text.split(/\r?\n/);
+  return lines.flatMap((line, i) => {
+    const dir = lines[i + 1] === PATHS_LINE ? /^Playbook: .* — (.+)$/.exec(line)?.[1] : undefined;
+    return dir ? [dir] : [];
+  });
 }
 
 /** The order a profile's linked playbook is looked for in, after the profile's own source. */

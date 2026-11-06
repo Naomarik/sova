@@ -1,24 +1,30 @@
 import type { PiExtensionAPI } from "../harness/pi/extension-types";
 import { execFile } from "node:child_process";
-import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import type { HookCtx, ToolCtx, ToolSpec } from "../../shared/harness";
 import type { ClickChoice } from "../../shared/overseer-card";
-import { DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, MERGE_VERBS, RELEASE_VERBS, VERB_PARAMS, VERBS, type VerbParam, type VerbResult } from "../../shared/project-contract";
+import { parseBlockTags } from "../../shared/playbook-delivery";
+import { playbookDirsIn } from "../../shared/playbooks";
+import { readServed, SERVED_FILE_NAME, servedKey } from "../../pi-config/extensions/worktrees/served.ts";
+import { CONTRACT_FILE, DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, MERGE_VERBS, RELEASE_VERBS, VERB_PARAMS, VERBS, type VerbParam, type VerbResult } from "../../shared/project-contract";
 import { redactingTool, serverRedactor, type Redactor } from "../overseer-redact";
 import { toPiTool } from "../harness/pi/tools";
 import { WORKTREES } from "../harness/state-kinds";
 import { stateView } from "../harness/state-view";
-import { projectRootOf } from "../project-root";
+import { playbookProposes } from "../playbooks";
+import { projectOf, projectRootOf } from "../project-root";
+import { chatStateRoot } from "../state-root";
 import type { Caller, CopyApproval, CreatorWorking, ProjectEngine, VerbAct } from "./engine";
 import { approvedLeftover, LEFTOVER_CLICK_REFUSAL } from "../overseer-copies";
 import { findLeftovers, LEFTOVER_UNSUPPORTED, leftoverLine, stopLeftover, type LeftoverHost } from "./leftovers";
 import { registerInstanceNote, resultNote, sessionNote } from "./note";
+import { readRegistry, registryFile } from "./store";
 
 /**
  * The verbs as tools (§app.project-services/callers), calling the engine in this process, never
- * over HTTP, so nothing a shell can send is ever taken for them: `project_verbs` in every ordinary
- * hosted session (its own worktrees' instances), `sova_project_verbs` for the Overseers. The
+ * over HTTP, so nothing a shell can send is ever taken for them: `project_verbs` in a hosted session
+ * that is offered it (its own worktrees' instances), `sova_project_verbs` for the Overseers. The
  * result is the verb's own JSON; log lines are wrapped as untrusted and everything is redacted.
  */
 
@@ -328,6 +334,33 @@ async function ownCheckouts(ctx: ToolCtx | undefined): Promise<string[]> {
     if (top) own.add(top);
   }
   return [...own];
+}
+
+/** Whether a message's text starts a playbook that proposes setup: sent by hand or by the Setup chat, or fired by a schedule. */
+async function startsSetupPlaybook(text: string): Promise<boolean> {
+  const dirs = [...playbookDirsIn(text), ...parseBlockTags(text).flatMap((t) => (t.dir ? [t.dir] : []))];
+  for (const dir of dirs) if (isAbsolute(dir) && (await playbookProposes(dir))) return true;
+  return false;
+}
+
+/**
+ * Whether this chat is offered `project_verbs` now (§app.project-services/tool-offered): the one rule for
+ * every chat, read from this computer's files. Only the state root of the server that started the chat knows
+ * the queue and the copies. `prompt` is the message starting a run, not on the branch yet.
+ */
+export async function projectVerbsOffered(ctx: HookCtx, prompt?: string): Promise<boolean> {
+  const project = await projectOf(ctx.cwd);
+  if (project.state !== "ok") return false;
+  const { root } = project;
+  if ([root, ...(await ownCheckouts(ctx))].some((folder) => existsSync(join(folder, CONTRACT_FILE)))) return true;
+  const key = servedKey(root);
+  if (readServed(join(chatStateRoot(), SERVED_FILE_NAME))?.roots.some((r) => servedKey(r.root) === key)) return true;
+  if (readRegistry(registryFile(chatStateRoot())).instances.some((i) => i.project === root)) return true;
+  if (prompt && (await startsSetupPlaybook(prompt))) return true;
+  for (const h of ctx.branch()) {
+    if (h.kind === "user" && (await startsSetupPlaybook(h.blocks.map((b) => (b.type === "text" ? b.text : "")).join("")))) return true;
+  }
+  return false;
 }
 
 /** The inline extension every ordinary hosted session gets (server/chat-manager.ts). */

@@ -172,6 +172,21 @@ const discoveryTtl = (discovery: Discovery): number =>
 
 /** Tools removed from the orchestrator while strict delegate is on. */
 const STRICT_REMOVED_TOOLS = new Set(["edit", "write"]);
+
+/**
+ * Leaving strict: the tools strict removed go back where the snapshot had them, and every other tool stays
+ * as it is now, so one activated or removed since strict began keeps its change (§chat.mode-menu/strict).
+ */
+function withStrictRemoved(current: readonly string[], snapshot: readonly string[]): string[] {
+	const next = [...current];
+	for (let i = snapshot.length - 1; i >= 0; i--) {
+		const name = snapshot[i]!;
+		if (!STRICT_REMOVED_TOOLS.has(name) || next.includes(name)) continue;
+		const later = snapshot.slice(i + 1).find((other) => next.includes(other));
+		next.splice(later === undefined ? next.length : next.indexOf(later), 0, name);
+	}
+	return next;
+}
 /** The launch flag behind adversarial review (§chat.alignment-review/flag); Sova passes it per hosted session. */
 export const REVIEW_FLAG = "adversarial-review";
 /**
@@ -590,13 +605,14 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	const probeWanted = (): boolean => probeScope().backends.length > 0;
 
 	function applyStrictTools(): void {
-		if (toolsSnapshot === undefined) toolsSnapshot = pi.getActiveTools();
-		pi.setActiveTools(toolsSnapshot.filter((name) => !STRICT_REMOVED_TOOLS.has(name)));
+		const current = pi.getActiveTools();
+		if (toolsSnapshot === undefined) toolsSnapshot = current;
+		pi.setActiveTools(current.filter((name) => !STRICT_REMOVED_TOOLS.has(name)));
 	}
 
 	function restoreTools(): void {
 		if (toolsSnapshot === undefined) return;
-		pi.setActiveTools(toolsSnapshot);
+		pi.setActiveTools(withStrictRemoved(pi.getActiveTools(), toolsSnapshot));
 		toolsSnapshot = undefined;
 	}
 

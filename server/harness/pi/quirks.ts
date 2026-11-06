@@ -345,9 +345,9 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "turn-end-loadout",
     kind: "ordering",
     relies:
-      "Within one run, pi emits turn_end, then takes the steering messages, then builds the next request's loadout from the active tools (prepareNextTurn), then emits turn_start: a tool an extension registers in a turn_end handler is declared (toolsAdded) in the next request of the same run, beside a message steered during the step, while one registered at turn_start is not.",
-    pi: ["agentLoop", "AgentSession._installAgentNextTurnRefresh", "AgentSession._preparePromptAndToolLoadout", "ExtensionAPI.registerTool"],
-    where: [{ file: "pi-config/extensions/link/index.ts", symbol: "join" }],
+      "Within one run, pi emits turn_end, then takes the steering messages, then builds the next request's loadout from the active tools (prepareNextTurn), then emits turn_start: a tool an extension registers or activates in a turn_end handler is declared (toolsAdded) in the next request of the same run, beside a message steered during the step, while one registered at turn_start is not.",
+    pi: ["agentLoop", "AgentSession._installAgentNextTurnRefresh", "AgentSession._preparePromptAndToolLoadout", "ExtensionAPI.registerTool", "ExtensionAPI.setActiveTools"],
+    where: [{ file: "pi-config/extensions/link/index.ts", symbol: "join" }, { file: "server/served-tools.ts", symbol: "offeredToolExtension" }],
     canary: "P23 turn-end-loadout: a tool registered at turn_end is declared in the next request of the same run, beside the steered message; one registered at turn_start is not",
     retireWhen: "pi offers a documented hook for changing the tool set before a run's next request",
   },

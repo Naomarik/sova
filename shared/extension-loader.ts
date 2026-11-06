@@ -65,6 +65,8 @@ export interface ExtensionsInstalled {
   through?: string;
   /** This Sova's rules. */
   has: string;
+  /** Its home folder, so a row can say `~` before anything else on the page has asked. */
+  home: string;
 }
 
 /** `"1.20"` → [1, 20], or null when it isn't `<major>.<minor>`. */

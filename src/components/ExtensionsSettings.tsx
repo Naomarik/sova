@@ -1,4 +1,4 @@
-import { createResource, createSignal, For, Show } from "solid-js";
+import { createEffect, createResource, createSignal, For, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { ExtensionInspect, ExtensionReview, ExtensionRow, ExtensionsInstalled } from "../../shared/extension-loader";
 import { ApiError, approveExtension, chooseExtensionFolder, extensionProgram, getExtensionLog, getExtensionsInstalled, getUpdates, inspectExtension, installExtension, removeExtension, turnExtensionOff, turnExtensionOn } from "../lib/api";
@@ -30,7 +30,7 @@ import {
 import { tildePath } from "../lib/format";
 import { createPoll } from "../lib/poll";
 import { openSettings } from "../lib/settings-nav";
-import { home, toast } from "../lib/ui-state";
+import { home, setHome, toast } from "../lib/ui-state";
 import { FolderPicker } from "./FolderPicker";
 import { Toggle } from "./form";
 import { Banner, Chip, trapFocus } from "./ui";
@@ -418,6 +418,11 @@ function Row(props: { row: ExtensionRow; through?: string; onChange: () => void;
 /** Settings → Extensions: this computer's extensions. Every action on it saves at once. */
 export function ExtensionsSettingsSection() {
   const poll = createPoll<ExtensionsInstalled>(getExtensionsInstalled, EXT_POLL_MS, { cacheKey: "extensions:installed" });
+  // Only the folder picker sets this otherwise, so a row drawn before it opens would show the whole path.
+  createEffect(() => {
+    const h = poll.data()?.home;
+    if (h && !home()) setHome(h);
+  });
   const [choosing, setChoosing] = createSignal<{ forId?: string } | null>(null);
   const [reviewing, setReviewing] = createSignal<Reviewing | null>(null);
   const [rowError, setRowError] = createSignal<string | null>(null);

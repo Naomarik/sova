@@ -294,6 +294,7 @@ describe("adding or changing an extension", () => {
   test("the list reads for anyone the gate let in; through another computer it says so, and the page's own doesn't", async () => {
     const mine = (await (await call("GET", "/api/extensions/installed", undefined, pageHeaders())).json()) as { through?: string; rows: unknown[] };
     assert.equal(mine.through, undefined);
+    assert.equal(typeof (mine as { home?: unknown }).home, "string", "a row can say ~ before the picker has opened");
     assert.deepEqual(mine.rows, []);
     const seen = (await (await call("GET", "/api/extensions/installed", undefined, pageHeaders(), { meshPeer: { id: "other", nodeId: "n" } })).json()) as { through?: string };
     assert.equal(typeof seen.through, "string");

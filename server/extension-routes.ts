@@ -3,7 +3,7 @@
 // and a request from an extension's own page is refused too, as an accident guard.
 import type { Context, Hono } from "hono";
 import type { ExtensionRow, ExtensionsInstalled } from "../shared/extension-loader";
-import { hostname } from "node:os";
+import { homedir, hostname } from "node:os";
 import { approveExtension, chooseFolder, installFolder, LoaderRefusal, programAction, programNotFound, programStartedAt, removeExtension, reviewEntry, reviewFolder, turnOff, turnOn } from "./extension-loader";
 import { programLog, programStatus } from "./extension-program";
 import { contractWords, extensionHealth, listedExtensions, peerExtensionEntries, type ListedExtension } from "./extensions";
@@ -96,6 +96,7 @@ export function registerExtensionRoutes(app: Hono<any>): void {
       others: peerExtensionEntries().map((p) => ({ id: p.entry.id, title: p.entry.title, from: p.from ?? "" })),
       ...(notPage(c) === "local" ? { through: hostname() } : {}),
       has: contractWords(),
+      home: homedir(),
     };
     return c.json(answer, 200, NO_STORE);
   });

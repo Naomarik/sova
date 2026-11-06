@@ -9,10 +9,9 @@
 
 **Every agent session, one calm workspace. On your desk, or folded in your pocket.**
 
-Sova runs the [pi](https://pi.dev) coding agent on your own machine, through pi's SDK, and reads
-the same `~/.pi/agent` your terminal does. It lists every session on the machine, shows any
-transcript, watches a session that's open in a TUI as it runs, and gives web chats workers,
-branching and steering. It is one person's tool for one person's agent.
+Sova runs the [pi](https://pi.dev) coding agent on your own machine, through pi's SDK, each chat in
+a process of its own, and uses the same `~/.pi/agent` directory as pi. It lists every session on
+the machine, shows any transcript, and gives web chats workers, branching and steering. It is one person's tool for one person's agent.
 
 <a href="https://sova.naomarik.com/" title="Watch a session run in Sova (video on the site)">
   <img src="site/src/assets/screens/hero-desk.webp" alt="Sova on a desktop: the sessions sidebar with 2 sessions that need you, a session in Delegate mode waiting on its 3 workers, and the working worker's transcript." width="920">
@@ -42,9 +41,7 @@ uses your existing pi provider login.
 
 ## Why you'd run it
 
-- **Every session in one place.** Web chats and the sessions pi wrote in your terminal, with no
-  import. A session open in a TUI streams live and is read-only here; Sova identifies it reliably
-  only when your terminal pi loads the [sessions extension](pi-config/extensions/sessions/README.md).
+- **Every session in one place.** Web chats and the pi sessions already on your machine, with no import.
 - **Hand work to subagents and follow each one.** In [Delegate mode](https://sova.naomarik.com/docs/modes/delegate/)
   the agent sends planning, investigation and changes to workers, each with its own transcript and
   context gauge in the workers pane. The shipped routes use Claude Code models, so install the

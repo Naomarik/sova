@@ -500,8 +500,8 @@ export async function makePing(
     if (open.some((x) => x.summary.toLowerCase() === summary.toLowerCase())) return { write: false, value: "that is the same summary as this session's open ping." };
     const at = store.now();
     const id = `pg_${++d.n}`;
-    // A newer ping lowers the session's hand (a newer stuck or decision replaces it).
-    for (const x of d.pings) if (x.sessionId === who.sessionId && HAND_KINDS.has(x.kind) && !x.lowered) x.lowered = { at: new Date(at).toISOString(), why: "newer-ping" };
+    // A newer done lowers the session's hand and a newer stuck or decision replaces it; news and relay leave it up.
+    if (HAND_KINDS.has(kind!)) for (const x of d.pings) if (x.sessionId === who.sessionId && HAND_KINDS.has(x.kind) && !x.lowered) x.lowered = { at: new Date(at).toISOString(), why: "newer-ping" };
     const said = kind === "relay" && standing.said ? standing.said.slice(0, PING_SAID_MAX) : undefined;
     const rec: PingRecord = {
       id,

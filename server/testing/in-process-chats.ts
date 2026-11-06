@@ -91,8 +91,8 @@ class LocalSpecialPort implements SpecialPort {
   private async ctxOf(local: { ctx: HookCtx } | undefined, leafId: string | null): Promise<HookCtx> {
     return local?.ctx ?? fileHookCtx(this.path, { sessionId: chatHandle(this.path)?.mirror.sessionId ?? "", leafId });
   }
-  async runStart(a: { leafId: string | null; images: boolean; prompt?: string }, local?: { ctx: HookCtx }) {
-    return this.host.runStart(this.path, await this.ctxOf(local, a.leafId), { images: a.images, ...(a.prompt !== undefined ? { prompt: a.prompt } : {}) });
+  async runStart(a: { leafId: string | null; images: boolean; prompt?: string; user?: boolean }, local?: { ctx: HookCtx }) {
+    return this.host.runStart(this.path, await this.ctxOf(local, a.leafId), { images: a.images, ...(a.prompt !== undefined ? { prompt: a.prompt } : {}), ...(a.user === true ? { user: true } : {}) });
   }
   async compact(a: { leafId: string | null }, local?: { ctx: HookCtx }) {
     return this.host.compact ? this.host.compact(this.path, await this.ctxOf(local, a.leafId)) : null;

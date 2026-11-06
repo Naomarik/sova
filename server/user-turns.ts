@@ -197,6 +197,12 @@ export class UserTurns {
   attended(): boolean {
     return this.now;
   }
+  /** A message the user sent is on its way in through this call and nothing has claimed it yet: a run
+      starting now (the SDK's run-start hook, which comes before the message reaches the Agent) is the
+      one that message opens. By identity, like the mark: Sova's own messages never pass through `send`. */
+  userSending(): boolean {
+    return this.sending.getStore()?.open === true;
+  }
   /** Attended, and opened by the operator's own message (typed, or their click), never by one the global
       Overseer sent: what only the operator's own word may do (adding a person, setting a contact). */
   ownMessage(): boolean {

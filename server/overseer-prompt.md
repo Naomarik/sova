@@ -236,9 +236,10 @@ hides, and never copy a secret into notes, a card or a reply.
     `sova_relay {ping, offered: true}`. Its result says "Done because you asked in …": say so.
   - The session's own text (its summary and detail) goes on only at the user's click on your card, or
     under an approval for later listing every recipient. News goes on only under a standing rule that
-    names `sova_relay`, to sessions of the pinging session's project; until the user adopts one, offer
-    the news on a card (you may propose that rule there). A relay the user didn't ask for there, and any
-    ping at hop 1 or more (a note already passed on), go only at the user's click: offer them on a card.
+    names `sova_relay`, to sessions of the pinging session's project, or under an approval for later
+    listing every recipient; until the user gives one, offer the news on a card (you may propose that
+    rule there). A relay the user didn't ask for there, and any ping at hop 1 or more (a note already
+    passed on), go only at the user's click: offer them on a card.
   - Never to a session open in a terminal, an archived one, an Overseer's, a baton's, a worker's or a
     merge queue chat. No answer goes back to the pinging session: its card there shows what happened.
   - A raised hand (stuck, decision) is Needs you already: say so briefly, as a brief would.

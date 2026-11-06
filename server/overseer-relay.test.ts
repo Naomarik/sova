@@ -28,7 +28,7 @@ function summary(id: string, over: Partial<SessionSummary> = {}): SessionSummary
 
 type Delivered = { ping: string; to: { id: string }; text: string; hop: number; from: { sessionId: string } };
 
-function rig(o: { attended?: boolean; permit?: { id: string; label: string } | null; limits?: Partial<typeof DEFAULT_PING_LIMITS>; sessions?: SessionSummary[]; deliver?: "started" | "waiting" | "terminal" } = {}) {
+function rig(o: { attended?: boolean; permit?: { id: string; label: string } | null; covers?: string[]; limits?: Partial<typeof DEFAULT_PING_LIMITS>; sessions?: SessionSummary[]; deliver?: "started" | "waiting" | "terminal" | null } = {}) {
   const clock = { t: NOW };
   const file = join(agentDir, `pings-${++fileN}.json`);
   const store = new PingStore(() => file, () => clock.t);
@@ -36,23 +36,29 @@ function rig(o: { attended?: boolean; permit?: { id: string; label: string } | n
   const delivered: Delivered[] = [];
   const used: string[] = [];
   let prompts = 0;
-  const state = { attended: o.attended ?? false, permit: o.permit ?? null };
+  // covers: the sessions the permit names (coveringPermit: it covers a call only when it names every one); absent, any.
+  const state = { attended: o.attended ?? false, permit: o.permit ?? null, covers: o.covers };
   const tool = relayTool({
     // As overseer-tools' act calls it: (toolCallId, params).
     act: (_name, run) => (toolCallId: string, params: unknown) => run(params, toolCallId),
     lookup: async (ref) => sessions.get(String(ref).replace(/^sova:\/\/s\//, "")) ?? null,
     link: (s) => `[${s.title}](sova://s/${s.id})`,
     attended: () => state.attended,
-    permit: () => state.permit,
+    permit: (_tool, ids) => (state.permit && (!state.covers || ids.every((i) => state.covers!.includes(i))) ? state.permit : null),
     used: (id) => void used.push(id),
     takePrompt: () => (++prompts > 10 ? "Limit reached: at most 10 prompts per message from the user." : null),
     limits: () => ({ ...DEFAULT_PING_LIMITS, ...o.limits }),
     projectRoot: async (cwd) => (cwd.startsWith("/w/proj") ? "/w/proj" : cwd),
     store: () => store,
-    deliver: async (r) => {
-      delivered.push(r as Delivered);
-      return o.deliver ?? "started";
-    },
+    // null: the server's own delivery, which isn't running in a unit test.
+    ...(o.deliver === null
+      ? {}
+      : {
+          deliver: async (r: Parameters<NonNullable<Parameters<typeof relayTool>[0]["deliver"]>>[0]) => {
+            delivered.push(r as Delivered);
+            return o.deliver ?? "started";
+          },
+        }),
   });
   const ping = (p: Partial<PingRecord> & { kind: PingKind; summary: string }): PingRecord =>
     store.update((d) => {
@@ -164,6 +170,22 @@ describe("what covers a pass-on, and so what goes (§app.overseer-pings/relay)",
     assert.equal(r.outcomes(p.id).at(-1)!.kind, "passed");
   });
 
+  test("news under an approval for later the user clicked: only when it names every recipient, then in any project", async () => {
+    const r = rig({ permit: { id: "g_3", label: "Any act on these sessions until 6 PM" }, covers: ["b", "far"], sessions: [summary("far", { cwd: "/w/other" })] });
+    const p = r.ping({ kind: "news", summary: "the schema moved" });
+    const out = await r.call({ ping: p.id, sessions: ["b", "far"] });
+    assert.match(out.text, /Done under g_3/);
+    assert.deepEqual(r.used, ["g_3"]);
+    assert.equal(await takeNews("far", r.store), newsText(p), "a session outside the pinging session's project too");
+    assert.equal(await takeNews("b", r.store), newsText(p));
+    // One it doesn't name: no permit covers the call, so it is offered on a card.
+    const q = r.ping({ kind: "news", summary: "another" });
+    assert.match(await r.refusal({ ping: q.id, sessions: ["b", "c"] }), /only under a standing rule that names sova_relay/);
+    assert.deepEqual(r.outcomes(q.id), [{ kind: "offered" }]);
+    assert.equal(await takeNews("c", r.store), null);
+    assert.equal(auditLines().at(-1)!.outcome, "refused");
+  });
+
   test("offered: true says on the pinging chat's card that it waits for the user (who it is for is unclear)", async () => {
     const r = rig();
     const p = r.ping({ kind: "relay", summary: "tell them", to: "the other one", said: "tell the other one" });
@@ -208,6 +230,39 @@ describe("recipients and limits (§app.overseer-pings/relay 'Recipients', /limit
     // In a turn the user started: no day allowance, but each recipient takes one of the turn's prompts.
     r.state.attended = true;
     await r.call({ ping: p.id, sessions: ["b"] });
+  });
+
+  test("a peer's session or an unknown id is refused on its own, in the result and on the card; the others still go", async () => {
+    const r = rig();
+    const p = r.ping({ kind: "relay", summary: "s", to: "x", said: SAID });
+    const out = await r.call({ ping: p.id, sessions: ["peer-1:abc", "b", "sova://s/nope"] });
+    assert.deepEqual(r.delivered.map((x) => x.to.id), ["b"]);
+    assert.match(out.text, /peer-1:abc: it isn't a session on this host \(a peer's session takes no passed-on notes\), so nothing was sent\./);
+    assert.match(out.text, /nope: it isn't a session on this host/);
+    assert.match(out.text, /Passed to \[Session b\]/);
+    const refused = r.outcomes(p.id).filter((o) => o.kind === "refused");
+    assert.deepEqual(refused.map((o) => (o as { to: { id: string } }).to.id), ["peer-1:abc", "nope"]);
+    assert.deepEqual(auditLines().at(-1)!.to, ["b"]);
+    // Only ones not here: refused, each named, nothing sent.
+    const msg = await r.refusal({ ping: p.id, sessions: ["peer-1:abc"] });
+    assert.match(msg, /^peer-1:abc: it isn't a session on this host.*\nNothing was passed on\.$/s);
+    assert.equal(r.delivered.length, 1);
+    assert.equal(auditLines().at(-1)!.outcome, "refused");
+  });
+
+  test("every call is one line of the log, refused or not: a malformed ping id, an unknown one, delivery not running", async () => {
+    const r = rig({ deliver: null });
+    const before = auditLines().length;
+    await r.refusal({ ping: "nope", sessions: ["b"] });
+    assert.deepEqual(auditLines().slice(before), [{ at: auditLines()[before]!.at, sessionId: "", kind: "sova_relay", outcome: "refused", error: "ping is a ping's id, pg_N. Nothing was passed on.", reason: "bad-ping" }]);
+    await r.refusal({ ping: "pg_99", sessions: ["b"] });
+    assert.deepEqual({ ...auditLines().at(-1)!, at: "" }, { at: "", sessionId: "", kind: "sova_relay", ping: "pg_99", outcome: "refused", error: "No ping pg_99. Nothing was passed on.", reason: "no-ping" });
+    const p = r.ping({ kind: "relay", summary: "s", to: "x", said: SAID });
+    assert.match(await r.refusal({ ping: p.id, sessions: ["b"] }), /isn't running on this server yet/);
+    const line = auditLines().at(-1)!;
+    assert.deepEqual([line.sessionId, line.ping, line.outcome, line.reason], ["pinger", p.id, "refused", "not-running"]);
+    assert.equal(auditLines().length, before + 3, "one line a call");
+    assert.equal(r.store.recent(recipientKey("b"), 3_600_000), 0, "a refusal takes nothing");
   });
 
   test("a busy recipient gets it once its turn settles; the call says so", async () => {

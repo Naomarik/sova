@@ -14,7 +14,7 @@ import { PING_ID_RE, type PingOutcome, type PingRecord, type SessionSummary } fr
 import type { OverseerPingLimits } from "../shared/protocol";
 import { auditPing, pingStore, setPingOutcome, type PingStore } from "./overseer-pings";
 import { holdNews, newsText, relayDelivery, relayHop, relayText, type RelayAttempt } from "./overseer-relay";
-import { Refusal, text } from "./session-guards";
+import { Refusal, sessionRef, text } from "./session-guards";
 
 const HOUR_MS = 3_600_000;
 export const RELAY_KEY = "relay";
@@ -56,6 +56,9 @@ function recipientRefusal(s: SessionSummary, ping: PingRecord): { why: string; t
   return null;
 }
 
+/** A recipient that isn't a session on this host: a peer's, or an id nothing matches. */
+const NOT_HERE = "it isn't a session on this host (a peer's session takes no passed-on notes), so nothing was sent";
+
 /** The refusal that sends the Overseer to a card: the ping waits for the user's click there. */
 const WAITS_FOR_CLICK = "Offer it to the user on a sova_card card instead (say what it is and who it is for); their click starts a turn in which you may pass it on. Nothing was passed on.";
 
@@ -82,9 +85,13 @@ export function relayTool(d: RelayToolDeps) {
       "sova_relay",
       async (p: any, toolCallId: string) => {
         const id = typeof p?.ping === "string" ? p.ping.trim() : "";
-        if (!PING_ID_RE.test(id)) throw new Refusal("ping is a ping's id, pg_N. Nothing was passed on.");
-        const ping = store().get(id);
-        if (!ping) throw new Refusal(`No ping ${id}. Nothing was passed on.`);
+        // No ping, no pinging session: the line names none.
+        const early = (why: string, reason: string): never => {
+          auditPing({ sessionId: "", kind: "sova_relay", ...(id && PING_ID_RE.test(id) ? { ping: id } : {}), outcome: "refused", error: why, reason });
+          throw new Refusal(why);
+        };
+        if (!PING_ID_RE.test(id)) early("ping is a ping's id, pg_N. Nothing was passed on.", "bad-ping");
+        const ping = store().get(id) ?? early(`No ping ${id}. Nothing was passed on.`, "no-ping");
         const refs: unknown[] = Array.isArray(p?.sessions) ? p.sessions : [];
         const audit = (o: "ok" | "refused", extra: { to?: string[]; error?: string; reason?: string } = {}) =>
           auditPing({ sessionId: ping.sessionId, kind: "sova_relay", ping: id, outcome: o, ...extra });
@@ -104,10 +111,25 @@ export function relayTool(d: RelayToolDeps) {
         if (!refs.length) return refuse("Name the sessions to pass it to (at most 3), or offered: true when you offered it on a card. Nothing was passed on.");
         if (refs.length > most) return refuse(`At most ${most} recipients per pass-on (${refs.length} given; Settings → Overseer → Limits). Nothing was passed on.`, { reason: "limit" });
         const recipients: SessionSummary[] = [];
+        const notHere: string[] = [];
         for (const ref of refs) {
           const s = await d.lookup(ref).catch(() => null);
-          if (!s) return refuse(`No session with id ${String(ref)} (nor a session with that alias). Nothing was passed on.`);
-          if (!recipients.some((x) => x.id === s.id)) recipients.push(s);
+          if (!s) {
+            const raw = sessionRef(ref) || String(ref);
+            if (!notHere.includes(raw)) notHere.push(raw);
+          } else if (!recipients.some((x) => x.id === s.id)) recipients.push(s);
+        }
+        // Each is refused on its own, in the result and on the pinging chat's card; the others still go.
+        const lines: string[] = [];
+        const refuseNotHere = async () => {
+          for (const raw of notHere) {
+            await outcome(id, { kind: "refused", to: { id: raw, title: raw }, why: NOT_HERE });
+            lines.push(`${raw}: ${NOT_HERE}.`);
+          }
+        };
+        if (!recipients.length) {
+          await refuseNotHere();
+          return refuse(`${lines.join("\n")}\nNothing was passed on.`, { reason: "recipients" });
         }
         const ids = recipients.map((s) => s.id);
         const from = await d.lookup(ping.sessionId).catch(() => null);
@@ -137,7 +159,7 @@ export function relayTool(d: RelayToolDeps) {
             if (grant || (permit && inProject)) under = { id: permit!.id, done: `Done under ${permit!.id} (${permit!.label}).`, permit: true };
             else
               return refuse(
-                `News goes on in a turn the user didn't start only under a standing rule that names sova_relay, to sessions of the pinging session's project${permit ? ` (${permit.id} covers these sessions, but not all of them are in that project)` : ""}. ${WAITS_FOR_CLICK} You may propose that rule there ("Pass on news a session announces to the sessions of its project it affects").`,
+                `News goes on in a turn the user didn't start only under a standing rule that names sova_relay, to sessions of the pinging session's project, or under an approval for later listing every recipient${permit ? ` (${permit.id} covers these sessions, but not all of them are in that project)` : ""}. ${WAITS_FOR_CLICK} You may propose that rule there ("Pass on news a session announces to the sessions of its project it affects").`,
                 { offered: true, reason: "needs-rule" },
               );
           } else if (grant) under = { id: grant.id, done: `Done under ${grant.id} (${grant.label}).`, permit: true };
@@ -150,7 +172,7 @@ export function relayTool(d: RelayToolDeps) {
           if (!running) throw new Refusal("Passing notes on isn't running on this server yet. Nothing was passed on.");
           return running.send(r);
         });
-        const lines: string[] = [];
+        await refuseNotHere();
         const reached: string[] = [];
         const s0 = store();
         for (const s of recipients) {
@@ -196,7 +218,10 @@ export function relayTool(d: RelayToolDeps) {
             r = await deliver({ ping: id, to: { id: s.id, path: s.path, title: s.title }, text: relayText(ping, words), hop: relayHop(ping), from: { sessionId: ping.sessionId, title: ping.title } });
           } catch (err) {
             giveBack();
-            if (err instanceof Refusal) throw err;
+            if (err instanceof Refusal) {
+              audit("refused", { error: err.message, reason: "not-running" });
+              throw err;
+            }
             lines.push(`${d.link(s)}: not sent (${err instanceof Error ? err.message : String(err)}).`);
             continue;
           }

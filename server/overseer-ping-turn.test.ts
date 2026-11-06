@@ -13,9 +13,11 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
 const { PingStore } = await import("./overseer-pings");
-const { PingTurns, TURN_KEY, pingTurnText, pingsPartText, takeWaitingPings, sovaStartedPrompt, pingWakes, PING_TURN_HEADER } = await import("./overseer-ping-turn");
+const { PingTurns, TURN_KEY, pingTurnText, pingsPartText, takeWaitingPings, pingWakes, PING_TURN_HEADER } = await import("./overseer-ping-turn");
 const { DEFAULT_PING_LIMITS } = await import("../shared/overseer-limits");
 const { OVERSEER_PING_PREFIX } = await import("../shared/protocol");
+const { UserTurns } = await import("./user-turns");
+const { specialLoadout } = await import("./chat-special");
 
 let fileN = 0;
 const NOW = Date.parse("2026-11-06T12:00:00.000Z");
@@ -141,12 +143,31 @@ describe("the ping turn's message", () => {
     assert.equal(pingsPartText([], new Map()), undefined);
   });
 
-  test("the run note's [pings] part rides only a run Sova didn't start", () => {
-    assert.equal(sovaStartedPrompt("please check billing"), false);
-    assert.equal(sovaStartedPrompt("[overseer-brief] A new blocker appeared"), true);
-    assert.equal(sovaStartedPrompt(`${OVERSEER_PING_PREFIX} Messages`), true);
-    assert.equal(sovaStartedPrompt("[ext_job x2] done"), true);
-    assert.equal(sovaStartedPrompt(undefined), true, "an older chat process: nothing is taken");
+  test("the run note's [pings] part rides only a run a message the user sent opens, told by identity, never by text", async () => {
+    // The Overseer's run-start hook, as its chat builds it: it asks the server with user: true only inside the user's send.
+    const turns = new UserTurns();
+    let claim: (input: unknown) => void = () => {};
+    turns.watch({ onUserMessage: (c) => ((claim = c), () => {}) });
+    const asked: { user?: boolean; prompt?: string }[] = [];
+    const port = { runStart: async (a: { user?: boolean; prompt?: string }) => (asked.push(a), { prompt: {} }), compact: async () => null, agentEnd: async () => null, runEvent: () => {}, action: async () => ({ ok: true, result: null }) };
+    const spec = { kind: "overseer", extension: "sova-overseer", cwd: null, tools: [], customTools: [], allow: [], loader: { append: "none" }, model: null, thinking: null, hooks: {}, context: "redact", refuses: {}, composerClosed: null, start: { prompt: {} } };
+    const built = specialLoadout("chat-pings", spec as never, port as never, { tool: (d) => ({ name: d.name }) as never, userSending: () => turns.userSending() });
+    const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<unknown>>();
+    (built.loader as any).extensionFactories[0].factory({ on: (n: string, fn: never) => void handlers.set(n, fn), registerTool: () => {}, setActiveTools: () => {}, sendMessage: () => {}, appendEntry: () => {} });
+    const ctx = { cwd: "/w", model: { input: ["text"] }, sessionManager: { getLeafId: () => null, getBranch: () => [], getSessionId: () => "sid", getSessionFile: () => undefined, getSessionName: () => undefined } };
+    const runStart = (prompt: string) => handlers.get("before_agent_start")!({ prompt, systemPromptOptions: {} }, ctx);
+    // The user's message: the hook runs inside its send, across the SDK's awaits, before the Agent claims it.
+    await turns.send(async () => {
+      await Promise.resolve();
+      await runStart("[overseer-brief] looks like a brief, but the user sent it");
+      claim({ role: "user", content: "x" });
+      // A later run from inside that run (a follow-up the SDK runs after it): the send's mark is spent.
+      await runStart("please check billing");
+    });
+    // Sova's own messages never pass through the user's send, whatever their text.
+    await runStart("please check billing");
+    await runStart(`${OVERSEER_PING_PREFIX} Messages`);
+    assert.deepEqual(asked.map((a) => a.user === true), [true, false, false, false]);
   });
 });
 

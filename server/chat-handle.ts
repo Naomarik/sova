@@ -329,8 +329,9 @@ export interface SpecialHost {
   spec(path: string): Promise<SpecialSpec>;
   /** A chat process this server took back (no open): serve its tools and rebuild per-chat state. */
   adopt(path: string): Promise<void>;
-  /** `a.prompt`: the text of the message that starts the run (absent from a chat on older code). */
-  runStart(path: string, ctx: HookCtx, a: { images: boolean; prompt?: string }): Promise<RunStartAnswer>;
+  /** `a.prompt`: the text of the message that starts the run (absent from a chat on older code). `a.user`: a
+      message the user sent opens it (UserTurns.userSending, by identity; absent from a chat on older code). */
+  runStart(path: string, ctx: HookCtx, a: { images: boolean; prompt?: string; user?: boolean }): Promise<RunStartAnswer>;
   compact?(path: string, ctx: HookCtx): Promise<RunStartAnswer["message"] | null>;
   agentEnd?(path: string, text: string): Promise<RunStartAnswer["message"] | null>;
   /** Each run event of the kind's chat, inside the chat's own event (here) or in arrival order (a chat
@@ -862,7 +863,7 @@ export async function answerChatAsk(path: string, method: ChatAskMethod, args: u
       if (method === "special.agentEnd") return h.agentEnd ? h.agentEnd(path, String(a.text ?? "")) : null;
       const ctx = await fileHookCtx(path, { sessionId: chatHandle(path)?.mirror.sessionId ?? "", leafId: a.leafId ?? null });
       if (method === "special.compact") return h.compact ? h.compact(path, ctx) : null;
-      return h.runStart(path, ctx, { images: !!a.images, ...(typeof a.prompt === "string" ? { prompt: a.prompt } : {}) });
+      return h.runStart(path, ctx, { images: !!a.images, ...(typeof a.prompt === "string" ? { prompt: a.prompt } : {}), ...(a.user === true ? { user: true } : {}) });
     }
   }
   throw new Error(`Unknown ask: ${String(method)}`);

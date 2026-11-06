@@ -46,6 +46,8 @@ export interface SpecialDeps {
   visRetry?: () => PiExtensionFactory;
   /** A run start whose answer did not come: logged by the caller. */
   log?(line: string): void;
+  /** The run starting now is one a message the user sent opens (UserTurns.userSending), by identity. */
+  userSending?(): boolean;
 }
 
 /** The built loadout: the loader's options, the tool allowlist, the SDK's custom tools, the prompt a run starts on. */
@@ -83,8 +85,9 @@ export function specialLoadout(chatId: string, spec: SpecialSpec, port: SpecialP
   let pack = lastAnswer.get(chatId)?.baton;
 
   const runStart = async (ctx: HookCtx, images: boolean, prompt?: string): Promise<RunStartAnswer> => {
+    const user = deps.userSending?.() === true;
     try {
-      const a = await port.runStart({ leafId: ctx.leafId(), images, ...(typeof prompt === "string" ? { prompt } : {}) }, { ctx });
+      const a = await port.runStart({ leafId: ctx.leafId(), images, ...(typeof prompt === "string" ? { prompt } : {}), ...(user ? { user: true } : {}) }, { ctx });
       lastAnswer.set(chatId, a);
       return a;
     } catch (err) {

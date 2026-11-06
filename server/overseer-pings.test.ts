@@ -205,14 +205,30 @@ describe("overseer_ping: the call (§app.overseer-pings/tool)", () => {
 });
 
 describe("a raised hand (§app.overseer-pings/raised-hand)", () => {
-  test("one hand per session: a newer stuck or decision replaces it, any other ping lowers it", async () => {
-    const r = rig();
+  test("one hand per session: a newer stuck or decision replaces it, done lowers it, news and relay leave it up", async () => {
+    const r = rig({ limits: { sessionPerHour: 100, sessionPerDay: 100 } });
     await r.ping({ kind: "stuck", summary: "first" });
     await r.ping({ kind: "decision", summary: "second" });
     assert.equal(raisedHands(r.store).get("a")!.summary, "second");
     assert.equal(r.store.get("pg_1")!.lowered!.why, "newer-ping");
     await r.ping({ kind: "news", summary: "third" });
-    assert.equal(raisedHands(r.store).get("a"), undefined, "news lowers it");
+    await r.ping({ kind: "relay", summary: "fourth", to: "Bob" });
+    assert.equal(raisedHands(r.store).get("a")?.summary, "second", "news and relay leave it up");
+    assert.equal(r.store.get("pg_2")!.lowered, undefined);
+    await r.ping({ kind: "stuck", summary: "fifth" }, undefined, "a");
+    assert.equal(raisedHands(r.store).get("a")!.summary, "fifth", "a newer stuck replaces it");
+    assert.equal(r.store.get("pg_2")!.lowered!.why, "newer-ping");
+    const d = rig({ limits: { sessionPerHour: 100, sessionPerDay: 100 } });
+    await d.ping({ kind: "done", summary: "shipped" });
+    await d.ping({ kind: "news", summary: "fyi" });
+    await d.ping({ kind: "relay", summary: "tell Bob", to: "Bob" });
+    assert.equal(raisedHands(d.store).get("a")?.summary, "shipped", "the done line too: news and relay leave it");
+    await d.ping({ kind: "decision", summary: "which db" });
+    assert.equal(raisedHands(d.store).get("a")!.summary, "which db", "a hand replaces the done line");
+    assert.equal(d.store.get("pg_1")!.lowered!.why, "newer-ping");
+    await d.ping({ kind: "done", summary: "settled" });
+    assert.equal(raisedHands(d.store).get("a")!.summary, "settled", "a newer done lowers the hand");
+    assert.equal(d.store.get("pg_4")!.lowered!.why, "newer-ping");
   });
 
   test("it survives a turn an Overseer's or a project overseer's prompt starts, and comes down at the user's own turn", async () => {

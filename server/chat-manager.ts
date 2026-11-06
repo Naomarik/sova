@@ -712,7 +712,8 @@ export type SpecialKind = ChatSpecialKind;
  * reads (the run's live context).
  */
 export interface SpecialPort {
-  runStart(a: { leafId: string | null; images: boolean; prompt?: string }, local?: { ctx: HookCtx }): Promise<RunStartAnswer>;
+  /** `user`: a message the user sent opens this run (UserTurns.userSending), by identity. */
+  runStart(a: { leafId: string | null; images: boolean; prompt?: string; user?: boolean }, local?: { ctx: HookCtx }): Promise<RunStartAnswer>;
   compact(a: { leafId: string | null }, local?: { ctx: HookCtx }): Promise<RunStartAnswer["message"] | null>;
   agentEnd(a: { text: string }): Promise<RunStartAnswer["message"] | null>;
   /** Each run event, in the chat's own event; never awaited. */
@@ -4602,6 +4603,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
               return h ? { ...h, drawingsOn: () => true, visToolsOn: () => false } : null;
             }),
           log: (line) => console.warn(`[chat] ${kind}: ${line}`),
+          userSending: () => runs.turns?.userSending() ?? false,
         })
       : null;
     // An ordinary chat gets the default extensions plus the vis feedback extension

@@ -115,7 +115,7 @@ import { readDecisionSettings } from "./decide-settings";
 import { attentionChanged, onAttentionChanged } from "./attention-memo";
 import { sessionsChanged } from "./list-generation";
 import { onPingChanged, pingStore, raisedHands, undeliveredPings } from "./overseer-pings";
-import { PingTurns, sovaStartedPrompt, takeWaitingPings } from "./overseer-ping-turn";
+import { PingTurns, takeWaitingPings } from "./overseer-ping-turn";
 import { pingLimitsOf } from "../shared/overseer-limits";
 import { endDismissals, prunable, readDismissed, takeUndone } from "./needs-you-dismissed";
 import { sessionFeed } from "./session-feed";
@@ -1292,8 +1292,9 @@ registerSpecialHost({
     const branch = ctx.branch();
     const append = prompt.ours(branch);
     const now = new Date();
-    // The pings that waited for the user's message (§app.overseer/run-note "Pings that waited"): in a run Sova didn't start.
-    const pings = sovaStartedPrompt(a?.prompt) ? undefined : await takeWaitingPings(sessionNames, (t) => serverRedactor().redact(t)).catch(() => undefined);
+    // The pings that waited for the user's message (§app.overseer/run-note "Pings that waited"): only in a run a
+    // message the user sent opens, by identity (a chat on older code says nothing: they wait).
+    const pings = a?.user !== true ? undefined : await takeWaitingPings(sessionNames, (t) => serverRedactor().redact(t)).catch(() => undefined);
     const { message } = await runNoteMessage(branch, now, { ...prompt.noteParts(branch, now), ...(pings ? { pings } : {}) });
     return { prompt: {}, append, message };
   },

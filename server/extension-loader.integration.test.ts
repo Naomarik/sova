@@ -129,7 +129,8 @@ async function theWholeLife(r: ReturnType<typeof rig>) {
     assert.equal((await r.json("POST", "/api/extensions/install", { folder, version: "stale" })).code, "changed");
 
     await r.install(folder);
-    await r.stateIs("standin", "running");
+    // Under the health cache's 10 s: a first "not yet" isn't kept while it starts.
+    await r.stateIs("standin", "running", 8_000);
     const first = await r.env("standin");
     assert.equal(first.token, null, "Sova's token is not in its environment");
     assert.ok(existsSync(first.keyFile), "its key is written");

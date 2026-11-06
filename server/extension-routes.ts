@@ -6,7 +6,7 @@ import type { ExtensionRow, ExtensionsInstalled } from "../shared/extension-load
 import { homedir, hostname } from "node:os";
 import { approveExtension, chooseFolder, installFolder, LoaderRefusal, programAction, programNotFound, programStartedAt, removeExtension, reviewEntry, reviewFolder, turnOff, turnOn } from "./extension-loader";
 import { programLog, programStatus } from "./extension-program";
-import { contractWords, extensionHealth, listedExtensions, peerExtensionEntries, type ListedExtension } from "./extensions";
+import { clearHealthOf, contractWords, extensionHealth, listedExtensions, peerExtensionEntries, type ListedExtension } from "./extensions";
 import { extensionPageRefusal, notPage, yourClickRefusal } from "./page-only";
 
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -53,9 +53,11 @@ export async function rowOf(l: ListedExtension): Promise<ExtensionRow> {
   if (missing) return { ...on, state: "stopped", line: missing };
   const st = await programStatus(e.id);
   if (st.state !== "active" && st.state !== "activating") return { ...on, state: "stopped", line: "Its program exited." };
+  const at = programStartedAt(e.id);
+  // Just started: a "not yet" kept from its first second mustn't read Starting for the cache's 10 s.
+  if (at !== undefined && Date.now() - at < STARTING_MS) clearHealthOf(e.id);
   const h = await extensionHealth(e.id);
   if (h?.status === "ok") return on;
-  const at = programStartedAt(e.id);
   if (st.state === "activating" || (at !== undefined && Date.now() - at < STARTING_MS)) return { ...on, state: "starting" };
   return { ...on, state: "stopped", line: "Its program isn't answering." };
 }

@@ -52,7 +52,11 @@ environment every runner starts in, and the hermetic dev server.
   Sova's forms in Chrome, triggered by form code only (the form kit, its limits, each migrated
   surface), run at landing when triggered; it picks its own
   short temp dir for Chrome's sockets, `server/settings-browser-temp.test.helper.ts`, and skips saying why only
-  when none is writable). Each lists its triggers: the
+  when none is writable), and **Themes** (`themes`, `server/theme-mode.integration.test.ts`: Light, Dark
+  and Auto in Chrome on the app's own build, triggered by theme code only (the theme store and its
+  pre-paint script, Settings → Themes, `main.tsx`, `index.html`, `vite.config.*`, `shared/theme.ts`, the
+  explanation previews, `tokens.css`, `themes/`, `server/themes.ts`) and by any package change, run at
+  landing when triggered). Each lists its triggers: the
   areas whose change can break it (chats, workers, teams, the Overseer, batons, Claude Code and their
   extensions, the harness; tour code), any package or toolchain change, the test setup this guide
   `watches`, and the module itself. Every other integration file is the everyday set. A new slow

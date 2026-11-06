@@ -50,10 +50,10 @@ describe("which group a file is in", () => {
 });
 
 describe("what a landing runs", () => {
-  test("a pi pin change alone (package.json, the lockfile) runs Chat processes", () => {
+  test("a pi pin change alone (package.json, the lockfile) runs Chat processes and Themes", () => {
     for (const changed of [["package.json"], ["pnpm-lock.yaml"], ["mise.toml"], ["pnpm-workspace.yaml"]]) {
       const r = landing(changed);
-      assert.deepEqual(r.ran, ["trial"], changed[0]);
+      assert.deepEqual(r.ran, ["trial", "themes"], changed[0]);
       assert.ok(r.files.includes(trial));
     }
   });
@@ -63,7 +63,7 @@ describe("what a landing runs", () => {
       assert.deepEqual(landing([f]).ran, ["trial"], f);
     }
     // The test setup triggers every group a landing runs.
-    for (const f of ["scripts/run-tests.mjs", "scripts/test-groups.mjs"]) assert.deepEqual(landing([f]).ran, ["trial", "merge-queue", "forms"], f);
+    for (const f of ["scripts/run-tests.mjs", "scripts/test-groups.mjs"]) assert.deepEqual(landing([f]).ran, ["trial", "merge-queue", "forms", "themes"], f);
   });
 
   test("a tours-only change runs no group at landing (Tours never run there), and the everyday set still runs", () => {
@@ -79,15 +79,15 @@ describe("what a landing runs", () => {
   test("Tours never run at landing, even when every trigger changed", () => {
     const r = landing(["server/tours/runner.ts", "package.json", "scripts/run-tests.mjs"]);
     assert.ok(!r.files.includes(tour) && !r.files.includes(nearTours));
-    assert.deepEqual(r.ran, ["trial", "merge-queue", "forms"]);
+    assert.deepEqual(r.ran, ["trial", "merge-queue", "forms", "themes"]);
   });
 
   test("an unrelated change runs only the everyday set, naming both groups as skipped", () => {
     const r = landing(["src/components/Sidebar.tsx"]);
     assert.deepEqual(r.files, [tourNoChrome, everyday]);
-    assert.deepEqual(r.skipped.map((s) => [s.name, s.why]), [["trial", "untriggered"], ["tours", "never"], ["merge-queue", "untriggered"], ["forms", "untriggered"]]);
+    assert.deepEqual(r.skipped.map((s) => [s.name, s.why]), [["trial", "untriggered"], ["tours", "never"], ["merge-queue", "untriggered"], ["forms", "untriggered"], ["themes", "untriggered"]]);
     assert.equal(setKey(r.ran), "core");
-    assert.equal(setKey(landing(["package.json"]).ran), "core+trial");
+    assert.equal(setKey(landing(["package.json"]).ran), "core+trial+themes");
   });
 
   test("the merge queue, its checks or what they read runs the Merge queue group; nothing else does", () => {
@@ -96,7 +96,7 @@ describe("what a landing runs", () => {
       assert.deepEqual(r.ran, ["merge-queue"], f);
     }
     assert.deepEqual(landing(["src/components/Sidebar.tsx"]).ran, []);
-    assert.deepEqual(landing(["package.json"]).ran, ["trial"]);
+    assert.deepEqual(landing(["package.json"]).ran, ["trial", "themes"]);
   });
 
   test("form code, and only form code, runs Forms in a browser", () => {
@@ -109,6 +109,17 @@ describe("what a landing runs", () => {
       assert.ok(run([f]).files.includes(settings), f);
     }
     for (const f of ["src/components/Sidebar.tsx", "package.json", "server/merge-queue/run.ts", "src/lib/settings-forms-roundtrip.test.ts"]) assert.ok(!run([f]).ran.includes("forms"), f);
+  });
+
+  test("theme code, and only theme code, runs Themes", () => {
+    const themes = "server/theme-mode.integration.test.ts";
+    assert.equal(groupOf(themes)?.name, "themes");
+    const run = (changed: string[]) => selectFiles([themes, everyday], changed, { mode: "landing" });
+    for (const f of ["src/lib/theme.ts", "src/lib/theme-prepaint.ts", "src/components/SettingsDialog.tsx", "src/components/TypographySection.tsx", "src/main.tsx", "index.html", "vite.config.ts", "shared/theme.ts", "src/lib/explain.ts", "src/components/ExplainTiles.tsx", "src/design/tokens.css", "themes/dracula.json", "server/themes.ts", "package.json", themes]) {
+      assert.ok(run([f]).ran.includes("themes"), f);
+      assert.ok(run([f]).files.includes(themes), f);
+    }
+    for (const f of ["src/components/Sidebar.tsx", "src/design/base.css", "server/app.ts", "src/lib/theme.test.ts", "src/share/theme.ts"]) assert.ok(!run([f]).ran.includes("themes"), f);
   });
 
   test("a changed test file triggers only its own group, never the area it sits in", () => {
@@ -142,6 +153,6 @@ describe("what a session's --changed adds", () => {
 describe("--groups", () => {
   test("only the named groups' files; all is every group", () => {
     assert.deepEqual(selectFiles(files, [], { mode: "groups", only: ["tours"] }).files, [tour, nearTours]);
-    assert.deepEqual(selectFiles(files, [], { mode: "groups", only: ["all"] }).ran, ["trial", "tours", "merge-queue", "forms"]);
+    assert.deepEqual(selectFiles(files, [], { mode: "groups", only: ["all"] }).ran, ["trial", "tours", "merge-queue", "forms", "themes"]);
   });
 });

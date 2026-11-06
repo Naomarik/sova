@@ -3,8 +3,8 @@
 // with no Context section left; a 403 or 404 reads Not Recording and a brief failure doesn't; the rows
 // add up to You and an empty row is hidden; a fresh browser shows it closed, with no placeholder and no
 // read, and opening or closing it is remembered for all sessions; open, it holds a placeholder, never a
-// zero, before the first read; the tick is no live region; and at 375px nothing scrolls sideways and each
-// expander is a 44px target. Every test but the closed ones opens it first, through the heading, and
+// zero, before the first read; the tick is no live region; every row is one line on one rhythm with a 44px
+// hit area on each expander, and at 375px nothing scrolls sideways. Every test but the closed ones opens it first, through the heading, and
 // asserts it did. Emphasis follows a figure's place: the same colours for any size, Counting or Paused.
 // SPENT_UI_SHOTS=<dir> also saves that test's screenshots. Chrome or Chromium must be installed.
 import assert from "node:assert/strict";
@@ -362,9 +362,57 @@ const placeColours = (page: Page) =>
       partTime: colour('[data-time-row="reading-transcript"] > .text-num'),
       docTitle: colour(".time-spent-doc-title"),
       docWords: colour(".time-spent-docs .text-muted"),
-      note: colour(".time-spent-body > .usage-note"),
+      note: colour(".time-spent-notes > .usage-note"),
     };
   });
+
+/** Each expander answers across 44px of height: the hit area, whatever the row's visible height. */
+async function targets44(page: Page) {
+  for (const name of ["Time Spent", /^Reading/]) {
+    const button = page.getByRole("button", { name });
+    const missed = await button.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const x = box.left + box.width / 2;
+      const mid = box.top + box.height / 2;
+      return [-21.5, -14, 0, 14, 21.5].filter((dy) => !el.contains(document.elementFromPoint(x, mid + dy)));
+    });
+    assert.deepEqual(missed, [], `${String(name)}: these offsets from its middle don't reach it`);
+  }
+}
+
+test("every row is one line tall on one rhythm, Reading's parts hang from it, and the word sits on the figures' line", async () => {
+  const page = await open(1440, (r) => r.fulfill(json(RECORD)));
+  try {
+    await word(page).waitFor();
+    const top = (q: string) => page.locator(q).evaluate((el) => {
+      const b = el.getBoundingClientRect();
+      return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, height: b.height };
+    });
+    const row = (k: string) => top(`[data-time-row="${k}"]`);
+    const [reading, typing, scrolling] = [await row("reading"), await row("typing"), await row("scrolling")];
+    assert.ok(Math.abs(reading.height - typing.height) < 1, `Reading is ${reading.height}px tall, Typing ${typing.height}px`);
+    assert.ok(Math.abs(typing.top - reading.top - (scrolling.top - typing.top)) < 1, "an even step between rows");
+    await targets44(page);
+    const copy = await page.getByRole("button", { name: "Copy Resume Command" }).boundingBox();
+    const stolen = await page.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest(".time-spent") !== null, [copy!.x + copy!.width / 2, copy!.y + copy!.height - 2]);
+    assert.equal(stolen, false, "the heading's hit area leaves the button above it alone");
+
+    await page.getByRole("button", { name: /^Reading/ }).click();
+    const [open2, part, part2, after] = [await row("reading"), await row("reading-transcript"), await row("reading-alignments"), await row("typing")];
+    assert.ok(part.left - open2.left >= 12, `a part hangs one step under Reading, not ${part.left - open2.left}px`);
+    const guide = await page.locator('[data-time-row="reading-transcript"]').evaluate((el) => getComputedStyle(el.parentElement!).borderLeftWidth);
+    assert.notEqual(guide, "0px", "on a guide rule");
+    const toParent = part.top - open2.bottom;
+    const toNext = after.top - part2.bottom;
+    assert.ok(toParent < toNext, `a part sits nearer Reading (${toParent}px) than the row below (${toNext}px)`);
+
+    const [you, agent, said] = [await top("[data-time-you]"), await top("[data-time-agent]"), await top("[data-time-word]")];
+    assert.ok(said.top < you.bottom && said.bottom > you.top, "the word is on the figures' line");
+    assert.ok(said.left - agent.right <= 32, `the word follows the figures, ${said.left - agent.right}px on`);
+  } finally {
+    await page.context().close();
+  }
+});
 
 for (const [width, height] of [[1440, 1300], [375, 1100]] as const) {
   test(`at ${width}px emphasis follows the place: three weights, whatever the size, Counting and Paused alike`, async () => {
@@ -419,7 +467,7 @@ for (const [width, height] of [[1440, 1300], [375, 1100]] as const) {
   });
 }
 
-test("at 375px nothing scrolls sideways and the expanders are 44px targets", async () => {
+test("at 375px nothing scrolls sideways, and the expanders are 44px targets", async () => {
   const long = { ...RECORD, rows: { ...RECORD.rows, "reading-transcript": 360_000 }, agent: 720_000, alignments: [{ ...RECORD.alignments[0]!, title: "A very long alignment title that has to wrap at the edge of a phone screen without widening anything" }] };
   const page = await open(375, (r) => r.fulfill(json(long)));
   try {
@@ -428,10 +476,7 @@ test("at 375px nothing scrolls sideways and the expanders are 44px targets", asy
     const panel = page.locator(".session-panel-scroll");
     const overflow = await panel.evaluate((el) => el.scrollWidth - el.clientWidth);
     assert.ok(overflow <= 0, `the panel scrolls sideways by ${overflow}px`);
-    for (const name of ["Time Spent", /^Reading/]) {
-      const box = (await page.getByRole("button", { name }).boundingBox())!;
-      assert.ok(box.height >= 43.5, `${String(name)} is ${box.height}px tall`);
-    }
+    await targets44(page);
   } finally {
     await page.context().close();
   }

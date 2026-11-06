@@ -99,7 +99,7 @@ function TimeSpentBody(props: { path: string; id: string }) {
   const [readingOpen, setReadingOpen] = createSignal(false);
 
   return (
-    <div class="time-spent-body stack-2" id={props.id}>
+    <div class="time-spent-body" id={props.id}>
       <Show
         when={view()}
         fallback={
@@ -114,7 +114,7 @@ function TimeSpentBody(props: { path: string; id: string }) {
                   <Line class="time-spent-figure" width="45%" />
                 </div>
                 <div class="time-spent-rows">
-                  <Line class="time-spent-skeleton-tall text-caption" width="35%" />
+                  <Line class="time-spent-row" width="35%" />
                   <Line class="time-spent-row" width="30%" />
                   <Line class="time-spent-row" width="25%" />
                 </div>
@@ -159,7 +159,7 @@ function TimeSpentBody(props: { path: string; id: string }) {
                 <Show when={v().reading}>
                   {(reading) => (
                     <>
-                      <li>
+                      <li class="time-spent-reading">
                         <button
                           type="button"
                           class="time-spent-row time-spent-expander"
@@ -175,17 +175,19 @@ function TimeSpentBody(props: { path: string; id: string }) {
                           </span>
                           <span class="text-num">{formatSpent(reading().seconds)}</span>
                         </button>
+                        <Show when={readingOpen()}>
+                          <ul class="time-spent-parts">
+                            <For each={reading().parts}>
+                              {(part) => (
+                                <li class="time-spent-row time-spent-part" data-time-row={part.key} data-seconds={part.seconds}>
+                                  <span>{part.label}</span>
+                                  <span class="text-num">{formatSpent(part.seconds)}</span>
+                                </li>
+                              )}
+                            </For>
+                          </ul>
+                        </Show>
                       </li>
-                      <Show when={readingOpen()}>
-                        <For each={reading().parts}>
-                          {(part) => (
-                            <li class="time-spent-row time-spent-part" data-time-row={part.key} data-seconds={part.seconds}>
-                              <span>{part.label}</span>
-                              <span class="text-num">{formatSpent(part.seconds)}</span>
-                            </li>
-                          )}
-                        </For>
-                      </Show>
                     </>
                   )}
                 </Show>
@@ -201,23 +203,27 @@ function TimeSpentBody(props: { path: string; id: string }) {
             </Show>
 
             <Show when={v().alignments.length > 0}>
-              <h4 class="time-spent-sub text-caption">Alignments</h4>
-              <ul class="time-spent-docs">
-                <For each={v().alignments}>
-                  {(doc) => (
-                    <li data-time-doc={doc.docId}>
-                      <p class="time-spent-doc-title text-caption">{doc.title}</p>
-                      <p class="text-caption text-muted text-num">{doc.words}</p>
-                    </li>
-                  )}
-                </For>
-              </ul>
+              <div class="stack-2">
+                <h4 class="time-spent-sub text-caption">Alignments</h4>
+                <ul class="time-spent-docs">
+                  <For each={v().alignments}>
+                    {(doc) => (
+                      <li data-time-doc={doc.docId}>
+                        <p class="time-spent-doc-title text-caption">{doc.title}</p>
+                        <p class="text-caption text-muted text-num">{doc.words}</p>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </div>
             </Show>
 
-            <p class="usage-note">An estimate. Reading makes no events, so this goes by what's on screen and your last input.</p>
-            <Show when={v().older}>
-              <p class="usage-note">Your time before Time Spent arrived wasn't recorded.</p>
-            </Show>
+            <div class="time-spent-notes stack-2">
+              <p class="usage-note">An estimate. Reading makes no events, so this goes by what's on screen and your last input.</p>
+              <Show when={v().older}>
+                <p class="usage-note">Your time before Time Spent arrived wasn't recorded.</p>
+              </Show>
+            </div>
           </>
         )}
       </Show>

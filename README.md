@@ -11,7 +11,8 @@
 
 Sova runs the [pi](https://pi.dev) coding agent on your own machine, through pi's SDK, each chat in
 a process of its own, and uses the same `~/.pi/agent` directory as pi. It lists every session on
-the machine, shows any transcript, and gives web chats workers, branching and steering. It is one person's tool for one person's agent.
+the machine, shows any transcript, and gives web chats workers, branching and steering. It is one
+person's tool for one person's agent.
 
 <a href="https://sova.naomarik.com/" title="Watch a session run in Sova (video on the site)">
   <img src="site/src/assets/screens/hero-desk.webp" alt="Sova on a desktop: the sessions sidebar with 2 sessions that need you, a session in Delegate mode waiting on its 3 workers, and the working worker's transcript." width="920">

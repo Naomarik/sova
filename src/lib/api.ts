@@ -146,6 +146,7 @@ import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../
 import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../shared/provider-limits";
 import type { TargetInfo } from "./remote-session";
 import type { CommandEntry } from "../../shared/commands-catalog";
+import type { BackgroundJob } from "../../shared/protocol";
 import type { AlignTriage, WorkerChecks, DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
 import { upgradeLegacyRows } from "./legacy-rows";
@@ -1020,6 +1021,17 @@ export const fetchTeamInboxBody = (path: string, teamId: string, workerId: strin
   request<TeamInboxBody>(
     `/api/insights/session/inbox?path=${encodeURIComponent(path)}&team=${encodeURIComponent(teamId)}&worker=${encodeURIComponent(workerId)}&item=${encodeURIComponent(id)}`,
   );
+
+/** A chat's running background jobs and its workers' (§app.background-jobs/pane). Starts no chat. */
+export const fetchSessionJobs = (path: string) => request<{ jobs: BackgroundJob[] }>(`/api/sessions/jobs?path=${encodeURIComponent(path)}`);
+
+/** Stop one background job: 15 s to finish, then the rest ends. Never starts or wakes the chat.
+    `sessionId` names a worker's job (the job's own `sessionId`). */
+export const stopSessionJob = (path: string, id: string, sessionId?: string) =>
+  request<{ ok: true; id: string; ended: boolean }>("/api/sessions/jobs/stop", {
+    method: "POST",
+    body: JSON.stringify({ path, id, ...(sessionId ? { sessionId } : {}) }),
+  });
 
 /** The repository around a session's folder (read-only git). `fresh` skips the server's ~10s cache.
     Use loadGitSummary (lib/git-summary.ts), which shares a request already running. */

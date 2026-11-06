@@ -226,6 +226,9 @@ export const NUDGE_MAX_DELAY_MS = 24 * 3600_000;
 export const NUDGE_MAX_ACTIVE = 5;
 /** Consecutive fires while no other member is working; a working teammate resets the count. */
 export const NUDGE_MAX_IDLE_FIRES = 30;
+/** A stopped monitor that won't resume is tried this many times by a running parent, then at its next start. */
+export const NUDGE_RESUME_RETRIES = 3;
+export const NUDGE_RESUME_RETRY_MS = 30_000;
 export const NUDGE_PAST_TOLERANCE_MS = 60_000;
 
 export function fmtDur(ms: number): string {

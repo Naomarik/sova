@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 554 |
-| Routes a catalogue entry points at | 171 |
-| Catalogue entries | 233 |
+| Routes registered | 556 |
+| Routes a catalogue entry points at | 173 |
+| Catalogue entries | 235 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -35,7 +35,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Pending (not yet a command) | 23 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 11 |
-| Hand-written tool specs | 129 |
+| Hand-written tool specs | 130 |
 
 ## Catalogue entries
 
@@ -87,6 +87,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.worktree.summary` | Count Merged Worktrees | looks | `GET /api/worktrees/summary` | sessions |
 | `session.worktree.cleanup` | Clean Up Worktrees | changes | `POST /api/worktrees/cleanup` | sessions |
 | `session.diff.summary` | Show Changes | looks | `GET /api/diff/summary` | sessions |
+| `session.job.list` | List Background Jobs | looks | `GET /api/sessions/jobs` | sessions |
+| `session.job.stop` | Stop Background Job | changes | `POST /api/sessions/jobs/stop` | sessions |
 | `project.verb.create` | Project create | changes | `POST /api/project-services/create` | admin |
 | `project.verb.up` | Project up | changes | `POST /api/project-services/up` | admin |
 | `project.verb.down` | Project down | changes | `POST /api/project-services/down` | admin |
@@ -916,6 +918,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/sessions/draft` | sessions | `session.draft.get` |
 | `PUT /api/sessions/draft` | sessions | `session.draft.set` |
 | `POST /api/sessions/fork` | sessions | `session.fork` |
+| `GET /api/sessions/jobs` | sessions | `session.job.list` |
+| `POST /api/sessions/jobs/stop` | sessions | `session.job.stop` |
 | `POST /api/sessions/prompt` | sessions | `session.send` |
 | `POST /api/sessions/shorten-titles` | sessions | `session.title.shorten` |
 | `GET /api/sessions/summary` | sessions | `session.get` |
@@ -984,6 +988,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | --- | ---: | --- |
 | `server/assistant-news.ts` | 1 | `project_news` |
 | `server/assistant-request-tools.ts` | 3 | `owner_requests`, `close_request`, `reopen_request` |
+| `server/background-jobs-request.ts` | 1 | `background_job` |
 | `server/baton-files.ts` | 2 | `<computed: INSPECT_TOOL>`, `confirm_file` |
 | `server/baton-loadout.ts` | 4 | `record_decision`, `hand_to`, `goal_done`, `propose_roster_edit` |
 | `server/baton-read-link.ts` | 1 | `read_link` |

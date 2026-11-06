@@ -120,6 +120,8 @@ test("never offered: Sova's server and its children, sova-runtime.service, a cha
   assert.match(L.protectedWhy(3000, cg("0::/user.slice/user@1000.service/app.slice/sova-runtime.service\n"))!, /sova-runtime\.service/);
   assert.equal(L.protectedWhy(3000, cg("0::/user.slice/user@1000.service/app.slice/sova-svc-abc123-demo-1-web.service\n")), "a copy's own process");
   assert.equal(L.protectedWhy(3000, cg("0::/user.slice/user@1000.service/sova-chats.slice/sova-chat-abc-1.service\n")), "a process a chat started", "reparented, still in the chat's unit");
+  assert.equal(L.protectedWhy(3000, cg("0::/user.slice/user@1000.service/sova-jobs.slice/sova-job-abc123-sessA-j1.scope\n")), "a chat's background job", "a kept job, out of its chat's unit");
+  assert.equal(L.protectedWhy(3000, cg("0::/user.slice/user@1000.service/sova-jobs.slice/sova-job-abc123-sessA-j2.service\n")), "a chat's background job", "a requested job");
   assert.equal(L.protectedWhy(3000, { ...cg("0::/x.scope\n"), isChatProcess: (p: number) => p === 3000 }), "a chat process");
   const chain = { ...cg("0::/x.scope\n"), ppid: (p: number) => (p === 3000 ? 2990 : p === 2990 ? 2980 : 1), isChatProcess: (p: number) => p === 2980 };
   assert.equal(L.protectedWhy(3000, chain), "a process a chat started", "a chat's grandchild: a server it started by hand");

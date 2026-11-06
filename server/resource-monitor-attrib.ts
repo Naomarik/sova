@@ -153,6 +153,9 @@ export interface AttribInput {
   /** A process in a chat's unit of its own → that chat's process (the unit holds what the chat started,
       reparented or not). */
   unitOf?: ReadonlyMap<number, number>;
+  /** A process in a running background job's unit → the chat its record names (a worker's: the
+      worker's parent and that worker), whether or not that chat runs. */
+  jobOwner?: ReadonlyMap<number, Owner>;
   sids: SidMemory;
 }
 
@@ -255,6 +258,8 @@ export function attribute(input: AttribInput): Attribution {
       if (inTree.has(ppid)) inTree.add(pid);
       if (!owner && up) owner = up.session === undefined && up.worker?.startsWith("unowned:") ? up : { ...up, via: "descendant" };
     }
+    // In a background job's unit: the chat that left it, through the job's record.
+    if (!owner) owner = input.jobOwner?.get(pid);
     // In a chat's unit but no longer under it (setsid'd, reparented): still the chat's.
     const chat = owner ? undefined : input.unitOf?.get(pid);
     if (chat && chat !== pid && procs.has(chat)) {

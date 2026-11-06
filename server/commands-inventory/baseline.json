@@ -208,6 +208,7 @@
     "GET /api/sessions/dir": {"need":"sessions","is":"page-plumbing"},
     "GET /api/sessions/draft": {"need":"sessions","is":"command","ids":["session.draft.get"]},
     "GET /api/sessions/git": {"need":"sessions","is":"pending"},
+    "GET /api/sessions/jobs": {"need":"sessions","is":"command","ids":["session.job.list"]},
     "GET /api/sessions/summary": {"need":"sessions","is":"command","ids":["session.get"]},
     "GET /api/sessions/tools": {"need":"sessions","is":"command","ids":["session.tools.get"]},
     "GET /api/sessions/worker-checks": {"need":"sessions","is":"command","ids":["session.workers.checks"]},
@@ -451,6 +452,7 @@
     "POST /api/sessions/configure": {"need":"sessions","is":"command","ids":["session.configure"]},
     "POST /api/sessions/connect": {"need":"sessions","is":"pending"},
     "POST /api/sessions/fork": {"need":"sessions","is":"command","ids":["session.fork"]},
+    "POST /api/sessions/jobs/stop": {"need":"sessions","is":"command","ids":["session.job.stop"]},
     "POST /api/sessions/loadout": {"need":"sessions","is":"chat-start"},
     "POST /api/sessions/profile": {"need":"sessions","is":"chat-start"},
     "POST /api/sessions/prompt": {"need":"sessions","is":"command","ids":["session.send"]},
@@ -570,6 +572,7 @@
   "tools": {
     "server/assistant-news.ts": ["project_news"],
     "server/assistant-request-tools.ts": ["owner_requests","close_request","reopen_request"],
+    "server/background-jobs-request.ts": ["background_job"],
     "server/baton-files.ts": ["<computed: INSPECT_TOOL>","confirm_file"],
     "server/baton-loadout.ts": ["record_decision","hand_to","goal_done","propose_roster_edit"],
     "server/baton-read-link.ts": ["read_link"],

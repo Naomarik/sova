@@ -91,6 +91,13 @@ interface Live {
 
 const log = (line: string) => console.log(`[chat-workers] ${line}`);
 
+const workerKilledListeners = new Set<(chatId: string) => void>();
+/** Hear every worker chat a stop ends (never its idle stop). */
+export function onWorkerKilled(fn: (chatId: string) => void): () => void {
+  workerKilledListeners.add(fn);
+  return () => workerKilledListeners.delete(fn);
+}
+
 function sizeOf(path: string): number {
   try {
     return statSync(path).size;
@@ -131,6 +138,17 @@ export function deathText(d: Pick<ChatDeath, "exit" | "signal" | "logTail">): st
   let tail = d.logTail.filter((l) => l.trim()).slice(-DEATH_LINES).join("\n");
   if (Buffer.byteLength(tail) > DEATH_BYTES) tail = Buffer.from(tail).subarray(-DEATH_BYTES).toString("utf8").replace(/^\uFFFD+/, "");
   return `This worker's process stopped unexpectedly (${how})${tail.trim() ? `\nLast output: ${tail.trim()}` : ""}`;
+}
+
+/** A worker chat as the wake keeper sees it: who brings it back, and whether it can come back. */
+export interface WakeOwner {
+  parentPath: string;
+  parentSessionId: string;
+  workerId: string;
+  /** Its process runs now. */
+  running: boolean;
+  /** Its record ended: how. `killed`: stopped on purpose, so nothing brings it back. */
+  ended?: EndCause;
 }
 
 export class WorkerRegistry {
@@ -352,6 +370,14 @@ export class WorkerRegistry {
     // A report still waiting to open its parent goes with it (an archived parent opens for none).
     this.cancelSettle(l);
     this.set(l, { state: "ended", ended: { cause: "killed", at: new Date(this.now()).toISOString() } });
+    // Stopping a worker stops its background jobs; its idle stop doesn't (§app.background-jobs/stopping).
+    for (const fn of workerKilledListeners) {
+      try {
+        fn(chatId);
+      } catch (err) {
+        log(`${chatId}: a stop listener failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
     await this.procs.stop(l.rec).catch((err) => log(`${chatId}: stop failed: ${err instanceof Error ? err.message : String(err)}`));
     l.handle = null;
     this.ended(l, { t: "ended", cause: "killed" });
@@ -367,6 +393,31 @@ export class WorkerRegistry {
     // Every report still waiting to open the parent, an ended worker's included.
     for (const l of this.live.values()) if (l.rec.parent.sessionId === parentSessionId) this.cancelSettle(l);
     await Promise.all([...this.live.values()].filter((l) => l.rec.parent.sessionId === parentSessionId && l.rec.state !== "ended").map((l) => this.stop(l.rec.chatId, reason)));
+  }
+
+  /** The keeper's view of worker chat `chatId`, if it is one. */
+  wakeOwner(chatId: string): WakeOwner | undefined {
+    const l = this.live.get(chatId);
+    if (!l) return undefined;
+    return {
+      parentPath: l.rec.parent.path,
+      parentSessionId: l.rec.parent.sessionId,
+      workerId: l.rec.parent.workerId,
+      running: !!l.handle && !l.handle.closed,
+      ...(l.rec.state === "ended" && l.rec.ended ? { ended: l.rec.ended.cause } : {}),
+    };
+  }
+
+  /** Start a stopped worker's process under its recorded loadout: nothing is sent to it. */
+  async reopen(chatId: string): Promise<void> {
+    const l = this.get(chatId);
+    if (l.rec.state === "ended") throw new Error(`${l.rec.parent.workerId} has ended`);
+    await this.open(l);
+  }
+
+  /** Every worker chat of parent session `parentSessionId`, ended ones too. */
+  chatsOf(parentSessionId: string): string[] {
+    return [...this.live.values()].filter((l) => l.rec.parent.sessionId === parentSessionId).map((l) => l.rec.chatId);
   }
 
   // ---- the feed -----------------------------------------------------------------------------------

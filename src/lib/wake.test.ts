@@ -51,3 +51,22 @@ test("parseWakeNudge tolerates CRLF and extra spaces", () => {
 test("wakeTitle names the nudge", () => {
   assert.equal(wakeTitle({ id: "n1" }), "Wake nudge n1");
 });
+
+test("a job card carries when its job ended, the latest of several; a card from before that line has none", async () => {
+  const { jobCardText } = await import("../../pi-config/extensions/subagents/job-store.ts");
+  type JobRecord = import("../../pi-config/extensions/subagents/job-store.ts").JobRecord;
+  const job = (id: string, endedAt: number): JobRecord => ({ v: 1, id, sessionId: "s", path: "/s.jsonl", kind: "kept", command: "make lab > lab.log &", cwd: "/w", unit: "u", driver: "systemd", startedAt: endedAt - 300_000, bootId: "b", output: "/w/lab.log", ended: { at: endedAt, how: "exited", card: "wake" } });
+  const end = Date.parse("2026-11-04T14:32:05.000Z");
+  const one = jobCardText([job("j1", end)], {});
+  assert.match(one, /\nEnded at 2026-11-04T14:32:05\.000Z\.\n/);
+  assert.deepEqual(parseWakeNudge(one), { id: "j1", job: true, reason: "make lab > lab.log &", endedAt: end });
+  // Late: the end time is still the job's, not the delivery's.
+  assert.equal(parseWakeNudge(jobCardText([job("j1", end)], { late: 3_600_000 }))?.endedAt, end);
+  const two = jobCardText([job("j1", end + 60_000), job("j2", end)], {});
+  assert.equal(parseWakeNudge(two)?.endedAt, end + 60_000);
+  // An older row: no end line, so no end time (the card shows its arrival), and it still parses.
+  const old = "[job j1] Background job ended.\nj1: `make lab > lab.log &`, ran 5m.\nOutput: /w/lab.log\nIt ended on its own; its output says whether it worked.\nRead its output and decide what to do next. Prioritize any newer user message.";
+  assert.deepEqual(parseWakeNudge(old), { id: "j1", job: true, reason: "make lab > lab.log &" });
+  // Only the card's own line counts, never a quoted lookalike in the command.
+  assert.equal(parseWakeNudge("[job j1] Background job ended.\nj1: `echo Ended at 2026-01-01T00:00:00.000Z.`, ran 1m.")?.endedAt, undefined);
+});

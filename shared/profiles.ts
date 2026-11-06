@@ -21,7 +21,7 @@ export type Grantable = (typeof GRANTABLE)[number];
 
 /** The tools each removable capability takes away. Exact names, except the `*` prefixes. */
 export const CAPABILITY_TOOLS: Record<Removable, readonly string[]> = {
-  shell: ["bash"],
+  shell: ["bash", "background_job"],
   edit: ["edit", "write"],
   workers: ["agent_*", "team_*"],
   web: ["web_search", "fetch_content", "get_search_content", "source_check"],

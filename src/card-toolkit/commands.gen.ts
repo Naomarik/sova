@@ -49,6 +49,8 @@ export type CommandId =
   | "session.worktree.summary"
   | "session.worktree.cleanup"
   | "session.diff.summary"
+  | "session.job.list"
+  | "session.job.stop"
   | "project.verb.create"
   | "project.verb.up"
   | "project.verb.down"
@@ -564,6 +566,20 @@ export interface CommandParams {
     "path": string;
     /** With commit or merge: the commit */
     "sha"?: string;
+  };
+  /** A chat's running background jobs and its workers': what runs, since when, where its output goes. Starts no chat. (only looks; needs the card's owner trusted) */
+  "session.job.list": {
+    /** The session, by id or by path */
+    "session"?: string;
+  };
+  /** Stop one background job: 15 s to finish, then the rest ends. Never starts or wakes the chat. (changes something; needs the card's owner trusted) */
+  "session.job.stop": {
+    /** The session, by id or by path */
+    "session"?: string;
+    /** The job, such as j1 */
+    "id": string;
+    /** A worker's job: that worker's chat id (the job's sessionId) */
+    "sessionId"?: string;
   };
   /** The project verb create, as the operator (sova-project create). (changes something; needs the card's owner trusted) */
   "project.verb.create": {
@@ -3732,6 +3748,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "session.worktree.summary": "looks",
   "session.worktree.cleanup": "changes",
   "session.diff.summary": "looks",
+  "session.job.list": "looks",
+  "session.job.stop": "changes",
   "project.verb.create": "changes",
   "project.verb.up": "changes",
   "project.verb.down": "changes",

@@ -5,8 +5,8 @@ alsoUpdate: ["pi-config/extensions/spec/docs/CHANGELOG.md"]
 # spec
 
 The spec system: the `.sova/spec` tools, the `spec` minor mode that tells agents to run them, and its hooks. This
-guide is for changing the system. To follow the discipline while working on Sova, AGENTS.md points at
-`pi-config/extensions/mode/spec-mode.md` and, before a behavior change, `pi-config/extensions/spec/WRITING.md`.
+guide is for changing the system. To follow the discipline while working on Sova with spec on, AGENTS.md points at
+the mode's block and, before a behavior change, `pi-config/extensions/spec/WRITING.md`.
 
 ## What lives here, and its own docs
 

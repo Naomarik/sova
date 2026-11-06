@@ -1,10 +1,17 @@
 /* Settings → Merge Queue (MergeQueueSettings.tsx): groups of 3-cell rows (label, value, where it
    lives or its action). MergeQueueLandHow.tsx uses the same row classes. Rows stack under 640px. */
 .mqs-project {
+  flex-direction: row;
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
 }
+.mqs-project .select-wrap { flex: 0 1 auto; min-width: 0; }
+.mqs-project .select { min-width: 0; max-width: 100%; }
+/* The heading stays on one line beside the project picker; the picker gives way. */
+.mqs > .settings-type-head > .settings-type-title { flex: none; white-space: nowrap; }
+.mqs > .settings-type-head > .mqs-project { flex: 0 1 auto; }
 .mqs-body {
   display: flex;
   flex-direction: column;
@@ -53,7 +60,10 @@
   justify-content: flex-end;
   gap: var(--space-2);
 }
+/* A source tag (Set by Sova, Project file) is a small tag at its own width: at a row's end, or under its value once
+   the row stacks, never stretched across it. */
 .mqs-tag {
+  justify-self: end;
   font-size: var(--fs-micro);
   line-height: var(--lh-micro);
   padding: 2px 6px;
@@ -107,4 +117,6 @@
 @media (max-width: 640px) {
   .mqs-row { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
   .mqs-end { justify-content: flex-start; }
+  .mqs-row > .mqs-tag { justify-self: start; }
 }
+.mqs-from-row { flex-wrap: wrap; gap: var(--space-2); }

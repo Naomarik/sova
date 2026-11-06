@@ -117,7 +117,10 @@ its standing chip, and its controls; with more than one login in the account, it
 **Down** move it inside the account only. The name is renamed in place: **Rename** turns it into a
 field with **Save Name** and **Cancel**; Enter or **Save Name** saves it as the login's `label`
 (`PATCH /api/claude/accounts/:id` `{label}`), Escape or **Cancel** leaves it (and Settings stays
-open), and an empty name goes back to "Login N". A login's controls are named with its account
+open), and an empty name goes back to "Login N". The field is the form kit's (§design/forms): a
+name past 80 characters is kept whole, never cut, with its count "{n} / 80" red and "Login name
+can be at most 80 characters." under it, and Save Name (and Enter) waits until it fits; the server
+refuses such a name in the same sentence, both reading one rule (`shared/account-limits.ts`). A login's controls are named with its account
 ("Rename Login 1 of a@example.com"), so two accounts' "Login 1" never share a name. A login can be
 switched off or on (**Use**, `enabled`; off = never chosen automatically) and removed. A login
 that a project or organization here uses (§app.claude-logins/project-login) says so on its row:
@@ -402,24 +405,27 @@ one Claude login of this host that its new chats start on.
 Apart from the last-resort rule above, a chat in no registered project, or in an archived one,
 behaves exactly as before.
 
-## §app.claude-logins/accounts-tab — Settings → Accounts
+## §app.claude-logins/accounts-tab — Settings → Accounts → Claude
 
-A tab in Settings, **Accounts**, between Models and Modes. Its **Claude Logins** section says that
+A tab in Settings, **Accounts**, between Models and Modes, holds one tab per provider
+(§app/provider-keys); this is its **Claude** tab. Its **Claude Logins** section says that
 every Claude process on this device (its mesh name, or "This device") runs on the first ready
 login in the order, then lists the logins by account (§app.claude-logins/device-order); Remove asks inline
 what goes away and what stays, and on a login a project or organization uses, first says "Used by
 {names}: they go back to No preference." (§app.claude-logins/project-login). Under the list, **Add a login** (§app.claude-logins/add-remove) is
 a panel with four states: starting ("Starting Claude Code's sign-in…"); waiting for the code (the
 URL as a link with **Copy Link**, a **Code** field, **Finish Sign-In** and **Cancel**, and the
-reason when Claude Code refused a code); done (**Added**, the new login's email, organization and
+reason when Claude Code refused a code, as the Code field's one sentence under it); done (**Added**, the new login's email, organization and
 plan, whether it shares an account already here, and **Done**); failed (the reason, "Nothing was
 added.", **Close** and **Try Again**). Closing Settings cancels a flow still waiting for its code.
-No token or credential is ever shown or sent to the browser.
+No Claude login's token or credential is ever shown or sent to the browser.
 Under the logins, one plain line says whether the Claude Code CLI was found
 (§app.claude-logins/cli-status). On macOS a login counts as signed in when its keychain item
 exists (§app.claude-logins/macos-keychain), so **Add a login** finishes there too; and when this
 device's own login can be read neither from its file nor from the keychain, a muted line under
-**This device's own login** says "On macOS, add your Claude login under Settings → Accounts."
+**This device's own login** says "On macOS, add your Claude login under Settings → Accounts → Claude."
+Below the CLI line, the tab's pay-as-you-go **Anthropic API key** (§app.provider-keys/pay-as-you-go).
+The ChatGPT subscription sign-in is on the OpenAI tab (§app.openai-login/section).
 
 **While the mesh is on** the section is the pool (§app.claude-logins/pool): an intro that every
 device shares these logins, one at a time, borrowed from the keeper and given back after a limit,
@@ -570,7 +576,7 @@ keeper and holder, and every login on it is used as before (§app.claude-logins/
 
 ## §app.claude-logins/cli-status — Is the Claude Code CLI here
 
-Settings → Accounts ends with one muted status line about the Claude Code CLI, read when the tab
+Accounts → Claude's sign-ins end with one muted status line about the Claude Code CLI, read when the tab
 opens (`GET /api/settings/claude-status`: `claude --version` on this host's first usable login,
 and how many `claude-code-cli` models the server's runtime holds). It says, first match wins:
 "Checking for the Claude Code CLI…" while it asks; "Claude Code CLI: {reason}" when the CLI could
@@ -592,7 +598,7 @@ user's keychain), `$CLAUDE_SECURESTORAGE_CONFIG_DIR` is unset (it renames every 
 login's directory holds no `.credentials.json`, Sova reads that login's item instead, for every
 login on this device, `default` and added ones alike:
 
-- **Whether it is signed in** — Settings → Accounts' **Not signed in**, the check that finishes
+- **Whether it is signed in** — Accounts → Claude's **Not signed in**, the check that finishes
   **Add a login** or **Sign In Again**, a spawn's refusal of a login that isn't signed in, and
   whether a login needing sign-in has been signed in again since (its credentials changed) — comes
   from the item's modification time, read from its attributes only (`security
@@ -614,9 +620,9 @@ is as before, byte for byte.
 
 When this host is macOS and `default`'s login can be read neither from the file nor from the
 keychain, `GET /api/insights/usage` and `GET /api/claude/accounts` carry `claudeOwnLoginUnreadable:
-true` (absent otherwise), and the Usage page (under its lead line) and Settings → Accounts (under
+true` (absent otherwise), and the Usage page (under its lead line) and Accounts → Claude (under
 **This device's own login**) each show one muted hint: "On macOS, add your Claude login under
-Settings → Accounts." On every other platform neither field nor hint ever appears.
+Settings → Accounts → Claude." On every other platform neither field nor hint ever appears.
 
 **The pool can't move a keychain login.** The pool (§app.claude-logins/pool) moves a login between
 devices as its credentials file and never reads or writes the keychain for it. So a login this Mac
@@ -625,7 +631,7 @@ never returned, lent or kept free — not after a limit or a failed sign-in, not
 idle, not when **Return** is asked or it is pinned to another device, not for a new keeper — and
 a move already under way for it is called off, leaving it held and used here (its limit or sign-in
 standing still keeps it unused until that clears). It is never deleted for having no file. While
-the mesh is on, Settings → Accounts shows it on this Mac with "Stays on this Mac: its sign-in is in
+the mesh is on, Accounts → Claude shows it on this Mac with "Stays on this Mac: its sign-in is in
 the macOS keychain, which the pool can't move." in place of **Return** and the pin select. Other
 devices are not told: the pool still shows it held by this Mac, and a **Return** asked there is
 never carried out. Removing it from the pool, or another device signing it in again, still drops

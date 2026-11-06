@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MergeEntry, MergeRun, RunStep, WorktreeQueueInfo } from "../../shared/merge-queue";
-import { entryLandBlock, SENT_BACK_LINE, stillSentBack, rowButtons, attribution, clock, controlWords, mins, notesOf, pausedTitle, pushedWords, queueRow, queueStateChip, rowsSummary, runProgress, sourceTag, verdictChip, waitingHead, type QueueRowInput } from "./merge-queue";
+import { entryLandBlock, SENT_BACK_LINE, stillSentBack, rowButtons, attribution, clock, controlWords, mins, notesOf, pausedTitle, pushedWords, queueRow, queueStateChip, rowsSummary, runProgress, sourceTag, stepCounts, stepDetail, stepMark, stepTime, tildeIn, verdictChip, waitingHead, type QueueRowInput } from "./merge-queue";
 
 const SHA = "a".repeat(40);
 const wt = (x: Partial<QueueRowInput> = {}): QueueRowInput => ({ status: "active", exists: true, branch: "feat/x", readiness: undefined, ...x });
@@ -170,15 +170,12 @@ test("whose failure: a branch's (passes on master, fails again on the tip)", () 
   assert.equal(attribution({ verdict: "passed", steps: [] } as unknown as MergeRun), null);
 });
 
-test("the onboarding's check list: Name: command per line, the rest named back", async () => {
-  const { parseCheckList } = await import("./merge-queue");
-  assert.deepEqual(parseCheckList("Typecheck: npm run typecheck\n\nUnit tests: npm test -- --ci\nbroken line\n: no name"), {
-    checks: [
-      { label: "Typecheck", command: "npm run typecheck" },
-      { label: "Unit tests", command: "npm test -- --ci" },
-    ],
-    bad: [4, 5],
-  });
+test("not set up: unserved, or checks unset; an invalid definition is a setup, said as such", async () => {
+  const { notSetUp } = await import("./merge-queue");
+  assert.equal(notSetUp({ served: false, checks: "declared" }), true);
+  assert.equal(notSetUp({ served: true, checks: "unset" }), true);
+  assert.equal(notSetUp({ served: true, checks: "declared" }), false);
+  assert.equal(notSetUp({ served: false, checks: "unset", invalid: "bad json" }), false);
 });
 
 test("row numbers: on live rows only; Land pins the head they were read at", async () => {
@@ -223,6 +220,56 @@ test("can't tell whose failure: its words, the queue's why, Land Anyway and Send
   assert.equal(r.reason, "Build failed with this branch and on master alone.");
   assert.deepEqual(controlWords([{ key: "unattributed" }, { key: "ready" }]), { text: "1 needs you", n: 1, dot: "warn" });
   assert.equal(rowsSummary([{ key: "unattributed" }]), "1 can't tell whose failure");
+});
+
+// ---- the run page's Checks and why ----
+
+const runStep = (x: Partial<RunStep>): RunStep => ({ id: "check:unit", kind: "check", label: "Unit tests", result: "passed", ms: 75_000, log: "check-unit.log", ...x });
+
+test("a step's time: a finished one shows what it took; a running one counts up from its start; waiting and skipped show none", () => {
+  const now = Date.parse("2026-11-03T10:01:42Z");
+  assert.equal(stepTime(runStep({}), now), "1:15");
+  assert.equal(stepTime(runStep({ result: "failed", ms: 57_000 }), now), "0:57");
+  assert.equal(stepTime(runStep({ result: "running", ms: 0, startedAt: "2026-11-03T10:00:00Z" }), now), "1:42", "not 0:00");
+  assert.equal(stepTime(runStep({ result: "running", ms: 0 }), now), "", "no start known: no made-up time");
+  assert.equal(stepTime(runStep({ result: "pending", ms: 0 }), now), "");
+  assert.equal(stepTime(runStep({ result: "skipped", ms: 3 }), now), "");
+});
+
+test("a check's counts go with its description: none on a skipped check, none when every count is zero; a failed count is marked", () => {
+  assert.deepEqual(stepCounts(runStep({ counts: { passed: 11496, failed: 0, skipped: 5 } })), [{ text: "11496 passed" }, { text: "5 skipped" }]);
+  assert.deepEqual(stepCounts(runStep({ result: "failed", counts: { passed: 10, failed: 2, skipped: null } })), [{ text: "10 passed" }, { text: "2 failed", failed: true }]);
+  assert.deepEqual(stepCounts(runStep({ result: "skipped", counts: { passed: 0, failed: 0, skipped: 0 } })), [], "no stray '0 passed'");
+  assert.deepEqual(stepCounts(runStep({ counts: { passed: 0, failed: null, skipped: null } })), []);
+  assert.deepEqual(stepCounts(runStep({ counts: null })), []);
+});
+
+test("status marks: nothing that looks like it expands; skipped and unchanged setup get a dash, waiting an empty ring", () => {
+  assert.equal(stepMark(runStep({ result: "passed" })).icon, "check");
+  assert.equal(stepMark(runStep({ result: "failed" })).icon, "close");
+  assert.equal(stepMark(runStep({ result: "running" })).icon, "clock");
+  assert.equal(stepMark(runStep({ result: "skipped", kind: "setup", detail: "unchanged since the last run" })).icon, "minus");
+  assert.deepEqual(stepMark(runStep({ result: "pending" })), { icon: null, cls: "mq-wait", word: "Waiting" });
+  for (const r of ["passed", "failed", "running", "pending", "skipped"] as const) assert.notEqual(stepMark(runStep({ result: r })).icon, "chevron-right");
+});
+
+test("a step's detail: the home folder shortened, the copy's folder and commits in mono, anything else plain", () => {
+  const home = "/home/me";
+  assert.deepEqual(stepDetail(runStep({ id: "copy", kind: "copy", detail: "/home/me/webapps/.worktrees/x-merge at 0123abc" }), home), [{ text: "~/webapps/.worktrees/x-merge", mono: true }, { text: " at " }, { text: "0123abc", mono: true }]);
+  assert.deepEqual(stepDetail(runStep({ id: "merge", kind: "merge", detail: "89abcde" }), home), [{ text: "89abcde", mono: true }]);
+  assert.deepEqual(stepDetail(runStep({ result: "failed", detail: "exit 1: added /home/me/a.ts" }), home), [{ text: "exit 1: added ~/a.ts" }], "free text stays one plain part");
+  assert.deepEqual(stepDetail(runStep({ detail: undefined }), home), []);
+  assert.equal(tildeIn("/home/me2/x and /home/me/y", home), "/home/me2/x and ~/y", "only the home folder itself");
+  assert.equal(tildeIn("/mnt/home/me/x", home), "/mnt/home/me/x", "a home path inside another path stays");
+  assert.equal(tildeIn("copy /mnt/home/me/x to /home/me/x", home), "copy /mnt/home/me/x to ~/x");
+  assert.equal(tildeIn("/home/me", home), "~", "the bare home folder, alone");
+  assert.equal(tildeIn("cd /home/me && ls", home), "cd ~ && ls", "the bare home folder before a space");
+  assert.equal(tildeIn("/home/me.bak/x", home), "/home/me.bak/x", "a sibling folder stays");
+  assert.equal(tildeIn(`at "/home/me/a" (/home/me/b) cwd=/home/me/c PATH=/bin:/home/me/d, /home/me/e`, home), `at "~/a" (~/b) cwd=~/c PATH=/bin:~/d, ~/e`, "after a quote, bracket, =, : or comma");
+  assert.equal(tildeIn("/home/me/x/home/me/y", home), "~/x/home/me/y", "only where a path starts");
+  assert.equal(tildeIn("/home/me/x", "/home/me/"), "~/x", "a trailing slash on home is ignored");
+  assert.equal(tildeIn("/a+b/x", "/a+b"), "~/x", "regex characters in home are literal");
+  assert.equal(tildeIn("/aab/x", "/a+b"), "/aab/x");
 });
 
 // al_4: no Land at all while a sent-back branch is being fixed; the fixed, finished commit brings Land back.
@@ -299,4 +346,70 @@ test("a sent-back entry superseded by a later cancelled one no longer reads Need
   assert.equal(info?.settled, "superseded");
   assert.notEqual(queueRow(wt({ queue: info, mergeServed: true })).key, "needs-fix");
   assert.equal(queueRow(wt({ queue: { ...info!, settled: undefined }, mergeServed: true })).key, "needs-fix", "unsettled, it still would");
+});
+
+test("a live row's size carries when the branch last changed; a landed or merged row has no date", async () => {
+  const { headWhen } = await import("./merge-queue");
+  const at = new Date(Date.now() - 2 * 24 * 3600_000).toISOString();
+  const stats = { head: SHA, ahead: 3, added: 40, removed: 2, headAt: at };
+  for (const x of [wt({ readiness: ready, mergeServed: true, mergeStats: stats }), wt({ readiness: { ...ready, state: "in-progress", dirtyCount: 1 }, mergeStats: stats }), wt({ queue: q({ state: "checking" }), mergeStats: stats }), wt({ queue: q({ state: "needs-fix" }), mergeStats: stats })]) {
+    const r = queueRow(x);
+    assert.equal(r.size, "3 commits · +40 −2", r.key);
+    assert.deepEqual(r.when, headWhen(at), r.key);
+    assert.equal(r.when?.text, "2d ago");
+    assert.equal(r.when?.iso, at);
+  }
+  for (const x of [wt({ queue: q({ state: "landed" }), mergeStats: stats }), wt({ status: "merged", mergeStats: stats }), wt({ exists: false, mergeStats: stats })]) {
+    const r = queueRow(x);
+    assert.equal(r.when, undefined, r.key);
+    assert.equal(r.size, undefined, r.key);
+  }
+  // No date read: the size alone.
+  assert.equal(queueRow(wt({ readiness: ready, mergeServed: true, mergeStats: { head: SHA, ahead: 1, added: 1, removed: 0 } })).when, undefined);
+});
+
+test("the date reads relative, then a date past a week; in full for hover and screen readers", async () => {
+  const { headWhen } = await import("./merge-queue");
+  const now = Date.parse("2026-11-05T15:00:00");
+  assert.equal(headWhen(new Date(now - 2 * 3600_000).toISOString(), now)?.text, "2h ago");
+  assert.equal(headWhen(new Date(now - 24 * 3600_000).toISOString(), now)?.text, "yesterday");
+  assert.equal(headWhen(new Date(now - 3 * 24 * 3600_000).toISOString(), now)?.text, "3d ago");
+  const old = headWhen("2026-10-02T13:43:00", now)!;
+  assert.equal(old.text, "Oct 2");
+  assert.equal(old.full, "Oct 2, 2026, 1:43 PM");
+  assert.equal(headWhen(undefined, now), undefined);
+  assert.equal(headWhen("not a date", now), undefined);
+});
+
+test("a Ready row's facts: commits ahead, lines, the date apart", async () => {
+  const { readyFactsWords } = await import("./merge-queue");
+  assert.equal(readyFactsWords({ ahead: 3, added: 1497, removed: 309 }), "3 commits ahead · +1497 −309");
+  assert.equal(readyFactsWords({ ahead: 1 }), "1 commit ahead");
+});
+
+test("a Ready row's chip is its chat's readiness reading, in the Worktrees rows' words; no chat says so", async () => {
+  const { readyRowChip, chatTreesOf } = await import("./merge-queue");
+  const { readinessChip } = await import("./worktrees");
+  const r = { branch: "feat/x", worktree: "/w", commit: SHA };
+  assert.deepEqual(readyRowChip(r, undefined), { label: "No chat", tone: "neutral", title: "No chat works on this branch: nothing reads it as finished or not." });
+  assert.equal(readyRowChip({ ...r, session: "s1" }, []).label, "No reading");
+  const tree = (x: object) => [{ path: "/w", branch: "feat/x", state: "ready" as const, ...x }];
+  const landing = tree({ landing: { state: "ready", commit: SHA } });
+  // Every state the Worktrees readiness chip has: the same label and tone.
+  for (const t of [landing, tree({}), tree({ state: "in-progress" }), tree({ state: "waiting-approval" }), tree({ state: "blocked" }), tree({ landing: { state: "specs", commit: SHA, drafts: ["d"] } })]) {
+    const want = readinessChip({ readiness: t[0] as never })!;
+    const got = readyRowChip({ ...r, session: "s1" }, t as never);
+    assert.deepEqual([got.label, got.tone], [want.label, want.tone]);
+  }
+  assert.equal(readyRowChip({ ...r, session: "s1" }, landing as never).label, "Ready to land");
+  assert.equal(readyRowChip({ ...r, session: "s1" }, tree({ state: "in-progress" }) as never).label, "In progress");
+  const conflict = readyRowChip({ ...r, session: "s1" }, tree({ state: "in-progress", why: "conflicts with master: 2 files", reason: "Conflicts with master · 2 files", conflicts: 2 }) as never);
+  assert.deepEqual([conflict.label, conflict.tone], ["Conflicts with master", "warn"]);
+  // Matched by its worktree, else its branch; a worker's chat reads its top chat's readings too.
+  const sessions = [
+    { id: "top", path: "/s/top.jsonl", readiness: { trees: [{ path: "/w", branch: "feat/x", state: "waiting-approval" }], since: 0 } },
+    { id: "wk", path: "/s/wk.jsonl", workerSession: true, workerOf: { id: "top", path: "/s/top.jsonl" } },
+  ] as never;
+  assert.equal(readyRowChip({ ...r, session: "wk" }, chatTreesOf("wk", sessions)).label, "Waiting for your OK");
+  assert.equal(chatTreesOf("nobody", sessions), undefined);
 });

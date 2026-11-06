@@ -57,6 +57,24 @@ function setup(names = [REAL_NAME, REAL_TWO]) {
   return { agent, run, ok, session, schedules, store, linked, runs: () => existsSync(join(agent, "sova", "schedule-runs.jsonl")) };
 }
 
+test("copied sessions: the wake store is removed on every run, whatever is in it", () => {
+  const d = setup();
+  const store = join(d.agent, "sova", "wake-nudges");
+  const put = () => {
+    mkdirSync(store, { recursive: true });
+    writeFileSync(join(store, "c.nudges.json"), "{}");
+  };
+  put();
+  d.ok();
+  assert.ok(existsSync(store), "kept with no copied session");
+  d.session(REAL_NAME);
+  d.ok();
+  assert.equal(existsSync(store), false, "gone when copies arrive");
+  put();
+  d.ok();
+  assert.equal(existsSync(store), false, "gone on a re-run too");
+});
+
 test("a fresh dir with no copied session is set up as before: wake-nudge linked, schedules kept", () => {
   const d = setup();
   d.schedules(OWN);

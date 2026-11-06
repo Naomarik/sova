@@ -9,6 +9,7 @@ import { unlockFromFragment } from "./lib/auth";
 import { applyStoredTheme, clearTheme, clearTypography, setTextSize } from "./lib/theme";
 import { applyStoredSpine } from "./lib/spine";
 import { guardDelegatedEvents } from "./lib/release-control";
+import { installWireStamp } from "./lib/wire-stamp";
 import "./sw-register";
 
 /**
@@ -53,6 +54,7 @@ applyStoredSpine();
 history.scrollRestoration = "manual";
 // Before any event is handled: Solid's event delegation would otherwise leave an event, and
 // through its path a closed view, alive for the page's life (lib/release-control).
+installWireStamp();
 guardDelegatedEvents(window, Object.getOwnPropertyDescriptor(Event.prototype, "currentTarget")!.get!);
 
 // A `sova open` link's `#t=<token>` comes off the address bar before the app reads its own `#/…`

@@ -20,6 +20,17 @@ describe("estimates", () => {
     expect(estimateFromRuns(runs)).toBe(5 * 60_000);
   });
 
+  test("a run or step that reused passes from identical code teaches no duration", () => {
+    const reusing: MergeRun["steps"] = [{ id: "check:unit", kind: "check", label: "u", result: "passed", ms: 1000, log: "x", reused: 568, detail: "412 ran, 568 already passed on identical code (28 re-checked)" }];
+    // Nine fast reusing runs, then three full ones: only the full runs set the estimate.
+    const runs = [...Array.from({ length: 9 }, (_, i) => run(10 + i, "passed", 1, reusing)), ...Array.from({ length: 3 }, (_, i) => run(i, "passed", 7))];
+    expect(estimateFromRuns(runs)).toBe(7 * 60_000);
+    // Only reusing runs: no whole-run estimate; their reused steps teach nothing either.
+    const only = Array.from({ length: 3 }, (_, i) => run(i, "passed", 1, [...reusing, { id: "copy", kind: "copy", label: "c", result: "passed", ms: 500, log: "x" }]));
+    expect(estimateFromRuns(only)).toBe(500);
+    expect(estimateFromRuns([run(1, "passed", 1, reusing)])).toBeNull();
+  });
+
   test("no passed run yet: the sum of each step's median; nothing timed: null", () => {
     const steps = (ms: number): MergeRun["steps"] => [
       { id: "copy", kind: "copy", label: "c", result: "passed", ms, log: "x" },

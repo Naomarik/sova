@@ -21,11 +21,14 @@
       "server/sync/docs.test.ts",
       "server/sync/extensions.test.ts",
       "server/sync/index.test.ts",
-      "server/sync/docs-grants.test.ts"
+      "server/sync/docs-grants.test.ts",
+      "server/wire-gate.ts",
+      "server/mesh/index.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-11T18:49Z"
+      "by": "user (omar)",
+      "at": "2026-11-03T22:12Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
     }
   },
   "§mesh.sync/kept-copies": {
@@ -63,7 +66,12 @@
       "server/sync/logins.test.ts",
       "server/sync/logins.integration.test.ts",
       "server/sync/index.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T02:14Z",
+      "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#2783ea91"
+    }
   },
   "§mesh.sync/profile-library": {
     "kind": "behavior",

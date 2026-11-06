@@ -6,9 +6,15 @@
     "code": [
       "pi-config/extensions/model-levels/core.ts",
       "pi-config/extensions/model-levels/core.test.ts",
-      "pi-config/extensions/model-levels/index.ts"
+      "pi-config/extensions/model-levels/index.ts",
+      "server/harness/pi/model-sync.ts"
     ],
-    "requires": []
+    "requires": [],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T16:57Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    }
   },
   "§app.model-levels/mapping": {
     "kind": "behavior",
@@ -28,6 +34,29 @@
       "§chat.composer/composer-flyout"
     ]
   },
+  "§app.model-levels/new-models": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "pi-config/extensions/model-levels/core.ts",
+      "pi-config/extensions/model-levels/index.ts",
+      "server/harness/pi/open.ts",
+      "server/harness/pi/model-sync.ts",
+      "pi-config/extensions/model-levels/core.test.ts",
+      "server/harness/pi/model-levels.test.ts"
+    ],
+    "requires": [
+      "§app.model-levels/server-check",
+      "§app.model-levels/precedence",
+      "§app.settings-dialog/models"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T16:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    },
+    "evidence": "verified"
+  },
   "§app.model-levels/precedence": {
     "kind": "behavior",
     "authority": "accepted",
@@ -39,19 +68,31 @@
     ],
     "requires": [
       "§app.model-levels/mapping"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T16:57Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    }
   },
   "§app.model-levels/retired": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/model-levels/core.ts",
-      "pi-config/extensions/model-levels/core.test.ts"
+      "pi-config/extensions/model-levels/core.test.ts",
+      "server/harness/pi/model-sync.ts"
     ],
     "requires": [
-      "§app.model-levels/sources"
-    ]
+      "§app.model-levels/sources",
+      "§chat.model-menu/saved-default"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T16:57Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    }
   },
   "§app.model-levels/scope": {
     "kind": "behavior",
@@ -64,7 +105,62 @@
       "server/harness/pi/model-levels.test.ts",
       "server/harness/pi/model-levels.integration.test.ts"
     ],
-    "requires": []
+    "requires": [],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T16:57Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    }
+  },
+  "§app.model-levels/server-check": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "pi-config/extensions/model-levels/core.ts",
+      "server/harness/pi/open.ts",
+      "server/harness/pi/model-sync.ts",
+      "server/harness/pi/model-sync.test.ts",
+      "server/harness/pi/model-sync.integration.test.ts",
+      "pi-config/extensions/model-levels/core.test.ts",
+      "server/app.ts",
+      "server/index.ts",
+      "shared/commands/other.ts",
+      "shared/protocol.ts"
+    ],
+    "requires": [
+      "§app.model-levels/cache",
+      "§app.model-levels/sources",
+      "§app.model-levels/mapping"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T16:57Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    },
+    "evidence": "verified"
+  },
+  "§app.model-levels/settings-line": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "src/components/SettingsDialog.tsx",
+      "src/lib/model-check.ts",
+      "src/lib/model-check.test.ts",
+      "src/lib/api.ts",
+      "src/design/base.css",
+      "server/app.ts",
+      "shared/commands/other.ts"
+    ],
+    "requires": [
+      "§app.model-levels/server-check",
+      "§app.settings-dialog/models"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T16:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    },
+    "evidence": "reviewed"
   },
   "§app.model-levels/sources": {
     "kind": "behavior",
@@ -76,7 +172,12 @@
     ],
     "requires": [
       "§app.model-levels/cache"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T16:57Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    }
   },
   "§app.model-levels/sova-boot": {
     "kind": "behavior",
@@ -87,12 +188,19 @@
       "server/harness/pi/model-levels.test.ts",
       "server/harness/pi/model-levels.integration.test.ts",
       "pi-config/extensions/subagents/index.ts",
-      "pi-config/extensions/subagents/index.test.ts"
+      "pi-config/extensions/subagents/index.test.ts",
+      "server/harness/pi/model-sync.ts",
+      "server/index.ts"
     ],
     "requires": [
       "§app.model-levels/cache",
       "§app.harness/session-open"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T16:57Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    }
   },
   "§app/model-levels": {
     "kind": "surface",
@@ -107,6 +215,11 @@
     "notOwned": [
       "§chat.composer/composer-flyout",
       "§chat/model-menu"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T16:57Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    }
   }
 }

@@ -6,6 +6,8 @@ import type { WebSocket } from "ws";
 import { cappedWebSocketServer, streamWebSocketServer } from "./runtime-quirks";
 import type { ChatClientMessage, ChatServerMessage, LlmFeedMessage, SessionFeedMessage, V2EventFrame, WatchServerMessage } from "../shared/protocol";
 import { refuseUpgrade } from "./auth";
+import { type NotPage, notPageSocket, yourClickBody } from "./page-only";
+import { sandboxAfterRewind, sandboxCommand, sandboxLowers } from "./sandbox-state";
 import { isDirectLocal } from "./compression";
 import { acquireChatHandle, ArchivedError, BusyError, ConfigError, type ChatClient } from "./chat-handle";
 import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
@@ -28,6 +30,8 @@ import { CHAT_CLOSED_CLOSE_CODE, HAVE_MAX_CHARS, HAVE_PARAM, type WireVersion } 
 import { unsentRefusal } from "../shared/chat-runtime";
 import { draftTexts, HeldSends, type Unsent } from "../shared/held-sends";
 import { putBackDraft } from "./drafts";
+import { COMPOSER_PARAM } from "../shared/wire-areas";
+import { writingRefused } from "./wire-gate";
 import { opNote, stallGauge } from "./stall-recorder";
 
 /** How long a chat socket that closed stays in its chat to hear what became of the messages it
@@ -72,18 +76,63 @@ export function haveOf(params: URLSearchParams, ask: TailAsk): string | undefine
     is not stamped seen and its marks are not nudged. Every other caller leaves it out. */
 interface ChatSocketOpts {
   viewer?: boolean;
+  /** This socket stated another writing number: each frame gets this sentence and does nothing,
+      while the socket stays open and live (§mesh.compatibility/refusal). */
+  refused?: string;
+  /** Who this socket is when it isn't the operator's page; only a socket the main listener judged leaves it null. */
+  notPage?: NotPage | null;
 }
 
 async function handleChat(ws: WebSocket, path: string, force: boolean, ask: TailAsk, wire: WireVersion, have?: string, opts: ChatSocketOpts = {}): Promise<void> {
   const id = idOf(path);
   const viewer = opts.viewer !== false;
+  const who: NotPage | null = opts.notPage === undefined ? "local" : opts.notPage;
+  /** Rewinds this socket sent that are still being checked (toChat). */
+  let checking = 0;
+  /** One frame into the chat. `/sandbox` typed in the page's composer runs; from anything else a lowering is refused
+      (§app.access/your-click), the send's refusal reaching this socket like any other. */
+  const toChat = (open: NonNullable<typeof chat>, msg: ChatClientMessage) => {
+    // A card's click opens a turn that may act on what the card names, so it is the person's, never a script's or a
+    // chat's (§app.access/your-click). A click relayed by a peer stays as it was: a page on another computer sends one.
+    if (who !== null && who !== "local" && msg.type === "prompt" && msg.confirm) {
+      client.send({ type: "error", code: "refused", message: yourClickBody("cardClick", who).error, ...(msg.clientId ? { clientId: msg.clientId } : {}) });
+      return;
+    }
+    // Going back past a raise lowers the sandbox: the extension restores the state of the branch it lands on.
+    if (who !== null && (msg.type === "rewind" || msg.type === "regenerate")) {
+      // The socket may close meanwhile (`wait=0`): it stays in the chat until the frame went over.
+      checking++;
+      Promise.all([open.sandboxInfo(), open.branch()]).then(
+        ([info, branch]) => {
+          const after = sandboxAfterRewind(branch, String(msg.entryId ?? ""));
+          if (!after || !sandboxLowers(info?.state, after)) return open.clientMessage(client, msg);
+          const type = msg.type === "rewind" ? ("rewind_refused" as const) : ("regenerate_refused" as const);
+          client.send({ type, id: msg.id, entryId: msg.entryId, reason: "cancelled", message: yourClickBody("rewind", who).error });
+        },
+        (err) => client.send({ type: "error", code: "internal", message: err instanceof Error ? err.message : String(err) }),
+      ).finally(() => {
+        checking--;
+        if (gone && held.size === 0 && checking === 0) leave();
+      });
+      return;
+    }
+    const asked = who !== null && (msg.type === "prompt" || msg.type === "steer") ? sandboxCommand(String(msg.text ?? "")) : null;
+    if (!asked) return open.clientMessage(client, msg);
+    open.sandboxInfo().then(
+      (info) => {
+        if (!sandboxLowers(info?.state, asked)) return open.clientMessage(client, msg);
+        client.send({ type: "error", code: "refused", message: yourClickBody("sandbox", who!).error, ...("clientId" in msg && msg.clientId ? { clientId: msg.clientId } : {}) });
+      },
+      (err) => client.send({ type: "error", code: "internal", message: err instanceof Error ? err.message : String(err) }),
+    );
+  };
   // What this socket sent and the chat hasn't answered yet (§chat.transcript/send-while-starting).
   // Once the socket is gone, a refusal can't reach any tab: its text goes back as the draft.
   const held = new HeldSends();
   let gone = false;
   const heard = (back: Unsent[]) => {
     if (gone && back.length) putBackDraft(id, draftTexts(back));
-    if (gone && held.size === 0) leave();
+    if (gone && held.size === 0 && checking === 0) leave();
   };
   const client: ChatClient = {
     send: (msg) => {
@@ -95,6 +144,8 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
       sendRaw(ws, json);
     },
     close: (code, reason) => ws.close(code, reason),
+    // A peer's socket stays as it was: a page on another computer comes that way (§app.access/your-click).
+    ...(who !== null && who !== "local" ? { notUser: true as const } : {}),
     ...(wire === 2 ? { wire: 2 as const } : {}),
     ...(ask.tail ? { tail: true } : {}),
     ...(ask.tail && ask.pull ? { pull: { prefetch: ask.prefetch } } : {}),
@@ -115,6 +166,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   };
   /** The socket closed with sends unanswered: stay to hear them, for a while. */
   const stayToHear = () => {
+    if (checking > 0) return;
     if (held.size === 0) return leave();
     listen = setTimeout(leave, GONE_LISTEN_MS);
     listen.unref?.();
@@ -127,9 +179,14 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
       client.send({ type: "error", code: "internal", message: "Invalid JSON" });
       return;
     }
+    if (opts.refused) {
+      const clientId = (msg as { clientId?: unknown }).clientId;
+      client.send({ type: "error", code: "refused", message: opts.refused, ...(typeof clientId === "string" && clientId ? { clientId } : {}) });
+      return;
+    }
     sessionsChanged(); // a prompt, abort or rename: the next listing is built afresh
     held.sent(msg);
-    if (chat) chat.clientMessage(client, msg);
+    if (chat) toChat(chat, msg);
     else early.push(msg);
   });
   // Seen: a pane is on screen while its socket is open (server/seen.ts). Stamped at attach and at
@@ -185,7 +242,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   // Gone or not, the chat takes what the socket sent while it opened, in order, and this socket
   // stays in it until each send is answered (stayToHear).
   chat.attach(client);
-  for (const msg of early.splice(0)) chat.clientMessage(client, msg);
+  for (const msg of early.splice(0)) toChat(chat, msg);
   if (gone) stayToHear();
 }
 
@@ -220,10 +277,10 @@ export const POSTED_FRAMES_MAX = 100;
  * early frames take (handleChat), on a stand-in socket that is already gone: the chat opens, runs
  * them in order, takes each client id once, and a refusal goes back as the session's draft.
  */
-export function deliverFrames(path: string, frames: readonly ChatClientMessage[]): void {
+export function deliverFrames(path: string, frames: readonly ChatClientMessage[], notPage: NotPage | null = "script"): void {
   const gone = Object.assign(new EventEmitter(), { readyState: 3, OPEN: 1, close() {}, send() {} });
   const ws = gone as unknown as WebSocket;
-  handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2).catch((err) => console.error("[chat/frames]", err));
+  handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2, undefined, { notPage }).catch((err) => console.error("[chat/frames]", err));
   for (const f of frames) gone.emit("message", JSON.stringify(f));
   gone.emit("close");
 }
@@ -243,7 +300,7 @@ export interface RecordedChat {
  * `onFrame`, parsed. Nothing is sent until `emit()`; the caller emits once it has the hello.
  * Never a viewer (no seen stamp); never forced.
  */
-export function recordFrame(path: string, frame: ChatClientMessage, onFrame: (msg: Record<string, unknown>) => void, onClose: () => void): RecordedChat {
+export function recordFrame(path: string, frame: ChatClientMessage, onFrame: (msg: Record<string, unknown>) => void, onClose: () => void, notPage: NotPage | null = "script"): RecordedChat {
   let open = true;
   let sent = false;
   const rec = Object.assign(new EventEmitter(), {
@@ -269,7 +326,7 @@ export function recordFrame(path: string, frame: ChatClientMessage, onFrame: (ms
     },
   });
   const ws = rec as unknown as WebSocket;
-  handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2, undefined, { viewer: false }).catch((err) => {
+  handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2, undefined, { viewer: false, notPage }).catch((err) => {
     console.error("[chat/action]", err);
     rec.close();
   });
@@ -296,6 +353,13 @@ export function postedFrames(body: unknown): ChatClientMessage[] | null {
   if (!Array.isArray(frames) || frames.length === 0 || frames.length > POSTED_FRAMES_MAX) return null;
   for (const f of frames) if (!f || typeof f !== "object" || Array.isArray(f) || typeof (f as { type?: unknown }).type !== "string") return null;
   return frames as ChatClientMessage[];
+}
+
+/** The texts in posted frames that go back as a draft when the frames are refused unrun. */
+export function framesDraft(frames: readonly ChatClientMessage[]): string[] {
+  const held = new HeldSends();
+  for (const frame of frames) held.sent(frame);
+  return draftTexts(held.takeAll());
 }
 
 /** The refusals for messages a pane sent while its chat was opening, when it didn't open. */
@@ -400,6 +464,9 @@ export function upgradeSovaStreamSocket(req: IncomingMessage, socket: Duplex, he
   upgradeWith(streamWss, req, socket, head);
 }
 
+/** What the main listener's upgrade judged of a socket (attachWebSockets). The peer listener's have no entry: not the page. */
+const pageSockets = new WeakMap<IncomingMessage, NotPage | null>();
+
 function upgradeWith(server: typeof wss, req: IncomingMessage, socket: Duplex, head: Buffer): void {
   const url = new URL(req.url ?? "/", "http://localhost");
   const route = url.pathname;
@@ -447,7 +514,8 @@ function upgradeWith(server: typeof wss, req: IncomingMessage, socket: Duplex, h
       return;
     }
     if (route === "/ws/chat") {
-      handleChat(ws, path, url.searchParams.get("force") === "1", tail, wire, haveOf(url.searchParams, tail)).catch((err) => {
+      const refused = writingRefused(url.searchParams.get(COMPOSER_PARAM)) ?? undefined;
+      handleChat(ws, path, url.searchParams.get("force") === "1", tail, wire, haveOf(url.searchParams, tail), { notPage: pageSockets.get(req), ...(refused ? { refused } : {}) }).catch((err) => {
         console.error("[ws/chat]", err);
         ws.close(4500, "internal");
       });
@@ -474,6 +542,10 @@ export function attachWebSockets(server: Server): void {
     }
     // A session on another host, forwarded to it (server/mesh/proxy.ts); never while the mesh is off.
     if (meshUpgrade(req, socket, head, url)) return;
+    pageSockets.set(req, notPageSocket((n) => {
+      const v = req.headers[n];
+      return Array.isArray(v) ? v.join(n === "cookie" ? "; " : ", ") : v;
+    }));
     upgradeSovaSocket(req, socket, head);
   });
 }

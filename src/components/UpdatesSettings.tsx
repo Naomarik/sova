@@ -5,6 +5,8 @@ import { relativeTime } from "../lib/format";
 import { announce } from "../lib/ui-state";
 import { goBackLabel, KIND_LABEL, refreshUpdates, resultLine, runningLine, setUpdatesState, sourceName, upgradeLabel, updatesState, withdrawnTitle } from "../lib/updates";
 import { setUpdatesDraft, setUpdatesSaved, updatesDraft, updatesSaveError, updatesSaving, type UpdatesDraft } from "../lib/updates-draft";
+import { BRANCH_RULE } from "../../shared/branch-name";
+import { Select, TextField, Toggle } from "./form";
 import { Banner } from "./ui";
 import { sentence } from "./WorkerSlotRow";
 
@@ -243,68 +245,52 @@ export function UpdatesSettingsSection() {
             <Show when={updatesDraft()}>
               {(d) => (
                 <div class="settings-updates-form">
-                  <div class="field settings-field">
-                    <label class="field-label" for="updates-source">
-                      Update from
-                    </label>
-                    <div class="select-wrap">
-                      <select class="select" id="updates-source" disabled={updatesSaving()} onChange={(e) => edit({ source: e.currentTarget.value as UpdatesDraft["source"] })}>
-                        <option value="stable" selected={d().source === "stable"}>
-                          Stable releases
-                        </option>
-                        <option value="master" selected={d().source === "master"}>
-                          Latest changes (master)
-                        </option>
-                        <option value="branch" selected={d().source === "branch"}>
-                          A branch
-                        </option>
-                      </select>
-                      <span class="select-caret" aria-hidden="true">
-                        ▾
-                      </span>
-                    </div>
-                    <span class="field-hint">Always Sova's own repository. Changing it installs nothing.</span>
-                  </div>
+                  <Select
+                    id="updates-source"
+                    class="settings-field"
+                    label="Update from"
+                    hint="Always Sova's own repository. Changing it installs nothing."
+                    value={d().source}
+                    options={[
+                      { value: "stable", label: "Stable releases" },
+                      { value: "master", label: "Latest changes (master)" },
+                      { value: "branch", label: "A branch" },
+                    ]}
+                    disabled={updatesSaving()}
+                    onChange={(v) => edit({ source: v as UpdatesDraft["source"] })}
+                  />
                   <Show when={d().source === "branch"}>
-                    <div class="field settings-field">
-                      <label class="field-label" for="updates-branch">
-                        Branch
-                      </label>
-                      <input
-                        class="input input-mono"
-                        id="updates-branch"
-                        value={d().branch}
-                        placeholder="feat/name"
-                        spellcheck={false}
-                        autocomplete="off"
-                        disabled={updatesSaving()}
-                        aria-invalid={!d().branch.trim() ? "true" : undefined}
-                        onInput={(e) => edit({ branch: e.currentTarget.value })}
-                      />
-                      <Show when={!d().branch.trim()} fallback={<span class="field-hint">Save Changes looks it up in Sova's repository.</span>}>
-                        <span class="field-error">Name the branch.</span>
-                      </Show>
-                    </div>
-                  </Show>
-                  <label class="toggle settings-updates-toggle">
-                    <input type="checkbox" checked={d().autoCheck} disabled={updatesSaving()} onChange={(e) => edit({ autoCheck: e.currentTarget.checked })} />
-                    <span class="toggle-box" aria-hidden="true" />
-                    Check for updates automatically
-                  </label>
-                  <span class="field-hint">Once a day, whether or not Sova is open in a browser.</span>
-                  <label class="toggle settings-updates-toggle">
-                    <input
-                      type="checkbox"
-                      checked={d().autoUpgrade}
-                      disabled={updatesSaving() || !st().running.canUpgrade}
-                      onChange={(e) => edit({ autoUpgrade: e.currentTarget.checked })}
+                    <TextField
+                      id="updates-branch"
+                      class="settings-field"
+                      inputClass="input-mono"
+                      label="Branch"
+                      hint="Save Changes looks it up in Sova's repository."
+                      rule={BRANCH_RULE}
+                      value={d().branch}
+                      placeholder="feat/name"
+                      spellcheck={false}
+                      autocomplete="off"
+                      disabled={updatesSaving()}
+                      onInput={(v) => edit({ branch: v })}
                     />
-                    <span class="toggle-box" aria-hidden="true" />
-                    Upgrade automatically
-                  </label>
-                  <span class="field-hint">
-                    When a check finds an update, we install it and restart Sova. Chats keep running and move to the new code when they're idle.
-                  </span>
+                  </Show>
+                  <Toggle
+                    class="settings-updates-toggle"
+                    label="Check for updates automatically"
+                    hint="Once a day, whether or not Sova is open in a browser."
+                    checked={d().autoCheck}
+                    disabled={updatesSaving()}
+                    onChange={(on) => edit({ autoCheck: on })}
+                  />
+                  <Toggle
+                    class="settings-updates-toggle"
+                    label="Upgrade automatically"
+                    hint="When a check finds an update, we install it and restart Sova. Chats keep running and move to the new code when they're idle."
+                    checked={d().autoUpgrade}
+                    disabled={updatesSaving() || !st().running.canUpgrade}
+                    onChange={(on) => edit({ autoUpgrade: on })}
+                  />
                 </div>
               )}
             </Show>

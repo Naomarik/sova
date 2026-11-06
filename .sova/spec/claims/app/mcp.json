@@ -10,7 +10,11 @@
       "server/mcp/routes.ts",
       "server/mcp/config.ts",
       "shared/mcp.ts",
-      "server/mcp/mcp.test.ts"
+      "server/mcp/mcp.test.ts",
+      "src/components/McpSettings.tsx",
+      "server/settings-limits-parity.test.ts",
+      "shared/mcp-limits.ts",
+      "src/components/form/index.tsx"
     ],
     "requires": [
       "§app.mcp/approval",
@@ -46,8 +50,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T06:51Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
+      "at": "2026-11-04T12:30Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#78234ec6"
     }
   },
   "§app.mcp/check": {
@@ -305,7 +309,8 @@
       "pi-config/sandbox-policy/darwin/policy.json",
       "server/mcp/testing/oauth-stub.fixture.ts",
       "server/harness/pi/mcp.ts",
-      "server/harness/pi/mcp-http.ts"
+      "server/harness/pi/mcp-http.ts",
+      "src/components/form/index.tsx"
     ],
     "requires": [
       "§app.mcp/approval",

@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import type { MeshLoginEntry, SessionSummary, SyncCategory } from "../../shared/protocol";
 import type { MeshInfoView as MeshInfo, MeshSessionsView as MeshSessions, PeerStatusView as PeerStatus } from "../../shared/mesh-access";
+import { hostReading, readsWithoutSending, stateCost, type HostReading } from "./mesh-compat";
 import { readKey, removeKey, writeKey } from "./storage-keys";
 import { reuseUnchanged } from "./summary-diff";
 
@@ -46,17 +47,53 @@ export function noteSessionsHidden(answer: MeshSessions): void {
 /** Whether peer `id` keeps its sessions from this host: its hello, or its session list, said `denied`. */
 export const sessionsHiddenBy = (id: string): boolean => hiddenSessions().has(id) || peerInfo(id)?.state === "hidden";
 
-/** A peer that can't be opened or driven right now, with the sentence that says why; null if it can. */
+/** The one reading of a host (§mesh/compatibility): every screen's state, word and mark come from it. */
+export const peerReading = (p: PeerStatus): HostReading => hostReading(p, hiddenSessions().has(p.id));
+
+/** The reading of the peer `id`, or null while the mesh doesn't know it. */
+export const readingOf = (id: string): HostReading | null => {
+  const p = peerInfo(id);
+  return p ? peerReading(p) : null;
+};
+
+/** A peer that can't be used fully from here, with the sentence that says what that costs; null if it can. */
 export function peerUnavailable(p: PeerStatus): string | null {
   const name = p.label || p.id;
   /** The server's reason as the end of our sentence: one full stop, whatever it brought. */
   const reason = p.error ? `: ${p.error.replace(/[.\s]+$/, "")}.` : ".";
-  if (p.state === "up") return hiddenSessions().has(p.id) ? `${name} keeps its sessions from this host.` : null;
-  if (p.state === "down") return `${name} isn't answering${reason}`;
-  if (p.state === "skewed") return `${name} runs a different Sova version${p.hello ? ` (${p.hello.version})` : ""}. Update one of them.`;
-  if (p.state === "hidden") return `${name} shares nothing with this host.`;
-  return p.error ? `${name} refused this host${reason}` : `${name} refused this host. Add this host to its peers.`;
+  const r = peerReading(p);
+  switch (r) {
+    case "works":
+      return null;
+    case "read-only":
+    case "display":
+    case "update":
+      return stateCost(r, name);
+    case "hidden":
+      return p.state === "up" ? `${name} keeps its sessions from this host.` : `${name} shares nothing with this host.`;
+    case "down":
+      return `${name} isn't answering${reason}`;
+    default:
+      return p.error ? `${name} refused this host${reason}` : `${name} refused this host. Add this host to its peers.`;
+  }
 }
+
+/** The reading that keeps a session on a peer open with sending off, or null: it can send, or it is
+    here, or the page in its place says why. */
+export const sendingOff = (path: string): "read-only" | "display" | null => {
+  const h = hostOf(path);
+  const r = h ? readingOf(h) : null;
+  return r && readsWithoutSending(r) ? r : null;
+};
+
+/** Whether the peer holding `path` is in Update needed, so the session can't open. */
+export const updateNeededFor = (path: string): boolean => {
+  const h = hostOf(path);
+  return !!h && readingOf(h) === "update";
+};
+
+/** Why a peer's session can't be opened, or null when it can: Read only and Display may be wrong open. */
+export const peerCantOpen = (p: PeerStatus): string | null => (readsWithoutSending(peerReading(p)) ? null : peerUnavailable(p));
 
 // ---- path → host --------------------------------------------------------------------------------
 

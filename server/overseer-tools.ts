@@ -14,8 +14,10 @@ import type {
   TranscriptItem,
 } from "../shared/protocol";
 import type { PeerStateView } from "../shared/mesh-access";
+import { hostState, WIRE_AREAS, type WireAreas } from "../shared/wire-areas";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { fixedNameRefusal } from "../shared/fixed-names";
 import { relativeTime } from "../pi-config/extensions/stamp/format.ts";
 import { newestTopics, topicTime } from "../shared/outline-order";
 import { whereOf } from "./attention";
@@ -28,6 +30,7 @@ import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact"
 import { trialActWait } from "./chat-handle";
 import { logAction, readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
 import { parseModePatch } from "./mode-state";
+import { createNotNamed } from "../shared/profiles";
 import { ideaTools, type IdeaToolHost, type ToolCall } from "./overseer-idea-tools";
 import { todoTools } from "./overseer-todo-tools";
 import { extTools, type ExtToolDeps } from "./overseer-ext-tools";
@@ -38,6 +41,7 @@ import type { ArchiveWorktrees, WorktreePlan } from "./archive-worktrees";
 import { safeHttpsUrl } from "../shared/overseer-card";
 import { branchLabels } from "./overseer-run-note";
 import { linkTools, type LinksApi } from "./overseer-link-tools";
+import { pairTargets, pairTools } from "./overseer-pair-tools";
 import { projectEngine } from "./project-services/routes";
 import { overseerVerbsTool, type LooseExec } from "./project-services/tools";
 import { operatorEnvelopeOf } from "./projects/spaces";
@@ -53,7 +57,7 @@ import { orgLinkRows } from "./shares-overview";
 import { linkUrl, shareState } from "./share/listener";
 import type { PeerLinkRead } from "../shared/mesh-links";
 import { cut, type ReadFrom, Refusal, renderTranscript, sessionRef, text, writableRefusal } from "./session-guards";
-import { findProfile } from "./profile-sources";
+import { findProfile, profileRefusedWhy } from "./profile-sources";
 import { approvalRefusal } from "./profile-trust";
 import { singletonHolder } from "./session-profile";
 import { keyOf, singletonRunningText, titleCase } from "../shared/profiles";
@@ -235,6 +239,8 @@ export interface PeerRef {
   nodeId: string;
   state: PeerStateView;
   error?: string;
+  /** The area numbers it lists; absent on a host that lists none. */
+  areas?: WireAreas;
 }
 
 /** The acting tools' refusal in a turn the user did not start. */
@@ -275,6 +281,9 @@ export function actTargets(tool: string, params: any): string[] | null {
       return Array.isArray(params?.sessions) && params.sessions.length ? params.sessions.map(String) : null;
     case "sova_group":
       return (params?.op === "add" || params?.op === "remove") && Array.isArray(params?.sessions) && params.sessions.length ? params.sessions.map(String) : null;
+    case "sova_pair":
+      // pair: its two chats; unpair and resume: the pairing's two (§app.overseer/pairs).
+      return pairTargets(params);
     default:
       return null;
   }
@@ -649,9 +658,11 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
     return s;
   }
 
-  /** A `host` param: absent or blank is this host; otherwise a peer this host has, up now and on
-      the same protocol. A peer that is down, skewed or refusing is a refusal naming it. */
-  async function peerOf(ref: unknown): Promise<PeerRef | null> {
+  /** A `host` param: absent or blank is this host; otherwise a peer this host has, answering and
+      not in Update needed by this host's own numbers (§mesh.compatibility/host-acts). A peer that is
+      down, refusing or on such a version is a refusal naming it. `write`: this call sends to it, which
+      takes a peer that works fully. */
+  async function peerOf(ref: unknown, write = false): Promise<PeerRef | null> {
     const id = typeof ref === "string" ? ref.trim() : "";
     if (!id) return null;
     const peer = await host.peer(id);
@@ -659,9 +670,12 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
       const ids = host.peerIds();
       throw new Refusal(ids.length ? `This host has no mesh peer "${id}". Its peers: ${ids.join(", ")}.` : "The mesh is off on this host (no peers), so there is no host to name. Leave host out.");
     }
+    const reading = hostState(WIRE_AREAS, peer);
+    if (reading === "update") throw new Refusal(`${peer.label} (${peer.id}) runs another version of Sova, so nothing reaches it from here now.`);
+    if (write && reading !== null && reading !== "works") throw new Refusal(`${peer.label} (${peer.id}) runs another version of Sova: its sessions can be read from here, but nothing can be sent to it or created on it.`);
     if (peer.state !== "up")
       throw new Refusal(
-        `${peer.label} (${peer.id}) is ${peer.state === "skewed" ? "on another protocol version (skewed)" : peer.state === "refused" ? "refusing this host (it doesn't list it as a peer)" : peer.state === "hidden" ? "hiding everything from this host (its grant to this host is none)" : "down"}${peer.error ? `: ${peer.error}` : ""}, so nothing reaches it from here now.`,
+        `${peer.label} (${peer.id}) is ${peer.state === "refused" ? "refusing this host (it doesn't list it as a peer)" : peer.state === "hidden" ? "hiding everything from this host (its grant to this host is none)" : "down"}${peer.error ? `: ${peer.error}` : ""}, so nothing reaches it from here now.`,
       );
     return peer;
   }
@@ -1444,6 +1458,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         // unknown one creates no session and takes no cap.
         // Memory is never given to a coding session (§chat.memory/where), here or on a peer.
         if (Array.isArray(p.minor_modes) && p.minor_modes.includes("memory")) throw new Refusal(`${MEMORY_CODING_REFUSAL}. No session was created.`);
+        if (p.mode === "create") throw new Refusal(createNotNamed("the Overseer"));
         if (p.mode || p.minor_modes !== undefined || p.project_modes !== undefined) {
           const bad = parseModePatch({ ...(p.mode ? { mode: p.mode } : {}), ...(p.minor_modes !== undefined ? { minorModes: p.minor_modes } : {}), ...(p.project_modes !== undefined ? { projectModes: p.project_modes } : {}) });
           if ("error" in bad) throw new Refusal(`${bad.error.replace("minorModes", "minor_modes").replace("projectModes", "project_modes")}. No session was created.`);
@@ -1467,7 +1482,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
           // Resolved in the new session's own project (§chat.profiles/projects); a target's cwd has none.
           const where = typeof p.cwd === "string" && p.cwd ? p.cwd : null;
           const prof = await findProfile(p.profile, where);
-          if (!prof) throw new Refusal(`No profile "${p.profile}" for that folder. No session was created.`);
+          if (!prof) throw new Refusal(`${(await profileRefusedWhy(p.profile, where)) ?? `No profile "${p.profile}" for that folder.`} No session was created.`);
           if (!prof.overseerMayStart)
             throw new Refusal(`The ${prof.label} profile isn't marked "The Overseer may start it" (in its file), so you can't start it. No session was created; ask the user to start it or to allow it.`);
           if (prof.approval === "needed") throw new Refusal(`${approvalRefusal(prof)} No session was created.`);
@@ -1481,8 +1496,8 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
               };
           }
         }
-        // A peer that is down or skewed refuses before any cap is taken.
-        const peer = onPeer ? await peerOf(p.host) : null;
+        // A peer that is down or doesn't work fully refuses before any cap is taken.
+        const peer = onPeer ? await peerOf(p.host, true) : null;
         if (p.subagent_profile !== undefined) await checkSubagentProfile(p.subagent_profile, peer);
         // Every check and reservation happens with no await between them: parallel creates in one
         // message each see the others' reservations.
@@ -1577,8 +1592,11 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         ["session"],
       ),
       execute: act("sova_set_session", async (p) => {
+        if (p.mode === "create") throw new Refusal(createNotNamed("the Overseer"));
         if (Array.isArray(p.minor_modes) && p.minor_modes.includes("memory")) throw new Refusal(`${MEMORY_CODING_REFUSAL}. Nothing was changed.`);
         const s = await resolveWritable(p.session);
+        // A chat Sova names itself keeps that name: no title, no alias (shared/fixed-names.ts).
+        if ((p.title !== undefined || p.alias !== undefined) && s.fixedName) throw new Refusal(`${fixedNameRefusal(s.fixedName)} Nothing was changed.`);
         // A session waiting on the user's alignment answers keeps align on (§app.project-overseer/coding-mode): checked first.
         const drop = alignDropRefusal(!!s.align, p.minor_modes);
         if (drop) throw new Refusal(`${drop} Nothing was changed.`);
@@ -1901,6 +1919,23 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
       });
     })(),
     ...linkTools({ act, read, links: host.links, take: () => limits.take("link", host.caps()), refusal: (m) => new Refusal(m), obj, str }),
+    ...pairTools({
+      act,
+      read,
+      lookup,
+      // The introduction goes as sova_send's messages do (the route tags it as the Overseer's),
+      // queued behind a running turn, never a steer. A chat it reaches doesn't count as one the
+      // Overseer started: the pairing, not the Overseer, keeps it working.
+      send: async (s, message) => {
+        const r = await call("POST", "/api/sessions/prompt", { path: s.path, text: message });
+        if (r.status !== 200) throw failed(r, "Sending the introduction");
+      },
+      take: (n) => limits.take("prompt", host.caps(), n),
+      give: (n) => limits.give("prompt", n),
+      refusal: (m) => new Refusal(m),
+      obj,
+      str,
+    }),
     // Project instances (§app.project-services/callers): reads free, acts through `act` (turns the user started).
     overseerVerbsTool(
       projectEngine,

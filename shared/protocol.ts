@@ -16,6 +16,29 @@ import type { OwnerRequestCard } from "./project-assistant";
 import type { CardInfo } from "./transcript-cards";
 export type { WakeInfo };
 
+/** One running background job, as `GET /api/sessions/jobs?path=` lists it (§app.background-jobs/pane):
+    the chat's own and its workers'. The server's `JobView` (server/background-jobs.ts). */
+export interface BackgroundJob {
+  /** `j1`, `j2`, …: unique within its chat (`sessionId`). */
+  id: string;
+  /** The chat that owns it: the session's own id, or one of its workers'. */
+  sessionId: string;
+  /** What runs: the command the chat ran, or the one it asked Sova to start. */
+  command: string;
+  cwd: string;
+  kind: "kept" | "requested";
+  /** When it was kept or started (ms). */
+  startedAt: number;
+  /** The file its output goes to, or null when it has none. */
+  output: string | null;
+  /** Its output still points at its command's closed output (§app.background-jobs/output). */
+  noOutput: boolean;
+  /** The worker it belongs to (its worker id), or null for the chat's own. */
+  worker: string | null;
+  /** Stop was pressed and the job hasn't ended yet. */
+  stopping: boolean;
+}
+
 export interface SessionSummary {
   /** Session id from the JSONL header line. */
   id: string;
@@ -35,6 +58,14 @@ export interface SessionSummary {
       is stored for this session, even one equal to the derived title; absent when none is, and
       from older servers. "user" and "overseer" are explicit and never renamed automatically. */
   titleBy?: SessionTitleBy;
+  /** A chat whose name Sova fixes (shared/fixed-names.ts): `title` is that name, whatever its first message,
+      an automatic title, a rename, an alias or a pi session name says. "overseer": "Overseer" (current and earlier
+      conversations); "project-overseer": "Overseer · {project}" with the project's current name; the merge queue's
+      thread and reviewers, release chats and gathering sessions: the name Sova gave each when it started (a
+      gathering's public title). With it, no `originalTitle` or `titleBy` is sent, and a rename is refused
+      (POST /api/sessions/title answers 409 with the sentence). The client offers no Rename… or Regenerate title
+      for it. Safe by absence: an older server. */
+  fixedName?: import("./fixed-names").FixedNameKind;
   createdAt: string; // ISO, from header
   lastActiveAt: string; // ISO, file mtime
   /** Latest "provider/model": the model_change or assistant message closest to the end of the
@@ -93,6 +124,10 @@ export interface SessionSummary {
       socket's hello (§chat.composer/known-on-switch). The model supersedes the file-tail `model`.
       Absent for a session the server doesn't hold, and from older servers and peers. */
   chat?: HeldChatState;
+  /** How many background jobs this session's chat keeps running (§app.background-jobs/pane), its
+      workers' not counted. Present (≥ 1) only while the chat has shut down, i.e. `chat` is absent:
+      the session list's `job running` marker. Absent otherwise, and from older servers. */
+  jobsRunning?: number;
   /** "web" if spawned via this webapp's POST /api/sessions (tracked persistently by the server,
       survives restarts); "external" for anything else. Pane rule: top region shows
       live!=null || (origin==="web" && !archived); everything else goes to the bottom archive section. */
@@ -278,6 +313,8 @@ export const EAGER_TOOLS: ReadonlySet<string> = new Set([
   "sova_confirm",
   "sova_link",
   "sova_unlink",
+  // A pairing made or ended (§app.overseer/pairs): its details are the action card.
+  "sova_pair",
   "align",
   "session_send",
   "sova_create_session",
@@ -960,9 +997,10 @@ export interface ThemeList {
 export const PLAYBOOK_ENTRIES = ["PLAYBOOK.md", "SKILL.md"] as const;
 export type PlaybookEntry = (typeof PLAYBOOK_ENTRIES)[number];
 
-/** What a verb playbook's branch proposes: the project's settings, its deploy section, or its releases (the release
-    section plus the project's release playbook). */
-export const PLAYBOOK_PROPOSES = ["definition", "deploy", "release"] as const;
+/** What a verb playbook's branch proposes: the project's settings, its deploy section, its releases (the release
+    section plus the project's release playbook), or its whole pipeline (the Setup chat: services, merge, release and
+    deploy together, §app.project-setup/chat). */
+export const PLAYBOOK_PROPOSES = ["definition", "deploy", "release", "pipeline"] as const;
 export type PlaybookProposes = (typeof PLAYBOOK_PROPOSES)[number];
 
 /** One entry in the Sova playbook catalog. */
@@ -971,7 +1009,7 @@ export interface PlaybookInfo {
   title: string;              // frontmatter title, else name, else the id
   description: string;        // frontmatter description, else ""
   promptHint?: string;        // frontmatter promptHint: what the reader may want to specify for the first turn
-  /** Frontmatter `proposes: definition | deploy | release`: a verb playbook, whose branch the operator merges
+  /** Frontmatter `proposes: definition | deploy | release | pipeline`: a verb playbook, whose branch the operator merges
       (§app.project-runtime/verb-playbooks). Absent (or any other value): not a verb playbook. */
   proposes?: PlaybookProposes;
   source: "sova" | "user" | "project";
@@ -1195,6 +1233,113 @@ export interface ClaudePoolInfo {
   /** This device never holds a subscription login (it syncs API keys only). */
   apiKeysOnly?: boolean;
 }
+/**
+ * Settings → Accounts' OpenAI sign-in (§app.openai-login): the ChatGPT subscription, pi's
+ * `openai-codex`, one sign-in per device. The flow the dialog polls. A code first; when OpenAI
+ * refuses the code route, the browser route (open the link, paste back the address the page ends on).
+ */
+export type OpenAiLoginFlow =
+  | { state: "starting" }
+  /** Open `url` on any device, sign in, enter `userCode`; Sova waits (nothing to paste). */
+  | { state: "code"; userCode: string; url: string; expiresAt: number }
+  /**
+   * Open `url`, sign in, paste the address the page ends on (POST …/login/answer). `refused`: why the
+   * code route was not offered (set when this route is the fallback). `error`: the last pasted address
+   * was not one Sova could use; the flow keeps waiting.
+   */
+  | { state: "browser"; url: string; expiresAt: number; refused?: string; error?: string }
+  | { state: "finishing" }
+  | { state: "done"; email?: string }
+  /** Left alone until `expiresAt` (15 min): ended itself, nothing saved. */
+  | { state: "expired" }
+  | { state: "failed"; error: string };
+/** GET /api/settings/accounts/openai, and the answer of cancel and sign-out. */
+export interface OpenAiAccountInfo {
+  /** pi's auth.json holds an `openai-codex` sign-in. */
+  signedIn: boolean;
+  /** The signed-in ChatGPT account's email, read from its access token on the server: the one
+      string from a credential that leaves the server (§app.openai-login). */
+  email?: string;
+  /** The access token's expiry: the sign-in renews by then (pi renews it when it next uses OpenAI). */
+  expiresAt?: number;
+  /** `expiresAt` has passed. */
+  expired?: boolean;
+  /** The Codex app is signed in on this computer (~/.codex/auth.json has a sign-in). A boolean only. */
+  codexAppSignedIn: boolean;
+  /** The mesh is on and shares sign-ins: signing out here signs out the devices that share them. */
+  meshSharesLogins: boolean;
+  /** This device shares API keys only: this sign-in stays on this device. */
+  apiKeysOnly: boolean;
+  flow: OpenAiLoginFlow | null;
+}
+/** POST /api/settings/accounts/openai/login (body optional). `browser` skips the code route. */
+export interface OpenAiLoginStart { method?: "code" | "browser" }
+/** POST /api/settings/accounts/openai/login/answer: the address the browser route's page ended on. */
+export interface OpenAiLoginAnswer { text: string }
+
+// Settings → Accounts' API keys (§app/provider-keys). Every answer is Cache-Control: no-store.
+// GET    /api/settings/accounts/keys                    -> ProviderKeysInfo (never a key value)
+// PUT    /api/settings/accounts/keys/:provider          { key } -> ProviderKeyWrite (checked first; refused: saved false)
+// DELETE /api/settings/accounts/keys/:provider          -> ProviderKeyWrite (a logout login sync spreads)
+// POST   /api/settings/accounts/keys/:provider/test     -> ProviderKeyRow (the key in use checked again)
+// POST   /api/settings/accounts/keys/:provider/reveal   -> { key } only to the page in a browser on this computer, else 403
+// PUT, DELETE and reveal answer 403 to anything but the page's own request (§app.provider-keys/your-click).
+/** Accounts' provider tabs, in order (`#/settings/accounts/<tab>`). */
+export type ProviderKeyTab = "claude" | "openai" | "ollama-cloud" | "deepseek" | "zai" | "other";
+/** A key row's chip: Connected, No key, Key refused, Not checked yet, or Saved, not checked (no check exists). */
+export type ProviderKeyStatus = "connected" | "nokey" | "refused" | "unchecked" | "saved";
+export interface ProviderKeyCheck {
+  at: number;
+  result: "accepted" | "refused" | "unreachable";
+  /** The provider's reason (refused) or why it couldn't be reached. */
+  reason?: string;
+}
+export interface ProviderKeyRow {
+  /** pi's provider id. */
+  provider: string;
+  name: string;
+  tab: ProviderKeyTab;
+  /** A key is saved here (in pi's auth.json). */
+  saved: boolean;
+  /** The saved key's last 4 characters: the only part of a key on this wire. */
+  last4?: string;
+  /** The saved key is a command pi runs (device config): never read back or checked. */
+  command?: true;
+  /** pi holds a sign-in of another kind under this provider's id: no key can be saved over it. */
+  otherSignIn?: true;
+  /** Where the key in use comes from: saved here wins over the environment's. */
+  source: "saved" | "env" | "none";
+  /** The environment variable that can serve this provider, when there is one. */
+  envName?: string;
+  envSet: boolean;
+  status: ProviderKeyStatus;
+  /** The last check of the key in use (absent when that key was never checked). */
+  lastCheck?: ProviderKeyCheck;
+  /** Sova can check this provider's key (Test; check before save). */
+  checkable: boolean;
+  /** False when Settings → Models switches the provider off. */
+  providerEnabled: boolean;
+}
+export interface ProviderKeysInfo {
+  /** The five tab providers, then each other provider with a saved key. */
+  rows: ProviderKeyRow[];
+  /** The Other provider picker: every provider that takes a key and has no tab. */
+  others: { id: string; name: string }[];
+  /** This request may read a key back (a browser on this computer, the page's own request). */
+  revealAllowed: boolean;
+  /** The mesh is on and shares logins: keys reach the mesh computers that get logins. */
+  meshSharesLogins: boolean;
+  /** The subscription sign-ins' standing, for the Claude and OpenAI tabs' marks. */
+  signIns: { claude: boolean; openai: boolean };
+}
+export interface ProviderKeyPut { key: string }
+export interface ProviderKeyWrite {
+  /** The pasted key was written (PUT), or a key is still saved (DELETE: false once removed). */
+  saved: boolean;
+  /** PUT: the provider refused the paste, in its words; nothing was written. */
+  refused?: string;
+  row: ProviderKeyRow;
+}
 /** PUT /api/claude/pool/keeper */
 export interface ClaudePoolKeeperRequest { device: string }
 /** PATCH /api/claude/pool/:id */
@@ -1264,6 +1409,36 @@ export interface ModelInfo {
       independent of any session, so two models can be compared by it;
       ContextInfo.window cannot, because it describes one session's current model. */
   contextWindow?: number;
+}
+
+// GET  /api/settings/models/check -> ModelCheckStatus (Settings → Models' line under Ollama Cloud)
+// POST /api/settings/models/check -> ModelCheckStatus once the check it runs at once has finished
+//                                    (409 when checks are off on this server)
+/** The server's check of Ollama Cloud's model list (§app.model-levels/server-check, /settings-line). */
+export interface ModelCheckStatus {
+  /** The provider checked: `ollama-cloud`. */
+  provider: string;
+  /** False with PI_OFFLINE or SOVA_MODELS_FETCH=off: nothing is checked. */
+  enabled: boolean;
+  /** A check is running now. */
+  checking: boolean;
+  /** The last check; absent before any. */
+  last?: {
+    at: number;
+    ok: boolean;
+    /** Why it failed (ok false). */
+    error?: string;
+    /** When the server tries again on its own after a failure. */
+    retryAt?: number;
+    /** Model ids new to the list at that check. */
+    added: string[];
+    /** Model ids that check found retired. */
+    retired: string[];
+    /** The API key, checked in the same round: Settings → Accounts' Ollama Cloud tab shows this reading. */
+    key?: { result: "accepted" | "refused" | "unreachable"; reason?: string };
+  };
+  /** Models the check added in the last week (the New mark), as provider/id refs. */
+  newModels: { ref: string; firstSeenAt: number }[];
 }
 
 /** One folder's subfolders (GET /api/folders). Directories only, never files: a symlink is listed
@@ -1525,6 +1700,29 @@ export interface SessionContextPart {
   tokens: number;
   path?: string;
   text?: string;
+  /** Skills only: the agent loaded the skill (read its SKILL.md, or it was invoked) since the latest
+      compaction, so its text is in the window now. */
+  read?: boolean;
+}
+
+/** One kind of message in the conversation since the latest compaction: how many, and ≈ their tokens. */
+export interface SessionContextTally {
+  count: number;
+  tokens: number;
+}
+
+/** What the conversation holds, by who sent it. The tallies add up to `conversation`, give or take rounding. */
+export interface SessionContextTalk {
+  /** Your messages (shell commands you ran included). */
+  user: SessionContextTally;
+  /** The model's replies, their tool calls and thinking included. */
+  replies: SessionContextTally;
+  /** Tool results, less the loaded subfolder files they carry (those are `nested`). */
+  toolResults: SessionContextTally;
+  /** Extension messages and branch summaries. */
+  other: SessionContextTally;
+  /** The latest compaction's summary, which stands in for what it dropped; absent before a compaction. */
+  summary?: { text: string; tokens: number; at?: string };
 }
 
 /** An instruction file in a folder below the chat's own, loaded when the agent reads, edits or writes a
@@ -1558,6 +1756,8 @@ export type SessionContextView =
       tools: SessionContextPart[];
       /** ≈ the messages in context, loaded nested files left out (they are `nested`). */
       conversation: number;
+      /** `conversation` by kind of message. Absent from an older server. */
+      talk?: SessionContextTalk;
       nested: SessionContextNested[];
       /** The walk below cwd stopped at its cap: the list may be incomplete. */
       nestedIncomplete?: true;
@@ -1796,10 +1996,15 @@ export interface BatchPromptResult {
     new sessions** (~/.pi/agent/mode.json), never one chat's state. `strict` is shown, never
     changed here. `modes`/`minors` list what exists. */
 export interface ModeInfo {
-  mode: string; // "normal" | "delegate"
+  mode: string; // "normal" | "delegate" | "create"
   minorModes: string[]; // canonical order
   strict: boolean;
+  /** Only in Create: the mode Save as Default saves, the chat's last normal or Delegate choice (§chat.create-mode/per-chat-only). */
+  saveMode?: string;
   modes: { id: string; description: string }[];
+  /** Only in GET /api/mode with no path: modes a default can't hold but a chat here can pick (Create). A peer's chat
+      has no ?path= read, so its menu adds these to `modes`; a gathering chat has no menu at all. Absent: an older host. */
+  chatModes?: { id: string; description: string }[];
   minors: { id: string; description: string }[];
   /** The memory minor mode's choice (§chat/memory): in GET /api/mode the saved default new chats
       start from (Settings' memory file), in a ChatModeResult that chat's own. Absent from older servers. */
@@ -1930,6 +2135,9 @@ export interface HeldChatState {
     The same values reach every client of that chat as a "mode" server message. */
 export interface ChatModeResult extends ModeInfo, ChatProjectModes {
   applies: ModeApplies;
+  /** The mode Save as default writes, while it isn't `mode`: in Create, this chat's last normal or
+      Delegate choice (§chat.create-mode/per-chat-only). */
+  saveMode?: string;
 }
 
 // ---- Project minor modes (§chat.mode-menu/project-modes) ----------------------------------------
@@ -2563,7 +2771,7 @@ export type ChatServerMessage =
   | { type: "append"; items: TranscriptItem[] }
   /** THIS chat's own mode, and how the last switch applies to it. Sent after hello and after
       every switch of this chat. No other chat's switch, and no write of the default, sends one. */
-  | ({ type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies; memory?: ChatMemoryChoice } & ChatProjectModes)
+  | ({ type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies; memory?: ChatMemoryChoice; saveMode?: string } & ChatProjectModes)
   /** THIS chat's memory (§chat/memory): sent after hello while memory is on, and on every change once
       it was on; never from a runtime without the memory engine. None received: memory is off. */
   | { type: "memory_status"; status: MemoryStatus }
@@ -3435,6 +3643,13 @@ export interface SessionWorktreeInfo {
   /** Its branch against the project's merge target (commits ahead, lines +/−), for a registered project's worktree.
       Additive. */
   mergeStats?: import("./merge-queue").WorktreeMergeStats;
+  /** What its branch does, in a few bullets (§ the merge queue's branch summaries), once anything is known: at its
+      entry's commit while it has an open or landed entry, else at its head. Only where the queue serves the repo.
+      Additive. */
+  mergeSummary?: import("./merge-queue").BranchSummary;
+  /** The chat that owns its branch (server/merge-queue/owners.ts), for the row's title link. Only where the queue
+      serves the repo. Additive. */
+  mergeOwner?: { session: string; path?: string; title?: string; archived?: true };
   /** Present only when its repo is one the merge queue serves (on the Projects list and its merge setup done): Land,
       "Ready to land" and "Landing specs" key on it, never on `mergeProject` being missing. Absent: the repo merges
       plainly (the chat merges it into main). Additive. */
@@ -3613,8 +3828,11 @@ export interface OverseerInfo {
   /** The current Overseer file: mount the normal chat on it (keyed on path). */
   path: string;
   id: string;
-  /** Up to 20 previous Overseer files, newest first; openable read-only (watch, no chat). */
-  history: { id: string; path: string; title: string; lastActiveAt: string }[];
+  /** Up to 20 previous Overseer files, newest first; openable read-only (watch, no chat). `title` is the fixed
+      name ("Overseer") every summary hands out; `about` says what that conversation was about (its automatic
+      title, else its first message, else "Untitled"), what the History screen shows. `about` absent: an older
+      server, whose `title` was that. */
+  history: { id: string; path: string; title: string; about?: string; lastActiveAt: string }[];
   /** Attention counts for the entry button (from the digest). act = blockers; decide = finished/look;
       needsYou = sessions Needs you lists (act or soft items, shared/needs-you.ts), the head's "need
       you" (additive: absent from older servers, then read `act`). */
@@ -4236,6 +4454,8 @@ export type ScreenPlace = "reply" | "row" | "card";
 //                                  "expired" one can be claimed: it spreads once refreshed. 400 bad
 //                                  body or unknown key, 409 nothing here to claim (logged out or dead)
 //                                  or the logins switch is off, 404 while OFF)
+// POST /api/mesh/home          -> MeshInfo   (bind peers.json to this folder and machine; this host's
+//                                  browser only. 409 when its home is a copy's original, still in use)
 // GET  /api/mesh/hello          -> MeshHello   (this host's own, for the SPA's stale-tab check: id,
 //                                  version, protocol, build. Cheap (a stat), and answered with the
 //                                  mesh off too, no Tailscale call; nodeId only while on)
@@ -4327,6 +4547,9 @@ export interface MeshInfo {
   frontDoor: string | null;
   /** peers.json exists but can't be used (the mesh is OFF because of it). */
   error?: string;
+  /** peers.json belongs to another folder or machine (a copy, a move, unbound): the mesh is OFF.
+      POST /api/mesh/home (this host's browser only) rebinds it here, except for "copied". */
+  homeMismatch?: "copied" | "moved" | "other-machine" | "unbound";
 }
 
 export interface MeshPeerEntry {
@@ -5256,6 +5479,9 @@ export interface MonitorSession {
   sessionPath?: string;
   /** Session display title, when known. */
   title?: string;
+  /** The session is the Overseer's current conversation or an earlier one: Open Session goes to the Overseer page
+      (or that earlier conversation's), never the plain session route. Absent for every other session. */
+  overseer?: "current" | "earlier";
   cwd?: string;
   /** Hosted in this server (its tool children are the server's children). */
   hosted: boolean;
@@ -5436,7 +5662,7 @@ export interface MonitorHistory {
   /** Oldest first. */
   points: MonitorPoint[];
   /** Labels for every group key used in `points`. Session groups are keyed by session path. */
-  groups: Record<string, { label: string; sessionPath?: string }>;
+  groups: Record<string, { label: string; sessionPath?: string; overseer?: "current" | "earlier" }>;
   /** Worker names by group key, then worker id, for the workers in `points` that had one. */
   workerLabels?: Record<string, Record<string, string>>;
 }
@@ -5866,3 +6092,35 @@ export interface UpdateApplyRequest {
   target: string;
   confirm: true;
 }
+
+// ---- the Overseer's pairings (§app.overseer/pairs) ---------------------------------------------
+// GET  /api/sessions/pairs?id=<session id>     -> { pairs: PairView[] }  (no id: every pairing in force)
+// POST /api/sessions/pairs/unpair { pairing }  -> { pair: PairView }      (404 none, 409 already ended)
+// POST /api/sessions/pairs/resume { pairing, direction? } -> { pair: PairView }
+
+/** One chat of a pairing, as the page and the Overseer read it. `paused`: notes TO this chat have
+    reached the ceiling and wait for a resume. */
+export interface PairSideView {
+  sessionId: string;
+  path: string;
+  title: string;
+  topic: string;
+  job: string;
+  /** Notes pushed to this chat since that direction was last resumed. */
+  notesIn: number;
+  paused: boolean;
+}
+
+export interface PairView {
+  id: string;
+  createdAt: string;
+  a: PairSideView;
+  b: PairSideView;
+  /** The ceiling per direction. */
+  limit: number;
+  endedAt?: string;
+  endedWhy?: "unpaired" | "archived" | "gone";
+}
+
+/** A direction of a pairing, by its two chats' places in it. */
+export type PairResumeDirection = "a_to_b" | "b_to_a";

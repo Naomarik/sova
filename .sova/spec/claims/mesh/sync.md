@@ -9,7 +9,9 @@ settings it had whenever another host's copy replaces them (§mesh.sync/kept-cop
 
 ## §mesh.sync/categories — Settings, themes, extensions
 
-A change to a synced category on one host reaches every up peer that has that category on. Each
+A change to a synced category on one host reaches every up peer that has that category on. A peer
+this host reads as Update needed (§mesh.compatibility/host-acts) is neither pushed to, pulled from
+nor merged with until the hosts match. Each
 file is one document (the subagent profile library merges profile by profile instead,
 §mesh.sync/profile-library); the most recently changed version wins, a deletion travels like a change,
 and a received document is written only if the program that reads it accepts it, atomically and
@@ -91,6 +93,10 @@ A host is never sent a login, secret or logout for a store it doesn't keep. Clau
 store (`~/.claude`) is not synced: each device keeps its own login there as its last resort, and
 added Claude logins move one device at a time through the pool (§app.claude-logins/pool), never
 through this sync.
+Deleting pi's `auth.json` is not a logout: no tombstone is made, and its logins come back from other
+hosts. A file that turns up empty after being missing, is found empty when Sova starts, or is an empty
+new file in the old one's place counts the same as a deleted one. Removing a login from the file while
+Sova runs (pi's own logout rewrites it in place) is a logout and spreads as above.
 Every local write takes the owning program's own lock and replaces the file atomically at mode 0600. Claude Code's credentials name no account, so a new entry that
 replaces one with more than 10 minutes left is a login (a re-login or another account), not a refresh. Known gap:
 a Claude Code re-login made in the last 10 minutes of a pre-sync login's access token is taken for a

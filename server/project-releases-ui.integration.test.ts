@@ -13,6 +13,7 @@ import type { Browser, BrowserContext, Page } from "playwright-core";
 import type { ReleaseHistoryItem, ReleaseRecord, ReleaseStep, ReleaseView } from "../shared/release";
 import type { DeployTargetView } from "../shared/project-contract";
 import type { ProjectSummary } from "../shared/projects";
+import type { SetupProposal, SetupStatus } from "../shared/setup-chat";
 import { launchTourBrowser } from "./tours/browser";
 import { scratchRoot } from "./test-scratch";
 
@@ -90,6 +91,7 @@ const view = (x: Partial<ReleaseView> = {}): ReleaseView => ({
   gates: null,
   quiet: null,
   deployTargets: ["prod"],
+  note: null,
   ...x,
 });
 const TARGET: DeployTargetView = { name: "prod", about: "the public site", standing: "declared", last: null, verifiedCommit: sha("9"), rollback: "redeploy-previous", request: null };
@@ -104,7 +106,7 @@ interface Opened {
   set(v: ReleaseView): void;
 }
 
-async function open(width: number, hash: string, first: ReleaseView, o: { runtime?: Record<string, unknown>; onboard409?: string } = {}): Promise<Opened> {
+async function open(width: number, hash: string, first: ReleaseView, o: { runtime?: Record<string, unknown>; onboard409?: string; setup?: SetupStatus; setup409?: string; /** A verb's effect on the view release.status answers next. */ react?: (verb: string, body: Record<string, unknown>, v: ReleaseView) => ReleaseView | undefined } = {}): Promise<Opened> {
   const phone = width < 768;
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce" });
   const page = await ctx.newPage();
@@ -121,6 +123,7 @@ async function open(width: number, hash: string, first: ReleaseView, o: { runtim
     const verb = /^\/api\/project-services\/((?:release|deploy)\.[a-z-]+)$/.exec(p)?.[1];
     if (verb) {
       calls.push({ verb, body: body() });
+      current = o.react?.(verb, body(), current) ?? current;
       if (verb === "release.status") return route.fulfill(json(ok(verb, { release: { view: current } })));
       if (verb.startsWith("release.")) return route.fulfill(json(ok(verb, { release: { view: current } })));
       if (verb === "deploy.status") return route.fulfill(json(ok(verb, { deploy: { deployHash: "d".repeat(64), targets: [TARGET] } })));
@@ -135,13 +138,21 @@ async function open(width: number, hash: string, first: ReleaseView, o: { runtim
       if (o.onboard409) return route.fulfill(json({ error: o.onboard409 }, 409));
       return route.fulfill(json({ sessionId: "s-maker", path: "/w/sessions/maker.jsonl", worktree: { path: "/w/.worktrees/notes-release-setup", branch: "sova/release-setup" } }));
     }
+    if (p === `/api/projects/${PID}/setup`) {
+      if (route.request().method() === "POST") {
+        calls.push({ verb: "setup.open", body: body() });
+        if (o.setup409) return route.fulfill(json({ error: o.setup409 }, 409));
+        return route.fulfill(json({ sessionId: "s-setup", path: "/w/sessions/setup.jsonl", reopened: false }, 201));
+      }
+      return route.fulfill(json(o.setup ?? NO_SETUP));
+    }
     const held = new RegExp(`^/api/projects/${PID}/held/([^/]+)/cancel$`).exec(p);
     if (held) {
       calls.push({ verb: "held.cancel", body: { hold: decodeURIComponent(held[1]!) } });
       return route.fulfill(json({ ok: true }));
     }
     if (p === `/api/projects/${PID}/runtime` && o.runtime) return route.fulfill(json(o.runtime));
-    if (p === "/api/project-services/merge.status") return route.fulfill(json(ok("merge.status", { merge: { view: { served: false, checks: "unset", target: "master", root: ROOT_DIR } } })));
+    if (p === "/api/project-services/merge.status") return route.fulfill(json(ok("merge.status", { merge: { view: { served: false, checks: "unset", target: "master", root: ROOT_DIR, state: "idle", checking: [], waiting: [], needsYou: [], needsFix: [], recent: [], heads: { target: sha("1") } } } })));
     if (p === "/api/sessions") return route.fulfill(json([]));
     if (p === "/api/projects") return route.fulfill(json({ projects: [PROJECT] }));
     if (p === `/api/projects/${PID}`) return route.fulfill(json(PROJECT));
@@ -182,7 +193,7 @@ const noSideScroll = async (page: Page) => assert.equal(await page.evaluate(() =
 const TAB = `#/projects/${PID}/releases`;
 
 describe("the Releases tab", () => {
-  test("sits after Merge Queue; a project not set up says how, and Set Up Releases starts the maker", async () => {
+  test("sits after Merge Queue; a project not set up says what a release does, and Set Up with a Chat opens the Setup chat", async () => {
     const o = await open(1280, TAB, view({ initialized: false, history: [], latest: null, landingsSince: null }));
     try {
       await o.page.getByRole("tab", { name: "Releases" }).waitFor();
@@ -190,12 +201,15 @@ describe("the Releases tab", () => {
       assert.equal(tabs.indexOf("Releases"), tabs.indexOf("Merge Queue") + 1, tabs.join(","));
       assert.equal(await o.page.getByRole("tab", { name: "Releases" }).getAttribute("aria-selected"), "true");
       await o.page.getByText("Releases aren't set up for this project").waitFor();
+      await o.page.getByText(/A release tags master with a version, writes its notes and runs each step you agree on/).waitFor();
       assert.equal(await o.page.getByRole("button", { name: "Start Release" }).count(), 0, "nothing starts a release before it is set up");
+      assert.equal(await o.page.getByRole("button", { name: "Set Up Releases" }).count(), 0, "the old one-shot maker button is gone");
       await shot(o.page, "not-set-up");
-      await o.page.getByRole("button", { name: "Set Up Releases" }).click();
-      await called(o, "onboard");
-      assert.deepEqual(lastCall(o, "onboard").body, { playbook: "release-maker" });
-      await o.page.getByRole("link", { name: "Open the Chat" }).waitFor();
+      await o.page.getByRole("button", { name: "Set Up with a Chat", exact: true }).click();
+      await called(o, "setup.open");
+      assert.equal(lastCall(o, "setup.open").body.from, "releases");
+      assert.equal(o.calls.filter((c) => c.verb === "onboard").length, 0, "never a release-maker run of its own");
+      await o.page.waitForFunction(() => location.hash.includes(encodeURIComponent("/w/sessions/setup.jsonl")));
     } finally {
       await o.ctx.close();
     }
@@ -371,6 +385,89 @@ describe("the Releases tab", () => {
   });
 });
 
+describe("the Release Note", () => {
+  for (const width of [1280, 390]) {
+    test(`at ${width}px: Release Note opens its editor beside Start Release; Save keeps it, it shows by Start, and Clear Note drops it`, async () => {
+      const react = (verb: string, b: Record<string, unknown>, v: ReleaseView): ReleaseView | undefined =>
+        verb === "release.note" ? { ...v, note: String(b.text) ? { text: String(b.text), at: iso(0) } : null } : undefined;
+      const o = await open(width, TAB, view(), { react });
+      try {
+        const start = o.page.getByRole("button", { name: "Start Release" });
+        const noteBtn = o.page.getByRole("button", { name: "Release Note" });
+        await noteBtn.waitFor();
+        assert.equal(await noteBtn.getAttribute("aria-expanded"), "false");
+        assert.equal(await o.page.getByRole("group", { name: "Release note for the next release" }).count(), 0, "no note shown when none is saved");
+        await noteBtn.click();
+        const editor = o.page.getByRole("group", { name: "Release note", exact: true });
+        const area = editor.getByLabel("Release note", { exact: true });
+        await area.waitFor();
+        assert.equal(await area.evaluate((el) => el === document.activeElement), true, "the editor takes focus");
+        assert.equal(await editor.getByRole("button", { name: "Clear Note" }).count(), 0, "nothing to clear yet");
+        assert.equal(await editor.getByRole("button", { name: "Save Note" }).getAttribute("aria-disabled"), "true", "an empty note has nothing to save");
+        await area.fill("  Release as 0.10.1.\nSkip the docs step.  ");
+        await shot(o.page, `note-editor-${width}`);
+        await editor.getByRole("button", { name: "Save Note" }).click();
+        await called(o, "release.note");
+        assert.deepEqual(lastCall(o, "release.note").body, { project: ROOT_DIR, text: "Release as 0.10.1.\nSkip the docs step." });
+        const saved = o.page.getByRole("group", { name: "Release note for the next release" });
+        await saved.getByText(/Release as 0\.10\.1\.\s+Skip the docs step\./).waitFor();
+        await saved.getByText("Start Release sends this note to the release chat, then clears it.").waitFor();
+        assert.equal(await editor.count(), 0, "Save closes the editor");
+        if (width < 768) await noSideScroll(o.page);
+        await shot(o.page, `note-saved-${width}`);
+        // Cancel leaves the saved note as it was.
+        await noteBtn.click();
+        await editor.getByLabel("Release note", { exact: true }).fill("something else");
+        await editor.getByRole("button", { name: "Cancel" }).click();
+        assert.equal(o.calls.filter((c) => c.verb === "release.note").length, 1, "Cancel saves nothing");
+        await saved.getByText(/Release as 0\.10\.1/).waitFor();
+        // Clear Note sends the empty note.
+        await noteBtn.click();
+        await editor.getByRole("button", { name: "Clear Note" }).click();
+        await until("the note cleared", () => o.calls.filter((c) => c.verb === "release.note").length === 2);
+        assert.deepEqual(lastCall(o, "release.note").body, { project: ROOT_DIR, text: "" });
+        await saved.waitFor({ state: "detached" });
+        await start.waitFor();
+      } finally {
+        await o.ctx.close();
+      }
+    });
+  }
+
+  test("Start Release stays one click with a note saved: it opens nothing and sends no text of its own", async () => {
+    const o = await open(1280, TAB, view({ note: { text: "Release as 0.10.1.", at: iso(5) } }));
+    try {
+      await o.page.getByRole("group", { name: "Release note for the next release" }).getByText("Release as 0.10.1.").waitFor();
+      await o.page.getByRole("button", { name: "Start Release" }).click();
+      await called(o, "release.start");
+      assert.deepEqual(lastCall(o, "release.start").body, { project: ROOT_DIR }, "the server reads the saved note itself");
+      assert.equal(await o.page.getByRole("group", { name: "Release note", exact: true }).count(), 0, "Start opens no editor");
+    } finally {
+      await o.ctx.close();
+    }
+  });
+
+  test("a started release shows the note it got and the ask it received, the ask labelled as theirs", async () => {
+    const r = record({ note: "Release as 0.10.1.", asked: { by: "assistant:prj_rel00001", why: "3 fixes since v0.9.0 wait on a release" } });
+    const o = await open(1280, TAB, view({ open: r, note: { text: "For the one after: skip docs.", at: iso(1) } }));
+    try {
+      const ctx = o.page.getByRole("group", { name: "What this release started with" });
+      await ctx.getByText("Your release note").waitFor();
+      await ctx.getByText("Release as 0.10.1.").waitFor();
+      await ctx.getByText("Asked by the Project Assistant").waitFor();
+      await ctx.getByText("3 fixes since v0.9.0 wait on a release").waitFor();
+      // The saved note waits for the next start while this one is open.
+      const saved = o.page.getByRole("group", { name: "Release note for the next release" });
+      await saved.getByText("For the one after: skip docs.").waitFor();
+      await saved.getByText("The next Start Release sends this note to its release chat, then clears it.").waitFor();
+      assert.equal(await o.page.getByRole("button", { name: "Start Release" }).count(), 0);
+      await shot(o.page, "note-on-record");
+    } finally {
+      await o.ctx.close();
+    }
+  });
+});
+
 describe("the Releases tab's latest release", () => {
   test("Plan Deploy of vX sits on the latest release, never on a newer withdrawn one", async () => {
     const history = [hist("v0.3.0", { withdrawn: { at: iso(30), why: "bad build" }, sha: sha("3") }), hist("v0.2.0", { channels: ["stable"], sha: sha("2") }), hist("v0.1.0", { sha: sha("1") })];
@@ -390,28 +487,30 @@ const runtimeWith = (state: string, extra: Record<string, unknown> = {}) => ({
   can: { onboard: true }, feed: [],
 });
 
-describe("Set Up Releases while its run is live or proposed", () => {
-  test("a live run: the tab says the setup chat is running, with Open Chat, and offers no second Set Up Releases", async () => {
-    const o = await open(1280, TAB, view({ initialized: false, history: [], latest: null, landingsSince: null }), { runtime: runtimeWith("running") });
+describe("the Setup chat on the Releases tab", () => {
+  test("a working chat: its card says so with Open Setup Chat; a not-set-up project offers no Start Fresh", async () => {
+    const o = await open(1280, TAB, view({ initialized: false, history: [], latest: null, landingsSince: null }), { setup: setupWith("working", null) });
     try {
-      const run = o.page.getByRole("group", { name: "Set Up Releases run" });
-      await run.getByText("Setup chat running").waitFor();
-      await run.getByRole("link", { name: "Open Chat" }).waitFor();
-      assert.equal(await o.page.getByRole("button", { name: "Set Up Releases" }).count(), 0);
+      const card = o.page.getByRole("group", { name: "Setup chat" }).or(o.page.locator('[aria-label="Setup chat"]')).first();
+      await card.waitFor();
+      assert.match(await card.innerText(), /Setup · notes/);
+      assert.match(await card.innerText(), /working/i);
+      await card.getByText("Open Setup Chat").waitFor();
+      assert.equal(await o.page.getByRole("button", { name: /Start Fresh/ }).count(), 0, "Start Fresh is for a set-up project");
     } finally {
       await o.ctx.close();
     }
   });
 
-  test("a proposed run: the tab shows its release setup and its Land", async () => {
-    const review = { release: { hash: `sha256:${"a".repeat(64)}`, settings: { playbook: ".sova/playbooks/release", tag: "v${version}", scheme: "semver", channels: ["stable"], commit: true, checks: [], quietMin: 30 }, steps: [{ id: "version", label: "Pick the version", phase: "prepare" }, { id: "commit", label: "Make the release commit", phase: "prepare" }], files: ["PLAYBOOK.md", "release.json"] } };
-    const o = await open(1280, TAB, view({ initialized: false, history: [], latest: null, landingsSince: null }), { runtime: runtimeWith("proposed", { branchHash: `sha256:${"a".repeat(64)}`, commit: sha("e"), review }) });
+  test("a proposal with a release setup: its steps, and Run Trial until a trial of its head passed", async () => {
+    const o = await open(1280, TAB, view({ initialized: false, history: [], latest: null, landingsSince: null }), { setup: setupWith("proposed", null) });
     try {
-      const pr = o.page.getByRole("group", { name: "Set Up Releases proposal" });
-      await pr.getByText(/proposes a release setup for Notes on sova\/release-setup/).waitFor();
+      const pr = o.page.getByRole("group", { name: "Setup proposal" });
+      await pr.waitFor();
       await pr.getByText("Pick the version").waitFor();
-      await pr.getByRole("button", { name: /Land|Merge Branch/ }).waitFor();
-      assert.equal(await o.page.getByRole("button", { name: "Set Up Releases" }).count(), 0);
+      await pr.getByText("Make the release commit").waitFor();
+      assert.equal(await pr.getByRole("button", { name: /^(Land|Merge Branch) / }).count(), 0, "no Land or Merge Branch before a passing trial");
+      await pr.getByRole("button", { name: /^Run Trial of / }).waitFor();
       await shot(o.page, "setup-proposed");
     } finally {
       await o.ctx.close();
@@ -419,17 +518,22 @@ describe("Set Up Releases while its run is live or proposed", () => {
   });
 });
 
-test("Set Up Releases refused because another setup chat is still open: its words as sent, with Open Chat", async () => {
-  const why = 'The last setup run, "Release maker", ended with no change but its chat is still open: open that chat to carry on, or archive it to start over.';
-  const idle = { ...runtimeWith("idle"), playbook: { ...runtimeWith("idle").playbook, result: "no-change" } };
-  const o = await open(1280, TAB, view({ initialized: false, history: [], latest: null, landingsSince: null }), { runtime: idle, onboard409: why });
+test("Set Up with a Chat refused: the server's words beside the button", async () => {
+  const why = "Another playbook run is live on this project: finish it first.";
+  const o = await open(1280, TAB, view({ initialized: false, history: [], latest: null, landingsSince: null }), { setup409: why });
   try {
-    await o.page.getByRole("button", { name: "Set Up Releases" }).click();
-    await called(o, "onboard");
-    const note = o.page.locator(".rel-setup-held").filter({ hasText: why });
-    await note.waitFor();
-    assert.match((await note.getByRole("link", { name: "Open Chat" }).getAttribute("href")) ?? "", /maker\.jsonl/);
+    await o.page.getByRole("button", { name: "Set Up with a Chat", exact: true }).click();
+    await called(o, "setup.open");
+    await o.page.getByRole("status").filter({ hasText: why }).first().waitFor();
   } finally {
     await o.ctx.close();
   }
 });
+
+const NO_SETUP: SetupStatus = { chat: null, setUp: { merge: false, release: false, deploy: false }, can: { open: true }, history: [] };
+function setupWith(state: "working" | "proposed", trial: null): SetupStatus {
+  const proposal = state === "proposed"
+    ? ({ branch: "sova/setup-notes-1a2b3c", target: "master", commit: sha("e"), served: false, hash: `sha256:${"a".repeat(64)}`, services: [], files: [{ path: ".sova/project.json", status: "M", setup: true }, { path: ".sova/playbooks/release/PLAYBOOK.md", status: "A", setup: true }], merge: { checks: "none" }, release: { hash: `sha256:${"b".repeat(64)}`, settings: { playbook: ".sova/playbooks/release", tag: "v${version}", scheme: "semver", channels: ["stable"], commit: true, checks: [], quietMin: 30 }, steps: [{ id: "version", label: "Pick the version", phase: "prepare" }, { id: "commit", label: "Make the release commit", phase: "prepare" }], files: ["PLAYBOOK.md", "release.json"] }, trial, land: { can: false, why: `This setup branch has no passing trial at ${sha("e").slice(0, 7)}: run a trial of it first.` } } as unknown as SetupProposal)
+    : null;
+  return { chat: { sessionId: "s-setup", path: "/w/sessions/setup.jsonl", title: "Setup · notes", state, startedAt: new Date(T0).toISOString(), branch: "sova/setup-notes-1a2b3c", proposal, setUp: { merge: false, release: false, deploy: false } }, setUp: { merge: false, release: false, deploy: false }, can: { open: true }, history: [] };
+}

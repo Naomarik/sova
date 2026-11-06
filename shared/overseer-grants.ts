@@ -26,7 +26,7 @@ export const REVOKE_ENTRY = "overseer-revoke";
 export const USE_ENTRY = "overseer-grant-use";
 
 /** The acts an approval or rule can cover: the tools that act on named sessions. */
-export const GRANTABLE_ACTS = ["sova_send", "sova_set_session", "sova_archive", "sova_answer_dialog", "sova_group"] as const;
+export const GRANTABLE_ACTS = ["sova_send", "sova_set_session", "sova_archive", "sova_answer_dialog", "sova_group", "sova_pair"] as const;
 export type GrantableAct = (typeof GRANTABLE_ACTS)[number];
 
 /** A grant's default length after its `at`, and how far ahead a card may approve. */
@@ -332,6 +332,7 @@ const ACT_WORDS: Record<GrantableAct, string> = {
   sova_archive: "archive",
   sova_answer_dialog: "answer dialogs",
   sova_group: "group",
+  sova_pair: "pair",
 };
 export const actsText = (acts: readonly GrantableAct[]): string =>
   acts.length === GRANTABLE_ACTS.length ? "any act" : acts.map((a) => ACT_WORDS[a]).join(", ");

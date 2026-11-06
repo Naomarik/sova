@@ -180,3 +180,13 @@ test("a project's release items list in the region and open its Releases tab; th
   assert.equal(needsYouTitle(0, 1, false, 5), "1 deploy item and 5 release items waiting on you.");
   assert.equal(needsYouTitle(1, 0, false, 1), "The 1 session waiting on you, and 1 release item.");
 });
+
+test("a project's own Setup chat joins only for its proposal: its other items stay with its project", () => {
+  const playbook = { projectId: "prj_1", label: "Project setup", hash: "sha256:x", branch: "sova/setup-1", target: "main", proposes: "pipeline" as const };
+  const d = digest([{ ...item("setup", "act", "playbook-review", 20, "Project setup: merge sova/setup-1 into main"), playbook }, item("setup", "act", "error", 30, "Connection error."), item("build", "act", "error", 10, "boom")]);
+  const rows = needsYouRows(d, [session("a")], [session("setup"), session("build")]);
+  assert.deepEqual(rows.map((r) => r.session.id), ["setup"], "the build's failure alone doesn't list it");
+  assert.deepEqual(rows[0]!.playbook, playbook);
+  assert.deepEqual(rows[0]!.details, ["Project setup: merge sova/setup-1 into main"], "the failed turn stays with its project");
+  assert.equal(rows[0]!.kind, "playbook-review");
+});

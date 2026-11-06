@@ -119,6 +119,8 @@ export function providerChip(p: UsageProvider, now?: number): { tone?: Tone; tex
 }
 
 const signIn = (id: UsageProvider["id"]) => (id === "openai" ? "pi /login" : "claude /login");
+/** OpenAI's sign-in lives in Settings → Accounts (§app.openai-login): its notes point there, not to a terminal. */
+const OPENAI_SIGN_IN = "under Settings → Accounts";
 const keyWord = (id: UsageProvider["id"]) => (id === "zai" ? "API key" : "key");
 
 /** A note or caption: `lead`, then `code` in `<code>`, then `rest`. */
@@ -144,6 +146,17 @@ function timedOut(p: UsageProvider, now: number): UsageLine | null {
   return { rest: `Sign-in token expired ${relativeTime(a.expiresAt, now)}. It renews the next time ${RENEWER[a.source]}; usage updates after that.` };
 }
 
+/**
+ * The usage reading says pi's OpenAI sign-in stopped working: OpenAI refused it, or its renewal
+ * expired (a token that only timed out renews the next time pi uses OpenAI, so it hasn't). A
+ * reading of the Codex app's own sign-in says nothing about pi's.
+ */
+export function openAiSignInStopped(p: UsageProvider | undefined, now = Date.now()): boolean {
+  if (!p || p.id !== "openai" || p.auth?.source === "codex-cli") return false;
+  if (p.auth?.kind === "oauth" && refreshDead(p.auth, now)) return true;
+  return p.state === "expired" && timedOut(p, now) === null;
+}
+
 /** One caption replacing the meters when a provider has nothing to show. Null = render meters. */
 export function providerProblem(p: UsageProvider, now = Date.now()): UsageLine | null {
   if (p.id === "ollama" && (p.activity || p.credits)) return null;
@@ -151,8 +164,10 @@ export function providerProblem(p: UsageProvider, now = Date.now()): UsageLine |
     case "ok":
       return null;
     case "nologin":
+      if (p.id === "openai") return { rest: `Not signed in. Sign in ${OPENAI_SIGN_IN} and it'll show at the next refresh.` };
       return { lead: "Not signed in. Run ", code: signIn(p.id), rest: " and it'll show at the next refresh." };
     case "expired":
+      if (p.id === "openai") return timedOut(p, now) ?? { rest: `Sign-in expired. Sign in again ${OPENAI_SIGN_IN}.` };
       return timedOut(p, now) ?? { lead: "Sign-in expired. Run ", code: signIn(p.id), rest: " to renew it." };
     case "nokey":
       return { lead: `No ${PROVIDER_NAME[p.id]} ${keyWord(p.id)} in `, code: "~/.pi/agent/auth.json", rest: "." };
@@ -174,7 +189,10 @@ export function providerProblem(p: UsageProvider, now = Date.now()): UsageLine |
 export function authCaption(p: UsageProvider, now: number): UsageLine | null {
   const a = p.auth;
   if (a?.kind !== "oauth" || p.state === "expired") return null;
-  if (refreshDead(a, now)) return { lead: "Sign-in can't renew. Run ", code: signIn(p.id), rest: " to sign in again." };
+  if (refreshDead(a, now)) {
+    if (p.id === "openai") return { rest: `Sign-in can't renew. Sign in again ${OPENAI_SIGN_IN}.` };
+    return { lead: "Sign-in can't renew. Run ", code: signIn(p.id), rest: " to sign in again." };
+  }
   const late = timedOut(p, now);
   if (late) return late;
   const renewed = a.refreshedAt !== undefined ? `last renewed ${relativeTime(a.refreshedAt, now)}` : null;
@@ -657,6 +675,10 @@ export function usageGlance(u: UsageInsight | undefined, now: number, loginId?: 
       const exact = money(p.balance.total, p.balance.currency);
       return [{ id: p.id, abbr, amount, high: !p.balance.available, stale, full: `${name} balance ${exact}` }];
     }
+    if (p.id === "ollama" && p.credits) {
+      const g = ollamaGlance(p, now, stale);
+      return g ? [{ id: p.id, abbr, bars: [g.bar], high: false, stale, full: g.full }] : [];
+    }
     const others = p.id === "claude" && u.claudeLogins ? otherAccounts(u, now, login) : [];
     const withOthers = others.length ? { others } : {};
     const g = glanceBars(p, now, stale);
@@ -669,6 +691,38 @@ export function usageGlance(u: UsageInsight | undefined, now: number, loginId?: 
     }
     return [];
   });
+}
+
+/**
+ * Ollama Cloud's included-credit meter (§app.insights/ollama-glance): the share of the period's
+ * included credits used, with the period's tick. Null without a current reading (currentIncluded:
+ * at most 10 minutes old, its period not ended, a meaningful used share). Activity never counts.
+ */
+function ollamaGlance(p: UsageProvider, now: number, stale: boolean): { bar: PaceBar; full: string } | null {
+  if (!currentIncluded(p, now)) return null;
+  const c = p.credits!.data!;
+  const inc = c.included!;
+  const used = includedCreditPct(c)!;
+  const balance = inc.balance_usd!, allowance = inc.allowance_usd!;
+  const period = inc.period!;
+  const w: UsageWindow = { label: "month", pct: used, resetsAt: period.until, startsAt: period.from };
+  const pace = windowPace(w, now);
+  const elapsed = pace?.elapsed ?? null;
+  const tail = [pace?.progress, `resets ${stampTime(Date.parse(period.until), now)}`].filter(Boolean) as string[];
+  const purchased = c.purchased?.balance_usd;
+  const knownPurchased = typeof purchased === "number" && Number.isFinite(purchased) && purchased >= 0;
+  const name = `${PROVIDER_NAME.ollama} included credits:`;
+  // Exact, as money() is, but a whole amount without ".00": "$299.95 of $300 left".
+  const usd = (n: number) => money(n, "USD").replace(/\.00$/, "");
+  if (balance === 0 && knownPurchased && purchased > 0) {
+    return {
+      bar: { pct: 100, elapsed, tone: stale ? null : "error" },
+      full: [`${PROVIDER_NAME.ollama} included credits used up; purchased ${usd(purchased)} left`, ...tail].join(" \u00b7 "),
+    };
+  }
+  const words = [`${name} ${Math.round(used)}% used`, `${usd(balance)} of ${usd(allowance)} left`, ...tail];
+  if (knownPurchased) words.push(`purchased ${usd(purchased)}`);
+  return { bar: { pct: Math.round(used), elapsed, tone: stale ? null : paceTone(used, elapsed) }, full: words.join(" \u00b7 ") };
 }
 
 /** Every line the glance says, each provider's then Claude's other accounts. */

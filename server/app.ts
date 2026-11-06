@@ -1,6 +1,7 @@
 // The server's Hono app and its routes (buildApp), with nothing started: no listener, no
 // usage-helper child, no timers or loops. server/index.ts builds it, listens and boots everything
 // else; tests build it to drive routes through app.request() (no socket).
+import { registerJobRoutes } from "./background-jobs-routes";
 import { chatHostHealth } from "./chat-host";
 import { holderAlive, readLock } from "./chat-runtime/writer-lock";
 import { execFileSync } from "node:child_process";
@@ -27,6 +28,7 @@ import { registerProjectFileRoutes } from "./project-files-routes";
 import { registerMcpRoutes } from "./mcp/routes";
 import { registerSessionOfferRoutes } from "./session-offers-routes";
 import { registerTranscriptCardRoutes } from "./transcript-cards-routes";
+import { registerPairRoutes } from "./topic-pairs";
 import { setFileCopyGuards } from "./project-files-tool";
 import { registerProjectRoutes } from "./projects/routes";
 import { registerProjectServiceRoutes } from "./project-services/routes";
@@ -47,7 +49,9 @@ import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
 import { mountOutreachRelay } from "./outreach/relay";
 import { mountOutreach } from "./outreach/routes";
-import { deliverFrames, postedFrames, POSTED_FRAMES_MAX } from "./ws";
+import { deliverFrames, framesDraft, postedFrames, POSTED_FRAMES_MAX } from "./ws";
+import { COMPOSER_HEADER, type NewSessionBody, type SessionPromptBody } from "../shared/wire-areas";
+import { mountWritingGate, refusedAnswer, writingRefused } from "./wire-gate";
 import { mountChatActions } from "./chat-actions";
 import { acquireChatHandle, type ChatHandle, chatHandle, chatHandleById, chatHandles, getModelRuntime, ModeRefusedError, setOpeningChoice } from "./chat-handle";
 import { restorePick } from "../pi-config/extensions/subagents/subagent-profiles.ts";
@@ -58,7 +62,7 @@ import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } 
 import { setFavorite } from "./model-favorites";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
-import { draftForClient, setDraft } from "./drafts";
+import { draftForClient, putBackDraft, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
 import { getAgentsInsight, getHiddenWorkers, getMemberInbox, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
@@ -68,10 +72,13 @@ import { LIST_VERSION_HEADER } from "../src/lib/summary-diff";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
 import { QUEUE_CHAT_MODE_REFUSAL, queueChatRole } from "../shared/merge-queue";
 import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
+import { fixedNameRefusal } from "../shared/fixed-names";
 import { rowsOf } from "./transcript";
 import { readBranch, unknownEntries } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
 import { appendToClosedFile, createSessionFile, type NewSessionFile } from "./harness/pi/state";
+import { modelCheck, modelCheckStatus } from "./harness/pi/model-sync";
+import { reapplyModelLevels } from "./harness/pi/open";
 import { LINK_MEMBER, SUBAGENT_PROFILE } from "./harness/state-kinds";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
@@ -94,7 +101,7 @@ import { configureSession } from "./sessions-configure";
 import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
 import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
 import type { ProfilePick } from "./profile-sources";
-import { singletonRunningText, THINKING_LEVELS } from "../shared/profiles";
+import { CREATE_NO_DEFAULT, createNotNamed, singletonRunningText, THINKING_LEVELS } from "../shared/profiles";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
 import { subagentProfilesInfo, requireSubagentProfile, restoreReplacedProfiles, saveSubagentProfileDefault, saveSubagentProfiles } from "./subagent-profiles";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
@@ -106,23 +113,26 @@ import { registerScheduleRoutes } from "./schedule-routes";
 import { readWebSettings, writeWebSettings } from "./web-settings";
 import { alignSettingsInfo, saveAlignSettingsBody } from "./align-settings";
 import { readSummarizerSettings, writeSummarizerSettings } from "./topic-outline-settings";
+import { setBranchBulletWriter, summaryLineWriter } from "./merge-queue/branch-summaries";
 import { claudeCliStatus } from "./claude-status";
 import { AutoTitleSweep, autoTitlePaths, nameSession, shortenPicks, traceToFile, type NameDeps } from "./session-autotitle";
 import { setSummaryWriter, summaryFromChain } from "./version-summaries";
 import { parseSessionTitleSettings, readSessionTitleSettings, sessionTitleSettingsInfo, writeSessionTitleSettings } from "./session-titles-settings";
 import type { LlmRuntime } from "./decide-llm";
 import { claudeLoginEnv, registerClaudeAccountRoutes } from "./claude-accounts";
-import { modeInfo, parseModeRequest, readMode } from "./mode-state";
+import { OpenAiLoginService, registerOpenAiLoginRoutes } from "./openai-login";
+import { linkOllamaReading, ProviderKeysService, registerProviderKeyRoutes } from "./provider-keys";
+import { chatOnlyModes, CREATE_NOT_TAKEN, modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { defaultMemoryChoice } from "./memory/settings";
 import { registerMemoryRoutes } from "./memory/routes";
-import { parseSandboxBody } from "./sandbox-state";
+import { parseSandboxBody, sandboxCommand, sandboxLowers } from "./sandbox-state";
 import { WORKER_ID_RE } from "./worker-resume";
 import { meshApi, meshRoutes } from "./mesh";
 import { registerCommandsRoutes } from "./commands-routes";
 import { auditStart, registerAuditRoutes } from "./command-audit";
 import { mountDetails } from "./mesh/details";
 import { mountResync } from "./mesh/resync";
-import { probePeer } from "./mesh/hello";
+import { areasForbid, probePeer } from "./mesh/hello";
 import { LINK_LIVE, meshLinks } from "./mesh/links";
 import { mountLinks } from "./mesh/links-routes";
 import { deliverLinkMessage, heldSessionPath, notifyLinksChanged, setLinksSource } from "./link-delivery";
@@ -142,7 +152,9 @@ import {
   overseerAutonomy,
   revokePermit,
 } from "./overseer";
-import { readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
+import { readNotes, writeNotes } from "./overseer-store";
+import { problemOf } from "../shared/form-rules";
+import { NOTES_RULE } from "../shared/overseer-limits";
 import { pathOfId, promptSession } from "./session-prompt";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
 import { checkRename, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea, type IdeaUpdate } from "./overseer-ideas";
@@ -162,8 +174,12 @@ import { routeOpName } from "./stall-recorder-route";
 import { opEnd, opStart, stallRecording } from "./stall-recorder";
 import { authGate, CALLER_HEADER, extensionCaller, isExtensionKey, SERVER_HEADER, TOKEN_HEADER, unlock, pair, revealToken, setExtensionKeyCheck } from "./auth";
 import { localRequest } from "./mesh/proxy";
-import { pageOnlyRefusal } from "./page-only";
+import { notPage, pageOnlyRefusal, yourClickBody, yourClickRefusal } from "./page-only";
 import { registerProjectSettingsRoutes } from "./project-settings-routes";
+import { registerSovaSettingsRoutes } from "./sova-settings-routes";
+import { setSovaSettingsDeps } from "./sova-settings";
+import { setCreateSettingsRun } from "./create-settings-tool";
+import { runCreateSettings } from "./create-settings-run";
 import { isProjectModeId } from "../shared/project-modes";
 import { extensionKeys } from "./extension-keys";
 import { registerUpdatesRoutes } from "./updates/routes";
@@ -248,6 +264,9 @@ export function buildApp(deps: AppDeps) {
     }
     audited?.(c.res.status, c.req.routePath);
   });
+
+  // A writing request from another version never reaches its route (§mesh.compatibility/refusal).
+  mountWritingGate(app);
 
   // A request that may change something starts the next session listing afresh, before it runs and
   // again once it answered, so its caller's next listing shows the change (§app.session-list/listing-reuse).
@@ -385,7 +404,7 @@ export function buildApp(deps: AppDeps) {
   // `target` flag, so the remote extension runs every tool on the far side. `link: true` makes it a
   // link member session (§app.overseer/links-tools): only the Overseer's create sends it.
   app.post("/api/sessions", async (c) => {
-    let body: { cwd?: unknown; target?: unknown; remoteCwd?: unknown; profile?: unknown; prompt?: unknown; subagent_profile?: unknown; link?: unknown; model?: unknown; thinking?: unknown };
+    let body: Partial<Record<keyof NewSessionBody, unknown>>;
     try {
       body = await c.req.json();
     } catch {
@@ -454,6 +473,8 @@ export function buildApp(deps: AppDeps) {
   registerWrapupRoutes(app);
   registerProjectOverseerRoutes(app);
   registerProjectSettingsRoutes(app);
+  registerSovaSettingsRoutes(app);
+  setCreateSettingsRun(runCreateSettings);
   registerProjectCostRoutes(app);
   registerProjectFileRoutes(app);
   // Session offers: a session's offer cards and clicks, another chat's show, the project page's list (§chat/offers).
@@ -461,6 +482,14 @@ export function buildApp(deps: AppDeps) {
   // MCP servers: the Settings tab, the project page's section, Check, approval and sign-in (§app/mcp).
   registerMcpRoutes(app);
   registerTranscriptCardRoutes(app);
+  // The Overseer's pairings (§app.overseer/pairs): each paired chat's line, Unpair and Resume.
+  registerPairRoutes(app, {
+    title: async (id) => {
+      const path = await pathOfId(id);
+      return path ? (await getSessionSummary(path))?.title : undefined;
+    },
+    exists: async (id) => (await pathOfId(id)) !== null,
+  });
   // The usage ledger: every figure of spend, answered by the usage helper (§app.insights/usage-ledger).
   registerUsageRoutes(app);
   registerProjectRoutes(app);
@@ -612,6 +641,9 @@ export function buildApp(deps: AppDeps) {
     return r.ok ? c.json(r.summary) : c.json({ error: r.error }, r.status);
   });
 
+  // A chat's background jobs and Stop (§app.background-jobs/pane).
+  registerJobRoutes(app);
+
   // Renames a session, in Sova ONLY (server/session-titles.ts): the id gets a stored title and
   // the .jsonl is never opened, let alone written — a session open in a TUI can be renamed here
   // without touching the file that TUI owns. `title: null` clears the override, and the derived
@@ -641,6 +673,8 @@ export function buildApp(deps: AppDeps) {
     // archive mark and the group assignment are keyed by too.
     const before = await getSessionSummary(path);
     if (!before) return c.json({ error: "Session file not found" }, 404);
+    // A chat Sova names itself (shared/fixed-names.ts) keeps that name: nothing is stored.
+    if (before.fixedName) return c.json({ error: fixedNameRefusal(before.fixedName) }, 409);
     setSessionTitle(before.id, title, source);
     const summary = await getSessionSummary(path);
     return c.json(summary ?? { ...before, title: title ?? before.originalTitle ?? before.title });
@@ -679,6 +713,9 @@ export function buildApp(deps: AppDeps) {
   });
   // Versions' summaries for the owner (§app.project-assistant/versions) are written by the same title models.
   setSummaryWriter((prompt) => summaryFromChain(readSessionTitleSettings(), prompt, titleDeps()));
+  // The merge queue's branch summaries (server/merge-queue/branch-summaries.ts) are written by the summary-line
+  // chain (Settings → Summaries), never the title models; their spend is their own purpose, with the project.
+  setBranchBulletWriter(summaryLineWriter(titleDeps));
   const autoTitleSweep = new AutoTitleSweep({
     settings: () => readSessionTitleSettings(),
     list: listSessions,
@@ -851,7 +888,13 @@ export function buildApp(deps: AppDeps) {
   // Merged worktrees of the session's repository (server/worktree-cleanup.ts, §chat.worktrees/cleanup):
   // the count for a new session's empty state, the dry run, and a removal of exactly the confirmed
   // paths that are still removable. Only when asked; never --force.
-  configureCleanup({ summary: (path) => getSessionSummary(path), sessionFiles: listSessionFiles, readBranch });
+  configureCleanup({
+    summary: (path) => getSessionSummary(path),
+    sessionFiles: listSessionFiles,
+    readBranch,
+    // A conflict's scratch copy the merge thread made itself: the queue's own, never listed (merge-queue/owners.ts).
+    queueMade: async (path) => (await import("./merge-queue/wire")).worktreeQueueMade(path),
+  });
   app.get("/api/worktrees/summary", async (c) => {
     const path = resolveSessionPath(c.req.query("path"));
     if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
@@ -985,6 +1028,17 @@ export function buildApp(deps: AppDeps) {
   // set_model and on the next message of a session already sitting on one, and the pi extensions
   // pick the same file up per model change, per turn and per spawn, TUI sessions included.
   app.get("/api/settings/models", (c) => c.json(readModelPolicy()));
+  // Ollama Cloud's model list check (§app.model-levels/server-check): its status for Settings → Models'
+  // line, and Check now, which answers once the check is done (the model list has then been re-applied).
+  app.get("/api/settings/models/check", (c) => c.json(modelCheckStatus(), 200, { "Cache-Control": "no-store" }));
+  app.post("/api/settings/models/check", async (c) => {
+    // The round checks the Ollama Cloud key too (linkOllamaReading): one record, read by Accounts as well.
+    const record = await modelCheck().checkNow();
+    if (!record) return c.json({ error: "Model checks are off on this server (PI_OFFLINE or SOVA_MODELS_FETCH=off)." }, 409);
+    // The shared runtime applies the file before the answer, so the client's next /api/models has the new list.
+    await reapplyModelLevels();
+    return c.json(modelCheckStatus());
+  });
   app.put("/api/settings/models", async (c) => {
     let body: unknown;
     try {
@@ -1065,6 +1119,7 @@ export function buildApp(deps: AppDeps) {
     claudeModels: () => cachedClaudeModels(),
     policy: () => readModelPolicy(),
   };
+  setSovaSettingsDeps({ sources: delegateSources, titlesChanged: () => autoTitleSweep.reschedule() });
   app.get("/api/settings/delegate", (c) => c.json(delegateInfo()));
   app.get("/api/settings/delegate/options", async (c) => c.json(await delegateOptions(delegateSources)));
   app.get("/api/settings/subagents", async (c) => {
@@ -1226,13 +1281,28 @@ export function buildApp(deps: AppDeps) {
   // through Claude Code's own `claude auth login`. The registry is the claude-code extension's.
   const claudeAccounts = registerClaudeAccountRoutes(app);
 
+  // Settings → Accounts' OpenAI sign-in (§app.openai-login): the ChatGPT subscription through pi's own
+  // login. A change re-checks the shared runtime's providers, so the model menu and opening choices
+  // see it at once, and asks for a usage reading.
+  /** A sign-in or a key changed: the shared runtime re-checks its providers (the model menu follows at once) and usage is read again. */
+  const afterAccountChange = async () => {
+    await (await getModelRuntime()).getAvailable().catch(() => []);
+    await refreshUsageInsight().catch(() => undefined);
+  };
+  const openAiLogin = registerOpenAiLoginRoutes(app, new OpenAiLoginService({ afterChange: afterAccountChange }));
+
+  // Settings → Accounts' API keys (§app/provider-keys): checked before saving, stored by pi's own login,
+  // read back only to a browser on this computer. Ollama Cloud's key is checked in Settings → Models' model list
+  // round: one record, shown in both places.
+  registerProviderKeyRoutes(app, linkOllamaReading(new ProviderKeysService({ afterChange: afterAccountChange })));
+
   // The mode is per session. ~/.pi/agent/mode.json is the default new sessions
   // start from; GET reads it, POST without ?path= writes it and changes no open chat. A switch never writes
   // it (chat-manager switchMode): the default moves when a caller asks for exactly that.
   // With ?path=: that held chat's own mode, its project modes read now (§chat.mode-menu/project-modes).
   app.get("/api/mode", async (c) => {
     const rawPath = c.req.query("path");
-    if (rawPath === undefined) return c.json(modeInfo(readMode(), defaultMemoryChoice()));
+    if (rawPath === undefined) return c.json({ ...modeInfo(readMode(), defaultMemoryChoice()), chatModes: chatOnlyModes() });
     const path = resolveSessionPath(rawPath);
     if (!path) return c.json({ error: "Invalid ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
     const chat = chatHandle(path);
@@ -1328,7 +1398,15 @@ export function buildApp(deps: AppDeps) {
     if (path === null) {
       // The default never stores project modes (§chat.mode-menu/project-modes): they belong to one chat's checkout.
       if (request.patch.projectModes !== undefined) return c.json({ error: "Project modes belong to one chat: send projectModes with ?path=" }, 400);
+      if (request.patch.mode === "create") return c.json({ error: CREATE_NO_DEFAULT }, 400);
       return c.json(await switchMode(request.patch));
+    }
+    // Only a chat picks Create for itself (§chat.create-mode/per-chat-only); nothing was switched.
+    if (request.patch.mode === "create" && overseerSender(c.req.header(OVERSEER_SENDER_HEADER))) return c.json({ error: createNotNamed("the Overseer") }, 409);
+    // Approving a project tool is your click, or the Overseer's own turn-on (§app.access/your-click): nothing switches.
+    if (request.patch.approve?.length) {
+      const notYou = yourClickRefusal(c, { projectTool: request.patch.approve[0]!.id }, { overseerKeeps: true });
+      if (notYou) return notYou;
     }
     // The merge queue's own chats keep the modes Sova started them with (profiles/system, thread.ts threadMemoryOn).
     if (queueChatRole((await getSessionSummary(path).catch(() => null))?.profile)) return c.json({ error: QUEUE_CHAT_MODE_REFUSAL }, 409);
@@ -1345,6 +1423,8 @@ export function buildApp(deps: AppDeps) {
     try {
       const result = await got.chat.switchMode(patch);
       if (result.needsApproval) return c.json({ error: result.error ?? "Approval needed", needsApproval: result.needsApproval } satisfies ProjectModeApprovalNeeded, 409);
+      // A chat on code older than Create keeps its mode, and one open elsewhere takes no switch.
+      if (patch.mode === "create" && result.mode !== "create") return c.json({ error: CREATE_NOT_TAKEN }, 409);
       return c.json(result);
     } catch (err) {
       if (err instanceof ModeRefusedError) return c.json({ error: err.message }, 409);
@@ -1362,8 +1442,14 @@ export function buildApp(deps: AppDeps) {
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
     const frames = postedFrames(await c.req.json().catch(() => null));
     if (!frames) return c.json({ error: `Expected { frames: [...] }, 1 to ${POSTED_FRAMES_MAX} objects with a type` }, 400);
+    // The page is going, so nobody hears a refusal: what it carried goes back as the draft.
+    const refused = writingRefused(c.req.header(COMPOSER_HEADER));
+    if (refused) {
+      putBackDraft(idOf(path), framesDraft(frames));
+      return refusedAnswer(c, refused);
+    }
     sessionsChanged();
-    deliverFrames(path, frames);
+    deliverFrames(path, frames, notPage(c));
     return c.json({ accepted: frames.length }, 202);
   });
 
@@ -1385,6 +1471,11 @@ export function buildApp(deps: AppDeps) {
     if ("error" in parsed) return c.json({ error: parsed.error }, 400);
     const got = await chatFor(path);
     if ("error" in got) return c.json({ error: got.error }, got.status);
+    // Lowering it is your click; the Overseer's runs only in a turn your click on a card opened (§app.access/your-click).
+    if (sandboxLowers((await got.chat.sandboxInfo())?.state, parsed.state)) {
+      const notYou = yourClickRefusal(c, "sandbox", { overseerKeeps: true });
+      if (notYou) return notYou;
+    }
     return c.json(await got.chat.applySandbox(parsed.state));
   });
 
@@ -1640,7 +1731,8 @@ export function buildApp(deps: AppDeps) {
       return c.json({ error: "Expected JSON body { text }" }, 400);
     }
     if (typeof body?.text !== "string") return c.json({ error: "text must be a string" }, 400);
-    if (body.text.length > NOTES_MAX) return c.json({ error: `Notes must be at most ${NOTES_MAX} characters` }, 400);
+    const tooLong = problemOf(NOTES_RULE, body.text);
+    if (tooLong) return c.json({ error: tooLong }, 400);
     if (body.base !== undefined && typeof body.base !== "string") return c.json({ error: "base must be a string" }, 400);
     const current = readNotes();
     if (typeof body.base === "string" && body.base !== current)
@@ -1811,7 +1903,7 @@ export function buildApp(deps: AppDeps) {
   // prompt): idle it starts a turn; mid-turn it is queued as `delivery` (followUp by default, or
   // steer). Refused TUI-live, for the Overseer's own file, or when a foreign writer holds it.
   app.post("/api/sessions/prompt", async (c) => {
-    let body: { path?: unknown; text?: unknown; delivery?: unknown };
+    let body: Partial<Record<keyof SessionPromptBody, unknown>>;
     try {
       body = await c.req.json();
     } catch {
@@ -1823,6 +1915,14 @@ export function buildApp(deps: AppDeps) {
     const path = resolveSessionPath(typeof body.path === "string" ? body.path : null);
     if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    // A `/sandbox` that lowers isn't sent by this road, whoever asks: the page's own is typed in its composer
+    // (§app.access/your-click). The chat refuses it too, for every other way a server-side send reaches it.
+    const asked = sandboxCommand(body.text);
+    if (asked) {
+      const got = await chatFor(path);
+      if ("error" in got) return c.json({ error: got.error }, got.status);
+      if (sandboxLowers((await got.chat.sandboxInfo())?.state, asked)) return c.json(yourClickBody("sandbox", notPage(c) ?? "script"), 403);
+    }
     const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery);
     return r.ok ? c.json({ ok: true, queued: r.queued, kind: r.kind, ...(r.compacting ? { compacting: true } : {}) }) : c.json({ error: r.error }, r.status);
   });
@@ -1877,6 +1977,7 @@ export function buildApp(deps: AppDeps) {
     held: heldSessionPath,
     deliver: deliverLinkMessage,
     probe: async (peer) => (await probePeer(peer)).state,
+    updateNeeded: async (peer) => areasForbid(await probePeer(peer)),
     notify: notifyLinksChanged,
     renderPeerRead,
     // File transfers: a session's sandbox binds what the server packs and where it extracts.
@@ -1979,7 +2080,7 @@ export function buildApp(deps: AppDeps) {
     return spaIndex(c, next);
   });
 
-  return { app, autoTitleSweep, claudeAccounts, meshResync };
+  return { app, autoTitleSweep, claudeAccounts, openAiLogin, meshResync };
 }
 
 export type BuiltApp = ReturnType<typeof buildApp>;

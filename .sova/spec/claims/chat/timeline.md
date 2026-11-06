@@ -349,7 +349,8 @@ left-behind row keeps its sender, so the filter never brings it back.
 real user message under the hood, just rendered as a card in the thread). Its title is its
 reason, or "Wake nudge n1" when the nudge carried none — never the tagged message's first line.
 It gets the same density line and Rewind as any other input. It is not something you typed, so
-Inputs Only leaves it out, and the composer's count doesn't count it.
+Inputs Only leaves it out, and the composer's count doesn't count it. A background job's end card
+(§app.background-jobs/end-card) is the same, titled "Background job j1".
 
 The list's name follows it: `aria-label="Session timeline, your messages only"`, and the foot line
 starts "Your messages only, newest first,".

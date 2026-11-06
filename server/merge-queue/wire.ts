@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LANDING_FILE_NAME } from "../../pi-config/extensions/worktrees/landing.ts";
 import { stateRoot } from "../state-root";
-import { branchQueueOf, type MergeQueueView, type WorktreeMergeProject, type WorktreeMergeStats, type WorktreeQueueInfo } from "../../shared/merge-queue";
+import { type BranchSummary, branchQueueOf, type LandingSummary, type LandingSummaryProject, type MergeQueueView, type WorktreeMergeProject, type WorktreeMergeStats, type WorktreeQueueInfo } from "../../shared/merge-queue";
 import type { RunMerge, ThreadEvent, WakeThread } from "./contract";
 import { type IngestDeps, startIngest } from "./ingest";
 import { setLandingNoteSource, setMergeCardNoteSource } from "./card-note";
@@ -15,11 +15,16 @@ import { canonical } from "../../pi-config/extensions/worktrees/state.ts";
 import type { QueueSubject } from "../git-diff";
 import { type Owner, WorktreeOwners } from "./owners";
 import { engineServices, makeRunMerge } from "./run";
-import { worktreeQueueInfo } from "./view";
-import type { SessionBranchQueue, SessionBranchRow } from "../../shared/protocol";
+import { queueGlanceOf, worktreeQueueInfo } from "./view";
+import type { ProjectGlanceQueue } from "../../shared/projects";
+import type { SessionBranchQueue, SessionBranchRow, SessionWorktreeInfo } from "../../shared/protocol";
+import { BranchSummaries, branchBulletWriter, readBranchFacts } from "./branch-summaries";
+import { SummarySweep } from "./summary-sweep";
+import { projectKey } from "./store";
 import { sessionsChanged } from "../list-generation";
 import { LandingNotes, SERVED_FILE_NAME, ServedRule, servedKey, servedRule, setServedRule, type SetupOf, startServedWriter } from "./served";
 import type { ProjectOf } from "../project-root";
+import { trialEndedText } from "./setup-branch";
 import { gitRefsStamp } from "../worktrees";
 
 /**
@@ -29,10 +34,16 @@ import { gitRefsStamp } from "../worktrees";
  */
 
 let queues: MergeQueues | null = null;
-type RowFields = { queue?: WorktreeQueueInfo; mergeProject?: WorktreeMergeProject; mergeStats?: WorktreeMergeStats; mergeServed?: true };
+/** The branch summaries (branch-summaries.ts), one store for every queue. */
+let summaries: BranchSummaries | null = null;
+/** The summaries' background sweep (summary-sweep.ts): every Ready row's bullets once its chat is idle. */
+let sweep: SummarySweep | null = null;
+type RowFields = { queue?: WorktreeQueueInfo; mergeProject?: WorktreeMergeProject; mergeStats?: WorktreeMergeStats; mergeServed?: true; mergeSummary?: BranchSummary; mergeOwner?: SessionWorktreeInfo["mergeOwner"] };
 let servedWriter: { refresh(): Promise<void>; stop(): void } | null = null;
 /** The served roots as last computed (the writer's pass): the thread wake's synchronous check. */
 let servedNow = new Set<string>();
+/** The served roots as the served rule names them (queues are made by these). */
+let servedRootsNow: string[] = [];
 let rowsOf: ((path: string, branch: string) => Promise<RowFields>) | null = null;
 
 /** A worktree row's queue fields (SessionWorktreeInfo.queue / mergeProject / mergeServed): mergeProject for a
@@ -152,6 +163,8 @@ interface KeptView {
   drafts: string[];
   /** The look taken before the newest view read for the list: at those refs, its stamp, and when. */
   seen?: { refs: string; stamp: string | null; at: number };
+  /** The project cards' cut of it (§app.projects/home-glance). */
+  glance: ProjectGlanceQueue | null;
 }
 
 /** Each queue's newest view, indexed by branch (the session list joins its rows' entries here, no Git read): kept from
@@ -213,6 +226,7 @@ export function noteQueueView(view: Pick<MergeQueueView, "root" | "at" | "projec
     worktrees: view.needsFix.flatMap((e) => (e.worktree ? [e.worktree] : [])),
     drafts: view.needsFix.flatMap((e) => (e.worktree && !e.settled && e.sentBackFor === "drafts" ? [e.worktree] : [])),
     ...(prev?.seen ? { seen: prev.seen } : {}),
+    glance: queueGlanceOf(view),
   });
   // A change re-lists; so does a queue's first view after a start when it holds entries: the rows' background reads
   // may be up to an idle cycle old, and the listing joins this view at once.
@@ -240,6 +254,30 @@ export function checkQueueViews(): number {
     n++;
   }
   return n;
+}
+
+/** A project card's figures from its queue's newest kept view (§app.projects/home-glance): null when no view of that
+ *  queue is kept (a queue that doesn't serve the project keeps none). Synchronous: never builds a view, never makes a
+ *  queue, no Git. */
+export function queueGlanceNow(root: string): ProjectGlanceQueue | null {
+  return latestViews.get(servedKey(root))?.glance ?? null;
+}
+
+/**
+ * A project card's queue state (§app.projects/home-glance): `served` with the kept view's cut; `reading` for a root the
+ * queue serves (listed and set up, as the served writer last named them) whose view isn't kept yet, which starts that
+ * view's one read here (deduped with any read in flight; once kept, the list's watch maintains it like every kept
+ * view); `unserved` otherwise, which reads nothing and makes no queue. Synchronous: the first read of a served root is
+ * the only one that leads to Git, and it runs in the background.
+ */
+export function queueGlanceState(root: string): { state: "served"; cut: ProjectGlanceQueue } | { state: "reading" | "unserved" } {
+  const key = servedKey(root);
+  const kept = latestViews.get(key)?.glance;
+  if (kept) return { state: "served", cut: kept };
+  if (!servedNow.has(key)) return { state: "unserved" };
+  const d = listDeps;
+  if (d && !viewing.has(key)) void readView(d, key, lookAt(d, key, [], [])).catch((err) => console.warn(`[merge-queue] ${key}: glance view failed: ${err instanceof Error ? err.message : err}`));
+  return { state: "reading" };
 }
 
 /** A branch's newest entry in its queue's newest view: undefined when it has none there, null when no view of that
@@ -275,6 +313,38 @@ let bareSettingsOf: ((root: string) => Promise<import("../../shared/merge-queue-
 
 /** A listed project's settings while the queue doesn't serve it, made without a queue (settings.ts bareSettings);
  *  null while the queue isn't started or its target has no commit. */
+/** The gate's answer when it can't read what it needs: never a quiet pass. */
+export const TRIAL_UNREADABLE = "Sova can't confirm a passing trial of this branch now: try again in a moment.";
+
+/**
+ * Why a branch head can't merge or land yet as a setup branch (setup-branch.ts): it changes the project's setup and no
+ * trial of exactly `head` passed; null when it isn't a setup branch or its trial passed. Merge Branch on a project the
+ * queue doesn't serve asks this too. Fails closed: when the trials can't be read, a setup branch is refused.
+ */
+export async function setupUntriedAt(root: string, head: string): Promise<string | null> {
+  if (!head || !root) return TRIAL_UNREADABLE;
+  const q = queues ? ((await queues.peek(root)) ?? (await queues.get(root).catch(() => null))) : null;
+  if (q) {
+    const target = await q.targetHead();
+    return target ? q.setupUntried(target, head) : TRIAL_UNREADABLE;
+  }
+  // No queue here: a branch that leaves the setup alone needs none; a setup branch can't be checked, so it waits.
+  const { isSetupChange, setupChangeOf } = await import("./setup-branch");
+  const { resolveTarget } = await import("./served");
+  const { definitionAt } = await import("../project-services/deploy-recipe");
+  const target = await resolveTarget(realGit, root, (r, ref) => definitionAt(r, ref)).catch(() => null);
+  const change = target ? await setupChangeOf(realGit, root, target, head) : null;
+  return change && !isSetupChange(change) ? null : TRIAL_UNREADABLE;
+}
+
+/** A project's trials and target as its queue keeps them (the Setup chat's tab reads them); null: no queue here. */
+export async function setupTrialsAt(root: string): Promise<{ target: string; trials: import("../../shared/merge-queue").MergeTrial[]; readRun: (id: string) => import("../../shared/merge-queue").MergeRun | null } | null> {
+  if (!queues || !root) return null;
+  const q = await queues.peek(root);
+  if (!q) return null;
+  return { target: q.target, trials: q.trials(), readRun: (id) => q.store.readRun(id) };
+}
+
 export function mergeBareSettings(root: string): Promise<import("../../shared/merge-queue-settings").MergeQueueSettings | null> {
   return bareSettingsOf ? bareSettingsOf(root) : Promise.resolve(null);
 }
@@ -440,11 +510,26 @@ async function threadVerbDeps(served: { projectIdOf(root: string): string | null
 let owners: WorktreeOwners | null = null;
 /** The chat a worktree's branch belongs to (owners.ts), the rule Ready rows and Land share. */
 export async function worktreeOwnerOf(worktree: string): Promise<Owner | null> {
+  return (await ownersNow()).ownerOf(worktree);
+}
+async function ownersNow(): Promise<WorktreeOwners> {
   if (!owners) {
     const [{ listSessions }, { trackedWorktrees }] = await Promise.all([import("../sessions-index"), import("../merge-readiness")]);
     owners = new WorktreeOwners({ sessions: () => listSessions(), tracked: trackedWorktrees, canonical });
   }
-  return owners.ownerOf(worktree);
+  return owners;
+}
+/** A worktree one of the merge queue's own chats created (owners.ts queueMade): never on a list you land from. */
+export async function worktreeQueueMade(worktree: string): Promise<boolean> {
+  return (await ownersNow()).queueMade(worktree);
+}
+
+/** A worktree row's owner: its chat's id, file, title and archived mark. */
+async function ownerRowOf(o: Owner): Promise<SessionWorktreeInfo["mergeOwner"]> {
+  const { listSessions } = await import("../sessions-index");
+  const s = (await listSessions().catch(() => [])).find((x) => x.id === o.session);
+  const title = s?.title && s.title !== "Untitled" ? s.title : undefined;
+  return { session: o.session, ...(s?.path ? { path: s.path } : {}), ...(title ? { title } : {}), ...(o.archived || s?.archived ? { archived: true as const } : {}) };
 }
 
 /** The root of the registered project `id`, or null. */
@@ -524,7 +609,9 @@ export async function statsOf(root: string, targetHead: string, branch: string):
   const short = await realGit(["diff", "--shortstat", `${targetHead}...${head}`], root);
   const added = Number(/(\d+) insertion/.exec(short.stdout)?.[1] ?? 0);
   const removed = Number(/(\d+) deletion/.exec(short.stdout)?.[1] ?? 0);
-  const out = short.code === 0 ? { head, ahead, added, removed } : null;
+  // When the branch last changed: its head's committer date (the Ready rows' own).
+  const when = (await realGit(["log", "-1", "--format=%cI", head], root)).stdout.trim();
+  const out = short.code === 0 ? { head, ahead, added, removed, ...(when ? { headAt: when } : {}) } : null;
   if (statsCache.size > 500) statsCache.clear();
   statsCache.set(key, out);
   return out;
@@ -558,6 +645,7 @@ export async function startMergeQueue(
     onRoots: (roots) => {
       const was = servedNow;
       servedNow = new Set(roots.map((r) => servedKey(r.root)));
+      servedRootsNow = roots.map((r) => r.root);
       // A root gaining service: its rows have no root to join by, and an archived one has no read coming.
       if (listDeps && [...servedNow].some((r) => !was.has(r))) void rereadUnrooted();
     },
@@ -599,14 +687,16 @@ export async function startMergeQueue(
       ev.kind === "queued"
         ? { kind: "queued" as const, entry, ...base }
         : ev.kind === "conflict"
-          ? { kind: "conflict" as const, entry, run: ev.run ?? "", files: ev.files ?? [], ...base }
+          ? { kind: "conflict" as const, entry, run: ev.run ?? "", files: ev.files ?? [], ...base, ...(ev.scratch ? { scratch: ev.scratch } : {}), ...(ev.scratchError ? { scratchError: ev.scratchError } : {}) }
           : ev.kind === "failed"
             ? { kind: "failed" as const, entry, run: ev.run ?? "", ...(ev.why ? { summary: ev.why } : {}), ...base }
             : ev.kind === "paused"
               ? { kind: "paused" as const, why: ev.why ?? "paused" }
               : ev.kind === "names"
                 ? { kind: "names" as const, file: ev.namesFile ?? "", target: ev.target }
-                : null;
+                : ev.kind === "idle"
+                  ? { kind: "idle" as const, entry, ...(ev.lastLanded ? { lastLanded: ev.lastLanded } : {}), ...(ev.head ? { head: ev.head } : {}) }
+                  : null;
     if (!mapped) return false;
     if (!servedNow.has(servedKey(ev.root))) return false;
     if (!threadMod.hasMergeThread()) return false;
@@ -648,6 +738,33 @@ export async function startMergeQueue(
     targetOf: (root) => served.servedTarget(root),
   });
   setLandingNoteSource((session) => notes.noteFor(session));
+  // What each branch does (branch-summaries.ts): written once a served branch reads Ready to land at a commit, or is
+  // approved at one; the queue's rows and the Worktrees rows read them, and a change publishes the view again.
+  const bs: BranchSummaries = new BranchSummaries({
+    // Beside the queue's own records (store.ts): `<state>/merge-queue/<project key>/branch-summaries.json`.
+    fileOf: (root) => join(base, projectKey(root), "branch-summaries.json"),
+    facts: async (root, branch, commit): Promise<import("./branch-summaries").BranchFacts | null> => {
+      const pq = await queues!.get(root);
+      const head = (await pq.declared()).head;
+      return head ? readBranchFacts(realGit, root, { branch, commit, target: pq.target, targetHead: head }) : null;
+    },
+    writer: branchBulletWriter,
+    projectOf: (root) => projectIdOf(root) ?? root,
+    changed: (root) => void queues?.peek(root)?.then((pq) => pq.republish()).catch(() => {}),
+    log: (line) => console.warn(line),
+  });
+  summaries = bs;
+  const summaryFor = (root: string, branch: string, commit: string, front = false) => {
+    if (!servedNow.has(servedKey(root))) return;
+    bs.ensure(root, branch, commit, { front });
+  };
+  // A chat is idle read as the worktree readiness reads it (server/merge-readiness.ts runningNow: busy, working, or a
+  // worker working); an unknown chat counts as idle.
+  const chatIdle = async (session: string): Promise<boolean> => {
+    const { listSessions } = await import("../sessions-index");
+    const x = (await listSessions()).find((y) => y.id === session);
+    return !x || !(x.busy || x.activity?.state === "working" || (x.workers?.working ?? x.live?.workers?.working ?? 0) > 0);
+  };
   const cardsDo = (p: Promise<void>) => void p.catch((err) => console.warn(`[merge-queue] card: ${err instanceof Error ? err.stack : err}`));
   queues = new MergeQueues({
     base,
@@ -661,10 +778,45 @@ export async function startMergeQueue(
       publishFeed({ type: "merge_queue", project: view.project, view });
       cardsDo(mc.sync(view));
     },
+    // A trial's end reaches the chat that started it, as a queue wake (it ends its turn and is woken).
+    trialEnded: (t, run) => {
+      if (t.by.kind !== "chat" || !t.by.session) return;
+      const session = t.by.session;
+      void (async () => {
+        const path = await sessionPath(session);
+        if (!path) return;
+        (await import("../merge-readiness")).rereadReadiness(path);
+        await (await import("./wake")).sendQueueWake(path, trialEndedText(t, run));
+      })().catch((err) => console.warn(`[merge-queue] trial note to ${session}: ${err instanceof Error ? err.message : err}`));
+    },
+    // Why a sent-back branch's newest commit isn't Ready to land: its chat's last readiness reading, never a fresh read.
+    newestReading: async (worktree, tip) => {
+      const [{ listSessions }, { readinessReading }, { newestReadingOf }] = await Promise.all([import("../sessions-index"), import("../merge-readiness"), import("../ready-to-land")]);
+      return newestReadingOf(worktree, tip, { owner: worktreeOwnerOf, pathOf: async (id) => (await listSessions()).find((s) => s.id === id)?.path, reading: readinessReading, canonical });
+    },
+    // A test check broken on the target: one notification that opens the project's Merge Queue tab (its Needs you
+    // holds the flag), so the user can start a chat to fix the target.
+    flagBroken: (b, root) => {
+      const id = projectIdOf(root);
+      void import("../push")
+        .then(({ notifyOnce }) =>
+          notifyOnce({ title: `The merge queue needs you · ${root.split("/").pop() ?? root}`, body: `${b.why}. Branches skip it until it's fixed: start a chat to fix it.`, hash: id ? `#/projects/${encodeURIComponent(id)}/merge-queue` : "#/projects", tag: `sova:merge-broken:${id ?? root}:${b.check}` }),
+        )
+        .catch((err) => console.warn(`[merge-queue] ${root}: notification not sent: ${err instanceof Error ? err.message : String(err)}`));
+    },
     // The branch's card in its own chat: raised at the approval, a revision at each outcome (cards.ts).
-    notify: (kind, e, extra) => cardsDo(kind === "approved" ? mc.approved(e, extra.root) : mc.outcome(kind, e, { ...(extra.run ? { run: extra.run } : {}), root: extra.root })),
+    notify: (kind, e, extra) => {
+      // An approved branch was Ready to land at its commit: its summary is written if it has none yet.
+      // An approval's goes to the front of the line.
+      if (kind === "approved") summaryFor(extra.root, e.branch, e.commit, true);
+      cardsDo(kind === "approved" ? mc.approved(e, extra.root) : mc.outcome(kind, e, { ...(extra.run ? { run: extra.run } : {}), root: extra.root }));
+    },
+    summaryOf: (root, branch, commit): BranchSummary | undefined => bs.summaryOf(root, branch, commit),
+    pruneSummaries: (root, live, shown) => void bs.prune(root, live, shown),
     // The branch's chat (owners.ts): the Ready rows show it, and a Land naming no chat records it.
     ownerOf: async (_root, _branch, worktree) => (worktree ? worktreeOwnerOf(worktree) : null),
+    // A conflict's scratch copy the merge thread made itself (old style): hidden from Ready, refused by Land.
+    queueMade: (worktree) => worktreeQueueMade(worktree),
     thread,
     draftsHash: (dir) => draftsHash(dir),
     // A branch sent back for its drafts: Sova's docs check of them, the one readiness runs (one cache).
@@ -675,11 +827,7 @@ export async function startMergeQueue(
     // Landing by request (al_3): the docs commit goes into a chat's folder only while it is idle, read as the worktree
     // readiness reads it (server/merge-readiness.ts runningNow: busy, working, or a worker working); an unknown chat
     // can't be interrupted. A request's title is its chat's.
-    chatIdle: async (session) => {
-      const { listSessions } = await import("../sessions-index");
-      const x = (await listSessions()).find((y) => y.id === session);
-      return !x || !(x.busy || x.activity?.state === "working" || (x.workers?.working ?? x.live?.workers?.working ?? 0) > 0);
-    },
+    chatIdle,
     chatTitle: async (session) => {
       const { listSessions } = await import("../sessions-index");
       const t = (await listSessions()).find((y) => y.id === session)?.title;
@@ -691,6 +839,38 @@ export async function startMergeQueue(
     releaseEvent: (ev) => releaseWire.releaseEvent(ev),
   });
   const q = queues;
+  // A served tree that reads Ready to land at a commit (merge-readiness.ts): its branch summary is written.
+  const { configureReadiness } = await import("../merge-readiness");
+  configureReadiness({
+    // A setup branch is Ready to land only once a trial of its exact head passed (setup-branch.ts).
+    setupUntried: async (dir, head) => {
+      const p = await projectOf(dir);
+      if (p.state !== "ok" || !p.git || !served.isListed(p.root)) return null;
+      const queue = (await q.peek(p.root)) ?? (await q.get(p.root));
+      const target = await queue.targetHead();
+      return target ? queue.setupUntried(target, head) : null;
+    },
+    readyToLand: (t) =>
+      void projectOf(t.path)
+        .then((p) => (p.state === "ok" && p.git ? summaryFor(p.root, t.branch, t.commit) : undefined))
+        .catch(() => {}),
+    // A served tree's chat read idle: the sweep's next look passes over its project.
+    treeIdle: (t) =>
+      void projectOf(t.path)
+        .then((p) => (p.state === "ok" && p.git && servedNow.has(servedKey(p.root)) ? sweep?.poke(servedRootsNow.find((r) => servedKey(r) === servedKey(p.root)) ?? p.root) : undefined))
+        .catch(() => {}),
+  });
+  // Every branch on a served project's Ready list gets its bullets once its chat is idle; its first pass is the
+  // backfill. Never started by a view or a page read.
+  sweep = new SummarySweep({
+    roots: () => servedRootsNow,
+    readyOf: async (root) => (await q.get(root)).readyRows(),
+    targetHead: async (root) => (await (await q.get(root)).declared()).head || null,
+    chatIdle,
+    summaries: bs,
+    log: (line) => console.warn(line),
+  });
+  sweep.start();
   // Releases (server/project-services/release.ts): their verbs, the queue's hold and Publish go through these queues.
   await releaseWire.startReleaser({
     stateRoot: stateRoot(),
@@ -717,6 +897,7 @@ export async function startMergeQueue(
     },
     isThreadChat: (root, sid) => threadMod.mergeThread().isThreadChat(root, sid),
     reviewerOf: review.reviewerOf,
+    isReviewerChat: review.isReviewerChat,
     deliverReview: review.deliverReview,
     ...(await threadVerbDeps(served)),
   });
@@ -744,7 +925,12 @@ export async function startMergeQueue(
     const reviewer = info ? reviewerOfRun(p.root, info.run) : undefined;
     const queue = info && reviewer ? { ...info, reviewer } : info;
     const stats = await statsOf(p.root, v.heads.target, branch);
-    return { ...(queue ? { queue } : {}), mergeProject: { id, root: p.root, target: v.target, checks: v.checks, review: v.review, ...(v.invalid ? { invalid: v.invalid } : {}), ...(v.paused ? { paused: v.paused.why } : {}) }, ...(stats ? { mergeStats: stats } : {}), mergeServed: true };
+    // Its summary at its entry's commit while it has one, else at its head; and the chat that owns it, for the title.
+    const at = queue?.commit ?? stats?.head;
+    const summary = at ? bs.summaryOf(p.root, branch, at) : undefined;
+    const owner = await worktreeOwnerOf(path).catch(() => null);
+    const ownerRow = owner ? await ownerRowOf(owner) : undefined;
+    return { ...(summary ? { mergeSummary: summary } : {}), ...(ownerRow ? { mergeOwner: ownerRow } : {}), ...(queue ? { queue } : {}), mergeProject: { id, root: p.root, target: v.target, checks: v.checks, review: v.review, ...(v.invalid ? { invalid: v.invalid } : {}), ...(v.paused ? { paused: v.paused.why } : {}) }, ...(stats ? { mergeStats: stats } : {}), mergeServed: true };
   };
   listDeps = {
     projectOf: (path) => projectOf(path),
@@ -800,7 +986,67 @@ export async function startMergeQueue(
   );
 }
 
+type LandingListed = { id: string; root: string; name: string; archived?: unknown };
+let landingList: (() => LandingListed[]) | null = null;
+/** Tests only: the Projects list the landing summary names projects from (null: listProjects). */
+export function setLandingListForTest(f: (() => LandingListed[]) | null): void {
+  landingList = f;
+}
+
+/**
+ * GET /api/merge-queue/landing-summary: every listed project's queue cut (ProjectQueue.landingCut, loaded queues that
+ * serve it) and release cut (Releaser.landingCut), one answer, no Ready-list or tag-history reads. A project with
+ * neither is left out; one whose read fails has null there. Empty while the queue isn't started.
+ */
+export async function landingSummary(): Promise<LandingSummary> {
+  const at = new Date().toISOString();
+  const q = queues;
+  if (!q) return { projects: [], at };
+  const [{ listProjects }, { releaser }] = await Promise.all([import("../projects/spaces"), import("../project-services/release-wire")]);
+  const listed = new Map(
+    (landingList ?? listProjects)()
+      .filter((p) => !p.archived)
+      .map((p) => [servedKey(p.root), p] as const),
+  );
+  const loaded = new Map((await q.loaded().catch(() => [])).map((pq) => [servedKey(pq.root), pq] as const));
+  const r = releaser();
+  const releaseRoots = new Map((r?.roots() ?? []).map((root) => [servedKey(root), root] as const));
+  const keys = [...new Set([...loaded.keys(), ...releaseRoots.keys()])].filter((k) => listed.has(k));
+  const warn = (what: string, root: string) => (err: unknown) => (console.warn(`[merge-queue] ${root}: landing summary ${what}: ${err instanceof Error ? err.message : err}`), null);
+  const projects = await Promise.all(
+    keys.map(async (key): Promise<LandingSummaryProject | null> => {
+      const p = listed.get(key)!;
+      const pq = loaded.get(key);
+      const relRoot = releaseRoots.get(key);
+      const [queue, release] = await Promise.all([
+        pq ? pq.landingCut().then((c) => (c.served ? c : null), warn("queue", key)) : Promise.resolve(null),
+        r && relRoot ? r.landingCut(relRoot).catch(warn("release", key)) : Promise.resolve(null),
+      ]);
+      return queue || release ? { id: p.id, root: p.root, name: p.name || p.id, queue, release } : null;
+    }),
+  );
+  return { projects: projects.filter((x): x is LandingSummaryProject => !!x), at };
+}
+
+/** Try Again on a branch summary that failed (POST /api/merge-queue/projects/:project/branch-summary). */
+export async function retryBranchSummary(projectId: string, branch: string, commit: string): Promise<{ ok: true } | { ok: false; code: "not-found" | "invalid-request" | "busy" | "unsupported"; message: string }> {
+  if (!queues || !summaries) return { ok: false, code: "unsupported", message: "The merge queue isn't running." };
+  const root = await projectRootOf(projectId);
+  if (!root) return { ok: false, code: "not-found", message: `no project ${projectId}` };
+  const r = summaries.retry(root, branch, commit);
+  return r.ok ? { ok: true } : r;
+}
+
+/** Tests: the summaries' sweep the server runs. */
+export const summarySweepNow = (): SummarySweep | null => sweep;
+
+/** Tests: the store the server writes branch summaries with. */
+export const branchSummariesNow = (): BranchSummaries | null => summaries;
+
 export async function stopMergeQueue(): Promise<void> {
+  sweep?.stop();
+  sweep = null;
+  summaries = null;
   rowsOf = null;
   listDeps = null;
   resetQueueViewsForTest();
@@ -809,6 +1055,7 @@ export async function stopMergeQueue(): Promise<void> {
   servedWriter = null;
   setServedRule(null);
   servedNow = new Set();
+  servedRootsNow = [];
   cards = null;
   bareSettingsOf = null;
   setMergeCardNoteSource(null);

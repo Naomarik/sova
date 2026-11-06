@@ -8,7 +8,9 @@ import type { DiskAhead } from "./disk-ahead";
 import type { InstallInfo, ServiceUnit } from "./install-kind";
 import { binDirOf } from "./install-kind";
 import type { UpgradePlan } from "./runner";
-import { nextCheckDue, parseSource, readUpdatesFile, sameSource, sourceLabel, validBranchName, writeUpdatesFile, type UpdatesFile } from "./state";
+import { nextCheckDue, parseSource, readUpdatesFile, sameSource, sourceLabel, writeUpdatesFile, type UpdatesFile } from "./state";
+import { BRANCH_RULE } from "../../shared/branch-name";
+import { problemOf } from "../../shared/form-rules";
 
 /**
  * Updates: what runs, the daily check, the settings, and starting an upgrade job.
@@ -252,9 +254,8 @@ export class UpdatesManager {
     if (body.source !== undefined) {
       const raw = body.source as Record<string, unknown> | null;
       if (raw && raw.kind === "branch") {
-        const name = typeof raw.branch === "string" ? raw.branch.trim() : "";
-        if (!name) throw new UpdatesRefusal("Updates: Name the branch.", 400);
-        if (!validBranchName(name)) throw new UpdatesRefusal(`Updates: ${name} isn't a branch name git takes.`, 400);
+        const why = problemOf(BRANCH_RULE, typeof raw.branch === "string" ? raw.branch : "");
+        if (why) throw new UpdatesRefusal(`Updates: ${why}`, 400);
       }
       const parsed = parseSource(raw);
       if (!parsed) throw new UpdatesRefusal("Updates: Choose Stable releases, Latest changes or a branch.", 400);

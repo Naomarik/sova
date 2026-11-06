@@ -89,7 +89,8 @@ import { type Redactor, redactExtensionMessages, serverRedactor } from "./overse
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { UnreadReplies } from "./unread-replies";
-import { cleanupSessions, markArchived, endingOf, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions, summaryReads, type SummaryReads } from "./sessions-index";
+import { aboutOf, cleanupSessions, markArchived, endingOf, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions, summaryReads, type SummaryReads } from "./sessions-index";
+import { readSessionTitleRecords } from "./session-titles";
 import { getSessionInsight } from "./insights";
 import { branchLabels, cardsOnBranch, runNote, runNoteSessionIds, type SessionNow, sessionsInPlay, sessionsInPlayText, type Touched } from "./overseer-run-note";
 import { changedText, openingOn, toldOn, type LivePart, type OpeningDetails } from "./overseer-opening";
@@ -115,6 +116,7 @@ import { notifyBlockers, pushWanted, resetPushState } from "./push";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { overseerMemoryOf } from "./memory/settings";
 import { playbookReviews } from "./projects/playbook-review";
+import { setupChatPaths } from "./projects/setup-chat";
 import { tourSignInWaits } from "./tours/sign-in-notice";
 import { deployAttentionItems } from "./project-services/deploy-attention";
 import { extensionHealth, overseerExtCommands } from "./extensions";
@@ -288,17 +290,19 @@ export async function overseerInfo(list?: readonly SessionSummary[]): Promise<Ov
   const history: OverseerInfo["history"] = [];
   const byId = list ? new Map(list.map((s) => [s.id, s])) : null;
   let reads: SummaryReads | undefined;
+  // `title` is the fixed name every summary says ("Overseer"); `about` tells the conversations apart.
+  const titles = readSessionTitleRecords();
   for (const id of st?.history ?? []) {
     const row = byId?.get(id);
     if (row) {
-      history.push({ id, path: row.path, title: row.title, lastActiveAt: row.lastActiveAt });
+      history.push({ id, path: row.path, title: row.title, about: (await aboutOf(row.path, titles)) ?? row.title, lastActiveAt: row.lastActiveAt });
       continue;
     }
     const p = await pathOfId(id);
     if (!p) continue;
     reads ??= summaryReads();
     const s = await getSessionSummary(p, undefined, reads);
-    if (s) history.push({ id, path: p, title: s.title, lastActiveAt: s.lastActiveAt });
+    if (s) history.push({ id, path: p, title: s.title, about: (await aboutOf(p, titles)) ?? s.title, lastActiveAt: s.lastActiveAt });
   }
   const digest = await attentionDigest(list);
   const seenAt = readSeen()[cur.id];
@@ -359,6 +363,8 @@ export function attentionDigest(list?: readonly SessionSummary[]): Promise<Retur
     const aliases = readAliases();
     // Proposed verb playbook runs (§app.project-runtime/review), by their session file.
     const reviews = playbookReviews();
+    // Every Setup chat, current or replaced: an archived one lists nothing.
+    const setupChats = setupChatPaths();
     // Tour recordings waiting for a sign-in (§app.tours/sites), by session id, from the server's memory.
     const signIns = tourSignInWaits();
     const rows: AttentionRow[] = sessions.map((s) => {
@@ -377,6 +383,7 @@ export function attentionDigest(list?: readonly SessionSummary[]): Promise<Retur
         ...(stallsOn ? teamStallField(s.id) : {}),
         ...(aliases[s.id] ? { alias: aliases[s.id] } : {}),
         ...(reviews.has(s.path) ? { playbook: reviews.get(s.path)! } : {}),
+        ...(setupChats.has(s.path) ? { setupChat: true as const } : {}),
         ...(signIns.has(s.id) ? { tourSignIn: signIns.get(s.id)! } : {}),
         ...offerField(s),
         ...cardsField(s),
@@ -454,6 +461,12 @@ export function overseerSettingsInfo(): OverseerSettingsInfo {
  * yet: the provider may simply not be registered), then applied to the held Overseer at once when
  * it is idle, else at its next turn boundary.
  */
+/** Why a save of `body` would be refused by its shape, or null. Writes nothing. */
+export const overseerSettingsProblem = (body: unknown): string | null => {
+  const parsed = parseSettings(body, true);
+  return "error" in parsed ? parsed.error : null;
+};
+
 export async function saveOverseerSettings(body: unknown): Promise<OverseerSaveResult | { error: string }> {
   const parsed = parseSettings(body, true);
   if ("error" in parsed) return parsed;
@@ -679,7 +692,7 @@ const host: OverseerToolHost = {
     const entry = meshApi.enabled() ? meshApi.peers().find((p) => p.id === id) : undefined;
     if (!entry) return null;
     const probe = await probePeer(entry);
-    return { id: entry.id, label: entry.label, nodeId: entry.nodeId, state: probe.state, ...(probe.error ? { error: probe.error } : {}) };
+    return { id: entry.id, label: entry.label, nodeId: entry.nodeId, state: probe.state, ...(probe.error ? { error: probe.error } : {}), ...(probe.hello?.areas ? { areas: probe.hello.areas } : {}) };
   },
   peerSession: (peerId, id) => peerSession(peerId, id),
   peerIds: () => (meshApi.enabled() ? meshApi.peers().map((p) => p.id) : []),

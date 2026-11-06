@@ -131,6 +131,18 @@ found so far (pi 1.0.3).
 - SDK: `createAgentSession`, `createAgentSessionRuntime`, `SessionManager.open(path)/create(cwd)`,
   `ModelRuntime.create()` (no args → reuses `~/.pi/agent` auth). Events via `session.subscribe`. Docs:
   `<pi>/docs/sdk.md`; examples: `<pi>/examples/sdk/11-sessions.ts`, `13-session-runtime.ts`.
+- Provider sign-in: `ModelRuntime.login(provider, "oauth", AuthInteraction)` / `logout(provider)` store and
+  remove in `<authPath>` under pi's lockfile lock. Settings → Accounts' OpenAI sign-in runs them on a
+  throwaway runtime (`server/harness/pi/sign-in.ts`, the contract's `ProviderSignIn` in
+  `shared/harness-core.ts`, quirk P37) and answers pi's prompts itself. Another runtime's `getAvailable()`
+  re-reads the store, so `/api/models` sees the change at once; its `hasConfiguredAuth` snapshot only after
+  that call, which `server/openai-login.ts`'s caller makes after each change.
+- Provider API keys: `ModelRuntime.login(provider, "api_key", …)` answered with the key at its one `secret`
+  prompt, and `logout(provider)`, store and remove `{ type: "api_key", key }` the same way. Settings → Accounts'
+  keys run them on a throwaway runtime over the agent dir's `models.json` too, so ollama-cloud is known
+  (`piProviderKeys` in `server/harness/pi/sign-in.ts`, the contract's `ProviderKeyStore`, quirk P38); pi
+  exports no `AuthStorage`, and `setRuntimeApiKey` stores nothing. `server/provider-keys.ts` checks a key
+  before it calls them and refreshes the shared runtime after.
 - Extension dialog bridge (ExtensionUIContext) pattern: `<pi>/dist/modes/rpc/rpc-mode.js`
   (`createExtensionUIContext` at line 83, bound via `bindExtensions({uiContext, mode:"rpc", ...})` at
   line 231). Sova's is `createPiUiContext`/`bindPiExtensions` (`server/harness/pi/ui-bridge.ts`), bound

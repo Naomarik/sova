@@ -82,7 +82,15 @@
       "src/lib/mode-menu.test.ts",
       "src/design/base.css",
       "server/chat-manager.ts"
-    ]
+    ],
+    "requires": [
+      "§chat.create-mode/delegate-parity"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
   },
   "§chat.subagent-profiles/off": {
     "kind": "behavior",
@@ -154,9 +162,9 @@
       "pi-config/extensions/mode/align-settings.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-30T01:15Z",
-      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#00a2d68b"
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§chat.subagent-profiles/settings": {
@@ -175,7 +183,9 @@
       "src/lib/subagent-editor.ts",
       "src/lib/subagent-editor.test.ts",
       "src/components/WorkerSlotRow.tsx",
-      "src/lib/team-form.ts"
+      "shared/subagent-limits.ts",
+      "shared/subagent-profile-checks.ts",
+      "src/components/form/index.tsx"
     ],
     "agreed": {
       "by": "naomarik",

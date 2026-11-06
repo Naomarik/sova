@@ -1,6 +1,8 @@
+import { CREATE_SETTINGS_TOOL, createSettingsTool } from "./create-settings-tool";
 import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync } from "node:fs";
 import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type ChatSpecialKind, type RunStartAnswer, type ServerToolCall, type ServerToolDecl, type ServerToolOutcome, type SpecialSpec, unsentRefusal, type WorkerHost, type WorkerSpec } from "../shared/chat-runtime";
 import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORKER_HOST_EVENT, type WorkerHostAnnouncement } from "../pi-config/extensions/subagents/worker-host.ts";
 import { prepareOwnerArea } from "../shared/decisions";
@@ -16,7 +18,7 @@ import { inputSourceOf, type QueueImage, type QueueKind, WebQueue, type WebQueue
 import { decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { sessionsChanged } from "./list-generation";
-import { appliesAfter, type BranchEntries, chatModeOf, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
+import { appliesAfter, type BranchEntries, chatModeOf, CREATE_NOT_TAKEN, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, saveModeOf, typedMajorMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
 import { loadDefaults, saveDefaults } from "./web-defaults";
 import { subagentProfilesInfo, requireSubagentProfile, saveSubagentProfileDefault } from "./subagent-profiles";
 import { restorePick, pickEntryFor } from "../pi-config/extensions/subagents/subagent-profiles.ts";
@@ -63,6 +65,7 @@ import { forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache
 import { VIS_CHECK_TOOL, visCheckExtension, type VisCheckHost } from "./vis-check";
 import { MEMORY_COMPACTION_REFUSAL, memoryExtension, type MemoryHost } from "./harness/pi/memory";
 import { deeperContextExtension } from "./harness/pi/deeper-context";
+import { backgroundJobsExtension } from "./harness/pi/background-jobs";
 import { mcpExtension } from "./harness/pi/mcp";
 import { nothingDeclared } from "./mcp/folder";
 import { NO_MCP, normalizeChatList, type McpChatList } from "./mcp/list";
@@ -86,7 +89,7 @@ function overseerMemoryNow(file: string | undefined): OverseerMemoryInForce {
   }
   return overseerMemoryOf(parseOverseerMemory(raw));
 }
-import { withWebMinors } from "./memory/permit";
+import { withWebMinors, withWebMode } from "./memory/permit";
 import { approvalNeededText, checkProjectSwitch, listingFor, projectModesInfo } from "./project-mode-menu";
 import { isApproved, isApprovedByUser, recordApproval } from "./project-mode-approvals";
 import { ModeActions, notHereFor, type ModeCommandOutcome } from "./mode-commands";
@@ -97,6 +100,10 @@ import { MEMORY_TOOLS } from "../shared/memory";
 import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension, sessionInstanceNote } from "./project-services/tools";
 import { servedToolsExtension, servedVisToolsExtension } from "./served-tools";
+import { BACKGROUND_JOB_TOOL } from "./background-jobs-request";
+import { JOB_CARDS_ENV } from "./background-jobs";
+/** wake-nudge.ts of this code copy: a worker with no wake_nudge of its own still delivers its jobs' end cards (cards only). */
+const JOB_CARDS_EXTENSION = fileURLToPath(new URL("../pi-config/extensions/wake-nudge.ts", import.meta.url));
 import { TOUR_TOOLS } from "../shared/tour";
 import { tourTools } from "./tours/tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
@@ -128,6 +135,9 @@ import { markBackground } from "../pi-config/extensions/provider-limits/gate.ts"
 const GUARD_POLL_MS = 3000;
 const PERF_KINDS_SET: ReadonlySet<string> = new Set(["main", "worker", "overseer"]);
 /** The entry a message was written as, or null. */
+/** A `/mode …` command: what it does is the extension's, so the server reads it back. */
+const isModeText = (text: string): boolean => /^\/mode(\s|$)/.test(text.trim());
+
 const safeId = (harness: HarnessSession, message: unknown): string | null => {
   try {
     return harness.persistedId(message);
@@ -278,6 +288,8 @@ export const DEFAULT_EXTENSION_FACTORIES = [
   SHELL_GUARD_FACTORY,
   // Subfolder AGENTS.md / CLAUDE.md files, attached to the read/edit/write result that first reaches them.
   deeperContextExtension(),
+  // What a bash call leaves running is kept as a background job (§app.background-jobs/keeping).
+  backgroundJobsExtension(),
 ];
 
 const mcpListHere: NonNullable<ChatHosts["mcpList"]> = async (ask) => (await import("./mcp/chat")).chatListFor(ask);
@@ -484,6 +496,9 @@ export interface ChatClient {
   /** The same message already serialized (server/ws.ts): a hello or history made once for every
       client that gets it. Without it, `send`. */
   sendRaw?(json: string): void;
+  /** A script's, a chat's or an extension's socket (server/page-only.ts): what it sends runs, but is never the user's,
+      so no turn it opens is attended (§app.access/your-click). A page, here or through a peer, has none. */
+  notUser?: true;
   /** Asked for wire 2 (`/ws/chat?wire=2`, shared/protocol.ts WireVersion): its events and rows are
       mapped (server/wire-rows.ts). Absent: wire 1, every message as it always was. */
   wire?: 2;
@@ -784,18 +799,22 @@ function workerHostExtension(pi: PiExtensionAPI): void {
 export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtins?: string[] | null } & Partial<Pick<WorkerSpec, "mcp" | "parent">>, path: string) {
   // Subfolder instruction files load for every kind whose loadout has a file tool (server/deeper-context.ts).
   const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension()] : [];
+  // A hidden chat keeps no job: nothing would deliver its card or stop it.
   if (w.kind !== "worker") return [SHELL_GUARD_FACTORY, ...files];
   // Only what the chat named: a worker's list is fixed at its start and kept when it resumes (§app.mcp/who-gets).
   const mcp = w.mcp ? normalizeChatList(w.mcp) : null;
   return [
     SHELL_GUARD_FACTORY,
     ...files,
+    ...(!w.builtins || w.builtins.includes("bash") ? [backgroundJobsExtension()] : []),
     ...(mcp?.servers.length
       ? [mcpExtension({ list: async () => mcp, label: () => w.parent?.workerId ?? "A worker", tellParent: (note) => (chatHosts.mcpTell ?? mcpTellHere)(w.parent?.path ?? "", note) })]
       : []),
     servedDecls
       ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
       : projectVerbsExtension(projectEngine),
+    // background_job: a job under the worker's own confinement, run by the server (§app.background-jobs/request).
+    ...(servedDecls && (!w.builtins || w.builtins.includes("bash")) ? [servedToolsExtension("sova-background-job", servedSpecs(path, (n) => n === BACKGROUND_JOB_TOOL))] : []),
   ];
 }
 
@@ -808,7 +827,7 @@ function workerBuild(w: WorkerSpec, path: string): PiBuild {
   return {
     loader: {
       noExtensions: true,
-      additionalExtensionPaths: [...w.extensions],
+      additionalExtensionPaths: [...w.extensions, ...(process.env[JOB_CARDS_ENV] === "only" ? [JOB_CARDS_EXTENSION] : [])],
       extensionFactories: workerExtensionFactories(w, path),
       ...(w.appendSystemPrompt ? { appendSystemPrompt: [w.appendSystemPrompt] } : {}),
     },
@@ -1415,7 +1434,7 @@ class ChatSession {
     this.flushDeferredAppends();
     const images = item.images as ImageInput[] | undefined;
     // The message goes in labelled with its send's key (§app.chat-processes/worker-instructions).
-    const toSdk = <T>(send: () => T) => this.sendKeys.run(item.key, () => this.toSdk(item.origin, send, item.confirm, !!item.overseer));
+    const toSdk = <T>(send: () => T) => this.sendKeys.run(item.key, () => this.toSdk(item.notUser ? "server" : item.origin, send, item.confirm, !!item.overseer));
     // What the extensions' input handlers are told: a person's input, or Sova's own (§app.overseer/input-source).
     const source = inputSourceOf(item);
     // The sender's mark goes in with the message, never earlier: a held item is not in the SDK,
@@ -1453,6 +1472,8 @@ class ChatSession {
     await toSdk(() => this.tracked(item.text, () => this.harness.send(item.text, { images, delivery: item.kind, source }))).catch((err) => {
       if (!this.heldForCompaction(err, { ...item, id: undefined })) throw err;
     });
+    // One that waited for a running reply: the send's own read-back ran before this did.
+    if (isModeText(item.text)) this.readModeBack();
   }
 
   /** A keyed turn failed: its message never ran, unless it is held for a compaction to go in again (heldForCompaction). */
@@ -1494,6 +1515,7 @@ class ChatSession {
       session?: WebQueueItem["session"];
       confirm?: WebQueueItem["confirm"];
       byPerson?: WebQueueItem["byPerson"];
+      notUser?: WebQueueItem["notUser"];
       key?: string;
     },
   ): boolean {
@@ -1511,6 +1533,7 @@ class ChatSession {
       ...(item.session ? { session: item.session } : {}),
       ...(item.confirm ? { confirm: item.confirm } : {}),
       ...(item.byPerson ? { byPerson: true as const } : {}),
+      ...(item.notUser ? { notUser: true as const } : {}),
       ...(item.key !== undefined ? { key: item.key } : {}),
     });
     return true;
@@ -2030,6 +2053,7 @@ class ChatSession {
           if (!this.harness.isRunning() && !this.starting) for (const m of stale) this.dropTopicMark(m);
         }, 0);
       }
+      if (event.type === "compaction.end" && event.wrote) emitChatEvent(this.path, "compacted");
       if (event.type === "run.settled" || event.type === "compaction.end") emitChatEvent(this.path, "receiverIdle");
       if (event.type === "run.settled" && this.senderMarks.length) {
         // A mark that never found its message this run (the prompt was swallowed or failed early)
@@ -2233,7 +2257,7 @@ class ChatSession {
   modeMessage(): ChatServerMessage {
     const s = this.modeState;
     // `memory` only where the menu can turn it on (§chat.memory/where): its absence hides the row.
-    return { type: "mode", mode: s.mode, minorModes: [...s.minorModes], strict: s.strict, applies: this.modeApplies, ...(this.memoryOffered() ? { memory: this.memory.choiceNow() } : {}), ...this.projectModesInfo() };
+    return { type: "mode", mode: s.mode, minorModes: [...s.minorModes], strict: s.strict, ...saveModeOf(s), applies: this.modeApplies, ...(this.memoryOffered() ? { memory: this.memory.choiceNow() } : {}), ...this.projectModesInfo() };
   }
 
   /** The project modes this chat has on (its newest mode entry's `projectModes`, turn-on order). */
@@ -2254,6 +2278,15 @@ class ChatSession {
       approved: isApproved,
       approvedByUser: isApprovedByUser,
     }));
+  }
+
+  /** This chat's mode as its branch says, after the extension's own handler changed it (a typed `/mode strict on`). */
+  private readModeBack(): void {
+    if (this.disposed) return;
+    this.modeState = chatModeOf(this.harness.state.branch());
+    this.syncVisCheckTool();
+    this.syncMemoryTools();
+    this.broadcast(this.modeMessage());
   }
 
   /** Run a command of a project mode on in this chat (POST /api/mode/command, §chat.mode-menu/project-mode-commands). */
@@ -2285,7 +2318,8 @@ class ChatSession {
 
   /** This chat's mode as POST /api/mode?path= answers it, the project rows read now. */
   modeResult(): ChatModeResult {
-    return { ...modeInfo(this.modeState, this.memoryOffered() ? this.memory.choiceNow() : undefined), applies: this.modeApplies, ...this.projectModesInfo() };
+    // A chat with no mode switch (a gathering chat, any Overseer, the Project Assistant) has no Create.
+    return { ...modeInfo(this.modeState, this.memoryOffered() ? this.memory.choiceNow() : undefined, !this.overseer && !this.specialRefuses("mode")), applies: this.modeApplies, ...this.projectModesInfo() };
   }
 
   /**
@@ -2572,7 +2606,7 @@ class ChatSession {
           for (const id of projectModes) if (!was.includes(id)) await cmd.handler(`${PROJECT_MODE_PREFIX}${id} on`, ctx);
         }
         // Not awaited: after switching, setMode awaits the delegate routing probe (up to 15s).
-        cmd.handler(state.mode, ctx).catch((err) => {
+        withWebMode(this.harness.id, state.mode, () => cmd.handler(state.mode, ctx)).catch((err) => {
           console.error("[chat] /mode handler failed", err);
           if (this.disposed) return;
           this.modeApplies = "new-chats";
@@ -2961,6 +2995,8 @@ class ChatSession {
       confirm?: string;
       /** A person typed it elsewhere (a group batch): its input source is `interactive` (inputSourceOf). */
       byPerson?: true;
+      /** It came from a client that isn't the user (ChatClient.notUser): the turn it opens is unattended. */
+      notUser?: true;
       /** The key it was sent under: its message is labelled with it (§app.chat-processes/worker-instructions). */
       key?: string;
     },
@@ -2988,7 +3024,8 @@ class ChatSession {
       const fromSession = opts?.sentBySession ? { session: opts.sentBySession } : {};
       const confirm = opts?.confirm ? { confirm: opts.confirm } : {};
       const byPerson = opts?.byPerson ? { byPerson: true as const } : {};
-      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton, ...fromSession, ...confirm, ...byPerson, ...(key !== undefined ? { key } : {}) });
+      const notUser = opts?.notUser ? { notUser: true as const } : {};
+      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton, ...fromSession, ...confirm, ...byPerson, ...notUser, ...(key !== undefined ? { key } : {}) });
       return { queued: true, turn: Promise.resolve() };
     }
     this.flushDeferredAppends();
@@ -3006,8 +3043,10 @@ class ChatSession {
     if (send) this.senderMarks.push(send);
     if (opts?.sentBySession) this.profileState?.run?.expectHop(text, opts.sentBySession.hop);
     const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
-    const turn = this.sendKeys.run(key, () => this.toSdk(origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm, !!opts?.sentByOverseer));
+    const turn = this.sendKeys.run(key, () => this.toSdk(opts?.notUser ? "server" : origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm, !!opts?.sentByOverseer));
     this.noteStarting(turn);
+    // Whoever sent it: a `/mode …` that reaches the extension (strict, a minor mode) is read back, so the menu never lags.
+    if (isModeText(text)) turn.then(() => this.readModeBack(), () => {});
     if (key !== undefined) turn.then(() => this.sendKeys.done(key), (err) => this.keyedTurnFailed(key, err));
     if (send)
       turn.catch(() => {
@@ -3029,6 +3068,7 @@ class ChatSession {
         ...(opts?.sentBySession ? { session: opts.sentBySession } : {}),
         ...(opts?.confirm ? { confirm: opts.confirm } : {}),
         ...(opts?.byPerson ? { byPerson: true as const } : {}),
+        ...(opts?.notUser ? { notUser: true as const } : {}),
         ...(key !== undefined ? { key } : {}),
       };
       if (!this.heldForCompaction(err, item)) throw err;
@@ -3314,6 +3354,7 @@ class ChatSession {
       accepted = this.acceptPrompt(sent.text ?? String(msg.text ?? ""), images, "client", clientId, {
         sentByBaton: { by: sent.by },
         ...(msg.type === "steer" ? { delivery: "steer" as const } : {}),
+        ...(client.notUser ? { notUser: true as const } : {}),
       });
     } catch (err) {
       void port.action("@clientSendRefused", {}).catch(() => {});
@@ -3440,6 +3481,18 @@ class ChatSession {
             fail(new ModeRefusedError());
             return;
           }
+          // `/mode normal|delegate|create` typed in a composer is the menu's switch, with its refusals, its permit and
+          // its reply, so no second way in and no mode the server doesn't know about. Nothing reaches the model.
+          const typedMode = msg.images?.length ? undefined : typedMajorMode(String(msg.text ?? ""));
+          if (typedMode) {
+            this.switchMode({ mode: typedMode })
+              .then((result) => {
+                if (typedMode === "create" && result.mode !== "create") throw new ModeRefusedError(CREATE_NOT_TAKEN);
+                this.ackSend(client, clientId, false);
+              })
+              .catch(fail);
+            return;
+          }
           // A special kind that attributes its composer's messages (a baton session: only while
           // the operator holds the baton) decides here, before anything is queued or written.
           // The model gate runs first, so a refusal never counts against the kind (a baton's budget);
@@ -3465,7 +3518,7 @@ class ChatSession {
           // A confirm card's click in the Overseer or a project overseer (never a typed answer): the turn it opens may act on
           // the card's items.
           const confirm = this.takesClicks && msg.type === "prompt" && typeof msg.confirm === "string" && msg.confirm ? msg.confirm : undefined;
-          const { queued, turn } = this.acceptPrompt(text, images, "client", clientId, confirm ? { confirm } : undefined);
+          const { queued, turn } = this.acceptPrompt(text, images, "client", clientId, { ...(confirm ? { confirm } : {}), ...(client.notUser ? { notUser: true as const } : {}) });
           // The ack goes out NOW, not after the turn: it says whether a queue row exists, and a
           // client that learned that only at turn end would offer Remove for a sent message.
           this.ackSend(client, clientId, queued);
@@ -3623,7 +3676,8 @@ class ChatSession {
    */
   private steer(client: ChatClient, msg: Extract<ChatClientMessage, { type: "steer" }>, clientId: string | undefined, fail: (err: unknown) => void): void {
     this.assertModelAllowed();
-    const { queued, turn } = this.acceptPrompt(String(msg.text ?? ""), parseImages(msg.images), "client", clientId, { delivery: "steer" });
+    const text = String(msg.text ?? "");
+    const { queued, turn } = this.acceptPrompt(text, parseImages(msg.images), "client", clientId, { delivery: "steer", ...(client.notUser ? { notUser: true as const } : {}) });
     this.ackSend(client, clientId, queued);
     turn.catch(fail);
   }
@@ -3742,7 +3796,7 @@ class ChatSession {
     // The branch is now at the point before the user message, so the session is idle and this
     // starts a turn rather than queueing. Its failure reports into this session's pane, where
     // every other turn failure already does.
-    const { turn } = this.acceptPrompt(target.text, target.images as ImageInput[] | undefined, "client", undefined, { replay: true });
+    const { turn } = this.acceptPrompt(target.text, target.images as ImageInput[] | undefined, "client", undefined, { replay: true, ...(client.notUser ? { notUser: true as const } : {}) });
     turn.catch((err) => this.reportTurnFailure(err));
   }
 
@@ -4052,6 +4106,7 @@ const LISTENER_NAME: Record<ChatLifecycleEvent["type"], string> = {
   closed: "closed",
   topicEntered: "topic-entered",
   topicGone: "topic-gone",
+  compacted: "compacted",
 };
 /** Listeners run inside the event, each on its own: one that throws is logged and the rest still run. */
 export function onChatEvent(fn: (event: ChatLifecycleEvent) => void): () => void {
@@ -4081,6 +4136,8 @@ export const onAgentStarted = (fn: (path: string) => void): (() => void) => onEv
 /** A hosted runtime's turn settled or its compaction ended: a topic receiver may take its next
     batch (server/topic-delivery.ts). Called inside the event; listeners defer their own work. */
 export const onReceiverIdle = (fn: (path: string) => void): (() => void) => onEventOf("receiverIdle", fn);
+/** A hosted chat's compaction wrote its summary (a paired chat's reminder, server/topic-delivery.ts). */
+export const onCompacted = (fn: (path: string) => void): (() => void) => onEventOf("compacted", fn);
 /** A hosted chat's run settled (attention signals, tags). */
 export const onAgentSettled = (fn: (path: string) => void): (() => void) => onEventOf("settled", fn);
 
@@ -4501,9 +4558,11 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
                 : projectVerbsExtension(projectEngine),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
               servedDecls
-                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && n !== CARD_TOOL && !TOUR_TOOLS.has(n)))
+                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && n !== CARD_TOOL && n !== CREATE_SETTINGS_TOOL && !TOUR_TOOLS.has(n)))
                 : queuePushExtension({ sessionId: () => read.id, title: () => titleOf(read.branch()) }),
               servedVisToolsExtension("sova-tours", servedDecls ? servedSpecs(path, n => TOUR_TOOLS.has(n)) : tourTools(read.id, path), () => visHost.chat ? visHost.chat.modeState.minorModes.includes("vis") : undefined),
+              // sova_settings: a Create chat's settings cards (§chat.create-mode/settings-cards), active only in Create.
+              servedVisToolsExtension("sova-create-settings", servedDecls ? servedSpecs(path, (n) => n === CREATE_SETTINGS_TOOL) : [createSettingsTool({ sessionId: read.id, mode: () => visHost.chat?.modeState.mode, cwd: () => cwd })], () => visHost.chat?.modeState.mode === "create"),
               // offer: this project's offers, from the session's snapshot (§chat.offers/tool). Most chats have none: no extension.
               ...(offerSpecs.length ? [servedToolsExtension("sova-session-offers", offerSpecs, (ctx) => (chatHosts.offerNote ?? offerNoteHere)(ctx.sessionId), OFFER_NOTE_MESSAGE)] : []),
               // card: this project's transcript cards (§chat/transcript-cards). Every ordinary chat hears an

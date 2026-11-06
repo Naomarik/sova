@@ -745,13 +745,13 @@ html, body { overflow: clip; overscroll-behavior: none; }
 /* Radios, drawn round as in Themes' size choice (base.css: .toggle-radio is not ported); the row is the target. */
 .public-links-route { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
 .public-links-route > legend { padding: 0; margin-bottom: var(--space-1); }
-.public-links-choice { justify-content: flex-start; align-items: flex-start; gap: var(--space-3); min-height: var(--tap-min); padding: var(--space-2) 0; }
-.public-links-choice .toggle-box { flex: none; margin-top: 2px; order: -1; }
+:is(.public-links-choice, .public-links-choices > .toggle) { justify-content: flex-start; align-items: flex-start; gap: var(--space-3); min-height: var(--tap-min); padding: var(--space-2) 0; }
+:is(.public-links-choice, .public-links-choices > .toggle) .toggle-box { flex: none; margin-top: 2px; order: -1; }
 /* A route is a radio (round, a dot); a visitor switch is a checkbox (square, a tick). */
-.public-links-choice input[type="radio"] ~ .toggle-box { border-radius: var(--r-full); }
-.public-links-choice input[type="radio"]:checked ~ .toggle-box { box-shadow: inset 0 0 0 3px var(--color-surface); }
-.public-links-choice input[type="checkbox"] ~ .toggle-box { position: relative; }
-.public-links-choice input[type="checkbox"]:checked ~ .toggle-box::after { content: ""; position: absolute; left: 5px; top: 1px; width: 4px; height: 9px; border: solid var(--color-on-accent); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+:is(.public-links-choice, .public-links-choices > .toggle) input[type="radio"] ~ .toggle-box { border-radius: var(--r-full); }
+:is(.public-links-choice, .public-links-choices > .toggle) input[type="radio"]:checked ~ .toggle-box { box-shadow: inset 0 0 0 3px var(--color-surface); }
+:is(.public-links-choice, .public-links-choices > .toggle) input[type="checkbox"] ~ .toggle-box { position: relative; }
+:is(.public-links-choice, .public-links-choices > .toggle) input[type="checkbox"]:checked ~ .toggle-box::after { content: ""; position: absolute; left: 5px; top: 1px; width: 4px; height: 9px; border: solid var(--color-on-accent); border-width: 0 2px 2px 0; transform: rotate(45deg); }
 .public-links-choice-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .public-links-choice-name { color: var(--color-ink); }
 .public-links-choice-meta { font-size: var(--fs-caption); color: var(--color-ink-muted); }
@@ -1600,7 +1600,6 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .wt-queue-row { align-items: flex-start; flex-wrap: wrap; row-gap: var(--space-2); }
 .wt-queue-row > .list-main { flex: 1 1 16rem; min-width: 0; }
 .wt-queue-row .list-title { font-weight: var(--fw-medium); white-space: normal; overflow-wrap: anywhere; }
-.wt-queue-path { white-space: normal; overflow-wrap: anywhere; }
 .wt-queue-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); margin-top: var(--space-1); }
 .wt-queue-reason,
 .wt-queue-note,
@@ -1610,23 +1609,47 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .wt-queue-error,
 .mq-error { color: var(--status-error); }
 .wt-queue-act { display: flex; flex-wrap: wrap; gap: var(--space-2); flex: none; align-items: center; }
-.wt-queue-confirm { margin-top: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--r-md); background: var(--color-sunken); }
-.wt-queue-confirm p { margin: 0 0 var(--space-2); }
+/* Land's confirm (and Land Without Its Specs…'s): it replaces the row's actions, right-aligned under the row, the
+   cancel ghost on the left and the action rightmost. Full width folded; at most 420px from unfolded. */
+.wt-queue-confirm { flex: 1 1 100%; min-width: 0; margin-top: var(--space-1); padding: var(--space-2) 10px; border: 1px solid var(--status-warn); border-radius: var(--r-md); background: var(--status-warn-bg); text-align: right; }
+.wt-queue-confirm p { margin: 0; overflow-wrap: anywhere; white-space: normal; }
+.wt-queue-confirm-title { font-weight: var(--fw-semibold); color: var(--color-ink); }
+.wt-queue-confirm-line { margin-top: 2px !important; color: var(--color-ink-2); }
+.wt-queue-confirm-act { justify-content: flex-end; flex-wrap: wrap; margin-top: var(--space-2); }
+/* Land and its ▾ at their own size: Land as wide as its word, the ▾ a narrow tab, both as tall as the row's other
+   buttons. Every row action (and a confirm's two) is one size everywhere: button-sm's height at its label's width,
+   on desktop, the Fold, a phone and a touch pointer alike; the coarse-pointer 44px is not applied to them. */
+:where(.wt-queue-split) > .button.button-icon { width: 32px; min-width: 32px; min-height: var(--control-sm); padding: 0; }
+/* Folded: the actions on a line of their own under the bullets, at its end. */
+.wt-queue-row > .wt-queue-act { flex: 1 1 100%; justify-content: flex-end; }
 @media (pointer: coarse) {
-  .wt-queue-act .button,
-  .mq-row .button,
-  .mq-step-end .button { min-height: var(--tap-min); }
+  .mq-step-end .button,
+  .mq-step-log .button { min-height: var(--tap-min); }
 }
 .wt-queue-modal .modal-body { display: grid; gap: var(--space-3); }
 .wt-queue-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
 .wt-queue-head p { margin: var(--space-1) 0 0; }
-.wt-queue-intro { margin: 0; color: var(--color-ink-2); }
+/* The foot: the queue's one line on the left (muted), View Merge Queue a small link on the right. */
+.wt-queue-foot { justify-content: space-between; }
+.wt-queue-intro { margin: 0; min-width: 0; color: var(--color-ink-muted); }
+.wt-queue-foot-link { flex: none; margin-inline-start: auto; display: inline-flex; align-items: center; min-height: var(--tap-min); }
 .wt-queue-paused { margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--status-warn-bg); color: var(--color-ink); }
 
 /* The tab. */
 .mq-body { gap: var(--space-4); }
 .mq-head { flex-wrap: wrap; gap: var(--space-2); }
-.mq-intro { margin: 0; }
+.mq-intro,
+.mq-queue-summary { margin: 0; }
+/* Every group of buttons on the tab, the run page and the Merge thread card (base.css has no .button-row rule): one
+   even gap, every button on one centre line, wrapping as a group. */
+.mq-tab .button-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; max-width: 100%; }
+/* A borderless button that starts a line lines up with the words above it: it gives back its own side padding. */
+.mq-tab :is(.button-row, .mq-row-act) > .button-ghost:first-child { margin-inline-start: calc(-1 * var(--space-3)); }
+/* Touch: the head's, the Merge thread card's, a banner's, History's and the run page's buttons are 44px tall. A
+   row's own actions keep Land's size (below). */
+@media (pointer: coarse) {
+  .mq-tab :is(.mq-head, .mq-thread-card, .banner-action, .mq-history > .spread, .mq-run-actions, .mq-crumbs) .button { min-height: var(--tap-min); }
+}
 .mq-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-sunken); }
 .mq-cell p { margin: 0; }
 .mq-cell-value { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-1) 0; font-weight: var(--fw-medium); }
@@ -1651,7 +1674,6 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-history .list-meta { margin: 0; white-space: normal; overflow: visible; text-overflow: clip; }
 /* A long branch wraps inside the button on a phone, never past the screen's edge. */
 .mq-reviewing { min-width: 0; max-width: 100%; height: auto; white-space: normal; overflow-wrap: anywhere; text-align: start; }
-.mq-head .button-row { flex-wrap: wrap; min-width: 0; max-width: 100%; }
 .mq-card p,
 .mq-card h3 { margin: 0; }
 .mq-card .spread { flex-wrap: wrap; gap: var(--space-2); }
@@ -1673,38 +1695,80 @@ html, body { overflow: clip; overscroll-behavior: none; }
    (Review Changes first). The whole row opens its chat (.mq-tap); its buttons and links keep their own action. */
 .mq-branch { margin: 0; font-weight: var(--fw-medium); white-space: normal; overflow-wrap: anywhere; }
 .mq-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); margin: var(--space-1) 0 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
-.mq-chat .mq-chat-link { font-weight: var(--fw-medium); }
-.mq-folder-last { display: none; }
+/* A row's top line (§app.merge-queue/view): the owner chat's title (a link), the branch in small mono, "archived". */
+.mq-head-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); margin: 0; white-space: normal; min-width: 0; }
+.mq-head-line .mq-chat-link { font-weight: var(--fw-medium); overflow-wrap: anywhere; min-width: 0; }
+.mq-head-line .mq-branch { font-size: var(--fs-caption); font-weight: var(--fw-regular); color: var(--color-ink-2); }
+.mq-head-line .mq-archived { align-self: center; }
+/* What the branch does (§app.merge-queue/branch-summary): bullets under the facts line, wrapping on a phone. */
+.mq-summary { margin: var(--space-1) 0 0; min-width: 0; }
+.mq-summary-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); margin: 0; }
+.mq-summary-stale { margin: 0; }
+.mq-summary-bullets { margin: var(--space-1) 0 0; padding-inline-start: var(--space-4); font-size: var(--fs-caption); color: var(--color-ink); }
+.mq-summary-bullets li { white-space: normal; overflow-wrap: anywhere; }
+.mq-summary-bullets li + li { margin-top: 2px; }
+.mq-summary-old { color: var(--color-ink-2); }
 .mq-tap { cursor: pointer; }
 .mq-tap:hover { background: var(--color-sunken); }
 .mq-row-act { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .mq-card .mq-row-act { flex: none; }
-/* A phone: no outer card and no inner box, rows split by hairlines with 12px sides, the folder's last name,
-   and the actions on a line of their own: Review Changes left, the row's own on the right, 44px tall. */
-@media (max-width: 599px) {
-  /* The page's own side padding (.insights-inner) is given back: the rows' hairlines reach the screen's edges. */
+/* The queue's own room decides its layout, never the window's width: the tab asks the project page's pane
+   (container `insights`). Under 600px of room for the queue (a pane under 632px, its 16px sides taken off: a
+   phone, the Fold with the sidebar open, a narrow window), the narrow layout: no outer card, every section edge to
+   edge with hairlines (the strip, the Merge thread card, Checking now, the lists, the run page's cards; banners keep
+   their box), and every row's and card's actions on a line of their own under its words: Review Changes on the
+   left, the row's own on the right, at their own size. */
+@container insights (max-width: 631px) {
+  /* The page's own side padding (.insights-inner) is given back: the hairlines reach the pane's edges. */
   .card.mq-tab { border: 0; border-radius: 0; background: none; box-shadow: none; overflow: visible; margin-inline: calc(-1 * var(--space-4)); padding: var(--space-3) 12px; }
-  .mq-tab .mq-list,
-  .mq-tab .mq-card { margin-inline: -12px; border-inline: 0; border-radius: 0; }
-  .mq-tab .mq-card { padding: var(--space-3) 12px; }
-  .mq-tab .mq-row { flex-direction: column; align-items: stretch; padding: var(--space-3) 12px; }
+  .mq-tab :is(.mq-list, .mq-card, .mq-strip, .mq-thread-card) { margin-inline: -12px; border-inline: 0; border-radius: 0; }
+  .mq-tab :is(.mq-card, .mq-strip, .mq-thread-card) { padding-inline: 12px; }
+  .mq-tab .mq-row { flex-direction: column; flex-wrap: nowrap; align-items: stretch; padding: var(--space-3) 12px; }
   .mq-tab .mq-row > .list-main { flex: none; }
-  .mq-tab .mq-row-act { width: 100%; }
-  .mq-tab .mq-card .spread .mq-row-act { width: auto; }
-  .mq-tab .mq-row-act .button,
-  .mq-tab .mq-row-act .button-split > .button { min-height: var(--tap-min); }
-  .mq-tab .mq-row > .mq-row-act .mq-review { margin-inline-end: auto; }
-  .mq-folder-full { display: none; }
-  .mq-folder-last { display: inline; }
+  .mq-tab .mq-row > .mq-row-act { width: 100%; justify-content: flex-end; }
+  .mq-tab .mq-row-act .mq-review { margin-inline-end: auto; }
+  /* A card's head (Checking now, the Merge thread, History): its buttons on a line of their own under the title. */
+  .mq-tab :is(.mq-card, .mq-thread-card, .mq-history) > .spread { flex-wrap: wrap; row-gap: var(--space-2); }
+  .mq-tab :is(.mq-card, .mq-thread-card, .mq-history) > .spread > :is(.mq-row-act, .button-row) { flex: 1 1 100%; }
+  .mq-tab .mq-card > .spread > .mq-row-act { justify-content: flex-end; }
+  /* A banner's button under its words, in line with them (past the icon), never beside a squeezed column. */
+  .mq-tab .banner > .banner-action { flex: 1 1 100%; margin-inline-start: calc(20px + var(--space-3)); }
+}
+/* With room: a row is two columns, its words left and its actions a column at the top right, each button at its own
+   width against the right edge; an open confirm spans the row and sits at its right. A card's head keeps its title
+   and its buttons on one line. Every row of the tab alike: Checking now, Waiting, Needs you, Ready, Sent back,
+   Recent and History. */
+@container insights (min-width: 632px) {
+  .mq-tab .mq-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-4); align-items: start; }
+  .mq-tab .mq-row > .list-main { grid-column: 1; grid-row: 1; }
+  .mq-tab .mq-row > .mq-row-act { grid-column: 2; grid-row: 1; width: auto; flex-direction: column; flex-wrap: nowrap; align-items: flex-end; }
+  .mq-tab .mq-row > .mq-row-act .button-destructive { margin-left: 0; margin-top: var(--space-2); }
+  .mq-tab .mq-row > .wt-queue-confirm { grid-column: 1 / -1; justify-self: end; width: 100%; max-width: 420px; }
+  .mq-tab :is(.mq-card, .mq-thread-card) > .spread { flex-wrap: nowrap; }
+}
+@media (max-width: 599px) {
   .wt-queue-modal .wt-queue-row { padding-inline: 12px; }
   .wt-queue-modal .wt-queue-act { flex: 1 1 100%; }
-  .wt-queue-modal .wt-queue-act .button,
-  .wt-queue-modal .wt-queue-act .button-split > .button { min-height: var(--tap-min); }
   .wt-queue-modal .wt-queue-review { margin-inline-end: auto; }
-  .wt-queue-modal .wt-queue-path-full { display: none; }
-  .wt-queue-modal .wt-queue-path-last { display: inline; }
 }
-.wt-queue-path-last { display: none; }
+/* Unfolded: a row is two columns, its words left and its actions a column at the top right, each button at its own
+   width against the right edge; an open
+   confirm spans the row and sits at its right. The modal asks the window (it is no pane's); the pane's and the
+   tab's rows ask their pane too, so a narrow pane keeps the folded layout. */
+@media (min-width: 768px) {
+  .wt-queue-modal .wt-queue-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-4); align-items: start; }
+  .wt-queue-modal .wt-queue-row > .list-main { grid-column: 1; grid-row: 1; }
+  .wt-queue-modal .wt-queue-row > .wt-queue-act { grid-column: 2; grid-row: 1; flex-direction: column; flex-wrap: nowrap; align-items: flex-end; }
+  .wt-queue-modal .wt-queue-row > .wt-queue-act .button-destructive { margin-left: 0; margin-top: var(--space-2); }
+  .wt-queue-modal .wt-queue-row > .wt-queue-confirm { grid-column: 1 / -1; justify-self: end; width: 100%; max-width: 420px; }
+  @container (min-width: 30rem) {
+    .wt-queue-list .wt-queue-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-4); align-items: start; }
+    .wt-queue-list .wt-queue-row > .list-main { grid-column: 1; grid-row: 1; }
+    .wt-queue-list .wt-queue-row > .wt-queue-act { grid-column: 2; grid-row: 1; flex-direction: column; flex-wrap: nowrap; align-items: flex-end; }
+    .wt-queue-list .wt-queue-row > .wt-queue-act .button-destructive { margin-left: 0; margin-top: var(--space-2); }
+    .wt-queue-list .wt-queue-row > .wt-queue-confirm { grid-column: 1 / -1; justify-self: end; width: 100%; max-width: 420px; }
+  }
+}
 .mq-sides { display: grid; gap: var(--space-2); margin: var(--space-2) 0 0; }
 .mq-sides > div { padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
 .mq-sides dt { margin: 0 0 var(--space-1); }
@@ -1717,9 +1781,18 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-skip { color: var(--color-ink-muted); }
 
 /* The run's page. */
-.mq-crumbs { color: var(--color-ink-muted); }
-.mq-run > .button-row { flex-wrap: wrap; }
+.mq-crumbs { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-1); color: var(--color-ink-muted); }
+.mq-crumbs > span { overflow-wrap: anywhere; min-width: 0; }
+/* Back to Queue: a borderless arrow before the path, its arrow in line with the page's left edge (it gives back the
+   space around its icon); 44px square on touch. */
+.mq-crumbs .mq-back { --mq-back: var(--control-sm); flex: none; width: var(--mq-back); min-height: var(--mq-back); margin-inline-start: calc((var(--mq-back) - 16px) / -2); color: var(--color-ink-2); }
+@media (pointer: coarse) { .mq-crumbs .mq-back { --mq-back: var(--tap-min); } }
+/* Its two actions on one centre line: View Logs (outlined) and Open Merge Thread (borderless). */
+.mq-run-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+.mq-card-head { display: grid; gap: var(--space-1); }
 .mq-legend { margin: 0; }
+/* A list of steps, shared with the Releases tab: mark | step | its time and actions, which wrap under the name at
+   phone width. */
 .mq-steps { list-style: none; margin: 0; padding: 0; }
 .mq-step { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: var(--space-1) var(--space-3); align-items: start; padding: var(--space-2) 0; border-top: 1px solid var(--color-border); }
 .mq-step:first-child { border-top: 0; }
@@ -1728,16 +1801,11 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-step-main { min-width: 0; }
 .mq-step-main p { margin: 0; }
 .mq-step-name { flex-wrap: wrap; font-weight: var(--fw-medium); }
+/* A run's step: its tag held to the name's last word, so only the name wraps; the two part only when even they don't
+   fit on one line. */
+.mq-step-tail { display: inline-flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-2); max-width: 100%; }
+.mq-step-tail > .chip { font-weight: var(--fw-regular); }
 .mq-step-end { display: flex; align-items: center; gap: var(--space-2); justify-content: flex-end; flex-wrap: wrap; }
-.mq-fail-line { color: var(--status-error); overflow-wrap: anywhere; }
-.mq-log { margin: var(--space-2) 0 0; max-height: 360px; overflow: auto; padding: var(--space-2) var(--space-3); border-radius: var(--r-sm); background: var(--color-sunken); font-size: var(--fs-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-.mq-log-all { flex-basis: 100%; }
-.mq-whose { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--space-2); margin: 0; }
-.mq-whose > div { padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
-.mq-whose dd { margin: var(--space-1) 0 0; font-weight: var(--fw-medium); }
-.mq-whose-failed { color: var(--status-error); }
-.mq-whose-ok { color: var(--status-success); }
-/* At phone width a step's time and Log wrap under its name. */
 @container (max-width: 520px) {
   .mq-step { grid-template-columns: 24px minmax(0, 1fr); }
   .mq-step-end { grid-column: 2; justify-content: flex-start; }
@@ -1746,17 +1814,42 @@ html, body { overflow: clip; overscroll-behavior: none; }
   .mq-step { grid-template-columns: 24px minmax(0, 1fr); }
   .mq-step-end { grid-column: 2; justify-content: flex-start; }
 }
+/* The run's checks and why: one grid for every row (mark | check | time | Log), so each time and each Log sit in the
+   same place on every row, those with no time or no Log included. The mark, time and Log sit on the name's line. */
+.mq-run-steps { --mq-line: calc(var(--fs-body) * var(--lh-body)); display: grid; grid-template-columns: 24px minmax(0, 1fr) auto auto; column-gap: var(--space-3); }
+/* Its rows take the list's columns and gaps (column-gap: normal, so the shared rule's gap gives way). */
+.mq-run-steps > .mq-step { grid-column: 1 / -1; grid-template-columns: subgrid; row-gap: var(--space-1); column-gap: normal; }
+.mq-run-steps .mq-mark { height: var(--mq-line); }
+.mq-run-steps .mq-step-name { min-height: var(--mq-line); }
+/* Waiting: an empty muted ring, nothing that looks like it expands. */
+.mq-ring { width: 12px; height: 12px; border: var(--stroke-icon) solid currentColor; border-radius: var(--r-full); }
+/* A description shows at most two lines; the rest is in the step's log (and its title). */
+.mq-step-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.mq-step-time { min-width: 5ch; line-height: var(--mq-line); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mq-step-log { display: flex; align-items: center; justify-content: flex-end; height: var(--mq-line); }
+.mq-step > .mq-log { grid-column: 2 / -1; margin-top: var(--space-1); }
+.mq-fail-line { color: var(--status-error); overflow-wrap: anywhere; }
+.mq-log { margin: var(--space-2) 0 0; max-height: 360px; overflow: auto; padding: var(--space-2) var(--space-3); border-radius: var(--r-sm); background: var(--color-sunken); font-size: var(--fs-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.mq-run > .mq-log-all { margin: 0; }
+.mq-whose { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--space-2); margin: 0; }
+.mq-whose > div { padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
+.mq-whose dd { margin: var(--space-1) 0 0; font-weight: var(--fw-medium); }
+.mq-whose-failed { color: var(--status-error); }
+.mq-whose-ok { color: var(--status-success); }
+/* A 44px Log button overflows the name's line: give the row the room. */
+@media (pointer: coarse) {
+  .mq-run-steps > .mq-step { padding-block: var(--space-3); }
+}
+@media (max-width: 599px) {
+  .mq-run-steps { column-gap: var(--space-2); }
+}
 
-/* Onboarding. */
+/* A choice row: a radio and its words, the whole row the target. */
 .mq-choice { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-3); border: 1.5px solid var(--color-border); border-radius: var(--r-md); cursor: pointer; min-height: var(--tap-min); }
 .mq-choice:has(input:checked) { border-color: var(--color-accent); background: var(--color-accent-tint); }
 .mq-choice input { margin-top: 3px; accent-color: var(--color-accent); }
 .mq-choice > span { display: grid; gap: var(--space-1); }
 .mq-choice-desc { color: var(--color-ink-2); }
-.mq-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--space-3); padding-left: var(--space-6); }
-.mq-field-wide { grid-column: 1 / -1; }
-.mq-steps-head { margin: 0 0 var(--space-1); font-weight: var(--fw-semibold); color: var(--color-ink); }
-.mq-what { margin: 0; padding-left: var(--space-5); color: var(--color-ink-2); display: grid; gap: var(--space-1); }
 /* Land ▾: the menu's panel sits after its trigger inside the split, so the trigger isn't :last-child;
    give it back the split's closing edge. */
 .wt-queue-split > .button[aria-haspopup="menu"] {
@@ -1766,13 +1859,28 @@ html, body { overflow: clip; overscroll-behavior: none; }
 }
 .mq-run p { margin: 0; }
 
+/* The Setup chat: its button, its card line, and its proposal read from its branch. */
+.setup-chat-act { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.setup-chat-act .button,
+.setup-proposal .button,
+.setup-chat-card .button { min-height: var(--tap-min); }
+.setup-proposal p { margin: 0; }
+.setup-section { padding-top: var(--space-2); border-top: 1px solid var(--color-border); }
+.setup-section > h4 { margin: 0; }
+.setup-check-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+.setup-check-result { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-left: auto; }
+.setup-trial-line { overflow-wrap: anywhere; }
+.setup-files { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-1); }
+.setup-files > li { overflow-wrap: anywhere; font-size: var(--fs-mono); line-height: var(--lh-mono); }
+.setup-file-other .chip { margin-left: var(--space-1); }
+
 /* The merge queue's card in the branch's chat: the Merged card's frame, plus its lines and actions. */
 .mq-chat-card .mq-card-line { margin: 0; overflow-wrap: anywhere; white-space: normal; }
 .mq-chat-card .mq-card-warn { color: var(--status-warn); }
 .mq-chat-card .mq-card-sides { margin: var(--space-1) 0; }
 .mq-card-failures { margin: 0; padding-left: var(--space-4); }
 .mq-card-failures li { overflow-wrap: anywhere; }
-.mq-card-actions { flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
+.mq-card-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
 .mq-card-actions .button-destructive { margin-left: var(--space-2); }
 @media (pointer: coarse) { .mq-card-actions .button { min-height: var(--tap-min); } }
 .mq-card-folded .disclosure-label { overflow-wrap: anywhere; }
@@ -1780,3 +1888,15 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-unclear { margin: var(--space-1) 0 0; padding-left: var(--space-4); }
 .mq-unclear li { overflow-wrap: anywhere; }
 .mq-unattributed .mq-unclear { margin-bottom: var(--space-2); }
+
+/* A chat's pairing lines sit above the transcript in their own space (§app.overseer/pairs): one row
+   each, the partner's title cut with an ellipsis so Unpair stays on the row at any width. */
+.transcript-header { flex: none; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); padding: var(--space-3) var(--space-4) 0; }
+.transcript-header .banner { flex-wrap: nowrap; min-width: 0; width: 100%; max-width: calc(var(--measure) + var(--space-9) - var(--space-6)); margin: 0 auto; }
+.transcript-header .banner-main { flex: 1 1 0; min-width: 0; }
+.transcript-header .banner-title { margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* A card head with a chip (a Paired queue batch) on a phone: the name gives way (ellipsis) so the
+   chip and time stay in. */
+.toolcard-summary:has(> .chip-count) > .toolcard-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toolcard-summary > .chip-count { flex: none; }

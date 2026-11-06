@@ -84,6 +84,9 @@ export interface LinksDeps {
   deliver(path: string, framed: string): Promise<PeerLinkMessageResult>;
   /** A peer's hello state now (server/mesh/hello.ts probePeer); absent: taken as up. */
   probe?(peer: PeerEntry): Promise<PeerStateView>;
+  /** Both hosts list their areas and this host reads the peer as Update needed
+      (§mesh.compatibility/host-acts, hello.ts areasForbid); absent: never. */
+  updateNeeded?(peer: PeerEntry): Promise<boolean>;
   /** The listed members of a link changed, or a message landed for them (the `links` frame). */
   notify?(sessionIds: string[]): void;
   now?(): number;
@@ -629,7 +632,7 @@ export class MeshLinks {
       const peer = this.deps.mesh.peers().find((p) => p.id === a.host);
       if (!peer) fail(400, "unreachable", `${a.host} is not a peer of this host`);
       const probe = this.deps.probe ? await this.deps.probe(peer!) : "up";
-      if (probe === "skewed") fail(409, "skewed", `${peer!.label} runs a different protocol; update it first`);
+      if (probe === "skewed" || (await this.deps.updateNeeded?.(peer!))) fail(409, "skewed", anotherVersion(peer!.label));
       if (probe !== "up") fail(409, "unreachable", `${peer!.label} is ${probe}`);
       if (!sharesWith(this.deps.mesh, peer!.id, "links")) fail(409, undefined, linksWithheld(peer!.label));
       const has = await this.whoami(peer!);
@@ -1478,6 +1481,12 @@ export class MeshLinks {
   }
 
   private async hopWithCopy(nodeId: string, item: { kind: LinkOutboxEntry["kind"]; body: unknown; linkId?: string; offerId?: string }, link?: MeshLink): Promise<HopResult> {
+    // Refused at once and never held; the link itself stays (§mesh.links/delivery). An end or a
+    // report still goes: it only closes what is already there.
+    if (item.kind === "message" || item.kind === "offer" || item.kind === "link") {
+      const peer = this.peerOfNode(nodeId);
+      if (peer && (await this.deps.updateNeeded?.(peer))) return { state: "final", status: 409, body: { reason: "skewed" }, why: anotherVersion(peer.label) };
+    }
     // Named at the hop, never when held: a held entry carries the newest whoami answer.
     const body = this.named(nodeId, item.kind, item.body);
     const r = await this.hop(nodeId, pathOf(item), body);
@@ -1741,6 +1750,9 @@ function recipientOf(e: Extract<LinkOutboxEntry, { kind: "message" }>): string {
 }
 
 /** How one hop reads as a recipient's delivery. */
+/** The refusal for a host this host reads as Update needed. */
+const anotherVersion = (label: string): string => `${label} runs another version of Sova; update it first`;
+
 function toDelivery(to: LinkMemberRef, r: HopResult | { state: "queued"; why: string }): LinkDelivery {
   if (r.state === "queued" || r.state === "down") return { to, state: "outbox" };
   if (r.state === "final") {

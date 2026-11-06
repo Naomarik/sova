@@ -25,7 +25,9 @@ function pane() {
     },
     hello() {
       w = waitOnHello(w);
-      feed = feedOnHello(feed);
+      const step = feedOnHello(feed);
+      feed = step.feed;
+      p.said.push(...step.says);
     },
     send(text: string): string {
       const id = `c${++n}`;
@@ -213,6 +215,43 @@ test("the same turn failure re-reported keeps one banner and is said once; the s
   p.error("boom");
   assert.equal(banners(p.feed()).length, 1);
   assert.equal(p.said.length, 2, "the newer turn's failure is announced");
+});
+
+test("a refusal before a hello that does come is said at that hello: the chat opened, so no start failure will", () => {
+  const sentence = "This page is older than Host A. Reload the page to send here.";
+  const p = pane();
+  p.open();
+  const id = p.send("sent the moment the composer was usable");
+  p.refused(id, sentence);
+  assert.deepEqual(p.said, [], "nothing yet: it could still be the chat failing to open");
+  p.hello();
+  assert.deepEqual(p.draft, ["sent the moment the composer was usable"]);
+  assert.deepEqual(p.said, [{ say: "refused", message: sentence }]);
+  assert.equal(p.feed().turnError, null, "no turn failed");
+  assert.equal(p.feed().entries.length, 0);
+  p.hello();
+  assert.equal(p.said.length, 1, "said once: a later hello has nothing held");
+});
+
+test("several refusals before the hello with one sentence are said once; a refused Stop gives nothing back and is said too", () => {
+  const sentence = "Host A needs an update before it can take sends from this page.";
+  let feed = feedOnRefused(EMPTY_FEED, { message: sentence, beforeHello: true, back: 1 }).feed;
+  feed = feedOnRefused(feed, { message: sentence, beforeHello: true, back: 1 }).feed;
+  assert.deepEqual(feedOnHello(feed).says, [{ say: "refused", message: sentence }]);
+  const stop = feedOnRefused(EMPTY_FEED, { message: sentence, beforeHello: true, back: 0 }).feed;
+  assert.deepEqual(feedOnHello(stop).says, [{ say: "refused", message: sentence }]);
+  assert.equal(feedOnHello(stop).feed.heldWords, undefined);
+});
+
+test("a refusal the start failure follows stays quiet: that failure says it, and a later hello doesn't repeat it", () => {
+  const p = pane();
+  p.open();
+  p.refused(p.send("held for a chat that didn't open"));
+  p.error(START_REASON);
+  assert.deepEqual(p.said, [{ say: "startFailed", back: 1 }]);
+  p.open();
+  p.hello();
+  assert.equal(p.said.length, 1);
 });
 
 test("a refusal after the hello (a turn the chat refused) is still a toast and an announcement", () => {

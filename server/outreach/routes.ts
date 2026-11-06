@@ -61,6 +61,20 @@ export async function outreachInfo(selected?: string): Promise<OutreachInfo> {
   };
 }
 
+/** Save a patch as Settings → Outreach does, with what follows it (a Create card's Apply goes this way too). */
+export async function applyOutreachPatch(patch: OutreachPatch): Promise<{ error: string } | { ok: true }> {
+  const r = saveOutreach(patch);
+  if ("error" in r) return r;
+  if ("sender" in patch || "numbers" in patch) {
+    resetLocalClient();
+    dropLink();
+  }
+  // The senders in use may have changed: read them, and forget the ones no longer used.
+  await watchSenders();
+  attentionChanged();
+  return { ok: true };
+}
+
 export function mountOutreach(app: Hono): void {
   app.get("/api/outreach", async (c) => (local(c) ? c.json(await outreachInfo(c.req.query("sender")), 200, NO_STORE) : c.json({ error: "Not found" }, 404)));
   app.put("/api/outreach", small, async (c) => {
@@ -76,15 +90,8 @@ export function mountOutreach(app: Hono): void {
     const KEYS = ["sender", "acceptFrom", "paused", "authDir", "numbers", "labels"] as const;
     for (const k of KEYS) if (k in body) (patch as Record<string, unknown>)[k] = (body as Record<string, unknown>)[k];
     for (const k of Object.keys(body)) if (!(KEYS as readonly string[]).includes(k)) return c.json({ error: `Unknown key ${JSON.stringify(k)}` }, 400);
-    const r = saveOutreach(patch);
+    const r = await applyOutreachPatch(patch);
     if ("error" in r) return c.json({ error: r.error }, 400);
-    if ("sender" in patch || "numbers" in patch) {
-      resetLocalClient();
-      dropLink();
-    }
-    // The senders in use may have changed: read them, and forget the ones no longer used.
-    await watchSenders();
-    attentionChanged();
     return c.json(await outreachInfo(c.req.query("sender")), 200, NO_STORE);
   });
   // The sender's controls (§app.outreach/sender-controls): the operator's own buttons in Settings → Outreach.

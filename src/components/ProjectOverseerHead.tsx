@@ -5,6 +5,7 @@ import { ApiError, clearProjectOverseer, getProjectOverseer, patchProjectOversee
 import { relativeTime } from "../lib/format";
 import { projectHref, projectSessionHref } from "../lib/projects-route";
 import { headState, historyTitle, startedWords, statusLines } from "../lib/project-overseer-view";
+import { historyRows } from "../lib/overseer";
 import { brakeDone, columnsFor, powerGroups, powersButtonName } from "../lib/powers-view";
 import { PowersPanel } from "./PowersGrid";
 import { announce, localRunning, toast } from "../lib/ui-state";
@@ -116,7 +117,8 @@ export function ProjectOverseerHead(props: {
   const s = () => props.summary();
   const projectName = () => c.info()?.projectName ?? s().project?.projectName ?? "this project";
   const age = (at: string) => relativeTime(at, props.now);
-  const history = () => c.info()?.history ?? [];
+  /** Each earlier conversation by what it was about, never the name they all share. */
+  const history = () => historyRows(c.info()?.history ?? []);
 
   const save = (x: ProjectOverseerPatch, done: string) => void c.act(() => patchProjectOverseer(c.projectId, x), done);
   const resume = () => save({ resume: true }, brakeDone);
@@ -136,6 +138,8 @@ export function ProjectOverseerHead(props: {
     });
   };
   const earlierWords = (n: number) => `${n} earlier ${n === 1 ? "conversation" : "conversations"}`;
+  /** What the earlier conversation on screen was about (its History row), else its listed title. */
+  const earlierAbout = () => history().find((h) => h.path === s().path)?.title ?? historyTitle(s().title);
 
   /** The same switches as the project page's (§design.copy-deck/project-powers), in a menu panel. */
   const Powers = (p: { info: ProjectOverseerInfo }) => (
@@ -160,8 +164,8 @@ export function ProjectOverseerHead(props: {
             Earlier Overseer Conversation
           </h1>
           <p class="session-head-meta">
-            <span title={s().title}>
-              {historyTitle(s().title)} · {age(s().lastActiveAt)}
+            <span title={earlierAbout()}>
+              {earlierAbout()} · {age(s().lastActiveAt)}
             </span>
           </p>
         </div>

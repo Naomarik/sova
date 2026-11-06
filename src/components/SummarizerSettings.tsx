@@ -22,7 +22,9 @@ import {
   type SummarizerDraft,
 } from "../lib/summarizer-form";
 import { home } from "../lib/ui-state";
+import { Select, Toggle } from "./form";
 import { Banner } from "./ui";
+import { RetryButton, sentence } from "./WorkerSlotRow";
 
 const BACKENDS: SummarizerBackend[] = ["claude-code", "pi"];
 
@@ -91,6 +93,7 @@ export function SummarizerSettingsSection() {
         A small model writes the line under each session's title as the session goes. Pick it, and a fallback for when
         it can't run. A change applies to sessions started afterwards, here and in pi in the terminal.
       </p>
+      <p class="settings-intro">This model also writes the merge queue's branch summaries.</p>
 
       <Show when={info.error}>
         <Banner
@@ -142,16 +145,14 @@ export function SummarizerSettingsSection() {
             disabled={locked()}
             onChange={(next) => setSlot("primary", next)}
           />
-          <label class="toggle toggle-switch settings-delegate-fallback-toggle">
-            <span>Fallback</span>
-            <input
-              type="checkbox"
-              checked={draft()!.fallback !== null}
-              disabled={locked()}
-              onChange={(e) => setSlot("fallback", e.currentTarget.checked ? { backend: draft()!.primary.backend, model: "" } : null)}
-            />
-            <span class="toggle-box" />
-          </label>
+          <Toggle
+            switch
+            class="settings-delegate-fallback-toggle"
+            label="Fallback"
+            checked={draft()!.fallback !== null}
+            disabled={locked()}
+            onChange={(on) => setSlot("fallback", on ? { backend: draft()!.primary.backend, model: "" } : null)}
+          />
           <Show
             when={draft()!.fallback}
             fallback={<p class="field-hint">No fallback: when the primary can't run, the line isn't updated until it can.</p>}
@@ -182,15 +183,6 @@ export function SummarizerSettingsSection() {
   );
 }
 
-/** A reason as a sentence: closed with a period unless it already ends in one (or in "?"). */
-const sentence = (text: string) => (/[.?!]$/.test(text) ? text : `${text}.`);
-
-const RetryButton = (props: { label: string; onClick(): void }) => (
-  <button type="button" class="button button-sm" onClick={() => props.onClick()}>
-    {props.label}
-  </button>
-);
-
 /** One summarizer: backend and model, and what the row has to say about the pick. */
 function SlotRow(props: {
   slot: "primary" | "fallback";
@@ -211,60 +203,36 @@ function SlotRow(props: {
         <span class="settings-delegate-slot-label">Primary</span>
       </Show>
       <div class="settings-delegate-fields settings-summaries-fields">
-        <div class="field">
-          <label class="field-label" for={id("backend")}>
-            Backend
-          </label>
-          <div class="select-wrap">
-            <select
-              class="select"
-              id={id("backend")}
-              disabled={props.disabled}
-              onChange={(e) => props.onChange({ backend: e.currentTarget.value as SummarizerBackend, model: "" })}
-            >
-              <For each={BACKENDS}>
-                {(b) => (
-                  <option value={b} selected={b === props.choice.backend}>
-                    {BACKEND_LABELS[b]}
-                  </option>
-                )}
-              </For>
-            </select>
-            <span class="select-caret" aria-hidden="true">
-              ▾
-            </span>
-          </div>
-        </div>
-        <div class="field">
-          <label class="field-label" for={id("model")}>
-            Model
-          </label>
-          <div class="select-wrap">
-            <select
-              class="select text-mono"
-              id={id("model")}
-              disabled={props.disabled}
-              aria-describedby={issue() ? id("issue") : undefined}
-              onChange={(e) => props.onChange({ ...props.choice, model: e.currentTarget.value })}
-            >
-              <Show when={!props.choice.model}>
-                <option value="" selected disabled>
-                  {props.options ? "Choose a model" : "Checking…"}
-                </option>
-              </Show>
-              <For each={models()}>
-                {(o) => (
-                  <option value={o.value} selected={o.value === props.choice.model} title={o.title}>
-                    {o.label}
-                  </option>
-                )}
-              </For>
-            </select>
-            <span class="select-caret" aria-hidden="true">
-              ▾
-            </span>
-          </div>
-        </div>
+        <Select
+          id={id("backend")}
+          label="Backend"
+          value={props.choice.backend}
+          options={BACKENDS.map((b) => ({ value: b, label: BACKEND_LABELS[b] }))}
+          disabled={props.disabled}
+          onChange={(v) => props.onChange({ backend: v as SummarizerBackend, model: "" })}
+        />
+        <Select
+          id={id("model")}
+          label="Model"
+          selectClass="text-mono"
+          value={props.choice.model}
+          disabled={props.disabled}
+          describedBy={issue() ? id("issue") : undefined}
+          onChange={(v) => props.onChange({ ...props.choice, model: v })}
+        >
+          <Show when={!props.choice.model}>
+            <option value="" selected disabled>
+              {props.options ? "Choose a model" : "Checking…"}
+            </option>
+          </Show>
+          <For each={models()}>
+            {(o) => (
+              <option value={o.value} selected={o.value === props.choice.model} title={o.title}>
+                {o.label}
+              </option>
+            )}
+          </For>
+        </Select>
       </div>
       <Show when={issue()}>
         {(i) => (

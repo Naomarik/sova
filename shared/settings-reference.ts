@@ -97,7 +97,19 @@ const topKeys: Record<string, string> = {
   share: "which endpoints may be shared, for how long",
   deploy: "the deploy targets and their recipe",
   sources: "other checkouts it builds from",
+  merge: "the merge queue's section: see merge-queue",
+  release: "how the project releases: its playbook, tag, channels and gating checks (absent: releases aren't set up)",
 };
+const RELEASE_KEY_WORDS: Record<string, string> = {
+  playbook: "the release playbook's folder, which holds release.json",
+  tag: 'the tag pattern, holding ${version} once (absent: "v${version}")',
+  scheme: "how versions read: semver, calver or none",
+  channels: "the moving tags it updates, at most 3",
+  commit: "false: tag-only, no release commit through the queue",
+  checks: "the release-only checks: a merge check's id, or one declared here",
+  quietMin: "minutes without a report from the release chat before Sova says so",
+};
+const releaseKeys = Object.fromEntries(DEFINITION_KEYS.release.map((k) => [`release.${k}`, RELEASE_KEY_WORDS[k] ?? k]));
 const COPIES_KEY_WORDS: Record<(typeof COPIES_EDIT_KEYS)[number], string> = {
   limit: "how many of the project's copies may run at once on this machine, 1–16; null removes this machine's value, so the main checkout's .sova/project.json (its slots {cap}, default 4) applies",
 };
@@ -299,7 +311,7 @@ export const SETTINGS_REFERENCE: Record<SettingId, ReferenceEntry> = {
     summary: "The project's software: its services, running copies, tests, sharing and deploy (the services contract).",
     edit: '{setting: "services", file: {…the whole .sova/project.json…} | null}',
     grant: "Any change: it decides what runs on this computer.",
-    keys: { ...serviceTop, ...serviceKeys },
+    keys: { ...serviceTop, ...serviceKeys, ...releaseKeys },
     changedAt: "the Branches tab and the Software card",
   },
   "merge-queue": {
@@ -438,9 +450,22 @@ export function settingsIndex(placed = true): string {
   }).join("\n");
 }
 
-/** One entry in full, for sova_settings reference. */
-export function referenceText(id: SettingId): string {
-  const e = SETTINGS_REFERENCE[id];
+/** What a Create chat's card holds of the merge queue (§chat.create-mode/settings-cards), in place of the overseer's refusal. */
+export const MERGE_QUEUE_CARD_EDIT =
+  '{setting: "merge-queue", changes?: {push?, review?, checks?: {<id>: {timeoutSec?, rerun?, optional?}}}, models?: {review?: {model, thinking?} | null, thread?: …}} on a card of its own. Check commands, the install step, the target and the kits go by Land; first setup stays the person\'s, on the Merge Queue tab.';
+
+/** A project's Claude login, for a Create chat only: not in the project overseer's list. */
+export const CLAUDE_LOGIN_SETTING = "project.claude-login";
+export const CLAUDE_LOGIN_REFERENCE = [
+  "The project's Claude login (project.claude-login): which existing login its new chats start on; open chats keep theirs.",
+  "Where: kept on this computer. Changed at: the project page's Claude login.",
+  'Propose: {setting: "claude-login", login: "<login id>" | "none" | "org"}: "none" is this computer\'s order, "org" follows its organization (a placed project only).',
+  "Needs the person's approval: never. Adding a login or signing in stays on Settings → Accounts.",
+].join("\n");
+
+/** One entry in full, for sova_settings reference (`create`: as a Create chat proposes it). */
+export function referenceText(id: SettingId, opts: { create?: boolean } = {}): string {
+  const e = opts.create && id === "merge-queue" ? { ...SETTINGS_REFERENCE[id], edit: MERGE_QUEUE_CARD_EDIT } : SETTINGS_REFERENCE[id];
   return [
     `${e.label} (${id}): ${e.summary}`,
     `Where: ${e.where === "sova" ? "kept by Sova" : `the file ${e.file} (lands as a commit when the operator applies the card)`}. Changed at: ${e.changedAt}.`,

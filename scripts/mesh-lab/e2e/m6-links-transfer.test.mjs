@@ -25,7 +25,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { chaos, container, hostUrl, lab, labTokenHeaders, laptopFetch, readAgentFile, requireLab, sh, tailnetIp, waitFor, writeAgentFile } from "./lib.mjs";
+import { chaos, container, hostUrl, lab, labPageHeaders, labTokenHeaders, laptopFetch, readAgentFile, requireLab, sh, tailnetIp, waitFor, writeAgentFile } from "./lib.mjs";
 import { accept, api, byId, decline, inbox, link, makeTree, MODEL, newSession, offer, offers, prompt, releaseLock, rowOf, send, takeLock, transcript, treeHash, unlink, waitIdle, waitInbox, waitOffer, writeLinksFile } from "./links-lib.mjs";
 
 const REPO = fileURLToPath(new URL("../../..", import.meta.url));
@@ -61,7 +61,24 @@ const noticeRows = async (host, session, of) => {
 };
 /** The transcript without its `info` rows (the model and thinking that configure wrote): what a turn adds. */
 const turnRows = async (host, path) => (await transcript(host, path)).filter((i) => i.kind !== "info");
-const sandbox = (host, s, on) => api(host, `/api/sandbox?path=${encodeURIComponent(s.path)}`, { method: "POST", body: { on }, timeoutMs: 60000 });
+/** Set a chat's sandbox as the page does: lowering it passes only on the page's cookie (§app.access/your-click), and
+    the lab's other calls carry the token in a header. */
+const sandbox = async (host, s, on) => {
+  const res = await fetch(`${hostUrl(host)}/api/sandbox?path=${encodeURIComponent(s.path)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...labPageHeaders() },
+    body: JSON.stringify({ on }),
+    signal: AbortSignal.timeout(60000),
+  });
+  const text = await res.text();
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = undefined;
+  }
+  return { status: res.status, json, text };
+};
 /** Hold a session again (its runtime opened) after its host's Sova restarted: local acts need it.
     The busy rule may refuse it for a few seconds after the last write (a wake's turn): retried. */
 const hold = (host, s) =>

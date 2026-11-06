@@ -43,7 +43,10 @@ const shown = (m: Mirror): string => str(m.get("hash12")) || hash12(m.get("def",
 /** The run's playbook by its title (§app.project-runtime/verb-playbooks); a run recorded before it had one is Project verbs'. */
 const label = (m: Mirror): string => str(m.get("playbook", "label")) || "Project verbs";
 /** What a proposed run's branch holds, by what its playbook proposes: a deploy-setup run's recipe, else a definition. */
-const proposal = (m: Mirror): string => (m.get("playbook", "proposes") === "deploy" ? "a deploy recipe" : "a definition");
+const proposal = (m: Mirror): string => {
+  const p = m.get("playbook", "proposes");
+  return p === "deploy" ? "a deploy recipe" : p === "release" ? "a release setup" : p === "pipeline" ? "the project's setup" : "a definition";
+};
 
 const entered = (r: FeedRow, s: string): boolean => r.after.includes(s) && !r.before.includes(s);
 

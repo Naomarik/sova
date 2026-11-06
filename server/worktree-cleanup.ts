@@ -20,6 +20,7 @@ import { canonical, isWithin, WORKTREES_ENTRY_TYPE } from "../pi-config/extensio
 import { readStoredCwd } from "./git-summary";
 import { lineHeader, lineNeedle } from "./harness/pi/reader";
 import { worktreesRemoved } from "./merge-readiness";
+import { scratchCopiesIn } from "./merge-queue/scratch";
 import { appendLedger, mergedByContent, resetContentMerges, type RemovedWorktree } from "./removed-worktrees";
 import { sandboxInfo } from "./sandbox-state";
 import { parseTargetCwd } from "./targets";
@@ -107,6 +108,9 @@ export interface CleanupDeps {
   /** Ends the cached readiness of every session tracking a removed tree (server/merge-readiness.ts). */
   removed: (paths: readonly string[]) => Promise<void>;
   now: () => number;
+  /** The worktree was made by one of the merge queue's own chats (merge-queue/wire.ts worktreeQueueMade, the test the
+      queue's Ready list uses): a conflict's scratch copy the merge thread made itself. Never listed. Absent: none is. */
+  queueMade?: (path: string) => Promise<boolean>;
 }
 
 const writeGit: GitRunner = async (args, opts) => runGit([...args], opts.cwd);
@@ -248,7 +252,15 @@ export async function classifyRepo(dir: string, git: GitRunner = need().git): Pr
     if (r.code === 0) for (const ref of r.stdout.split("\n")) if (ref.startsWith("refs/heads/")) ancestors.add(ref.slice(11));
   }
   const trees: ClassifiedTree[] = [];
+  // The merge queue's scratch copies (by the mark it leaves in each one's admin dir) are its own, removed when their
+  // landing attempt ends: never listed here, so never offered or kept with a reason. So are the ones a merge queue chat
+  // created itself (queueMade).
+  const scratch = new Set(scratchCopiesIn(commonDir).map((c) => canonical(c.path)));
+  const queueMade = deps?.queueMade;
   for (const w of linked) {
+    if (scratch.has(canonical(w.path))) continue;
+    // One the merge thread made itself (the old feat/resolve-mq_* copies): the queue's too, by who made it.
+    if (queueMade && (await queueMade(w.path).catch(() => false))) continue;
     const base: ClassifiedTree = { path: w.path, ...(w.branch ? { branch: w.branch } : {}), ...(w.head ? { head: w.head } : {}), locked: w.locked, gone: w.prunable || !existsSync(w.path), class: "unmerged", ancestor: false };
     if (!w.branch || !w.head) {
       trees.push({ ...base, why: "Not on a branch." });

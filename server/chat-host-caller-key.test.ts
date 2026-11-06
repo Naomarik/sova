@@ -183,3 +183,17 @@ test("a server started from a chat's tools never acts as that chat: its own SOVA
   assert.ok(scrubChatProcessEnv(own).includes("SOVA_CALLER_KEY"));
   assert.equal(own.SOVA_CALLER_KEY, undefined);
 });
+
+test("a chat's SOVA_URL is its own server's: an outer chat's is scrubbed, and no bind that loopback can't reach is named", async () => {
+  const { chatEnv, scrubChatProcessEnv } = await import("./chat-runtime/supervisor");
+  const { chatServerUrl } = await import("./auth");
+  const outer = "http://127.0.0.1:4800";
+  assert.equal(chatEnv({ serverEnv: { SOVA_URL: outer, LANG: "C" }, bun: "/opt/bun/bin/bun", home: "/h", agentDir: "/h/a" }).SOVA_URL, undefined);
+  assert.equal(chatEnv({ serverEnv: { SOVA_URL: outer }, bun: "/opt/bun/bin/bun", home: "/h", agentDir: "/h/a", extra: { SOVA_URL: "http://127.0.0.1:4960" } }).SOVA_URL, "http://127.0.0.1:4960");
+  const own: NodeJS.ProcessEnv = { SOVA_URL: outer };
+  assert.ok(scrubChatProcessEnv(own).includes("SOVA_URL"));
+  assert.deepEqual(
+    [["127.0.0.1", 4960], ["0.0.0.0", 4960], ["::", 4960], ["localhost", 4960], ["::1", 4960], ["100.64.0.1", 4960]].map(([h, p]) => chatServerUrl(h as string, p as number)),
+    ["http://127.0.0.1:4960", "http://127.0.0.1:4960", "http://127.0.0.1:4960", "http://localhost:4960", "http://[::1]:4960", undefined],
+  );
+});

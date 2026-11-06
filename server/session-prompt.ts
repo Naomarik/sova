@@ -1,3 +1,5 @@
+import { CREATE_NOT_SENT, createNotNamed } from "../shared/profiles";
+import { typedMajorMode } from "./mode-state";
 import { statSync } from "node:fs";
 import { acquireChatHandle } from "./chat-handle";
 import { readOverseerState } from "./overseer-store";
@@ -72,6 +74,9 @@ export async function promptSession(
   key?: string,
 ): Promise<PromptResult> {
   if (!text.trim()) return { ok: false, status: 400, error: "text must not be blank" };
+  // Only a chat's own composer or mode menu picks Create: refused here, or the extension's refusal reaches nobody and the
+  // sender is told it went (§chat.create-mode/per-chat-only).
+  if (typedMajorMode(text) === "create") return { ok: false, status: 409, error: sentBy ? createNotNamed("the Overseer") : opts ? createNotNamed("a project overseer") : CREATE_NOT_SENT };
   const s = await getSessionSummary(path);
   if (!s) return { ok: false, status: 404, error: "Session file not found" };
   const overseerId = sentBy && sentBy === readOverseerState()?.current ? sentBy : undefined;

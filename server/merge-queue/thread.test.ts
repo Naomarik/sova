@@ -10,6 +10,8 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { scratchRoot } from "../test-scratch";
+import { realGit } from "./guard";
+import { makeScratchCopy } from "./scratch";
 import {
   DEFAULT_PLAYBOOK_DIR,
   MergeThread,
@@ -359,7 +361,7 @@ test("the project's own playbook is read after the method; without one the metho
 
 test("each event names the verbs it is answered with, all of them merge verbs the contract lists", async () => {
   const { MERGE_VERBS } = await import("../../shared/project-contract");
-  const evs: ThreadEvent[] = [queued(), { kind: "conflict", entry: entry(), run: "mr_1", files: ["a.ts"] }, { kind: "failed", entry: entry(), run: "mr_1", summary: "unit" }, { kind: "paused", why: "x" }, { kind: "names", file: "/s/names.json", target: "main" }];
+  const evs: ThreadEvent[] = [queued(), { kind: "conflict", entry: entry(), run: "mr_1", files: ["a.ts"] }, { kind: "failed", entry: entry(), run: "mr_1", summary: "unit" }, { kind: "paused", why: "x" }, { kind: "names", file: "/s/names.json", target: "main" }, { kind: "idle", entry: entry() }];
   for (const ev of evs) {
     const verbs = [...eventText(ev).matchAll(/\bmerge\.[a-z]+/g)].map((m) => m[0]);
     for (const v of verbs) assert.ok((MERGE_VERBS as readonly string[]).includes(v), `${ev.kind} names ${v}, not a merge verb`);
@@ -368,6 +370,26 @@ test("each event names the verbs it is answered with, all of them merge verbs th
     const text = readFileSync(join(DEFAULT_PLAYBOOK_DIR, f), "utf8");
     for (const m of text.matchAll(/`(merge\.[a-z]+)/g)) assert.ok((MERGE_VERBS as readonly string[]).includes(m[1]!), `${f} names ${m[1]}, not a merge verb`);
   }
+});
+
+test("conflict: the message names Sova's scratch copy to resolve in, or says none could be made and what to answer", () => {
+  const withCopy = eventText({ kind: "conflict", entry: entry("mq_5"), run: "mr_1", files: ["a.ts"], scratch: "/p/.worktrees/proj-conflict-mq_5" });
+  assert.match(withCopy, /Sova made a scratch copy for it at \/p\/\.worktrees\/proj-conflict-mq_5: a worktree with no branch, at master's head\. Resolve there, and never make a worktree of your own/);
+  assert.match(withCopy, /your resolution commit from the scratch copy/);
+  assert.doesNotMatch(withCopy, /side worktree/);
+  const none = eventText({ kind: "conflict", entry: entry("mq_5"), run: "mr_1", files: ["a.ts"], scratchError: "git worktree add failed: disk full" });
+  assert.match(none, /Sova couldn't make a scratch copy for it \(git worktree add failed: disk full\): judge it from the diff, and answer verdict "behaviour-differs" with no commit/);
+});
+
+test("idle: the queue is quiet; the newest landing and the target's head are named; the playbook decides, merge.hold is offered", () => {
+  const text = eventText({ kind: "idle", entry: entry("mq_9"), lastLanded: { id: "mq_8", branch: "feat/x", sha: "c".repeat(40) }, head: "d".repeat(40) });
+  assert.match(text, /^Idle: the queue has nothing left to check and nothing running \(the last change: entry mq_9 · /);
+  assert.match(text, /The newest landing: entry mq_8 · feat\/x as ccccccc\. master is at ddddddd\./);
+  assert.match(text, /"When the queue is idle"/);
+  assert.match(text, /merge\.hold \{action: "set"\}/);
+  assert.match(text, /Otherwise nothing is needed: end your turn\./);
+  const bare = eventText({ kind: "idle", entry: entry("mq_9") });
+  assert.doesNotMatch(bare, /newest landing|is at/);
 });
 
 test("queued: the diff and the picks read from the base the entry was queued against, so a landed branch still shows its changes", () => {
@@ -445,8 +467,10 @@ function standInModel(root: string, map: string, calls: VerbCall[]) {
     const c = /Conflict: entry (\S+) · (\S+) at (\w+) conflicts with (\S+) in/.exec(text);
     if (c) {
       const [, id, branch, , target] = c;
-      const side = join(root, "..", `resolve-${id}`);
-      git(root, "worktree", "add", "-q", "--detach", side, target!);
+      // The copy Sova names in the message, as the playbook says; a message without one: none to work in.
+      const named = /Sova made a scratch copy for it at (\S+): /.exec(text)?.[1];
+      const side = named ?? join(root, "..", `resolve-${id}`);
+      if (!named) git(root, "worktree", "add", "-q", "--detach", side, target!);
       try {
         git(side, "merge", "--no-ff", "--no-commit", branch!);
       } catch {
@@ -536,7 +560,8 @@ test("conflicts: both sides adding items is resolved as no behaviour change with
   const targetHead = commitFile(r, "list.txt", "alpha\ngamma\nomega\n", "add gamma");
   const calls: VerbCall[] = [];
   const { t, settle } = wiredThread(dir, standInModel(r, "/nonexistent", calls));
-  t.notify(r, { kind: "conflict", entry: entry("mq_add", { branch: "feat/add", commit: pinned }), run: "mr_1", files: ["list.txt"] });
+  const scratch = await makeScratchCopy(realGit, { root: r, entry: "mq_add", base: targetHead });
+  t.notify(r, { kind: "conflict", entry: entry("mq_add", { branch: "feat/add", commit: pinned }), run: "mr_1", files: ["list.txt"], scratch });
   await t.idle(r);
   await settle();
   const ok = calls.find((c) => c.args.entry === "mq_add")!;
@@ -555,8 +580,47 @@ test("conflicts: both sides adding items is resolved as no behaviour change with
   t.notify(r, { kind: "conflict", entry: entry("mq_change", { branch: "feat/change", commit: git(r, "rev-parse", "feat/change") }), run: "mr_2", files: ["list.txt"] });
   await t.idle(r);
   await settle();
+  assert.equal(git(scratch, "rev-parse", "HEAD"), commit, "the resolution was made in Sova's scratch copy");
   const differs = calls.find((c) => c.args.entry === "mq_change")!;
   assert.equal(differs.verb, "merge.resolve");
   assert.equal(differs.args.verdict, "behaviour-differs");
   assert.equal(differs.args.commit, undefined);
+});
+
+// ---- picks carry their select; the method is reread at every event ----------------------------------
+
+test("queued: the pick's call shape carries select, as the method's picks page says", () => {
+  const text = eventText(queued("mq_9"));
+  assert.ok(text.includes('merge.extend {entry: "mq_9", checks: [id], why, select}'), text);
+  assert.match(text, /select is part of the pick/);
+  const picks = readFileSync(join(DEFAULT_PLAYBOOK_DIR, "references", "picks.md"), "utf8");
+  assert.ok(picks.includes("`merge.extend {entry, checks: [id], why, select}`"));
+  assert.ok(readFileSync(join(DEFAULT_PLAYBOOK_DIR, "PLAYBOOK.md"), "utf8").includes("`merge.extend {entry, checks: [id], why, select}`"));
+});
+
+test("every event tells the thread to read its moment's Read as you go row now, never from memory, and the method has a row for each", async () => {
+  const { READ_AS_YOU_GO } = await import("./thread");
+  const evs: ThreadEvent[] = [
+    queued(),
+    { kind: "conflict", entry: entry(), run: "mr_1", files: ["a.ts"] },
+    { kind: "failed", entry: entry(), run: "mr_1" },
+    { kind: "paused", why: "x" },
+    { kind: "idle", entry: entry() },
+    { kind: "names", file: "/s/names.json", target: "main" },
+    { kind: "answer", ask: { id: "ak_1", question: "q?" }, text: "yes", from: "the user" },
+  ];
+  assert.deepEqual(evs.map((e) => e.kind).sort(), Object.keys(READ_AS_YOU_GO).sort(), "every event kind the thread is sent has a moment");
+  const method = readFileSync(join(DEFAULT_PLAYBOOK_DIR, "PLAYBOOK.md"), "utf8");
+  const table = method.slice(method.indexOf("## Read as you go"), method.indexOf("## Each event"));
+  assert.ok(table.length > 20, "the method has its Read as you go section");
+  for (const ev of evs) {
+    const text = eventText(ev);
+    const moment = READ_AS_YOU_GO[ev.kind];
+    assert.ok(text.endsWith(`read your playbook's "Read as you go" row for ${moment} and the pages it names, now, never from memory (the project's own playbook wins where its list differs).`), `${ev.kind}: ${text}`);
+    assert.ok(table.includes(`| **${moment}** |`), `the method's table has a ${moment} row`);
+  }
+  // Memory is for history only; the project's own table may override the rows.
+  assert.match(method, /use it for history only/);
+  assert.match(method, /never from memory/);
+  assert.match(table, /A project's own playbook may give its own "Read as you go" table: its row wins where it differs/);
 });

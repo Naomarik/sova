@@ -2,7 +2,7 @@
   "§app.claude-logins/accounts-tab": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/AccountsSettings.tsx",
       "src/components/SettingsDialog.tsx",
@@ -19,16 +19,21 @@
       "server/claude-pool/index.ts",
       "src/lib/claude-pool.test.ts",
       "src/lib/claude-login-groups.ts",
-      "src/lib/claude-login-groups.test.ts"
+      "src/lib/claude-login-groups.test.ts",
+      "shared/account-limits.ts",
+      "server/claude-accounts.test.ts",
+      "server/settings-limits-parity.test.ts",
+      "src/components/form/index.tsx",
+      "src/components/ProviderKeys.tsx"
     ],
     "requires": [
       "§app.claude-logins/add-remove",
       "§app.claude-logins/device-order"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-24T04:43Z",
-      "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      "by": "user",
+      "at": "2026-11-05T17:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
     }
   },
   "§app.claude-logins/active-login": {
@@ -119,8 +124,14 @@
       "server/index.ts",
       "server/app.ts",
       "server/models.ts",
-      "shared/protocol.ts"
-    ]
+      "shared/protocol.ts",
+      "src/components/AccountsSettings.tsx"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T17:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    }
   },
   "§app.claude-logins/device-order": {
     "kind": "behavior",
@@ -140,7 +151,10 @@
       "server/insights-claude-logins.test.ts",
       "src/lib/claude-login-groups.ts",
       "src/lib/claude-login-groups.test.ts",
-      "src/design/base.css"
+      "src/design/base.css",
+      "shared/account-limits.ts",
+      "server/settings-limits-parity.test.ts",
+      "src/components/form/index.tsx"
     ],
     "agreed": {
       "by": "naomarik",
@@ -289,7 +303,12 @@
       "src/lib/claude-pool.test.ts",
       "server/claude-pool/pool-test-fixtures.ts",
       "server/claude-pool/agent.integration.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T17:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    }
   },
   "§app.claude-logins/migration": {
     "kind": "behavior",

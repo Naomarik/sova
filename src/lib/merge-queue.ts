@@ -2,8 +2,10 @@
 // session pane's Worktrees rows and the project's Merge Queue tab, so the four always agree. Pure: no
 // Solid, no DOM. The shapes are the queue's (shared/merge-queue.ts); the verb calls live in
 // merge-queue-client.ts.
-import type { SessionWorktreeInfo } from "../../shared/protocol";
-import { newerWords, ordinal } from "../../shared/merge-queue";
+import type { SessionSummary, SessionWorktreeInfo, WorktreeReadiness } from "../../shared/protocol";
+import { newerWords, ordinal, type LandHow, type MergeReady } from "../../shared/merge-queue";
+import { clockTime, relativeTime } from "../../pi-config/extensions/stamp/format.ts";
+import { readinessChip } from "./worktrees";
 import type { MergeEntry, MergeNote, MergeProjectInfo, MergeQueueView, MergeRun, RunStep, WorktreeQueueInfo } from "./merge-queue-types";
 import { requestChip, requestReason } from "./merge-queue-requests";
 
@@ -75,6 +77,8 @@ export interface QueueRow {
   newer?: string;
   /** The branch against the target's head: "3 commits · +40 −2". */
   size?: string;
+  /** When the branch last changed (its head's committer date), drawn after the size: "2d ago". */
+  when?: HeadWhen;
   /** Notes on it (the merge thread's first), each with what kind it is. */
   notes: { label: string; text: string }[];
   action: RowAction;
@@ -82,6 +86,8 @@ export interface QueueRow {
   sendBack?: boolean;
   /** Remove from Queue beside the action (Needs a fix): the entry leaves the queue; nothing is deleted. */
   remove?: boolean;
+  /** Needs a fix with commits of its own past the one sent back: its re-land reads Land Newest Commit. */
+  landNewest?: true;
   /** A run to See Why on. */
   run?: string;
 }
@@ -126,12 +132,63 @@ export const PLAIN_MERGE_LINE = "Say “land it” in the chat to merge it into 
 export const sizeWords = (s: { ahead: number; added: number; removed: number } | undefined): string | undefined =>
   s ? `${s.ahead} ${s.ahead === 1 ? "commit" : "commits"} · +${s.added} −${s.removed}` : undefined;
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** When a branch last changed, as a row draws it in a <time>: `iso` its datetime, `text` relative ("2h ago",
+    "yesterday", "3d ago", "Nov 2" past a week: Sova's relativeTime), `full` the date and time for hover and screen
+    readers ("Nov 2, 2026, 1:43 PM"). Undefined when there's no date or it doesn't parse. */
+export interface HeadWhen {
+  iso: string;
+  text: string;
+  full: string;
+}
+export function headWhen(headAt: string | undefined, now = Date.now()): HeadWhen | undefined {
+  const ms = headAt ? Date.parse(headAt) : NaN;
+  if (!Number.isFinite(ms)) return undefined;
+  const d = new Date(ms);
+  return { iso: headAt!, text: relativeTime(ms, now), full: `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}, ${clockTime(ms)}` };
+}
+
+/** A Ready to land, not approved row's facts: "da69caa · 3 commits ahead · +1497 −309", then its date apart. */
+export const readyFactsWords = (r: Pick<MergeReady, "ahead" | "added" | "removed">): string =>
+  `${r.ahead} ${r.ahead === 1 ? "commit" : "commits"} ahead${r.added !== undefined && r.removed !== undefined ? ` · +${r.added} −${r.removed}` : ""}`;
+
+/** The chip on a Ready to land, not approved row: its chat's own readiness reading of the branch, in the words and
+    colour a Worktrees row's readiness chip uses (worktrees.ts readinessChip: Ready to land, In progress, Waiting for
+    your OK…), with a conflict said as such ("Conflicts with master"). No chat: a neutral "No chat". A chat whose
+    reading Sova doesn't have (it doesn't track the worktree, or isn't on the page's list): a neutral "No reading". */
+export interface ReadyChip {
+  label: string;
+  tone: Tone;
+  title: string;
+}
+export function readyRowChip(r: Pick<MergeReady, "session" | "sessionArchived" | "worktree" | "branch">, trees: readonly WorktreeReadiness[] | undefined): ReadyChip {
+  if (!r.session) return { label: "No chat", tone: "neutral", title: "No chat works on this branch: nothing reads it as finished or not." };
+  const t = trees?.find((x) => x.path === r.worktree) ?? trees?.find((x) => x.branch === r.branch);
+  if (!t) return { label: "No reading", tone: "neutral", title: `Sova has no reading of this branch from its chat${r.sessionArchived ? " (archived)" : ""}.` };
+  const conflict = t.reason && /^Conflicts with /.test(t.reason) ? t.reason.split(" · ")[0]! : null;
+  if (conflict) return { label: conflict, tone: "warn", title: `${t.reason}.` };
+  const chip = readinessChip({ readiness: t });
+  if (!chip) return { label: "Merged", tone: "success", title: "Its chat reads this branch as merged." };
+  return { label: chip.label, tone: chip.tone, title: chip.title };
+}
+
+/** The readiness readings a chat recorded by id holds (a worker's, then its top chat's), among `sessions`. */
+export function chatTreesOf(id: string | undefined, sessions: readonly Pick<SessionSummary, "id" | "path" | "readiness" | "workerSession" | "workerOf">[] | undefined): WorktreeReadiness[] | undefined {
+  if (!id) return undefined;
+  const all = sessions ?? [];
+  const s = all.find((x) => x.id === id || x.path === id);
+  if (!s) return undefined;
+  const top = s.workerSession && s.workerOf ? all.find((x) => x.path === s.workerOf!.path || x.id === s.workerOf!.id) : undefined;
+  return [...(s.readiness?.trees ?? []), ...(top?.readiness?.trees ?? [])];
+}
+
 /** The commit a Land pins: the head the row's numbers were read at, else the one readiness found finished. */
 export const shownCommit = (w: Partial<Pick<SessionWorktreeInfo, "readiness" | "mergeStats">>): string | undefined =>
   w.mergeStats?.head ?? w.readiness?.landing?.commit;
 
 /** A sent-back row's line when the queue gave no reason. */
-export const SENT_BACK_LINE = "Sent back to its chat. Land comes back once its chat fixes it, or use Land This Commit Again.";
+export const SENT_BACK_LINE = "Sent back to its chat. Land comes back once its chat fixes it, or land its newest commit now.";
 
 /** The branch reads finished again at a commit other than the one sent back: the fix is in. */
 export const fixedPast = (w: { readiness?: { landing?: { commit: string } } }, sentBack: string): boolean => {
@@ -151,7 +208,33 @@ export function entryLandBlock(e: Pick<WorktreeQueueInfo, "state" | "redrafted" 
   return undefined;
 }
 
-/** The commit Land This Commit Again pins, where an item that knows only the branch's queue entry offers it (the
+/**
+ * A sent-back branch's re-land, as every row and card draws it: it always lands the branch's newest commit (Land with
+ * no pinned commit). "Land This Commit Again" while the branch's head is still the commit sent back, "Land Newest
+ * Commit" once it moved: the line says how many of its own commits that brings in, or that it was rewritten (amended or
+ * rebased: nothing to count), and, when the newest commit isn't Ready to land, why. Pure.
+ */
+export function landAgainOf(e: Pick<WorktreeQueueInfo, "newerCommits" | "newerRewritten" | "newerBlocked"> | undefined): { label: "Land This Commit Again" | "Land Newest Commit"; included: string | null; blocked: string | null } {
+  const n = e?.newerCommits ?? 0;
+  const moved = !!n || !!e?.newerRewritten;
+  return {
+    label: moved ? "Land Newest Commit" : "Land This Commit Again",
+    included: n ? `${n} newer commit${n === 1 ? "" : "s"} included` : moved ? "the branch was rewritten since it was sent back" : null,
+    blocked: moved && e?.newerBlocked ? `The newest commit isn't Ready to land: ${e.newerBlocked}.` : null,
+  };
+}
+
+/** The Overseer's menu item for that re-land: it lands `head`, the head its page read, so its words name that commit,
+ *  never the one sent back once they differ. */
+export function landAgainItem(e: Pick<WorktreeQueueInfo, "commit" | "newerCommits" | "newerRewritten" | "newerBlocked">, head: string | undefined): { label: "Land This Commit Again" | "Land Newest Commit"; description: string } {
+  const again = landAgainOf(e);
+  const same = again.label === "Land This Commit Again" && (!head || head === e.commit);
+  const what = same ? `${short(e.commit)} again` : head ? short(head) : "its newest commit";
+  const lines = [again.included, again.blocked].filter(Boolean).map((l) => (l!.endsWith(".") ? l! : `${l}.`));
+  return { label: same ? "Land This Commit Again" : "Land Newest Commit", description: [`Approves ${what}: every check runs from the start.`, ...lines].join(" ") };
+}
+
+/** The commit a sent-back entry was sent back at, where an item that knows only the branch's queue entry offers its re-land (the
  *  Overseer's coding-worktree menu, beside its Land that entryLandBlock turns off): a sent-back entry still needing a
  *  fix. None once its drafts are fixed (Land is on) or it settled (nothing left to land). */
 export const landThisAgainOf = (e: Pick<WorktreeQueueInfo, "state" | "commit" | "redrafted" | "settled"> | undefined): string | undefined =>
@@ -227,8 +310,10 @@ export const rowKeyOf = (w: RowKeyInput): RowKey => entryKeyOf(w) ?? treeKeyOf(w
 /** The words for one worktree, from its tracked state, its readiness and its queue entry. */
 export function queueRow(w: QueueRowInput): QueueRow {
   const r = queueRowOf(w);
-  const size = SIZED.includes(r.key) ? sizeWords(w.mergeStats) : undefined;
-  return size ? { ...r, size } : r;
+  if (!SIZED.includes(r.key)) return r;
+  const size = sizeWords(w.mergeStats);
+  const when = headWhen(w.mergeStats?.headAt);
+  return { ...r, ...(size ? { size } : {}), ...(when ? { when } : {}) };
 }
 function queueRowOf(w: QueueRowInput): QueueRow {
   const e = w.queue;
@@ -268,13 +353,18 @@ function queueRowOf(w: QueueRowInput): QueueRow {
       case "drafts-changed":
         return { ...base, key: "drafts-changed", label: "Drafts changed", tone: "warn", reason: e.reason ?? "Its spec drafts changed since you approved. Land again to approve them.", action: "land" };
       case "needs-fix":
-        // Sent back: no Land while its chat fixes it; Land This Commit Again (the same commit, every check from the
+        // Sent back: no Land while its chat fixes it; its re-land (the branch's newest commit, every check from the
         // start) and Remove from Queue instead. Once the branch reads finished again at a newer commit (clean, no
         // conflicts, its chat idle: Sova's ready reading), or sent back for its drafts and the queue says they're fixed,
         // that commit wins and the row is Ready with Land. Settled (a later entry for the branch, already in the
         // target, its branch or folder removed): nothing to fix. entryKeyOf gives no key in those cases, and the row
         // reads as the worktree itself, below.
-        return { ...base, key: "needs-fix", label: "Needs a fix", tone: "error", reason: e.reason ?? SENT_BACK_LINE, action: "land-this-again", remove: true };
+        {
+          // Its re-land takes the branch's newest commit: the line says what that brings in (landAgainOf).
+          const again = landAgainOf(e);
+          const newer = [again.included, again.blocked].filter(Boolean).join(" · ");
+          return { ...base, newer: newer || undefined, key: "needs-fix", label: "Needs a fix", tone: "error", reason: e.reason ?? SENT_BACK_LINE, action: "land-this-again", ...(again.included ? { landNewest: true as const } : {}), remove: true };
+        }
       case "landed":
         return {
           ...base,
@@ -360,9 +450,9 @@ function queueRowOf(w: QueueRowInput): QueueRow {
 
 /** A row's buttons, as the Worktrees modal and the session pane draw them, in order. Set Up Queue needs the
     project to link to; Send Back follows the row's one action. */
-export type RowButton = "Land" | "Set Up Queue" | "Cancel" | "Accept" | "Land Anyway" | "Send Back" | "Land This Commit Again" | "Remove from Queue";
-export function rowButtons(row: Pick<QueueRow, "action" | "sendBack" | "remove">, projectId: string | undefined): RowButton[] {
-  const one: Partial<Record<RowAction, RowButton>> = { land: "Land", cancel: "Cancel", accept: "Accept", "land-anyway": "Land Anyway", "land-this-again": "Land This Commit Again" };
+export type RowButton = "Land" | "Set Up Queue" | "Cancel" | "Accept" | "Land Anyway" | "Send Back" | "Land This Commit Again" | "Land Newest Commit" | "Remove from Queue";
+export function rowButtons(row: Pick<QueueRow, "action" | "sendBack" | "remove"> & Partial<Pick<QueueRow, "landNewest">>, projectId: string | undefined): RowButton[] {
+  const one: Partial<Record<RowAction, RowButton>> = { land: "Land", cancel: "Cancel", accept: "Accept", "land-anyway": "Land Anyway", "land-this-again": row.landNewest ? "Land Newest Commit" : "Land This Commit Again" };
   const out: RowButton[] = [];
   if (row.action === "setup") {
     if (projectId) out.push("Set Up Queue");
@@ -379,8 +469,29 @@ export function modalHead(rows: Pick<QueueRowInput, "mergeServed" | "mergeProjec
   if (!served) return { intro: null, paused: null };
   const p = rows.find((w) => w.mergeServed && w.mergeProject)?.mergeProject;
   return {
-    intro: `Land queues a branch. It's merged onto ${p?.target ?? "the target branch"}, checked there on its own, and lands as exactly the commit that was tested.`,
+    intro: "Land queues a branch; it lands as the commit that was tested.",
     paused: p?.paused ? `The queue is paused: ${p.paused}. Land still takes your approval; it's checked once the queue resumes.` : null,
+  };
+}
+
+/** What Land's confirm says: the branch, how many commits go to the queue (the row's own count, else none named) and
+    what moves once the checks pass, by the way of landing when the caller knows it (else the target moves). */
+export function landConfirmWords(branch: string, ahead: number | undefined, target: string | undefined, how?: LandHow): { title: string; line: string; confirm: string } {
+  const n = typeof ahead === "number" && ahead > 0 ? ahead : undefined;
+  const to = target ?? "the target branch";
+  const go = n === undefined ? "Its commits go" : `${n} ${n === 1 ? "commit goes" : "commits go"}`;
+  const after =
+    how === "github-pr"
+      ? "a pull request opens on GitHub once checks pass."
+      : how === "gitlab-mr"
+        ? "a merge request opens on GitLab once checks pass."
+        : how === "push-branch"
+          ? "the branch is pushed once checks pass."
+          : `${to} moves once checks pass.`;
+  return {
+    title: `Land ${branch}?`,
+    line: `${go} to the merge queue; ${after}`,
+    confirm: n === undefined ? "Land Branch" : `Land ${n} ${n === 1 ? "Commit" : "Commits"}`,
   };
 }
 
@@ -489,6 +600,79 @@ export function sourceTag(s: RunStep["source"]): { label: string; tone: Tone } |
   }
 }
 
+// ---- the run page's Checks and why ------------------------------------------------------------
+
+/** A step's status mark: a check, a cross, a clock, a plain dash (skipped, or setup unchanged since the last run),
+    or no icon at all (`null`: an empty muted ring, waiting). Nothing here looks like something to expand. */
+export interface StepMark {
+  icon: "check" | "close" | "clock" | "minus" | null;
+  cls: string;
+  word: string;
+}
+const MARKS: Record<RunStep["result"], StepMark> = {
+  passed: { icon: "check", cls: "mq-pass", word: "Passed" },
+  failed: { icon: "close", cls: "mq-fail", word: "Failed" },
+  running: { icon: "clock", cls: "mq-running", word: "Running" },
+  pending: { icon: null, cls: "mq-wait", word: "Waiting" },
+  skipped: { icon: "minus", cls: "mq-skip", word: "Skipped" },
+};
+export const stepMark = (s: Pick<RunStep, "result">): StepMark => MARKS[s.result];
+
+/** A step's time column: "" while waiting or skipped; a running step counts up from its start (`now`); a
+    finished one shows what it took. */
+export function stepTime(s: Pick<RunStep, "result" | "ms" | "startedAt">, now: number): string {
+  if (s.result === "pending" || s.result === "skipped") return "";
+  if (s.result === "running") {
+    const at = s.startedAt ? Date.parse(s.startedAt) : NaN;
+    if (Number.isFinite(at)) return clock(now - at);
+    return s.ms > 0 ? clock(s.ms) : "";
+  }
+  return clock(s.ms);
+}
+
+/** A check's test counts, for its description line ("11496 passed", "5 skipped"; `failed` drawn red). None for a
+    skipped or waiting step, and none when every count is zero or unknown ("0 passed" says nothing). */
+export function stepCounts(s: Pick<RunStep, "result" | "counts">): { text: string; failed?: true }[] {
+  const c = s.counts;
+  if (!c || s.result === "skipped" || s.result === "pending") return [];
+  if (!c.passed && !c.failed && !c.skipped) return [];
+  return [
+    ...(c.passed != null ? [{ text: `${c.passed} passed` }] : []),
+    ...(c.failed ? [{ text: `${c.failed} failed`, failed: true as const }] : []),
+    ...(c.skipped ? [{ text: `${c.skipped} skipped` }] : []),
+  ];
+}
+
+/** Shows every `<home>/…` path inside a line as `~/…`, and the home folder alone as `~`. Only a path that starts
+    there counts: at the line's start or after a space, a quote, a bracket, `=`, `:` or `,` (never inside
+    `/mnt<home>/…`), and only the folder itself (followed by `/`, a space or the end, never `<home>2/…`). */
+export function tildeIn(text: string, home: string | null): string {
+  if (!home) return text;
+  const h = home.replace(/\/+$/, "");
+  if (!h) return text;
+  const esc = h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text.replace(new RegExp(`(^|[\\s"'\`([{<=:,])${esc}(?=/|\\s|$)`, "g"), "$1~");
+}
+
+const SHA_RE = /^[0-9a-f]{7,40}$/;
+/** A step's detail with paths shortened (~/…). The queue's own facts (a copy's folder and commit, a merge's commit)
+    come back split, the folder and commit marked `mono`; any other detail is one plain part. */
+export function stepDetail(s: Pick<RunStep, "id" | "kind" | "result" | "detail">, home: string | null): { text: string; mono?: true }[] {
+  if (!s.detail) return [];
+  const text = tildeIn(s.detail, home);
+  const structured = s.result === "passed" && (s.kind === "copy" || s.kind === "merge" || s.id === "rerun-master:copy");
+  if (!structured) return [{ text }];
+  const out: { text: string; mono?: true }[] = [];
+  for (const word of text.split(/(\s+)/)) {
+    if (!word) continue;
+    const mono = SHA_RE.test(word) || word.startsWith("/") || word.startsWith("~");
+    const last = out[out.length - 1];
+    if (!mono && last && !last.mono) last.text += word;
+    else out.push(mono ? { text: word, mono: true } : { text: word });
+  }
+  return out;
+}
+
 /** A definition that doesn't parse, as one sentence: the parser's path and message, then what to do. */
 export const invalidWords = (invalid: string): string => `This project's .sova/project.json doesn't parse: ${invalid.trim().replace(/[.]$/, "")}. Fix it on the target, or land a branch that fixes it; nothing else lands until it parses.`;
 
@@ -579,20 +763,8 @@ export function pausedTitle(v: Pick<MergeQueueView, "paused">): string {
   }
 }
 
-/** The onboarding's "List its checks": one per line, "Name: command". Lines that aren't are named back. */
-export function parseCheckList(text: string): { checks: { label: string; command: string }[]; bad: number[] } {
-  const checks: { label: string; command: string }[] = [];
-  const bad: number[] = [];
-  text.split("\n").forEach((line, i) => {
-    if (!line.trim()) return;
-    const at = line.indexOf(":");
-    const label = at > 0 ? line.slice(0, at).trim() : "";
-    const command = at > 0 ? line.slice(at + 1).trim() : "";
-    if (label && command) checks.push({ label, command });
-    else bad.push(i + 1);
-  });
-  return { checks, bad };
-}
+/** The queue doesn't serve this listed project: it has no merge setup (an invalid one is still a setup, said as such). Pure. */
+export const notSetUp = (v: Pick<MergeQueueView, "served" | "checks" | "invalid">): boolean => !v.invalid && (v.served === false || v.checks === "unset");
 
 /** "Whose failure is it?": the evidence a red run gathered, in the order it was checked. */
 export function attribution(r: Pick<MergeRun, "steps" | "verdict" | "blame">): { question: string; answer: string; result: "ok" | "failed" | "skipped" | "running" }[] | null {

@@ -13,11 +13,13 @@ The install script is safe to pipe from `curl`, needs no `sudo`, and installs no
 - bash (Alpine has none until you `apk add bash`)
 - Git
 - Node.js 22.19 or later
-- pnpm, or npx to run the pnpm Sova pins
+- pnpm, or npx to run the pnpm Sova pins when yours doesn't run
 - curl
 - unzip or python3
 
 The server runs on Bun, and so does every chat and worker, each in a process of its own. The installer downloads the Bun version Sova pins into Sova's own folder and checks it against a recorded checksum; if it can't, it stops and changes nothing. It doesn't install a version manager or edit your shell profile.
+
+If your Node or pnpm comes through mise, the versions your own mise configuration names are the ones used. The installer and the launcher tell mise to ignore the `mise.toml` in Sova's folders, so nothing it pins is downloaded and your list of trusted folders doesn't change. A pnpm that doesn't run there, such as one with no version set, is passed over for npx.
 
 ## Install
 
@@ -27,7 +29,7 @@ curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/instal
 
 This installs Sova's newest stable release (the `stable` tag, which each release moves to itself); running it again updates to the newest stable release then.
 
-The whole script is one function that runs only after bash has read its last line, so a download cut short runs nothing. To install another tag, branch or commit, end the command with `| SOVA_REF=<ref> bash` instead (`SOVA_REF=v0.10.0` stays on that release, `SOVA_REF=master` follows the latest commit); one that doesn't exist stops it before it changes anything. It builds Sova in a staging folder and only replaces your install once the build has succeeded; if anything fails, the previous install stays.
+The whole script is one function that runs only after bash has read its last line, so a download cut short runs nothing. To install another tag, branch or commit, end the command with `| SOVA_REF=<ref> bash` instead (`SOVA_REF=v0.10.2` stays on that release, `SOVA_REF=master` follows the latest commit); one that doesn't exist stops it before it changes anything. It builds Sova in a staging folder and only replaces your install once the build has succeeded; if anything fails, the previous install stays.
 
 What it puts on your machine:
 
@@ -52,7 +54,7 @@ Either one starts the server in the background if it isn't running (through the 
 
 The window is Chrome, Chromium, Brave, Edge, Vivaldi or Helium (your default browser if it's one of them), with a browser profile kept for Sova alone: `~/.config/sova-browser` on Linux, `~/Library/Application Support/sova-browser` on macOS. Without any of them, Sova opens as a tab of your default browser instead, and the installer tells you so. A browser installed only as a Flatpak isn't found.
 
-On macOS that window is Sova's installed app, with no browser title bar: Sova draws a slim band of its own across the top, in its own colours, holding the window buttons at the top left and the browser's title-bar toggle and ⋮ menu at the top right. Drag the band to move the window; the toggle brings the browser's title bar back. The installer opens and closes the browser once to install it. If Sova's window is open, it closes it first when you run the installer in a terminal; an upgrade from Settings leaves it open, and `sova open` finishes the install the next time it opens Sova. The app the Dock shows is the browser's own launcher for it: pinned, it opens Sova without starting the server, so pin it if you run the login service, and use **Sova** otherwise. If the install fails, Sova opens in a bare browser window instead, and `sova app --install` tries again.
+On macOS that window is Sova's installed app, with no browser title bar: Sova draws a slim band of its own across the top, in its own colours, holding the window buttons at the top left and the browser's title-bar toggle and ⋮ menu at the top right. Drag the band to move the window; the toggle brings the browser's title bar back. The installer opens and closes the browser once to install it; on a later run it finds the app already there and leaves the browser alone, and a run whose app install was skipped or failed tries again. If Sova's window is open, it closes it first when you run the installer in a terminal; an upgrade from Settings leaves it open, and `sova open` finishes the install the next time it opens Sova. The app the Dock shows is the browser's own launcher for it: pinned, it opens Sova without starting the server, so pin it if you run the login service, and use **Sova** otherwise. If the install fails, Sova opens in a bare browser window instead, and `sova app --install` tries again.
 
 To run the server in a terminal yourself, run `sova`; `Ctrl+C` stops it.
 

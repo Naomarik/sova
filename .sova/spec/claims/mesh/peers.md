@@ -17,7 +17,8 @@ node at its own tailnet address (§mesh.peers/discovery).
 
 ## §mesh.peers/off — With no peer configured, nothing changes
 
-The mesh is **on** exactly when this host's `peers.json` lists at least one peer. While it is off,
+The mesh is **on** exactly when this host's `peers.json` lists at least one peer and belongs here
+(§mesh.peers/allowlist). While it is off,
 Sova behaves as it did before the mesh existed, except for the Mesh card, the `#/mesh` page and the
 Mesh section of Settings: no new listening port, no Tailscale call, no timer, no outbound request, no
 write to `auth.json`, to Claude Code credentials or to any settings file (apart from what the user
@@ -26,13 +27,24 @@ off, and the lease a process running `claude` on an added login keeps in that lo
 §app.claude-logins/drain). There is no pool of Claude logins: every login on the host is its own
 (§app.claude-logins/migration). Every existing route and
 WebSocket answers byte-for-byte as before, protocol additions are optional fields or new types
-only, and a `SessionSummary` carries no host or peer field.
+only, and a `SessionSummary` carries no host or peer field. The one exception is a send from a tab
+left open across an update, refused while its stated version differs (§mesh.compatibility/refusal).
 
 ## §mesh.peers/allowlist — peers.json is the allowlist
 
 `peers.json` in Sova's state directory (mode 0600, written atomically) names this host and the
 peers it trusts, by Tailscale node identity. The user curates it, from the Mesh page or by hand.
 Discovery only suggests candidates; a node never becomes a peer by being on the tailnet.
+`peers.json` also records where it lives: its folder and this computer. A `peers.json` in Sova's
+usual state directory with no record records this itself the first time Sova starts there, and a
+write Sova makes to a `peers.json` with no peers yet (a first pairing) records this folder; one with
+no record in any other folder is not trusted. A `peers.json` recorded for another folder or another
+computer, or not trusted, leaves the mesh fully off (§mesh.peers/off): no connections and no sync of
+logins, settings, themes or extensions, until the user confirms it with Reconnect Here on the Mesh
+page (§mesh.ui/page), which moves the record here and answers only this host's own browser. A moved
+folder never reconnects on its own. A copy on the same computer while the recorded folder still holds
+its own `peers.json` never joins: it has no Reconnect Here and no override. Known gap: on a computer
+whose id Sova can't read (macOS), only the folder is compared.
 Pairing a peer from the Mesh page's form also records what it may see and do here (§mesh.peers/grants),
 `presence` unless the user picks more.
 
@@ -42,7 +54,9 @@ While the mesh is on, the host opens a second listener on its tailnet address fo
 Every request and WebSocket upgrade on it is checked once: the host asks its own Tailscale
 LocalAPI `whois` who the caller is, and serves it only if that node is listed in `peers.json`.
 A tailnet node not in the list, and any caller Tailscale cannot identify, is refused before any
-route runs. The peer listener never forwards to a third host.
+route runs. The peer listener never forwards to a third host. How the host reaches its own
+Tailscale, on Linux and on a Mac, is §mesh.peers/tailscale-on-mac; while it can't, every caller is
+refused.
 
 A caller that passes this check is then held to what this host grants it (§mesh.peers/grants).
 
@@ -118,7 +132,8 @@ and no name or Browser access tell. While this host's grant to a peer is anythin
 browser request it relays to that peer carries no name of this host and none of the browser's
 Origin, Referer, User-Agent, Accept-Language or forwarding headers.
 
-Grants are edited only from this host's own browser, at `/api/mesh/access`. No peer and no browser
+Grants are edited only from this host's own browser: at `/api/mesh/access`, or by Apply on a Create chat's
+card (§chat.create-mode/settings-cards). No peer and no browser
 relayed through another host reaches it, so a peer can never raise its own grant. A browser holding
 this host's own token is the user operating this host, not a peer, and grants don't apply to it
 (§app.access/gate).
@@ -143,12 +158,98 @@ What it takes is what the entry's own route takes, decided by the peer's grant t
 one of its project verbs, which needs admin. An id the peer doesn't know, an extension's own command
 (`ext.*`) included, needs `full` and then answers that there is no such command. A request whose
 params would take it off the entry's own route is refused. A refusal by the peer's grant is exit 2
-(refused), as it is for the entry's route. Neither the main listener nor the share listener has the
+(refused), as it is for the entry's route. A remote run states this host's versions
+(§mesh.compatibility/every-send-states-a-version): a peer on another writing number refuses a command
+on a writing route, also exit 2, and every other command is unaffected. Neither the main listener nor the share listener has the
 route: it is reached only on the peer listener and a dial-out pairing's connection. Without
 `--host`, `sova run` is unchanged.
 
 In a remote run, `--session` is looked up on the peer, and a path param must be absolute (a path
 on this host means nothing there); list, describe and watch take no `--host`.
+
+## §mesh.peers/tailscale-on-mac — How a host reaches its own Tailscale
+
+Every question the host asks Tailscale (`status` and `whois`, such as for Add Peer by name, Find
+Hosts, the peer listener's addresses, the caller check and dials to a peer by name) goes to this
+machine's own Tailscale LocalAPI, found with no setting:
+
+- **`SOVA_TAILSCALE_SOCKET`**, when set, wins on every platform: the host uses that socket and
+  looks nowhere else. A Mac then does as Linux: its messages keep tailscaled's technical wording,
+  naming that path, and it never looks again or retries.
+- **Linux**, and every platform but macOS, uses `/var/run/tailscale/tailscaled.sock`, as before.
+  It reads no other file and starts no program to find it, and its messages are worded as before,
+  byte for byte.
+- **A Mac** uses the first kind of install it finds, in this order:
+  1. Tailscale's app from tailscale.com: the port its `/Library/Tailscale/ipnport` link names, on
+     `127.0.0.1`, with the key in `/Library/Tailscale/sameuserproof-<port>`.
+  2. The App Store app: its port and key, found with `/usr/sbin/lsof` among this account's own
+     `IPNExtension` processes. Requests during that search share it; each still passes over the
+     endpoint it has just failed at. The host never opens the app's group container itself, which
+     could make macOS ask whether Sova may read another app's data.
+  3. Homebrew or open-source `tailscaled`: the socket `/var/run/tailscaled.socket`.
+
+  The app's files outlast the app, so when the app's port refuses the connection, the host passes
+  it over for the next kind.
+
+**Trusted only as root leaves it.** The host uses the app's files only when the `ipnport` link and
+the key file are both owned by root, the link names a port from 1 to 65535, and the key file is a
+plain file that no one but root can write; otherwise it passes over that kind. It opens the key
+file without following a link, then checks it and reads it through that one open handle, so the
+file it checked is the file it reads. So another account on the Mac can neither point Sova at a port of its choosing nor plant a key. The Homebrew socket
+sits in `/var/run`, where only root can create it, and the App Store lookup reads only this
+account's own processes.
+
+**The key.** A Mac's key is sent only to `127.0.0.1`, with the request. It is never written to
+disk, logged, put in a message or sent to the browser.
+
+**After Tailscale restarts.** A restart can change Tailscale's port and key. The host picks them up
+at its next request, with no restart of Sova. What it found of the App Store app (its port and key)
+or of Homebrew (the socket) it keeps and uses first; with neither kept, it reads the app's files
+again for every request. Whenever a request can't reach Tailscale (any connection error, whatever
+the message says) or Tailscale refuses it, the host forgets what it kept and looks afresh on the
+next request. When either app refuses the connection or the key, it also looks again at once and,
+if that finds something new, retries once.
+
+**When it can't.** On a Mac, with no `SOVA_TAILSCALE_SOCKET`, five causes have a plain message of
+their own, given as the reason in Add Peer's error, in Find Hosts' error and under this host's name
+on the Mesh page. When the host asked more than one install, the message is for the last one:
+
+- Not installed (no kind of install found, or the Homebrew socket is gone): "Sova can't find
+  Tailscale on this Mac. Install the Tailscale app from tailscale.com and sign in."
+- Not running (the connection is refused), at either app's port: "Tailscale isn't running on this
+  Mac. Open the Tailscale app and connect."; at Homebrew's socket: "Tailscale (tailscaled) isn't
+  running on this Mac. Start tailscaled."
+- Not an administrator (the app's key can't be read by this account, and no other kind was found):
+  "Only an administrator account on this Mac can ask Tailscale who's connected. Run Sova from an
+  administrator account."
+- Refused (Tailscale refused the request, 401 or 403), from either app, even after one fresh look: "Tailscale on
+  this Mac refused Sova's request. Quit and reopen the Tailscale app."; from Homebrew's
+  `tailscaled`: "Tailscale (tailscaled) on this Mac refused Sova's request. Restart tailscaled."
+- Too slow (no answer within 2 seconds): "Tailscale on this Mac didn't answer in time. Try again."
+
+Any other failure keeps tailscaled's technical wording, as on Linux: another connection error (such
+as a reset connection, or a socket this account may not open) and any other error answer from
+Tailscale.
+
+**Failing closed.** Whatever the cause, a host that can't ask its Tailscale who is calling refuses
+the caller before any route runs (§mesh.peers/listener), as on Linux; no cause lets a caller in.
+Only how the host reaches Tailscale differs by platform, never whom it trusts: the caller is still
+the node Tailscale names, matched against `peers.json`.
+
+**What is left.** The same risk as for Tailscale's own command-line tool on a Mac: the app's port is
+an ordinary one, so while the app isn't listening on it, another account on this Mac could take
+that port, receive the key and answer as Tailscale, deciding who passes the caller check while it
+does. Sova doesn't run as root, so it can't check who holds the port. When the tailscale.com app
+itself is down, its tunnel is down too, so no tailnet caller reaches the peer listener. But that
+app's files outlast it: when they sit beside a running App Store app or Homebrew `tailscaled`, the
+tunnel is up while the old port is free, and another account on this Mac that takes that port can
+answer Sova's question about who is calling, and so let a caller pass as a listed peer. Sova
+documents this risk and does not guard against it. Sova assumes one local user, whose own
+programs can already read Sova's token.
+
+**Only when asked.** Nothing here runs on its own, at start or on a timer: the host looks for
+Tailscale only as part of a question it asks Tailscale. So with the mesh off, and no Add Peer by
+name or Find Hosts, it reads no Tailscale file and starts no lookup (§mesh.peers/off).
 
 ## §mesh.peers/address-identity — Hosts without Tailscale LocalAPI
 
@@ -169,15 +270,19 @@ edited. Remove a deleted peer from `peers.json` promptly.
 ## §mesh.peers/hello — hello
 
 Each host answers `hello` on its peer listener with its id, label, host name, Sova version, a
-fingerprint of its wire protocol, its pi version and its clock; a build that records its boot commit
-(§mesh.peers/resync) also says that commit, outside the fingerprint, so hosts on older builds still
-match. A peer whose fingerprint differs
-is shown as `skewed`: listed, but its sessions can't be opened or created until the hosts match.
+fingerprint of its wire protocol, its pi version, its clock and the version number of each area
+(§mesh.compatibility/areas); a build that records its boot commit (§mesh.peers/resync) also says that
+commit. The commit and the areas sit outside the fingerprint, so hosts on older builds still match.
+A peer that lists its areas is judged by them (§mesh.compatibility/states) and its fingerprint
+decides nothing. A peer that lists none and whose fingerprint differs is shown as `skewed`: listed,
+but its sessions can't be opened or created until the hosts match (§mesh.compatibility/legacy).
 
 ## §mesh.peers/health — Peer status
 
 While the mesh is on, the host polls each peer's `hello` and reports each as `up`, `down` or
-`skewed` with when it was last seen. A peer that stops answering is `down` on the first
+`skewed` with when it was last seen and the area numbers it lists, which the page judges it by
+(§mesh.compatibility/judged-by-the-page). A host that lists its areas is `up` whatever its numbers;
+`skewed` is a host that lists none, on another build (§mesh.compatibility/legacy). A peer that stops answering is `down` on the first
 failed hello; its absence never breaks this host's own sessions or pages. A `skewed` peer
 answers, so it counts as reachable wherever this host acts on a peer coming back up: every
 reading of it (its hello, its session list, its own calls) agrees, and a poll never reads it as
@@ -188,7 +293,8 @@ gone and back. A peer that identifies this host but grants it nothing (its hello
 
 On the Mesh page, on request, the host reads its Tailscale status and suggests tailnet nodes that
 answer `hello`. Suggestions are never added to `peers.json` without the user's action, and discovery
-never runs while the page doesn't ask for it.
+never runs while the page doesn't ask for it. When the host can't ask its Tailscale, Find Hosts
+suggests nothing and says why (§mesh.peers/tailscale-on-mac).
 
 ## §mesh.peers/resync — Bring a peer that is behind up to this host's build
 
@@ -197,27 +303,35 @@ At boot a host records, in one step, the commit it runs (its `BUILD_COMMIT`, els
 fingerprint, and checks that the commit's own `shared/protocol.ts` has that fingerprint. That record
 names "this host's build" from then on, however the checkout moves.
 
-In the session pane's host menu, a host on another version (`skewed`) carries a line under its
-name that places its commit against this host's by this checkout's history: behind by N commits,
-newer, on another branch, or not known here. Only a host that is behind gets a `Resync` button beside
-it; a newer host gets the hint to update this host instead (Sova never downgrades a host from the
+In the session pane's host menu, every host that answers on a build other than this host's, in any
+state (§mesh.compatibility/states), a host that works fully included, carries a line under its name
+that places its commit against this host's by this checkout's history: behind by N commits, newer,
+on another branch, or not known here. A host on this host's own commit carries none. The placing
+comes from the commits alone, never from the host's state. Only a host that is behind gets a `Resync`
+button beside it, whatever its state; a newer host gets the hint to update this host instead (Sova never downgrades a host from the
 page). The button is disabled with its reason: under the host when this host has no recipe for that
 host, kept or derived (the reason says what to set), or the recipe's own settings are missing, and once for the whole menu, above `Mesh details…`,
 when this host's build can't be named (it booted with uncommitted changes, its protocol doesn't match
 its commit, or it has no commit).
 
-The button opens a confirm sheet that names both commits and how far apart they are, says that the
+A Create chat's card can start a recipe already kept, by Apply (§chat.create-mode/settings-cards): it shows
+the confirm sheet's own sentences, read again whenever the page reads the card, it pins this host's commit
+when it is prepared, so a chat can't name the commit, and it is refused where the menu wouldn't offer the
+action. The
+button opens a confirm sheet that names both commits and how far apart they are, says that the
 host restarts onto this host's build and, when its details say so, how many turns are running and
 workers working there that the restart stops (a warning; it never refuses), and that the job runs
 from this host, so restarting this host's server stops it. Confirming deploys exactly the commit
 this host booted from, never the checkout's newer `HEAD`: the request names that commit and is
 refused once it is no longer this host's boot commit, and refused unless it is JSON. One job runs
-per host at a time (a second is refused while one runs). The sheet follows the job: the script
-running, then waiting until the host's `hello` carries this host's fingerprint, then done or failed
+per host at a time (a second is refused while one runs), and a host that doesn't answer or isn't
+behind is refused. The sheet follows the job: the script
+running, then waiting until the host's `hello` carries this host's boot commit, then done or failed
 with the reason and the last lines of the script's output, which are also kept in
 `<agent dir>/sova/mesh-resync/<host id>.log`.
 
-Explicit recipes live in `<agent dir>/sova/mesh-resync.json`, on this host only (sync never copies it), keyed
+Explicit recipes live in `<agent dir>/sova/mesh-resync.json`, on this host only (sync never copies it; a
+Create chat's card can set one, §chat.create-mode/settings-cards), keyed
 by peer id: `{"hosts": {"<id>": {"kind": "vps"}}}` runs `scripts/mesh-vps/deploy.sh --rev <commit>`
 (with its own `local.env`); `{"kind": "termux", "ssh"?: "<user@host>", "sshPort"?: <n>, "args"?:
 […]}` runs `scripts/mesh-termux/deploy.sh`, which streams `git archive` of the commit over ssh into

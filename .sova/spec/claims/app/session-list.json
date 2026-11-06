@@ -124,7 +124,8 @@
       "src/components/SessionView.tsx",
       "src/components/SessionTitleSettings.tsx",
       "server/overseer-tools.ts",
-      "server/overseer-tools.test.ts"
+      "server/overseer-tools.test.ts",
+      "server/fixed-names.test.ts"
     ]
   },
   "§app.session-list/cleanup-org-guard": {
@@ -175,12 +176,14 @@
       "server/worktrees-refs-stamp.test.ts",
       "server/merge-queue/wire-unserved.integration.test.ts",
       "shared/merge-queue.ts",
-      "src/lib/session-row.snapshot.json"
+      "src/lib/session-row.snapshot.json",
+      "server/sessions-index-jobs.test.ts",
+      "src/lib/session-row.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T14:54Z",
-      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
+      "by": "omar",
+      "at": "2026-11-05T11:12Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#b0d1af6b"
     }
   },
   "§app.session-list/drop-overlay": {
@@ -211,6 +214,53 @@
       "by": "omar",
       "at": "2026-10-27T08:48Z",
       "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
+    }
+  },
+  "§app.session-list/fixed-names": {
+    "kind": "behavior",
+    "requires": [
+      "§app.session-list/session-titles",
+      "§app.session-list/auto-titles",
+      "§app.overseer/identity-and-clear",
+      "§app.merge-queue/chats"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "server/sessions-index.ts",
+      "server/app.ts",
+      "server/session-names.ts",
+      "server/overseer-tools.ts",
+      "server/project-overseer.ts",
+      "server/session-autotitle.ts",
+      "src/components/SessionView.tsx",
+      "src/components/OverseerView.tsx",
+      "shared/fixed-names.ts",
+      "server/sova-chat-names.ts",
+      "server/sova-chat-origin.ts",
+      "server/fixed-names.test.ts",
+      "shared/protocol.ts",
+      "server/overseer-tools.test.ts",
+      "server/org-sessions.ts",
+      "shared/project-overseer.ts",
+      "server/overseer.ts",
+      "server/merge-queue/thread.ts",
+      "server/merge-queue/reviewer.ts",
+      "server/project-services/release.ts",
+      "server/project-services/release-wire.ts",
+      "src/components/SessionRowMenu.tsx",
+      "src/lib/session-row-menu.test.ts",
+      "src/lib/auto-title.ts",
+      "src/lib/known-before-mount.ts",
+      "src/lib/summary-diff.ts",
+      "src/lib/summary-diff.test.ts",
+      "src/lib/overseer.ts",
+      "src/lib/overseer.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T10:31Z",
+      "source": "pi-session:01a1ab0e-cb20-7081-a563-521c041eafdd#51e5317f"
     }
   },
   "§app.session-list/group-picker": {
@@ -381,12 +431,13 @@
       "§app.overseer/proactivity",
       "§app.session-list/recent",
       "§app.session-list/groups",
-      "§app.session-list/spine"
+      "§app.session-list/spine",
+      "§app.project-runtime/review"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T05:47Z",
-      "source": "pi-session:01a1a1b7-c99c-75b6-8a92-b66649ed6742#43572b80"
+      "at": "2026-11-05T07:21Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
     }
   },
   "§app.session-list/ordinary-surfaces": {
@@ -404,12 +455,14 @@
       "src/components/Sidebar.tsx",
       "server/worker-sessions.ts",
       "src/lib/project-region.ts",
-      "src/lib/queue-chats.test.ts"
+      "src/lib/queue-chats.test.ts",
+      "src/lib/needs-you.ts",
+      "src/lib/needs-you.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T18:31Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
+      "at": "2026-11-05T07:21Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
     }
   },
   "§app.session-list/organizations": {
@@ -537,7 +590,10 @@
     "evidence": "reviewed",
     "code": [
       "server/session-titles.ts",
-      "server/session-titles.test.ts"
+      "server/session-titles.test.ts",
+      "server/app.ts",
+      "server/sessions-index.ts",
+      "server/fixed-names.test.ts"
     ]
   },
   "§app.session-list/spine": {
@@ -560,7 +616,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-17T18:00Z"
+      "at": "2026-11-05T03:27Z",
+      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#f0aa11bd"
     }
   },
   "§app.session-list/states": {

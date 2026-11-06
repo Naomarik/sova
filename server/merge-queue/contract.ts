@@ -45,9 +45,11 @@ export interface RunInput {
   /** The project's private names file (store.ts namesFileOf): the leak scan reads it (`--names` / SOVA_LEAK_NAMES).
    *  Absent: none yet (pushes are held until the merge thread's interview writes it). */
   namesFile?: string;
-  /** Try It on Main (merge.setup dryRun): reset to `base`, set up, run `project.def`'s checks there; no merge, no
+  /** A dry run (merge.setup dryRun): reset to `base`, set up, run `project.def`'s checks there; no merge, no
    *  docs, no reruns, no review. The entry is a stand-in (its branch is the target). */
   tryOnly?: true;
+  /** A trial (merge.try) of this branch or commit: the try runs on it, not on the target, and its words say so. */
+  trialOf?: string;
   /** Run the review step (the project declares a kit and the approval didn't skip it). */
   review: boolean;
   /** Aborted when the run is voided (master moved, cancelled, server stopping). */
@@ -109,6 +111,9 @@ export interface RunOutcome {
   unclear?: { check: string; label: string; step: string; why?: string }[];
   /** Checks red on the target alone (shown on the strip). */
   targetRed?: string[];
+  /** Test checks broken on the target (attribute.ts brokenOnTarget): skipped for this branch; the queue flags each
+   *  until a later run of it runs tests again. `why`: "<label> is broken on <target>: no test ran (<first line>)". */
+  broken?: { check: string; label: string; why: string; step: string }[];
   /** The project declares no automated tests. */
   noChecks?: true;
   /** The checks it ran, with sources. */
@@ -128,9 +133,11 @@ export type EstimateRun = (projectId: string, root: string) => number | null;
 /** What the queue tells the merge thread (merge-thread: server/merge-queue/thread.ts wakes the project's thread).
  *  `queued`: read the branch, maybe pick checks (merge.extend) and write a note (merge.note). `conflict`: judge it
  *  (merge.resolve). `failed`: explain the failure (merge.note). `paused`: a machine pause to look at. `landed`: the note
- *  may still be written. Answers whether a thread was asked: false (none, or off) never delays anything. */
+ *  may still be written. `idle`: nothing is left to check and nothing runs (after a landing, a failure, a conflict or a
+ *  cancel); `entry` is the one that changed last, `lastLanded` the newest landing. Answers whether a thread was asked:
+ *  false (none, or off) never delays anything. */
 export interface ThreadEvent {
-  kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names";
+  kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names" | "idle";
   project: string;
   root: string;
   target: string;
@@ -144,5 +151,12 @@ export interface ThreadEvent {
    *  diffs `base...entry.commit`, which stays right after the entry lands. */
   base?: string;
   why?: string;
+  /** idle: the newest landed entry of the queue, and the commit it landed as. */
+  lastLanded?: { id: string; branch: string; sha: string };
+  /** idle: the target's head now. */
+  head?: string;
+  /** conflict: the scratch copy Sova made for the thread to resolve in (scratch.ts), or why it couldn't. */
+  scratch?: string;
+  scratchError?: string;
 }
 export type WakeThread = (ev: ThreadEvent) => boolean;

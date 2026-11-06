@@ -548,6 +548,9 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 /* A proposed run's banner: Read Report and Merge Branch, apart. */
 .playbook-banner-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .playbook-banner-actions > .button { min-height: var(--tap-min); }
+/* A gated Land's reason (Run Trial's line) wraps inside the banner instead of widening the page. */
+.banner-action:has(.playbook-banner-actions) { min-width: 0; max-width: 100%; }
+.playbook-banner-actions .playbook-review-act > .text-caption { flex: 1 1 14rem; min-width: 0; max-width: 28rem; overflow-wrap: anywhere; }
 
 /* Folded width: rows stack, buttons share the row, and Roll Back takes its own line, away from the primary. */
 @container project-card (max-width: 479px) {
@@ -618,6 +621,7 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .project-settings-row .list-main { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .project-settings-row .list-meta { overflow-wrap: anywhere; }
 .project-settings-state { font-size: var(--fs-caption); color: var(--color-ink-2); }
+.settings-card-place { color: var(--color-ink-2); }
 .settings-card-lands { font-size: var(--fs-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
 
 /* The copy limit at the top of the Branches tab (§app.project-services/services-ui). */
@@ -645,6 +649,13 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .rel-artifacts { margin: 0; padding-left: var(--space-4); }
 .rel-actions .rel-abandon { margin-left: auto; }
 .rel-why { margin: 0; }
+.rel-saved-note { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
+.rel-saved-note p { margin: 0; }
+.rel-note-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9lh; overflow: auto; }
+.rel-start-context { display: flex; flex-direction: column; gap: var(--space-2); }
+.rel-note-editor .textarea { min-height: 96px; resize: vertical; }
+.rel-note-editor .field-hint { margin: 0; }
+.rel-note-count { margin-left: auto; font-variant-numeric: tabular-nums; }
 .rel-row .list-title { flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
 .deploy-release { display: block; margin-top: var(--space-1); }
 @media (max-width: 767px) {

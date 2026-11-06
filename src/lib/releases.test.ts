@@ -4,6 +4,10 @@ import { test } from "node:test";
 import type { ReleaseHistoryItem, ReleaseRecord, ReleaseStep, ReleaseView } from "../../shared/release";
 import {
   abandonConfirmLine,
+  askerWord,
+  NOTE_MAX,
+  noteDraft,
+  savedNoteLine,
   cardLine,
   countdown,
   previousRelease,
@@ -15,8 +19,6 @@ import {
   releaseChip,
   releaseOfTarget,
   shownRecord,
-  setupLiveLine,
-  setupRun,
   sinceLine,
   stepActions,
   visibleSteps,
@@ -143,19 +145,6 @@ test("the Overview card: the open release first, else the latest with its landin
   assert.equal(cardLine({ initialized: false, latest: null, landingsSince: null, open: null }), "Releases aren't set up for this project.");
 });
 
-test("a Set Up Releases run: live (running or waiting) with its chat, proposed with its branch; other playbooks' runs are none", () => {
-  const pb = { sessionId: "s", playbookId: "release-maker", label: "Release maker", proposes: "release" as const, startedBy: "operator" as const, startedAt: "", path: "/s/m.jsonl", branch: "sova/release-setup", questions: 2 };
-  assert.deepEqual(setupRun({ playbookState: "running", playbook: pb }), { kind: "live", waiting: false, path: "/s/m.jsonl", questions: 2 });
-  const waiting = setupRun({ playbookState: "waiting", playbook: pb });
-  assert.deepEqual(waiting, { kind: "live", waiting: true, path: "/s/m.jsonl", questions: 2 });
-  assert.equal(setupLiveLine(waiting as Extract<typeof waiting, { kind: "live" }>), "Setup chat waiting on your answers · 2 questions");
-  assert.equal(setupLiveLine({ kind: "live", waiting: false }), "Setup chat running");
-  assert.deepEqual(setupRun({ playbookState: "proposed", playbook: pb }), { kind: "proposed", branch: "sova/release-setup", path: "/s/m.jsonl" });
-  assert.equal(setupRun({ playbookState: "idle", playbook: pb }), null);
-  assert.equal(setupRun({ playbookState: "running", playbook: { ...pb, proposes: "deploy" } }), null);
-  assert.equal(setupRun(undefined), null);
-});
-
 test("a failed Publish offers Retry Publish on the Publish button, never Retry Step, which would publish nothing", () => {
   assert.deepEqual(stepActions({ state: "ready" }, { id: "publish", state: "failed", phase: "sova" }), { continue: false, retry: false });
   assert.equal(publishLabel(record({ steps: [step("publish", "failed", "sova")] })), "Retry Publish");
@@ -171,4 +160,21 @@ test("the chip says a failed Publish while the record stays ready, and Ready to 
   assert.equal(releaseChip(record({ state: "ready", steps: [step("publish", "waiting", "sova")] })).word, "Ready to publish");
   assert.equal(releaseChip(record({ state: "ready", steps: [step("gh", "failed", "after"), step("publish", "waiting", "sova")] })).word, "Ready to publish", "only Publish's own failure");
   assert.equal(releaseChip(record({ state: "published", steps: [step("publish", "failed", "sova")] })).word, "Published");
+});
+
+test("the Release Note editor: Save keeps the trimmed text, offers nothing when it changes nothing, and knows the cap", () => {
+  assert.deepEqual(noteDraft("  Release as 0.10.1.  ", null), { text: "Release as 0.10.1.", changed: true, tooLong: false });
+  assert.equal(noteDraft("Skip docs ", "Skip docs").changed, false, "the same note, trimmed, is no change");
+  assert.equal(noteDraft("   ", null).changed, false, "a blank draft over no note changes nothing");
+  assert.equal(noteDraft("", "Skip docs").changed, true, "emptying a saved note is a change (Clear)");
+  assert.equal(noteDraft("x".repeat(NOTE_MAX + 1), null).tooLong, true);
+  assert.equal(NOTE_MAX, 4000);
+});
+
+test("the saved note's line and who asked", () => {
+  assert.match(savedNoteLine(false), /^Start Release sends this note/);
+  assert.match(savedNoteLine(true), /^The next Start Release/);
+  assert.equal(askerWord("assistant:prj_1"), "the Project Assistant");
+  assert.equal(askerWord("overseer:s1"), "the Overseer");
+  assert.equal(askerWord("project-overseer:prj_1"), "the project's overseer");
 });

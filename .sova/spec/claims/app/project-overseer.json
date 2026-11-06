@@ -34,15 +34,17 @@
       "statecharts/src/sova/statecharts/rules/powers.cljc",
       "statecharts/test/sova/statecharts/refit/powers_test.cljs",
       "src/lib/powers-view.ts",
-      "src/components/PowersGrid.tsx"
+      "src/components/PowersGrid.tsx",
+      "server/project-overseer-routes.ts"
     ],
     "requires": [
-      "§app.project-overseer/tools"
+      "§app.project-overseer/tools",
+      "§app.access/your-click"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "by": "naomarik",
+      "at": "2026-11-05T03:54Z",
+      "source": "pi-session:4ff7a076-864d-4370-9783-4c5b6119e95c#5bc9ed14"
     }
   },
   "§app.project-overseer/coding-mode": {
@@ -51,7 +53,8 @@
     "evidence": "verified",
     "requires": [
       "§app.project-overseer/tools",
-      "§chat/mode-menu"
+      "§chat/mode-menu",
+      "§chat.create-mode/per-chat-only"
     ],
     "code": [
       "server/project-coding-mode.ts",
@@ -81,14 +84,14 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T15:12Z",
-      "source": "pi-session:2795e843-1adb-4247-bc12-31f6489eb179#7bab1946"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§app.project-overseer/coding-worktrees": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app.project-overseer/tools",
       "§chat.worktrees/tool"
@@ -140,8 +143,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T14:54Z",
-      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
+      "at": "2026-11-05T19:18Z",
+      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
     }
   },
   "§app.project-overseer/confirm-brief": {
@@ -473,7 +476,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-15T19:32Z"
+      "at": "2026-11-04T23:29Z",
+      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
     }
   },
   "§app.project-overseer/page": {
@@ -489,7 +493,11 @@
       "src/lib/api.ts",
       "src/orgs.css",
       "src/components/PowersGrid.tsx",
-      "src/lib/powers-view.ts"
+      "src/lib/powers-view.ts",
+      "server/project-overseer.ts",
+      "shared/project-overseer.ts",
+      "src/lib/overseer.ts",
+      "src/lib/overseer.test.ts"
     ],
     "requires": [
       "§app.project-overseer/identity",
@@ -500,8 +508,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-22T00:49Z",
-      "source": "pi-session:aaa55e42-efea-4624-8d25-f08fbba7fb25#e92e5471"
+      "at": "2026-11-05T03:54Z",
+      "source": "pi-session:4ff7a076-864d-4370-9783-4c5b6119e95c#5bc9ed14"
     }
   },
   "§app.project-overseer/pipeline": {
@@ -659,6 +667,7 @@
       "shared/project-settings.ts",
       "shared/settings-reference.ts",
       "server/project-settings.test.ts",
+      "server/project-settings-git.test.ts",
       "shared/settings-reference.test.ts",
       "src/components/SettingsChangeCard.tsx",
       "src/components/ProjectSettingsCards.tsx",
@@ -671,7 +680,8 @@
       "src/components/Thread.tsx",
       "src/components/ProjectPage.tsx",
       "server/overseer-org-part.ts",
-      "server/project-services/copy-limit.ts"
+      "server/project-services/copy-limit.ts",
+      "server/merge-queue/queue-held-card.test.ts"
     ],
     "requires": [
       "§app.project-overseer/autonomy-levels",
@@ -680,12 +690,14 @@
       "§chat.offers/approval",
       "§app.organizations/stakeholder",
       "§app.owner-page/controls",
-      "§app.requirements/frozen-spec"
+      "§app.requirements/frozen-spec",
+      "§chat.create-mode/settings-cards",
+      "§app.access/your-click"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:29Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§app.project-overseer/statechart-tools": {
@@ -895,8 +907,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§app.project-overseer/watch-loop": {

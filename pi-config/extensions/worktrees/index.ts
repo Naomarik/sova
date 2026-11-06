@@ -27,6 +27,7 @@ import { dirname } from "node:path";
 import { createWorktree, defaultTarget, forkPoint, GitError, type Git, inspectWorktree, landedStats, listWorktrees, mergeWorktree, type MergeProbe, probeMerge, runGit } from "./git.ts";
 import { landingFile, newestUserMessage, recordGoAhead, typedGoAhead } from "./landing.ts";
 import { servedFile, servedKey, servedRoot } from "./served.ts";
+import { isSetupChange, setupChangeOf } from "./setup-rule.ts";
 import { carryAgreedDrafts, landDocs, type MergeSpecReport, mergeSpecReport, specLines } from "./spec.ts";
 import {
 	activeTrees,
@@ -76,14 +77,20 @@ export interface WorktreesOptions {
 	mergeQueue?: boolean | ((mainRoot: string) => boolean | string);
 }
 
-/** The default `mergeQueue` answer: a chat Sova didn't start (no `SOVA_CHAT_STATE_ROOT`) merges plainly; one it
- *  did asks the server's merge-served.json, and an absent or damaged file reads as served (fail closed: a served
- *  repo never merges around its queue). → false | true | the queue's target branch. */
+/** The default `mergeQueue` answer. A chat Sova didn't start merges plainly: it has neither `SOVA_CHAT_STATE_ROOT` nor
+ *  `SOVA_CHAT_SOCK`, the socket only Sova's launch hands a chat process. One it did asks the server's merge-served.json;
+ *  an absent or damaged file reads as served, and so does a chat with the socket but no state root (fail closed: a
+ *  served repo never merges around its queue). → false | true | the queue's target branch. */
 export function queueServes(mainRoot: string, env: NodeJS.ProcessEnv = process.env): boolean | string {
-	if (!env.SOVA_CHAT_STATE_ROOT) return false;
+	if (!env.SOVA_CHAT_STATE_ROOT) return !!env.SOVA_CHAT_SOCK;
 	const s = servedRoot(mainRoot, servedFile(env));
 	return s === "unknown" ? true : s ? s.target : false;
 }
+
+/** A setup branch where no merge queue serves the repo: it is merged from its Setup card alone. */
+export const SETUP_BRANCH_REFUSED = "This branch changes the project's setup: press Merge Branch on its Setup card, which needs a passing trial first. Nothing was merged.";
+/** Git couldn't tell whether the branch changes the project's setup: refused (fail closed). */
+export const SETUP_UNCONFIRMED = "Sova can't confirm whether this branch changes the project's setup, so nothing was merged. If it does, press Merge Branch on its Setup card, which needs a passing trial first.";
 
 export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = {}) {
 	const git = options.git ?? runGit;
@@ -100,6 +107,14 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 		const r = await git(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd);
 		if (r.code !== 0) throw new GitError(`Not a git repository: ${cwd}`);
 		return mergeQueue(servedKey(dirname(r.stdout.trim())));
+	}
+
+	/** Where no merge queue serves the repo, a setup branch (setup-rule.ts) is merged only from its Setup card, which
+	    needs a passing trial first; this refuses it, and refuses when Git can't tell (fail closed). */
+	async function refuseSetupBranch(path: string, branch: string, target: string): Promise<void> {
+		const change = await setupChangeOf(git, path, target, branch).catch(() => null);
+		if (!change) throw new Error(SETUP_UNCONFIRMED);
+		if (isSetupChange(change)) throw new Error(SETUP_BRANCH_REFUSED);
 	}
 
 	/** A plain merge of a worktree's branch into `target`: its spec drafts made official on it first (unless
@@ -344,6 +359,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 							const target = mainBranch && mainBranch !== f.branch ? mainBranch : main;
 							if (!target) throw new Error(`${f.path}'s repository has no master or main branch to merge ${f.branch} into. Nothing was merged.`);
 							const own = tracked ?? set?.trees.find((t) => t.path === f.path && t.status === "active");
+							await refuseSetupBranch(f.path, f.branch, target);
 							await approve(ctx, "Merge a worktree?", `Merge ${f.branch} (${f.path}) into ${target}.`);
 							const r = await plainMerge(f, own, target, word.withoutSpecs);
 							return done(`${r.text}\nNo merge queue serves this repo, so the user's word merged it here.\n${listing()}`, { ...r.details, trees: set?.trees ?? [] });
@@ -363,6 +379,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 						const served = await servedAt(t.path);
 						if (served !== false && (served === target || (await landsThroughQueue(git, t.path, target))))
 							throw new Error(`${target} is the branch others land into: branches reach it only through Sova's merge queue, never a merge from a chat. Nothing was merged. When the work is finished, tell the user they can type "land it" here (or press Land).`);
+						if (served === false) await refuseSetupBranch(t.path, t.branch, target);
 						await approve(ctx, "Merge a worktree?", `Merge ${t.branch} (${t.path}) into ${target}.`);
 						const r = await plainMerge(t, t, target, !!params.withoutDocs);
 						return done(`${r.text}\n${listing()}`, { ...r.details, trees: set?.trees ?? [] });

@@ -9,14 +9,20 @@
       "server/index.ts",
       "server/app.ts",
       "shared/topic-message.ts",
-      "server/topics-runtime.test.ts"
+      "server/topics-runtime.test.ts",
+      "server/topic-pairs.test.ts"
     ],
     "requires": [
       "§chat.topics/store",
       "§chat.topics/open",
       "§chat.profiles/limits",
       "§mesh.links/delivery"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T10:36Z",
+      "source": "pi-session:01a1ab3a-26bd-72b7-9a70-7646430041e9#56b7c1df"
+    }
   },
   "§chat.topics/open": {
     "kind": "behavior",
@@ -28,12 +34,18 @@
       "server/topic-store.ts",
       "shared/profiles.ts",
       "server/topic-store.test.ts",
-      "server/topics-runtime.test.ts"
+      "server/topics-runtime.test.ts",
+      "server/topic-pairs.test.ts"
     ],
     "requires": [
       "§chat.profiles/session-tools",
       "§chat.topics/store"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T10:36Z",
+      "source": "pi-session:01a1ab3a-26bd-72b7-9a70-7646430041e9#56b7c1df"
+    }
   },
   "§chat.topics/push": {
     "kind": "behavior",
@@ -43,12 +55,18 @@
       "server/topics.ts",
       "server/chat-manager.ts",
       "server/topics-runtime.test.ts",
-      "server/topic-store.ts"
+      "server/topic-store.ts",
+      "server/topic-pairs.test.ts"
     ],
     "requires": [
       "§chat.topics/open",
       "§chat.topics/store"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T10:36Z",
+      "source": "pi-session:01a1ab3a-26bd-72b7-9a70-7646430041e9#56b7c1df"
+    }
   },
   "§chat.topics/row": {
     "kind": "behavior",
@@ -73,7 +91,10 @@
       "server/merge-readiness.ts",
       "server/align-state.ts",
       "server/session-share-view.ts",
-      "server/topics-runtime.test.ts"
+      "server/topics-runtime.test.ts",
+      "src/lib/transcript-kinds.ts",
+      "src/lib/transcript-kinds.test.ts",
+      "server/topic-pairs.test.ts"
     ],
     "requires": [
       "§chat.topics/delivery",
@@ -82,9 +103,9 @@
       "§app.decisions/asks-user"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T14:32Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+      "by": "user",
+      "at": "2026-11-05T10:36Z",
+      "source": "pi-session:01a1ab3a-26bd-72b7-9a70-7646430041e9#56b7c1df"
     }
   },
   "§chat.topics/store": {
@@ -96,7 +117,8 @@
       "server/topic-store.test.ts",
       "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
       "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
-      "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts"
+      "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts",
+      "server/topic-pairs.test.ts"
     ],
     "requires": []
   },

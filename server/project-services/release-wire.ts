@@ -1,9 +1,10 @@
 import { join } from "node:path";
 import type { AttentionItem } from "../../shared/protocol";
-import type { ReleaseView } from "../../shared/release";
+import type { ReleaseRecord, ReleaseView } from "../../shared/release";
 import type { ProjectDef } from "../../shared/project-contract";
 import type { MergeQueues, ReleaseQueueEvent } from "../merge-queue/queue";
 import { type ReleaseAttention, Releaser } from "./release";
+import { RELEASE_THREAD_PROFILE } from "../../shared/fixed-names";
 
 /**
  * The server's one releaser (server/project-services/release.ts), wired by the merge queue's start (it needs the
@@ -11,7 +12,7 @@ import { type ReleaseAttention, Releaser } from "./release";
  * release chat's start and wake, and the stall watch.
  */
 
-export const RELEASE_THREAD_PROFILE = "release-thread";
+export { RELEASE_THREAD_PROFILE };
 
 let current: Releaser | null = null;
 
@@ -19,6 +20,23 @@ let current: Releaser | null = null;
 export const releaser = (): Releaser | null => current;
 export function setReleaserForTest(r: Releaser | null): void {
   current = r;
+}
+
+/** Each project's newest release records as the releaser last published them (or as its start found them), by root:
+ *  what a project card's Release row reads (§app.projects/home-glance) without opening a record file. */
+const latestReleases = new Map<string, { open: ReleaseRecord | null; last: ReleaseRecord | null }>();
+
+/** Keep a published release view's records (the feed's `release` frame). */
+export function noteReleaseView(view: Pick<ReleaseView, "project" | "open" | "last">): void {
+  latestReleases.set(view.project, { open: view.open, last: view.last });
+}
+
+/** A root's newest release records as kept in memory: undefined when none was kept. Synchronous, no file read. */
+export const keptReleases = (root: string): { open: ReleaseRecord | null; last: ReleaseRecord | null } | undefined => latestReleases.get(root);
+
+/** Tests only. */
+export function resetKeptReleasesForTest(): void {
+  latestReleases.clear();
 }
 
 type AppRequest = (path: string, init?: RequestInit) => Response | Promise<Response>;
@@ -41,7 +59,10 @@ export async function startReleaser(d: ReleaseWireDeps): Promise<Releaser> {
     rootOf: d.rootOf,
     definitionAt: d.definitionAt,
     projectIdOf: d.projectIdOf,
-    publish: (view) => d.publishFeed({ type: "release", project: view.project, view }),
+    publish: (view) => {
+      noteReleaseView(view);
+      d.publishFeed({ type: "release", project: view.project, view });
+    },
     attention: () => attentionChanged(),
     deployedTo: (root, sha) => deployedAt(root, sha),
     thread: {
@@ -52,7 +73,8 @@ export async function startReleaser(d: ReleaseWireDeps): Promise<Releaser> {
         return out.ok ? { id: out.id, path: out.path } : { error: out.error };
       },
       retitle(session, title) {
-        void import("../session-titles").then(({ writeAutoTitle }) => writeAutoTitle(session, title, { redo: true })).catch(() => {});
+        // Sova's own name for its release chat (server/sova-chat-names.ts): a rename never reaches it.
+        void import("../sova-chat-names").then(({ setSovaChatName }) => setSovaChatName(session, "release", title)).catch(() => {});
       },
       async wake(path, text) {
         const { promptSession } = await import("../session-prompt");
@@ -63,6 +85,12 @@ export async function startReleaser(d: ReleaseWireDeps): Promise<Releaser> {
   });
   projectEngine().releaser = (verb, body, caller) => r.run(verb, body, caller);
   r.startWatch();
+  // What the cards' glance reads until the first publish: each root's records, read once here at the start.
+  for (const root of r.roots()) {
+    try {
+      if (!latestReleases.has(root)) latestReleases.set(root, r.keptRecords(root));
+    } catch {}
+  }
   current = r;
   return r;
 }
@@ -73,6 +101,7 @@ export const releaseEvent = (ev: ReleaseQueueEvent): void => current?.onQueueEve
 export function stopReleaser(): void {
   current?.stopWatch();
   current = null;
+  latestReleases.clear();
 }
 
 const DETAIL_MAX = 200;

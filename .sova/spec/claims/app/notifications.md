@@ -98,6 +98,10 @@ tier and comes back is new again.
   device is subscribed and it isn't quiet hours (else it is dropped), redacted like the others.
   Its title is "The merge thread needs you · {project}", its body the question, its tag
   `sova:merge-ask:{project id}`, and a tap opens the project's Merge Queue tab.
+- **A test check broken on the target** (§app.merge-queue/blame) is sent the same way, once per check
+  until a later run lifts its flag. Its title is "The merge queue needs you · {project folder}", its
+  body "{flag line}. Branches skip it until it's fixed: start a chat to fix it.", its tag
+  `sova:merge-broken:{project id}:{check}`, and a tap opens the project's Merge Queue tab.
 - **No silent pushes.** The service worker shows a notification for every push it receives,
   whatever the payload — with a generic "Sova" title when it can't read one.
 

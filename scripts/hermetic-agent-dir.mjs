@@ -22,7 +22,9 @@
 // hosting it would fire the overdue ones at once, with whatever auth the dir has. So whenever the
 // dir holds (or, with --copied-sessions, will receive) copies of real sessions, the wake-nudge
 // extension is left out and the scheduler's state (sova/schedules.json, sova/schedule-runs.jsonl)
-// is blanked. A session counts as copied when a file of the same name is in ~/.pi/agent/sessions
+// is blanked, and the wake store (sova/wake-nudges) with it, on every run: nothing of a copied chat
+// may come due here, and such a server neither fills that store nor keeps it (server/wake-keeper.ts).
+// A session counts as copied when a file of the same name is in ~/.pi/agent/sessions
 // (its names are read, nothing there is touched). The mode is sticky: copied-sessions.json records
 // it, so a re-run never links wake-nudge back; schedules are blanked again only when new copies
 // arrive, --copied-sessions is passed, or the store holds a schedule approved in the real one
@@ -141,6 +143,7 @@ const copiedMode = copiedFlag || marked !== null || copied.length > 0;
 const newCopies = copied.filter((n) => !marked?.has(n));
 const BLANK_STORE = `${JSON.stringify({ version: 1, seq: 0, schedules: [], logins: {} }, null, 2)}\n`;
 const scheduleFiles = [join(AGENT, "sova", "schedules.json"), join(AGENT, "sova", "schedule-runs.jsonl")];
+const wakeStore = join(AGENT, "sova", "wake-nudges");
 /** A store's approved schedules, by root and approval: the same approval is the same schedule. */
 function approvals(file) {
   try {
@@ -174,6 +177,11 @@ if (copiedMode) {
         rmSync(runs, { force: true });
         console.log(`${runs}: removed (copied sessions)`);
       }
+    }
+    if (existsSync(wakeStore)) {
+      assertOutsideHomePi(wakeStore);
+      rmSync(wakeStore, { recursive: true, force: true });
+      console.log(`${wakeStore}: removed (copied sessions)`);
     }
   }
 }

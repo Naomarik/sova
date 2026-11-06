@@ -115,6 +115,12 @@ theme. Add `class="icon"` (20px) or `class="icon icon-sm"` (16px) to the `<svg>`
 `aria-hidden="true"` whenever a text label sits next to it. An icon-only button gets its name from
 `aria-label`, never from the SVG.
 
+**One exception: a project's picture is content, not a glyph.** A project's icon
+(§app.projects/icon) shows its uploaded or found PNG as an `<img>` with an empty `alt` (the name
+is always beside it), on a `--color-sunken` tile so a transparent logo reads in both themes, and
+its letters as text on a coloured tile. Neither is a UI glyph, so neither goes through
+`currentColor`; every UI glyph stays a mask or inline SVG.
+
 Two supported forms, both inheriting `currentColor`:
 
 - **Mask span (used by the frontend):**
@@ -165,13 +171,16 @@ and `fill="none" stroke="currentColor"`.
 | `pencil.svg` | Draft rows (§app/session-list): the lead of line 2, before the draft's preview; the composer's run status while the turn writes (§chat.transcript/streaming). A pen at 45° with a nib, legible at `.icon-sm`. New, drawn on the system grid |
 | `bulb.svg` | The composer's run status while the turn thinks (§chat.transcript/streaming): a light bulb with two base lines. New, drawn on the system grid |
 | `wrench.svg` | The composer's run status while the turn runs a tool (§chat.transcript/streaming): an open-jawed wrench at 45°. New, drawn on the system grid |
-| `gauge.svg` | Usage: the sidebar foot's Usage row. Sova's own, drawn on the system grid |
+| `gauge.svg` | Usage: the Usage page's "No usage data yet." empty-state mark. Sova's own, drawn on the system grid |
+| `usage-coin.svg` | Usage in the sidebar: the foot's Usage row and the spine's Usage link (§app.session-list/spine). A dollar coin beside two meter bars. New, drawn on the system grid |
 | `activity.svg` | Resource monitor: the button at the right end of the sidebar foot's Usage row, and its spine item (§app.resource-monitor/entry-button). A pulse line: flat, one sharp peak and trough, flat again. New, drawn on the system grid |
 | `sliders.svg` | The normal mode's icon: in the mode trigger at the right end of the composer foot (also alone before the chat's mode is known), the mode menu's Normal row and the profile cards (§chat.mode-menu/trigger). Three tracks with an offset handle each. New, drawn on the system grid |
 | `mode-delegate.svg` | The delegate mode's icon: the mode trigger, its menu row and the profile cards (§chat.mode-menu/trigger). A node with an arrow leaving it to the right. New, drawn on the system grid |
+| `mode-create.svg` | The Create mode's icon: the mode trigger and its menu row (§chat.mode-menu/trigger). A four-point spark with a small plus |
 | `mode-align.svg`, `mode-spec.svg`, `mode-vis.svg`, `mode-memory.svg` | One per built-in minor mode, wherever the major mode's icon shows: align two centred bars on a vertical axis, spec a clipboard with lines, vis a bar chart on axes, memory a stacked cylinder. A project mode has no file: it is its id's first letter in a rounded square (`.mode-letter`). New, drawn on the system grid |
 | `subagents.svg` | Subagents: the mode menu's Subagents row and the profile cards' subagents count (§chat.profiles/picker). Branching nodes: one node above, a stem down to three below. New, drawn on the system grid |
-| `worker.svg` | Agents: the sidebar foot's Agents row, plus the Teams and Subagents section heads, and the composer's subagents trigger (§app.subagents-pane/trigger) (from the skill's set) |
+| `agents-working.svg` | Agents in the sidebar: the foot's Agents row, the phone foot bar's working count (§app.insights/sidebar-foot-phone), and the spine's working tally and Agents link (§app.session-list/spine). A small bot head with an antenna and two sparks. New, drawn on the system grid |
+| `worker.svg` | Agents: the Teams and Subagents section heads, and the composer's subagents trigger (§app.subagents-pane/trigger) (from the skill's set) |
 | `settings.svg` | Settings: the gear at the right end of the sidebar foot's Agents row, and the Settings dialog's tab rail. A cog on the system grid (the skill ships a sun-burst under this name)
 | `branch.svg` | Git branches and the mesh: the setup card's repository line, a worktree's line on the Agents page, the worktree merge card, the Mesh card and the Settings dialog's Mesh tab; the fallback, {n} worktrees, on the session row's branch status (§app.session-list/content-rules "Row line 3") |
 | `external.svg` | Opens elsewhere: Open in New Tab (extension view), Open Directly (mesh), Open workspace, Open Groups (the Groups region head), Open {n} Explanations, the Settings dialog's Public links tab |
@@ -184,6 +193,7 @@ and `fill="none" stroke="currentColor"`.
 | `shield-on.svg`, `shield-partial.svg`, `shield-off.svg` | The composer's sandbox shield, one per state (§chat.composer/sandbox-shield): a heavy rim with a filled core, the core's left half, a thin dashed outline |
 | `star.svg` | The model menu's favourite toggle; the Overseer's Ideas button |
 | `expand.svg` | Focus (§chat.transcript/focus-view): the round button in the transcript's corner. Four corner brackets. New, drawn on the system grid |
+| `minus.svg` | The merge queue run page's mark for a skipped check or setup unchanged since the last run (§app.merge-queue/view): a plain dash. Drawn on the system grid |
 | `x-circle.svg`, `menu.svg` | Drawings only (vis): the error tone icon, and wireframe icons |
 
 The effort ring (§chat.composer/behavior) has no file either: the ring and its mark, the max

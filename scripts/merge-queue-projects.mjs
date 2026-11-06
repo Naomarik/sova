@@ -165,7 +165,7 @@ async function plainCases(P) {
     check(r.ok === false && r.error, `merge.add refused before setup (${JSON.stringify(r.error ?? r.merge?.entry?.state)})`);
     check(!existsSync(join(P.root, ".sova", "project.json")), "nothing written yet");
   });
-  await k("O2", "Try It on Main: the test command passes on main, nothing saved", async (ev) => {
+  await k("O2", "merge.setup dry run: the test command passes on main, nothing saved", async (ev) => {
     const before = P.head();
     const r = await setup({ command: "node --test", dryRun: true });
     check(r.ok !== false && r.merge?.run, `a try started (${JSON.stringify(r.error ?? "")})`);

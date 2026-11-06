@@ -36,6 +36,7 @@ mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 
 const { testApp } = await import("./mesh/app-test-fixtures");
+const { pageHeaders } = await import("./testing/page");
 const app = await testApp();
 const { addWebSession } = await import("./web-sessions");
 const { canonicalPath } = await import("./paths");
@@ -77,7 +78,7 @@ const outsideState = () => `${treeHash(homedir(), [root, join(homedir(), ".cache
 
 interface Answer { status: number; body: unknown }
 async function sendTo(a: Hono, method: string, url: string, raw?: string): Promise<Answer> {
-  const res = await a.request(url, { method, ...(raw === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: raw }) });
+  const res = await a.request(url, { method, ...(raw === undefined ? {} : { headers: { "Content-Type": "application/json", ...pageHeaders() }, body: raw }) });
   const text = await res.text();
   let body: unknown = text;
   try { body = JSON.parse(text); } catch { /* not JSON: the judge says so */ }
@@ -273,12 +274,15 @@ const VALIDATE_ONLY: Record<string, string> = {
   "session.sandbox.set": "acquires a chat handle, which starts the chat's process",
   "worker.resume": "acquires a chat handle, which starts the chat's process, and resumes a worker process",
   "session.group.send": "prompts each member, which starts their chat processes",
+  "session.job.stop": "a valid stop runs systemctl --user stop on the job's unit, the user's own service manager",
   "project.costs": "a valid call asks the usage helper, a process of its own (without it the route answers 503 usage-unavailable)",
   "project.preview.off": "needs a minted preview, and minting connects to the port it shows",
   "project.worktree.merge": "a valid call needs a coding session of the project (its build row and git worktree), which only starting a coding session makes, and that starts its chat process",
   "project.worktree.remove": "a valid call needs a coding session of the project (its build row and git worktree), which only starting a coding session makes, and that starts its chat process",
+  "settings.cards.withdraw": "a valid call needs a Sova-wide card, which only a Create chat's sova_settings propose makes",
   "project.settings.propose.withdraw": "a valid call needs a settings card, which only the project overseer's sova_settings propose makes, in its chat",
   "usage.prices.refresh": "fetches the price list over the network; the in-process ledger here has prices off, so a valid call changes nothing",
+  "settings.models.check": "a valid call checks Ollama Cloud's model list over the network; a test process never checks, so it answers 409 and changes nothing",
   "push.test": "sends a real notification to every registered device",
   // The merge queue's settings act on a started queue of a git project (queue-settings.test.ts, settings-routes.test.ts).
   "project.merge-queue.settings.get": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
@@ -289,9 +293,10 @@ const VALIDATE_ONLY: Record<string, string> = {
   "project.merge-queue.request.publish": "a valid call needs a queue entry checked and waiting for its request's text, which the unit tier's app doesn't start",
   "project.merge-queue.land-how.set": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
   "project.merge-queue.land-how.clear": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
+  "project.merge-queue.branch-summary.retry": "a valid call needs the server's merge queue started with a branch whose summary failed, which the unit tier's app doesn't start",
   "project.folder.list": "a valid call needs a registered project with git history (folder-read.test.ts covers it)",
   "project.folder.read": "a valid call needs a registered project with git history (folder-read.test.ts covers it)",
-  "server.restart": "a valid call schedules a restart of the service that runs this server (and in-process it is refused before any body is read: only the operator's browser or the token may)",
+  "server.restart": "a valid call schedules a restart of the service that runs this server (and in-process it is refused before any body is read: only the user's own page may)",
   "chat.stop": "a valid call on an open chat drives its process; on a closed one it writes nothing, so no effect oracle can read it back",
   "chat.compact": "acquires a chat handle, which starts the chat's process",
   "chat.rewind": "acquires a chat handle, which starts the chat's process",
@@ -305,6 +310,10 @@ const VALIDATE_ONLY: Record<string, string> = {
   "session.title.shorten": "a valid call renames long titles with the title model, a model call",
   "session.worktree.cleanup": "a valid removal needs a git repository with a merged worktree; the dry run changes nothing, so no oracle can read it back",
   "insights.usage.refresh": "asks every provider for its usage over the network, which the unit tier may not",
+  "project.coding.start": "a valid call starts a coding session in the project, which starts its chat process",
+  "project.setup.open": "a valid call starts the project's Setup chat, a coding session whose chat process starts",
+  "project.setup.get": "a valid call reads the project's runtime, which runs the supervisor's status and git",
+  "project.setup.merge": "the user's own page only: a valid call merges or lands a branch",
 };
 
 /**
@@ -318,6 +327,9 @@ function anchors(c: CommandEntry): Anchor[] {
   // Every path param: a dot segment in any spelling is refused by the request builder, before any request (it would resolve out of the route).
   for (const [name, p] of Object.entries(c.params)) if (p.in === "path") pendingSetup.push(async () => { for (const dots of [".", "..", "%2e", "%2E%2e", ".%2e"]) assert.throws(() => buildRequest(c, { ...fill(c), [name]: dots }), /can't be "\." or "\.\."/, `${c.id} ${name}=${dots}`); });
   if (c.id.startsWith("project.verb.")) return [{ anchor: { project: join(outside, "no-project") }, refuse: true, kind: "refused" }];
+  // An unknown project: refused before anything starts (a valid call would start a coding session's chat).
+  if (c.id === "project.coding.start") return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }];
+  if (c.id === "project.setup.open" || c.id === "project.setup.get" || c.id === "project.setup.merge") return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }];
   // A real folder too, but only wrong-typed values: a string profile would start a chat.
   if (c.id === "session.create") return [{ anchor: { cwd: join(outside, "no-dir") }, refuse: true, kind: "refused" }, { anchor: { cwd: workDir() }, refuse: false, kind: "real", onlyWrongTypes: true }];
   if (c.id === "project.services.view") return [{ anchor: { pid: "no-such-project" }, refuse: false, kind: "real" }];
@@ -332,11 +344,12 @@ function anchors(c: CommandEntry): Anchor[] {
   if (c.id === "project.overseer.todo.update") return [{ anchor: { pid: "no-such-project", id: "x" }, refuse: true, kind: "refused" }, { anchor: (() => { const a: Record<string, unknown> = {}; pendingSetup.push(async () => { const d = join(root, `po-${c.id}`); mkdirSync(d, { recursive: true }); a.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d, name: c.id }))).body as { project: { id: string } }).project.id; /* its runtime registry's first read, done now: no write lands after the hash */ await (await import("./projects/runtime")).observe(String(a.pid)); await (await import("./org-engine")).hostOf(String(a.pid)).idle(); a.id = ((await sendTo(app, "POST", `/api/projects/${a.pid}/overseer/todos`, JSON.stringify({ text: "Anchor" }))).body as { todos: { id: string }[] }).todos[0]!.id; }); return a; })(), refuse: false, kind: "real" }];
   if (c.id === "project.overseer.todo.reorder") return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }, { anchor: (() => { const a: Record<string, unknown> = {}; pendingSetup.push(async () => { const d = join(root, `po-${c.id}`); mkdirSync(d, { recursive: true }); a.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d, name: c.id }))).body as { project: { id: string } }).project.id; /* its runtime registry's first read, done now: no write lands after the hash */ await (await import("./projects/runtime")).observe(String(a.pid)); await (await import("./org-engine")).hostOf(String(a.pid)).idle(); a.id = ((await sendTo(app, "POST", `/api/projects/${a.pid}/overseer/todos`, JSON.stringify({ text: "Anchor" }))).body as { todos: { id: string }[] }).todos[0]!.id; }); return a; })(), refuse: false, kind: "real" }];
   // A registered project (made in the set-up, its id written into the anchor) takes each body past the project's lookup to the route's own checks.
-  if (c.id === "project.update" || c.id === "project.worktree.merge" || c.id === "project.worktree.remove" || c.id === "project.claude-login.set") {
+  if (c.id === "project.update" || c.id === "project.worktree.merge" || c.id === "project.worktree.remove" || c.id === "project.claude-login.set" || c.id.startsWith("project.icon.")) {
     const v: Record<string, unknown> = {};
     pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
     return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }, { anchor: v, refuse: false, kind: "real" }];
   }
+  if (c.id === "settings.cards.withdraw") return [{ anchor: { card: "sw_0" }, refuse: true, kind: "refused" }];
   if (c.id === "project.settings.undo" || c.id === "project.settings.propose.withdraw" || c.id === "project.overseer.settings.set") return [{ anchor: { pid: "no-such-project", card: "sc_1" }, refuse: true, kind: "refused" }, { anchor: withProject({ card: "sc_1" }), refuse: false, kind: "real", onlyWrongTypes: true }];
   // A folder that is no folder is refused whatever else the body says; one already registered (in the set-up) is the
   // route's own 409 after its checks of the body, so each case meets them and none registers a project.
@@ -355,6 +368,8 @@ function anchors(c: CommandEntry): Anchor[] {
   if (c.id === "insights.usage.refresh") return [];
   const out: Anchor[] = [];
   // Tags are kept by id, for any id: a missing session is no refusal there (a finding, reported).
+  // The job id is checked before the session: a refused anchor (no such session) and a real one (no such job) both carry one.
+  if (c.id === "session.job.stop") return [{ anchor: { session: missing[0], id: "j1" }, refuse: true, kind: "refused" }, { anchor: { session: session()[0], id: "j1" }, refuse: false, kind: "real" }];
   if (c.id === "session.tags.set") return [{ anchor: { session: "no-such-id" }, refuse: false, kind: "real" }, { anchor: { session: session()[1] }, refuse: false, kind: "real" }];
   if (c.params.session) {
     out.push({ anchor: { session: sessionArg(c, missing) }, refuse: true, kind: "refused" });
@@ -414,10 +429,36 @@ function versionFixture(oracle?: (e: import("./version-summaries").SummaryEntry 
   };
 }
 
+/** A square PNG's signature and IHDR (the icon routes read no further). */
+function fakePng(side: number): Buffer {
+  const b = Buffer.alloc(40);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0);
+  b.writeUInt32BE(13, 8);
+  b.write("IHDR", 12, "ascii");
+  b.writeUInt32BE(side, 16);
+  b.writeUInt32BE(side, 20);
+  return b;
+}
+/** A registered project for an icon fixture; `uploaded`: it has an uploaded icon already. */
+function iconProject(values: Record<string, unknown>, uploaded = false): Record<string, unknown> {
+  const v: Record<string, unknown> = { ...values };
+  pendingSetup.push(async () => {
+    const d = join(root, `project-${++n}`);
+    mkdirSync(d, { recursive: true });
+    v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id;
+    await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`);
+    if (uploaded) await sendTo(app, "PUT", `/api/projects/${v.pid}/icon`, JSON.stringify({ png: fakePng(64).toString("base64") }));
+  });
+  return v;
+}
+
 const FIXTURES: Record<string, Fixture> = {
   "session.list": { values: () => ({}), status: 200 },
   "session.get": { values: () => ({ session: session()[1] }), status: 200 },
   "session.read": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.pairs.list": { values: () => ({}), status: 200 },
+  "session.pairs.unpair": { values: () => { const v: Record<string, unknown> = {}; pendingSetup.push(async () => { v.pairing = (await import("./topics")).topicStore().openPair({ sessionId: `fz-a-${++n}`, path: join(root, `fz-a-${n}.jsonl`), job: "A." }, { sessionId: `fz-b-${n}`, path: join(root, `fz-b-${n}.jsonl`), job: "B." }).pair.id; }); return v; }, status: 200, oracle: async (_b, v) => assert.ok((await import("./topics")).topicStore().pair(String(v.pairing))?.endedAt) },
+  "session.pairs.resume": { values: () => { const v: Record<string, unknown> = {}; pendingSetup.push(async () => { const s = (await import("./topics")).topicStore(); const p = s.openPair({ sessionId: `fz-c-${++n}`, path: join(root, `fz-c-${n}.jsonl`), job: "C." }, { sessionId: `fz-d-${n}`, path: join(root, `fz-d-${n}.jsonl`), job: "D." }).pair; for (let i = 0; i < 40; i++) s.countPairNote(p.id, "toA"); v.pairing = p.id; }); return v; }, status: 200, oracle: async (_b, v) => assert.equal((await import("./topics")).topicStore().pair(String(v.pairing))?.notes.toA, 0) },
   "project.services.view": { values: () => ({ pid: "no-such-project" }), status: 404 },
   "org.owner.request.done": ownerRequestFixture("done"),
   "org.owner.request.decline": ownerRequestFixture("declined"),
@@ -451,6 +492,7 @@ const FIXTURES: Record<string, Fixture> = {
   "overseer.abilities": { values: () => ({}), status: 200 },
   "overseer.todo.list": { values: () => ({}), status: 200 },
   "models.list": { values: () => ({}), status: 200 },
+  "settings.models.check.status": { values: () => ({}), status: 200 },
   "extensions.list": { values: () => ({}), status: 200 },
   "session.create": {
     values: () => { const d = join(root, "work"); mkdirSync(d, { recursive: true }); return { cwd: d }; },
@@ -479,6 +521,11 @@ const FIXTURES: Record<string, Fixture> = {
     values: () => ({ session: session(true)[0] }),
     status: 200,
     oracle: async (_b, v) => assert.equal((await read("GET", `/api/sessions/summary?id=${pathToId(v.session)}`)).archived, true),
+  },
+  "session.job.list": {
+    values: () => ({ session: session()[0] }),
+    status: 200,
+    oracle: async (body) => assert.deepEqual(body, { jobs: [] }),
   },
   "session.unarchive": {
     values: () => { const s = session(true); archived.push(s[0]); return { session: s[0] }; },
@@ -603,6 +650,7 @@ const FIXTURES: Record<string, Fixture> = {
   "project.overseer.todo.reorder": { values: () => { const v: Record<string, unknown> = {}; pendingSetup.push(async () => { const d = join(root, `pf-${Math.random().toString(36).slice(2)}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d, name: "Fuzz fixture" }))).body as { project: { id: string } }).project.id; /* its runtime registry's first read, done now: no write lands after the hash */ await (await import("./projects/runtime")).observe(String(v.pid)); await (await import("./org-engine")).hostOf(String(v.pid)).idle(); for (const text of ["Kept", "Done one"]) await sendTo(app, "POST", `/api/projects/${v.pid}/overseer/todos`, JSON.stringify({ text })); const ids = ((await read("GET", `/api/projects/${v.pid}/overseer/todos`)).todos as { id: string }[]).map((t) => t.id); v.id = ids[1]; v.ids = [...ids].reverse(); }); return v; }, status: 200, oracle: async (_b, v) => assert.deepEqual(((await read("GET", `/api/projects/${v.pid}/overseer/todos`)).todos as { id: string; text: string }[]).map((t) => t.id), v.ids) },
   "project.overseer.todo.clear-done": { values: () => { const v: Record<string, unknown> = {}; pendingSetup.push(async () => { const d = join(root, `pf-${Math.random().toString(36).slice(2)}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d, name: "Fuzz fixture" }))).body as { project: { id: string } }).project.id; /* its runtime registry's first read, done now: no write lands after the hash */ await (await import("./projects/runtime")).observe(String(v.pid)); await (await import("./org-engine")).hostOf(String(v.pid)).idle(); for (const text of ["Kept", "Done one"]) await sendTo(app, "POST", `/api/projects/${v.pid}/overseer/todos`, JSON.stringify({ text })); const ids = ((await read("GET", `/api/projects/${v.pid}/overseer/todos`)).todos as { id: string }[]).map((t) => t.id); v.id = ids[1]; v.ids = [...ids].reverse(); await sendTo(app, "PATCH", `/api/projects/${v.pid}/overseer/todo?id=${v.id}`, JSON.stringify({ done: true })); }); return v; }, status: 200, oracle: async (_b, v) => assert.ok(!JSON.stringify(await read("GET", `/api/projects/${v.pid}/overseer/todos`)).includes("Done one")) },
   "project.list": { values: () => ({}), status: 200 },
+  "project.glance": { values: () => ({}), status: 200 },
   "project.get": {
     values: () => {
       const v: Record<string, unknown> = {};
@@ -664,6 +712,23 @@ const FIXTURES: Record<string, Fixture> = {
     },
     status: 200,
     oracle: async (_b, v) => assert.equal((await read("GET", `/api/projects/${v.pid}/claude-login`)).setting, "default"),
+  },
+  // A project's icon (§app.projects/icon): its upload and letters switch are kept under the state root.
+  "project.icon.get": { values: () => iconProject({}), status: 200 },
+  "project.icon.upload": {
+    values: () => iconProject({ png: fakePng(64).toString("base64") }),
+    status: 200,
+    oracle: async (_b, v) => assert.equal((await read("GET", `/api/projects/${v.pid}/icon/info`)).use, "upload"),
+  },
+  "project.icon.letters": {
+    values: () => iconProject({ letters: true }),
+    status: 200,
+    oracle: async (_b, v) => assert.equal((await read("GET", `/api/projects/${v.pid}/icon/info`)).use, "letters"),
+  },
+  "project.icon.remove": {
+    values: () => iconProject({}, true),
+    status: 200,
+    oracle: async (_b, v) => assert.equal((await read("GET", `/api/projects/${v.pid}/icon/info`)).uploaded, undefined),
   },
   "org.claude-login.get": {
     values: () => {
@@ -755,6 +820,7 @@ const FIXTURES: Record<string, Fixture> = {
     oracle: async (_b, v) => assert.equal(((await read("GET", `/api/session-cards?path=${encodeURIComponent(String(v.session))}`)).cards as { state: string }[])[0]?.state, "answered"),
   },
   "project.settings.get": { values: () => withProject(), status: 200 },
+  "settings.cards.get": { values: () => ({}), status: 200 },
   "project.settings.history": { values: () => withProject(), status: 200 },
   "project.overseer.settings.set": {
     values: () => withProject({ watch: false }),
@@ -821,6 +887,7 @@ const FIXTURES: Record<string, Fixture> = {
   "playbook.list": { values: () => ({}), status: 200 },
   "draft-spec.list": { values: () => ({}), status: 200 },
   "mcp.servers.list": { values: () => ({}), status: 200 },
+  "project.merge-queue.landing-summary": { values: () => ({}), status: 200 },
   "mcp.server.status": { values: () => ({ id: "no-such-row" }), status: 404 },
 };
 /** A registered project (its overseer's settings read their defaults), made in the set-up. */

@@ -93,14 +93,18 @@
       "server/session-powers.ts",
       "server/session-profiles.test.ts",
       "server/session-profiles-runtime.test.ts",
-      "server/session-powers.integration.test.ts"
+      "server/session-powers.integration.test.ts",
+      "pi-config/extensions/subagents/job-store.ts",
+      "pi-config/extensions/wake-nudge.ts",
+      "server/job-card-limits.test.ts"
     ],
     "requires": [
       "§chat.profiles/session-tools"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-12T18:54Z"
+      "by": "omar",
+      "at": "2026-11-04T11:00Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
     }
   },
   "§chat.profiles/live-commit": {
@@ -132,11 +136,13 @@
       "server/harness/state-kinds.ts",
       "docs/profiles.md"
     ],
-    "requires": [],
+    "requires": [
+      "§chat.create-mode/per-chat-only"
+    ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T02:27Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+      "by": "omar",
+      "at": "2026-11-05T11:12Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#b0d1af6b"
     }
   },
   "§chat.profiles/picker": {
@@ -162,7 +168,8 @@
       "server/subagent-profiles.ts",
       "src/lib/name-fit.ts",
       "src/lib/name-fit.test.ts",
-      "src/components/fold-fit.ts"
+      "src/components/fold-fit.ts",
+      "src/components/form/index.tsx"
     ],
     "requires": [
       "§chat.profiles/model",
@@ -187,6 +194,22 @@
     "requires": [
       "§chat.profiles/projects",
       "§chat.playbooks/what-gets-sent"
+    ]
+  },
+  "§chat.profiles/profile-name": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "shared/profile-limits.ts",
+      "shared/profiles.ts",
+      "server/profiles-store.ts",
+      "src/components/ProfilePicker.tsx",
+      "src/components/form/index.tsx"
+    ],
+    "requires": [
+      "§chat.profiles/picker",
+      "§design.forms/limits"
     ]
   },
   "§chat.profiles/projects": {
@@ -273,8 +296,14 @@
       "src/lib/api.ts"
     ],
     "requires": [
-      "§chat.profiles/projects"
-    ]
+      "§chat.profiles/projects",
+      "§app.access/your-click"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
   },
   "§chat/profiles": {
     "kind": "surface",

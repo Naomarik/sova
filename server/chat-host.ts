@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { claudeExecutable } from "../pi-config/extensions/claude-code/claude-executable.ts";
 import { producerId, setChildCounts } from "../pi-config/extensions/llm-inflight/tracker.ts";
 import { type ChatRuntimeMirror, type ChatRuntimeSettings, DEFAULT_RUNTIME_SETTINGS, type ExitCause, type FrameOf } from "../shared/chat-runtime-wire";
-import { sovaToken } from "./auth";
+import { chatServerUrl, sovaToken } from "./auth";
 import { callerKeys as serverCallerKeys, type CallerKeys } from "./caller-keys";
 import {
   acquireChatHandle,
@@ -61,7 +61,10 @@ import {
 import { holderAlive, readLock, releaseLockOf } from "./chat-runtime/writer-lock";
 import { chatBun, NO_BUN, NO_BUN_CHATS } from "./chat-runtime/bun";
 import { WORKER_PROTO } from "./chat-runtime/worker-port";
-import { type WorkerProcesses, type WorkerRecord, WorkerRegistry } from "./chat-workers";
+import { type WakeOwner, type WorkerProcesses, type WorkerRecord, WorkerRegistry } from "./chat-workers";
+import { WAKE_DIR_ENV, WAKE_WORKER_ENV } from "../pi-config/extensions/subagents/wake-store.ts";
+import { wakeDir, wakesOn } from "./wake-keeper";
+import { jobCardsEnv, jobsEnv } from "./background-jobs";
 import { readWorkerNice } from "./process-priority";
 import type { Driver } from "./project-services/drivers";
 import { addOwnPid } from "./live";
@@ -119,8 +122,8 @@ export function chatHostHealth(): { driver: ChatHost["driver"] | "starting"; bun
 const log = (line: string) => console.log(`[chat-host] ${line}`);
 
 /** What a worker chat is served (§app.project-services/callers): a worker's or team member's project_verbs; a hidden chat, nothing. */
-export function workerServed(worker: { kind: string }, path: string): ServerToolDecl[] {
-  return worker.kind === "worker" ? servedWorkerTools(path) : [];
+export function workerServed(worker: { kind: string; flags?: WorkerSpec["flags"]; parent?: WorkerSpec["parent"] }, path: string): ServerToolDecl[] {
+  return worker.kind === "worker" ? servedWorkerTools(path, worker.flags && worker.parent ? { flags: worker.flags, parent: worker.parent } : undefined) : [];
 }
 
 /** What a test swaps (a fake driver, links over in-memory streams); the server uses the real ones. */
@@ -213,6 +216,7 @@ export class ChatHostRouter {
       const id = this.codeFor.get(c.chatId) ?? build;
       const code = id === build ? currentCode : generationDir(id);
       const bun = this.bun() ?? process.execPath;
+      const serverUrl = chatServerUrl();
       return {
         argv: [bun, join(code, "server", "chat-runtime", "main.ts")],
         workdir: code,
@@ -224,7 +228,12 @@ export class ChatHostRouter {
           agentDir: w?.spec.agentDir ?? agentRoot(),
           extra: {
             ...withoutLoginContext(w?.spec.env),
-            ...(w?.spec.agentDir ? { SOVA_CHAT_STATE_ROOT: stateRoot() } : {}),
+            SOVA_CHAT_STATE_ROOT: stateRoot(),
+            ...(wakesOn() ? { [WAKE_DIR_ENV]: wakeDir() } : {}),
+            ...(w?.kind === "worker" ? { [WAKE_WORKER_ENV]: "1" } : {}),
+            // A chat in a systemd unit keeps what its commands leave running (§app.background-jobs/where).
+            ...jobsEnv(host?.driver),
+            ...jobCardsEnv(w?.spec, jobsEnv(host?.driver)),
             SOVA_CHAT_SOCK: c.sock,
             SOVA_CHAT_PATH: c.sessionPath,
             SOVA_CHAT_ID: c.chatId,
@@ -235,6 +244,8 @@ export class ChatHostRouter {
             // The project's Claude login for a chat in its folder, and the logins saved for other work
             // (§app.claude-logins/project-login); none on a host with no assignment.
             ...loginContextEnv(c.cwd),
+            // Its own server, whatever port that is; a server started from this chat's tools hands its chats its own.
+            ...(serverUrl ? { SOVA_URL: serverUrl } : {}),
             // After the worker spec's env: a loadout never chooses its key.
             SOVA_CALLER_KEY: this.callerKeys.issue(c.chatId, c.unit),
           },
@@ -990,6 +1001,7 @@ export function startChatHost(): void {
       await Promise.race([boot, new Promise<void>((r) => setTimeout(r, TAKE_BACK_MAX_MS).unref?.())]);
       await router?.settled(path);
     },
+    driver: () => (host ? host.driver : undefined),
   });
 }
 
@@ -1001,6 +1013,21 @@ export function detachChatHost(): void {
 /** Parent session `sessionId` was archived or deleted: its workers stop. */
 export async function stopWorkersOf(sessionId: string, reason: string): Promise<void> {
   await router?.workers.stopAllOf(sessionId, reason);
+}
+
+/** The worker chat holding `sessionId`, as the wake keeper asks (§chat.wake-nudges/kinds). */
+export function wakeOwnerOf(sessionId: string): WakeOwner | undefined {
+  return router?.workers.wakeOwner(sessionId);
+}
+
+/** Start stopped worker chat `sessionId`'s process, idle, under its recorded loadout. */
+export async function reopenWorkerChat(sessionId: string): Promise<void> {
+  await router?.workers.reopen(sessionId);
+}
+
+/** Every worker chat parent session `sessionId` has had, ended ones included. */
+export function workerChatsOf(sessionId: string): string[] {
+  return router?.workers.chatsOf(sessionId) ?? [];
 }
 
 /** The handle `chatHandle` finds, if it is a chat process's (tests, health). */

@@ -22,7 +22,7 @@ is.
 ```html
 <!-- the sidebar foot's Usage row (§app.insights/sidebar-foot) -->
 <div class="sidebar-foot-row">
-  <a class="list-row list-row-interactive insights-row sidebar-foot-link" href="#/usage" …>…gauge… glance</a>
+  <a class="list-row list-row-interactive insights-row sidebar-foot-link" href="#/usage" …>…usage-coin… glance</a>
   <button type="button" class="button button-icon sidebar-settings"
           title="Resource monitor" aria-label="Resource monitor">
     <span class="icon icon-sm" style="--icon: url(/icons/activity.svg)" aria-hidden="true"></span>
@@ -34,7 +34,7 @@ is.
   in the same column: the same markup and the same class as the gear (`.button.button-icon.sidebar-settings`),
   so both are 44 × 44 with the same margin and right edge, in both themes. Its glyph is
   `activity.svg`, a pulse line (§design.ground-rules/icons).
-- **Collapsed.** The spine carries the same button as a `.spine-item` right after the Usage gauge
+- **Collapsed.** The spine carries the same button as a `.spine-item` right after the Usage link
   (§app.session-list/spine), so the monitor is reachable with the sessions pane collapsed.
 - **What it does.** Opens the monitor modal. Which is open lives in a module signal in
   `src/lib/monitor-nav.ts` (`openMonitor` / `closeMonitor` / `monitorOpen`), rendered through a
@@ -113,6 +113,11 @@ says that it isn't.
   its own: the process itself by its pid (`worker-pid`), its Claude Code CLI by the chat's provider
   session ids (`session-id`), the rest of its unit or tree through it (`descendant`), and a process
   carrying its session file by that (`env`). The `cwd` heuristic never matches a worker's chat.
+- **A background job** (§app/background-jobs) has left its chat's unit, so it is measured with its
+  job unit's whole cgroup and charged through the job's record (`descendant`) to the chat that left
+  it, as that worker of its parent session when a worker did, whether or not that chat is running.
+  It is never counted as escaped or unattributed, and it falls under Tools and work. The list of
+  running jobs is re-read at most every 10 s; a job's processes, every tick.
 - **Sova's memory, four ways.** Every measured process falls in exactly one part, so the four
   add up to Sova's memory (`memory.total`): **Backend**, the server and its usage helper (the
   server's long-lived child running `server/usage-helper/main.ts`, which is never Not attributed);
@@ -166,7 +171,8 @@ button, focus returning to the opener. Under 768px the same markup is a sheet wi
 - **Sessions → workers table.** One table whose rows add up to the total. First **Backend**,
   "the Sova server and its helper", opening to **Sova server** ("web app, sessions, monitor") and
   **Usage helper** ("prices and usage"). Then each session with its totals, its backend as its
-  caption ("Claude Code", or "pi model · nothing wrapped") and an **Open Session** link, opening to
+  caption ("Claude Code", or "pi model · nothing wrapped") and an **Open Session** link opening
+  the chat (the Overseer's opens its page, §app.overseer/ways-in), the row opening to
   its parts: **Sova runtime** ("this chat's own process"), **Claude Code** ("the wrapped CLI";
   absent for a pi-model chat, whose caption already says nothing is wrapped), **Tools** (its
   process count, expanding to its heaviest tools), then its workers — backend, status, how long
@@ -178,11 +184,14 @@ button, focus returning to the opener. Under 768px the same markup is a sheet wi
   working."). A heuristic match carries a **Guess** chip, its reason in the chip's title. Under
   520px of table the Swap column goes, rather than stacking the rows: the session → worker →
   process indent is the information.
-- **Names.** The client names a session as the sidebar does, from the session list the app
-  already holds, by path; then by the snapshot's `title` — Sova's in-memory display title, renames
-  included, with no I/O per tick (else pi's own session name). History keeps the
-  label of a session that has since exited or been archived; then "Untitled session in {folder}". A file name or path is
-  never a label. Legend names stop at 32ch with an ellipsis, the full name in their `title`.
+- **Names.** One of Sova's own chats (an overseer, a merge thread or reviewer, a release chat, a
+  gathering session) is always named by its fixed name (§app.session-list/fixed-names): "Overseer",
+  "Overseer · {project}" and so on, in the table, the chart's legend and the chart's history alike,
+  history saved before the name was fixed included (relabelled when shown). Otherwise the
+  client names a session as the sidebar does, from the session list the app already holds, by path; then by the
+  snapshot's `title` — Sova's in-memory display title, renames included, with no I/O per tick (else
+  pi's own session name). History keeps the label of a session that has since exited or been
+  archived; then "Untitled session in {folder}". A file name or path is never a label. Legend names stop at 32ch with an ellipsis, the full name in their `title`.
 - **Transient work in this window.** Processes that were among a tick's busiest and aren't running
   now, attributed, with their peak CPU and when last seen; repeated runs of one command by one
   owner fold into one row ("`vite build` ×8").

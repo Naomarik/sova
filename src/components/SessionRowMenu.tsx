@@ -94,25 +94,28 @@ export function RowMenu(props: { row: BoardRow; ctx: RowMenuCtx; archive: { labe
                   onRun={() => props.ctx.onOpenSubagents(s().path)}
                 />
               </div>
-              <div class="model-menu-group" role="group" aria-label="Title">
-                <menu.Item label="Rename…" aria={`Rename ${quoted(s().title)}`} icon={<Icon name="pencil" small />} keepFocus onRun={() => props.ctx.setRenaming(s().path)} />
-                <menu.Item
-                  label="Use Gist as Title"
-                  aria={`Use the gist as the title of ${quoted(s().title)}`}
-                  icon={<Icon name="pencil" small />}
-                  description={gist() ?? undefined}
-                  disabled={gist() ? "" : summaryLineOf(s()) ? "The gist is already the title." : "No gist yet."}
-                  onRun={() => void setTitle(gist())}
-                />
-                <menu.Item
-                  label="Reset to Original Title"
-                  aria={`Reset ${quoted(s().title)} to its original title`}
-                  icon={<Icon name="undo" small />}
-                  description={s().originalTitle}
-                  disabled={s().originalTitle === undefined ? "Not renamed." : ""}
-                  onRun={() => void setTitle(null)}
-                />
-              </div>
+              {/* A chat Sova names itself keeps that name: no title actions at all. */}
+              <Show when={!s().fixedName}>
+                <div class="model-menu-group" role="group" aria-label="Title">
+                  <menu.Item label="Rename…" aria={`Rename ${quoted(s().title)}`} icon={<Icon name="pencil" small />} keepFocus onRun={() => props.ctx.setRenaming(s().path)} />
+                  <menu.Item
+                    label="Use Gist as Title"
+                    aria={`Use the gist as the title of ${quoted(s().title)}`}
+                    icon={<Icon name="pencil" small />}
+                    description={gist() ?? undefined}
+                    disabled={gist() ? "" : summaryLineOf(s()) ? "The gist is already the title." : "No gist yet."}
+                    onRun={() => void setTitle(gist())}
+                  />
+                  <menu.Item
+                    label="Reset to Original Title"
+                    aria={`Reset ${quoted(s().title)} to its original title`}
+                    icon={<Icon name="undo" small />}
+                    description={s().originalTitle}
+                    disabled={s().originalTitle === undefined ? "Not renamed." : ""}
+                    onRun={() => void setTitle(null)}
+                  />
+                </div>
+              </Show>
               <div class="model-menu-group" role="group" aria-label="Organize">
                 <menu.Item
                   label="Move to Group…"

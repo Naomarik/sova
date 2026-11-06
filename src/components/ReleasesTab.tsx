@@ -1,13 +1,16 @@
 import { createEffect, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
 import type { ReleaseHistoryItem, ReleaseRecord, ReleaseStep, ReleaseView } from "../../shared/release";
 import type { ReleaseSetupReview } from "../../shared/project-runtime";
-import { ApiError, runReleaseSetup } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { createPoll, type Poll } from "../lib/poll";
 import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
 import {
   abandonConfirmLine,
+  askerWord,
   cardLine as cardLineOf,
+  NOTE_MAX,
+  noteDraft,
+  savedNoteLine,
   countdown,
   previousRelease,
   progressLine,
@@ -22,8 +25,6 @@ import {
   sinceLine,
   startedByWord,
   PHASE_WORD,
-  setupLiveLine,
-  setupRun,
   STEP_CHIP,
   stepActions,
   visibleSteps,
@@ -33,8 +34,7 @@ import {
 import { askDeployPlan, noteReleaseChanged, readReleases, releaseChanged, releaseFeed, releaseRefusal, runReleaseVerb } from "../lib/releases-client";
 import { announce, toast } from "../lib/ui-state";
 import { CancelHeldButton } from "./HeldAct";
-import { MergeRunButton, proposedRun } from "./PlaybookReview";
-import type { ProjectRuntimeView } from "../../shared/project-runtime";
+import { createSetupPoll, SetupChatButton, SetupChatState, SetupNotSetUp, type SetupPoll } from "./SetupChat";
 import { Banner, Chip, Icon } from "./ui";
 
 /** A release's steps move by the minute; the checks by the second, on the Merge Queue tab. */
@@ -92,29 +92,33 @@ function useAct() {
 
 /**
  * A project's Releases tab: the release in progress with its steps, Publish and Abandon; then every
- * numbered release from its tags, newest first, with its notes, channel badges, where it runs and Withdraw. A
- * project whose releases aren't set up gets the note on how, with Set Up Releases.
+ * numbered release from its tags, newest first, with its notes, channel badges, where it runs and Withdraw, and Change
+ * Setup. A project whose releases aren't set up gets what a release does, with Set Up with a Chat.
  */
-export function ReleasesTab(props: { projectId: string; root: string; name: string; archived: boolean; poll: Poll<ReleaseView>; /** The project's software registry: a Set Up Releases run's state. */ runtime?: Poll<ProjectRuntimeView> }) {
+export function ReleasesTab(props: { projectId: string; root: string; name: string; archived: boolean; poll: Poll<ReleaseView>; /** The page's read of the project's Setup chat (one of its own when absent). */ setup?: SetupPoll }) {
   const view = () => props.poll.data();
+  const setup = props.setup ?? createSetupPoll(props.projectId);
   return (
     <section class="card orgs-section rel-tab" aria-labelledby="rel-title">
       <Show
         when={view()}
         fallback={<p class="orgs-empty">{props.poll.error() ? `Couldn't read this project's releases. ${props.poll.error()}` : "Reading the releases."}</p>}
       >
-        {(v) => <ReleasesBody projectId={props.projectId} name={props.name} archived={props.archived} view={v()} targets={v().deployTargets} runtime={props.runtime} />}
+        {(v) => <ReleasesBody projectId={props.projectId} name={props.name} archived={props.archived} view={v()} targets={v().deployTargets} setup={setup} />}
       </Show>
     </section>
   );
 }
 
-function ReleasesBody(props: { projectId: string; name: string; archived: boolean; view: ReleaseView; targets: string[]; runtime?: Poll<ProjectRuntimeView> }) {
+function ReleasesBody(props: { projectId: string; name: string; archived: boolean; view: ReleaseView; targets: string[]; setup: SetupPoll }) {
   const v = () => props.view;
   const head = useAct();
   const shown = () => shownRecord(v());
   const canStart = () => v().initialized && !v().problem && !v().open && !props.archived;
   const start = () => void head.run("start", () => runReleaseVerb(v().project, "release.start"), "Started a release. Its chat follows the release playbook.");
+  // The Release Note: offered wherever a release could start later (it is for the next start, open release or not).
+  const canNote = () => v().initialized && !v().problem && !props.archived;
+  const [editing, setEditing] = createSignal(false);
   return (
     <div class="stack mq-body rel-body">
       <div class="spread mq-head">
@@ -124,12 +128,38 @@ function ReleasesBody(props: { projectId: string; name: string; archived: boolea
           </h2>
           <Show when={!v().initialized}>{chip({ word: "Not set up", tone: "warn" })}</Show>
         </div>
-        <Show when={canStart()}>
-          <button type="button" class="button button-sm button-primary" aria-disabled={head.busy() ? "true" : undefined} onClick={start}>
-            {head.busy() === "start" ? "Starting…" : "Start Release"}
-          </button>
-        </Show>
+        <div class="cluster rel-head-act">
+          <Show when={canNote()}>
+            <button type="button" class="button button-sm" aria-expanded={editing() ? "true" : "false"} aria-controls="rel-note-editor" onClick={() => setEditing(!editing())}>
+              <Icon name="pencil" small />
+              Release Note
+            </button>
+          </Show>
+          <Show when={v().initialized && !props.archived}>
+            <SetupChatButton projectId={props.projectId} setUp from="releases" poll={props.setup} />
+          </Show>
+          <Show when={canStart()}>
+            <button type="button" class="button button-sm button-primary" aria-disabled={head.busy() ? "true" : undefined} onClick={start}>
+              {head.busy() === "start" ? "Starting…" : "Start Release"}
+            </button>
+          </Show>
+        </div>
       </div>
+      <Show when={canNote() && editing()}>
+        <NoteEditor project={v().project} saved={v().note} onClose={() => setEditing(false)} />
+      </Show>
+      <Show when={canNote() && !editing() && v().note}>
+        {(n) => (
+          <div class="rel-saved-note" role="group" aria-label="Release note for the next release">
+            <p class="cluster text-caption">
+              <span class="text-eyebrow">Release note</span>
+              <span class="text-muted">saved {relativeTime(n().at)}</span>
+            </p>
+            <p class="rel-note-text">{n().text}</p>
+            <p class="text-caption text-muted">{savedNoteLine(!!v().open)}</p>
+          </div>
+        )}
+      </Show>
       <div class="mq-strip rel-strip" role="group" aria-label="Latest release">
         <div class="mq-cell">
           <p class="text-eyebrow">Latest release</p>
@@ -148,8 +178,11 @@ function ReleasesBody(props: { projectId: string; name: string; archived: boolea
       <Show when={v().problem}>
         {(p) => <Banner tone="error" title="This project's release settings don't read." body={`${p().trim().replace(/[.]$/, "")}. Fix it on ${v().target}, or land a branch that fixes it; no release starts until it reads.`} />}
       </Show>
+      <Show when={v().initialized}>
+        <SetupChatState projectId={props.projectId} poll={props.setup} proposalOnly />
+      </Show>
       <Show when={!v().initialized}>
-        <NotSetUp projectId={props.projectId} name={props.name} archived={props.archived} target={v().target} runtime={props.runtime} />
+        <NotSetUp projectId={props.projectId} archived={props.archived} target={v().target} setup={props.setup} />
       </Show>
       <Show when={shown()}>{(r) => <InProgress projectId={props.projectId} view={v()} record={r()} targets={props.targets} />}</Show>
       <Show when={v().initialized && !shown() && !v().problem}>
@@ -164,123 +197,71 @@ function ReleasesBody(props: { projectId: string; name: string; archived: boolea
   );
 }
 
-/** Releases aren't set up: what that means, how to set them up, and Set Up Releases (the maker, a chat). */
-function NotSetUp(props: { projectId: string; name: string; archived: boolean; target: string; runtime?: Poll<ProjectRuntimeView> }) {
+/**
+ * The Release Note's editor: the operator's instructions for the next release chat (a version, pages to skip). Save keeps
+ * it on the server until a Start Release sends it; Clear Note drops it; an empty note changes nothing about Start.
+ */
+function NoteEditor(props: { project: string; saved: { text: string; at: string } | null; onClose: () => void }) {
   const act = useAct();
-  // A Set Up Releases run already live or proposed: say so in place of Set Up Releases.
-  const run = () => setupRun(props.runtime?.data());
-  const [started, setStarted] = createSignal<{ path: string; branch?: string } | null>(null);
-  // Another setup run of this project holds the start (409): its words as sent, with Open Chat on that run's chat.
-  const [held, setHeld] = createSignal<string | null>(null);
-  const heldChat = (): string | null => {
-    const pb = props.runtime?.data()?.playbook;
-    if (pb?.path) return projectSessionHref(props.projectId, pb.path);
-    return pb?.sessionId ? `#/sid/${encodeURIComponent(pb.sessionId)}` : null;
+  const [draft, setDraft] = createSignal(props.saved?.text ?? "");
+  const d = () => noteDraft(draft(), props.saved?.text);
+  const save = async (text: string, done: string) => {
+    if (await act.run(text ? "save" : "clear", () => runReleaseVerb(props.project, "release.note", { text }), done)) props.onClose();
   };
-  const setup = async () => {
-    if (act.busy()) return;
-    setHeld(null);
-    await act.run(
-      "setup",
-      async () => {
-        try {
-          const out = await runReleaseSetup(props.projectId);
-          setStarted({ path: out.path, branch: out.worktree?.branch });
-          return { ok: true };
-        } catch (err) {
-          if (!(err instanceof ApiError) || err.status !== 409) throw err;
-          setHeld(err.message);
-          props.runtime?.refetch();
-          return { ok: false, error: { message: err.message } };
-        }
-      },
-      "Set Up Releases started a chat.",
-    );
-  };
+  let area: HTMLTextAreaElement | undefined;
+  queueMicrotask(() => area?.focus());
   return (
-    <div class="stack-2 rel-unset">
-      <Banner
-        tone="info"
-        title="Releases aren't set up for this project"
-        body={
-          <>
-            Until they are, nothing here starts a release. Set Up Releases opens a chat that reads {props.name}, asks you how it releases (the version rule, the notes, each step, the channel that moves), then proposes a release playbook
-            and a <code class="text-mono">release</code> section in <code class="text-mono">.sova/project.json</code> on a branch for you to land on {props.target}. Every part of it stays yours to change.
-          </>
-        }
-        action={
-          <Show when={!props.archived && !run()}>
-            <button type="button" class="button button-sm button-primary" aria-disabled={act.busy() ? "true" : undefined} onClick={() => void setup()}>
-              {act.busy() === "setup" ? "Starting…" : "Set Up Releases"}
-            </button>
-          </Show>
-        }
-      />
-      <Show when={run()?.kind === "live" ? (run() as Extract<ReturnType<typeof setupRun>, { kind: "live" }>) : null}>
-        {(r) => (
-          <div class="mq-card rel-setup-run" role="group" aria-label="Set Up Releases run">
-            <p class="cluster">
-              <Chip tone={r().waiting ? "warn" : "accent"} live={!r().waiting}>
-                {r().waiting ? "Waiting on you" : "Running"}
-              </Chip>
-              <span>{setupLiveLine(r())}</span>
-              <Show when={r().path}>
-                {(p) => (
-                  <a class="button button-sm" href={projectSessionHref(props.projectId, p())}>
-                    Open Chat
-                  </a>
-                )}
-              </Show>
-            </p>
-          </div>
-        )}
-      </Show>
-      <Show when={run()?.kind === "proposed" ? proposedRun(props.runtime?.data()) : null}>
-        {(pr) => (
-          <div class="mq-card rel-setup-run" role="group" aria-label="Set Up Releases proposal">
-            <p class="orgs-line">
-              The setup chat proposes a release setup for {props.name} on <span class="text-mono">{pr().branch}</span>. Read it before it reaches {pr().target}.
-            </p>
-            <Show when={props.runtime?.data()?.playbook?.review?.release}>{(rel) => <ReleaseSetupSteps setup={rel()} />}</Show>
-            <div class="deploy-actions">
-              <MergeRunButton projectId={props.projectId} run={pr()} onDone={(view) => (view ? props.runtime?.set(view) : props.runtime?.refetch())} />
-              <Show when={pr().path}>
-                {(p) => (
-                  <a class="button button-sm button-ghost" href={projectSessionHref(props.projectId, p())}>
-                    Read Report
-                  </a>
-                )}
-              </Show>
-            </div>
-          </div>
-        )}
-      </Show>
-      <Show when={started()}>
-        {(s) => (
-          <p class="text-caption">
-            The set-up chat started{s().branch ? <> on <span class="text-mono">{s().branch}</span></> : null}. <a href={projectSessionHref(props.projectId, s().path)}>Open the Chat</a>
-          </p>
-        )}
-      </Show>
-      <Show
-        when={held()}
-        fallback={<Show when={act.error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>}
-      >
-        {(m) => (
-          <p class="text-caption rel-setup-held" role="status">
-            {m()}{" "}
-            <Show when={heldChat()}>
-              {(href) => (
-                <a class="button button-sm" href={href()}>
-                  Open Chat
-                </a>
-              )}
-            </Show>
-          </p>
-        )}
-      </Show>
+    <div class="deploy-confirm rel-note-editor" id="rel-note-editor" role="group" aria-label="Release note">
+      <label class="field">
+        <span class="field-label">Release note</span>
+        <textarea
+          ref={area}
+          class="input textarea"
+          rows={4}
+          maxlength={NOTE_MAX}
+          aria-describedby="rel-note-hint"
+          placeholder="Release as 0.10.1. Skip the docs step."
+          value={draft()}
+          onInput={(e) => setDraft(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") props.onClose();
+          }}
+        />
+      </label>
+      <p class="field-hint" id="rel-note-hint">
+        The next release chat reads it as your instructions. Start Release sends it, then clears it.
+      </p>
+      <Show when={act.error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>
+      <div class="deploy-actions">
+        <button
+          type="button"
+          class="button button-sm button-primary"
+          aria-disabled={act.busy() || !d().changed || !d().text ? "true" : undefined}
+          title={!d().text ? "Write a note first." : !d().changed ? "No change to save." : undefined}
+          onClick={() => d().changed && d().text && void save(d().text, "Saved the release note.")}
+        >
+          {act.busy() === "save" ? "Saving…" : "Save Note"}
+        </button>
+        <Show when={props.saved}>
+          <button type="button" class="button button-sm button-destructive" aria-disabled={act.busy() ? "true" : undefined} onClick={() => void save("", "Cleared the release note.")}>
+            {act.busy() === "clear" ? "Clearing…" : "Clear Note"}
+          </button>
+        </Show>
+        <button type="button" class="button button-sm button-ghost" onClick={props.onClose}>
+          Cancel
+        </button>
+        <span class="text-caption text-muted rel-note-count">
+          {draft().length} of {NOTE_MAX}
+        </span>
+      </div>
     </div>
   );
+}
+
+/** Releases aren't set up: what a release does and what setting it up changes, with Set Up with a Chat (the project's
+    Setup chat, which proposes releases with the merge queue and deploys), then that chat's state and its proposal. */
+function NotSetUp(props: { projectId: string; archived: boolean; target: string; setup: SetupPoll }) {
+  return <SetupNotSetUp projectId={props.projectId} surface="releases" target={props.target} archived={props.archived} poll={props.setup} />;
 }
 
 /** The release in progress (or one published whose after-publish steps still run): its steps, gates and actions. */
@@ -329,6 +310,27 @@ function InProgress(props: { projectId: string; view: ReleaseView; record: Relea
         </span>
       </p>
       <p class="text-caption mq-now">{progressLine(r())}</p>
+      <Show when={r().note || r().asked}>
+        <div class="rel-start-context" role="group" aria-label="What this release started with">
+          <Show when={r().note}>
+            {(n) => (
+              <div class="rel-saved-note">
+                <p class="text-eyebrow">Your release note</p>
+                <p class="rel-note-text">{n()}</p>
+              </div>
+            )}
+          </Show>
+          <Show when={r().asked}>
+            {(a) => (
+              <div class="rel-saved-note">
+                <p class="text-eyebrow">Asked by {askerWord(a().by)}</p>
+                <p class="rel-note-text">{a().why}</p>
+                <p class="text-caption text-muted">Passed to the chat as background, not as your instructions.</p>
+              </div>
+            )}
+          </Show>
+        </div>
+      </Show>
       <Show when={open()}>
         <p class="text-caption text-muted">Other landings wait in the queue until {name()} is published or abandoned.</p>
       </Show>
@@ -714,9 +716,14 @@ export function ReleaseSetupSteps(props: { setup: ReleaseSetupReview }) {
               <For each={s().steps.filter((x) => x.phase === ph)}>
                 {(x) => (
                   <li class="deploy-step">
-                    <span class="deploy-step-kind">{x.label}</span> <span class="text-mono text-muted">{x.id}</span>
-                    {x.held ? <> · <Chip tone="warn">Held for you</Chip></> : null}
-                    {x.artifact ? " · reports a built file" : ""}
+                    <span class="deploy-step-kind">
+                      {x.label}
+                      {x.held ? <Chip tone="warn">Held for you</Chip> : null}
+                    </span>
+                    <span class="text-mono text-muted">
+                      {x.id}
+                      {x.artifact ? " · reports a built file" : ""}
+                    </span>
                   </li>
                 )}
               </For>

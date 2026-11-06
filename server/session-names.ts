@@ -20,7 +20,9 @@ const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 const cut = (s: string, max: number) => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
 
 /** The session's name, summary-first. Pure. */
-export function sessionName(s: Pick<SessionSummary, "title"> & Partial<Pick<SessionSummary, "titleBy" | "outlineGist" | "outlineNow">>, alias?: string | null): string {
+export function sessionName(s: Pick<SessionSummary, "title"> & Partial<Pick<SessionSummary, "titleBy" | "outlineGist" | "outlineNow" | "fixedName">>, alias?: string | null): string {
+  // A chat Sova names itself (shared/fixed-names.ts) is called that, whatever alias it was given before.
+  if (s.fixedName && s.title.trim()) return cut(oneLine(s.title), NAME_MAX);
   if (alias?.trim()) return oneLine(alias);
   if (s.titleBy && s.title.trim()) return cut(oneLine(s.title), NAME_MAX);
   const summary = oneLine(s.outlineGist ?? s.outlineNow ?? "");

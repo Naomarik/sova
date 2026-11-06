@@ -234,7 +234,7 @@ export interface CodingModeNow {
 }
 
 /** A mode as people read it: `normal · spec · visuals` (`vis` said as "visuals"). */
-export const codingModeWords = (m: Pick<ProjectCodingMode, "mode" | "minorModes">): string =>
+export const codingModeWords = (m: { mode: string; minorModes: string[] }): string =>
   [m.mode, ...m.minorModes.map((x) => (x === "vis" ? "visuals" : x))].join(" · ");
 
 export interface ProjectOverseerSettings {
@@ -308,8 +308,10 @@ export interface ProjectOverseerInfo {
   /** The current conversation: mount the normal chat page on it. */
   path: string | null;
   id: string | null;
-  /** Earlier conversations, newest first (read-only). */
-  history: { id: string; path: string; title: string; lastActiveAt: string }[];
+  /** Earlier conversations, newest first (read-only). `title` is the fixed name ("Overseer · {project}"); `about`
+      what that conversation was about (its automatic title, else its first message, else "Untitled"); absent from
+      an older server. */
+  history: { id: string; path: string; title: string; about?: string; lastActiveAt: string }[];
   /** As saved, but `powers` is the view (PowersView): both columns as set and after the brake, the brake, the one-time note. */
   settings: ProjectOverseerSettingsView;
   /** What a coding session started now gets: this computer's default mode and subagent profile. */

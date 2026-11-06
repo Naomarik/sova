@@ -87,7 +87,10 @@
       "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
       "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
       "pi-config/extensions/sandbox/shadow-prune.ts",
-      "pi-config/extensions/sandbox/README.md"
+      "pi-config/extensions/sandbox/README.md",
+      "server/background-jobs-request.ts",
+      "server/background-jobs-request.test.ts",
+      "server/background-jobs-request.integration.test.ts"
     ],
     "about": [
       "§chat.sandbox/what-on-enforces"
@@ -153,7 +156,8 @@
       "§chat.sandbox/toggle",
       "§chat.sandbox/workers",
       "§chat.worktrees/workers",
-      "§app.mcp/sandbox"
+      "§app.mcp/sandbox",
+      "§app.access/your-click"
     ],
     "authority": "accepted",
     "evidence": "verified",
@@ -171,17 +175,20 @@
       "pi-config/extensions/sandbox/tests/cache-invariant.mjs",
       "pi-config/extensions/sandbox/tests/run.mjs",
       "pi-config/extensions/subagents/index.test.ts",
-      "pi-config/extensions/claude-code/provider/session-bridge.ts"
+      "pi-config/extensions/claude-code/provider/session-bridge.ts",
+      "server/app.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T02:27Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+      "at": "2026-11-04T12:30Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#78234ec6"
     }
   },
   "§chat.sandbox/toggle": {
     "kind": "behavior",
-    "requires": [],
+    "requires": [
+      "§app.access/your-click"
+    ],
     "authority": "accepted",
     "evidence": "verified",
     "code": [
@@ -190,12 +197,17 @@
       "pi-config/extensions/sandbox/tools.ts",
       "pi-config/extensions/sandbox/shadow-prune.ts",
       "pi-config/extensions/sandbox/README.md",
-      "pi-config/extensions/sandbox/tests/index.unit.test.ts"
+      "pi-config/extensions/sandbox/tests/index.unit.test.ts",
+      "server/app.ts",
+      "server/chat-manager.ts",
+      "server/ws.ts",
+      "server/sandbox-state.ts",
+      "server/chat-runtime/trial-your-click.integration.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-30T12:02Z",
-      "source": "pi-session:01a18c63-8f43-7660-9a5a-04b82a0fed6e#73daaccb"
+      "by": "user",
+      "at": "2026-11-04T16:27Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#e85d747a"
     }
   },
   "§chat.sandbox/what-on-enforces": {

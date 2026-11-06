@@ -25,6 +25,8 @@ export const WAN_IPS = { relay: "198.51.100.10", plain: "198.51.100.20" };
 export const STATE = process.env.LAB_STATE || join(homedir(), ".cache/sova-mesh/lab");
 export const DOMAIN = "mesh.lab";
 export const IMAGES = { host: "sovamesh-host:lab", plain: "sovamesh-plain:lab" };
+/** The images of one commit, for hosts that run their own build (`--rev <node>=<rev>`, `lab swap`). */
+export const revImages = (commit) => ({ host: `sovamesh-host:rev-${commit.slice(0, 12)}`, plain: `sovamesh-plain:rev-${commit.slice(0, 12)}` });
 const PULLED = { headscale: "headscale/headscale:v0.29.4", caddy: "caddy:2-alpine" };
 const AUTH_SRC = join(ROOT, ".agent/auth.json");
 const HOST_IDS = "abcdefgh".split("");
@@ -55,10 +57,16 @@ const DNS = { dns: ["1.1.1.1", "9.9.9.9"], dns_search: ["."] };
 /** The lab CA certificate, trusted by every lab node (system store + NODE_EXTRA_CA_CERTS). */
 const CA_MOUNT = `${join(STATE, "tls/ca.pem")}:/run/lab-tls/ca.pem:ro`;
 
-const DEFAULTS = { hosts: ["a", "b", "c"], plain: true, stranger: true, frontdoor: true, publicfront: true, mock: true, auth: "all", seed: true, order: null, wan: false };
+const DEFAULTS = { hosts: ["a", "b", "c"], plain: true, stranger: true, frontdoor: true, publicfront: true, mock: true, auth: "all", seed: true, order: null, wan: false, revs: {} };
 /** The host the public front sits in front of: the first host (a public-links gateway). */
 export const publicGateway = (cfg) => (cfg.publicfront ? (cfg.hosts[0] ?? null) : null);
 const MOCK_DIR = () => join(STATE, "mock-token");
+/** The laptop's addresses for a page of this node. The auth gate takes loopback origins on its own
+    port only (4800), and a browser's `crossorigin` scripts and every write send Origin, so a page on
+    a published port answers 403 for its own JS unless the origin is listed. */
+const pageOrigins = (port) => [`http://127.0.0.1:${port}`, `http://127.0.0.1:${PORTS.frontdoor}`].join(",");
+/** The image a Sova node runs: its own commit's, else the lab's common build. */
+const imageOf = (cfg, id, kind) => (cfg.revs?.[id] ? revImages(cfg.revs[id])[kind] : IMAGES[kind]);
 
 // ---------------------------------------------------------------------------------------------
 // small process helpers
@@ -130,7 +138,7 @@ function hostService(cfg, id) {
     : { env: {}, volumes: [] };
   volumes.push(...mock.volumes);
   return {
-    image: IMAGES.host,
+    image: imageOf(cfg, id, "host"),
     container_name: container(id),
     hostname: id,
     // docker-init as PID 1: it reaps the detached chat processes a restarted Sova leaves to it
@@ -148,6 +156,7 @@ function hostService(cfg, id) {
       PORT: String(SOVA_PORT),
       HOST: "127.0.0.1",
       SOVA_TOKEN: labToken(),
+      SOVA_ALLOWED_ORIGINS: pageOrigins(PORTS.host(id)),
       NODE_EXTRA_CA_CERTS: "/run/lab/ca-bundle.pem",
       ...mock.env,
     },
@@ -197,14 +206,14 @@ export function composeFor(cfg) {
   if (cfg.plain) {
     const auth = cfg.auth === "all" || (Array.isArray(cfg.auth) && cfg.auth.includes("plain"));
     services.plain = {
-      image: IMAGES.plain,
+      image: imageOf(cfg, "plain", "plain"),
       container_name: container("plain"),
       hostname: "plain",
       init: true,
       // NET_ADMIN only for the entrypoint's egress guard; Sova runs with it dropped. No tun device.
       cap_add: ["NET_ADMIN"],
       ...DNS,
-      environment: { LAB_HOST: "plain", LAB_TAILSCALE: "0", LAB_SOVA: "1", LAB_SEED: cfg.seed ? "1" : "0", PORT: String(SOVA_PORT), HOST: "127.0.0.1", SOVA_TOKEN: labToken(), NODE_EXTRA_CA_CERTS: "/run/lab-tls/ca.pem" },
+      environment: { LAB_HOST: "plain", LAB_TAILSCALE: "0", LAB_SOVA: "1", LAB_SEED: cfg.seed ? "1" : "0", PORT: String(SOVA_PORT), HOST: "127.0.0.1", SOVA_TOKEN: labToken(), SOVA_ALLOWED_ORIGINS: pageOrigins(PORTS.plain), NODE_EXTRA_CA_CERTS: "/run/lab-tls/ca.pem" },
       volumes: ["plain-agent:/sova/.agent", "plain-home:/root", CA_MOUNT, ...(auth ? [`${AUTH_SRC}:/run/lab-secrets/auth.json:ro`] : [])],
       ports: [`127.0.0.1:${PORTS.plain}:4900`],
       networks: ["lab"],
@@ -515,7 +524,12 @@ function parseUpArgs(args, cfg) {
     else if (a === "--no-seed") next.seed = false;
     else if (a === "--no-build") next._noBuild = true;
     else if (a === "--dirty") next._dirty = true;
-    else if (a === "--rev") next._rev = val();
+    else if (a === "--rev") {
+      const v = val();
+      const own = /^([a-h]|plain)=(.*)$/.exec(v);
+      if (own) next._nodeRevs = { ...next._nodeRevs, [own[1]]: own[2] };
+      else next._rev = v;
+    }
     else die(`unknown option ${a}`);
   }
   return next;
@@ -532,7 +546,7 @@ const PROVENANCE_PATHS = ["server", "shared", "src", "pi-config", "scripts/herme
  * (Dockerfile, host/) always come from the working tree's scripts/mesh-lab. The provenance lands
  * in every container as /sova/BUILD_COMMIT and on the images as labels.
  */
-function build({ rev = "HEAD", dirty = false } = {}) {
+function build({ rev = "HEAD", dirty = false, images = IMAGES } = {}) {
   const commit = git("rev-parse", "--verify", `${rev}^{commit}`);
   const dirtyPaths = dirty ? git("status", "--porcelain", "--", ...PROVENANCE_PATHS).split("\n").filter(Boolean) : [];
   const labDirty = git("status", "--porcelain", "--", "scripts/mesh-lab").split("\n").filter(Boolean);
@@ -543,6 +557,10 @@ function build({ rev = "HEAD", dirty = false } = {}) {
     mkdirSync(ctx, { recursive: true });
     const tar = spawnSync("sh", ["-c", `git -C "$1" archive "$2" | tar -x -C "$3"`, "-", ROOT, commit, ctx], { stdio: "inherit" });
     if (tar.status !== 0) throw new Error(`git archive ${commit} failed`);
+    // git archive stamps every file with the commit's time, and BuildKit sends a context file only when
+    // its size or mtime changed: two commits of one second with a same-size edit would share the file,
+    // the second image carrying the first's bytes under its own commit. Layers key on content, not mtime.
+    run("find", [ctx, "-exec", "touch", "-h", "{}", "+"]);
     // the lab's build files from the working tree (a commit from before the lab has none)
     for (const f of ["Dockerfile", "Dockerfile.dockerignore", "host"]) {
       rmSync(join(ctx, "scripts/mesh-lab", f), { recursive: true, force: true });
@@ -558,7 +576,7 @@ function build({ rev = "HEAD", dirty = false } = {}) {
     labBuildFiles: labDirty.length ? `working tree, uncommitted: ${labDirty.join("; ")}` : "working tree, clean",
     builtAt: new Date().toISOString(),
   };
-  console.log(`building ${IMAGES.plain} and ${IMAGES.host} from ${provenance.source} at ${commit.slice(0, 12)}${dirtyPaths.length ? ` + ${dirtyPaths.length} dirty path(s)` : ""}`);
+  console.log(`building ${images.plain} and ${images.host} from ${provenance.source} at ${commit.slice(0, 12)}${dirtyPaths.length ? ` + ${dirtyPaths.length} dirty path(s)` : ""}`);
   const common = [
     "build", "-f", join(ctx, "scripts/mesh-lab/Dockerfile"),
     "--label", "sova.mesh-lab=1",
@@ -567,13 +585,18 @@ function build({ rev = "HEAD", dirty = false } = {}) {
     "--build-arg", `LAB_PROVENANCE=${JSON.stringify(provenance)}`,
   ];
   try {
-    docker([...common, "--target", "plain", "-t", IMAGES.plain, ctx], { inherit: true });
-    docker([...common, "--target", "host", "-t", IMAGES.host, ctx], { inherit: true });
+    docker([...common, "--target", "plain", "-t", images.plain, ctx], { inherit: true });
+    docker([...common, "--target", "host", "-t", images.host, ctx], { inherit: true });
   } finally {
     if (ctx !== ROOT) rmSync(ctx, { recursive: true, force: true });
   }
   return provenance;
 }
+
+const resolveCommit = (rev) => git("rev-parse", "--verify", `${rev}^{commit}`);
+const haveRevImages = (commit) => Object.values(revImages(commit)).every((img) => docker(["image", "inspect", img], { allowFail: true, quiet: true }).code === 0);
+/** The images of one commit, always from git archive: a host on its own build names a commit. */
+const buildRev = (commit) => build({ rev: commit, images: revImages(commit) });
 
 /** What each running Sova container was built from (its /sova/BUILD_COMMIT). */
 export function provenanceOf(name) {
@@ -596,14 +619,27 @@ export function provenanceLine(cfg) {
 
 async function cmdUp(args) {
   const cfg = parseUpArgs(args, loadConfig() || DEFAULTS);
-  const { _noBuild: noBuild, _dirty: dirty, _rev: rev } = cfg;
+  const { _noBuild: noBuild, _dirty: dirty, _rev: rev, _nodeRevs: nodeRevs = {} } = cfg;
   delete cfg._noBuild;
   delete cfg._dirty;
   delete cfg._rev;
+  delete cfg._nodeRevs;
   if (dirty && rev) die("--dirty builds the working tree; it cannot be combined with --rev");
+  // Each named node runs its own commit, kept in lab.json like the other options; `--rev a=` puts a
+  // back on the common build. Nodes named nowhere stay on the common image, as a lab always has.
+  cfg.revs = { ...cfg.revs };
+  for (const [n, r] of Object.entries(nodeRevs)) {
+    if (![...cfg.hosts, "plain"].includes(n)) die(`--rev ${n}=: ${n} is not a Sova node of this lab`);
+    if (r) cfg.revs[n] = resolveCommit(r);
+    else delete cfg.revs[n];
+  }
   if (!existsSync(AUTH_SRC) && cfg.auth !== "none") die(`${AUTH_SRC} missing: build it (scripts/hermetic-agent-dir.mjs + the API-key auth.json) or use --auth none`);
   saveConfig(cfg);
-  if (!noBuild) build({ rev: rev ?? "HEAD", dirty: !!dirty });
+  if (!noBuild) {
+    build({ rev: rev ?? "HEAD", dirty: !!dirty });
+    for (const commit of new Set(Object.values(nodeRevs).filter(Boolean).map(resolveCommit))) buildRev(commit);
+  }
+  for (const commit of new Set(Object.values(cfg.revs))) if (!haveRevImages(commit)) buildRev(commit);
   mkdirSync(join(STATE, "secrets"), { recursive: true, mode: 0o700 });
   const keyFile = join(STATE, "secrets/authkey");
   if (!existsSync(keyFile)) writeFileSync(keyFile, "", { mode: 0o600 }); // bind-mount target must exist
@@ -628,6 +664,28 @@ async function cmdUp(args) {
   }
   if (publicGateway(cfg)) console.log(`public front: http://127.0.0.1:${PORTS.publicfront}/ > ${publicGateway(cfg)} 127.0.0.1:${SHARE_PORT}`);
   cmdStatus([]);
+}
+
+/** Put one running node on another commit, as an update does: same volumes (sessions, peers.json,
+    tailnet identity), new code. `default` puts it back on the lab's common build. A commit's images
+    are built once; --build rebuilds them (after a change to the lab's own host/ files). */
+async function cmdSwap(args) {
+  const cfg = requireConfig();
+  const n = needNode(cfg, args[0], ["sova"]);
+  const rev = args[1] ?? die("swap <node> <rev|default> [--build]");
+  cfg.revs = { ...cfg.revs };
+  if (rev === "default") delete cfg.revs[n];
+  else {
+    const commit = resolveCommit(rev);
+    if (args.includes("--build") || !haveRevImages(commit)) buildRev(commit);
+    cfg.revs[n] = commit;
+  }
+  saveConfig(cfg);
+  writeCompose(cfg);
+  compose(["up", "-d", "--no-deps", n], { inherit: true });
+  if (publicGateway(cfg) === n) compose(["up", "-d", "--no-deps", "--force-recreate", "publicfront"], { inherit: true });
+  await waitReady(cfg);
+  console.log(`${n}: ${provenanceLine({ ...cfg, hosts: [n], plain: false })}`);
 }
 
 function cmdDown() {
@@ -660,6 +718,9 @@ function cmdDestroy(args) {
   docker(["network", "rm", NETWORK], { allowFail: true, quiet: true });
   docker(["network", "rm", WAN_NETWORK], { allowFail: true, quiet: true });
   for (const img of Object.values(IMAGES)) docker(["image", "rm", "-f", img], { allowFail: true, quiet: true });
+  // the per-commit images (--rev <node>=<rev>, swap), whatever lab.json still says about them
+  const revTagged = docker(["images", "--format", "{{.Repository}}:{{.Tag}}", "--filter", "label=sova.mesh-lab=1"], { allowFail: true, quiet: true }).out.split("\n").filter((t) => /^sovamesh-(host|plain):rev-/.test(t));
+  if (revTagged.length) docker(["image", "rm", "-f", ...revTagged], { allowFail: true, quiet: true });
   docker(["image", "prune", "-f", "--filter", "label=sova.mesh-lab=1"], { allowFail: true, quiet: true });
   if (args.includes("--pulled")) for (const img of Object.values(PULLED)) docker(["image", "rm", img], { allowFail: true, quiet: true });
   rmSync(STATE, { recursive: true, force: true });
@@ -815,6 +876,15 @@ function restartSova(n) {
   docker(["exec", container(n), "sh", "-c", KILL_SOVA], { allowFail: true, quiet: true });
 }
 
+/** The binding a host's Sova checks peers.json against (server/mesh/index.ts checkHome): its state root's
+    real path and machine id. A peers.json with none in a non-default agent dir, as every lab host has, is
+    "unbound" and keeps the mesh off; Sova only binds a default root by itself. A build from before the
+    binding ignores the field. */
+function homeOf(n) {
+  const out = docker(["exec", container(n), "node", "-e", `const fs=require("fs");const d=process.env.PI_CODING_AGENT_DIR+"/sova";fs.mkdirSync(d,{recursive:true});const p=fs.realpathSync(d);let m;try{m=fs.readFileSync("/etc/machine-id","utf8").trim()}catch{}console.log(JSON.stringify({path:p,...(m?{machine:m}:{})}))`]).out;
+  return JSON.parse(out);
+}
+
 async function cmdPair(args) {
   const cfg = requireConfig();
   const noRestart = args.includes("--no-restart");
@@ -828,7 +898,9 @@ async function cmdPair(args) {
     try {
       prev = cur ? JSON.parse(cur) : {};
     } catch {}
-    writeAgentFile(h, "sova/peers.json", JSON.stringify({ ...prev, ...peersJsonFor(cfg, h, members) }, null, 2) + "\n");
+    const doc = { ...prev, ...peersJsonFor(cfg, h, members) };
+    doc.self.home = homeOf(h);
+    writeAgentFile(h, "sova/peers.json", JSON.stringify(doc, null, 2) + "\n");
     console.log(`${h}: peers.json -> ${members.filter((m) => m !== h).join(", ")}`);
   }
   if (!noRestart) {
@@ -857,12 +929,16 @@ const HELP = `usage: scripts/mesh-lab/lab <command> [args]
 
 lifecycle
   up [--hosts N|a,b,..] [--auth all|none|a,b] [--no-plain] [--no-stranger] [--no-frontdoor] [--no-publicfront]
-     [--no-mock] [--no-seed] [--no-build] [--rev <rev>] [--dirty] [--wan]
+     [--no-mock] [--no-seed] [--no-build] [--rev <rev>] [--rev <node>=<rev>…] [--dirty] [--wan]
                                   build images from git archive <rev> (default HEAD; --dirty: the
                                   working tree as is), start/refresh the lab, wait until ready;
+                                  --rev a=<rev> runs that node on its own commit, kept until
+                                  --rev a= or lab swap a default;
                                   --wan adds sovamesh_wan (198.51.100.0/24, "the internet") to the
                                   first host and plain, for M9
   build [--rev <rev>] [--dirty]   build the images only
+  swap <node> <rev|default> [--build]   update one running node to another commit: same volumes,
+                                  new image (built once per commit); default: the common build
   down                            stop and remove containers (volumes kept)
   reset [up options]              wipe all lab volumes + Headscale DB + secrets, then up
   destroy [--pulled]              remove everything the lab created (containers, volumes, network,
@@ -912,6 +988,8 @@ export async function main(argv) {
       const i = args.indexOf("--rev");
       return build({ rev: i >= 0 ? args[i + 1] : "HEAD", dirty: args.includes("--dirty") });
     }
+    case "swap":
+      return cmdSwap(args);
     case "down":
       return cmdDown();
     case "reset":

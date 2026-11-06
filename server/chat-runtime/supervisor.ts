@@ -168,7 +168,7 @@ const DENY = new Set(["INVOCATION_ID", "JOURNAL_STREAM", "MANAGERPID", "NOTIFY_S
 /**
  * The variables the launch sets for one chat process, and only for it: its socket, file, id, unit and
  * build, the state root of the server that started it, where its code was copied from and to
- * (§app.chat-processes/code-generations), and its caller key (§app.command-audit/keys). A server never reads them: one started from a chat's own
+ * (§app.chat-processes/code-generations), and its caller key (§app.command-audit/keys), and the URL of that server. A server never reads them: one started from a chat's own
  * tools (a hermetic server in a worktree) deletes them from its env at boot (scrubChatProcessEnv),
  * and a chat process never inherits them from its server.
  */
@@ -181,7 +181,15 @@ export const CHAT_PROCESS_ENV = [
   "SOVA_CHAT_STATE_ROOT",
   "SOVA_CHAT_LIVE_ROOT",
   "SOVA_CHAT_COPIES_ROOT",
+  "SOVA_WAKE_DIR",
+  "SOVA_WAKE_WORKER",
+  "SOVA_JOBS_DIR",
+  "SOVA_JOBS_UNIT_PREFIX",
+  "SOVA_JOB_CARDS",
+  // A server started by a chat's command carries that call's mark (server/background-jobs-capture.ts).
+  "SOVA_JOB_CALL",
   "SOVA_CALLER_KEY",
+  "SOVA_URL",
   // accounts.ts LOGIN_CONTEXT_ENV: a chat's project login, handed over per chat (never inherited by a server).
   "SOVA_CLAUDE_LOGIN_CONTEXT",
 ] as const;
@@ -904,7 +912,8 @@ export class ChatSupervisor {
     const t = this.chats.get(chatId);
     if (!t) return;
     if (!idle) t.idleSince = null;
-    else if (t.idleSince === null) t.idleSince = since ?? this.now();
+    // A later `since` while idle: a turn too short for any mirror to show it running.
+    else if (t.idleSince === null || (since !== undefined && since > t.idleSince)) t.idleSince = since ?? this.now();
   }
 
   /** Chat `chatId`'s Claude CLI child: none, idle (kept for the next turn) or busy (never reaped). */

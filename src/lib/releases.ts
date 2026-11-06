@@ -1,7 +1,6 @@
 // The Releases tab's words and rules: pure, so the rules run under tsx --test and
 // the tab, the Overview card and the Deploy card read them alike. Types only from the wire.
-import type { ProjectRuntimeView } from "../../shared/project-runtime";
-import type { ReleaseHistoryItem, ReleaseRecord, ReleaseState, ReleaseStep, ReleaseView, StepState } from "../../shared/release";
+import { RELEASE_NOTE_MAX, type ReleaseHistoryItem, type ReleaseRecord, type ReleaseState, type ReleaseStep, type ReleaseView, type StepState } from "../../shared/release";
 
 export type ChipTone = "info" | "warn" | "error" | "success" | "accent" | undefined;
 export interface ChipWord {
@@ -175,18 +174,18 @@ function list(xs: readonly string[]): string {
 /** Who started it, in the record's own words. */
 export const startedByWord = (by: ReleaseRecord["startedBy"]): string => (by === "power" ? "the release power" : "you");
 
-/** A Set Up Releases run (the release playbook maker) as the not-set-up view shows it: live (running, or waiting on your
-    answers) with its chat, or proposed on its branch for you to review and land; null when none is. */
-export type SetupRun = { kind: "live"; waiting: boolean; path?: string; questions?: number } | { kind: "proposed"; branch: string; path?: string };
-export function setupRun(v: Pick<ProjectRuntimeView, "playbook" | "playbookState"> | undefined): SetupRun | null {
-  const pb = v?.playbook;
-  if (!pb || pb.proposes !== "release") return null;
-  if (v!.playbookState === "running" || v!.playbookState === "waiting")
-    return { kind: "live", waiting: v!.playbookState === "waiting", ...(pb.path ? { path: pb.path } : {}), ...(pb.questions ? { questions: pb.questions } : {}) };
-  if (v!.playbookState === "proposed") return { kind: "proposed", branch: pb.branch ?? "its branch", ...(pb.path ? { path: pb.path } : {}) };
-  return null;
+/** The longest Release Note Sova keeps (release.note refuses a longer one). */
+export const NOTE_MAX = RELEASE_NOTE_MAX;
+
+/** Who asked for a release (a release.request's `by`), in plain words. */
+export const askerWord = (by: string): string => (by.startsWith("assistant") ? "the Project Assistant" : by.startsWith("project-overseer") ? "the project's overseer" : "the Overseer");
+
+/** The editor's Save: the note as Sova keeps it (trimmed), and whether Save would change anything. */
+export function noteDraft(draft: string, saved: string | null | undefined): { text: string; changed: boolean; tooLong: boolean } {
+  const text = draft.trim();
+  return { text, changed: text !== (saved ?? ""), tooLong: text.length > RELEASE_NOTE_MAX };
 }
 
-/** The live run's line: "Setup chat running", or what it waits on. */
-export const setupLiveLine = (r: Extract<SetupRun, { kind: "live" }>): string =>
-  r.waiting ? `Setup chat waiting on your answers${r.questions ? ` · ${r.questions} ${r.questions === 1 ? "question" : "questions"}` : ""}` : "Setup chat running";
+/** The saved note's line beside Start Release: what the next start does with it. */
+export const savedNoteLine = (open: boolean): string =>
+  open ? "The next Start Release sends this note to its release chat, then clears it." : "Start Release sends this note to the release chat, then clears it.";

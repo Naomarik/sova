@@ -187,12 +187,13 @@
       "server/session-powers.ts",
       "server/group-prompt.ts",
       "server/chat-workers.ts",
-      "server/chat-actions.ts"
+      "server/chat-actions.ts",
+      "pi-config/extensions/wake-nudge.ts"
     ],
     "agreed": {
       "by": "omar",
-      "at": "2026-10-26T22:15Z",
-      "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
+      "at": "2026-11-04T11:02Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#a22a19ea"
     },
     "evidence": "verified"
   },
@@ -236,7 +237,8 @@
       "src/lib/explanations.ts",
       "src/components/OverviewSharesCard.tsx",
       "src/lib/session-shares.ts",
-      "src/lib/session-shares.test.ts"
+      "src/lib/session-shares.test.ts",
+      "src/components/OverviewProjects.tsx"
     ],
     "requires": [
       "§app.organizations/org-cards",
@@ -244,8 +246,14 @@
       "§app.session-list/needs-you",
       "§app.session-list/recent",
       "§mesh.ui/card",
-      "§app.extensions/cards"
-    ]
+      "§app.extensions/cards",
+      "§app.projects/home-cards"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T22:53Z",
+      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
+    }
   },
   "§chat.transcript/live-watch": {
     "kind": "behavior",
@@ -687,12 +695,13 @@
       "src/App.tsx",
       "src/lib/older-rows-view.ts",
       "src/lib/error-feed.ts",
-      "src/lib/error-feed.test.ts"
+      "src/lib/error-feed.test.ts",
+      "src/components/OverviewProjects.tsx"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-19T21:14Z",
-      "source": "pi-session:398db362-660a-4f63-967c-d28758e5179f#fb5aff13"
+      "by": "user",
+      "at": "2026-11-04T22:53Z",
+      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
     }
   },
   "§chat.transcript/streaming": {
@@ -731,12 +740,16 @@
       "src/lib/hidden-rows.ts",
       "src/lib/hidden-rows.test.ts",
       "src/lib/input-count.ts",
-      "shared/wake.ts"
+      "shared/wake.ts",
+      "src/components/WakeCard.tsx",
+      "src/lib/wake.test.ts",
+      "src/lib/wake-card.test.ts",
+      "pi-config/extensions/subagents/job-store.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-27T21:10Z",
-      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
+      "by": "omar",
+      "at": "2026-11-04T11:00Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
     }
   },
   "§chat.transcript/turn-end-keeps-reader": {

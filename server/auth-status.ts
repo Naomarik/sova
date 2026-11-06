@@ -8,10 +8,14 @@ import type { UsageAuth, UsageProvider } from "../shared/protocol";
 
 // What each usage provider's sign-in says, for the Usage page: expiry times and when it was last
 // renewed. Reads the same credential files the usage-status fetch does
-// (pi-config/extensions/usage-status/fetch.ts), and only reads them: Sova never writes a
-// credential file and never refreshes a token. Each file is re-parsed only when its (mtime, size)
-// changes, and a parse keeps numbers and flags only, so no token string outlives the read and
-// none can reach the wire. On macOS, a Claude login with no file is read from its keychain item
+// (pi-config/extensions/usage-status/fetch.ts), and only reads them: Sova never refreshes a token,
+// and writes a credential file in three named places only, each at the user's request: Settings →
+// Accounts' Claude logins (server/claude-accounts.ts, through Claude Code), its OpenAI sign-in
+// (server/openai-login.ts, through pi's own login and logout) and its API keys (server/provider-keys.ts,
+// through pi's api-key login and logout). Each file is re-parsed only when its
+// (mtime, size) changes, and a parse keeps numbers and flags only, so no token string outlives the
+// read and none can reach the wire. The one string kept is the OpenAI sign-in's email, read from its
+// access token's claims for Settings → Accounts (§app.openai-login). On macOS, a Claude login with no file is read from its keychain item
 // (§app.claude-logins/macos-keychain) at most every 30 s per login, keeping the same numbers.
 
 /** The credential files fetch.ts reads: Claude Code's own directory ($CLAUDE_CONFIG_DIR, else ~/.claude), pi's (the agent dir's auth.json) and the Codex CLI's. */
@@ -42,7 +46,7 @@ const has = (v: unknown): boolean => typeof v === "string" && v.length > 0;
 
 /** `mtimeMs` is the file's; a keychain item has none, and so no renewal time. */
 interface ClaudeFacts { expiresAt?: number; refreshExpiresAt?: number; mtimeMs?: number }
-interface PiFacts { openai?: { expiresAt?: number }; apiKeys: UsageProvider["id"][] }
+interface PiFacts { openai?: { expiresAt?: number; email?: string }; apiKeys: UsageProvider["id"][] }
 interface CodexFacts { refreshedAt?: number }
 
 function claudeFacts(v: unknown, mtimeMs?: number): ClaudeFacts | undefined {
@@ -79,11 +83,33 @@ async function keychainFacts(credsPath: string, now: number, keychain?: Keychain
 /** auth.json keys fetch.ts reads an API key from, by usage provider. */
 const API_KEY_ENTRIES: [string, UsageProvider["id"]][] = [["ollama-cloud", "ollama"], ["zai", "zai"], ["deepseek", "deepseek"]];
 
+/** The JWT claim OpenAI keeps the account's profile under. */
+const OPENAI_PROFILE_CLAIM = "https://api.openai.com/profile";
+const EMAIL = /^[^\s@]{1,128}@[^\s@]{1,253}$/;
+
+/**
+ * An OpenAI access token's email (`https://api.openai.com/profile` → `email`), decoded from its
+ * payload and nothing else: no signature is checked, as this is a label. Anything that isn't a
+ * plain email address gives nothing.
+ */
+export function emailOf(token: unknown): { email?: string } {
+  if (typeof token !== "string") return {};
+  const payload = token.split(".")[1];
+  if (!payload) return {};
+  try {
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    const email = isRec(claims) && isRec(claims[OPENAI_PROFILE_CLAIM]) ? claims[OPENAI_PROFILE_CLAIM].email : undefined;
+    return typeof email === "string" && EMAIL.test(email) ? { email } : {};
+  } catch {
+    return {};
+  }
+}
+
 function piFacts(v: unknown): PiFacts | undefined {
   if (!isRec(v)) return undefined;
   const codex = v["openai-codex"];
   return {
-    ...(isRec(codex) && has(codex.access) ? { openai: { expiresAt: num(codex.expires) } } : {}),
+    ...(isRec(codex) && has(codex.access) ? { openai: { expiresAt: num(codex.expires), ...emailOf(codex.access) } } : {}),
     apiKeys: API_KEY_ENTRIES.filter(([key]) => isRec(v[key]) && has(v[key].key)).map(([, id]) => id),
   };
 }
@@ -148,6 +174,28 @@ export async function readAuthStatus(paths: AuthStatusPaths = defaultAuthPaths()
   else if (codex) out.openai = oauth("codex-cli", codex, now);
   for (const id of pi?.apiKeys ?? []) out[id] = { kind: "apiKey" };
   return out;
+}
+
+/** Settings → Accounts' OpenAI section: pi's `openai-codex` sign-in, and whether the Codex app is signed in here. */
+export interface OpenAiSignInFacts {
+  signedIn: boolean;
+  email?: string;
+  expiresAt?: number;
+  expired?: boolean;
+  codexAppSignedIn: boolean;
+}
+
+/** pi's own OpenAI sign-in (never the Codex app's: Sova's chats can't use that one), read as readAuthStatus reads it. */
+export async function readOpenAiSignIn(paths: AuthStatusPaths = defaultAuthPaths(), now = Date.now()): Promise<OpenAiSignInFacts> {
+  const [pi, codex] = await Promise.all([factsOf(paths.piAuth, piFacts), factsOf(paths.codexAuth, codexFacts)]);
+  const o = pi?.openai;
+  if (!o) return { signedIn: false, codexAppSignedIn: codex !== undefined };
+  return {
+    signedIn: true,
+    ...(o.email ? { email: o.email } : {}),
+    ...(o.expiresAt !== undefined ? { expiresAt: o.expiresAt, expired: o.expiresAt <= now } : {}),
+    codexAppSignedIn: codex !== undefined,
+  };
 }
 
 function claudeAuth(claude: ClaudeFacts, now: number): UsageAuth {

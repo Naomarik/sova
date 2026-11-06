@@ -26,14 +26,17 @@ import { firstText, headerOf, joinedText, lineEntry, lineMay, toHEntry } from ".
 import { contextStep } from "./harness/pi/usage";
 import { type AlignScan, readAlignScan } from "./align-state";
 import { type WorkerParents, WorkerSessions } from "./worker-sessions";
-import { isOverseerId, overseerDir } from "./overseer-store";
+import { isOverseerId, overseerDir, readOverseerState } from "./overseer-store";
 import { readDecisionSettings } from "./decide-settings";
 import { readSignals, type SignalsFile, signalsOverlay, withoutRestartAsk } from "./signals-store";
 import { withOpenOffer } from "./session-offers";
 import { dropSessionTags, tagsFor, tagsReader } from "./session-tags";
 import { branchesOverlay, pruneReadiness, readinessOverlay } from "./merge-readiness";
 import { listGeneration } from "./list-generation";
-import { projectOverseerOfPath, readPoState } from "./project-overseer-store";
+import { projectOf, projectOverseerOfPath, readPoState } from "./project-overseer-store";
+import { memoSovaChatNames, readSovaChatNames, setSovaChatName, type SovaChatName } from "./sova-chat-names";
+import { rebuildSovaName } from "./sova-chat-origin";
+import { SOVA_NAMED_FALLBACK, sovaNamedKind, type FixedNameKind, type SovaNamedKind } from "../shared/fixed-names";
 import { projectOverseerUnread } from "./project-overseer-unread";
 import { engineBuildsReader, type EngineBuildsReader } from "./build-loadout";
 import { projectCodingIds, projectKeeps, projectSessionLookup } from "./project-sessions";
@@ -43,6 +46,7 @@ import { removeSessionTours } from "./tours/lifecycle";
 import { byActivity } from "../src/lib/summary-diff";
 import { queueChatRole } from "../shared/merge-queue";
 import { opTrack } from "./stall-recorder";
+import { runningJobCount } from "./background-jobs";
 
 /**
  * What another layer adds to the list (organizations: a baton session's `baton`, an org session's `org`), and
@@ -54,6 +58,8 @@ export interface SessionsPart {
   lookup(builds: EngineBuildsReader): { of(path: string, id: string, project?: SessionSummary["project"]): Pick<SessionSummary, "baton" | "org" | "folderOrg"> | undefined };
   /** Why the file may never be deleted here, or null. */
   keeps?(path: string): string | null;
+  /** A gathering session's name (its public title), or undefined when the file isn't one (shared/fixed-names.ts). */
+  gatheringTitle?(path: string): string | undefined;
 }
 const sessionParts: SessionsPart[] = [];
 export function contributeSessions(part: SessionsPart): void {
@@ -79,6 +85,157 @@ function fieldLookup(): (path: string, id: string, cwd?: string, mtimeMs?: numbe
   };
 }
 
+/** A gathering session's public title, from the layer that knows it; undefined for any other file. */
+function gatheringTitleOf(path: string): string | undefined {
+  for (const p of sessionParts) {
+    const t = p.gatheringTitle?.(path);
+    if (t?.trim()) return t;
+  }
+  return undefined;
+}
+
+// ---- fixed names (shared/fixed-names.ts) -----------------------------------------------------------------------
+
+/** What makes a file one of the chats Sova names itself. `baton`: the list found it a baton session (undefined:
+    unknown, so the gathering layer is asked). */
+interface FixedFacts {
+  id: string;
+  path: string;
+  overseer?: boolean;
+  projectOverseer?: { projectId: string } | null;
+  baton?: boolean;
+  profile?: SessionSummary["profile"];
+  /** The file's header time: tells a withdrawal's own chat from the release chat it followed. */
+  createdAt?: string;
+}
+export interface FixedName {
+  kind: FixedNameKind;
+  name: string;
+}
+
+const nameLine = (t: string): string => t.replace(/\s+/g, " ").trim();
+
+/** A project's name as it is now (a rename shows at the next read), or null when the project can't be read. */
+function projectNameOf(projectId: string): string | null {
+  try {
+    return nameLine(projectOf(projectId).name) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The name Sova fixes for a chat, or null for every other chat. The overseers' names are derived (the project's
+ * current name); a gathering's is its public title; a merge queue chat's or release chat's is the one Sova recorded
+ * when it started the chat (server/sova-chat-names.ts, a store no rename writes). For a chat started before that
+ * record, the name is rebuilt from Sova's own records with the start paths' formatters (server/sova-chat-origin.ts)
+ * and recorded then, once; failing that, a merge chat's stored title when Sova wrote it (`auto`: the namer never
+ * names a merge chat), else the kind's word. A release chat's `auto` title is never trusted: the namer may have
+ * written it. Titles the user or the Overseer stored on these chats are never read.
+ */
+export function fixedNameOf(f: FixedFacts, names: Readonly<Record<string, SovaChatName>> = memoSovaChatNames(), titles: Readonly<Record<string, StoredTitle>> = memoSessionTitleRecords()): FixedName | null {
+  if (f.overseer) return { kind: "overseer", name: "Overseer" };
+  if (f.projectOverseer) {
+    const project = projectNameOf(f.projectOverseer.projectId);
+    return { kind: "project-overseer", name: project ? `Overseer \u00b7 ${project}` : "Overseer" };
+  }
+  if (f.baton !== false) {
+    const t = gatheringTitleOf(f.path);
+    if (t) return { kind: "gathering", name: nameLine(t) };
+  }
+  const given = names[f.id];
+  const kind = sovaNamedKind(f.profile) ?? given?.kind;
+  if (!kind) return null;
+  if (given) return { kind, name: given.name };
+  const rebuilt = rebuiltName(kind, f);
+  if (rebuilt) return { kind, name: rebuilt };
+  const stored = titles[f.id];
+  return { kind, name: kind !== "release" && stored?.by === "auto" ? stored.title : SOVA_NAMED_FALLBACK[kind] };
+}
+
+/** Ids whose name couldn't be rebuilt, and when that was found: asked again a minute later at most. */
+const unrebuilt = new Map<string, number>();
+const UNREBUILT_MS = 60_000;
+
+/** The rebuilt Sova name of a chat started before Sova recorded it, recorded now so it is read once. */
+function rebuiltName(kind: SovaNamedKind, f: FixedFacts, now = Date.now()): string | null {
+  const miss = unrebuilt.get(f.id);
+  if (miss !== undefined && now - miss < UNREBUILT_MS) return null;
+  const name = rebuildSovaName(kind, f.id, f.path, f.createdAt);
+  if (!name) {
+    if (unrebuilt.size > 2000) unrebuilt.clear();
+    unrebuilt.set(f.id, now);
+    return null;
+  }
+  unrebuilt.delete(f.id);
+  setSovaChatName(f.id, kind, name);
+  return name;
+}
+
+/** The facts of one file from what is cached of it (or, with nothing cached, its id from the file name). */
+function fixedFactsOfPath(path: string, entry: CacheEntry | undefined = cache.get(path)): FixedFacts {
+  const id = entry?.summary.id ?? idOf(path);
+  const overseer = (entry ? entry.marked : true) && isOverseerId(id);
+  return { id, path, overseer, projectOverseer: overseer ? null : projectOverseerOfPath(path, id, entry?.mtimeMs), profile: entry?.summary.profile, createdAt: entry?.summary.createdAt };
+}
+
+/** A file's fixed name, from its cached summary when there is one (else its file name and Sova's records). */
+export function fixedNameOfPath(path: string): FixedName | null {
+  return fixedNameOf(fixedFactsOfPath(path));
+}
+
+/** Whether a file is the Overseer's current conversation or an earlier one (the monitor's Open Session). */
+export function overseerConversationOf(path: string): "current" | "earlier" | undefined {
+  const entry = cache.get(path);
+  if (entry && !entry.marked) return undefined;
+  const id = entry?.summary.id ?? idOf(path);
+  const st = readOverseerState();
+  if (!st) return undefined;
+  return st.current === id ? "current" : st.history.includes(id) ? "earlier" : undefined;
+}
+
+/** What the resource monitor says of a chat Sova names: its name, and whether it is the Overseer's current or an
+    earlier conversation (Open Session goes to the Overseer page then). */
+export interface MonitorFixed {
+  title: string;
+  overseer?: "current" | "earlier";
+}
+const MONITOR_FIXED_MS = 15_000;
+const monitorFixedMemo = new Map<string, { at: number; v: MonitorFixed | null }>();
+
+/**
+ * The monitor's word on one session file (undefined: an ordinary session). `fresh` reads Sova's records now (a
+ * history request); without it the answer is kept for 15 s, so the monitor's tick asks them at most that often.
+ */
+export function monitorFixedOf(path: string, fresh = false, now = Date.now()): MonitorFixed | undefined {
+  const hit = monitorFixedMemo.get(path);
+  if (!fresh && hit && now - hit.at < MONITOR_FIXED_MS) return hit.v ?? undefined;
+  const f = fixedNameOfPath(path);
+  const v: MonitorFixed | null = f ? { title: f.name, ...(f.kind === "overseer" ? { overseer: overseerConversationOf(path) ?? "earlier" } : {}) } : null;
+  if (monitorFixedMemo.size > 2000) monitorFixedMemo.clear();
+  monitorFixedMemo.set(path, { at: now, v });
+  return v ?? undefined;
+}
+
+/** A row with its fixed name: `title` is the name, and no override provenance rides along (none applies). */
+function withFixedName<T extends Pick<SessionSummary, "title" | "originalTitle" | "titleBy" | "fixedName">>(row: T, fixed: FixedName | null): T {
+  if (!fixed) return row;
+  const { originalTitle: _o, titleBy: _b, ...rest } = row;
+  return { ...rest, title: fixed.name, fixedName: fixed.kind } as T;
+}
+
+/**
+ * What an earlier overseer conversation was about (the History screens): Sova's automatic title for it, else its
+ * first message, else "Untitled". Never the fixed name, and never a title somebody typed (a project overseer's file
+ * stored its fixed name as one). Undefined when the file is not a session.
+ */
+export async function aboutOf(path: string, titles: Readonly<Record<string, StoredTitle>> = memoSessionTitleRecords()): Promise<string | undefined> {
+  const s = await summarize(path).catch(() => null);
+  if (!s) return undefined;
+  const stored = titles[s.id];
+  return stored?.by === "auto" ? stored.title : s.title;
+}
+
 /** Why a file may never be deleted here (another layer's, or a standalone project's), or null. */
 function keptBy(path: string): string | null {
   for (const p of sessionParts) {
@@ -100,6 +257,13 @@ type BaseSummary = Omit<SessionSummary, "live" | "workers" | "origin" | "archive
 const heldChatField = (path: string): Pick<SessionSummary, "chat"> => {
   const chat = heldChatState(path);
   return chat ? { chat } : {};
+};
+
+/** SessionSummary.jobsRunning: a shut-down chat's running background jobs (the list's `job running` marker). */
+const jobsField = (id: string, path: string): Pick<SessionSummary, "jobsRunning"> => {
+  if (heldChatState(path)) return {};
+  const n = runningJobCount(id);
+  return n > 0 ? { jobsRunning: n } : {};
 };
 
 const CHUNK = 16 * 1024;
@@ -916,8 +1080,12 @@ function withTitle(s: BaseSummary, titles: Readonly<Record<string, StoredTitle>>
 }
 
 /** A session's display title from what is already in memory (the cached summary and the titles
-    as last read), with no I/O; undefined when the session was never summarized here. */
+    as last read), with no read of its transcript beyond a chat Sova names itself, whose name comes from Sova's own
+    small records (at most every 15 s, monitorFixedOf); undefined when the session was never summarized here. */
 export function cachedTitleOf(path: string): string | undefined {
+  // A chat Sova names itself reads that name even before its file was summarized here (kept 15 s: monitorFixedOf).
+  const fixed = monitorFixedOf(path);
+  if (fixed) return fixed.title;
   const hit = cache.get(path);
   return hit ? withTitle(hit.summary, memoSessionTitleRecords()).title : undefined;
 }
@@ -927,7 +1095,8 @@ export function cachedTitleOf(path: string): string | undefined {
     file is not a session. */
 export async function displayTitleOf(path: string): Promise<string | undefined> {
   const s = await summarize(path).catch(() => null);
-  return s ? withTitle(s, memoSessionTitleRecords()).title : undefined;
+  if (!s) return undefined;
+  return fixedNameOf(fixedFactsOfPath(path))?.name ?? withTitle(s, memoSessionTitleRecords()).title;
 }
 
 /** ms epoch of a session's last assistant reply, from the cached tail read; undefined when unknown. */
@@ -1047,6 +1216,9 @@ export function listSessions(): Promise<SessionSummary[]> {
 
 /** The last listing's rows by path (buildSessions hands an unchanged row out as the same object). */
 let lastRows = new Map<string, SessionSummary>();
+
+/** The last listing's rows by path, as built (no read): what the project cards' glance joins the monitor's sessions to. */
+export const lastListedRows = (): ReadonlyMap<string, SessionSummary> => lastRows;
 
 /** Deep equality that also holds key order and undefined-valued keys: JSON- and deepStrictEqual-identical. */
 function sameValue(a: unknown, b: unknown): boolean {
@@ -1269,6 +1441,7 @@ async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<st
   const resolveWindow = await windowResolver();
   const drafts = readDrafts();
   const titles = readSessionTitleRecords();
+  const sovaNames = readSovaChatNames();
   const groups = readAssignments();
   const seen = readSeen();
   const attention = readDecisionSettings().features.attention;
@@ -1318,8 +1491,9 @@ async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<st
     const ownRec = own.get(s.path);
     // The husk check above reads the DERIVED title on purpose: what keeps an empty session out of
     // the list is that nobody has written in it, which renaming it doesn't change.
+    const fixed = fixedNameOf({ id: s.id, path: s.path, overseer: !!s.overseer, projectOverseer: special.projectOverseer, baton: !!special.baton, profile: s.profile, createdAt: s.createdAt }, sovaNames, titles);
     const row: SessionSummary = {
-      ...withTitle(s, titles),
+      ...withFixedName(withTitle(s, titles), fixed),
       ...outlineOverlay(s, liveOutline(l, ownRec)),
       live: liveField(l),
       workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
@@ -1329,6 +1503,7 @@ async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<st
       ...(groups[s.id] !== undefined ? { groupId: groups[s.id] } : {}),
       busy: isSessionBusy(s.path),
       ...heldChatField(s.path),
+      ...jobsField(s.id, s.path),
       ...attentionFields(s, l, ownRec, seen),
       ...decisionFields(s, l, ownRec, seen, attention, stores),
       ...(preview !== undefined ? { draftPreview: preview } : {}),
@@ -1379,6 +1554,7 @@ export interface SummaryReads {
   own: Map<string, RawLiveRecord>;
   groups: Record<string, string>;
   titles: ReturnType<typeof readSessionTitleRecords>;
+  sovaNames: ReturnType<typeof readSovaChatNames>;
   seen: Record<string, number>;
   attention: boolean;
   fields: ReturnType<typeof fieldLookup>;
@@ -1390,6 +1566,7 @@ export function summaryReads(): SummaryReads {
     own: readOwnLiveRecords(),
     groups: readAssignments(),
     titles: readSessionTitleRecords(),
+    sovaNames: readSovaChatNames(),
     seen: readSeen(),
     attention: readDecisionSettings().features.attention,
     fields: fieldLookup(),
@@ -1405,8 +1582,10 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
   const ownRec = r.own.get(path);
   const groupId = r.groups[s.id];
   const worker = await workerSessions.isWorker(s.path).catch(() => false);
+  const special = r.fields(s.path, s.id, s.cwd);
+  const fixed = fixedNameOf({ id: s.id, path: s.path, overseer: !!s.overseer, projectOverseer: special.projectOverseer, baton: !!special.baton, profile: s.profile, createdAt: s.createdAt }, r.sovaNames, r.titles);
   const row: SessionSummary = {
-    ...withTitle(s, r.titles),
+    ...withFixedName(withTitle(s, r.titles), fixed),
     ...outlineOverlay(s, liveOutline(l, ownRec)),
     live: liveField(l),
     workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
@@ -1416,9 +1595,10 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     ...(groupId !== undefined ? { groupId } : {}),
     busy: isSessionBusy(s.path),
     ...heldChatField(s.path),
+    ...jobsField(s.id, s.path),
     ...attentionFields(s, l, ownRec, r.seen),
     ...decisionFields(s, l, ownRec, r.seen, r.attention),
-    ...r.fields(s.path, s.id, s.cwd),
+    ...special,
   };
   const readiness = readinessOverlay(row);
   const branches = branchesOverlay(row);

@@ -41,3 +41,5 @@ export const clearLandHowOverride = (project: string) => call(`${P(project)}/lan
 export const updateLocalMain = (project: string) => call<{ kind?: "updated" | "current"; head?: string }>(`${P(project)}/update-local-main`, "POST", {});
 export const publishRequest = (entry: string, text: { title: string; body: string; draft: boolean }) =>
   call(`/api/merge-queue/entries/${encodeURIComponent(entry)}/publish`, "POST", text);
+/** Try Again on a branch summary that failed: the same commit is written again. */
+export const retryBranchSummary = (project: string, branch: string, commit: string) => call<{ ok?: true; state?: "writing" }>(`${P(project)}/branch-summary`, "POST", { branch, commit });

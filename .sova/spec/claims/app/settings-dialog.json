@@ -15,7 +15,8 @@
       "server/align-settings.ts",
       "server/app.ts",
       "server/web-settings.ts",
-      "shared/protocol.ts"
+      "shared/protocol.ts",
+      "src/components/form/index.tsx"
     ],
     "requires": [
       "§app/settings-dialog",
@@ -43,7 +44,11 @@
       "src/components/SettingsDialog.tsx",
       "server/decide-settings.ts",
       "server/decide-routes.ts",
-      "src/lib/decision-form.test.ts"
+      "src/lib/decision-form.test.ts",
+      "shared/decision-limits.ts",
+      "server/decide-settings.test.ts",
+      "server/settings-limits-parity.test.ts",
+      "src/components/form/index.tsx"
     ],
     "requires": [
       "§app.decisions/providers",
@@ -93,7 +98,9 @@
       "src/lib/work-compression.test.ts",
       "src/components/SettingsDialog.tsx",
       "src/components/UpdatesSettings.tsx",
-      "src/components/ServerSettings.tsx"
+      "src/components/ServerSettings.tsx",
+      "src/lib/recent.test.ts",
+      "src/components/form/index.tsx"
     ],
     "agreed": {
       "by": "user",
@@ -131,11 +138,14 @@
       "src/lib/model-policy.ts",
       "src/lib/model-policy-draft.ts",
       "src/lib/settings-draft.ts",
-      "src/lib/settings-draft.test.ts"
+      "src/lib/settings-draft.test.ts",
+      "src/lib/model-check.ts",
+      "src/design/base.css"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-15T04:52Z"
+      "at": "2026-11-05T16:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
     }
   },
   "§app.settings-dialog/modes": {
@@ -154,6 +164,47 @@
     "agreed": {
       "by": "user",
       "at": "2026-10-15T04:52Z"
+    }
+  },
+  "§app.settings-dialog/number-boxes": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/BatonSettings.tsx",
+      "src/components/PublicLinksSettings.tsx",
+      "src/components/SessionTitleSettings.tsx",
+      "src/components/SubagentProfilesSettings.tsx",
+      "src/components/OverseerSettings.tsx",
+      "src/components/SettingsDialog.tsx",
+      "src/lib/overseer-draft.ts",
+      "src/lib/settings-number-boxes.test.ts",
+      "src/lib/settings-forms-roundtrip.test.ts",
+      "server/settings-limits-parity.test.ts",
+      "src/components/settings/MergeQueueSettings.tsx",
+      "src/lib/merge-queue-settings.ts",
+      "src/lib/merge-queue-settings-draft.ts",
+      "src/lib/merge-queue-settings.test.ts",
+      "src/components/settings/MergeQueueLandHow.tsx",
+      "src/components/form/index.tsx",
+      "shared/subagent-limits.ts",
+      "shared/subagent-profile-checks.ts",
+      "server/subagent-profiles.ts",
+      "src/lib/subagent-profiles-draft.ts",
+      "src/lib/subagent-editor.ts",
+      "src/lib/subagent-profiles-draft.test.ts",
+      "src/lib/recent.ts",
+      "src/lib/session-title-settings-form.ts"
+    ],
+    "requires": [
+      "§app.settings-dialog/save-bar",
+      "§app.settings-dialog/general",
+      "§app.merge-queue/settings-save"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T09:48Z",
+      "source": "pi-session:01a1a855-6f5f-72d2-b9d3-59fb661e925b#267965d9"
     }
   },
   "§app.settings-dialog/one-height": {
@@ -186,7 +237,10 @@
       "server/share-message.test.ts",
       "server/share-message.integration.test.ts",
       "src/components/BatonSettings.css",
-      "server/project-assistant-routes.ts"
+      "server/project-assistant-routes.ts",
+      "shared/baton-limits.ts",
+      "server/settings-limits-parity.test.ts",
+      "src/components/form/index.tsx"
     ],
     "agreed": {
       "by": "naomarik",
@@ -231,17 +285,50 @@
       "server/overseer-store.ts",
       "src/components/Composer.tsx",
       "src/design/base.css",
-      "src/lib/overseer-draft.test.ts"
+      "src/lib/overseer-draft.test.ts",
+      "shared/overseer-limits.ts",
+      "shared/form-rules.ts",
+      "src/components/form/index.tsx"
     ],
     "requires": [
       "§app.settings-dialog/save-bar",
       "§app.overseer/caps",
+      "§design.copy-deck/settings-overseer",
+      "§app.settings-dialog/overseer-checks"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-04T21:15Z",
+      "source": "pi-session:01a1a855-6f5f-72d2-b9d3-59fb661e925b#0f628483"
+    }
+  },
+  "§app.settings-dialog/overseer-checks": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/overseer-draft.ts",
+      "src/lib/overseer-draft.test.ts",
+      "src/components/OverseerSettings.tsx",
+      "server/overseer-store.ts",
+      "server/overseer-store.test.ts",
+      "server/app.ts",
+      "server/settings-limits-parity.test.ts",
+      "shared/overseer-limits.ts",
+      "shared/form-rules.ts",
+      "src/components/form/index.tsx"
+    ],
+    "requires": [
+      "§app.settings-dialog/overseer",
+      "§app.settings-dialog/save-bar",
+      "§app.settings-dialog/number-boxes",
+      "§app.overseer/caps",
       "§design.copy-deck/settings-overseer"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T17:10Z",
-      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#42b7b210"
+      "by": "naomarik",
+      "at": "2026-11-04T21:15Z",
+      "source": "pi-session:01a1a855-6f5f-72d2-b9d3-59fb661e925b#0f628483"
     }
   },
   "§app.settings-dialog/profiles": {
@@ -299,7 +386,9 @@
       "src/lib/alignment-draft.ts",
       "src/lib/alignment-draft.test.ts",
       "src/components/AlignmentSettings.tsx",
-      "src/lib/updates-draft.ts"
+      "src/lib/updates-draft.ts",
+      "src/lib/settings-forms-roundtrip.test.ts",
+      "server/settings-roundtrip.integration.test.ts"
     ],
     "requires": [
       "§app/settings-dialog",
@@ -338,7 +427,10 @@
       "src/lib/auto-title.ts",
       "src/lib/api.ts",
       "pi-config/extensions/topic-outline/config.ts",
-      "pi-config/extensions/topic-outline/claude-cli.test.ts"
+      "pi-config/extensions/topic-outline/claude-cli.test.ts",
+      "shared/session-title-limits.ts",
+      "server/settings-limits-parity.test.ts",
+      "src/components/form/index.tsx"
     ],
     "agreed": {
       "by": "naomarik",

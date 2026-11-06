@@ -61,7 +61,7 @@ import { canonicalPath } from "./paths";
 import { startableIn } from "./project-folder";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
-import { displayTitleOf, getSessionSummary, idOf, indexedSessionPaths, listSessions, markArchived } from "./sessions-index";
+import { aboutOf, displayTitleOf, getSessionSummary, idOf, indexedSessionPaths, listSessions, markArchived } from "./sessions-index";
 import { actOrThrow, heldAt, holdByRef, holdRef, refusalError } from "./org-engine";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { listPreviews, PreviewRefused } from "./preview-links";
@@ -467,7 +467,8 @@ export async function projectOverseerInfo(projectId: string): Promise<ProjectOve
     const hp = await pathOfId(id);
     if (!hp) continue;
     const s = await getSessionSummary(hp);
-    if (s) history.push({ id, path: hp, title: s.title, lastActiveAt: s.lastActiveAt });
+    // `title` is the fixed name ("Overseer · {project}"); `about` tells the conversations apart.
+    if (s) history.push({ id, path: hp, title: s.title, about: (await aboutOf(hp)) ?? s.title, lastActiveAt: s.lastActiveAt });
   }
   const memo = readMemo(p);
   const known = indexedSessionPaths();
@@ -996,7 +997,7 @@ export function codingModeNowWords(now = codingModeNow()): string {
 /** The Overseer's mode request on a start (POST …/items/code): its mode, or a 400 before anything is taken. */
 function itemCodeMode(body: ModeRequest): ProjectCodingMode | undefined {
   if (body.mode === undefined && body.minor_modes === undefined && body.subagent_profile === undefined) return undefined;
-  const c = checkedCodingModeChoice(body);
+  const c = checkedCodingModeChoice({ ...body, by: "the Overseer" });
   if ("error" in c) throw new OrgError(c.error, 400);
   return c.mode;
 }
@@ -1181,9 +1182,18 @@ async function startCodingSession(
  */
 export function startOnboardSession(
   projectId: string,
-  input: { prompt: string; title: string; model: string; thinking: string; envelope?: Envelope; extra: Record<string, unknown> },
+  input: { prompt: string; title: string; model: string; thinking: string; envelope?: Envelope; extra: Record<string, unknown>; mode?: ProjectCodingMode },
 ): Promise<StartedCoding> {
   return startCodingSession(projectId, { ...input, kind: "onboard", act: "verbs/onboard" });
+}
+
+/**
+ * The Setup chat's start (§app.project-setup/chat): an operator coding session on its own worktree and branch, its
+ * first prompt and mode given, through `build/start` like any other: never a verb playbook run, so the registry's
+ * playbook region stays the Project verbs playbook's.
+ */
+export function startSetupSession(projectId: string, input: { prompt: string; title: string; model: string; thinking: string; mode: ProjectCodingMode; envelope?: Envelope }): Promise<StartedCoding> {
+  return startCodingSession(projectId, { ...input, kind: "operator-coding" });
 }
 
 /** Where a session runs in its worktree: the folder asked for, inside it, when it exists there. */

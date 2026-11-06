@@ -242,17 +242,20 @@ label a person reads says "sessions pane".
     <div class="spine-stats">
       <button class="button button-icon spine-item spine-stat" type="button"
               aria-label="7 agents working now: 2 sessions and 5 subagents. Output tokens a minute: 48k over the last 5 minutes, 12k over 30. Replies still being written aren't counted yet."
-              title="{the same}">…worker…<span class="spine-count">7</span></button>
+              title="{the same}">…agents-working…<span class="spine-count">7</span></button>
       <button class="button button-icon spine-item spine-stat" type="button"
               aria-label="2 sessions open in a TUI" title="2 sessions open in a TUI">…terminal…<span class="spine-count">2</span></button>
     </div>
     <div class="spine-foot">
+      <!-- only while the landing bar shows (§app.merge-queue/landing-bar): opens its detail as a popover -->
+      <button class="button button-icon spine-item landing-spine" type="button" aria-haspopup="dialog" aria-expanded="false"
+              aria-label="{the landing bar's title}. {its sub line}. {its count in words}" title="{the same}">…icon…<span class="landing-spine-dot landing-spine-dot-{tone}" aria-hidden="true"></span></button>
       <a class="button button-icon spine-item" href="#/usage"
-         aria-label="{the usage glance sentence, else Usage}" title="{the same}">…gauge…</a>
+         aria-label="{the usage glance sentence, else Usage}" title="{the same}">…usage-coin…</a>
       <!-- §app.resource-monitor/entry-button -->
       <button class="button button-icon spine-item" type="button" aria-label="Resource monitor" title="Resource monitor">…activity…</button>
       <a class="button button-icon spine-item" href="#/agents"
-         aria-label="{the Agents row's full sentence}" title="{the same}">…worker…</a>
+         aria-label="{the Agents row's full sentence}" title="{the same}">…agents-working…</a>
       <!-- while an update this copy can install is waiting (§app.updates/indicator): the name reads
            "Settings · update available" and an accent .update-dot sits at the button's top right -->
       <button class="button button-icon spine-item" type="button" aria-label="Settings" title="Settings">…settings…</button>
@@ -341,8 +344,10 @@ label a person reads says "sessions pane".
   opens. Pointer users get the sentence as the `title`; a tap raises the same sentence as a toast,
   the rail's precedent (§app.session-list/accessibility — there is no hover on touch).
 - **The foot** — Usage (`#/usage`), Resource monitor, Agents (`#/agents`) and Settings, the
-  expanded foot's two doorways and two buttons, in that order: the monitor sits right after the
-  gauge, as it sits beside the Usage glance. Resource monitor opens the monitor modal, exactly as
+  expanded foot's two doorways and two buttons, in that order: the monitor sits right after
+  Usage, as it sits beside the Usage glance. Above Usage, only while the landing bar has something
+  to show, the **landing item**: one icon with a status dot in the bar's tone, named by the bar's
+  title, sub line and count in words, which opens the bar's detail as a popover (§app.merge-queue/landing-bar). Resource monitor opens the monitor modal, exactly as
   the foot's button does (§app.resource-monitor/entry-button). The glance sentences are not dropped at 64px, only unprinted: Usage's `title` and
   `aria-label` are the usage glance in full words (`glanceText()`), and Agents' are the Agents
   row's own sentence (§app.insights/sidebar-foot, e.g. "Agents: 7 agents working now: 2 sessions
@@ -355,7 +360,7 @@ label a person reads says "sessions pane".
   of 44px items centred with `--space-1` between and `--space-2` above and below, split by
   `--color-border` rules. The tiles are the scroll region (`.pane`) and take the height that's
   left; the other four are pinned. They cost 721px with every item shown (each of the four region doors, two tallies and four foot items is a 44px
-  item and its 4px gap; 625px measured at 1400×1000 with three doors and three foot items, plus one door's 48px and the monitor item's 48px), so the tiles keep a floor of one tile (60px), and on a window shorter than that the whole spine scrolls instead.
+  item and its 4px gap; 625px measured at 1400×1000 with three doors and three foot items, plus one door's 48px and the monitor item's 48px), so the tiles keep a floor of one tile (60px), and on a window shorter than that the whole spine scrolls instead. The landing item, while shown, costs 48px more.
   Neither scrollbar is drawn: a 10px bar in a 64px column pushes every item off the shared axis.
   **The cost:** nothing shows that the tiles scroll, beyond the tile cut at the edge. Recent is 5
   by default and 20 at most, and every tile is also a row in the expanded pane.
@@ -676,6 +681,8 @@ label a person reads says "sessions pane".
   rows without Busy, and a Busy row's count sits still. Alone in the rail, the count centres on
   the title's first line like the TUI chip; under a state it takes `−--space-1` of margin, which
   cancels the rail's gap, so it tucks up against the state.
+- **Job marker.** A session whose chat has shut down with a background job running shows a small
+  `job running` marker (§app.background-jobs/pane). A chat still running shows none here.
 - **320px budget.** The rail costs a **34px** gutter (2px margin + 30px column + 2px margin) and
   gives back the whole right end of the row. Busy's 26px box runs from x=4 to x=30 and the TUI
   chip, centred on the same axis, from about x=6.9 to x=27.1; the title block starts **34px** in
@@ -774,7 +781,12 @@ on its row. Neither is a worktree ready to merge or waiting for your OK: that is
 branch status (§app.session-list/content-rules "Row line 3"). The blockers are the attention digest's **act** tier (§app.overseer/attention-digest), read
 from `GET /api/overseer/attention`, the list the Overseer's "{a} need you" counts — less the
 organization sessions (§app.session-list/ordinary-surfaces), which wait in the Organizations
-region's own Needs you (§app.session-list/organizations). **The Overseer's count still includes
+region's own Needs you (§app.session-list/organizations). A registered project's own session (its
+overseer's conversations and its builds, which live in its project's block) joins only for a
+proposal waiting on you, a `playbook-review` item such as its Setup chat's
+(§app.project-runtime/review), with that proposal's button (on a Setup proposal Run Trial, then Land
+or Merge Branch) and Read Report; its other items, a
+failed turn included, stay in its project's block. **The Overseer's count still includes
 them, deliberately**: the Overseer reads the whole digest, like the org and project pages, so its
 "{a} need you" can be higher than this region's count by the org sessions waiting on you. The digest, not the
 session list, is the source: a hosted pending dialog, a worker error and every detail sentence
@@ -849,7 +861,8 @@ thing it waits on being done.
 - **The whole row is one link.** It is stretched over the row, one tab stop, and what it opens is words
   inside it, never a second control. Two things act and are real buttons, each its own tab stop beside
   the link in the row's last line, and pressing one doesn't navigate: **Merge Branch** on a proposed
-  playbook run (`playbook-review`, §app.project-runtime/review), which acts at once and says a refusal's
+  playbook run (`playbook-review`, §app.project-runtime/review; on a Setup proposal, the proposal's own
+  button: Run Trial, then Land or Merge Branch), which acts at once and says a refusal's
   reason, and **Cancel** on a held act (§app.project-overseer/holds).
 - **Not a session row, no put-away.** A row here has none of a session row's marks or gestures: no rail,
   unread dot, time, model, context ring or merge badge, no press-and-hold, lift or drag, and no menu; a
@@ -1394,7 +1407,10 @@ a TUI be renamed at all (the webapp must never write a file a TUI owns). Every s
 hands out carries the override as `title` and the derived one as `originalTitle`, so the rename is
 the same everywhere a session is named, and clearing it has something to go back to. Titles are
 capped at `SESSION_TITLE_MAX` (80, the derived title's own cap), trimmed, whitespace collapsed to
-one line; a deleted session's title is forgotten with its file.
+one line; a deleted session's title is forgotten with its file. **Sova's own chats are never
+renamed**: the Overseer, a project overseer, a merge thread or reviewer, a release chat and a
+gathering session keep a fixed name (§app.session-list/fixed-names), so the route refuses a title
+for one, and a title stored for one before is not shown.
 
 **Every stored title says who set it.** The store is version 2: `titles[id]` is either a bare
 string, a title from before provenance existed, or `{title, by, at}` with `by` one of `user`,
@@ -1499,7 +1515,7 @@ refused for length.
   switch on starts a run at once.
 - **Which.** A session with no stored title at all, with a summary line, quiet for the *quiet
   period* (default 5 minutes, by its file's modification time), and none of: archived by hand, an
-  empty husk, a subagent's or team member's own session, an Overseer or project overseer file. A
+  empty husk, a subagent's or team member's own session, an Overseer file or other fixed-name chat (§app.session-list/fixed-names). A
   group member is swept like any session, in a group an older build made included
   (§workspace.groups/legacy-groups). Most recently active first.
 - **How much.** At most 10 sessions per run, 2 at a time. Existing unnamed sessions are backfilled
@@ -1522,7 +1538,7 @@ sessions" ("Name 1 session"), counting the section's rows as the search shows th
 once. A press sends exactly those rows; while it runs the button is disabled, `aria-busy`, and
 titled "Naming {n} sessions…". When it returns the list is fetched again and the rows show their
 new titles. **No toast, no undo**: a title the user doesn't like is renamed or cleared like any
-other (on the Agents board, §app.insights/team-cards; the store is §app.session-list/session-titles). A click or keypress on the button inside a
+other (on the Agents board, §app.insights/team-cards). A click or keypress on the button inside a
 `<summary>` never toggles its section. A row the model failed on stays nameable, so a second press
 tries it again.
 
@@ -1563,6 +1579,58 @@ doesn't like is renamed like any other.
 splits a section's rows by host and sends each peer's rows to that peer
 (`/peer/<id>/api/sessions/auto-title`, the usual routing); a peer whose Sova predates the route
 answers 404, and its rows are skipped silently. Each host's sweep follows that host's own switch.
+
+## §app.session-list/fixed-names — Sova's own chats keep the names Sova gives them
+
+Some chats are Sova's own, and each is named for what it is, never for what was said in it. Their
+name is **fixed**: Sova gives it, and nothing else ever changes it.
+
+| Chat | Its fixed name |
+|---|---|
+| The Overseer (§app/overseer), its current conversation and every earlier one | "Overseer" |
+| A project overseer (§app/project-overseer), current and earlier conversations | "Overseer · {project}", the project's current name: renaming the project renames it |
+| The merge thread (§chat.merge-queue/thread) | the title Sova starts it with, "Merge thread · {project folder} · {date}" |
+| A merge reviewer (§app.merge-queue/review) | the title Sova starts it with, "Review · {branch} · {commit}" (" · attempt {n}") |
+| A release chat (§app.release/start) | the title Sova gives it, "Release {tag} of {project}", which Sova itself changes once the tag is picked; the chat a withdrawal starts reads "Withdraw {tag}" |
+| A gathering session (§app/baton) | its public title |
+
+Sova keeps the name it gives a merge thread, reviewer or release chat in a store of its own,
+apart from the title store every rename writes (§app.session-list/session-titles). A chat started
+before that store existed gets the name Sova gave it rebuilt from Sova's own records, never from
+its stored title: a merge thread from the queue's thread record (its project and the day it
+started); a reviewer from the queue's record of it (branch, attempt, run) and the run's commit
+(else the commit its first message names); a release chat from its release record, with the
+record's tag as it is now, and a withdrawal's chat as "Withdraw {tag}". Only when no record names
+the chat (cleared, pruned, or kept under another state root) does it read the general word:
+"Merge thread", "Merge review" or "Release chat".
+
+- **One name everywhere.** Every summary the server hands out carries the fixed name as the
+  chat's `title`, so every place that names a session reads the same one: the sidebar, the Agents
+  board, the Merge Queue tab, the resource monitor (§app.resource-monitor/screen), the Overseer's
+  tool results, briefs and notifications (§app.overseer/session-names), and every link to it.
+- **Nothing overrides it.** Not its first message (the derived title), not an automatic title (the
+  sweep, Name sessions, Shorten long titles or Regenerate title, §app.session-list/auto-titles),
+  not a rename by the user or by the Overseer (§app.session-list/session-titles), and not an alias
+  (§app.overseer/session-names).
+- **Nothing offers to.** On such a chat the Agents board's ⋯ has no Rename…, Use Gist as Title or
+  Reset to Original Title (§app.insights/team-cards), and an open chat's head has no Regenerate
+  title. Every other way is refused (409 from the title route), nothing stored, with one plain
+  sentence: "An overseer keeps its own name.", "The merge queue's chats keep the names Sova gives
+  them.", "A release chat keeps the name Sova gives it." or "A gathering session keeps its public
+  title as its name." That covers the Overseer's `sova_set_session` with a title or an alias (the
+  sentence, then "Nothing was changed.") and the command palette's Rename Session, which still
+  lists them and is refused by the server. The automatic-title route skips one as `not-listed`.
+- **Names set before.** A title or alias already stored for such a chat stops showing: the fixed
+  name takes its place, with nothing for the user to clear. A merge thread, reviewer, release chat
+  or gathering session someone renamed reads its Sova name again.
+- **What a conversation was about** stays apart from the name. The fixed name can't tell an
+  overseer's conversations apart, so the Overseer's History and a project overseer's History still
+  name each earlier conversation by what it was about: its automatic title when it has one, else
+  its first message, "No messages" when it has none (§app.overseer/identity-and-clear,
+  §app.project-overseer/page). The server sends that line as each History row's `about`, apart from
+  its `title`, which is the fixed name.
+- Sova knows these chats by the marks that make each one what it is (§app.overseer/identity-and-clear,
+  §app.merge-queue/chats), never by a title.
 
 ## §app.session-list/regions-top-and-archive — Regions: top and Archive
 
@@ -1792,7 +1860,7 @@ for the same reason: something other than the operator runs them.
 - the **Groups** region and every way into a group (§app.session-list/groups), which add back
   every session a registered project owns (its overseer's conversations and its builds, whoever
   started them): those can be grouped and are drawn in their group, while they stay out of Folders,
-  Needs you, Recent (but for the operator's own builds) and the Archive and keep their place in their project's block;
+  Needs you (but for a Setup proposal waiting on you, §app.session-list/needs-you), Recent (but for the operator's own builds) and the Archive and keep their place in their project's block;
 - the **recent folders** offered for a new session (`GET /api/cwds`, the New Session dialog's Recent
   folders, `sova_list_folders`): never the Overseer's folder
   (`<stateRoot>/overseer/`), never an attached org's workspace dir, and never a folder only an org's

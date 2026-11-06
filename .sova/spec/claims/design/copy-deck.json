@@ -64,6 +64,22 @@
       "src/lib/cost-history.ts"
     ]
   },
+  "§design.copy-deck/create-mode": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "about": [
+      "§chat/create-mode"
+    ]
+  },
+  "§design.copy-deck/forms": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "shared/form-rules.ts"
+    ]
+  },
   "§design.copy-deck/gathering-abilities": {
     "kind": "note",
     "authority": "accepted",
@@ -112,7 +128,10 @@
     "authority": "accepted",
     "evidence": "verified",
     "code": [
-      "src/lib/git-summary.ts"
+      "src/lib/git-summary.ts",
+      "src/components/WakeCard.tsx",
+      "shared/wake.ts",
+      "src/lib/wake-card.test.ts"
     ]
   },
   "§design.copy-deck/markdown-and-code": {
@@ -154,7 +173,6 @@
       "src/components/WorktreesModal.tsx",
       "src/components/MergeQueueTab.tsx",
       "src/components/MergeRunView.tsx",
-      "src/components/MergeOnboarding.tsx",
       "src/lib/merge-queue.ts",
       "shared/merge-queue.ts",
       "src/components/MergeQueueCard.tsx",
@@ -166,7 +184,9 @@
       "server/merge-queue/wake.ts",
       "src/lib/merge-queue-chats.ts",
       "src/lib/merge-queue-settings.ts",
-      "server/merge-queue/notices.ts"
+      "server/merge-queue/notices.ts",
+      "src/components/BranchSummary.tsx",
+      "src/components/SummarizerSettings.tsx"
     ]
   },
   "§design.copy-deck/merge-queue-chats": {
@@ -227,7 +247,8 @@
     "code": [
       "src/components/OverseerView.tsx",
       "src/components/OverseerApprovalsPanel.tsx",
-      "src/lib/overseer-approvals.ts"
+      "src/lib/overseer-approvals.ts",
+      "src/lib/overseer.ts"
     ]
   },
   "§design.copy-deck/overseer-orgs": {
@@ -251,7 +272,7 @@
   "§design.copy-deck/project-coding": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "verified"
+    "evidence": "reviewed"
   },
   "§design.copy-deck/project-costs": {
     "kind": "note",
@@ -281,7 +302,8 @@
       "src/lib/project-overseer-view.ts",
       "src/components/SessionView.tsx",
       "src/components/PowersGrid.tsx",
-      "src/lib/powers-view.ts"
+      "src/lib/powers-view.ts",
+      "src/lib/overseer.ts"
     ]
   },
   "§design.copy-deck/project-powers": {
@@ -298,6 +320,20 @@
     "requires": [
       "§app.project-overseer/autonomy-levels",
       "§app.organizations/project-page"
+    ]
+  },
+  "§design.copy-deck/project-setup": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "about": [
+      "§app/project-setup"
+    ],
+    "code": [
+      "src/lib/setup-chat.ts",
+      "src/components/SetupChat.tsx",
+      "server/projects/runtime-routes.ts",
+      "shared/playbook-review.ts"
     ]
   },
   "§design.copy-deck/project-stakeholder": {
@@ -466,7 +502,8 @@
       "src/lib/regions.ts",
       "src/lib/needs-you-row.ts",
       "src/components/NeedsYouRow.tsx",
-      "src/lib/branch-status.ts"
+      "src/lib/branch-status.ts",
+      "src/lib/session-row.test.ts"
     ]
   },
   "§design.copy-deck/slash-commands": {
@@ -487,7 +524,11 @@
       "src/components/SubagentPane.tsx",
       "src/lib/spend.ts",
       "src/components/CostBreakdown.tsx",
-      "src/lib/cost-history.ts"
+      "src/lib/cost-history.ts",
+      "src/components/BackgroundJobs.tsx",
+      "src/lib/background-jobs.ts",
+      "src/lib/background-jobs.test.ts",
+      "src/lib/background-jobs.browser.test.ts"
     ]
   },
   "§design.copy-deck/timeline-tab": {
@@ -507,6 +548,14 @@
     "about": [
       "§chat.transcript/empty-worktrees",
       "§chat.worktrees/cleanup"
+    ]
+  },
+  "§design.copy-deck/your-click": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "about": [
+      "§app.access/your-click"
     ]
   },
   "§design/copy-deck": {

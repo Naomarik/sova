@@ -2,8 +2,10 @@
  * Session profiles (§chat/profiles): what one session can do. Capabilities, Default (the only
  * profile in code; the others are files, §chat.profiles/projects), a profile's identity, the
  * snapshot a session keeps in its `sova-profile` entry, and the words both sides print. Shared by the
- * server and the client; imports nothing.
+ * server and the client; imports only the pure form rules.
  */
+import { check } from "./form-rules";
+import { PROFILE_LABEL_RULE } from "./profile-limits";
 
 /** Removable capabilities, in the order every list shows them. */
 export const REMOVABLE = ["shell", "edit", "workers", "web", "worktrees", "timers", "mcp"] as const;
@@ -19,7 +21,7 @@ export type Grantable = (typeof GRANTABLE)[number];
 
 /** The tools each removable capability takes away. Exact names, except the `*` prefixes. */
 export const CAPABILITY_TOOLS: Record<Removable, readonly string[]> = {
-  shell: ["bash"],
+  shell: ["bash", "background_job"],
   edit: ["edit", "write"],
   workers: ["agent_*", "team_*"],
   web: ["web_search", "fetch_content", "get_search_content", "source_check"],
@@ -67,6 +69,15 @@ export const isSubagentsRef = (v: unknown): v is string => typeof v === "string"
     pi-config's MINOR_MODES less its web-only ones (memory, which only a chat's own mode menu turns on;
     this file imports nothing), pinned equal by session-profiles.test.ts. */
 export const PROFILE_MINOR_MODES = ["align", "spec", "vis"] as const;
+
+/** Who is told Create can't be named (§design.copy-deck/create-mode). */
+export type CreateNamer = "a profile" | "an automation" | "the Overseer" | "a project overseer";
+/** The refusal when a starter names Create, which only a chat picks for itself (§chat.create-mode/per-chat-only). */
+export const createNotNamed = (who: CreateNamer): string => `Create is chosen in a chat's own mode menu, so ${who} can't name it. Nothing was changed.`;
+/** The refusal when a message sent to a chat by anything but its own composer is `/mode create`. */
+export const CREATE_NOT_SENT = "Create is chosen in the chat itself, so a message sent to it can't switch it. Nothing was sent.";
+/** The refusal when a default names Create. */
+export const CREATE_NO_DEFAULT = "Create is chosen in each chat, so no default holds it.";
 export type ProfileMinorMode = (typeof PROFILE_MINOR_MODES)[number];
 
 export const PROFILE_ICONS = ["grid", "eye", "network", "branch", "wrench", "shield", "search", "terminal", "bulb", "building"] as const;
@@ -319,6 +330,7 @@ export function profileFileError(raw: unknown): string | null {
     if (o[k] !== undefined && typeof o[k] !== "string") return `"${k}" must be text.`;
   for (const k of ["singleton", "overseerMayStart"] as const) if (o[k] !== undefined && typeof o[k] !== "boolean") return `"${k}" must be true or false.`;
   if (o.icon !== undefined && !(PROFILE_ICONS as readonly string[]).includes(o.icon as string)) return `"icon" must be one of ${PROFILE_ICONS.join(", ")}.`;
+  if (o.mode === "create") return `"mode": ${createNotNamed("a profile")}`;
   if (o.mode !== undefined && o.mode !== "normal" && o.mode !== "delegate") return `"mode" must be "normal" or "delegate".`;
   if (o.thinking !== undefined && !(THINKING_LEVELS as readonly unknown[]).includes(o.thinking)) return `"thinking" must be one of ${THINKING_LEVELS.join(", ")}.`;
   if (o.subagents !== undefined && !isSubagentsRef(o.subagents)) return `"subagents" must be "off" or a subagent profile's id (lowercase letters, digits and dashes).`;
@@ -339,8 +351,9 @@ export function parseProfile(raw: unknown): Profile | { error: string } {
   if (!o || typeof o !== "object") return { error: "A profile must be an object." };
   const id = typeof o.id === "string" ? o.id.trim() : "";
   if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(id)) return { error: `Profile id "${id}" is not valid (lowercase letters, digits and dashes).` };
-  const label = typeof o.label === "string" ? o.label.trim() : "";
-  if (!label || label.length > 60) return { error: "A profile needs a name of up to 60 characters." };
+  const named = check(PROFILE_LABEL_RULE, typeof o.label === "string" ? o.label : "");
+  if (!named.ok) return { error: named.message };
+  const label = named.value as string;
   const caps = normalizeCaps(Array.isArray(o.remove) ? (o.remove as string[]) : [], Array.isArray(o.grant) ? (o.grant as string[]) : []);
   const l = (o.limits ?? {}) as Record<string, unknown>;
   const limits: ProfileLimits = {

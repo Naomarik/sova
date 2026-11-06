@@ -62,7 +62,7 @@ describe("the area", () => {
   test("every entry here is in COMMANDS, and nothing that grants power or reveals a secret is", () => {
     for (const c of OTHER_ENTRIES) assert.ok(COMMANDS.includes(c), c.id);
     const writes = OTHER_ENTRIES.filter((c) => c.id.startsWith("settings.") && c.effect === "changes").map((c) => c.id).sort();
-    assert.deepEqual(writes, ["settings.align.set", "settings.assistant-default.set"]);
+    assert.deepEqual(writes, ["settings.align.set", "settings.assistant-default.set", "settings.cards.withdraw", "settings.models.check"]);
     const forbidden = /\/api\/(profiles|schedules\/(?:approve|revoke)|claude|auth|settings\/decisions|settings\/claude-status)(\/|$)|approve|login/;
     // Which login a project or an org's projects start on (§app.claude-logins/project-login): they name a login
     // id and never touch a credential or an account; each is named here, so no other path slips through.

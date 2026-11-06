@@ -247,6 +247,26 @@
       "src/lib/format.test.ts"
     ]
   },
+  "§app.insights/ollama-glance": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "src/lib/insights.ts",
+      "src/lib/insights.test.ts"
+    ],
+    "requires": [
+      "§app.insights/ollama-credits",
+      "§app.insights/pace-tick",
+      "§app.insights/sidebar-foot",
+      "§app.insights/sidebar-foot-phone"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T16:59Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    },
+    "evidence": "verified"
+  },
   "§app.insights/ollama-reset": {
     "kind": "behavior",
     "requires": [
@@ -293,7 +313,12 @@
       "shared/protocol.ts",
       "server/insights.ts",
       "src/components/UsageHistory.tsx"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T16:59Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    }
   },
   "§app.insights/performance-tab": {
     "kind": "behavior",
@@ -451,7 +476,8 @@
     "evidence": "verified",
     "code": [
       "src/lib/insights.ts",
-      "src/lib/insights.test.ts"
+      "src/lib/insights.test.ts",
+      "src/components/Sidebar.tsx"
     ],
     "requires": [
       "§app.claude-logins/active-login",
@@ -461,7 +487,12 @@
       "§app.session-list/working-now",
       "§app.insights/token-velocity",
       "§chat.composer/known-on-switch"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T16:59Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    }
   },
   "§app.insights/sidebar-foot-phone": {
     "kind": "behavior",
@@ -476,7 +507,12 @@
       "§mesh.remote-sessions/host-filter",
       "§app.session-list/working-now",
       "§app.insights/token-velocity"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T03:27Z",
+      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#f0aa11bd"
+    }
   },
   "§app.insights/subagent-cards": {
     "kind": "behavior",
@@ -634,7 +670,12 @@
       "src/components/UsageOllama.tsx",
       "src/design/base.css",
       "src/lib/usage-rows.integration.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T19:06Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#15da6eba"
+    }
   },
   "§app.insights/usage-detail-reachability": {
     "kind": "behavior",
@@ -700,7 +741,8 @@
       "server/usage-helper/query.ts",
       "server/usage-helper/records.ts",
       "server/usage-helper/service.ts",
-      "server/app.ts"
+      "server/app.ts",
+      "server/merge-queue/branch-summaries.ts"
     ],
     "requires": [
       "§app.insights/llm-inflight",
@@ -793,8 +835,9 @@
       "pi-config/extensions/usage-status/fetch.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-13T00:40Z"
+      "by": "user",
+      "at": "2026-11-05T02:17Z",
+      "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#31e7455c"
     }
   },
   "§app.insights/usage-resend": {
@@ -867,11 +910,14 @@
       "server/worktrees.test.ts",
       "server/index.ts",
       "server/app.ts",
-      "shared/protocol.ts"
+      "shared/protocol.ts",
+      "server/merge-tree-probe.ts",
+      "server/merge-tree-probe.test.ts"
     ],
     "agreed": {
-      "by": "user (al_1 go-ahead)",
-      "at": "2026-10-16T16:27Z"
+      "by": "naomarik",
+      "at": "2026-11-05T16:44Z",
+      "source": "pi-session:01a1ac85-7019-77e8-b78d-58217842f2ef#e4f5f750"
     }
   },
   "§app/insights": {

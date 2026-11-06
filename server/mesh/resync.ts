@@ -1,15 +1,17 @@
+import { cardSheet } from "../../src/lib/mesh-resync";
+import { setMeshCardPort } from "./card-port";
 import { type ChildProcess, spawn } from "node:child_process";
 import { createWriteStream, existsSync, mkdirSync, readFileSync, type WriteStream } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { type MeshResync, noRecipeReason, type ResyncHost, type ResyncJob, type ResyncKind, type ResyncRelation, type ResyncSelf } from "../../shared/mesh-resync";
+import { type MeshResync, noRecipeReason, type ResyncHost, type ResyncJob, type ResyncKind, type ResyncRelation, type ResyncSelf, relationRefusal } from "../../shared/mesh-resync";
 import { stateRoot } from "../state-root";
 import { type BootBuild, bootBuild, bootBuildChecked, type Git, realGit } from "./build-id";
 import { fetchPeerDetails } from "./details";
 import { fetchPeer } from "./dial";
-import { ownProtocol, type ProbeResult, probeHello, probePeer } from "./hello";
+import { answered, type ProbeResult, probeHello, probePeer } from "./hello";
 import type { MeshApi } from "./index";
 import { PEER_ID_RE, type PeerEntry } from "./peers";
 
@@ -18,7 +20,7 @@ import { PEER_ID_RE, type PeerEntry } from "./peers";
 // the one its deploy scripts' local.env implies (VPS_ID, PHONE_ID).
 // A mechanical background job on the claude-accounts sign-in model: one per host, 409 while it runs,
 // spawned without a shell, output capped and teed to <state root>/mesh-resync/<id>.log, a timeout;
-// after the script exits the peer's hello is polled (uncached) until it speaks this host's protocol.
+// after the script exits the peer's hello is polled (uncached) until it carries this host's boot commit.
 // Routes live under /api/mesh/, which the peer listener never serves (listener.ts), so only this
 // host's own page can start one. While the mesh is off both routes are the plain 404.
 
@@ -221,7 +223,6 @@ export interface ResyncDeps {
   /** The page's cached probe, and an uncached one for the job's own checks. */
   probe: (peer: PeerEntry) => Promise<ProbeResult>;
   hello: (peer: PeerEntry) => Promise<ProbeResult>;
-  protocol: () => string;
   recipes: () => { recipes: Map<string, Recipe>; error?: string };
   logDir: () => string;
   /** Spawns argv[0] with the rest (tests pass a fake script). */
@@ -252,7 +253,6 @@ export class ResyncService {
       buildChecked: bootBuildChecked,
       probe: probePeer,
       hello: (peer) => probeHello((path, init) => fetchPeer(peer, path, init)),
-      protocol: ownProtocol,
       recipes: () => readRecipes(recipesFile(), derivedRecipes(localEnvs(this.d.root))),
       logDir: resyncLogDir,
       spawn: realSpawn,
@@ -277,10 +277,12 @@ export class ResyncService {
     return r;
   }
 
-  /** A skewed peer's commit (its hello's, else its details') and what runs on it. */
-  private async peerFacts(peer: PeerEntry, probe: ProbeResult): Promise<{ commit?: string; activity?: ResyncHost["activity"] }> {
-    const got = await fetchPeerDetails(this.d.mesh, peer);
+  /** An answering peer's commit (its hello's, else its details') and what runs on it. A peer on
+      this host's own commit is asked nothing more: the common case, on every read of the menu. */
+  private async peerFacts(peer: PeerEntry, probe: ProbeResult, ours: string | undefined): Promise<{ commit?: string; activity?: ResyncHost["activity"] }> {
     const fromHello = probe.hello?.commit;
+    if (fromHello !== undefined && fromHello === ours) return { commit: fromHello };
+    const got = await fetchPeerDetails(this.d.mesh, peer);
     const commit = typeof fromHello === "string" && SHA_RE.test(fromHello) ? fromHello : got.details?.versions.commit;
     const a = got.details?.activity;
     return {
@@ -301,8 +303,9 @@ export class ResyncService {
         const problem = recipe ? recipeProblem(recipe, this.d.root, this.d.exists) : undefined;
         const job = this.jobs.get(peer.id)?.state;
         const base = { id: peer.id, label: peer.label || peer.id, state: probe.state, recipe: recipe?.kind ?? null, ...(problem ? { recipeProblem: problem } : {}), ...(job ? { job: { ...job } } : {}) };
-        if (probe.state !== "skewed") return { ...base, relation: probe.state === "up" ? "same" : "unknown" };
-        const facts = await this.peerFacts(peer, probe);
+        // The placing comes from the commits alone, whatever the host's state (§mesh.peers/resync).
+        if (!answered(probe) || probe.state === "hidden") return { ...base, relation: "unknown" };
+        const facts = await this.peerFacts(peer, probe, build?.commit);
         return { ...base, ...facts, ...(await this.relation(build?.commit, facts.commit)) };
       }),
     );
@@ -339,18 +342,11 @@ export class ResyncService {
     const problem = recipeProblem(recipe, this.d.root, this.d.exists);
     if (problem) return { status: 409, body: { error: `The recipe for ${name} can't run: ${problem}` } };
     const probe = await this.d.hello(peer);
-    if (probe.state === "up") return { status: 409, body: { error: `${name} already runs ${selfName}'s version` } };
-    if (probe.state !== "skewed") return { status: 409, body: { error: `${name} isn't answering (${probe.state}), so its build can't be compared` } };
-    const facts = await this.peerFacts(peer, probe);
+    if (!answered(probe) || probe.state === "hidden") return { status: 409, body: { error: `${name} isn't answering (${probe.state}), so its build can't be compared` } };
+    const facts = await this.peerFacts(peer, probe, build.commit);
     const rel = await this.relation(build.commit, facts.commit);
     if (rel.relation !== "behind") {
-      const why: Record<Exclude<ResyncRelation, "behind">, string> = {
-        ahead: `${name} runs a newer build than ${selfName}; update ${selfName} instead`,
-        same: `${name} runs the same commit`,
-        diverged: `${name} runs a build on another branch`,
-        unknown: `${name}'s commit isn't known in this checkout`,
-      };
-      return { status: 409, body: { error: why[rel.relation] } };
+      return { status: 409, body: { error: relationRefusal(rel.relation, name, selfName) } };
     }
     return { status: 202, body: this.run(peer, recipe, build.commit) };
   }
@@ -406,14 +402,14 @@ export class ResyncService {
     }
   }
 
-  /** After the script: poll the peer's hello (uncached) until it speaks this host's protocol. */
+  /** After the script: poll the peer's hello (uncached) until it carries this host's boot commit. */
   private async waitForPeer(job: Job, peer: PeerEntry): Promise<void> {
     const until = Date.now() + this.d.timeouts.wait;
     let last: ProbeResult | null = null;
     while (job.state.state === "waiting") {
       last = await this.d.hello(peer);
       if (job.state.state !== "waiting") return;
-      if (last.state === "up" && last.hello?.protocol === this.d.protocol()) {
+      if (answered(last) && last.hello?.commit === job.state.commit) {
         this.end(job, { state: "done" });
         return;
       }
@@ -476,6 +472,15 @@ const small = bodyLimit({ maxSize: 1024, onError: (c) => c.json({ error: "Too la
 /** GET /api/mesh/resync and POST /api/mesh/resync/:id (main listener only: /api/mesh/*). */
 export function mountResync(app: Hono, mesh: MeshApi, deps: Partial<ResyncDeps> = {}): ResyncService {
   const service = new ResyncService({ mesh, ...deps });
+  // A Create card's Apply: the same start, for the commit the card showed, with the confirm sheet's own words.
+  setMeshCardPort({
+    resync: (peer, commit) => service.start(peer, { commit }, "application/json"),
+    async resyncSheet(peer) {
+      if (mesh.config()?.peers.find((p) => p.id === peer)?.lan) return { problem: `${peer} is a dial-out pairing: update it on that host` };
+      const info = await service.info();
+      return info ? cardSheet(info, peer) : { problem: "The mesh is off here." };
+    },
+  });
   app.get("/api/mesh/resync", async (c) => {
     const info = await service.info();
     return info ? c.json(info) : notFound(c);

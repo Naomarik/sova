@@ -16,12 +16,25 @@ user's (§chat.merge-queue/chat-turns).
 follows. A project may add its own `.sova/playbooks/merge-queue/PLAYBOOK.md`. The thread reads it
 after the method, and where the two differ, the project's wins. Both are playbook folders
 (§chat.playbooks/bundles). What is worth a note on a landing is what the project's playbook says.
-- Sova's says: server, shared or pi-config code (restart Sova to pick it up), dependency or
-  lockfile changes, migrations or state-file changes, follow-ups the branch left.
+- Sova's says: server, shared or pi-config code, dependency or lockfile changes, migrations or
+  state-file changes, follow-ups the branch left. It also has the thread restart Sova itself after
+  landings that change what the server runs, and note that it did (§chat.merge-queue/sova-restart).
 - A static site's might say nothing is worth noting, since it reloads itself.
 
 Both can be read, never edited, from Settings → Merge Queue, as two labelled groups, "Sova's
 method" and "This project's" (§app.merge-queue/settings).
+
+**Read as you go.** Sova's method playbook has a **Read as you go** table: one row per moment Sova
+calls the thread in for (**Queued**, **Conflict**, **Failed**, **Paused**, **Idle**, **Names**,
+**Answer**), naming the pages to read again at that moment, every time. Each message Sova sends the
+thread ends: "Before you act, read your playbook's "Read as you go" row for {moment} and the pages
+it
+names, now, never from memory (the project's own playbook wins where its list differs)." Its memory
+is for history only (a check that failed before, how it judged a branch like this one), never for
+the
+current state or the method. A project's own merge playbook may give its own table: its row wins
+where
+it differs; without one, Sova's stands, with the project playbook's section of the same name added.
 
 **One thread, with memory, on its own.** Each project keeps one merge thread, whose only mode is
 memory (UniiChat). It reads its playbook again whenever it changed, works without waiting for the
@@ -37,12 +50,19 @@ approval, when:
 - **an entry was queued.** It reads the branch's diff and its chat's intent. It may write the
   landing's note (§app.merge-queue/note). It may also pick extra checks by blast radius with
   `merge.extend`, each with its reason, add-only (§app.merge-queue/checks). Picks count only if they
-  arrive before the run's checks start.
+  arrive before the run's checks start. The message for every queued branch gives the full pick,
+  `merge.extend {entry, checks: [id], why, select}`, and says `select` is part of it, to be copied
+  whenever the pick has one; the tool's own help says the same (§app.project-services/merge-verbs).
+  No
+  setting governs this, and the queue doesn't handle a pick sent with no selection specially.
 - **a merge conflicted.** It judges the conflict with `merge.resolve`, saying no behaviour change or
   behaviour differs, with the target's side and the branch's side in plain words
-  (§app.merge-queue/conflicts).
+  (§app.merge-queue/conflicts). It works the resolution out in the scratch copy Sova made for that
+  attempt, whose folder the call names, and never makes a worktree or a branch of its own for it
+  (§app.merge-queue/resolve-copy).
 - **a run failed on the branch.** It explains the failure as the entry's note.
 - **the queue paused.**
+- **the queue has nothing left to check** (§app.merge-queue/empty).
 - **a project that pushes has no private names** (below).
 
 A replaced thread keeps its merge verbs for an hour, to finish its turn (one replaced by Start Fresh
@@ -55,9 +75,13 @@ replaced within the hour, counts as the thread for the merge verbs.
 - write notes;
 - add checks (never drop one);
 - judge and resolve conflicts;
-- retry after a machine pause.
+- retry after a machine pause;
+- hold its queue's new starts for a few minutes, and clear that hold (§app.merge-queue/empty).
 
-It may not approve, cancel or land an entry, merge into the target, or push. It messages no other
+It may not approve, cancel or land an entry, pause or resume the queue, merge into the target, or
+push. It never sets the queue up or changes its setup: that is the project's Setup chat, a separate
+chat the user talks to (§app/project-setup), and the thread neither starts it nor calls `merge.try`
+or `merge.setup`. It messages no other
 chat directly. When it needs the user (the names interview below, or any question it can't settle
 itself), it asks through the merge verbs, and Sova carries the question to the branch's chat
 (§chat.merge-queue/asks). Its profile has no web, no workers and no timers, grants no session
@@ -78,7 +102,8 @@ When their answer comes back, it adds their names to the list, then asks the sam
 list is complete, giving only its kinds and counts. A question never quotes a name: to see the
 names themselves the user opens the merge thread, which shows the list there only. Once they
 confirm, it says in the entry's note (with no names) that the push hold lifts with the next
-landing. The names are kept only in the project's names file (`<state root>/merge-queue/<project key>/names.json`; Sova's own
+landing. The names are kept only in the project's names file (`<state root>/merge-queue/<project
+key>/names.json`; Sova's own
 repository falls back to `<state root>/merge-round.json`), which the leak scan reads
 (§app.merge-queue/push); Sova's own project keeps `<state root>/merge-round.json`. The file is
 private to the user (mode 0600), only ever added to, and never committed. The finder prints the
@@ -138,7 +163,9 @@ hour's grace. Questions still open stay open across it (§chat.merge-queue/asks)
 it changed since the thread last read it, the next event's message starts with one line: "The
 playbook changed since you read it: read {method PLAYBOOK.md} and {project PLAYBOOK.md} again
 first, with the references they name." Everything else (the branch, the queue, the logs) it reads
-fresh at each event, as before: its memory is for history, never for the queue's current state.
+fresh at each event, as before: its memory is for history, never for the queue's current state,
+nor for how to do a step: each event's message names the guide pages to read again now (Read as you
+go, §chat.merge-queue/thread).
 
 ## §chat.merge-queue/chat-card — A branch's card in the chat that built it
 
@@ -197,11 +224,16 @@ takes ~N min" and offers **Cancel**; while checking, "Checking · 4 of 7 steps".
 - **Needs a fix** gives the reason with **See Why**, and lists the failing checks ("Unit tests · 1
   failed") with their failing tests and a link to each log. When the merge thread's explanation
   arrives later, it is added to the same card ("Merge thread: …"). It and a **Sent back** revision
-  offer **Land This Commit Again** and **Remove from Queue** (§chat.composer/worktrees-control).
+  offer the re-land button and **Remove from Queue** (§chat.composer/worktrees-control). The
+  re-land button lands the branch's newest commit (§app.merge-queue/approve): **Land This Commit
+  Again** until the branch moved, then **Land Newest Commit**. Once it moved the card adds, joined by
+  " · ", what that brings in ("{n} newer commits included", or "the branch was rewritten since it was
+  sent back") and, when it applies, "The newest commit isn't Ready to land: {why}.".
   For a branch sent back for its drafts, once they have changed since and fit, the card keeps its
   Needs a fix pill and offers **Land** at the same commit in place of Land This Commit Again, beside
   Remove from Queue; it changes by itself when the drafts are edited. A fix at a newer commit
-  leaves the card's buttons as they are: Land for the new commit is on the rows and the tab. Once
+  turns the card's re-land button into Land Newest Commit, as above; Land for a Ready new commit
+  is on the rows and the tab. Once
   the entry no longer needs a fix (the branch approved again later, already in the target, or its
   branch or folder gone), the card offers no action at all, so nothing on it is one the queue would
   refuse.
@@ -211,8 +243,8 @@ takes ~N min" and offers **Cancel**; while checking, "Checking · 4 of 7 steps".
   "removed by you", and no queue action; approving the branch again later moves the card on as a
   new "approved" revision.
 
-Land and Land This Commit Again on the card approve the commit the card shows; Land Again approves
-the branch's head.
+Land on the card approves the commit the card shows; the re-land button (Land This Commit Again,
+Land Newest Commit) and Land Again approve the branch's head.
 - **Behaviour differs** shows both sides and the proposal, with **Accept** and **Send Back**;
   **Review flagged** shows the review's findings, with **Land Anyway** and **Send Back**;
   **Can't tell whose failure** names the check that failed on the merge and on the target alone,
@@ -267,8 +299,8 @@ message, queue card or queue line, whatever its branches look like. The one exce
   they fit the user sees Land again at the same commit (or Land This Commit Again on its row and card),
   or types "land it" in the chat; for a broken check or a conflict, that Land comes back on its row
   once the fix is committed and finished. The turn a user's Send Back starts ends the same way: Land
-  comes back on its row once the fix is committed and finished, or the user can use Land This Commit
-  Again. **Remove from Queue** starts no turn and leaves no hidden
+  comes back on its row once the fix is committed and finished, or the user can land its newest commit
+  from there. **Remove from Queue** starts no turn and leaves no hidden
   line. A chat busy with other work takes it after that turn. A
   wake the chat can't take (archived, an Overseer, a project overseer or a baton chat, or one held
   open in a terminal, which Sova never writes to) is refused and becomes the hidden line
@@ -327,3 +359,55 @@ and Sova takes the question to the user. Each question gets an id (`ak_…`).
 
 Open questions are kept with the project's thread record, across a Start Fresh or a replaced
 thread. The user can always open the merge thread and talk to it directly; that is never needed.
+
+## §chat.merge-queue/sova-restart — Sova's merge thread restarts Sova after landings
+
+Sova's own project playbook (`.sova/playbooks/merge-queue/`, its "When the queue is idle") has
+Sova's merge thread restart Sova after landings that change what its server runs, so new server code
+goes live without the operator pressing Restart Sova. It is an instruction in that playbook, with
+its script (`scripts/restart-sova.mjs`), not a product setting: there is no switch and nothing on
+screen for it, and no other project's merge thread does it (each follows its own project's playbook;
+Sova's method playbook forbids restarting anything unless the project's playbook says so,
+§chat.merge-queue/thread).
+
+- **What needs a restart.** One rule (`server/restart-paths.ts`) says which landed files the server
+  loads only at its start:
+  - code under `server/`, `shared/` or `pi-config/`, but not tests (`*.test.*`) or Markdown docs;
+  - the `src/` files the server or a chat process imports at runtime (its list is held to a walk of
+    the server's imports, so a new import is caught);
+  - the package list, lockfile, workspace install settings and toolchain pin (`package.json`,
+    `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `mise.toml`), which also need an install first.
+
+  Landings of other page files (`src/`, `public/`, the page's build settings) only get the page
+  rebuilt, never a restart. A `package.json` whose only change is its `version` (a release's bump)
+  counts for neither. A session's "restart pending" and its status line's "restart owed" read the
+  same file rule (§chat.worktrees/readiness), file by file, so a release commit may still show there.
+- **When.** Only on the queue's Idle (§app.merge-queue/empty), and once: one plan covers every file
+  that changed between the commit Sova runs (`GET /api/health`'s `head`) and the target's head. With
+  anything queued or checking it waits for the next Idle. When nothing needs it, nothing happens;
+  when Sova doesn't answer, or the main checkout isn't on the target's head, it does nothing and
+  waits for the next Idle.
+- **Never during a release.** While a release is open (§app.release/checks) it builds and restarts
+  nothing. The release's hold lifting at Publish or Abandon sends Idle again, and the thread catches
+  up then. A release's own commit is never a reason to restart: trying a release live stays the
+  operator's Apply (§app.release/sova).
+- **Page files only:** it builds the page (`pnpm run build` in the main checkout), restarts nothing,
+  and on a failure notes "The page build failed after landing {branch}: {first error line}." Open
+  tabs offer the newer page.
+- **A restart, in order:**
+  1. It holds the queue's new starts (`merge.hold`, §app.merge-queue/empty).
+  2. In the main checkout it runs `pnpm install --frozen-lockfile` when an install file changed, then
+     `pnpm run build`. If either fails, nothing restarts, it clears the hold, and its note says "Not
+     restarted: {install|build} failed after landing {branch}: {first error line}."
+  3. If a run started before the hold, it clears the hold and waits for the next Idle.
+  4. It restarts `sova-runtime.service` the way the operator's own terminal does (`systemctl --user
+     restart`; on macOS `launchctl kickstart -k`), never through `POST /api/updates/restart`, which
+     still refuses it (§app.updates/restart). Chats and workers, the merge thread included, keep
+     running through it (§app.chat-processes/survives-restart).
+  5. It waits up to a minute for `GET /api/health` to answer with a new start on the target's head.
+  6. It clears the hold (the new start already lifted it) and adds to its note on the newest landing
+     (§app.merge-queue/note), keeping what the note said: "Restarted Sova after landing {branch}.",
+     or "Restart after landing {branch} didn't come back on {sha}: {why}. Check
+     sova-runtime.service." It never retries a failed restart itself: the next Idle plans again.
+
+This is the one place a chat restarts Sova (§app.access/your-click).

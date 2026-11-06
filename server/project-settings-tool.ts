@@ -34,7 +34,7 @@ export const SETTINGS_TOOL_PARAMETERS = {
 type Out = { content: { type: "text"; text: string }[]; details: unknown };
 const text = (t: string) => [{ type: "text" as const, text: t }];
 
-function cardWords(c: SettingsCardView): string {
+export function cardWords(c: SettingsCardView): string {
   const lines = [
     `${c.id} "${c.title}" · ${c.state}${c.grants.length ? ` · needs the operator's approval (${c.grants.length} grant${c.grants.length === 1 ? "" : "s"})` : ""}`,
     ...c.kept.map((k) => `  - ${k.label}: ${k.fromText} → ${k.toText}${k.grant ? ` (grant: ${k.grant})` : ""}`),

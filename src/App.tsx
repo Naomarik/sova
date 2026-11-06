@@ -33,11 +33,12 @@ import { watchUpdates } from "./lib/updates";
 import { actSessionCount, setAppBadge } from "./lib/push";
 import { firstBaseline, helloNews, weighHello, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
 import { activeHostFilter, hostScope, noteSessionsHidden, sessionsHiddenBy } from "./lib/mesh";
-import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
+import { HostUpdatePage } from "./components/HostStateNotices";
+import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerCantOpen, peerInfo, sameMeshInfo, sessionRouteFromHash, updateNeededFor, setMeshState } from "./lib/mesh";
 import { bindKey, paletteKeyAction } from "./commands/keys";
 import { composerOf } from "./commands/composers";
 import { closePalette, paletteRequest, togglePaletteFromKey } from "./commands/palette-open";
-import { isOverseerHash, OVERSEER_HASH, overseerHistoryId } from "./lib/overseer";
+import { isOverseerHash, OVERSEER_HASH, overseerHistoryId, overseerRedirect } from "./lib/overseer";
 import { followListRows, onFeedPush, requestListRead, sessionFeedOpen } from "./lib/session-feed";
 import { ListRows, ROW_STAMP_SLACK_MS } from "./lib/list-rows";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
@@ -64,10 +65,10 @@ import { createPoll } from "./lib/poll";
 import { homeFromSessionPath } from "./lib/format";
 import { reconcileTheme } from "./lib/theme";
 import { rememberedWidth, setSpine, spine, spineWidth } from "./lib/spine";
-import { isOverviewHash, leaveOverview } from "./lib/overview-route";
+import { isOverviewHash, launchHome, leaveOverview } from "./lib/overview-route";
 import { sessionsGlance } from "./lib/home-sessions";
 import { applySidebarWidth } from "./lib/sidebar-width";
-import { closeSettings, openSettings, settingsOpenAt, settingsProjectFromHash, settingsTabFromHash } from "./lib/settings-nav";
+import { closeSettings, openSettings, settingsAccountFromHash, settingsOpenAt, settingsProjectFromHash, settingsTabFromHash } from "./lib/settings-nav";
 import type { RewindControl } from "./lib/inputs";
 import { activeTab, focusMoving, focusView, groupSendAll, hideThinking, hideTools, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
 import { createPaneInsight } from "./lib/pane-insight";
@@ -80,6 +81,7 @@ import { ExplanationsCard, ExplanationsView } from "./components/ExplanationsVie
 import { ExtensionCards, ExtensionView } from "./components/ExtensionView";
 import { HomeSessionsCard } from "./components/HomeSessionsCard";
 import { OverviewActions } from "./components/OverviewActions";
+import { OverviewProjects } from "./components/OverviewProjects";
 import { AccessPage } from "./components/AccessPage";
 import { OverviewOrgsCard } from "./components/OverviewOrgsCard";
 import { OverviewSharesCard } from "./components/OverviewSharesCard";
@@ -134,8 +136,9 @@ function openSettingsFromHash() {
     return;
   }
   const project = settingsProjectFromHash(location.hash);
+  const account = settingsAccountFromHash(location.hash);
   history.replaceState(history.state, "", lastHash);
-  openSettings(tab, null, project ? { project } : {});
+  openSettings(tab, null, { ...(project ? { project } : {}), ...(account ? { account } : {}) });
 }
 
 /** While a run is in flight and the session feed is down, re-read the list often enough that the
@@ -393,6 +396,21 @@ export function App() {
 
   redirectLegacyInsights();
   openSettingsFromHash();
+  // A fresh launch on a phone or a folded Fold lands on Home, the list one Back below it (§app.shell/overview): once per
+  // tab, before any route is read; never on a hashchange.
+  launchHome({
+    hash: location.hash,
+    narrow: folded(),
+    storage: (() => {
+      try {
+        return sessionStorage;
+      } catch {
+        return null;
+      }
+    })(),
+    replace: (h) => history.replaceState(history.state, "", h),
+    push: (h) => history.pushState(null, "", h),
+  });
   /** `#/overview`: the overview as a phone's own page (§app.shell/overview); wide, it is the
       empty main column as always. */
   const [overviewRoute, setOverviewRoute] = createSignal(isOverviewHash(location.hash));
@@ -494,6 +512,13 @@ export function App() {
     return items && items.length > 0 ? items : null;
   });
   const [creating, setCreating] = createSignal(false);
+  /** A folder New Session opens set to (a Home project card's New Chat…); cleared when the dialog closes. */
+  const [newSessionPrefill, setNewSessionPrefill] = createSignal<string | null>(null);
+  const newSessionIn = (root: string) => {
+    setNewSessionPrefill(root);
+    setCreating(true);
+  };
+  createEffect(on(creating, (open) => !open && setNewSessionPrefill(null), { defer: true }));
   /** The palette is open: by the key, or by a composer's "+" (commands/palette-open.ts). */
   const paletteOpen = () => paletteRequest() !== null;
   const [shortcutsOpen, setShortcutsOpen] = createSignal(false);
@@ -578,10 +603,19 @@ export function App() {
         onHash();
       });
   };
+  /** A session route to one of the Overseer's own files (an old bookmark, a link from another chat) is the
+      Overseer page, or an earlier conversation's History page: swapped in place, like the routes above. */
+  const redirectOverseerSession = () => {
+    const r = sessionRouteFromHash(location.hash);
+    if (!r || r.host) return;
+    const to = overseerRedirect(r.path, overseer.data());
+    if (to) history.replaceState(history.state, "", to);
+  };
   const onHash = () => {
     redirectLegacyInsights();
     openSettingsFromHash();
     resolveSessionIdRoute();
+    redirectOverseerSession();
     setRoute(pathFromHash());
     setGroupRoute(groupRouteFromHash(location.hash));
     setInsightsRoute(insightsRouteFromHash(location.hash));
@@ -596,6 +630,8 @@ export function App() {
     setAccessRoute(location.hash === "#/access");
   };
   // A `#/sid/` route opened before the first list load resolves when the lists land.
+  // A session route to an Overseer file opened before the Overseer's info was read moves once it lands.
+  createEffect(on(overseer.data, () => sessionRouteFromHash(location.hash) && onHash(), { defer: true }));
   createEffect(on([list, peerLists, meshSettled, peersSettled], () => sessionIdFromHash(location.hash) && onHash(), { defer: true }));
   /** Ctrl/⌘+K: the command palette; "?": the shortcut sheet (§app/command-palette). Each is a
       separate file the browser fetches on its first opening. On a Mac, Ctrl+K in a text field is
@@ -750,7 +786,7 @@ export function App() {
     const h = hostOf(path);
     if (!h) return null;
     const p = peerInfo(h);
-    if (p) return peerUnavailable(p);
+    if (p) return peerCantOpen(p);
     if (meshError()) return `This host couldn't read its peers: ${meshError()}`;
     return meshState() ? `${h} isn't one of this host's peers.` : null;
   };
@@ -985,6 +1021,13 @@ export function App() {
     }
     if (spine()) setSpine(false);
     queueMicrotask(() => document.getElementById("session-search")?.focus());
+  };
+
+  /** The sova brand over a phone's Home: back to the list beneath it, like the Sessions card (never a new entry). */
+  const leaveHomeToList = (e: MouseEvent) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    leaveOverview();
   };
 
   // ---- Subagents pane: open for one session path, closed whenever the route changes ----------
@@ -1273,17 +1316,22 @@ export function App() {
                   spins on a socket nobody answers. It opens again once the host is back. */}
               <Match when={route() && peerDown(route()!)}>
                 {(why) => (
-                  <div class="center-fill">
-                    <div class="empty">
-                      <p class="empty-title">{hostLabel(hostOf(route()!)!)} can't be reached.</p>
-                      <p class="empty-body">
-                        {why()} This session lives there, so it opens once that host is back. Nothing here changed.
-                      </p>
-                      <a class="button empty-action" href="#/mesh">
-                        See Hosts
-                      </a>
+                  <Show
+                    when={!updateNeededFor(route()!)}
+                    fallback={<HostUpdatePage host={hostOf(route()!)!} />}
+                  >
+                    <div class="center-fill">
+                      <div class="empty">
+                        <p class="empty-title">{hostLabel(hostOf(route()!)!)} can't be reached.</p>
+                        <p class="empty-body">
+                          {why()} This session lives there, so it opens once that host is back. Nothing here changed.
+                        </p>
+                        <a class="button empty-action" href="#/mesh">
+                          See Hosts
+                        </a>
+                      </div>
                     </div>
-                  </div>
+                  </Show>
                 )}
               </Match>
               {/* One session, the whole pane (#/s/<path>), exactly as before. Keyed on its host too: a
@@ -1387,7 +1435,7 @@ export function App() {
                     brand back to the list, and New Session. */}
                 <Show when={!unfolded()}>
                   <div class="sidebar-head overview-bar">
-                    <BrandLink />
+                    <BrandLink onClick={leaveHomeToList} />
                     <span class="sidebar-spacer" />
                     <button type="button" class="button" onClick={() => setCreating(true)}>
                       <Icon name="plus" />
@@ -1400,6 +1448,14 @@ export function App() {
                     {/* A plain title at every width: the Sessions card below is where the count lives. */}
                     <h1 class="overview-title">Overview</h1>
                   </div>
+                  {/* Projects first (§app.projects/home-cards): this host's projects, needs you first. */}
+                  <OverviewProjects
+                    sessions={list()}
+                    digest={attention.data()}
+                    proactivity={overseer.data()?.proactivity}
+                    now={now()}
+                    onNewSessionIn={newSessionIn}
+                  />
                   {/* Ways to start something. */}
                   <OverviewActions onNewSession={() => setCreating(true)} />
                   <HomeSessionsCard glance={sessionsGlance(list() ?? [], attention.data(), overseer.data()?.proactivity)} now={now()} onOpenList={openSessionList} />
@@ -1450,7 +1506,7 @@ export function App() {
       <Show when={creating()}>
         <Portal>
           <NewSessionDialog
-            prefill={newSessionCwd(summary(), list() ?? [], (cwd) => offersCwd(cwd, showHiddenFolders()), pageProjectRoot()) ?? ""}
+            prefill={newSessionPrefill() ?? newSessionCwd(summary(), list() ?? [], (cwd) => offersCwd(cwd, showHiddenFolders()), pageProjectRoot()) ?? ""}
             knownCwds={[...new Set((list() ?? []).filter((s) => !s.overseer && !s.org).map((s) => s.cwd))]}
             onCancel={() => setCreating(false)}
             onCreated={adoptCreated}

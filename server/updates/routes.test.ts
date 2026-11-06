@@ -6,7 +6,8 @@ import { OVERSEER_SENDER_HEADER, senderSecret } from "../overseer-sender";
 import { scratchRoot } from "../test-scratch";
 import { gitIn } from "./git";
 import { UpdatesManager } from "./manager";
-import { jobEnvOf, OPERATOR_ONLY, registerUpdatesRoutes, setUpdatesForTest } from "./routes";
+import { pageHeaders } from "../testing/page";
+import { jobEnvOf, registerUpdatesRoutes, setUpdatesForTest } from "./routes";
 
 /**
  * Only the operator acts on updates: a same-origin browser request on the
@@ -45,7 +46,9 @@ after(() => setUpdatesForTest(null));
 const app = new Hono();
 registerUpdatesRoutes(app);
 
-const BROWSER = { "sec-fetch-site": "same-origin", "content-type": "application/json" };
+const BROWSER = { "sec-fetch-site": "same-origin", "content-type": "application/json", ...pageHeaders() };
+const UPDATE_REFUSAL = "Only the user updates Sova. Ask them to do it in Settings → General. Nothing was changed.";
+const PEER_REFUSAL = "Only the user approves this, on the page of the computer it belongs to. Open Sova on that computer. Nothing changed.";
 const socket = { incoming: {} };
 const call = (method: string, path: string, opts: { body?: unknown; headers?: Record<string, string>; env?: unknown } = {}) =>
   app.request(path, { method, headers: opts.headers, body: opts.body === undefined ? undefined : JSON.stringify(opts.body) }, opts.env as never);
@@ -63,17 +66,21 @@ for (const [route, method, body] of [
   ["/api/updates/settings", "PUT", { autoUpgrade: true }],
   ["/api/updates/apply", "POST", { target: "a".repeat(40), confirm: true }],
 ] as const) {
-  test(`${method} ${route}: refused with no socket, from the peer listener, with the Overseer's mark, or without a browser's same-origin mark`, async () => {
+  test(`${method} ${route}: refused with no socket, from the peer listener, with the Overseer's mark, to a script or a chat, or without a browser's same-origin mark`, async () => {
     for (const [why, env, headers] of [
       ["in-process", undefined, BROWSER],
       ["peer listener", { incoming: {}, meshPeer: { name: "peer" } }, BROWSER],
       ["the Overseer", socket, { ...BROWSER, [OVERSEER_SENDER_HEADER]: senderSecret() }],
       ["not a browser", socket, { "content-type": "application/json" }],
-      ["a cross-site page", socket, { "sec-fetch-site": "cross-site", "content-type": "application/json" }],
+      ["a cross-site page", socket, { ...BROWSER, "sec-fetch-site": "cross-site" }],
+      ["the token in a header, claiming same-origin", socket, { "sec-fetch-site": "same-origin", "x-sova-token": "t" }],
+      ["the token beside the cookie", socket, { ...BROWSER, "x-sova-token": "t" }],
+      ["a chat's key", socket, { ...BROWSER, "x-sova-caller": "k" }],
     ] as const) {
       const r = await call(method, route, { env, headers, body });
       assert.equal(r.status, 403, why);
-      assert.deepEqual(await r.json(), { error: OPERATOR_ONLY }, why);
+      const peer = why === "peer listener";
+      assert.deepEqual(await r.json(), { error: peer ? PEER_REFUSAL : UPDATE_REFUSAL, yourClick: true, ...(peer ? { peer: true } : {}) }, why);
     }
     assert.equal(calls.length, 0, "nothing ran");
   });

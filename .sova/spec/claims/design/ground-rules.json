@@ -37,7 +37,11 @@
       "public/icons/mode-vis.svg",
       "public/icons/mode-memory.svg",
       "public/icons/alert-triangle.svg",
-      "public/icons/progress.svg"
+      "public/icons/progress.svg",
+      "src/components/ProjectIcon.tsx",
+      "src/project-icon.css",
+      "public/icons/usage-coin.svg",
+      "public/icons/agents-working.svg"
     ]
   },
   "§design.ground-rules/motion": {

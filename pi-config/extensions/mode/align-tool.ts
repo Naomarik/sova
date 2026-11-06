@@ -271,6 +271,29 @@ Implementation review (phase diff): run each blocker's check to confirm it, send
 export const ALIGN_REVIEW_GUIDELINE =
 	"Adversarial review (align review op): after each create or import, and before done once the build and tests pass, review Complex or risky work (ambiguous, cross-cutting, high-risk, trust boundaries, persistence/migrations/data formats, shared contracts, concurrency/lifecycle, hard to roll back) with the read-only reviewer the op names; otherwise record a skip with a one-line reason. Never set done while a review runs or a blocker is open.";
 
+const parsedJson = (value: unknown): unknown => {
+	if (typeof value !== "string") return value;
+	try {
+		return JSON.parse(value);
+	} catch {
+		return value;
+	}
+};
+
+/**
+ * The call's arguments before pi's schema check: a model on the Claude Code CLI sometimes writes `ops`, or each op, as
+ * JSON text, which would fail the check with "ops.0: must be object" though the call means what it says. Read as JSON;
+ * text that isn't JSON is left for the check to refuse. A lone op object is a list of one.
+ */
+export function readAlignArgs(args: unknown): unknown {
+	if (args === null || typeof args !== "object" || Array.isArray(args)) return args;
+	const record = args as Record<string, unknown>;
+	const read = parsedJson(record.ops);
+	const list = Array.isArray(read) ? read.flatMap(parsedJson) : read !== null && typeof read === "object" ? [read] : read;
+	const same = Array.isArray(list) && Array.isArray(record.ops) && list.length === record.ops.length && list.every((op, i) => op === (record.ops as unknown[])[i]);
+	return same || list === record.ops ? args : { ...record, ops: list };
+}
+
 /**
  * Register the tool. `review`: the `adversarial-review` flag's form (the review ops in the schema,
  * the rules in the description and guidelines); without it, exactly the flag-off tool. `visual`: the
@@ -289,6 +312,7 @@ export function registerAlignTool(pi: ExtensionAPI, host: AlignToolHost, form: A
 		promptSnippet: ALIGN_PROMPT_SNIPPET,
 		promptGuidelines: review ? [...ALIGN_TOOL_GUIDELINES, ALIGN_REVIEW_GUIDELINE] : ALIGN_TOOL_GUIDELINES,
 		parameters: alignParameters(form),
+		prepareArguments: (args: unknown) => readAlignArgs(args) as never,
 		// The state is shared: calls in one message apply one after another.
 		executionMode: "sequential",
 		async execute(_id, params, signal, _update, ctx) {

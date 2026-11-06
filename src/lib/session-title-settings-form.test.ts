@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionTitleSettings } from "../../shared/protocol";
-import { INTERVAL, minutesIssue, minutesOf, QUIET, sameTitleSettings, titleDraftProblem, toTitleDraft, toTitleSettings, withoutSubagentMarks } from "./session-title-settings-form";
+import { sameTitleSettings, titleDraftProblem, toTitleDraft, toTitleSettings, withoutSubagentMarks } from "./session-title-settings-form";
 
 const saved: SessionTitleSettings = {
   version: 1,
@@ -14,15 +14,12 @@ const saved: SessionTitleSettings = {
   fallback: { backend: "claude-code", model: "sonnet", effort: "low" },
 };
 
-test("minutes: whole numbers in range only, as typed", () => {
-  assert.equal(minutesOf("15", INTERVAL), 15);
-  assert.equal(minutesOf(" 0 ", QUIET), 0);
-  assert.equal(minutesOf("0", INTERVAL), null);
-  assert.equal(minutesOf("2.5", INTERVAL), null);
-  assert.equal(minutesOf("", INTERVAL), null);
-  assert.equal(minutesOf("1441", QUIET), null);
-  assert.equal(minutesIssue("abc", INTERVAL), "A whole number of minutes, 1 to 1440.");
-  assert.equal(minutesIssue("10", INTERVAL), null);
+test("minutes: whole numbers in range only, as typed, refused in the shared words (Settings QA D7)", () => {
+  const d = toTitleDraft(saved);
+  assert.equal(toTitleSettings({ ...d, intervalMinutes: "15" }).intervalMinutes, 15);
+  assert.equal(toTitleSettings({ ...d, quietMinutes: " 0 " }).quietMinutes, 0);
+  for (const bad of ["0", "2.5", "", "1e", "abc", "9999"]) assert.equal(titleDraftProblem({ ...d, intervalMinutes: bad }), "Minutes between checks must be a whole number from 1 to 1,440.", bad);
+  assert.equal(titleDraftProblem({ ...d, quietMinutes: "1441" }), "Quiet minutes must be a whole number from 0 to 1,440.");
 });
 
 test("a draft round-trips, and only a real change is dirty", () => {
@@ -37,11 +34,11 @@ test("a draft round-trips, and only a real change is dirty", () => {
 test("Save waits for valid minutes, a model and an effort per row, and a fallback that isn't the primary", () => {
   const d = toTitleDraft(saved);
   assert.equal(titleDraftProblem(d), null);
-  assert.match(titleDraftProblem({ ...d, intervalMinutes: "0" })!, /between checks/);
-  assert.match(titleDraftProblem({ ...d, quietMinutes: "-1" })!, /quiet minutes/);
+  assert.match(titleDraftProblem({ ...d, intervalMinutes: "0" })!, /Minutes between checks/);
+  assert.match(titleDraftProblem({ ...d, quietMinutes: "-1" })!, /Quiet minutes/);
   assert.match(titleDraftProblem({ ...d, primary: { backend: "pi", model: "", effort: "" } })!, /primary model/);
-  assert.match(titleDraftProblem({ ...d, fallback: { backend: "claude-code", model: "sonnet", effort: "" } })!, /effort for its fallback/);
-  assert.match(titleDraftProblem({ ...d, fallback: { ...d.primary } })!, /same model as its primary/);
+  assert.match(titleDraftProblem({ ...d, fallback: { backend: "claude-code", model: "sonnet", effort: "" } })!, /effort for the fallback/);
+  assert.match(titleDraftProblem({ ...d, fallback: { ...d.primary } })!, /same as the primary/);
 });
 
 test("the offer drops Delegate's subagent marks: a title model obeys only the global policy", () => {

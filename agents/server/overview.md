@@ -17,7 +17,9 @@ watcher, the price seed and the share listener. The pi harness boundary has its 
   launchd examples, the Node switch), [docs/bun-quirks.md](../../docs/bun-quirks.md) (the Bun quirk
   registry), [server/harness/pi/README.md](../../server/harness/pi/README.md) and
   [QUIRKS.md](../../server/harness/pi/QUIRKS.md). The restart rules every task follows are in
-  [AGENTS.md](../../AGENTS.md#live-server-restart).
+  [AGENTS.md](../../AGENTS.md#live-server-restart), with its one exception: Sova's own merge thread restarts
+  the live unit after landings, once the queue is idle (`.sova/playbooks/merge-queue/PLAYBOOK.md`; the
+  path rule is `server/restart-paths.ts`).
 - Spec: `§app/server-runtime`.
 - The command catalogue, the `scripts/sova.mjs` command line and what extensions may add:
   [commands/overview.md](commands/overview.md).
@@ -39,9 +41,8 @@ watcher, the price seed and the share listener. The pi harness boundary has its 
   each as an operator stop, through the supervisor's records, never a process found by name.
 - On macOS the live server is the launchd agent `sova-runtime` (`~/Library/LaunchAgents/sova-runtime.plist`,
   the launchd example in docs/running-as-a-service.md), and every restart rule holds. Its restart is
-  `launchctl kickstart -k gui/$(id -u)/sova-runtime`; the verb form
-  (`sova-project apply --checkout ~/webapps/sova --confirm`) runs it 3 s later from a process detached
-  from the server. Pid and state: `launchctl print gui/$(id -u)/sova-runtime`; start time:
+  `launchctl kickstart -k gui/$(id -u)/sova-runtime`; Apply on the project's Branches tab runs it 3 s later
+  from a process detached from the server. `sova-project apply` of Sova's own slot 0 is refused. Pid and state: `launchctl print gui/$(id -u)/sova-runtime`; start time:
   `ps -o lstart= -p <pid>`; log: `~/Library/Logs/sova-runtime.log`.
 - The claude-code bridge's `globalThis` singleton is a `Symbol.for` registry entry in each chat's
   process: a chat gets a bridge from new code only when it reloads onto that code.
@@ -157,6 +158,24 @@ nothing heavy) and writes `<state root>/stalls/stalls.jsonl`, 1 MiB then rotated
 - The watcher follows imports, and `stall-recorder-worker.ts` is loaded by URL: the dev watcher
   doesn't restart on an edit to it alone.
 
+### Mesh areas (§mesh/compatibility)
+
+- `shared/wire-areas.ts` and `.json` hold one version number per area. Hosts match on an area only when
+  the numbers are equal: no oldest supported version, no translating down. `hostState` is the one
+  reading of a host, for a page (its bundled numbers) and for a host's own acts (its running numbers,
+  `hostReading` in `server/mesh/hello.ts`); never re-derive it.
+- `state: "up"` no longer means usable: a host that lists areas is `up` whatever its numbers. Anything
+  that acts on a peer goes through `hostReading`, or `areasForbid` when a host that lists none must
+  stay as it was (`server/mesh/hello.ts`).
+- A writing route (`WRITING_ROUTES`, `server/wire-gate.ts`) refuses a number other than this host's.
+  Whatever the server runs states its own: `peerFetch` and the in-process `statingOwnNumber` stamp it,
+  and `scripts/sova.mjs` too. A new in-process caller of a writing route goes through those, or it is
+  refused the day writing passes version 1.
+- The ratchet (`shared/wire-areas.test.ts`, `server/testing/wire-shape.ts`) holds each area's root
+  types against its recorded shape and fails with instructions. Declare the change: a `compatible`
+  entry with its shape and a note, or a raised `version` with the old format's code removed and the
+  area's saved samples (`src/lib/wire-samples/`) replaced. A new type on an area goes in `AREA_ROOTS`.
+
 ## When you change X, also update Y
 
 | You change | Also |
@@ -166,7 +185,9 @@ nothing heavy) and writes `<state root>/stalls/stalls.jsonl`, 1 MiB then rotated
 | `bun` in `mise.toml` | `scripts/bun-release.txt` checksum lines; `mise trust <worktree>` |
 | `scripts/dev-server.mjs` watch set | this guide's watcher paragraph and the extensions guide's "not watched" list |
 | `shared/protocol.ts` | coordinate with the frontend first; `shared/wire-v1.ts` if v1 frames are affected |
-| anything in `server/**` or `shared/**` | say the live server needs a restart (AGENTS.md) |
+| a type an area covers (`AREA_ROOTS` in `server/testing/wire-shape.ts`) | declare it in `shared/wire-areas.json` as compatible or breaking; a breaking one replaces `src/lib/wire-samples/` |
+| anything in `server/**` or `shared/**` | say the live server needs a restart (AGENTS.md); the merge thread does it after the landing |
+| a new runtime import of a `src/` file from `server/` or `shared/` | add it to `SERVER_SRC_IMPORTS` in `server/restart-paths.ts` (`restart-paths.test.ts` fails until you do) and to the frontend guide's list |
 
 While working: `pnpm test` constantly, `pnpm test:int --changed` before asking to land, `pnpm run
 typecheck`. Landing (the merge queue) runs both tiers in full.

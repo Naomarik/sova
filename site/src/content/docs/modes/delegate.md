@@ -8,6 +8,8 @@ order: 2
 
 ## What changes
 
+[Create](/docs/modes/create/) does everything on this page and shares these settings.
+
 Delegate is a major mode: pick **delegate** in the chat's mode menu (see [Modes](/docs/modes/)).
 From the chat's next message, the agent plans and routes the work to subagents (workers) instead of
 doing it all itself. Delegate routes 4 kinds of work:
@@ -68,7 +70,7 @@ routes, all on Claude Code:
 
 ## Teams
 
-Besides single workers, the agent can start a **team**, in either major mode. It starts one when
+Besides single workers, the agent can start a **team**, in any major mode. It starts one when
 you ask for a team, or when parts of the work depend on each other: they change the same files or
 interfaces at the same time, or one worker builds while another checks. Otherwise it uses single
 workers.
@@ -82,6 +84,9 @@ From the chat's subagent profile, a new team can get two standing members:
 The profile's **members default** is the model a team member runs on when nobody named one. Without
 it, such a member runs on the chat's own model. Profile **Off** gives teams no standing members and
 no members default. All of this is edited in the profile's **Teams** section.
+
+Members message each other by role through their own inboxes, and the coordinator speaks for
+them. [Teams](/docs/teams/) covers how a team talks, the coordinator, the monitor and handovers.
 
 ## Watch the workers
 
@@ -112,7 +117,8 @@ with its transcript and its spend, but not running.
   in the pane says when it stopped: "Not running since a server restart; it was mid-task at…"
 - Nothing starts again by itself. The agent resumes a worker with its `agent_resume` tool, or you can
   type `/agent-resume <id>`. The worker keeps its id and its transcript, rejoins its team, and comes
-  back idle: it waits for new work rather than finishing the interrupted turn.
+  back idle: it waits for new work rather than finishing the interrupted turn. A worker of an archived session
+  isn't resumed: unarchive the session first.
 
 ## Strict
 

@@ -23,6 +23,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import type { MergeEntry, MergeThreadAsk } from "../../shared/merge-queue";
+import { mergeThreadTitle } from "../../shared/fixed-names";
 
 /** A thread without memory older than this is replaced at its next event (a thread with memory never ages out). */
 export const THREAD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -54,9 +55,12 @@ export type ThreadEntry = Pick<MergeEntry, "id" | "branch" | "commit" | "target"
     `base...commit` even after it landed, when `target...commit` is empty. Absent: the target's name. */
 export type ThreadEvent =
   | { kind: "queued"; entry: ThreadEntry; base?: string }
-  | { kind: "conflict"; entry: ThreadEntry; run: string; files: string[]; base?: string }
+  /** `scratch`: the copy Sova made for the thread to resolve in (scratch.ts); `scratchError`: why none could be made. */
+  | { kind: "conflict"; entry: ThreadEntry; run: string; files: string[]; base?: string; scratch?: string; scratchError?: string }
   | { kind: "failed"; entry: ThreadEntry; run: string; summary?: string; base?: string }
   | { kind: "paused"; why: string }
+  /** Nothing left to check and nothing running: `entry` changed last; `lastLanded` is the newest landing; `head` the target's. */
+  | { kind: "idle"; entry: ThreadEntry; lastLanded?: { id: string; branch: string; sha: string }; head?: string }
   /** The project has no private-names list: pushes are held until the user answers the interview. */
   | { kind: "names"; file: string; target: string }
   /** The user's answer to a merge.ask, relayed by the chat it was asked in (or typed on the tab). */
@@ -207,8 +211,28 @@ export function rereadLine(playbook: string, method: string = DEFAULT_PLAYBOOK_D
 
 const short = (sha: string) => sha.slice(0, 7);
 
-/** The message one event becomes. Each names the verbs to answer with and asks for a short turn. */
+/** Each moment's name in the playbook's "Read as you go" table (PLAYBOOK.md; a project's own playbook may list other pages). */
+export const READ_AS_YOU_GO: Readonly<Record<ThreadEvent["kind"], string>> = {
+  queued: "Queued",
+  conflict: "Conflict",
+  failed: "Failed",
+  paused: "Paused",
+  idle: "Idle",
+  names: "Names",
+  answer: "Answer",
+};
+
+/** The line every event message ends with: the method's pages are read fresh at each event, never from memory. */
+export function readAsYouGoLine(kind: ThreadEvent["kind"]): string {
+  return `Before you act, read your playbook's "Read as you go" row for ${READ_AS_YOU_GO[kind]} and the pages it names, now, never from memory (the project's own playbook wins where its list differs).`;
+}
+
+/** The message one event becomes: the event, then the reread line. Each names the verbs to answer with and asks for a short turn. */
 export function eventText(ev: ThreadEvent): string {
+  return `${eventBody(ev)}\n${readAsYouGoLine(ev.kind)}`;
+}
+
+function eventBody(ev: ThreadEvent): string {
   switch (ev.kind) {
     case "queued": {
       const e = ev.entry;
@@ -216,7 +240,7 @@ export function eventText(ev: ThreadEvent): string {
       return [
         `Queued: entry ${e.id} · ${e.branch} at ${short(e.commit)}, onto ${e.target}${ev.base ? ` (at ${short(ev.base)})` : ""}.`,
         `Read what it changes (\`git diff ${base}...${e.commit}\`, read only; it may land before you finish). Then, in one short turn:`,
-        `1. pick extra checks by blast radius (the method's scripts/blast-radius.mjs --base ${base} --tip ${e.commit}, references/picks.md) and add them with merge.extend {entry: "${e.id}", checks: [id], why} (skip when nothing beyond the floor fits; "landed" or "busy" means too late: go on to the note);`,
+        `1. pick extra checks by blast radius (the method's scripts/blast-radius.mjs --base ${base} --tip ${e.commit}, references/picks.md) and add them with merge.extend {entry: "${e.id}", checks: [id], why, select} (select is part of the pick: copy the pick's select whenever it has one, since a check that takes a group or files fails at once without it; skip when nothing beyond the floor fits; "landed" or "busy" means too late: go on to the note);`,
         `2. write its note with merge.note {entry: "${e.id}", note} ("What's worth noting" in the playbook; an empty note when nothing is).`,
       ].join("\n");
     }
@@ -224,7 +248,10 @@ export function eventText(ev: ThreadEvent): string {
       const e = ev.entry;
       return [
         `Conflict: entry ${e.id} · ${e.branch} at ${short(e.commit)} conflicts with ${e.target} in ${ev.files.join(", ") || "(files in the run log)"}. Run ${ev.run}.`,
-        `Judge it (references/conflicts.md) and answer with merge.resolve {entry: "${e.id}", verdict, files, ours, theirs, proposal, commit?, note?}: no behaviour change → verdict "no-behaviour-change" with your resolution commit from a side worktree; the two sides want different behaviour → verdict "behaviour-differs", and the user decides.`,
+        ev.scratch
+          ? `Sova made a scratch copy for it at ${ev.scratch}: a worktree with no branch, at ${e.target}'s head. Resolve there, and never make a worktree of your own; Sova removes the copy when this attempt ends.`
+          : `Sova couldn't make a scratch copy for it${ev.scratchError ? ` (${ev.scratchError})` : ""}: judge it from the diff, and answer verdict "behaviour-differs" with no commit, so the user decides.`,
+        `Judge it (references/conflicts.md) and answer with merge.resolve {entry: "${e.id}", verdict, files, ours, theirs, proposal, commit?, note?}: no behaviour change → verdict "no-behaviour-change" with your resolution commit from the scratch copy; the two sides want different behaviour → verdict "behaviour-differs", and the user decides.`,
       ].join("\n");
     }
     case "failed": {
@@ -236,6 +263,14 @@ export function eventText(ev: ThreadEvent): string {
     }
     case "paused":
       return [`The queue paused: ${ev.why}.`, `If the logs say why and the pause holds an entry, explain it on that entry with merge.note (references/failures.md). Never resume it yourself.`].join("\n");
+    case "idle": {
+      const e = ev.entry;
+      const l = ev.lastLanded;
+      return [
+        `Idle: the queue has nothing left to check and nothing running (the last change: entry ${e.id} · ${e.branch}).${l ? ` The newest landing: entry ${l.id} · ${l.branch} as ${short(l.sha)}.` : ""}${ev.head ? ` ${e.target} is at ${short(ev.head)}.` : ""}`,
+        `If the project's playbook says what to do once the queue is quiet ("When the queue is idle"), do it now, through the verbs; merge.hold {action: "set"} keeps new runs from starting meanwhile and {action: "clear"} lifts it. Otherwise nothing is needed: end your turn.`,
+      ].join("\n");
+    }
     case "names":
       return [
         `Names: this project has no private-names list, so every push of ${ev.target} is held. Landings go on.`,
@@ -455,9 +490,7 @@ export class MergeThread {
       why = `it refused messages (${r.error})`;
       this.say(`${root}: the thread refused a message three times (${r.error}); starting a fresh one`);
     } else if (rec) this.say(`${root}: a fresh thread, since ${why}`);
-    const date = new Date(now).toISOString().slice(0, 10);
-    const name = root.split("/").filter(Boolean).pop() ?? root;
-    const r = await withTimeout(this.deps.create(root, firstText(root, playbook, ev), `Merge thread · ${name} · ${date}`), ms, "starting the thread");
+    const r = await withTimeout(this.deps.create(root, firstText(root, playbook, ev), mergeThreadTitle(root, now)), ms, "starting the thread");
     if (!r.ok) throw new Error(`couldn't start a thread: ${r.error}`);
     const history = rec ? this.retireRecord(root, rec, why ?? "replaced", false) : (readStored(this.deps.file)[root]?.history ?? []);
     const all = readStored(this.deps.file);
@@ -542,8 +575,11 @@ export async function createChat(request: AppRequest, cwd: string, profile: stri
   });
   const json = (await res.json().catch(() => null)) as { id?: string; path?: string; error?: string } | null;
   if (res.status !== 201 || !json?.id || !json.path) return { ok: false, error: json?.error ?? `HTTP ${res.status}` };
-  const { writeAutoTitle } = await import("../session-titles");
-  writeAutoTitle(json.id, title);
+  // The name Sova gives it, in its own store: no rename (the user's, the Overseer's, the namer's) reaches it.
+  const [{ setSovaChatName }, { sovaNamedKind }] = await Promise.all([import("../sova-chat-names"), import("../../shared/fixed-names")]);
+  const kind = sovaNamedKind({ source: "sova", id: profile });
+  if (kind) setSovaChatName(json.id, kind, title);
+  else (await import("../session-titles")).writeAutoTitle(json.id, title);
   return { ok: true, id: json.id, path: json.path };
 }
 

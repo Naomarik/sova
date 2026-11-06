@@ -5,7 +5,7 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P29 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P38 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
@@ -1259,6 +1259,60 @@ describe("pi contract", () => {
     await run;
     assert.deepEqual(usersOf(model.calls.at(-1)!).slice(-1), ["again"], "nothing removed or cleared reached the model");
     session.dispose();
+  });
+
+  test("P37 openai-codex-login: the login asks a method menu with device_code and browser first, and a refused code route fails before any code is shown, with the not-enabled text", async () => {
+    // The browser route's half (its link's state, the paste-back prompt's signal, localhost:1455 freed
+    // on abort) listens on a port: server/harness/pi/sign-in.integration.test.ts.
+    const authPath = join(dir, "p37-auth.json");
+    const runtime = await ModelRuntime.create({ authPath, modelsPath: null, allowModelNetwork: false, refreshOnCreate: false });
+    const realFetch = globalThis.fetch;
+    const asked: string[] = [];
+    const events: string[] = [];
+    let menu: string[] = [];
+    // OpenAI answers the code request with 404: device code sign-in not enabled.
+    globalThis.fetch = (async () => new Response("", { status: 404 })) as typeof fetch;
+    const { PI_CODE_REFUSED } = await import("./sign-in.ts");
+    try {
+      await assert.rejects(runtime.login("openai-codex", "oauth", {
+        async prompt(p: any) {
+          asked.push(p.type);
+          if (p.type === "select") { menu = p.options.map((o: { id: string }) => o.id); return "device_code"; }
+          throw new Error("unexpected prompt");
+        },
+        notify(e: any) { events.push(e.type); },
+      }), (error: Error) => PI_CODE_REFUSED.test(error.message), "a 404 is refused with the text sign-in.ts reads");
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    assert.deepEqual(asked, ["select"], "the method menu comes first, and nothing else is asked");
+    assert.ok(menu.includes("device_code") && menu.includes("browser"), `menu ids: ${menu.join(", ")}`);
+    assert.ok(!events.includes("device_code"), "a refused code route shows no code");
+    assert.equal(existsSync(authPath) && JSON.parse(readFileSync(authPath, "utf8"))["openai-codex"] !== undefined, false, "nothing saved");
+  });
+
+  test("P38 api-key-login: the api-key login asks one secret prompt and stores the key under the provider, logout removes only that entry, and the key providers carry an api-key login", async () => {
+    const authPath = join(dir, "p38-auth.json");
+    const modelsPath = join(dir, "p38-models.json");
+    writeFileSync(modelsPath, JSON.stringify({ providers: { "ollama-cloud": { baseUrl: "https://ollama.com/v1", api: "openai-completions", models: [{ id: "m" }] } } }));
+    const runtime = await ModelRuntime.create({ authPath, modelsPath, allowModelNetwork: false, refreshOnCreate: false });
+    const withKey = runtime.getProviders().filter((p: any) => typeof p.auth?.apiKey?.login === "function").map((p: any) => p.id);
+    for (const id of ["anthropic", "openai", "deepseek", "zai", "openrouter", "ollama-cloud"]) assert.ok(withKey.includes(id), `${id} takes a key`);
+    assert.ok(!withKey.includes("openai-codex"), "a subscription-only provider takes none");
+    const asked: string[] = [];
+    for (const id of ["deepseek", "zai", "ollama-cloud"]) {
+      await runtime
+        .login(id, "api_key", { async prompt(p: any) { asked.push(p.type); return `fake-${id}-key`; }, notify() {} } as never)
+        .catch((e: unknown) => { if (!(e instanceof pi.agent.CredentialSynchronizationError)) throw e; });
+    }
+    assert.deepEqual(asked, ["secret", "secret", "secret"], "one secret prompt per login");
+    const file = () => JSON.parse(readFileSync(authPath, "utf8"));
+    assert.deepEqual(file().zai, { type: "api_key", key: "fake-zai-key" });
+    assert.deepEqual(pi.agent.readStoredCredential("deepseek", authPath), { type: "api_key", key: "fake-deepseek-key" });
+    writeFileSync(authPath, JSON.stringify({ ...file(), openrouter: { type: "api_key", key: "!false" } }));
+    assert.deepEqual(pi.agent.readStoredCredential("openrouter", authPath), { type: "api_key", key: "!false" }, "read as stored: the command isn't run");
+    await runtime.logout("zai").catch((e: unknown) => { if (!(e instanceof pi.agent.CredentialSynchronizationError)) throw e; });
+    assert.deepEqual(Object.keys(file()).sort(), ["deepseek", "ollama-cloud", "openrouter"], "logout removes only its entry");
   });
 
   test("T1 scripted-model: the members the test double replaces exist, and it runs a turn", async () => {

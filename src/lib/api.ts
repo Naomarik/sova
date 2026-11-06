@@ -3,7 +3,7 @@ import type { OrgClaudeLogin, ProjectClaudeLogin } from "../../shared/projects";
 import type { ModelPick, WorkModels } from "../../shared/powers";
 import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
 import type { CardAnswerValue, CardInfo, ProjectCardsAnswer, SessionCardsAnswer } from "../../shared/transcript-cards";
-import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow } from "../../shared/project-settings";
+import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow, SovaCardsInfo } from "../../shared/project-settings";
 import type { McpNewServer, McpProjectServers, McpServerRow, McpServers, McpSignIn } from "../../shared/mcp";
 import type { ProfilesListing } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
@@ -33,6 +33,8 @@ import type {
   ClaudePoolInfo,
   ClaudeCliStatus,
   ClaudeLoginFlowState,
+  OpenAiAccountInfo,
+  OpenAiLoginFlow,
   ContextInfo,
   ExtensionInfo,
   ExplanationInfo,
@@ -72,6 +74,7 @@ import type {
   SessionSetupFileText,
   SessionContextView,
   SessionTools,
+  PairView,
   SessionSummary,
   ThemeList,
   TmpAttachment,
@@ -98,7 +101,7 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
-import { WIRE_PARAM } from "../../shared/protocol";
+import { WIRE_PARAM, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
 import { LIST_VERSION_HEADER, parseListVersion } from "./summary-diff";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
 import type {
@@ -120,7 +123,7 @@ import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { UsagePerformance } from "../../shared/usage/perf";
 import { MAX_USAGE_SESSIONS, type PricesInfo, type UsageCosts, type UsageSessionSpend, type UsageSessionsRequest, type UsageSessionsTotals, type UsageToday } from "../../shared/usage/wire";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
-import type { ProjectList, ProjectRegistered, ProjectSummary } from "../../shared/projects";
+import type { ProjectIconInfo, ProjectList, ProjectRegistered, ProjectSummary } from "../../shared/projects";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch, ProjectWorktrees } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import type { MeshResync, ResyncJob, ResyncStart } from "../../shared/mesh-resync";
@@ -144,9 +147,11 @@ import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../
 import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../shared/provider-limits";
 import type { TargetInfo } from "./remote-session";
 import type { CommandEntry } from "../../shared/commands-catalog";
+import type { BackgroundJob } from "../../shared/protocol";
 import type { AlignTriage, WorkerChecks, DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
 import { upgradeLegacyRows } from "./legacy-rows";
+import { COMPOSER_QUERY } from "./wire-stamp";
 import { onAuthorized, onUnauthorized } from "./auth";
 import type { PreviewList, PreviewMint, PreviewMinted, PreviewView } from "../../shared/preview-links";
 
@@ -220,6 +225,16 @@ export const mintAccessCode = () =>
 export const revealAccessToken = () => request<{ token: string }>("/api/auth/token", { cache: "no-store" });
 
 export const listSessions = () => request<SessionSummary[]>("/api/sessions");
+
+/** A chat's pairings in force (§app.overseer/pairs): its Paired with lines. */
+export const listPairs = (sessionId: string) =>
+  request<{ pairs: PairView[] }>(`/api/sessions/pairs?id=${encodeURIComponent(sessionId)}`, { cache: "no-store" });
+/** Unpair: both topics close, their waiting notes drop. */
+export const unpairChats = (pairing: string) =>
+  request<{ pair: PairView }>("/api/sessions/pairs/unpair", { method: "POST", body: JSON.stringify({ pairing }) });
+/** Resume a paused pairing (both directions): their note counts go back to 0. */
+export const resumePairing = (pairing: string) =>
+  request<{ pair: PairView }>("/api/sessions/pairs/resume", { method: "POST", body: JSON.stringify({ pairing }) });
 /** The list and the feed version it is at (`X-Sova-List-Version`; null from a server without it). */
 export const listSessionsVersioned = async () => {
   const { body, headers } = await requestWithHeaders<SessionSummary[]>("/api/sessions");
@@ -267,6 +282,9 @@ export const getModelPolicy = (host?: string | null) => request<ModelPolicy>(hos
 export const putModelPolicy = (policy: ModelPolicy) =>
   request<ModelPolicy>("/api/settings/models", { method: "PUT", body: JSON.stringify(policy) });
 /** How many of each provider's requests may run at once on this device (§app.provider-limits/setting). */
+/** Ollama Cloud's model list check (§app.model-levels/settings-line): its status, and Check now (answers once done). */
+export const getModelCheck = () => request<ModelCheckStatus>("/api/settings/models/check");
+export const runModelCheck = () => request<ModelCheckStatus>("/api/settings/models/check", { method: "POST" });
 export const getProviderLimits = () => request<ProviderLimitsInfo>("/api/settings/provider-limits");
 export const putProviderLimits = (limits: ProviderLimits) =>
   request<ProviderLimitsInfo>("/api/settings/provider-limits", { method: "PUT", body: JSON.stringify({ limits }) });
@@ -324,6 +342,23 @@ export const getChatClaudeAccounts = (path: string) =>
 /** Add a login, or (with `login`) sign an existing one in again on this device. */
 export const startClaudeLogin = (login?: string) =>
   request<ClaudeLoginFlowState>("/api/claude/accounts/flow", { method: "POST", ...(login ? { body: JSON.stringify({ login }) } : {}) });
+/** The OpenAI (ChatGPT subscription) sign-in of Settings → Accounts (§app.openai-login). */
+export const getOpenAiAccount = () => request<OpenAiAccountInfo>("/api/settings/accounts/openai");
+export const signOutOpenAi = () => request<OpenAiAccountInfo>("/api/settings/accounts/openai", { method: "DELETE" });
+/** Start pi's sign-in, the code route first; answers once the code (or the browser route's link) is out. */
+export const startOpenAiLogin = () => request<OpenAiLoginFlow>("/api/settings/accounts/openai/login", { method: "POST" });
+export const getOpenAiLogin = () => request<OpenAiLoginFlow | null>("/api/settings/accounts/openai/login");
+/** The browser route: the address the sign-in page ended on. */
+export const sendOpenAiLoginAnswer = (text: string) =>
+  request<OpenAiLoginFlow>("/api/settings/accounts/openai/login/answer", { method: "POST", body: JSON.stringify({ text }) });
+export const cancelOpenAiLogin = () => request<OpenAiAccountInfo>("/api/settings/accounts/openai/login", { method: "DELETE" });
+/** Settings → Accounts' API keys (§app/provider-keys): the rows (never a key), save (checked first), remove, Test, and the reveal. */
+export const getProviderKeys = () => request<ProviderKeysInfo>("/api/settings/accounts/keys");
+const keyUrl = (provider: string, tail = "") => `/api/settings/accounts/keys/${encodeURIComponent(provider)}${tail}`;
+export const saveProviderKey = (provider: string, key: string) => request<ProviderKeyWrite>(keyUrl(provider), { method: "PUT", body: JSON.stringify({ key }) });
+export const removeProviderKey = (provider: string) => request<ProviderKeyWrite>(keyUrl(provider), { method: "DELETE" });
+export const testProviderKey = (provider: string) => request<ProviderKeyRow>(keyUrl(provider, "/test"), { method: "POST" });
+export const revealProviderKey = (provider: string) => request<{ key: string }>(keyUrl(provider, "/reveal"), { method: "POST" });
 export const setClaudePoolKeeper = (device: string) =>
   request<ClaudePoolInfo>("/api/claude/pool/keeper", { method: "PUT", body: JSON.stringify({ device }) });
 export const pinClaudePoolLogin = (id: string, pin: string | null) =>
@@ -998,6 +1033,17 @@ export const fetchTeamInboxBody = (path: string, teamId: string, workerId: strin
     `/api/insights/session/inbox?path=${encodeURIComponent(path)}&team=${encodeURIComponent(teamId)}&worker=${encodeURIComponent(workerId)}&item=${encodeURIComponent(id)}`,
   );
 
+/** A chat's running background jobs and its workers' (§app.background-jobs/pane). Starts no chat. */
+export const fetchSessionJobs = (path: string) => request<{ jobs: BackgroundJob[] }>(`/api/sessions/jobs?path=${encodeURIComponent(path)}`);
+
+/** Stop one background job: 15 s to finish, then the rest ends. Never starts or wakes the chat.
+    `sessionId` names a worker's job (the job's own `sessionId`). */
+export const stopSessionJob = (path: string, id: string, sessionId?: string) =>
+  request<{ ok: true; id: string; ended: boolean }>("/api/sessions/jobs/stop", {
+    method: "POST",
+    body: JSON.stringify({ path, id, ...(sessionId ? { sessionId } : {}) }),
+  });
+
 /** The repository around a session's folder (read-only git). `fresh` skips the server's ~10s cache.
     Use loadGitSummary (lib/git-summary.ts), which shares a request already running. */
 export const fetchGitSummary = (path: string, fresh = false) =>
@@ -1033,7 +1079,8 @@ export const removeWorktrees = (path: string, expect: string[]) =>
  * something that isn't a TUI. It never overrides a live TUI.
  */
 export function wsUrl(endpoint: "/ws/chat" | "/ws/watch", path: string, force = false, host: string | null = hostOf(path)): string {
-  return `${wsOrigin()}${peerBase(host)}${endpoint}?path=${encodeURIComponent(path)}${force ? "&force=1" : ""}&${WIRE}`;
+  // A chat socket states this page's writing number (§mesh.compatibility/every-send-states-a-version).
+  return `${wsOrigin()}${peerBase(host)}${endpoint}?path=${encodeURIComponent(path)}${force ? "&force=1" : ""}&${WIRE}${endpoint === "/ws/chat" ? `&${COMPOSER_QUERY}` : ""}`;
 }
 
 function wsOrigin(): string {
@@ -1063,6 +1110,9 @@ export const fetchMesh = (init?: RequestInit) => request<MeshInfo>("/api/mesh", 
 
 /** This host's own hello: its version and wire-contract fingerprint. */
 export const fetchMeshHello = () => request<MeshHello>("/api/mesh/hello", meshReadInit(true));
+
+/** Reconnect Here: bind peers.json to this folder and machine; the answer is the mesh after it. */
+export const reconnectMeshHere = () => request<MeshInfo>("/api/mesh/home", { method: "POST" });
 
 /** Replace peers.json's list; the answer is the mesh as it stands after the write. An entry
     without `nodeId` is resolved by its name on the tailnet. `grants` names the preset of a peer this
@@ -1286,6 +1336,8 @@ export const setProjectStakeholder = (id: string, pid: string, stakeholder: stri
 
 const projectPath = (pid: string) => `/api/projects/${encodeURIComponent(pid)}`;
 export const listProjects = () => request<ProjectList>("/api/projects");
+/** The overview cards' runtime figures (§app.projects/home-glance). */
+export const getProjectGlance = () => request<import("../../shared/projects").ProjectGlanceList>("/api/projects/glance");
 export const getProject = (pid: string) => request<ProjectSummary>(projectPath(pid));
 /** Register a folder as a project (Add Project, Add as Project); its checkout root, said back when it differs. */
 export const addProject = (root: string) => request<ProjectRegistered>("/api/projects", jsonInit("POST", { root }));
@@ -1295,6 +1347,11 @@ export const patchProject = (pid: string, patch: { name?: string; root?: string 
 /** Archive a project (§app.organizations/archive): 409 naming what is open; Unarchive brings it back. */
 export const archiveProject = (pid: string) => request<ProjectSummary>(`${projectPath(pid)}/archive`, jsonInit("POST", {}));
 export const unarchiveProject = (pid: string) => request<ProjectSummary>(`${projectPath(pid)}/unarchive`, jsonInit("POST", {}));
+/** A project's icon (§app.projects/icon): what it is now (rescans the folder), an upload, letters on or off, the upload removed. */
+export const getProjectIconInfo = (pid: string) => request<ProjectIconInfo>(`${projectPath(pid)}/icon/info`, { cache: "no-store" });
+export const uploadProjectIcon = (pid: string, png: string) => request<ProjectIconInfo>(`${projectPath(pid)}/icon`, jsonInit("PUT", { png }));
+export const setProjectIconLetters = (pid: string, letters: boolean) => request<ProjectIconInfo>(`${projectPath(pid)}/icon`, jsonInit("PATCH", { letters }));
+export const removeProjectIcon = (pid: string) => request<ProjectIconInfo>(`${projectPath(pid)}/icon`, { method: "DELETE" });
 
 // ---- the org's owner and the Owner page (§app/owner-page; routes in shared/owner.ts) ----
 /** Set the org's owner (an active roster person's id), or none. */
@@ -1474,9 +1531,6 @@ export async function runRootVerb(root: string, verb: ServicesUiVerb, body: Reco
     throw err;
   }
 }
-/** Run the Project deploy playbook (§app.project-runtime/deploy-playbook): a verb playbook run that proposes a deploy recipe. */
-export const runDeploySetup = (projectId: string) =>
-  request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", { playbook: "project-deploy" }));
 /** A deploy verb as the operator (§app.project-services/deploy): a refusal is a result too, never thrown. */
 export async function runDeployVerb(root: string, verb: DeployVerb, body: Record<string, unknown>): Promise<VerbResult> {
   try {
@@ -1509,16 +1563,29 @@ export async function runReleaseVerb(project: string, verb: `release.${string}`,
     throw err;
   }
 }
-/** Set Up Releases: the Release playbook maker, a guided setup that proposes the project's release playbook and settings. */
-export const runReleaseSetup = (projectId: string) =>
-  request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", { playbook: "release-maker" }));
 /** A chat's merge queue cards: one per branch it owns, from its approval on (`session.merge-cards`). */
 export const getMergeCards = (sessionId: string) => request<{ cards: import("../../shared/merge-queue").MergeCard[] }>(`/api/merge-queue/cards?session=${encodeURIComponent(sessionId)}`);
+/** Every project's queue and releases in one quick read: the landing bar's starting picture (page open, reconnect). */
+export const getLandingSummary = () => request<import("../../shared/merge-queue").LandingSummary>("/api/merge-queue/landing-summary");
 /** What runs on this host now, every project's (Running branches on `#/projects`). */
 export const getHostServices = () => request<HostServicesView>("/api/services");
 export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);
-/** Merge Branch on a proposed playbook run (§app.project-runtime/merge): the hash shown; a refused merge's error says why. */
-export const mergeProjectRun = (projectId: string, hash: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/merge`, jsonInit("POST", { hash }));
+/** Merge Branch on a proposed playbook run (§app.project-runtime/merge): the hash shown (and the Setup chat's, the commit
+    its proposal was read at); a refused merge's error says why. */
+export const mergeProjectRun = (projectId: string, hash: string, commit?: string) =>
+  request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/merge`, jsonInit("POST", commit ? { hash, commit } : { hash }));
+/** A project's Setup chat (the one standing chat that sets up its merge queue, releases and deploys): its state and its
+    branch's proposal, and whether it may open now. */
+export const getSetupChat = (projectId: string) =>
+  request<import("../../shared/setup-chat").SetupStatus>(`${projectPath(projectId)}/setup`);
+/** Opens the project's Setup chat, starting it the first time; `from`: the part the user came from (the chat starts
+    there). `fresh`: Start Fresh (this chat is archived once its turn ends; the next open starts a new one). */
+export const openSetupChat = (projectId: string, opts: { from?: "merge-queue" | "releases" | "deploy" | "settings"; fresh?: boolean } = {}) =>
+  request<import("../../shared/setup-chat").SetupOpened>(`${projectPath(projectId)}/setup`, jsonInit("POST", { ...(opts.from ? { from: opts.from } : {}), ...(opts.fresh ? { fresh: true } : {}) }));
+/** Land or Merge Branch on the Setup chat's proposal (the user's own page only): the hash and commit the card read.
+    `queued`: the branch joined the merge queue (a served project); else it was merged. A 409 says why not. */
+export const mergeSetupProposal = (projectId: string, hash: string, commit: string) =>
+  request<{ queued: boolean; setup: import("../../shared/setup-chat").SetupStatus }>(`${projectPath(projectId)}/setup/merge`, jsonInit("POST", { hash, commit }));
 /** Run the Project verbs playbook on the project: a coding session on its own branch. */
 export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
   request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));
@@ -1659,6 +1726,13 @@ export const applySettingsCard = (projectId: string, card: string, fingerprint: 
 /** Dismiss a card (Discard, for "local", with the fingerprint it showed). */
 export const withdrawSettingsCard = (projectId: string, card: string, fingerprint?: string) =>
   request<ProjectSettingsInfo>(`${projectPath(projectId)}/settings/cards/${encodeURIComponent(card)}/withdraw`, jsonInit("POST", fingerprint ? { fingerprint } : {}));
+/** Sova-wide cards, which have no project: only the chat that prepared one shows it (§chat.create-mode/settings-cards). */
+export const getSovaSettingsCards = () => request<SovaCardsInfo>("/api/settings/cards", { cache: "no-store" });
+/** `input`: what the person typed on the card; it goes with this request and nowhere else. */
+export const applySovaSettingsCard = (card: string, fingerprint: string, input?: string) => request<SettingsApplyResult>("/api/settings/apply", jsonInit("POST", { card, fingerprint, ...(input !== undefined ? { input } : {}) }));
+export const withdrawSovaSettingsCard = (card: string) => request<SovaCardsInfo>(`/api/settings/cards/${encodeURIComponent(card)}/withdraw`, jsonInit("POST", {}));
+/** Cancel the held Save of the folder's edits: `cancelSave` keeps them, where the same call without it is Discard. */
+export const cancelLocalSettingsSave = (projectId: string) => request<ProjectSettingsInfo>(`${projectPath(projectId)}/settings/cards/local/withdraw`, jsonInit("POST", { cancelSave: true }));
 export const undoSettingsRow = (projectId: string, id: string) =>
   request<{ undone?: SettingsHistoryRow[]; card?: SettingsCardView }>(`${projectPath(projectId)}/settings/undo`, jsonInit("POST", { id }));
 export const getProjectOffers = (projectId: string) => request<ProjectOffersAnswer>(`${projectPath(projectId)}/offers`, { cache: "no-store" });

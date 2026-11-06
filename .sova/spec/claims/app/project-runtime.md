@@ -102,8 +102,7 @@ earlier setup run's chat is still open, read from the project's builds even when
 lost it: working, waiting on alignment questions, or holding commits not merged counts as live;
 ended with no change, its chat neither archived nor its worktree removed, it holds a start too, as
 "The last setup run, \"{title}\", ended with no change but its chat is still open: open that chat to
-carry on, or archive it to start over." (Set Up Releases shows either as sent, with Open Chat for
-that run, §app.release/tab); and, for an
+carry on, or archive it to start over."; and, for an
 unattended overseer, while the software is registered and current ("The project's software is
 registered and current: the playbook has nothing to do.").
 
@@ -241,7 +240,18 @@ definition: read its report."); a run that proposes `release` names no hash ther
 pins settings and playbook files together: "{Title} proposes a release setup on {branch}.", its action **Merge Branch** (§app.project-runtime/merge; none when
 there is nothing valid to merge) and a link to the run's session, **Read Report**. The Needs-you row
 of a `playbook-review` item carries the same button beside the row's link, and its action words read
-"Read Report" (§app.session-list/needs-you).
+"Read Report" (§app.session-list/needs-you). A Setup chat's proposal (§app.project-setup/proposal)
+raises the same item, banner and push, labelled "Project setup": "Project setup proposes the project's
+setup on {branch}." (the banner's body and button are the Setup chat's own, read from its proposal,
+§app.project-setup/proposal), the item's body "Read it, then merge it into {target}." (with no valid setup at its head,
+"Project setup proposes changes on {branch}." with "Its branch has no valid setup: read its report."),
+and its button is the setup proposal's own (**Run Trial** with "Run a trial of
+{sha7} first: it lands only once its own checks pass." until a trial of the head passed, then Land or
+Merge Branch through the Setup chat's route; "Reading the setup proposal." while it is read). The Setup
+item goes as soon as its proposal does (§app.project-setup/proposal: its branch lands or merges, its
+worktree is removed, or the current Setup chat runs a turn), at the next read of Needs you; on a
+project the queue serves it stays while the approved branch waits in the queue, until it lands. The
+same proposal read again keeps the time it was first listed.
 
 ## §app.project-runtime/merge — Merge Branch
 
@@ -253,7 +263,9 @@ changed since it was shown: look again."). For a run whose playbook proposes `de
 and the sentence is "The deploy recipe changed since it was shown: look again.". For one that
 proposes `release`, `hash` is the release setup's own: a digest of the branch's `release` section
 together with its release playbook folder's tree at the tip (§app.release/maker), and the sentence
-is "The release setup changed since it was shown: look again.". A merge that is
+is "The release setup changed since it was shown: look again.". A Setup chat's proposal is never
+merged here: this route hands it to the Setup chat's own (§app.project-setup/proposal), with its
+rules and refusals. A merge that is
 refused answers 409 with "The merge was refused: {its reason}". With no run proposed it is refused
 409: "No playbook run is proposed." It answers the registry, read again. The Software card shows
 **Merge Branch** while a run is proposed, beside the banner's and the Needs-you row's; each says, on
@@ -305,7 +317,9 @@ whose last message is its report.
 A verb playbook is a playbook whose `PLAYBOOK.md` frontmatter says what it proposes,
 `proposes: definition` (the project's `.sova/project.json`, §app.project-services/contract),
 `proposes: deploy` or `proposes: release` (the `release` section with the project's release
-playbook folder, §app.release/maker). `project-verbs` proposes `definition`. `verbs/onboard`'s `playbook` names one
+playbook folder, §app.release/maker). The Setup chat's playbook, `project-setup`, says `proposes:
+pipeline` (the `merge`, `release` and `deploy` sections with the release playbook folder), but it is
+never run as a verb playbook run (below). `project-verbs` proposes `definition`. `verbs/onboard`'s `playbook` names one
 by its id (lower case letters, digits and hyphens, else 400 "No playbook "{id}": a playbook id is
 lower case letters, digits and hyphens."). The registry's run is keyed by the
 playbook's id: it records the id, the playbook's title and what it proposes, and the run strip, the
@@ -321,6 +335,14 @@ question, not a guess: its open questions are the session's `open-questions` Nee
 answers are the operator's: either Overseer's `sova_send` to a run waiting on them is refused,
 and neither Overseer may turn align off on it while it waits (§app.project-overseer/coding-mode).
 
+A project's releases and deploys are set up by its Setup chat (§app/project-setup), never by a run
+of their own; the Setup chat is a coding chat of the project, not a verb playbook run, so it never
+holds the project's run and a Project verbs run proceeds alongside it: a start of `project-setup`,
+`release-maker` or `project-deploy` (`verbs/onboard` naming any of them) opens the project's Setup
+chat instead, and no list of playbooks offers any of them. The two halves' questions, references
+and checkers are the Setup chat's release and deploy halves (§app.release/maker,
+§app.project-runtime/deploy-playbook).
+
 ## §app.project-runtime/deploy-standing — Each deploy target's standing
 
 Each deploy target has a standing on this host, derived by one rule from main's recipe at HEAD, never
@@ -331,9 +353,12 @@ can be planned.
 
 ## §app.project-runtime/deploy-playbook — The Project deploy playbook
 
-`playbooks/project-deploy/` is a verb playbook (`proposes: deploy`, titled "Project deploy",
-§app.project-runtime/verb-playbooks), started like any (`verbs/onboard {playbook: "project-deploy"}`) on
-its own branch with align on. It writes how the project ships, the definition's `deploy` and the
+`playbooks/project-deploy/` holds the deploy half of the project's Setup chat
+(§app/project-setup): nothing starts it on its own any more: `verbs/onboard` naming it opens the
+Setup chat, the Playbooks dialog and every other list of playbooks leave it out, and Set Up Deploy
+is gone
+(§app.project-runtime/deploy-panel). The Setup chat follows it, on its setup branch with align on,
+for how the project ships. It writes how the project ships, the definition's `deploy` and the
 names in `host`, and nothing that doesn't trace to the operator's answer. It is interview-first: after
 reading the state (`deploy.status`, the definition at HEAD) and the repository's deploy candidates, it
 asks with align, before writing anything, for the targets and what each is, each target's branch, its
@@ -346,16 +371,20 @@ verify or credential check, nor anything that reaches a target; the only verbs i
 `scripts/project-deploy.mjs` lists candidates (the deploy entrypoints the repository holds, read and
 never run, the host names and targets declared), formats (`fmt`, the Project verbs canonical form) and
 checks (Sova's parser plus a literal IP or user@host, a shell string inside an argv, or a
-secret-looking value: problems, exit 1). Its report lists each target, a trace of every field to the
-answer that set it, the host values and env credentials this host still lacks, the check, and "Merge
-Branch {hash12} on the project page: read each step on its review first."
+secret-looking value: problems, exit 1). The Setup chat's report lists each target, a trace of every
+field to the answer that set it, the host values and env credentials this host still lacks, and the
+check; the proposal is landed or merged as the Setup chat's (§app.project-setup/proposal).
 
 ## §app.project-runtime/deploy-panel — The Deploy panel
 
 The project page's Overview has a **Deploy** card under the Software card, the operator's view of
 how the project ships, reading `deploy.status` every 5 seconds. With no deploy declared on main it says
-"Main declares no deploy yet." and offers **Set Up Deploy**, which starts the Project deploy playbook
-(§app.project-runtime/deploy-playbook). Each target is a row: its name, its standing chip
+"Main declares no deploy yet.", says in plain words what a deploy is and that the project's Setup
+chat asks how each target ships and proposes it on a branch, running nothing, and offers **Set Up
+with a Chat**; a main with no `.sova/project.json` at all reads the same, never a bare error. Once
+main declares a deploy, the card offers **Change Setup**. Both open the
+project's Setup chat (§app.project-setup/start). While its setup branch is proposed, the card shows
+each proposed target's steps from the branch (§app.project-setup/proposal). Each target is a row: its name, its standing chip
 (Declared, Not declared; §app.project-runtime/deploy-standing), the release it runs ("Runs
 {tag}", "(withdrawn)" when it is; §app.release/deploy), its
 about, its last deploy with a state chip (Deploying, the live indicator; Deployed; Failed; Verify failed;

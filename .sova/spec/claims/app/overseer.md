@@ -35,7 +35,8 @@ are atomic tmp+rename.
   unread count, the proactivity mode and whether it is mid-turn.
 - **Route.** `#/overseer` is the identity. The app resolves it through `GET /api/overseer` and
   mounts the normal chat view on that path, keyed on the path, so a rotation remounts it cleanly.
-  The view's head reads "Overseer" (no cwd).
+  The view's head reads "Overseer" (no cwd). Every other way into the conversation lands there
+  too (§app.overseer/ways-in).
 - **Hidden everywhere else.** `SessionSummary.overseer` is set by that rule. An Overseer file,
   current or historical, is a special session (§app.session-list/ordinary-surfaces, the one list of
   what that means, shared with organization sessions): it appears on no ordinary surface — no
@@ -51,10 +52,27 @@ are atomic tmp+rename.
   and repoints `current`. The requesting tab lands on the new file. Other tabs that showed the
   Overseer re-resolve `#/overseer` when their socket reports the runtime was closed.
 - **History.** A **History** menu in the head (in ⋯ as History… below a 900px head,
-  §app.overseer/head-layout) lists the previous files (≤20), each row its first message (at most two lines, the rest in its tooltip) over how long ago it was active; a list taller than the window scrolls. One opens read-only at
+  §app.overseer/head-layout) lists the previous files (≤20), each row what that conversation was
+  about, its automatic title when it has one, else its first message, never the fixed name "Overseer"
+  every one shares (§app.session-list/fixed-names) (at most two lines, the rest in its tooltip), over how long ago it was active; a list taller than the window scrolls. One opens read-only at
   `#/overseer/h/<id>` (watch view, no composer); the server refuses a chat on any Overseer file
   but the current one. Settings, standing notes, the audit log and live standing rules
   (§app.overseer/approvals) survive a clear.
+
+## §app.overseer/ways-in — Every way into the Overseer lands on its page
+
+The Overseer's conversation has one page: `#/overseer` (§app.overseer/identity-and-clear), the one
+the Overseer button opens (§app.overseer/entry-button), with the Overseer's own head and the title
+"Overseer". Every other way into the current conversation lands on that same page, in the same view
+under the same title, never on an ordinary chat page:
+
+- the resource monitor's **Open Session** on its row (§app.resource-monitor/screen);
+- an old bookmark or link to its chat's own address (`#/s/<path>`);
+- a link to it from another chat (a session link, a card's link or a tool result's).
+
+An earlier (cleared) conversation reached any of these ways lands on its **Earlier Overseer
+Conversation** page (`#/overseer/h/<id>`), read only, as its History row opens it. A project
+overseer's conversations already open under their own head (§app.project-overseer/page).
 
 ## §app.overseer/hosting — Runtime loadout
 
@@ -149,8 +167,12 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
 - **The transcript read reaches peers.** `sova_read_session` takes an optional `host`: with a
   peer's id it reads that peer's session by id (§mesh.links/by-id), with the same bounds and
   untrusted wrapping. The peer renders the slice with its own parser and redacts it with its own
-  secrets before it leaves, and this host redacts it again. A peer that is down or skewed is a
-  refusal naming the host, never an empty transcript.
+  secrets before it leaves, and this host redacts it again. A peer that is down or in Update needed
+  (§mesh.compatibility/host-acts) is a refusal naming the host, never an empty transcript.
+- **A peer on another version.** This host judges each peer by its own numbers
+  (§mesh.compatibility/host-acts) and states its own writing number with every send to one. Creating
+  a session on a peer takes a peer that works fully: one that is Read only or Display may be wrong
+  refuses it, naming the host, and can still be read.
 - **Act:** create a session in any folder, on a remote target, or on a mesh peer (`host`,
   §app.overseer/links-tools), optionally as a link member session (`link`, the only way one is made,
   §app.overseer/links-tools), with an optional first prompt, model,
@@ -162,7 +184,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   in; `minor_modes` names built-in modes only). The Overseer turning a project mode on counts as the
   user's approval of its tools and commands: nothing waits, and the approval is recorded as the
   Overseer's. It never approves the mode's hooks, which stay inactive until the user approves them
-  (§chat.mode-menu/project-mode-hooks). `project_modes` is the
+  (§chat.mode-menu/project-mode-hooks). `mode` can't be `create`, which only a chat picks for itself
+  (§chat.create-mode/per-chat-only). `project_modes` is the
   whole set to have on (`[]` turns them all off); `sova_create_session` refuses it with `host`
   ("project_modes can't be given with host. No session was created."). An unknown mode, minor
   mode or project mode, or a broken project mode, refuses
@@ -177,7 +200,7 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   ask with cards (`sova_card`, §app.overseer/confirm); the ideas backlog (`sova_idea`: file, grow, update, link and rename ideas, launch and
   message an idea's explorer); the user's todos (`sova_todo`: add, tick, untick, edit, remove, clear the
   done ones); link sessions across hosts and end a link (`sova_link`, `sova_unlink`,
-  §app.overseer/links-tools); this host's organizations: orgs, projects, rosters, owners and
+  §app.overseer/links-tools); pair chats (`sova_pair`, §app.overseer/pairs); this host's organizations: orgs, projects, rosters, owners and
   decisions (`sova_org`, `sova_org_project`, `sova_roster`, `sova_owner`, `sova_project_decisions`,
   §app.overseer/org-writes), an owner's page link sent to them on WhatsApp (`sova_owner`
   `send_link`, §app.owner-page/send), gathering sessions (`sova_gather`, §app.overseer/org-people-facing) and
@@ -202,7 +225,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   ends. Queued messages go in the order they were sent: follow-ups one at a time, and every steer
   waiting while the turn runs together, each its own message at the agent's next step; a steer sent
   after a follow-up waits for that follow-up. A
-  leading `/` runs that session's command, as in the composer. The tool's result says which
+  leading `/` runs that session's command, as in the composer, but for a `/sandbox` that lowers and
+  `/mode create`, each refused to the sender (§app.access/your-click, §chat.create-mode/per-chat-only). The tool's result says which
   happened: sent, queued behind the turn, queued as a steer, or held for the compaction. Never a
   terminal-owned, archived or worker session, and never the Overseer's own; nor a project's session
   whose alignment questions are the user's alone while it waits on them (a verb playbook's run, or
@@ -236,7 +260,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   click**: below the state the session is in (`sova_set_session`), or, for a new session, below
   the state it would start in (`sova_create_session`: Subagents only, or On when the policy's
   `defaultOn` is true). It runs only in a turn the user opened by clicking a card
-  (§app.overseer/confirm), by the exact-click test of §app.overseer/org-people-facing: for
+  (§app.overseer/confirm), the one lowering the route takes from the Overseer
+  (§app.access/your-click), by the exact-click test of §app.overseer/org-people-facing: for
   `sova_set_session`, a card that lists that session; for `sova_create_session`, any card, since
   the session does not exist yet (the prompt tells the Overseer that card must say the session
   starts with its sandbox lowered, and how far). Anywhere else (a typed "yes", an unattended run,
@@ -331,7 +356,9 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   confirm-card click, a steer, a regenerate), with or without images and whatever its text became on
   the way in, enters it. A brief, a fired `wake_nudge`, an extension's message that starts a run (an
   `/explain` result, a subagent's or team member's report: `sendMessage(…, {triggerTurn: true})`),
-  a run with no message at all, or any message of unknown origin is **unattended**, and so is a
+  a run with no message at all, a message of unknown origin, or a prompt, steer or regenerate from a
+  script's, a chat's or an extension's socket, `POST /api/chat/frames` or `POST /api/chat/action` (§app.access/your-click) is
+  **unattended**, and so is a
   fresh runtime after a restart: it fails closed.
   - **Foreign input ends the user's part of a run.** Once the model has replied to the user's
     message, any other input entering the context (a wake-up or a worker's report queued into the
@@ -347,7 +374,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   In an
   unattended turn every acting tool refuses without doing anything: create, send, archive and
   unarchive, rename and set model/thinking/mode (`sova_set_session`), group operations,
-  answering a dialog, linking and unlinking (`sova_link`, `sova_unlink`), every `sova_idea` operation (filing, changing, linking or renaming an idea,
+  answering a dialog, linking and unlinking (`sova_link`, `sova_unlink`), `sova_pair` but `list`,
+  every `sova_idea` operation (filing, changing, linking or renaming an idea,
   launching or messaging an explorer), every `sova_todo` operation, ticking included, and every
   organization act (`sova_org`, `sova_org_project`, `sova_roster`, `sova_owner`,
   `sova_project_decisions`, `sova_gather`, `sova_project_overseer`, a message to a project overseer
@@ -839,6 +867,7 @@ jumps to it (§app.overseer/links).
   - The card's state comes from the fold, never from later messages: open (live buttons);
     answered ("You chose b — Archive all", or "Answered: <the user's words>"); "Replaced by c_7",
     a link to that card; dropped, with its reason. An item decided shows its choice or words.
+- **A click from a script, a chat or an extension** never reaches the chat (§app.access/your-click).
 - **Clicks compose a message.** An option's click sends "c_4 b: <its reply, else its label>" as the
   user's next message, marked as a click on c_4 (§app.overseer/org-people-facing). While the turn
   it started runs, the card shows "Sent: b" and its buttons wait; if the turn ends without an answer
@@ -1066,7 +1095,7 @@ or a card click. No helper session is needed.
   whose history can't be read. Never offered, whatever
   its folder: Sova's own server and its child processes, the `sova-runtime.service` unit, a chat
   process and any process a chat started (one with a chat or Sova's server among its ancestors, or
-  inside a chat's unit), any process of a copy's or shared service's unit, slot 0's adopted unit, and a listener
+  inside a chat's unit), any process of a background job's unit (§app/background-jobs), any process of a copy's or shared service's unit, slot 0's adopted unit, and a listener
   this user can't read. `stop-leftover {project, port}` stops one in the click's turn, after checking
   that the port is still held by the same process (same pid and start time) and that it is still safe;
   otherwise "It is no longer the process your card listed: nothing was stopped.", or "It is no longer
@@ -1104,8 +1133,10 @@ fetched down to, then lands.
   too, from when a result or any job status names them (a running job's included), but toward the
   Overseer's own next start or send and its running count only: a schedule's fire and an auto-resume
   find their free slots from the sessions it started alone (§app.overseer/extension-commands). All nine are
-  configurable in Settings → Overseer; a settings file without the newer ones reads them as their
-  defaults.
+  configurable in Settings → Overseer, each a whole number from 0 to 1,000, the same range in the
+  form, in what a save accepts and in what a read of the file keeps; a save with one outside it is refused naming the limit by its
+  Settings label ("Sessions created must be a whole number from 0 to 1,000."), never by its field
+  name. A settings file without the newer ones reads them as their defaults.
 - **The running count shows.** While any Overseer-started session counts as running, the
   Overseer's composer shows "3 of 10 running" in its run-status row, from the same count the cap
   checks, and the refusal and the prompt name Settings → Overseer → Limits. The text is a button
@@ -1166,7 +1197,7 @@ time. Both kinds of approval come only from the user's click on a card option th
 - **A standing rule (`r_N`).** A card option with `rule {text, acts?, any_session?}` proposes a
   standing instruction ("Send continue to a session after its usage limit resets"); its click adopts
   it. A rule lasts until revoked. It covers the acts it names (`sova_send`, `sova_set_session`,
-  `sova_archive`, `sova_answer_dialog`, `sova_group`; all of them when it names none) on the
+  `sova_archive`, `sova_answer_dialog`, `sova_group`, `sova_pair`; all of them when it names none) on the
   sessions the card lists, or on any session with `any_session: true`. Its button reads "Adopts a
   standing rule: <text>".
 - An option carries `at` or `rule`, never both, and never on a link option. Only the global
@@ -1189,9 +1220,9 @@ time. Both kinds of approval come only from the user's click on a card option th
   no way to write one. In the panel a carried rule's "From c_3 a" links to that earlier
   conversation in the Overseer's history, not to a card in the thread.
 - **Only whole coverage acts.** In a run the user did not start, an acting tool that targets
-  sessions (send, set, archive, answer a dialog, a group's add or remove) first looks for one live
-  approval or rule that covers the tool and every session it names: an approval whose deadline has
-  not passed and that lists them all, or a rule whose acts include the tool and whose sessions
+  sessions (send, set, archive, answer a dialog, a group's add or remove, a pairing's acts) first
+  looks for one live approval or rule that covers the tool and every session it names: an approval
+  whose deadline has not passed and that lists them all, or a rule whose acts include the tool and whose sessions
   include them all. With one, the act runs within the caps (§app.overseer/caps), and its result
   ends with "Done under g_2 (<its label>)." Lowering a session's sandbox is never covered: it
   needs the user's click in the same turn (§app.overseer/tools). Without one, or for any act that names no session
@@ -1260,12 +1291,15 @@ time. Both kinds of approval come only from the user's click on a card option th
   a phone notification's title and lines (§app.notifications/delivery) and a card's echo of its
   session items — the name is the session's alias, else a title the user, the Overseer or Sova's
   auto-title set, else its one-line summary (the outline's gist, else its "now" line), else its
-  title (the first message). The attention item carries it as `name`.
+  title (the first message). One of Sova's own chats (an overseer, a merge thread or reviewer, a
+  release chat, a gathering session) is named by its fixed name alone (§app.session-list/fixed-names),
+  never by an alias, a stored title or a summary. The attention item carries it as `name`.
 - **Aliases.** `sova_set_session {alias}` gives a session a short name the user chose ("overseer
   fixes"): at most 40 characters, one line, unique on this host (case-insensitive); an empty alias
   clears it. It is stored in Sova's own `<stateRoot>/session-aliases.json`, never in the session
   file. Every tool that takes a session also takes its alias, matched case-insensitively and
-  exactly, and `sova_list_sessions` shows it. Setting one is an act (§app.overseer/tools).
+  exactly, and `sova_list_sessions` shows it. One of Sova's own chats takes no alias: setting one
+  is refused with a plain sentence, and one set before never shows as its name. Setting one is an act (§app.overseer/tools).
 
 ## §app.overseer/links-tools — Linking sessions across hosts
 
@@ -1276,8 +1310,8 @@ Three tools let the Overseer make and end links between sessions on different ho
   its host (a peer id; this host when left out) and session id. A peer's member is resolved on its
   own host by id (§mesh.links/by-id). It refuses, naming the member, a TUI-live session, an archived
   one, a worker's session, the Overseer's own, a baton session, a project overseer's session, any
-  other organization's session (§app.session-list/organizations), a session on a host that is down or skewed,
-  and a second member on the same host as another. Any other session can be linked, running or
+  other organization's session (§app.session-list/organizations), a session on a host that is down or in Update needed
+  (§mesh.compatibility/host-acts), and a second member on the same host as another. Any other session can be linked, running or
   idle, whether or not it was created with `link: true` (§mesh.links/record); one that wasn't gets
   the link tools as it joins (§mesh.links/tools). A member host on the earlier build that linked
   only sessions created with `link: true` refuses any other member there; the call fails naming
@@ -1327,6 +1361,75 @@ Three tools let the Overseer make and end links between sessions on different ho
 - Its peer calls never carry this host's sender secret.
 - To say something to a member, the Overseer uses `sova_send` to a local member like any session; it never
   sends into a link.
+
+## §app.overseer/pairs — Pairing two chats
+
+The global Overseer can pair two chats on this host so they work together: each may send the
+other short notes, which arrive between turns. Nothing else about either chat changes: no chat
+gains or loses a tool, and its system prompt stays as it was, so a pairing costs neither chat its
+prompt cache, in pi and Claude Code chats alike. The notes travel as queue notes (§chat/topics).
+
+- **The tool.** `sova_pair {op: "pair" | "unpair" | "resume" | "list", …}`. `pair {a, b, job_a,
+  job_b}` pairs sessions `a` and `b`, `job_a` saying in the Overseer's words what `a` does (it is
+  told to `b`), `job_b` what `b` does. `unpair {pairing}` ends one. `resume {pairing, direction?}`
+  lifts a pause (below), `direction` being `a_to_b` or `b_to_a`, both directions when none is named. `list {session?}` lists the pairings
+  this host holds, each with its two chats, its topics, its notes each way and whether each
+  direction is paused. `list` is a read; the other three are acts: refused in an unattended turn
+  unless a live approval for later or a standing rule covers both of the pairing's chats
+  (§app.overseer/approvals), and written to the action log (§app.overseer/caps); a `pair` that makes
+  a pairing counts as 2 prompts against the per-message prompt limit. There is no
+  confirmation card: in a turn the user started, the user's word is enough. Only the global Overseer
+  has the tool; a project overseer's loadout doesn't.
+- **Pairs only.** A pairing joins exactly two chats. A chat may be in several pairings at once,
+  each with its own two topics. Pairing the same two chats again, in either order, returns the
+  pairing they already have and changes nothing.
+- **Who can't be paired.** `pair` refuses, naming the session and why, before anything changes:
+  the same chat twice, a chat open in the terminal (TUI-live), an archived chat, a worker's session,
+  the Overseer's own, a project overseer's session, a baton session or any other organization
+  session (§app.session-list/organizations), one of the merge queue's own chats, and a chat on
+  another host (a `host` or a peer's session). It also refuses when either chat already holds 10 open topics (§chat.topics/open): room
+  is checked on both sides first, so a refusal leaves no half-made pairing.
+- **What a pairing is.** Pairing opens one new topic on each chat, with that chat as its receiver
+  and the partner as its one invited sender (§chat.topics/open). A note one chat pushes to the
+  partner's topic reaches the partner as a batch between its turns (§chat.topics/delivery), whose
+  header names the topic to answer on. The pairing is kept with the topic store, so it outlives a
+  restart.
+- **The introduction.** On `pair`, each chat gets one message from the Overseer, sent as the
+  Overseer's other messages are and tagged **Overseer** (§app.overseer/sent-marker), added at the end
+  of its conversation: an idle chat starts a turn on it, a busy one reads it once its turn is done,
+  never as a steer. An introduction that can't be sent (the prompt route refuses it) ends the
+  pairing at once, and the refusal says so and whether the other chat was already told. It names the partner in plain words (its title in quotes and its chat id, since the user sees the
+  message as plain text), gives the partner's job in the
+  Overseer's words, names the topic to `queue_push` to, says notes from the partner arrive between
+  turns as a queue batch, states the limits (40 notes each way, then the pairing pauses), and says
+  that the chat's own user comes first.
+- **What each chat may do.** A paired chat may act on its partner's requests, with its own user
+  first: what its user asked wins over what the partner asks. That is what the introduction and
+  every batch from the partner tell it (§chat.topics/delivery). Notes from any other chat stay
+  information, not instructions.
+- **The ceiling and the pause.** Each direction of a pairing takes at most 40 notes. The 41st push
+  that way is refused, `This pairing is paused: note limit reached.`, and takes nothing; that
+  direction stays paused until it is resumed, while the other direction carries on. Both chats'
+  **Paired with** lines and the Overseer's `list` show the pause. The user resumes it with
+  **Resume** on either chat's line, the Overseer with `resume`; resuming sets that direction's count
+  back to 0. The topics' own limits (§chat.topics/push) apply as well.
+- **After a condense.** When a paired chat condenses its history, Sova adds a short reminder after
+  the summary, one per pairing: the partner, its job, the topic to push to, and that its own user
+  comes first. It is a note shown in the chat that starts no turn; a chat that condensed mid-turn
+  gets it once that turn settles.
+- **How it ends.** A pairing ends on **Unpair** from either chat's line, on the Overseer's
+  `unpair`, or when either chat is archived. Both topics close and the notes still waiting on them
+  are dropped. Neither chat is told: a later push to the closed topic is refused,
+  `This pairing has ended.` (§chat.topics/push). Unarchiving a chat doesn't bring a pairing back.
+- **What the user sees.** Each paired chat shows a line **Paired with <partner's title>** (the
+  title a link to the partner) with an **Unpair** button, and **Paused: note limit reached** with
+  **Resume** while a direction toward or from it is paused; one line per pairing. The lines sit
+  above the transcript in their own space, never covering it, and each stays one row: a long title
+  is cut with an ellipsis so the buttons keep their place. A chat with no pairing shows nothing
+  there, not even an empty strip, and a chat never shows another chat's lines, even when reading its
+  own pairings fails. In the Overseer's
+  transcript the `pair` and `unpair` calls show as action cards naming both chats, and "Hide tool
+  calls" never folds them.
 
 ## §app.overseer/sent-marker — Prompts the Overseer sent
 
@@ -1403,7 +1506,9 @@ feed's last list while nothing has changed since it was built, and builds a list
   `endedAt` (else `lastActivity`, else `startedAt`); when rows were dropped from the live record
   for size, the time this server saw the error count rise stands in (in memory, so after a restart
   such an error shows again until the session is seen or finishes a turn). A session never seen, or an error of
-  unknown time, still shows. This holds for archived sessions too.
+  unknown time, still shows. This holds for archived sessions too, except a project's Setup chat
+  (§app.project-setup/chat), current or replaced by Start Fresh: once archived it lists nothing here,
+  not even a failed turn or a failed worker.
 - **Needs you, open questions** (§chat.alignment/session-mark): an idle session that is not
   archived, whose `align` counts say it waits on the user's answers (align on, and no user prompt
   since the alignment last changed), is `open-questions` ("{n} open
@@ -2046,9 +2151,12 @@ Sova composer (the Overseer sending through `sova_send` is not one), a group bat
 or a baton participant's message. Every message Sova sends on its own is `rpc`: Overseer briefs,
 auto-resume's prompts and reports, `sova_send`, a schedule's message, a profile start's first
 message, a project overseer's prompt or look, another session's send, and a baton wrap-up. A
-message queued behind a running turn keeps its source to its hand-off. Never `extension`, which the vision-delegate extension skips,
-so an image on such a message is still described for a model that can't see it. So the wake-nudge
-extension's limit of 30 fires without input restarts only on a person's input.
+message queued behind a running turn keeps its source to its hand-off. None of these is `extension`, which the vision-delegate extension skips,
+so an image on such a message is still described for a model that can't see it. A background job's
+end card is not one of Sova's sends: the chat's own wake-nudge extension delivers it, so like a wake
+nudge it arrives as `extension`, never `interactive` or `rpc` (an `rpc` card would restart a worker's
+count of wakes). So the wake-nudge extension's limit of 30 fires without input restarts only on a
+person's input.
 
 ## §app.overseer/standing-notes — Standing notes
 
@@ -2159,7 +2267,10 @@ for that idea that plans with the user and edits nothing.
 
 An **Ideas** button in the Overseer page's head, with the idea count, opens a panel: beside the
 chat on a wide window, over it on a narrow one. Below a 660px head the button is its icon with
-the count as a corner badge, so the head still fits (§app.overseer/head-layout).
+the count as a corner badge, so the head still fits (§app.overseer/head-layout). The count, in
+the chip, the badge and the button's label ("Ideas, 2"), counts only ideas still in play (open,
+exploring, started) and leaves done and dropped ones out: a backlog of two ideas, one done and one
+dropped, reads 0. The panel's own counts still count every idea.
 
 - **Table of contents** grouped by namespace, with counts, one row per idea (sub-entries under their
   main entry) and a status chip each.
@@ -2506,7 +2617,8 @@ organization write (§app.overseer/caps); a refusal takes nothing.
 - **Behind a confirm card, enforced.** These ops act on people or end something, and run only in a
   turn the user opened by clicking a card (§app.overseer/confirm) that lists every person, project,
   session, folder and org the call acts on: the run's opening message is a click on that card, its text exactly
-  the message the click composes, and the card was open when it arrived. A card-level option approves
+  the message the click composes, it wasn't sent by a script, a chat or an extension
+  (§app.access/your-click), and the card was open when it arrived. A card-level option approves
   every item on the card; a per-item Apply approves only the items it gave a choice. The click's mark
   travels with it: a click the chat holds before handing it to the model (queued behind a running
   turn, or put back in the queue because a compaction was starting) keeps its mark, and that it was

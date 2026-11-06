@@ -10,7 +10,7 @@ once the first message is sent, and kept by the session itself. The UI says
 ## §chat.profiles/model — Capabilities, sources and the session's copy
 
 - **Capabilities, not tool names.** A profile names groups (`shared/profiles.ts`, one map for server
-  and client). Removable: **Shell** (`bash`), **Edit files** (`edit`, `write`), **Workers & teams**
+  and client). Removable: **Shell** (`bash`, `background_job`), **Edit files** (`edit`, `write`), **Workers & teams**
   (`agent_*`, `team_*`), **Web** (`web_search`, `fetch_content`, `get_search_content`,
   `source_check`), **Worktrees** (`worktree`), **Timers** (`wake_nudge`), **MCP Servers** (every
   tool of the chat's MCP servers, §app.mcp/who-gets). The link tools are no
@@ -32,8 +32,9 @@ once the first message is sent, and kept by the session itself. The UI says
   subagent profile. `minorModes` is the whole set of minor modes the session starts with (`align`,
   `spec`, `vis`), in any order; `[]` starts with none; absent, the session starts with
   mode.json's default. A file whose `thinking` is no level, whose `subagents` isn't `off` or a
-  subagent profile id (lowercase letters, digits and dashes, at most 48), or whose `minorModes`
-  isn't a list of those names, doesn't parse.
+  subagent profile id (lowercase letters, digits and dashes, at most 48), whose `minorModes`
+  isn't a list of those names, or whose `mode` isn't `normal` or `delegate`, doesn't parse. Naming
+  `create` says why: it is chosen in a chat (§chat.create-mode/per-chat-only).
 - **Capability-neutral.** A profile that removes and grants nothing, isn't One at a time, and has
   no first message (so it sets only model, effort, subagents, mode or minor modes) is
   capability-neutral.
@@ -162,6 +163,14 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
 - **A session the Overseer started from a profile** shows the same screen with it preselected and
   one muted line: "Started by the Overseer with {label}." It stays changeable until a message is sent.
 
+## §chat.profiles/profile-name — A profile's name
+
+Save Current As Profile's name box (§chat.profiles/picker) is the form kit's (§design/forms): a
+name past 60 characters is kept whole, its count "{n} / 60" red with "Profile name can be at most 60
+characters." under it, and Save Profile waits; a blank one is "Profile name can't be empty.". The
+server's add, and its read of a profile file, refuse in the same words, from one rule
+(`shared/profile-limits.ts`).
+
 ## §chat.profiles/applying — A pick writes the entry and reopens the runtime
 
 - `POST /api/sessions/profile {path, profile}` (`profile`: `{source, id}` or a bare id, resolved
@@ -276,8 +285,8 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   from the server's own record of the message, never from its text.
 - **Per message you send, 10.** Sends in runs the user started, counted until the user's next
   message.
-- **On its own, 40 a day.** Sends in runs the user didn't start (a timer's wake-up, another session's
-  message), counted per local day. A wake-up turn may send; it spends this allowance.
+- **On its own, 40 a day.** Sends in runs the user didn't start (a timer's wake-up, a background job's
+  end card, another session's message), counted per local day. A wake-up turn may send; it spends this allowance.
 - **Targets per run, 5.** Distinct sessions one run sends to.
 - **To one session per 10 minutes, 6.** Sends from this session to one target in any 10 minutes.
 - A refused send takes nothing from any allowance. The per-message and per-day counts outlive a
@@ -411,7 +420,8 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   `{version: 1, approved: {<identity>: {grant: [...], overseerMayStart, at}}}`, outside every repo.
   Approving records the powers the file has at that moment. `POST /api/profiles/approve {cwd, id,
   grant, overseerMayStart}` is refused when those aren't the powers the file has now (it changed
-  since you looked), so what you approve is what you saw. **Apply and Approve** on a project overseer's
+  since you looked), so what you approve is what you saw, and from anything but your own page
+  (§app.access/your-click), so no chat or script approves one. **Apply and Approve** on a project overseer's
   Settings change card (§app.project-overseer/settings) records the same approval, of the powers the card
   showed, for each profile the card grants; the overseer itself never approves one.
 - **Where.** In the picker, an unapproved project profile reads **Needs approval**. Picking it

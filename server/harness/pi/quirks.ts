@@ -514,6 +514,33 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi lets a host hand a server its own token source and literal values",
   },
   {
+    id: "P37",
+    name: "openai-codex-login",
+    kind: "semantic",
+    relies: "The openai-codex login asks a `select` first with option ids `device_code` and `browser`; its code route fails before notifying `device_code` when OpenAI refuses it (HTTP 404), with an error whose text holds `device code login is not enabled` (`PI_CODE_REFUSED`); its browser route notifies `auth_url` with the link's `state`, prompts `manual_code` with a signal that aborts when the callback wins, and closes its localhost:1455 server before `login` rejects on an abort.",
+    pi: ["ModelRuntime.login", "AuthInteraction.prompt", "AuthInteraction.notify", "openai-codex `login`"],
+    where: [
+      { file: "server/harness/pi/sign-in.ts", symbol: "piInteraction" },
+      { file: "server/harness/pi/sign-in.ts", symbol: "piProviderSignIn" },
+      { file: "server/openai-login.ts", symbol: "OpenAiLoginService.answer" },
+    ],
+    canary: "P37 openai-codex-login: the login asks a method menu with device_code and browser first, and a refused code route fails before any code is shown, with the not-enabled text",
+    retireWhen: "pi takes the login method as an option and reports a refused method as its own error",
+  },
+  {
+    id: "P38",
+    name: "api-key-login",
+    kind: "semantic",
+    relies: "A provider's api-key login (pi-ai's `envApiKeyAuth`) prompts once with `type: \"secret\"` and stores `{ type: \"api_key\", key }` under the provider's id by a modify under pi's lock; `ModelRuntime.logout` deletes only that entry; a provider that takes a key carries `auth.apiKey.login` in `getProviders()`, models.json's included; `readStoredCredential` reads the entry without resolving it.",
+    pi: ["ModelRuntime.login", "ModelRuntime.logout", "ModelRuntime.getProviders", "readStoredCredential", "pi-ai `envApiKeyAuth`"],
+    where: [
+      { file: "server/harness/pi/sign-in.ts", symbol: "piProviderKeys" },
+      { file: "server/harness/pi/sign-in.ts", symbol: "storedKeyOf" },
+    ],
+    canary: "P38 api-key-login: the api-key login asks one secret prompt and stores the key under the provider, logout removes only that entry, and the key providers carry an api-key login",
+    retireWhen: "pi exports a store-a-key call (AuthStorage or a ModelRuntime method that persists)",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

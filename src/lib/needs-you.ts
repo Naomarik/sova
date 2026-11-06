@@ -48,13 +48,21 @@ export interface NeedsYouRow {
  * filter narrows this region like every other and it never lists a row the rest of the pane hides.
  * A digest session the list doesn't carry is dropped: the count is the rows.
  */
-export function needsYouRows(digest: Pick<AttentionDigest, "items"> | undefined, sessions: readonly SessionSummary[]): NeedsYouRow[] {
+export function needsYouRows(
+  digest: Pick<AttentionDigest, "items"> | undefined,
+  sessions: readonly SessionSummary[],
+  /** Sessions listed only for a proposal waiting on you (a `playbook-review` item): a project's own Setup chat, which
+      the region otherwise leaves to its project's block, keeps its Merge Branch / Run Trial row here; its other items
+      (a failed turn) stay with its project. */
+  reviewsOf: readonly SessionSummary[] = [],
+): NeedsYouRow[] {
   if (!digest) return [];
   const byPath = new Map(sessions.map((s) => [s.path, s]));
+  const reviewOnly = new Map(reviewsOf.filter((s) => !byPath.has(s.path)).map((s) => [s.path, s]));
   const acc = new Map<string, { session: SessionSummary; since: number; details: { at: number; text: string; kind: AttentionItem["kind"] }[]; first: AttentionItem["kind"]; playbook?: NeedsYouRow["playbook"]; soft: boolean }>();
   for (const it of digest.items) {
     if (!listsInNeedsYou(it)) continue;
-    const session = byPath.get(it.path);
+    const session = byPath.get(it.path) ?? (it.kind === "playbook-review" && it.playbook ? reviewOnly.get(it.path) : undefined);
     if (!session) continue;
     let a = acc.get(it.path);
     if (!a) acc.set(it.path, (a = { session, since: it.since, details: [], first: it.kind, soft: true }));

@@ -336,6 +336,51 @@ describe("sampler over a fixture /proc", () => {
     }
   });
 
+  test("background jobs: their units' whole cgroups, charged to the chat (or parent's worker) their record names, running or not; never escaped or unattributed", async () => {
+    const CHATS = "/user.slice/user-1000.slice/user@1000.service/sova-chats.slice";
+    const JOBS = "/user.slice/user-1000.slice/user@1000.service/sova-jobs.slice";
+    const procs = (): P[] => [
+      { pid: SERVER, ppid: 1, argv: ["node"] },
+      { pid: 450, ppid: 1, argv: ["bun", "server/chat-runtime/main.ts"], cgroup: `${CHATS}/sova-chat-a.service` },
+      // a's kept job: a dev server and its child, reparented to the manager
+      { pid: 600, ppid: 1, sid: 600, argv: ["node", "vite"], cgroup: `${JOBS}/sova-job-x-a-j1.scope`, rssPages: 1000 },
+      { pid: 601, ppid: 600, sid: 600, argv: ["esbuild"], cgroup: `${JOBS}/sova-job-x-a-j1.scope` },
+      // b's job: b has shut down (not hosted)
+      { pid: 610, ppid: 1, sid: 610, argv: ["sleep", "300"], cgroup: `${JOBS}/sova-job-x-b-j1.scope` },
+      // worker ag_09's job, its worker chat not running
+      { pid: 620, ppid: 1, sid: 620, argv: ["python3", "-m", "http.server"], cgroup: `${JOBS}/sova-job-x-w-j1.scope` },
+    ];
+    const facts = { workers: [], toolsRunning: 0, lastToolEnd: 0 };
+    setRemoteHosted("/s/a.jsonl", { sessionId: "sess-a", ...facts, workers: [{ id: "ag_09", name: "tester", status: "exited" }], pid: 450 });
+    try {
+      for (const unit of [true, false]) {
+        const fx = fixture(unit ? "job-units" : "job-units-tree", procs(), { unit });
+        const jobs = [
+          { cgroup: join(fx.cg, `${JOBS}/sova-job-x-a-j1.scope`), session: "/s/a.jsonl" },
+          { cgroup: join(fx.cg, `${JOBS}/sova-job-x-b-j1.scope`), session: "/s/b.jsonl" },
+          { cgroup: join(fx.cg, `${JOBS}/sova-job-x-w-j1.scope`), session: "/s/a.jsonl", worker: "ag_09" },
+          { cgroup: join(fx.cg, `${JOBS}/gone.scope`), session: "/s/c.jsonl" }, // ended between reads: nothing
+        ];
+        const m = new ResourceMonitor({ procRoot: fx.proc, cgroupRoot: fx.cg, logDir: join(root, `job-units-${unit}-log`), serverPid: SERVER,
+          eventLoop: false, platform: "linux", clkTck: HZ, jobs: () => jobs });
+        await m.tick();
+        const s = m.snapshot()!;
+        assert.deepEqual(s.sessions.map((x) => x.sessionPath).sort(), ["/s/a.jsonl", "/s/b.jsonl"]);
+        const a = s.sessions.find((x) => x.sessionPath === "/s/a.jsonl")!;
+        assert.deepEqual(a.own.map((p) => p.pid).sort(), [450, 600, 601]);
+        assert.deepEqual([a.workers[0]!.id, a.workers[0]!.procCount, a.workers[0]!.top.map((p) => p.pid)], ["ag_09", 1, [620]]);
+        const b = s.sessions.find((x) => x.sessionPath === "/s/b.jsonl")!;
+        assert.deepEqual(b.own.map((p) => p.pid), [610]);
+        assert.ok(a.toolsBytes! > 0, "a job is Tools and work");
+        assert.equal(s.escaped.procs.length, 0, "a job's unit is not the server's: nothing escaped it");
+        assert.equal(s.unattributed.procs.length, 0);
+        assert.equal(s.totals.procCount, 6);
+      }
+    } finally {
+      setRemoteHosted("/s/a.jsonl", null);
+    }
+  });
+
   test("a .service cgroup the server merely inherited (started from a shell in the unit) is tree scope", () => {
     const fx = fixture("inherited", [{ pid: SERVER, ppid: 1, argv: ["node"] }], { unit: true, managerComm: "zsh" });
     const m = new ResourceMonitor({ procRoot: fx.proc, cgroupRoot: fx.cg, logDir: join(root, "inherited-log"), serverPid: SERVER,
@@ -616,4 +661,20 @@ test("titleOf (Sova's title, from memory) wins over pi's session name", async ()
   assert.equal(m.snapshot()!.sessions[0]!.title, "Renamed in Sova");
   assert.equal((await m.history(0, "5s")).groups["/s/a.jsonl"]!.label, "Renamed in Sova");
   assert.deepEqual(asked, ["/s/a.jsonl"]);
+});
+
+test("a chat Sova names itself (fixedOf) reads its name on the row and the chart, and says when it is the Overseer's", async () => {
+  const fx = fixture("fixed", [{ pid: SERVER, ppid: 1, argv: ["node"] }, { pid: 200, ppid: SERVER, argv: ["claude", "-p"] }], { unit: false });
+  let name = "huh"; // what the history recorded before the name was fixed
+  const m = new ResourceMonitor({ procRoot: fx.proc, logDir: join(root, "fixed-log"), serverPid: SERVER, eventLoop: false, platform: "linux",
+    hosted: () => [hostedA({ title: "huh" })], titleOf: () => name,
+    fixedOf: (p, fresh) => (p === "/s/a.jsonl" && (fresh || name === "Overseer") ? { title: "Overseer", overseer: "current" } : undefined) });
+  await m.tick();
+  // The tick before the rule: the ring holds "huh"; the read relabels it.
+  assert.equal(m.snapshot()!.sessions[0]!.title, "huh");
+  assert.deepEqual((await m.history(0, "5s")).groups["/s/a.jsonl"], { label: "Overseer", sessionPath: "/s/a.jsonl", overseer: "current" });
+  name = "Overseer";
+  await m.tick();
+  const row = m.snapshot()!.sessions[0]!;
+  assert.deepEqual({ title: row.title, overseer: row.overseer }, { title: "Overseer", overseer: "current" });
 });

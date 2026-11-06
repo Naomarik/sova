@@ -350,7 +350,23 @@ test("providerProblem expired: soft only when the token timed out and the refres
   assert.deepEqual(expired(claudeAuth({ expiresAt: NOW - 2 * H, refreshExpired: true })), hard, "refresh flag without a time");
   assert.deepEqual(expired(claudeAuth({ expiresAt: NOW + 2 * H })), hard, "refused before its expiry: revoked");
   assert.deepEqual(expired(claudeAuth({})), hard, "no expiry known");
-  assert.deepEqual(expired({ kind: "oauth", source: "pi", expiresAt: NOW + H }, "openai"), { ...hard, code: "pi /login" });
+  assert.deepEqual(expired({ kind: "oauth", source: "pi", expiresAt: NOW + H }, "openai"), { rest: "Sign-in expired. Sign in again under Settings → Accounts." });
+});
+
+test("OpenAI's sign-in notes point to Settings → Accounts, never a terminal command", () => {
+  const lines = [
+    providerProblem(provider({ id: "openai", state: "nologin" }), NOW),
+    providerProblem(provider({ id: "openai", state: "expired" }), NOW),
+    authCaption(provider({ id: "openai", windows: [{ label: "5h", pct: 10 }], auth: { kind: "oauth", source: "pi", expiresAt: NOW + H, refreshExpired: true } }), NOW),
+  ];
+  assert.deepEqual(lines, [
+    { rest: "Not signed in. Sign in under Settings → Accounts and it'll show at the next refresh." },
+    { rest: "Sign-in expired. Sign in again under Settings → Accounts." },
+    { rest: "Sign-in can't renew. Sign in again under Settings → Accounts." },
+  ]);
+  for (const l of lines) assert.equal((l as { code?: string } | null)?.code, undefined, "no command to run");
+  // Claude's keep their command.
+  assert.equal(providerProblem(provider({ id: "claude", state: "nologin" }), NOW)?.code, "claude /login");
 });
 
 const login = (over: Partial<UsageClaudeLogin> & Pick<UsageClaudeLogin, "id">): UsageClaudeLogin => ({
@@ -730,3 +746,64 @@ test("usageGlance: C's words add each other account usable here, once per accoun
   const one: UsageInsight = { ...u, claudeLogins: u.claudeLogins!.slice(0, 2) };
   assert.equal(usageGlance(one, NOW)[0]!.others, undefined);
 });
+
+// ---- Ollama Cloud on the glance (§app.insights/ollama-glance) ----
+{
+  const from = "2026-11-05T19:30:00Z", until = "2026-12-05T19:30:00Z";
+  const ON = Date.parse(from) + 3_600_000;
+  const ol = (o: { balance?: number; allowance?: number; purchased?: number; fetchedAt?: number; until?: string } = {}): UsageProvider =>
+    provider({
+      id: "ollama", state: "na",
+      activity: { fetchedAt: ON, data: { range: "30d", scope: "self", from, until, totals: { usage_usd: 999 }, buckets: [] } },
+      credits: {
+        fetchedAt: o.fetchedAt ?? ON - 60_000,
+        data: {
+          included: { balance_usd: o.balance ?? 299.95, allowance_usd: o.allowance ?? 300, period: { from, until: o.until ?? until } },
+          ...(o.purchased === undefined ? {} : { purchased: { balance_usd: o.purchased } }),
+        },
+      },
+    });
+  const glance = (p: UsageProvider, now = ON) => usageGlance({ available: true, stale: false, providers: [p] } as unknown as UsageInsight, now);
+
+  test("usageGlance: a current Ollama credits reading is one OL bar with the period's tick", () => {
+    const [part, ...rest] = glance(ol({ purchased: 0 }));
+    assert.equal(rest.length, 0);
+    assert.equal(part!.abbr, "OL");
+    assert.equal(part!.high, false);
+    assert.equal(part!.bars!.length, 1);
+    assert.equal(part!.bars![0]!.pct, 0);
+    assert.ok(part!.bars![0]!.elapsed! > 0 && part!.bars![0]!.elapsed! < 0.01);
+    assert.equal(part!.bars![0]!.tone, null);
+    assert.equal(part!.full, `Ollama Cloud included credits: 0% used \u00b7 $299.95 of $300 left \u00b7 day 1 of 30 \u00b7 resets ${stampTime(Date.parse(until), ON)} \u00b7 purchased $0`);
+  });
+
+  test("usageGlance: OL tone follows the foot rules; unknown purchased is left out", () => {
+    const ahead = glance(ol({ balance: 240 }))[0]!;
+    assert.equal(ahead.bars![0]!.pct, 20);
+    assert.equal(ahead.bars![0]!.tone, "warn");
+    assert.ok(!ahead.full.includes("purchased"));
+    assert.equal(glance(ol({ balance: 15 }))[0]!.bars![0]!.tone, "error");
+  });
+
+  test("usageGlance: OL is left out without a current reading", () => {
+    assert.deepEqual(glance(ol({ fetchedAt: ON - 601_000 })), [], "older than 10 minutes");
+    assert.deepEqual(glance(ol({ until: "2026-11-05T20:00:00Z" }), Date.parse("2026-11-05T20:00:00Z") + 1000).length, 0, "period ended");
+    assert.deepEqual(glance(ol({ allowance: 0, balance: 0 })), [], "allowance 0");
+    assert.deepEqual(glance(provider({ id: "ollama", state: "na", activity: ol().activity })), [], "activity alone never fills it");
+  });
+
+  test("usageGlance: included used up with purchased left is a full error bar, never out of credit", () => {
+    const part = glance(ol({ balance: 0, purchased: 12.5 }))[0]!;
+    assert.deepEqual(part.bars, [{ pct: 100, elapsed: part.bars![0]!.elapsed, tone: "error" }]);
+    assert.equal(part.high, false);
+    assert.equal(part.full, `Ollama Cloud included credits used up; purchased $12.50 left \u00b7 day 1 of 30 \u00b7 resets ${stampTime(Date.parse(until), ON)}`);
+    assert.ok(!/out of credit/i.test(part.full));
+  });
+
+  test("usageGlance: OL sits between O and Z", () => {
+    const u = { available: true, stale: false, providers: [
+      provider({ id: "openai", windows: [{ label: "7d", pct: 10 }] }), ol(), provider({ id: "zai", windows: [{ label: "plan", pct: 5 }] }),
+    ] } as unknown as UsageInsight;
+    assert.deepEqual(usageGlance(u, ON).map((p) => p.abbr), ["O", "OL", "Z"]);
+  });
+}

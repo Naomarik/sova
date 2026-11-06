@@ -14,9 +14,9 @@ import {
   bareProgramsNote,
   commandLine,
   filterProfiles,
-  FOOT_NOTE,
-  isDefaultAll,
   isDefaultMode,
+  majorGear,
+  menuModes,
   modeSummary,
   nextProjectModes,
   noProfileMatch,
@@ -25,9 +25,9 @@ import {
   projectRowState,
   savedAnnounce,
   saveLabel,
-  saveTitle,
   type ShownMode,
 } from "../lib/mode-menu";
+import { createModeSave } from "../lib/mode-save";
 import { useHostScope } from "../lib/host-scope";
 import { usePaneId } from "../lib/pane-scope";
 import { openSettings, setSubagentSettingsPath } from "../lib/settings-nav";
@@ -56,19 +56,23 @@ export interface ModeControl {
       opens it for the request itself, so the request never waits for this view
       (§chat.transcript/send-while-starting). Absent: nothing to start. */
   wake?: () => void;
+  /** What this chat can't do in Create (lib/mode-menu createLimits), or null. Absent: nothing. */
+  limits?: () => string | null;
 }
 
 /** radio: the major mode; check: a minor mode; project: one of this project's own minor modes;
     action: opens a settings screen or the picker, switches nothing. */
 type Item = { kind: "radio" | "check" | "project" | "action"; id: string; description: string; label?: string };
 
-/** The gear actions: Delegate's row and spec's, since both settings live in Settings → Subagents. */
+/** The gear actions: Delegate's, Create's and spec's rows, since all their settings live in Settings → Subagents. */
 const CONFIGURE_DELEGATE: Item = {
   kind: "action",
   id: "configure-delegate",
   label: "Configure Delegate",
   description: "Which worker each kind of work goes to",
 };
+/** Create shares Delegate's settings (§chat.create-mode/delegate-parity), so its gear opens the same tab. */
+const CONFIGURE_CREATE: Item = { ...CONFIGURE_DELEGATE, id: "configure-create", label: "Configure Create" };
 const CONFIGURE_SPEC: Item = {
   kind: "action",
   id: "configure-spec",
@@ -113,7 +117,7 @@ const [info, setInfo] = createSignal<ModeInfo | null>(null);
  * the last read failed: unknown is never "already the default".
  */
 const [defaultMode, setDefaultMode] = createSignal<ShownMode | null>(null);
-const shownOf = (m: Pick<ModeInfo, "mode" | "minorModes" | "strict">): ShownMode => ({ mode: m.mode, minorModes: [...m.minorModes], strict: m.strict });
+const shownOf = (m: Pick<ModeInfo, "mode" | "minorModes" | "strict"> & { saveMode?: string }): ShownMode => ({ mode: m.mode, minorModes: [...m.minorModes], strict: m.strict, ...(m.saveMode ? { saveMode: m.saveMode } : {}) });
 /** The memory choice new chats start from (GET /api/mode's `memory`, or the save's answer); null unknown. */
 const [defaultMemory, setDefaultMemory] = createSignal<ChatMemoryChoice | null>(null);
 const memoryOf = (m: ModeInfo): ChatMemoryChoice | null => (m.memory ? { type: m.memory.type, size: m.memory.size } : null);
@@ -195,7 +199,11 @@ export function ModeMenu(props: { control: ModeControl }) {
     // Each gear follows its row in the roving order, as it follows it on the row. Subagents is the
     // one row of its own group, last.
     return [
-      ...i.modes.flatMap((m) => (m.id === "delegate" ? [{ kind: "radio" as const, ...m }, CONFIGURE_DELEGATE] : [{ kind: "radio" as const, ...m }])),
+      ...i.modes.flatMap((m) => {
+        const row = { kind: "radio" as const, ...m };
+        const gear = majorGear(m.id);
+        return gear ? [row, gear === "configure-create" ? CONFIGURE_CREATE : CONFIGURE_DELEGATE] : [row];
+      }),
       ...i.minors.flatMap((m) =>
         m.id === "spec"
           ? [{ kind: "check" as const, ...m }, CONFIGURE_SPEC]
@@ -249,7 +257,8 @@ export function ModeMenu(props: { control: ModeControl }) {
    * and the library's own `default`, so the answer is the file's, not a guess from the last press
    * or from a switch's reply.
    */
-  const alreadyDefault = () => isDefaultAll(defaultMode(), shown(), profiles()) && (!memChoice() || sameMemoryType(defaultMemory(), memChoice()));
+  const save = createModeSave({ shown, defaultMode, profiles, alsoSaved: () => !memChoice() || sameMemoryType(defaultMemory(), memChoice()) });
+  const alreadyDefault = save.already;
   const saveState = (): "idle" | "saving" | "done" => (saving() ? "saving" : alreadyDefault() ? "done" : "idle");
 
   const focusItem = (i: number) => {
@@ -325,7 +334,8 @@ export function ModeMenu(props: { control: ModeControl }) {
     }
     try {
       const read = await getMode(host());
-      setInfo(read);
+      // A local chat's own answer below replaces this list; a peer's chat has only this one.
+      setInfo({ ...read, modes: menuModes(read) });
       setDefaultMode(shownOf(read));
       setDefaultMemory(memoryOf(read));
     } catch {
@@ -337,6 +347,8 @@ export function ModeMenu(props: { control: ModeControl }) {
     if (!host()) {
       try {
         const read = await getChatMode(props.control.path);
+        // Which major modes this chat offers is the chat's own answer (§chat.create-mode/where-offered).
+        setInfo((i) => (i ? { ...i, modes: read.modes } : read));
         if (read.projectMinors) setFreshProject({ project: read.project, projectMinors: read.projectMinors });
       } catch {
         // Keep the mode message's rows: they are older, never wrong about what is on.
@@ -514,7 +526,7 @@ export function ModeMenu(props: { control: ModeControl }) {
       setDefaultMemory(memoryOf(written));
       setInfo((i) => i ?? written); // the lists, in case the open-time read failed
       setProfiles(await getSubagentProfiles(props.control.path, host()));
-      announce(savedAnnounce(shown(), profiles()?.current.name ?? null));
+      announce(savedAnnounce(save.savable(), profiles()?.current.name ?? null));
     } catch (err) {
       const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
       setError({ title: "Couldn't save the default.", body: `${why}.` });
@@ -681,6 +693,9 @@ export function ModeMenu(props: { control: ModeControl }) {
           <Show when={memoryRowText(info()?.memory?.types, memChoice() ?? undefined, checked(p.it)).detail}>
             {(d) => <span class="popover-item-desc mode-menu-detail">{d()}</span>}
           </Show>
+        </Show>
+        <Show when={p.it.id === "create" && p.it.kind === "radio" ? props.control.limits?.() : null}>
+          {(limits) => <span class="popover-item-desc mode-menu-detail">{limits()}</span>}
         </Show>
         <Show when={projectState(p.it)?.note}>{(note) => <span class="popover-item-desc mode-menu-detail mode-menu-project-note">{note()}</span>}</Show>
       </span>
@@ -1084,13 +1099,13 @@ export function ModeMenu(props: { control: ModeControl }) {
 
           <div class="mode-menu-foot">
             <p class="mode-menu-foot-line">
-              <span class="text-mono">strict: {current()?.strict ? "on" : "off"}</span> · {FOOT_NOTE}
+              <span class="text-mono">strict: {current()?.strict ? "on" : "off"}</span> · {save.note()}
             </p>
             <button
               type="button"
               class="button button-ghost button-sm mode-menu-save"
               aria-disabled={busy() || saving() || alreadyDefault() ? "true" : undefined}
-              title={saveTitle(shown(), alreadyDefault())}
+              title={save.title()}
               onClick={() => void saveAsDefault()}
             >
               <Show when={alreadyDefault() && !saving()}>

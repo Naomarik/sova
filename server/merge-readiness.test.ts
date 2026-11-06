@@ -184,7 +184,9 @@ test("replyBody cuts closing Also updates lines", () => {
 });
 
 test("a failed or missing check: failed keeps it off ready, none is still ready and says so", () => {
-  assert.deepEqual(r.treeReadiness(tree(), { ...idle, lastCheck: { at: 1, ok: false } }), { state: "in-progress", why: "the last check failed", reason: "In progress · the last check failed" });
+  assert.deepEqual(r.treeReadiness(tree(), { ...idle, lastCheck: { at: 1, ok: false } }), { state: "in-progress", why: "this chat's last check run failed", reason: "In progress · this chat's last check run failed" });
+  const named = { at: 1, ok: false, what: "test run", failed: "1 failing file, server/a.test.ts" };
+  assert.equal(r.treeReadiness(tree(), { ...idle, lastCheck: named }).why, "this chat's last test run failed: 1 failing file, server/a.test.ts");
   assert.deepEqual(r.treeReadiness(tree(), idle), { state: "ready", why: "no check run seen", reason: "Ready to merge · no check run seen · 1 commit ahead" });
   assert.equal(r.checkFailed(false, "ℹ tests 12\nℹ pass 12\nℹ fail 0\n"), false);
   assert.equal(r.checkFailed(false, "ℹ tests 12\nℹ pass 11\nℹ fail 1\n"), true);
@@ -196,9 +198,9 @@ test("a failed or missing check: failed keeps it off ready, none is still ready 
   assert.equal(r.CHECK_RE.test("git status"), false);
 });
 
-test("R5: only server-side files ask for a restart; src/, docs and tests never do", () => {
-  for (const f of ["server/index.ts", "shared/protocol.ts", "pi-config/extensions/mode/align.ts", "package.json", "pnpm-lock.yaml"]) assert.ok(r.needsRestart(f), f);
-  for (const f of ["src/components/Sidebar.tsx", "server/README.md", "server/attention.test.ts", ".sova/spec/manifest.json", "e2e/x.mjs"]) assert.equal(r.needsRestart(f), false, f);
+test("R5: only server-side files ask for a restart (the src/ files the server imports among them); the page, docs and tests never do", () => {
+  for (const f of ["server/index.ts", "shared/protocol.ts", "pi-config/extensions/mode/align.ts", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "mise.toml", "src/lib/message.ts"]) assert.ok(r.needsRestart(f), f);
+  for (const f of ["src/app.tsx", "src/components/Sidebar.tsx", "server/README.md", "server/attention.test.ts", ".sova/spec/manifest.json", "e2e/x.mjs"]) assert.equal(r.needsRestart(f), false, f);
 });
 
 test("R8: one restart item for the whole server, however many sessions ask", () => {
@@ -1157,7 +1159,9 @@ test("b1: idle, check ok, asks nothing and a finished turn outcome is Ready to l
   const read = async () => (await r.readReadinessScan(path, fs.statSync(path).size, null)).facts!;
   const HEAD = "a".repeat(40);
   let status: WorktreeStatus & { head?: string } = { path: "/wt/agents-row-dropdown", source: "session", exists: true, branch: "feat/agents-row-dropdown", base: "master", merged: "no", ahead: 1, behind: 0, dirty: false, head: HEAD };
-  r.configureReadiness({ insights: { treeStatus: async () => status }, git: fakeGit({}), asksUser: (sid) => (sid === SID ? { turnId: (lines.at(-1) as { id: string }).id, asks: false } : undefined), now: () => 0, processStart: 0, landing: fileLandingStore(() => store), drafts: () => undefined, nudge: undefined });
+  // The merge queue hears each Ready to land reading (its branch summary is written then).
+  const told: { path: string; branch: string; commit: string }[] = [];
+  r.configureReadiness({ insights: { treeStatus: async () => status }, git: fakeGit({}), asksUser: (sid) => (sid === SID ? { turnId: (lines.at(-1) as { id: string }).id, asks: false } : undefined), now: () => 0, processStart: 0, landing: fileLandingStore(() => store), drafts: () => undefined, nudge: undefined, readyToLand: (t) => void told.push(t) });
   try {
     const firstReply = (lines.at(-1) as { id: string }).id;
     recordTurnOutcome(SID, { turnId: firstReply, replyAt: Date.parse("2026-10-23T10:05:00.000Z"), at: 1, provider: "pi", model: "m", answers: { outcome: { type: "choice", choice: "did-what-was-asked" } } as never });
@@ -1165,6 +1169,7 @@ test("b1: idle, check ok, asks nothing and a finished turn outcome is Ready to l
     const one = await r.computeReadiness(summary(path), facts);
     assert.equal(one?.trees[0]?.state, "ready");
     assert.deepEqual(one?.trees[0]?.landing, { state: "ready", commit: HEAD }, "landing-eligible");
+    assert.deepEqual(told, [{ path: "/wt/agents-row-dropdown", branch: "feat/agents-row-dropdown", commit: HEAD }], "the queue is told it reads Ready to land");
 
     // A follow-up: the user says thanks, the agent replies, asking nothing; its outcome is a progress report.
     const more = chain([user("thanks", "2026-10-23T10:06:00.000Z"), assistant([{ type: "text", text: "Noted." }], "stop", "2026-10-23T10:07:00.000Z")]);
@@ -1181,8 +1186,10 @@ test("b1: idle, check ok, asks nothing and a finished turn outcome is Ready to l
     status = { ...status, head: "b".repeat(40), ahead: 2 };
     const three = await r.computeReadiness(summary(path), facts2);
     assert.equal(three?.trees[0]?.landing, undefined);
+    assert.ok(!told.some((t) => t.commit === "b".repeat(40)), "a head that doesn't read Ready to land isn't told");
     assert.equal(fileLandingStore(() => store).held(SID, "/wt/agents-row-dropdown"), undefined, "the moved head dropped the record");
   } finally {
+    r.configureReadiness({ readyToLand: undefined });
     writeDecisionSettings(decisionDefaults());
     servedReset();
   }
@@ -1313,6 +1320,53 @@ test("Ready to land: decisions off falls back to the code-only conditions; a run
   }
 });
 
+test("a held head, then a reading at a new commit: Landing specs keeps it held and tells the queue nothing; Ready to land holds it and tells the queue once", async () => {
+  const { fileLandingStore } = await import("./ready-to-land");
+  const store = join(agentDir, "rtl-hold-order.json");
+  const landing = fileLandingStore(() => store);
+  const lines = chain([worktrees([tracked()], "2026-10-25T10:00:00.000Z"), assistant([{ type: "text", text: "Done." }], "stop", "2026-10-25T10:05:00.000Z")]);
+  const path = sessionFile(lines);
+  const fs = await import("node:fs");
+  const facts = { ...(await r.readReadinessScan(path, fs.statSync(path).size, null)).facts!, lastCheck: { at: 1, ok: true } };
+  const WT = "/wt/agents-row-dropdown";
+  const [A, B, C] = ["1".repeat(40), "2".repeat(40), "3".repeat(40)];
+  let status: WorktreeStatus & { head?: string } = { path: WT, source: "session", exists: true, branch: "feat/agents-row-dropdown", base: "master", merged: "no", ahead: 1, behind: 0, dirty: false, head: B };
+  let problems: string[] = ["§x/a (draft d): §x/a has no verification note from its chat"];
+  const told: string[] = [];
+  r.configureReadiness({
+    insights: { treeStatus: async () => status },
+    git: fakeGit({}),
+    asksUser: () => undefined,
+    now: () => 0,
+    processStart: 0,
+    landing,
+    drafts: () => ["d"],
+    draftsHash: () => undefined,
+    docsPreview: () => ({ drafts: ["d"], added: [], changed: [], problems }),
+    finished: () => "off",
+    nudge: undefined,
+    readyToLand: (t) => void told.push(t.commit),
+  });
+  try {
+    landing.hold(SID, WT, { branch: "feat/agents-row-dropdown", commit: A, at: 0 });
+    // Landing specs at a new commit B: held at B, never dropped; the queue isn't told.
+    const specs = await r.computeReadiness(summary(path), facts);
+    assert.equal(specs?.trees[0]?.landing?.state, "specs");
+    assert.equal(landing.held(SID, WT)?.commit, B, "a Landing specs reading keeps its head held");
+    assert.deepEqual(told, []);
+    // Ready to land at a new commit C: held at C, the queue told once.
+    status = { ...status, head: C };
+    problems = [];
+    const ready = await r.computeReadiness(summary(path), facts);
+    assert.equal(ready?.trees[0]?.landing?.state, "ready");
+    assert.equal(landing.held(SID, WT)?.commit, C);
+    assert.deepEqual(told, [C]);
+  } finally {
+    r.configureReadiness({ readyToLand: undefined, docsPreview: undefined, draftsHash: undefined });
+    servedReset();
+  }
+});
+
 test("a finished branch that can't be queued to land: Sova names what blocks it once per commit, never naming a card, and only where the project's merge queue is set up", async () => {
   const { fileLandingStore, landingBlockers, blockedNoteText } = await import("./ready-to-land");
   const live = { running: false, openQuestions: 0 };
@@ -1329,8 +1383,12 @@ test("a finished branch that can't be queued to land: Sova names what blocks it 
     "2 uncommitted files",
     "conflicts with master in 3 files",
     'a temporary commit ("WIP x")',
-    "a failing check run",
+    "this chat's last check run failed",
   ]);
+  // Whose run and what failed: the chat's own last test run, with its failing file.
+  const own = landingBlockers(t, { ...live, lastCheck: { at: 1, ok: false, what: "test run", failed: "1 failing file, server/a.test.ts" } })!;
+  assert.deepEqual(own.map((b) => b.text), ["this chat's last test run failed: 1 failing file, server/a.test.ts"]);
+  assert.match(blockedNoteText("feat/x", t.head, own), /can't be queued to land yet: this chat's last test run failed: 1 failing file, server\/a\.test\.ts\. /);
   const note = blockedNoteText("feat/x", t.head, landingBlockers({ ...t, dirty: true, dirtyCount: 1, dirtyFiles: ["notes/"] }, live)!);
   assert.match(note, /^\[merge-queue\] feat\/x is finished at fffffff, but it can't be queued to land yet: 1 uncommitted folder\. /);
   assert.doesNotMatch(note, /Land It|card/);
@@ -1496,4 +1554,25 @@ test("one listing's rows share their stats, the next doesn't inherit them", asyn
     r.readinessOverlay(rows[0]!);
     assert.notEqual(seen[2], seen[0], "the next listing starts fresh");
   } finally { await r.readinessIdle(); servedReset(); }
+});
+
+test("a failed check's output: what kind of run it was and what it names as failing, for the ready-to-land blocker", async () => {
+  const { checkFailureOf } = await import("./ready-to-land");
+  const runner = "…\nrun-tests (bun): 1137 files (unit), 13095 pass, 1 fail, 7 skip, 1 failing files, 58.6 s\n  FAIL server/merge-queue/attribute.test.ts\n";
+  assert.deepEqual(checkFailureOf(runner), { what: "test run", failed: "1 failing file, server/merge-queue/attribute.test.ts" });
+  const many = "run-tests (bun): 9 files (unit), 1 pass, 5 fail, 0 skip, 4 failing files, 3 s\n  FAIL a.test.ts\n  FAIL b.test.ts\n  FAIL c.test.ts\n  FAIL d.test.ts\n";
+  assert.deepEqual(checkFailureOf(many), { what: "test run", failed: "4 failing files, a.test.ts, b.test.ts, c.test.ts, +1 more" });
+  assert.deepEqual(checkFailureOf("ℹ tests 12\nℹ pass 10\nℹ fail 2\n"), { what: "test run", failed: "2 failing tests" });
+  assert.deepEqual(checkFailureOf("src/a.ts(3,4): error TS2322: x\nsrc/a.ts(9,1): error TS2304: y\nsrc/b.ts(1,1): error TS2304: z\n"), { what: "typecheck", failed: "3 type errors, src/a.ts, src/b.ts" });
+  assert.deepEqual(checkFailureOf("Error: something broke\n"), { what: "check run" });
+});
+
+test("a failed check run in the session file carries what it named into the readiness facts", async () => {
+  const r = await import("./merge-readiness");
+  const ids = new Set<string>();
+  const call = JSON.stringify({ type: "message", id: "a1", parentId: null, timestamp: "2026-11-05T10:00:00.000Z", message: { role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", id: "call_1", name: "bash", arguments: { command: "pnpm test" } }] } });
+  const result = JSON.stringify({ type: "message", id: "a2", parentId: "a1", timestamp: "2026-11-05T10:01:00.000Z", message: { role: "toolResult", toolCallId: "call_1", toolName: "bash", isError: true, content: [{ type: "text", text: "run-tests (bun): 3 files (unit), 9 pass, 1 fail, 0 skip, 1 failing files, 2 s\n  FAIL server/x.test.ts\n" }] } });
+  const entries = [r.scanLine(call, ids), r.scanLine(result, ids)].filter((e): e is NonNullable<typeof e> => !!e);
+  const facts = r.factsOf(entries);
+  assert.deepEqual(facts.lastCheck, { at: Date.parse("2026-11-05T10:01:00.000Z"), ok: false, what: "test run", failed: "1 failing file, server/x.test.ts" });
 });

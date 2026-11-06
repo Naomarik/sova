@@ -383,7 +383,8 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   overseer's column only, with no act only an organization has (gatherings, WhatsApp, owner updates,
   the roster), as the server lists them. An idea or to-do offers **Send to person…** only while placed;
   **Start Coding Session** always.
-- **Head.** The page head is the project's name (§app.organizations/org-page: cut with an
+- **Head.** The page head is the project's icon at 32px (§app.projects/icon; its letters for a
+  project on a peer), then its name (§app.organizations/org-page: cut with an
   ellipsis, the whole name as its `title`), the meta line (the org · folder while placed, the folder
   alone otherwise), **Refresh Project**, and a
   **⋯** menu ("Project actions · {project}") holding **Settings** (a link to the Settings tab) and
@@ -425,7 +426,7 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   conflict is open or a decision is ready to promote). The tab is in the URL:
   `#/projects/<pid>` is Overview, `…/requirements`, `…/branches`, `…/merge-queue` (the project's
   merge queue, or, while the queue doesn't serve the project, its "No merge queue settings are
-  set up" note with Initialize, §app.merge-queue/view,
+  set up" note with Set Up with a Chat, §app.merge-queue/view,
   §app.merge-queue/setup; a run's page is `…/merge-queue/<run>`), `…/releases` (the project's releases, or,
   while they aren't set up, how to set them up, §app.release/tab), `…/cost`, `…/settings` the others
   (`…/overseer` stays the overseer's door). Picking a tab or a chip adds a history entry, so Back
@@ -460,10 +461,11 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   opening the add form.
 - **Branches**: the project's running copies on this host, one per branch, each opening its app where the project declares an entry (§app.project-services/services-ui).
 - **Cost**: the Cost card (§app.project-costs/card).
-- **Settings.** In this order: **Settings changes waiting** (only while a project overseer's Settings
+- **Settings.** In this order: **Icon** (§app.projects/icon: the project's icon, where it comes
+  from, and Upload, Replace, Remove, Use Letters or Use Picture; only for a project on this host); **Settings changes waiting** (only while a project overseer's Settings
   change card or the folder's uncommitted settings edits wait, §app.project-overseer/settings); **Overseer** (the Watch switch and its hint); **What may happen
   without you** (§design.copy-deck/project-powers: the always-allowed line, the Paused banner with
-  Resume while braked, the one-time note until dismissed, and the switches in groups, one column for
+  Resume while braked, and the switches in groups, one column for
   the overseer on its own and, while an organization places the project, one for the Project
   Assistant from a client); **Sessions it starts** (the gathering and coding sessions'
   model, thinking, abilities and mode selects, three to a row where they fit); **Claude login**
@@ -632,7 +634,7 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   the never-looser level beside them. When a host whose Sova doesn't know switches saves that file (it
   writes `confirmKinds`/`confirmKindsKnown`, or leaves the switches' `stamp` stale, whatever level it
   writes, the same one included), this host reads the overseer column again from that level by the
-  carry-over, with the one-time note (§app.project-overseer/autonomy-levels).
+  carry-over, with no note (§app.project-overseer/autonomy-levels).
 - **This host's view is derived again.** For each baton session the attach sets its listing title
   to the public title, and for each overseer conversation "Overseer · <project>" (a title the
   operator already gave one here stays); marks them as web sessions; and records their files'
@@ -756,7 +758,7 @@ Organizations region's own Needs you, never the global one.
   they are not private: they are no contact detail. Only the operator writes them. The person's
   page and the org's reads say whether they are in hours now and, if not, when their next window
   opens (`hoursNow`, worked out on each read, never stored). With no hours set, the person is always in
-  hours, as before.
+  hours.
 - **Company hours, the default.** The org may have a time zone and working hours of its own, in
   the same shape; they are not private. A person with no hours of their own uses the company's;
   their own win when set; with neither, they are always in hours. Only the operator sets them, on
@@ -791,8 +793,7 @@ Organizations region's own Needs you, never the global one.
   count: the company's hours apply ({company line})." or, when the company has no zone and hours,
   "Without a time zone these don't count: they are always in hours." Everything below reads these
   effective hours. They limit only what reaches a person: the overseer's looks and held acts that
-  reach nobody are not held to them, and the operator's own clicks go at once, with the off-hours
-  note. A change to someone's working hours (their own, the company's, or a revert of either) moves
+  reach nobody are not held to them, and the operator's own clicks go at once. A change to someone's working hours (their own, the company's, or a revert of either) moves
   every act waiting for their hours (a held act waiting for them, an offer waiting to reach them)
   to their new window, or at once when they are in hours now; the act is checked against the
   hours in force when it goes.
@@ -817,7 +818,7 @@ Organizations region's own Needs you, never the global one.
   from the browser's zone list), a toggle "Set working hours", then the days Mon…Sun (Mon–Fri by
   default) and "From"/"To" (09:00–17:00 by default), "In their time zone. An end before the start
   runs overnight." It refuses, before sending: "\"{zone}\" isn't a time zone this browser knows. Use
-  an IANA name, like Europe/Istanbul.", "Pick at least one working day, or turn working hours off.",
+  an IANA name, like Europe/Istanbul." (live, under its box), "Pick at least one working day, or turn working hours off.",
   "Working hours need a start and an end." It sends only a changed zone or hours; turning hours off
   clears them.
 - **Shown** on the People card and the person's page as an "Hours" fact: "{days} {from}–{to}

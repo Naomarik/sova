@@ -66,8 +66,8 @@ export const LEASE_IDLE_MS = 15 * 60_000;
     Settings holds none, and the bounds every limit (the default, a start's own, an extension's
     result) must stay within. */
 export const MESSAGES_DEFAULT = 60;
-export const MESSAGES_MIN = 1;
-export const MESSAGES_CAP = 1000;
+export { FILE_MB, MESSAGES_CAP, MESSAGES_MIN, PHOTO_MB, PHOTOS_PER_CONVERSATION, PHOTOS_PER_MESSAGE } from "./baton-limits";
+import { PHOTO_MB, PHOTOS_PER_MESSAGE, PHOTOS_PER_CONVERSATION } from "./baton-limits";
 
 /** "operator" or a roster person's id. */
 export type PersonRef = string;
@@ -386,8 +386,6 @@ export interface BatonFileSettings {
   maxBytes: number;
 }
 
-/** The largest file a person may send (§app.baton/files): the setting's bounds, in MB. */
-export const FILE_MB = { min: 1, max: 25, default: 25 } as const;
 /** Files in one message. */
 export const FILES_PER_MESSAGE = 10;
 
@@ -401,9 +399,6 @@ export interface BatonPhotoSettings {
   perConversation: number;
 }
 
-export const PHOTOS_PER_MESSAGE = { min: 1, max: 8, default: 4 } as const;
-export const PHOTO_MB = { min: 1, max: 10, default: 5 } as const;
-export const PHOTOS_PER_CONVERSATION = { min: 1, max: 200, default: 40 } as const;
 export const MB = 1024 * 1024;
 export const PHOTO_DEFAULTS: BatonPhotoSettings = {
   enabled: true,

@@ -76,15 +76,18 @@
       "server/chat-runtime/generations.ts",
       "server/chat-handle-remote.test.ts",
       "src/lib/unacked-sends.ts",
-      "src/lib/unacked-sends.test.ts"
+      "src/lib/unacked-sends.test.ts",
+      "server/background-jobs-capture.ts",
+      "server/chat-runtime/trial-jobs-tj2.integration.test.ts"
     ],
     "requires": [
       "§app/chat-processes",
       "§app.chat-processes/supervision"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-13T04:27Z"
+      "by": "omar",
+      "at": "2026-11-04T10:59Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
     },
     "evidence": "verified"
   },
@@ -99,7 +102,9 @@
       "server/ws.ts",
       "server/chat-manager.ts",
       "server/chat-runtime/inflight.ts",
-      "server/chat-runtime/crash.ts"
+      "server/chat-runtime/crash.ts",
+      "server/background-jobs-capture.ts",
+      "server/chat-runtime/trial-jobs-tj2.integration.test.ts"
     ],
     "requires": [
       "§app/chat-processes",
@@ -107,8 +112,9 @@
       "§chat.transcript/own-writes-across-restart"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-13T05:04Z"
+      "by": "omar",
+      "at": "2026-11-04T10:59Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
     }
   },
   "§app.chat-processes/extension-loading": {
@@ -149,7 +155,11 @@
       "scripts/chat-runtime-trial/run.mjs",
       "server/chat-runtime/trial-crash-idle.integration.test.ts",
       "src/components/ChatView.tsx",
-      "src/lib/older-rows-view.ts"
+      "src/lib/older-rows-view.ts",
+      "server/chat-runtime/trial-wake-tw1.integration.test.ts",
+      "server/background-jobs-capture.ts",
+      "server/chat-runtime/trial-jobs-tj1.integration.test.ts",
+      "server/chat-runtime/trial-jobs-tj2.integration.test.ts"
     ],
     "requires": [
       "§app/chat-processes",
@@ -158,8 +168,8 @@
     ],
     "agreed": {
       "by": "omar",
-      "at": "2026-10-26T22:15Z",
-      "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
+      "at": "2026-11-04T11:02Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#a22a19ea"
     },
     "evidence": "verified"
   },
@@ -218,7 +228,8 @@
       "server/chat-host.test.ts",
       "server/chat-runtime/host.test.ts",
       "server/tours/tools.ts",
-      "server/project-services/worker-verbs.test.ts"
+      "server/project-services/worker-verbs.test.ts",
+      "server/background-jobs-request.ts"
     ],
     "requires": [
       "§app/chat-processes",
@@ -227,9 +238,9 @@
       "§app/tours"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T20:56Z",
-      "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#ddd8cd7b"
+      "by": "omar",
+      "at": "2026-11-04T10:59Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
     },
     "evidence": "verified"
   },
@@ -286,7 +297,9 @@
       "server/chat-runtime/trial-s3-baton-kill.integration.test.ts",
       "server/chat-runtime/trial-s3-looks-powers.integration.test.ts",
       "server/chat-runtime/trial-s3-overseer.integration.test.ts",
-      "server/chat-runtime/host.test.ts"
+      "server/chat-runtime/host.test.ts",
+      "server/wake-keeper.ts",
+      "server/chat-runtime/trial-wake-tw8.integration.test.ts"
     ],
     "requires": [
       "§app/chat-processes",
@@ -295,9 +308,11 @@
       "§app.harness/session-special"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-12T18:54Z"
-    }
+      "by": "omar",
+      "at": "2026-11-04T10:59Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+    },
+    "evidence": "verified"
   },
   "§app.chat-processes/supervision": {
     "kind": "behavior",
@@ -317,7 +332,11 @@
       "server/chat-runtime/gc-timer.test.ts",
       "server/chat-runtime/main.ts",
       "server/caller-keys.ts",
-      "server/chat-runtime/link.integration.test.ts"
+      "server/chat-runtime/link.integration.test.ts",
+      "server/auth.ts",
+      "server/chat-server-url.integration.test.ts",
+      "server/chat-host-caller-key.test.ts",
+      "server/background-jobs-capture.ts"
     ],
     "requires": [
       "§app/chat-processes",
@@ -325,9 +344,9 @@
       "§app.chat-processes/code-pickup"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-25T23:29Z",
-      "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
+      "by": "omar",
+      "at": "2026-11-04T10:59Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
     },
     "evidence": "verified"
   },
@@ -343,7 +362,9 @@
       "server/ws.ts",
       "server/overseer.ts",
       "server/chat-joins.test.ts",
-      "server/chat-runtime/own-pids.test.ts"
+      "server/chat-runtime/own-pids.test.ts",
+      "server/background-jobs-capture.ts",
+      "server/chat-runtime/trial-jobs-tj2.integration.test.ts"
     ],
     "requires": [
       "§app/chat-processes",
@@ -351,8 +372,9 @@
       "§app.harness/session-open"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-13T00:54Z"
+      "by": "omar",
+      "at": "2026-11-04T10:59Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
     },
     "evidence": "verified"
   },
@@ -386,7 +408,10 @@
       "pi-config/extensions/subagents/chat-worker.ts",
       "server/chat-workers.test.ts",
       "server/chat-runtime/trial-s4-crash.integration.test.ts",
-      "server/chat-runtime/crash.ts"
+      "server/chat-runtime/crash.ts",
+      "server/background-jobs-capture.ts",
+      "server/chat-runtime/trial-jobs-tj5.integration.test.ts",
+      "scripts/chat-runtime-trial/run.mjs"
     ],
     "requires": [
       "§app.chat-processes/workers",
@@ -395,8 +420,9 @@
       "§app.overseer/attention-digest"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-13T00:43Z"
+      "by": "omar",
+      "at": "2026-11-04T10:59Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
     },
     "evidence": "verified"
   },
@@ -476,7 +502,12 @@
       "server/chat-runtime/trial-s5-handoff.integration.test.ts",
       "server/project-services/worker-verbs.test.ts",
       "pi-config/extensions/subagents/runner.ts",
-      "pi-config/extensions/subagents/registry.ts"
+      "pi-config/extensions/subagents/registry.ts",
+      "server/wake-keeper.ts",
+      "server/wake-keeper-live.ts",
+      "server/chat-runtime/trial-wake-tw5.integration.test.ts",
+      "server/background-jobs.ts",
+      "server/chat-runtime/trial-jobs-tj3.integration.test.ts"
     ],
     "requires": [
       "§app/chat-processes",
@@ -487,9 +518,9 @@
       "§chat/kill-guard"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T02:26Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+      "by": "omar",
+      "at": "2026-11-04T11:02Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#a22a19ea"
     },
     "evidence": "verified"
   },

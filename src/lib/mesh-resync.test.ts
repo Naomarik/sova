@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { noRecipeReason, type ResyncHost, type ResyncSelf } from "../../shared/mesh-resync";
-import { jobText, resyncNote, resyncView, sheetText, tailLines } from "./mesh-resync";
+import { cardSheet, jobText, resyncNote, resyncView, sheetText, tailLines } from "./mesh-resync";
 
 const self: ResyncSelf = { id: "desk", label: "Desk", commit: "c".repeat(40) };
 const host = (over: Partial<ResyncHost> = {}): ResyncHost => ({
@@ -16,20 +16,26 @@ const host = (over: Partial<ResyncHost> = {}): ResyncHost => ({
   ...over,
 });
 
-test("only a skewed host that is behind gets the button", () => {
-  assert.deepEqual(resyncView(host(), self), { line: "12 commits behind Desk", button: {} });
-  assert.deepEqual(resyncView(host({ distance: 1 }), self).line, "1 commit behind Desk");
-  for (const relation of ["ahead", "same", "diverged", "unknown"] as const) {
-    assert.equal(resyncView(host({ relation }), self).button, null, relation);
-    assert.ok(resyncView(host({ relation }), self).line, `${relation} still says where it is`);
+test("any answering host that is behind gets the button, whatever its state; the placing is the commits' alone", () => {
+  assert.deepEqual(resyncView(host(), self), { line: "On another build: 12 commits behind Desk", button: {} });
+  assert.deepEqual(resyncView(host({ state: "up" }), self), { line: "On another build: 12 commits behind Desk", button: {} }, "a host that lists its areas is up, whatever they are");
+  assert.deepEqual(resyncView(host({ distance: 1 }), self).line, "On another build: 1 commit behind Desk");
+  for (const state of ["up", "skewed"] as const) {
+    for (const relation of ["ahead", "diverged", "unknown"] as const) {
+      assert.equal(resyncView(host({ state, relation }), self).button, null, relation);
+      assert.match(resyncView(host({ state, relation }), self).line!, /^On another build: /, `${relation} still says where it is`);
+    }
+    assert.deepEqual(resyncView(host({ state, relation: "same" }), self), { line: null, button: null }, "this host's own commit carries no line");
   }
+  assert.equal(resyncView(host({ state: "up", relation: "unknown", commit: undefined }), self).line, null, "same fingerprint, no commit said: nothing shows it is another build");
+  for (const state of ["down", "refused", "hidden"] as const) assert.deepEqual(resyncView(host({ state }), self), { line: null, button: null }, state);
   assert.deepEqual(resyncView(host({ state: "up", relation: "same" }), self), { line: null, button: null });
   assert.deepEqual(resyncView(host({ state: "down", relation: "unknown" }), self), { line: null, button: null });
   assert.deepEqual(resyncView(undefined, self), { line: null, button: null });
 });
 
 test("a newer host gets the hint to update this host, never a downgrade", () => {
-  assert.equal(resyncView(host({ relation: "ahead" }), self).line, "Newer than Desk. Update Desk to match it.");
+  assert.equal(resyncView(host({ relation: "ahead" }), self).line, "On another build: newer than Desk. Update Desk to match it.");
 });
 
 test("disabled with its reason, said under the host: no recipe, a recipe that can't run, a build that can't be named", () => {
@@ -37,17 +43,18 @@ test("disabled with its reason, said under the host: no recipe, a recipe that ca
   const what = "No resync recipe for VPS on Desk: set VPS_ID in scripts/mesh-vps/local.env (or PHONE_ID in scripts/mesh-termux/local.env) to vps, or add vps to mesh-resync.json";
   assert.deepEqual(none.button, { reason: what }, "names what to set, in the sentence the start's 409 says too");
   assert.equal(noRecipeReason({ id: "vps", label: "VPS" }, "Desk"), what);
-  assert.equal(none.line, `12 commits behind Desk. ${what}`);
+  assert.equal(none.line, `On another build: 12 commits behind Desk. ${what}`);
   assert.deepEqual(resyncView(host({ recipeProblem: "scripts/mesh-vps/local.env is missing" }), self).button, { reason: "Its recipe can't run: scripts/mesh-vps/local.env is missing" });
   const blocked = resyncView(host({ recipe: null }), { ...self, blocked: "This host booted with uncommitted changes" });
   assert.deepEqual(blocked.button, { reason: "This host booted with uncommitted changes" }, "the build comes first: a recipe wouldn't help");
-  assert.equal(blocked.line, "12 commits behind Desk", "this host's block is said once for the menu, not under each host");
+  assert.equal(blocked.line, "On another build: 12 commits behind Desk", "this host's block is said once for the menu, not under each host");
 });
 
 test("the menu's one note: why nothing can be resynced from here, only when some host is behind", () => {
   const off = { ...self, blocked: "This host booted with uncommitted changes" };
   assert.equal(resyncNote({ self: off, hosts: [host()] }), "Resync is off: This host booted with uncommitted changes");
   assert.equal(resyncNote({ self: off, hosts: [host({ relation: "ahead" })] }), null);
+  assert.equal(resyncNote({ self: off, hosts: [host({ state: "up" })] }), "Resync is off: This host booted with uncommitted changes", "an up host behind counts too");
   assert.equal(resyncNote({ self, hosts: [host()] }), null);
   assert.equal(resyncNote(null), null);
 });
@@ -56,7 +63,7 @@ test("a running job replaces the button with its progress", () => {
   const job = { commit: self.commit!, startedAt: 0, tail: "" };
   assert.deepEqual(resyncView(host({ job: { ...job, state: "running" } }), self), { line: "Resyncing to ccccccc…", button: null });
   assert.equal(resyncView(host({ job: { ...job, state: "waiting" } }), self).button, null);
-  assert.match(resyncView(host({ job: { ...job, state: "failed", error: "x" } }), self).line!, /^Last resync failed\. 12 commits behind/);
+  assert.match(resyncView(host({ job: { ...job, state: "failed", error: "x" } }), self).line!, /^Last resync failed\. On another build: 12 commits behind/);
   assert.deepEqual(resyncView(host({ state: "up", relation: "same", job: { ...job, state: "done" } }), self).line, "Resynced to ccccccc");
 });
 
@@ -77,4 +84,21 @@ test("job words and the output tail", () => {
   assert.equal(jobText({ ...job, state: "done" }, "VPS"), "VPS runs ccccccc now.");
   assert.equal(jobText({ ...job, state: "failed", error: "The deploy script stopped with exit 1." }, "VPS"), "The deploy script stopped with exit 1.");
   assert.equal(tailLines("a\n\nb\nc\n", 2), "b\nc");
+});
+
+test("a Create card shows the confirm sheet's own sentences for the commit it pins, or why it can't start", () => {
+  const info = (over = {}, me = self) => ({ self: me, hosts: [host(over)] });
+  const ok = cardSheet(info(), host().id);
+  assert.ok("commit" in ok);
+  assert.equal(ok.commit, self.commit);
+  const s = sheetText(host(), self);
+  assert.deepEqual(ok.lines, [s.what, s.running, s.job]);
+  const problem = (over: object, me = self) => (cardSheet(info(over, me), host().id) as { problem: string }).problem;
+  assert.match(problem({ recipe: null }), /No resync recipe/);
+  assert.match(problem({ recipeProblem: "local.env is missing" }), /can't run: local.env is missing/);
+  assert.match(problem({ state: "up" }), /already runs/);
+  assert.match(problem({ state: "down" }), /isn't answering/);
+  assert.match(problem({ relation: "ahead" }), /newer build/);
+  assert.match(problem({}, { ...self, blocked: "a dirty tree" }), /a dirty tree/);
+  assert.match((cardSheet(info(), "stranger") as { problem: string }).problem, /No computer stranger/);
 });

@@ -203,8 +203,15 @@ export interface MergeEntry {
   position?: number;
   /** One line: why it stands where it stands ("conflicts in 2 files", "unit failed: src/a.test.ts"). */
   reason?: string;
-  /** The branch moved past the pinned commit since approval: how many commits are not included. */
+  /** The branch moved past the pinned commit since approval: how many of its own commits (first-parent, none the
+   *  target already has) are not included. On a sent-back entry: how many Land This Commit Again brings in. */
   newerCommits?: number;
+  /** Sent back, and the branch was amended or rebased since: its tip isn't a descendant of the pinned commit. There is
+   *  nothing to count (`newerCommits` absent); the re-land still lands the tip. */
+  newerRewritten?: true;
+  /** Sent back and moved on: why the branch's newest commit isn't Ready to land (its chat's readiness reading, else a
+   *  temporary commit or uncommitted files); absent when it is. */
+  newerBlocked?: string;
   /** The run now checking it, or the last one that did. */
   run?: string;
   /** Every run it had, oldest first. */
@@ -235,6 +242,8 @@ export interface MergeEntry {
    *  branch has a later entry for the same target; `merged`: its sent-back commit or the branch's tip is already in the
    *  target; `gone`: the branch or its worktree folder was removed. A settled entry leaves the Sent back list. */
   settled?: MergeSettled;
+  /** What the branch does at the approved commit (BranchSummary): the view's, never stored. Additive. */
+  summary?: BranchSummary;
   /** needs-fix only, stored at the hand-back: why it was sent back. Absent on entries sent back before it was kept:
    *  read as not the drafts' (the queue infers `drafts` once from a run whose docs step failed). */
   sentBackFor?: SentBackFor;
@@ -292,6 +301,12 @@ export interface RunStep {
   log: string;
   counts?: { passed: number | null; failed: number | null; skipped: number | null } | null;
   failures?: { file?: string; name?: string; message?: string; blame?: Blame }[];
+  /** rerun-master: the check is broken on the target (a test check that ran no test anywhere): skipped for this
+   *  branch, `detail` the flag line. */
+  broken?: true;
+  /** check: how many of its test files already passed on identical code (the re-checked ones too); the step's log
+   *  lists each and its source run. Its time says nothing about the check's full length (the estimate skips it). */
+  reused?: number;
 }
 
 export type RunVerdict =
@@ -330,6 +345,31 @@ export interface MergeRun {
   noChecks?: true;
 }
 
+/**
+ * A trial (merge.try): a setup branch's proposed checks run on its exact head in the merge copy, nothing merged and
+ * nothing saved. The checks are that commit's own `.sova/project.json` merge checks (and the services they require),
+ * then its `release.checks`. Each check's pass or fail, duration and log are the run's steps (`merge.logs {run}`).
+ * A setup branch is offered Land only once a trial of its exact head passed.
+ */
+export interface MergeTrial {
+  /** The run (mr_…) holding its steps and logs. */
+  run: string;
+  /** The commit tried (full sha): the result counts for this commit only. */
+  commit: string;
+  /** The branch it was asked for, when named by branch. */
+  branch?: string;
+  verdict: "running" | "passed" | "failed" | "machine" | "void";
+  /** One line: why the verdict. */
+  why?: string;
+  /** Release checks the trial left out: unchanged against the target's release section and not named for it. */
+  notRun?: { id: string; label: string }[];
+  /** Who started it: the operator, or a chat (its session id). */
+  by: { kind: "operator" } | { kind: "chat"; session?: string };
+  startedAt: string;
+  endedAt?: string;
+}
+export const MERGE_TRIALS_KEPT = 20;
+
 // ---- the queue ----------------------------------------------------------------------------------
 
 /** Why the queue is paused: approvals are still accepted, runs wait. */
@@ -353,6 +393,18 @@ export interface PauseInfo {
  *  nothing yet (onboarding; no approval accepted). */
 export type ChecksDeclared = "declared" | "test-command" | "none" | "unset";
 
+/** One test check broken on the target: "<label> is broken on <target>: no test ran (<first log line>)". */
+export interface TargetBroken {
+  check: string;
+  label: string;
+  why: string;
+  /** The run that found it, and its step on the target alone (its log). */
+  run: string;
+  step: string;
+  /** When it was first found (ISO); later runs that find it again keep it. */
+  at: string;
+}
+
 export interface MergeQueueHeads {
   /** The target's head now. */
   target: string;
@@ -364,6 +416,9 @@ export interface MergeQueueHeads {
   pushWhy?: string;
   /** Checks red on the target alone, by label. */
   targetRed?: string[];
+  /** Test checks broken on the target (no test ran on the merge, the tip or the target alone, same exit each time):
+   *  skipped for every branch meanwhile, shown in the tab's Needs you until a later run of that check runs tests. */
+  targetBroken?: TargetBroken[];
   /** Request projects: how many commits local target is behind origin's (as last fetched); Update Local Main. */
   behind?: number;
   /** Update Local Main can't now: why (the main folder has uncommitted edits). */
@@ -420,13 +475,41 @@ export interface MergeQueueView {
   /** Ready, not approved: this project's worktree branches with commits the target hasn't, a clean tree, a head that
    *  isn't TEMP, and no entry in line or landed at that commit (the view's Land list). */
   ready?: MergeReady[];
-  /** Try It on Main (merge.setup dryRun): the run in flight, or the last one. */
+  /** A merge.setup dry run (the operator's, from the CLI): the run in flight, or the last one. */
   tryRun?: MergeRun;
+  /** merge.try: the setup branches' trials, newest first (at most MERGE_TRIALS_KEPT), each pinned to its commit. */
+  trials?: MergeTrial[];
   /** A release holds the queue (the freeze banner): only its entries land and nothing is pushed until it is
    *  published or abandoned. */
   release?: MergeReleaseHold;
   /** Every setting the queue uses, where each is kept, and the saves the Settings tab may make. */
   settings?: import("./merge-queue-settings").MergeQueueSettings;
+  at: string;
+}
+
+/** A project's queue as the landing bar starts from it (GET /api/merge-queue/landing-summary): the view's fields the bar
+ *  reads, `recent` and `waitingOnHost` cut to the newest few. A whole MergeQueueView (the `merge_queue` feed frame) is one too. */
+export type LandingQueueCut = Pick<MergeQueueView, "project" | "root" | "target" | "state" | "paused" | "invalid" | "served" | "current" | "checking" | "waiting" | "needsYou" | "recent" | "waitingOnHost" | "release" | "reviewing" | "heads" | "at">;
+
+/** A project's releases as the landing bar starts from them: the open record and the last one (steps without their
+ *  `detail`), with Publish's gates and the quiet watch. `project` is the root, as in ReleaseView; a whole ReleaseView
+ *  (the `release` feed frame) is one too. */
+export type LandingReleaseCut = Pick<import("./release").ReleaseView, "project" | "initialized" | "open" | "last" | "gates" | "quiet" | "target" | "remote">;
+
+/** One project of this computer's Projects list in the landing summary. `queue` null: the queue doesn't serve it (or
+ *  has nothing loaded); `release` null: it has no release record. */
+export interface LandingSummaryProject {
+  id: string;
+  root: string;
+  name: string;
+  queue: LandingQueueCut | null;
+  release: LandingReleaseCut | null;
+}
+
+/** GET /api/merge-queue/landing-summary: every project's queue and releases in one quick read (no Ready-list or tag
+ *  history reads), for the landing bar at page open and at each reconnect; the feed's frames carry it on from there. */
+export interface LandingSummary {
+  projects: LandingSummaryProject[];
   at: string;
 }
 
@@ -453,7 +536,7 @@ export interface MergeUnclear {
   why?: string;
 }
 
-export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled" | "redrafted"> & {
+export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "newerRewritten" | "newerBlocked" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled" | "redrafted"> & {
   project: string;
   run?: string;
   /** The run's newest reviewer chat (Open Reviewer Chat on the branch's Worktrees row), while it runs and after. */
@@ -461,6 +544,7 @@ export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "
   /** The project has a review kit (the Land menu shows "Land without review"). */
   reviewKit?: boolean;
 };
+
 
 /** A branch's entry as the session list carries it (protocol.ts SessionBranchQueue): its state, never a precomputed
  *  key, so a new state flows through, and the fields a row's words read. */
@@ -479,10 +563,25 @@ export const branchQueueOf = (q: WorktreeQueueInfo): BranchQueueFacts => ({
   ...(q.redrafted ? { redrafted: true as const } : {}),
 });
 
+/**
+ * What a branch does, in up to 5 plain bullets (the summary-line model writes them from the branch's commit messages
+ * and the parts it changed, once it reads Ready to land for its commit). `commit`: the commit the row is about.
+ * `writing`: the bullets for it are being written now; `failed`: they couldn't be (Try Again asks again); `ready`:
+ * `bullets` are shown. `stale`: the bullets shown were written for an earlier commit of the branch. Additive.
+ */
+export interface BranchSummary {
+  commit: string;
+  state: "ready" | "writing" | "failed";
+  bullets?: string[];
+  stale?: { commit: string };
+}
+
 export interface MergeReady {
   branch: string;
   worktree: string;
   commit: string;
+  /** What the branch does (BranchSummary), once anything is known. Additive. */
+  summary?: BranchSummary;
   /** Commits ahead of the target. */
   ahead: number;
   /** The chat the branch belongs to (its id), by the rule Land records too (server/merge-queue/owners.ts): the chat
@@ -493,6 +592,9 @@ export interface MergeReady {
   /** Lines added and removed on the branch's side (target...branch), when read. */
   added?: number;
   removed?: number;
+  /** When the branch last changed: its head's committer date (ISO 8601, `git log -1 --format=%cI`), when read.
+   *  Additive. */
+  headAt?: string;
 }
 
 /** SessionWorktreeInfo.mergeStats: the branch against the target, for the row's "N commits · +a −r". */
@@ -504,6 +606,8 @@ export interface WorktreeMergeStats {
   /** Lines added and removed, the branch's side only (target...branch). */
   added: number;
   removed: number;
+  /** When the branch last changed: its head's committer date (ISO 8601), when read. Additive. */
+  headAt?: string;
 }
 
 /** SessionWorktreeInfo.mergeProject: the project a worktree lands into, whatever its entry. */
@@ -536,6 +640,7 @@ export interface WorktreeMergeProject {
  * merge.answer  {entry, answer: accept | send-back | land-anyway, why?}          → entry (the user's)
  * merge.review  {run, verdict, text?}                         → entry (the review step's verdict)
  * merge.retry   {project | entry, note?}                      → view (rerun after a machine pause)
+ * merge.try     {project?, branch? | commit?, checks?}        → trial + run (a setup branch's checks on its head; saves nothing)
  */
 export const MERGE_ANSWERS = ["accept", "send-back", "land-anyway"] as const;
 export type MergeAnswer = (typeof MERGE_ANSWERS)[number];
@@ -552,6 +657,10 @@ export interface MergeReport {
   /** merge.fresh: whether a thread was retired; merge.clear: the chats deleted. */
   fresh?: boolean;
   cleared?: number;
+  /** merge.try: the trial as recorded (its run is `run`). */
+  trial?: MergeTrial;
+  /** merge.hold: the merge thread's hold now (null: none); `until` when it lifts by itself. */
+  hold?: { at: string; until: string } | null;
 }
 
 // ---- the WS feed --------------------------------------------------------------------------------
@@ -629,6 +738,8 @@ export interface MergeCard {
   eta?: MergeEntry["eta"];
   reason?: string;
   newerCommits?: number;
+  newerRewritten?: true;
+  newerBlocked?: string;
   run?: string;
   /** Checking: steps finished of all the run's steps. */
   progress?: { done: number; total: number };

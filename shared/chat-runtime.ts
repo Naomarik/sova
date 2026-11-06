@@ -231,8 +231,9 @@ export interface ChatLifecycleEvent {
   chatId: ChatId;
   /** started: a run began (agent_start). settled: a run settled. receiverIdle: a run settled or a
       compaction ended (a topic receiver may take its next batch). closed: the chat closed.
-      topicEntered / topicGone: a topic batch handed over entered the transcript, or never will. */
-  type: "started" | "settled" | "receiverIdle" | "closed" | "topicEntered" | "topicGone";
+      topicEntered / topicGone: a topic batch handed over entered the transcript, or never will.
+      compacted: a compaction wrote its summary (a paired chat's reminder follows it). */
+  type: "started" | "settled" | "receiverIdle" | "closed" | "topicEntered" | "topicGone" | "compacted";
   at: number;
   /** The topic batch's id, on topicEntered and topicGone. */
   batch?: string;
@@ -412,6 +413,8 @@ export type ChatReply<M extends ChatMethod = ChatMethod> =
 /** A browser on `/ws/chat`, as the chat sees it: which wire it reads and how it wants the transcript. */
 export interface ChatClientInfo {
   clientId: string;
+  /** Not the user's socket (ChatClient.notUser): what it sends runs, and no turn it opens is attended. */
+  notUser?: true;
   wire?: 2;
   tail?: boolean;
   pull?: { prefetch: boolean };

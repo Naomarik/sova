@@ -2,7 +2,8 @@ import { createEffect, createMemo, createResource, createSignal, For, Match, on,
 import type { OverseerInfo, OverseerProactivity, SessionSummary } from "../../shared/protocol";
 import { clearOverseer, getOverseer, getOverseerIdeas, getOverseerSettings, getOverseerTodos, putOverseerSettings } from "../lib/api";
 import { modelLabel, relativeTime } from "../lib/format";
-import { nextProactivity, OVERSEER_HASH, overseerHistoryHref, PROACTIVITY, PROACTIVITY_HINT, PROACTIVITY_LABEL } from "../lib/overseer";
+import { historyRows, nextProactivity, OVERSEER_HASH, overseerHistoryHref, PROACTIVITY, PROACTIVITY_HINT, PROACTIVITY_LABEL } from "../lib/overseer";
+import { headIdeasCount } from "../lib/ideas";
 import { isMainThread } from "../lib/regions";
 import { settingsOpenAt } from "../lib/settings-nav";
 import { announce, toast } from "../lib/ui-state";
@@ -202,8 +203,8 @@ export function OverseerView(props: {
     ),
   };
 
-  /** A file with no message yet is "Untitled" to the list; here it is said as what it is. */
-  const history = () => (props.info?.history ?? []).map((h) => (h.title === "Untitled" ? { ...h, title: "No messages" } : h));
+  /** Each earlier conversation by what it was about (never the name they all share), "No messages" for an empty one. */
+  const history = () => historyRows(props.info?.history ?? []);
   const age = (at: string) => relativeTime(at, props.wiring.now);
   const clearNow = () => void clear().then((ok) => ok && announce("Cleared. The previous conversation is in History."));
   /** A screen swap moves focus to its first row, as opening the menu does; with no row, to the trigger. */
@@ -346,13 +347,13 @@ export function OverseerView(props: {
           ref={ideasButton}
           aria-expanded={ideasOpen()}
           aria-controls="overseer-ideas"
-          aria-label={ideasInfo() ? `Ideas, ${ideasInfo()!.toc.total}` : "Ideas"}
+          aria-label={ideasInfo() ? `Ideas, ${headIdeasCount(ideasInfo()!.toc)}` : "Ideas"}
           title="The ideas the Overseer has filed for later."
           onClick={() => (ideasOpen() ? closeIdeas() : setIdeasOpen(true))}
         >
           <Icon name="star" small />
           <span class="overseer-ideas-word">Ideas</span>
-          <Show when={ideasInfo()}>{(i) => <span class="chip chip-count">{i().toc.total}</span>}</Show>
+          <Show when={ideasInfo()}>{(i) => <span class="chip chip-count">{headIdeasCount(i().toc)}</span>}</Show>
         </button>
         <button
           type="button"

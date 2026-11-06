@@ -1,20 +1,23 @@
-import { createEffect, createMemo, createResource, createSignal, For, on, type JSX, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, Index, on, type JSX, Show, untrack } from "solid-js";
 import type { FolderRef, MergeQueueSettings, MergeSettingsChange, ModelChoice, SettingSource } from "../../../shared/merge-queue-settings";
 import type { ModelPick } from "../../../shared/powers";
 import { cancelMergeSettings, listProjects, putMergeModels, saveMergeSettings } from "../../lib/api";
 import { folderGroup } from "../../lib/folder-sources";
 import { fileCount } from "../../lib/folder-viewer";
 import { tildePath } from "../../lib/format";
-import { short } from "../../lib/merge-queue";
+import { notSetUp, short } from "../../lib/merge-queue";
 import { mergeChanged, readQueue } from "../../lib/merge-queue-client";
 import { showsPushToOrigin } from "../../lib/merge-queue-requests";
 import {
   changeLines,
   changesOf,
+  draftProblem,
+  minutesTextOf,
+  typedMinutes,
   checksCaption,
   minutes,
   modelWords,
-  parseMinutes,
+  minutesRule,
   rebaseDraft,
   refusalWords,
   pendingSaveTitle,
@@ -31,8 +34,9 @@ import { projectTabHref } from "../../lib/projects-route";
 import { closeSettings } from "../../lib/settings-nav";
 import { announce, home, toast } from "../../lib/ui-state";
 import { FolderViewer } from "../FolderViewer";
-import { notSetUp, requestInitialize } from "../../lib/merge-queue-initialize";
+import { createSetupPoll, SetupChatButton, SetupNotSetUp } from "../SetupChat";
 import { ModelPickButton } from "../ModelPickButton";
+import { NumberField, Select, Toggle } from "../form";
 import { Banner } from "../ui";
 import { MergeQueueLandHow, MergeQueueLandSuggestion } from "./MergeQueueLandHow";
 import "./MergeQueueSettings.css";
@@ -76,30 +80,21 @@ export function MergeQueueSettingsSection(props: { project: string | null }) {
           Merge queue
         </h3>
         <Show when={(projects() ?? []).length > 0}>
-          <label class="mqs-project">
-            <span class="field-label">Project</span>
-            <span class="select-wrap">
-              <select
-                class="select"
-                value={current()?.id ?? ""}
-                onChange={(e) => {
-                  const next = e.currentTarget.value;
-                  // Unsaved edits of another project's settings: ask before they go.
-                  if (stagedDirty() && stagedEdit()?.project !== next) {
-                    e.currentTarget.value = current()?.id ?? "";
-                    setAskSwitch(next);
-                    return;
-                  }
-                  setPicked(next);
-                }}
-              >
-                <For each={projects()}>{(p) => <option value={p.id}>{p.name}</option>}</For>
-              </select>
-              <span class="select-caret" aria-hidden="true">
-                ▾
-              </span>
-            </span>
-          </label>
+          <Select
+            class="mqs-project"
+            label="Project"
+            value={current()?.id ?? ""}
+            options={(projects() ?? []).map((p) => ({ value: p.id, label: p.name }))}
+            onChange={(next, el) => {
+              // Unsaved edits of another project's settings: ask before they go.
+              if (stagedDirty() && stagedEdit()?.project !== next) {
+                el.value = current()?.id ?? "";
+                setAskSwitch(next);
+                return;
+              }
+              setPicked(next);
+            }}
+          />
         </Show>
       </div>
       <Show when={askSwitch()}>
@@ -165,27 +160,14 @@ function ProjectQueueSettings(props: { projectId: string; root: string }) {
   );
 }
 
-/** A project the queue doesn't serve (no merge setup): the Merge Queue tab's words; Initialize opens that tab straight on its setup. */
+/** A project the queue doesn't serve (no merge setup): what the queue does and what setting it up changes, with Set Up
+    with a Chat, which opens the project's Setup chat (and closes Settings to show it). */
 function NotServed(props: { projectId: string; target: string; settings: MergeQueueSettings | undefined }) {
+  const setup = createSetupPoll(props.projectId);
   return (
-    <div class="mqs-body">
-      <Banner
-        tone="info"
-        title="No merge queue settings are set up for this project"
-        body={`Until they are, its chats merge branches into ${props.target} themselves when you ask.`}
-        action={
-          <a
-            class="button button-sm"
-            href={projectTabHref(props.projectId, "merge-queue")}
-            onClick={() => {
-              requestInitialize(props.projectId);
-              closeSettings();
-            }}
-          >
-            Initialize
-          </a>
-        }
-      />
+    // A link in the chat's card (Open Setup Chat, View Log, Read Report) leaves Settings too.
+    <div class="mqs-body" onClick={(e) => (e.target as Element).closest(".setup-unset a[href]") && closeSettings()}>
+      <SetupNotSetUp projectId={props.projectId} surface="settings" target={props.target} poll={setup} onOpen={closeSettings} />
       <MergeQueueLandSuggestion settings={props.settings} />
     </div>
   );
@@ -255,6 +237,8 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
     ),
   );
   const changes = createMemo(() => changesOf(draft(), s(), props.hasOrigin));
+  /** A time-limit box that isn't one: the save waits, saying which. */
+  const problem = createMemo(() => draftProblem(draft(), s()));
   const [confirming, setConfirming] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -327,9 +311,12 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
 
   return (
     <div class="mqs-body">
-      <p class="text-caption text-muted mqs-from">
-        From {target()} at <span class="text-mono">{short(s().at)}</span>
-      </p>
+      <div class="spread mqs-from-row">
+        <p class="text-caption text-muted mqs-from">
+          From {target()} at <span class="text-mono">{short(s().at)}</span>
+        </p>
+        <SetupChatButton projectId={props.projectId} setUp from="settings" onOpen={closeSettings} />
+      </div>
       <Show when={s().projectFileDiffers}>
         <p class="mqs-note" role="note">
           The project folder's <span class="text-mono">.sova/project.json</span> differs from {target()}'s. These are {target()}'s values, which the queue uses.
@@ -356,11 +343,7 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
         </Row>
         <Show when={showsPushToOrigin(s().how?.effective)}>
           <Row label="Push after each landing" end={<Tag source="project" />} hint={!props.hasOrigin ? "This project has no origin, so nothing is pushed." : undefined}>
-            <label class="toggle">
-              <input type="checkbox" checked={draft().push} disabled={locked() || !props.hasOrigin} onChange={(e) => setDraft({ ...draft(), push: e.currentTarget.checked })} />
-              <span class="toggle-box" aria-hidden="true" />
-              <span>{draft().push ? "On" : "Off"}</span>
-            </label>
+            <Toggle label={draft().push ? "On" : "Off"} checked={draft().push} disabled={locked() || !props.hasOrigin} onChange={(on) => setDraft({ ...draft(), push: on })} />
           </Row>
         </Show>
         <Row label="Private names" end={<Tag source="computer" />}>
@@ -370,67 +353,60 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
 
       <Group title="Checks" caption={checksCaption(s().checks)}>
         <Show when={s().checks.mode === "declared" && s().checks.list.length > 0} fallback={<Row label="Checks" end={<Tag source="project" />}>{s().checks.mode === "test-command" ? "The project's test command" : "None declared"}</Row>}>
-          <For each={shownChecks()}>
+          <Index each={shownChecks()}>
             {(c) => {
-              const d = () => draft().checks[c.id] ?? { timeoutSec: c.timeoutSec, rerun: c.rerun, optional: c.optional };
-              const [text, setText] = createSignal(String(Math.round(c.timeoutSec / 60)));
-              // A discard or a fresh read moves the value under the field: the field follows, unless it already says it.
-              createEffect(
-                on(
-                  () => d().timeoutSec,
-                  (t) => {
-                    if (parseMinutes(text(), capMin()) !== t / 60) setText(String(Math.round(t / 60)));
-                  },
-                  { defer: true },
-                ),
-              );
-              const bad = () => parseMinutes(text(), capMin()) === null;
+              const d = () => draft().checks[c().id] ?? { timeoutSec: c().timeoutSec, rerun: c().rerun, optional: c().optional };
+              // What was typed lives in the staged edit (kept across tabs, cleared by a discard or a save),
+              // so a box that isn't a time limit holds the save instead of saving the last good number.
+              const text = () => minutesTextOf(draft(), c().id, s());
               return (
-                <Row label={c.label} end={<Tag source="project" />} hint={bad() ? `A time limit is whole minutes, 1 to ${capMin()}.` : undefined}>
+                <Row label={c().label} end={<Tag source="project" />}>
                   <span class="mqs-check">
-                    <label class="mqs-minutes">
-                      <input
-                        class="input text-num"
-                        type="number"
-                        min="1"
-                        max={capMin()}
-                        step="1"
-                        value={text()}
-                        disabled={locked()}
-                        aria-invalid={bad()}
-                        aria-label={`${c.label}: time limit in minutes`}
-                        onInput={(e) => {
-                          setText(e.currentTarget.value);
-                          const n = parseMinutes(e.currentTarget.value, capMin());
-                          if (n !== null) editCheck(c.id, { timeoutSec: n * 60 });
-                        }}
-                      />
-                      <span class="text-caption text-muted">min</span>
-                    </label>
-                    <label class="toggle">
-                      <input type="checkbox" checked={d().rerun} disabled={locked()} onChange={(e) => editCheck(c.id, { rerun: e.currentTarget.checked })} />
-                      <span class="toggle-box" aria-hidden="true" />
-                      <span>Reruns failed files</span>
-                    </label>
-                    <span class="select-wrap">
-                      <select class="select" aria-label={`${c.label}: when it runs`} value={d().optional ? "picked" : "always"} disabled={locked()} onChange={(e) => editCheck(c.id, { optional: e.currentTarget.value === "picked" })}>
-                        <option value="always">Every time</option>
-                        <option value="picked">Only when picked</option>
-                      </select>
-                      <span class="select-caret" aria-hidden="true">
-                        ▾
-                      </span>
-                    </span>
+                    <NumberField
+                      label={`${c().label}: time limit in minutes`}
+                      hideLabel
+                      rule={minutesRule(capMin(), c().label)}
+                      value={text()}
+                      disabled={locked()}
+                      afterClass="mqs-minutes"
+                      after={<span class="text-caption text-muted">min</span>}
+                      onInput={(v) => {
+                        setDraft(typedMinutes(draft(), c().id, v, s()));
+                        setSaid(null);
+                        setSaidLink(null);
+                      }}
+                    />
+                    <Toggle label="Reruns failed files" checked={d().rerun} disabled={locked()} onChange={(on) => editCheck(c().id, { rerun: on })} />
+                    <Select
+                      label={`${c().label}: when it runs`}
+                      hideLabel
+                      value={d().optional ? "picked" : "always"}
+                      options={[
+                        { value: "always", label: "Every time" },
+                        { value: "picked", label: "Only when picked" },
+                      ]}
+                      disabled={locked()}
+                      onChange={(v) => editCheck(c().id, { optional: v === "picked" })}
+                    />
                   </span>
                 </Row>
               );
             }}
-          </For>
+          </Index>
           <Show when={s().checks.list.length > CHECKS_SHOWN}>
             <button type="button" class="button button-sm button-ghost mqs-more" aria-expanded={showAll()} onClick={() => setShowAll(!showAll())}>
               {showAll() ? "Show Fewer" : `Show ${s().checks.list.length - CHECKS_SHOWN} More`}
             </button>
           </Show>
+        </Show>
+        <Show when={s().checks.mode !== "none" && s().checks.mode !== "unset"}>
+          <Row
+            label="Reuse passes from identical code"
+            end={<Tag source="project" />}
+            hint={draft().reuse ? "A test file that already passed on exactly this code isn't run again; a few are re-checked at each landing. Reruns and releases always run in full." : "Every check runs in full."}
+          >
+            <Toggle label={draft().reuse ? "On" : "Off"} checked={draft().reuse} disabled={locked()} onChange={(on) => setDraft({ ...draft(), reuse: on })} />
+          </Row>
         </Show>
         <Row label="Longest a check runs" end={<Tag source="sova" />}>
           {s().fixed.checkMaxMin} min
@@ -453,11 +429,7 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
 
       <Group title="Review">
         <Row label="Review each landing" end={<Tag source="project" />} hint={!draft().review && !s().review.canTurnOn ? "Turning it on needs the review folder on the target: .sova/playbooks/review." : undefined}>
-          <label class="toggle">
-            <input type="checkbox" checked={draft().review} disabled={locked() || (!s().review.on && !s().review.canTurnOn)} onChange={(e) => setDraft({ ...draft(), review: e.currentTarget.checked })} />
-            <span class="toggle-box" aria-hidden="true" />
-            <span>{draft().review ? "On" : "Off"}</span>
-          </label>
+          <Toggle label={draft().review ? "On" : "Off"} checked={draft().review} disabled={locked() || (!s().review.on && !s().review.canTurnOn)} onChange={(on) => setDraft({ ...draft(), review: on })} />
         </Row>
         <Row
           label="Instructions"
@@ -527,10 +499,10 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
         </Row>
       </Group>
 
-      <Show when={changes() || said() || error()}>
+      <Show when={changes() || problem() || said() || error()}>
         <div class="mqs-save" role="region" aria-label="Save to the project file">
           <Show when={error()}>{(e) => <Banner tone="error" title="Couldn't save the queue settings." body={`${e().replace(/[.]$/, "")}. Nothing changed on ${target()}.`} />}</Show>
-          <Show when={said() && !changes()}>
+          <Show when={said() && !changes() && !problem()}>
             <p class="text-caption" role="status">
               {said()}
               <Show when={saidLink()}>
@@ -545,20 +517,37 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
               </Show>
             </p>
           </Show>
-          <Show when={changes()}>
-            {(ch) => (
+          <Show when={changes() || problem()}>
+            {(_) => (
               <Show
-                when={confirming()}
+                when={confirming() && changes() && !problem()}
                 fallback={
                   <div class="spread mqs-save-row">
-                    <span class="text-caption">
-                      {changeLines(ch(), s()).length} change{changeLines(ch(), s()).length === 1 ? "" : "s"} to the project file.
-                    </span>
+                    <Show
+                      when={problem()}
+                      fallback={
+                        <span class="text-caption">
+                          {changeLines(changes()!, s()).length} change{changeLines(changes()!, s()).length === 1 ? "" : "s"} to the project file.
+                        </span>
+                      }
+                    >
+                      {(p) => (
+                        <span class="field-error" id="mqs-save-problem">
+                          {p()}
+                        </span>
+                      )}
+                    </Show>
                     <span class="button-row">
                       <button type="button" class="button button-sm button-ghost" disabled={busy()} onClick={() => discardStaged()}>
                         Discard Changes
                       </button>
-                      <button type="button" class="button button-sm button-primary" disabled={locked()} onClick={() => setConfirming(true)}>
+                      <button
+                        type="button"
+                        class="button button-sm button-primary"
+                        disabled={locked() || !!problem() || !changes()}
+                        aria-describedby={problem() ? "mqs-save-problem" : undefined}
+                        onClick={() => setConfirming(true)}
+                      >
                         {byRequest() ? saveVerb() : `Save to ${target()}`}…
                       </button>
                     </span>
@@ -567,10 +556,10 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
               >
                 <div class="mqs-confirm" role="group" aria-label="Confirm the save">
                   <p class="text-body">
-                    Save {changeLines(ch(), s()).length === 1 ? "this change" : "these changes"} to <span class="text-mono">.sova/project.json</span> {viaWords()}?
+                    Save {changeLines(changes()!, s()).length === 1 ? "this change" : "these changes"} to <span class="text-mono">.sova/project.json</span> {viaWords()}?
                   </p>
                   <ul class="mqs-confirm-list">
-                    <For each={changeLines(ch(), s())}>{(l) => <li>{l}</li>}</For>
+                    <For each={changeLines(changes()!, s())}>{(l) => <li>{l}</li>}</For>
                   </ul>
                   <p class="text-caption text-muted">
                     {byRequest() ? `It applies once it's merged into ${target()}.` : "It applies from the next landing and isn't checked first."}
@@ -581,7 +570,7 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
                     <button type="button" class="button button-sm button-ghost" disabled={busy()} onClick={() => setConfirming(false)}>
                       Cancel
                     </button>
-                    <button type="button" class="button button-sm button-primary" disabled={locked()} onClick={() => void save(ch())}>
+                    <button type="button" class="button button-sm button-primary" disabled={locked() || !!problem() || !changes()} onClick={() => { const ch = changes(); if (ch && !problem()) void save(ch); }}>
                       {busy() ? "Saving…" : props.running && !byRequest() ? "Save When It Finishes" : byRequest() ? saveVerb() : `Save to ${target()}`}
                     </button>
                   </div>

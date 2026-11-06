@@ -119,10 +119,15 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   review kit, relative to the checkout (§app.merge-queue/review); `land` (optional: `local`,
   `github-pr`, `gitlab-mr` or `push-branch`; absent: `local`), the project's way of landing, which
   this computer's own choice overrides (§app.merge-queue/strategies); and `request` (optional): the
-  folder of the project's request kit (§app.merge-queue/request-kit). With no `merge` section the queue
+  folder of the project's request kit (§app.merge-queue/request-kit); and `reuse` (optional boolean,
+  absent: true): whether checks may reuse passes from identical code (§app.merge-queue/checks),
+  `false` making every check run every file. With no `merge` section the queue
   uses `test` (§app.merge-queue/checks); with neither, the project's queue isn't set up
   (§app.merge-queue/setup). A check runs with `SOVA_VERB=merge`, `SOVA_STEP` (its id), `SOVA_OUT`,
-  `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP` and `SOVA_MERGE_CHANGED` (a file listing the changed paths).
+  `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP` and `SOVA_MERGE_CHANGED` (a file listing the changed paths),
+  and either `SOVA_FRESH=1` (a rerun that places the blame, a release's check, or reuse turned off:
+  run every file, reuse nothing) or `SOVA_REUSE_SAMPLE` (the share of reusable files to re-check,
+  0.05).
 - **`release`** (optional): how the project releases numbered versions, outside the definition's
   hash: `playbook`, `tag`, `scheme`, `channels`, `commit`, `checks` and `quietMin`
   (§app.release/settings). Absent, the project's releases aren't set up.
@@ -274,7 +279,8 @@ probe's answer).
   whatever they leave behind is killed with them. Which process listens on a port is read from
   `/proc` on Linux, else from `lsof`.
 
-Sova stops, restarts and signals only units with its own prefix and state hash, never a process it
+A requested background job runs through this same driver (§app.background-jobs/request). Sova stops,
+restarts and signals only units with its own prefix and state hash, never a process it
 did not start; an adopted unit (§app.project-services/adopt) is only read, and restarted only by the
 delayed restart an operator's confirmed `apply` schedules. A `static` service is served inside the server's process (as
 §mesh.public/preview-serve serves folders), and it is bound again when the server starts. The
@@ -354,8 +360,9 @@ nothing (§app.project-services/adopt).
 
 Both are reads. `status` of an instance reports each service as observed now (stopped, starting,
 ready, degraded, failed, or `external` when something else holds its port) with its unit, pid,
-ports and, while a process service runs, `rssBytes` (the resident memory of its unit's
-processes now), each data resource's existence, the definition's hash, and the supervisor in use
+ports and, while a process service runs, `rssBytes` (the memory its unit's processes use now,
+each process's own memory as the resource monitor measures it, §app.resource-monitor/sampling-and-history:
+on Linux resident less shared pages, on macOS resident memory), each data resource's existence, the definition's hash, and the supervisor in use
 as the one check `supervisor` (informational: it never makes `ok` false). A service the definition
 no longer declares whose unit (or static serve) still runs is listed too, after the declared ones,
 as `degraded` with its unit and pid and the detail "no longer in the definition" (a shared one:
@@ -387,7 +394,8 @@ test command") and nothing changes. Otherwise test holds the instance's lock (§
 brings up the services `test.requires` names, with what they require, as up does
 (§app.project-services/up, on-demand ones included) and waits for their readiness, then runs `run`
 with the selectors appended as its last arguments (none: whatever the command runs with no
-arguments, which for Sova's own runner is the unit tier), in the instance's
+arguments, which for Sova's own runner is the unit tier; that runner reuses passes from identical
+code as it does anywhere, §app.server-runtime/test-reuse, and counts a reused file as passed), in the instance's
 checkout, as one waited-for unit `sova-hook-<state hash>-<instance>-test` with the instance's env
 plus `SOVA_VERB=test`, `SOVA_TEST_SELECT` (the selectors as a JSON array) and `SOVA_OUT`. At its
 timeout, or when the caller aborts (a cancelled tool call), the unit is killed whole. It runs
@@ -644,44 +652,65 @@ reports its own release's steps.
 ## §app.project-services/merge-verbs — The merge verbs
 
 The merge queue (§app/merge-queue) is worked through verbs beside the deploy verbs, the same way:
-the same route (`POST /api/project-services/<verb>`), the same CLI and the same tools, each answering
+the same route (`POST /api/project-services/<verb>`), the same CLI and the same tools, each
+answering
 the one result shape with its own `merge` key (§app.project-services/result).
 
 - **Reads**: `merge.status` (a project: the queue's view, its state and why it is paused, the
   current run, the waiting line with estimates, what needs the user, what needs a fix, recent
-  landings with their runs, and the target's and pushed heads) and `merge.logs` (a run, optionally
+  landings with their runs, the target's and pushed heads, and the test checks flagged broken on the
+  target) and `merge.logs` (a run, optionally
   one step and a line count).
 - **Setting it up**: `merge.setup` (a project's checks, one test command with its time and what
-  starts first, or no automated tests; a dry run tries them, and a save commits them:
-  §app.merge-queue/setup), the user's only.
+  starts first, or no automated tests; a dry run tries them, and a save commits them), the
+  operator's only, from the routes and the CLI: no chat may call it, with or without a dry run
+  (§app.merge-queue/setup).
+- **Trying a setup**: `merge.try` (a branch, by default the caller's own, or a commit, and the release check ids to run though unchanged): runs that commit's own
+  proposed merge checks and release-only checks in the merge copy, merging and saving nothing
+  (§app.project-setup/trial).
 - **The user's**: `merge.add` (a branch or checkout, its commit by default the head, and the
-  options without its specs and without review: §app.merge-queue/approve; at a sent-back entry's
-  commit it is Land This Commit Again), `merge.cancel` (an entry: one in line, checking or
+  options without its specs and without review: §app.merge-queue/approve; at a sent-back branch's
+  head it is the re-land button, Land This Commit Again or Land Newest Commit), `merge.cancel` (an
+  entry: one in line, checking or
   waiting is taken out of the line; a Needs a fix one is Remove from Queue, cancelled as
-  "removed by you", deleting nothing), `merge.pause` and `merge.resume` (a project, with an optional why), and `merge.answer`
-  (an entry waiting for the user: `accept` a resolution, `land-anyway` over a blocking review or a failure
+  "removed by you", deleting nothing), `merge.pause` and `merge.resume` (a project, with an optional
+  why), and `merge.answer`
+  (an entry waiting for the user: `accept` a resolution, `land-anyway` over a blocking review or a
+  failure
   whose owner can't be told, or `send-back`), `merge.reply` (a merge thread's question by its id
   and the user's answer: §chat.merge-queue/asks), `merge.fresh` (a project: Start Fresh,
-  §chat.merge-queue/thread-life) and `merge.clear` (a queue chat's id, or `all`: §app.merge-queue/chats).
+  §chat.merge-queue/thread-life) and `merge.clear` (a queue chat's id, or `all`:
+  §app.merge-queue/chats).
 - **The merge thread's**: `merge.note` (an entry and at most 300 characters; empty clears it),
-  `merge.extend` (an entry, the check ids it adds and why; never removes one), `merge.resolve` (an
+  `merge.extend` (an entry, the check ids it adds, why, and a selection, `select`, for a check that
+  takes one: the slow test group, files or walkthroughs it runs; never removes one; the tool's help
+  for `checks` and `select` names the full pick and says a check that takes a selection runs bare
+  without one and fails), `merge.resolve` (an
   entry, its judgement, no behaviour change or behaviour differs, the files, both sides and the
   proposal in plain words, and the commit of its resolution), `merge.retry` (a project or entry
-  paused for the machine) and `merge.ask` (the question for the user, and the entry it is about:
-  §chat.merge-queue/asks). Each takes an optional `note`, recorded on the entry.
+  paused for the machine), `merge.ask` (the question for the user, and the entry it is about:
+  §chat.merge-queue/asks) and `merge.hold` (a project and `action`: `set` holds the queue's new
+  starts for 5 minutes, set again renewing them, and `clear` lifts the hold; it answers the hold
+  now: §app.merge-queue/empty). Each but `merge.hold`, which names no entry, takes an optional
+  `note`, recorded on the entry.
 - **The review step's**: `merge.review` (a run, its verdict `ok`, `notes` or `blocking`, and the
   reviewer's text).
 
 **Callers.**
 - The operator (the routes, the CLI, the Land and Cancel controls) calls the user's verbs (add,
-  cancel, pause, resume, answer, reply, fresh, clear, setup) and the reads, and may write a note.
+  cancel, pause, resume, answer, reply, fresh, clear, setup), `merge.try` (Run Trial) and the reads,
+  and may write a note
+  or hold the queue (`merge.hold`).
   Only the operator calls the user's verbs, with one exception: the chat a merge thread's question
   was asked in may call `merge.reply` for that question only, to pass on the user's answer.
 - A typed "land it" reaches `merge.add` as the user's approval through `worktree land`
   (§chat.worktrees/tool); no session can call `merge.add` as a tool.
 - The project's merge thread (§chat.merge-queue/thread) calls the reads and its own verbs (note,
-  extend, resolve, retry, ask), for its own project only.
+  extend, resolve, retry, ask, hold), for its own project only.
 - A review step's reviewer calls `merge.review` for its own run only (§app.merge-queue/review).
+- Any chat, the project's Setup chat included (§app.project-setup/trust), calls `merge.try` for its
+  own project; `merge.setup` and every other user's verb is `forbidden` to it, as to every chat. The
+  Overseers' `merge.try` is `forbidden`.
 - Any other chat reads its own project's queue; anything else is `forbidden`.
 
 **Only where the queue serves** (§app.merge-queue/served). Every verb, the operator's too, asks
@@ -689,11 +718,13 @@ the rule first, whichever way it names the project (a project, an entry, a run, 
 caller's folder). For a repository not on the Projects list every verb is refused with the error
 `unsupported` and "not a project the merge queue serves: merge it into main from the chat", and
 nothing is recorded or loaded. For a listed project whose merge setup isn't done only `merge.status`
-(its view says it isn't served, §app.merge-queue/view) and `merge.setup` (Initialize,
-§app.merge-queue/setup) are taken; every other verb gets that same refusal.
+(its view says it isn't served, §app.merge-queue/view), `merge.setup` (the operator's,
+§app.merge-queue/setup) and `merge.try` (§app.project-setup/trial) are taken; every other verb gets
+that same refusal.
 
 The Land, Land This Commit Again, Cancel, Remove from Queue, Pause, Resume, Accept, Send Back, Land
-Anyway, Start Fresh, Send Answer, Clear and Clear All actions are catalogue commands pointing at these verbs (§app/commands).
+Anyway, Start Fresh, Send Answer, Clear, Clear All and Run Trial actions are catalogue commands
+pointing at these verbs (§app/commands).
 
 ## §app.project-services/self-host — When the project is Sova itself
 
@@ -707,7 +738,9 @@ chat, worker and hidden chat runs in a process of its own (§app/chat-processes)
 restarting the server cuts none of them off. Instances of the project's other worktrees
 are not affected: their verbs follow the ordinary rules. When slot 0 adopts a unit
 (§app.project-services/adopt), of this project or any other, the same rule guards its `apply`, and
-`down`, `reset` and `teardown` of it are refused outright.
+`down`, `reset` and `teardown` of it are refused outright. `apply` of this server's own checkout passes
+only on your own page, or a page on another of your computers with its proof, whatever the `confirm`
+(§app.access/your-click): anything else answers `forbidden`, in the refusal of §design.copy-deck/your-click.
 
 ## §app.project-services/adopt — Slot 0 adopts a unit Sova did not start
 
@@ -724,7 +757,8 @@ hash. Every other slot runs the service as usual, on its allocated ports.
 On an adopted slot 0, Sova only reads the unit (`systemctl --user show`; on macOS `launchctl print
 gui/<uid>/<label>`, with when its main process started and the memory of that process's tree read
 from `ps`), whatever its supervisor:
-status shows the service with the unit's name, its main pid, resident memory and readiness on the
+status shows the service with the unit's name, its main pid, its memory (its processes' own memory,
+measured as for any other service, §app.project-services/status-logs) and readiness on the
 unit's ports, `ready` once that answers, else from the unit's state, and a detail saying it is the
 adopted unit and when it started (for the server's own unit, "this server" and the commit it
 loaded); the copy is wanted running. Logs read the unit's journal (on macOS, the last lines of the
@@ -785,7 +819,9 @@ The operator sees and drives every running copy from two places, both on this ho
   null), usable (how many slots of 1 to 16 the layout can use), unavailable (one sentence per unusable slot), estimate (what a copy takes, or null), host: {totalBytes, availableBytes}}`. It is read every 5 seconds while the tab shows. One row per copy: the main checkout's (slot 0) first, named
   `main`, then each branch copy by slot. A row shows the branch, `slot {n}`, each checkout service's
   ports (a port with HTTP readiness is a link to the site at `http://<this page's host>:<port>/`, never the readiness check's path), the copy's
-  memory (the sum of its services' resident memory, "—" when none reports one), its state as a chip
+  memory (the sum of its services' memory, each process's own memory as the resource monitor
+  measures it, so it reads what a project card's Memory in use counts for that copy,
+  §app.projects/home-glance; "—" when none reports one), its state as a chip
   (Running, Starting, Degraded, Stopped, Absent; Starting while the copy is degraded only because a
   service is still starting, none failed or degraded; a service that is not ready is named under the
   row with its state), and who created it ("by you", "by a coding session", "by its overseer", "by the Overseer",
@@ -994,8 +1030,8 @@ the operator's alone. Outside that act a project overseer's or the assistant's `
 `deploy.run` is `forbidden` ("A deploy is the operator's: raise it with deploy.request {target,
 commit?, why}, and the operator opens its plan."). `deploy.rollback` and clearing a deploy request are
 the operator's alone (`sova-project deploy.rollback --target <name> --confirm`). `deploy.request` is
-the overseers' and the assistant's, always, with `deploy` Off too; a coding session's is
-`forbidden`. Conformance and Sova on its own never deploy, and a coding session never ships or asks.
+the overseers' and the assistant's, always, with `deploy` Off too; a coding session's, the Setup
+chat's included (§app.project-setup/trust), is `forbidden`. Conformance and Sova on its own never deploy, and a coding session never ships or asks.
 Each verbs tool's own description says who ships through it: the project overseer's, that `deploy.run` (or
 `deploy.plan`) sets off the project's deploy act under the deploy power, with no overrides, and that
 `deploy.rollback` is the operator's; a coding session's, that it never ships or asks; the global Overseer's,

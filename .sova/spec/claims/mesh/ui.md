@@ -18,8 +18,13 @@ host with no peers. Every browser address on the page (the front door's own and 
 front door) is a link that opens it in a new tab, with a copy button beside it that confirms
 "Address copied". While the mesh is on, each host's line (this host's and every peer's) also names
 the Claude login it holds from the pool (§app.claude-logins/pool): "Claude: {email}" ("+N" when it
-holds more than one), or "No Claude login"; it opens Settings → Accounts, and its tooltip lists
+holds more than one), or "No Claude login"; it opens Settings → Accounts → Claude, and its tooltip lists
 what the host holds or says that it borrows a login when it needs Claude.
+
+While the mesh is on, each peer's line also shows its state in the words every screen uses
+(§mesh.compatibility/marks). A host that works fully on another build shows no amber: its line just
+says it is on another build, with where that build sits against this host's when it can be placed
+(§mesh.peers/resync).
 
 While the mesh is on, each peer's line also carries "What {peer} can see here" (§mesh.peers/grants): its
 preset, and a list of every capability, each with its switch and what it means in plain words. Sessions
@@ -30,6 +35,11 @@ on {peer}" is read-only, learned from that peer's answers. The add-peer form has
 `presence` unless the user picks more. When `mesh-access.json` can't be read, the page says so, and that
 every peer gets hello only until it is fixed.
 
+When `peers.json` doesn't belong here (§mesh.peers/allowlist), the page says why in one line: it was
+moved from another folder, copied from another computer, not yet confirmed, or is a copy of a Sova
+whose folder still exists on this computer. For the first three it shows **Reconnect Here**, which
+moves the record here and turns the mesh on; for a copy whose folder still exists it shows none.
+
 ## §mesh.ui/settings — Settings → Mesh
 
 Settings has a Mesh section: this host's name, a toggle per sync category (settings, themes,
@@ -37,4 +47,8 @@ extensions, logins), under Logins a "Sync subscriptions to this host" switch tha
 mode on or off (§mesh.sync/api-keys-only), and the front-door address. The switch shows only while
 the mesh and login sync are on — login sync as set on the form. The section is Save-gated: every
 field and switch is staged and written by the dialog's Save Changes, which sends only what changed
-(§app.settings-dialog/save-bar).
+(§app.settings-dialog/save-bar). The two typed fields are checked before Save, by the same rule
+the server's save applies: the name can't be blank and is at most 80 characters; the front door,
+when set, is an http:// or https:// address of a scheme, host and port only. While either fails,
+its box is red, its line says why and Save waits ("Mesh: {why}"); a save that reaches the server
+anyway is refused in the same words.

@@ -114,12 +114,14 @@
       "src/components/SessionView.tsx",
       "src/components/VoiceInput.tsx",
       "src/design/base.css",
-      "src/lib/chat-wait.ts"
+      "src/lib/chat-wait.ts",
+      "src/components/WatchView.tsx",
+      "src/components/HostStateNotices.tsx"
     ],
     "agreed": {
-      "by": "Omar (user)",
-      "at": "2026-10-28T13:24Z",
-      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+      "by": "user (omar)",
+      "at": "2026-11-03T22:11Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
     }
   },
   "§chat.composer/file-index-deadline": {
@@ -178,6 +180,28 @@
       "server/session-summary-chat.test.ts",
       "server/claude-login-state.ts"
     ]
+  },
+  "§chat.composer/land-confirm": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.composer/worktrees-control",
+      "§chat.worktrees/pane",
+      "§app.merge-queue/view",
+      "§app.merge-queue/approve",
+      "§app.merge-queue/strategies"
+    ],
+    "code": [
+      "src/components/WorktreesModal.tsx",
+      "src/components/MergeQueueTab.tsx",
+      "src/app.css"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T21:36Z",
+      "source": "pi-session:6295e4a0-38a1-4768-a7a6-2787ccf54172#23af1717"
+    }
   },
   "§chat.composer/memory-status": {
     "kind": "behavior",
@@ -287,7 +311,7 @@
   "§chat.composer/worktrees-control": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§chat/worktrees",
       "§chat.worktrees/pane",
@@ -297,14 +321,17 @@
       "§chat.timeline/inputs-only",
       "§chat.changes/viewer",
       "§chat.changes/endpoint",
+      "§chat.composer/land-confirm",
       "§chat.merge-queue/chat-card",
       "§app.merge-queue/run",
-      "§chat.worktrees/ready-to-land"
+      "§chat.worktrees/ready-to-land",
+      "§app.merge-queue/owner",
+      "§app.merge-queue/branch-summary"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T14:54Z",
-      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
+      "at": "2026-11-05T19:18Z",
+      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
     },
     "code": [
       "src/components/WorktreesControl.tsx",
@@ -331,7 +358,10 @@
       "shared/merge-queue.ts",
       "server/merge-queue/view.ts",
       "server/docs-preview.ts",
-      "server/spec-drafts-state.ts"
+      "server/spec-drafts-state.ts",
+      "src/components/BranchSummary.tsx",
+      "shared/protocol.ts",
+      "server/merge-queue/verbs.test.ts"
     ]
   },
   "§chat/composer": {

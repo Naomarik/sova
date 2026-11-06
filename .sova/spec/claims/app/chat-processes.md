@@ -38,6 +38,8 @@ workers, dialogs and refusals. What differs is what survives a server restart
   answers any request, while it is still taking the chats back), through a reload's replacement,
   until the server has stopped, so a chat process never reads as a terminal holding its file (a
   session message, auto-resume and attention see it as the server's).
+- **Background jobs run on.** A chat's background jobs run outside its process and outside the
+  server, so they keep running (§app/background-jobs).
 - **Browsers carry on.** A pane that reconnects mid-reply shows the reply so far and keeps
   streaming it (§chat.transcript/streaming).
 - **Dialogs stay open.** A question an extension asked stays open while no server is connected,
@@ -73,13 +75,15 @@ death: nothing is reported and nothing is resumed.
   server, which sends it once it has taken back its chats. A run that resume started and that is cut off again is not resumed a
   second time. A process that stopped because it was asked to (idle, archived, a code reload, the
   chat closing itself) is never resumed, and a server restart is never a death.
+- **Its background jobs live on.** A job the chat kept is outside the process that died and keeps
+  running; what it hadn't kept dies with it (§app.background-jobs/keeping).
 
 ## §app.chat-processes/server-actions — Server actions from a chat process
 
 An ordinary chat receives `record_tour` and `show_tour` only while vis is on; align's Visuals alone does not enable either tool. A hand-off's already-reviewed, scoped `show_tour` is separate baseline context, never recording access (§app.tours/authoring).
 
 A few tools act on the server's own state: `project_verbs` (a project's running instances) of an
-ordinary chat, a worker or a team member (§app.project-services/callers), `queue_push` (a topic's queue), `offer` (a project's offer cards, §chat.offers/tool) and the tool-backed tour actions `record_tour` and `show_tour` (§app.tours/authoring); every tool of the Overseer, a project overseer and a
+ordinary chat, a worker or a team member (§app.project-services/callers), `background_job` (§app.background-jobs/request), `queue_push` (a topic's queue), `offer` (a project's offer cards, §chat.offers/tool) and the tool-backed tour actions `record_tour` and `show_tour` (§app.tours/authoring); every tool of the Overseer, a project overseer and a
 baton session, their file tools (`read`, `grep`, `find`, `ls`, `write`, `edit`) included; and a
 powers chat's `queue_open`. Some of what a chat does without a tool acts on it too: a baton
 composer's message (who sent it, and the statechart's note of it), saving the model or thinking a
@@ -148,9 +152,14 @@ with its output in `<state root>/chats/logs`; it reads processes from `/proc` on
 is made once at start and logged. The
 process is the server's own Bun running `server/chat-runtime/main.ts` from its code generation's
 copy, with that copy as its working directory (§app.chat-processes/code-generations; the checkout
-itself only when no copy could be made, never the chat's own folder). Stopping it sends SIGTERM to the chat's process and, 30 s later,
-SIGKILL to whatever is left of its unit (`KillMode=mixed`) or its session. There is no `Restart=`:
-nothing but the server ever starts a chat again.
+itself only when no copy could be made, never the chat's own folder). Stopping it sends SIGTERM to the chat's process. In a unit
+(`KillMode=mixed`), the moment that process exits, whether from the stop or on its own (an idle
+close, a reload, a crash), SIGKILL ends whatever is left of its unit at once, with no warning; one
+that hasn't exited 30 s after the SIGTERM is ended with it. In a detached session, what is left of
+the session gets SIGKILL 30 s later, and a tool command, which runs in a session of its own, isn't
+reached. A background job has left the unit and isn't touched (§app.background-jobs/keeping); what a
+command left that wasn't kept ends with it. There is no `Restart=`: nothing but the server ever
+starts a chat again.
 
 - **Environment.** The chat's process gets the server's environment, minus the service manager's
   per-unit variables (`INVOCATION_ID`, `NOTIFY_SOCKET`, `LISTEN_*`, `WATCHDOG_*` and the like), `PWD`
@@ -158,10 +167,11 @@ nothing but the server ever starts a chat again.
   directory of the Claude program the server resolved, then the server's `PATH`. It also gets
   `HOME`, `PI_CODING_AGENT_DIR` and the chat's own `SOVA_CHAT_*` (among them the checkout's and the
   copies' places, `SOVA_CHAT_LIVE_ROOT` and `SOVA_CHAT_COPIES_ROOT`), and its own key,
-  `SOVA_CALLER_KEY` (§app.command-audit/keys), and `GIT_CONFIG_SYSTEM` naming Sova's git system
+  `SOVA_CALLER_KEY` (§app.command-audit/keys), `SOVA_URL`, its own server's address on the port it is
+  really bound to, left out when the server is bound to one address loopback can't reach, and `GIT_CONFIG_SYSTEM` naming Sova's git system
   config, so nothing it runs starts git's background cleanup (§app.git-cleanup/no-background). A chat process's own
   variables (`SOVA_CHAT_SOCK`, `_PATH`, `_ID`, `_UNIT`, `_BUILD`, `_STATE_ROOT`, `_LIVE_ROOT`,
-  `_COPIES_ROOT`, and `SOVA_CALLER_KEY`) are never passed on from the server's environment, and a server deletes them from
+  `_COPIES_ROOT`, `SOVA_CALLER_KEY`, and `SOVA_URL`) are never passed on from the server's environment, and a server deletes them from
   its own at start, so a server started from a chat's tools never acts as that chat or its server. All of it is passed in a file only
   the user can read, never on a command line. A variable that file can't carry (a name that is no
   variable name, or a value on more than one line) is left out, and the server logs its name once.
@@ -201,18 +211,21 @@ nothing but the server ever starts a chat again.
 A chat's process with nothing in flight (no reply, compaction, queued message, open dialog,
 working worker or server action) is asked to close after 30 minutes like that
 (`SOVA_CHAT_IDLE_MIN`, in minutes, fractions allowed; 0 is never), whether or not a browser tab
-has it open: an open tab doesn't keep it running. The chat checks again that it is still quiet,
+has it open: an open tab doesn't keep it running, and neither does a pending wake nudge or a
+running background job. The chat checks again that it is still quiet,
 and refuses otherwise, which restarts the clock. A chat that accepts but has not exited 30 s later
 is stopped. That stop only ever reaches the process that accepted: a chat started again while it
 closes (someone sent to it, say) waits, as for any previous process still exiting (up to 10 s,
 §app.chat-processes/supervision), until that close is done, and its new process is never stopped
-by it, under either driver. An idle stop is not a death and never gets a "continue". A tab that had it open keeps
+by it, under either driver. An idle stop is not a death and never gets a "continue". Its background
+jobs keep running (§app.background-jobs/keeping). A tab that had it open keeps
 its rows and draft and doesn't reconnect: its socket, a reconnect or a server restart never starts
 the chat again; only something that needs the chat does, such as sending from that tab
 (§chat.transcript/instant-open, "A chat closed while its tab is open"). The chat stays closed until
 someone sends to it or acts on it, opens it (a click, a reload, every pane of a workspace), brings
-its workspace tab to the front (§workspace.groups/layout-tabs), or another chat or the Overseer
-sends it a message, which starts a new process; a jump in its Timeline or scrolling up for older
+its workspace tab to the front (§workspace.groups/layout-tabs), another chat or the Overseer
+sends it a message, a wake nudge of its comes due (§chat.wake-nudges/on-time) or a background job's
+end card comes for it (§app.background-jobs/end-card), which starts a new process; a jump in its Timeline or scrolling up for older
 rows doesn't, they read the file (§chat.transcript/instant-open). An archived chat is the
 exception: none of these starts it until someone unarchives it; opening it reads its file, and the
 rest is refused (§chat.transcript/instant-open, "An archived chat"). Its `hello`
@@ -229,7 +242,8 @@ of a run in flight, which belongs to the process that has the chat open.
 A reply in flight or an open dialog keeps it running until that ends; a pane left attached when
 the server went does not. To stop them at once instead, `bun scripts/stop-chats.ts [--agent-dir <dir>]` stops every chat
 process the install's state root records, through its records and driver (never a process found by
-name), each as an operator stop.
+name), each as an operator stop, and every background job of that state root
+(§app.background-jobs/stopping).
 
 ## §app.chat-processes/code-pickup — Picking up new code
 
@@ -240,7 +254,8 @@ overrides it for tests; an unknown build means no badge). A chat whose build dif
 to reload at a quiet moment: when nobody is attached, or after 5 minutes quiet. "Reload Now" asks at
 once when the chat is quiet, else when its reply ends. Its workers don't hold a reload: they run in
 processes of their own, keep working through it and are reattached (§app.chat-processes/workers);
-only a working worker of another backend, which runs inside the chat's process, still holds it. Reloads run one
+only a working worker of another backend, which runs inside the chat's process, still holds it. Nor
+do its background jobs, which keep running through it (§app.background-jobs/keeping). Reloads run one
 at a time. The server first starts a replacement process and waits up to 30 s for it to boot; only
 then does it ask the old process to close. The old process refuses if it is no longer quiet; the
 replacement is then stopped, and the reload is tried again later. A reload the person asked for ("Reload Now")
@@ -347,6 +362,8 @@ notes stay the server's (§app.chat-processes/server-actions). A previous conver
 read-only is refused before any process starts. An organization's statechart engine runs only in
 the server: a chat process that tries to open one is refused.
 
+- **Wake nudges.** A pending nudge brings a shut-down Overseer or project overseer back as it does
+  any chat (§chat.wake-nudges/kinds).
 - **Each run asks.** At each run's start the chat asks the server for that run's prompt and run
   note; a baton's also brings its abilities, its owner areas and who wrote what. A compaction's note
   and the Overseer's id check are asked the same way. With no server it waits up to a minute, then
@@ -433,14 +450,16 @@ passes its events back. A worker never runs inside the server's process.
 - **Trust.** A worker trusts its project's local files as every Sova chat does.
 - **MCP servers.** A worker or team member gets only the servers its parent named, and a hidden
   chat gets none (§app.mcp/who-gets).
-- **Archiving or deleting the parent** stops its workers.
+- **Archiving or deleting the parent** stops its workers and their background jobs, and cancels
+  their wake nudges (§app.background-jobs/stopping, §chat.wake-nudges/archive).
 - **Idle workers.** A waiting worker's process stops after the idle-stop time like any chat's
   (§app.chat-processes/idle-stop). It is still listed waiting and still takes a live slot, and its
-  next instruction reopens it in a new process, under its recorded loadout.
+  next instruction reopens it in a new process, under its recorded loadout. So does a wake nudge or a
+  background job's end card, through its parent (§chat.wake-nudges/kinds).
 - **Team mailboxes are kept.** A team's mailbox lives under the parent session's teams directory
   and is kept across reloads and restarts: a reattached or resumed member keeps its inbox, requests a
   member wrote while its parent was away are handled once the parent is back, and pending wake
-  nudges are kept, held or not, and fire after a reload.
+  nudges are kept, held or not, and armed again when the parent starts (§teams.defaults/wake-nudge).
 - **Extension sources.** Each worker loads its usual extensions plus those `agent_spawn`'s `extensions` names. Every extension Sova ships, and every local path, loads with no install step. An outside `npm:` or `git:` source that isn't installed (or whose installed copy doesn't match its pinned version) is refused at spawn with one line: "<source> isn't installed: install it first (`pi install <source>`)".
 - **Hidden chats.** An `/explain` or hand-off fork still running when its parent reloads is
   reattached and settles when it finishes; it reads interrupted only when its chat is gone (the
@@ -470,7 +489,8 @@ resumed run, or the reopen failed) it ends: its status is error, with the error 
 worker's process stopped unexpectedly (exit N | signal S | it stopped answering)" followed by
 "Last output: …" with its log's last 20 lines, at most 2 KB, the newest kept. No second continue is
 sent. Either way, an instruction the worker had accepted whose message it never ran goes with the
-dead process, and is reported as never run (§app.chat-processes/worker-instructions).
+dead process, and is reported as never run (§app.chat-processes/worker-instructions). A background
+job the worker kept keeps running (§app.background-jobs/keeping).
 
 A server restart is never a death, nor is a stop the server asked for (idle, a code reload, an
 archive, a kill): nothing is reported and nothing is resumed.

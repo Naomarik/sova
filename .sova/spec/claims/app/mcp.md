@@ -40,7 +40,12 @@ is saved apart from the list (§app.mcp/secrets). Edit has the same fields.
   nothing. A pasted entry that says `${NAME}` is taken at its word: the new row asks for
   `NAME`, and the form has no Secret field.
 - **Names.** A name already on this computer's list is refused. A Secret's Name is letters, digits
-  and underscores.
+  and underscores, starting with a letter or an underscore. Both are said before the press: in Add
+  Server, a Name another server on this computer already has (trimmed, exact) turns the Name box red
+  with "There's already a server named {name}." under it, and on the Command way a Secret's Name
+  that breaks the rule turns red with "A secret's name is letters, digits and underscores."; Add
+  and Check (Save and Check, for the secret's name, in Edit) is disabled until it's fixed. The
+  server's refusals stay as they were.
 - **Edit keeps what it doesn't show.** It changes only what its fields name: the entry's other
   values, headers and folder stay as they were, and a saved secret stays saved. Changing an address
   server to a command, or back, makes a new entry instead.
@@ -118,7 +123,8 @@ value is masked in them (§app.mcp/secrets).
 
 **Sign In** opens a dialog and the service's sign-in page in a new tab. Sign-in finishes on the
 computer running Sova. From anywhere else, a phone or another computer, the sign-in page ends on an
-address that won't load, and the person pastes that address into the dialog to finish. Only the
+address that won't load, and the person pastes that address into the dialog to finish; a
+sign-in that fails says why under that address box. Only the
 page can sign in (§app.mcp/approval's refusals), and only for an approved server. The sign-in is
 saved on this computer outside every repository, is never shown and never copies to another
 computer. A Check follows. A sign-in that expires reads Needs Sign-in at the next Check. A call that
@@ -171,7 +177,9 @@ who wrote a file. Adding or editing on the page counts as approving, so normal u
   repository, and it never copies to another computer. No branch or clone carries an approval.
 - **What you approve is what you saw.** The request carries the version the page showed and is
   refused when the entry has changed since.
-- **Only the page approves.** A chat, script, extension, Overseer or another computer is refused. A
+- **Only the page approves.** A chat, script, extension, Overseer or another computer is refused, and so
+  is a call that doesn't show itself as the page by the install's cookie on the main listener, as at
+  every approval of §app.access/your-click. A
   project overseer's Settings change card never approves a server. Approving is a trust grant: it is
   no catalogue command (the commands inventory classes it so) and no agent tool reaches it.
 - **Nothing runs before approval.** No Check, no sign-in, no copy in a chat. Every start checks the

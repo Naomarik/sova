@@ -50,6 +50,8 @@ export interface QueueFile {
   /** Open entries in line order first is not implied: order by `seq`. Final ones kept (newest 60). */
   entries: (MergeEntry & { seq: number })[];
   paused?: PauseInfo;
+  /** The merge thread's hold (merge.hold): no new run starts until `until` (epoch ms) or its clear; cleared at start. */
+  hold?: { at: string; until: number };
   intent?: LandIntent;
   /** A publication in flight (request strategies). */
   publish?: PublishIntent;
@@ -61,12 +63,14 @@ export interface QueueFile {
   knownTarget?: string;
   /** Commits the queue moved the target to (tips, docs commits are inside them), newest last: the push rule reads them. */
   landed: string[];
-  heads: { pushed?: string; pushWhy?: string; targetRed?: string[] };
+  heads: { pushed?: string; pushWhy?: string; targetRed?: string[]; targetBroken?: import("../../shared/merge-queue").TargetBroken[] };
   /** Machine failures in a row, per entry (retry once, then pause). */
   machineTries: Record<string, number>;
   /** A settings save waiting for the branch checking now (applied at the next quiet point); `failed`: why it couldn't be. */
   pendingSave?: { at: string; changes: import("../../shared/merge-queue-settings").MergeSettingsChange; failed?: string };
   seq: number;
+  /** merge.try's trials, newest first (MERGE_TRIALS_KEPT), each pinned to its commit. */
+  trials?: import("../../shared/merge-queue").MergeTrial[];
   /** A release holds the queue: only its entries land, nothing is pushed (queue.ts freezeForRelease). */
   release?: import("../../shared/merge-queue").MergeReleaseHold & { checks?: import("../../shared/project-contract").MergeCheckDecl[] };
 }

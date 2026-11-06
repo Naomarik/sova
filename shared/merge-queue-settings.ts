@@ -52,6 +52,8 @@ export interface MergeSettingsChange {
   /** How it lands, in the project file (`merge.land`; "local" removes the key, the default). */
   land?: import("./merge-queue").LandHow;
   checks?: Record<string, { timeoutSec?: number; rerun?: boolean; optional?: boolean }>;
+  /** Reuse passes from identical code (`merge.reuse`; true removes the key, the default). */
+  reuse?: boolean;
 }
 
 /** Sova's fixed values: shown, never changed here. */
@@ -75,7 +77,7 @@ export interface MergeQueueSettings {
   editBlocked?: string;
   /** A save waiting for the branch checking now, or for the release holding the queue. `release`: that release, as
    *  shown ("release v0.4.0"), read from the hold now, so it goes when the hold lifts (settingsWaitingWords). */
-  pendingSave?: { at: string; changes: MergeSettingsChange; release?: string };
+  pendingSave?: { at: string; changes: MergeSettingsChange; failed?: string; release?: string };
   landing: {
     target: string;
     /** null: absent, so it pushes when origin exists. */
@@ -84,6 +86,8 @@ export interface MergeQueueSettings {
     names: { setUp: boolean; count: number };
   };
   checks: { mode: "declared" | "test-command" | "none" | "unset"; list: MergeCheckSetting[] };
+  /** Checks may reuse passes from identical code (`merge.reuse` isn't false). Absent: on. */
+  reuse?: boolean;
   setup: { steps: { id: string; label?: string }[] };
   install?: { inputs: string[]; timeoutSec: number };
   review: {

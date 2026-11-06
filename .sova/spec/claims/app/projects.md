@@ -2,7 +2,8 @@
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 A **project** is a folder (a git checkout root, or a plain folder) the operator has explicitly
-registered. Every registered project has the project page, its overseer, coding sessions with their
+registered. Every registered project has an icon (§app.projects/icon), a card at the top of the
+overview (§app.projects/home-cards), the project page, its overseer, coding sessions with their
 worktrees, costs, previews and running instances (§app/project-services), whether or not an
 organization places it, and every session run in its folder is listed as its own, however it was started
 (§app.projects/folder-sessions). An organization only **places** a project and adds its own concerns
@@ -75,10 +76,12 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
 ## §app.projects/list — The Projects page and the sidebar's Projects region
 
 - `GET /api/projects` lists every project known here: the standalone ones and those placed in each
-  attached org, each `{id, name, root, origin, remote?, createdAt, archived?, space}` where `space`
-  is `{kind: "standalone"}` or `{kind: "org", orgId, orgName}`. It is a union read from the engines,
+  attached org, each `{id, name, root, origin, remote?, createdAt, archived?, space, icon?}` where `space`
+  is `{kind: "standalone"}` or `{kind: "org", orgId, orgName}`, and `icon` is there only while the
+  project shows a picture (§app.projects/icon). It is a union read from the engines,
   never a copy.
-- `#/projects` lists them as rows linking to `#/projects/<pid>` (name, folder, and "In {org}" when
+- `#/projects` lists them as rows linking to `#/projects/<pid>` (the project's icon at 24px, a
+  project on a peer showing its letters, §app.projects/icon; name, folder, and "In {org}" when
   placed), archived ones apart, with **Add Project** opening the Add Project dialog (Folder ·
   Clone from GitHub). Under them, **Running branches** lists what runs on this host now, every
   project's, each with a Stop, a branch's name linking to its app's entry while the project
@@ -116,6 +119,240 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
   yet. Add one on the Projects page.", "Projects page" a link to `#/projects`. It is listed once the session list loads, even
   empty, except when a search finds nothing in it. Where Needs you names where an item of a standalone project
   waits, it says Projects.
+
+## §app.projects/home-cards — Your projects first on the overview
+
+The overview's first section (§chat.transcript/landing-page, part 2) is a grid of project cards,
+so the first thing read is which project needs you, what is waiting to land and what is running,
+and a chat in any of them is one press away.
+
+- **Which projects.** Every project registered on this host that is not archived
+  (`GET /api/projects`, §app.projects/list), standalone and placed alike, in one grid: a placed
+  project is never grouped under its organization; its second line names it, and the overview's
+  Organizations card still leads to each org. Archived projects and the projects of your other
+  computers are not shown; the Projects page lists both.
+- **The head.** The `Projects` section eyebrow, with an `All Projects` link to `#/projects` at its
+  right.
+- **A card** (`.card.overview-project-card`), top to bottom: its head, the Chats group, the Runtime group,
+  the progress zone while something moves, and the foot bar. Cards in one row are the same height,
+  the foot bar pinned to each card's bottom.
+- **The card's head is its Needs you band.** The project's icon at 40px (§app.projects/icon), its
+  name on one line (cut with an ellipsis, the whole name as its `title`) and a second line: `In
+  {org name}` for a placed project; otherwise its folder, with the home folder shortened to `~` and
+  the full root as its `title`. On the right: while something in the project needs you, the count
+  in large figures over `Needs you`, the head tinted in the warn tone and the card's border warn,
+  as the Sessions card's is; otherwise `Nothing needs you`, muted. The head is the card's link to
+  its page, `#/projects/<pid>` (§app.organizations/project-page), with a chevron.
+  - `Needs you` counts the Needs-you region's rows among the project's chats
+    (§app.session-list/needs-you: the same rows and the same proactivity rule, so every card reads
+    `Nothing needs you` while the region would list nothing). A project's chats are the main
+    threads listed as its (`SessionSummary.project` naming its id, §app.projects/folder-sessions).
+- **Chats**, a caption with `{n} open` at its right, over two rows:
+  - **Open chats**: the project's chats still open, neither archived nor done: the same count the
+    sidebar's project heading shows (§app.projects/list). While any of them is working it reads
+    `{n} · {w} working`; working is a live record saying `working`, or a web session the server
+    reports busy, as the Sessions card counts it. It opens the project's page.
+  - **Archived chats**: how many of the project's chats are archived. It is not a link (there is no
+    list of one project's archived chats): no chevron, no hover, and a press on it opens nothing.
+  - A chat that is done but not archived (an ended terminal chat) counts in neither row.
+- **Runtime**, a caption with the project's memory in use at its right, `idle` while that is 0, or
+  `no project setup` for a project with no project file (`.sova/project.json`), over three rows:
+  - **Ready to merge**: how many branches the project's Merge Queue tab lists under `Ready to land,
+    not approved` (§app.merge-queue/view), with a success dot while above 0, then `· {k} in line`
+    while approved branches wait or are being checked. It opens the Merge Queue tab,
+    `#/projects/<pid>/merge-queue`. A muted `…` while the queue serves the project but its first
+    view since Sova started is still being read. `—` for a project the merge queue doesn't serve,
+    and then the row is not a link.
+  - **Running slots**: one pip per slot of the copy limit, one lit per running copy, and `{r} of
+    {cap}`: the running copies against the copy limit, as the Branches tab counts them (the main
+    checkout's and conformance's copies never count, §app.project-services/instances). `0 of 4`
+    while none runs. `—` for a project with no project file. It opens the Branches tab,
+    `#/projects/<pid>/branches`.
+  - **Memory in use**: a thin bar and the figure (`640 MB`, `2.4 GB`): what the project's chats
+    and running copies use now (§app.projects/home-glance). The bar fills by the project's share of
+    this machine's total memory. `0 MB idle` while nothing of it runs. A
+    project with no project file still shows what its chats use. It opens the Branches tab while
+    the project has a project file; otherwise it is not a link.
+  - A row that opens something tints on hover and carries a chevron; a row with nothing to open
+    has neither.
+- **The progress zone**, thin rows just above the foot bar, shown only while something moves; each
+  is one link, and the zone is absent when nothing moves:
+  - **Landing**, while the project's queue is checking a branch: `Landing {branch} · step {n} of
+    {m}` with `~{n} min left`, a segmented meter (the landing bar's segments, §app.merge-queue/landing-bar:
+    {m} counts every segment it draws), and `started {when} · takes ~{n} min · {k} in line` (no `in line` part while none
+    waits). It opens the Merge Queue tab.
+  - **Frozen for a release**, while a release holds the queue, landings wait on it and no run of
+    the queue's is checking: `Merge queue` `Frozen for a release`, `{n} waiting` at its right, with
+    "{target} is frozen for release {tag}" under it, as the Merge Queue tab says it. While a release's own check runs, the Landing row's last part reads `{n}
+    waiting for {tag}` instead. It opens the Merge Queue tab.
+  - **Release**, while a release is open, or published or withdrawn with steps still to finish:
+    `Release {tag} · Step {i} of {n}` (`New release` until its tag is picked), the Releases tab's
+    state chip in its words (`Preparing`, `Checking`, `Ready to publish`, `Publishing`, `Publish
+    failed`, `Published, finishing`, `Withdrawn, finishing`; `Held for you` while its step is
+    held), a segmented meter (one segment per step), and the step's name (`{label}, held for you`
+    while held) with `{k} done` (§app.release/tab). It opens the Releases tab,
+    `#/projects/<pid>/releases`.
+- **The foot bar**, pinned to the card's bottom on the sunken tone: **New Chat** on the left,
+  `Active {relative time}` beside it (the newest activity among its chats, `src/lib/format.ts`, the
+  exact stamp as its `title`; `No chats yet` when it has none), the first thing cut (with an
+  ellipsis) when the card is too narrow for it, and **⋯** on the right.
+  - **New Chat.** One press starts a chat in the project at once, with no dialog: exactly what New
+    Session's Project tab starts (§app/new-session-dialog, §app.project-overseer/new-coding-session:
+    in the project root, on the project's coding model and thinking, `worktree: "later"`, so it
+    cuts its own branch once the work has a name), then opens it with the composer focused. While
+    it starts the button is disabled and reads `Starting…`; when the start fails the card says
+    `Couldn't start a chat: {reason}`.
+  - **The ⋯ menu** (`Project actions · {name}`): `New Chat…` (the New Session dialog with its folder
+    set to the project's root, to pick a model, a branch or a subfolder), `Overseer` (the project's
+    overseer), `Merge Queue`, `Branches` and `Settings` (those tabs of its page).
+- **Nothing on the card lands anything.** Ready to merge and the progress zone only say what the
+  queue and the release hold; approving a branch stays with the places that show the commit
+  approved (§app.merge-queue/approve), and publishing a release with the Releases tab.
+- **What updates when.** The head's count and the Chats group come from the session list and the
+  attention digest the page already has: they add no read and update live. Ready to merge, Running
+  slots, Memory in use and the progress zone come from one read of every card's figures
+  (§app.projects/home-glance), made when the section shows and every 30 seconds while it is shown,
+  with the project list's own read (also after Add Project). Until that read first answers, and
+  while it fails, those three rows read `—` and the zone is absent; the next poll tries again.
+- **Order.** The projects that need you first; then the most recently active (the newest activity
+  among its chats, or when it was added for a project with no chats), newest first; then by name.
+  The counts update live but the cards don't move while the overview is shown: the order is set
+  once, on each visit, when the projects, the session list, the attention digest and the Overseer's
+  proactivity have all been read (until then the cards keep the live order, so the ones that need
+  you are never buried), and a project added meanwhile joins at the end, so a card never jumps
+  under your finger. The next visit sorts afresh.
+- **Many projects.** Up to 8 cards show, 6 while the grid is one column; under them `Show all
+  {n}` shows the rest in place and `Show fewer` folds them back. With more than 8 cards (an
+  archived project has none, so it never counts) a `Filter projects` search field sits above the
+  grid: it matches names, ignoring case, and shows every match whatever the limit; with no match
+  it reads `No project matches "{text}"`.
+- **Add Project.** The grid's last tile is a dashed `Add Project` tile, always but while a filter
+  is on. It opens the Add Project dialog (a folder, or Clone from GitHub; §app.projects/registration,
+  §app.projects/clone), and the new project is listed once it is added.
+- **Empty, loading, failed.** With no project the section holds one card: `No projects yet`, "Add a
+  folder or clone a GitHub repository and it shows up here." and an `Add Project` button. Before the
+  first read answers it reads `Reading projects…`; a failed read says "Couldn't read projects.
+  Trying again shortly." and the next poll tries again.
+- **Widths.** The columns follow the overview's own width (the `overview` container), never the
+  window's: one column under 560px (a phone, a folded Fold), two from 560px (an open Fold), three
+  from 900px (a desktop). The 8-or-6 limit changes at the same 560px. Every card has the same
+  layout at every width; there is no compact card. Nothing scrolls sideways, and in one column
+  every row and button is at least 44px tall.
+
+## §app.projects/home-glance — What the project cards' runtime figures read, and what they cost
+
+The project cards' Ready to merge, Running slots, Memory in use and progress zone
+(§app.projects/home-cards) come from one read of every listed project at once, made by the
+overview every 30 seconds while its Projects section shows and never otherwise. The read only
+gathers what Sova already keeps (but for a served queue's first view, below); it lands nothing and
+changes nothing.
+
+- **Ready to merge, in line, landing and frozen** come only from the merge queue's newest view of
+  that project, the one it already keeps for the Merge Queue tab and the landing bar
+  (§app.merge-queue/view, §app.merge-queue/landing-bar): its `Ready to land, not approved` list, its
+  waiting and checking entries, its Checking now check and estimates, and whether a release holds
+  it. A project the queue doesn't serve (not listed, or its merge setup not done, as the queue
+  last named its served projects) reads `unserved`: nothing is read for it and no queue is made. A
+  served project whose queue has kept no view yet (after Sova starts) reads `reading`, and the
+  read starts that queue's view once, in the background, deduped with any read already running;
+  once kept, the view is kept up to date as every other kept view is, with no Merge Queue tab
+  visit. Past that one first view the read asks the queue for no view and runs no git. So a card
+  is never fresher than that view.
+- **Release progress** comes from the project's release records (§app.release/record) as Sova
+  keeps them in memory: as the releaser last published them to the Releases tab, or as its start
+  read them; the read opens no record file. The record shown is the one the Releases tab shows:
+  the open one, else a published or withdrawn one while its after-steps still have work.
+- **Running slots** come from the copies' records and the copy limit's one rule
+  (§app.project-services/instances): the running copies, the main checkout's and conformance's
+  never counted, against the limit in force. No service is asked or probed for it. A project with
+  no project file has none.
+- **A project's memory in use** is two parts, each process counted once, each by its own memory as
+  the resource monitor measures it (§app.resource-monitor/sampling-and-history: on Linux resident
+  less shared pages; on macOS resident memory):
+  - **its chats**: every chat listed as the project's (§app.projects/folder-sessions) that has a
+    process, with its workers and the tools and programs they started, as the resource monitor
+    charges them to the chat (§app.resource-monitor/attribution), taken from the monitor's newest
+    sample (at most 5 seconds old); the read samples nothing itself.
+  - **its running copies**: the processes of every copy of the project that runs now, the main
+    checkout's included (an adopted main is its adopted unit, §app.project-services/adopt), and of
+    its shared services, found from each unit's own process list (its cgroup's `cgroup.procs`) and
+    measured as the monitor measures a chat's process (§app.resource-monitor/lightness-budget: no
+    `smaps`, no PSS, nothing spawned). On a host without a systemd user manager to read (macOS),
+    this part is not read and counts 0: the read never spawns `ps` for it.
+- **Cost.** No command is spawned and no service is probed by the read itself; the one background
+  view of a served queue that has none kept is the queue's own view read. Its cost is the copies'
+  memory reads, bounded by how many copies run, and a few in-memory lookups; several overviews open
+  at once share one answer, reused for up to 10 seconds.
+
+## §app.projects/icon — A project's icon: a picture, or its letters
+
+Every project has an icon, a rounded square beside its name: on the overview's project cards
+(40px, §app.projects/home-cards), in its page's head (32px, §app.organizations/project-page) and on
+the Projects page's rows (24px, §app.projects/list). The sidebar, the session list, New Session's
+project picker, the command palette and the browser tab keep their look.
+
+- **Which one shows.** A picture you uploaded; else one found in the project's folder; else its
+  letters. `Use Letters` shows the letters whatever is uploaded or found, until `Use Picture`.
+- **Found in the folder.** Sova looks, in this order, at: `.sova/icon.png`; the PNG icons declared
+  by the first web app manifest that parses, of `public/manifest.webmanifest`,
+  `public/site.webmanifest`, `public/manifest.json`, `static/manifest.json`,
+  `manifest.webmanifest` and `manifest.json` (an icon whose `src` ends in `.png` or whose `type` is
+  `image/png`, whose `purpose` is absent or includes `any`, the largest declared size first, its
+  `src` resolved against the manifest's own folder, a leading `/` meaning that folder); then
+  `public/apple-touch-icon.png`, `public/icons/apple-touch-icon.png`,
+  `static/apple-touch-icon.png`, `apple-touch-icon.png`, `app/icon.png`, `src/app/icon.png`,
+  `app/apple-icon.png`, `public/icon.png`, `public/logo.png`, `icon.png`, `logo.png`,
+  `assets/icon.png`, `assets/logo.png`, `build/icon.png`, `resources/icon.png`,
+  `src-tauri/icons/icon.png` and `src-tauri/icons/128x128@2x.png`. The first that passes every
+  check is used: a regular file, never a symlink, whose real path stays inside the project's folder
+  (a manifest `src` with `..` out of it, or with a scheme, is skipped), at most 1 MB, a PNG by its bytes (not by its name), at least 64px on its short
+  side and nearly square (the long side at most 1.25 times the short), so a wide wordmark or a
+  tiny favicon is skipped. A found icon is a PNG only: an SVG in the folder is never used. Sova
+  only reads the folder, never writes to it, and notices a new or changed icon file within about
+  30 seconds.
+- **The Icon card**, first on the project's Settings tab: the 40px icon, where it comes from
+  (`Uploaded`, `Found in the project: {path}` or `Letters`), `Upload Image…` (`Replace Image…` once
+  one is uploaded), `Remove Image` while one is uploaded (back to the found picture or the
+  letters), `Use Letters` while a picture shows, and `Use Picture` while letters are on and a
+  picture is uploaded or found, under the line "Shown on Home, on this page and in All Projects.
+  PNG, JPEG, WebP, GIF or SVG, up to 5 MB; kept on this computer only." Opening it looks in the
+  folder again. After a change every icon of the project on the page shows the new one; a change
+  that fails shows "Couldn't change the icon." with the reason. Uploading turns Use Letters off. A
+  project on a peer has no Icon card.
+- **Uploading.** PNG, JPEG, WebP, GIF or SVG, up to 5 MB ("This image is over 5 MB."). The page
+  draws it into a 256×256 square, fitted whole with see-through margins, never cropped, and sends
+  that PNG; a file it can't decode or draw says "This image can't be used. Try a PNG." The server
+  takes only a square PNG of 64 to 1024px, at most 1 MB: over that 413 "The image is over 1 MB.";
+  anything not a PNG 415 "Only a PNG is accepted (the page converts other images)"; not square or
+  out of range 400 "The image must be square, 64 to 1024 px."
+- **Kept on this computer only.** The upload and the letters choice are this host's state
+  (`<stateRoot>/project-icons/<pid>.png` and `<pid>.json`; the folder `0700`, the files `0600`,
+  written atomically), never written into the project's repository, kept by project id through
+  archive, unarchive, placement and import, and not shared with an organization's people or your
+  other computers. A project listed from a peer shows its letters.
+- **On the wire.** `ProjectSummary.icon` (`{kind: "image", source: "upload" | "found", v}`) is
+  there only while a picture shows, on this host's own projects; `v` changes whenever the picture
+  does. `GET /api/projects/:pid/icon` answers the PNG, read fresh, with `Content-Type: image/png`,
+  `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox`,
+  cached as immutable for a year when `?v=` is the current `v` and `no-store` otherwise; 404 while
+  the letters show or for an unknown project. `GET …/icon/info` answers `{use, letters,
+  uploaded?, found?}` (`use` one of `upload`, `found`, `letters`), looking in the folder afresh;
+  `PUT …/icon {png}` uploads (base64), `PATCH …/icon {letters}` turns the letters on or off and
+  `DELETE …/icon` removes the upload, each answering the same info. The writes are the operator's
+  own: one carrying the Overseer's sender mark is refused (403, "Only you can change a project's
+  icon.").
+- **Letters.** Two letters, like an avatar. The name splits into words on spaces, `-`, `_`, `.`,
+  `/` and a lower-to-upper case change; with two or more words, the first letter of each of the
+  first two, in capitals (`Landing Site` LS, `acme-api` AA, `LandingSite` LS). One word: its first
+  letter in capitals and its second in lower case (`Sova` So, `x` X), or, for a word all in
+  capitals, its first two as they are (`API` AP). A name with no letter or digit shows its first
+  character (an emoji); an empty one `?`. They are white, semibold, at 40% of the tile, on one of 8
+  fixed colours (`#2F6690`, `#1F7A72`, `#5E7A1F`, `#8A6512`, `#A4502A`, `#A63D5C`, `#7A4E9C`,
+  `#4F5D75`), each at least 4.5:1 against white and none of them Sova's accent, so a tile never
+  reads as a button. The colour comes from the project's id, never its name, so a rename keeps it.
+  The letters are hidden from screen readers: the name is always beside them.
+- **Drawn.** A picture sits whole on a `--color-sunken` tile with a 1px `--color-border` inset, so
+  a transparent logo reads in both themes; one that fails to load shows the letters instead.
 
 ## §app.projects/folder-sessions — A session in a project's folder is the project's
 

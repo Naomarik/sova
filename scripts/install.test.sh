@@ -799,7 +799,8 @@ check "$(yes_if [ "$lstatus" -eq 0 ] && grep -qxF 'http://127.0.0.1:4811/#t=tok-
 check "$(yes_if [ ! -e "$browsed" ])" "sova app, no such browser: no browser started"
 
 # 31. macOS: the default https handler when it is one of them, else the first bundle found; the
-#     bundle's own executable, with the macOS profile folder; `open` as the tab fallback.
+#     bundle started through `open -n -a`, with the macOS profile folder, and directly when `open`
+#     fails or isn't there; `open` as the tab fallback.
 FAKE_UNAME=Darwin run_install app-mac --no-service
 mkdir -p "$home/.pi/agent/sova"
 printf 'tok-mac\n' > "$home/.pi/agent/sova/auth-token"
@@ -831,7 +832,22 @@ OUT
 	*) exit 1 ;;
 esac
 STUB
-printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s"\n' "$tmp/app-mac/opened" > "$mac/open"
+# The launcher's `open -n -a <bundle> --args ...`: logged one argument per line, then as macOS would,
+# the bundle's executable runs, unless open-no-start is there; open-fail fails it, starting nothing.
+# Anything else is the tab fallback.
+cat > "$mac/open" <<STUB
+#!/usr/bin/env bash
+if [ "\${1:-}" = -n ]; then
+	printf '%s\\n' "\$@" > "$tmp/app-mac/launched"
+	[ ! -e "$tmp/app-mac/open-fail" ] || exit 1
+	[ ! -e "$tmp/app-mac/open-no-start" ] || exit 0
+	bundle=\$3
+	shift 4
+	exe=\$(basename "\$bundle" .app)
+	exec "\$bundle/Contents/MacOS/\$exe" "\$@"
+fi
+printf '%s\\n' "\$*" >> "$tmp/app-mac/opened"
+STUB
 chmod 755 "$mac/defaults" "$mac/open"
 mac_cmd() { set +e; rm -f "$browsed"; launch=$(env -u PI_CODING_AGENT_DIR -u PORT FAKE_UNAME=Darwin HOME="$home" FAKE_UP="$tmp/up.always" PATH="$1" "$home/.local/bin/sova" app 2>&1); lstatus=$?; set -e; }
 mac_cmd "$mac:$up:$sandbox"
@@ -839,6 +855,27 @@ wait_for "$browsed" || true
 check "$(yes_if [ "$lstatus" -eq 0 ] && [ "$(head -n 1 "$browsed" 2>/dev/null)" = "$home/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" ])" \
 	"sova app, mac: the default https handler's bundle executable"
 check "$(yes_if grep -qxF -- "--user-data-dir=$home/Library/Application Support/sova-browser" "$browsed")" "sova app, mac: the macOS profile folder"
+check "$(yes_if [ "$(sed -n 1,3p "$tmp/app-mac/launched" 2>/dev/null | tr '\n' '|')" = "-n|-a|$home/Applications/Brave Browser.app|" ] && [ "$(sed -n 4p "$tmp/app-mac/launched")" = --args ])" \
+	"sova app, mac: the window starts through macOS's launcher, a new instance of the browser's bundle"
+check "$(yes_if grep -qxF -- '--app=http://127.0.0.1:4800/#t=tok-mac' "$tmp/app-mac/launched" && grep -qxF -- '--no-first-run' "$tmp/app-mac/launched" && grep -qxF -- '--no-default-browser-check' "$tmp/app-mac/launched" && grep -qxF -- "--user-data-dir=$home/Library/Application Support/sova-browser" "$tmp/app-mac/launched")" \
+	"sova app, mac: the launcher gets the unlocked URL, the profile and the no-prompt flags"
+# open answered, and nothing else starts it: a direct start would be a second one.
+touch "$tmp/app-mac/open-no-start"
+mac_cmd "$mac:$up:$sandbox"
+check "$(yes_if [ "$lstatus" -eq 0 ])" "sova app, mac: exits 0 once open has answered"
+sleep 0.5
+check "$(yes_if [ ! -e "$browsed" ])" "sova app, mac: no direct start as well"
+rm "$tmp/app-mac/open-no-start"
+touch "$tmp/app-mac/open-fail"
+mac_cmd "$mac:$up:$sandbox"
+wait_for "$browsed" || true
+check "$(yes_if [ "$lstatus" -eq 0 ] && [ "$(head -n 1 "$browsed" 2>/dev/null)" = "$home/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" ] && grep -qxF -- '--app=http://127.0.0.1:4800/#t=tok-mac' "$browsed")" \
+	"sova app, mac, open fails: the bundle's executable, directly, with the same window"
+rm "$tmp/app-mac/open-fail"
+mac_cmd "$up:$sandbox"
+wait_for "$browsed" || true
+check "$(yes_if [ "$(head -n 1 "$browsed" 2>/dev/null)" = "$home/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ])" \
+	"sova app, mac, no open at all: the executable, directly"
 rm "$mac/defaults"
 mac_cmd "$mac:$up:$sandbox"
 wait_for "$browsed" || true
@@ -1126,6 +1163,86 @@ check "$(yes_if said 'writer status 0')" "piped, early failure: the whole script
 check "$(yes_if bash -n "$installer")" "portable: parses"
 check "$(yes_if [ -z "$(grep -nE 'sed -i|readlink -f|stat -c|date -d|setsid|declare -A|mapfile|readarray|\$\{[a-zA-Z_]+(,,|\^\^)|&>>|\|&' "$installer")" ])" \
 	"portable: no GNU-only flags or bash 4 features"
+
+# 27. pnpm may be a mise shim, and the clone's mise.toml one mise refuses: the installer tells mise to
+#     ignore the staging and install directories, keeping and appending to the caller's own list.
+#     The shim behaves as mise does: it refuses a mise.toml in its working directory or above unless
+#     a MISE_IGNORED_CONFIG_PATHS entry covers it, logs the list it was given, then runs the pnpm stub.
+unset MISE_IGNORED_CONFIG_PATHS
+cat > "$stubs/mise-pnpm" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' "\${MISE_IGNORED_CONFIG_PATHS:-}" >> "$tmp/mise-shim.log"
+d=\$(pwd -P)
+while :; do
+	if [ -f "\$d/mise.toml" ]; then
+		ignored=false
+		IFS=: read -ra paths <<< "\${MISE_IGNORED_CONFIG_PATHS:-}"
+		for p in "\${paths[@]}"; do
+			[ -n "\$p" ] || continue
+			case "\$d/mise.toml" in "\$p" | "\$p"/*) ignored=true ;; esac
+		done
+		\$ignored || { printf 'mise ERROR Config files in %s are not trusted.\n' "\$d/mise.toml" >&2; exit 1; }
+	fi
+	[ "\$d" = / ] && break
+	d=\$(dirname "\$d")
+done
+exec "$stubs/pnpm" "\$@"
+STUB
+# A pnpm that never runs: a shim with no version set ("No version is set for pnpm").
+printf '#!/usr/bin/env bash\nprintf "mise ERROR No version is set for shim: pnpm\\n" >&2\nexit 1\n' > "$stubs/broken-pnpm"
+chmod 755 "$stubs/mise-pnpm" "$stubs/broken-pnpm"
+misepnpm=$tmp/sandbox-misepnpm       # pnpm is the mise shim; no npx, so only the shim can build
+brokennpx=$tmp/sandbox-brokenpnpm    # a pnpm that never runs, and npx
+brokennonpx=$tmp/sandbox-brokennonpx # a pnpm that never runs, and no npx
+mkdir -p "$misepnpm" "$brokennpx" "$brokennonpx"
+cp -P "$nopm"/* "$misepnpm/"
+cp -P "$nopnpm"/* "$brokennpx/"
+cp -P "$nopm"/* "$brokennonpx/"
+ln -sf "$stubs/mise-pnpm" "$misepnpm/pnpm"
+ln -sf "$stubs/broken-pnpm" "$brokennpx/pnpm"
+ln -sf "$stubs/broken-pnpm" "$brokennonpx/pnpm"
+
+rm -f "$tmp/mise-shim.log"
+kept=$tmp/a-kept-config-dir
+MISE_IGNORED_CONFIG_PATHS=$kept CASE_PATH=$misepnpm run_install mise-shim
+unset CASE_PATH
+mise_dir="$(cd -P "$tmp" && pwd -P)/mise-shim/fake home/.local/share/sova"   # physical, as the installer writes it
+check "$(yes_if [ "$status" -eq 0 ])" "mise shim: exits 0"
+check "$(yes_if [ -f "$home/.local/share/sova/dist/index.html" ] && [ -x "$home/.local/bin/sova" ])" \
+	"mise shim: the build and the launcher are in place"
+# Every call (the probe, install, build) saw the caller's entry first, then the staging and install dirs.
+check "$({ [ "$(wc -l < "$tmp/mise-shim.log" 2>/dev/null)" -ge 3 ] &&
+	[ -z "$(grep -vE "^$kept:[^:]*/\.sova-staging\.[^/:]+:$mise_dir\$" "$tmp/mise-shim.log")" ]; } && echo true || echo false)" \
+	"mise shim: every pnpm call kept the caller's MISE_IGNORED_CONFIG_PATHS and appended staging and install dirs"
+# The launcher appends the install dir to the list the server is started with, keeping the caller's.
+[ ! -d "$home/.local/share/sova/scripts" ] ||
+	printf '#!/bin/sh\nprintf "MISE_IGNORED_CONFIG_PATHS=%%s\\n" "$MISE_IGNORED_CONFIG_PATHS"\n' > "$home/.local/share/sova/scripts/start-server.sh"
+launch=$(env HOME="$home" PATH="$misepnpm" MISE_IGNORED_CONFIG_PATHS="$kept" "$home/.local/bin/sova" 2>&1 || true)
+check "$(yes_if [ "$launch" = "MISE_IGNORED_CONFIG_PATHS=$kept:$mise_dir" ])" \
+	"mise shim: the launcher keeps the caller's MISE_IGNORED_CONFIG_PATHS and appends the install dir"
+
+# 28. A pnpm on PATH that does not run in the clone: npx runs the pinned pnpm, and the output says so.
+rm -f "$tmp/npx.log"
+CASE_PATH=$brokennpx run_install broken-pnpm-npx
+unset CASE_PATH
+check "$(yes_if [ "$status" -eq 0 ])" "broken pnpm, npx: exits 0"
+check "$({ [ "$(sort -u "$tmp/npx.log" 2>/dev/null)" = 'pnpm@12.6.0' ] && [ "$(wc -l < "$tmp/npx.log")" -eq 2 ]; } && echo true || echo false)" \
+	"broken pnpm, npx: install and build ran the pinned pnpm@12.6.0 through npx"
+check "$(yes_if said 'pnpm is on PATH but does not run here; running pnpm@12.6.0 through npx')" \
+	"broken pnpm, npx: says pnpm does not run and npx runs the pinned one"
+check "$(yes_if [ -f "$home/.local/share/sova/dist/index.html" ] && [ -x "$home/.local/bin/sova" ])" \
+	"broken pnpm, npx: the build and the launcher are in place"
+
+# 29. A pnpm on PATH that does not run, and no npx: stops with the reason, changing nothing.
+CASE_PATH=$brokennonpx run_install broken-pnpm-no-npx
+unset CASE_PATH
+check "$(yes_if [ "$status" -ne 0 ])" "broken pnpm, no npx: exits nonzero"
+check "$(yes_if said 'pnpm is on PATH but does not run here (a version manager')" \
+	"broken pnpm, no npx: says pnpm does not run and there is no npx"
+check "$(yes_if [ ! -e "$home/.local/share/sova" ] && [ ! -e "$home/.local/bin/sova" ])" \
+	"broken pnpm, no npx: no install dir, no launcher"
+check "$({ [ -z "$(ls -d "$home/.local/share/.sova-staging."* 2>/dev/null)" ] && pi_untouched; } && echo true || echo false)" \
+	"broken pnpm, no npx: no staging dir left, ~/.pi untouched"
 
 printf '\n%s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

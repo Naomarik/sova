@@ -79,6 +79,9 @@
 //               left goes back as the session's saved draft
 //     t21rx     F14/F15: Reload now and a prompt at once, either order: refused back by clientId and run once
 //               when sent again, or taken first and reloaded at the reply's end; never lost or doubled
+//     tw1-tw8   wake nudges with no tab (§chat/wake-nudges): on time, a busy chat, Sova off at the due
+//               time, archived, a start with no fire, a worker, a paused team, a chain near the
+//               limit, the Overseer
 //     t23       idle stop of a waiting worker: no death, still waiting, a steer reopens it once
 //     t24       llm-inflight: a worker's call counted once on /ws/watch?feed=llm; its tokens stay after
 //               it ends
@@ -124,7 +127,7 @@
 // Writes <scratch>/results.json (every check, pass/fail, details) and keeps server-*.log and
 // mock.jsonl beside it. Exit 0 when every check passed, 1 when one failed, 2 on a setup problem.
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -137,6 +140,7 @@ import {
   chat,
   chatProcLog,
   client,
+  pageCookie,
   freePort,
   healthy,
   mockLog,
@@ -159,7 +163,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "tsend", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "hermetic"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "tsend", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "tw1", "tw2", "tw3", "tw4", "tw5", "tw6", "tw7", "tw8", "tj1", "tj2", "tj3", "tj4", "tj5", "hermetic", "tyourclick"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "serve", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -307,7 +311,7 @@ async function booted(o, s, url, sharePort) {
     const want = darwin ? "detached" : driver;
     R.check(h?.chatHost?.driver === want && h?.chatHost?.bun !== false, `live-like: with no switch set, chats run in processes of their own on the ${want} driver (health chatHost ${JSON.stringify(h?.chatHost)?.slice(0, 120)})`);
   }
-  const cl = client(url, tokenOf(o.agent ?? agent));
+  const cl = client(url, tokenOf(o.agent ?? agent), o.agent ?? agent);
   if (!o.agent) {
     shareBase = `http://127.0.0.1:${sharePort}`;
     srv = s;
@@ -323,8 +327,19 @@ async function restart(changes) {
   await healthy(base);
   R.note(`server restarted: pid ${before} → ${srv.pid()}${changes ? ` (${JSON.stringify(changes)})` : ""}`);
 }
-/** Stops the server and every chat process of the agent dir (records, units of the stand-in slice). */
-async function teardown(s = srv, agentDir = agent) {
+/** A kept background job's process (§app.background-jobs/keeping): what a Sova stop leaves running. */
+const inJobsSlice = (pid) => {
+  try {
+    return readFileSync(`/proc/${pid}/cgroup`, "utf8").includes("/sova-jobs.slice/");
+  } catch {
+    return false;
+  }
+};
+/**
+ * Stops the server and every chat process of the agent dir (records, units of the stand-in slice).
+ * `keepJobs`: as a real Sova stop does, it leaves the background jobs running.
+ */
+async function teardown(s = srv, agentDir = agent, { keepJobs = false } = {}) {
   if (s) await s.down();
   for (const r of allRecords(agentDir)) {
     if (driver === "systemd" && r.unit) {
@@ -345,7 +360,7 @@ async function teardown(s = srv, agentDir = agent) {
       } catch {}
   // What no record names (a worker whose record went first, a tool or fake claude it started): every
   // process of the agent dir. A failed check left such processes running before (report-s4 item 9).
-  const left = await sweep(agentDir, { mock: false });
+  const left = await sweep(agentDir, { mock: false, ...(keepJobs ? { spare: inJobsSlice } : {}) });
   if (left.length) R.note(`teardown: stopped ${left.length} process(es) no record named: ${left.map((p) => `${p.pid} ${p.cmd.slice(0, 80)}`).join("; ")}`);
 }
 /** Whether another check runs after the current one in this run (the integration tier runs one check per run). */
@@ -1122,6 +1137,112 @@ async function t6() {
 
 // T10: the Overseer in its own process: a served read tool, a served file tool, an acting tool and an
 // explorer (stage 4: a worker chat of the Overseer's, a process of its own); the run note is in the file.
+/**
+ * §app.access/your-click over real sockets, on a real chat process: going back past a raise lowers the sandbox, so only
+ * the page does it; `/sandbox` that lowers is refused on POST /api/chat/frames and a script's socket, and the forms the
+ * extension doesn't take as the command lower nothing. Each page-side step is the control: it shows the read can see a lowering.
+ */
+async function tyourclick() {
+  const token = tokenOf(agent);
+  const T = { "x-sova-token": token };
+  const send = (path, body, headers) => fetch(`${base}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+  const q = (path) => encodeURIComponent(path);
+  const action = async (path, body, headers) => (await send(`/api/chat/action?path=${q(path)}&wait=20000`, body, headers)).json();
+  const frames = (path, list, headers) => send(`/api/chat/frames?path=${q(path)}`, { frames: list }, headers);
+  const lastSaid = (x) => x.s.got.findLast((m) => m.type === "sandbox")?.state;
+  const raised = async (x) => {
+    await send(`/api/sandbox?path=${q(x.path)}`, { state: "on" }, T);
+    await waitFor(() => lastSaid(x) === "on", 30000);
+  };
+  const said = async (x) => {
+    const one = await chat(c, x.path);
+    const m = await one.until((f) => f.type === "sandbox", 10000, "the sandbox message");
+    one.close();
+    return m.state;
+  };
+  const users = (x) => entries(x.path).filter((e) => e.type === "message" && e.message?.role === "user");
+  const offEntries = (x) => entries(x.path).filter((e) => e.type === "custom" && e.customType === "sandbox" && e.data?.on === false).length;
+  const rewinds = (x) => entries(x.path).filter((e) => e.type === "custom" && e.customType === "sova-rewind").length;
+  const WORDS = "Only the user lowers a chat's sandbox. Ask them to rewind this chat in the page. Nothing was changed.";
+  const asks = async () => {
+    const x = await newChat();
+    await turn(x, "say ok");
+    await raised(x);
+    return x;
+  };
+
+  const a = await asks();
+  // What On does to a tool here: it stops the write, enforcing or refusing to run; the page's rewind below lets it land.
+  const outside = join(scratch, `outside-${Date.now()}`);
+  mkdirSync(outside, { recursive: true });
+  const writesOut = async (x, name) => {
+    const r = await turn(x, `[call bash ${JSON.stringify({ command: `touch ${join(outside, name)} && echo WROTE` })}]`);
+    return { wrote: existsSync(join(outside, name)), said: textOfMsg(r[0]?.message).slice(0, 160) };
+  };
+  const onWrite = await writesOut(a, "on");
+  R.check(!onWrite.wrote, `tyourclick: On, a write outside the project doesn't land (${onWrite.said})`);
+  const first = users(a)[0].id;
+  // The reply before the raise: regenerating a later one goes back past nothing.
+  const reply = entries(a.path).find((e) => e.message?.role === "assistant").id;
+  const usersBefore = users(a).length;
+  for (const [who, headers] of [["a script", T], ["a chat", { ...T, "x-sova-caller": "k" }]]) {
+    const back = await action(a.path, { type: "rewind", entryId: first }, headers);
+    R.check(back.reply?.type === "rewind_refused" && back.reply?.message === WORDS, `tyourclick: ${who}'s rewind past the raise is refused with where to click`, JSON.stringify(back).slice(0, 200));
+    const again = await action(a.path, { type: "regenerate", entryId: reply }, headers);
+    R.check(again.reply?.type === "regenerate_refused" && again.reply?.message === WORDS, `tyourclick: ${who}'s regenerate past the raise is refused`, JSON.stringify(again).slice(0, 200));
+  }
+  const script = client(base, token).socket(`/ws/chat?path=${q(a.path)}&wire=2`);
+  await script.opened;
+  await script.until((m) => m.type === "hello", 15000, "the script's hello");
+  script.send({ type: "rewind", id: "w1", entryId: first });
+  const heard = await script.until((m) => m.type === "rewind_refused", 15000, "the socket's refusal");
+  R.check(heard.message === WORDS, "tyourclick: a script's socket gets the same refusal");
+  script.close();
+  R.check((await said(a)) === "on" && rewinds(a) === 0 && users(a).length === usersBefore, `tyourclick: the sandbox stayed On and the chat didn't move (${rewinds(a)} rewinds)`);
+  // Past no raise, nothing is lowered: a script's rewind still runs.
+  await turn(a, "say ok again");
+  const second = users(a).at(-1).id;
+  const keeps = await action(a.path, { type: "rewind", entryId: second }, T);
+  R.check(keeps.reply?.type === "rewound" && (await said(a)) === "on", "tyourclick: a script's rewind that lowers nothing still runs", JSON.stringify(keeps).slice(0, 200));
+  // The page's own: it lowers, and every open pane hears the state.
+  const before = a.s.got.length;
+  a.s.send({ type: "rewind", id: "p1", entryId: first });
+  await a.s.until((m) => m.type === "rewound", 15000, "the page's rewind", before);
+  await a.s.until((m) => m.type === "sandbox" && m.state === "subagents", 15000, "the page hears the state after it", before);
+  R.check((await said(a)) === "subagents", "tyourclick: the page's rewind passes, lowers, and the page is told");
+  const offWrite = await writesOut(a, "after");
+  R.check(offWrite.wrote, `tyourclick: the lowering is real: the write On stopped lands (${offWrite.said})`);
+
+  const b = await asks();
+  const reply2 = entries(b.path).findLast((e) => e.message?.role === "assistant").id;
+  const from = b.s.got.length;
+  b.s.send({ type: "regenerate", id: "p2", entryId: reply2 });
+  await b.s.until((m) => m.type === "regenerated", 15000, "the page's regenerate", from);
+  await settled(b.s, from, 60000);
+  R.check((await said(b)) === "subagents", "tyourclick: the page's regenerate passes and lowers");
+
+  // /sandbox as a message, by each road, on a chat that is On.
+  const d = await asks();
+  for (const text of ["/SANDBOX off", "/sandbox off\nand then this"]) {
+    const n = d.s.got.length;
+    const r = await send("/api/sessions/prompt", { path: d.path, text }, T);
+    R.check(r.status === 200, `tyourclick: ${JSON.stringify(text)} isn't the command that lowers, so it isn't refused`);
+    await sleep(1500);
+    R.check(lastSaid(d) === "on" && (await said(d)) === "on" && offEntries(d) === 0, `tyourclick: ${JSON.stringify(text)} lowered nothing`, `heard ${d.s.got.length - n} frames`);
+  }
+  const refused = await send("/api/sessions/prompt", { path: d.path, text: "/sandbox off" }, T);
+  R.check(refused.status === 403, `tyourclick: /sandbox off by session.send is refused (${refused.status})`);
+  for (const [i, text] of ["/sandbox off", "/sandbox subagents"].entries()) {
+    R.check((await frames(d.path, [{ type: "prompt", text, clientId: `f${i}` }], T)).status === 202, `tyourclick: frames taken: ${text}`);
+    await sleep(1500);
+    R.check((await said(d)) === "on" && offEntries(d) === 0, `tyourclick: ${text} by POST /api/chat/frames lowered nothing`);
+  }
+  const cookie = { cookie: pageCookie(agent, token) };
+  await frames(d.path, [{ type: "prompt", text: "/sandbox off", clientId: "fp" }], cookie);
+  await waitFor(() => lastSaid(d) === "off", 15000);
+  R.check((await said(d)) === "off" && offEntries(d) > 0, "tyourclick: the page's own frame lowers it: the reads above can see a lowering");
+}
+
 async function t10() {
   writeFileSync(join(proj, "trial-read.txt"), "READ-ME-TRIAL\n");
   const ov = await openOn(await overseer());
@@ -3240,7 +3361,633 @@ async function serve() {
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), tsend, t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, hermetic, plumbing, serve, real: () => t1(opt("model")) };
+// Wake nudges with no tab open (§chat/wake-nudges, the plan's a8): a short idle stop, a keeper ticking
+// every second. Each check drives real chat processes; what can't be shortened (a 3-try count, a
+// 30-fire chain) has its rule in server/wake-keeper.test.ts and subagents/wake-nudge.test.ts.
+const WAKE_KNOBS = { SOVA_WAKE_TICK_MS: "1000", SOVA_WAKE_LEAD_MS: "1500", SOVA_WAKE_CONFIRM_MS: "6000", SOVA_WAKE_GAPS_MS: "1000,2000" };
+/** `waitFor`, whose timeout fails the check: what follows is meaningless without it. */
+const wakeWait = async (cond, ms) => {
+  await waitFor(cond, ms);
+  if (!cond()) throw new Error(`timed out after ${ms} ms: ${String(cond).slice(0, 120)}`);
+};
+const wakeBoot = async (idleMs = 4000) => {
+  await teardown();
+  await boot({ idleMs, extra: WAKE_KNOBS });
+};
+const scheduleNudge = (delay, reason, id) => `[call wake_nudge ${JSON.stringify({ action: "schedule", delay, reason })}]${id ? ` #${id}` : ""}`;
+const fires = (path, id) => entries(path).filter((e) => e.type === "message" && e.message?.role === "user" && JSON.stringify(e.message.content).includes(`[wake_nudge ${id}]`));
+const wakeLog = () => readdirSync(scratch).filter((f) => /^server-\d+\.log$/.test(f)).flatMap((f) => readFileSync(join(scratch, f), "utf8").split("\n")).filter((l) => l.includes("[wake-keeper]"));
+const wakeRecords = () => {
+  const dir = join(agent, "sova", "wake-nudges");
+  return existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json")) : [];
+};
+/** Set a nudge, close the tab, and wait for the idle stop. Its process, and when the nudge is due. */
+async function nudgeThenShutDown(o, delay, reason) {
+  const r = await turn(o, scheduleNudge(delay, reason));
+  R.check(r.length === 1 && !r[0].message.isError, `the nudge was set (${resultText(r[0])})`);
+  const pid = chatPid(o.path);
+  o.s.close();
+  await wakeWait(() => !alive(pid), 30000);
+  return { pid, due: r[0].message.details.nudge.fireAt, id: r[0].message.details.nudge.id };
+}
+
+// tw1: no tab, on time. A busy chat gets its nudge after the reply, never during it. A short turn restarts the idle clock.
+async function tw1() {
+  await wakeBoot();
+  const a = await newChat();
+  const { pid, due, id } = await nudgeThenShutDown(a, "14s", "NO-TAB");
+  R.check(Date.now() < due, "tw1: the chat shut down before its nudge came due");
+  R.check(wakeRecords().length === 1, `tw1: its due time is on record with Sova (${wakeRecords().join()})`);
+  await wakeWait(() => fires(a.path, id).length > 0, 30000);
+  const fired = Date.parse(fires(a.path, id)[0].timestamp);
+  R.check(chatPid(a.path) && chatPid(a.path) !== pid, `tw1: Sova brought the chat back, no tab open (pid ${pid} → ${chatPid(a.path)})`);
+  R.check(Math.abs(fired - due) < 6000, `tw1: it fired on time (${fired - due} ms from due)`);
+  R.check(!JSON.stringify(fires(a.path, id)[0].message.content).includes("Overdue"), "tw1: not marked late");
+  await wakeWait(() => wakeRecords().length === 0, 15000);
+  R.check(wakeRecords().length === 0, "tw1: its record left the list once the message was on the branch");
+  // The mock replies at once: the idle clock restarts at the turn's end (the repro's early close).
+  const restarted = chatPid(a.path);
+  const started = Date.now();
+  await wakeWait(() => !alive(restarted), 30000);
+  const quiet = Date.now() - Math.max(fired, started);
+  R.check(Date.now() - fired >= 3500, `tw1: the idle stop counts from the end of the short turn (${Date.now() - fired} ms after the fire, ${quiet} ms here)`);
+  await sleep(3000); // two ticks and more: nothing starts it again
+  R.check(!chatPid(a.path) && fires(a.path, id).length === 1, `tw1: it fired once and nothing brought it back (${fires(a.path, id).length})`);
+
+  const b = await newChat();
+  const set = await turn(b, scheduleNudge("11s", "BUSY"));
+  const nid = set[0].message.details.nudge.id;
+  await mock.hold("tw1busy");
+  prompt(b.s, "[long 8 #tw1busy] a long reply");
+  await b.s.until(delta(/part 2\//), 30000, "streaming");
+  await sleep(Math.max(0, set[0].message.details.nudge.fireAt - Date.now()) + 2000);
+  R.check(fires(b.path, nid).length === 0, "tw1: past its time, a busy chat's nudge waits for the reply");
+  await mock.hold("tw1busy", false);
+  await wakeWait(() => fires(b.path, nid).length > 0, 30000);
+  const order = entries(b.path).filter((e) => e.type === "message");
+  const replyAt = order.findIndex((e) => JSON.stringify(e.message.content).includes("REPLY-DONE tw1busy"));
+  const fireAt = order.findIndex((e) => e.message.role === "user" && JSON.stringify(e.message.content).includes(`[wake_nudge ${nid}]`));
+  R.check(replyAt !== -1 && replyAt < fireAt, `tw1: it came after the reply, as no interruption (${replyAt}, ${fireAt})`);
+  R.check(fires(b.path, nid).length === 1, "tw1: once");
+  b.s.close();
+  await nextServer();
+}
+
+// tw2: Sova off at the due time: it catches up; two chats, each started once.
+async function tw2() {
+  await wakeBoot();
+  const a = await newChat();
+  const b = await newChat();
+  const [one, two] = await Promise.all([nudgeThenShutDown(a, "12s", "RESTART-A"), nudgeThenShutDown(b, "12s", "RESTART-B")]);
+  await srv.down();
+  await sleep(Math.max(0, Math.max(one.due, two.due) - Date.now()) + 2000);
+  R.check(fires(a.path, one.id).length === 0 && fires(b.path, two.id).length === 0, "tw2: with Sova off, nothing fired");
+  srv.up();
+  await healthy(base);
+  await wakeWait(() => fires(a.path, one.id).length > 0 && fires(b.path, two.id).length > 0, 40000);
+  await sleep(2000); // a keeper ticking each second: a second start would be in its log by now
+  R.check(fires(a.path, one.id).length === 1 && fires(b.path, two.id).length === 1, "tw2: each fired once after Sova came back");
+  const starts = wakeLog().filter((l) => l.includes("bringing it back"));
+  R.check(starts.length === 2, `tw2: one start per chat (${starts.length})`);
+  await nextServer();
+}
+
+// tw3: archived while shut down, then unarchived and opened: nothing fires, and `list` shows nothing.
+async function tw3() {
+  await wakeBoot();
+  const a = await newChat();
+  const { due, id } = await nudgeThenShutDown(a, "11s", "ARCHIVED");
+  await post("/api/sessions/archive", { path: a.path, archived: true });
+  R.check(wakeRecords().length === 0, `tw3: archiving took it off the list (${wakeRecords().join()})`);
+  await sleep(Math.max(0, due - Date.now()) + 3000);
+  R.check(!chatPid(a.path) && fires(a.path, id).length === 0, "tw3: an archived chat is never brought back");
+  await post("/api/sessions/archive", { path: a.path, archived: false });
+  await sleep(2500); // past a few ticks: unarchiving wakes nothing
+  R.check(!chatPid(a.path), "tw3: unarchiving starts nothing");
+  a.s = await chat(c, a.path);
+  a.s.send({ type: "set_model", ref: "trial/m1" });
+  // An absence: an overdue nudge fires 2 s after a start. The review's check holds it 10 s.
+  await sleep(10000);
+  R.check(fires(a.path, id).length === 0, "tw3: opening it fires nothing");
+  await reawaken(a);
+  const listed = await turn(a, '[call wake_nudge {"action":"list"}]');
+  R.check(/No pending nudges/.test(resultText(listed[0])), `tw3: list shows none (${resultText(listed[0])})`);
+  a.s.close();
+  await nextServer();
+}
+
+// tw4: a chat that starts and doesn't fire (its extension gone): one start, the record dropped, no
+// loop; the nudge waits and fires at the next open with the extension back. A record the chat
+// doesn't know costs one start and goes.
+async function tw4() {
+  await wakeBoot();
+  const a = await newChat();
+  const { id } = await nudgeThenShutDown(a, "12s", "NO-EXTENSION");
+  const link = join(agent, "extensions", "wake-nudge.ts");
+  const target = readlinkSync(link);
+  rmSync(link);
+  try {
+    await wakeWait(() => wakeLog().some((l) => l.includes("doesn't know it")), 60000);
+    R.check(wakeLog().filter((l) => l.includes("bringing it back")).length === 1, `tw4: a start that fired nothing, once (${wakeLog().length})`);
+    R.check(wakeRecords().length === 0 && fires(a.path, id).length === 0, "tw4: the stale record is gone, nothing fired");
+    const pid = chatPid(a.path);
+    if (pid) await waitFor(() => !alive(pid), 30000);
+    await sleep(3000);
+    R.check(!chatPid(a.path), "tw4: the shut-down chat stays down: it can't loop");
+  } finally {
+    symlinkSync(target, link);
+  }
+  // Nudges from a record no chat holds: one start, gone.
+  const b = await newChat();
+  await turn(b, "say ok");
+  const id2 = entries(b.path)[0].id;
+  const pid2 = chatPid(b.path);
+  b.s.close();
+  await wakeWait(() => !alive(pid2), 30000);
+  const before = wakeLog().filter((l) => l.includes("bringing it back")).length;
+  writeFileSync(join(agent, "sova", "wake-nudges", `${encodeURIComponent(id2)}.nudges.json`), JSON.stringify({ v: 1, source: "nudges", sessionId: id2, path: b.path, items: [{ id: "n9", at: Date.now() - 1000 }], syncedAt: 1 }));
+  await wakeWait(() => wakeRecords().length === 0, 30000);
+  await sleep(3000);
+  R.check(wakeLog().filter((l) => l.includes("bringing it back")).length === before + 1, "tw4: a record for a nudge the chat doesn't have cost one start");
+  R.check(userEntriesWith(b.path, "[wake_nudge") === 0, "tw4: and fired nothing");
+  // With the extension back, opening the first chat fires what it still holds.
+  a.s = await chat(c, a.path);
+  await wakeWait(() => fires(a.path, id).length > 0, 30000);
+  R.check(fires(a.path, id).length === 1, "tw4: it fires at the next open");
+  a.s.close();
+  await nextServer();
+}
+
+// tw5: a worker, stopped with its parent: the parent comes back, then the worker, which fires its own nudge.
+async function tw5() {
+  await wakeBoot();
+  const a = await newChat();
+  const task = `${scheduleNudge("16s", "WORKER-NUDGE")} #tw5w`;
+  // A worker has the tool when its spawn names the extension.
+  const r = await turn(a, `[call agent_spawn ${JSON.stringify({ prompt: task, model: "trial/m1", name: "trial-tw5", extensions: [join(agent, "extensions", "wake-nudge.ts")] })}]`);
+  R.check(r.length === 1 && !r[0].message.isError, `tw5: spawned (${resultText(r[0])})`);
+  const w = await workerWith(a.path, "#tw5w");
+  if (!R.check(w, "tw5: the server records the worker")) return;
+  await wakeWait(() => toolResults(w.path).some((e) => e.message?.toolName === "wake_nudge"), 60000);
+  const set = toolResults(w.path).find((e) => e.message?.toolName === "wake_nudge");
+  R.check(!set.message.isError, `tw5: the worker set its nudge (${resultText(set)})`);
+  const { id, fireAt } = set.message.details.nudge;
+  const workerPid = record(w.path)?.pid;
+  const parentPid = chatPid(a.path);
+  a.s.close();
+  await wakeWait(() => !alive(workerPid) && !alive(parentPid), 30000);
+  R.check(Date.now() < fireAt, "tw5: parent and worker both stopped before it came due");
+  await wakeWait(() => fires(w.path, id).length > 0, 40000);
+  const parentNow = chatPid(a.path);
+  R.check(parentNow && parentNow !== parentPid, `tw5: the parent came back first (pid ${parentPid} → ${parentNow})`);
+  R.check(record(w.path)?.pid !== workerPid, "tw5: the worker runs in a new process");
+  await sleep(3000);
+  R.check(fires(w.path, id).length === 1, "tw5: its nudge reached it once");
+  await wakeWait(() => wakeRecords().length === 0, 15000);
+  R.check(wakeRecords().length === 0, "tw5: its record left the list");
+  await nextServer();
+}
+
+// tw6: a paused team with no member running: the parent comes back and the monitor gets the nudge.
+async function tw6() {
+  await wakeBoot();
+  const monitorText = '[call team_msg {"to":"coordinator","message":"zai 5h at 95%","notice":"pause"}][call wake_nudge {"action":"schedule","delay":"20s","reason":"NUDGE-TW6"}]';
+  const teams = {
+    coordinator: { enabled: true, role: "coordinator", primary: { backend: "pi", model: "trial/m1" }, fallback: null, instructions: "" },
+    monitor: { enabled: true, role: "monitor", primary: { backend: "pi", model: "trial/m1" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: false, pausePct: 90, resumeMarginMinutes: 5 }, instructions: monitorText },
+    handover: { retireTimeoutMinutes: 10 },
+  };
+  const file = join(agent, "subagent-profiles.json");
+  const legacy = join(agent, "team-defaults.json");
+  const before = existsSync(file) ? readFileSync(file, "utf8") : null;
+  const defaultProfile = (lib) => lib.profiles.find((x) => x.id === readJson(join(agent, "subagent-profiles-default.json"))?.default) ?? lib.profiles[0];
+  if (before !== null) {
+    const lib = JSON.parse(before);
+    defaultProfile(lib).teams = teams;
+    writeFileSync(file, JSON.stringify(lib, null, 2));
+  } else writeFileSync(legacy, JSON.stringify({ version: 1, ...teams }, null, 2));
+  try {
+    const team = { name: "tw6", objective: "trial team", members: [{ role: "worker", model: "trial/m1", prompt: "say ok #tw6dev" }] };
+    const o = await newChat();
+    const r = await turn(o, `[call team_create ${JSON.stringify(team)}]`);
+    R.check(r.length === 1 && !r[0].message.isError, `tw6: team_create answered (${resultText(r[0])})`);
+    const mon = await workerWith(o.path, "NUDGE-TW6");
+    if (!R.check(mon, "tw6: the monitor is a worker chat")) return;
+    await wakeWait(() => toolResults(mon.path).some((e) => e.message?.toolName === "wake_nudge"), 60000);
+    const set = toolResults(mon.path).find((e) => e.message?.toolName === "wake_nudge");
+    R.check(!set.message.isError, `tw6: the monitor set its nudge (${resultText(set)})`);
+    const parentPid = chatPid(o.path);
+    o.s.close();
+    await wakeWait(() => !alive(parentPid) && workerRecords(o.path).every((w) => !alive(record(w.path)?.pid)), 40000);
+    R.check(wakeRecords().length === 1, `tw6: the parent is on record for the team's nudge (${wakeRecords().join()})`);
+    R.check(userEntriesWith(mon.path, "[wake_nudge") === 0, "tw6: every member stopped, nothing fired yet");
+    await wakeWait(() => userEntriesWith(mon.path, "[wake_nudge") > 0, 60000);
+    R.check(chatPid(o.path) && chatPid(o.path) !== parentPid, `tw6: Sova brought the parent back (pid ${parentPid} → ${chatPid(o.path)})`);
+    await sleep(3000);
+    R.check(userEntriesWith(mon.path, "[wake_nudge") === 1, `tw6: the monitor got it once (${userEntriesWith(mon.path, "[wake_nudge")})`);
+    await wakeWait(() => wakeRecords().length === 0, 15000);
+    R.check(wakeRecords().length === 0, "tw6: delivered, it left the list");
+  } finally {
+    if (before !== null) writeFileSync(file, before);
+    else rmSync(legacy, { force: true });
+  }
+  await nextServer();
+}
+
+// tw7: a chain near the limit, a message from another chat partway: it doesn't reset, the 30th wake says stop, and the count holds across each idle stop.
+async function tw7() {
+  await wakeBoot();
+  const a = await newChat();
+  await turn(a, "say ok");
+  const id = entries(a.path)[0].id;
+  const third = scheduleNudge("10s", "LAST");
+  const second = scheduleNudge("10s", `SECOND ${third}`);
+  const pw = await powersChat();
+  await turn(pw, "say ok");
+  const { pid } = await nudgeThenShutDown(a, "15s", `FIRST ${second}`);
+  // 27 wakes behind it, as this chat's own entry says, written while it is down. Nothing typed from here on.
+  appendFileSync(a.path, `${JSON.stringify({ type: "custom", customType: "wake-nudge-count", data: { n: 27 }, id: "counted0", parentId: entries(a.path).at(-1).id, timestamp: new Date().toISOString() })}\n`);
+  // Older than the write guard's window: this hand's edit is no foreign writer's.
+  const old = new Date(Date.now() - 600_000);
+  utimesSync(a.path, old, old);
+  await wakeWait(() => userEntriesWith(a.path, "[wake_nudge") >= 1, 40000);
+  R.check(chatPid(a.path) !== pid, "tw7: brought back for the first nudge of the chain");
+  await reawaken(pw);
+  await turn(pw, `[call session_send {"session":"${id}","text":"FROM-ANOTHER-CHAT say ok"}]`);
+  await wakeWait(() => userEntriesWith(a.path, "FROM-ANOTHER-CHAT") > 0, 30000);
+  await wakeWait(() => userEntriesWith(a.path, "Wake limit (30) reached without user input: do not schedule") > 0, 120000);
+  R.check(userEntriesWith(a.path, "[wake_nudge") === 3, `tw7: fires 28, 29 and 30, the other chat's message partway (${userEntriesWith(a.path, "[wake_nudge")})`);
+  await wakeWait(() => wakeRecords().length === 0, 15000);
+  // A message from another chat is no reset: the chat's schedule is refused.
+  await reawaken(pw);
+  await turn(pw, `[call session_send {"session":"${id}","text":${JSON.stringify(scheduleNudge("10s", "REFUSED"))}}]`);
+  await wakeWait(() => toolResults(a.path).some((e) => e.message?.isError && resultText(e).includes("Wake limit (30)")), 40000);
+  const stopped = chatPid(a.path);
+  if (stopped) await waitFor(() => !alive(stopped), 30000);
+  // The count held across that stop, and a typed message opens it again.
+  a.s = await chat(c, a.path);
+  const again = await turn(a, scheduleNudge("1h", "AFTER-TYPING"));
+  R.check(again.length === 1 && !again[0].message.isError, `tw7: a typed message opens the chain again (${resultText(again[0])})`);
+  a.s.close();
+  pw.s.close();
+  await nextServer();
+}
+
+// tw8: the Overseer shuts down and comes back for its nudge as any chat does.
+async function tw8() {
+  await wakeBoot();
+  const ov = await openOn(await overseer());
+  const { pid, due, id } = await nudgeThenShutDown(ov, "12s", "OVERSEER-NUDGE");
+  R.check(Date.now() < due, "tw8: the Overseer shut down before its nudge came due");
+  await wakeWait(() => fires(ov.path, id).length > 0, 40000);
+  R.check(chatPid(ov.path) && chatPid(ov.path) !== pid, `tw8: Sova brought it back, no tab open (pid ${pid} → ${chatPid(ov.path)})`);
+  R.check(fires(ov.path, id).length === 1, "tw8: it fired once");
+  await wakeWait(() => wakeRecords().length === 0, 15000);
+  await nextServer();
+}
+
+
+// Background jobs (§app/background-jobs, the plan's a11): systemd only (a chat's unit and the jobs slice),
+// a short idle stop, the job keeper ticking each second.
+const JOB_KNOBS = { ...WAKE_KNOBS, SOVA_JOBS_TICK_MS: "1000" };
+const jobsRoot = () => join(agent, "sova", "background-jobs");
+const jobsOf = (path) => {
+  const id = entries(path)[0]?.id;
+  const dir = join(jobsRoot(), encodeURIComponent(id ?? ""));
+  if (!id || !existsSync(dir)) return [];
+  return readdirSync(dir).filter((f) => /^j\d+\.json$/.test(f)).map((f) => readJson(join(dir, f))).sort((x, y) => Number(x.id.slice(1)) - Number(y.id.slice(1)));
+};
+const jobById = (path, id) => jobsOf(path).find((j) => j.id === id);
+const jobPids = (j) => {
+  try {
+    return readFileSync(join(j.cgroup, "cgroup.procs"), "utf8").split("\n").filter(Boolean).map(Number);
+  } catch {
+    return [];
+  }
+};
+const fullText = (e) => (Array.isArray(e?.message?.content) ? e.message.content.map((c) => c.text ?? "").join("") : String(e?.message?.content ?? ""));
+const jobCards = (path, id) => entries(path).filter((e) => e.type === "message" && e.message?.role === "user" && new RegExp(`^\\[job [^\\]]*\\b${id}\\b`).test(fullText(e)));
+const jobBoot = async (extra = {}) => {
+  await teardown();
+  await boot({ idleMs: 4000, extra: { ...JOB_KNOBS, ...extra } });
+};
+const needSystemd = (name) => {
+  if (driver === "systemd") return true;
+  R.check(false, `${name} needs --driver systemd (chat units and the jobs slice)`);
+  return false;
+};
+
+// tj1: two commands side by side, a failed command that left a job, a job with no output file; an idle
+// stop leaves the jobs running; a job's end wakes the chat with no tab; Stop wakes nothing; archiving stops the rest.
+async function tj1() {
+  if (!needSystemd("tj1")) return;
+  await jobBoot();
+  const a = await newChat();
+  const f1 = join(scratch, "tj1-setsid.out");
+  const fg = join(scratch, "tj1-fg.out");
+  const both = await turn(a, `[par-bash ${JSON.stringify([`sleep 4; echo FG-DONE > ${fg}`, `setsid sleep 300 > ${f1} 2>&1 &`])}]`);
+  const fgRes = both.find((e) => fullText(e).includes("") && e.message.toolCallId?.endsWith("_0"));
+  const bgRes = both.find((e) => e.message.toolCallId?.endsWith("_1"));
+  R.check(both.length === 2, `tj1: two calls ran side by side (${both.length})`);
+  R.check(bgRes && /background job j1/.test(fullText(bgRes)), `tj1: the call that left a job says so (${fullText(bgRes).slice(-200)})`);
+  R.check(fgRes && !/background job/.test(fullText(fgRes)), `tj1: the slow foreground call is no job (${fullText(fgRes).slice(-200)})`);
+  R.check(existsSync(fg), "tj1: the foreground run finished untouched");
+  let jobs = jobsOf(a.path);
+  R.check(jobs.length === 1 && jobs[0].output === f1, `tj1: one job, its output where the command sent it (${JSON.stringify(jobs.map((j) => [j.id, j.output]))})`);
+  const j1pids = jobPids(jobs[0]);
+  R.check(j1pids.length === 1, `tj1: the job's scope holds its process (${j1pids})`);
+
+  const f2 = join(scratch, "tj1-false.out");
+  const failed = await turn(a, `[call bash ${JSON.stringify({ command: `sleep 300 > ${f2} 2>&1 & false` })}]`);
+  const unitProcs = () => {
+    try {
+      const cg = readFileSync(`/proc/${chatPid(a.path)}/cgroup`, "utf8").trim().slice(3);
+      return readFileSync(join("/sys/fs/cgroup", cg, "cgroup.procs"), "utf8").split("\n").filter(Boolean).map((p) => {
+        let env = "";
+        try {
+          env = readFileSync(`/proc/${p}/environ`, "utf8").split("\0").find((l) => l.startsWith("SOVA_JOB_CALL=")) ?? "-";
+        } catch {}
+        let cmd = "";
+        try {
+          cmd = readFileSync(`/proc/${p}/cmdline`, "utf8").replace(/\0/g, " ").slice(0, 60);
+        } catch {}
+        return `${p}:${cmd}:${env}`;
+      }).join(" | ");
+    } catch (e) {
+      return String(e);
+    }
+  };
+  R.check(failed[0]?.message?.isError && /background job j2/.test(fullText(failed[0])), `tj1: a failed command that left something running leaves a job (${fullText(failed[0]).slice(-200)}) [unit: ${unitProcs()}]`);
+
+  const after = join(scratch, "tj1-after");
+  const dead = await turn(a, `[call bash ${JSON.stringify({ command: `(sleep 5; echo x; touch ${after}) &` })}]`);
+  R.check(/has no output file and will die the first time it writes/.test(fullText(dead[0])), `tj1: a job with no output file is flagged (${fullText(dead[0]).slice(-200)})`);
+  const j3 = jobById(a.path, "j3");
+  R.check(j3?.noOutput === true && jobPids(j3).length > 0, "tj1: alive at return, and kept");
+
+  const pid = chatPid(a.path);
+  a.s.close();
+  await wakeWait(() => !alive(pid), 30000);
+  R.check(j1pids.every(alive), "tj1: the idle stop left the jobs running");
+  // The dead-pipe job dies at its first write; its end brings the chat back with its card.
+  await wakeWait(() => jobCards(a.path, "j3").length > 0, 40000);
+  R.check(!existsSync(after), "tj1: its first write killed it: the file after the write never appeared");
+  R.check(jobById(a.path, "j3")?.ended?.how === "exited", `tj1: recorded as ended (${JSON.stringify(jobById(a.path, "j3")?.ended)})`);
+  R.check(/no output file/.test(fullText(jobCards(a.path, "j3")[0])), "tj1: its card says it had no output file");
+  await sleep(2000); // two keeper ticks: a second card would be on the branch by now
+  R.check(jobCards(a.path, "j3").length === 1, "tj1: one card");
+
+  // Stop: no card, no start.
+  await wakeWait(() => !chatPid(a.path), 30000);
+  await post("/api/sessions/jobs/stop", { path: a.path, id: "j1" });
+  await wakeWait(() => jobById(a.path, "j1")?.ended, 30000);
+  R.check(jobById(a.path, "j1").ended.how === "stopped" && !j1pids.some(alive), `tj1: Stop ended it (${JSON.stringify(jobById(a.path, "j1").ended)})`);
+  await sleep(3000); // past three ticks: a wake would have started the chat by now
+  R.check(!chatPid(a.path) && jobCards(a.path, "j1").length === 0, "tj1: Stop sent no card and started nothing");
+  const listed = await c.api(`/api/sessions/jobs?path=${encodeURIComponent(a.path)}`);
+  R.check(listed.jobs?.map((j) => j.id).join() === "j2", `tj1: the list shows the job still running (${JSON.stringify(listed.jobs?.map((j) => j.id))})`);
+
+  // The chat learns of the stop on its next run.
+  a.s = await chat(c, a.path);
+  a.s.send({ type: "set_model", ref: "trial/m1" });
+  await turn(a, "hello");
+  const noted = entries(a.path).some((e) => e.type === "custom_message" && /\[job j1 stopped\]/.test(JSON.stringify(e.content)));
+  R.check(noted, "tj1: its next run carried the stop's note");
+  a.s.close();
+
+  const j2pids = jobPids(jobById(a.path, "j2"));
+  await post("/api/sessions/archive", { path: a.path, archived: true });
+  await wakeWait(() => jobById(a.path, "j2")?.ended, 40000);
+  R.check(jobById(a.path, "j2").ended.how === "archived" && !j2pids.some(alive), "tj1: archiving stopped its job");
+  R.check(jobCards(a.path, "j2").length === 0, "tj1: archiving sent no card");
+  await nextServer();
+}
+
+// tj2: the limit at 1, and what a kept job survives: a reload onto new code, a chat crash, a Sova restart.
+async function tj2() {
+  if (!needSystemd("tj2")) return;
+  await jobBoot({ SOVA_JOBS_MAX: "1" });
+  const a = await newChat();
+  const f1 = join(scratch, "tj2-1.out");
+  await turn(a, `[call bash ${JSON.stringify({ command: `sleep 300 > ${f1} 2>&1 &` })}]`);
+  const j1 = jobById(a.path, "j1");
+  const pids = jobPids(j1);
+  R.check(pids.length === 1, "tj2: the first job is kept");
+  const over = await turn(a, `[call bash ${JSON.stringify({ command: `SOVA_TJ2=over sleep 300 > ${f1}.2 2>&1 &` })}]`);
+  R.check(/already keeps 1 background jobs, so it wasn't kept/.test(fullText(over[0])), `tj2: past the limit the result says so (${fullText(over[0]).slice(-220)})`);
+  R.check(jobsOf(a.path).length === 1, "tj2: no record for it");
+  const unit = readFileSync(`/proc/${chatPid(a.path)}/cgroup`, "utf8").trim().split("/").pop();
+  const overPid = Number(readFileSync(join("/sys/fs/cgroup", readFileSync(`/proc/${chatPid(a.path)}/cgroup`, "utf8").trim().slice(3), "cgroup.procs"), "utf8").split("\n").filter(Boolean).find((p) => { try { return readFileSync(`/proc/${p}/environ`, "utf8").includes("SOVA_TJ2=over"); } catch { return false; } }));
+  R.check(overPid > 0, "tj2: it stays in the chat's unit");
+  // A crash: the chat's own process killed.
+  const pid = chatPid(a.path);
+  process.kill(pid, "SIGKILL");
+  await wakeWait(() => !alive(pid), 15000);
+  await wakeWait(() => !alive(overPid), 15000);
+  R.check(pids.every(alive), "tj2: a chat crash leaves its kept job running, and ends the one it didn't keep");
+  // A Sova restart, then a reload onto a new build.
+  await srv.down();
+  R.check(pids.every(alive), "tj2: a Sova stop leaves it running");
+  await teardown(srv, agent, { keepJobs: true });
+  await boot({ idleMs: 4000, build: "trial-next", extra: { ...JOB_KNOBS, SOVA_JOBS_MAX: "1" } });
+  a.s = await chat(c, a.path);
+  a.s.send({ type: "set_model", ref: "trial/m1" });
+  await turn(a, "hello");
+  R.check(pids.every(alive), "tj2: a Sova restart and a reload leave it running");
+  // Sova stopped for good: scripts/stop-chats.ts stops its jobs with its chats.
+  a.s.close();
+  await srv.down();
+  R.check(pids.every(alive), "tj2: still running with the server stopped");
+  const bun = process.env.SOVA_BUN || (() => {
+    try {
+      return execFileSync("mise", ["which", "bun"], { cwd: ROOT, encoding: "utf8" }).trim();
+    } catch {
+      return "bun";
+    }
+  })();
+  const env = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("SOVA_") && k !== "PI_CODING_AGENT_DIR")), [KNOBS.slice]: slice };
+  let out = "";
+  try {
+    out = execFileSync(bun, [join(ROOT, "scripts", "stop-chats.ts"), "--agent-dir", agent], { cwd: ROOT, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 120000 });
+  } catch (e) {
+    out = `exit ${e.status}: ${e.stdout ?? ""}${e.stderr ?? ""}`;
+  }
+  R.check(/stopping job j1 /.test(out) && /1 background job stopping/.test(out), `tj2: stop-chats names the job it stops (${out.trim().slice(-300)})`);
+  await wakeWait(() => !pids.some(alive), 30000);
+  R.check(!pids.some(alive), "tj2: stop-chats ended the job");
+  await nextServer();
+}
+
+// tj3: background_job end to end: a chat's job passes and its card says so; a worker's job fails and its
+// card, delivered in the worker, gives the exit code; stopping the worker stops its other job, with no card.
+async function tj3() {
+  if (!needSystemd("tj3")) return;
+  await jobBoot();
+  const a = await newChat();
+  const pout = join(scratch, "tj3-parent.out");
+  const r = await turn(a, `[call background_job ${JSON.stringify({ command: `sleep 1; echo PARENT > ${pout}` })}] #tj3p`);
+  R.check(r.length === 1 && !r[0].message.isError && /Started background job j1/.test(fullText(r[0])), `tj3: background_job started a job (${fullText(r[0]).slice(0, 200)})`);
+  const asked = mockLog(mock.log).filter((e) => e.scenario && /#tj3p/.test(e.userText ?? ""));
+  R.check(asked.length > 0 && asked.every((e) => e.jobTool && e.jobGuide), `tj3: the chat is offered background_job and told to send output to a file (${JSON.stringify(asked.map((e) => [e.jobTool ?? false, e.jobGuide ?? false]))})`);
+  const pj = jobById(a.path, "j1");
+  R.check(pj?.kind === "requested" && jobPids(pj).length > 0 || pj?.ended, `tj3: recorded as requested, in its unit (${JSON.stringify(pj && { kind: pj.kind, cgroup: pj.cgroup })})`);
+  await wakeWait(() => jobCards(a.path, "j1").length > 0, 40000);
+  const pcard = fullText(jobCards(a.path, "j1")[0]);
+  R.check(/It passed \(exit code 0\)/.test(pcard) && pcard.includes(pj?.output ?? "?"), `tj3: its card says it passed and where its output is (${pcard.slice(0, 300)})`);
+  R.check(readFileSync(pout, "utf8").trim() === "PARENT", "tj3: the job ran outside the chat");
+
+  const task = `[call background_job ${JSON.stringify({ command: "sleep 2; echo W; exit 4" })}] [call background_job ${JSON.stringify({ command: "sleep 300" })}] #tj3w`;
+  const sp = await turn(a, `[call agent_spawn ${JSON.stringify({ prompt: task, model: "trial/m1", name: "trial-tj3" })}]`);
+  R.check(sp.length === 1 && !sp[0].message.isError, `tj3: spawned (${resultText(sp[0])})`);
+  const afterSpawn = a.s.got.length;
+  const w = await workerWith(a.path, "#tj3w");
+  if (!R.check(w, "tj3: the server records the worker")) return;
+  await wakeWait(() => jobsOf(w.path).length === 2, 60000);
+  const wj = jobsOf(w.path);
+  R.check(wj.length === 2 && wj.every((j) => j.kind === "requested" && j.worker), `tj3: the worker's two jobs, each naming the worker (${JSON.stringify(wj.map((j) => [j.id, j.kind, j.worker]))})`);
+  await wakeWait(() => jobCards(w.path, "j1").length > 0, 60000);
+  const wcard = fullText(jobCards(w.path, "j1")[0]);
+  R.check(/It failed \(exit code 4\)/.test(wcard), `tj3: the worker's card says it failed, with its exit code (${wcard.slice(0, 300)})`);
+  R.check(!toolResults(w.path).some((e) => e.message?.toolName === "wake_nudge") && jobCards(a.path, "j1").length === 1, "tj3: the worker got its own card; the parent's card stayed one");
+  const j2pids = jobPids(jobById(w.path, "j2"));
+  R.check(j2pids.length > 0, `tj3: the worker's long job runs (${j2pids})`);
+  // Its task's end reaches the parent as a turn of its own: kill it once that settled.
+  const done = await workerDone(a.s, "trial-tj3");
+  R.check(done?.outcome, `tj3: the worker's task ended (${done?.outcome})`);
+  // The parent may have stopped while idle: open it again to ask for the kill.
+  await waitFor(() => a.s.got.slice(afterSpawn).some(isEvent("run.settled")) || !chatPid(a.path), 30000);
+  a.s.close();
+  a.s = await chat(c, a.path);
+  a.s.send({ type: "set_model", ref: "trial/m1" });
+  await a.s.until((m) => m.type === "model" || m.type === "error", 15000, "set_model answer");
+  const t0 = new Date().toISOString();
+  const wid = w.parent?.workerId;
+  try {
+    await turn(a, `[call agent_kill ${JSON.stringify({ id: wid })}]`);
+  } catch (e) {
+    R.note(`tj3: the parent's model calls since: ${mockLog(mock.log).filter((x) => x.scenario && x.at >= t0).map((x) => `${x.pid} ${x.scenario} ${x.userText.slice(0, 80)}`).join(" | ")}`);
+    throw e;
+  }
+  await wakeWait(() => jobById(w.path, "j2")?.ended, 40000);
+  R.check(jobById(w.path, "j2")?.ended?.how === "worker-stopped" && !j2pids.some(alive), `tj3: stopping the worker stopped its job (${JSON.stringify(jobById(w.path, "j2")?.ended)})`);
+  await sleep(3000);
+  R.check(jobCards(w.path, "j2").length === 0, "tj3: no card for it");
+  a.s.close();
+  await nextServer();
+}
+
+// tj4: deleting a chat (archive, then delete) stops its job and sends no card; a Claude Code chat's bash
+// (the fake claude calling Sova's bash over MCP) keeps a job as a pi chat's does; a sandboxed chat keeps
+// nothing (its command's leftovers end with the call) and background_job refuses it.
+async function tj4() {
+  if (!needSystemd("tj4")) return;
+  await jobBoot();
+  // A Claude Code chat: its bash runs through pi's tool loop in the chat, so the call is marked and kept.
+  const cc = await newChat("claude-code-cli/claude-sonnet-5-5");
+  const cout = join(scratch, "tj4-claude.out");
+  const cr = await turn(cc, `[fake-tool bash ${JSON.stringify({ command: `setsid sleep 300 > ${cout} 2>&1 &` })}]`, 90000);
+  R.check(cr.length === 1 && cr[0].message?.toolName === "bash" && /background job j1/.test(fullText(cr[0])), `tj4: a Claude Code chat's bash keeps a job and says so (${cr.map((e) => `${e.message?.toolName}: ${fullText(e).slice(-200)}`).join(" | ")})`);
+  const cj = jobById(cc.path, "j1");
+  const cpids = cj ? jobPids(cj) : [];
+  R.check(cj?.output === cout && cpids.length === 1, `tj4: one job in its own unit, its output recorded (${JSON.stringify(cj && { output: cj.output, cgroup: cj.cgroup })})`);
+  const fakeSaid = entries(cc.path).filter((e) => e.type === "message" && e.message?.role === "assistant").map(fullText).join(" ");
+  R.check(/Fake tool result: [\s\S]*background job j1/.test(fakeSaid), "tj4: the CLI got the result with the job's line");
+
+  // Delete: a chat that isn't archived is refused and keeps its job; archived and deleted, its job stops, with no card.
+  const refused = await post("/api/sessions/cleanup", { mode: "paths", paths: [cc.path], dryRun: false });
+  R.check(existsSync(cc.path) && cpids.every(alive), `tj4: delete of an unarchived chat is refused, its job runs (${JSON.stringify(refused).slice(0, 200)})`);
+  cc.s.close();
+  const sid = entries(cc.path)[0]?.id;
+  await post("/api/sessions/archive", { path: cc.path, archived: true });
+  // A chat written to in the last two minutes is skipped by delete: make it older.
+  const old = new Date(Date.now() - 10 * 60_000);
+  utimesSync(cc.path, old, old);
+  const del = await post("/api/sessions/cleanup", { mode: "paths", paths: [cc.path], dryRun: false });
+  R.check(!existsSync(cc.path), `tj4: the chat is deleted (${JSON.stringify(del).slice(0, 200)})`);
+  const recDir = join(jobsRoot(), encodeURIComponent(sid ?? ""));
+  const rec = () => (existsSync(join(recDir, "j1.json")) ? readJson(join(recDir, "j1.json")) : null);
+  await wakeWait(() => rec()?.ended || !cpids.some(alive), 40000);
+  await wakeWait(() => rec()?.ended, 20000);
+  R.check(!cpids.some(alive) && rec()?.ended?.how === "archived", `tj4: deleting stopped its job (${JSON.stringify(rec()?.ended)})`);
+  await sleep(2000);
+  R.check(!existsSync(join(recDir, "j1.card")) || readFileSync(join(recDir, "j1.card"), "utf8").trim() !== "sent", "tj4: no card was sent");
+
+  // A sandboxed chat: nothing kept, and background_job refused with its reason.
+  const sb = await newChat();
+  const on = await c.api(`/api/sandbox?path=${encodeURIComponent(sb.path)}`, { method: "POST", body: JSON.stringify({ on: true }) });
+  R.check(on && !on.error, `tj4: the chat's sandbox is on (${JSON.stringify(on).slice(0, 200)})`);
+  const sout = join(scratch, "tj4-sandboxed.out");
+  const sr = await turn(sb, `[call bash ${JSON.stringify({ command: `setsid sleep 300 > ${sout} 2>&1 & echo started` })}]`);
+  if (/Sandbox unavailable/.test(fullText(sr[0]))) {
+    // Where the sandbox can't enforce (its probe fails: a scratch home under an allowed tmp), nothing runs at all.
+    R.note(`tj4: the sandbox can't enforce here, so a sandboxed command's leftovers aren't exercised (${fullText(sr[0]).slice(0, 160)})`);
+    R.check(!existsSync(sout) && !/background job/.test(fullText(sr[0])), "tj4: nothing ran, and nothing is kept");
+  } else R.check(sr.length === 1 && /started/.test(fullText(sr[0])) && !/background job/.test(fullText(sr[0])), `tj4: a sandboxed chat's command ran and its leftover is not kept (${fullText(sr[0]).slice(-200)})`);
+  R.check(jobsOf(sb.path).length === 0, "tj4: no job record for it");
+  const br = await turn(sb, `[call background_job ${JSON.stringify({ command: "sleep 300" })}]`);
+  R.check(br.length === 1 && br[0].message?.isError && /sandbox/i.test(fullText(br[0])), `tj4: background_job refuses a sandboxed chat, saying why (${fullText(br[0]).slice(0, 240)})`);
+  R.check(jobsOf(sb.path).length === 0, "tj4: still no job");
+  sb.s.close();
+  await nextServer();
+}
+
+// tj5: a worker's process crashes (SIGKILL) mid-run with a kept job and a requested job running: both keep
+// running, neither is recorded as ended and neither sends a card; the worker's run is resumed once
+// (§app.chat-processes/worker-crash). What its last bash call was still running ends with the process.
+async function tj5() {
+  if (!needSystemd("tj5")) return;
+  await jobBoot();
+  const a = await newChat();
+  const kout = join(scratch, "tj5-kept.out");
+  const task = [
+    `[call bash ${JSON.stringify({ command: `setsid sleep 300 > ${kout} 2>&1 &` })}]`,
+    `[call background_job ${JSON.stringify({ command: "sleep 300" })}]`,
+    `[call bash ${JSON.stringify({ command: "SOVA_TJ5=inflight sleep 120" })}]`,
+    "#tj5w",
+  ].join(" ");
+  const sp = await turn(a, `[call agent_spawn ${JSON.stringify({ prompt: task, model: "trial/m1", name: "trial-tj5" })}]`);
+  R.check(sp.length === 1 && !sp[0].message.isError, `tj5: spawned (${resultText(sp[0])})`);
+  const w = await workerWith(a.path, "#tj5w");
+  if (!R.check(w, "tj5: the server records the worker")) return;
+  await wakeWait(() => jobsOf(w.path).length === 2, 60000);
+  const jobs = jobsOf(w.path);
+  R.check(jobs.map((j) => j.kind).join() === "kept,requested", `tj5: the worker keeps one job and asked for one (${JSON.stringify(jobs.map((j) => [j.id, j.kind]))})`);
+  const pids = jobs.flatMap(jobPids);
+  R.check(jobs.every((j) => jobPids(j).length > 0), `tj5: each job's unit holds its processes (${jobs.map((j) => `${j.id}: ${jobPids(j)}`).join("; ")})`);
+  // Mid-run: its third call is still running in the worker's own unit.
+  const inflight = () => {
+    const pid = chatPid(w.path);
+    if (!pid) return 0;
+    try {
+      const cg = readFileSync(`/proc/${pid}/cgroup`, "utf8").trim().slice(3);
+      return Number(readFileSync(join("/sys/fs/cgroup", cg, "cgroup.procs"), "utf8").split("\n").filter(Boolean).find((p) => { try { return readFileSync(`/proc/${p}/environ`, "utf8").includes("SOVA_TJ5=inflight"); } catch { return false; } }) ?? 0);
+    } catch {
+      return 0;
+    }
+  };
+  await wakeWait(() => inflight() > 0, 60000);
+  const callPid = inflight();
+  R.check(callPid > 0, "tj5: the worker is mid-run, its last bash call running in its unit");
+  const pid1 = chatPid(w.path);
+  process.kill(pid1, "SIGKILL");
+  R.note(`tj5: killed the worker's process ${pid1}`);
+  await wakeWait(() => !alive(pid1), 15000);
+  await wakeWait(() => !alive(callPid), 15000);
+  R.check(!alive(callPid), "tj5: the call still running ends with the worker's process");
+  // The crash resume: a new process, the crash "continue" once.
+  await wakeWait(() => userEntriesWith(w.path, CRASH_RESUME_TEXT) >= 1, 60000);
+  R.check(chatPid(w.path) && chatPid(w.path) !== pid1, `tj5: the worker reopened in a new process (pid ${pid1} → ${chatPid(w.path) || "none"})`);
+  // Several keeper sweeps (1 s each) after the death: the jobs still run, and none is recorded as ended.
+  await sleep(5000);
+  R.check(pids.every(alive), `tj5: both jobs survive the worker's crash (${pids.map((p) => `${p}:${alive(p)}`)})`);
+  R.check(jobsOf(w.path).every((j) => !j.ended), `tj5: neither is recorded as ended (${JSON.stringify(jobsOf(w.path).map((j) => j.ended ?? null))})`);
+  R.check(jobCards(w.path, "j1").length === 0 && jobCards(w.path, "j2").length === 0, "tj5: no card for either");
+  R.check(userEntriesWith(w.path, CRASH_RESUME_TEXT) === 1, `tj5: one crash "continue" (${userEntriesWith(w.path, CRASH_RESUME_TEXT)})`);
+  a.s.close();
+  await nextServer();
+}
+
+const table = { tyourclick, t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), tsend, t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, tw1, tw2, tw3, tw4, tw5, tw6, tw7, tw8, tj1, tj2, tj3, tj4, tj5, hermetic, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

@@ -185,3 +185,13 @@ test("an extension entry named like one of Sova's items is left out of the menu"
   assert.deepEqual(labels(html).slice(-2), ["Copy Path", "Real One"]);
   assert.equal(labels(html).filter((l) => l === "Copy Path").length, 1);
 });
+
+test("a chat Sova names itself (fixedName) has no title actions; every other item stays", () => {
+  const plain = drawMenu({ row: row(session()), ctx: ctx(), archive: { label: "Archive", blocked: null } });
+  const fixed = drawMenu({ row: row(session({ title: "Overseer · Portal", fixedName: "project-overseer" })), ctx: ctx(), archive: { label: "Archive", blocked: null } });
+  for (const label of ["Rename…", "Use Gist as Title", "Reset to Original Title"]) {
+    assert.ok(plain.includes(label), `an ordinary chat offers ${label}`);
+    assert.equal(fixed.includes(label), false, `no ${label}`);
+  }
+  assert.ok(fixed.includes("Move to Group…") && fixed.includes("Copy Path"));
+});

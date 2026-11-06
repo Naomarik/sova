@@ -45,7 +45,7 @@ working worker is never the one it leaves out.
     <a class="list-row list-row-interactive insights-row sidebar-foot-link" href="#/usage" aria-current="page"
        title="Usage&#10;Claude 5-hour: 10% used · 2h 10m of 5h · resets 6:59 PM; 7-day: 47% used · day 4 of 7 · resets Oct 9 10:00 PM&#10;OpenAI 7-day: 95% used · day 2 of 7 · resets Oct 8 9:30 PM&#10;…"
        aria-label="Usage: Claude 5-hour: 10% used · 2h 10m of 5h · resets 6:59 PM; 7-day: 47% used · day 4 of 7 · resets Oct 9 10:00 PM. OpenAI 7-day: …">
-      <span class="icon" style="--icon: url(/icons/gauge.svg)" aria-hidden="true"></span>
+      <span class="icon" style="--icon: url(/icons/usage-coin.svg)" aria-hidden="true"></span>
       <span class="insights-row-text usage-glance">
         <!-- a two-window provider: the short window thin on top, the long one below -->
         <span class="usage-glance-item"><span class="usage-glance-tag">C</span>
@@ -68,7 +68,7 @@ working worker is never the one it leaves out.
   <a class="list-row list-row-interactive insights-row" href="#/agents"
      title="Agents: 7 agents working now: 2 sessions and 5 subagents. Output tokens a minute: 48k over the last 5 minutes, 12k over 30. Replies still being written aren't counted yet."
      aria-label="Agents: 7 agents working now: 2 sessions and 5 subagents. Output tokens a minute: 48k over the last 5 minutes, 12k over 30. Replies still being written aren't counted yet.">
-    <span class="icon" style="--icon: url(/icons/worker.svg)" aria-hidden="true"></span>
+    <span class="icon" style="--icon: url(/icons/agents-working.svg)" aria-hidden="true"></span>
     <span class="agents-ticker">
       <span class="agents-line">
         <span class="insights-row-text"><span class="text-num">7</span> agents</span>
@@ -86,8 +86,11 @@ working worker is never the one it leaves out.
 ```
 
 **Unfolded (≥768)** the foot holds **two stacked rows, and both are always present**, so the layout never
-jumps: the Usage row is 44px and the Agents row 64px, the extra 20px holding the token chart
-(§app.insights/token-velocity) on a second line. Those two are the foot's only rows: it has no
+jumps under them: the Usage row is 44px and the Agents row 64px, the extra 20px holding the token chart
+(§app.insights/token-velocity) on a second line. Only the **landing bar** comes and goes, above them
+(above the host filter row while the mesh is on), while a merge queue or an open release has something
+to show (§app.merge-queue/landing-bar); it is drawn by its own claim, not here. Besides it, those two
+are the foot's only rows: it has no
 Shares row, and the spine's foot has no Shares button — the Shares page is reached from the
 overview's Shares card (§chat.transcript/landing-page) and from each Sharing section
 (§app.session-share/shares-page). **Folded (<768) none of this shows**: a
@@ -117,7 +120,7 @@ Usage glance needs the room.
     and its long one as a 4px bar under it, 1px apart: Claude's 5-hour over the window flagged
     `active` when that is a 7-day one (a 7-day Fable, say), else its 7-day; Z.ai's plan window
     (5-hour) over MCP uses. A one-window provider draws one 6px bar: OpenAI the window flagged
-    `active` (the first one, if several are), else its 7-day, else its longest; legacy Ollama percent readings their Monthly. Modern Ollama activity and included/purchased credit fields are not glance windows or DeepSeek-style balances; they remain on the Usage page and are omitted from the web glance under Missing data below. The TUI's compact status is separate (§app.insights/ollama-activity).
+    `active` (the first one, if several are), else its 7-day, else its longest; Ollama Cloud its included credits used (§app.insights/ollama-glance), a legacy percent reading its Monthly; never its activity or purchased credits. The TUI's compact status is separate (§app.insights/ollama-activity).
     Never Claude's Opus-only window. A provider sending only one of its two windows draws that one
     as a one-window provider does. A window of the pair with no current reading (its reset
     passed) keeps its place as an empty track, so the meter's shape never jumps.
@@ -154,7 +157,7 @@ Usage glance needs the room.
     no-login-ready case above). A chosen login in another not-`ok` state (signed out, sign-in
     expired) is missing data.
   - **Missing data.** A provider that isn't `ok`, or has neither windows nor a balance, is left
-    out. With nothing at all, the row reads "Usage".
+    out, as is Ollama Cloud with no current included-credit reading (§app.insights/ollama-glance). With nothing at all, the row reads "Usage".
   - **Tone.** Each bar's fill is neutral ink, `warn` when its used share runs more than 10
     points ahead of its tick, `error` at 90% or more, and, with no tick, `warn` from 80%
     (§app.insights/pace-tick, **Foot fill tone**). The hue is the meter's own status; the row's
@@ -212,7 +215,7 @@ Usage glance needs the room.
   The row itself has room for the figures, not for the sentences.
 
 The rows take no chip, because the pages carry the status, and no color but the usage meters'
-fill tone. Each truncates with an ellipsis.
+fill tone (the landing bar above them has its own icon, count and tones). Each truncates with an ellipsis.
 
 ## §app.insights/sidebar-foot-phone — The foot on a phone: one bar, one sheet
 
@@ -227,13 +230,16 @@ Nothing in them is rewritten, only re-homed: the Agents row's chart scrubs in th
 too, by a 500ms hold on the row and then a drag, and the sheet never scrolls under that drag
 (§app.insights/velocity-scrub). At ≥768 the bar never shows and the foot
 is §app.insights/sidebar-foot as drawn there; the spine is untouched by either. The sheet's
-accessible name is "Hosts, usage and agents".
+accessible name is "Hosts, usage and agents". While a merge queue or an open release has something
+to show, the landing bar's own 44px strip sits directly above this bar, with its own sheet
+(§app.merge-queue/landing-bar); it is neither part of this bar nor in this sheet, and the bar
+itself stays 44px.
 
 The bar itself reads the same data as the rows, left to right:
 
 - **Mesh.** The connected count `{up}/{total}`, the host filter row's own figures
   (`connectedCount`) — shown only while the mesh is on, the same rule as the row.
-- **Agents working.** The `worker` icon and the Agents row's own figure, the working count
+- **Agents working.** The Agents row's icon (`agents-working`, a small bot head with sparks) and the Agents row's own figure, the working count
   (§app.session-list/working-now: the bare `{n}` whenever known, a floor too, `–` while unknown),
   no word — the bar is a strip of figures; the accessible name says it. Always shown, a complete
   `0` included.
@@ -422,7 +428,8 @@ host and every connected host.**
 
 **Every model call made on this device by Sova or pi (main sessions, the Overseer, org and baton
 sessions, workers at any depth, pi or Claude Code, and one-shots: decisions, titles, topic
-outlines, image descriptions, compaction, branch summaries, cache warming) writes one usage record
+outlines, image descriptions, compaction, branch summaries, cache warming, the merge queue's branch
+summaries) writes one usage record
 at its end, and every figure of spend Sova shows is read from these records and priced by one
 function.** Standalone `claude` use outside Sova and pi is not recorded.
 
@@ -430,7 +437,9 @@ function.** Standalone `claude` use outside Sova and pi is not recorded.
   1-hour part when the provider reports it), the provider, the model asked for and the model that
   answered, when the call ended, the session that owns it, that session's parent (a worker's
   session), the kind (`main`, `worker`, `overseer`, `oneshot`), the purpose of a side call
-  (`title`, `decide`, `outline`, `vision`, `branch-summary`, `compaction`, `cache-warm`, …), the
+  (`title`, `decide`, `outline`, `vision`, `branch-summary`, `compaction`, `cache-warm`, …, and
+  `git-branch-summary`, the merge queue's branch summaries, with their project set, kept apart from
+  `branch-summary`, which is a conversation's), the
   working directory and the org project when known, and a key that names the call. A call that
   reports no tokens writes nothing. Each attempt of a retried call is its own record.
 - **How a Claude process started.** The first record of each Claude Code child the provider bridge
@@ -1055,7 +1064,7 @@ Ollama Cloud's monthly credit display reads authoritative included balance, allo
 - **macOS hint.** When the payload carries `claudeOwnLoginUnreadable` (macOS, and Claude Code's own
   login is neither in its file nor in a keychain this server can read,
   §app.claude-logins/macos-keychain), one muted `.usage-note` under the lead says "On macOS, add
-  your Claude login under Settings → Accounts."
+  your Claude login under Settings → Accounts → Claude."
 - **Rows.** The body under the lead is `.usage-groups`: separate `.card.usage-rows` surfaces for
   `providers[]` entries, in the order given: Claude, OpenAI, Ollama Cloud, Z.ai, DeepSeek. Page-background
   gaps and rounded card edges separate provider types; hairlines separate accounts within Claude.
@@ -1245,6 +1254,9 @@ Fill past the tick means the quota is going faster than the window.
 - **No tick when it isn't known.** No `resetsAt` (an idle Claude 5-hour window, Ollama's legacy
   monthly percent, Z.ai's MCP uses), or a label of no stated length (`pri`, `plan`, a `month` without
   `startsAt`): no tick. A reset that has passed: no tick either. A tick is never estimated.
+- **Ollama Cloud's included credits** take their span from the provider's own credit period,
+  `included.period.from` to `included.period.until` (§app.insights/ollama-credits), whatever its
+  length: the tick stands at the share of that period elapsed, and its words count its days.
 - **Words.** A window of a day or more is "day {n} of {total}" (n from 1, in whole 24-hour days
   of its span); a shorter one "{elapsed} of {length}" ("2h 10m of 5h"). One bar in words is
   "{window}: {pct}% used · {progress} · resets {when}": `when` is the clock time, with its date
@@ -1254,6 +1266,34 @@ Fill past the tick means the quota is going faster than the window.
   ink, `warn` when its used share is more than 10 points ahead of its tick (`pct − 100 ×
   elapsed > 10`), and `error` at 90% or more. A bar with no tick is `warn` from 80%. The Usage
   rows keep their own fill tones, which pair with the head chip (§app.insights/usage-cards).
+
+## §app.insights/ollama-glance — Ollama Cloud on the usage glance
+
+`OL` sits in the sidebar foot's usage glance in its fixed place, between `O` and `Z`
+(§app.insights/sidebar-foot), whenever Sova has a current included-credit reading for Ollama
+Cloud: current as §app.insights/ollama-credits rules it (its provider period not ended, and the
+reading no more than 10 minutes old, its time known and not ahead of now).
+
+- **The bar** is one 6px bar of the share of this period's included credits used,
+  `(allowance − balance) / allowance` (§app.insights/ollama-credits, **Credits line**), with the
+  pace tick of Ollama's own credit period (§app.insights/pace-tick). Its tone is the foot's
+  (**Foot fill tone**): `warn` more than 10 points ahead of the tick, `error` at 90% or more.
+- **Words.** The row's `title` and `aria-label` line reads "Ollama Cloud included credits: {pct}%
+  used · ${balance} of ${allowance} left · {progress} · resets {when} · purchased ${purchased}",
+  for example "Ollama Cloud included credits: 0% used · $299.95 of $300 left · day 1 of 30 · resets
+  Dec 5 7:30 PM · purchased $0", the amounts exact (`money()`) with a trailing ".00" dropped
+  ("$300", "$299.95"); a purchased balance that isn't known is left out.
+- **Included credits used up, purchased left.** With the included balance at 0 and purchased
+  credits remaining, the bar is full and `error`, and the words say "Ollama Cloud included credits
+  used up; purchased ${purchased} left · {progress} · resets {when}". Never "out of
+  credit": calls still run on purchased credits, and the item never takes
+  `.usage-glance-item-high`.
+- **No current reading.** With no current included-credit reading (none yet, a kept previous one,
+  an ended period, or a pair with no meaningful used share), `OL` is left out of the glance and its
+  words, never drawn from an old reading, until a current reading returns. Activity dollars never
+  stand in for it or fill the bar.
+- **Phones** show the same `OL` part on the phone bar, since it reads the glance's parts
+  (§app.insights/sidebar-foot-phone). The Usage page is unchanged (§app.insights/usage-cards).
 
 ## §app.insights/ollama-reset — Ollama Cloud's reset is the provider's
 
@@ -1310,7 +1350,10 @@ usage fetch reads (Claude Code's `~/.claude/.credentials.json`, pi's `auth.json`
 Codex CLI's `~/.codex/auth.json`), re-read only when a file changes; on macOS a Claude login with no
 credentials file is read from its keychain item instead, for the fetch and for these numbers
 (§app.claude-logins/macos-keychain), and then carries no `refreshedAt`. It carries numbers, enums and
-booleans only: no string from a credential file ever leaves the server. Claude's
+booleans only: no string from a credential file ever leaves the server, with one named exception:
+OpenAI's sign-in through pi (`openai-codex`) also carries the signed-in account's `email`, read on
+the server from the access token's own claims (§app.openai-login/section); never the token or any
+other string from it. Claude's
 `refreshedAt` is the credentials file's modification time, and only while that time agrees (to
 within 10 minutes) with an 8-hour token lifetime ending at `expiresAt`; otherwise it is left out
 rather than guessed. OpenAI signed in through pi has an expiry and no renewal time; signed in only
@@ -1322,6 +1365,9 @@ when Claude Code itself runs; the Usage page says so (§app.insights/usage-cards
 renewing it. The one exception is Settings → Accounts (§app.claude-logins/add-remove): at the
 user's request Sova runs Claude Code's own `claude auth login` and `claude auth logout` in an added
 login's directory, and deletes that directory on removal. Claude Code writes those credentials.
+The second is OpenAI in Settings → Accounts (§app.openai-login/sign-in, §app.openai-login/sign-out):
+at the user's request Sova runs pi's own sign-in and sign-out for `openai-codex`, which save the
+sign-in to, and remove it from, pi's `auth.json`. pi renews it while chats use it; Sova never does.
 
 **Every Claude login's usage.** Claude Code's own credentials are read from its own directory
 (`$CLAUDE_CONFIG_DIR` when set, else `~/.claude`), as its spawns use it. Each other Claude login
@@ -1842,9 +1888,15 @@ commits each side has that the other hasn't; `added`/`removed` are the lines the
 since it left the base (binary files count 0). `branch` is absent on a detached HEAD. `dirty` says
 whether anything is uncommitted, untracked files included.
 
-**Read-only and bounded.** Reading a tree never writes to it: no index refresh or lock, no
-fsmonitor, no textconv or external diff, and the trial merge behind `content` writes its objects to
-a scratch store that is deleted afterwards. Every git runs without a shell under a 5-second limit,
+**Read-only and bounded.** Reading a tree never writes to it, but for the one exception below: no
+index refresh or lock, no fsmonitor, no textconv or external diff, and the trial merge behind `content`
+writes its objects to a scratch store that is deleted afterwards. The trial merge normally runs
+outside the tree's folder and the project's, so nothing it writes, a merge driver's temporary files
+included, is left in the main checkout or any worktree, even when git is stopped at its limit. The
+exception is a project with a `.gitattributes` file on a git older than 2.43, or one whose version
+can't be read: that git can't read the attributes from outside, so the merge runs in the checkout.
+Its answers stay right, and a merge stopped at its limit can still leave git's temporary files there.
+Every git runs without a shell under a 5-second limit,
 at most four at a time. The comparison is kept until the tree's HEAD or its base moves, or what its
 trial merge rests on changes (the configuration, attribute files and merge drivers' code,
 §app/idle-git-cache); `dirty` is kept for ten seconds, and what hasn't been asked for in an hour is dropped. With git older than 2.38 there

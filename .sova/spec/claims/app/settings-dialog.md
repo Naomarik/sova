@@ -5,7 +5,8 @@ The sidebar foot's Agents row ends in a gear. It opens the Settings modal: a lef
 one panel, wider than the product's question-asking modals because two panes have to fit beside
 each other (§design/ground-rules and §design/deviations record the deviation). There is no route and no URL — Settings is a modal
 the session stays behind, closed by the scrim, Esc, or its Close button (Cancel while anything
-is unsaved, which discards it, §app.settings-dialog/save-bar).
+is unsaved, which discards it, §app.settings-dialog/save-bar). A number box in a form that waits
+for Save keeps whatever you type in it, red until it is valid (§app.settings-dialog/number-boxes).
 
 The rail is the structure: each settings screen is one tab — General, Models, Accounts, MCP Servers, Subagents,
 Alignment, Profiles, Overseer, Notifications, Decisions, Summaries, Memory, Organizations, Merge Queue, Themes, Mesh, Public links, Outreach, Voice, Experimental.
@@ -52,7 +53,8 @@ below, are this machine's."), because "settings" in a tool with a shared config
 file is otherwise an open question.
 
 - **Sessions in Recent** — how many rows the sidebar's Recent region shows
-(§app.session-list/recent). A number field, **3 to 20, 5 by default**. This is the
+(§app.session-list/recent). A number box, **3 to 20, 5 by default**: the form kit's text box with
+a numeric keyboard (§design/forms), which keeps what was typed. This is the
 **only** control for that count: the region itself carries none, because a count settable in two
 places is a count that disagrees in one of them.
 
@@ -61,10 +63,11 @@ places is a count that disagrees in one of them.
   region is a row with neighbours, which the open session alone can fill.
 
   It saves as you type: a valid number moves the sidebar on the
-  keystroke. An invalid one changes nothing and the field says which way it is wrong — "3 is the
-  fewest. Below that Recent is a row, not a list." — rather than silently clamping under the
-  caret. Leaving the field is where an unusable draft is repaired to the nearest count that works,
-  and the polite region says the new count so the repair isn't silent.
+  keystroke. An invalid one changes nothing: the box is red with "Sessions in Recent must be a
+  whole number from 3 to 20." under its hint, rather than silently clamping under the
+  caret. Leaving the field is where an unusable draft is repaired to the nearest count that works
+  (a fraction rounds, 7.5 to 8; a number past a bound takes that bound; blank or no number at all,
+  the default), and the polite region says the new count so the repair isn't silent.
 
   The value persists in `localStorage["sova:recent-count"]`, like the theme and for the same
   reason: it is this browser's, not the machine's. A stored value that is not a whole number in
@@ -137,7 +140,9 @@ returns every model allowed, which is what the list showed. `claude-code` is a p
 with no model rows: one switch over every Claude Code worker, its default model included, because
 its models are the CLI's rather than pi's. A provider named in the policy that this machine has no
 credentials for is listed too, with `No models on this machine` where the count goes — a rule you
-can't see is a rule you can't undo.
+can't see is a rule you can't undo. The Ollama Cloud group also holds the line about the server's last check
+of its model list, with **Check Now** (§app.model-levels/settings-line), and a model that check
+added in the last week carries a **New** mark on its row (§app.model-levels/new-models).
 
 A switch doesn't write on its own. Every move is staged, and the dialog's **Save Changes** writes
 the whole policy — one save for every provider and model you moved, never one per switch — while
@@ -238,7 +243,10 @@ medium, fallback `claude-opus-5-5` (Opus 5.5) high; Investigation `claude-opus-5
 The seventh tab: which model writes the summary line under each session's title
 (§app.session-list/content-rules, "Row line 2"), as the `topic-outline` extension's chain — a
 **Primary** and an optional **Fallback**, each a row of two native selects, Backend (`Claude Code`,
-`pi`) and Model, laid out like a Delegate row without Effort. The chain is not a list you edit
+`pi`) and Model, laid out like a Delegate row without Effort. The same chain writes the merge queue's branch
+summaries (§app.merge-queue/branch-summary), and a line in the section says so: "This model also
+writes the merge queue's branch summaries."; a saved change applies to the next branch summary
+written. The chain is not a list you edit
 here: a primary and a fallback are the choices that matter, and timeouts and budgets stay in the
 file.
 
@@ -295,8 +303,8 @@ the sweep's next run.
 - **Timing, two whole-minute fields**, Teams' number fields: "Check every (minutes)" (default 5,
   1–1440; hint "How often the sweep looks for sessions to name.") and "After quiet for (minutes)"
   (default 5, 0–1440; hint "A session is named once nothing was written in it for this long.").
-  A value outside its range, or not a whole number, replaces the hint with "A whole number of
-  minutes, {min} to {max}." and holds Save.
+  A value outside its range, or not a whole number, is red, its sentence under the hint
+  ("Minutes between checks must be a whole number from 1 to 1,440.") and holds Save.
 - **Primary and an optional Fallback**, each the Delegate row — Backend, Model, Effort
   (`WorkerSlotRow`), with that row's model lists and its "not offered" and "not verified" notes,
   but without Delegate's "off for subagents" marks (a title model is not a worker) — and the same
@@ -312,9 +320,8 @@ the sweep's next run.
   allowed.
 - **Picks wait for Save** (§app.settings-dialog/save-bar), as "Session titles" in the footer.
   Save waits for a complete form (both minute fields valid, every row has a model and an effort,
-  the fallback is not the primary; the footer names the first of these that's missing, e.g.
-  "Session titles needs a whole number of minutes between checks."), and the server refuses the
-  same (400). A failed save keeps
+  the fallback is not the primary; the footer names the first, e.g. "Session titles: Choose a
+  primary model."), and the server refuses it (400) in the same words. A failed save keeps
   the draft under "Couldn't save the session title settings.", with the reason.
 - **The file.** Read tolerantly (a missing or broken file, or a field in it that doesn't parse,
   reads as that field's default), written whole and atomically on Save.
@@ -466,13 +473,13 @@ The tab after Subagents, and the align mode's settings (§chat/alignment). It op
 "How the align mode plans with you." Four groups follow, staged and saved with the dialog's Save
 Changes like every gated form (§app.settings-dialog/save-bar):
 
-- **Eagerness**, first, a radiogroup of two, each option a label row with a one-line description
-  (§chat.alignment/eagerness): **Eager** "Opens an alignment card for any request that implies
+- **Eagerness**, first, a radiogroup of two, each option its name then " · " and a one-line
+  description on the same line, as the Overseer's Proactivity (§chat.alignment/eagerness): **Eager** "Opens an alignment card for any request that implies
   work, and leans toward asking first.", **Careful** "Opens one when you want something changed;
   questions get their answer in chat." A file with no saved Eagerness shows as Eager. Under it the
   hint "Either way, nothing is built until you confirm a card. Reaches open chats at their next
   message."
-- **Writing style**, a radiogroup of three, each option a label row with a one-line description:
+- **Writing style**, a radiogroup of three, each option drawn the same way:
   **Project manager** "Screens, wording and behaviour only; no code. Technical detail folded into
   notes.", **Simplified** "Short sentences in everyday words, fewer items.", **Technical** "Files,
   code and technical trade-offs in the plan." A saved `default` shows as Technical. Under it the hint "Reaches open chats at their
@@ -523,18 +530,19 @@ TUI never reads it.
 **One page, one Save.** No sub-tabs: the groups below stack in this order and the dialog's Save
 Changes writes them all (§app.settings-dialog/save-bar). What a user reaches for often stays open;
 the rest folds. A folded group is a disclosure whose head names it and says, in a few words, what is
-inside. It opens itself when the reason Save waits points to a field inside it (a limit that isn't
-a whole number opens Per-message limits, an action missing its label or prompt opens its row, an
-explorer with no model or effort opens Advanced), on the tab's mount as well as on the edit;
+inside. It opens itself when the reason Save waits points to a field inside it (a limit opens
+Per-message limits, a quick action its row, the explorer or extra instructions Advanced;
+§app.settings-dialog/overseer-checks), on the tab's mount as well as on the edit;
 folding it again is the user's. Limits, Quick actions and the idea explorer each have a reset, at
-the end of the group's head row, beside its name; each reads **Reset to Defaults** and fills only
-the draft. Switch labels are in sentence case, like every other Settings switch.
+the end of the group's head row, beside its name; each reads **Reset to Defaults**, fills only
+the draft, and is disabled while its group already shows the defaults (as Summaries' and Session
+titles' resets are). Switch labels are in sentence case, like every other Settings switch.
 
 - **Proactivity**: Off / List Only / Brief Me, the same setting the Overseer page cycles.
 - **Model and thinking**: **Model** (provider/model) and **Thinking**, clamped to the model's
   ladder. A save applies them at once when the Overseer is idle, otherwise at the end of its turn.
   They never become the default for new sessions.
-- **Limits** (§app.overseer/caps), all nine: its lede reads "Before acting, the Overseer checks
+- **Limits** (§app.overseer/caps), all nine, each a whole number from 0 to 1,000: its lede reads "Before acting, the Overseer checks
   these. When one is reached it stops and asks you instead. "Per message" counts restart each time
   you message it." First, full width, **Running at once**, with its hint: "How many sessions the
   Overseer started or messaged may be working at the same time. Starting a session, or messaging
@@ -553,7 +561,8 @@ the draft. Switch labels are in sentence case, like every other Settings switch.
   these. Picking one sends its prompt." One line per action: its label, its description, and
   **Edit**, which opens that row alone (Label, Description, Prompt; Move Up, Move Down, Remove) and
   becomes **Done**. **Add Quick Action**, under the list, adds a row already open, its label
-  focused; **Reset to Defaults** puts back the two defaults, Get Things Moving and Tidy Up
+  focused; at 12 actions it is disabled. **Reset to
+  Defaults** puts back the two defaults, Get Things Moving and Tidy Up
   (§app.overseer/default-quick-actions).
 - **Standing notes**: a textarea over `overseer-notes.md`. Its hint: "The Overseer reads these every
   turn and can add to them. They survive /clear."
@@ -575,8 +584,51 @@ the draft. Switch labels are in sentence case, like every other Settings switch.
   only the fields the user changed on top of them, so a model the Overseer's composer switched to, or
   a note `sova_note` added, while the form was open is never reverted. A file whose content would not
   change is not written.
+- **Checked before Save** (§app.settings-dialog/overseer-checks): every limit a save accepts,
+  with counts on the long texts, so a Save never stops halfway.
 - The PUT is strict: an invalid body is refused with its reason, and a model that can't be verified
   or that the policy refuses comes back as a warning sentence.
+
+## §app.settings-dialog/overseer-checks — Overseer: checked before Save
+
+The Overseer form (§app.settings-dialog/overseer) checks every limit its save accepts before
+anything is sent, with the same numbers the server holds (§app.overseer/caps):
+
+- **The nine limits**: each a whole number from 0 to 1,000. A limit box keeps exactly what you
+  typed, blank or half-typed included (§app.settings-dialog/number-boxes); while it holds anything
+  else it is red and Save waits on "{limit} must be a whole number from 0 to 1,000.", {limit} its
+  label. The running line reads the saved limit meanwhile. A number typed back to the saved value
+  ("5" over a saved 5) is no change. A limit the server's settings lack is filled from its
+  default, never shown blank or red.
+- **Quick actions**: at most 12; Add Quick Action says "{n} of at most 12." beside it and is
+  disabled at 12. Each needs a label and a prompt ("Quick action {n}'s label can't be empty.");
+  its Label is at most 40 characters, its Description at most 120 and its Prompt at most 2,000,
+  counted after trimming as the server counts them, each with its count under the box ("{n} /
+  40"), red past its most.
+- **Standing notes** and **Extra instructions**: at most 8,000 characters each, with a count
+  "{n} / 8,000" under the hint, red past the most.
+- **The idea explorer** needs a model and an effort.
+
+While any of these fails, the box is red with its own sentence under it (the form kit's,
+§design/forms; the explorer's under the Idea explorer row, and no line for the whole form), Save
+waits and the footer names the first in page order (limits, quick actions, standing notes, the explorer, extra instructions), in the words of
+§design.copy-deck/settings-overseer ("Overseer: Standing notes can be at most 8,000
+characters."); the group holding it opens itself: a limit opens Per-message limits, a quick action
+its row, the explorer or extra instructions Advanced. So the settings and the notes, two writes,
+are never split by a refusal: a Save the form allowed is not refused by the server for any of
+these. One case only Save can see: the notes it rebases onto what the Overseer appended meanwhile
+(§app.settings-dialog/overseer) may run past 8,000 together. Save then writes neither file, and
+says "The Overseer added to its standing notes while you were editing them, and together they're
+over 8,000 characters, so nothing was saved. Shorten the notes, then Save Changes again." under
+the notes box, which is red, and in the form's "Couldn't save the Overseer settings." banner; the
+box then shows the merged text with its red count.
+
+Both read these limits from one table (`shared/overseer-limits.ts`), and the server's strict PUT
+refuses in the form's own sentence, word for word, naming the limit by its Settings label
+("Sessions created must be a whole number from 0 to 1,000."), never by its field name; its other
+refusals name the quick action by number ("Quick action 2's label can be at most 40
+characters."), the extra instructions and the standing notes the same way
+(§design.copy-deck/settings-overseer).
 
 ## §app.settings-dialog/decisions — Decisions
 
@@ -601,7 +653,8 @@ In this order:
   field and **Save Key**; with one stored, **Replace Key** (the field again, with Save Key and
   Cancel) and **Remove Key** (which asks first, with Cancel). The field never shows a stored key — only
   its last 4 characters. A key from `SOVA_JEV_KEY` is shown as such, with no key controls. A key
-  Jev rejects is not stored; the field keeps what was typed, with the reason. **Test Decisions**
+  Jev rejects is not stored; the field keeps what was typed, with the reason as its one sentence
+  under the box (a failed Remove Key, with no box shown, says it under the section). **Test Decisions**
   always sits in the key row — beside Replace Key and Remove Key, beside Save Key with none stored,
   on its own with a key from `SOVA_JEV_KEY`, and with Jev off — except while Remove Key asks; it is
   disabled while nothing can answer and while a change is being saved, and it tests what is saved,
@@ -632,8 +685,11 @@ In this order:
   shows in warn under the switches, only when the switches aren't already saying so.
 - **Never send.** A **Never send TUI sessions** switch (sessions started in the pi terminal) and
   a Folders textarea, one full path per line (`/…`, `~` or `~/…`). A line that isn't a full path,
-  or more than 100 lines, shows the reason under the box and holds Save Changes until fixed
-  (§app.decisions/privacy); blank and repeated lines are dropped, so they alone are no change.
+  or more than 100 lines, shows the reason under the box, below its hint, and holds Save Changes
+  until fixed (§app.decisions/privacy); the server's save refuses the same lines in the same words,
+  both reading one rule (`shared/decision-limits.ts`). Blank and repeated lines are dropped, so
+  they alone are no change. Save waits on an incomplete fallback row with the footer "Decisions:
+  Choose a fallback model." or "Decisions: Choose an effort for the fallback model."
 - A footnote names where the settings are stored, and that the key is stored separately, readable
   only by the user.
 
@@ -736,26 +792,59 @@ reads "Save them on their tab, or discard them and close."
   Tag All Sessions and Stop Tagging, and Phone Notifications' Enable on This Device, Turn Off on
   This Device, Remove and Send Test.
 
+## §app.settings-dialog/number-boxes — A number box keeps what you typed
+
+On every tab a number box is the form kit's (§design/forms). In every Save-gated form
+(§app.settings-dialog/save-bar), a number box left blank or half-typed ("", "1e", "a5", "-") keeps exactly the text in it: it is never wiped, never snapped
+back to the saved or default value, and never left stuck red after a valid number is typed. While
+it holds something the field doesn't take (a blank is taken only where the field says so, as
+Models' "No limit") the box is red (`aria-invalid`), its own message says so, and Save waits with
+the status line naming the form; typing a valid number clears all three. Only Reset to Defaults,
+Cancel and a save replace the text. The boxes are text fields with a numeric keyboard
+(`inputmode="numeric"`), never `type="number"`, whose browsers empty or alter what a half-typed
+value holds. They are Models' requests at once per provider, Organizations' message limit, photo
+and file limits, Overseer's nine limits, Session titles' two minute fields, Public links' ports,
+Subagents' team numbers (where "1.", "1e" and "-" are no number either) and Merge
+Queue's check time limits.
+
+**Merge Queue's time limits** keep to the same rule with the tab's own save
+(§app.merge-queue/settings-save): each check's box keeps what was typed in the gathered changes,
+across tabs and a rebase onto a newer target, until Discard Changes or a save. While one isn't
+whole minutes from 1 to the cap it is red, its one sentence under the box, "{check}: the time limit
+in minutes must be a whole number from 1 to {cap}."; the save row names the first such box in the
+same sentence, in place of "{n} changes to the project file.", and Save to {target}… (Open a PR, Push a Branch)
+waits while Discard Changes stays. A blank box is an unsaved change, so the close-hold names Merge
+Queue. Only the number on screen is ever saved.
+
+The one exception is General's **Sessions in Recent** (§app.settings-dialog/general), a kit box
+like the rest that keeps what was typed while you type: it has no Save to wait on, since it saves
+as you type, so leaving it still repairs an unusable value to the
+nearest count that works, as that section says.
+
 ## §app.settings-dialog/organizations — Organizations
 
 The tab after Summaries: **Hand-off sessions**, the defaults for new baton sessions
 (§app.baton/goal-and-loadout). First **Message limit** — how many messages a hand-off
 session takes in, from everyone, before it comes back to the operator; a whole number from 1 to
 1000, default 60. The hint says it applies to new sessions only ("New sessions only; sessions
-already started keep theirs."), and while the field holds anything else it says "A whole number
-from 1 to 1,000." Save-gated: the dialog's footer saves it (§app.settings-dialog/save-bar), and
-while the field is invalid Save Changes is disabled and the status line says "Organizations needs
-a message limit from 1 to 1,000." A failed save shows "Couldn't save the message limit." at the
+already started keep theirs."). Every number box on the tab is the form kit's (§design/forms,
+§app.settings-dialog/number-boxes) and its limits are one table the server's save reads too
+(`shared/baton-limits.ts`): while a box holds anything but a whole number in its range it is red,
+with its own sentence under it ("Message limit must be a whole number from 1 to 1,000."), and
+Save-gated: the dialog's footer saves the tab (§app.settings-dialog/save-bar), and while a box is
+red Save Changes is disabled and the status line names the first in page order, "Organizations:
+{its sentence}". The server refuses an out-of-range value in the same sentence. A failed save shows "Couldn't save the message limit." at the
 form's end, with the reason and "Your saved limit is unchanged."
 Below it, **Photos in gathering chats** (§app.baton/images): **People can send photos** (on by
-default), **Per message** 1–8 (default 4), **Largest photo, MB** 1–10 (default 5) and **Per
-conversation** 1–200 (default 40), with the hint "Applies to every gathering session on this
-host, from its next message." Save-gated like the limit: while a number is outside its range
-Save Changes is disabled and the status line says "Organizations needs photo limits within their
-ranges."
-Below it, **Files in gathering chats** (§app.baton/files): **Largest file, MB** 1–25 (default 25),
-with the hint "Applies to gathering sessions that take files, from the next upload." Save-gated
-the same way: "Organizations needs a largest file from 1 to 25 MB."
+default), **Per message** 1–8 (default 4), **Largest photo (MB)** 1–10 (default 5) and **Per
+conversation** 1–200 (default 40), each box's hint its range, with the hint "Applies to every
+gathering session on this host, from its next message." under them. Checked like the limit, even
+while photos are off and the boxes greyed: "Photos per message must be a whole number from 1 to
+8.", "Largest photo (MB) must be a whole number from 1 to 10.", "Photos per conversation must be a
+whole number from 1 to 200."
+Below it, **Files in gathering chats** (§app.baton/files): **Largest file (MB)** 1–25 (default 25),
+with the hint "Applies to gathering sessions that take files, from the next upload." Checked the
+same way: "Largest file (MB) must be a whole number from 1 to 25."
 Below it, **Project Assistant** (§app.project-assistant/models): one control, **Default model**,
 showing the default's model and thinking level ("Opus 5.5 · medium") with its price once saved, or
 `Choose Model` while there is none; it opens the chat composer's model picker (the model row and

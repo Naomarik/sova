@@ -143,3 +143,15 @@ test("what extensions add stands after the readiness badge and before the model,
   // Another session in the same pane shows none.
   assert.equal(drawRow({ ...ROWS.plain!, id: "s-2" }, withChips), snapshot.plain);
 });
+
+test("a shut-down chat with a background job running shows `job running` after the time; a running chat shows none", () => {
+  const snapshot = JSON.parse(readFileSync(SNAPSHOT, "utf8")) as Record<string, string>;
+  const html = drawRow(session({ jobsRunning: 2 }));
+  assert.match(html, /ago · <span class="session-job-running">job running<\/span> · <span class="text-mono"/);
+  // Nothing else on the row moves.
+  assert.equal(html.replace(/ · <span class="session-job-running">job running<\/span>/, ""), snapshot.plain);
+  // A chat with a process (its `chat` field) shows none, whatever the count says; so does an older server's row.
+  const held = { model: "anthropic/claude-opus-5", thinking: "off", mode: "auto", minorModes: [], strict: false, applies: [] } as unknown as SessionSummary["chat"];
+  assert.doesNotMatch(drawRow(session({ jobsRunning: 1, chat: held })), /job running/);
+  assert.equal(drawRow(session({ jobsRunning: 0 })), snapshot.plain);
+});

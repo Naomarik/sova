@@ -332,7 +332,8 @@
       "server/tours/bindings-routes.ts",
       "server/tours/bindings-portable.integration.test.ts",
       "server/share/hub.ts",
-      "server/tours/bindings-portable-host.ts"
+      "server/tours/bindings-portable-host.ts",
+      "shared/powers.ts"
     ],
     "requires": [
       "§app.organizations/workspace-repo",
@@ -340,7 +341,12 @@
       "§app.project-overseer/autonomy-levels",
       "§app.baton/links",
       "§app/tours"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-05T03:54Z",
+      "source": "pi-session:4ff7a076-864d-4370-9783-4c5b6119e95c#5bc9ed14"
+    }
   },
   "§app.organizations/privacy": {
     "kind": "behavior",
@@ -380,7 +386,8 @@
       "§app.project-costs/card",
       "§app/requirements",
       "§mesh.public/preview-card",
-      "§app.owner-page/controls"
+      "§app.owner-page/controls",
+      "§app.projects/icon"
     ],
     "code": [
       "src/components/ProjectPage.tsx",
@@ -404,12 +411,15 @@
       "src/lib/powers-view.ts",
       "src/lib/projects-route.test.ts",
       "src/components/MergeQueueTab.tsx",
-      "src/components/ReleasesTab.tsx"
+      "src/components/ReleasesTab.tsx",
+      "src/components/ProjectIcon.tsx",
+      "src/components/ProjectIconCard.tsx",
+      "src/components/InsightsPage.tsx"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "by": "naomarik",
+      "at": "2026-11-05T03:54Z",
+      "source": "pi-session:4ff7a076-864d-4370-9783-4c5b6119e95c#5bc9ed14"
     }
   },
   "§app.organizations/projects": {
@@ -591,7 +601,8 @@
       "statecharts/src/sova/statecharts/baton.cljc",
       "server/statecharts.ts",
       "server/statecharts.test.ts",
-      "statecharts/src/sova/statecharts/api.cljs"
+      "statecharts/src/sova/statecharts/api.cljs",
+      "src/components/form/index.tsx"
     ],
     "requires": [
       "§app.organizations/roster",

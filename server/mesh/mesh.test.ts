@@ -6,11 +6,13 @@
 // listener, the gate, real hops (sockets, WebSockets, blackholed and wedged peers) and revocation:
 // mesh.integration.test.ts.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
+import type { MeshInfoView } from "../../shared/mesh-access";
 import type { MeshLocalSettings } from "../../shared/mesh-local";
+import { WIRE_AREAS } from "../../shared/wire-areas";
 import type { FrontDoorConfig, MeshCandidate, MeshHello, MeshInfo, MeshSessions, MeshSettings } from "../../shared/protocol";
 import { testApp } from "./app-test-fixtures";
 import { fakeWire } from "./peer-wire-test-fixtures";
@@ -40,14 +42,14 @@ setIdentity({
 
 const wire = fakeWire();
 const app = await testApp();
-const { listenerInfo, meshApi, stopMesh } = await import("./index");
+const { homeDeps, listenerInfo, meshApi, peerFetch, stopMesh } = await import("./index");
 const hookLog: string[] = [];
 meshApi.onMeshStart(() => hookLog.push("start"));
 meshApi.onMeshStop(() => hookLog.push("stop"));
 meshApi.onPeerUp((id) => hookLog.push(`up:${id}`));
 const settingsLog: string[] = [];
 meshApi.onSettingsChange((s) => settingsLog.push(s.hostLabel));
-const { clearProbes, ownProtocol } = await import("./hello");
+const { clearProbes, ownHello, ownProtocol } = await import("./hello");
 const { peersFile } = await import("./peers");
 // The mesh's link transfers probe tar when it starts: answered here, so no tar runs.
 (await import("./links-transfer")).setTarAvailableForTest(true);
@@ -57,13 +59,15 @@ const { peersFile } = await import("./peers");
 const B = "http://127.0.0.1:47001";
 const DEAD = "http://127.0.0.1:47002";
 let fakeHello: "same" | "other" | "refused" = "same";
+/** What the fake hello lists: nothing, or a list, on a fingerprint other than this host's. */
+let fakeAreas: unknown;
 let fakeSessions: unknown = [{ id: "s1", path: "/far/s1.jsonl" }];
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } });
 wire.serve(B, async (req) => {
   const url = new URL(req.url);
   if (url.pathname === "/api/peer/hello") {
     if (fakeHello === "refused") return json(403, { error: "not a peer" }, { "X-Sova-Mesh": "refused" });
-    const hello: MeshHello = { mesh: 1, id: "b", label: "B", hostname: "b", version: "0", protocol: fakeHello === "same" ? ownProtocol() : "0000", pi: "x", now: 1 };
+    const hello: MeshHello & { areas?: unknown } = { mesh: 1, id: "b", label: "B", hostname: "b", version: "0", protocol: fakeHello === "same" ? ownProtocol() : "0000", pi: "x", now: 1, ...(fakeAreas !== undefined ? { areas: fakeAreas } : {}) };
     return json(200, hello);
   }
   if (url.pathname === "/api/sessions") return json(200, fakeSessions);
@@ -71,7 +75,7 @@ wire.serve(B, async (req) => {
   if (url.pathname === "/api/own-403") return json(403, { error: "route says no" });
   if (url.pathname === "/api/sets-cookie") return json(200, { ok: true }, { "Set-Cookie": "planted=1; Path=/" });
   const h = req.headers;
-  return json(url.pathname === "/api/teapot" ? 418 : 200, { method: req.method, url: `${url.pathname}${url.search}`, body: await req.text(), fwd: h.get("x-forwarded-host"), relayed: h.get("x-sova-relayed"), cookie: h.get("cookie"), token: h.get("x-sova-token"), authorization: h.get("authorization") });
+  return json(url.pathname === "/api/teapot" ? 418 : 200, { method: req.method, url: `${url.pathname}${url.search}`, body: await req.text(), fwd: h.get("x-forwarded-host"), relayed: h.get("x-sova-relayed"), composer: h.get("x-sova-composer"), peerArea: h.get("x-sova-peer-area"), cookie: h.get("cookie"), token: h.get("x-sova-token"), authorization: h.get("authorization") });
 });
 wire.down(DEAD);
 
@@ -123,6 +127,14 @@ describe("mesh OFF (no peers.json)", () => {
     assert.equal(identityCalls, 0);
     assert.equal((await putJson("/api/mesh/settings", { frontDoor: "ftp://x" }))[0], 400);
     assert.deepEqual(settingsLog, ["Host A"], "not after a refused write");
+    // Refusals read like the form's own words, never a raw key (Settings QA D9).
+    const refused = async (body: unknown) => ((await putJson<{ error: string }>("/api/mesh/settings", body))[1] as { error: string }).error;
+    assert.equal(await refused({ hostLabel: "x".repeat(81) }), "This host's name can be at most 80 characters.");
+    assert.equal(await refused({ hostLabel: "  " }), "This host needs a name.");
+    assert.equal(await refused({ frontDoor: "not a url" }), "The front door must be a web address, like https://sova.example.ts.net.");
+    assert.equal(await refused({ frontDoor: "ftp://x" }), "The front door must start with http:// or https://.");
+    assert.equal(await refused({ frontDoor: "https://x/path" }), "The front door is a scheme, host and port only, with no path.");
+    assert.equal((await putJson("/api/mesh/settings", { hostLabel: "x".repeat(80) }))[0], 200);
   });
 });
 
@@ -197,6 +209,44 @@ describe("mesh ON", () => {
     assert.equal(info.peers[0]!.priority, 2);
     assert.ok(info.peers[0]!.lastSeen);
     assert.equal(info.peers[1]!.lastSeen, null);
+  });
+
+  test("a host that lists its areas is up whatever its numbers and fingerprint; one that lists none is judged as before", async () => {
+    await putJson("/api/mesh/peers", { peers: [peersB, peersDead] });
+    const peer = async () => {
+      clearProbes();
+      const [, info] = await getJson<MeshInfoView>("/api/mesh");
+      return info.peers.find((p) => p.id === "b")!;
+    };
+    fakeHello = "other";
+    fakeAreas = { ...WIRE_AREAS, composer: 9, later: 2 };
+    let p = await peer();
+    assert.equal(p.state, "up");
+    assert.deepEqual(p.areas, { ...WIRE_AREAS, composer: 9 }, "only the four areas reach the page");
+    fakeAreas = { sessions: 1 }; // not a list: a host with none
+    p = await peer();
+    assert.equal(p.state, "skewed");
+    assert.equal(p.areas, undefined);
+    assert.equal((p.hello as { areas?: unknown } | undefined)?.areas, undefined);
+    fakeAreas = undefined;
+    assert.equal((await peer()).state, "skewed");
+    fakeHello = "same";
+    assert.equal((await peer()).state, "up");
+  });
+
+  test("this host's hello lists its running numbers, outside the fingerprint", () => {
+    assert.deepEqual(ownHello({ id: "a", label: "A" }).areas, WIRE_AREAS);
+  });
+
+  test("the proxy carries the writing number a page states, unchanged, even to a host on another number", async () => {
+    const [, echoed] = await call<{ composer: string | null }>("POST", "/peer/b/api/sessions/prompt", { path: "x" }, { "X-Sova-Composer": "7" });
+    assert.equal(echoed.composer, "7");
+  });
+
+  test("whatever this host runs states its own numbers to a peer, and a caller can't state others", async () => {
+    const res = await peerFetch("b", "/api/echo", { method: "POST", headers: { "X-Sova-Composer": "7" } });
+    const got = (await res.json()) as { composer: string; peerArea: string };
+    assert.deepEqual([got.composer, got.peerArea], [String(WIRE_AREAS.composer), String(WIRE_AREAS.peer)]);
   });
 
   test("GET /api/mesh/sessions: grouped by peer; a peer that stops answering keeps its last list, stale", async () => {
@@ -345,5 +395,87 @@ describe("mesh ON", () => {
     assert.equal((await putJson("/api/mesh/settings", { hostLabel: "x" }))[0], 409);
     assert.equal(readFileSync(peersFile(), "utf8"), "{broken", "never overwritten");
     rmSync(peersFile());
+  });
+});
+
+// ---- home binding: a copy, a move or another machine keeps the mesh off -------------------------
+
+describe("home binding", () => {
+  const here = () => realpathSync(join(tmp, "agent", "sova"));
+  const doc = (home?: object) => ({ version: 1, self: { id: "a", label: "A", ...(home ? { home } : {}) }, peers: [{ id: "b", label: "B", nodeId: "nB", dnsName: "127.0.0.1", url: B }] });
+  const writeDoc = (home?: object) => writeFileSync(peersFile(), JSON.stringify(doc(home)));
+  const home = () => (JSON.parse(readFileSync(peersFile(), "utf8")) as { self: { home?: { path: string; machine?: string } } }).self.home;
+  const offAs = async (kind: string) => {
+    const fetches = wire.fetches;
+    const [, info] = await getJson<MeshInfo>("/api/mesh");
+    assert.equal(info.enabled, false, kind);
+    assert.equal(info.homeMismatch, kind);
+    assert.equal(listenerInfo(), null);
+    assert.equal(wire.fetches, fetches, "nothing went out");
+  };
+  const reconnect = () => call<MeshInfo & { error?: string }>("POST", "/api/mesh/home");
+  const realMachine = homeDeps.machine;
+  after(() => {
+    homeDeps.machine = realMachine;
+    rmSync(peersFile(), { force: true });
+  });
+
+  test("a peers.json with peers and no home, outside the default root, stays off and isn't bound", async () => {
+    writeDoc();
+    await offAs("unbound");
+    assert.equal(home(), undefined);
+  });
+
+  test("Reconnect Here is this host's browser only, and binds it here", async () => {
+    writeDoc();
+    assert.equal((await call("POST", "/api/mesh/home", undefined, { "X-Sova-Relayed": "1" }))[0], 404);
+    const [s, info] = await reconnect();
+    assert.equal(s, 200);
+    assert.equal(info.enabled, true);
+    assert.equal(info.homeMismatch, undefined);
+    assert.equal(home()?.path, here());
+  });
+
+  test("the default root binds itself on its first read", async () => {
+    const realRoot = homeDeps.defaultRoot;
+    mkdirSync(join(tmp, "h", ".pi"), { recursive: true });
+    symlinkSync(join(tmp, "agent"), join(tmp, "h", ".pi", "agent")); // the same folder by another path
+    homeDeps.defaultRoot = () => join(tmp, "h", ".pi", "agent");
+    try {
+      writeDoc();
+      const [, info] = await getJson<MeshInfo>("/api/mesh");
+      assert.equal(info.enabled, true);
+      assert.equal(home()?.path, here());
+    } finally {
+      homeDeps.defaultRoot = realRoot;
+    }
+  });
+
+  test("a moved folder stays off until Reconnect Here", async () => {
+    writeDoc({ path: join(tmp, "gone", "sova") });
+    await offAs("moved");
+    assert.equal((await reconnect())[1].enabled, true);
+    assert.equal(home()?.path, here());
+  });
+
+  test("another machine stays off until Reconnect Here, which binds this machine", async () => {
+    homeDeps.machine = () => "machine-here";
+    writeDoc({ path: here(), machine: "machine-other" });
+    await offAs("other-machine");
+    assert.equal((await reconnect())[1].enabled, true);
+    assert.deepEqual(home(), { path: here(), machine: "machine-here" });
+  });
+
+  test("a copy whose original is still in use stays off, and Reconnect Here is refused", async () => {
+    const orig = join(tmp, "orig", "sova");
+    mkdirSync(orig, { recursive: true });
+    const origHome = { path: realpathSync(orig), machine: "machine-here" };
+    writeFileSync(join(orig, "peers.json"), JSON.stringify(doc(origHome)));
+    writeDoc(origHome);
+    await offAs("copied");
+    const [s] = await reconnect();
+    assert.equal(s, 409);
+    assert.deepEqual(home(), origHome, "not rebound");
+    await offAs("copied");
   });
 });

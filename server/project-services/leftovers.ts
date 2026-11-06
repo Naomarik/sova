@@ -15,7 +15,7 @@ import { locksDir, readRegistry, tryLock, type Registry } from "./store";
  * whose folder is deleted or missing, or that runs in a clean worktree of the project whose branch has
  * commits of its own now on the main checkout's branch, is safe to stop; anything else (outside any git
  * checkout included) is in use. Never offered, whatever its folder: Sova's own server and its children,
- * `sova-runtime.service`, a chat process and anything a chat started (its descendants, its unit), a copy's or shared service's unit (this state root's or another's), slot 0's adopted unit,
+ * `sova-runtime.service`, a chat process and anything a chat started (its descendants, its unit), a background job's unit, a copy's or shared service's unit (this state root's or another's), slot 0's adopted unit,
  * and a listener this user can't read. Linux only (/proc). Everything the host gives is injected, so the
  * rules are tested over fakes.
  */
@@ -144,6 +144,8 @@ export function protectedWhy(pid: number, h: Pick<LeftoverHost, "selfPid" | "ppi
   const cg = h.cgroup(pid) ?? "";
   // Reparented (nohup, setsid): still inside the chat's unit, which lives while the chat does.
   if (/\/sova-chat-[^/\n]*\.service/.test(cg)) return "a process a chat started";
+  // A background job: kept out of its chat on purpose, Stopped from its chat.
+  if (/\/sova-job-[^/\n]*\.(service|scope)/.test(cg)) return "a chat's background job";
   if (cg.includes("/sova-runtime.service")) return "Sova's own server (sova-runtime.service)";
   const own = h.cgroup(h.selfPid);
   const ownUnit = unitOfCgroup(own);

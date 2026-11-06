@@ -7,6 +7,10 @@ import { MergeFailure, PUSH_HELD_NAMES, PUSH_WAITS_NEXT_LANDING, type QueueDeps 
 import { writeOverride } from "./strategy";
 import { DEF, makeKit, makeRepo, sh, tryGit, until, untilAborted } from "./testing/queue-kit";
 import { WorktreeOwners } from "./owners";
+import { BranchSummaries, readBranchFacts } from "./branch-summaries";
+import { realGit } from "./guard";
+import { SummarySweep } from "./summary-sweep";
+import { makeScratchCopy } from "./scratch";
 import type { SessionSummary } from "../../shared/protocol";
 
 /** Landed, and its push answered (pushed or not). */
@@ -139,6 +143,30 @@ describe("approval", () => {
   describe("tracked drafts: only the branch's own", () => {
     // Many stale drafts committed on the target (a project that tracks .sova/spec/drafts).
     const stale = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`.sova/spec/drafts/old-${i}/spec/claims/a.md`, `stale ${i}\n`]));
+
+    test("the kit's commits start no git background maintenance (its repack under the next reads loses objects)", () => {
+      // `git commit` spawns `git maintenance run --auto --detach` before it exits whenever maintenance.auto is on, so the
+      // commit's trace2 names it every time: no timing involved.
+      const repo = makeRepo();
+      const trace = join(repo.scratch, "trace2.json");
+      const was = process.env.GIT_TRACE2_EVENT;
+      try {
+        process.env.GIT_TRACE2_EVENT = trace;
+        repo.commitOn(repo.root, stale(300), "stale drafts");
+        repo.branch("feat/comment", { "a.txt": "// a comment\n" });
+        const events = readFileSync(trace, "utf8")
+          .split("\n")
+          .filter(Boolean)
+          .map((l) => JSON.parse(l) as { event: string; argv?: string[] });
+        const argv = (kind: string) => events.filter((e) => e.event === kind).map((e) => (e.argv ?? []).join(" "));
+        assert.equal(argv("start").filter((a) => / commit -q\b/.test(a)).length, 2, "both commits were traced");
+        assert.deepEqual([...argv("start"), ...argv("child_start")].filter((a) => /(^|\/)git (maintenance|gc|repack)\b/.test(a)), [], "no background cleanup started");
+      } finally {
+        if (was === undefined) delete process.env.GIT_TRACE2_EVENT;
+        else process.env.GIT_TRACE2_EVENT = was;
+        repo.done();
+      }
+    });
 
     test("a comment-only branch over hundreds of stale tracked drafts names none and lands", async () => {
       const k = makeKit({ deps: { draftsHash: (dir: string) => draftsHash(dir) } });
@@ -1132,7 +1160,7 @@ describe("setting up the checks", () => {
     }
   });
 
-  test("Try It on Main runs the answer's checks on the target alone, merging nothing, and saves nothing", async () => {
+  test("A dry run (merge.setup dryRun) runs the answer's checks on the target alone, merging nothing, and saves nothing", async () => {
     const k = makeKit({ checks: "unset" });
     try {
       k.repo.commitOn(k.repo.root, { ".sova/project.json": DEF_TEXT }, "definition");
@@ -1161,7 +1189,7 @@ describe("setting up the checks", () => {
     }
   });
 
-  test("Try It on Main never runs beside a landing run in the same copy", async () => {
+  test("A dry run never runs beside a landing run in the same copy", async () => {
     const k = makeKit();
     try {
       k.repo.commitOn(k.repo.root, { ".sova/project.json": DEF_TEXT }, "definition");
@@ -1363,6 +1391,138 @@ describe("the view's extras", () => {
       const v = await q.view();
       assert.deepEqual(v.ready!.map((r) => [r.branch, r.commit, r.ahead]), [["feat/ready", a.head, 1]]);
       assert.deepEqual(v.thread, { session: "t1", startedAt: "2026-11-02T00:00:00.000Z", state: "idle" });
+    } finally {
+      await k.done();
+    }
+  });
+  test("branch summaries: a Ready row and an entry carry theirs, at their commits; a write publishes the view again; none is started by a read", async () => {
+    let asked = 0;
+    let summaries: BranchSummaries | null = null;
+    const k = makeKit({
+      deps: {
+        summaryOf: (root, branch, commit) => summaries!.summaryOf(root, branch, commit),
+        pruneSummaries: (root, live, shown) => void summaries!.prune(root, live, shown),
+      },
+    });
+    try {
+      const q = await k.q();
+      summaries = new BranchSummaries({
+        fileOf: () => join(q.store.dir, "branch-summaries.json"),
+        facts: async (root, branch, commit) => readBranchFacts(realGit, root, { branch, commit, target: q.target, targetHead: (await q.declared()).head ?? "" }),
+        writer: () => async (prompt) => (asked++, { bullets: [prompt.includes("Adds the ready file") ? "Adds the ready file" : "Something else"], model: "prov/a" }),
+        projectOf: () => "p1",
+        changed: () => q.republish(),
+      });
+      await q.pause("hold");
+      const a = k.repo.branch("feat/ready", { "r.txt": "r\n" }, { message: "Adds the ready file" });
+      const b = k.repo.branch("feat/queued", { "q.txt": "q\n" });
+      await q.add({ branch: "feat/queued", by: "land-button" });
+      let v = await q.view();
+      assert.equal(v.ready![0]!.summary, undefined, "nothing before it reads Ready");
+      assert.equal(v.waiting[0]!.summary, undefined);
+      assert.equal(asked, 0, "a view never starts a write");
+      const published = k.views.length;
+      await summaries.ensure(q.root, "feat/ready", a.head).done;
+      await summaries.ensure(q.root, "feat/queued", b.head).done;
+      await until(async () => k.views.length > published, "the view published again");
+      v = await q.view();
+      assert.deepEqual(v.ready![0]!.summary, { commit: a.head, state: "ready", bullets: ["Adds the ready file"] });
+      assert.deepEqual(v.waiting[0]!.summary, { commit: b.head, state: "ready", bullets: ["Something else"] });
+      assert.equal(asked, 2);
+      // Never stored with the queue's records.
+      assert.ok(!readFileSync(join(q.store.dir, "queue.json"), "utf8").includes("Adds the ready file"));
+    } finally {
+      await k.done();
+    }
+  });
+  test("the sweep, not a view, writes a Ready row's bullets: no chat or an idle one is written, a busy chat's waits; the row carries its date", async () => {
+    let asked = 0;
+    let summaries: BranchSummaries | null = null;
+    const busy = new Set(["c-busy"]);
+    const k = makeKit({
+      deps: {
+        summaryOf: (root, branch, commit) => summaries!.summaryOf(root, branch, commit),
+        ownerOf: async (_r, branch) => (branch === "feat/busy" ? "c-busy" : branch === "feat/idle" ? "c-idle" : null),
+      },
+    });
+    try {
+      const q = await k.q();
+      summaries = new BranchSummaries({
+        fileOf: () => join(q.store.dir, "branch-summaries.json"),
+        facts: async (root, branch, commit) => readBranchFacts(realGit, root, { branch, commit, target: q.target, targetHead: (await q.declared()).head ?? "" }),
+        writer: () => async () => (asked++, { bullets: ["Adds a file"], model: "prov/a" }),
+        projectOf: () => "p1",
+        changed: () => q.republish(),
+      });
+      await q.pause("hold");
+      const none = k.repo.branch("feat/nochat", { "n.txt": "n\n" });
+      const idle = k.repo.branch("feat/idle", { "i.txt": "i\n" });
+      const b = k.repo.branch("feat/busy", { "b.txt": "b\n" });
+      // Two page reads: no model call.
+      await q.view();
+      const v0 = await q.view({ fresh: true });
+      assert.equal(asked, 0, "a view never starts a write");
+      assert.ok(v0.ready!.every((r) => r.summary === undefined));
+      const row = v0.ready!.find((r) => r.branch === "feat/nochat")!;
+      assert.equal(row.headAt, sh(k.repo.root, "log", "-1", "--format=%cI", none.head), "the head's committer date");
+      const sweep = new SummarySweep({
+        roots: () => [q.root],
+        readyOf: () => q.readyRows(),
+        targetHead: async () => (await q.declared()).head || null,
+        chatIdle: async (s) => !busy.has(s),
+        summaries,
+      });
+      await sweep.tick();
+      await until(async () => asked === 2, "the idle rows written");
+      await until(async () => !summaries!.isWriting(q.root, idle.head), "the writes ended");
+      const v = await q.view({ fresh: true });
+      const of = (br: string) => v.ready!.find((r) => r.branch === br)!.summary;
+      assert.deepEqual(of("feat/nochat"), { commit: none.head, state: "ready", bullets: ["Adds a file"] });
+      assert.deepEqual(of("feat/idle"), { commit: idle.head, state: "ready", bullets: ["Adds a file"] });
+      assert.equal(of("feat/busy"), undefined, "a busy chat's branch waits");
+      // Nothing moved: the next look passes over nothing; once the chat is idle and pokes, it is written.
+      await sweep.tick();
+      assert.equal(asked, 2);
+      busy.clear();
+      sweep.poke(q.root);
+      await sweep.tick();
+      await until(async () => asked === 3 && !summaries!.isWriting(q.root, b.head), "the busy chat's branch written once idle");
+      // Reads after the writes still start none.
+      await q.view({ fresh: true });
+      await q.view({ fresh: true });
+      assert.equal(asked, 3);
+    } finally {
+      await k.done();
+    }
+  });
+  test("the sweep never writes bullets for the queue's own copies: a scratch copy on a branch, or one the merge thread made itself", async () => {
+    const written: string[] = [];
+    let summaries: BranchSummaries | null = null;
+    const made = new Set<string>();
+    const k = makeKit({ deps: { summaryOf: (root, branch, commit) => summaries!.summaryOf(root, branch, commit), queueMade: async (p) => made.has(p) } });
+    try {
+      const q = await k.q();
+      summaries = new BranchSummaries({
+        fileOf: () => join(q.store.dir, "branch-summaries.json"),
+        facts: async (root, branch, commit) => readBranchFacts(realGit, root, { branch, commit, target: q.target, targetHead: (await q.declared()).head ?? "" }),
+        writer: () => async (prompt) => (written.push(prompt), { bullets: ["Adds a file"], model: "prov/a" }),
+        projectOf: () => "p1",
+        changed: () => q.republish(),
+      });
+      await q.pause("hold");
+      const mine = k.repo.branch("feat/mine", { "m.txt": "m\n" });
+      const old = k.repo.branch("feat/resolve-mq_old2", { "o.txt": "o\n" });
+      made.add(old.path);
+      // A scratch copy the queue made, put on a branch ahead of master.
+      const copy = await makeScratchCopy(realGit, { root: k.repo.root, entry: "mq_sweep1", base: k.repo.head() });
+      k.repo.commitOn(copy, { "s.txt": "s\n" }, "in the copy");
+      sh(copy, "switch", "-q", "-c", "feat/in-copy");
+      const sweep = new SummarySweep({ roots: () => [q.root], readyOf: () => q.readyRows(), targetHead: async () => (await q.declared()).head || null, chatIdle: async () => true, summaries });
+      await sweep.tick();
+      await until(async () => written.length >= 1 && !summaries!.isWriting(q.root, mine.head), "the user's branch written");
+      await sweep.tick();
+      assert.equal(written.length, 1, "one model call: the user's branch alone, none for a queue copy");
+      assert.match(written[0]!, /m\.txt/, "it is the user's branch");
     } finally {
       await k.done();
     }

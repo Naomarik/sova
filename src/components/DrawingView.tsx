@@ -8,6 +8,8 @@ import { answerDrawingCall, boxHeight } from "../lib/card-view-host";
 import { announce, copyText } from "../lib/ui-state";
 import { post, shellDoc, themeNow } from "./CardView";
 import { CardErrorBox } from "./TranscriptKind";
+// The box's own rule: DataCards brings it only once a data card has drawn, and without it the frame paints opaque.
+import "../data-cards.css";
 
 /**
  * A `vis <owner>.<name>` fence of one of the chat's own kinds (§chat.transcript-cards/drawing-kinds):

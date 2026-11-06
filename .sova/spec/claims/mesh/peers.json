@@ -17,8 +17,14 @@
     "code": [
       "server/mesh/peers.ts",
       "server/mesh/index.ts",
-      "server/mesh/peers.test.ts"
-    ]
+      "server/mesh/peers.test.ts",
+      "server/mesh/mesh.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T02:14Z",
+      "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#2783ea91"
+    }
   },
   "§mesh.peers/discovery": {
     "kind": "behavior",
@@ -27,7 +33,12 @@
     "code": [
       "server/mesh/index.ts",
       "server/mesh/localapi.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-05T01:37Z",
+      "source": "pi-session:915c7c2a-d21e-4992-8899-b2d3b2871536#1d2b9d7c"
+    }
   },
   "§mesh.peers/grants": {
     "kind": "behavior",
@@ -70,7 +81,12 @@
       "server/mesh/lan-mesh.integration.test.ts",
       "server/overseer-link-tools.test.ts",
       "server/sync/docs-grants.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
   },
   "§mesh.peers/health": {
     "kind": "behavior",
@@ -83,8 +99,15 @@
       "server/mesh/mesh.test.ts",
       "server/mesh/peer-wire-test-fixtures.ts",
       "server/mesh/app-test-fixtures.ts",
-      "server/mesh/mesh.integration.test.ts"
-    ]
+      "server/mesh/mesh.integration.test.ts",
+      "shared/mesh-access.ts",
+      "shared/wire-areas.ts"
+    ],
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:12Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
   },
   "§mesh.peers/hello": {
     "kind": "behavior",
@@ -94,8 +117,15 @@
       "server/mesh/hello.ts",
       "shared/protocol.ts",
       "shared/mesh-resync.ts",
-      "server/mesh/build-id.ts"
-    ]
+      "server/mesh/build-id.ts",
+      "shared/wire-areas.ts",
+      "server/mesh/mesh.test.ts"
+    ],
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:12Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
   },
   "§mesh.peers/listener": {
     "kind": "behavior",
@@ -105,7 +135,12 @@
       "server/mesh/listener.ts",
       "server/mesh/localapi.ts",
       "server/mesh/paths.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-05T01:37Z",
+      "source": "pi-session:915c7c2a-d21e-4992-8899-b2d3b2871536#1d2b9d7c"
+    }
   },
   "§mesh.peers/off": {
     "kind": "behavior",
@@ -115,8 +150,17 @@
       "server/mesh/index.ts",
       "server/mesh/peers.ts",
       "server/index.ts",
-      "server/app.ts"
-    ]
+      "server/app.ts",
+      "server/public-links-routes.ts",
+      "server/mesh/mesh.test.ts",
+      "server/wire-gate.ts",
+      "server/wire-gate.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T02:14Z",
+      "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#2783ea91"
+    }
   },
   "§mesh.peers/remote-commands": {
     "kind": "behavior",
@@ -132,9 +176,15 @@
       "scripts/sova.mjs",
       "server/mesh/remote-commands.test.ts",
       "server/mesh/remote-commands.integration.test.ts",
-      "scripts/sova-host.integration.test.ts"
+      "scripts/sova-host.integration.test.ts",
+      "shared/wire-areas.ts"
     ],
-    "evidence": "verified"
+    "evidence": "verified",
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:12Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
   },
   "§mesh.peers/resync": {
     "kind": "behavior",
@@ -168,7 +218,29 @@
       "scripts/mesh-termux/deploy.sh",
       "server/index.ts",
       "server/app.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
+  },
+  "§mesh.peers/tailscale-on-mac": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§mesh.peers/listener"
+    ],
+    "code": [
+      "server/mesh/localapi.ts",
+      "server/mesh/localapi-endpoint.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-05T01:37Z",
+      "source": "pi-session:915c7c2a-d21e-4992-8899-b2d3b2871536#1d2b9d7c"
+    }
   },
   "§mesh/peers": {
     "kind": "surface",

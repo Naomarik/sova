@@ -30,6 +30,7 @@ import { CHAT_CLOSED_CLOSE_CODE, HAVE_MAX_CHARS, HAVE_PARAM, type WireVersion } 
 import { unsentRefusal } from "../shared/chat-runtime";
 import { draftTexts, HeldSends, type Unsent } from "../shared/held-sends";
 import { putBackDraft } from "./drafts";
+import { SHELL_NOT_PAGE_TEXT } from "./chat-shell";
 import { COMPOSER_PARAM } from "../shared/wire-areas";
 import { writingRefused } from "./wire-gate";
 import { opNote, stallGauge } from "./stall-recorder";
@@ -92,6 +93,13 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   /** One frame into the chat. `/sandbox` typed in the page's composer runs; from anything else a lowering is refused
       (§app.access/your-click), the send's refusal reaching this socket like any other. */
   const toChat = (open: NonNullable<typeof chat>, msg: ChatClientMessage) => {
+    // A command from shell mode is typed at a message box: the page's here, or a page on another computer through a
+    // peer (§chat.shell-mode/who). A script's, a chat's, an extension's or the Overseer's socket runs none and stops
+    // none: `shell` hears why, so nothing waits on it; `shell_stop` has no answer of its own and does nothing.
+    if (who !== null && who !== "local" && (msg.type === "shell" || msg.type === "shell_stop")) {
+      if (msg.type === "shell") client.send({ type: "shell_refused", clientId: String(msg.clientId ?? ""), reason: "unavailable", message: SHELL_NOT_PAGE_TEXT });
+      return;
+    }
     // A card's click opens a turn that may act on what the card names, so it is the person's, never a script's or a
     // chat's (§app.access/your-click). A click relayed by a peer stays as it was: a page on another computer sends one.
     if (who !== null && who !== "local" && msg.type === "prompt" && msg.confirm) {

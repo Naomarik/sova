@@ -4,11 +4,14 @@
 // ends before the reply and a second client that attaches then sees its card in the hello (t18), and it is
 // saved below the reply once the reply ends; a command still running shows with its output so far to a
 // client that attaches; archiving a chat stops its running command and saves it as stopped by the close
-// (t19); and a page's handed-over frames never run one. Every wait is on a frame or the file, never a sleep.
+// (t19); a page's handed-over frames never run one; and a script's or a chat's socket is refused one while the
+// page's runs it. Every wait is on a frame or the file, never a sleep.
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
+import { authCookieName } from "./auth";
+import { SHELL_NOT_PAGE_TEXT } from "./chat-shell";
 import { startHermeticServer, type HermeticServer } from "./testing/hermetic-server";
 
 let s: HermeticServer;
@@ -45,9 +48,15 @@ const newSession = async (): Promise<Session> => (await api("POST", "/api/sessio
 /** The session file's entries. */
 const entries = (ses: Session): any[] => readFileSync(ses.path, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
 const bashEntries = (ses: Session) => entries(ses).filter((e) => e.type === "message" && e.message?.role === "bashExecution");
-/** A chat socket of the web app's own (wire 2): its frames, and a way to send. */
-async function chatSocket(ses: Session) {
-  const ws = new WebSocket(`${s.base.replace("http", "ws")}/ws/chat?path=${encodeURIComponent(ses.path)}&tail=rest&wire=2`, { headers: { "x-sova-token": s.token } } as never);
+/** What each kind of socket shows (server/page-only.ts): the page its sign-in cookie, a script the token, a chat its key. */
+const shows = {
+  page: () => ({ cookie: `${authCookieName(s.agentDir)}=${s.token}` }),
+  script: () => ({ "x-sova-token": s.token }),
+  chat: () => ({ "x-sova-token": s.token, "x-sova-caller": "a-chat-key" }),
+};
+/** A chat socket (wire 2), the web app's own unless `who` says otherwise: its frames, and a way to send. */
+async function chatSocket(ses: Session, who: keyof typeof shows = "page") {
+  const ws = new WebSocket(`${s.base.replace("http", "ws")}/ws/chat?path=${encodeURIComponent(ses.path)}&tail=rest&wire=2`, { headers: shows[who]() } as never);
   const frames: any[] = [];
   ws.addEventListener("message", (e) => frames.push(JSON.parse(String(e.data))));
   const hello = await until("the socket's hello", () => frames.find((f) => f.type === "hello"));
@@ -162,5 +171,25 @@ test("a page's handed-over frames never run a command (POST /api/chat/frames)", 
   await a.find("the live command saved", (f) => f.type === "shell_saved");
   assert.equal(existsSync(marker), false);
   assert.deepEqual(bashEntries(ses).map((e) => e.message.command), ["echo after"]);
+  a.close();
+});
+
+test("only the message box runs a command: a script's or a chat's socket is refused, the page's runs (§chat.shell-mode/who)", async () => {
+  const ses = await newSession();
+  const marker = join(s.work, `ran-${Date.now()}`);
+  for (const who of ["script", "chat"] as const) {
+    const x = await chatSocket(ses, who);
+    x.send({ type: "shell", command: `touch ${marker}`, clientId: who });
+    const refused = await x.find(`the ${who}'s refusal`, (f) => f.type === "shell_refused" && f.clientId === who);
+    assert.deepEqual({ reason: refused.reason, message: refused.message }, { reason: "unavailable", message: SHELL_NOT_PAGE_TEXT }, who);
+    x.close();
+  }
+  // The page's command afterwards runs and is the only one saved: had a refused one run, its record would be first.
+  const a = await chatSocket(ses);
+  a.send({ type: "shell", command: "echo page", clientId: "p1" });
+  await a.find("the page's command saved", (f) => f.type === "shell_saved");
+  assert.equal(existsSync(marker), false);
+  assert.deepEqual(bashEntries(ses).map((e) => e.message.command), ["echo page"]);
+  assert.equal(a.frames.some((f) => f.type === "shell_start" && f.run.command !== "echo page"), false);
   a.close();
 });

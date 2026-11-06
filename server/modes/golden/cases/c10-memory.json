@@ -31,6 +31,7 @@
    "<inline:sova-fork-cache>",
    "<inline:sova-shell-guard>",
    "<inline:sova-deeper-context>",
+   "<inline:sova-background-jobs>",
    "<inline:sova-mcp>",
    "<inline:sova-worker-host>",
    "<inline:sova-vis-check>",
@@ -104,7 +105,7 @@
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>"
       },
-      "toolsAdded": "@623bd96fe7cea855"
+      "toolsAdded": "@8bdb5fccd3d89fa9"
      },
      {
       "role": "user",
@@ -167,7 +168,7 @@
       "docs": "@0f5fabf6c3c47c4c",
       "cwd": "<cwd>\n<ws:plain>\n</cwd>"
      },
-     "toolsAdded": "@410ebd0168030dcd"
+     "toolsAdded": "@3b4114dce0511c8f"
     }
    }
   ],

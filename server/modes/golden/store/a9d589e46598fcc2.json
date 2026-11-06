@@ -40,6 +40,7 @@
    "merge.fresh",
    "merge.clear",
    "merge.hold",
+   "merge.try",
    "release.status",
    "release.logs",
    "release.request",
@@ -68,7 +69,7 @@
  },
  "branch": {
   "type": "string",
-  "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)."
+  "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
  },
  "from": {
   "type": "string",
@@ -134,7 +135,7 @@
  },
  "commit": {
   "type": "string",
-  "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)."
+  "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
  },
  "plan": {
   "type": "string",
@@ -197,7 +198,7 @@
   "items": {
    "type": "string"
   },
-  "description": "merge.extend {entry, checks, why, select}: check ids from the project's merge section to add to this entry's run (never removes one); send each pick's select with it."
+  "description": "merge.extend {entry, checks, why, select}: check ids from the project's merge section to add to this entry's run (never removes one); send each pick's select with it; merge.try: release check ids to run although unchanged."
  },
  "verdict": {
   "type": "string",

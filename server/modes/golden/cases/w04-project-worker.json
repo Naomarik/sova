@@ -32,6 +32,7 @@
     "<inline:sova-fork-cache>",
     "<inline:sova-shell-guard>",
     "<inline:sova-deeper-context>",
+    "<inline:sova-background-jobs>",
     "<inline:sova-mcp>",
     "<inline:sova-worker-host>",
     "<inline:sova-vis-check>",
@@ -196,7 +197,7 @@
         "cwd": "<cwd>\n<ws:project>\n</cwd>",
         "mode": "@2f8f600eeb60d291"
        },
-       "toolsAdded": "@f23f68b77ba76ebf"
+       "toolsAdded": "@fca91f6038831dd5"
       },
       {
        "role": "user",
@@ -314,7 +315,7 @@
        "cwd": "<cwd>\n<ws:project>\n</cwd>",
        "mode": "@2f8f600eeb60d291"
       },
-      "toolsAdded": "@820512e76afd0840"
+      "toolsAdded": "@04d40d1976d14871"
      }
     }
    ],
@@ -386,7 +387,7 @@
         "addendum": "@fb6d1792828f25c1",
         "cwd": "<cwd>\n<ws:project>\n</cwd>"
        },
-       "toolsAdded": "@7b99df714141fefa"
+       "toolsAdded": "@3cd79d9a3f5a9a4e"
       },
       {
        "role": "user",
@@ -422,7 +423,7 @@
        "addendum": "@fb6d1792828f25c1",
        "cwd": "<cwd>\n<ws:project>\n</cwd>"
       },
-      "toolsAdded": "@7b99df714141fefa"
+      "toolsAdded": "@3cd79d9a3f5a9a4e"
      }
     }
    ],
@@ -439,6 +440,7 @@
     "<mode-slot:project-tools-worker>",
     "<inline:sova-shell-guard>",
     "<inline:sova-deeper-context>",
+    "<inline:sova-background-jobs>",
     "<inline:sova-project-verbs>"
    ]
   }

@@ -33,6 +33,7 @@
     "<inline:sova-fork-cache>",
     "<inline:sova-shell-guard>",
     "<inline:sova-deeper-context>",
+    "<inline:sova-background-jobs>",
     "<inline:sova-mcp>",
     "<inline:sova-worker-host>",
     "<inline:sova-vis-check>",
@@ -105,7 +106,7 @@
         "cwd": "<cwd>\n<ws:tree-mode>\n</cwd>",
         "mode": "@d4cf9a33be021005"
        },
-       "toolsAdded": "@e2b397104cd2f81f"
+       "toolsAdded": "@428f943a602ffe68"
       },
       {
        "role": "user",
@@ -224,7 +225,7 @@
        "cwd": "<cwd>\n<ws:tree-mode>\n</cwd>",
        "mode": "@d4cf9a33be021005"
       },
-      "toolsAdded": "@e5c3f6c1075aeaf9"
+      "toolsAdded": "@ded17415db866517"
      }
     }
    ],
@@ -298,7 +299,7 @@
         "cwd": "<cwd>\n<ws:tree-mode>\n</cwd>",
         "mode": "@1aae69296415268d"
        },
-       "toolsAdded": "@1eef9b5cedae8c21"
+       "toolsAdded": "@a4dd3d9f1130e643"
       },
       {
        "role": "user",
@@ -333,7 +334,7 @@
        "cwd": "<cwd>\n<ws:tree-mode>\n</cwd>",
        "mode": "@1aae69296415268d"
       },
-      "toolsAdded": "@1eef9b5cedae8c21"
+      "toolsAdded": "@a4dd3d9f1130e643"
      }
     }
    ],
@@ -348,6 +349,7 @@
     "<repo>/pi-config/extensions/sandbox",
     "<inline:sova-shell-guard>",
     "<inline:sova-deeper-context>",
+    "<inline:sova-background-jobs>",
     "<inline:sova-project-verbs>"
    ]
   }

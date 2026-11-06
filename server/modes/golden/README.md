@@ -1,6 +1,6 @@
 # Modes recordings
 
-What a chat's or a worker's model sees of its modes, recorded at master `30cfffc1f` with the pi-config mode
+What a chat's or a worker's model sees of its modes, recorded at master `7c4750f0a` with the pi-config mode
 extension running every mode, and the yardstick for Sova's engine (al_1, Settings → Experimental → "Sova
 runs chat modes"). The code is in `server/modes/tests/` (`harness.fixture.ts` says what a recording holds;
 `cases.fixture.ts` lists the cases).
@@ -19,8 +19,8 @@ store/<hash>.json      the big values (system prompts, tool lists, notes), once 
 | `SOVA_MODES_DUMP=<dir>` | a request that failed the once-only check, written whole |
 
 Re-take them from master's code, never from a tree in the middle of the move: `git archive <rev>` into
-`.cache/<name>`, link `node_modules`, copy `server/modes/tests/`, the four test files and the runner's
-`server/modes/**/*.test.ts` glob in, record there with `node scripts/run-tests.mjs -- <files>`, and copy
+`.cache/<name>`, link `node_modules`, copy `server/modes/tests/`, the four test files, the runner's
+`server/modes/**/*.test.ts` glob and `SOVA_MODES_GOLDEN` in `scripts/test-env.mjs`'s allowed list in (while master lacks them), record there with `node scripts/run-tests.mjs -- <files>`, and copy
 `golden/cases` and `golden/store` back (delete both first: the store check fails on files nothing uses).
 Review the diff as the change's effect on every case.
 

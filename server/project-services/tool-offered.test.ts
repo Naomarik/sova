@@ -25,6 +25,8 @@ const { renderBlock } = await import("../../shared/playbook-delivery");
 const { stateView } = await import("../harness/state-view");
 const { WORKTREES } = await import("../harness/state-kinds");
 const { clearProjectCache } = await import("../project-root");
+const { targetDir } = await import("../targets");
+const { defaultRemoteOf } = await import("../files");
 
 after(() => rmSync(base, { recursive: true, force: true }));
 
@@ -99,12 +101,21 @@ const refuses: [string, () => HookCtx | Promise<HookCtx>][] = [
   ["a folder that doesn't exist", () => ctxOf(join(base, "gone"))],
   ["a relative folder", () => ctxOf("somewhere")],
   ["files on another computer, even with its project's definition, queue and copy", () => {
-    const remote = join(agentDir, "remote", "box", "work");
+    // The placeholder is a real local folder holding all of them, so only its being another computer's can say no.
+    const remote = targetDir("box", "/work");
+    mkdirSync(remote, { recursive: true });
+    define(remote);
     writeFileSync(join(sova, "project-services", "registry.json"), JSON.stringify({ version: 1, instances: [{ project: remote }], shared: [] }));
     writeFileSync(join(sova, "merge-served.json"), JSON.stringify({ v: 1, at: "2026-01-01T00:00:00Z", roots: [{ root: remote, target: "master" }] }));
     return ctxOf(remote);
   }],
 ];
+test("the control for the row on another computer: the same files in a local folder offer it", async () => {
+  const d = folder(false);
+  define(d);
+  assert.equal(await projectVerbsOffered(ctxOf(d)), true);
+  assert.equal(defaultRemoteOf(targetDir("box", "/work"))?.target, "box");
+});
 for (const [name, ctx] of refuses) test(`not offered: ${name}`, async () => assert.equal(await projectVerbsOffered(await ctx()), false));
 
 test("the message starting a run offers it before it is on the branch", async () => {

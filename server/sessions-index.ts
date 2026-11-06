@@ -748,9 +748,11 @@ function tailEndingIn(win: TailWindow): { reply: LastReply | null; ending: TailE
  * Reads 16KB chunks and stops as soon as the first user message is seen (cap 256KB).
  * The model here is only the fallback for when readTailModel finds none near EOF.
  */
-/** `input`: the head holds a user message of any kind. A wake nudge or a partner's link message
-    never titles a session, but it is still something written in it: a session whose only user
-    messages are link messages has real turns and is never an empty husk. */
+/** `input`: the head holds something written in it, so the session is no empty husk: a user message
+    of any kind, or a saved command (shell mode's `!`/`!!`, pi's bashExecution, §chat.shell-mode/card). A wake
+    nudge, a partner's link message or a command never titles a session, but each is still something
+    written in it: a session whose only entries are link messages or commands is never an empty husk.
+    (A command is still no input to the transcript's counts, rewind or titles: those read rows.) */
 type HeadFacts = { header: any; title: string | null; model: string | null; overseer: boolean; input: boolean; profile?: ProfileEntryData | null };
 
 export async function readHead(path: string): Promise<HeadFacts | null> {
@@ -809,6 +811,8 @@ async function readHeadFrom(fh: FileHandle): Promise<HeadFacts | null> {
         input = true;
         if (title === null && !notTitle(userText(h))) title = oneLine(userText(h));
       }
+      // A saved command keeps the session (§chat.shell-mode/card); it never titles it.
+      if (h?.kind === "shell") input = true;
       if (title !== null && model) return { header, title, model, overseer, input, profile };
     }
     // Stop at the first user message even without a model: model_change precedes it.
@@ -824,7 +828,7 @@ async function readHeadFrom(fh: FileHandle): Promise<HeadFacts | null> {
         else if (h?.kind === "user") {
           input = true;
           if (!notTitle(userText(h))) title = oneLine(userText(h));
-        }
+        } else if (h?.kind === "shell") input = true;
       } catch {
         // partial line: ignore
       }
@@ -1731,8 +1735,8 @@ export function idOf(path: string): string {
 
 /**
  * True when the file is an empty husk: all of it was read and it holds no user message of any
- * kind (readHead stops at the first titling one). A link or wake message counts: it never
- * titles the session, but the session is not empty. Never guessed from a head-capped read of a big file,
+ * kind and no saved command (readHead stops at the first titling message). A link or wake message,
+ * or a command run from shell mode, counts: it never titles the session, but the session is not empty. Never guessed from a head-capped read of a big file,
  * so a session whose first user message sits beyond MAX_HEAD is never treated as empty.
  */
 export async function isZeroInput(path: string, size: number): Promise<boolean> {

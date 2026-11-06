@@ -107,6 +107,7 @@ import {
   copyText,
   draftReply,
   drafts,
+  focusView,
   groupSendAll,
   hideThinking,
   hideTools,
@@ -1689,6 +1690,8 @@ export function ChatView(props: {
     topic,
     // A group pane while Send to All hides every pane composer: Reply has nowhere to stage.
     sendToAll: scope.id !== null && groupSendAll(),
+    // Focus hides the single view's composer (never a pane's): Reply would stage out of sight.
+    focus: scope.id === null && focusView(),
   });
 
   /** Regenerate: the server walks back to the user message that started this reply, rewinds to

@@ -188,6 +188,8 @@ export interface ActionState {
   tourNotice?: boolean;
   /** This chat is a group pane while Send to All hides its composer: Reply has nowhere to stage. */
   sendToAll?: boolean;
+  /** Focus hides this view's composer (§chat.transcript/focus-view): Reply has nowhere to show what it staged. */
+  focus?: boolean;
   /** This reply answered a link message: the same. */
   link?: boolean;
   /** This reply answered a topic batch: the same. */
@@ -197,6 +199,8 @@ export interface ActionState {
 export const TUI_LIVE_REASON = "This session is open in a terminal, so Sova won't write to it.";
 /** Reply in a group pane while the group composer stands in for every pane's own. */
 export const REPLY_SEND_ALL_REASON = "Turn off Send to All to reply in this pane.";
+/** Reply while Focus hides the composer: only the Focus button turns Focus off. */
+export const REPLY_FOCUS_REASON = "Turn off Focus to reply.";
 /**
  * Why an action is off, in user-facing words — or null when it can act. Never hidden: a button
  * that disappears takes its reason with it.
@@ -220,6 +224,7 @@ export function actionReason(kind: LandedActionKind, s: ActionState): string | n
       if (!s.chat) return "Only a chat open in Sova can reply.";
       if (s.live) return TUI_LIVE_REASON;
       if (s.sendToAll) return REPLY_SEND_ALL_REASON;
+      if (s.focus) return REPLY_FOCUS_REASON;
       return null;
     case "fork":
       if (!s.chat) return "Open this session as a chat in Sova to fork it.";

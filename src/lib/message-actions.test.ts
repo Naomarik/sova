@@ -139,6 +139,7 @@ test("Reply never changes the conversation: nothing in flight blocks it, only a 
   assert.equal(actionReason("reply", state({ live: true })), TUI_LIVE_REASON);
   assert.equal(actionReason("reply", state({ sendToAll: true })), REPLY_SEND_ALL_REASON);
   assert.equal(REPLY_SEND_ALL_REASON, "Turn off Send to All to reply in this pane.");
+  assert.equal(actionReason("reply", state({ focus: true })), "Turn off Focus to reply.");
   // The structural facts outrank Send to All, as they do every other state.
   assert.equal(actionReason("reply", state({ chat: false, sendToAll: true })), "Only a chat open in Sova can reply.");
 });

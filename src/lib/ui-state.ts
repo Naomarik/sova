@@ -274,10 +274,10 @@ export async function loadDraft(path: string): Promise<DraftPayload> {
 registerPutBack((path, texts) => {
   // A command already in the draft stays as its text ("!ls"): the whole draft is a message now.
   void loadDraft(path).then((d) => {
-    // A refused reply comes back as its words, its reply staged again unless another is staged by
-    // now (shared/reply-quote `takeBack`; server/drafts.ts `putBackDraft` is the same rule).
-    const back = takeBack(texts);
-    if (back.reply && !d.reply) setDraftReply(path, back.reply);
+    // A refused reply comes back as its words, its reply staged again; while another is staged, it
+    // comes back whole (shared/reply-quote `takeBack`; server/drafts.ts `putBackDraft` is the same rule).
+    const back = takeBack(texts, { staged: d.reply });
+    if (back.reply) setDraftReply(path, back.reply);
     const now = draftMessage(path);
     setDraftText(path, [...back.texts.filter((t) => t.trim()), ...(now.trim() ? [now] : [])].join("\n\n"));
   });

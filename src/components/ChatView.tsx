@@ -507,11 +507,11 @@ export function ChatView(props: {
   const [restored, setRestored] = createSignal<{ text: string } | null>(null);
   /** Texts on their way back to the composer: the first reply among them comes back as its words,
       its reply staged again (shared/reply-quote `takeBack`). A Rewind or a Stop, the user's own
-      ask, replaces any reply staged before (`replace`); a refused send's put-back stages it only
-      when none is staged by then. */
+      ask, replaces any reply staged before (`replace`); a refused send's reply, while another is
+      staged, comes back whole instead, quote and all. */
   const restage = (texts: readonly string[], replace: boolean): string[] => {
-    const split = takeBack(texts);
-    if (split.reply && (replace || !draftReply(props.path))) setDraftReply(props.path, split.reply);
+    const split = takeBack(texts, { staged: draftReply(props.path), replace });
+    if (split.reply) setDraftReply(props.path, split.reply);
     return split.texts;
   };
   const [everOpened, setEverOpened] = createSignal(false);
@@ -788,12 +788,12 @@ export function ChatView(props: {
    */
   const handBackSends = (sent: readonly Unsent[], said?: string): string[] => {
     if (!sent.length) return [];
-    // A refused reply comes back as its words, its reply staged again unless another is staged by now.
-    const split = takeBack(sent.map((u) => u.text));
+    // A refused reply comes back as its words, its reply staged again; while another is staged, whole.
+    const split = takeBack(sent.map((u) => u.text), { staged: draftReply(props.path) });
     const back = sent.map((u, i) => ({ ...u, text: split.texts[i]! }));
     const r = handBack({ draft: draftMessage(props.path) || undefined, cardSent: untrack(cardSent) }, back, clicks);
     if (r.texts.length) {
-      if (split.reply && !draftReply(props.path)) setDraftReply(props.path, split.reply);
+      if (split.reply) setDraftReply(props.path, split.reply);
       setDraftText(props.path, r.draft ?? "");
       setRestored({ text: r.texts.join("\n\n") });
       if (said) announce(said);

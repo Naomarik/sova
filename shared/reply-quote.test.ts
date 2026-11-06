@@ -149,3 +149,19 @@ test("share pages carry no message id: the reply's id is replaced, its quote and
   assert.deepEqual(parseReply(shown), { entryId: SHARED_REPLY_ID, role: "assistant", part: false, quote: "one\ntwo", words: "my words" });
   assert.equal(withoutReplyId("plain"), "plain");
 });
+
+test("takeBack with a reply already staged: a put-back keeps it and brings the new reply back whole; a Rewind or Stop replaces it", async () => {
+  const { takeBack } = await import("./reply-quote");
+  const staged = reply({ entryId: "aaaa1111", quote: "staged since" });
+  const back = composeReply(reply({ entryId: "bbbb2222", role: "user", quote: "refused quote" }), "hi");
+  // A refused send: nothing to stage, and the quote comes back with its words, never dropped.
+  assert.deepEqual(takeBack(["plain", back], { staged }), { texts: ["plain", back], reply: null });
+  assert.deepEqual(takeBack([back], { staged, replace: false }), { texts: [back], reply: null });
+  // A Rewind or Stop: the user asked for it back, so it is staged in place of the other.
+  const replaced = takeBack(["plain", back], { staged, replace: true });
+  assert.deepEqual(replaced.texts, ["plain", "hi"]);
+  assert.equal(replaced.reply?.entryId, "bbbb2222");
+  // Nothing staged: staged either way.
+  assert.equal(takeBack([back], { staged: null }).reply?.entryId, "bbbb2222");
+  assert.equal(takeBack([back]).reply?.entryId, "bbbb2222");
+});

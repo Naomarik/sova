@@ -351,12 +351,14 @@ test("a refused reply put back comes back as its words with its reply staged aga
   assert.equal(d?.reply?.quote, staged.quote);
 });
 
-test("a put-back keeps a reply already staged, and never stacks a second quote into the words", () => {
+test("a put-back while another reply is staged keeps that one and brings the refused reply back whole, quote and all", () => {
   const mine = { ...staged, entryId: "feedf00d", role: "user" as const, quote: "staged since" };
   setDraft("put-back-2", "later words", [], undefined, mine);
-  putBackDraft("put-back-2", [composeReply(staged, "hi")]);
+  const refused = composeReply(staged, "hi");
+  putBackDraft("put-back-2", [refused]);
   const d = getDraft("put-back-2");
-  assert.equal(d?.text, "hi\n\nlater words");
-  assert.equal(d?.reply?.entryId, "feedf00d");
-  assert.ok(!d?.text.includes("[Replying to"), d?.text);
+  assert.deepEqual(d?.reply, mine, "the reply staged since stays staged");
+  assert.equal(d?.text, `${refused}\n\nlater words`);
+  assert.ok(d?.text.includes("[Replying to your earlier reply · 1a2b3c4d]"), "the refused reply's first line comes back");
+  assert.ok(d?.text.includes("> the quoted words"), "and its quote");
 });

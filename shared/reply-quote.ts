@@ -103,18 +103,26 @@ export const stagedOf = (p: ParsedReply): StagedReply => ({
 });
 
 /**
- * Texts going back to the composer (a Rewind, Stop's hand-back, a refused send), in order. The
- * first that replies to another comes back as its words with its reply to stage again; any later
- * one comes back whole, quote line and all, since only one reply can be staged and a quote dropped
- * silently would be lost. Whether the reply replaces one already staged is the caller's: a Rewind
- * or a Stop does (the user just asked for it back), a put-back of a refused send doesn't.
+ * Texts going back to the composer (a Rewind, Stop's hand-back, a refused send), in order, and the
+ * reply to stage from them. One reply is staged at a time: the first text that replies to another
+ * comes back as its words with its reply to stage, when it may be staged: nothing is staged
+ * (`staged` null) or the caller replaces what is (`replace`: a Rewind or a Stop, the user's own
+ * ask). Every other reply, that first one included when it may not be staged, comes back whole,
+ * first line and quote and all, since a quote dropped silently would be lost. `reply` is null when
+ * nothing is to be staged.
  */
-export function takeBack(texts: readonly string[]): { texts: string[]; reply: StagedReply | null } {
+export function takeBack(
+  texts: readonly string[],
+  opts: { staged?: StagedReply | null; replace?: boolean } = {},
+): { texts: string[]; reply: StagedReply | null } {
+  const mayStage = opts.replace === true || !opts.staged;
   let reply: StagedReply | null = null;
+  let seen = false;
   const out = texts.map((t) => {
-    if (reply) return t;
+    if (seen || !mayStage) return t;
     const p = parseReply(t);
     if (!p) return t;
+    seen = true;
     reply = stagedOf(p);
     return p.words;
   });

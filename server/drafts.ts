@@ -183,17 +183,17 @@ export function setDraft(id: string, text: string, rawAttachments?: unknown, mod
     their texts go back as the session's draft, ahead of any draft already saved (the order a tab
     puts a refused send back in), its attachments kept. Blank texts are skipped. The result is a message: a
     saved command's mode is dropped, and its text stays as it was typed. A refused reply comes back as
-    its words with its reply staged again, unless the draft already stages one (shared/reply-quote
-    `takeBack`, the tab's own rule). */
+    its words with its reply staged again; while the draft already stages one, it comes back whole,
+    quote and all (shared/reply-quote `takeBack`, the tab's own rule). */
 export function putBackDraft(id: string, texts: readonly string[]): void {
-  const split = takeBack(texts.filter((t) => t.trim()));
+  const current = load()[id];
+  const split = takeBack(texts.filter((t) => t.trim()), { staged: current?.reply ?? null });
   const back = split.texts.filter((t) => t.trim());
   if (!back.length && !split.reply) return;
-  const current = load()[id];
   // A saved command joins as text with its marker shown, so nothing is lost and nothing runs on Enter.
   const kept = current?.text.trim() ? [`${current.mode ? markerOf(current.mode) : ""}${current.text}`] : [];
   const text = [...back, ...kept].join("\n\n");
-  setDraft(id, text, current?.attachments, undefined, current?.reply ?? split.reply);
+  setDraft(id, text, current?.attachments, undefined, split.reply ?? current?.reply);
 }
 
 /** Drop the drafts of deleted sessions; same write rules as setDraft. */

@@ -2,6 +2,7 @@
 // Timers are injectable so the tests drive time by hand instead of sleeping.
 
 import type { ShellDraftMode, UploadResult } from "../../shared/protocol";
+import type { StagedReply } from "../../shared/reply-quote";
 
 export type { ShellDraftMode };
 
@@ -14,6 +15,8 @@ export interface DraftPayload {
   /** A command written in shell mode (§chat.shell-mode/box): its mode, kept apart from the text, so a
       leading "!" in `text` is only ever text. Absent: a message. */
   mode?: ShellDraftMode;
+  /** A message staged by its Reply (§chat.composer/replying), or null. */
+  reply: StagedReply | null;
 }
 
 export type SaveDraft = (path: string, draft: DraftPayload) => void | Promise<void>;

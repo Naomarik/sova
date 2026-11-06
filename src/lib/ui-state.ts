@@ -4,9 +4,11 @@
 import { createSignal } from "solid-js";
 import { fetchDraft, putDraft } from "./api";
 import type { SessionSummary, UploadResult } from "../../shared/protocol";
+import { sameStagedReply, type StagedReply } from "../../shared/reply-quote";
 import type { ContextState } from "./context";
 import { draftCounts } from "./draft-mark";
 import { registerPutBack } from "./chat-outbox";
+import { takeBack } from "../../shared/reply-quote";
 import { createDraftSaver, type DraftPayload, type ShellDraftMode } from "./draft-save";
 import { readKey, writeKey } from "./storage-keys";
 import { makeToast, placeToast, type Toast, type ToastOptions } from "./toast";
@@ -134,6 +136,20 @@ const storeAttachments = (path: string, list: UploadResult[]) =>
     return next;
   });
 
+/** A message staged by its Reply (§chat.composer/replying), by session path: part of the draft,
+    saved and loaded with it. A signal, so the composer's strip and the sidebar's pencil follow it. */
+const [repliesByPath, setRepliesByPath] = createSignal<Record<string, StagedReply>>({});
+export const draftReply = (path: string): StagedReply | null => repliesByPath()[path] ?? null;
+
+const storeReply = (path: string, reply: StagedReply | null) =>
+  setRepliesByPath((m) => {
+    if (sameStagedReply(m[path] ?? null, reply)) return m;
+    const next = { ...m };
+    if (reply) next[path] = reply;
+    else delete next[path];
+    return next;
+  });
+
 /** Whether each session this tab knows the draft of holds one (lib/draft-mark), by path. A signal,
     unlike `drafts`, so the sidebar's pencil follows every write; a path absent here is unknown
     to this tab, and the row falls back to the listing's `hasDraft`. */
@@ -143,7 +159,7 @@ export const hasLocalDraft = (path: string): boolean | undefined => draftPresenc
 /** Re-derives `path`'s presence from the in-memory draft. Called by every writer after it writes;
     changes the signal only when the answer does, so a keystroke doesn't re-render the list. */
 const syncPresence = (path: string) => {
-  const has = draftCounts(drafts.get(path) ?? "", draftAttachments(path));
+  const has = draftCounts(drafts.get(path) ?? "", draftAttachments(path), draftReply(path));
   setDraftPresence((m) => (m[path] === has ? m : { ...m, [path]: has }));
 };
 
@@ -152,11 +168,20 @@ const syncPresence = (path: string) => {
 const draftKnown = new Set<string>();
 /** Set only while the page is being hidden, so that flush's writes can outlive the page. */
 let unloading = false;
-const draftSaver = createDraftSaver((path, d) => putDraft(path, d.text, d.attachments, { keepalive: unloading, mode: d.mode }).then(() => {}));
+const draftSaver = createDraftSaver((path, d) =>
+  putDraft(path, d.text, d.attachments, { keepalive: unloading, mode: d.mode, reply: d.reply }).then(() => {}),
+);
+/** Paths whose staged reply this tab set or cleared itself: a load that lands later never revives one. */
+const replyTouched = new Set<string>();
 
-/** The whole draft goes out on every save, so a text save never drops the attachments. */
+/** The whole draft goes out on every save, so a text save never drops the attachments or the reply. */
 const scheduleSave = (path: string) =>
-  draftSaver.schedule(path, { text: drafts.get(path) ?? "", attachments: draftAttachments(path), ...(draftModes.has(path) ? { mode: draftModes.get(path) } : {}) });
+  draftSaver.schedule(path, {
+    text: drafts.get(path) ?? "",
+    attachments: draftAttachments(path),
+    ...(draftModes.has(path) ? { mode: draftModes.get(path) } : {}),
+    reply: draftReply(path),
+  });
 
 /** Writes the in-memory draft and schedules the server copy (debounced). `mode`: the box wrote it in
     shell mode; without one the draft is a message (any saved mode goes), so only the box saves one. */
@@ -178,13 +203,24 @@ export function setDraftAttachments(path: string, list: UploadResult[]): void {
   scheduleSave(path);
 }
 
-/** After a send: blank text and no attachments, which deletes the stored draft. The files stay,
-    since the sent prompt names them. */
+/** Stages a reply (or with null removes it) and schedules the server copy with the rest of the draft. */
+export function setDraftReply(path: string, reply: StagedReply | null): void {
+  draftKnown.add(path);
+  replyTouched.add(path);
+  storeReply(path, reply);
+  syncPresence(path);
+  scheduleSave(path);
+}
+
+/** After a send: blank text, no attachments and no reply, which deletes the stored draft. The files
+    stay, since the sent prompt names them. */
 export function clearDraft(path: string): void {
   draftKnown.add(path);
+  replyTouched.add(path);
   drafts.delete(path);
   draftModes.delete(path);
   storeAttachments(path, []);
+  storeReply(path, null);
   syncPresence(path);
   scheduleSave(path);
 }
@@ -198,12 +234,17 @@ function mergeAttachments(local: UploadResult[], stored: UploadResult[]): Upload
 
 /** The draft for `path`: this tab's copy when it has one, else the stored one. Never rejects. */
 export async function loadDraft(path: string): Promise<DraftPayload> {
-  const local = (): DraftPayload => ({ text: drafts.get(path) ?? "", attachments: draftAttachments(path), ...(draftModes.has(path) ? { mode: draftModes.get(path) } : {}) });
+  const local = (): DraftPayload => ({
+    text: drafts.get(path) ?? "",
+    attachments: draftAttachments(path),
+    ...(draftModes.has(path) ? { mode: draftModes.get(path) } : {}),
+    reply: draftReply(path),
+  });
   if (draftKnown.has(path)) return local();
-  let stored: DraftPayload = { text: "", attachments: [] };
+  let stored: DraftPayload = { text: "", attachments: [], reply: null };
   try {
     const r = await fetchDraft(path);
-    stored = { text: r.text ?? "", attachments: r.attachments, ...(r.mode ? { mode: r.mode } : {}) };
+    stored = { text: r.text ?? "", attachments: r.attachments, ...(r.mode ? { mode: r.mode } : {}), reply: r.reply };
   } catch {
     // Unreachable server or a missing file: start empty; typing still saves.
   }
@@ -212,11 +253,14 @@ export async function loadDraft(path: string): Promise<DraftPayload> {
     // attachments still come back if this tab attached nothing, so a keystroke during the load
     // can't cost the screenshot — the save it scheduled would otherwise store an empty list.
     if (stored.attachments.length && draftAttachments(path).length === 0) setDraftAttachments(path, stored.attachments);
+    // The same for a staged reply, unless this tab staged, removed or sent one meanwhile.
+    if (stored.reply && !replyTouched.has(path) && !draftReply(path)) setDraftReply(path, stored.reply);
     return local();
   }
   draftKnown.add(path);
   if (stored.text) drafts.set(path, stored.text);
   if (stored.text && stored.mode) draftModes.set(path, stored.mode);
+  if (stored.reply && !replyTouched.has(path)) storeReply(path, stored.reply);
   // A load may ADD an attachment, never drop one: the server copy can be behind a save still in
   // flight, and losing a row the user can see leaves its file orphaned on disk — the worse bug.
   // (Deleting a file goes through Remove: setDraftAttachments, or clearDraft after a send.)
@@ -229,9 +273,13 @@ export async function loadDraft(path: string): Promise<DraftPayload> {
 // ahead of what the draft holds, quietly (§chat.transcript/send-while-starting).
 registerPutBack((path, texts) => {
   // A command already in the draft stays as its text ("!ls"): the whole draft is a message now.
-  void loadDraft(path).then(() => {
+  void loadDraft(path).then((d) => {
+    // A refused reply comes back as its words, its reply staged again unless another is staged by
+    // now (shared/reply-quote `takeBack`; server/drafts.ts `putBackDraft` is the same rule).
+    const back = takeBack(texts);
+    if (back.reply && !d.reply) setDraftReply(path, back.reply);
     const now = draftMessage(path);
-    setDraftText(path, [...texts, ...(now.trim() ? [now] : [])].join("\n\n"));
+    setDraftText(path, [...back.texts.filter((t) => t.trim()), ...(now.trim() ? [now] : [])].join("\n\n"));
   });
 });
 

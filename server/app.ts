@@ -873,11 +873,11 @@ export function buildApp(deps: AppDeps) {
   });
 
   app.put("/api/sessions/draft", async (c) => {
-    let body: { path?: unknown; text?: unknown; attachments?: unknown; mode?: unknown };
+    let body: { path?: unknown; text?: unknown; attachments?: unknown; mode?: unknown; reply?: unknown };
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: "Expected JSON body { path, text, attachments? }" }, 400);
+      return c.json({ error: "Expected JSON body { path, text, attachments?, reply? }" }, 400);
     }
     if (typeof body.text !== "string") return c.json({ error: "text must be a string" }, 400);
     const path = resolveSessionPath(typeof body.path === "string" ? body.path : null);
@@ -891,8 +891,9 @@ export function buildApp(deps: AppDeps) {
     // running something. A refused mode stays in view as its marker ("!ls"), as a hand-back's does.
     const keep = body.mode !== undefined && notPage(c) === null;
     const text = body.mode !== undefined && !keep ? `${markerOf(body.mode)}${body.text}` : body.text;
-    // Invalid entries are dropped by the store rather than failing the whole write.
-    setDraft(idOf(path), text, body.attachments, keep ? body.mode : undefined);
+    // Invalid entries (an attachment, a malformed staged reply) are dropped by the store rather
+    // than failing the whole write. Each save is the whole draft: one with no reply has none.
+    setDraft(idOf(path), text, body.attachments, keep ? body.mode : undefined, body.reply);
     return c.json({ ok: true });
   });
 

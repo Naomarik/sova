@@ -13,7 +13,8 @@ mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const draftsFile = join(agentDir, "sova", "drafts.json");
 
-const { draftForClient, draftPreview, dropDrafts, getDraft, putBackDraft, readDrafts, setDraft } = await import("./drafts");
+const { draftCounts, draftForClient, draftPreview, dropDrafts, getDraft, putBackDraft, readDrafts, setDraft } = await import("./drafts");
+const { composeReply } = await import("../shared/reply-quote");
 const { isPiClipboardName } = await import("../shared/tmp-paths");
 const { cleanupSessions, listSessions } = await import("./sessions-index");
 const { canonicalPath } = await import("./paths");
@@ -234,7 +235,7 @@ test("GET /api/sessions/draft body: attachments whose file is gone are left out,
   assert.equal(body.text, "hi");
   assert.deepEqual(body.attachments, [keep]);
   assert.ok(body.updatedAt);
-  assert.deepEqual(draftForClient("get-none"), { text: null, attachments: [], updatedAt: null });
+  assert.deepEqual(draftForClient("get-none"), { text: null, attachments: [], reply: null, updatedAt: null });
   dropDrafts(["get-draft"]);
 });
 
@@ -317,4 +318,45 @@ test("putBackDraft: what goes back is a message; a saved command joins it as tex
   putBackDraft("back", ["again"]);
   assert.deepEqual([getDraft("back")?.mode, getDraft("back")?.text], [undefined, "again\n\n!!cat .env"]);
   dropDrafts(["back"]);
+});
+
+// ---- A staged reply rides with the draft (§chat.composer/replying) ---------------------------
+
+const staged = { entryId: "1a2b3c4d", role: "assistant" as const, part: false, quote: "the quoted words", trimmed: false };
+
+test("a staged reply is stored with the draft, alone it is a draft, and GET returns it", () => {
+  setDraft("reply-only", "", [], undefined, staged);
+  assert.deepEqual(getDraft("reply-only")?.reply, staged);
+  assert.equal(draftCounts(getDraft("reply-only") ?? undefined), true, "a reply alone keeps the draft");
+  assert.deepEqual(draftForClient("reply-only").reply, staged);
+  // A save without it (Remove Reply, a send) drops it, and with nothing else the draft goes.
+  setDraft("reply-only", "", []);
+  assert.equal(getDraft("reply-only"), null);
+  assert.equal(draftForClient("none-here").reply, null);
+});
+
+test("a malformed staged reply is dropped, never the draft", () => {
+  setDraft("bad-reply", "words", [], undefined, { entryId: "has spaces", role: "assistant", quote: "q" });
+  assert.equal(getDraft("bad-reply")?.text, "words");
+  assert.equal(getDraft("bad-reply")?.reply, undefined);
+  setDraft("bad-reply", "", [], undefined, { ...staged, role: "system" });
+  assert.equal(getDraft("bad-reply"), null, "nothing valid left: no draft");
+});
+
+test("a refused reply put back comes back as its words with its reply staged again", () => {
+  putBackDraft("put-back", [composeReply(staged, "hi")]);
+  const d = getDraft("put-back");
+  assert.equal(d?.text, "hi");
+  assert.equal(d?.reply?.entryId, staged.entryId);
+  assert.equal(d?.reply?.quote, staged.quote);
+});
+
+test("a put-back keeps a reply already staged, and never stacks a second quote into the words", () => {
+  const mine = { ...staged, entryId: "feedf00d", role: "user" as const, quote: "staged since" };
+  setDraft("put-back-2", "later words", [], undefined, mine);
+  putBackDraft("put-back-2", [composeReply(staged, "hi")]);
+  const d = getDraft("put-back-2");
+  assert.equal(d?.text, "hi\n\nlater words");
+  assert.equal(d?.reply?.entryId, "feedf00d");
+  assert.ok(!d?.text.includes("[Replying to"), d?.text);
 });

@@ -5,7 +5,7 @@ import type { UploadResult } from "../../shared/protocol";
 import { createDraftSaver, type DraftPayload, type SaveDraft } from "./draft-save";
 
 /** A text-only draft; most tests only care which payload won. */
-const d = (text: string, attachments: UploadResult[] = []): DraftPayload => ({ text, attachments });
+const d = (text: string, attachments: UploadResult[] = []): DraftPayload => ({ text, attachments, reply: null });
 
 /** Hand-driven timers: `tick()` fires every timer still armed. */
 function fakeTimers() {
@@ -78,8 +78,23 @@ test("attachments ride with the text, and the last whole payload wins", () => {
   saver.schedule("/a", d("look here", []));
   t.tick();
   assert.deepEqual(r.payloads, [
-    ["/a", { text: "look here", attachments: [shot] }],
-    ["/a", { text: "look here", attachments: [] }],
+    ["/a", { text: "look here", attachments: [shot], reply: null }],
+    ["/a", { text: "look here", attachments: [], reply: null }],
+  ]);
+});
+
+test("a staged reply rides with the text, and a later save without it drops it (§chat.composer/replying)", () => {
+  const t = fakeTimers();
+  const r = recorder();
+  const saver = createDraftSaver(r.save, t);
+  const reply = { entryId: "a1b2c3d4", role: "assistant" as const, part: false, quote: "q", trimmed: false };
+  saver.schedule("/a", { text: "", attachments: [], reply });
+  t.tick();
+  saver.schedule("/a", d("sent"));
+  t.tick();
+  assert.deepEqual(r.payloads, [
+    ["/a", { text: "", attachments: [], reply }],
+    ["/a", { text: "sent", attachments: [], reply: null }],
   ]);
 });
 

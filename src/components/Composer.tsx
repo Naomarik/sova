@@ -6,7 +6,7 @@ import { runControls } from "../lib/compact";
 import { createTouchMode, enterSends, notePress as pressAt, refocusAfterSend, type SendPress } from "../lib/input-mode";
 import { watchKeyboard } from "../lib/voice/keyboard";
 import { enterRunsLocal, insertCommand, localCommand, menuCommands, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
-import { canRun, draftOf, enterOnInput, folderName, leaveOnKey, modeAnnouncement, onAnswer, openDraft, SHELL_MARKER, shellPlaceholder, type ShellControl, type ShellMode } from "../lib/shell-mode";
+import { canRun, codeSpans, draftOf, enterOnInput, folderName, leaveOnKey, modeAnnouncement, NOT_CONNECTED_YET, onAnswer, openDraft, runWhileBlocked, SHELL_MARKER, shellPlaceholder, type ShellControl, type ShellMode } from "../lib/shell-mode";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
 import { registerComposer } from "../commands/composers";
 import { openPaletteFrom } from "../commands/palette-open";
@@ -109,6 +109,10 @@ export interface ComposerReason {
   /** Said elsewhere for the eye (the note over the transcript's end while a chat connects or starts,
       §chat.transcript/instant-open): here for assistive technology only, visually hidden. */
   quiet?: boolean;
+  /** Its backticked quotes are drawn as code (a shell-mode refusal, §chat.shell-mode/box). */
+  code?: boolean;
+  /** Long: on a line of its own under the foot's controls, which keep their size. */
+  wide?: boolean;
 }
 
 /** `KB` under 1 MB, rounded; otherwise one decimal. */
@@ -384,8 +388,18 @@ export function Composer(props: {
   /** What the foot says: the state's reason, else that an attachment is still uploading. */
   const shownReason = (): ComposerReason | null => {
     const refused = shellMode() ? shellReason() : null;
-    return reason() ?? (refused ? { icon: "attention", text: refused } : null) ?? (uploading() > 0 && !shellMode() ? { icon: "clock", text: "Uploading…" } : null);
+    const state = reason();
+    // A Run's refusal shows over a wait said only to the ear (connecting), never over a reason on
+    // screen; it may be long and quote code (the kill guard's reply), so it gets its own line.
+    if (refused && (!state || state.quiet)) return { icon: "attention", text: refused, code: true, wide: true };
+    return state ?? (uploading() > 0 && !shellMode() ? { icon: "clock", text: "Uploading…" } : null);
   };
+  // "Not connected yet" answers a Run pressed while the chat connects: once it has, it is moot.
+  createEffect(
+    on(disabled, (off) => {
+      if (!off && untrack(shellReason) === NOT_CONNECTED_YET) setShellReason(null);
+    }),
+  );
   // Tapped, Enter adds a line and Send sends; the placeholder's key hint shows exactly when
   // Enter sends, so it swaps in place when the mode does.
   const { touch, onPointerDown } = createTouchMode();
@@ -894,7 +908,16 @@ export function Composer(props: {
     // Only a click on Send itself carries its press; Enter and Ctrl/⌘+Enter have none.
     const sendPress = takePress();
     const p = e instanceof SubmitEvent && e.submitter === sendButton ? sendPress : null;
-    if (!canSend()) return;
+    if (!canSend()) {
+      // Shell mode: a Run the box can't take now keeps the command and says why when nothing on
+      // screen does (the chat still connecting). Nothing is sent, now or later.
+      const why = shellMode() && props.shell && !props.readOnly && !pendingRun() && text().trim() ? runWhileBlocked(reason()) : null;
+      if (why) {
+        setShellReason(why);
+        announce(why);
+      }
+      return;
+    }
     // Shell mode: the line is a command, never a message (no steer, no prompt). Images and picks stay.
     if (shellMode() && props.shell) {
       const command = text().trim();
@@ -1463,6 +1486,7 @@ export function Composer(props: {
 
         <div
           class="composer-foot"
+          data-reason-wide={shownReason()?.wide ? "" : undefined}
           ref={(foot) => {
             // The model's short name is the foot's last part to shrink:
             // where the row doesn't fit once its gaps narrow, the mode switch's icons fold first.
@@ -1545,7 +1569,11 @@ export function Composer(props: {
               {(r) => (
                 <Show when={!r().quiet} fallback={<span class="visually-hidden">{r().text}</span>}>
                   <Icon name={r().icon} small />
-                  {r().text}
+                  <Show when={r().code} fallback={r().text}>
+                    <span>
+                      <For each={codeSpans(r().text)}>{(s) => (s.code ? <code>{s.text}</code> : s.text)}</For>
+                    </span>
+                  </Show>
                 </Show>
               )}
             </Show>

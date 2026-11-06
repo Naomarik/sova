@@ -98,6 +98,73 @@ describe("the Context tab's groups", () => {
       assert.equal(shareOf(unread.tokens, 200_000, inWindow(unread)), 0.5);
     });
 
+    describe("skills of a folder below the chat's, and manual-only ones", () => {
+      const nested = (name: string, tokens: number, extra: Partial<ContextPart>): ContextPart => ({ id: `skills:skill:/p/${name}`, group: "skills", label: name, tokens, path: `/p/${name}/SKILL.md`, folder: "svc", offered: false, read: false, ...extra });
+      const start = skill("a", 100, true);
+      const unread = skill("b", 50, false);
+      const notOffered = nested("later", 300, {});
+      const offeredOne = nested("now", 40, { offered: true });
+      const manual = nested("hand", 900, { manualOnly: true });
+      const ran = nested("ran", 0, { read: true });
+
+      test("not offered and manual-only rows add nothing to any total; an offered one counts, and moves up", () => {
+        const without = layoutOf(start, unread);
+        const line = lineOf(start, unread, offeredOne, notOffered, manual, ran);
+        assert.equal(line.tokens, 100 + 50 + 40);
+        assert.deepEqual(line.parts.map((p) => p.label), ["a", "ran", "b", "now", "hand", "later"]);
+        assert.equal(line.notReadFrom, 2);
+        assert.equal(line.notOfferedFrom, 4);
+        const all = layoutOf(start, unread, notOffered, manual);
+        assert.equal(all.lines.find((x) => x.kind === "skills")!.tokens, without.lines.find((x) => x.kind === "skills")!.tokens);
+        assert.equal(all.other, without.other, "Other doesn't move");
+        assert.equal(all.free, without.free);
+      });
+
+      test("the line and the sheet count them apart, in their section, with what they'd add", () => {
+        const line = lineOf(start, unread, offeredOne, notOffered, manual);
+        assert.equal(line.meta, "3 skills · 1 read · 2 not offered yet");
+        const sheet = groupSheet(line);
+        assert.equal(sheet.sub, "1 read · 2 not read yet · 2 not offered yet");
+        assert.deepEqual(sheet.below?.parts.map((p) => p.label), ["b", "now"]);
+        assert.equal(sheet.last?.heading, "Not offered yet · not counted");
+        assert.deepEqual(sheet.last?.parts.map((p) => p.label), ["hand", "later"]);
+        assert.equal(shareOf(notOffered.tokens, 1000, inWindow(notOffered)), null);
+        assert.equal(inWindow(manual), false);
+        assert.equal(inWindow(offeredOne), true);
+      });
+
+      test("a line of nothing but not-offered rows still shows, so they can be seen", () => {
+        const line = lineOf(notOffered);
+        assert.equal(line.tokens, 0);
+        assert.equal(groupSheet(line).sub, "0 read · 1 not offered yet");
+        assert.ok(groupSheet(line).last);
+      });
+
+      test("words: a folder before the description, a Manual only chip, a note for each state", () => {
+        assert.deepEqual(partMeta({ ...notOffered, detail: "Does it." }), { text: "svc/ · Does it." });
+        assert.deepEqual(partMeta({ ...offeredOne, detail: "Does it." }), { chip: { word: "Not read yet", done: false }, text: "svc/ · Does it." });
+        assert.deepEqual(partMeta(manual), { chip: { word: "Manual only", done: false }, text: "svc/" });
+        assert.deepEqual(partMeta(ran), { chip: { word: "Read", done: true }, text: "svc/" });
+        assert.match(partNote(notOffered)!, /first time the agent reads, edits or writes a file in svc/);
+        assert.match(partNote(manual)!, /never offered.*\/skill:hand/);
+        assert.match(partNote(ran)!, /counts under Conversation/);
+        assert.match(partNote(offeredOne)!, /only what the model is offered/);
+      });
+
+      test("a starting manual-only skill is the same; a starting skill with none of this is as it was", () => {
+        const startManual: ContextPart = { ...skill("m", 700, false), manualOnly: true };
+        assert.equal(lineOf(start, startManual).tokens, 100);
+        assert.deepEqual(partMeta(startManual), { chip: { word: "Manual only", done: false }, text: "" });
+        assert.deepEqual(partMeta(unread), { chip: { word: "Not read yet", done: false }, text: "" });
+      });
+
+      test("flatParts takes the server's rows into one group, with their state", () => {
+        const v = { state: "ok", cwd: "/p", window: 100, total: 1, prompt: true, instructions: [], mode: null, rules: [], tools: [], conversation: 0, nested: [], checkedAt: 0, skills: [{ id: "skill:a", label: "a", tokens: 1, read: false }], nestedSkills: [{ id: "skill:/p/x", label: "x", tokens: 2, read: false, offered: false, folder: "svc", manualOnly: true }] } as never;
+        const ps = flatParts(v).filter((p) => p.group === "skills");
+        assert.deepEqual(ps.map((p) => [p.label, p.folder, p.offered, p.manualOnly]), [["a", undefined, undefined, undefined], ["x", "svc", false, true]]);
+      });
+    });
+
     test("its sheet: the summary, the card of skills read, then Not read yet, with no word of not counting", () => {
       const sheet = groupSheet(lineOf(skill("a", 1_500, true), skill("b", 500, false), skill("c", 400, false)));
       assert.equal(sheet.sub, "1 read · 2 not read yet");

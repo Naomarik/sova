@@ -6,6 +6,7 @@
 //  - the mode, rules and docs: the held chat's system prompt by section (`promptSections`), and its tools as
 //    declared (`declaredTools`), so they are unknown (`prompt: false`) for a chat this server doesn't hold;
 //  - the instruction files below cwd: the deeper-context engine's own walk (server/deeper-context.ts);
+//  - the skills below cwd: the same walk's sibling, and the blocks on the branch (server/subfolder-skills.ts);
 //  - the total and the window: the transcript head's rule (contextOfBranch, resolveContext).
 // The conversation is estimated from the branch's messages since the latest compaction, and tallied by
 // kind (`talk`); a skill counts as read when server/skills.ts's rules find it loaded in what the model
@@ -20,10 +21,12 @@ import { chatHandle } from "./chat-handle";
 import { deeperContextAllow } from "./chat-special";
 import { listSubfolderInstructions, resolveToolPath, visiblePart } from "./deeper-context";
 import { resolveContext } from "./models";
-import { estimateTokens, getSessionSetup } from "./session-setup";
+import { estimateTokens, getSessionSetup, measureFile } from "./session-setup";
 import { toolTokens } from "./session-tools";
 import { collectSkills, skillLinesOf } from "./skills";
+import { listSubfolderSkills, offeredSkills } from "./subfolder-skills";
 import { readBranch } from "./harness/pi/reader";
+import { piSkillsIn } from "./harness/pi/skill-sources";
 import { contextOfBranch, resetsContext } from "./harness/pi/usage";
 
 /** The sections that aren't one of their own: the files and skills are listed one by one, the mode alone. */
@@ -46,6 +49,7 @@ export interface ContextViewDeps {
   branch?: (path: string) => Promise<readonly HEntry[]>;
   context?: typeof resolveContext;
   nested?: typeof listSubfolderInstructions;
+  nestedSkills?: (cwd: string) => ReturnType<typeof listSubfolderSkills>;
   now?: () => number;
 }
 
@@ -162,6 +166,40 @@ export function skillsRead(branch: readonly HEntry[], cwd: string): { names: Set
   return { names, paths };
 }
 
+/** The skills of folders below `cwd` as the tab lists them: each one the walk finds (or the branch's blocks
+    still hold, should its file have gone or the walk stopped short), offered or not, read or not. A file the
+    chat's starting list has isn't one. `same`: names more than one row has, which match by path alone.
+    Sizes: an offered one its listing, as it is in the window; one not offered yet what it would add; a
+    manual-only one its whole text. */
+export function nestedSkillParts(
+  cwd: string,
+  branch: readonly HEntry[],
+  walk: ReturnType<typeof listSubfolderSkills>,
+  startingPaths: ReadonlySet<string>,
+  isRead: (name: string, path: string) => boolean,
+): SessionContextPart[] {
+  const offered = new Map(offeredSkills(branch).map((s) => [s.filePath, s]));
+  const rows = new Map<string, { name: string; description: string; filePath: string; dir: string; manualOnly: boolean }>();
+  for (const s of walk.skills) if (!startingPaths.has(s.filePath)) rows.set(s.filePath, s);
+  for (const s of offered.values()) if (!rows.has(s.filePath)) rows.set(s.filePath, { ...s, manualOnly: false });
+  return [...rows.values()].map((s) => {
+    const isOffered = offered.has(s.filePath);
+    const read = isRead(s.name, s.filePath);
+    const tokens = s.manualOnly ? (measureFile(s.filePath)?.tokens ?? 0) : !isOffered && read ? 0 : estimateTokens(skillListing(s.name, s.description, s.filePath));
+    return {
+      id: `skill:${s.filePath}`,
+      label: s.name,
+      ...(s.description ? { detail: s.description.trim() } : {}),
+      path: s.filePath,
+      tokens,
+      read,
+      folder: s.dir,
+      offered: isOffered,
+      ...(s.manualOnly ? { manualOnly: true as const } : {}),
+    };
+  });
+}
+
 /** The text pi lists one offered skill with (pi formatSkillsForPrompt): its name, description and location. */
 const skillListing = (name: string, description: string | undefined, path: string): string =>
   `  <skill>\n    <name>${name}</name>\n    <description>${description ?? ""}</description>\n    <location>${path}</location>\n  </skill>`;
@@ -180,6 +218,16 @@ export async function getContextView(path: string, deps: ContextViewDeps = {}): 
     .filter((f) => !f.off)
     .map((f) => ({ id: `file:${f.path}`, label: labelOf(cwd, f.path), path: f.path, tokens: f.tokens ?? Math.ceil(f.bytes / CHARS_PER_TOKEN) }));
   const loads = skillsRead(branch, cwd);
+  // The skills a folder below cwd has, for a chat that gets them: none where it loads no skills, or where its
+  // tools can't both touch a file and read one (§chat.subfolder-skills/offering).
+  const toolNames = held ? new Set(held.tools.map((t) => t.name)) : null;
+  const getsNested = !held?.loader?.noSkills && (!toolNames || (["read", "edit", "write"].some((t) => toolNames.has(t)) && ["read", "bash"].some((t) => toolNames.has(t))));
+  const skillWalk = getsNested ? (deps.nestedSkills ?? ((c) => listSubfolderSkills(c, piSkillsIn)))(cwd) : { skills: [], incomplete: false };
+  const startingPaths = new Set(setup.skills.map((k) => k.path));
+  // A name two rows share matches by path alone: reading one of them says nothing of the other.
+  const uses = new Map<string, number>();
+  for (const n of [...setup.skills.filter((k) => !k.off).map((k) => k.name), ...skillWalk.skills.filter((s) => !startingPaths.has(s.filePath)).map((s) => s.name), ...offeredSkills(branch).filter((s) => !skillWalk.skills.some((w) => w.filePath === s.filePath)).map((s) => s.name)]) uses.set(n, (uses.get(n) ?? 0) + 1);
+  const isRead = (name: string, path: string) => loads.paths.has(resolveToolPath(cwd, path)) || ((uses.get(name) ?? 0) <= 1 && loads.names.has(name));
   const skills: SessionContextPart[] = setup.skills
     .filter((k) => !k.off)
     .map((k) => ({
@@ -187,9 +235,13 @@ export async function getContextView(path: string, deps: ContextViewDeps = {}): 
       label: k.name,
       ...(k.description ? { detail: k.description } : {}),
       path: k.path,
-      tokens: estimateTokens(skillListing(k.name, k.description, k.path)),
-      read: loads.names.has(k.name) || loads.paths.has(resolveToolPath(cwd, k.path)),
+      tokens: k.manualOnly ? (k.tokens ?? Math.ceil(k.bytes / CHARS_PER_TOKEN)) : estimateTokens(skillListing(k.name, k.description, k.path)),
+      read: isRead(k.name, k.path),
+      ...(k.manualOnly ? { manualOnly: true as const } : {}),
     }));
+  const nestedSkills = getsNested ? nestedSkillParts(cwd, branch, skillWalk, startingPaths, isRead) : [];
+  // What the blocks on the branch add to Conversation is counted under Skills offered.
+  const offeredListed = nestedSkills.reduce((n, s) => n + (s.offered ? s.tokens : 0), 0);
 
   let mode: SessionContextPart | null = null;
   const rules: SessionContextPart[] = [];
@@ -224,10 +276,11 @@ export async function getContextView(path: string, deps: ContextViewDeps = {}): 
     rules,
     skills,
     tools,
-    conversation: Math.max(0, conversationTokens(branch) - loadedNested),
-    talk: conversationTalk(branch, loadedNested),
+    conversation: Math.max(0, conversationTokens(branch) - loadedNested - offeredListed),
+    talk: conversationTalk(branch, loadedNested + offeredListed),
     nested,
-    ...(walk.incomplete ? { nestedIncomplete: true as const } : {}),
+    ...(nestedSkills.length ? { nestedSkills } : {}),
+    ...(walk.incomplete || skillWalk.incomplete ? { nestedIncomplete: true as const } : {}),
     checkedAt: now(),
   };
 }

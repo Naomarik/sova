@@ -40,8 +40,9 @@ interface Doc {
 type Level = { line: ContextLineKind; label: string } | { line: ContextLineKind; label: string; part: ContextPart; doc: Doc };
 const isPart = (l: Level): l is Extract<Level, { part: ContextPart }> => "part" in l;
 
-/** A row's size: a file not yet loaded shows what it would add. */
-const sizeOf = (p: ContextPart) => (inWindow(p) ? approxTokens(p.tokens) : `+${approxTokens(p.tokens)}`);
+/** A row's size: a file or skill not in the window yet shows what it would add, and a skill /skill: ran
+    unoffered has no listing there at all. */
+const sizeOf = (p: ContextPart) => (inWindow(p) ? approxTokens(p.tokens) : p.group === "skills" && p.read ? approxTokens(0) : `+${approxTokens(p.tokens)}`);
 /** Paths and tool names are machine names. */
 const monoName = (p: ContextPart) => p.group === "instructions" || p.group === "subfolder" || p.group === "tools";
 
@@ -214,20 +215,20 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
             <PartRows level={g.level} parts={sheet().above} />
           </ul>
         </Show>
-        <Show when={sheet().below}>
+        <For each={[sheet().below, sheet().last].flatMap((s) => s ?? [])}>
           {(below) => (
-            <section class="stack-2" aria-labelledby={below().id}>
-              <h4 class="text-eyebrow context-sheet-eyebrow" id={below().id}>
-                {below().heading}
+            <section class="stack-2" aria-labelledby={below.id}>
+              <h4 class="text-eyebrow context-sheet-eyebrow" id={below.id}>
+                {below.heading}
               </h4>
-              <p class="usage-note text-muted">{below().note}</p>
-              <ul class="list context-list" aria-labelledby={below().id}>
-                <PartRows level={g.level} parts={below().parts} />
+              <p class="usage-note text-muted">{below.note}</p>
+              <ul class="list context-list" aria-labelledby={below.id}>
+                <PartRows level={g.level} parts={below.parts} />
               </ul>
             </section>
           )}
-        </Show>
-        <Show when={g.line.kind === "instructions" && ok()?.nestedIncomplete}>
+        </For>
+        <Show when={(g.line.kind === "instructions" || g.line.kind === "skills") && ok()?.nestedIncomplete}>
           <p class="usage-note text-muted">This list may be incomplete.</p>
         </Show>
       </>

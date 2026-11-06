@@ -87,5 +87,5 @@ from the next landing, isn't checked first, and goes to `origin` with the next l
 - **A project that lands on its host** (by request, or by pushing a branch) gets the change as a
   request or a pushed branch of its own instead of a commit, and it applies once that is merged.
 
-A project the queue doesn't serve yet shows **Initialize** here instead of the groups, which opens
-its Merge Queue tab on the setup.
+A project the queue doesn't serve yet shows what setting it up changes here instead of the groups,
+with **Set Up with a Chat**, which closes Settings and opens the project's Setup chat.

@@ -128,6 +128,10 @@
       {
         "path": "site/src/styles/components.css",
         "reason": "the mock-ups' design-system subset, not documentation styling"
+      },
+      {
+        "path": "server/modes/golden/store",
+        "reason": "recorded test data named by content hash (golden/README.md); every re-take renames files, so no claim can map them"
       }
     ]
   }

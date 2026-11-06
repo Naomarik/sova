@@ -165,9 +165,10 @@ implementing, not only while a question is open:
   reports problems. It can't change code or run anything." It shows only with the button, so never
   with the flag off.
 
-## §chat.alignment-review/tui — In the TUI
+## §chat.alignment-review/tui — Typed `/review`
 
-With the flag on, `/review plan|implementation [al_N]` sends the same message the card's button
+With the flag on, `/review plan|implementation [al_N]` typed in the chat's composer
+(§chat.mode-menu/typed-commands) sends the same message the card's button
 sends (the open alignment when it is the only one); `implementation` and `diff` both name the
-`diff` phase, and its completions offer `plan` and `implementation`. The TUI's result card and
-markdown show the record's lines, each open blocker as "implementation b1 open: …". With the flag off, `/review` is not registered.
+`diff` phase. With the flag off, there is no `/review` command. A pi terminal has none
+(§chat.mode-menu/terminal).

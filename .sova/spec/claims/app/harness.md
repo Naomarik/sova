@@ -63,7 +63,9 @@ copy with `PI_PACKAGE_DIR` set.
 - History is read through the neutral reader, never `parseLines` plus a switch on `entry.type`.
 - Wire additions use `SovaEvent` and `RowFacts`; `src/` never branches on pi entry or event names.
 - A new Sova agent feature is never a new pi-config extension and never a new call to an
-  extension's command handler. Existing extensions are grandfathered, and the pi-config files the
+  extension's command handler. Existing extensions are grandfathered; the mode extension's work now
+  runs in Sova itself (`server/modes/`, its pi glue in `server/harness/pi/modes*.ts`,
+  §chat.mode-menu/sova-runs-modes), and its pi-config copy stays only until the old way is retired. The pi-config files the
   server imports stay pi-free.
 - The boundary baseline is never grown to make a change pass: adding a file, raising a count or
   listing a new wrapper needs the user's say-so.

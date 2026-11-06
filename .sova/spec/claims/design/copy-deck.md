@@ -339,7 +339,8 @@ words, in the composer, the session pane, the chat's queue cards and the project
 |---|---|
 | Trigger (composer foot, right end) | icons: the major mode's (normal: sliders), one per minor mode on, a letter in a rounded square per project mode on; folded where the foot is too tight for them (§chat.mode-menu/trigger): the first icon, then +{n}, the other modes' count (+3); then the chevron; words beside them only at a composer 620px or wider: {mode} · {minor} · {project mode} …, or "Mode" before this chat's state arrives (`aria-label`/`title`, always: "Mode: {label}", plus ", applies after this turn" when pending) |
 | Menu `aria-label` | Mode |
-| Group labels | Major mode · Minor modes · This project · {name} ("This project" with no name; only with project modes) · Subagents |
+| Group labels | Major mode · Minor modes · This project · {name} ("This project" with no name; only with project modes) · Your modes (only with personal modes, §chat.mode-menu/personal-modes) · Subagents |
+| Personal mode row | as a project mode's row and states; a personal mode that replaces a project mode of its id adds to its state line: Replaces this project's {id}. · its approval panel's lead reads {id} comes from your modes folder. in place of {id} comes from {project}'s files. |
 | Project mode row (§chat.mode-menu/project-modes) | {id} (mono) / its `MODE.md` `description`; the state line under it: broken: Can't turn on: {problem} · removed: Removed from the project. This chat keeps it until you turn it off. · changed: Changed since you turned it on. Turn it off and on to load the changes. · on, files broken now: Its files have a problem now: {problem}. This chat keeps the version it turned on. · needs approval: Asks before turning on: it runs {n} tool(s). (with commands or hooks, what it runs: it runs 1 tool, 1 command and 1 hook.) · on, tools changed since approval: Its tools changed since you approved them, so they won't run. Turn it off and on to approve them again. · on, hooks waiting for you (§chat.mode-menu/project-mode-hooks): Hooks need your approval. Its tools and commands run; its hooks wait for you. · on, hooks over their budget: Hooks paused: a hook ran 10 times in 10 minutes. |
 | Trigger with project modes | {mode} · {built-in minors} · {project modes}, e.g. delegate · spec · deploy-notes |
 | Approval panel | Back · title: Turn on {id}? · {id} comes from {project}'s files. Turning it on lets the model run this tool / these {n} tools in this chat's folder. · one card per tool: {name} (mono), {description}, {command argv as one line} (mono) · foot: Runs from {dir}. Approval covers its tools and every file in this folder. We ask again when any of them changes. · when a tool starts a bare program: {node} is this machine's own program, so the approval doesn't cover it. (two: {node and sh}; three or more, with the serial comma: {node, python3, and sh} are this machine's own programs, so the approval doesn't cover them.) · buttons: Approve and Turn On (primary; while saving: Turning On…) · Cancel |
@@ -350,9 +351,8 @@ words, in the composer, the session pane, the chat's queue cards and the project
 | Approval out of date (warn banner in the panel) | Its tools changed while this was open. These are the tools it has now. Check them again before you approve. |
 | Project tool refused (to the model) | {tool} wasn't run: the files of {id} changed since it was approved. Ask the user to approve {id} again in the mode menu. |
 | Project tool refused under the sandbox (to the model) | {tool} wasn't run: project mode tools don't run while the sandbox is on. Ask the user to turn the sandbox off to use {id}'s tools. |
-| Terminal: project mode needs approval | Minor mode {id} not turned on: {id} runs the project's own tools: approve it from a Sova chat's mode menu first |
-| Terminal: palette row | This project · {name} — {description} — {state} |
-| Terminal: `/mode status` line | project modes ({name}): {id} (on \| removed \| changed since turned on \| needs approval \| broken: {path}: {error}) |
+| Typed: mode needs approval (§chat.mode-menu/typed-commands) | Minor mode {id} not turned on: {id} runs the project's own tools: approve it from a Sova chat's mode menu first |
+| Typed: anything else | Usage: /mode [normal\|delegate\|strict on\|strict off\|subagents <profile>\|{minor} [on\|off] …\|<project mode> [on\|off]\|project:<project mode> [on\|off]] · for `/align`: Usage: /align on\|off |
 | Worker turning a project mode on | a worker gets its project modes from the session that started it |
 | Mode rows | each row's name follows its icon, the same icon the trigger uses (the menu is the trigger's legend) |
 | Subagents row / Delegate detail | subagents icon (branching nodes) · Subagents · {name} / Profile: {name} |
@@ -374,7 +374,7 @@ words, in the composer, the session pane, the chat's queue cards and the project
 | Switch failed | **Couldn't switch the mode.** {reason}. Your mode is unchanged. |
 | Load failed | **Couldn't load the modes.** Your mode is unchanged. Close this and try again. |
 | Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off (a project mode by its id, the same way) · Strict mode on\|off (shown as recorded) |
-| Toast (from the extension) | Mode: {mode} · Minor mode: {minor} on\|off (a project mode by its id) |
+| Toast (a switch, from the menu or typed) | Mode: {mode} · Minor mode: {minor} on\|off (a project mode by its id) |
 
 ## §design.copy-deck/your-click — What only your own click passes (§app.access/your-click)
 
@@ -769,9 +769,11 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 
 | Where | Copy |
 |---|---|
-| Intro | Unfinished features. They can change or disappear, and they apply to sessions you start after switching them on — chats already open keep the setup they began with. |
-| Empty state (no switch to show) | No experimental features right now. |
+| Intro | Unfinished features. They can change or disappear, and each one says when a change reaches your chats. |
+| Sova runs chat modes switch · hint (§chat.mode-menu/sova-runs-modes) | Sova runs chat modes · Sova runs every chat's modes itself, instead of the pi mode extension. Turn it off to go back to the old way; nothing is lost either way. Open chats switch over at their next quiet moment; workers already running finish the way they started. |
+| Empty state (no switch to show; the tab has one today, so it isn't shown) | No experimental features right now. |
 | Load failed (banner-error) | **Couldn't read the experimental settings.** Nothing was changed. |
+| Save failed (banner-error) | **Couldn't save the change.** {reason}. Your saved setting is unchanged. |
 | Buttons | none in the tab — the dialog footer's Save Changes · Cancel (§design.copy-deck/settings-modes-delegate) |
 
 ## §design.copy-deck/settings-alignment — Settings · Alignment (§app.settings-dialog/alignment)

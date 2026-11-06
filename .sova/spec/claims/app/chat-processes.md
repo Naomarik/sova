@@ -314,7 +314,10 @@ the chat's copy was made is left out of that chat until it reloads onto newer co
 process logs it. Installed packages, a project's own
 extensions and a worktree's own agent dir load from where they are. A worker whose extension is
 missing from its copy (renamed since its parent's copy was made) does not start, and says
-"<file> is not in this chat's code (<id>); reload the parent chat". Settings, models, skills,
+"<file> is not in this chat's code (<id>); reload the parent chat", except the mode extension's own
+worker files (`spec-worker.ts`, `project-tools-worker.ts`), which Sova's modules take the place of
+so the worker starts (§chat.mode-menu/sova-runs-modes). While Sova runs chat modes, the mode
+extension a chat or worker would load is Sova's own, in the same place in its list. Settings, models, skills,
 prompts, themes and the agent dir's other files are read live.
 
 When the copy can't be made (a checkout whose Git fails, no space, no tree), chats run from the checkout as before;

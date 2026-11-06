@@ -45,7 +45,8 @@
       "server/harness/pi/contract.test.ts",
       "server/chat-runtime/supervisor.test.ts",
       "server/chat-runtime/trial-s5-generations.integration.test.ts",
-      "server/chat-host.test.ts"
+      "server/chat-host.test.ts",
+      "server/harness/pi/own-code-modes.test.ts"
     ],
     "requires": [
       "§app.chat-processes/supervision",
@@ -53,7 +54,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-13T12:56Z"
+      "at": "2026-11-05T05:46Z",
+      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
     }
   },
   "§app.chat-processes/code-pickup": {

@@ -418,7 +418,13 @@
       "pi-config/extensions/subagents/index.test.ts",
       "pi-config/extensions/subagents/README.md",
       "scripts/hermetic-agent-dir.mjs",
-      "pi-config/extensions/sandbox/env.ts"
+      "pi-config/extensions/sandbox/env.ts",
+      "pi-config/extensions/subagents/worker-host.ts",
+      "pi-config/extensions/subagents/fork/background.ts",
+      "server/chat-manager.ts",
+      "server/harness/pi/own-code.ts",
+      "server/sova-modes-workers.test.ts",
+      "server/modes/worker-slots.golden.test.ts"
     ]
   },
   "§chat/worktrees": {

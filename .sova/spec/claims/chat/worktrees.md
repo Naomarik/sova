@@ -212,6 +212,11 @@ active tracked worktree, or when the worktree has no `.agent`. Extension discove
 the tree's subagents and worktrees extensions are never loaded. The model policy is still the
 parent's. The choice is recorded with the worker, so a resume applies it again.
 
+While Sova runs chat modes (§chat.mode-menu/sova-runs-modes), no mode extension is loaded from the
+tree and none needs to be there: Sova gives the worker its modes itself, exactly as the next
+paragraph says the tree's extension does. With the switch off, the tree's own extension is loaded as
+above.
+
 That mode extension knows it runs in a worker (the worker marker tells it on the extension bus,
 so an older tree's extension just doesn't hear it): it ignores the `mode` snapshots a `fork` copied
 from the parent's branch and the tree's `mode.json`, so the worker is always in normal mode with

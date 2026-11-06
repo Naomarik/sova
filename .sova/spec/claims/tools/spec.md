@@ -110,7 +110,8 @@ untrusted directory never stops it (under bun: the first `node` on PATH outside 
 
 The census is skipped after a tool that cannot write the repository, by an explicit list of tool
 names: read, grep, find, ls, align, agent_list, agent_models, agent_transcript, agent_wait,
-team_list, team_inbox, team_roster, link_inbox, link_members and link_offers. A skipped call neither looks at the tree nor moves the census's baseline; what changed
+team_list, team_inbox, team_roster, link_inbox, link_members, link_offers and spec
+(§app.spec-lookup/spec-tool). A skipped call neither looks at the tree nor moves the census's baseline; what changed
 while it ran is taken in before the next call that can write, like any change between calls. Shell
 commands are never skipped.
 
@@ -149,7 +150,8 @@ short however many § the change touched (under 500 characters for 25 touched §
 With none marked read first, it reads "none read first; lower-ranked: <command>".
 A § with a stale literal says so beside its id: "(still states 12)". A § the session ran
 `sova-spec.mjs read` on, by its literal id in any of its shell commands so far (a read of a shell
-variable counts every § that command spells), counts as read; a §
+variable counts every § that command spells), or read with the `spec` tool's `read`
+(§app.spec-lookup/spec-tool), counts as read; a §
 the task created is never listed, nor one only another process's changes landed in. The line is
 said once per set of landed §: it stays quiet until a later edit changes that set, and says nothing
 when every one of them was read. A call that edits never carries it; a tool the census skips
@@ -237,7 +239,10 @@ touching the task. The first `read` brings the frame; later reads add `--no-fram
 unread, never absent, and "uninvestigated" is unknown, not none. A foreign § its change touched is
 read with `read`. `packet` and `scope` stay listed, in the writing procedure, for whole-chain
 machine inspection, not as a reading step. Every command either part spells is one the shipped tools
-parse, with the flags it pairs with it.
+parse, with the flags it pairs with it. The short part says in one sentence that a `spec` tool, if
+offered (§app.spec-lookup/spec-tool), runs these same reads without a shell, and keeps its one shell
+line, which the write tools still need; a code-writing worker's spec brief says the same after its
+trusted-tools line.
 
 The writing procedure has the chat record one note per changed promise on what it verified
 (`evidence --note`, §tools.spec/land) and names no doc-only case, which the landing picks per record

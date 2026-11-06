@@ -558,16 +558,11 @@ change parses only the lines appended since (a file that shrank or was rewritten
 
 ## §chat.alignment/tui — In the TUI
 
-The TUI draws each `align` call as one dim line naming the document and its ops, and its result as
-a compact card: the id, title, status and open count, the change line, and the open questions with
-their recommendations, by letter and label when one names an option (the whole document, options
-lettered, with its technical notes and each visual as its source text, when the tool row is
-expanded). The TUI reads the Eagerness, writing style and Visuals from `mode-align.json` like Sova
-(§chat.alignment/settings-file); adversarial review stays `pi --adversarial-review` only. A widget above the editor
-lists the open alignments ("◇ align · al_3 2/7 open · al_2 implementing · alt+a view") while align is
-on. The viewer (`/align`, the viewer key) shows one document at a time as markdown, ←/→ switching
-between them; `/align status` lists them and `/align export [path]` writes them as markdown. An
-older session's `align-doc` entries keep their one-line transcript marker.
+A pi terminal has no align from Sova (§chat.mode-menu/terminal): no `align` call line or result card
+drawn by the mode, no widget above the editor, no alignments viewer, and no `/align status` or
+`/align export`. In a Sova chat, typed `/align on|off` turns align on or off, and anything else after
+`/align` is answered with its usage line (§chat.mode-menu/typed-commands). An older session's
+`align-doc` entries keep their one-line transcript marker.
 
 ## §chat.alignment/settings-file — `mode-align.json`
 

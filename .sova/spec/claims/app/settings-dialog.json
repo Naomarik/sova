@@ -388,7 +388,10 @@
       "src/components/AlignmentSettings.tsx",
       "src/lib/updates-draft.ts",
       "src/lib/settings-forms-roundtrip.test.ts",
-      "server/settings-roundtrip.integration.test.ts"
+      "server/settings-roundtrip.integration.test.ts",
+      "src/lib/experimental-draft.test.ts",
+      "server/web-settings.ts",
+      "server/web-settings.test.ts"
     ],
     "requires": [
       "§app/settings-dialog",
@@ -396,9 +399,9 @@
       "§design.copy-deck/settings-modes-delegate"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T02:26Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+      "by": "naomarik",
+      "at": "2026-11-05T05:46Z",
+      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
     }
   },
   "§app.settings-dialog/summaries": {

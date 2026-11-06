@@ -150,11 +150,18 @@
       "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/align-ui.ts",
       "pi-config/extensions/mode/align.ts",
-      "pi-config/extensions/mode/tests/review-smoke.mjs"
+      "pi-config/extensions/mode/tests/review-smoke.mjs",
+      "server/modes/engine.ts",
+      "server/harness/pi/modes.ts"
     ],
     "requires": [
       "§chat.alignment/tui"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-05T05:46Z",
+      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
+    }
   },
   "§chat/alignment-review": {
     "kind": "surface",

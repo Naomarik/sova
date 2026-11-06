@@ -285,7 +285,7 @@ default and no other chat's starter can name it.
 
 - **Save as Default** in a Create chat saves the chat's last normal or Delegate choice, with its
   strict flag, minor modes and subagent profile (§chat.mode-menu/menu). A chat that has been in no
-  other mode saves normal. `/mode default` does the same.
+  other mode saves normal.
 - **Each of these refuses, and none falls back:** a default naming Create in `POST /api/mode` with no
   `?path=`; a profile whose `mode` is `create` (the file doesn't parse, with the reason); a playbook
   or schedule through such a profile; an automation's `settings.mode`; the Overseer's

@@ -131,8 +131,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-25T21:07Z",
-      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
+      "at": "2026-11-05T05:47Z",
+      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
     }
   },
   "§tools.spec/census-rank": {
@@ -450,12 +450,14 @@
       "pi-config/extensions/subagents/spec-brief.test.ts",
       "pi-config/extensions/mode/index.test.ts",
       "pi-config/extensions/mode/prompt.ts",
-      "pi-config/extensions/spec/PROMOTE.md"
+      "pi-config/extensions/spec/PROMOTE.md",
+      "pi-config/extensions/mode/tests/fixtures/flag-off-master.json",
+      "pi-config/extensions/spec/docs/CHANGELOG.md"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-28T16:31Z",
-      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#c123538a"
+      "at": "2026-11-05T05:46Z",
+      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
     }
   },
   "§tools.spec/near-impact": {
@@ -687,8 +689,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-19T15:13Z",
-      "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
+      "at": "2026-11-05T05:47Z",
+      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
     }
   },
   "§tools.spec/where-lookup": {

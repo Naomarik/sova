@@ -308,11 +308,21 @@
       "pi-config/extensions/mode/palette.ts",
       "pi-config/extensions/mode/tests/smoke.mjs",
       "pi-config/extensions/mode/align.ts",
-      "pi-config/extensions/mode/align.test.ts"
+      "pi-config/extensions/mode/align.test.ts",
+      "server/modes/engine.ts",
+      "server/harness/pi/modes.ts",
+      "server/modes/engine-parity.test.ts"
     ],
     "requires": [
-      "§chat.alignment/state"
-    ]
+      "§chat.alignment/state",
+      "§chat.mode-menu/terminal",
+      "§chat.mode-menu/typed-commands"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-05T05:46Z",
+      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
+    }
   },
   "§chat.alignment/visuals": {
     "kind": "behavior",

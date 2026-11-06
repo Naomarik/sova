@@ -778,7 +778,9 @@ Discard button of its own: saving is the dialog's. Merge Queue (below) and MCP S
   (§app.settings-dialog/alignment); Save Changes writes the review switch to Sova's settings and the
   eagerness, style and visuals to `mode-align.json`, each a write of its own, and the status line names the form
   "Alignment" whichever of the two failed.
-- **Experimental** holds no switch now: its panel says "No experimental features right now." and nothing in it is ever unsaved. Adversarial
+- **Experimental** holds one switch, **Sova runs chat modes**, on by default, with one line saying
+  what it does and when a change reaches open chats (§chat.mode-menu/sova-runs-modes); it waits
+  disabled until the saved settings load. Adversarial
   review moved to Alignment; the Claude Code provider is no switch there, it is always on (§app.claude-code-provider/always-on).
 - **Merge Queue saves on its own** (§app.merge-queue/settings-save): its project-file changes are a
   commit on the project's target with a confirm of their own, and its models save as they are

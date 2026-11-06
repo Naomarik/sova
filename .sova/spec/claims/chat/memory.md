@@ -64,9 +64,9 @@ refused, and neither overseer has a mode-menu memory row.
 
 - The mode extension declares it web-only (`MINOR_SURFACES` in `pi-config/extensions/mode/minor.ts`,
   a record over every minor mode). Its `/mode memory on` takes effect only while Sova's server is
-  applying a switch for that very session (the server's `sova:web-minor` hook); typed by hand (in a
-  terminal or a web composer), and from `--minor`, it is refused with "memory is turned on from a
-  Sova chat's mode menu". The terminal palette and minor shortcuts don't list it. Turning it off is
+  applying a switch for that very session (the server's `sova:web-minor` hook); typed by hand in a
+  chat's composer (§chat.mode-menu/typed-commands), it is refused with "memory is turned on from a
+  Sova chat's mode menu". Turning it off is
   never refused, and a switch sends it `/mode memory off` only in a chat where memory was on.
 - Workers never get it (`MINOR_WORKER.memory` is false, §chat.mode-menu/workers).
 - A session profile naming it is refused ("memory is for chats only: turn it on from a chat's mode
@@ -83,12 +83,9 @@ refused, and neither overseer has a mode-menu memory row.
   when the saved default has it on.
 - A session whose saved mode has memory on (a web chat later opened in a terminal) keeps it in its
   saved mode, but nothing runs it there.
-- A saved default with memory on (`/mode default` or the menu's save, from a chat with memory) stays
+- A saved default with memory on (the menu's save, from a chat with memory) stays
   in `mode.json` as saved, and a new or never-switched web chat starts with it. A terminal session
-  adopting that default (or a branch without a saved mode, after `/tree`) drops memory: its status
-  line, `/mode status`'s `minor:` line (its `default:` line still shows the file) and the active
-  minor modes it publishes don't list it. The extension tells the two
-  apart by the server's `sova:web-minor` hook, which Sova's server installs when it loads.
+  has no modes (§chat.mode-menu/terminal), so nothing runs it there either.
 
 ## §chat.memory/choice — Each chat's type and size
 

@@ -119,7 +119,7 @@ export function allEntries(env = process.env) {
   } catch {
     doc = null;
   }
-  // An entry turned off lists nothing; the proxy still refuses any that isn't active (§app.commands/extension-commands).
+  // An entry turned off lists nothing; the proxy still refuses any that isn't active.
   if (doc && Array.isArray(doc.extensions)) doc = { ...doc, extensions: doc.extensions.filter((e) => e?.off !== true) };
   return [...COMMANDS, ...extCommandsOf(doc)];
 }

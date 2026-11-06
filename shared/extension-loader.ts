@@ -1,5 +1,4 @@
-// What the page and the server say to each other about Settings → Extensions (§app.extensions/loader,
-//). Types and one pure rule: no imports, so either side loads it.
+// What the page and the server say to each other about Settings → Extensions. Types and one pure rule: no imports, so either side loads it.
 
 /** One row's one state, the first that applies, in this order. */
 export type ExtensionRowState = "not-usable" | "folder-not-found" | "needs-newer" | "waiting" | "changed" | "off" | "stopped" | "starting" | "running";

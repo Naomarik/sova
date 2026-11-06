@@ -9,6 +9,7 @@
 import { schemaError } from "./card-schema.ts";
 import { distPathError, normalizeDrawingDecl, type DrawingDecl } from "./drawing-kinds.ts";
 import { checkCardData, DATA_CARDS, notRaisedText, optionLetter, type ButtonsCard, type ChecklistCard, type DataCardKind, type QuestionCard } from "./view-cards.ts";
+import type { PingKind, PingOutcome, PingRecord } from "./protocol.ts";
 
 export const CARD_TOOL = "card";
 /** A project's card folders, under its checkout. */
@@ -446,3 +447,48 @@ export function cardToolParameters(s: CardSnapshot): Record<string, unknown> {
 /** A raise refused: "Nothing was raised: …" with the reason (or the data's first broken field). */
 export const NOTHING_RAISED = "Nothing was raised";
 export { notRaisedText };
+
+// ---- Sova's own cards: a ping's (§app.overseer-pings/tool "Its card") ------------------------------
+
+/** The card a ping shows in the chat that made it: Sova's own type, in no snapshot, drawn as a status card,
+    anchored at the ping's tool call, keyed by the ping's id, its data revised in place with the outcome. */
+export const PING_CARD_TYPE = "sova.ping";
+
+/** A ping's kind as a person reads it: on its card, in Needs you, in the Overseer's words. */
+export const PING_KIND_WORDS: Record<PingKind, string> = { stuck: "Stuck", done: "Done", decision: "Needs your decision", news: "News", relay: "Pass this on" };
+
+/** "2:14 PM": the clock a transcript line uses (§design.ground-rules/voice). */
+const clock = (iso: string): string => {
+  const d = new Date(iso);
+  return Number.isFinite(d.getTime()) ? d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "";
+};
+
+/** One outcome line as the card reads it. */
+export function pingOutcomeText(o: PingOutcome): string {
+  switch (o.kind) {
+    case "passed":
+      return `Passed to ${o.to.title} · ${clock(o.at)}`.replace(/ · $/, "");
+    case "waiting":
+      return `Waiting for ${o.to.title} to finish its turn`;
+    case "terminal":
+      return `${o.to.title} is open in a terminal, so nothing was sent`;
+    case "refused":
+      return `${o.to.title}: ${o.why}`;
+    case "offered":
+      return "Offered to you in the Overseer";
+    case "declined":
+      return `The Overseer didn't pass it on: ${o.why}`;
+  }
+}
+
+const cut = (s: string, max: number) => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
+
+/** A ping's card data (a status card): "Told the Overseer" (or "Told {project}'s overseer"), its kind and
+    summary, and what became of it so far, one line per outcome. */
+export function pingCardData(p: Pick<PingRecord, "kind" | "summary" | "route" | "outcomes">): { title: string; tone: "ok" | "warn" | "info"; line: string; detail?: string } {
+  const title = p.route.kind === "project" ? `Told ${p.route.projectName}'s overseer` : "Told the Overseer";
+  const lines = p.outcomes.map(pingOutcomeText);
+  const warn = p.outcomes.some((o) => o.kind === "terminal" || o.kind === "refused" || o.kind === "declined");
+  const tone = warn ? "warn" : p.outcomes.some((o) => o.kind === "passed") ? "ok" : "info";
+  return { title: cut(title, 120), tone, line: cut(`${PING_KIND_WORDS[p.kind]}: ${p.summary}`, 300), ...(lines.length ? { detail: cut(lines.join("\n"), 1000) } : {}) };
+}

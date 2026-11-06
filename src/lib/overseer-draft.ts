@@ -3,7 +3,7 @@ import { ApiError, getOverseerNotes, getOverseerSettings, putOverseerNotes, putO
 import type { BackendsInfo } from "./delegate-form";
 import { createDraftStore, failureOf, SaveFailed } from "./settings-draft";
 import { check, type FieldCheck, firstIssue, type WholeRule } from "../../shared/form-rules";
-import { CAP_KEYS, CAP_MAX, CAP_RULES, DEFAULT_CAPS as CAP_DEFAULTS, EXTRA_PROMPT_RULE, NOTES_MAX, NOTES_RULE, QA_RULES, qaLabel, QUICK_ACTIONS_MAX, TOO_MANY_QUICK_ACTIONS } from "../../shared/overseer-limits";
+import { CAP_KEYS, CAP_MAX, CAP_RULES, DEFAULT_CAPS as CAP_DEFAULTS, EXTRA_PROMPT_RULE, NOTES_MAX, NOTES_RULE, PING_LIMIT_KEYS, PING_LIMIT_RULES, QA_RULES, qaLabel, QUICK_ACTIONS_MAX, TOO_MANY_QUICK_ACTIONS } from "../../shared/overseer-limits";
 
 /**
  * Settings → Overseer's unsaved edits: the settings file and the standing notes, edited together
@@ -261,6 +261,8 @@ export const PER_MESSAGE_CAP_KEYS = CAP_KEYS.filter((k) => k !== "concurrentSess
 export type OverseerIssueAt =
   | { group: "running" }
   | { group: "per-message"; key: keyof OverseerCaps }
+  /** A session ping limit (§app.overseer-pings/limits), checked whenever the settings carry them. */
+  | { group: "pings"; key: (typeof PING_LIMIT_KEYS)[number] }
   | { group: "quick-action"; index: number }
   | { group: "notes" }
   | { group: "advanced" };
@@ -282,6 +284,7 @@ export function overseerFields(d: AnyDraft): (FieldCheck<OverseerIssueAt> | { me
   const actions = d.settings.quickActions;
   return [
     ...CAP_KEYS.map((k) => ({ rule: CAP_RULES[k], value: (d.settings.caps as FormCaps)[k], at: k === "concurrentSessions" ? { group: "running" as const } : { group: "per-message" as const, key: k } })),
+    ...(d.settings.pings ? PING_LIMIT_KEYS.map((k) => ({ rule: PING_LIMIT_RULES[k], value: d.settings.pings![k], at: { group: "pings" as const, key: k } })) : []),
     { message: actions.length > QUICK_ACTIONS_MAX ? TOO_MANY_QUICK_ACTIONS : null, at: { group: "quick-action", index: QUICK_ACTIONS_MAX } },
     ...actions.flatMap((a, i) => (["label", "description", "prompt"] as const).map((k) => ({ rule: QA_RULES[k], value: a[k], label: qaLabel(i + 1, k), at: { group: "quick-action" as const, index: i } }))),
     { rule: NOTES_RULE, value: d.notes, at: { group: "notes" } },

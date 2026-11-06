@@ -64,6 +64,9 @@ export interface AttentionRow {
   /** The session's open transcript cards waiting on an answer (server/transcript-cards.ts openCardsOf,
       §chat.transcript-cards/answering): each one's title and when it was raised (ms epoch). */
   cards?: { title: string; at: number }[];
+  /** The session's ping that is up (server/overseer-pings.ts raisedHands, §app.overseer-pings/raised-hand): a
+      raised hand (`stuck`, `decision`) or its done line, its summary and when it was made (ms epoch). */
+  raisedHand?: { kind: "stuck" | "decision" | "done"; summary: string; at: number };
 }
 
 /** Act kinds that list in Needs you and count in "need you" but never brief the Overseer (and are no push kind). */
@@ -184,6 +187,13 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   // An open transcript card (§chat.transcript-cards/answering): one item per card, idle or working; never a push
   // (no push kind) and never a brief (NEVER_BRIEFED).
   if (!s.archived) for (const card of row.cards ?? []) add("act", "card-waiting", card.at || lastActive, `Waiting on your answer: ${card.title}`);
+  // A raised hand (§app.overseer-pings/raised-hand): the session said it is stuck or needs a decision, a real
+  // blocker (briefed, pushed as Raised hand), idle or working, until a turn the user starts there begins. A done
+  // ping is a quiet decide line. Neither on an archived session.
+  const hand = s.archived ? undefined : row.raisedHand;
+  const handUp = hand?.kind === "stuck" || hand?.kind === "decision";
+  if (hand && handUp) add("act", "raised-hand", hand.at || lastActive, `${hand.kind === "stuck" ? "Stuck" : "Needs your decision"}: ${hand.summary}`);
+  else if (hand) add("decide", "raised-hand", hand.at || lastActive, `Says it's done: ${hand.summary}`);
   // Decision signals (server/signals-store.ts): the list carries them only while they should show
   // (idle, not expired after 7 idle days), with the kinds already derived from the fixed thresholds.
   // They are guesses, so never blockers (§app.overseer/attention-digest): soft decide items, which
@@ -192,7 +202,8 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   const sig = s.signals?.kinds ?? [];
   const at = s.signals?.at ?? lastActive;
   // An open offer card is its own item above, so the asks-you mark it gives an idle row adds no soft item.
-  const asks = sig.includes("asks-you") && !questions && !s.archived && !offer;
+  // A raised hand says it outright, so it takes the guess's place while it is up (§app.decisions/asks-user).
+  const asks = sig.includes("asks-you") && !questions && !s.archived && !offer && !handUp;
   if (asks) {
     const sentence = row.signalText?.sentence;
     add("decide", "asks-you", at, sentence ? `${askLead(row.signalText?.askKind)}: ${sentence}` : "The last reply asks you something.", true);

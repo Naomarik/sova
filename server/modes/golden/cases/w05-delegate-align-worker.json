@@ -22,7 +22,9 @@
     "team_succeed",
     "team_list",
     "project_verbs",
-    "queue_push"
+    "queue_push",
+    "overseer_ping",
+    "spec"
    ],
    "entries": [],
    "extensions": [
@@ -42,7 +44,8 @@
     "<inline:sova-topics>",
     "<inline:sova-tours>",
     "<inline:sova-create-settings>",
-    "<inline:sova-transcript-cards>"
+    "<inline:sova-transcript-cards>",
+    "<inline:sova-spec>"
    ]
   },
   {
@@ -68,6 +71,8 @@
     "team_list",
     "project_verbs",
     "queue_push",
+    "overseer_ping",
+    "spec",
     "align"
    ],
    "entries": [
@@ -133,13 +138,13 @@
        "content": "",
        "sections": {
         "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-        "tools": "@15d31f2a78f55765",
-        "rules": "@c812aa6c1d63cb16",
+        "tools": "@0eae69fcaf8872d9",
+        "rules": "@48997246f5058a77",
         "docs": "@0f5fabf6c3c47c4c",
         "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-        "mode": "@e1a1a7d764975de7"
+        "mode": "@01dae8612ae32cc3"
        },
-       "toolsAdded": "@c22ce789a0f2b849"
+       "toolsAdded": "@1be96ccdb2d47fe3"
       },
       {
        "role": "user",
@@ -241,6 +246,8 @@
     "team_list",
     "project_verbs",
     "queue_push",
+    "overseer_ping",
+    "spec",
     "align"
    ],
    "entries": [
@@ -259,13 +266,13 @@
       "content": "",
       "sections": {
        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-       "tools": "@15d31f2a78f55765",
-       "rules": "@c812aa6c1d63cb16",
+       "tools": "@0eae69fcaf8872d9",
+       "rules": "@48997246f5058a77",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-       "mode": "@e1a1a7d764975de7"
+       "mode": "@01dae8612ae32cc3"
       },
-      "toolsAdded": "@98970cd3f4f7992a"
+      "toolsAdded": "@bca279855a23da99"
      }
     }
    ],
@@ -300,7 +307,7 @@
     "<repo>/pi-config/extensions/mode/spec-worker.ts"
    ],
    "flags": {},
-   "appendSystemPrompt": "@86c3b03079d98792",
+   "appendSystemPrompt": "@35b020b90dc856e5",
    "env": {
     "SPEC_AGREE_SOURCE": "pi-session:<sid:1>#<entry>",
     "SPEC_AGREE_GIVEN": "pi-session:<sid:1>#<entry>",
@@ -332,10 +339,10 @@
         "tools": "@da87b165576f1968",
         "rules": "@367a111ecea93121",
         "docs": "@0f5fabf6c3c47c4c",
-        "addendum": "@70d04e19ea7fff81",
+        "addendum": "@ef58de34066b89a8",
         "cwd": "<cwd>\n<ws:plain>\n</cwd>"
        },
-       "toolsAdded": "@a4dd3d9f1130e643"
+       "toolsAdded": "@fe25e5ea1e96f352"
       },
       {
        "role": "user",
@@ -354,7 +361,8 @@
     "bash",
     "edit",
     "write",
-    "project_verbs"
+    "project_verbs",
+    "spec"
    ],
    "entries": [
     {
@@ -367,10 +375,10 @@
        "tools": "@da87b165576f1968",
        "rules": "@367a111ecea93121",
        "docs": "@0f5fabf6c3c47c4c",
-       "addendum": "@70d04e19ea7fff81",
+       "addendum": "@ef58de34066b89a8",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>"
       },
-      "toolsAdded": "@a4dd3d9f1130e643"
+      "toolsAdded": "@743bcfa6b1ae6605"
      }
     }
    ],
@@ -385,7 +393,8 @@
     "<inline:sova-shell-guard>",
     "<inline:sova-deeper-context>",
     "<inline:sova-background-jobs>",
-    "<inline:sova-project-verbs>"
+    "<inline:sova-project-verbs>",
+    "<inline:sova-spec>"
    ]
   }
  ]

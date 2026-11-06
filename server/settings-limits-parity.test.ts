@@ -191,6 +191,14 @@ const LIMITS: Limit[] = [
   ...(["label", "description", "prompt"] as const).map(
     (k): Limit => ({ ...ruled(limits.QA_RULES[k]), client: (v) => ovClient(withAction({ [k]: v })), server: (v) => ovServer(withAction({ [k]: v })) }),
   ),
+  // Sessions' ping limits (§app.overseer-pings/limits): the form checks each one the settings carry.
+  ...limits.PING_LIMIT_KEYS.map(
+    (k): Limit => ({
+      ...ruled(limits.PING_LIMIT_RULES[k]),
+      client: (v) => ovClient({ ...ovSettings(), pings: { ...limits.DEFAULT_PING_LIMITS, [k]: v } }),
+      server: (v) => ovServer({ ...ovSettings(), pings: { ...limits.DEFAULT_PING_LIMITS, [k]: v } }),
+    }),
+  ),
   { name: "Overseer quick actions (at most 12)", sameWords: true, takes: [1, 12], refuses: [13], client: (v) => ovClient(withActions(v as number)), server: (v) => ovServer(withActions(v as number)) },
   { ...ruled(limits.EXTRA_PROMPT_RULE), client: (v) => ovClient({ ...ovSettings(), extraSystemPrompt: v }), server: (v) => ovServer({ ...ovSettings(), extraSystemPrompt: v }) },
   {

@@ -441,6 +441,10 @@ export interface TranscriptItem {
       entry. Renders nothing itself; the client draws the sender header above the user row
       `targetId` (resolving by id in either arrival order) and hides that row's header line. */
   sessionMark?: { kind: "sent"; targetId: string; from: { sessionId: string; title: string }; hop: number };
+  /** A note the Overseer passed on from another session (§app.overseer-pings/relay): the invisible
+      `sova-relay-sent` entry (RelaySentData). Renders nothing itself; the client draws "From {title}, via
+      the Overseer" with "hop {n}" above the user row `targetId` (resolving by id in either arrival order). */
+  relayMark?: { kind: "sent"; targetId: string; from: { sessionId: string; title: string }; ping: string; hop: number };
   /** The session's `sova-profile` entry (§chat.profiles/after-first-message): kind "info", drawn as
       the muted "Profile: {label}" row only once a user message is on the branch; null = Default. */
   profileMark?: { profile: SessionProfileField | null };
@@ -3793,6 +3797,10 @@ export interface OverseerSettings {
       UniiChat. Written only by PUT /api/overseer/memory; a settings PUT keeps the stored one. `size`: an older
       file's, kept but ignored (the size is Settings → Memory's for the type). */
   memory?: { on: boolean; type: MemoryType; size?: number };
+  /** Sessions' pings' limits (§app.overseer-pings/limits), in Settings → Overseer → Limits. Absent = every
+      default (DEFAULT_PING_LIMITS); a field absent or out of range on read = its default. A settings PUT
+      without it keeps the stored one, so an older page's save never resets them. */
+  pings?: OverseerPingLimits;
 }
 
 /** GET /api/overseer/abilities: what the global Overseer can do, for its About panel (§app.overseer/about).
@@ -3886,6 +3894,7 @@ export type AttentionKind =
   | "outreach-not-sent"   // act tier, never pushed: a project overseer's WhatsApp send was refused or failed (no session: `path` "", `href` the person's page)
   | "whatsapp-down"       // act tier, pushed (kind `whatsapp-down`): WhatsApp sending is down, logged out, replaced, blocked, unpaired, or unreachable 5 min (§app.outreach/sender-health; no session: `path` "", `href` "#/settings/outreach")
   | "conflict-to-operator" // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
+  | "raised-hand"     // a session's ping (§app.overseer-pings/raised-hand): act tier, pushed (kind `raised-hand`) and briefed, for `stuck` ("Stuck: …") and `decision` ("Needs your decision: …"); decide tier for `done` ("Says it's done: …"), never Needs you, a brief or a push. Up until a turn the user starts there, a newer ping or the archive
   | "asks-you"        // decide tier, soft: decisions' guess that the last reply of a turn with no open alignment question asks the user something
   | "unverified"      // decide tier, soft: decisions' guess that the last reply says it is done but names something it didn't run or check
   | "ready-to-merge"  // decide tier: a worktree is ready, or ready and waiting for the go-ahead (SessionSummary.readiness)
@@ -4314,6 +4323,133 @@ export interface SovaTodoDetails {
 export const OVERSEER_BRIEF_PREFIX = "[overseer-brief]";
 
 // ---------------------------------------------------------------------------
+// Sessions ping their Overseer (§app/overseer-pings): the `overseer_ping` tool every ordinary chat
+// has, the open pings Sova keeps (`<stateRoot>/pings/pings.json`), the turn pings start in the
+// Overseer, and what the pinging chat's card shows afterwards.
+
+/** Marks an Overseer turn a ping started (§app.overseer-pings/wake): its prompt text starts with this
+    prefix, so the transcript renders it as a machine row "Pings · {time}", as a brief is. */
+export const OVERSEER_PING_PREFIX = "[overseer-ping]";
+
+/** The tool's name, fixed across releases (a Claude Code chat sees `mcp__sova__overseer_ping`). */
+export const OVERSEER_PING_TOOL = "overseer_ping";
+
+/** What a ping says (§app.overseer-pings/tool). Only `stuck` and `decision` raise a hand; `done` is a
+    quiet line; `news` and `relay` are for other sessions. */
+export type PingKind = "stuck" | "done" | "decision" | "news" | "relay";
+export const PING_KINDS: readonly PingKind[] = ["stuck", "done", "decision", "news", "relay"];
+export const PING_SUMMARY_MAX = 200;
+export const PING_DETAIL_MAX = 2000;
+export const PING_TO_MAX = 200;
+/** The user's message a relay carries, read from the pinging session's own record: at most this long. */
+export const PING_SAID_MAX = 600;
+/** A ping's id: `pg_N`. */
+export const PING_ID_RE = /^pg_[1-9][0-9]{0,8}$/;
+
+/** Which Overseer hears a ping (§app.overseer-pings/routing): the Overseer, or a project's overseer. */
+export type PingRoute = { kind: "overseer" } | { kind: "project"; projectId: string; projectName: string };
+
+/** A session a ping's outcome names. */
+export interface PingPeer {
+  id: string;
+  title: string;
+}
+
+/** One line of what became of a ping, as its card shows it (§app.overseer-pings/tool "Its card"),
+    set by the Overseer's side, never by the pinging chat's model:
+    - `passed`: "Passed to {title} · {time}" (`at` ISO);
+    - `waiting`: "Waiting for {title} to finish its turn";
+    - `terminal`: "{title} is open in a terminal, so nothing was sent";
+    - `refused`: a recipient sova_relay refused, named with why ("{title}: {why}");
+    - `offered`: "Offered to you in the Overseer" (text that waits for the user's click);
+    - `declined`: "The Overseer didn't pass it on: {why}". */
+export type PingOutcome =
+  | { kind: "passed"; to: PingPeer; at: string }
+  | { kind: "waiting"; to: PingPeer }
+  | { kind: "terminal"; to: PingPeer }
+  | { kind: "refused"; to: PingPeer; why: string }
+  | { kind: "offered" }
+  | { kind: "declined"; why: string };
+
+/** One open ping, as `<stateRoot>/pings/pings.json` keeps it. `attended`, `hop` and `said` were
+    recorded inside the call, in the pinging chat's own process (§app.overseer-pings/tool "Who
+    started the run"): never from the call's arguments, never later. */
+export interface PingRecord {
+  id: string;
+  /** ISO, when the call was made. */
+  at: string;
+  sessionId: string;
+  /** The session file then. */
+  path: string;
+  /** The session's title then. */
+  title: string;
+  /** Its folder then. */
+  cwd: string;
+  kind: PingKind;
+  summary: string;
+  detail?: string;
+  /** `relay` only: who it is for, in the user's words or as a session link. */
+  to?: string;
+  /** The user's own message started the run the ping was made in (UserTurns, by identity). */
+  attended: boolean;
+  /** 0 for a run the user's message opened; another session's message or a passed-on note's hop plus 1;
+      1 for any other run the user didn't start (a topic batch, a schedule's message, an Overseer's prompt, a wake-up). */
+  hop: number;
+  /** `relay` in a run the user started only: the text of the user's message there, at most PING_SAID_MAX. */
+  said?: string;
+  /** Which Overseer hears it, decided when it was made. */
+  route: PingRoute;
+  /** The transcript card that shows it in the pinging chat (`cd_N`), once raised. */
+  card?: string;
+  /** What became of it so far, newest last (one line per recipient at most). */
+  outcomes: PingOutcome[];
+  /** `stuck`/`decision`: the hand is up (`done`: its line shows) until a turn the user starts there begins,
+      a newer ping, or the archive. ISO of when it came down, and why; absent while it is up. */
+  lowered?: { at: string; why: "user-turn" | "newer-ping" | "archived" };
+  /** The Overseer's side took it (a ping turn, a run note, a project overseer's reason): ISO. */
+  delivered?: string;
+}
+
+/** One line of `<stateRoot>/pings/audit.jsonl` (§app.overseer-pings/limits "The log"): never a ping's text. */
+export interface PingAuditLine {
+  at: string;
+  sessionId: string;
+  /** `overseer_ping`'s kind, or "sova_relay" for a pass-on. */
+  kind: PingKind | "sova_relay";
+  /** The ping's id, once it has one. */
+  ping?: string;
+  /** Session ids only, never words: a pass-on's recipients, or the sessions a relay's `to` links (sova://s/{id}). */
+  to?: string[];
+  outcome: "ok" | "refused" | "error" | "lowered" | "outcome";
+  error?: string;
+  reason?: string;
+}
+
+/** Settings → Overseer → Limits' ping limits (§app.overseer-pings/limits): each a whole number 0–1,000.
+    Absent from overseer.json: every default. */
+export interface OverseerPingLimits {
+  sessionPerHour: number;   // default 3: pings one session may make in any hour
+  sessionPerDay: number;    // default 10: pings one session may make in a local day
+  turnGapMin: number;       // default 2: minutes at least between two ping turns
+  turnsPerDay: number;      // default 30: ping turns a local day
+  relayRecipients: number;  // default 3: recipients one sova_relay call may name
+  relayPerDay: number;      // default 20: recipients a local day in turns the user didn't start
+  recipientPerHour: number; // default 3: passed-on notes one recipient may take in any hour
+}
+
+/** The invisible `sova-relay-sent` record a passed-on note's delivery writes once it entered the
+    recipient's context (§app.overseer-pings/relay "Never the user's"): the sent-marker mechanism's
+    fourth sender. Its row reads "From {title}, via the Overseer" (TranscriptItem.relayMark). */
+export interface RelaySentData {
+  v: 1;
+  /** The user entry the note became. */
+  targetId: string;
+  from: { sessionId: string; title: string };
+  ping: string;
+  hop: number;
+}
+
+// ---------------------------------------------------------------------------
 // Web Push: phone notifications for blockers (server/push*.ts, server/web-push.ts). Not the
 // sessions feed's "push" of marks (/ws/watch?feed=sessions). Every response is no-store, and no
 // response ever carries a device's endpoint or keys back out.
@@ -4328,8 +4464,9 @@ export const OVERSEER_BRIEF_PREFIX = "[overseer-brief]";
 
 /** The act-tier kinds a phone notification can be about (server/attention.ts). */
 /** "looping" (Subagent stuck) is retired: a stuck subagent is a decide item, never a blocker. */
-export type PushKind = "needs-input" | "open-questions" | "error" | "baton-needs-you" | "worker-error" | "playbook-review" | "whatsapp-down" | "owner-outage";
-export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "open-questions", "error", "baton-needs-you", "worker-error", "playbook-review", "whatsapp-down", "owner-outage"];
+/** "raised-hand": a session pinged stuck or needs your decision (§app.overseer-pings/raised-hand), on by default. */
+export type PushKind = "needs-input" | "open-questions" | "error" | "baton-needs-you" | "worker-error" | "playbook-review" | "whatsapp-down" | "owner-outage" | "raised-hand";
+export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "open-questions", "error", "baton-needs-you", "worker-error", "playbook-review", "whatsapp-down", "owner-outage", "raised-hand"];
 
 /** `<stateRoot>/push.json`. */
 export interface PushSettings {

@@ -194,13 +194,15 @@ export function queuePushTool(ctx: PushingSession): Tool {
   } as Tool;
 }
 
-/** The hidden inline extension every ordinary runtime gets (server/chat-manager.ts). */
-export function queuePushExtension(ctx: PusherContext) {
+/** The hidden inline extension every ordinary runtime gets (server/chat-manager.ts). `after`: the tools that
+    follow queue_push in it, as a served chat's own "sova-topics" has them (overseer_ping, §app.overseer-pings/tool). */
+export function queuePushExtension(ctx: PusherContext, after: readonly ToolSpec[] = []) {
   return {
     name: "sova-topics",
     hidden: true,
     factory: (pi: PiExtensionAPI) => {
       pi.registerTool(toPiTool(queuePushTool(ctx)));
+      for (const t of after) pi.registerTool(toPiTool(t));
     },
   };
 }

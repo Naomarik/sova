@@ -37,6 +37,8 @@ export const NEEDS_KINDS: Record<AttentionKind, KindWords> = {
   "held-act": { word: "Held", tone: "warn", title: "Waiting to start" },
   "offer-waiting": { word: "Your turn", tone: "warn" },
   "card-waiting": { word: "Your turn", tone: "warn" },
+  // A session pinged stuck or needs your decision (§app.overseer-pings/raised-hand); its done line never lists here.
+  "raised-hand": { word: "Your turn", tone: "warn" },
   "tour-sign-in": { word: "Sign in", tone: "warn" },
   "playbook-review": { word: "Ready", tone: "success" },
   "deploy-failed": { word: "Failed", tone: "error", title: "Deploy failed" },

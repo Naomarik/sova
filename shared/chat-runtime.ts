@@ -218,6 +218,18 @@ export interface ServerToolCall {
       message route). Absent (an older chat process): not their own. */
   own?: boolean;
   card: string | null;
+  /** `overseer_ping` only (§app.overseer-pings/tool): the ordinary chat's run as it stood when the call was
+      made, read in the chat's own process: whether the user's own message started it (UserTurns, by
+      identity), its hop, and, when the user's message started it, that message's text from the chat's own
+      record (at most PING_SAID_MAX). Absent: no run record (an older chat process): unattended, hop 1. */
+  standing?: RunStanding;
+}
+
+/** An ordinary chat's run as a ping records it (ServerToolCall.standing). */
+export interface RunStanding {
+  attended: boolean;
+  hop: number;
+  said?: string;
 }
 
 /** How a server-hosted tool's run ended, server → chat. A server that stopped while the tool ran

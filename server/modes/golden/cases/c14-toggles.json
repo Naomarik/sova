@@ -21,7 +21,9 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "overseer_ping",
+   "spec"
   ],
   "entries": [],
   "extensions": [
@@ -41,7 +43,8 @@
    "<inline:sova-topics>",
    "<inline:sova-tours>",
    "<inline:sova-create-settings>",
-   "<inline:sova-transcript-cards>"
+   "<inline:sova-transcript-cards>",
+   "<inline:sova-spec>"
   ]
  },
  {
@@ -55,12 +58,12 @@
       "content": "",
       "sections": {
        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-       "tools": "@44baa8b2ed1e6cce",
-       "rules": "@bb6b8db0787c1b6b",
+       "tools": "@8dc0c46578d02256",
+       "rules": "@9ea18b2ab3665c2b",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>"
       },
-      "toolsAdded": "@428f943a602ffe68"
+      "toolsAdded": "@99f5275978b48afb"
      },
      {
       "role": "user",
@@ -93,7 +96,9 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "overseer_ping",
+   "spec"
   ],
   "entries": [
    {
@@ -103,12 +108,12 @@
      "content": "",
      "sections": {
       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-      "tools": "@44baa8b2ed1e6cce",
-      "rules": "@bb6b8db0787c1b6b",
+      "tools": "@8dc0c46578d02256",
+      "rules": "@9ea18b2ab3665c2b",
       "docs": "@0f5fabf6c3c47c4c",
       "cwd": "<cwd>\n<ws:plain>\n</cwd>"
      },
-     "toolsAdded": "@ded17415db866517"
+     "toolsAdded": "@4d98a97950b01f0b"
     }
    }
   ],
@@ -137,6 +142,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "vis_guide",
    "vis_check",
    "record_tour",
@@ -196,7 +203,7 @@
       "stopReason": "stop",
       "thinkingLevel": "off"
      },
-     "@4000223a106dd329",
+     "@346d58aa2aa8785d",
      {
       "role": "user",
       "content": [
@@ -238,6 +245,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "vis_guide",
    "vis_check",
    "record_tour",
@@ -250,7 +259,7 @@
      "role": "system",
      "content": "",
      "sections": {
-      "tools": "@3fcdd3ae7332f29c"
+      "tools": "@de766f9bb43c9280"
      },
      "toolsAdded": [
       {
@@ -395,7 +404,9 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "overseer_ping",
+   "spec"
   ],
   "entries": [
    {
@@ -473,7 +484,7 @@
       "role": "system",
       "content": "",
       "sections": {
-       "tools": "@44baa8b2ed1e6cce"
+       "tools": "@8dc0c46578d02256"
       },
       "toolsRemoved": [
        {
@@ -504,7 +515,7 @@
       "content": [
        {
         "type": "text",
-        "text": "@aa375cdbe179dd10"
+        "text": "@00968ef1c6fda4e0"
        }
       ]
      }
@@ -530,7 +541,9 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "overseer_ping",
+   "spec"
   ],
   "entries": [
    {
@@ -539,7 +552,7 @@
      "role": "system",
      "content": "",
      "sections": {
-      "tools": "@44baa8b2ed1e6cce"
+      "tools": "@8dc0c46578d02256"
      },
      "toolsRemoved": [
       {
@@ -560,7 +573,7 @@
    {
     "type": "custom_message",
     "customType": "mode-note",
-    "content": "@aa375cdbe179dd10",
+    "content": "@00968ef1c6fda4e0",
     "display": false,
     "details": {
      "v": 1,
@@ -597,7 +610,9 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "overseer_ping",
+   "spec"
   ],
   "entries": [
    {
@@ -690,7 +705,9 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "overseer_ping",
+   "spec"
   ],
   "entries": [
    {
@@ -731,6 +748,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "align"
   ],
   "entries": [
@@ -792,8 +811,8 @@
       "role": "system",
       "content": "",
       "sections": {
-       "tools": "@15d31f2a78f55765",
-       "rules": "@c812aa6c1d63cb16",
+       "tools": "@0eae69fcaf8872d9",
+       "rules": "@48997246f5058a77",
        "mode": "@435090063634d020"
       },
       "toolsAdded": [
@@ -867,6 +886,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "align"
   ],
   "entries": [
@@ -876,8 +897,8 @@
      "role": "system",
      "content": "",
      "sections": {
-      "tools": "@15d31f2a78f55765",
-      "rules": "@c812aa6c1d63cb16",
+      "tools": "@0eae69fcaf8872d9",
+      "rules": "@48997246f5058a77",
       "mode": "@435090063634d020"
      },
      "toolsAdded": [
@@ -959,6 +980,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "align"
   ],
   "entries": [
@@ -1054,6 +1077,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "align"
   ],
   "entries": [
@@ -1093,6 +1118,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "align"
   ],
   "entries": [
@@ -1181,6 +1208,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "align"
   ],
   "entries": [],

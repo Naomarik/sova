@@ -4,7 +4,7 @@
  * the same words (shared/form-rules.ts).
  */
 import type { TextRule, WholeRule } from "./form-rules";
-import type { OverseerCaps } from "./protocol";
+import type { OverseerCaps, OverseerPingLimits } from "./protocol";
 
 export const CAP_MAX = 1000;
 export const QUICK_ACTIONS_MAX = 12;
@@ -34,6 +34,33 @@ export const CAP_LABEL: Record<keyof OverseerCaps, { label: string; hint: string
   gatherPerTurn: { label: "Gathering sessions started", hint: "Gathering sessions and offers it may start, per message you send." },
   extRunsPerTurn: { label: "Extension commands run", hint: "Extension commands it may run, per message you send." },
 };
+
+/** Sessions' pings' limits (§app.overseer-pings/limits), each a whole number from 0 to CAP_MAX. */
+export const PING_LIMIT_KEYS = ["sessionPerHour", "sessionPerDay", "turnGapMin", "turnsPerDay", "relayRecipients", "relayPerDay", "recipientPerHour"] as const satisfies readonly (keyof OverseerPingLimits)[];
+
+export const DEFAULT_PING_LIMITS: OverseerPingLimits = { sessionPerHour: 3, sessionPerDay: 10, turnGapMin: 2, turnsPerDay: 30, relayRecipients: 3, relayPerDay: 20, recipientPerHour: 3 };
+
+export const PING_LIMIT_LABEL: Record<keyof OverseerPingLimits, { label: string; hint: string }> = {
+  sessionPerHour: { label: "Pings per session an hour", hint: "Pings one session may send the Overseer in any hour." },
+  sessionPerDay: { label: "Pings per session a day", hint: "Pings one session may send the Overseer in a day." },
+  turnGapMin: { label: "Minutes between ping turns", hint: "The Overseer wakes for pings at most once in this many minutes." },
+  turnsPerDay: { label: "Ping turns a day", hint: "Turns the Overseer may start for pings in a day." },
+  relayRecipients: { label: "Sessions per pass-on", hint: "Sessions one note may be passed on to." },
+  relayPerDay: { label: "Pass-ons a day on its own", hint: "Sessions the Overseer may pass notes on to in a day, in turns you didn't start." },
+  recipientPerHour: { label: "Notes per session an hour", hint: "Passed-on notes one session may get in any hour." },
+};
+
+export const PING_LIMIT_RULES = Object.fromEntries(PING_LIMIT_KEYS.map((k) => [k, { kind: "whole", label: PING_LIMIT_LABEL[k].label, min: 0, max: CAP_MAX }])) as Record<keyof OverseerPingLimits, WholeRule>;
+
+/** A settings object's ping limits, every one absent or out of range read as its default. */
+export function pingLimitsOf(s: { pings?: Partial<OverseerPingLimits> } | null | undefined): OverseerPingLimits {
+  const out = { ...DEFAULT_PING_LIMITS };
+  for (const k of PING_LIMIT_KEYS) {
+    const v = s?.pings?.[k];
+    if (typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= CAP_MAX) out[k] = v;
+  }
+  return out;
+}
 
 export const CAP_RULES = Object.fromEntries(CAP_KEYS.map((k) => [k, { kind: "whole", label: CAP_LABEL[k].label, min: 0, max: CAP_MAX }])) as Record<keyof OverseerCaps, WholeRule>;
 

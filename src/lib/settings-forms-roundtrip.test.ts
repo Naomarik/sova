@@ -266,6 +266,7 @@ const ROWS: Row[] = [
       "kinds.playbook-review": { valid: false },
       "kinds.whatsapp-down": { valid: false },
       "kinds.owner-outage": { valid: false },
+      "kinds.raised-hand": { valid: false },
       "quietHours.enabled": { valid: true },
       "quietHours.start": { valid: "21:30", invalid: ["", "25:00", "9", "07:00"] },
       "quietHours.end": { valid: "06:15", invalid: ["", "7:6x", "21:30"] },

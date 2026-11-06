@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type ChatSpecialKind, type RunStartAnswer, type ServerToolCall, type ServerToolDecl, type ServerToolOutcome, type SpecialSpec, unsentRefusal, type WorkerHost, type WorkerSpec } from "../shared/chat-runtime";
 import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORKER_HOST_EVENT, type WorkerHostAnnouncement } from "../pi-config/extensions/subagents/worker-host.ts";
 import { prepareOwnerArea } from "../shared/decisions";
-import { LOGIN_UNCHANGED } from "../shared/protocol";
+import { LOGIN_UNCHANGED, OVERSEER_PING_TOOL } from "../shared/protocol";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
 import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, ProjectModeApproval, ProjectModeApprovalNeeded, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
@@ -113,6 +113,9 @@ import { tourTools } from "./tours/tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
+import { lowerHand, overseerPingTool, ownWordsOf } from "./overseer-pings";
+import { queueChatRole } from "../shared/merge-queue";
+import type { RunStanding } from "../shared/chat-runtime";
 import { QUEUE_OPEN_TOOL, queuePushExtension, topicStore } from "./topics";
 import { OFFER_NOTE_MESSAGE, OFFER_TOOL } from "../shared/session-offers";
 import { CARD_NOTE_MESSAGE, CARD_TOOL } from "../shared/transcript-cards";
@@ -4377,6 +4380,8 @@ export function serverToolSpec(chatId: string, decl: ServerToolDecl): ToolSpec {
         attended: turns?.attended() ?? false,
         own: turns?.ownMessage() ?? false,
         card: turns?.confirmedCard() ?? null,
+        // A ping's run, as it stands now, in this process (§app.overseer-pings/tool "Who started the run").
+        ...(decl.name === OVERSEER_PING_TOOL ? { standing: runStandingOf(chat, params) } : {}),
       };
       const local: ServerToolLocal = {
         signal,
@@ -4399,6 +4404,20 @@ export function serverToolSpec(chatId: string, decl: ServerToolDecl): ToolSpec {
       throw local.error ?? new Error(out.error.message);
     },
   };
+}
+
+/**
+ * An ordinary chat's run as a ping records it (§app.overseer-pings/tool): who started it and its hop from the
+ * chat's RunState, and for a relay in a run the user's message started, that message's text from the chat's own
+ * branch (never the call's arguments). No run record: unattended, hop 1.
+ */
+function runStandingOf(chat: ChatSession, params: unknown): RunStanding {
+  const run = chat.profileState?.run;
+  if (!run) return { attended: false, hop: 1 };
+  const s = run.standing();
+  const relay = (params as { kind?: unknown } | null)?.kind === "relay";
+  const said = s.attended && relay ? ownWordsOf(chat.harness.branch()) : undefined;
+  return { ...s, ...(said !== undefined ? { said } : {}) };
 }
 
 /** The served tools whose names `which` takes, as this chat registers them (`queue_push`'s extension also
@@ -4590,10 +4609,12 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
     const overrides = special ? undefined : loadoutOverrides(loadout);
     profile.run = undefined;
     profile.limits = undefined;
-    if (snap?.grant.length) {
-      profile.limits = new SessionLimits(read.id, snap.limits);
-      profile.run = new RunState(profile.limits);
-    }
+    if (snap?.grant.length) profile.limits = new SessionLimits(read.id, snap.limits);
+    // Every ordinary chat tells the user's own turns apart and keeps its run's hop (§app.overseer-pings/tool):
+    // a turn the user's message starts lowers the session's raised hand (§app.overseer-pings/raised-hand).
+    if (!special) profile.run = new RunState(profile.limits, () => void lowerHand(read.id, "user-turn"));
+    // overseer_ping: every ordinary chat but the merge queue's own (§app.overseer-pings/tool).
+    const pings = !special && !queueChatRole(snap);
     const powers =
       snap?.grant.length && profile.run && profile.limits
         ? [sessionPowersExtension({ sessionId: read.id, cwd, title: () => titleOf(read.branch()), profile: snap, run: profile.run, limits: profile.limits, path: () => path })]
@@ -4645,8 +4666,11 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
                 : projectVerbsExtension(projectEngine),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
               servedDecls
-                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && n !== CARD_TOOL && n !== CREATE_SETTINGS_TOOL && !TOUR_TOOLS.has(n)))
-                : queuePushExtension({ sessionId: () => read.id, title: () => titleOf(read.branch()) }),
+                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && n !== CARD_TOOL && n !== CREATE_SETTINGS_TOOL && !TOUR_TOOLS.has(n) && (pings || n !== OVERSEER_PING_TOOL)))
+                : queuePushExtension(
+                    { sessionId: () => read.id, title: () => titleOf(read.branch()) },
+                    pings ? [overseerPingTool({ sessionId: () => read.id, path: () => path, title: () => titleOf(read.branch()), standing: (p) => (visHost.chat ? runStandingOf(visHost.chat, p) : null) })] : [],
+                  ),
               servedVisToolsExtension("sova-tours", servedDecls ? servedSpecs(path, n => TOUR_TOOLS.has(n)) : tourTools(read.id, path), () => visHost.chat ? visHost.chat.modeState.minorModes.includes("vis") : undefined),
               // sova_settings: a Create chat's settings cards (§chat.create-mode/settings-cards), active only in Create.
               servedVisToolsExtension("sova-create-settings", servedDecls ? servedSpecs(path, (n) => n === CREATE_SETTINGS_TOOL) : [createSettingsTool({ sessionId: read.id, mode: () => visHost.chat?.modeState.mode, cwd: () => cwd })], () => visHost.chat?.modeState.mode === "create"),

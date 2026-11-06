@@ -21,7 +21,9 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "overseer_ping",
+   "spec"
   ],
   "entries": [],
   "extensions": [
@@ -41,7 +43,8 @@
    "<inline:sova-topics>",
    "<inline:sova-tours>",
    "<inline:sova-create-settings>",
-   "<inline:sova-transcript-cards>"
+   "<inline:sova-transcript-cards>",
+   "<inline:sova-spec>"
   ]
  },
  {
@@ -67,6 +70,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "align"
   ],
   "entries": [
@@ -99,13 +104,13 @@
       "content": "",
       "sections": {
        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-       "tools": "@15d31f2a78f55765",
-       "rules": "@c812aa6c1d63cb16",
+       "tools": "@0eae69fcaf8872d9",
+       "rules": "@48997246f5058a77",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
        "mode": "@762c2620222a71e2"
       },
-      "toolsAdded": "@c22ce789a0f2b849"
+      "toolsAdded": "@1be96ccdb2d47fe3"
      },
      {
       "role": "user",
@@ -246,6 +251,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "align"
   ],
   "entries": [
@@ -264,13 +271,13 @@
      "content": "",
      "sections": {
       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-      "tools": "@15d31f2a78f55765",
-      "rules": "@c812aa6c1d63cb16",
+      "tools": "@0eae69fcaf8872d9",
+      "rules": "@48997246f5058a77",
       "docs": "@0f5fabf6c3c47c4c",
       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
       "mode": "@762c2620222a71e2"
      },
-     "toolsAdded": "@98970cd3f4f7992a"
+     "toolsAdded": "@bca279855a23da99"
     }
    }
   ],
@@ -301,6 +308,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "align",
    "vis_guide",
    "vis_check",
@@ -364,7 +373,7 @@
       "stopReason": "stop",
       "thinkingLevel": "off"
      },
-     "@0235b526995e867d",
+     "@a59aa4ce8c8a7a2d",
      {
       "role": "user",
       "content": [
@@ -415,6 +424,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "align",
    "vis_guide",
    "vis_check",
@@ -428,7 +439,7 @@
      "role": "system",
      "content": "",
      "sections": {
-      "tools": "@42e3b65af9a48a61"
+      "tools": "@f720f707ea3bbb6b"
      },
      "toolsAdded": [
       {
@@ -616,6 +627,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "align",
    "vis_guide",
    "vis_check",
@@ -643,13 +656,13 @@
       "content": "",
       "sections": {
        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-       "tools": "@42e3b65af9a48a61",
-       "rules": "@c812aa6c1d63cb16",
+       "tools": "@f720f707ea3bbb6b",
+       "rules": "@48997246f5058a77",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
        "mode": "@762c2620222a71e2"
       },
-      "toolsAdded": "@224e3a098e952def"
+      "toolsAdded": "@2f1041f783549594"
      },
      {
       "role": "user",
@@ -745,6 +758,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "align",
    "vis_guide",
    "vis_check",
@@ -805,6 +820,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "align"
   ],
   "entries": [
@@ -868,7 +885,7 @@
       "role": "system",
       "content": "",
       "sections": {
-       "tools": "@15d31f2a78f55765"
+       "tools": "@0eae69fcaf8872d9"
       },
       "toolsRemoved": [
        {
@@ -935,6 +952,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "align"
   ],
   "entries": [
@@ -944,7 +963,7 @@
      "role": "system",
      "content": "",
      "sections": {
-      "tools": "@15d31f2a78f55765"
+      "tools": "@0eae69fcaf8872d9"
      },
      "toolsRemoved": [
       {

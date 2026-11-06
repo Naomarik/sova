@@ -21,7 +21,9 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "overseer_ping",
+   "spec"
   ],
   "entries": [],
   "extensions": [
@@ -41,7 +43,8 @@
    "<inline:sova-topics>",
    "<inline:sova-tours>",
    "<inline:sova-create-settings>",
-   "<inline:sova-transcript-cards>"
+   "<inline:sova-transcript-cards>",
+   "<inline:sova-spec>"
   ]
  },
  {
@@ -67,6 +70,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "align",
    "vis_guide",
    "vis_check"
@@ -101,13 +106,13 @@
       "content": "",
       "sections": {
        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-       "tools": "@42e3b65af9a48a61",
-       "rules": "@c812aa6c1d63cb16",
+       "tools": "@f720f707ea3bbb6b",
+       "rules": "@48997246f5058a77",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
        "mode": "@4bc274657855880d"
       },
-      "toolsAdded": "@7c0aa6dbc371fecf"
+      "toolsAdded": "@16be2a66815a7737"
      },
      {
       "role": "user",
@@ -141,6 +146,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "align",
    "vis_guide",
    "vis_check"
@@ -162,13 +169,13 @@
      "content": "",
      "sections": {
       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-      "tools": "@42e3b65af9a48a61",
-      "rules": "@c812aa6c1d63cb16",
+      "tools": "@f720f707ea3bbb6b",
+      "rules": "@48997246f5058a77",
       "docs": "@0f5fabf6c3c47c4c",
       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
       "mode": "@4bc274657855880d"
      },
-     "toolsAdded": "@21fb2e698bf62ece"
+     "toolsAdded": "@ac1a5b45d68afae3"
     }
    }
   ],

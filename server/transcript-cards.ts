@@ -17,6 +17,7 @@ import {
   normalizeCardSnapshot,
   notRaisedText,
   parseCardFile,
+  PING_CARD_TYPE,
   VIEW_FILE,
   type CardAnswer,
   type CardDecl,
@@ -552,6 +553,52 @@ export async function raiseCard(input: RaiseInput): Promise<CardInfo> {
   };
   rec.cards.push(card);
   rec.path = input.path;
+  saveRecord(rec);
+  return card;
+}
+
+/**
+ * Sova's own card in an ordinary chat (a ping's, §app.overseer-pings/tool "Its card"): a status card of
+ * PING_CARD_TYPE, in no snapshot and needing none, anchored at the tool call that made it and keyed. Null
+ * where cards don't show (an archived or special session). Never a turn, never an answer to wait on.
+ */
+export async function raiseSovaCard(input: { path: string; sessionId?: string; data: unknown; key: string; toolCallId?: string }): Promise<CardInfo | null> {
+  const s = await summaryOf(input.path);
+  const sessionId = input.sessionId ?? s.id;
+  if (s.archived || s.workerSession || s.overseer || s.projectOverseer || s.baton) return null;
+  const checked = checkCardData("status", input.data);
+  if (!checked.ok) throw new CardRefusal(notRaisedText(checked.error), 400);
+  const after = input.toolCallId ? undefined : await deps.lastEntry(input.path).catch(() => null);
+  const rec = readRecord(sessionId) ?? freshRecord(sessionId, input.path);
+  const card: CardInfo = {
+    id: `cd_${++rec.n}`,
+    type: PING_CARD_TYPE,
+    title: (checked.data as { title: string }).title,
+    draws: "status",
+    answerMode: "none",
+    placement: "anchored",
+    key: input.key,
+    data: checked.data,
+    at: deps.now().toISOString(),
+    by: { kind: "agent" },
+    ...(input.toolCallId ? { toolCallId: input.toolCallId } : { after: after ?? null }),
+    state: "done",
+  };
+  rec.cards.push(card);
+  rec.path = input.path;
+  saveRecord(rec);
+  return card;
+}
+
+/** Sova's own card's data revised in place (its outcome line), by its id: where it stands, with no turn. Null: no such card. */
+export function reviseSovaCard(sessionId: string, cardId: string, data: unknown): CardInfo | null {
+  const rec = readRecord(sessionId);
+  const card = rec?.cards.find((c) => c.id === cardId && c.type === PING_CARD_TYPE);
+  if (!rec || !card) return null;
+  const checked = checkCardData("status", data);
+  if (!checked.ok) throw new CardRefusal(notRaisedText(checked.error), 400);
+  card.data = checked.data;
+  card.title = (checked.data as { title: string }).title;
   saveRecord(rec);
   return card;
 }

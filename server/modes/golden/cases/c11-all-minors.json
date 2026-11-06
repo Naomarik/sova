@@ -21,7 +21,9 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "overseer_ping",
+   "spec"
   ],
   "entries": [],
   "extensions": [
@@ -41,7 +43,8 @@
    "<inline:sova-topics>",
    "<inline:sova-tours>",
    "<inline:sova-create-settings>",
-   "<inline:sova-transcript-cards>"
+   "<inline:sova-transcript-cards>",
+   "<inline:sova-spec>"
   ]
  },
  {
@@ -67,6 +70,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "align",
    "vis_guide",
    "vis_check",
@@ -159,13 +164,13 @@
       "content": "",
       "sections": {
        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-       "tools": "@42e3b65af9a48a61",
-       "rules": "@c812aa6c1d63cb16",
+       "tools": "@f720f707ea3bbb6b",
+       "rules": "@48997246f5058a77",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-       "mode": "@df2848187a3ad690"
+       "mode": "@9c8aa7412996c313"
       },
-      "toolsAdded": "@094e5221302752a5"
+      "toolsAdded": "@d1b3f0b4136b4dad"
      },
      {
       "role": "user",
@@ -212,6 +217,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "align",
    "vis_guide",
    "vis_check",
@@ -236,13 +243,13 @@
      "content": "",
      "sections": {
       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-      "tools": "@42e3b65af9a48a61",
-      "rules": "@c812aa6c1d63cb16",
+      "tools": "@f720f707ea3bbb6b",
+      "rules": "@48997246f5058a77",
       "docs": "@0f5fabf6c3c47c4c",
       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-      "mode": "@df2848187a3ad690"
+      "mode": "@9c8aa7412996c313"
      },
-     "toolsAdded": "@972e9acf375d4cf9"
+     "toolsAdded": "@e0e0e8c0d08a2568"
     }
    }
   ],

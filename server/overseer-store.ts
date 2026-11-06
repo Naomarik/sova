@@ -15,7 +15,7 @@ import { type Redactor, serverRedactor } from "./overseer-redact";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
 import { check, problemOf } from "../shared/form-rules";
-import { CAP_KEYS, CAP_RULES, DEFAULT_CAPS, EXTRA_PROMPT_RULE, NOTES_MAX, QA_RULES, qaLabel, QUICK_ACTIONS_MAX, TOO_MANY_QUICK_ACTIONS } from "../shared/overseer-limits";
+import { CAP_KEYS, CAP_RULES, DEFAULT_CAPS, DEFAULT_PING_LIMITS, EXTRA_PROMPT_RULE, NOTES_MAX, PING_LIMIT_KEYS, PING_LIMIT_RULES, QA_RULES, qaLabel, QUICK_ACTIONS_MAX, TOO_MANY_QUICK_ACTIONS } from "../shared/overseer-limits";
 
 /**
  * The Overseer's Sova-owned files under the state root. Same store rules as web-sessions.ts:
@@ -196,6 +196,24 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
         if (r.ok) out.caps[key] = r.value!;
         else if (strict) return { error: r.message };
       }
+    }
+  }
+  // Sessions' pings' limits (§app.overseer-pings/limits): absent stays absent (every default), so a save
+  // that doesn't carry them keeps the stored ones (saveOverseerSettings).
+  if (raw.pings !== undefined) {
+    if (!isObj(raw.pings)) {
+      const e = fail("pings must be an object");
+      if (e) return e;
+    } else {
+      const pings = { ...DEFAULT_PING_LIMITS };
+      for (const key of PING_LIMIT_KEYS) {
+        const v = raw.pings[key];
+        if (v === undefined) continue;
+        const r = check(PING_LIMIT_RULES[key], typeof v === "number" ? v : null);
+        if (r.ok) pings[key] = r.value!;
+        else if (strict) return { error: r.message };
+      }
+      out.pings = pings;
     }
   }
   if (raw.explorer !== undefined) {

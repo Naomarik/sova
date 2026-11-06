@@ -70,6 +70,7 @@ import { registerUsageRoutes } from "./usage-routes";
 import { sessionFeed } from "./session-feed";
 import { LIST_VERSION_HEADER } from "../src/lib/summary-diff";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
+import { lowerHand } from "./overseer-pings";
 import { QUEUE_CHAT_MODE_REFUSAL, queueChatRole } from "../shared/merge-queue";
 import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { fixedNameRefusal } from "../shared/fixed-names";
@@ -2032,6 +2033,8 @@ export function buildApp(deps: AppDeps) {
   onSessionArchived((id) => void meshLinks.endFor(id));
   // A chat archived or deleted ends its hand-picks of Claude logins (§app.claude-logins/idle-pin).
   onSessionArchived((id) => clearPicksOf(agentRoot(), id));
+  // An archived chat's raised hand comes down (§app.overseer-pings/raised-hand).
+  onSessionArchived((id) => void lowerHand(id, "archived"));
   // Public links (shared/public-links.ts): Settings → Public links under /api/public-links (main
   // listener only), and a gateway's peer routes under /api/peer/share-gateway/*.
   mountPublicLinks(app);

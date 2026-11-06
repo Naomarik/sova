@@ -220,6 +220,7 @@ const ROWS: Row[] = [
       "kinds.playbook-review": { value: false },
       "kinds.whatsapp-down": { value: false },
       "kinds.owner-outage": { value: false },
+      "kinds.raised-hand": { value: false },
       "quietHours.enabled": { value: true },
       "quietHours.start": { value: "23:59" },
       "quietHours.end": { value: "00:00" },

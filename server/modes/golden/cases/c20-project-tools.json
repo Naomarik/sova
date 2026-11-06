@@ -21,7 +21,9 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "overseer_ping",
+   "spec"
   ],
   "entries": [],
   "extensions": [
@@ -41,7 +43,8 @@
    "<inline:sova-topics>",
    "<inline:sova-tours>",
    "<inline:sova-create-settings>",
-   "<inline:sova-transcript-cards>"
+   "<inline:sova-transcript-cards>",
+   "<inline:sova-spec>"
   ]
  },
  {
@@ -67,6 +70,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "rel__status"
   ],
   "entries": [
@@ -152,13 +157,13 @@
       "content": "",
       "sections": {
        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-       "tools": "@44baa8b2ed1e6cce",
-       "rules": "@bb6b8db0787c1b6b",
+       "tools": "@8dc0c46578d02256",
+       "rules": "@9ea18b2ab3665c2b",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:project>\n</cwd>",
-       "mode": "@3fbec9cdf6035e9b"
+       "mode": "@332041087c907df9"
       },
-      "toolsAdded": "@fca91f6038831dd5"
+      "toolsAdded": "@9c84f5052fbc37ce"
      },
      {
       "role": "user",
@@ -251,6 +256,8 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "overseer_ping",
+   "spec",
    "rel__status"
   ],
   "entries": [
@@ -261,13 +268,13 @@
      "content": "",
      "sections": {
       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-      "tools": "@44baa8b2ed1e6cce",
-      "rules": "@bb6b8db0787c1b6b",
+      "tools": "@8dc0c46578d02256",
+      "rules": "@9ea18b2ab3665c2b",
       "docs": "@0f5fabf6c3c47c4c",
       "cwd": "<cwd>\n<ws:project>\n</cwd>",
-      "mode": "@3fbec9cdf6035e9b"
+      "mode": "@332041087c907df9"
      },
-     "toolsAdded": "@04d40d1976d14871"
+     "toolsAdded": "@1747fa4b6b553cba"
     }
    }
   ],

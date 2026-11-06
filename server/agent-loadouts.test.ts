@@ -27,6 +27,7 @@ const { GAP_PARAM } = await import("./overseer-org-part");
 const { createSettingsTool } = await import("./create-settings-tool");
 const { createGuideTool } = await import("../pi-config/extensions/mode/create-guide-tool.ts");
 const { specCodingTool } = await import("./spec-coding-tool");
+const { overseerPingTool, NOTHING_SENT } = await import("./overseer-pings");
 
 const SNAPSHOT = new URL("./agent-loadouts.snapshot.json", import.meta.url);
 const CWD = "/work/project";
@@ -74,6 +75,8 @@ function families(): Record<string, Decl[]> {
     // A Create chat's settings cards (§chat.create-mode/settings-cards): prepares only, opened on purpose.
     "create-settings": [createSettingsTool({ sessionId: "s-1", mode: () => "create", cwd: () => CWD })].map(decl),
     spec: [specCodingTool()].map(decl),
+    // Every ordinary chat's ping (§app.overseer-pings/tool): fixed text, so a Claude Code chat's CLI never restarts over it.
+    "overseer-ping": [decl(overseerPingTool({ sessionId: () => "s-1", path: () => "/s/1.jsonl", title: () => "One" }))],
     "project-overseer+onboard": po.projectOverseerTools(poHost({ onboard: () => {} }), identity).map(decl),
     "project-overseer+gaps": po.projectOverseerTools(poHost({ gaps: () => ({ param: GAP_PARAM }) }), identity).map(decl),
     "project-overseer+copies": po.projectOverseerTools(poHost({ confirmedClicks: () => null }), identity).map(decl),
@@ -143,6 +146,7 @@ function refusals(): Record<string, unknown> {
       PREVIEW_IN_GATHERING: po.PREVIEW_IN_GATHERING,
     },
     "sessions-index.archiveSession": archiveRefusals(),
+    "overseer-pings": { NOTHING_SENT },
   };
 }
 

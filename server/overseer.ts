@@ -20,6 +20,7 @@ import {
   type OverseerAbilitiesInfo,
   type OverseerSettingsInfo,
   type SessionFeedMessage,
+  type PingRecord,
   type SessionSummary,
   type SovaConfirmItem,
 } from "../shared/protocol";
@@ -110,7 +111,9 @@ import { signalTextOf, teamStallOf } from "./signals-store";
 import { openOfferOf } from "./session-offers";
 import { openCardsOf } from "./transcript-cards";
 import { readDecisionSettings } from "./decide-settings";
-import { onAttentionChanged } from "./attention-memo";
+import { attentionChanged, onAttentionChanged } from "./attention-memo";
+import { sessionsChanged } from "./list-generation";
+import { onPingChanged, raisedHands } from "./overseer-pings";
 import { endDismissals, prunable, readDismissed, takeUndone } from "./needs-you-dismissed";
 import { sessionFeed } from "./session-feed";
 import { notifyBlockers, pushWanted, resetPushState } from "./push";
@@ -333,6 +336,11 @@ function noteFailedRise(path: string, failed: number, now: number): number {
 }
 let digestMemo: { at: number; value: Promise<ReturnType<typeof buildDigest>>; list?: readonly SessionSummary[] } | null = null;
 onAttentionChanged(() => (digestMemo = null));
+// A ping made, a hand lowered or an outcome set here (§app.overseer-pings/raised-hand): Needs you and the feed read it at once.
+onPingChanged(() => {
+  attentionChanged();
+  sessionsChanged();
+});
 onSessionPrompted(() => (digestMemo = null));
 
 /** The digest, memoised ~3s. `list` (the session feed's own, §app.decisions/push) builds it from
@@ -368,6 +376,8 @@ export function attentionDigest(list?: readonly SessionSummary[]): Promise<Retur
     const setupChats = setupChatPaths();
     // Tour recordings waiting for a sign-in (§app.tours/sites), by session id, from the server's memory.
     const signIns = tourSignInWaits();
+    // Raised hands and done lines (§app.overseer-pings/raised-hand), by session id: one read of the pings file.
+    const hands = raisedHands();
     const rows: AttentionRow[] = sessions.map((s) => {
       const chat = chatHandle(s.path)?.mirror;
       const live = byPath.get(s.path);
@@ -389,6 +399,7 @@ export function attentionDigest(list?: readonly SessionSummary[]): Promise<Retur
         ...(signIns.has(s.id) ? { tourSignIn: signIns.get(s.id)! } : {}),
         ...offerField(s),
         ...cardsField(s),
+        ...raisedHandField(s, hands),
       };
     });
     // Items of no session: an org project's missing stakeholder, its held acts and conflicts routed to the operator
@@ -421,6 +432,13 @@ function cardsField(s: SessionSummary): { cards?: { title: string; at: number }[
   if (s.archived) return {};
   const open = openCardsOf(s.id);
   return open.length ? { cards: open.map((c) => ({ title: c.title, at: c.at })) } : {};
+}
+
+/** The session's raised hand or done line (§app.overseer-pings/raised-hand) as a digest row's field. */
+function raisedHandField(s: SessionSummary, hands: ReadonlyMap<string, PingRecord>): Pick<AttentionRow, "raisedHand"> {
+  const p = s.archived ? undefined : hands.get(s.id);
+  if (!p || (p.kind !== "stuck" && p.kind !== "decision" && p.kind !== "done")) return {};
+  return { raisedHand: { kind: p.kind, summary: p.summary, at: Date.parse(p.at) || 0 } };
 }
 
 function teamStallField(id: string): { teamStall?: { since: number; names: string[] } } {
@@ -491,8 +509,11 @@ export async function saveOverseerSettings(body: unknown): Promise<OverseerSaveR
   // The memory switch is its own route's: a settings save keeps the stored one, so a
   // stale copy of the settings never turns it back on or off.
   const { memory: _sent, ...rest } = parsed;
-  const stored = readOverseerSettings().memory;
-  writeOverseerSettings({ ...rest, ...(stored ? { memory: stored } : {}) });
+  const before = readOverseerSettings();
+  const stored = before.memory;
+  // The ping limits (§app.overseer-pings/limits) a page that doesn't know them leaves out are kept as stored.
+  const pings = rest.pings ?? before.pings;
+  writeOverseerSettings({ ...rest, ...(stored ? { memory: stored } : {}), ...(pings ? { pings } : {}) });
   pendingApply = true;
   await applySettingsNow();
   digestMemo = null;

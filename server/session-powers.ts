@@ -219,7 +219,12 @@ export class RunState {
       at once (steers land together), and they enter in the order they were handed in. */
   private hops = new Map<string, number[]>();
   hop = 0;
-  constructor(private readonly limits: SessionLimits) {}
+  /** Every ordinary chat has one (§app.overseer-pings/tool "Who started the run"); `limits` only a
+      powers profile's. `onUserMessage`: a message the user sent entered the context (their turn began). */
+  constructor(
+    private readonly limits?: SessionLimits,
+    private readonly onUserMessage?: () => void,
+  ) {}
   /** The chat runtime is about to hand in a message another session sent. */
   expectHop(text: string, hop: number): void {
     this.hops.set(text, [...(this.hops.get(text) ?? []), hop]);
@@ -227,7 +232,7 @@ export class RunState {
   observe(event: TurnEvent): void {
     if (event.type === "run.start") {
       this.hop = 0;
-      this.limits.runStarted();
+      this.limits?.runStarted();
     }
     if (event.type === "message.start") {
       const t = userMessageText(event.handle);
@@ -240,10 +245,27 @@ export class RunState {
         } else if (!parseWakeNudge(t.trim())) this.hop = 0;
       }
     }
-    if (this.turns.observe(event)) this.limits.userMessage();
+    if (this.turns.observe(event)) {
+      this.limits?.userMessage();
+      try {
+        this.onUserMessage?.();
+      } catch (err) {
+        console.warn("[session-powers] user-turn listener failed:", err instanceof Error ? err.message : String(err));
+      }
+    }
   }
   attended(): boolean {
     return this.turns.attended();
+  }
+  /**
+   * The run's standing as a ping records it (§app.overseer-pings/tool): whether the user's own message
+   * started it, and its hop: 0 for a run the user's message opened, else the newest session message's
+   * hop plus 1 (1 for a run no session message opened: a topic batch, a schedule's message, a prompt
+   * an Overseer sent, a wake-up). Read inside the call, never later.
+   */
+  standing(): { attended: boolean; hop: number } {
+    const attended = this.turns.attended();
+    return { attended, hop: attended ? 0 : this.hop + 1 };
   }
 }
 

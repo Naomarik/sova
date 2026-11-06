@@ -77,6 +77,7 @@ import { JOBS_UNIT_PREFIX_ENV } from "./background-jobs-capture";
 import { JOBS_DIR_ENV } from "../pi-config/extensions/subagents/job-store.ts";
 import { readWorkerNice } from "./process-priority";
 import { queueOpenTool, queuePushTool } from "./topics";
+import { overseerPingTool } from "./overseer-pings";
 import type { PowersSend } from "./session-powers";
 import { tourTools } from "./tours/tools";
 import { sessionOfferTools } from "./session-offers-tool";
@@ -692,7 +693,11 @@ export async function fileSnapshot(path: string, w: Partial<ServerToolCtxWire> &
     declarations go to the chat in its `open`, in loadout order. `known`: the title the chat reports
     (its pi session name, often none), used only when the session's display title can't be read. */
 export function servedToolsFor(chatId: ChatId, sessionId: string, known: () => string | undefined, powers = false, plain = !powers): ServerToolDecl[] {
-  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title: () => senderTitle(chatId, known) }), ...tourTools(sessionId, chatId), jobTool({ path: chatId })];
+  const title = () => senderTitle(chatId, known);
+  // overseer_ping beside queue_push, for an ordinary chat (§app.overseer-pings/tool): the chat records its run's
+  // standing with each call, and leaves it out of a merge queue chat's loadout.
+  const ping = plain || powers ? [overseerPingTool({ sessionId: () => sessionId, path: () => chatId, title })] : [];
+  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title }), ...ping, ...tourTools(sessionId, chatId), jobTool({ path: chatId })];
   // Declared for a plain chat only: a special kind's own tool of this name (a project overseer's) must keep answering.
   // Its extension keeps it active only in Create (§chat.create-mode/settings-cards).
   if (plain) specs.push(createSettingsTool({ sessionId, mode: () => chatHandle(chatId)?.mirror.mode.mode, cwd: () => chatHandle(chatId)?.mirror.cwd ?? "" }));

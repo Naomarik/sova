@@ -1,0 +1,104 @@
+[
+ {
+  "name": "read",
+  "description": "@491fc972ef0356ca",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "path"
+   ],
+   "properties": {
+    "path": {
+     "type": "string",
+     "description": "Path to the file to read (relative or absolute)"
+    },
+    "offset": {
+     "type": "number",
+     "description": "Line number to start reading from (1-indexed)"
+    },
+    "limit": {
+     "type": "number",
+     "description": "Maximum number of lines to read"
+    }
+   }
+  },
+  "constrainedSampling": {
+   "type": "json_schema",
+   "strict": "prefer"
+  }
+ },
+ {
+  "name": "project_verbs",
+  "description": "@92bd36452c3a5ac1",
+  "parameters": {
+   "type": "object",
+   "properties": "@a9d589e46598fcc2",
+   "required": [
+    "verb"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "spec",
+  "description": "@c7d79fc694bf9ff4",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "op": {
+     "type": "string",
+     "enum": [
+      "where",
+      "map",
+      "toc",
+      "read",
+      "impact"
+     ]
+    },
+    "query": {
+     "type": "string",
+     "description": "where: the words, path or name; map: a namespace"
+    },
+    "dir": {
+     "type": "string",
+     "enum": [
+      "out",
+      "in",
+      "down",
+      "up",
+      "mentions"
+     ],
+     "description": "toc: which links (default out)"
+    },
+    "whole": {
+     "type": "boolean",
+     "description": "read: the whole claim"
+    },
+    "noFrame": {
+     "type": "boolean",
+     "description": "read: without the frame (every read after the first)"
+    },
+    "near": {
+     "type": "boolean",
+     "description": "impact: what relies on it, nearest first"
+    },
+    "cursor": {
+     "type": "string",
+     "description": "The previous answer's next cursor"
+    },
+    "root": {
+     "type": "string",
+     "description": "Project root (default your working directory): it or a folder below it, or a worktree you track"
+    },
+    "draft": {
+     "type": "string",
+     "description": "A draft's name, read instead of the current spec"
+    }
+   },
+   "required": [
+    "op"
+   ],
+   "additionalProperties": false
+  }
+ }
+]

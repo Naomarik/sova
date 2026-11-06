@@ -1,7 +1,7 @@
 # Modes recordings
 
 What a chat's or a worker's model sees of its modes, recorded at master `7c4750f0a` with the pi-config mode
-extension running every mode, and the yardstick for Sova's engine (al_1, Settings → Experimental → "Sova
+extension running every mode (re-taken at `3ce2843cd` with `overseer_ping` added to every ordinary chat, its only change), and the yardstick for Sova's engine (al_1, Settings → Experimental → "Sova
 runs chat modes"). The code is in `server/modes/tests/` (`harness.fixture.ts` says what a recording holds;
 `cases.fixture.ts` lists the cases).
 

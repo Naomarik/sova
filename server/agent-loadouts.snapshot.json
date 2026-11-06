@@ -7591,6 +7591,55 @@
         }
       ]
     },
+    "overseer-ping": {
+      "bytes": 1495,
+      "tools": [
+        {
+          "name": "overseer_ping",
+          "label": "Ping the Overseer",
+          "description": "Tell the Overseer something it should know: you are stuck, done with work the user is waiting on, need the user's decision, changed something other sessions of this project rely on (news), or the user asked you to give something to another session (relay, with to). It never ends your turn, and no answer comes back here.",
+          "promptSnippet": "tell the Overseer you are stuck, done, need the user's decision, have news, or have a note the user asked you to pass on",
+          "promptGuidelines": [
+            "Ping stuck or decision when you are blocked on the user, and done when you finish work the user is waiting on; say it in your reply as well: a ping never replaces that.",
+            "Ping news when you changed something other sessions of this project rely on.",
+            "Ping relay only when the user asks you to give something to another session; put who it is for in to, in the user's words or as a sova://s/ link."
+          ],
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "description": "stuck, done, decision, news or relay.",
+                "enum": [
+                  "stuck",
+                  "done",
+                  "decision",
+                  "news",
+                  "relay"
+                ]
+              },
+              "summary": {
+                "type": "string",
+                "description": "One line, at most 200 characters."
+              },
+              "detail": {
+                "type": "string",
+                "description": "Optional, at most 2000 characters."
+              },
+              "to": {
+                "type": "string",
+                "description": "relay only, and required there: who it is for, in the user's words or as a sova://s/ link (at most 200 characters)."
+              }
+            },
+            "required": [
+              "kind",
+              "summary"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
     "project-overseer+onboard": {
       "bytes": 40099,
       "tools": [
@@ -12895,6 +12944,9 @@
       "Only sessions started in Sova can be archived. This one is already in the archive.",
       "The agent is mid-turn; abort or wait before archiving.",
       "Subagents are working in this session. Stop them or wait for them to finish before archiving."
-    ]
+    ],
+    "overseer-pings": {
+      "NOTHING_SENT": "Nothing was sent:"
+    }
   }
 }

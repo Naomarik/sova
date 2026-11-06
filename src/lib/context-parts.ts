@@ -110,11 +110,13 @@ export interface ContextLine {
   tokens: number;
   /** The short line under its name. */
   meta: string;
-  /** Its parts as the sheet lists them: biggest first, Conversation's summary last, and (Instruction
-      files) the files not yet loaded at the end. */
+  /** Its parts as the sheet lists them: biggest first, Conversation's summary last, (Instruction
+      files) the files not yet loaded at the end, and (Skills offered) the skills read before the rest. */
   parts: ContextPart[];
-  /** Instruction files only: the first part that isn't in the window, or -1. */
+  /** Instruction files only: the first part that isn't in the window, or -1. Those aren't in `tokens`. */
   notLoadedFrom: number;
+  /** Skills offered only: the first skill not read yet, or -1. Those are in the window and in `tokens`. */
+  notReadFrom: number;
 }
 
 /** The tab's whole layout: the groups biggest first, Other apart, and the room left. */
@@ -176,10 +178,13 @@ export function contextLayout(s: ContextSizes): ContextLayout {
     const counts = mine.filter((p) => inWindow(p) && p.id !== "conversation:summary").sort(bySize);
     const later = mine.filter((p) => !inWindow(p)).sort(bySize);
     const summary = mine.filter((p) => p.id === "conversation:summary");
-    const parts = [...counts, ...summary, ...later];
+    // Every skill offered is in the window: read or not only orders the sheet, and no total looks at it.
+    const unread = g.kind === "skills" ? counts.filter((p) => !p.read) : [];
+    const first = g.kind === "skills" ? counts.filter((p) => p.read) : counts;
+    const parts = [...first, ...unread, ...summary, ...later];
     const tokens = g.kind === "conversation" ? s.conversation : mine.filter(inWindow).reduce((n, p) => n + p.tokens, 0);
     if (tokens <= 0 && later.length === 0) continue;
-    lines.push({ id: g.kind, kind: g.kind, label: g.label, tokens, meta: lineMeta(g.kind, mine), parts, notLoadedFrom: later.length ? parts.length - later.length : -1 });
+    lines.push({ id: g.kind, kind: g.kind, label: g.label, tokens, meta: lineMeta(g.kind, mine), parts, notLoadedFrom: later.length ? parts.length - later.length : -1, notReadFrom: unread.length ? first.length : -1 });
   }
   lines.sort((a, b) => b.tokens - a.tokens);
   const known = lines.reduce((n, l) => n + l.tokens, 0);
@@ -187,6 +192,30 @@ export function contextLayout(s: ContextSizes): ContextLayout {
     lines,
     other: s.total === null ? null : Math.max(0, s.total - known),
     free: s.total !== null && s.window ? Math.max(0, s.window - s.total) : null,
+  };
+}
+
+/** A group's sheet: the line on top, the parts in its card, and the section under it, if any. */
+export interface GroupSheet {
+  sub: string;
+  above: ContextPart[];
+  below: { id: string; heading: string; note: string; parts: ContextPart[] } | null;
+}
+
+/** How a group's sheet splits. Files not yet loaded cost nothing, so their heading says they aren't
+    counted; skills not read yet are in the window, so theirs must not. Pure. */
+export function groupSheet(line: Pick<ContextLine, "kind" | "meta" | "parts" | "notLoadedFrom" | "notReadFrom">): GroupSheet {
+  if (line.kind === "skills") {
+    if (line.notReadFrom < 0) return { sub: `${line.parts.length} read`, above: line.parts, below: null };
+    const above = line.parts.slice(0, line.notReadFrom);
+    const parts = line.parts.slice(line.notReadFrom);
+    return { sub: `${above.length} read · ${parts.length} not read yet`, above, below: { id: "context-not-read", heading: "Not read yet", note: NOT_READ_NOTE, parts } };
+  }
+  if (line.notLoadedFrom < 0) return { sub: line.meta, above: line.parts, below: null };
+  return {
+    sub: line.meta,
+    above: line.parts.slice(0, line.notLoadedFrom),
+    below: { id: "context-not-loaded", heading: "Not yet loaded · not counted", note: NOT_LOADED_NOTE, parts: line.parts.slice(line.notLoadedFrom) },
   };
 }
 
@@ -268,6 +297,8 @@ export function partNote(p: ContextPart): string | null {
 
 /** The note on a group's sheet for files not yet loaded. */
 export const NOT_LOADED_NOTE = "Each loads the first time the agent reads, edits or writes a file in its folder.";
+/** The note on Skills offered's sheet for skills not read yet. */
+export const NOT_READ_NOTE = "Each is in the window by its name and description, so its size counts.";
 /** Other's short line. */
 export const OTHER_META = "What the estimates don't explain, such as Claude Code's own prompt.";
 

@@ -8,7 +8,10 @@ import {
   contextRoom,
   fileFolder,
   flatParts,
+  groupSheet,
+  inWindow,
   meterShares,
+  NOT_LOADED_NOTE,
   partLang,
   partMeta,
   partNote,
@@ -65,6 +68,69 @@ describe("the Context tab's groups", () => {
     const only = contextLayout({ ...base, conversation: 0, parts: parts.filter((p) => p.id === "subfolder:/p/web/AGENTS.md") }).lines;
     assert.deepEqual(only.map((x) => [x.label, x.tokens, x.meta]), [["Instruction files", 0, "0 loaded · 1 not yet loaded"]]);
     assert.equal(contextLayout({ ...base, parts: parts.filter((p) => p.group === "instructions") }).lines.find((x) => x.kind === "instructions")!.meta, "2 loaded");
+  });
+
+  describe("Skills offered", () => {
+    const skill = (name: string, tokens: number, read: boolean): ContextPart => ({ id: `skills:skill:${name}`, group: "skills", label: name, tokens, path: `/s/${name}/SKILL.md`, read });
+    const noSkills = parts.filter((p) => p.group !== "skills");
+    const layoutOf = (...skills: ContextPart[]) => contextLayout({ ...base, parts: [...noSkills, ...skills] });
+    const lineOf = (...skills: ContextPart[]) => layoutOf(...skills).lines.find((x) => x.kind === "skills")!;
+
+    test("the skills read come first, then the rest, each biggest first, however big the unread ones are", () => {
+      const line = lineOf(skill("small-unread", 100, false), skill("small-read", 200, true), skill("big-unread", 9_000, false), skill("big-read", 800, true));
+      assert.deepEqual(line.parts.map((p) => p.label), ["big-read", "small-read", "big-unread", "small-unread"]);
+      assert.equal(line.notReadFrom, 2);
+      assert.equal(line.notLoadedFrom, -1, "nothing here is left out of the total");
+    });
+
+    test("a skill not read yet stays in the line's size, its count and Other, exactly as if it were read", () => {
+      const skills = [skill("a", 1_500, true), skill("b", 500, false)];
+      const mixed = layoutOf(...skills);
+      const allRead = layoutOf(...skills.map((p) => ({ ...p, read: true })));
+      const line = mixed.lines.find((x) => x.kind === "skills")!;
+      assert.equal(line.tokens, 2_000);
+      assert.equal(line.meta, "2 skills · 1 read");
+      assert.equal(mixed.other, allRead.other);
+      assert.deepEqual(mixed.lines.map((x) => [x.kind, x.tokens]), allRead.lines.map((x) => [x.kind, x.tokens]));
+      // Its row reads as counted: in the window, a share bar, and no "+".
+      const unread = line.parts.find((p) => p.label === "b")!;
+      assert.equal(inWindow(unread), true);
+      assert.equal(shareOf(unread.tokens, 200_000, inWindow(unread)), 0.5);
+    });
+
+    test("its sheet: the summary, the card of skills read, then Not read yet, with no word of not counting", () => {
+      const sheet = groupSheet(lineOf(skill("a", 1_500, true), skill("b", 500, false), skill("c", 400, false)));
+      assert.equal(sheet.sub, "1 read · 2 not read yet");
+      assert.deepEqual(sheet.above.map((p) => p.label), ["a"]);
+      assert.deepEqual(sheet.below?.parts.map((p) => p.label), ["b", "c"]);
+      assert.equal(sheet.below?.heading, "Not read yet");
+      assert.doesNotMatch(`${sheet.below?.heading} ${sheet.below?.note}`, /not counted|loads the first time/i);
+    });
+
+    test("with one group only that group shows: all read has no section, none read has no card", () => {
+      const read = groupSheet(lineOf(skill("a", 1_500, true), skill("b", 500, true)));
+      assert.equal(read.sub, "2 read");
+      assert.equal(read.below, null);
+      assert.deepEqual(read.above.map((p) => p.label), ["a", "b"]);
+      const unread = groupSheet(lineOf(skill("a", 1_500, false), skill("b", 500, false)));
+      assert.equal(unread.sub, "0 read · 2 not read yet");
+      assert.deepEqual(unread.above, []);
+      assert.deepEqual(unread.below?.parts.map((p) => p.label), ["a", "b"]);
+    });
+
+    test("Instruction files keeps its own heading and note, and its short line on top", () => {
+      const sheet = groupSheet(contextLayout(base).lines.find((x) => x.kind === "instructions")!);
+      assert.equal(sheet.sub, "3 loaded · 1 not yet loaded");
+      assert.equal(sheet.below?.heading, "Not yet loaded · not counted");
+      assert.equal(sheet.below?.note, NOT_LOADED_NOTE);
+      assert.deepEqual(sheet.below?.parts.map((p) => p.label), ["web/AGENTS.md"]);
+    });
+
+    test("any other group has one card and no section", () => {
+      const sheet = groupSheet(contextLayout(base).lines.find((x) => x.kind === "tools")!);
+      assert.equal(sheet.sub, "1 tool");
+      assert.equal(sheet.below, null);
+    });
   });
 
   test("Conversation lists its counts biggest first, then the kept summary; its size is the server's estimate", () => {

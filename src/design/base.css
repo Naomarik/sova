@@ -5710,26 +5710,6 @@ button.subagents-usage:focus-visible { outline: var(--focus-ring); outline-offse
   overflow: hidden;
 }
 
-/* Skills tab: loads on one card per section, like the explain rows. A row that jumps is a
-   .list-row-interactive button with a trailing arrow; a worker's row is a plain div, so it has
-   no hover, no pointer and no arrow. The certainty chip sits at the end of the first line. */
-.skill-list {
-  border: var(--stroke-thin) solid var(--color-border);
-  border-radius: var(--r-lg);
-  overflow: hidden;
-}
-.skill-list > li { border-bottom: var(--stroke-thin) solid var(--color-border); }
-.skill-list > li:last-child { border-bottom: 0; }
-.skill-row { align-items: flex-start; }
-.skill-list .skill-row { border-bottom: 0; }
-.skill-row .list-title,
-.skill-row .list-meta { display: block; }
-.skill-row > .chip { flex: none; margin-top: 2px; }
-.skill-row > .icon { flex: none; margin-top: 4px; color: var(--color-ink-muted); }
-.skill-worker-head { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; margin: 0; }
-.skill-worker-head > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.skill-worker-team { text-transform: none; letter-spacing: 0; }
-
 
 /* ---- BODY. List | transcript, each its own scroll region; the body itself
    never scrolls. Under 560px of pane it is list/detail instead: one half at

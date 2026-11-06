@@ -2,7 +2,8 @@
 // served from a scratch build with every request answered here (no server, no network). Every top line is a
 // group that opens one sheet over the tab, the same way whatever it holds; a part reads inside the sheet;
 // Escape and Back go back one level and focus returns to the row it came from, and the pane stays open; each
-// file is listed once, the ones not yet loaded last; skills say Read or Not read yet; Conversation opens to
+// file is listed once, the ones not yet loaded last; skills read come first with their Read chip, the rest
+// under Not read yet, which keep their sizes in the total; the strip has no Skills tab; Conversation opens to
 // its counts and the kept summary, with no transcript button; a failed read is a toast and the sheet stays. At 390, 880 and 1440 px,
 // every row is a 44px target and nothing scrolls sideways.
 // CTX_UI_SHOTS=<dir> also saves screenshots of each step, light and dark, at each width.
@@ -110,10 +111,11 @@ const MISSING = "/w/AGENTS.md";
 const CONTENT: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".json": "application/json", ".webmanifest": "application/manifest+json" };
 
 /** The chat open at `width` in `scheme`, its pane on the Context tab; every request answered from the data above. */
-async function open(width: number, scheme: "light" | "dark" = "light", over: { view?: SessionContextView; height?: number; files?: Record<string, string> } = {}): Promise<Page> {
+async function open(width: number, scheme: "light" | "dark" = "light", over: { view?: SessionContextView; height?: number; files?: Record<string, string>; errors?: string[] } = {}): Promise<Page> {
   const phone = width < 768;
   const ctx = await browser.newContext({ viewport: { width, height: over.height ?? (phone ? 844 : width < 1000 ? 1000 : 960) }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce", colorScheme: scheme });
   const page = await ctx.newPage();
+  if (over.errors) page.on("pageerror", (e) => over.errors!.push(e.message));
   const json = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
   await page.routeWebSocket(/.*/, (ws) => {
     if (!new URL(ws.url()).pathname.startsWith("/ws/chat")) return;
@@ -368,6 +370,95 @@ for (const width of [390, 1440]) {
       assert.equal(await page.locator(".context-sheet").getByRole("button", { name: "Copy" }).count(), 1);
     } finally {
       await page.context().close();
+    }
+  });
+}
+
+// Skills offered reads as Instruction files does, with one deliberate difference: a skill not read yet is
+// already in the window, so its section says nothing of not counting and its size stays in the total.
+const PLAYWRIGHT_DOC = "/w/skills/playwright/SKILL.md";
+const SKILL_FILES = { [PLAYWRIGHT_DOC]: "---\nname: playwright\n---\n# Playwright\n\nBrowser automation." };
+const eyebrow = (page: Page) => page.locator(".context-sheet .context-sheet-eyebrow");
+
+for (const width of [390, 1440]) {
+  test(`at ${width}px: the strip has no Skills tab, and Skills offered lists what was read, then Not read yet`, async () => {
+    const errors: string[] = [];
+    const page = await open(width, "light", { files: SKILL_FILES, errors });
+    try {
+      const tabs = await page.locator("#session-pane .session-tabs [role=tab]").allInnerTexts();
+      assert.deepEqual(tabs.map((t) => t.trim()), ["Session", "Timeline", "Agents", "Usage", "Context", "Sharing", "Explain"]);
+      assert.equal(await page.locator("#session-tab-skills").count(), 0);
+
+      // The group's own row is as it was: its count, and every skill in its size.
+      const row = page.locator('[data-ctx-key="line:skills"]');
+      assert.match(await row.innerText(), /2 skills · 1 read/);
+      assert.equal(await row.locator(".context-row-size").innerText(), "≈680");
+      await row.click();
+      await page.locator(".context-sheet").waitFor();
+      assert.equal(await page.locator(".context-sheet-sub").first().innerText(), "1 read · 1 not read yet");
+      assert.equal(await page.locator(".context-sheet-titles .context-row-size").innerText(), "≈680");
+
+      // The card of skills read, its Read chip; then the section, below it, with the rest.
+      const lists = page.locator(".context-sheet .context-list");
+      assert.equal(await lists.count(), 2);
+      assert.deepEqual(await lists.nth(0).locator(".context-row-name").allInnerTexts(), ["fold-ai-dev-design"]);
+      assert.equal((await lists.nth(0).locator(".chip").innerText()).trim(), "Read");
+      assert.equal(await lists.nth(0).locator(".chip-success").count(), 1);
+      assert.equal((await eyebrow(page).textContent())?.trim(), "Not read yet");
+      const section = page.locator('section[aria-labelledby="context-not-read"]');
+      assert.doesNotMatch(await section.innerText(), /not counted|loads the first time/i);
+      assert.match(await section.innerText(), /Each is in the window by its name and description, so its size counts\./);
+      assert.deepEqual(await lists.nth(1).locator(".context-row-name").allInnerTexts(), ["playwright"]);
+      assert.equal((await lists.nth(1).locator(".chip").innerText()).trim(), "Not read yet");
+      const [cardBox, headBox] = [await lists.nth(0).boundingBox(), await eyebrow(page).boundingBox()];
+      assert.ok(cardBox && headBox && headBox.y >= cardBox.y + cardBox.height, "the section sits under the card");
+      // Its size reads as counted: no "+", and its share bar.
+      assert.equal(await lists.nth(1).locator(".context-row-size").innerText(), "≈300");
+      assert.equal(await lists.nth(1).locator(".context-share").count(), 1);
+      await targetsOk(page, "Skills offered");
+      await noSideways(page, "Skills offered");
+      await shot(page, `${width}-light-8-skills-split`);
+
+      // A skill not read yet still opens to its text, and Back returns to its row.
+      await page.locator('[data-ctx-key="part:skills:skill:playwright"]').click();
+      await page.locator(".context-sheet .md-viewer-doc .message-body").waitFor();
+      assert.equal(await crumbs(page), "Context › Skills offered › playwright");
+      assert.equal(await page.locator(".context-sheet-sub").first().innerText(), PLAYWRIGHT_DOC);
+      assert.match(await page.locator(".context-sheet").innerText(), /Its size counts only what the model is offered/);
+      await noSideways(page, "a skill not read yet");
+      await page.keyboard.press("Escape");
+      assert.equal(await crumbs(page), "Context › Skills offered");
+      assert.equal(await activeKey(page), "part:skills:skill:playwright");
+      assert.deepEqual(errors, []);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test(`at ${width}px: with one group of skills, only that group shows`, async () => {
+    const allAs = (read: boolean): SessionContextView => ({ ...VIEW, skills: VIEW.skills!.map((s) => ({ ...s, read })) });
+    const none = await open(width, "light", { view: allAs(false), files: SKILL_FILES });
+    try {
+      await none.locator('[data-ctx-key="line:skills"]').click();
+      await none.locator(".context-sheet").waitFor();
+      assert.equal(await none.locator(".context-sheet-sub").first().innerText(), "0 read · 2 not read yet");
+      assert.equal(await none.locator(".context-sheet .context-list").count(), 1, "no empty card above the section");
+      assert.equal((await eyebrow(none).textContent())?.trim(), "Not read yet");
+      await noSideways(none, "no skill read");
+      await shot(none, `${width}-light-9-skills-none-read`);
+    } finally {
+      await none.context().close();
+    }
+    const all = await open(width, "light", { view: allAs(true) });
+    try {
+      await all.locator('[data-ctx-key="line:skills"]').click();
+      await all.locator(".context-sheet").waitFor();
+      assert.equal(await all.locator(".context-sheet-sub").first().innerText(), "2 read");
+      assert.equal(await all.locator(".context-sheet .context-list").count(), 1);
+      assert.equal(await eyebrow(all).count(), 0, "no empty section");
+      await noSideways(all, "every skill read");
+    } finally {
+      await all.context().close();
     }
   });
 }

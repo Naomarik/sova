@@ -8,8 +8,8 @@
 //  - the instruction files below cwd: the deeper-context engine's own walk (server/deeper-context.ts);
 //  - the total and the window: the transcript head's rule (contextOfBranch, resolveContext).
 // The conversation is estimated from the branch's messages since the latest compaction, and tallied by
-// kind (`talk`); a skill counts as read when the Skills tab's own rules (server/skills.ts) find it loaded
-// in what the model still sees.
+// kind (`talk`); a skill counts as read when server/skills.ts's rules find it loaded in what the model
+// still sees.
 
 import { homedir } from "node:os";
 import { relative, sep } from "node:path";
@@ -150,8 +150,8 @@ export function conversationTalk(branch: readonly HEntry[], loadedNested = 0): S
   };
 }
 
-/** The skills loaded in what the model still sees, by name and by resolved SKILL.md path: the Skills tab's
-    own evidence (a read, an invocation, or a shell command reading the file), since the latest compaction. */
+/** The skills loaded in what the model still sees, by name and by resolved SKILL.md path: server/skills.ts's
+    evidence (a read, an invocation, or a shell command reading the file), since the latest compaction. */
 export function skillsRead(branch: readonly HEntry[], cwd: string): { names: Set<string>; paths: Set<string> } {
   const names = new Set<string>();
   const paths = new Set<string>();

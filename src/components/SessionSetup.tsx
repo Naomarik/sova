@@ -291,8 +291,11 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
                                   <button class="setup-path setup-open" type="button" aria-label={openFileLabel(k.name)} onClick={() => void openFile(k.name, k.path)}>
                                     {k.name}
                                   </button>
+                                  <Show when={k.manualOnly}>
+                                    <span class="setup-manual">Manual only</span>
+                                  </Show>
                                 </span>
-                                <span class="setup-facts">{k.manualOnly ? `Manual only · ${fileFacts(k)}` : fileFacts(k)}</span>
+                                <span class="setup-facts">{fileFacts(k)}</span>
                                 <Show when={switchable()}>
                                   <label class="toggle toggle-switch setup-toggle">
                                     <input

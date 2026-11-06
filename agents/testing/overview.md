@@ -52,7 +52,10 @@ environment every runner starts in, and the hermetic dev server.
   Sova's forms in Chrome, triggered by form code only (the form kit, its limits, each migrated
   surface), run at landing when triggered; it picks its own
   short temp dir for Chrome's sockets, `server/settings-browser-temp.test.helper.ts`, and skips saying why only
-  when none is writable). Each lists its triggers: the
+  when none is writable) and **Menus in a browser** (`menus`, `server/menus-browser.integration.test.ts` on the
+  same helpers: right-click menus under real pointer presses, triggered by menu code only, run at landing when
+  triggered; its control skips the cases, saying why, on a browser that never closes a popover on a right-button
+  release). Each lists its triggers: the
   areas whose change can break it (chats, workers, teams, the Overseer, batons, Claude Code and their
   extensions, the harness; tour code), any package or toolchain change, the test setup this guide
   `watches`, and the module itself. Every other integration file is the everyday set. A new slow

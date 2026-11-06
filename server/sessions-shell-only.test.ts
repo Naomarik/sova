@@ -3,7 +3,7 @@
 // it opens with its command's row, and the empty-husk cleanup keeps it, `!` and `!!` alike, while a
 // header-only stub is still left out and deleted. In-process, in a throwaway agent dir.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -19,9 +19,13 @@ const { testApp } = await import("./mesh/app-test-fixtures");
 const app = await testApp();
 const { addWebSession } = await import("./web-sessions");
 const { canonicalPath } = await import("./paths");
-const { cleanupSessions, isZeroInput } = await import("./sessions-index");
+const { archiveSession, cleanupSessions, isZeroInput } = await import("./sessions-index");
+const { setChatRouter } = await import("./chat-handle");
 
-after(() => rmSync(agentDir, { recursive: true, force: true }));
+after(() => {
+  setChatRouter(null);
+  rmSync(agentDir, { recursive: true, force: true });
+});
 
 let n = 0;
 /** A web session file with these entries after its header, last written an hour ago (past the
@@ -66,4 +70,53 @@ test("a chat whose only entries are commands is listed, opens with its row, and 
   assert.deepEqual(r.deletedIds, [stub.id], "only the stub goes");
   assert.equal(existsSync(stub.path), false);
   for (const s of [shared, kept]) assert.ok(existsSync(s.path), "its commands are kept");
+});
+
+/** Chats this server holds, by path: whether a command runs in it, and what its close writes (a command
+    it stopped, saved as its chat closes). */
+function holdChats(chats: Map<string, { shell: boolean; onClose?: () => void }>): string[] {
+  const closed: string[] = [];
+  setChatRouter({
+    ready: async () => {},
+    get: (path) => (chats.has(path) ? ({ path, mirror: { running: false, shell: chats.get(path)!.shell, dialogs: [] } } as never) : undefined),
+    all: () => [],
+    acquire: async () => {
+      throw new Error("not in this test");
+    },
+    close: async (path) => {
+      closed.push(path);
+      chats.get(path)?.onClose?.();
+      return chats.has(path);
+    },
+  });
+  return closed;
+}
+
+test("a chat whose only content is a command still running is no husk: the cleanup keeps it, and archiving it keeps the command its close saves", async () => {
+  const running = sessionWith([]);
+  const racing = sessionWith([]);
+  const stub = sessionWith([]);
+  const closeSaves = () => appendFileSync(racing.path, `${JSON.stringify(bash({ command: "sleep 60", output: "", exitCode: undefined, cancelled: true }))}\n`);
+  const closed = holdChats(new Map([
+    [running.path, { shell: true }],
+    // The server hasn't heard of its command yet (the mirror lags), but its close saves one.
+    [racing.path, { shell: false, onClose: closeSaves }],
+  ]));
+  const r = await cleanupSessions({ mode: "husks", dryRun: false });
+  assert.ok(!r.deletedIds.includes(running.id), "a running command keeps its chat");
+  assert.ok(existsSync(running.path));
+  assert.ok(!r.deletedIds.includes(racing.id), "nor is one whose close saved a command deleted");
+  assert.ok(existsSync(racing.path));
+  assert.ok(r.deletedIds.includes(stub.id), "the control: a stub nobody holds still goes");
+
+  // Archive: the one whose close saves a command is archived, not deleted, its command kept.
+  const fresh = sessionWith([]);
+  const saveOnClose = () => appendFileSync(fresh.path, `${JSON.stringify(bash({ command: "sleep 60", output: "", exitCode: undefined, cancelled: true }))}\n`);
+  holdChats(new Map([[fresh.path, { shell: false, onClose: saveOnClose }]]));
+  const a = await archiveSession(fresh.path, true);
+  assert.ok(a.ok);
+  assert.equal((a as { summary: { deleted?: boolean } }).summary.deleted, undefined, "archived, not deleted");
+  assert.ok(existsSync(fresh.path));
+  assert.match(readFileSync(fresh.path, "utf8"), /"bashExecution"/, "its command is kept");
+  void closed;
 });

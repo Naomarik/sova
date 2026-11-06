@@ -18,7 +18,7 @@ import { dropGroupAssignments, readAssignments } from "./session-groups";
 import { draftCounts, draftPreview, dropDrafts, readDrafts } from "./drafts";
 import { dropSessionTitles, memoSessionTitleRecords, readSessionTitleRecords, type StoredTitle } from "./session-titles";
 import { removeSessionAttachments } from "./attachments";
-import { closeChat, cwdOverride, getModelRuntime, heldChatState, isSessionBusy, pendingDialogCount } from "./chat-handle";
+import { closeChat, cwdOverride, getModelRuntime, heldChatState, isSessionBusy, pendingDialogCount, shellInFlight } from "./chat-handle";
 import { isUnread, isViewing, readSeen, turnErrorShows } from "./seen";
 import { contextWindow } from "./models";
 import { parseTargetCwd } from "./targets";
@@ -1677,11 +1677,18 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
   // draft is a new session the user is writing in, not an abandoned stub — it archives normally.
   // So does an attached org's workspace session: a fresh baton waiting on its first link is a
   // husk by shape, and baton.json and overseer state name the file, so it is never deleted here.
-  if (archived && !keptBy(s.path)) {
+  // A chat running a command from shell mode is none either: its close saves the command
+  // (§chat.shell-mode/lifecycle), so the file is checked again once it closed.
+  if (archived && !keptBy(s.path) && !shellInFlight(s.path)) {
     const st = await stat(s.path).catch(() => null);
     if (st && (await isZeroInput(s.path, st.size))) {
       if (!draftCounts(readDrafts()[s.id])) {
         await closeChat(s.path, "Session archived; its runtime was closed.");
+        const closed = await stat(s.path).catch(() => null);
+        if (closed && !(await isZeroInput(s.path, closed.size))) {
+          await markArchived(s.id, s.path);
+          return { ok: true, summary: { ...s, archived: true } };
+        }
         await unlink(s.path);
         await cleanDeletedTours(s.id);
         dropEntry(s.path);
@@ -1825,8 +1832,9 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
       skipped.live++;
       continue;
     }
-    // Working subagents count as busy: deleting disposes the runtime, which would kill them.
-    if (isSessionBusy(path) || workingSubagents(path) > 0) {
+    // Working subagents count as busy: deleting disposes the runtime, which would kill them. So does
+    // a command from shell mode in flight: deleting would stop it and lose it (§chat.shell-mode/lifecycle).
+    if (isSessionBusy(path) || workingSubagents(path) > 0 || shellInFlight(path)) {
       skipped.busy++;
       continue;
     }
@@ -1853,6 +1861,14 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
     }
     try {
       await closeChat(path, "Session deleted by archive cleanup; its runtime was closed.");
+      // A husk whose close saved a command it ran (§chat.shell-mode/lifecycle) is no husk any more: kept.
+      if (req.mode === "husks") {
+        const closed = await stat(path).catch(() => null);
+        if (closed && !(await isZeroInput(path, closed.size))) {
+          skipped.busy++;
+          continue;
+        }
+      }
       await unlink(path);
       await cleanDeletedTours(id);
       dropEntry(path);

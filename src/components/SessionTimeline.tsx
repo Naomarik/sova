@@ -361,6 +361,17 @@ function SenderLine(props: { sender: Sender; names: Record<string, string> }) {
           </>
         )}
       </Show>
+      <Show when={s().kind === "relay" && (s() as Extract<Sender, { kind: "relay" }>)}>
+        {(from) => (
+          <>
+            <Icon name="network" small />
+            <span>
+              From <a href={`#/sid/${encodeURIComponent(from().sessionId)}`}>{from().title || "another session"}</a>, via the Overseer
+            </span>
+            <span class="text-muted">· hop {from().hop}</span>
+          </>
+        )}
+      </Show>
       <Show when={s().kind === "overseer"}>
         <Icon name="eye" small />
         <span>From the Overseer</span>

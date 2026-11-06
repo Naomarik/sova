@@ -11,6 +11,7 @@ import type { ReplyTiming } from "../../shared/usage/perf";
 import { isLinkMessage } from "../../shared/link-message";
 import { parseTopicBatch } from "../../shared/topic-message";
 import { isBriefText, isMergeQueueText } from "../../shared/senders";
+import { isPingText } from "./pings";
 import { parseWakeNudge } from "../../shared/wake";
 import type { HelloLive, TmpAttachment, UploadResult, V1EventFrame, V2EventFrame } from "../../shared/protocol";
 import { fromV1 } from "../../shared/wire-v1";
@@ -93,6 +94,7 @@ const isOwnLive = (e: Extract<LiveEntry, { kind: "user" }>): boolean =>
   !e.fromSession &&
   (e.by === undefined || e.by === "operator") &&
   !isBriefText(e.text) &&
+  !isPingText(e.text) &&
   !isMergeQueueText(e.text) &&
   parseWakeNudge(e.text) === null &&
   parseTopicBatch(e.text) === null;

@@ -62,6 +62,8 @@ const MOVED: Record<string, string[]> = {
   "overseer-answer": ["OverseerChoiceRow"],
   "profile-mark": [],
   brief: ["BriefRow"],
+  "ping-turn": ["PingsRow"],
+  "ping-card": ["PingCard"],
   explain: ["ExplainCard"],
   "team-report": ["TeamMessageCard"],
   report: ["ReportRow"],

@@ -1,9 +1,9 @@
-import type { DelegateOptions, OverseerCaps, OverseerQuickAction, OverseerSaveResult, OverseerSettings, OverseerSettingsInfo, WorkerChoice } from "../../shared/protocol";
+import type { DelegateOptions, OverseerCaps, OverseerPingLimits, OverseerQuickAction, OverseerSaveResult, OverseerSettings, OverseerSettingsInfo, WorkerChoice } from "../../shared/protocol";
 import { ApiError, getOverseerNotes, getOverseerSettings, putOverseerNotes, putOverseerSettings } from "./api";
 import type { BackendsInfo } from "./delegate-form";
 import { createDraftStore, failureOf, SaveFailed } from "./settings-draft";
 import { check, type FieldCheck, firstIssue, type WholeRule } from "../../shared/form-rules";
-import { CAP_KEYS, CAP_MAX, CAP_RULES, DEFAULT_CAPS as CAP_DEFAULTS, EXTRA_PROMPT_RULE, NOTES_MAX, NOTES_RULE, PING_LIMIT_KEYS, PING_LIMIT_RULES, QA_RULES, qaLabel, QUICK_ACTIONS_MAX, TOO_MANY_QUICK_ACTIONS } from "../../shared/overseer-limits";
+import { CAP_KEYS, CAP_MAX, CAP_RULES, DEFAULT_CAPS as CAP_DEFAULTS, DEFAULT_PING_LIMITS, EXTRA_PROMPT_RULE, NOTES_MAX, NOTES_RULE, PING_LIMIT_KEYS, PING_LIMIT_RULES, pingLimitsOf, QA_RULES, qaLabel, QUICK_ACTIONS_MAX, TOO_MANY_QUICK_ACTIONS } from "../../shared/overseer-limits";
 
 /**
  * Settings → Overseer's unsaved edits: the settings file and the standing notes, edited together
@@ -23,10 +23,12 @@ export interface OverseerDraft {
     and Save waits), or a number (what a load or a test puts there). */
 export type CapEntry = number | string;
 export type FormCaps = Record<keyof OverseerCaps, CapEntry>;
+/** The sessions' ping limits' boxes (§app.overseer-pings/limits), as the caps' are. */
+export type FormPings = Record<keyof OverseerPingLimits, CapEntry>;
 
 /** What the form edits: the saved shape, but each limit is what its box holds. */
 export interface OverseerForm {
-  settings: Omit<OverseerSettings, "caps"> & { caps: FormCaps };
+  settings: Omit<OverseerSettings, "caps" | "pings"> & { caps: FormCaps; pings?: FormPings };
   notes: string;
 }
 
@@ -48,7 +50,8 @@ export function completeCaps(settings: OverseerSettings, defaults?: Partial<Over
     const d = defaults?.[k];
     caps[k] = typeof d === "number" ? d : CAP_DEFAULTS[k];
   }
-  return { ...settings, caps };
+  // The ping limits: absent (never saved) or out of range reads as each default, so their boxes always show.
+  return { ...settings, caps, pings: pingLimitsOf(settings) };
 }
 
 /** The same, for a whole read of the settings: its defaults completed first. */
@@ -60,7 +63,8 @@ export function completeInfo<T extends { settings: OverseerSettings; defaults: {
 /** A copy with every limit mapped by `f`. */
 const mapCaps = <T extends OverseerDraft | OverseerForm, V extends CapEntry>(d: T, f: (v: CapEntry) => V) => {
   const c = cloneOverseer(d);
-  return { ...c, settings: { ...c.settings, caps: Object.fromEntries(Object.entries(c.settings.caps).map(([k, v]) => [k, f(v)])) } };
+  const map = (o: object) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, f(v as CapEntry)]));
+  return { ...c, settings: { ...c.settings, caps: map(c.settings.caps), ...(c.settings.pings ? { pings: map(c.settings.pings) } : {}) } };
 };
 /** The form as a fresh copy of what's saved: each limit shown as text. */
 export const toOverseerForm = (d: OverseerDraft): OverseerForm => mapCaps(d, String) as OverseerForm;
@@ -78,6 +82,7 @@ export function cloneOverseer(d: OverseerDraft | OverseerForm): OverseerDraft | 
     ...d.settings,
     quickActions: d.settings.quickActions.map((a) => ({ ...a })),
     caps: { ...d.settings.caps },
+    ...(d.settings.pings ? { pings: { ...d.settings.pings } } : {}),
     explorer: { ...d.settings.explorer },
   },
   notes: d.notes,
@@ -308,7 +313,14 @@ export function capsChangedFromDefault(caps: FormCaps | OverseerCaps, defaults: 
 export function resetLimits(d: OverseerForm, defaults: { caps: OverseerCaps }): OverseerForm {
   const caps = {} as FormCaps;
   for (const k of CAP_KEYS) caps[k] = String(defaults.caps[k] ?? CAP_DEFAULTS[k]);
-  return { ...cloneOverseer(d), settings: { ...cloneOverseer(d).settings, caps } };
+  const pings = {} as FormPings;
+  for (const k of PING_LIMIT_KEYS) pings[k] = String(DEFAULT_PING_LIMITS[k]);
+  return { ...cloneOverseer(d), settings: { ...cloneOverseer(d).settings, caps, pings } };
+}
+
+/** How many ping limits differ from their defaults (an absent one is at its default). */
+export function pingsChangedFromDefault(pings: FormPings | OverseerPingLimits | undefined): number {
+  return PING_LIMIT_KEYS.filter((k) => !capSame(pings?.[k] ?? DEFAULT_PING_LIMITS[k], DEFAULT_PING_LIMITS[k])).length;
 }
 /** Quick actions' Reset to Defaults: the shipped list, copied. Pure. */
 export const resetQuickActions = (d: OverseerForm, defaults: { quickActions: OverseerQuickAction[] }): OverseerForm => {
@@ -324,7 +336,7 @@ export const resetExplorer = (d: OverseerForm, defaults: { explorer: WorkerChoic
 /** Which groups already hold their defaults: their Reset to Defaults is greyed out. */
 export function atDefaults(d: AnyDraft, defaults: { caps: OverseerCaps; quickActions: OverseerQuickAction[]; explorer: WorkerChoice }): { limits: boolean; quickActions: boolean; explorer: boolean } {
   return {
-    limits: CAP_KEYS.every((k) => capSame((d.settings.caps as FormCaps)[k], defaults.caps[k])),
+    limits: CAP_KEYS.every((k) => capSame((d.settings.caps as FormCaps)[k], defaults.caps[k])) && pingsChangedFromDefault(d.settings.pings) === 0,
     quickActions: sameValue(d.settings.quickActions, defaults.quickActions),
     explorer: sameValue(d.settings.explorer, defaults.explorer),
   };

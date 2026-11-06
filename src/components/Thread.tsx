@@ -19,7 +19,8 @@ import { isHiddenBlock, isTourResult, liveHiddenCounts, splitHidden, thinkingHid
 import { chainRuns, type ChainRun } from "../lib/chain-rows";
 import { compressWork } from "../lib/work-compression";
 import { isChangeRow } from "../lib/change-rows";
-import { sendersOf } from "../../shared/senders";
+import { viewSendersOf } from "../lib/pings";
+import { CardContext } from "../lib/card-controls";
 import { isTurnStart } from "../lib/turn";
 import { latestAlignId, newestAlignRows } from "../lib/align";
 import { replyHovers } from "../lib/perf";
@@ -233,6 +234,15 @@ export function HistoryItems(props: {
     const r = callId ? results().get(callId) : undefined;
     return r && !toolResultView(r).isError ? normalizeRaisedCard(detailsOf(r)) : undefined;
   };
+  const raisedCards = useContext(CardContext);
+  /** An overseer_ping call's details once it succeeded, else (a slim row keeps none) the card Sova raised at the call
+      (§app.overseer-pings/tool): its card draws at the call. */
+  const pingOf = (callId: string | undefined) => {
+    if (!callId) return undefined;
+    const r = results().get(callId);
+    if (r && toolResultView(r).isError) return undefined;
+    return (r ? detailsOf(r) : undefined) ?? raisedCards?.ofCall(callId);
+  };
   /** A sova_settings propose's card, once it succeeded (§app.project-overseer/settings). */
   const settingsOf = (callId: string | undefined) => {
     const r = callId ? results().get(callId) : undefined;
@@ -247,7 +257,7 @@ export function HistoryItems(props: {
   /** The profile row shows once a message is on the branch (§chat.profiles/after-first-message). */
   const hasUserRow = createMemo(() => props.items.some((it) => it.kind === "user"));
   /** What a row's kind may ask of the whole list when it matches (lib/transcript-kinds.ts). */
-  const kinds: KindContext = { hasUserRow, tourCard: tourCardOf, showChanges: showChangesOf, offer: offerOf, settings: settingsOf, card: cardOf, hasCall: (id) => calls().has(id) };
+  const kinds: KindContext = { hasUserRow, tourCard: tourCardOf, showChanges: showChangesOf, offer: offerOf, settings: settingsOf, card: cardOf, ping: pingOf, hasCall: (id) => calls().has(id) };
   // Every row stands where it was raised (§chat.transcript-cards/placement): nothing moves to the end.
   const renderable = createMemo(() =>
     props.items.filter((it) => !isChangeRow(it) && !wrapupRows().has(it.id) && !(it.kind === "tool-call" && it.toolCallId && alignCalls().has(it.toolCallId))),
@@ -345,7 +355,7 @@ export function HistoryItems(props: {
   /** Who sent each user row, when its marker says (another session §chat.profiles/delivery, the
       Overseer, a baton participant §app.baton/attribution): target id → sender, in any order. The
       Timeline reads the same helper, so the two never disagree (shared/senders.ts). */
-  const senders = createMemo(() => sendersOf(props.items));
+  const senders = createMemo(() => viewSendersOf(props.items));
   const senderOf = (id: string) => senders().get(entryIdOf(id));
   const nameOf = (ref: string) => props.names?.[ref] ?? (ref === "operator" ? "You" : "Someone");
   /**

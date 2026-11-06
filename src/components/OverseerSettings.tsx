@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, Index, on, onCleanup, Show } from "solid-js";
-import type { OverseerAutonomy, OverseerCaps, OverseerProactivity, OverseerQuickAction, OverseerSettings } from "../../shared/protocol";
+import type { OverseerAutonomy, OverseerCaps, OverseerPingLimits, OverseerProactivity, OverseerQuickAction, OverseerSettings } from "../../shared/protocol";
 import { getDelegateOptions, getDelegateSettings, getOverseerAutonomy, getOverseerNotes, getOverseerSettings } from "../lib/api";
 import { tildePath } from "../lib/format";
 import { loadModelPolicy, usableModels } from "../lib/model-policy";
@@ -29,13 +29,14 @@ import {
   overseerWarnings as warnings,
   PER_MESSAGE_CAP_KEYS,
   perMessageSummary,
+  pingsChangedFromDefault,
   runningNowLine,
   setOverseerDraft,
   setOverseerSaved,
 } from "../lib/overseer-draft";
 import { clearSettingsSection, settingsSection } from "../lib/settings-nav";
 import { home } from "../lib/ui-state";
-import { CAP_RULES, EXTRA_PROMPT_RULE, NOTES_RULE, QA_RULES, qaLabel } from "../../shared/overseer-limits";
+import { CAP_RULES, DEFAULT_PING_LIMITS, EXTRA_PROMPT_RULE, NOTES_RULE, PING_LIMIT_KEYS, PING_LIMIT_LABEL, PING_LIMIT_RULES, QA_RULES, qaLabel } from "../../shared/overseer-limits";
 import { Choice, NumberField, Select, TextArea, TextField, Toggle } from "./form";
 import { Banner, Icon } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
@@ -101,6 +102,7 @@ export function OverseerSettingsSection() {
 
   // The folded groups, and the quick actions open for editing (by id, so a row that moves keeps its state).
   const [perMessageOpen, setPerMessageOpen] = createSignal(false);
+  const [pingsOpen, setPingsOpen] = createSignal(false);
   const [advancedOpen, setAdvancedOpen] = createSignal(false);
   const [openActions, setOpenActions] = createSignal<ReadonlySet<string>>(new Set());
   const actionOpen = (id: string) => openActions().has(id);
@@ -122,13 +124,14 @@ export function OverseerSettingsSection() {
     const at = issue()?.at;
     if (!at) return null;
     if (at.group === "quick-action") return `quick-action:${d()?.settings.quickActions[at.index]?.id ?? at.index}`;
-    return at.group === "per-message" ? `per-message:${at.key}` : at.group;
+    return at.group === "per-message" || at.group === "pings" ? `${at.group}:${at.key}` : at.group;
   });
   createEffect(
     on(issuePlace, (place) => {
       const at = place ? issue()?.at : undefined;
       if (!at) return;
       if (at.group === "per-message") setPerMessageOpen(true);
+      else if (at.group === "pings") setPingsOpen(true);
       else if (at.group === "advanced") setAdvancedOpen(true);
       else if (at.group === "quick-action") {
         const id = d()?.settings.quickActions[at.index]?.id;
@@ -137,7 +140,7 @@ export function OverseerSettingsSection() {
     }),
   );
 
-  const edit = (patch: Partial<Omit<OverseerSettings, "caps">> & { caps?: Record<keyof OverseerCaps, CapEntry> }) => {
+  const edit = (patch: Partial<Omit<OverseerSettings, "caps" | "pings">> & { caps?: Record<keyof OverseerCaps, CapEntry>; pings?: Record<keyof OverseerPingLimits, CapEntry> }) => {
     const cur = d();
     if (!cur) return;
     setOverseerDraft({ ...cur, settings: { ...cur.settings, ...patch } });
@@ -150,6 +153,10 @@ export function OverseerSettingsSection() {
   const editCap = (k: keyof OverseerCaps, v: string) => {
     const cur = d();
     if (cur) edit({ caps: { ...cur.settings.caps, [k]: v } });
+  };
+  const editPing = (k: keyof OverseerPingLimits, v: string) => {
+    const cur = d();
+    if (cur) edit({ pings: { ...DEFAULT_PING_LIMITS, ...cur.settings.pings, [k]: v } });
   };
 
   /** Models grouped by provider, as the picker lists them. The saved model stays listed even if the
@@ -194,6 +201,20 @@ export function OverseerSettingsSection() {
           )}
         </Show>
       }
+    />
+  );
+
+  /** One session ping limit's field (§app.overseer-pings/limits). */
+  const PingField = (p: { k: keyof OverseerPingLimits }) => (
+    <NumberField
+      id={`overseer-ping-${p.k}`}
+      label={PING_LIMIT_LABEL[p.k].label}
+      hint={PING_LIMIT_LABEL[p.k].hint}
+      rule={PING_LIMIT_RULES[p.k]}
+      value={String(d()!.settings.pings?.[p.k] ?? DEFAULT_PING_LIMITS[p.k])}
+      inputClass="overseer-cap-input"
+      disabled={saving()}
+      onInput={(v) => editPing(p.k, v)}
     />
   );
 
@@ -315,6 +336,16 @@ export function OverseerSettingsSection() {
                   </summary>
                   <div class="overseer-caps">
                     <For each={PER_MESSAGE_CAP_KEYS}>{(k) => <CapField k={k} />}</For>
+                  </div>
+                </details>
+                <details class="overseer-fold" open={pingsOpen()} onToggle={(e) => setPingsOpen(e.currentTarget.open)}>
+                  <summary class="overseer-fold-summary">
+                    <Icon name="chevron-right" small class="icon-twist" />
+                    <span class="overseer-fold-label">Session pings</span>
+                    <span class="overseer-fold-meta">{perMessageSummary(pingsChangedFromDefault(cur().settings.pings))}</span>
+                  </summary>
+                  <div class="overseer-caps">
+                    <For each={PING_LIMIT_KEYS}>{(k) => <PingField k={k} />}</For>
                   </div>
                 </details>
               </fieldset>

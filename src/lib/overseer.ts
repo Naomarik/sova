@@ -48,6 +48,7 @@ export function overseerRedirect(path: string, info: { path: string; history: re
 /** A proactive "Brief me" prompt: a machine row, never "You", and never a turn any tab navigates on.
     One rule with the Timeline and the input counts (shared/senders.ts). */
 import { isBriefText } from "../../shared/senders";
+import { isPingText } from "./pings";
 export { briefBody, isBriefText } from "../../shared/senders";
 
 // ---- Tool details -------------------------------------------------------------------------
@@ -155,7 +156,7 @@ export function confirmAnswer(
 ): { answered: boolean; choice: string | null } {
   for (let i = index + 1; i < items.length; i++) {
     const it = items[i]!;
-    if (it.kind !== "user" || isBriefText(it.text)) continue;
+    if (it.kind !== "user" || isBriefText(it.text) || isPingText(it.text)) continue;
     const text = (it.text ?? "").trim();
     const hit = details?.options.find((o) => confirmReply(o) === text || o.label === text);
     return { answered: true, choice: hit ? hit.label : null };
@@ -297,6 +298,6 @@ export const PROACTIVITY_LABEL = { off: "Off", badge: "List Only", brief: "Brief
 export const PROACTIVITY_HINT = {
   off: "No Needs you list. The Overseer chat still works.",
   badge: "Lists the sessions that need you in the sidebar. No messages from the Overseer.",
-  brief: "The list, plus an Overseer message when something new needs you, at most once every 10 minutes.",
+  brief: "The list, plus an Overseer message when something new needs you (at most once every 10 minutes) or a session pings it.",
 } as const;
 export const nextProactivity = (p: (typeof PROACTIVITY)[number]) => PROACTIVITY[(PROACTIVITY.indexOf(p) + 1) % PROACTIVITY.length]!;

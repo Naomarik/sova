@@ -27,8 +27,9 @@
  */
 
 import type { Component } from "solid-js";
-import type { TranscriptItem } from "../../shared/protocol";
+import { OVERSEER_PING_TOOL, type TranscriptItem } from "../../shared/protocol";
 import { rowFacts } from "../../shared/wire-v1";
+import { isPingText, pingCallOf, pingDetailsOf } from "./pings";
 import { isBriefText } from "../../shared/senders";
 import { normalizeOfferDetails, OFFER_TOOL } from "../../shared/session-offers";
 import { CARD_TOOL, normalizeCardDetails as normalizeRaisedCard, type CardInfo } from "../../shared/transcript-cards";
@@ -80,6 +81,8 @@ export interface KindContext {
   hasCall?(callId: string): boolean;
   /** A `card` call's card, once it succeeded (§chat.transcript-cards/card-tool). */
   card(callId: string | undefined): CardInfo | undefined;
+  /** An `overseer_ping` call's result details once it succeeded, or the card Sova raised at it (§app.overseer-pings/tool). */
+  ping?(callId: string | undefined): unknown;
 }
 
 /** What a toolkit view gets: its row, the value its kind's match gave, and what the transcript knows of it. */
@@ -133,7 +136,7 @@ export interface LiveKindContext {
 }
 
 /** The live views (components/LiveKinds.tsx `LIVE_VIEWS`), by name. */
-export type LiveView = "wake" | "topic" | "brief" | "user" | "assistant-text" | "thinking" | "align" | "info" | "tour" | "show-changes" | "offer" | "card" | "settings" | "tool";
+export type LiveView = "wake" | "topic" | "brief" | "ping-turn" | "ping-card" | "user" | "assistant-text" | "thinking" | "align" | "info" | "tour" | "show-changes" | "offer" | "card" | "settings" | "tool";
 
 /** What a live view gets: the piece of the run it draws, and the value its kind's live match gave. */
 export interface LiveKindViewProps<V = unknown> {
@@ -148,7 +151,7 @@ export interface LiveForm {
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "mcp-note" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report" | "align";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "mcp-note" | "overseer-answer" | "profile-mark" | "brief" | "ping-turn" | "ping-card" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report" | "align";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -236,11 +239,21 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
     view: { page: "brief" },
     live: { match: (input) => input.kind === "user" && isBriefText(input.entry.text) && input.entry, view: "brief" },
   }),
+  // The Overseer's ping turn (§app.overseer-pings/wake): a machine row as a brief is, never yours.
+  kind({
+    id: "ping-turn",
+    match: (it) => it.kind === "user" && isPingText(it.text),
+    host: "page",
+    placement: "anchored",
+    view: { page: "ping-turn" },
+    live: { match: (input) => input.kind === "user" && isPingText(input.entry.text) && input.entry, view: "ping-turn" },
+  }),
   kind({ id: "user", match: (it) => it.kind === "user", host: "page", placement: "anchored", view: { page: "user" }, live: { match: (input) => input.kind === "user" && input.entry, view: "user" } }),
   // The sent markers draw nothing themselves: each tags the row it names.
   kind({ id: "overseer-sent", match: (it) => it.overseerMark?.kind === "sent", host: "page", placement: "anchored", drawsNothing: true }),
   kind({ id: "baton-sent", match: (it) => it.batonMark?.kind === "sent", host: "page", placement: "anchored", drawsNothing: true }),
   kind({ id: "session-sent", match: (it) => it.sessionMark?.kind === "sent", host: "page", placement: "anchored", drawsNothing: true }),
+  kind({ id: "relay-sent", match: (it) => it.relayMark?.kind === "sent", host: "page", placement: "anchored", drawsNothing: true }),
   kind({ id: "profile-mark", match: (it) => it.profileMark, host: "page", placement: "anchored", view: { page: "profile-mark" } }),
   kind({ id: "baton", match: (it) => it.batonMark && it.batonMark.kind !== "sent" && it.batonMark, host: "page", placement: "anchored", view: { page: "baton" } }),
   kind({ id: "overseer-answer", match: (it) => it.overseerMark?.kind === "dialog-answer" && it.overseerMark, host: "page", placement: "anchored", view: { page: "overseer-answer" } }),
@@ -342,6 +355,17 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
     view: { load: loadsModule(() => import("../components/TranscriptCard") as unknown as Promise<{ default: Component<KindViewProps> }>) },
     // The running turn's card is drawn as soon as its call returns (§chat.transcript-cards/card-tool).
     live: { match: (input, ctx) => normalizeRaisedCard(doneCall(input, ctx, named(CARD_TOOL))), view: "card" },
+  }),
+  // A ping's card in the chat that pinged (§app.overseer-pings/tool "Its card"): drawn at its call, revised in place.
+  kind({
+    id: "ping-card",
+    outsideWork: true,
+    match: (it, ctx) => isCall(it) && it.text === OVERSEER_PING_TOOL && pingCallOf(ctx.ping?.(it.toolCallId)),
+    estimate: () => "96px",
+    host: "page",
+    placement: "anchored",
+    view: { page: "ping-card" },
+    live: { match: (input, ctx) => pingDetailsOf(doneCall(input, ctx, named(OVERSEER_PING_TOOL))), view: "ping-card" },
   }),
   kind({
     id: "settings",

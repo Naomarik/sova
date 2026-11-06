@@ -27,6 +27,8 @@
 .data-status-body > p { margin: 0; overflow-wrap: anywhere; }
 .data-status-line { color: var(--color-ink); }
 .data-status-detail { color: var(--color-ink-2); font-size: var(--fs-caption); line-height: var(--lh-caption); }
+/* A ping's card (§app.overseer-pings/tool): the Overseer's eye beside its title. */
+.ping-card .card-title { display: flex; align-items: center; gap: var(--space-1); }
 
 /* A table scrolls sideways inside its card, never the transcript. */
 .data-table-wrap { overflow-x: auto; }

@@ -1,7 +1,7 @@
 import { createContext, useContext } from "solid-js";
 import type { SovaConfirmDetails, TranscriptItem } from "../../shared/protocol";
 import type { CardDetails, OverseerCard } from "../../shared/overseer-card";
-import type { Sender } from "../../shared/senders";
+import type { ViewSender } from "../lib/pings";
 import type { ReplyTiming } from "../../shared/usage/perf";
 import type { ToolSource } from "../lib/tool-content";
 import type { LiveState, LiveUserState } from "../lib/live";
@@ -41,8 +41,8 @@ export interface ThreadRows {
   row(i: number): TranscriptItem | undefined;
   /** A measured reply's figures, by its row id: its first text row's head shows them. */
   timing(id: string): ReplyTiming | undefined;
-  /** Who sent a user row, when its marker says (shared/senders.ts). */
-  senderOf(id: string): Sender | undefined;
+  /** Who sent a user row, when its marker says (shared/senders.ts, and a passed-on note's, lib/pings.ts). */
+  senderOf(id: string): ViewSender | undefined;
   /** A baton person's name by ref ("operator" is You). */
   nameOf(ref: string): string;
   /** Whether a baton wrap-up's turn is shown (folded behind its card until asked for). */

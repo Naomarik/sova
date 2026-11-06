@@ -2,6 +2,7 @@ import { For, Show } from "solid-js";
 import { mergeQueueBody } from "../../shared/senders";
 import type { TmpAttachment } from "../../shared/protocol";
 import { stripSessionHeader } from "../../shared/profiles";
+import { relayBody } from "../lib/pings";
 import type { ReplyTiming } from "../../shared/usage/perf";
 import type { LiveUserState } from "../lib/live";
 import { agoTime, stampTime } from "../lib/format";
@@ -66,17 +67,30 @@ export function UserTurn(props: {
   sender?: string;
   /** Another session sent this message (its `sova-session-sent` marker, §chat.profiles/delivery). */
   fromSession?: { sessionId: string; title: string; hop?: number };
+  /** The Overseer passed on this note from a session that pinged (its `sova-relay-sent` marker, §app.overseer-pings/relay). */
+  relay?: { sessionId: string; title: string; hop: number };
   /** The merge queue started this turn (Needs a fix, Send Back): its prefix is dropped, never drawn as yours. */
   mergeQueue?: boolean;
   images?: string[];
   attachments?: TmpAttachment[];
 }) {
   const author = () =>
-    props.fromSession ? "From a session" : props.overseer ? "Overseer" : props.mergeQueue ? "Merge queue" : (props.sender ?? AUTHOR[props.origin ?? "client"]);
+    props.fromSession || props.relay ? "From a session" : props.overseer ? "Overseer" : props.mergeQueue ? "Merge queue" : (props.sender ?? AUTHOR[props.origin ?? "client"]);
   // The model reads the header line; the row shows it as the sender header instead.
-  const text = () => (props.fromSession ? stripSessionHeader(props.text) : props.mergeQueue ? mergeQueueBody(props.text) : props.text);
+  const text = () => (props.fromSession ? stripSessionHeader(props.text) : props.relay ? relayBody(props.text) : props.mergeQueue ? mergeQueueBody(props.text) : props.text);
   return (
     <>
+    <Show when={props.relay}>
+      {(from) => (
+        <p class="session-sender">
+          <Icon name="network" small />
+          <span>
+            From <a href={`#/sid/${encodeURIComponent(from().sessionId)}`}>{from().title || "another session"}</a>, via the Overseer
+          </span>
+          <span class="text-muted">· hop {from().hop}</span>
+        </p>
+      )}
+    </Show>
     <Show when={props.fromSession}>
       {(from) => (
         <p class="session-sender">
@@ -92,7 +106,7 @@ export function UserTurn(props: {
     </Show>
     <article
       class="message message-user"
-      classList={{ "message-from-session": !!props.fromSession }}
+      classList={{ "message-from-session": !!props.fromSession || !!props.relay }}
       // An attribute, absent unless set: every other row's markup stays exactly as it was.
       data-from-queue={props.mergeQueue ? "" : undefined}
       aria-label={props.time ? `${author()}, ${stampTime(props.time)}` : author()}

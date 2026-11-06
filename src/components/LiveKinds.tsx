@@ -32,7 +32,9 @@ import { ShowChangesCard } from "./ChangesViewer";
 import { OfferCardView } from "./OfferCard";
 import { SettingsToolCard } from "./SettingsChangeCard";
 import { ToolCard, type ToolStatus } from "./ToolCard";
-import { BriefRow, CardRevision, DeckCard, LinkCard, linkDetails, NavigateGo, PairCard, pairDetails, useOverseerThread } from "./OverseerCards";
+import { BriefRow, CardRevision, DeckCard, LinkCard, linkDetails, NavigateGo, PairCard, pairDetails, PingsRow, useOverseerThread } from "./OverseerCards";
+import { PingCard } from "./PingCard";
+import type { PingCallDetails } from "../lib/pings";
 
 /** A card the running turn raised, before its row settles: the toolkit's own card view, loaded when
     first needed; a failed load says so (lib/module-load). */
@@ -48,6 +50,8 @@ export const LIVE_VIEWS: { [K in LiveView]: Component<LiveKindViewProps<never>> 
   wake: (props: LiveKindViewProps<WakeInfo>) => <WakeCard nudge={props.value} text={userOf(props.input).text} />,
   topic: (props: LiveKindViewProps<TopicBatchInfo>) => <TopicCard batch={props.value} />,
   brief: (props: LiveKindViewProps<LiveUserEntry>) => <BriefRow text={props.value.text} />,
+  "ping-turn": (props: LiveKindViewProps<LiveUserEntry>) => <PingsRow text={props.value.text} />,
+  "ping-card": (props: LiveKindViewProps<PingCallDetails>) => <PingCard call={props.value} args={callOf(props.input).args} />,
   user: LiveUserRow,
   "assistant-text": (props: LiveKindViewProps<Extract<LiveBlock, { type: "text" }>>) => {
     const facts = factsOf(props.input);

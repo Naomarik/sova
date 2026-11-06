@@ -26,7 +26,9 @@ import { resultDetails as detailsOf, toolCallArgs, toolResultView } from "../lib
 import { confirmDetails } from "../lib/overseer";
 import { CARD_TOOL, LEGACY_CONFIRM_TOOL } from "../../shared/overseer-card";
 import { profileToolCard, ProfileToolCardView } from "./ProfileCards";
-import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow, PairCard, pairDetails } from "./OverseerCards";
+import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow, PairCard, pairDetails, PingsRow } from "./OverseerCards";
+import { PingCard } from "./PingCard";
+import type { PingCall } from "../lib/pings";
 import { toolContent } from "../lib/tool-content";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { AlignCard } from "./AlignCard";
@@ -54,6 +56,8 @@ export const BUILTIN_VIEWS = {
   "overseer-answer": (props: KindViewProps<Extract<NonNullable<TranscriptItem["overseerMark"]>, { kind: "dialog-answer" }>>) => <OverseerChoiceRow title={props.value.title} answer={props.value.answer} />,
   "profile-mark": ProfileMarkRow,
   brief: (props: KindViewProps) => <BriefRow text={props.item.text ?? ""} time={props.item.at} />,
+  "ping-turn": (props: KindViewProps) => <PingsRow text={props.item.text ?? ""} time={props.item.at} />,
+  "ping-card": (props: KindViewProps<PingCall>) => <PingCard call={props.value} args={toolCallArgs(props.item)} />,
   explain: (props: KindViewProps<NonNullable<NonNullable<TranscriptItem["report"]>["explain"]>>) => <ExplainCard explain={props.value} />,
   "team-report": (props: KindViewProps<NonNullable<NonNullable<TranscriptItem["report"]>["team"]>>) => (
     <TeamMessageCard report={props.item.report!} team={props.value} time={props.item.at} attachments={props.item.attachments} />
@@ -258,6 +262,7 @@ function UserRow(props: KindViewProps) {
       mergeQueue={isMergeQueueText(item.text) || rows.senderOf(item.id)?.kind === "merge-queue"}
       sender={((s) => (s?.kind === "baton" ? rows.nameOf(s.by) : undefined))(rows.senderOf(item.id))}
       fromSession={((s) => (s?.kind === "session" && !isMergeQueueText(item.text) ? { sessionId: s.sessionId, title: s.title, hop: s.hop } : undefined))(rows.senderOf(item.id))}
+      relay={((s) => (s?.kind === "relay" ? { sessionId: s.sessionId, title: s.title, hop: s.hop } : undefined))(rows.senderOf(item.id))}
       images={item.images}
       attachments={item.attachments}
     />

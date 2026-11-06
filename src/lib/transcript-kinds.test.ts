@@ -130,14 +130,14 @@ test("a piece of the running turn is matched by the same list, in its order, by 
 test("a call's kind says whether it stands outside the Work run, by one rule for settled and live rows", () => {
   const hit = (id: string) => ({ kind: kindById(id)!, value: true });
   // A card kind's call, once it is that card: a settings change, an offer, show_changes, a raised card, a tour, an alignment.
-  for (const id of ["settings", "offer", "show-changes", "card", "tour", "align"]) assert.equal(outsideWork(hit(id), "x"), true, id);
+  for (const id of ["settings", "offer", "show-changes", "card", "ping-card", "tour", "align"]) assert.equal(outsideWork(hit(id), "x"), true, id);
   // The tool kind: its own cards by name (whatever their result), every other call a step.
   for (const name of ["sova_card", "sova_confirm", "sova_link", "sova_unlink", "align", "card", "record_tour", "show_tour", "session_send", "sova_create_session"]) assert.equal(outsideWork(hit("tool"), name), true, name);
   // An offer, show_changes or a settings call that isn't its card (still running, or failed) is a step.
   for (const name of ["read", "bash", "offer", "show_changes", "sova_settings"]) assert.equal(outsideWork(hit("tool"), name), false, name);
   assert.equal(outsideWork(undefined, "card"), false, "no kind, no say");
   // Every other kind keeps out of it: a row of its kind is no call.
-  for (const k of TRANSCRIPT_KINDS) if (!["settings", "offer", "show-changes", "card", "tour", "align", "tool"].includes(k.id)) assert.equal(k.outsideWork, undefined, k.id);
+  for (const k of TRANSCRIPT_KINDS) if (!["settings", "offer", "show-changes", "card", "ping-card", "tour", "align", "tool"].includes(k.id)) assert.equal(k.outsideWork, undefined, k.id);
 });
 
 test("an align call that is only the change-request mark is a step, settled and streaming; any other align call stands outside the run", () => {

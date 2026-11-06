@@ -18,6 +18,7 @@ import {
 import { actsText, GRANT_DEFAULT_MS, GRANTABLE_ACTS, type Permit, sessionsText } from "../../shared/overseer-grants";
 import type { MeshLinkView } from "../../shared/mesh-links";
 import { briefBody, confirmRows, goTo, navigateDetails, settingsTarget } from "../lib/overseer";
+import { pingTurnBody } from "../lib/pings";
 import { scrollToCardId } from "../lib/card-refs";
 import { clockTime, relativeTime, stampTime } from "../lib/format";
 import { groupLinkIndex, resolveAppLink, sessionActiveAt, sessionIndex, sessionIndexVersion } from "../lib/session-links";
@@ -820,6 +821,23 @@ export function BriefRow(props: { text: string; time?: string }) {
       </div>
       <div class="overseer-brief-body">
         <Markdown text={briefBody(props.text)} />
+      </div>
+    </div>
+  );
+}
+
+/** The sessions' pings (§app.overseer-pings/wake): a machine row as a brief is, with the pings as markdown under it. */
+export function PingsRow(props: { text: string; time?: string }) {
+  return (
+    <div class="overseer-brief" role="note">
+      <div class="info-row overseer-machine-row">
+        <span class="info-row-text">
+          <Icon name="eye" small />
+          <span>Pings{props.time ? ` · ${clockTime(props.time)}` : ""}</span>
+        </span>
+      </div>
+      <div class="overseer-brief-body">
+        <Markdown text={pingTurnBody(props.text)} />
       </div>
     </div>
   );

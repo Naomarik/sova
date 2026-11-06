@@ -446,12 +446,12 @@ for (const [width, height] of [[1440, 1300], [375, 1100]] as const) {
       assert.notEqual(named, counting.you, "a row's label is quieter than its time");
       assert.equal(counting.sub, named);
       assert.equal(counting.word, named);
+      assert.equal(counting.figureLabel, named, "You and Agent name their figures as a row's label names its time");
       const detail = counting.docWords;
       assert.notEqual(detail, named, "detail is quieter than what names it");
       assert.notEqual(detail, counting.you);
       assert.equal(counting.note, detail);
       assert.equal(counting.partLabel, detail);
-      assert.equal(counting.figureLabel, detail);
       assert.equal(counting.partTime, named, "a part's time sits a step under a row's");
       await shots("counting");
       await page.evaluate(() => {

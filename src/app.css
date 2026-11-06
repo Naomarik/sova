@@ -1913,7 +1913,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 
 /* Time Spent on the Session tab. Three text weights, by place and never by a figure's size or value:
    ink for what the section is read for (You, Agent, each row's time, each document's title), ink-2 for what
-   names it (row labels, the Alignments heading, the word), muted for detail (Reading's parts, a document's
+   names it (You and Agent, row labels, the Alignments heading, the word), muted for detail (Reading's parts, a document's
    figures, the notes). One spacing scale: 16px between blocks, 8px between rows as Identity's, 4px inside
    Reading's group. Every row is one line tall; the heading and Reading keep a 44px target in a hit area that
    adds no height, so the rhythm stays even. */
@@ -1954,6 +1954,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 /* The word sits on the figures' line, as their third item. */
 .time-spent-head { display: flex; flex-wrap: wrap; align-items: flex-end; align-items: last baseline; gap: var(--space-2) var(--space-5); }
 .time-spent-figures { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin: 0; min-width: 0; }
+.time-spent-figures dt { color: var(--color-ink-2); }
 .time-spent-figure { margin: 0; color: var(--color-ink); font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-medium); white-space: nowrap; }
 .time-spent-word { margin: 0; color: var(--color-ink-2); white-space: nowrap; }
 .time-spent-sub { margin: 0; font-weight: var(--fw-medium); color: var(--color-ink-2); }

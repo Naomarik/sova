@@ -136,13 +136,13 @@ function TimeSpentBody(props: { path: string; id: string }) {
             <div class="time-spent-head">
               <dl class="time-spent-figures">
                 <div>
-                  <dt class="text-caption text-muted">You</dt>
+                  <dt class="text-caption">You</dt>
                   <dd class="time-spent-figure text-num" data-time-you data-seconds={v().you}>
                     {formatSpent(v().you)}
                   </dd>
                 </div>
                 <div>
-                  <dt class="text-caption text-muted">Agent</dt>
+                  <dt class="text-caption">Agent</dt>
                   <dd class="time-spent-figure text-num" data-time-agent data-seconds={v().agent}>
                     {formatSpent(v().agent)}
                   </dd>

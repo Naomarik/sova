@@ -1,7 +1,7 @@
 // Time Spent's tracker in a real Chrome (§app.subagents-pane/time-spent-counting): the app's own build, served from a
-// scratch build with every request answered here (no server, no network), the reports caught as they leave. Two panes:
-// the keyboard in pane A's composer and the wheel over pane B count Scrolling for B and nothing for A; a click into A
-// moves the count; the chat following new text is no Scrolling and no activity; what is on screen names the row, and an
+// scratch build with every request answered here (no server, no network), the reports caught as they leave. Two panes,
+// and the newest real input names the pane: the keyboard in pane A's composer and the wheel over pane B count Scrolling
+// for B and nothing for A; the mouse resting over B and keys in A's composer count Typing for A and nothing for B; the chat following new text is no Scrolling and no activity; what is on screen names the row, and an
 // alignment card's own seconds overlap it, with no row's content-visibility changed.
 // SOVA_TIME_SPENT_DIST=<dir>: drive a build made elsewhere (by hand, to show a tree without the rule fails).
 // Chrome or Chromium must be installed (as the tour tests: nothing is downloaded).
@@ -146,6 +146,28 @@ test("the keyboard in A's composer, the wheel over B: B's Scrolling grows, A get
   assert.ok((typed.rows.typing ?? 0) >= 1, `A's Typing grew: ${JSON.stringify(typed)}`);
   const after = await sums(page, reports, B);
   assert.ok(after.total <= before + 1, `B stopped within the second it was counting: ${before} then ${after.total}`);
+  await page.context().close();
+});
+
+test("the mouse resting over B, keys in A's composer: A's Typing grows, B's doesn't", async () => {
+  const { page, reports } = await open();
+  const box = await pane(page, B).boundingBox();
+  assert.ok(box);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  const composer = pane(page, A).locator("textarea").first();
+  await composer.focus();
+  await page.keyboard.type("a", { delay: 0 });
+  // The first key has named A: whatever B counted up to it stays, and nothing more comes.
+  await page.waitForTimeout(1_100);
+  const before = (await sums(page, reports, B)).total;
+  await page.keyboard.type("hello there, still typing", { delay: 150 });
+  const a = await sums(page, reports, A);
+  const b = await sums(page, reports, B);
+  assert.ok((a.rows.typing ?? 0) >= 2, `A's Typing grew: ${JSON.stringify(a)}`);
+  assert.equal(b.total, before, `B's didn't: ${JSON.stringify(b)}`);
+  assert.equal(b.rows.typing ?? 0, 0, `and B never had any: ${JSON.stringify(b)}`);
+  const stillOver = await page.evaluate(([x, y]) => !!document.elementFromPoint(x!, y!)?.closest(".workspace-pane[data-time-session]")?.getAttribute("data-time-session")?.includes("b.jsonl"), [box.x + box.width / 2, box.y + box.height / 2]);
+  assert.ok(stillOver, "the mouse stayed over B throughout");
   await page.context().close();
 });
 

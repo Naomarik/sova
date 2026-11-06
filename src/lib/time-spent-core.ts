@@ -40,7 +40,9 @@ export interface ClockState {
   sessions: readonly string[];
   /** The app's own open or focused session: the last word on which pane holds the keyboard. */
   focused: string | null;
-  pointerPane: string | null;
+  /** The pane the newest real input named: a key the pane holding the keyboard, a pointer, wheel or touch the one under it. */
+  inputPane: string | null;
+  /** The pane focus sits in: what counts before any input has named one. */
   keyboardPane: string | null;
   lastActiveAt: number;
   typedAt: number;
@@ -110,7 +112,7 @@ export function initialClock(now: number, visible = true): ClockState {
     elsewhere: false,
     sessions: [],
     focused: null,
-    pointerPane: null,
+    inputPane: null,
     keyboardPane: null,
     lastActiveAt: -Infinity,
     typedAt: -Infinity,
@@ -147,10 +149,14 @@ export function countWords(text: string): number {
 }
 
 function withPane(s: ClockState, pane: string | null): ClockState {
-  return pane && pane !== s.pointerPane && s.sessions.includes(pane) ? { ...s, pointerPane: pane } : s;
+  return pane && pane !== s.inputPane && s.sessions.includes(pane) ? { ...s, inputPane: pane } : s;
 }
-function withKeyboard(s: ClockState, pane: string | null): ClockState {
+function withFocus(s: ClockState, pane: string | null): ClockState {
   return pane && pane !== s.keyboardPane && s.sessions.includes(pane) ? { ...s, keyboardPane: pane } : s;
+}
+/** A key: it names the pane holding the keyboard, wherever the mouse is resting. */
+function withKey(s: ClockState, pane: string | null): ClockState {
+  return withPane(withFocus(s, pane), pane);
 }
 function viewOf(s: ClockState, session: string): SessionView {
   return s.views[session] ?? NO_VIEW;
@@ -168,7 +174,7 @@ export function reduce(s: ClockState, e: ClockEvent): ClockState {
       return {
         ...s,
         sessions: e.paths,
-        pointerPane: keep(s.pointerPane),
+        inputPane: keep(s.inputPane),
         keyboardPane: keep(s.keyboardPane),
       };
     }
@@ -183,13 +189,13 @@ export function reduce(s: ClockState, e: ClockEvent): ClockState {
     case "press":
       return withPane({ ...s, pressed: e.on, lastActiveAt: e.at }, e.pane);
     case "scroll-key":
-      return withKeyboard({ ...s, lastActiveAt: e.at, scrolledAt: e.at, intentUntil: Math.max(s.intentUntil, e.at + KEY_INTENT_MS) }, e.pane);
+      return withKey({ ...s, lastActiveAt: e.at, scrolledAt: e.at, intentUntil: Math.max(s.intentUntil, e.at + KEY_INTENT_MS) }, e.pane);
     case "key":
-      return withKeyboard({ ...s, lastActiveAt: e.at }, e.pane);
+      return withKey({ ...s, lastActiveAt: e.at }, e.pane);
     case "typed":
-      return withKeyboard({ ...s, lastActiveAt: e.at, typedAt: e.at }, e.pane);
+      return withKey({ ...s, lastActiveAt: e.at, typedAt: e.at }, e.pane);
     case "focus":
-      return withKeyboard(s, e.pane);
+      return withFocus(s, e.pane);
     case "scrolled":
       return s.pressed || e.at < s.intentUntil ? { ...s, lastActiveAt: e.at, scrolledAt: e.at } : s;
     case "dictating": {
@@ -210,13 +216,13 @@ export function reduce(s: ClockState, e: ClockEvent): ClockState {
   }
 }
 
-/** The session this moment would count for: a foreground view's own, the pane under the latest pointer, wheel or
-    touch, the pane holding the keyboard, then the app's focused or only session. */
+/** The session this moment would count for: a foreground view's own, the pane the newest real input named, the pane
+    holding the keyboard, then the app's focused or only session. */
 export function countedSession(s: ClockState): string | null {
   const on = (p: string | null | undefined): p is string => !!p && s.sessions.includes(p);
   const top = s.foreground[s.foreground.length - 1];
   if (on(top?.session)) return top.session;
-  if (on(s.pointerPane)) return s.pointerPane;
+  if (on(s.inputPane)) return s.inputPane;
   if (on(s.keyboardPane)) return s.keyboardPane;
   if (on(s.focused)) return s.focused;
   return s.sessions.length === 1 ? s.sessions[0]! : null;

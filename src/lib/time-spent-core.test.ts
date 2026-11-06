@@ -202,9 +202,23 @@ describe("split view: one pane counts", () => {
     assert.equal(countedSession(run(two(), { type: "focused", path: B })), B);
     assert.equal(countedSession(run(two(), { type: "focused", path: B }, { type: "focus", pane: A })), A);
   });
-  test("the latest pointer wins over the keyboard however recent the key", () => {
+  test("the mouse resting over B, keys in A's composer: A counts Typing, B nothing", () => {
     const s = run(two(), { type: "pointer", at: T0, pane: B }, { type: "typed", at: T0 + 500, pane: A });
-    assert.equal(countedSession(s), B);
+    assert.deepEqual(decide(s, T0 + 600), { session: A, row: "typing", docs: [] });
+  });
+  test("whichever input is newest names the pane, back and forth", () => {
+    const typed = run(two(), { type: "typed", at: T0, pane: A });
+    const wheeled = run(typed, { type: "wheel", at: T0 + 1, pane: B });
+    assert.equal(countedSession(wheeled), B);
+    assert.equal(countedSession(run(wheeled, { type: "key", at: T0 + 2, pane: A })), A);
+    assert.equal(countedSession(run(wheeled, { type: "scroll-key", at: T0 + 2, pane: A })), A);
+    assert.equal(countedSession(run(wheeled, { type: "pointer", at: T0 + 3, pane: A })), A);
+  });
+  test("focus moving is no input: it doesn't take the count from the pane the newest input named", () => {
+    assert.equal(countedSession(run(two(), { type: "wheel", at: T0, pane: B }, { type: "focus", pane: A })), B);
+  });
+  test("a key outside every pane names none: the last pane stays", () => {
+    assert.equal(countedSession(run(two(), { type: "pointer", at: T0, pane: B }, { type: "key", at: T0 + 1, pane: null })), B);
   });
   test("a pointer outside every pane keeps the last pane", () => {
     assert.equal(countedSession(run(two(), { type: "pointer", at: T0, pane: B }, { type: "pointer", at: T0 + 1, pane: null })), B);
@@ -216,7 +230,7 @@ describe("split view: one pane counts", () => {
   test("a pane leaving the screen stops being counted, and a tab behind the front one is not a pane", () => {
     const s = run(two(), { type: "pointer", at: T0, pane: B }, { type: "sessions", paths: [A] });
     assert.equal(countedSession(s), A);
-    assert.equal(s.pointerPane, null);
+    assert.equal(s.inputPane, null);
     assert.equal(countedSession(run(page([A]), { type: "pointer", at: T0, pane: B })), A);
   });
   test("a dialog counts for the session it opened over, wherever the pointer goes", () => {

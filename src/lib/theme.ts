@@ -15,7 +15,7 @@
 
 import { createSignal } from "solid-js";
 import type { ThemeList, ThemeTokens } from "../../shared/protocol";
-import { CSS_PROPERTY, DEFAULT_THEME_ID, type ThemeBase } from "../../shared/theme";
+import { BASE_SURFACE, CSS_PROPERTY, DEFAULT_THEME_ID, type ThemeBase } from "../../shared/theme";
 import {
   DEFAULT_TEXT_SIZE,
   NO_TYPOGRAPHY,
@@ -31,9 +31,10 @@ import {
   typographyProperties,
 } from "./typography";
 import { readKey, removeKey, writeKey } from "./storage-keys";
+import { THEME_KEY } from "./theme-prepaint";
 
-/** The ground rules: the choice persists here. */
-export const THEME_KEY = "sova:theme";
+/** The ground rules: the choice persists here (the pre-paint script reads it too). */
+export { THEME_KEY };
 
 /** One pick, as kept so the next load can paint it with no network. The id is the choice — the
     tokens are a cache of what the server said it resolved to, re-checked against the list on
@@ -216,10 +217,6 @@ export function clearTypography(): void {
   setTypography({ text: null, mono: null });
 }
 
-/** Each base's `--color-surface` as tokens.css defines it — the chrome color for a theme that
-    doesn't set `surface`. `dark`'s is also what index.html ships and what no theme goes back to. */
-const BASE_SURFACE: Record<ThemeBase, string> = { dark: "#2C2C38", light: "#FFFFFF" };
-
 /** The browser chrome color (the Android status bar), matched to the header's surface so the
     bar and the head under it read as one band. */
 function setMetaThemeColor(value: string): void {
@@ -341,10 +338,11 @@ export function clearTheme(): void {
   paint();
 }
 
-/** The pre-paint call (`main.tsx`): apply the cached choice synchronously — under Auto with the
-    system's setting read in the same step — or leave the document on its default dark. Nothing is
-    fetched here — a flash of the other theme is exactly what the ground rules forbid, and a
-    reconcile against the server happens after boot (App.tsx). */
+/** The startup call (`main.tsx`): apply the cached choice synchronously — under Auto with the
+    system's setting read in the same step — or leave the document on its default dark. index.html's
+    pre-paint script (`theme-prepaint.ts`) has already put the same theme on before the first frame;
+    this takes the store over from it and adds the font pick and the text size. Nothing is fetched
+    here; a reconcile against the server happens after boot (App.tsx). */
 export function applyStoredTheme(): void {
   setTypographySignal(readStoredTypography());
   setTextSizeSignal(readStoredTextSize());

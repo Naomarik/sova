@@ -1,5 +1,6 @@
-// Light, Dark and Auto in a real Chrome (§app.settings-dialog/themes): Auto wears the light pick from the first frame on a
-// light system and follows the system to dark with no reload, the browser bar's colour with it; Settings → Themes holds
+// Light, Dark and Auto in a real Chrome (§app.settings-dialog/themes): what the page wears before the app's own code runs
+// (its entry module held back) is the stored theme, painted by index.html's pre-paint script, and the reset link paints
+// nothing there; Auto follows the system to dark with no reload, the browser bar's colour with it; Settings → Themes holds
 // Appearance and two sections, a pick in the hidden one changes nothing on screen, and arrows stay inside a section;
 // the explanation thumbnails follow a live switch. The app's own build, served from a scratch build with every request
 // answered here (no server, no network). Chrome or Chromium must be installed (as the tour tests: nothing is downloaded).
@@ -9,7 +10,10 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { after, before, describe, test } from "node:test";
 import type { Browser, BrowserContext, Page } from "playwright-core";
+import { createServer } from "vite";
 import type { ExplanationInfo, ThemeInfo } from "../shared/protocol";
+import { BASE_SURFACE, CSS_PROPERTY } from "../shared/theme";
+import { THEME_KEY } from "../src/lib/theme-prepaint";
 import { launchTourBrowser } from "./tours/browser";
 import { scratchRoot } from "./test-scratch";
 
@@ -54,22 +58,25 @@ const CONTENT: Record<string, string> = { ".html": "text/html", ".js": "text/jav
 interface Opened {
   page: Page;
   ctx: BrowserContext;
+  /** Lets the held entry module through (a no-op when nothing was held). */
+  release(): void;
 }
 
-async function open(o: { scheme: "light" | "dark"; record?: unknown; hash?: string; width?: number }): Promise<Opened> {
+/** The built page's entry module: what `main.tsx` became. Held back, the page shows only what index.html itself painted. */
+const entryModule = () => {
+  const src = /<script type="module"[^>]*\ssrc="([^"]+)"/.exec(readFileSync(join(dist, "index.html"), "utf8"))?.[1];
+  assert.ok(src, "the built index.html loads one entry module");
+  return new URL(src, ORIGIN).pathname;
+};
+
+async function open(o: { scheme: "light" | "dark"; record?: unknown; hash?: string; search?: string; width?: number; hold?: boolean }): Promise<Opened> {
   const ctx = await browser.newContext({ viewport: { width: o.width ?? 1280, height: 1000 }, reducedMotion: "reduce", colorScheme: o.scheme });
   if (o.record !== undefined) await ctx.addInitScript((r) => localStorage.setItem("sova:theme", JSON.stringify(r)), o.record);
   await ctx.addInitScript(() => sessionStorage.setItem("sova:launched", "1"));
-  // What the first frame can wear: the document as it stands when the parser is done, before any fetch has answered.
-  await ctx.addInitScript(() => {
-    document.addEventListener("DOMContentLoaded", () => {
-      (window as unknown as { atReady: unknown }).atReady = {
-        theme: document.documentElement.dataset.theme ?? null,
-        meta: document.querySelector('meta[name="theme-color"]')?.getAttribute("content") ?? null,
-      };
-    });
-  });
   const page = await ctx.newPage();
+  const entry = entryModule();
+  let release = () => {};
+  const held = o.hold ? new Promise<void>((resolve) => (release = resolve)) : Promise.resolve();
   const json = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
   await page.routeWebSocket(/.*/, () => {});
   await page.route("**/*", async (route) => {
@@ -85,6 +92,7 @@ async function open(o: { scheme: "light" | "dark"; record?: unknown; hash?: stri
     if (p === "/api/overseer") return route.fulfill(json({ history: [], badge: { act: 0, decide: 0 }, unread: 0, proactivity: "badge", busy: false }));
     if (p.startsWith("/explain/")) return route.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><title>x</title>" });
     if (p.startsWith("/api/") || p.startsWith("/ws") || p === "/sw.js") return route.fulfill(json({}, 404));
+    if (p === entry) await held;
     const file = normalize(join(dist, p === "/" ? "index.html" : p));
     if (file.startsWith(dist) && existsSync(file) && statSync(file).isFile()) {
       const ext = /\.[a-z0-9]+$/.exec(file)?.[0] ?? "";
@@ -92,8 +100,48 @@ async function open(o: { scheme: "light" | "dark"; record?: unknown; hash?: stri
     }
     return route.fulfill({ status: 200, contentType: "text/html", body: readFileSync(join(dist, "index.html")) });
   });
-  await page.goto(`${ORIGIN}/${o.hash ?? ""}`);
-  return { page, ctx };
+  // Held, the page never loads: wait only for the document to arrive.
+  await page.goto(`${ORIGIN}/${o.search ?? ""}${o.hash ?? ""}`, { waitUntil: o.hold ? "commit" : "load" });
+  return { page, ctx, release };
+}
+
+interface Painted {
+  theme: string | null;
+  meta: string | null;
+  background: string;
+  inline: string[];
+}
+
+/** What the page wears while its entry module is held: the body parsed and the stylesheet applied, the app not run. */
+async function paintedBeforeApp(page: Page): Promise<Painted> {
+  await page.waitForFunction(() => !!document.getElementById("root") && [...document.styleSheets].some((s) => s.href?.includes("/assets/")));
+  return page.evaluate(() => {
+    if (document.getElementById("root")!.childElementCount > 0) throw new Error("the app ran: the entry module wasn't held");
+    const root = document.documentElement;
+    return {
+      theme: root.dataset.theme ?? null,
+      meta: document.querySelector('meta[name="theme-color"]')?.getAttribute("content") ?? null,
+      background: getComputedStyle(document.body).backgroundColor,
+      inline: [...root.style].filter((p) => p.startsWith("--")),
+    };
+  });
+}
+
+/** The app is up: its shell drew into #root. */
+const appRan = (page: Page) => page.waitForFunction(() => (document.getElementById("root")?.childElementCount ?? 0) > 0);
+
+/** tokens.css's own page colours, as Chrome computes them. */
+const BUILTIN_DARK_BG = "rgb(30, 30, 38)";
+
+/** The table and surfaces injected into an index.html, read back from behind the script's `args` comment. */
+function injectedArgs(html: string): unknown[] {
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]!).filter((s) => s.includes("/*args*/"));
+  assert.equal(scripts.length, 1, "one pre-paint script");
+  const at = html.indexOf('<meta name="theme-color"');
+  assert.ok(at >= 0 && html.indexOf(scripts[0]!) > at, "it comes after the theme-color meta it sets");
+  assert.ok(html.indexOf(scripts[0]!) < html.indexOf("</head>"), "in the head");
+  const args = scripts[0]!.slice(scripts[0]!.indexOf("/*args*/") + "/*args*/".length).replace(/\);?\s*$/, "");
+  return JSON.parse(`[${args}]`) as unknown[];
 }
 
 const dataTheme = (page: Page) => page.evaluate(() => document.documentElement.dataset.theme ?? null);
@@ -102,12 +150,18 @@ const record = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getIt
 const AUTO = { v: 2, mode: "auto", light: stored("nord-light"), dark: stored("dracula") };
 
 describe("Light, Dark and Auto", () => {
-  test("Auto on a light system wears the light pick from the first frame, then follows the system to dark with no reload", async () => {
-    const o = await open({ scheme: "light", record: AUTO });
+  test("Auto on a light system wears the light pick before the app runs, then follows the system to dark with no reload", async () => {
+    const o = await open({ scheme: "light", record: AUTO, hold: true });
     try {
-      await o.page.waitForFunction(() => (window as unknown as { atReady?: unknown }).atReady);
-      const ready = await o.page.evaluate(() => (window as unknown as { atReady: { theme: string | null; meta: string | null } }).atReady);
-      assert.deepEqual(ready, { theme: "light", meta: "#e5e9f0" }, "the light pick and its surface are on before the first frame");
+      const first = await paintedBeforeApp(o.page);
+      assert.deepEqual(
+        { theme: first.theme, meta: first.meta, background: first.background },
+        { theme: "light", meta: "#e5e9f0", background: "rgb(236, 239, 244)" },
+        "the light pick, its page colour and its surface are on before any of the app's code",
+      );
+      o.release();
+      await appRan(o.page);
+      assert.equal(await dataTheme(o.page), "light", "the app takes over the same theme");
       assert.equal(await o.page.evaluate(() => document.documentElement.style.getPropertyValue("--color-bg")), "#eceff4");
       await o.page.evaluate(() => ((window as unknown as { sameDocument: boolean }).sameDocument = true));
       await o.page.emulateMedia({ colorScheme: "dark" });
@@ -118,30 +172,73 @@ describe("Light, Dark and Auto", () => {
       await o.page.emulateMedia({ colorScheme: "light" });
       await o.page.waitForFunction(() => document.documentElement.dataset.theme === "light");
     } finally {
+      o.release();
       await o.ctx.close();
     }
   });
 
   test("nothing stored is Dark on a light system; an old single theme keeps its look and is rewritten as v2", async () => {
-    const fresh = await open({ scheme: "light" });
+    const fresh = await open({ scheme: "light", hold: true });
     try {
-      await fresh.page.waitForFunction(() => (window as unknown as { atReady?: unknown }).atReady);
-      assert.deepEqual(await fresh.page.evaluate(() => (window as unknown as { atReady: unknown }).atReady), { theme: null, meta: "#2C2C38" });
+      assert.deepEqual(await paintedBeforeApp(fresh.page), { theme: null, meta: "#2C2C38", background: BUILTIN_DARK_BG, inline: [] });
     } finally {
+      fresh.release();
       await fresh.ctx.close();
     }
     // The old shape is the single pick itself, as server/needs-you-rows-ui.integration.test.ts still writes it.
-    const old = await open({ scheme: "dark", record: stored("nord-light") });
+    const old = await open({ scheme: "dark", record: stored("nord-light"), hold: true });
     try {
-      await old.page.waitForFunction(() => (window as unknown as { atReady?: unknown }).atReady);
-      assert.deepEqual(await old.page.evaluate(() => (window as unknown as { atReady: unknown }).atReady), { theme: "light", meta: "#e5e9f0" }, "a light theme stored the old way still wears light on a dark system");
+      const first = await paintedBeforeApp(old.page);
+      assert.deepEqual({ theme: first.theme, meta: first.meta }, { theme: "light", meta: "#e5e9f0" }, "a light theme stored the old way still wears light on a dark system");
+      old.release();
+      await appRan(old.page);
+      await old.page.waitForFunction(() => JSON.parse(localStorage.getItem("sova:theme") ?? "{}").v === 2);
       const r = await record(old.page);
       assert.equal(r?.v, 2);
       assert.equal(r?.mode, "light");
       assert.equal(r?.light?.id, "nord-light");
       assert.equal(r?.dark, null);
     } finally {
+      old.release();
       await old.ctx.close();
+    }
+  });
+
+  test("the reset link paints nothing before the reset: an all-black dark pick never reaches the page", async () => {
+    const black = { id: "all-black", base: "dark", tokens: Object.fromEntries(["bg", "surface", "ink", "ink-2", "accent", "border"].map((k) => [k, "#000000"])) };
+    const o = await open({ scheme: "dark", record: { v: 2, mode: "dark", light: null, dark: black }, search: "?theme=default", hold: true });
+    try {
+      assert.deepEqual(await paintedBeforeApp(o.page), { theme: null, meta: "#2C2C38", background: BUILTIN_DARK_BG, inline: [] }, "no data-theme, no inline --color-*, the shipped bar colour");
+      o.release();
+      await appRan(o.page);
+      assert.equal(await record(o.page), null, "the app carried the reset out: nothing stored");
+      assert.equal(await o.page.evaluate(() => location.search), "", "and the reset is off the address");
+      assert.equal(await dataTheme(o.page), null);
+    } finally {
+      o.release();
+      await o.ctx.close();
+    }
+  });
+
+  test("the table injected into index.html is the app's own, in the build and in the dev server", async () => {
+    assert.deepEqual(injectedArgs(readFileSync(join(dist, "index.html"), "utf8")), [{ ...CSS_PROPERTY }, { ...BASE_SURFACE }, THEME_KEY], "vite build");
+    // In-process, no port and no watcher: only the page transform `vite dev` runs on each request for index.html.
+    const server = await createServer({
+      root: ROOT,
+      configFile: join(ROOT, "vite.config.ts"),
+      logLevel: "error",
+      cacheDir: join(scratchRoot("sova-theme-vite-"), "cache"),
+      optimizeDeps: { noDiscovery: true, include: [] },
+      server: { middlewareMode: true, hmr: false, ws: false, watch: null },
+      appType: "spa",
+    });
+    try {
+      const html = await server.transformIndexHtml("/index.html", readFileSync(join(ROOT, "index.html"), "utf8"));
+      assert.deepEqual(injectedArgs(html), [{ ...CSS_PROPERTY }, { ...BASE_SURFACE }, THEME_KEY], "vite dev");
+      const share = await server.transformIndexHtml("/src/share/index.html", readFileSync(join(ROOT, "src/share/index.html"), "utf8"));
+      assert.doesNotMatch(share, /\/\*args\*\//, "the share page gets no pre-paint script");
+    } finally {
+      await server.close();
     }
   });
 

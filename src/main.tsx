@@ -36,8 +36,9 @@ function themeResetRequested(): boolean {
   return true;
 }
 
-// Before first paint, synchronously: the cached theme goes on the document now (under Auto, the
-// one the system's setting asks for), or a reload of a themed window flashes the other first.
+// At startup, synchronously: the cached theme goes on the document (under Auto, the one the system's
+// setting asks for). index.html's pre-paint script already painted it before the first frame (a
+// module like this one runs after it, lib/theme-prepaint.ts); this takes over from it.
 // App.tsx reconciles the cache against /api/themes once it's up.
 // The escape hatch takes the font pick and the text size off too: one URL that lands on the
 // built-in dark in the built-in faces at the built-in size, whatever was cached.

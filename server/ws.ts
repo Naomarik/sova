@@ -181,7 +181,9 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     }
     if (opts.refused) {
       const clientId = (msg as { clientId?: unknown }).clientId;
-      client.send({ type: "error", code: "refused", message: opts.refused, ...(typeof clientId === "string" && clientId ? { clientId } : {}) });
+      // A command from shell mode hears its own refusal, so its box stops waiting and keeps it (§chat.shell-mode/running).
+      if (msg.type === "shell") client.send({ type: "shell_refused", clientId: String(clientId ?? ""), reason: "unavailable", message: opts.refused });
+      else client.send({ type: "error", code: "refused", message: opts.refused, ...(typeof clientId === "string" && clientId ? { clientId } : {}) });
       return;
     }
     sessionsChanged(); // a prompt, abort or rename: the next listing is built afresh

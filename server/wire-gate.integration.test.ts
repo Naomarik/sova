@@ -55,6 +55,14 @@ test("a socket on another writing number stays open and live, and every frame is
   assert.equal(refusals()[0].clientId, "c1", "the page puts that draft back");
   assert.match(refusals()[0].message, /^This host needs an update/);
 
+  // A command from shell mode hears a refusal of its own, so its box stops waiting; nothing runs.
+  ahead.ws.send(JSON.stringify({ type: "shell", command: "echo hi", clientId: "c3" }));
+  const shellRefused = await until("the command's refusal", () => heard.find((f) => f.type === "shell_refused"));
+  assert.equal(shellRefused.clientId, "c3");
+  assert.equal(shellRefused.reason, "unavailable");
+  assert.match(shellRefused.message, /^This host needs an update/);
+  assert.ok(!heard.some((f) => f.type === "shell_start"), "no command started");
+
   ahead.ws.send(JSON.stringify({ type: "abort" }));
   ahead.ws.send(JSON.stringify({ type: "set_model", ref: "mock/m1" }));
   await until("two more refusals", () => refusals().length === 3);

@@ -266,7 +266,8 @@ found so far (pi 1.0.3).
   another tool makes carries `parentToolCallId` (`HarnessEvent` `nested`, `SovaEvent` `parentCallId`)
   and is no row or live tool.
 - **pi reads the host's context files into a recording.** A session reads every `AGENTS.md`/`CLAUDE.md`
-  from its cwd up to `/` and skills from `~/.agents/skills`, so a golden recorded under a scratch dir
+  from its cwd up to `/` and skills from `~/.agents/skills`, and Sova adds the Claude skill folders
+  (`server/harness/pi/skill-sources.ts`, §chat/skill-sources), so a golden recorded under a scratch dir
   inside `$HOME` (or with the real `HOME`) captures the operator's private files. Record goldens from a
   scratch dir with no context file above it and `HOME` inside it, with every `SOVA_*` variable unset;
   `server/harness/pi/special-model-view.test.ts` fails a golden that names a real home path, a context

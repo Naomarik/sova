@@ -314,6 +314,9 @@ describe("an ordinary chat", async () => {
     assert.match(got, /<sova-skills dir="svc">/);
     assert.doesNotMatch(got, /<name>svc-claude<\/name>/);
     assert.ok(!chat.harness.commands().some((c) => c.name === "skill:svc-claude"));
+    model.reply({ text: "ok" });
+    await chat.acceptPrompt("/skill:svc-claude go", undefined, "server").turn;
+    assert.equal(textOf(messagesOf(model).at(-1)!), "/skill:svc-claude go", "typing it doesn't bring it back");
     await disposeHeldChat(path, "test: done");
   });
 });

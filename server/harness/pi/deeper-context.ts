@@ -74,7 +74,10 @@ export function deeperContextExtension(opts: { allow?: (abs: string) => boolean;
         if (!cmd) return { action: "continue" as const };
         try {
           const starting = startingSkills().find((c) => c.name === `skill:${cmd.name}`);
-          const file = starting ? starting.sourceInfo.path : nestedSkillFile(ctx.cwd, cmd.name, toolCtx(ctx).branch(), piSkillsIn);
+          const branch = toolCtx(ctx).branch();
+          // A name this chat switched off stays off (§chat.transcript/setup-card-toggles): pi leaves the text as typed.
+          if (!starting && (loadoutOnBranch(branch)?.offSkills ?? []).includes(cmd.name)) return { action: "continue" as const };
+          const file = starting ? starting.sourceInfo.path : nestedSkillFile(ctx.cwd, cmd.name, branch, piSkillsIn);
           if (!file) return { action: "continue" as const };
           const raw = readFileSync(file, "utf8");
           const skillDir = dirname(file);

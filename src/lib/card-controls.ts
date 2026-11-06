@@ -23,8 +23,6 @@ export interface CardTrustAsk {
 export interface CardControls {
   /** The card's state now (the server's), else undefined. */
   card(id: string): CardInfo | undefined;
-  /** The card Sova raised at a call (a ping's, §app.overseer-pings/tool), by the call's id. */
-  ofCall(callId: string): CardInfo | undefined;
   /** Cards raised from outside the chat: the page places them (lib/transcript-placement placeOutsideCards). */
   outside(): CardInfo[];
   /** Every open card waiting on an answer. */
@@ -131,7 +129,6 @@ export function createCardControls(path: () => string, canAct: () => boolean, ch
   };
   return {
     card: byId,
-    ofCall: (callId) => state.cards.find((c) => c.toolCallId === callId),
     outside: () => state.cards.filter((c) => !c.toolCallId),
     open: () => state.cards.filter((c) => c.state === "open" && c.answerMode !== "none"),
     newest: (card) => {

@@ -19,8 +19,7 @@ import { isHiddenBlock, isTourResult, liveHiddenCounts, splitHidden, thinkingHid
 import { chainRuns, type ChainRun } from "../lib/chain-rows";
 import { compressWork } from "../lib/work-compression";
 import { isChangeRow } from "../lib/change-rows";
-import { viewSendersOf } from "../lib/pings";
-import { CardContext } from "../lib/card-controls";
+import { sendersOf } from "../../shared/senders";
 import { isTurnStart } from "../lib/turn";
 import { latestAlignId, newestAlignRows } from "../lib/align";
 import { replyHovers } from "../lib/perf";
@@ -234,14 +233,10 @@ export function HistoryItems(props: {
     const r = callId ? results().get(callId) : undefined;
     return r && !toolResultView(r).isError ? normalizeRaisedCard(detailsOf(r)) : undefined;
   };
-  const raisedCards = useContext(CardContext);
-  /** An overseer_ping call's details once it succeeded, else (a slim row keeps none) the card Sova raised at the call
-      (§app.overseer-pings/tool): its card draws at the call. */
+  /** An overseer_ping call's details, once it succeeded (§app.overseer-pings/tool): its card draws at the call. */
   const pingOf = (callId: string | undefined) => {
-    if (!callId) return undefined;
-    const r = results().get(callId);
-    if (r && toolResultView(r).isError) return undefined;
-    return (r ? detailsOf(r) : undefined) ?? raisedCards?.ofCall(callId);
+    const r = callId ? results().get(callId) : undefined;
+    return r && !toolResultView(r).isError ? detailsOf(r) : undefined;
   };
   /** A sova_settings propose's card, once it succeeded (§app.project-overseer/settings). */
   const settingsOf = (callId: string | undefined) => {
@@ -355,7 +350,7 @@ export function HistoryItems(props: {
   /** Who sent each user row, when its marker says (another session §chat.profiles/delivery, the
       Overseer, a baton participant §app.baton/attribution): target id → sender, in any order. The
       Timeline reads the same helper, so the two never disagree (shared/senders.ts). */
-  const senders = createMemo(() => viewSendersOf(props.items));
+  const senders = createMemo(() => sendersOf(props.items));
   const senderOf = (id: string) => senders().get(entryIdOf(id));
   const nameOf = (ref: string) => props.names?.[ref] ?? (ref === "operator" ? "You" : "Someone");
   /**

@@ -4,12 +4,10 @@
 import type { RewindRefusal, TranscriptItem } from "../../shared/protocol";
 import { isInput } from "./turn";
 import { wakeTitle } from "../../shared/wake";
-import { isBriefText, messageBody, rowSender, sendersOf } from "../../shared/senders";
-import { isPingText, pingTurnBody, relayBody, relaySendersOf, type ViewSender } from "./pings";
+import { isBriefText, isPingText, messageBody, rowSender, sendersOf, type Sender } from "../../shared/senders";
 import { stripSessionHeader } from "../../shared/profiles";
 
-/** A row's sender as the views draw it: shared/senders.ts's, or a passed-on note's (lib/pings.ts). */
-export type Sender = ViewSender;
+export type { Sender };
 
 export type { RewindRefusal };
 
@@ -59,16 +57,12 @@ export const typedByUser = (row: Pick<InputRow, "sender" | "wake">): boolean => 
     n1", never the tagged message's first line. */
 export function inputRows(items: readonly TranscriptItem[]): InputRow[] {
   const senders = sendersOf(items);
-  const relays = relaySendersOf(items);
   return items
     .filter(isInput)
     .map((it) => {
-      const relay = it.kind === "user" ? relays.get(it.id.split(":", 1)[0]!) : undefined;
-      // The Overseer's ping turn (§app.overseer-pings/wake) is its own, as a brief is, never the user's.
-      const ping = it.kind === "user" && isPingText(it.text);
-      const sender: Sender | undefined = it.kind === "user" ? (relay ?? rowSender(it, senders) ?? (ping ? { kind: "overseer" } : undefined)) : undefined;
-      const text =
-        relay ? relayBody(it.text ?? "") : ping ? pingTurnBody(it.text ?? "") : messageBody(it.text ?? "", sender?.kind === "relay" ? undefined : sender, it.kind === "user" && isBriefText(it.text));
+      const sender = it.kind === "user" ? rowSender(it, senders) : undefined;
+      // A brief and the Overseer's ping turn (§app.overseer-pings/wake) drop their tag.
+      const text = messageBody(it.text ?? "", sender, it.kind === "user" && (isBriefText(it.text) || isPingText(it.text)));
       const preview =
         it.kind === "wake" && it.wake
           ? it.wake.job

@@ -28,7 +28,7 @@ import { CARD_TOOL, LEGACY_CONFIRM_TOOL } from "../../shared/overseer-card";
 import { profileToolCard, ProfileToolCardView } from "./ProfileCards";
 import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow, PairCard, pairDetails, PingsRow } from "./OverseerCards";
 import { PingCard } from "./PingCard";
-import type { PingCall } from "../lib/pings";
+import type { PingCallDetails } from "../lib/pings";
 import { toolContent } from "../lib/tool-content";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { AlignCard } from "./AlignCard";
@@ -57,7 +57,7 @@ export const BUILTIN_VIEWS = {
   "profile-mark": ProfileMarkRow,
   brief: (props: KindViewProps) => <BriefRow text={props.item.text ?? ""} time={props.item.at} />,
   "ping-turn": (props: KindViewProps) => <PingsRow text={props.item.text ?? ""} time={props.item.at} />,
-  "ping-card": (props: KindViewProps<PingCall>) => <PingCard call={props.value} args={toolCallArgs(props.item)} />,
+  "ping-card": (props: KindViewProps<PingCallDetails>) => <PingCard details={props.value} args={toolCallArgs(props.item)} />,
   explain: (props: KindViewProps<NonNullable<NonNullable<TranscriptItem["report"]>["explain"]>>) => <ExplainCard explain={props.value} />,
   "team-report": (props: KindViewProps<NonNullable<NonNullable<TranscriptItem["report"]>["team"]>>) => (
     <TeamMessageCard report={props.item.report!} team={props.value} time={props.item.at} attachments={props.item.attachments} />

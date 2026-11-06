@@ -1,6 +1,6 @@
 import { For, useContext } from "solid-js";
 import { CardContext } from "../lib/card-controls";
-import { pingCardId, pingCardView, type PingCall } from "../lib/pings";
+import { pingCardView, type PingCallDetails } from "../lib/pings";
 import { Icon } from "./ui";
 import "../data-cards.css";
 
@@ -9,12 +9,11 @@ import "../data-cards.css";
  * "Told the Overseer" with its kind and summary, then one line per outcome. Sova revises the card it keeps in place
  * (lib/card-controls reads it again), with no model turn; until the page has it, the call's own words draw it.
  */
-export function PingCard(props: { call: PingCall; args: unknown }) {
+export function PingCard(props: { details: PingCallDetails; args: unknown }) {
   const ctx = useContext(CardContext);
-  const id = () => pingCardId(props.call);
-  const view = () => pingCardView(props.call, props.args, id() ? ctx?.card(id()!) : undefined);
+  const view = () => pingCardView(props.details, props.args, props.details.card ? ctx?.card(props.details.card) : undefined);
   return (
-    <div class="transcript-card" data-card-id={id()}>
+    <div class="transcript-card" data-card-id={props.details.card}>
       <section class="card data-card data-card-status ping-card" aria-label={`${view().title}: ${view().line}`}>
         <div class="card-head">
           <h3 class="card-title">

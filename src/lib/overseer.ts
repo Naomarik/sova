@@ -47,8 +47,7 @@ export function overseerRedirect(path: string, info: { path: string; history: re
 
 /** A proactive "Brief me" prompt: a machine row, never "You", and never a turn any tab navigates on.
     One rule with the Timeline and the input counts (shared/senders.ts). */
-import { isBriefText } from "../../shared/senders";
-import { isPingText } from "./pings";
+import { isBriefText, isPingText } from "../../shared/senders";
 export { briefBody, isBriefText } from "../../shared/senders";
 
 // ---- Tool details -------------------------------------------------------------------------

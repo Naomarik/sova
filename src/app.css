@@ -1231,6 +1231,9 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .session-sender > span { min-width: 0; white-space: nowrap; }
 .session-sender > span:nth-of-type(2) { display: flex; gap: 0.3em; overflow: hidden; }
 .session-sender > span:nth-of-type(2) > a { min-width: 0; }
+/* A passed-on note's "{title}, via the Overseer" (§app.overseer-pings/relay): the comma sits against the title. */
+.session-sender-via { display: inline-flex; min-width: 0; }
+.session-sender-via > a { min-width: 0; }
 /* The same line above a Timeline row (§chat/timeline "Who sent it"): in the row's column, not
    pulled under a bubble. */
 .session-sender.timeline-sender { grid-row: 1; grid-column: 3; align-self: auto; margin: 0 0 var(--space-1); }

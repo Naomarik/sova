@@ -1,8 +1,7 @@
 import { For, Show } from "solid-js";
-import { mergeQueueBody } from "../../shared/senders";
+import { mergeQueueBody, relayBody } from "../../shared/senders";
 import type { TmpAttachment } from "../../shared/protocol";
 import { stripSessionHeader } from "../../shared/profiles";
-import { relayBody } from "../lib/pings";
 import type { ReplyTiming } from "../../shared/usage/perf";
 import type { LiveUserState } from "../lib/live";
 import { agoTime, stampTime } from "../lib/format";
@@ -85,7 +84,10 @@ export function UserTurn(props: {
         <p class="session-sender">
           <Icon name="network" small />
           <span>
-            From <a href={`#/sid/${encodeURIComponent(from().sessionId)}`}>{from().title || "another session"}</a>, via the Overseer
+            From{" "}
+            <span class="session-sender-via">
+              <a href={`#/sid/${encodeURIComponent(from().sessionId)}`}>{from().title || "another session"}</a>, via the Overseer
+            </span>
           </span>
           <span class="text-muted">· hop {from().hop}</span>
         </p>

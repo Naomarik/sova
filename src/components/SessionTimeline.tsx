@@ -366,7 +366,10 @@ function SenderLine(props: { sender: Sender; names: Record<string, string> }) {
           <>
             <Icon name="network" small />
             <span>
-              From <a href={`#/sid/${encodeURIComponent(from().sessionId)}`}>{from().title || "another session"}</a>, via the Overseer
+              From{" "}
+              <span class="session-sender-via">
+                <a href={`#/sid/${encodeURIComponent(from().sessionId)}`}>{from().title || "another session"}</a>, via the Overseer
+              </span>
             </span>
             <span class="text-muted">· hop {from().hop}</span>
           </>

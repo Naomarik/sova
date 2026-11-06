@@ -29,8 +29,8 @@
 import type { Component } from "solid-js";
 import { OVERSEER_PING_TOOL, type TranscriptItem } from "../../shared/protocol";
 import { rowFacts } from "../../shared/wire-v1";
-import { isPingText, pingCallOf, pingDetailsOf } from "./pings";
-import { isBriefText } from "../../shared/senders";
+import { pingDetailsOf } from "./pings";
+import { isBriefText, isPingText } from "../../shared/senders";
 import { normalizeOfferDetails, OFFER_TOOL } from "../../shared/session-offers";
 import { CARD_TOOL, normalizeCardDetails as normalizeRaisedCard, type CardInfo } from "../../shared/transcript-cards";
 import { checkCardData, dataCardHeight } from "../../shared/view-cards";
@@ -81,7 +81,7 @@ export interface KindContext {
   hasCall?(callId: string): boolean;
   /** A `card` call's card, once it succeeded (§chat.transcript-cards/card-tool). */
   card(callId: string | undefined): CardInfo | undefined;
-  /** An `overseer_ping` call's result details once it succeeded, or the card Sova raised at it (§app.overseer-pings/tool). */
+  /** An `overseer_ping` call's result details, once it succeeded (§app.overseer-pings/tool). */
   ping?(callId: string | undefined): unknown;
 }
 
@@ -360,7 +360,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   kind({
     id: "ping-card",
     outsideWork: true,
-    match: (it, ctx) => isCall(it) && it.text === OVERSEER_PING_TOOL && pingCallOf(ctx.ping?.(it.toolCallId)),
+    match: (it, ctx) => isCall(it) && it.text === OVERSEER_PING_TOOL && pingDetailsOf(ctx.ping?.(it.toolCallId)),
     estimate: () => "96px",
     host: "page",
     placement: "anchored",

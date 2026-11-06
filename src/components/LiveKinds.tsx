@@ -51,7 +51,7 @@ export const LIVE_VIEWS: { [K in LiveView]: Component<LiveKindViewProps<never>> 
   topic: (props: LiveKindViewProps<TopicBatchInfo>) => <TopicCard batch={props.value} />,
   brief: (props: LiveKindViewProps<LiveUserEntry>) => <BriefRow text={props.value.text} />,
   "ping-turn": (props: LiveKindViewProps<LiveUserEntry>) => <PingsRow text={props.value.text} />,
-  "ping-card": (props: LiveKindViewProps<PingCallDetails>) => <PingCard call={props.value} args={callOf(props.input).args} />,
+  "ping-card": (props: LiveKindViewProps<PingCallDetails>) => <PingCard details={props.value} args={callOf(props.input).args} />,
   user: LiveUserRow,
   "assistant-text": (props: LiveKindViewProps<Extract<LiveBlock, { type: "text" }>>) => {
     const facts = factsOf(props.input);

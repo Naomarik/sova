@@ -18,7 +18,7 @@ import {
 import { actsText, GRANT_DEFAULT_MS, GRANTABLE_ACTS, type Permit, sessionsText } from "../../shared/overseer-grants";
 import type { MeshLinkView } from "../../shared/mesh-links";
 import { briefBody, confirmRows, goTo, navigateDetails, settingsTarget } from "../lib/overseer";
-import { pingTurnBody } from "../lib/pings";
+import { pingTurnLines } from "../lib/pings";
 import { scrollToCardId } from "../lib/card-refs";
 import { clockTime, relativeTime, stampTime } from "../lib/format";
 import { groupLinkIndex, resolveAppLink, sessionActiveAt, sessionIndex, sessionIndexVersion } from "../lib/session-links";
@@ -837,7 +837,7 @@ export function PingsRow(props: { text: string; time?: string }) {
         </span>
       </div>
       <div class="overseer-brief-body">
-        <Markdown text={pingTurnBody(props.text)} />
+        <Markdown text={pingTurnLines(props.text)} />
       </div>
     </div>
   );

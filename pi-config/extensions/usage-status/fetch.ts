@@ -381,12 +381,14 @@ function zaiPct(l: any): number | undefined {
 	return p === undefined ? undefined : clampPct(p);
 }
 
-export async function fetchZai(): Promise<ZaiData> {
-	const auth = await readJson(PI_AUTH);
-	const key = auth?.zai?.key;
+/** `key`: check this key instead of auth.json's (a key pasted in Settings → Accounts, checked before it is saved); `request`: the fetch. */
+export interface KeyFetchOptions { key?: string | null; request?: typeof fetch }
+
+export async function fetchZai(options: KeyFetchOptions = {}): Promise<ZaiData> {
+	const key = options.key === undefined ? (await readJson(PI_AUTH))?.zai?.key : options.key;
 	if (typeof key !== "string" || !key) return { state: "nokey" };
 
-	const res = await fetch("https://api.z.ai/api/monitor/usage/quota/limit", {
+	const res = await (options.request ?? fetch)("https://api.z.ai/api/monitor/usage/quota/limit", {
 		headers: { Authorization: `Bearer ${key}` },
 		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
 	});
@@ -435,12 +437,11 @@ function dsAmount(v: unknown): number | undefined {
 	return Number.isFinite(n) ? n : undefined;
 }
 
-export async function fetchDeepSeek(): Promise<DeepSeekData> {
-	const auth = await readJson(PI_AUTH);
-	const key = auth?.deepseek?.key;
+export async function fetchDeepSeek(options: KeyFetchOptions = {}): Promise<DeepSeekData> {
+	const key = options.key === undefined ? (await readJson(PI_AUTH))?.deepseek?.key : options.key;
 	if (typeof key !== "string" || !key) return { state: "nokey" };
 
-	const res = await fetch("https://api.deepseek.com/user/balance", {
+	const res = await (options.request ?? fetch)("https://api.deepseek.com/user/balance", {
 		headers: { Authorization: `Bearer ${key}` },
 		signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
 	});

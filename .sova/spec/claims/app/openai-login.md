@@ -2,10 +2,10 @@
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 Sova's chats can use OpenAI's models through a ChatGPT subscription: pi's provider `openai-codex`.
-Settings → Accounts lets the user sign in to it, see who is signed in, and sign out, without a
+Settings → Accounts' OpenAI tab lets the user sign in to it, see who is signed in, and sign out, without a
 terminal or `pi /login`. There is one OpenAI sign-in per device, with no list of logins and no
-switching. Only the ChatGPT subscription is offered here: no API key field and no other OpenAI
-sign-in.
+switching. The ChatGPT subscription is the only sign-in offered; the tab's other way in is a
+pay-as-you-go OpenAI API key, below it (§app.provider-keys/pay-as-you-go).
 
 The sign-in is pi's own: Sova runs pi's login code for `openai-codex`, which stores it in pi's
 `auth.json` in the agent dir (the place `pi /login` uses), under pi's own file lock, and pi renews
@@ -13,15 +13,19 @@ it while chats use OpenAI. Sova never renews it itself. The Codex app's own sign
 (`~/.codex/auth.json`) is a different one: Sova only reads whether that file exists, and never
 writes or uses it for chats.
 
-No token or credential reaches the browser. The one string from the sign-in that does is the signed-in
+No token or credential of the sign-in reaches the browser. The one string from the sign-in that does is the signed-in
 account's email, read on the server from the access token's own claims (§app.insights/usage-refresh,
 **Sign-in data**).
 
-## §app.openai-login/section — The OpenAI section of Settings → Accounts
+## §app.openai-login/section — The OpenAI tab of Settings → Accounts
 
-Settings → Accounts (§app.claude-logins/accounts-tab) has an **OpenAI** section below the Claude
-logins and the Claude Code CLI line. Its intro says: "Sova's chats use OpenAI's models through your
-ChatGPT subscription. Sign in once on this device; chats pick it up on their next message." The
+Settings → Accounts' **OpenAI** tab (§app/provider-keys) starts with the ChatGPT subscription
+sign-in; the pay-as-you-go **OpenAI API key** follows it (§app.provider-keys/pay-as-you-go). Its
+intro says: "Sova's chats use OpenAI's models through your ChatGPT subscription. Sign in once on
+this device; chats pick it up on their next message." While the mesh is on and this device shares
+every login (§mesh.sync/logins), the second sentence says where the sign-in goes instead: "Sign in
+once here; it's shared with your mesh computers that get logins, and chats pick it up on their next
+message." The
 sign-in is one row named "ChatGPT subscription". The section reads the sign-in's standing each time
 the tab opens and after every sign-in or sign-out:
 

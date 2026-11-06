@@ -140,7 +140,9 @@ returns every model allowed, which is what the list showed. `claude-code` is a p
 with no model rows: one switch over every Claude Code worker, its default model included, because
 its models are the CLI's rather than pi's. A provider named in the policy that this machine has no
 credentials for is listed too, with `No models on this machine` where the count goes — a rule you
-can't see is a rule you can't undo.
+can't see is a rule you can't undo. The Ollama Cloud group also holds the line about the server's last check
+of its model list, with **Check Now** (§app.model-levels/settings-line), and a model that check
+added in the last week carries a **New** mark on its row (§app.model-levels/new-models).
 
 A switch doesn't write on its own. Every move is staged, and the dialog's **Save Changes** writes
 the whole policy — one save for every provider and model you moved, never one per switch — while

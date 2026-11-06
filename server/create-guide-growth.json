@@ -549,6 +549,8 @@
    "server.restart": "computers",
    "settings.sova.get": "computers",
    "settings.models.get": "computers",
+   "settings.models.check.status": "computers",
+   "settings.models.check": "computers",
    "settings.provider-limits.get": "computers",
    "settings.align.get": "computers",
    "settings.delegate.get": "computers",

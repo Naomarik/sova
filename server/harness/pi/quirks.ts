@@ -534,6 +534,19 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
   },
   {
     id: "P38",
+    name: "api-key-login",
+    kind: "semantic",
+    relies: "A provider's api-key login (pi-ai's `envApiKeyAuth`) prompts once with `type: \"secret\"` and stores `{ type: \"api_key\", key }` under the provider's id by a modify under pi's lock; `ModelRuntime.logout` deletes only that entry; a provider that takes a key carries `auth.apiKey.login` in `getProviders()`, models.json's included; `readStoredCredential` reads the entry without resolving it.",
+    pi: ["ModelRuntime.login", "ModelRuntime.logout", "ModelRuntime.getProviders", "readStoredCredential", "pi-ai `envApiKeyAuth`"],
+    where: [
+      { file: "server/harness/pi/sign-in.ts", symbol: "piProviderKeys" },
+      { file: "server/harness/pi/sign-in.ts", symbol: "storedKeyOf" },
+    ],
+    canary: "P38 api-key-login: the api-key login asks one secret prompt and stores the key under the provider, logout removes only that entry, and the key providers carry an api-key login",
+    retireWhen: "pi exports a store-a-key call (AuthStorage or a ModelRuntime method that persists)",
+  },
+  {
+    id: "P39",
     name: "base-prompt-sections",
     kind: "semantic",
     relies: "A command context's getSystemPromptOptions() hands out the session's live base prompt options, whose `sections` object builds the prompt a turn no before_agent_start built (an extension's message) and a run's later requests; a tool change replaces that object. So the mode engine keeps the getter (adopted from the chat's command context at every bind) and writes its `mode` section there again at every run start and switch.",
@@ -542,7 +555,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
       { file: "server/harness/pi/modes.ts", symbol: "modeCtx" },
       { file: "server/modes/engine.ts", symbol: "ModeEngine.syncHostSection" },
     ],
-    canary: "P38 base-prompt-sections: a command context's getSystemPromptOptions() is the live base options, whose sections build the prompt, and a tool change replaces it",
+    canary: "P39 base-prompt-sections: a command context's getSystemPromptOptions() is the live base options, whose sections build the prompt, and a tool change replaces it",
     retireWhen: "pi keeps extension sections across prompt rebuilds, or lets an extension own a section for the session's life",
     note: "The pi-config mode extension relies on the same, through its `/mode sync` (index.ts adoptHost); that reach goes when the extension is retired.",
   },

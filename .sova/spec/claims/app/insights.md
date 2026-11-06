@@ -120,7 +120,7 @@ Usage glance needs the room.
     and its long one as a 4px bar under it, 1px apart: Claude's 5-hour over the window flagged
     `active` when that is a 7-day one (a 7-day Fable, say), else its 7-day; Z.ai's plan window
     (5-hour) over MCP uses. A one-window provider draws one 6px bar: OpenAI the window flagged
-    `active` (the first one, if several are), else its 7-day, else its longest; legacy Ollama percent readings their Monthly. Modern Ollama activity and included/purchased credit fields are not glance windows or DeepSeek-style balances; they remain on the Usage page and are omitted from the web glance under Missing data below. The TUI's compact status is separate (§app.insights/ollama-activity).
+    `active` (the first one, if several are), else its 7-day, else its longest; Ollama Cloud its included credits used (§app.insights/ollama-glance), a legacy percent reading its Monthly; never its activity or purchased credits. The TUI's compact status is separate (§app.insights/ollama-activity).
     Never Claude's Opus-only window. A provider sending only one of its two windows draws that one
     as a one-window provider does. A window of the pair with no current reading (its reset
     passed) keeps its place as an empty track, so the meter's shape never jumps.
@@ -157,7 +157,7 @@ Usage glance needs the room.
     no-login-ready case above). A chosen login in another not-`ok` state (signed out, sign-in
     expired) is missing data.
   - **Missing data.** A provider that isn't `ok`, or has neither windows nor a balance, is left
-    out. With nothing at all, the row reads "Usage".
+    out, as is Ollama Cloud with no current included-credit reading (§app.insights/ollama-glance). With nothing at all, the row reads "Usage".
   - **Tone.** Each bar's fill is neutral ink, `warn` when its used share runs more than 10
     points ahead of its tick, `error` at 90% or more, and, with no tick, `warn` from 80%
     (§app.insights/pace-tick, **Foot fill tone**). The hue is the meter's own status; the row's
@@ -1064,7 +1064,7 @@ Ollama Cloud's monthly credit display reads authoritative included balance, allo
 - **macOS hint.** When the payload carries `claudeOwnLoginUnreadable` (macOS, and Claude Code's own
   login is neither in its file nor in a keychain this server can read,
   §app.claude-logins/macos-keychain), one muted `.usage-note` under the lead says "On macOS, add
-  your Claude login under Settings → Accounts."
+  your Claude login under Settings → Accounts → Claude."
 - **Rows.** The body under the lead is `.usage-groups`: separate `.card.usage-rows` surfaces for
   `providers[]` entries, in the order given: Claude, OpenAI, Ollama Cloud, Z.ai, DeepSeek. Page-background
   gaps and rounded card edges separate provider types; hairlines separate accounts within Claude.
@@ -1254,6 +1254,9 @@ Fill past the tick means the quota is going faster than the window.
 - **No tick when it isn't known.** No `resetsAt` (an idle Claude 5-hour window, Ollama's legacy
   monthly percent, Z.ai's MCP uses), or a label of no stated length (`pri`, `plan`, a `month` without
   `startsAt`): no tick. A reset that has passed: no tick either. A tick is never estimated.
+- **Ollama Cloud's included credits** take their span from the provider's own credit period,
+  `included.period.from` to `included.period.until` (§app.insights/ollama-credits), whatever its
+  length: the tick stands at the share of that period elapsed, and its words count its days.
 - **Words.** A window of a day or more is "day {n} of {total}" (n from 1, in whole 24-hour days
   of its span); a shorter one "{elapsed} of {length}" ("2h 10m of 5h"). One bar in words is
   "{window}: {pct}% used · {progress} · resets {when}": `when` is the clock time, with its date
@@ -1263,6 +1266,34 @@ Fill past the tick means the quota is going faster than the window.
   ink, `warn` when its used share is more than 10 points ahead of its tick (`pct − 100 ×
   elapsed > 10`), and `error` at 90% or more. A bar with no tick is `warn` from 80%. The Usage
   rows keep their own fill tones, which pair with the head chip (§app.insights/usage-cards).
+
+## §app.insights/ollama-glance — Ollama Cloud on the usage glance
+
+`OL` sits in the sidebar foot's usage glance in its fixed place, between `O` and `Z`
+(§app.insights/sidebar-foot), whenever Sova has a current included-credit reading for Ollama
+Cloud: current as §app.insights/ollama-credits rules it (its provider period not ended, and the
+reading no more than 10 minutes old, its time known and not ahead of now).
+
+- **The bar** is one 6px bar of the share of this period's included credits used,
+  `(allowance − balance) / allowance` (§app.insights/ollama-credits, **Credits line**), with the
+  pace tick of Ollama's own credit period (§app.insights/pace-tick). Its tone is the foot's
+  (**Foot fill tone**): `warn` more than 10 points ahead of the tick, `error` at 90% or more.
+- **Words.** The row's `title` and `aria-label` line reads "Ollama Cloud included credits: {pct}%
+  used · ${balance} of ${allowance} left · {progress} · resets {when} · purchased ${purchased}",
+  for example "Ollama Cloud included credits: 0% used · $299.95 of $300 left · day 1 of 30 · resets
+  Dec 5 7:30 PM · purchased $0", the amounts exact (`money()`) with a trailing ".00" dropped
+  ("$300", "$299.95"); a purchased balance that isn't known is left out.
+- **Included credits used up, purchased left.** With the included balance at 0 and purchased
+  credits remaining, the bar is full and `error`, and the words say "Ollama Cloud included credits
+  used up; purchased ${purchased} left · {progress} · resets {when}". Never "out of
+  credit": calls still run on purchased credits, and the item never takes
+  `.usage-glance-item-high`.
+- **No current reading.** With no current included-credit reading (none yet, a kept previous one,
+  an ended period, or a pair with no meaningful used share), `OL` is left out of the glance and its
+  words, never drawn from an old reading, until a current reading returns. Activity dollars never
+  stand in for it or fill the bar.
+- **Phones** show the same `OL` part on the phone bar, since it reads the glance's parts
+  (§app.insights/sidebar-foot-phone). The Usage page is unchanged (§app.insights/usage-cards).
 
 ## §app.insights/ollama-reset — Ollama Cloud's reset is the provider's
 

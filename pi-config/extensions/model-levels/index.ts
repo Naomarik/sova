@@ -2,7 +2,9 @@
  * Thinking levels for models pi has no catalog for (README.md). At session_start and before each
  * turn it applies the cached metadata (core.ts) to every models.json provider pi has no built-in
  * base for, and starts a background fetch when that metadata is over a day old; fresh metadata
- * applies as soon as it lands. With no metadata nothing is registered.
+ * applies as soon as it lands. With no metadata nothing is registered. `ollama-cloud` is never
+ * fetched here: Sova's server checks it (core.ts SERVER_CHECKED), and the models its check added
+ * register here too.
  *
  * Registration goes through pi.registerProvider(id, {models}), which merges with another
  * extension's registration of the same provider (provider-limits' {api, streamSimple}) and also

@@ -72,7 +72,8 @@ Paths in "Where" are under `server/`.
 | P35 mcp-tool-name | semantic | `piToolNames` (mcp/tool-names.ts) | `createMcpToolDefinition` | pi records the raw names in every result, or exports its naming |
 | P36 mcp-http-transport | semantic | `AddressServer` (harness/pi/mcp-http.ts), `mcpConfigOf` (harness/pi/mcp.ts), `piLiteral` (harness/pi/mcp.ts) | `StreamableHttpTransport`, `McpSessionExpiredError`, `McpAuthRequiredError`, `McpOAuthAuthorizationRequiredError`, `McpTransportFactory`, `McpExtensionOptions.createTransport` | pi lets a host hand a server its own token source and literal values |
 | P37 openai-codex-login | semantic | `piInteraction` (harness/pi/sign-in.ts), `piProviderSignIn` (harness/pi/sign-in.ts), `OpenAiLoginService.answer` (openai-login.ts) | `ModelRuntime.login`, `AuthInteraction.prompt`, `AuthInteraction.notify`, openai-codex `login` | pi takes the login method as an option and reports a refused method as its own error |
-| P38 base-prompt-sections | semantic | `modeCtx` (harness/pi/modes.ts), `ModeEngine.syncHostSection` (modes/engine.ts) | `ExtensionCommandContext.getSystemPromptOptions`, `BuildSystemPromptOptions.sections`, `AgentSession._baseSystemPromptOptions` | pi keeps extension sections across prompt rebuilds, or lets an extension own a section for the session's life |
+| P38 api-key-login | semantic | `piProviderKeys` (harness/pi/sign-in.ts), `storedKeyOf` (harness/pi/sign-in.ts) | `ModelRuntime.login`, `ModelRuntime.logout`, `ModelRuntime.getProviders`, `readStoredCredential`, pi-ai `envApiKeyAuth` | pi exports a store-a-key call (AuthStorage or a ModelRuntime method that persists) |
+| P39 base-prompt-sections | semantic | `modeCtx` (harness/pi/modes.ts), `ModeEngine.syncHostSection` (modes/engine.ts) | `ExtensionCommandContext.getSystemPromptOptions`, `BuildSystemPromptOptions.sections`, `AgentSession._baseSystemPromptOptions` | pi keeps extension sections across prompt rebuilds, or lets an extension own a section for the session's life |
 | T1 scripted-model (test-only) | private-write | `ScriptedModel.attach` (harness/pi/testing/scripted-model.ts) | `AgentSession._modelRuntime`, `Agent.getApiKey`, `Agent.streamFunction` | pi offers a public test model hook |
 
 ## What each one relies on
@@ -283,11 +284,17 @@ Settings → Accounts signs the ChatGPT subscription in through `ModelRuntime.lo
 
 Canary: `P37 openai-codex-login: the login asks a method menu with device_code and browser first, and a refused code route fails before any code is shown, with the not-enabled text`. The browser route's half (the link's `state`, the paste-back prompt's signal, the port freed on abort) listens on localhost:1455, so it runs in the integration tier: `server/harness/pi/sign-in.integration.test.ts`.
 
-### P38 base-prompt-sections
+### P38 api-key-login
+
+Settings → Accounts saves a pay-as-you-go API key through pi's own api-key login, `ModelRuntime.login(provider, "api_key", …)` on a throwaway runtime over the agent dir's `auth.json` and `models.json`, answering its one prompt with the key, and removes it with `ModelRuntime.logout` (§app/provider-keys). pi exports neither `AuthStorage` nor a call that stores a key (`setRuntimeApiKey` keeps it in memory only), so Sova relies on: a provider's api-key login (pi-ai's `envApiKeyAuth`) prompting exactly once, with `type: "secret"`, and storing `{ type: "api_key", key }` under the provider's id by a modify under pi's lock; `logout` deleting only that provider's entry; a provider that takes a key carrying `auth.apiKey.login` in `getProviders()`, providers models.json defines included; and `readStoredCredential` returning the stored entry without resolving it (a `!command` key is never run). Those writes are what login sync (server/sync/logins.ts) reads as a login and a logout.
+
+Canary: `P38 api-key-login: the api-key login asks one secret prompt and stores the key under the provider, logout removes only that entry, and the key providers carry an api-key login`.
+
+### P39 base-prompt-sections
 
 A command context's `getSystemPromptOptions()` hands out the session's live base prompt options: the `sections` object in them builds the prompt of a turn no `before_agent_start` built (one an extension's message starts) and of a run's later requests. A tool change replaces the object. So the mode engine keeps the getter, adopted from the chat's command context at every bind (the replacement for `/mode sync`), and writes its `mode` section there again at every run start and every switch. The pi-config mode extension relies on the same through `/mode sync`, until it is retired.
 
-Canary: `P38 base-prompt-sections: a command context's getSystemPromptOptions() is the live base options, whose sections build the prompt, and a tool change replaces it`.
+Canary: `P39 base-prompt-sections: a command context's getSystemPromptOptions() is the live base options, whose sections build the prompt, and a tool change replaces it`.
 
 ### T1 scripted-model (test-only)
 

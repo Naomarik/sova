@@ -1,6 +1,6 @@
-import { createEffect, createMemo, createResource, createSignal, For, on, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import type { ThemeInfo } from "../../shared/protocol";
-import { getClaudeCliStatus, getProviderLimits, getThemes, getWebSettings } from "../lib/api";
+import { getClaudeCliStatus, getModelCheck, getProviderLimits, getThemes, getWebSettings, runModelCheck } from "../lib/api";
 import { clockTime, tildePath } from "../lib/format";
 import {
   CLAUDE_CODE_PROVIDER,
@@ -18,7 +18,8 @@ import {
   setProviderSubagents,
   type ModelPolicy,
 } from "../lib/model-policy";
-import { ensureModels } from "../lib/models";
+import { ensureModels, loadModels, modelList } from "../lib/models";
+import { checkLine, newRefs } from "../lib/model-check";
 import { providerGrouper, type ProviderGroup } from "../lib/provider-groups";
 import { createPoll } from "../lib/poll";
 import {
@@ -58,8 +59,7 @@ import { announce, home } from "../lib/ui-state";
 import { DecisionSettingsSection } from "./DecisionSettings";
 import { SubagentProfilesSettings } from "./SubagentProfilesSettings";
 import { MeshSettingsSection } from "./MeshSettings";
-import { AccountsSettingsSection } from "./AccountsSettings";
-import { OpenAiAccountSection } from "./OpenAiAccount";
+import { AccountsPanel } from "./ProviderKeys";
 import { McpSettingsSection } from "./McpSettings";
 import { OverseerSettingsSection } from "./OverseerSettings";
 import { PublicLinksSettingsSection } from "./PublicLinksSettings";
@@ -234,9 +234,7 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
               and closing Settings cancels a sign-in still waiting for its code. */}
           <Show when={tab() === "accounts"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-accounts" aria-labelledby="settings-tab-accounts">
-              <AccountsSettingsSection />
-              <ClaudeCliStatusLine />
-              <OpenAiAccountSection />
+              <AccountsPanel claudeCli={() => <ClaudeCliStatusLine />} />
             </div>
           </Show>
           {/* Mounted only while its tab is: it reads its servers while it shows, and saves on its own. */}
@@ -385,7 +383,7 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
 }
 
 /**
- * Settings → Accounts' last line (§app.claude-logins/cli-status): whether the Claude Code CLI was
+ * Accounts → Claude's line under its sign-ins (§app.claude-logins/cli-status): whether the Claude Code CLI was
  * found, and how many of its models the picker has. A line, not a control — the provider is always
  * on. Read when the tab opens (the panel is mounted only while its tab is): the probe spawns
  * `claude --version` on the server.
@@ -535,7 +533,9 @@ function GeneralPanel() {
  * same Save Changes into provider-limits.json (provider-limits-draft.ts).
  */
 function ModelsPanel() {
-  const [models] = createResource(() => ensureModels());
+  const [loaded] = createResource(() => ensureModels());
+  /** The shared list once loaded, so a finished check's reload (below) updates the rows in place. */
+  const models = () => modelList() ?? loaded();
   const [source, { refetch }] = createResource(() => loadModelPolicy());
   /** The policy as the user has set it: the saved policy, then every staged switch move. */
   const policy = policyDraft;
@@ -569,6 +569,31 @@ function ModelsPanel() {
   const loweredNote = (provider: string) => {
     const l = limitsInfo()?.lowered?.[provider];
     return l ? `lowered to ${l.limit} until ${clockTime(l.until)}` : undefined;
+  };
+
+  // Ollama Cloud's model list check (§app.model-levels/settings-line): its line under the provider,
+  // Check Now, and the New marks. A finished check reloads the shared model list (picker included).
+  const [checkSource, { mutate: setCheck }] = createResource(() => getModelCheck().catch(() => undefined));
+  const [checking, setChecking] = createSignal(false);
+  const [checkError, setCheckError] = createSignal<string | null>(null);
+  const [now, setNow] = createSignal(Date.now());
+  const tick = setInterval(() => setNow(Date.now()), 30_000);
+  onCleanup(() => clearInterval(tick));
+  const checkStatus = () => checkSource();
+  const fresh = createMemo(() => newRefs(checkStatus(), now()));
+  const checkNow = async () => {
+    if (checking()) return;
+    setChecking(true);
+    setCheckError(null);
+    try {
+      setCheck(await runModelCheck());
+      await loadModels().catch(() => undefined);
+    } catch (e) {
+      setCheckError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setChecking(false);
+      setNow(Date.now());
+    }
   };
 
   /** A switch moved: staged, written by Save Changes. */
@@ -648,7 +673,7 @@ function ModelsPanel() {
           <SearchField label="Search models and providers" placeholder="Search models" spellcheck={false} value={query()} onInput={setQuery} />
         </div>
         <Show
-          when={policy() && models() && !models.loading}
+          when={policy() && models() && !loaded.loading}
           fallback={
             <div aria-hidden="true">
               <div class="skeleton skeleton-row" />
@@ -731,6 +756,22 @@ function ModelsPanel() {
                               onInput={(v) => editLimit(group.provider, v)}
                             />
                           </div>
+                          <Show when={checkStatus()?.provider === group.provider ? checkStatus() : undefined}>
+                            {(status) => (
+                              <div class="model-policy-check" aria-live="polite">
+                                <span class="model-policy-check-line">{checkError() ? `Couldn't check: ${sentence(checkError()!)}` : checkLine(status(), now(), checking())}</span>
+                                <button
+                                  type="button"
+                                  class="button button-sm"
+                                  disabled={checking() || status().checking || !status().enabled}
+                                  title={status().enabled ? `Check ${group.provider}'s model list now` : "Model checks are off on this server (PI_OFFLINE or SOVA_MODELS_FETCH=off)"}
+                                  onClick={() => void checkNow()}
+                                >
+                                  Check Now
+                                </button>
+                              </div>
+                            )}
+                          </Show>
                           <Show when={group.models.length > 0 && isOpen(group.provider)}>
                             <ul class="model-policy-models" id={`models-${group.provider}`}>
                               <For each={group.models}>
@@ -738,6 +779,10 @@ function ModelsPanel() {
                                   <li class="model-policy-row model-policy-model">
                                     <span class="model-policy-model-name" title={m.ref}>
                                       {m.id}
+                                      <Show when={fresh().has(m.ref)}>
+                                        {" "}
+                                        <span class="chip chip-info" title="Added from Ollama Cloud's list in the last week">New</span>
+                                      </Show>
                                     </span>
                                     <Toggle
                                       switch

@@ -20,6 +20,18 @@ export function standingOf(info: OpenAiAccountInfo, usage: UsageProvider | undef
   return openAiSignInStopped(usage, now) ? "sign-in-again" : "signed-in";
 }
 
+/**
+ * The tab's intro (§app.openai-login/section): where a sign-in goes follows the mesh logins setting. While the
+ * mesh is on and this device shares every login, it reaches the mesh computers that get logins; with API keys
+ * only (or no mesh), it stays here.
+ */
+export function introText(info: Pick<OpenAiAccountInfo, "meshSharesLogins" | "apiKeysOnly"> | undefined): string {
+  const lead = "Sova's chats use OpenAI's models through your ChatGPT subscription.";
+  return info?.meshSharesLogins && !info.apiKeysOnly
+    ? `${lead} Sign in once here; it's shared with your mesh computers that get logins, and chats pick it up on their next message.`
+    : `${lead} Sign in once on this device; chats pick it up on their next message.`;
+}
+
 /** The section's one muted note for this device, or null. */
 export function sectionNote(info: OpenAiAccountInfo): string | null {
   if (info.apiKeysOnly) return "This device shares API keys only, so this sign-in stays on this device.";

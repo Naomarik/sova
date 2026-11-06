@@ -303,7 +303,7 @@ function defaultApiKeysOnly(): boolean {
 }
 
 /** The mesh is on and shares sign-ins. */
-function defaultMeshSharesLogins(): boolean {
+export function defaultMeshSharesLogins(): boolean {
   return meshEnabled() && readMeshSettings().sync.logins;
 }
 

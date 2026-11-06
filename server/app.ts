@@ -74,6 +74,8 @@ import { rowsOf } from "./transcript";
 import { readBranch, unknownEntries } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
 import { appendToClosedFile, createSessionFile, type NewSessionFile } from "./harness/pi/state";
+import { modelCheck, modelCheckStatus } from "./harness/pi/model-sync";
+import { reapplyModelLevels } from "./harness/pi/open";
 import { LINK_MEMBER, SUBAGENT_PROFILE } from "./harness/state-kinds";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
@@ -116,6 +118,7 @@ import { parseSessionTitleSettings, readSessionTitleSettings, sessionTitleSettin
 import type { LlmRuntime } from "./decide-llm";
 import { claudeLoginEnv, registerClaudeAccountRoutes } from "./claude-accounts";
 import { OpenAiLoginService, registerOpenAiLoginRoutes } from "./openai-login";
+import { linkOllamaReading, ProviderKeysService, registerProviderKeyRoutes } from "./provider-keys";
 import { chatOnlyModes, CREATE_NOT_TAKEN, modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { defaultMemoryChoice } from "./memory/settings";
 import { registerMemoryRoutes } from "./memory/routes";
@@ -1003,6 +1006,17 @@ export function buildApp(deps: AppDeps) {
   // set_model and on the next message of a session already sitting on one, and the pi extensions
   // pick the same file up per model change, per turn and per spawn, TUI sessions included.
   app.get("/api/settings/models", (c) => c.json(readModelPolicy()));
+  // Ollama Cloud's model list check (§app.model-levels/server-check): its status for Settings → Models'
+  // line, and Check now, which answers once the check is done (the model list has then been re-applied).
+  app.get("/api/settings/models/check", (c) => c.json(modelCheckStatus(), 200, { "Cache-Control": "no-store" }));
+  app.post("/api/settings/models/check", async (c) => {
+    // The round checks the Ollama Cloud key too (linkOllamaReading): one record, read by Accounts as well.
+    const record = await modelCheck().checkNow();
+    if (!record) return c.json({ error: "Model checks are off on this server (PI_OFFLINE or SOVA_MODELS_FETCH=off)." }, 409);
+    // The shared runtime applies the file before the answer, so the client's next /api/models has the new list.
+    await reapplyModelLevels();
+    return c.json(modelCheckStatus());
+  });
   app.put("/api/settings/models", async (c) => {
     let body: unknown;
     try {
@@ -1252,12 +1266,17 @@ export function buildApp(deps: AppDeps) {
   // Settings → Accounts' OpenAI sign-in (§app.openai-login): the ChatGPT subscription through pi's own
   // login. A change re-checks the shared runtime's providers, so the model menu and opening choices
   // see it at once, and asks for a usage reading.
-  const openAiLogin = registerOpenAiLoginRoutes(app, new OpenAiLoginService({
-    afterChange: async () => {
-      await (await getModelRuntime()).getAvailable().catch(() => []);
-      await refreshUsageInsight().catch(() => undefined);
-    },
-  }));
+  /** A sign-in or a key changed: the shared runtime re-checks its providers (the model menu follows at once) and usage is read again. */
+  const afterAccountChange = async () => {
+    await (await getModelRuntime()).getAvailable().catch(() => []);
+    await refreshUsageInsight().catch(() => undefined);
+  };
+  const openAiLogin = registerOpenAiLoginRoutes(app, new OpenAiLoginService({ afterChange: afterAccountChange }));
+
+  // Settings → Accounts' API keys (§app/provider-keys): checked before saving, stored by pi's own login,
+  // read back only to a browser on this computer. Ollama Cloud's key is checked in Settings → Models' model list
+  // round: one record, shown in both places.
+  registerProviderKeyRoutes(app, linkOllamaReading(new ProviderKeysService({ afterChange: afterAccountChange })));
 
   // The mode is per session. ~/.pi/agent/mode.json is the default new sessions
   // start from; GET reads it, POST without ?path= writes it and changes no open chat. A switch never writes

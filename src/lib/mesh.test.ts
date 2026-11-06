@@ -40,6 +40,14 @@ import {
   passesHostFilter,
   downPeerIds,
   listedWhileDown,
+  listedSessions,
+  hostScope,
+  hostFilterLabel,
+  activeHostFilter,
+  chooseHostFilter,
+  storedHostFilter,
+  HOST_FILTER_KEY,
+  meshPeers,
   SELF_FILTER,
   meshRetryDelay,
   helloChange,
@@ -256,6 +264,77 @@ test("a down peer's rows are listed nowhere unless the host filter names it; eve
   assert.equal(listedWhileDown("laptop", "laptop", down), true, "chosen in the host filter: its rows show");
   for (const host of [null, "vps", "desk", "old"]) assert.equal(listedWhileDown(host, null, down), true, `${host} is listed`);
   assert.equal(listedWhileDown("laptop", null, downPeerIds([peer("laptop", "up")])), true, "answering again: back everywhere");
+});
+
+/** A page's storage for one test: what `chooseHostFilter` writes, read back. */
+function withStorage(run: (store: Map<string, string>) => void): void {
+  const store = new Map<string, string>();
+  const g = globalThis as { localStorage?: unknown };
+  const was = g.localStorage;
+  g.localStorage = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => void store.set(k, v),
+    removeItem: (k: string) => void store.delete(k),
+  };
+  try {
+    run(store);
+  } finally {
+    g.localStorage = was;
+    chooseHostFilter(null);
+    setMeshState(null);
+  }
+}
+
+test("the host filter is one store for the page: a choice reads back at once everywhere and is remembered", () => {
+  withStorage((store) => {
+    setMeshState({ enabled: true, self: { id: "desk", label: "Desk", hostname: "desk.local" }, peers: [peer("laptop", "up")], sync: [], frontDoor: null });
+    assert.equal(activeHostFilter(), null, "All by default");
+    chooseHostFilter("laptop");
+    // No storage event: a reader of the store sees it in the same tick.
+    assert.equal(storedHostFilter(), "laptop");
+    assert.equal(activeHostFilter(), "laptop");
+    assert.equal(store.get(HOST_FILTER_KEY), "laptop", "remembered across reloads");
+    chooseHostFilter(SELF_FILTER);
+    assert.equal(activeHostFilter(), SELF_FILTER);
+    assert.equal(hostFilterLabel(SELF_FILTER), "Desk", "this host as the host menu names it");
+    assert.equal(hostFilterLabel("laptop"), "laptop", "a peer with no label: its id");
+    chooseHostFilter("vps");
+    assert.equal(activeHostFilter(), null, "a host no longer known reads as All");
+    assert.equal(store.get(HOST_FILTER_KEY), "vps", "without touching the store");
+    chooseHostFilter(null);
+    assert.equal(store.has(HOST_FILTER_KEY), false, "All is the absence");
+    chooseHostFilter("laptop");
+    setMeshState({ enabled: false, self: { id: "desk", label: "Desk", hostname: "desk.local" }, peers: [peer("laptop", "up")], sync: [], frontDoor: null });
+    assert.equal(activeHostFilter(), null, "mesh off: never a filter");
+  });
+});
+
+test("the board's sessions follow the list's host rules: a down peer's rows are left out unless the filter names it", () => {
+  withStorage(() => {
+    resetHosts();
+    const here = row("/here/a.jsonl");
+    const lap = [row("/lap/b.jsonl"), row("/lap/c.jsonl")];
+    const vps = [row("/vps/d.jsonl")];
+    notePeerSessions("laptop", lap.map((s) => s.path));
+    notePeerSessions("vps", vps.map((s) => s.path));
+    setMeshState({ enabled: true, self: { id: "desk", label: "", hostname: "desk" }, peers: [peer("laptop", "down"), peer("vps", "up")], sync: [], frontDoor: null });
+    const peerLists = new Map([["laptop", lap], ["vps", vps]]);
+    const all = joinHostLists([here], peerLists);
+    const paths = (rows: readonly SessionSummary[]) => rows.map((s) => s.path);
+    // No host filter: the down peer's kept list is there, and none of it is the board's.
+    assert.deepEqual(paths(hostScope(all, activeHostFilter(), meshPeers())), ["/here/a.jsonl", "/vps/d.jsonl"]);
+    assert.deepEqual(paths(listedSessions(all, null, meshPeers())), ["/here/a.jsonl", "/vps/d.jsonl"], "the sidebar's rule is the same one");
+    chooseHostFilter("laptop");
+    assert.deepEqual(paths(hostScope(all, activeHostFilter(), meshPeers())), ["/lap/b.jsonl", "/lap/c.jsonl"], "named: its last known rows, and only them");
+    chooseHostFilter(SELF_FILTER);
+    assert.deepEqual(paths(hostScope(all, activeHostFilter(), meshPeers())), ["/here/a.jsonl"]);
+    chooseHostFilter("vps");
+    assert.deepEqual(paths(hostScope(all, activeHostFilter(), meshPeers())), ["/vps/d.jsonl"]);
+    chooseHostFilter(null);
+    setMeshState({ enabled: true, self: { id: "desk", label: "", hostname: "desk" }, peers: [peer("laptop", "up"), peer("vps", "up")], sync: [], frontDoor: null });
+    assert.deepEqual(paths(hostScope(all, activeHostFilter(), meshPeers())), ["/here/a.jsonl", "/lap/b.jsonl", "/lap/c.jsonl", "/vps/d.jsonl"], "answering again: back on the board");
+    resetHosts();
+  });
 });
 
 test("GET /api/mesh is asked again only after a failure that may pass", () => {

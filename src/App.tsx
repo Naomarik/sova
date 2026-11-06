@@ -32,7 +32,7 @@ import { socketReconnects } from "./lib/socket";
 import { watchUpdates } from "./lib/updates";
 import { actSessionCount, setAppBadge } from "./lib/push";
 import { firstBaseline, helloNews, weighHello, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
-import { noteSessionsHidden, sessionsHiddenBy } from "./lib/mesh";
+import { activeHostFilter, hostScope, noteSessionsHidden, sessionsHiddenBy } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { bindKey, paletteKeyAction } from "./commands/keys";
 import { composerOf } from "./commands/composers";
@@ -381,6 +381,15 @@ export function App() {
   });
   // Recent's sessions stay in memory, fetched in the background, so opening one paints at once.
   startRecentPreload(sidebarSessions);
+  /** The Agents board's sessions: this host's and every peer's with their pending archive changes,
+      under the list's host rules and the host filter the sidebar sets (lib/mesh `hostScope`). Not
+      this tab's unlisted husks: the board lists what the server does. */
+  const boardHostFilter = createMemo(activeHostFilter);
+  const boardSessions = createMemo<SessionSummary[] | undefined>((previous) => {
+    archiveVersion();
+    const l = allSessions();
+    return l && archiveChanges.apply(hostScope(l, boardHostFilter(), meshPeers()), previous);
+  });
 
   redirectLegacyInsights();
   openSettingsFromHash();
@@ -1015,7 +1024,7 @@ export function App() {
   const subagentsPath = () => {
     const s = subagents();
     if (!s) return null;
-    if (s.board) return insightsPage() === "agents" && (list() ?? []).some((x) => x.path === s.path) ? s.path : null;
+    if (s.board) return insightsPage() === "agents" && (boardSessions() ?? []).some((x) => x.path === s.path) ? s.path : null;
     return openPaths().includes(s.path) ? s.path : null;
   };
   /** The pane the board opened: a team link (`#/agents/<team>`) keeps it, leaving the page closes it. */
@@ -1218,12 +1227,17 @@ export function App() {
                 <Match when={insightsRoute()?.page === "agents"}>
                   <AgentsView
                     agents={agents}
-                    sessions={list()}
+                    sessions={boardSessions()}
+                    hereSessions={list()}
                     now={now()}
                     focusTeam={focusTeam()}
                     titleRef={(el) => (insightsTitleEl = el)}
                     onRefresh={refresh}
-                    onArchiveChanged={onArchived}
+                    onReadPeers={() => void loadPeerSessions()}
+                    onArchiveChanged={(path, archived) => {
+                      onArchived(path, archived);
+                      if (hostOf(path)) void loadPeerSessions();
+                    }}
                     onOpenSubagents={openSubagentsFor}
                     detailsPath={boardPanePath()}
                     onOpenDetails={openDetailsFor}

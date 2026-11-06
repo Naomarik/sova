@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import type { MeshLoginEntry, SessionSummary, SyncCategory } from "../../shared/protocol";
 import type { MeshInfoView as MeshInfo, MeshSessionsView as MeshSessions, PeerStatusView as PeerStatus } from "../../shared/mesh-access";
+import { readKey, removeKey, writeKey } from "./storage-keys";
 import { reuseUnchanged } from "./summary-diff";
 
 // The client side of the peer mesh: which host a session lives on, and how a request for it
@@ -373,6 +374,22 @@ export const SELF_FILTER = ":self";
 /** The filter only exists while the mesh is on with at least one peer: two hosts or more. */
 export const hostFilterShown = (): boolean => !!meshState()?.enabled && meshPeers().length > 0;
 
+/** The filter as remembered: one store for the page, so the sidebar's choice narrows the Agents
+    board too, at once (a same-tab write fires no `storage` event, so nothing listens for one). */
+const [storedHostFilter, setStoredHostFilter] = createSignal<string | null>(typeof localStorage === "undefined" ? null : readKey(localStorage, HOST_FILTER_KEY));
+export { storedHostFilter };
+
+/** Choose the host filter (null: All), and remember it across reloads. */
+export function chooseHostFilter(value: string | null): void {
+  setStoredHostFilter(value);
+  if (typeof localStorage === "undefined") return;
+  if (value === null) removeKey(localStorage, HOST_FILTER_KEY);
+  else writeKey(localStorage, HOST_FILTER_KEY, value);
+}
+
+/** The filter in effect now, for every list it narrows (`effectiveHostFilter` over the store). */
+export const activeHostFilter = (): string | null => effectiveHostFilter(storedHostFilter(), meshPeers(), hostFilterShown());
+
 /**
  * The filter in effect: the remembered one while it still names a known host, else null (All).
  * A host dropped from peers.json, or the mesh going off, reads as All without touching the store.
@@ -400,6 +417,20 @@ export const downPeerIds = (peers: readonly PeerStatus[]): Set<string> =>
  */
 export const listedWhileDown = (host: string | null, filter: string | null, down: ReadonlySet<string>): boolean =>
   host === null || !down.has(host) || filter === host;
+
+/** The sessions the list shows at all under `filter`: a down peer's only while the filter names
+    it. A peer that hides its sessions has none to start with (`mergePeerLists`). */
+export function listedSessions<S extends { path: string }>(sessions: readonly S[], filter: string | null, peers: readonly PeerStatus[]): S[] {
+  const down = downPeerIds(peers);
+  return sessions.filter((s) => listedWhileDown(hostOf(s.path), filter, down));
+}
+
+/** The sessions listed under `filter` and narrowed by it: what the Agents board shows. */
+export const hostScope = <S extends { path: string }>(sessions: readonly S[], filter: string | null, peers: readonly PeerStatus[]): S[] =>
+  listedSessions(sessions, filter, peers).filter((s) => passesHostFilter(filter, s.path));
+
+/** What the host filter's choice is called: this host as the host menu names it, or the peer's label. */
+export const hostFilterLabel = (filter: string): string => (filter === SELF_FILTER ? selfLabel() : hostLabel(filter));
 
 /** Waits between tries at GET /api/mesh after a failure that may pass (ms), the last one repeating. */
 const MESH_RETRY_MS = [5_000, 15_000, 30_000, 60_000];

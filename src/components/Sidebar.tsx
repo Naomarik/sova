@@ -71,7 +71,7 @@ import { projectHref, projectSessionHref, PROJECTS_HREF } from "../lib/projects-
 import { hasOverseerRows, overseerMenu, overseerMenuDot, overseerMenuLabel, rowEnd, rowLabel } from "../lib/overseer-menu";
 import { llmInflight, marksOverlay, openSessionFeed } from "../lib/session-feed";
 import { reuseUnchanged } from "../lib/summary-diff";
-import { FOLDERS_KEY, readKey, removeKey, writeKey } from "../lib/storage-keys";
+import { FOLDERS_KEY, readKey, writeKey } from "../lib/storage-keys";
 import { monogram, setSpine, spine } from "../lib/spine";
 import { ARCHIVE_TILE, createRowPress, type DragInfo, dropAction, dropTiles, type TileId } from "../lib/drag-overlay";
 import { bindKey } from "../commands/keys";
@@ -112,13 +112,12 @@ import { RemoteGroupDot } from "./RemoteStatus";
 import { Banner, Icon, trapFocus } from "./ui";
 import { showSummaries } from "../lib/summary-line";
 import {
-  downPeerIds,
-  effectiveHostFilter,
-  HOST_FILTER_KEY,
+  activeHostFilter,
+  chooseHostFilter,
   hostFilterShown,
   hostLabel,
   hostOf,
-  listedWhileDown,
+  listedSessions,
   meshPeers,
   passesHostFilter,
   peerInfo,
@@ -191,7 +190,7 @@ async function applyDrop(from: DragInfo, groupId: string | null): Promise<boolea
 export const sessionHref = (path: string) => sessionHrefOn(hostOf(path), path);
 
 /** A peer row's host state: the host menu's word and tone, or null for a peer that can be used. */
-const rowHostOf = (host: string) => {
+export const rowHostOf = (host: string) => {
   const peer = peerInfo(host);
   return peer ? rowHostState(peer.state, !!peerUnavailable(peer)) : null;
 };
@@ -200,7 +199,7 @@ const rowHostOf = (host: string) => {
  * A peer's session carries its host's name beside the time; a host that can't be used names its
  * state in a word too. A session on this host carries nothing, exactly as before the mesh.
  */
-function HostMark(props: { host: string }) {
+export function HostMark(props: { host: string }) {
   const peer = () => peerInfo(props.host);
   const why = () => (peer() ? peerUnavailable(peer()!) : null);
   const state = () => rowHostOf(props.host);
@@ -220,7 +219,7 @@ function HostMark(props: { host: string }) {
 }
 
 /** The host clause of a peer row's accessible name: the same word as its mark. */
-const hostClause = (host: string) => {
+export const hostClause = (host: string) => {
   const state = rowHostOf(host);
   if (!state) return `, on ${hostLabel(host)}`;
   return `, on ${hostLabel(host)}, ${state.word === "down" ? "which can't be reached" : state.word}`;
@@ -1211,21 +1210,15 @@ export function Sidebar(props: {
   attention?: AttentionDigest;
 }) {
   const [query, setQuery] = createSignal("");
-  /** The host filter as remembered (lib/mesh.ts); what applies is `hostFilter()`, which reads All
+  /** The host filter in effect (lib/mesh.ts, one store with the Agents board), which reads All
       while its host isn't known or the filter isn't shown. A memo, so the search hits re-run only
       when the filter's value moves, not on every mesh poll that rebuilds the peer list. */
-  const [storedHostFilter, setStoredHostFilter] = createSignal(readKey(localStorage, HOST_FILTER_KEY));
-  const hostFilter = createMemo(() => effectiveHostFilter(storedHostFilter(), meshPeers(), hostFilterShown()));
+  const hostFilter = createMemo(activeHostFilter);
   /** The host the filter shows, when it keeps its sessions from this one (§mesh.peers/grants). */
   const hiddenHost = createMemo(() => {
     const h = hostFilter();
     return h && h !== SELF_FILTER && sessionsHiddenBy(h) ? h : null;
   });
-  const chooseHostFilter = (value: string | null) => {
-    setStoredHostFilter(value);
-    if (value === null) removeKey(localStorage, HOST_FILTER_KEY);
-    else writeKey(localStorage, HOST_FILTER_KEY, value);
-  };
   // "Open Through This Host" in the mesh details: the filter takes that host (a fresh ask each time).
   createEffect(on(hostFilterAsk, (ask) => ask && chooseHostFilter(ask.value), { defer: true }));
   const [showSkeleton, setShowSkeleton] = createSignal(false);
@@ -1366,14 +1359,13 @@ export function Sidebar(props: {
   /** Main threads only (src/lib/regions.ts): every region, search hit and count reads this. Each row
       carries the feed's marks over the list's (a peer's row keeps its own); `reuseUnchanged` keeps a
       row's object across feed messages that don't touch it, so rows update in place. A down
-      peer's rows are left out unless the host filter names it (lib/mesh.ts `listedWhileDown`). */
+      peer's rows are left out unless the host filter names it (lib/mesh.ts `listedSessions`, the
+      Agents board's rule too). */
   const all = createMemo<SessionSummary[]>((prev) => {
-    const down = downPeerIds(meshPeers());
-    const filter = hostFilter();
     return reuseUnchanged(
       // A cleared project overseer conversation is drawn nowhere: its overseer's History opens it.
-      (props.sessions ?? [])
-        .filter((s) => isMainThread(s) && !isClearedOverseer(s) && listedWhileDown(hostOf(s.path), filter, down))
+      listedSessions(props.sessions ?? [], hostFilter(), meshPeers())
+        .filter((s) => isMainThread(s) && !isClearedOverseer(s))
         .map((s) => overlaid(s, marksOverlay(), !!hostOf(s.path))),
       prev,
     );

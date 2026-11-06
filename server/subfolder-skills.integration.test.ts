@@ -416,15 +416,21 @@ describe("Claude Code", async () => {
     await disposeHeldChat(path, "test: done");
   });
 
-  test("a Claude Code worker's read: the same", async () => {
-    const cwd = project();
-    const path = sessionFile(cwd, modelRef);
-    setWorkerSpec(path, workerSpec(cwd, { model: "claude-code-cli/claude-opus-5-5", extensions: [CC], flags: { "claude-code-provider": true } }));
-    const text = await run(path, "read", { path: "svc/x.ts" });
-    assert.match(text, /<sova-skills dir="svc">/, text.slice(0, 600));
-    assert.match(text, /<sova-instructions path="svc\/CLAUDE\.md">/, text.slice(0, 600));
-    await disposeHeldChat(path, "test: done");
-  });
+  for (const [tool, args] of [
+    ["read", { path: "svc/x.ts" }],
+    ["edit", { path: "svc/x.ts", edits: [{ oldText: "one", newText: "uno" }] }],
+    ["write", { path: "svc/made.ts", content: "m\n" }],
+  ] as const) {
+    test(`a Claude Code worker's ${tool}: the same`, async () => {
+      const cwd = project();
+      const path = sessionFile(cwd, modelRef);
+      setWorkerSpec(path, workerSpec(cwd, { model: "claude-code-cli/claude-opus-5-5", extensions: [CC], flags: { "claude-code-provider": true } }));
+      const text = await run(path, tool, args);
+      assert.match(text, /<sova-skills dir="svc">/, text.slice(0, 600));
+      assert.match(text, /<sova-instructions path="svc\/CLAUDE\.md">/, text.slice(0, 600));
+      await disposeHeldChat(path, "test: done");
+    });
+  }
 });
 
 describe("a chat that loads no skills", () => {

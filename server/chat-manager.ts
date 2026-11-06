@@ -2965,6 +2965,8 @@ class ChatSession {
       ...(this.cwdFallback ? { cwdFallback: this.cwdFallback } : {}),
       ...(tail ? { live: tail } : {}),
       ...(shell ? { shell } : {}),
+      // Its own agent and folder (§chat.shell-mode/box): a special kind's agent has no shell.
+      ...(this.special ? {} : { shellMode: true as const }),
     };
   }
 

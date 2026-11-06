@@ -101,7 +101,7 @@ export class ChatShell {
     const kill = killGuardRefusal(command, this.deps.platform ?? process.platform, "user");
     if (kill) return refuse("kill-guard", kill);
     const harness = this.deps.harness();
-    const run: ShellRun = { id: `sh_${randomUUID()}`, command, output: "", state: "running", startedAt: Date.now(), ...(msg.private === true ? { private: true as const } : {}) };
+    const run: ShellRun = { id: `sh_${randomUUID()}`, command, output: "", state: "running", startedAt: Date.now(), ...(msg.private === true ? { private: true as const } : {}), ...(clientId ? { clientId } : {}) };
     let endedNow!: () => void;
     const live: Live = { run, pending: "", timer: null, closing: false, saved: null, ended: new Promise((r) => (endedNow = r)) };
     this.current = live;

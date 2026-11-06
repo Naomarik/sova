@@ -13,7 +13,8 @@ must stay DOM- and Solid-free), browser testing, and the project skills.
   `src/design/` (design tokens, base CSS), which with `public/` (fonts/icons) is owned by **designer**.
 - `.claude/skills/`: project skills, registered for pi by `.pi/settings.json`
   (`"skills": ["../.claude/skills"]`; the folder is also trusted in `~/.pi/agent/trust.json`, or pi
-  prompts each session).
+  prompts each session). Every project's `.claude/skills` loads by itself (§chat/skill-sources); this
+  listing does no harm, since the same file reached twice shows once.
   - `.claude/skills/fold-ai-dev-design/`: the design system skill (copied from foldaidev). READ IT
     ([SKILL.md](../../.claude/skills/fold-ai-dev-design/SKILL.md)).
   - `.claude/skills/playwright/`: CDP browser automation via

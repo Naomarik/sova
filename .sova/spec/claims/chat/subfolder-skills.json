@@ -1,0 +1,63 @@
+{
+  "§chat.subfolder-skills/command": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.skill-sources/arguments"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/subfolder-skills.ts",
+      "server/subfolder-skills.test.ts",
+      "server/subfolder-skills.integration.test.ts",
+      "server/harness/pi/deeper-context.ts",
+      "server/harness/pi/session.ts",
+      "server/chat-manager.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T18:26Z",
+      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
+    }
+  },
+  "§chat.subfolder-skills/offering": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.subfolder-instructions/loading",
+      "§chat.skill-sources/manual-only",
+      "§chat.transcript/setup-card-toggles"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/subfolder-skills.ts",
+      "server/subfolder-skills.test.ts",
+      "server/subfolder-skills.integration.test.ts",
+      "server/deeper-context.ts",
+      "server/deeper-context.test.ts",
+      "server/harness/pi/deeper-context.ts",
+      "server/chat-manager.ts",
+      "server/chat-special.ts",
+      "server/subfolder-skills-claude.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T18:26Z",
+      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
+    }
+  },
+  "§chat/subfolder-skills": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/subfolder-skills.ts",
+      "server/harness/pi/deeper-context.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T18:26Z",
+      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
+    }
+  }
+}

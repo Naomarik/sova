@@ -74,6 +74,8 @@ Paths in "Where" are under `server/`.
 | P37 openai-codex-login | semantic | `piInteraction` (harness/pi/sign-in.ts), `piProviderSignIn` (harness/pi/sign-in.ts), `OpenAiLoginService.answer` (openai-login.ts) | `ModelRuntime.login`, `AuthInteraction.prompt`, `AuthInteraction.notify`, openai-codex `login` | pi takes the login method as an option and reports a refused method as its own error |
 | P38 api-key-login | semantic | `piProviderKeys` (harness/pi/sign-in.ts), `storedKeyOf` (harness/pi/sign-in.ts) | `ModelRuntime.login`, `ModelRuntime.logout`, `ModelRuntime.getProviders`, `readStoredCredential`, pi-ai `envApiKeyAuth` | pi exports a store-a-key call (AuthStorage or a ModelRuntime method that persists) |
 | P39 base-prompt-sections | semantic | `modeCtx` (harness/pi/modes.ts), `ModeEngine.syncHostSection` (modes/engine.ts) | `ExtensionCommandContext.getSystemPromptOptions`, `BuildSystemPromptOptions.sections`, `AgentSession._baseSystemPromptOptions` | pi keeps extension sections across prompt rebuilds, or lets an extension own a section for the session's life |
+| P40 skill-input-expansion | ordering | `deeperContextExtension` (harness/pi/deeper-context.ts), `expandedSkill` (skill-sources.ts) | `AgentSession.prompt`, `AgentSession._expandSkillCommand`, `stripFrontmatter` | pi lets an extension supply a skill's body or expands a skill with no parse step |
+| P41 skill-loader-diagnostics | semantic | `withSkillSources` (harness/pi/skill-sources.ts), `withRescued` (harness/pi/skill-sources.ts), `skillProblemsOf` (harness/pi/skill-sources.ts), `piSkillsIn` (harness/pi/skill-sources.ts) | `DefaultResourceLoader`, `ResourceLoaderOptions.additionalSkillPaths`, `ResourceLoaderOptions.skillsOverride`, `loadSkillsFromDir`, `ResourceDiagnostic` | pi reports dropped skills in a typed way, honours noSkills for additional paths, or loads Claude's folders and front matter itself |
 | T1 scripted-model (test-only) | private-write | `ScriptedModel.attach` (harness/pi/testing/scripted-model.ts) | `AgentSession._modelRuntime`, `Agent.getApiKey`, `Agent.streamFunction` | pi offers a public test model hook |
 
 ## What each one relies on
@@ -295,6 +297,18 @@ Canary: `P38 api-key-login: the api-key login asks one secret prompt and stores 
 A command context's `getSystemPromptOptions()` hands out the session's live base prompt options: the `sections` object in them builds the prompt of a turn no `before_agent_start` built (one an extension's message starts) and of a run's later requests. A tool change replaces the object. So the mode engine keeps the getter, adopted from the chat's command context at every bind (the replacement for `/mode sync`), and writes its `mode` section there again at every run start and every switch. The pi-config mode extension relies on the same through `/mode sync`, until it is retired.
 
 Canary: `P39 base-prompt-sections: a command context's getSystemPromptOptions() is the live base options, whose sections build the prompt, and a tool change replaces it`.
+
+### P40 skill-input-expansion
+
+`/skill:name` for a skill pi can't expand is expanded by Sova's `input` hook, in pi's own form (§chat.subfolder-skills/command, §chat.skill-sources/arguments): a subfolder's skill, which no list of pi's has; a rescued skill, whose YAML pi's `stripFrontmatter` throws on; and any skill whose text has one of Claude's placeholders. Sova relies on: the `input` event running before `_expandSkillCommand`, a transform's text not being expanded again, pi's form (`<skill name location>` with its references line and the text after it), which `server/skills.ts` reads back as an invocation, and pi leaving a skill it can't parse as typed.
+
+Canary: `P40 skill-input-expansion: the input hook sees /skill: before pi expands it, a transform isn't expanded again, Sova's form is pi's, and pi leaves a skill it can't parse as typed`.
+
+### P41 skill-loader-diagnostics
+
+The Claude skill folders are added through pi's public `additionalSkillPaths`, and a dropped skill rescued through `skillsOverride` (§chat/skill-sources). Sova relies on what pi doesn't promise about them: a dropped `SKILL.md` is known only by a warning diagnostic naming its path; a same-named loser is a collision diagnostic; additional paths load even with `noSkills`, so a chat that loads no skills must get none; a path naming a folder that holds `SKILL.md` loads that skill alone, with no search below; one file reached twice is silent; and a skill's `sourceInfo.path` is its file.
+
+Canary: `P41 skill-loader-diagnostics: a dropped skill is a warning naming its file, a loser a collision, noSkills still loads additional paths, a skill folder path loads that skill, one file twice is silent`.
 
 ### T1 scripted-model (test-only)
 

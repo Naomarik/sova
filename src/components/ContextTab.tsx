@@ -7,9 +7,9 @@ import {
   contextLayout,
   contextRoom,
   flatParts,
+  groupSheet,
   inWindow,
   meterShares,
-  NOT_LOADED_NOTE,
   OTHER_META,
   partLang,
   partMeta,
@@ -40,8 +40,9 @@ interface Doc {
 type Level = { line: ContextLineKind; label: string } | { line: ContextLineKind; label: string; part: ContextPart; doc: Doc };
 const isPart = (l: Level): l is Extract<Level, { part: ContextPart }> => "part" in l;
 
-/** A row's size: a file not yet loaded shows what it would add. */
-const sizeOf = (p: ContextPart) => (inWindow(p) ? approxTokens(p.tokens) : `+${approxTokens(p.tokens)}`);
+/** A row's size: a file or skill not in the window yet shows what it would add, and a skill /skill: ran
+    unoffered has no listing there at all. */
+const sizeOf = (p: ContextPart) => (inWindow(p) ? approxTokens(p.tokens) : p.group === "skills" && p.read ? approxTokens(0) : `+${approxTokens(p.tokens)}`);
 /** Paths and tool names are machine names. */
 const monoName = (p: ContextPart) => p.group === "instructions" || p.group === "subfolder" || p.group === "tools";
 
@@ -203,30 +204,31 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
   // ---- The sheet's levels --------------------------------------------------------------------
   const top = () => stack().at(-1);
   const GroupLevel = (g: { level: Level; line: ContextLine }) => {
-    const counted = () => (g.line.notLoadedFrom < 0 ? g.line.parts : g.line.parts.slice(0, g.line.notLoadedFrom));
-    const later = () => (g.line.notLoadedFrom < 0 ? [] : g.line.parts.slice(g.line.notLoadedFrom));
+    const sheet = createMemo(() => groupSheet(g.line));
     return (
       <>
-        <Show when={g.line.meta}>
-          <p class="context-sheet-sub">{g.line.meta}</p>
+        <Show when={sheet().sub}>
+          <p class="context-sheet-sub">{sheet().sub}</p>
         </Show>
-        <Show when={counted().length > 0}>
+        <Show when={sheet().above.length > 0}>
           <ul class="list context-list" aria-label={g.line.label}>
-            <PartRows level={g.level} parts={counted()} />
+            <PartRows level={g.level} parts={sheet().above} />
           </ul>
         </Show>
-        <Show when={later().length > 0}>
-          <section class="stack-2" aria-labelledby="context-not-loaded">
-            <h4 class="text-eyebrow context-sheet-eyebrow" id="context-not-loaded">
-              Not yet loaded · not counted
-            </h4>
-            <p class="usage-note text-muted">{NOT_LOADED_NOTE}</p>
-            <ul class="list context-list" aria-labelledby="context-not-loaded">
-              <PartRows level={g.level} parts={later()} />
-            </ul>
-          </section>
-        </Show>
-        <Show when={g.line.kind === "instructions" && ok()?.nestedIncomplete}>
+        <For each={[sheet().below, sheet().last].flatMap((s) => s ?? [])}>
+          {(below) => (
+            <section class="stack-2" aria-labelledby={below.id}>
+              <h4 class="text-eyebrow context-sheet-eyebrow" id={below.id}>
+                {below.heading}
+              </h4>
+              <p class="usage-note text-muted">{below.note}</p>
+              <ul class="list context-list" aria-labelledby={below.id}>
+                <PartRows level={g.level} parts={below.parts} />
+              </ul>
+            </section>
+          )}
+        </For>
+        <Show when={(g.line.kind === "instructions" || g.line.kind === "skills") && ok()?.nestedIncomplete}>
           <p class="usage-note text-muted">This list may be incomplete.</p>
         </Show>
       </>

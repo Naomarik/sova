@@ -167,7 +167,7 @@ export function specialLoadout(chatId: string, spec: SpecialSpec, port: SpecialP
       ...(spec.visRetry && deps.visRetry ? [deps.visRetry()] : []),
       // Subfolder instruction files, never outside what its file tools may read (a loadout with no
       // context files gets none).
-      ...(deeperAllow ? [deeperContextExtension({ allow: deeperAllow })] : []),
+      ...(deeperAllow ? [deeperContextExtension({ allow: deeperAllow, skills: !l.noSkills })] : []),
     ],
     // The OVERRIDE, not appendSystemPrompt: passing appendSystemPrompt suppresses discovery of the
     // user's own APPEND_SYSTEM.md, and the override keeps it (resource-loader.js:386-396).

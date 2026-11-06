@@ -26,6 +26,10 @@ export interface ContextPart {
   loaded?: boolean;
   /** Skills: loaded since the latest compaction. */
   read?: boolean;
+  /** Skills: only `/skill:name` runs it, so the model isn't offered it. */
+  manualOnly?: boolean;
+  /** Skills of a folder below the chat's: the model has been offered it. Absent: a starting skill. */
+  offered?: boolean;
   /** Conversation counts: how many messages of that kind. */
   count?: number;
   /** The compaction summary: when that compaction ran (ISO). */
@@ -35,7 +39,7 @@ export interface ContextPart {
 /** The server's read as one list of parts, in the order the window is built (ids prefixed by
     group, so two groups never collide). Conversation counts of 0 are left out. Pure. */
 export function flatParts(v: Extract<SessionContextView, { state: "ok" }>): ContextPart[] {
-  const of = (group: ContextPartGroup, ps: readonly { id: string; label: string; tokens: number; path?: string; text?: string; detail?: string; read?: boolean }[]): ContextPart[] =>
+  const of = (group: ContextPartGroup, ps: readonly { id: string; label: string; tokens: number; path?: string; text?: string; detail?: string; read?: boolean; manualOnly?: boolean; folder?: string; offered?: boolean }[]): ContextPart[] =>
     ps.map((p) => ({
       id: `${group}:${p.id}`,
       group,
@@ -45,6 +49,9 @@ export function flatParts(v: Extract<SessionContextView, { state: "ok" }>): Cont
       ...(p.text !== undefined ? { text: p.text } : {}),
       ...(p.detail ? { detail: p.detail } : {}),
       ...(p.read !== undefined ? { read: p.read } : {}),
+      ...(p.manualOnly ? { manualOnly: true } : {}),
+      ...(p.folder !== undefined ? { folder: p.folder } : {}),
+      ...(p.offered !== undefined ? { offered: p.offered } : {}),
     }));
   const t = v.talk;
   const tallies: ContextPart[] = t
@@ -60,7 +67,7 @@ export function flatParts(v: Extract<SessionContextView, { state: "ok" }>): Cont
     ...v.nested.map((n) => ({ id: `subfolder:${n.abs}`, group: "subfolder" as const, label: n.path, tokens: n.tokens, path: n.abs, folder: n.folder, loaded: n.loaded })),
     ...of("mode", v.mode ? [v.mode] : []),
     ...of("rules", v.rules),
-    ...of("skills", v.skills),
+    ...of("skills", [...v.skills, ...(v.nestedSkills ?? [])]),
     ...of("tools", v.tools),
     ...tallies,
     ...(t?.summary ? [{ id: "conversation:summary", group: "conversation" as const, label: "Compaction summary", tokens: t.summary.tokens, text: t.summary.text, ...(t.summary.at ? { at: t.summary.at } : {}) }] : []),
@@ -86,8 +93,16 @@ export function partLang(p: Pick<ContextPart, "group" | "path">): string {
 /** Whether a part opens: it has something to read. A conversation count doesn't. Pure. */
 export const partOpens = (p: Pick<ContextPart, "path" | "text">): boolean => p.path !== undefined || p.text !== undefined;
 
-/** A part in the window now: every part but a subfolder file not yet loaded. Pure. */
-export const inWindow = (p: ContextPart): boolean => p.group !== "subfolder" || p.loaded === true;
+/** A part in the window now: every part but a subfolder file not yet loaded, a skill not offered yet and a
+    manual-only skill. Pure. */
+export const inWindow = (p: ContextPart): boolean => {
+  if (p.group === "subfolder") return p.loaded === true;
+  if (p.group === "skills") return !p.manualOnly && p.offered !== false;
+  return true;
+};
+
+/** A skill listed in Read though no listing of it is in the window: `/skill:` ran it unoffered. Pure. */
+const ranUnoffered = (p: ContextPart): boolean => p.group === "skills" && p.read === true && !inWindow(p);
 
 /** What the lines are worked out from. */
 export interface ContextSizes {
@@ -110,11 +125,15 @@ export interface ContextLine {
   tokens: number;
   /** The short line under its name. */
   meta: string;
-  /** Its parts as the sheet lists them: biggest first, Conversation's summary last, and (Instruction
-      files) the files not yet loaded at the end. */
+  /** Its parts as the sheet lists them: biggest first, Conversation's summary last, (Instruction
+      files) the files not yet loaded at the end, and (Skills offered) the skills read before the rest. */
   parts: ContextPart[];
-  /** Instruction files only: the first part that isn't in the window, or -1. */
+  /** Instruction files only: the first part that isn't in the window, or -1. Those aren't in `tokens`. */
   notLoadedFrom: number;
+  /** Skills offered only: the first skill not read yet, or -1. Those are in the window and in `tokens`. */
+  notReadFrom: number;
+  /** Skills offered only: the first skill not offered yet, or -1. Those aren't in `tokens`. */
+  notOfferedFrom: number;
 }
 
 /** The tab's whole layout: the groups biggest first, Other apart, and the room left. */
@@ -151,7 +170,11 @@ function lineMeta(kind: ContextLineKind, parts: readonly ContextPart[]): string 
     case "rules":
       return counted(parts.length, "section", "sections");
     case "skills":
-      return `${counted(parts.length, "skill", "skills")} · ${parts.filter((p) => p.read).length} read`;
+    {
+      const offered = parts.filter(inWindow);
+      const not = parts.filter((p) => !inWindow(p) && !p.read).length;
+      return `${counted(offered.length, "skill", "skills")} · ${parts.filter((p) => p.read).length} read${not ? ` · ${not} not offered yet` : ""}`;
+    }
     case "tools":
       return counted(parts.length, "tool", "tools");
     case "conversation": {
@@ -174,12 +197,17 @@ export function contextLayout(s: ContextSizes): ContextLayout {
   for (const g of GROUPS) {
     const mine = s.parts.filter((p) => g.of.includes(p.group));
     const counts = mine.filter((p) => inWindow(p) && p.id !== "conversation:summary").sort(bySize);
-    const later = mine.filter((p) => !inWindow(p)).sort(bySize);
+    // A skill /skill: ran unoffered is Read, though nothing of it counts here.
+    const later = mine.filter((p) => !inWindow(p) && !ranUnoffered(p)).sort(bySize);
     const summary = mine.filter((p) => p.id === "conversation:summary");
-    const parts = [...counts, ...summary, ...later];
+    // Every skill offered is in the window: read or not only orders the sheet, and no total looks at it.
+    const unread = g.kind === "skills" ? counts.filter((p) => !p.read) : [];
+    const first = g.kind === "skills" ? [...counts.filter((p) => p.read), ...mine.filter(ranUnoffered).sort(bySize)] : counts;
+    const parts = [...first, ...unread, ...summary, ...later];
     const tokens = g.kind === "conversation" ? s.conversation : mine.filter(inWindow).reduce((n, p) => n + p.tokens, 0);
-    if (tokens <= 0 && later.length === 0) continue;
-    lines.push({ id: g.kind, kind: g.kind, label: g.label, tokens, meta: lineMeta(g.kind, mine), parts, notLoadedFrom: later.length ? parts.length - later.length : -1 });
+    if (tokens <= 0 && later.length === 0 && first.length === 0) continue;
+    const laterFrom = later.length ? parts.length - later.length : -1;
+    lines.push({ id: g.kind, kind: g.kind, label: g.label, tokens, meta: lineMeta(g.kind, mine), parts, notLoadedFrom: g.kind === "skills" ? -1 : laterFrom, notReadFrom: unread.length ? first.length : -1, notOfferedFrom: g.kind === "skills" ? laterFrom : -1 });
   }
   lines.sort((a, b) => b.tokens - a.tokens);
   const known = lines.reduce((n, l) => n + l.tokens, 0);
@@ -187,6 +215,41 @@ export function contextLayout(s: ContextSizes): ContextLayout {
     lines,
     other: s.total === null ? null : Math.max(0, s.total - known),
     free: s.total !== null && s.window ? Math.max(0, s.window - s.total) : null,
+  };
+}
+
+/** A group's sheet: the line on top, the parts in its card, and the section under it, if any. */
+export interface GroupSheet {
+  sub: string;
+  above: ContextPart[];
+  below: { id: string; heading: string; note: string; parts: ContextPart[] } | null;
+  /** Skills offered: the section after `below`, of the skills not offered yet. */
+  last: { id: string; heading: string; note: string; parts: ContextPart[] } | null;
+}
+
+/** How a group's sheet splits. Files not yet loaded cost nothing, so their heading says they aren't
+    counted; skills not read yet are in the window, so theirs must not. Pure. */
+export function groupSheet(line: Pick<ContextLine, "kind" | "meta" | "parts" | "notLoadedFrom" | "notReadFrom" | "notOfferedFrom">): GroupSheet {
+  if (line.kind === "skills") {
+    const end = line.notOfferedFrom < 0 ? line.parts.length : line.notOfferedFrom;
+    const from = line.notReadFrom < 0 ? end : line.notReadFrom;
+    const above = line.parts.slice(0, from);
+    const parts = line.parts.slice(from, end);
+    const not = line.parts.slice(end);
+    const sub = [`${above.length} read`, ...(parts.length ? [`${parts.length} not read yet`] : []), ...(not.length ? [`${not.length} not offered yet`] : [])].join(" · ");
+    return {
+      sub,
+      above,
+      below: parts.length ? { id: "context-not-read", heading: "Not read yet", note: NOT_READ_NOTE, parts } : null,
+      last: not.length ? { id: "context-not-offered", heading: "Not offered yet · not counted", note: NOT_OFFERED_NOTE, parts: not } : null,
+    };
+  }
+  if (line.notLoadedFrom < 0) return { sub: line.meta, above: line.parts, below: null, last: null };
+  return {
+    sub: line.meta,
+    above: line.parts.slice(0, line.notLoadedFrom),
+    below: { id: "context-not-loaded", heading: "Not yet loaded · not counted", note: NOT_LOADED_NOTE, parts: line.parts.slice(line.notLoadedFrom) },
+    last: null,
   };
 }
 
@@ -239,7 +302,13 @@ export function partMeta(p: ContextPart): { chip?: { word: string; done: boolean
     case "subfolder":
       return p.loaded ? { chip: { word: "Loaded", done: true }, text: fileFolder(p) } : { text: fileFolder(p) };
     case "skills":
-      return { chip: p.read ? { word: "Read", done: true } : { word: "Not read yet", done: false }, text: p.detail ?? "" };
+    {
+      // A subfolder's skill names its folder, so two of one name can be told apart.
+      const text = p.folder !== undefined ? [`${p.folder}/`, p.detail].filter(Boolean).join(" · ") : (p.detail ?? "");
+      if (p.read) return { chip: { word: "Read", done: true }, text };
+      if (p.manualOnly) return { chip: { word: "Manual only", done: false }, text };
+      return inWindow(p) ? { chip: { word: "Not read yet", done: false }, text } : { text };
+    }
     case "conversation": {
       if (p.id === "conversation:summary") {
         const at = clockOf(p.at);
@@ -262,12 +331,19 @@ export const partSubtitle = (p: ContextPart, line: Pick<ContextLine, "label">): 
     size counts. Pure. */
 export function partNote(p: ContextPart): string | null {
   if (p.group === "subfolder" && !p.loaded) return `Not counted yet. It loads the first time the agent reads, edits or writes a file in ${p.folder ?? ""}.`;
+  if (p.group === "skills" && ranUnoffered(p)) return "/skill: ran it, so its text counts under Conversation. No listing of it is in the window.";
+  if (p.group === "skills" && p.manualOnly) return `The model is never offered it. /skill:${p.label} runs it, and adds its text to Conversation.`;
+  if (p.group === "skills" && p.offered === false) return `Not counted yet. The model is offered it the first time the agent reads, edits or writes a file in ${p.folder ?? ""}.`;
   if (p.group === "skills") return "Its size counts only what the model is offered: name and description. The full SKILL.md loads when the agent reads it, then counts under Conversation.";
   return null;
 }
 
 /** The note on a group's sheet for files not yet loaded. */
 export const NOT_LOADED_NOTE = "Each loads the first time the agent reads, edits or writes a file in its folder.";
+/** The note on Skills offered's sheet for skills not read yet. */
+export const NOT_READ_NOTE = "Each is in the window by its name and description, so its size counts.";
+/** The note on Skills offered's sheet for skills not offered yet. */
+export const NOT_OFFERED_NOTE = "Each is offered the first time the agent reads, edits or writes a file in its folder. Manual-only skills are never offered.";
 /** Other's short line. */
 export const OTHER_META = "What the estimates don't explain, such as Claude Code's own prompt.";
 

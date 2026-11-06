@@ -5,7 +5,7 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P39 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P41 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
@@ -24,6 +24,7 @@ import { SendKeys } from "../../send-keys.ts";
 import { WebQueue } from "../../queue.ts";
 import { steerAllAtOnce } from "./queue-modes.ts";
 import { steerTicket } from "./steer-ticket.ts";
+import { expandedSkill } from "../../skill-sources.ts";
 
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-pi-contract-")));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -682,6 +683,70 @@ describe("pi contract", () => {
     await b.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" } as never);
     b.session.dispose();
     assert.deepEqual(warm, ["start", "shutdown"]);
+  });
+
+  test("P40 skill-input-expansion: the input hook sees /skill: before pi expands it, a transform isn't expanded again, Sova's form is pi's, and pi leaves a skill it can't parse as typed", async () => {
+    const skills = join(dir, "skills");
+    const put = (name: string, text: string) => {
+      mkdirSync(join(skills, name), { recursive: true });
+      writeFileSync(join(skills, name, "SKILL.md"), text);
+    };
+    put("contract-plain", "---\nname: contract-plain\ndescription: plain\n---\n\nThe body.\n");
+    put("contract-later", "---\nname: contract-later\ndescription: later\n---\n\nLater body.\n");
+    const heard: string[] = [];
+    const ext = (api: any) =>
+      api.on("input", (e: any) => {
+        heard.push(e.text);
+        return e.text.startsWith("/skill:contract-later") ? { action: "transform", text: "/skill:contract-plain already transformed" } : { action: "continue" };
+      });
+    const { session, model } = await quirkSession({ extensions: [ext] });
+    const said = () => {
+      const last = (model.calls.at(-1)!.context as { messages: { role: string; content: { text?: string }[] }[] }).messages.filter((m) => m.role === "user").at(-1)!;
+      return last.content.map((c) => c.text ?? "").join("");
+    };
+    const file = join(skills, "contract-plain", "SKILL.md");
+    await session.prompt("/skill:contract-plain go");
+    assert.equal(heard[0], "/skill:contract-plain go", "fixed or moved: the input event no longer runs before the expansion");
+    assert.equal(said(), expandedSkill({ name: "contract-plain", filePath: file, skillDir: join(skills, "contract-plain"), body: "The body.", args: "go" }), "pi's form changed: expandedSkill and server/skills.ts's parser follow it");
+    await session.prompt("/skill:contract-later");
+    assert.ok(said().startsWith('<skill name="contract-plain"'), "pi expands a transform's text after all: drop nothing, but the hook's result gets expanded twice for a body that starts /skill:");
+    assert.throws(() => pi.agent.stripFrontmatter("---\ndescription: a: b\n---\nBody"), "fixed: pi's parser reads this; the hook's rescue expansion may go");
+    rmSync(skills, { recursive: true, force: true });
+    session.dispose();
+  });
+
+  test("P41 skill-loader-diagnostics: a dropped skill is a warning naming its file, a loser a collision, noSkills still loads additional paths, a skill folder path loads that skill, one file twice is silent", async () => {
+    const at = join(dir, `p41-${Math.random().toString(36).slice(2)}`);
+    const cwd = join(at, "cwd");
+    mkdirSync(cwd, { recursive: true });
+    const put = (rel: string, text: string) => {
+      mkdirSync(join(at, rel), { recursive: true });
+      writeFileSync(join(at, rel, "SKILL.md"), text);
+    };
+    put("a/one", "---\nname: one\ndescription: one\n---\nbody\n");
+    put("a/colon", "---\nname: colon\ndescription: bad: colon\n---\nbody\n");
+    put("a/bare", "---\nname: bare\n---\nbody\n");
+    put("b/one", "---\nname: one\ndescription: another one\n---\nbody\n");
+    put("c/solo", "---\nname: solo\ndescription: solo\n---\nbody\n");
+    put("c/solo/below", "---\nname: below\ndescription: below\n---\nbody\n");
+    const load = async (o: Record<string, unknown>) => {
+      const loader = new DefaultResourceLoader({ cwd, agentDir: at, noExtensions: true, ...o } as never);
+      await loader.reload();
+      return loader.getSkills();
+    };
+    let seen: { skills: { name: string }[]; diagnostics: { type: string; path?: string; message: string; collision?: { name: string; winnerPath: string; loserPath: string } }[] } | undefined;
+    const { skills, diagnostics } = await load({ additionalSkillPaths: [join(at, "a"), join(at, "b"), join(at, "a/one")], skillsOverride: (base: never) => ((seen = base), base) });
+    assert.ok(seen, "skillsOverride is called");
+    assert.deepEqual(skills.map((s: { name: string }) => s.name).sort(), ["one"]);
+    assert.ok(diagnostics.some((d: { type: string; path?: string }) => d.type === "warning" && d.path === join(at, "a/colon/SKILL.md")), "a parse failure names its file");
+    assert.ok(diagnostics.some((d: { type: string; path?: string; message: string }) => d.type === "warning" && d.path === join(at, "a/bare/SKILL.md") && d.message === "description is required"), "skillProblemsOf reads this message");
+    const collisions = diagnostics.filter((d: { type: string }) => d.type === "collision");
+    assert.equal(collisions.length, 1, "one loser; the same file twice says nothing");
+    assert.deepEqual((collisions[0] as { collision?: unknown }).collision, { resourceType: "skill", name: "one", winnerPath: join(at, "a/one/SKILL.md"), loserPath: join(at, "b/one/SKILL.md") });
+    assert.equal(skills[0]!.sourceInfo.path, join(at, "a/one/SKILL.md"));
+    const none = await load({ noSkills: true, additionalSkillPaths: [join(at, "c/solo")] });
+    assert.deepEqual(none.skills.map((s: { name: string }) => s.name), ["solo"], "fixed: noSkills now wins, and withSkillSources's guard may go; a skill folder path stops at its own SKILL.md");
+    assert.deepEqual(pi.agent.loadSkillsFromDir({ dir: join(at, "c"), source: "project" }).skills.map((s: { name: string }) => s.name), ["solo"]);
   });
 
   test("P39 base-prompt-sections: a command context's getSystemPromptOptions() is the live base options, whose sections build the prompt, and a tool change replaces it", async () => {

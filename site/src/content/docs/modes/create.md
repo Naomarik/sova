@@ -86,7 +86,7 @@ on where the chat is.
 | Where the chat is | Topics about this computer | Topics about the project |
 |---|---|---|
 | A project with a merge queue | Work | Work, by card and Land |
-| A project with no merge queue | Work | The chat or a worker works on a branch in a worktree, and the chat merges it on your word. Create says what's missing and offers **Initialize** |
+| A project with no merge queue | Work | The chat or a worker works on a branch in a worktree, and the chat merges it on your word. Create says what's missing and offers **Set Up with a Chat** |
 | A folder that isn't a project | Work | Create says what's missing and offers **Add as Project** |
 | A folder that isn't in Git | Work | Create says project changes are made by hand |
 

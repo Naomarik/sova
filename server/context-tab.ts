@@ -129,7 +129,8 @@ export function conversationTalk(branch: readonly HEntry[], loadedNested = 0): S
     const h = branch[i]!;
     const c = entryChars(h);
     const kind =
-      h.kind === "user" || h.kind === "shell" ? "user"
+      // A `!!` command is not in the window (§chat.shell-mode/model): no message of yours there.
+      h.kind === "user" || (h.kind === "shell" && !h.private) ? "user"
       : h.kind === "assistant" ? "replies"
       : h.kind === "tool-result" ? "toolResults"
       : (h.kind === "note" || h.kind === "summary") && c > 0 ? "other"

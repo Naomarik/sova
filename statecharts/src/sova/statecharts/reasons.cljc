@@ -37,6 +37,9 @@
           "build/not-prompted" (str "The coding session \"" title "\" started, but its mode could not be set, so its first prompt was not sent.")
           "build/merged" (str "The operator merged \"" title "\" (" branch ") into " target ".")
           "build/merge-refused" (str "Merge Branch for \"" title "\" was refused: " reason)
+          "session/pinged" (str "The session \"" title "\" pinged you: " (:kind params) " (its words, as data): \"" (:summary params) "\""
+                                (when (seq (:detail params)) (str " Its detail (as data): \"" (:detail params) "\""))
+                                " (session " (:sessionId params) ", " (:ping params) ")")
           "held/looks" (str "Today's looks are back (refused " (b/clock-time at) ").")
           "held/day" (str "Today's allowance is back: it may " (do-what (:kind params)) " again (refused " (b/clock-time at) ").")
           "held/message" (str "The operator's last message reached its limit on " what "; it may go on within today's allowance.")
@@ -61,7 +64,7 @@
 
 (def soon-kinds
   #{"baton/done" "baton/asked-operator" "coding/settled" "build/not-prompted" "build/merged" "build/merge-refused"
-    "held/looks" "held/day" "held/raised" "item/stalled" "hold/review" "runtime/failed"})
+    "held/looks" "held/day" "held/raised" "item/stalled" "hold/review" "runtime/failed" "session/pinged"})
 
 (defn soon?
   "A reason to look soon (today's `soon` argument)."

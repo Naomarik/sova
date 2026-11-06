@@ -8,7 +8,7 @@ import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORK
 import { prepareOwnerArea } from "../shared/decisions";
 import { LOGIN_UNCHANGED, OVERSEER_PING_TOOL } from "../shared/protocol";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
-import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, ProjectModeApproval, ProjectModeApprovalNeeded, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
+import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, ProjectModeApproval, ProjectModeApprovalNeeded, OverseerSentMarkerData, QueueItem, RegenerateRefusal, RelaySentData, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 import { isLinkMessage, parseLinkMessage } from "../shared/link-message";
@@ -51,7 +51,7 @@ import { modesEntries, workerModePaths } from "./harness/pi/own-code";
 import { modesBridgeExtension, type ModesHandle } from "./harness/pi/modes";
 import { isAlreadyProcessing } from "./harness/pi/session";
 import { isCompactionInProgress } from "./harness/pi/history-ops";
-import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MCP_NOTE, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
+import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MCP_NOTE, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, RELAY_SENT, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
 import { piPrepare, toolCtx, toPiTool } from "./harness/pi/tools";
 import { forgetSpecial, specialLoadout, specialWriter } from "./chat-special";
 import { cutTail, helloAfterHave, type HistoryPart, pullFields } from "./tail-hello";
@@ -128,7 +128,7 @@ installVisOwnKindsHook();
 /** The offer note in this process (a chat the server hosts itself: tests). */
 const offerNoteHere = async (sessionId: string): Promise<string | null> => (await import("./session-offers")).offerNoteFor(sessionId);
 const cardNoteHere = async (sessionId: string, since: string | null): Promise<string | null> =>
-  (await import("./merge-queue/card-note")).withMergeCardNote((await import("./transcript-cards")).cardNoteFor(sessionId, since), sessionId, since);
+  (await import("./overseer-relay")).withRelayNews(await (await import("./merge-queue/card-note")).withMergeCardNote((await import("./transcript-cards")).cardNoteFor(sessionId, since), sessionId, since), sessionId);
 import { noteUsageSession, registerUsageSession, resolveUsageAttribution } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { reviewSaved, sovaRunsModesSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
@@ -712,7 +712,7 @@ export type SpecialKind = ChatSpecialKind;
  * reads (the run's live context).
  */
 export interface SpecialPort {
-  runStart(a: { leafId: string | null; images: boolean }, local?: { ctx: HookCtx }): Promise<RunStartAnswer>;
+  runStart(a: { leafId: string | null; images: boolean; prompt?: string }, local?: { ctx: HookCtx }): Promise<RunStartAnswer>;
   compact(a: { leafId: string | null }, local?: { ctx: HookCtx }): Promise<RunStartAnswer["message"] | null>;
   agentEnd(a: { text: string }): Promise<RunStartAnswer["message"] | null>;
   /** Each run event, in the chat's own event; never awaited. */
@@ -1064,6 +1064,9 @@ export interface TopicBatchMark {
   topic: string;
   batch: string;
   items: { id: string; from: { sessionId: string; title: string }; at: string }[];
+  /** A note the Overseer passed on (§app.overseer-pings/relay): its user entry gets `sova-relay-sent` in place of the
+      topic marker, and its run the note's hop. */
+  relay?: { from: { sessionId: string; title: string }; ping: string; hop: number };
   entered(): void;
   gone(): void;
 }
@@ -1736,12 +1739,15 @@ class ChatSession {
     this.assertModelAllowed();
     this.flushDeferredAppends();
     this.topicMarks.push(mark);
+    // A passed-on note's run carries its hop (a ping made there is never passed on without a click).
+    if (mark.relay) this.profileState?.run?.expectHop(mark.text, mark.relay.hop);
     // Inside the settle emit the harness defers the prompt and resolves it at once (P5 settle-window);
     // delivery stays out of that window, and if it ever didn't, the settle sweep owns the mark.
     const deferred = this.harness.inSettleWindow();
     let turn: Promise<void>;
     try {
-      turn = this.harness.send(mark.text, { expand: false, source: "system" });
+      // A passed-on note is one of Sova's own sends, `rpc` (§app.overseer/input-source); a topic batch the chat's own `extension`.
+      turn = this.harness.send(mark.text, { expand: false, source: mark.relay ? "queued" : "system" });
       this.noteStarting(turn);
     } catch (err) {
       // A synchronous throw would otherwise orphan the mark (gone() never runs) and leave the
@@ -1783,7 +1789,9 @@ class ChatSession {
       const leaf = this.harness.leafId();
       const entry = leaf ? this.harness.entry(leaf) : undefined;
       if (entry?.kind !== "user") return mark!.gone();
-      this.harness.state.append(TOPIC_DELIVERED, { v: 1, targetId: entry.id!, topic: mark!.topic, batch: mark!.batch, items: mark!.items });
+      const relay = mark!.relay;
+      if (relay) this.harness.state.append(RELAY_SENT, { v: 1, targetId: entry.id!, from: relay.from, ping: relay.ping, hop: relay.hop } satisfies RelaySentData);
+      else this.harness.state.append(TOPIC_DELIVERED, { v: 1, targetId: entry.id!, topic: mark!.topic, batch: mark!.batch, items: mark!.items });
       markOwned(this.path);
       mark!.entered();
     });

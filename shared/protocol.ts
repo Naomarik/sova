@@ -325,6 +325,8 @@ export const EAGER_TOOLS: ReadonlySet<string> = new Set([
   "card",
   // The project overseer's Settings change card (§app.project-overseer/settings): a propose's details are the card.
   "sova_settings",
+  // A session's ping (§app.overseer-pings/tool "Its card"): its details name the ping, its route and its card.
+  "overseer_ping",
   // Tours retain only a validated small card projection; full authoring input remains lazy.
   "record_tour",
   "show_tour",
@@ -4440,6 +4442,7 @@ export interface OverseerPingLimits {
 /** The invisible `sova-relay-sent` record a passed-on note's delivery writes once it entered the
     recipient's context (§app.overseer-pings/relay "Never the user's"): the sent-marker mechanism's
     fourth sender. Its row reads "From {title}, via the Overseer" (TranscriptItem.relayMark). */
+export const RELAY_SENT_ENTRY = "sova-relay-sent";
 export interface RelaySentData {
   v: 1;
   /** The user entry the note became. */

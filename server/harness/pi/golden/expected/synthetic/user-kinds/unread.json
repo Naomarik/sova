@@ -1,11 +1,11 @@
 {
-  "zero": 5,
+  "zero": 6,
   "mid": 2,
   "after": 0,
   "incremental": {
-    "before": 3,
-    "after": 5,
+    "before": 4,
+    "after": 6,
     "fullCounts": 1,
-    "fresh": 5
+    "fresh": 6
   }
 }

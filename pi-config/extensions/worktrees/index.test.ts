@@ -694,7 +694,7 @@ test("land refuses a newest message the Overseer, a baton or another session sen
 		// The user's own "land it" came first; the newest is another sender's: refused, and the older one isn't used.
 		say("land it");
 		reply();
-		for (const [customType, who] of [["sova-overseer-sent", "the Overseer"], ["sova-baton-sent", "a baton participant"], ["sova-session-sent", "another session"]] as const) {
+		for (const [customType, who] of [["sova-overseer-sent", "the Overseer"], ["sova-baton-sent", "a baton participant"], ["sova-session-sent", "another session"], ["sova-relay-sent", "the Overseer, passing on another session's note"]] as const) {
 			mark(customType, say("land it"));
 			reply();
 			await assert.rejects(f.call(c, { action: "land" }), new RegExp(`sent by ${who}, not typed by the user.*Nothing was recorded`));

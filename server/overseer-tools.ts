@@ -28,7 +28,9 @@ import type { ReadinessChecks } from "./merge-readiness";
 import { idOfAlias, sessionName } from "./session-names";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
 import { trialActWait } from "./chat-handle";
-import { logAction, readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
+import { logAction, readNotes, readOverseerSettings, writeNotes, NOTES_MAX } from "./overseer-store";
+import { relayTool } from "./overseer-relay-tool";
+import { pingLimitsOf } from "../shared/overseer-limits";
 import { parseModePatch } from "./mode-state";
 import { createNotNamed } from "../shared/profiles";
 import { ideaTools, type IdeaToolHost, type ToolCall } from "./overseer-idea-tools";
@@ -769,7 +771,8 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
       (UserTurns) unless `unattended: true` (notes, confirm cards, navigate: they change no session). */
   function act(
     name: string,
-    run: (params: any, toolCallId: string, call: ToolCall) => Promise<{ content: ReturnType<typeof text>; details: unknown; terminate?: boolean }>,
+    // `under`: what an act that judges its own coverage ran under (sova_relay: `ask:pg_N`, or the approval or rule), for the log.
+    run: (params: any, toolCallId: string, call: ToolCall) => Promise<{ content: ReturnType<typeof text>; details: unknown; terminate?: boolean; under?: string }>,
     opts: { unattended?: boolean } = {},
   ) {
     return async (toolCallId: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) => {
@@ -787,7 +790,8 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         }
         // No contact in the log (§app.overseer/org-projection): a contact argument is `[contact]`, and any value on a roster too.
         const c = contactRedactor();
-        logAction({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: c.deep(loggedArgs(name, params)), outcome: "ok", ...(under ? { under: under.id } : {}) });
+        const ranUnder = under?.id ?? out.under;
+        logAction({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: c.deep(loggedArgs(name, params)), outcome: "ok", ...(ranUnder ? { under: ranUnder } : {}) });
         await trialActWait("after", name, toolCallId, signal);
         return out;
       } catch (err) {
@@ -1918,6 +1922,18 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         str,
       });
     })(),
+    // sova_relay (§app.overseer-pings/relay): passing a session's ping on, on terms of coverage of its own.
+    relayTool({
+      act,
+      lookup,
+      link,
+      attended: () => host.attended(),
+      ...(host.permit ? { permit: (tool: string, ids: string[]) => host.permit!(tool, ids) } : {}),
+      ...(host.used ? { used: (id: string, tool: string, ids: string[], toolCallId: string) => host.used!(id, tool, ids, toolCallId) } : {}),
+      takePrompt: () => limits.take("prompt", host.caps()),
+      limits: () => pingLimitsOf(readOverseerSettings()),
+      projectRoot: (cwd) => projectRootOf(cwd),
+    }),
     ...linkTools({ act, read, links: host.links, take: () => limits.take("link", host.caps()), refusal: (m) => new Refusal(m), obj, str }),
     ...pairTools({
       act,

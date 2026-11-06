@@ -261,6 +261,8 @@ export interface ChatTopicBatch {
   topic: string;
   batch: string;
   items: { id: string; from: { sessionId: string; title: string }; at: string }[];
+  /** A note the Overseer passed on (§app.overseer-pings/relay), delivered as a batch is: marked `sova-relay-sent`. */
+  relay?: { from: { sessionId: string; title: string }; ping: string; hop: number };
 }
 
 /** Why a command was refused, by what the caller can do about it. Anything else is an error. */

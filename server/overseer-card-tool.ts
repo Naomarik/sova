@@ -96,7 +96,7 @@ function opSchemas(orgs: boolean, grants: boolean, copies = false): Record<CardO
             rule: obj(
               {
                 text: S('The standing instruction, e.g. "Send continue to a session after its usage limit resets."'),
-                acts: { type: "array", minItems: 1, items: { type: "string", enum: [...GRANTABLE_ACTS] }, description: "The acts it covers (default: all of them)." },
+                acts: { type: "array", minItems: 1, items: { type: "string", enum: [...GRANTABLE_ACTS] }, description: "The acts it covers (default: all of them but sova_relay, which a rule covers only when it names it)." },
                 any_session: { type: "boolean", description: "Cover any session on this host, not only the card's listed ones." },
               },
               ["text"],

@@ -1,7 +1,7 @@
 {
   "families": {
     "overseer": {
-      "bytes": 94566,
+      "bytes": 96431,
       "tools": [
         {
           "name": "sova_attention",
@@ -876,10 +876,11 @@
                                         "sova_archive",
                                         "sova_answer_dialog",
                                         "sova_group",
-                                        "sova_pair"
+                                        "sova_pair",
+                                        "sova_relay"
                                       ]
                                     },
-                                    "description": "The acts it covers (default: all of them)."
+                                    "description": "The acts it covers (default: all of them but sova_relay, which a rule covers only when it names it)."
                                   },
                                   "any_session": {
                                     "type": "boolean",
@@ -1655,6 +1656,37 @@
             },
             "required": [
               "op"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "sova_relay",
+          "label": "Pass a ping on",
+          "description": "Pass a session's ping (pg_N, from an [overseer-ping] message or the run note's [pings]) on to at most 3 other sessions on this host. You pick only who receives it; the words are the ping's, never yours: this tool takes no text. In a turn the user did not start it runs only for a relay the user asked for in a run of their own there, at hop 0 (then only the user's own words there go, and the result says \"Done because you asked in …\"), for news under a standing rule that names sova_relay (only to sessions of the pinging session's project), or under an approval for later listing every recipient; anything else waits for the user's click: offer it on a sova_card card. Pick the recipient from the user's own words there; when you can't tell who they meant, don't guess: offer a card and call this with offered: true, so the pinging chat's card says it waits for the user. A relay starts a turn in an idle recipient (a busy one gets it when its turn settles); news reaches each recipient as a hidden note at the start of its next turn. Never a session open in a terminal, an archived one, the pinging session, an Overseer's, a baton's, a worker's or a merge queue chat.",
+          "promptSnippet": "pass a session's ping on to other sessions (its own words; you pick only who)",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "ping": {
+                "type": "string",
+                "description": "The ping's id, pg_N."
+              },
+              "sessions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "description": "Session ids (or links) to pass it to, at most 3."
+              },
+              "offered": {
+                "type": "boolean",
+                "description": "true: you offered it to the user on a card instead (who it is for is unclear, or it waits for their click); give no sessions."
+              }
+            },
+            "required": [
+              "ping"
             ],
             "additionalProperties": false
           }
@@ -2957,7 +2989,7 @@
       ]
     },
     "overseer+copies": {
-      "bytes": 100351,
+      "bytes": 102216,
       "tools": [
         {
           "name": "sova_attention",
@@ -3832,10 +3864,11 @@
                                         "sova_archive",
                                         "sova_answer_dialog",
                                         "sova_group",
-                                        "sova_pair"
+                                        "sova_pair",
+                                        "sova_relay"
                                       ]
                                     },
-                                    "description": "The acts it covers (default: all of them)."
+                                    "description": "The acts it covers (default: all of them but sova_relay, which a rule covers only when it names it)."
                                   },
                                   "any_session": {
                                     "type": "boolean",
@@ -4695,6 +4728,37 @@
             },
             "required": [
               "op"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "sova_relay",
+          "label": "Pass a ping on",
+          "description": "Pass a session's ping (pg_N, from an [overseer-ping] message or the run note's [pings]) on to at most 3 other sessions on this host. You pick only who receives it; the words are the ping's, never yours: this tool takes no text. In a turn the user did not start it runs only for a relay the user asked for in a run of their own there, at hop 0 (then only the user's own words there go, and the result says \"Done because you asked in …\"), for news under a standing rule that names sova_relay (only to sessions of the pinging session's project), or under an approval for later listing every recipient; anything else waits for the user's click: offer it on a sova_card card. Pick the recipient from the user's own words there; when you can't tell who they meant, don't guess: offer a card and call this with offered: true, so the pinging chat's card says it waits for the user. A relay starts a turn in an idle recipient (a busy one gets it when its turn settles); news reaches each recipient as a hidden note at the start of its next turn. Never a session open in a terminal, an archived one, the pinging session, an Overseer's, a baton's, a worker's or a merge queue chat.",
+          "promptSnippet": "pass a session's ping on to other sessions (its own words; you pick only who)",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "ping": {
+                "type": "string",
+                "description": "The ping's id, pg_N."
+              },
+              "sessions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "description": "Session ids (or links) to pass it to, at most 3."
+              },
+              "offered": {
+                "type": "boolean",
+                "description": "true: you offered it to the user on a card instead (who it is for is unclear, or it waits for their click); give no sessions."
+              }
+            },
+            "required": [
+              "ping"
             ],
             "additionalProperties": false
           }

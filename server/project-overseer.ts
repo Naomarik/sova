@@ -31,7 +31,7 @@ import {
   type ProjectOverseerMarkerData,
   type StartedSession,
 } from "../shared/project-overseer";
-import type { OverseerState } from "../shared/protocol";
+import type { OverseerState, PingRecord } from "../shared/protocol";
 import { noteBuildMerged } from "./build-merged";
 import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, buildOfSession, buildStartedBy, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath, type BuildRow } from "./build-loadout";
 import { acquireChatHandle, BusyError, chatHandle, closeChat, isSessionBusy, onAgentSettled, onAgentStarted, declOfTool, registerSpecialHost, serverToolCall, serveTools, type SessionMarks, specialComposersChanged } from "./chat-handle";
@@ -46,6 +46,7 @@ import { baseAbilities } from "./gathering-abilities";
 import { gitRootOf, readWorktree } from "./project-worktrees";
 import { readCodingPass } from "./project-coding-read";
 import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
+import { markPingDelivered, onPing, PING_KIND_WORDS, undeliveredPings } from "./overseer-pings";
 import { pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
 import { CARDS_NOTE_MESSAGE, cardsNote } from "../shared/overseer-card";
 import { cardsOnBranch, nowLine } from "./overseer-run-note";
@@ -1884,6 +1885,31 @@ async function watchFact(projectId: string, event: string, payload: Record<strin
   }
 }
 
+/** A session in the project's folder pinged its overseer (§app.overseer-pings/routing): a reason to look soon,
+    `session/pinged`, deduped by the ping's id. Its words are data; the look acts only within the powers that are On.
+    True once the watch took it (the ping is then delivered). */
+export async function notePingReason(p: PingRecord): Promise<boolean> {
+  if (p.route.kind !== "project") return false;
+  const projectId = p.route.projectId;
+  const engine = engineOf(projectId);
+  if (!engine) return false;
+  const host = hostOf(engine);
+  const sid = watchSid(projectId);
+  if (!host.configuration(sid)) return false;
+  const params = { sessionId: p.sessionId, title: p.title, kind: PING_KIND_WORDS[p.kind], summary: p.summary, ...(p.detail ? { detail: p.detail } : {}), ping: p.id };
+  try {
+    const out = await host.act(sid, "reason/noted", { kind: "session/pinged", params, key: `session/pinged:${p.id}` }, { by: "system" } as unknown as Envelope, { settle: true });
+    if (out && (out as { taken?: boolean }).taken === false) return false;
+  } catch (err) {
+    console.warn(`[project-overseer] ${sid} ping ${p.id}: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+  markPingDelivered(p.id);
+  return true;
+}
+// Every ping a project overseer hears, as it is made (pings that waited across a restart: when the project's host opens).
+onPing((p) => void notePingReason(p).catch(() => {}));
+
 /** The settings the watch runs on (overseer.json as read): its level, the Watch switch, the pace, the hold, the caps. */
 const watchSettings = (s: ProjectOverseerSettings) => ({ autonomy: s.autonomy, powers: { overseer: s.powers.overseer, assistant: s.powers.assistant }, emptyRosterResumed: !!s.powers.emptyRosterResumedAt, watch: s.watch, watchGapMin: s.watchGapMin, soonLookSec: s.soonLookSec, holdMin: s.holdMin, caps: s.caps });
 
@@ -2012,6 +2038,10 @@ function lookFrom(branch: readonly HEntry[], text: string, before: number): numb
 }
 
 onOrgHostOpened((host, engine) => {
+  // Pings to a project overseer that waited across a restart (§app.overseer-pings/routing): noted once its watch is here.
+  setImmediate(() => {
+    for (const p of undeliveredPings("project")) void notePingReason(p).catch(() => {});
+  });
   // The project statechart's preview/start, taken (or released from its hold): checked again as it stands now, then
   // minted and its link kept host-local. The result names the preview only: an effect's result is logged.
   host.effects.register("preview", async (e) => {

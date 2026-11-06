@@ -1,5 +1,5 @@
 {
-  "n000000b:0": {
+  "n000000e:0": {
     "args": {
       "url": "https://example.com/doc"
     },
@@ -8,7 +8,7 @@
       "isError": false
     }
   },
-  "n000000b:1": {
+  "n000000e:1": {
     "args": {
       "command": "cat /home/user/.pi/skills/other-skill/SKILL.md"
     },
@@ -17,19 +17,19 @@
       "isError": false
     }
   },
-  "n000000c": {
+  "n000000f": {
     "result": {
       "output": "Example Domain",
       "isError": false
     }
   },
-  "n000000d": {
+  "n0000010": {
     "result": {
       "output": "skill text",
       "isError": false
     }
   },
-  "n000000e:0": {
+  "n0000011:0": {
     "args": {
       "url": "https://example.com/missing"
     },
@@ -38,7 +38,7 @@
       "isError": true
     }
   },
-  "n000000f": {
+  "n0000012": {
     "result": {
       "output": "404",
       "isError": true

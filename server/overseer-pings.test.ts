@@ -126,13 +126,22 @@ describe("overseer_ping: the call (§app.overseer-pings/tool)", () => {
     await r.ping({ kind: "stuck", summary: "fine" }, undefined, "q");
   });
 
-  test("a relay only in a run the user's own message started, at hop 0: only the user can ask you to pass something on", async () => {
-    const r = rig();
-    const only = /only the user can ask you to pass something on/;
-    assert.match(await r.refusal({ kind: "relay", summary: "s", to: "billing" }, { attended: false, hop: 1 }), only, "a run a topic batch, a wake or an Overseer's prompt opened");
-    assert.match(await r.refusal({ kind: "relay", summary: "s", to: "billing" }, { attended: false, hop: 2 }), only, "a run another session's message opened");
-    assert.match(await r.refusal({ kind: "relay", summary: "s", to: "billing" }, { attended: true, hop: 1 }), only, "hop 1 even if attended");
-    assert.match(await r.refusal({ kind: "relay", summary: "s", to: "billing" }, null), only, "no run record fails closed");
+  test("a relay the user's message didn't start, or at hop 1 or more, is kept unattended and waits for the user's click", async () => {
+    const r = rig({ limits: { sessionPerHour: 10 } });
+    const click = "The user didn't ask for this here, so it waits for their click.";
+    const cases: [RunStanding | null, string, boolean, number][] = [
+      [{ attended: false, hop: 1 }, "a run a topic batch, a wake or an Overseer's prompt opened", false, 1],
+      [{ attended: false, hop: 2 }, "a run another session's message opened", false, 2],
+      [{ attended: true, hop: 1 }, "hop 1 even if attended", true, 1],
+      [null, "no run record fails closed", false, 1],
+    ];
+    for (const [i, [standing, why, attended, hop]] of cases.entries()) {
+      const k = await r.ping({ kind: "relay", summary: `kept ${i}`, to: "billing" }, standing);
+      assert.equal(k.attended, attended, why);
+      assert.equal(k.hop, hop, why);
+      assert.equal(k.said, undefined, `${why}: no user's words recorded`);
+      assert.ok(pingAnswer(k).endsWith(click), `${why}: ${pingAnswer(k)}`);
+    }
     const p = await r.ping({ kind: "relay", summary: "s", to: "the billing session, sova://s/abc-1", detail: "INJECTED" }, { attended: true, hop: 0, said: `ship it friday ${"x".repeat(700)}` });
     assert.equal(p.said!.length, 600, "at most 600 characters of the user's message");
     assert.ok(p.said!.startsWith("ship it friday"));

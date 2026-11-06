@@ -46,6 +46,7 @@ import {
   type ServerToolRun,
   declOfTool,
   isOverseerFile,
+  onReceiverIdle,
   registerSpecialHost,
   serveTools,
 } from "./chat-handle";
@@ -113,7 +114,9 @@ import { openCardsOf } from "./transcript-cards";
 import { readDecisionSettings } from "./decide-settings";
 import { attentionChanged, onAttentionChanged } from "./attention-memo";
 import { sessionsChanged } from "./list-generation";
-import { onPingChanged, raisedHands } from "./overseer-pings";
+import { onPingChanged, pingStore, raisedHands, undeliveredPings } from "./overseer-pings";
+import { PingTurns, sovaStartedPrompt, takeWaitingPings } from "./overseer-ping-turn";
+import { pingLimitsOf } from "../shared/overseer-limits";
 import { endDismissals, prunable, readDismissed, takeUndone } from "./needs-you-dismissed";
 import { sessionFeed } from "./session-feed";
 import { notifyBlockers, pushWanted, resetPushState } from "./push";
@@ -907,7 +910,7 @@ export async function revokePermit(id: string): Promise<{ ok: true } | { ok: fal
  * (§app.overseer/confirm). One message, so it stays the cards note
  * the attendance rule treats as state. A failure to read the sessions still sends the time and the cards.
  */
-export async function runNoteMessage(branch: readonly HEntry[], now = new Date(), prompt: { changed?: string; opening?: OpeningDetails } = {}): Promise<{ message: { customType: string; content: string; display: false; details?: unknown } }> {
+export async function runNoteMessage(branch: readonly HEntry[], now = new Date(), prompt: { changed?: string; opening?: OpeningDetails; pings?: string } = {}): Promise<{ message: { customType: string; content: string; display: false; details?: unknown } }> {
   const cardsText = cardsNote(cardsOnBranch(branch), false, sessionActivity());
   // The switch its recall tools follow (§chat.memory/overseer): zoom is named only while it has it.
   const memory = overseerMemoryOn();
@@ -1284,12 +1287,14 @@ registerSpecialHost({
   // note (the time now, what cleared) and the open cards ride the prompt as a hidden message, never
   // the system prompt (a prompt change restarts a Claude Code CLI and breaks the cache): persisted,
   // so a restart or a fold keeps it.
-  async runStart(path, ctx) {
+  async runStart(path, ctx, a) {
     const prompt = promptOf(path);
     const branch = ctx.branch();
     const append = prompt.ours(branch);
     const now = new Date();
-    const { message } = await runNoteMessage(branch, now, prompt.noteParts(branch, now));
+    // The pings that waited for the user's message (§app.overseer/run-note "Pings that waited"): in a run Sova didn't start.
+    const pings = sovaStartedPrompt(a?.prompt) ? undefined : await takeWaitingPings(sessionNames, (t) => serverRedactor().redact(t)).catch(() => undefined);
+    const { message } = await runNoteMessage(branch, now, { ...prompt.noteParts(branch, now), ...(pings ? { pings } : {}) });
     return { prompt: {}, append, message };
   },
   // A compaction summarizes the card results away: the exact open cards, once, after it. The
@@ -1399,7 +1404,63 @@ export function briefDecision(input: {
 
 let announced: Map<string, Told> | null = null;
 let lastBriefAt = 0;
+/** Briefs and ping turns sent in a row with the user not looking (§app.overseer/proactivity "30 in a row"), and the last one's time. */
 let unattended = 0;
+let lastAutoAt = 0;
+
+/** The user looked at the Overseer since the last automatic turn: the count starts over. */
+function lookedSinceAuto(current: string): void {
+  if ((readSeen()[current] ?? 0) > lastAutoAt || isViewing(current)) unattended = 0;
+}
+
+/** Session names, summary-first (§app.overseer/session-names), by id: the ping turn's and the run note's links. */
+async function sessionNames(ids: readonly string[]): Promise<Map<string, string>> {
+  const aliases = readAliases();
+  const out = new Map<string, string>();
+  for (const id of ids) {
+    const path = await pathOfId(id).catch(() => null);
+    const s = path ? await getSessionSummary(path).catch(() => null) : null;
+    if (s) out.set(id, sessionName(s, aliases[s.id]));
+  }
+  return out;
+}
+
+// ---- ping turns (§app.overseer-pings/wake) ---------------------------------------------------------------
+
+const pingTurns = new PingTurns({
+  store: pingStore,
+  proactivity: () => readOverseerSettings().proactivity,
+  limits: () => pingLimitsOf(readOverseerSettings()),
+  overseerPath: async () => {
+    const st = readOverseerState();
+    return st ? await pathOfId(st.current) : null;
+  },
+  busy: (path) => {
+    const m = chatHandle(path)?.mirror;
+    return !!m && (m.running || m.compacting || m.starting || m.queue.web > 0);
+  },
+  send: async (path, text, key) => {
+    const overseer = await acquireChatHandle(path);
+    await overseer.send({ text, origin: "server", checkModel: true, key });
+  },
+  stopped: () => {
+    const st = readOverseerState();
+    if (st) lookedSinceAuto(st.current);
+    return unattended >= BRIEF_MAX_UNATTENDED;
+  },
+  sent: () => {
+    unattended++;
+    lastAutoAt = Date.now();
+  },
+  told: (keys) => {
+    if (announced) for (const k of keys) announced.set(k, { count: 1 });
+  },
+  names: sessionNames,
+  redact: (t) => serverRedactor().redact(t),
+  onIdle: onReceiverIdle,
+});
+/** Test only: one ping turn try now (overseer-ping-turn.ts PingTurns.tryNow). */
+export const pingTurnNowForTest = () => pingTurns.tryNow();
 
 /** The brief's message. Titles and details come from other sessions: redacted like any tool output. */
 export function briefText(items: Pick<AttentionItem, "kind" | "title" | "id" | "detail" | "name">[], redactor: () => Redactor = serverRedactor): string {
@@ -1434,8 +1495,10 @@ async function tick(ignoreGap = false): Promise<{ briefed: string[] } | { error:
   if (!st) return { briefed: [] }; // no Overseer yet: nothing to brief
   const path = await pathOfId(st.current);
   if (!path) return { briefed: [] };
-  // The user looked at the Overseer since the last brief: the unattended run starts over.
-  if ((readSeen()[st.current] ?? 0) > lastBriefAt || isViewing(st.current)) unattended = 0;
+  // The user looked at the Overseer since the last brief or ping turn: the unattended run starts over.
+  lookedSinceAuto(st.current);
+  // A raised hand a ping turn is about to carry is that turn's to tell, not a brief's (§app.overseer/brief-repeat).
+  if (announced) for (const p of undeliveredPings("overseer")) if (p.kind === "stuck" || p.kind === "decision") announced.set(`${p.sessionId}:raised-hand`, { count: 1 });
   const chat = chatHandle(path)?.mirror;
   const idle = !chat || (!chat.running && chat.queue.web === 0);
   // An option card waiting for the user is Needs you but never a brief (§app.overseer/attention-digest).
@@ -1452,7 +1515,7 @@ async function tick(ignoreGap = false): Promise<{ briefed: string[] } | { error:
     // Keyed by what it briefs (§app.chat-processes/server-messages): sent again after a lost answer, one turn.
     await overseer.send({ text, origin: "server", checkModel: true, key: tickBriefKey(briefDigest(d.brief.map((k) => `${k}=${counts.get(k) ?? ""}`))) });
     pendingBrief = null;
-    lastBriefAt = Date.now();
+    lastBriefAt = lastAutoAt = Date.now();
     unattended++;
     return { briefed: d.brief };
   } catch (err) {
@@ -1545,7 +1608,11 @@ let ticking = false;
     notifications go out under any proactivity; the loop also applies a Settings model change that
     arrived mid-turn. */
 export function startOverseerLoop(): void {
+  // Sessions' pings to the Overseer (§app.overseer-pings/wake): its ping turns.
+  pingTurns.start();
   const timer = setInterval(() => {
+    // A ping turn that could not go before (busy, a failed send) tries again.
+    pingTurns.poke();
     if (ticking) return;
     ticking = true;
     tick()

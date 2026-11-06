@@ -329,7 +329,8 @@ export interface SpecialHost {
   spec(path: string): Promise<SpecialSpec>;
   /** A chat process this server took back (no open): serve its tools and rebuild per-chat state. */
   adopt(path: string): Promise<void>;
-  runStart(path: string, ctx: HookCtx, a: { images: boolean }): Promise<RunStartAnswer>;
+  /** `a.prompt`: the text of the message that starts the run (absent from a chat on older code). */
+  runStart(path: string, ctx: HookCtx, a: { images: boolean; prompt?: string }): Promise<RunStartAnswer>;
   compact?(path: string, ctx: HookCtx): Promise<RunStartAnswer["message"] | null>;
   agentEnd?(path: string, text: string): Promise<RunStartAnswer["message"] | null>;
   /** Each run event of the kind's chat, inside the chat's own event (here) or in arrival order (a chat
@@ -835,7 +836,11 @@ export async function answerChatAsk(path: string, method: ChatAskMethod, args: u
     case "mcp.tell":
       return (await import("./mcp/chat")).tellParent(a.parent, a.note as McpNote);
     case "cards.note":
-      return withMergeCardNote(cardNoteFor(String(a.sessionId ?? ""), typeof a.since === "string" ? a.since : null), String(a.sessionId ?? ""), typeof a.since === "string" ? a.since : null);
+      // News the Overseer passed on rides the same note (§app.overseer-pings/relay "How it arrives").
+      return (await import("./overseer-relay")).withRelayNews(
+        await withMergeCardNote(cardNoteFor(String(a.sessionId ?? ""), typeof a.since === "string" ? a.since : null), String(a.sessionId ?? ""), typeof a.since === "string" ? a.since : null),
+        String(a.sessionId ?? ""),
+      );
     case "powers.sessions":
       return (await powersHost()).sessions();
     case "powers.session":
@@ -857,7 +862,7 @@ export async function answerChatAsk(path: string, method: ChatAskMethod, args: u
       if (method === "special.agentEnd") return h.agentEnd ? h.agentEnd(path, String(a.text ?? "")) : null;
       const ctx = await fileHookCtx(path, { sessionId: chatHandle(path)?.mirror.sessionId ?? "", leafId: a.leafId ?? null });
       if (method === "special.compact") return h.compact ? h.compact(path, ctx) : null;
-      return h.runStart(path, ctx, { images: !!a.images });
+      return h.runStart(path, ctx, { images: !!a.images, ...(typeof a.prompt === "string" ? { prompt: a.prompt } : {}) });
     }
   }
   throw new Error(`Unknown ask: ${String(method)}`);

@@ -28,25 +28,34 @@
     "{\"id\":\"n0000009:0\",\"kind\":\"assistant-text\",\"text\":\"Noted.\",\"at\":\"2026-09-01T10:00:09.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\"}}"
   ],
   [
-    "{\"id\":\"n000000a\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:10.000Z\",\"text\":\"<skill name=\\\"golden-skill\\\" location=\\\"/home/user/.pi/skills/golden-skill/SKILL.md\\\">\\nSkill body\\n</skill>\\n\\nUse the golden skill please\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}"
+    "{\"id\":\"n000000a\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:10.000Z\",\"text\":\"[passed on by the Overseer from session \\\"Pinger\\\" (0190a000-0000-7000-8000-pinger000000), hop 1]\\n\\nThe user asked \\\"Pinger\\\" to give you this. Their words there:\\n> ship it friday\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}"
   ],
   [
-    "{\"id\":\"n000000b:0\",\"kind\":\"tool-call\",\"text\":\"read_link\",\"toolCallId\":\"call_r\",\"at\":\"2026-09-01T10:00:11.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\"},\"tool\":{\"summary\":\"https://example.com/doc\",\"lazy\":true,\"bytes\":33}}",
-    "{\"id\":\"n000000b:1\",\"kind\":\"tool-call\",\"text\":\"bash\",\"toolCallId\":\"call_s\",\"at\":\"2026-09-01T10:00:11.000Z\",\"model\":\"zai/glm-5.3\",\"tool\":{\"summary\":\"cat /home/user/.pi/skills/other-skill/SKILL.md\",\"lazy\":true,\"bytes\":60}}"
+    "{\"id\":\"n000000b\",\"kind\":\"info\",\"at\":\"2026-09-01T10:00:11.000Z\",\"relayMark\":{\"kind\":\"sent\",\"targetId\":\"n000000a\",\"from\":{\"sessionId\":\"0190a000-0000-7000-8000-pinger000000\",\"title\":\"Pinger\"},\"ping\":\"pg_1\",\"hop\":1},\"meta\":{\"type\":\"custom\",\"customType\":\"sova-relay-sent\"}}"
   ],
   [
-    "{\"id\":\"n000000c\",\"kind\":\"tool-result\",\"toolCallId\":\"call_r\",\"at\":\"2026-09-01T10:00:12.000Z\",\"meta\":{\"type\":\"message\",\"role\":\"toolResult\",\"toolName\":\"read_link\",\"toolCallId\":\"call_r\",\"isError\":false},\"tool\":{\"lazy\":true,\"bytes\":14}}"
+    "{\"id\":\"n000000c:0\",\"kind\":\"assistant-text\",\"text\":\"Passed on, noted.\",\"at\":\"2026-09-01T10:00:12.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\"}}"
   ],
   [
-    "{\"id\":\"n000000d\",\"kind\":\"tool-result\",\"toolCallId\":\"call_s\",\"at\":\"2026-09-01T10:00:13.000Z\",\"meta\":{\"type\":\"message\",\"role\":\"toolResult\",\"toolName\":\"bash\",\"toolCallId\":\"call_s\",\"isError\":false},\"tool\":{\"lazy\":true,\"bytes\":10}}"
+    "{\"id\":\"n000000d\",\"kind\":\"user\",\"at\":\"2026-09-01T10:00:13.000Z\",\"text\":\"<skill name=\\\"golden-skill\\\" location=\\\"/home/user/.pi/skills/golden-skill/SKILL.md\\\">\\nSkill body\\n</skill>\\n\\nUse the golden skill please\",\"meta\":{\"type\":\"message\",\"role\":\"user\"}}"
   ],
   [
-    "{\"id\":\"n000000e:0\",\"kind\":\"tool-call\",\"text\":\"read_link\",\"toolCallId\":\"call_r2\",\"at\":\"2026-09-01T10:00:14.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\"},\"tool\":{\"summary\":\"https://example.com/missing\",\"lazy\":true,\"bytes\":37}}"
+    "{\"id\":\"n000000e:0\",\"kind\":\"tool-call\",\"text\":\"read_link\",\"toolCallId\":\"call_r\",\"at\":\"2026-09-01T10:00:14.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\"},\"tool\":{\"summary\":\"https://example.com/doc\",\"lazy\":true,\"bytes\":33}}",
+    "{\"id\":\"n000000e:1\",\"kind\":\"tool-call\",\"text\":\"bash\",\"toolCallId\":\"call_s\",\"at\":\"2026-09-01T10:00:14.000Z\",\"model\":\"zai/glm-5.3\",\"tool\":{\"summary\":\"cat /home/user/.pi/skills/other-skill/SKILL.md\",\"lazy\":true,\"bytes\":60}}"
   ],
   [
-    "{\"id\":\"n000000f\",\"kind\":\"tool-result\",\"toolCallId\":\"call_r2\",\"at\":\"2026-09-01T10:00:15.000Z\",\"meta\":{\"type\":\"message\",\"role\":\"toolResult\",\"toolName\":\"read_link\",\"toolCallId\":\"call_r2\",\"isError\":true},\"tool\":{\"lazy\":true,\"bytes\":3}}"
+    "{\"id\":\"n000000f\",\"kind\":\"tool-result\",\"toolCallId\":\"call_r\",\"at\":\"2026-09-01T10:00:15.000Z\",\"meta\":{\"type\":\"message\",\"role\":\"toolResult\",\"toolName\":\"read_link\",\"toolCallId\":\"call_r\",\"isError\":false},\"tool\":{\"lazy\":true,\"bytes\":14}}"
   ],
   [
-    "{\"id\":\"n0000010:0\",\"kind\":\"assistant-text\",\"text\":\"Done; anything else?\",\"at\":\"2026-09-01T10:00:16.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\"}}"
+    "{\"id\":\"n0000010\",\"kind\":\"tool-result\",\"toolCallId\":\"call_s\",\"at\":\"2026-09-01T10:00:16.000Z\",\"meta\":{\"type\":\"message\",\"role\":\"toolResult\",\"toolName\":\"bash\",\"toolCallId\":\"call_s\",\"isError\":false},\"tool\":{\"lazy\":true,\"bytes\":10}}"
+  ],
+  [
+    "{\"id\":\"n0000011:0\",\"kind\":\"tool-call\",\"text\":\"read_link\",\"toolCallId\":\"call_r2\",\"at\":\"2026-09-01T10:00:17.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"toolUse\"},\"tool\":{\"summary\":\"https://example.com/missing\",\"lazy\":true,\"bytes\":37}}"
+  ],
+  [
+    "{\"id\":\"n0000012\",\"kind\":\"tool-result\",\"toolCallId\":\"call_r2\",\"at\":\"2026-09-01T10:00:18.000Z\",\"meta\":{\"type\":\"message\",\"role\":\"toolResult\",\"toolName\":\"read_link\",\"toolCallId\":\"call_r2\",\"isError\":true},\"tool\":{\"lazy\":true,\"bytes\":3}}"
+  ],
+  [
+    "{\"id\":\"n0000013:0\",\"kind\":\"assistant-text\",\"text\":\"Done; anything else?\",\"at\":\"2026-09-01T10:00:19.000Z\",\"model\":\"zai/glm-5.3\",\"meta\":{\"type\":\"message\",\"role\":\"assistant\",\"provider\":\"zai\",\"model\":\"glm-5.3\",\"usage\":{\"input\":1200,\"output\":80,\"cacheRead\":400,\"cacheWrite\":0,\"totalTokens\":1680,\"cost\":{\"input\":0.001,\"output\":0.002,\"cacheRead\":0.0001,\"cacheWrite\":0,\"total\":0.0031}},\"stopReason\":\"stop\"}}"
   ]
 ]

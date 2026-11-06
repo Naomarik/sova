@@ -26,8 +26,11 @@ export const REVOKE_ENTRY = "overseer-revoke";
 export const USE_ENTRY = "overseer-grant-use";
 
 /** The acts an approval or rule can cover: the tools that act on named sessions. */
-export const GRANTABLE_ACTS = ["sova_send", "sova_set_session", "sova_archive", "sova_answer_dialog", "sova_group", "sova_pair"] as const;
+export const GRANTABLE_ACTS = ["sova_send", "sova_set_session", "sova_archive", "sova_answer_dialog", "sova_group", "sova_pair", "sova_relay"] as const;
 export type GrantableAct = (typeof GRANTABLE_ACTS)[number];
+/** What a rule naming no acts covers: every act but passing a session's ping on, which a rule covers only when it
+    names `sova_relay` (§app.overseer/approvals). An approval for later covers them all. */
+export const DEFAULT_RULE_ACTS: readonly GrantableAct[] = GRANTABLE_ACTS.filter((a) => a !== "sova_relay");
 
 /** A grant's default length after its `at`, and how far ahead a card may approve. */
 export const GRANT_DEFAULT_MS = 60 * 60_000;
@@ -313,7 +316,7 @@ export function permitFromClick(
   const rule = opt.rule!;
   const scope: PermitSession[] | "any" = rule.anySession ? "any" : sessions;
   if (scope !== "any" && !scope.length) return undefined;
-  return { type: RULE_ENTRY, data: { ...base, id: nextPermitId(all, "rule"), text: rule.text, acts: rule.acts?.length ? [...rule.acts] : [...GRANTABLE_ACTS], sessions: scope } };
+  return { type: RULE_ENTRY, data: { ...base, id: nextPermitId(all, "rule"), text: rule.text, acts: rule.acts?.length ? [...rule.acts] : [...DEFAULT_RULE_ACTS], sessions: scope } };
 }
 
 /** Whether a message entry id already has a grant or rule (a click writes at most one). */
@@ -333,9 +336,14 @@ const ACT_WORDS: Record<GrantableAct, string> = {
   sova_answer_dialog: "answer dialogs",
   sova_group: "group",
   sova_pair: "pair",
+  sova_relay: "pass pings on",
 };
 export const actsText = (acts: readonly GrantableAct[]): string =>
-  acts.length === GRANTABLE_ACTS.length ? "any act" : acts.map((a) => ACT_WORDS[a]).join(", ");
+  DEFAULT_RULE_ACTS.every((a) => acts.includes(a))
+    ? acts.includes("sova_relay")
+      ? "any act, passing pings on included"
+      : "any act"
+    : acts.map((a) => ACT_WORDS[a]).join(", ");
 
 /** "these 3 sessions" / "this session" / "any session". */
 export const sessionsText = (sessions: PermitSession[] | "any" | number): string => {

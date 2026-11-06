@@ -132,6 +132,8 @@ export interface RunNoteInput {
   redact?: (text: string) => string;
   /** The `[changed]` part (overseer-opening.ts changedText), when a part of the prompt changed. */
   changed?: string;
+  /** The `[pings]` part (overseer-ping-turn.ts takeWaitingPings): pings that waited for the user's message; already redacted. */
+  pings?: string;
   /** The opening values and told fingerprints to record (overseer-opening.ts). */
   opening?: OpeningDetails;
   /** The Overseer's memory is on (its recall tools are active): the note sends recall to zoom first. */
@@ -162,6 +164,8 @@ export function runNote(input: RunNoteInput): { content: string; details: RunNot
   const parts = [nowLine(input.now)];
   // What changed since the system prompt was written (overseer-opening.ts): already redacted.
   if (input.changed) parts.push(input.changed);
+  // Pings that waited for the user's message (§app.overseer/run-note): already redacted.
+  if (input.pings) parts.push(input.pings);
 
   const listed = listedCleared(input.branch);
   const cleared: string[] = [];

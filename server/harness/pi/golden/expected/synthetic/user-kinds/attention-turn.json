@@ -1,7 +1,7 @@
 {
   "full": {
-    "turnId": "n0000010",
-    "replyAt": 1788256816000,
+    "turnId": "n0000013",
+    "replyAt": 1788256819000,
     "lastUser": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please",
     "assistantLast": "Done; anything else?",
     "tools": [
@@ -28,8 +28,8 @@
     "durationMs": 6000
   },
   "window4k": {
-    "turnId": "n0000010",
-    "replyAt": 1788256816000,
+    "turnId": "n0000013",
+    "replyAt": 1788256819000,
     "lastUser": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please",
     "assistantLast": "Done; anything else?",
     "tools": [

@@ -176,6 +176,7 @@ export const SENT_MARKERS: Readonly<Record<string, string>> = {
 	"sova-overseer-sent": "the Overseer",
 	"sova-baton-sent": "a baton participant",
 	"sova-session-sent": "another session",
+	"sova-relay-sent": "the Overseer, passing on another session's note",
 };
 
 /**

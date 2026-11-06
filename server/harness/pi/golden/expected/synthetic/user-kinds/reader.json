@@ -6,8 +6,8 @@
     "timestamp": "2026-09-01T10:00:00.000Z",
     "cwd": "/home/user/golden"
   },
-  "lines": 18,
-  "entries": 17,
+  "lines": 21,
+  "entries": 20,
   "ids": [
     "0190a000-0000-7000-8000-n00000000000",
     "n0000001",
@@ -25,7 +25,10 @@
     "n000000d",
     "n000000e",
     "n000000f",
-    "n0000010"
+    "n0000010",
+    "n0000011",
+    "n0000012",
+    "n0000013"
   ],
   "branch": [
     "n0000001",
@@ -43,9 +46,12 @@
     "n000000d",
     "n000000e",
     "n000000f",
-    "n0000010"
+    "n0000010",
+    "n0000011",
+    "n0000012",
+    "n0000013"
   ],
-  "leaf": "n0000010",
+  "leaf": "n0000013",
   "types": [
     "model_change",
     "message",
@@ -55,6 +61,9 @@
     "message",
     "message",
     "message",
+    "message",
+    "message",
+    "custom",
     "message",
     "message",
     "message",

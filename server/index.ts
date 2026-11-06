@@ -30,6 +30,7 @@ import { flushOpenVisits } from "./visits";
 import { pruneVisitorLogs } from "./visitor-identity";
 import { acquireChatHandle, chatHandle, chatHandles, disposeAllChats, onAgentSettled, onChatEvent, onCompacted, onReceiverIdle, warmChatRuntime } from "./chat-handle";
 import { receiverSpecial, startTopicDelivery } from "./topic-delivery";
+import { startRelayDelivery } from "./overseer-relay";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { stateRoot } from "./state-root";
 import { noteStallHead, noteStallShutdown, stallGauge } from "./stall-recorder";
@@ -119,6 +120,17 @@ startTopicDelivery({
     const held = chatHandle(path);
     return held ? held.appendNote(noteType, text) : false;
   },
+});
+// Notes the Overseer passes on (§app.overseer-pings/relay): an idle recipient starts a turn, a busy one gets it at its
+// next settle; never a steer or a queued row.
+startRelayDelivery({
+  async summary(path) {
+    const s = await getSessionSummary(path);
+    return s ? { archived: s.archived, live: s.live, title: s.title } : null;
+  },
+  acquire: (path) => acquireChatHandle(path),
+  onIdle: onReceiverIdle,
+  onChatEvent,
 });
 // Outreach (§app/outreach): receipts of earlier sends find their log lines once the sender replays them.
 startOutreach();

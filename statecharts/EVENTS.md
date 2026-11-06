@@ -318,7 +318,9 @@ playbookState, commit, def, software, data, sources, proof, suite, registered, d
 baton/proposal, baton/asked-operator, reconcile/{conflict,resolved,drafted,promoted}, coding/settled,
 build/not-prompted, build/merged, build/merge-refused, held/{looks,day,message,raised}, item/{stalled,built}, hold/review,
 runtime/{registered,stale,failed,proposed,playbook-done} (all `by: statechart`; playbook-done asks only when the
-overseer started the run: `{"runtime/playbook-done" :overseer-started}`).
+overseer started the run: `{"runtime/playbook-done" :overseer-started}`), and session/pinged `{title, kind, summary, detail?,
+sessionId, ping}` (by `system`, from server/project-overseer.ts when a session in the project's folder pings its overseer,
+§app.overseer-pings/routing; soon; `key` `session/pinged:<ping id>`).
 `key` is typed (C3). A reason sent in a step whose event is `by` statechart (r3, a drive) says `by: statechart`.
 r14 (narrowing R3): every reason carries `asks` (bool), resolved from its transition's declaration
 `:sova/asks-overseer` (true, false, `:unwritten-false`: a closed gathering asks only when someone wrote in

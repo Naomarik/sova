@@ -56,8 +56,10 @@ import {
   OVERSEER_DIALOG_ANSWER_ENTRY,
   OVERSEER_ENTRY,
   OVERSEER_SENT_ENTRY,
+  RELAY_SENT_ENTRY,
   type OverseerDialogAnswerData,
   type OverseerSentMarkerData,
+  type RelaySentData,
 } from "../../shared/protocol";
 import { normalizeLoadout, type LoadoutEntryData } from "../session-loadout";
 import { normalizeTourAttachment, normalizeTourDetachment, TOUR_ATTACHMENT_ENTRY, TOUR_DETACHMENT_ENTRY, type TourAttachment, type TourDetachment } from "../../shared/tour";
@@ -139,6 +141,11 @@ export const MCP_NOTE = kind<McpNote>("sova-mcp-note", "branch-list", (d) => (is
 /** Beside a user message another session sent, as the transcript's row reads it. */
 export const SESSION_SENT = kind<SessionSentData>(SESSION_SENT_ENTRY, "branch-list", (d) =>
   isObject(d) && filled(d.targetId) && typeof d.from?.sessionId === "string" ? (d as SessionSentData) : null,
+);
+
+/** Beside a note the Overseer passed on from another session (§app.overseer-pings/relay), as the transcript's row reads it. */
+export const RELAY_SENT = kind<RelaySentData>(RELAY_SENT_ENTRY, "branch-list", (d) =>
+  isObject(d) && filled(d.targetId) && typeof d.from?.sessionId === "string" && typeof d.ping === "string" ? (d as RelaySentData) : null,
 );
 
 /** An Overseer file's marker: an Overseer file holds one (and overseer-state.json names it). */
@@ -278,7 +285,7 @@ export const MEMORY = kind<MemoryChoiceData>("sova-memory", "newest-on-branch", 
 /** Every registered kind, by type. */
 export const STATE_KINDS: ReadonlyMap<string, StateKind<unknown>> = new Map(
   [
-    REWIND, TOPIC_DELIVERED, FANOUT_MEMBER, PROFILE, LOADOUT, MCP_LIST, MCP_NOTE, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
+    REWIND, TOPIC_DELIVERED, FANOUT_MEMBER, PROFILE, LOADOUT, MCP_LIST, MCP_NOTE, SESSION_SENT, RELAY_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
     GRANT, RULE, REVOKE, GRANT_USE, PROJECT_OVERSEER, PROJECT_ASSISTANT, LINK_MEMBER, ALIGN_LAUNCH,
     BATON, BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP, TOUR_ATTACHMENT, TOUR_DETACHMENT,
     MODE, SUBAGENT_PROFILE, FORK_CACHE, WORKER_SESSION, SANDBOX, WORKTREES, CLAUDE_LOGIN, ALIGN_DOC, MEMORY,

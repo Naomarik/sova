@@ -56,9 +56,33 @@ interface PingsFileData {
   /** Count stamps (ms epoch) per key, pruned to COUNT_KEEP_MS: `session:{id}` for pings, and whatever keys
       the Overseer's side counts (`turn`, `relay`, `recipient:{id}`, PingStore.note). */
   counts: Record<string, number[]>;
+  /** Passed-on notes waiting for their recipient's turn to settle (§app.overseer-pings/relay "How it arrives"). */
+  relays?: PendingRelay[];
+  /** News waiting for each recipient's next turn, as a hidden note. */
+  news?: PendingNews[];
+}
+
+/** A relay sova_relay passed on whose recipient was busy: handed over at its next settle, never queued. */
+export interface PendingRelay {
+  /** `rl_…`, the delivery's own id. */
+  id: string;
+  ping: string;
+  to: { id: string; path: string; title: string };
+  text: string;
+  hop: number;
+  from: { sessionId: string; title: string };
+  at: string;
+}
+/** News passed on, waiting for the recipient's next turn. */
+export interface PendingNews {
+  ping: string;
+  to: { id: string; path: string; title: string };
+  text: string;
+  at: string;
 }
 
 const empty = (): PingsFileData => ({ version: 1, n: 0, pings: [], counts: {} });
+const objects = <T>(v: unknown): T[] => (Array.isArray(v) ? v.filter((x): x is T => !!x && typeof x === "object") : []);
 
 const localDay = (ms: number) => {
   const d = new Date(ms);
@@ -73,7 +97,16 @@ function parseFile(text: string): PingsFileData {
     if (raw.counts && typeof raw.counts === "object")
       for (const [k, v] of Object.entries(raw.counts)) if (Array.isArray(v)) counts[k] = v.filter((x): x is number => typeof x === "number");
     const pings = raw.pings.filter((p): p is PingRecord => !!p && typeof p === "object" && typeof p.id === "string" && PING_ID_RE.test(p.id) && typeof p.sessionId === "string");
-    return { version: 1, n: typeof raw.n === "number" ? raw.n : pings.length, pings: pings.map((p) => ({ ...p, outcomes: Array.isArray(p.outcomes) ? p.outcomes : [] })), counts };
+    const relays = objects<PendingRelay>(raw.relays);
+    const news = objects<PendingNews>(raw.news);
+    return {
+      version: 1,
+      n: typeof raw.n === "number" ? raw.n : pings.length,
+      pings: pings.map((p) => ({ ...p, outcomes: Array.isArray(p.outcomes) ? p.outcomes : [] })),
+      counts,
+      ...(relays.length ? { relays } : {}),
+      ...(news.length ? { news } : {}),
+    };
   } catch {
     return empty();
   }
@@ -358,7 +391,6 @@ export const OVERSEER_PING_GUIDELINES = [
 ];
 
 export const NOTHING_SENT = "Nothing was sent:";
-const ONLY_THE_USER = "only the user can ask you to pass something on.";
 
 export class PingRefusal extends Error {}
 
@@ -403,10 +435,12 @@ const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 const linkedIds = (to: string): string[] => [...to.matchAll(/sova:\/\/s\/([A-Za-z0-9_-]{1,128})/g)].map((m) => m[1]!);
 
 /** The answer to an accepted ping. */
-export function pingAnswer(p: Pick<PingRecord, "id" | "kind" | "route">): string {
+export function pingAnswer(p: Pick<PingRecord, "id" | "kind" | "route"> & Partial<Pick<PingRecord, "attended" | "hop">>): string {
   const who = p.route.kind === "project" ? `Told ${p.route.projectName}'s overseer` : "Told the Overseer";
   const hand = p.kind === "stuck" || p.kind === "decision" ? " Your hand stays up in Needs you until the user starts a turn here." : "";
-  return `${who} (${p.id}).${hand}`;
+  // A relay the user's message didn't start, or at hop 1 or more, is kept and goes only at the user's click (§app.overseer-pings/tool).
+  const click = p.kind === "relay" && (p.attended === false || (p.hop ?? 0) > 0) ? " The user didn't ask for this here, so it waits for their click." : "";
+  return `${who} (${p.id}).${hand}${click}`;
 }
 
 /** A session that may ping (§app.overseer-pings/tool: never a worker, an Overseer's, a project overseer's, a baton's, a merge queue chat or a TUI's). */
@@ -450,7 +484,6 @@ export async function makePing(
   if (not) refuse(not, "not-pinging");
   // Fails closed: a call with no run record (an older chat process) is unattended, at hop 1.
   const standing = who.standing ?? { attended: false, hop: 1 };
-  if (kind === "relay" && (!standing.attended || standing.hop > 0)) refuse(ONLY_THE_USER, "not-attended");
   if (kind === "decision" && (s!.align?.openQuestions ?? 0) > 0) refuse("this session has open alignment questions, and they are in Needs you already.", "open-questions");
   if ((kind === "news" || kind === "relay") && !(await deps.overseerExists())) refuse("this Sova has no Overseer.", "no-overseer");
   const limits = await deps.limits();

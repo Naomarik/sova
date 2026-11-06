@@ -82,9 +82,9 @@ export function specialLoadout(chatId: string, spec: SpecialSpec, port: SpecialP
   /** The baton's context pack of the run in progress. */
   let pack = lastAnswer.get(chatId)?.baton;
 
-  const runStart = async (ctx: HookCtx, images: boolean): Promise<RunStartAnswer> => {
+  const runStart = async (ctx: HookCtx, images: boolean, prompt?: string): Promise<RunStartAnswer> => {
     try {
-      const a = await port.runStart({ leafId: ctx.leafId(), images }, { ctx });
+      const a = await port.runStart({ leafId: ctx.leafId(), images, ...(typeof prompt === "string" ? { prompt } : {}) }, { ctx });
       lastAnswer.set(chatId, a);
       return a;
     } catch (err) {
@@ -103,7 +103,7 @@ export function specialLoadout(chatId: string, spec: SpecialSpec, port: SpecialP
       writers.set(chatId, pi);
       for (const decl of spec.tools) pi.registerTool(deps.tool(decl));
       pi.on("before_agent_start", async (event, ctx) => {
-        const a = await runStart(toolCtx(ctx), !!ctx?.model?.input?.includes("image"));
+        const a = await runStart(toolCtx(ctx), !!ctx?.model?.input?.includes("image"), typeof event.prompt === "string" ? event.prompt : undefined);
         // A baton's owner areas follow the roster: re-registering refreshes the registry, which
         // re-activates every allowed tool, so its abilities are set again right after.
         for (const decl of a.reregister ?? []) pi.registerTool(deps.tool(decl));

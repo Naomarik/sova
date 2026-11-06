@@ -154,6 +154,7 @@ test("newestUserMessage: the newest user message's text, and who sent it when a 
 	assert.deepEqual(newestUserMessage([user("u1", "land it"), mark("sova-overseer-sent", "u1"), reply]), { text: "land it", sentBy: "the Overseer" });
 	assert.deepEqual(newestUserMessage([user("u1", "land it"), mark("sova-baton-sent", "u1")]), { text: "land it", sentBy: "a baton participant" });
 	assert.deepEqual(newestUserMessage([user("u1", "land it"), mark("sova-session-sent", "u1")]), { text: "land it", sentBy: "another session" });
+	assert.deepEqual(newestUserMessage([user("u1", "land it"), mark("sova-relay-sent", "u1")]), { text: "land it", sentBy: "the Overseer, passing on another session's note" });
 	// A marker naming an older message, or another kind of custom entry, says nothing about the newest.
 	assert.deepEqual(newestUserMessage([user("u1", "hi"), mark("sova-overseer-sent", "u1"), user("u2", "land it"), mark("sova-rewind", "u2")]), { text: "land it" });
 	// The newest is another sender's: never an older one of the user's instead.

@@ -102,61 +102,91 @@
   "n000000b": {
     "ok": true,
     "userId": "n000000a",
-    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+    "text": "[passed on by the Overseer from session \"Pinger\" (0190a000-0000-7000-8000-pinger000000), hop 1]\n\nThe user asked \"Pinger\" to give you this. Their words there:\n> ship it friday"
   },
   "n000000b:0": {
     "ok": true,
     "userId": "n000000a",
-    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+    "text": "[passed on by the Overseer from session \"Pinger\" (0190a000-0000-7000-8000-pinger000000), hop 1]\n\nThe user asked \"Pinger\" to give you this. Their words there:\n> ship it friday"
   },
   "n000000c": {
     "ok": true,
     "userId": "n000000a",
-    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+    "text": "[passed on by the Overseer from session \"Pinger\" (0190a000-0000-7000-8000-pinger000000), hop 1]\n\nThe user asked \"Pinger\" to give you this. Their words there:\n> ship it friday"
   },
   "n000000c:0": {
     "ok": true,
     "userId": "n000000a",
-    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+    "text": "[passed on by the Overseer from session \"Pinger\" (0190a000-0000-7000-8000-pinger000000), hop 1]\n\nThe user asked \"Pinger\" to give you this. Their words there:\n> ship it friday"
   },
   "n000000d": {
-    "ok": true,
-    "userId": "n000000a",
-    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
   },
   "n000000d:0": {
-    "ok": true,
-    "userId": "n000000a",
-    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+    "ok": false,
+    "reason": "not_on_branch",
+    "message": "That is your own message; rewind to it to edit and send it again."
   },
   "n000000e": {
     "ok": true,
-    "userId": "n000000a",
+    "userId": "n000000d",
     "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
   },
   "n000000e:0": {
     "ok": true,
-    "userId": "n000000a",
+    "userId": "n000000d",
     "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
   },
   "n000000f": {
     "ok": true,
-    "userId": "n000000a",
+    "userId": "n000000d",
     "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
   },
   "n000000f:0": {
     "ok": true,
-    "userId": "n000000a",
+    "userId": "n000000d",
     "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
   },
   "n0000010": {
     "ok": true,
-    "userId": "n000000a",
+    "userId": "n000000d",
     "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
   },
   "n0000010:0": {
     "ok": true,
-    "userId": "n000000a",
+    "userId": "n000000d",
+    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+  },
+  "n0000011": {
+    "ok": true,
+    "userId": "n000000d",
+    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+  },
+  "n0000011:0": {
+    "ok": true,
+    "userId": "n000000d",
+    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+  },
+  "n0000012": {
+    "ok": true,
+    "userId": "n000000d",
+    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+  },
+  "n0000012:0": {
+    "ok": true,
+    "userId": "n000000d",
+    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+  },
+  "n0000013": {
+    "ok": true,
+    "userId": "n000000d",
+    "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+  },
+  "n0000013:0": {
+    "ok": true,
+    "userId": "n000000d",
     "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
   },
   "no-such-entry": {

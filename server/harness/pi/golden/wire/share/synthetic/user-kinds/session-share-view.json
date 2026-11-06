@@ -4,7 +4,7 @@
     "title": "Golden share",
     "sharedAt": "2026-10-05T00:00:00.000Z",
     "mode": "live",
-    "through": "2026-09-01T10:00:16.000Z",
+    "through": "2026-09-01T10:00:19.000Z",
     "items": [
       {
         "kind": "reply",
@@ -33,14 +33,26 @@
       {
         "kind": "user",
         "n": 4,
-        "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please",
+        "text": "[passed on by the Overseer from session \"Pinger\" (0190a000-0000-7000-8000-pinger000000), hop 1]\n\nThe user asked \"Pinger\" to give you this. Their words there:\n> ship it friday",
         "at": "2026-09-01T10:00:10.000Z"
       },
       {
         "kind": "reply",
         "n": 5,
+        "text": "Passed on, noted.",
+        "at": "2026-09-01T10:00:12.000Z"
+      },
+      {
+        "kind": "user",
+        "n": 6,
+        "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please",
+        "at": "2026-09-01T10:00:13.000Z"
+      },
+      {
+        "kind": "reply",
+        "n": 7,
         "text": "Done; anything else?",
-        "at": "2026-09-01T10:00:16.000Z"
+        "at": "2026-09-01T10:00:19.000Z"
       }
     ],
     "images": 0

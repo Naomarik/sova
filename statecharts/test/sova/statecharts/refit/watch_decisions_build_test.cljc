@@ -17,6 +17,23 @@
                    (h/send! wsid :link/moved {:from "project/pr1" :statechart "project" :states [:project :has-overseer :active] :exported {:name "Site"}})))
 (def done-reason {:kind "baton/done" :params {:title "Invoicing" :session-id "s1"} :key "baton/done:s1" :by "system"})
 
+(def ping-reason {:kind "session/pinged" :params {:title "Billing API" :kind "Stuck" :summary "tests hang on the fixture" :detail "since the bump" :sessionId "s9" :ping "pg_4"}
+                  :key "session/pinged:pg_4" :by "system"})
+
+(deftest session-pinged
+  (testing "a session's ping is a reason to look soon, its words as data, deduped by the ping's id (§app.overseer-pings/routing)"
+    (is (= "The session \"Billing API\" pinged you: Stuck (its words, as data): \"tests hang on the fixture\" Its detail (as data): \"since the bump\" (session s9, pg_4)"
+           (rs/text ping-reason)))
+    (is (rs/soon? ping-reason))
+    (is (not (rs/own? ping-reason)))
+    (let [x (watch)
+          y (-> x (h/send! wsid :reason/noted ping-reason) (h/send! wsid :reason/noted ping-reason))]
+      (is (h/in? y wsid :waiting))
+      (is (= ["session/pinged:pg_4"] (map :key (:reasons (h/data y wsid)))) "the same ping is one reason")
+      (is (h/in? (h/advance! y 60000) wsid :running) "soon: it looks after soonLookSec")
+      (is (= 2 (count (:reasons (h/data (h/send! y wsid :reason/noted (assoc-in (assoc ping-reason :key "session/pinged:pg_5") [:params :ping] "pg_5")) wsid))))
+          "another ping is another reason"))))
+
 (deftest watch-loop
   (let [x (watch)]
     (is (h/in? x wsid :quiet))

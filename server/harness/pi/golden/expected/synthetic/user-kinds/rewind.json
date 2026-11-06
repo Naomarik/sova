@@ -17,7 +17,7 @@
         "type": "sova-rewind",
         "data": {
           "targetId": "n0000002",
-          "fromLeafId": "n0000010"
+          "fromLeafId": "n0000013"
         }
       }
     ]
@@ -40,7 +40,7 @@
         "type": "sova-rewind",
         "data": {
           "targetId": "n0000004",
-          "fromLeafId": "n0000010"
+          "fromLeafId": "n0000013"
         }
       }
     ]
@@ -63,7 +63,7 @@
         "type": "sova-rewind",
         "data": {
           "targetId": "n0000006",
-          "fromLeafId": "n0000010"
+          "fromLeafId": "n0000013"
         }
       }
     ]
@@ -86,7 +86,7 @@
         "type": "sova-rewind",
         "data": {
           "targetId": "n0000008",
-          "fromLeafId": "n0000010"
+          "fromLeafId": "n0000013"
         }
       }
     ]
@@ -102,14 +102,14 @@
   "n000000a": {
     "outcome": {
       "ok": true,
-      "editorText": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
+      "editorText": "[passed on by the Overseer from session \"Pinger\" (0190a000-0000-7000-8000-pinger000000), hop 1]\n\nThe user asked \"Pinger\" to give you this. Their words there:\n> ship it friday"
     },
     "marks": [
       {
         "type": "sova-rewind",
         "data": {
           "targetId": "n000000a",
-          "fromLeafId": "n0000010"
+          "fromLeafId": "n0000013"
         }
       }
     ]
@@ -132,11 +132,18 @@
   },
   "n000000d": {
     "outcome": {
-      "ok": false,
-      "reason": "not_on_branch",
-      "message": "That input is not on this chat's current branch anymore."
+      "ok": true,
+      "editorText": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please"
     },
-    "marks": []
+    "marks": [
+      {
+        "type": "sova-rewind",
+        "data": {
+          "targetId": "n000000d",
+          "fromLeafId": "n0000013"
+        }
+      }
+    ]
   },
   "n000000e": {
     "outcome": {
@@ -155,6 +162,30 @@
     "marks": []
   },
   "n0000010": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "n0000011": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "n0000012": {
+    "outcome": {
+      "ok": false,
+      "reason": "not_on_branch",
+      "message": "That input is not on this chat's current branch anymore."
+    },
+    "marks": []
+  },
+  "n0000013": {
     "outcome": {
       "ok": false,
       "reason": "not_on_branch",

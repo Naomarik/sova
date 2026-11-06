@@ -176,7 +176,7 @@ describe("who started the run, recorded inside the call", () => {
     assert.equal(pingStore().get(p!.id)!.lowered!.why, "user-turn");
   });
 
-  test("a relay in the user's turn carries the user's own message from the chat's record, never the call's words; one in a run Sova started is refused and keeps nothing", async () => {
+  test("a relay in the user's turn carries the user's own message from the chat's record, never the call's words; one in a run Sova started is kept unattended, with no words of the user's", async () => {
     const path = makeSession();
     const chat = await held(path);
     const said = "please give the billing session my note: ship it friday";
@@ -190,9 +190,12 @@ describe("who started the run, recorded inside the call", () => {
 
     const before = pingsOf(path).length;
     await serverTurn(chat, path, [() => ping({ kind: "relay", summary: "another", to: "billing" })], "[from the project overseer] pass this on");
-    const refused = toolResults(path, OVERSEER_PING_TOOL).at(-1)!;
-    assert.equal(refused.text, "Nothing was sent: only the user can ask you to pass something on.");
-    assert.equal(pingsOf(path).length, before, "nothing kept");
+    const kept = toolResults(path, OVERSEER_PING_TOOL).at(-1)!;
+    assert.match(kept.text, /The user didn't ask for this here, so it waits for their click\.$/);
+    assert.equal(pingsOf(path).length, before + 1, "kept");
+    const unattended = pingsOf(path).at(-1)!;
+    assert.equal(unattended.attended, false);
+    assert.equal(unattended.said, undefined, "no words of the user's: nothing goes without a click");
     await serverTurn(chat, path, [() => ping({ kind: "news", summary: "the schema moved" })], "a wake-up's message");
     const news = pingsOf(path).at(-1)!;
     assert.equal(news.attended, false);

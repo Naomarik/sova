@@ -1,4 +1,4 @@
-import { MCP_LIST, MCP_NOTE } from "./harness/state-kinds";
+import { MCP_LIST, MCP_NOTE, RELAY_SENT } from "./harness/state-kinds";
 import { mcpNamesOf, mcpToolOfRow, type McpNames } from "./mcp/tool-names";
 import {
   EAGER_TOOLS,
@@ -630,6 +630,16 @@ function sessionSentRow(id: string, h: StateEntry): TranscriptItem[] {
   return [it];
 }
 
+/** A note the Overseer passed on from another session (§app.overseer-pings/relay): renders nothing
+    itself; the client draws "From {title}, via the Overseer" above the user row `targetId`. */
+function relaySentRow(id: string, h: StateEntry): TranscriptItem[] {
+  const d = RELAY_SENT.parse(h.data);
+  if (!d) return [];
+  const it = item(id, "info", h);
+  it.relayMark = { kind: "sent", targetId: d.targetId, from: { sessionId: d.from.sessionId, title: typeof d.from.title === "string" ? d.from.title : "" }, ping: d.ping, hop: typeof d.hop === "number" ? d.hop : 1 };
+  return [it];
+}
+
 /** The session's profile entry (§chat.profiles/after-first-message): the client draws its row only
     once a user message is on the branch. */
 function profileRow(id: string, h: StateEntry): TranscriptItem[] {
@@ -850,6 +860,7 @@ function stateRows(id: string, h: StateEntry): TranscriptItem[] {
   if (h.key === HANDOFF_RUN) return handoffRunRow(id, h);
   if (h.key === OVERSEER_SENT_ENTRY) return overseerSentRow(id, h);
   if (h.key === SESSION_SENT_ENTRY) return sessionSentRow(id, h);
+  if (h.key === RELAY_SENT.type) return relaySentRow(id, h);
   if (h.key === PROFILE_ENTRY) return profileRow(id, h);
   if (h.key === OVERSEER_DIALOG_ANSWER_ENTRY) return overseerAnswerRow(id, h);
   if (h.key === TEAM_EVENT_TYPE) return teamEventRow(id, h);

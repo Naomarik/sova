@@ -67,16 +67,30 @@
         {
           "kind": "message",
           "id": "n000000a",
-          "by": "p_alice",
-          "name": "Alice",
-          "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please",
+          "by": "",
+          "name": "Someone",
+          "text": "[passed on by the Overseer from session \"Pinger\" (0190a000-0000-7000-8000-pinger000000), hop 1]\n\nThe user asked \"Pinger\" to give you this. Their words there:\n> ship it friday",
           "at": "2026-09-01T10:00:10.000Z"
         },
         {
           "kind": "reply",
-          "id": "n0000010",
+          "id": "n000000c",
+          "text": "Passed on, noted.",
+          "at": "2026-09-01T10:00:12.000Z"
+        },
+        {
+          "kind": "message",
+          "id": "n000000d",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please",
+          "at": "2026-09-01T10:00:13.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "n0000013",
           "text": "Done; anything else?",
-          "at": "2026-09-01T10:00:16.000Z"
+          "at": "2026-09-01T10:00:19.000Z"
         }
       ]
     },
@@ -150,16 +164,30 @@
         {
           "kind": "message",
           "id": "n000000a",
-          "by": "p_alice",
-          "name": "Alice",
-          "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please",
+          "by": "",
+          "name": "Someone",
+          "text": "[passed on by the Overseer from session \"Pinger\" (0190a000-0000-7000-8000-pinger000000), hop 1]\n\nThe user asked \"Pinger\" to give you this. Their words there:\n> ship it friday",
           "at": "2026-09-01T10:00:10.000Z"
         },
         {
           "kind": "reply",
-          "id": "n0000010",
+          "id": "n000000c",
+          "text": "Passed on, noted.",
+          "at": "2026-09-01T10:00:12.000Z"
+        },
+        {
+          "kind": "message",
+          "id": "n000000d",
+          "by": "p_alice",
+          "name": "Alice",
+          "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please",
+          "at": "2026-09-01T10:00:13.000Z"
+        },
+        {
+          "kind": "reply",
+          "id": "n0000013",
           "text": "Done; anything else?",
-          "at": "2026-09-01T10:00:16.000Z"
+          "at": "2026-09-01T10:00:19.000Z"
         }
       ]
     },
@@ -232,16 +260,30 @@
       {
         "kind": "message",
         "id": "n000000a",
-        "by": "p_alice",
-        "name": "Alice",
-        "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please",
+        "by": "",
+        "name": "Someone",
+        "text": "[passed on by the Overseer from session \"Pinger\" (0190a000-0000-7000-8000-pinger000000), hop 1]\n\nThe user asked \"Pinger\" to give you this. Their words there:\n> ship it friday",
         "at": "2026-09-01T10:00:10.000Z"
       },
       {
         "kind": "reply",
-        "id": "n0000010",
+        "id": "n000000c",
+        "text": "Passed on, noted.",
+        "at": "2026-09-01T10:00:12.000Z"
+      },
+      {
+        "kind": "message",
+        "id": "n000000d",
+        "by": "p_alice",
+        "name": "Alice",
+        "text": "<skill name=\"golden-skill\" location=\"/home/user/.pi/skills/golden-skill/SKILL.md\">\nSkill body\n</skill>\n\nUse the golden skill please",
+        "at": "2026-09-01T10:00:13.000Z"
+      },
+      {
+        "kind": "reply",
+        "id": "n0000013",
         "text": "Done; anything else?",
-        "at": "2026-09-01T10:00:16.000Z"
+        "at": "2026-09-01T10:00:19.000Z"
       }
     ]
   }

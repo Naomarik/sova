@@ -56,7 +56,8 @@ they weren't, or the contributor isn't sure, run them first.
 The full run is required however small the fix:
 
 - `pnpm run typecheck`
-- `pnpm test:all`: unit and integration, every slow group, Tours included
+- `pnpm test:all -- --fresh`: unit and integration, every slow group, Tours included, reusing no
+  earlier passes
 - `pnpm run build`
 - When the change touches pi-config extensions: `node scripts/merge-checks/ext-suites.mjs`
 - When the change touches statecharts: `node scripts/merge-checks/statecharts.mjs` (needs a JVM and the
@@ -73,7 +74,7 @@ Spec replay is not part of the run. It starts real agent runs and stays with the
 change touches the spec tools, the report says it wasn't run.
 
 When the run isn't clean, fix the failures the change caused. List anything left in the report with the
-reason, whether it fails or can't run (for example, no Chrome for Tours). The PR may then open after one
+reason, whether it fails or can't run (for example, no Chrome for the browser tests). The PR may then open after one
 clear warning to the contributor that it may be declined. Do not refuse.
 
 Report only what you saw run, never what you assume passed.

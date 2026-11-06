@@ -1,3 +1,5 @@
+import { cardSenderHeaders } from "./extension-sender";
+import { CARD_SENDER_PREFIX } from "../shared/senders";
 import { execFile } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -51,7 +53,7 @@ export class OfferRefusal extends Error {
   constructor(
     message: string,
     readonly status: 400 | 404 | 409 = 409,
-    /** A refusal about this chat alone (another card open, Not Now, an open alignment question, already shown here). */
+    /** A refusal about this chat alone (another card open, Not Now, already shown here). */
     readonly chat = false,
   ) {
     super(message);
@@ -436,8 +438,9 @@ async function conditionHolds(c: OfferCondition, s: SessionSummary, trees: Trees
       const r = await deps.git(["status", "--porcelain"], s.cwd).catch(() => ({ code: 1, stdout: "x" }));
       return r.code === 0 && r.stdout.trim() === "";
     }
+    // Offers no longer wait on an open alignment question; a file that still names this stays valid.
     case "no-open-alignment":
-      return !(s.align?.openQuestions ?? 0);
+      return true;
   }
 }
 
@@ -490,7 +493,6 @@ export async function showOffer(input: ShowInput): Promise<OfferCard> {
   const rec = readRecord(sessionId) ?? { v: 1 as const, sessionId, path: input.path, snapshot: null, taken: false, takenAt: "", n: 0, cards: [], notNow: [] };
   if (rec.notNow.includes(input.offer)) throw new OfferRefusal(`The user chose Not Now on "${input.offer}" in this session. ${projectWords}`, 409, true);
   if (def.buttons.some((b) => b.run) && !runsApproved(root, file)) throw new OfferRefusal(`"${input.offer}" has run buttons the user hasn't approved: they approve them on the project page's Offers list. ${projectWords}`);
-  if ((s.align?.openQuestions ?? 0) > 0) throw new OfferRefusal(`This session has an open alignment question; offers wait until it is answered. ${projectWords}`, 409, true);
   const fromPath = input.from;
   if (def.buttons.some((b) => b.to === "shower") && !fromPath) throw new OfferRefusal(`"${input.offer}" sends to the chat that shows it: name that chat with from. ${projectWords}`, 400);
   let readiness: Promise<SessionSummary["readiness"]> | undefined;
@@ -682,7 +684,7 @@ async function chooseCard(path: string, rec: SessionRecord, card: StoredCard, in
     // Claimed before the send, so a second click at the same time finds it no longer open; reopened if the send fails.
     Object.assign(card, { state: "chosen", choice: { index, label: button.label, at } });
     saveRecord(rec);
-    const sent = await send(target, text).catch((err) => ({ ok: false as const, error: err instanceof Error ? err.message : String(err) }));
+    const sent = await send(target, text, card.name).catch((err) => ({ ok: false as const, error: err instanceof Error ? err.message : String(err) }));
     if (!sent.ok) {
       card.state = "open";
       delete card.choice;
@@ -753,7 +755,7 @@ async function pressRows(path: string, rec: SessionRecord, card: StoredCard, row
   if (texts.length) {
     const first = picks.find(({ row, i }) => typeof row.sends[i] === "string")!;
     const target = card.to[first.row.defIdx[first.i]!] === "shower" ? card.fromPath : path;
-    const sent = target ? await send(target, texts.join("\n")).catch((err) => ({ ok: false as const, error: err instanceof Error ? err.message : String(err) })) : { ok: false as const, error: "The chat this button sends to is not known. Nothing was sent." };
+    const sent = target ? await send(target, texts.join("\n"), card.name).catch((err) => ({ ok: false as const, error: err instanceof Error ? err.message : String(err) })) : { ok: false as const, error: "The chat this button sends to is not known. Nothing was sent." };
     if (!sent.ok) {
       for (const { row } of picks) {
         row.state = "open";
@@ -781,9 +783,12 @@ export async function sendToSession(path: string, text: string): Promise<void> {
   if (!r.ok) throw new Error(r.error);
 }
 
-async function send(path: string, text: string): Promise<{ ok: true } | { ok: false; error: string }> {
+async function send(path: string, text: string, offer?: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const req = buildRequest(findCommand("session.send")!, { session: path, text, delivery: "followUp" });
-  const res = await deps.request(req.url, { method: req.method, headers: { "content-type": "application/json" }, body: JSON.stringify(req.body) });
+  // A press never answers an alignment question or ends the chat's wait on one (§chat.alignment/session-mark).
+  const waits = offer !== undefined && ((await deps.summary(path).catch(() => null))?.align?.openQuestions ?? 0) > 0;
+  const headers = { "content-type": "application/json", ...(waits ? cardSenderHeaders({ sessionId: `${CARD_SENDER_PREFIX}offer.${offer}`, title: offer! }) : {}) };
+  const res = await deps.request(req.url, { method: req.method, headers, body: JSON.stringify(req.body) });
   if (res.ok) {
     await res.body?.cancel();
     return { ok: true };

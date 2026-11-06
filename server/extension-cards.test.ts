@@ -4,7 +4,7 @@
 // card may run, and what card news carries. The store, the manifest and the snapshot are real, in a throwaway dir;
 // the rest of the server is stubbed through setCardDeps.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, beforeEach, describe, test } from "node:test";
@@ -39,7 +39,8 @@ const { sessionCardTools } = await import("./transcript-cards-tool");
 const { extensionSenderOf } = await import("./extension-sender");
 
 const project = join(root, "project");
-mkdirSync(project);
+mkdirSync(join(project, ".sova", "cards", "go"), { recursive: true });
+writeFileSync(join(project, ".sova", "cards", "go", "card.json"), JSON.stringify({ version: 1, toolkit: 1, title: "Go", draws: "buttons", answer: "at-once" }));
 let n = 0;
 const sid = () => `01b00000-0000-7000-8000-${String(++n).padStart(12, "0")}`;
 const fresh = () => {
@@ -143,6 +144,33 @@ describe("cards that update (§chat.transcript-cards/updating-cards)", () => {
   });
 });
 
+describe("an open alignment question", () => {
+  const open = { align: { openDocs: 1, openQuestions: 1, questionDocs: 1 } } as Partial<SessionSummary>;
+  test("holds no card: a raise, an update and an answer all go on", async () => {
+    const s = fresh();
+    summaries.set(s.path, open);
+    const c = await cards.raiseCard({ path: s.path, type: "alpha.ask", data: question, by: { kind: "script" } });
+    assert.equal(c.state, "open");
+    assert.equal((await cards.raiseCard({ path: s.path, card: c.id, data: question, by: key("alpha"), type: undefined })).id, c.id);
+    assert.equal((await cards.answerCard({ path: s.path, card: c.id, answer: { option: 0 }, by: "you", via: "at-once" })).state, "answered");
+  });
+  test("a press's message goes out marked while it waits, and as it did with nothing open", async () => {
+    const press = async (over: Partial<SessionSummary>) => {
+      requests.length = 0;
+      const s = fresh();
+      summaries.set(s.path, over);
+      await cards.cardSnapshotFor(s.id, s.path, project);
+      cards.setCardsTrusted(cards.projectOwner(JSON.parse(readFileSync(join(cards.cardsDir(), `${s.id}.json`), "utf8")).root), true);
+      const c = await cards.raiseCard({ path: s.path, type: "project.go", data: { title: "Go?", buttons: [{ label: "Do", does: { kind: "send", text: "yes" } }] }, by: { kind: "script" } });
+      await cards.answerCard({ path: s.path, card: c.id, answer: { button: 0 }, by: "you", via: "at-once" });
+      return requests[0]!.headers;
+    };
+    const ctx = (h: Record<string, string>) => ({ env: {}, req: { header: (n: string) => h[n.toLowerCase()] } }) as never;
+    assert.deepEqual(extensionSenderOf(ctx(await press(open))), { sessionId: "card:project.go", title: "Go?", hop: 0 });
+    assert.equal(extensionSenderOf(ctx(await press({}))), null, "no wait: the same press is unmarked");
+  });
+});
+
 describe("queue chats (§chat.transcript-cards/queue-chats)", () => {
   const reviewer = { profile: { id: "merge-reviewer", source: "sova" } } as Partial<SessionSummary>;
   test("offered no extension's type, can't raise one; an ordinary chat is offered them", async () => {
@@ -153,12 +181,17 @@ describe("queue chats (§chat.transcript-cards/queue-chats)", () => {
     const o = fresh();
     assert.equal((await sessionCardTools(o.id, o.path, project)).length, 1, "the check can tell the two apart");
   });
-  test("a chat with no extension's type never reads its summary for this", async () => {
+  test("a chat with no extension's type keeps the snapshot as it is", async () => {
     const s = fresh();
     const was = process.env.SOVA_EXTENSIONS_FILE!;
     process.env.SOVA_EXTENSIONS_FILE = join(root, "none.json");
-    assert.equal(await cards.offeredCardSnapshot(s.id, s.path, project), null);
-    process.env.SOVA_EXTENSIONS_FILE = was;
+    try {
+      const got = await cards.offeredCardSnapshot(s.id, s.path, project);
+      assert.deepEqual(got, await cards.cardSnapshotFor(s.id, s.path, project));
+      assert.equal(got?.types.some((t) => t.ext), false);
+    } finally {
+      process.env.SOVA_EXTENSIONS_FILE = was;
+    }
   });
 });
 

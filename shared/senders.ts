@@ -27,7 +27,12 @@ export const MERGE_QUEUE_SESSION = "merge-queue";
 export { isMergeQueueText, MERGE_QUEUE_SENT_PREFIX };
 /** The sender ids of extensions' messages start with this (§app.extensions/name-badge). There is no such session. */
 export const EXTENSION_SENDER_PREFIX = "ext:";
+/** A press on a project's card while its chat waits on alignment answers: `card:<type>`, no session either (§chat.alignment/session-mark). */
+export const CARD_SENDER_PREFIX = "card:";
+export const isCardSender = (sessionId: string): boolean => sessionId.startsWith(CARD_SENDER_PREFIX);
 export const isExtensionSender = (sessionId: string): boolean => sessionId.startsWith(EXTENSION_SENDER_PREFIX);
+/** No session to link to, and never an answer to an alignment question. */
+export const isSessionlessSender = (sessionId: string): boolean => isExtensionSender(sessionId) || isCardSender(sessionId);
 /** A merge queue wake's words: without a session header line, if any, and without its prefix. */
 export const mergeQueueBody = (text: string): string => {
   const t = stripSessionHeader(text).trimStart();
@@ -63,7 +68,7 @@ export function sendersOf(items: readonly TranscriptItem[]): Map<string, Sender>
         it.sessionMark.targetId,
         it.sessionMark.from.sessionId === MERGE_QUEUE_SESSION
           ? { kind: "merge-queue" }
-          : isExtensionSender(it.sessionMark.from.sessionId)
+          : isSessionlessSender(it.sessionMark.from.sessionId)
             ? { kind: "extension", ...it.sessionMark.from }
             : { kind: "session", ...it.sessionMark.from, hop: it.sessionMark.hop },
       );

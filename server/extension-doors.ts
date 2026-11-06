@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { queueChatRole } from "../shared/merge-queue";
 import { DEPLOY_READ_VERBS, DEPLOY_VERBS, MERGE_READ_VERBS, MERGE_VERBS, RELEASE_READ_VERBS, RELEASE_VERBS } from "../shared/project-contract";
 import { judgedPath } from "./mesh/paths";
+import { pageExtensionSender } from "./extension-sender";
 import { notPage } from "./page-only";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { getSessionSummary } from "./sessions-index";
@@ -13,12 +14,14 @@ export const EXTENSION_SPEAKS_REFUSAL = "An extension speaks through session.sen
 export type NeverPromise = "user's word" | "approve" | "rules" | "overseer" | "sova's own";
 
 export interface ExtensionDoor {
-  /** One method, or every write (anything but GET and HEAD). */
+  /** One method, or every write: POST, PUT, PATCH, DELETE, anything but GET and HEAD. */
   method: "WRITE" | "PUT";
   /** As registered, `:name` for one segment; `/*` at the end: it and everything below. */
   route: string;
   promise: NeverPromise;
   error: string;
+  /** A page under `/ext/<id>/` is answered as its key would be (§app.extensions/page-badge): an accident guard. */
+  pages?: true;
 }
 
 const NOTHING = "Nothing changed.";
@@ -41,7 +44,7 @@ const verbDoors = (verbs: readonly string[], read: readonly string[], error: str
  * The doors an extension's key never opens, in one place, whatever else it carries (§app.extensions/not-you). Read at
  * the main gate, so a route needs no check of its own, and by an extension card's button and view commands, which run
  * in-process with no key. It is about a key: a program holding the operator's token is a script, and an extension's
- * page rides the user's login. A door that already answers a key in its own words (server/page-only.ts, the approvals)
+ * page rides the user's login. Everything a key is refused is in this file, so a door reopens by removing its row. A door that already answers a key in its own words (server/page-only.ts, the approvals)
  * isn't listed. server/extension-doors.test.ts fails on a new route that looks like one and is in neither place.
  */
 export const EXTENSION_DOORS: readonly ExtensionDoor[] = [
@@ -51,7 +54,7 @@ export const EXTENSION_DOORS: readonly ExtensionDoor[] = [
   // Counting as the user.
   ...verbDoors(MERGE_VERBS, MERGE_READ_VERBS, LAND),
   { method: "WRITE", route: "/api/merge-queue/*", promise: "user's word", error: LAND },
-  { method: "WRITE", route: "/api/session-groups/:id/prompt", promise: "user's word", error: EXTENSION_SPEAKS_REFUSAL },
+  { method: "WRITE", route: "/api/session-groups/:id/prompt", promise: "user's word", error: EXTENSION_SPEAKS_REFUSAL, pages: true },
   { method: "WRITE", route: "/api/mode", promise: "user's word", error: YOURS },
   { method: "WRITE", route: "/api/mode/command", promise: "user's word", error: YOURS },
   // Approving.
@@ -82,6 +85,31 @@ export const EXTENSION_DOORS: readonly ExtensionDoor[] = [
   { method: "WRITE", route: "/api/attention/dismiss", promise: "sova's own", error: YOURS },
 ];
 
+/**
+ * The rest of the table: what a key's frame into a chat is refused with, by the frame's type (a socket,
+ * /api/chat/frames and /api/chat/action alike). Remove a row and that frame runs. `compact` only with instructions.
+ */
+export const EXTENSION_FRAME_DOORS: Readonly<Record<string, string>> = {
+  prompt: EXTENSION_SPEAKS_REFUSAL,
+  steer: EXTENSION_SPEAKS_REFUSAL,
+  ui_response: "Only the user answers a chat's dialog. Nothing was answered.",
+  rewind: `An extension doesn't move a chat back: its messages are the user's. ${NOTHING}`,
+  regenerate: `An extension doesn't send a message over: its messages are the user's. ${NOTHING}`,
+  compact: EXTENSION_SPEAKS_REFUSAL,
+};
+
+/** And the refusals other code reads, by what they hold. A chat closed to keys takes no frame; these sentences are the sites' words. */
+/** `prompt` on `POST /api/sessions` (`session.new`): open the chat, then `session.send`. */
+export const EXTENSION_FIRST_PROMPT = EXTENSION_SPEAKS_REFUSAL;
+export const EXTENSION_CHAT_DOOR = "An extension takes no action in that chat. Nothing changed.";
+export const EXTENSION_CARD_DOORS = {
+  raiseOthers: "an extension raises only its own card types.",
+  changeOthers: "an extension changes only its own cards.",
+  answerOthers: "An extension answers only its own cards. Nothing was answered.",
+  pressActing: "Only the user presses a button that acts. Nothing was answered.",
+  sendToQueueChat: "That is one of the merge queue's own chats: an extension doesn't write in it.",
+} as const;
+
 const reOf = (route: string): RegExp => {
   const below = route.endsWith("/*");
   const body = (below ? route.slice(0, -2) : route)
@@ -103,25 +131,18 @@ export function closedDoor(method: string, pathname: string): ExtensionDoor | nu
 /** The door a key just knocked at, or null for anyone else and anywhere else. */
 export function extensionDoorRefusal(c: Context): ExtensionDoor | null {
   const door = closedDoor(c.req.method, new URL(c.req.url).pathname);
-  return door && notPage(c) === "extension" ? door : null;
+  if (!door) return null;
+  return notPage(c) === "extension" || (door.pages && pageExtensionSender(c)) ? door : null;
 }
+
+/** Whether a request is an extension's by its key, or by its page's `Referer` (a page only where a door says so). */
+export const actsAsExtension = (c: Context): boolean => notPage(c) === "extension" || pageExtensionSender(c) !== null;
 
 /** Why a key's frame into a chat is refused, whichever road it came by (a socket, /api/chat/frames, /api/chat/action); null: it may run. */
 export function extensionFrameRefusal(msg: { type?: unknown; instructions?: unknown }): string | null {
-  switch (msg.type) {
-    case "prompt":
-    case "steer":
-      return EXTENSION_SPEAKS_REFUSAL;
-    case "ui_response":
-      return "Only the user answers a chat's dialog. Nothing was answered.";
-    case "rewind":
-    case "regenerate":
-      return `An extension doesn't move a chat back or send a message over: its messages are the user's. ${NOTHING}`;
-    case "compact":
-      return typeof msg.instructions === "string" && msg.instructions.trim() ? EXTENSION_SPEAKS_REFUSAL : null;
-    default:
-      return null;
-  }
+  if (typeof msg.type !== "string" || !Object.hasOwn(EXTENSION_FRAME_DOORS, msg.type)) return null;
+  if (msg.type === "compact" && !(typeof msg.instructions === "string" && msg.instructions.trim())) return null;
+  return EXTENSION_FRAME_DOORS[msg.type]!;
 }
 
 /** The chats a key sends no frame into at all: an overseer's, a baton's, the merge queue's. */

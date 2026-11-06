@@ -172,7 +172,6 @@ describe("raising (§chat.transcript-cards/card-tool, /raise-command)", () => {
     await no({ type: "project.plan", data: { title: "P", items: [{ text: "a", done: false }] } }, /needs a key/);
     await no({ key: "k" }, /takes no key/);
     summaries.set(s.path, { align: { openQuestions: 1 } as never });
-    await no({}, /Nothing was raised: an alignment question is open\./);
     summaries.set(s.path, { workerSession: true } as never);
     await no({}, /only in ordinary chats/);
     summaries.delete(s.path);

@@ -29,6 +29,7 @@ let mergedOn = true;
 let summaryOver: Partial<SessionSummary> = {};
 let readinessState: string | null = null;
 const requests: { url: string; body: unknown }[] = [];
+const sentHeaders: Record<string, string>[] = [];
 let answer: { status: number; body: unknown } = { status: 200, body: { ok: true } };
 let n = 0;
 const sid = () => `01a00000-0000-7000-8000-${String(++n).padStart(12, "0")}`;
@@ -59,6 +60,7 @@ beforeEach(() => {
     },
     async request(url, init) {
       requests.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      sentHeaders.push((init?.headers ?? {}) as Record<string, string>);
       return new Response(JSON.stringify(answer.body), { status: answer.status, headers: { "content-type": "application/json" } });
     },
     async projects() {
@@ -229,16 +231,29 @@ describe("showing an offer", () => {
     await show(id, "r", { replyId: "u2" });
   });
 
-  test("refused, showing nothing: gone, disabled, broken, another chat's, an open alignment, a failed condition", async () => {
+  test("an open alignment question holds no offer, a file naming it stays valid, and a press beside it goes out marked", async () => {
+    writeOffers({ merge: def({ onlyIf: ["no-open-alignment"] }) });
+    const id = sid();
+    summaryOver = { align: { openDocs: 1, openQuestions: 2 } } as Partial<SessionSummary>;
+    const card = await show(id, "merge");
+    assert.equal(card.state, "open");
+    await offers.chooseOffer(pathOf(id), id, card.id, 0);
+    const { extensionSenderOf } = await import("./extension-sender");
+    const ctx = (h: Record<string, string>) => ({ env: {}, req: { header: (n: string) => h[n.toLowerCase()] } }) as never;
+    assert.deepEqual(extensionSenderOf(ctx(sentHeaders.at(-1)!)), { sessionId: "card:offer.merge", title: "merge", hop: 0 });
+    summaryOver = {};
+    const plain = sid();
+    await offers.chooseOffer(pathOf(plain), plain, (await show(plain, "merge")).id, 0);
+    assert.equal(extensionSenderOf(ctx(sentHeaders.at(-1)!)), null, "with nothing open the same press is as it was");
+  });
+
+  test("refused, showing nothing: gone, disabled, broken, another chat's, a failed condition", async () => {
     writeOffers({ merge: def(), off: def({ disabled: true }), bad: def({ nope: 1 }), captain: def({ shownBy: "another-chat" }), ready: def({ onlyIf: ["branch-ready"] }) });
     const id = sid();
     await refused(show(id, "gone"), /not an offer in this project's/);
     await refused(show(id, "off"), /not an offer in this project's/);
     await refused(show(id, "bad"), /not an offer in this project's/);
     await refused(show(id, "captain"), /Only another chat shows/);
-    summaryOver = { align: { openDocs: 1, openQuestions: 2 } } as Partial<SessionSummary>;
-    await refused(show(id, "merge"), /open alignment question/);
-    summaryOver = {};
     readinessState = "in-progress";
     await refused(show(id, "ready"), /ready to merge/);
     readinessState = "ready";

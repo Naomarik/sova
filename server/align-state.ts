@@ -18,7 +18,8 @@ import { isTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
 import { BranchScan, lineHead, lineMay, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
-import { isExtensionSender } from "../shared/senders";
+import { isSessionlessSender } from "../shared/senders";
+import { isCardPicksOnly } from "../shared/transcript-cards";
 import { MODE, OVERSEER_SENT, SESSION_SENT } from "./harness/state-kinds";
 
 /**
@@ -205,12 +206,12 @@ function compactLine(line: string): ScanEntry | null {
   if (typeof v.parentId === "string" || v.parentId === null) e.parentId = v.parentId as string | null;
   const h = toHEntry(v);
   if (h?.kind === "state" && (h.key === "align-doc" || h.key === "mode" || h.key === OVERSEER_SENT.type)) Object.assign(e, { customType: h.key, data: h.data });
-  // Only an extension's: another session's message still counts as a prompt here, so its mark isn't kept.
-  if (h?.kind === "state" && h.key === SESSION_SENT.type && isExtensionSender(String((h.data as { from?: { sessionId?: unknown } } | null)?.from?.sessionId ?? ""))) Object.assign(e, { customType: h.key, data: h.data });
+  // Only an extension's or a card press's: another session's message still counts as a prompt here, so its mark isn't kept.
+  if (h?.kind === "state" && h.key === SESSION_SENT.type && isSessionlessSender(String((h.data as { from?: { sessionId?: unknown } } | null)?.from?.sessionId ?? ""))) Object.assign(e, { customType: h.key, data: h.data });
   if (h?.kind === "tool-result" && h.tool === "align") e.message = { role: "toolResult", toolName: "align", isError: h.isError === true, details: h.details };
   if (h?.kind === "user") {
     const text = h.blocks.map(blockText).join("\n");
-    if (parseWakeNudge(text) === null && !isLinkMessage(text) && !isTopicBatch(text)) e.userPrompt = true;
+    if (parseWakeNudge(text) === null && !isLinkMessage(text) && !isTopicBatch(text) && !isCardPicksOnly(text)) e.userPrompt = true;
   }
   return e;
 }
@@ -223,14 +224,15 @@ function compactLine(line: string): ScanEntry | null {
  * (the newest `mode` entry on the branch says so) takes the tool away, so nothing could answer them.
  * A message an Overseer sent (its `sova-overseer-sent` mark names the entry) is never the user's
  * prompt: alignment questions are the user's to answer (§app.project-overseer/coding-mode). Nor is an extension's
- * (a `sova-session-sent` mark with a sender id starting `ext:`, §app.extensions/name-badge).
+ * (a `sova-session-sent` mark with a sender id starting `ext:`, §app.extensions/name-badge). Nor a card's or an offer's
+ * answer: a press's message (`card:`) or a message that is only gathered picks, so the question stays open and asked.
  */
 export function waitingAlignOf(branch: readonly ScanEntry[]): SessionAlign | undefined {
   const view = stateViewOf(branch);
   const active = view.latest(MODE)?.data.active;
   if (active && !active.minorModes.includes("align")) return undefined;
   const notTheUsers = new Set(view.list(OVERSEER_SENT).map((r) => r.data.targetId));
-  for (const r of view.list(SESSION_SENT)) if (isExtensionSender(r.data.from.sessionId)) notTheUsers.add(r.data.targetId);
+  for (const r of view.list(SESSION_SENT)) if (isSessionlessSender(r.data.from.sessionId)) notTheUsers.add(r.data.targetId);
   let lastDoc = -1;
   let lastUser = -1;
   branch.forEach((e, i) => {

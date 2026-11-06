@@ -72,6 +72,41 @@ describe("the table against the real app", () => {
   });
 });
 
+describe("§app.extensions/not-you, door by door", () => {
+  // Spelled here as the claim spells them, not derived from the table: the claim and the table can't agree by construction.
+  const CLAIMED: [string, string][] = [
+    ["POST", "/api/session-groups/g/prompt"],
+    ["POST", "/api/mode"],
+    ["POST", "/api/session-offers/choose"],
+    ["POST", "/api/attention/dismiss"],
+    ...["merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup", "merge.ask", "merge.reply", "merge.fresh", "merge.clear", "merge.hold", "merge.try", "release.request", "release.start", "release.step", "release.notes", "release.continue", "release.retry", "release.publish", "release.abandon", "release.withdraw", "deploy.plan", "deploy.run", "deploy.rollback", "deploy.request"].flatMap((v): [string, string][] => [["POST", `/api/project-services/${v}`], ["POST", `/api/projects/p/services/${v}`]]),
+    ["POST", "/api/merge-queue/entries/e/publish"],
+    ["PUT", "/api/merge-queue/projects/p/land-how"],
+    ["DELETE", "/api/merge-queue/projects/p/land-how/override"],
+    ["PUT", "/api/merge-queue/projects/p/models"],
+    ["POST", "/api/merge-queue/projects/p/settings"],
+    ["DELETE", "/api/merge-queue/projects/p/settings/pending"],
+    ["POST", "/api/projects/p/overseer/worktrees/merge"],
+    ["POST", "/api/projects/p/setup/merge"],
+    ["POST", "/api/projects/p/runtime/merge"],
+    ["POST", "/api/projects/p/draft-specs/s/approve"],
+    ["POST", "/api/projects/p/draft-specs/s/build"],
+    ["POST", "/api/tours/s/jobs/j/approve"],
+    ["POST", "/api/tours/s/jobs/j/approve-all"],
+    ["POST", "/api/schedules/revoke"],
+    ...["PUT", "POST", "PATCH", "DELETE"].flatMap((m): [string, string][] => [[m, "/api/settings"], [m, "/api/settings/overseer"], [m, "/api/settings/align"], [m, "/api/settings/decisions"], [m, "/api/settings/team"], [m, "/api/settings/subagents"], [m, "/api/settings/models"], [m, "/api/overseer/notes"], [m, "/api/overseer/memory"], [m, "/api/overseer/todos"], [m, "/api/overseer/idea"], [m, "/api/overseer/clear"], [m, "/api/overseer/autonomy/revoke"], [m, "/api/baton"], [m, "/api/baton/s/take"], [m, "/api/orgs/o/people/p/approve"], [m, "/api/outreach/send"]]),
+    ...["message", "run", "items/code", "clear", "coding", "memory", "todos", "ideas"].map((s): [string, string] => ["POST", `/api/projects/p/overseer/${s}`]),
+    ["POST", "/api/projects/p/overseer"],
+    ["PATCH", "/api/projects/p/overseer"],
+  ];
+  test("each is refused to a key", () => {
+    for (const [m, p] of CLAIMED) assert.ok(extensionDoorRefusal(context(m, p, { [TOKEN_HEADER]: KEY })), `${m} ${p}`);
+  });
+  test("reads under the same prefixes aren't", () => {
+    for (const p of ["/api/settings", "/api/overseer/notes", "/api/baton", "/api/orgs", "/api/outreach", "/api/merge-queue/cards", "/api/project-services/merge.status"]) assert.equal(closedDoor("GET", p), null, p);
+  });
+});
+
 describe("who is refused", () => {
   const ALL = EXTENSION_DOORS.map((d) => ({ method: d.method === "WRITE" ? "POST" : d.method, path: concrete(d.route) }));
 
@@ -98,6 +133,16 @@ describe("who is refused", () => {
     assert.match(extensionDoorRefusal(context("PUT", "/api/overseer/notes", { [TOKEN_HEADER]: KEY }))!.error, /^An extension can't change the Standing notes: they are the user's own instructions\. Nothing was saved\.$/);
     assert.match(extensionDoorRefusal(context("PUT", "/api/settings/overseer", { [TOKEN_HEADER]: KEY }))!.error, /^An extension can't change the Overseer's settings\. Nothing was saved\.$/);
     for (const d of EXTENSION_DOORS) assert.match(d.error, /Nothing (?:was )?\w+\.$/, d.route);
+  });
+});
+
+describe("the trust ask", () => {
+  test("an extension's says under their name and offers no merging; a project's is as it was", async () => {
+    const { trustAskBody } = await import("../shared/transcript-cards");
+    assert.equal(trustAskBody("ext:alpha", false), "They can then run Sova's commands, such as sending messages under their name, without asking again.");
+    assert.equal(trustAskBody("ext:alpha", true), "They can then run Sova's commands, such as reading your chats or sending messages under their name, without asking again.");
+    assert.equal(trustAskBody("project:/p", false), "They can then run any Sova command, such as sending messages or merging, without asking again.");
+    assert.equal(trustAskBody("project:/p", true), "They can then run any Sova command, such as reading your chats, sending messages or merging, without asking again.");
   });
 });
 

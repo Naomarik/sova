@@ -57,7 +57,7 @@ project's main checkout (a branch's own copy is never read, so a branch can't gi
 { "version": 1, "offers": { "merge": {
   "when": "The branch's work is finished, committed and its checks passed.",
   "why": "Saves typing 'merge it'.",
-  "onlyIf": ["branch-ready", "no-open-alignment"],
+  "onlyIf": ["branch-ready"],
   "repeat": "once-per-commit",
   "title": "Merge {branch} into {base}?",
   "buttons": [
@@ -76,7 +76,8 @@ project's main checkout (a branch's own copy is never read, so a branch can't gi
   button needs your approval on the project page (Settings tab, **Offers**): **Approve Run Buttons**.
   Changing a run button asks again.
 - **Limits**: at most 8 offers and 4 buttons each; `onlyIf` takes `branch-ready`,
-  `waiting-for-ok`, `tree-clean`, `no-open-alignment` and `specs-promoted`; `repeat` is
+  `waiting-for-ok`, `tree-clean` and `specs-promoted` (an older file's `no-open-alignment` is still
+  accepted and always holds: an offer shows beside an open alignment question); `repeat` is
   `once-per-commit` (the default), `once-per-reply` or `once-per-session`. `"disabled": true` turns
   one off; `"shownBy": "another-chat"` keeps it for another chat to show
   (`node scripts/sova.mjs run session.offers.show --session <path> --offer <name> --from <its own session>`). A
@@ -339,8 +340,7 @@ old: say so instead of half working.
 
 - **`session.send` (`POST /api/sessions/prompt`) is the one way to speak.** Sova marks the message with
   your name, from the key: the chat shows "From {title}" and the model reads a first line
-  `[from session "{title}" (ext:{id}), hop 0]`. So does a new chat's first message
-  (`POST /api/sessions` with `prompt`). No field or header can name another sender. It starts a turn in
+  `[from session "{title}" (ext:{id}), hop 0]`. No field or header can name another sender. It starts a turn in
   an idle chat and is a queued row the user can remove in a busy one.
 - **It is never the user's word.** A message of yours can't land a branch and doesn't end a chat's wait
   on its alignment answers.
@@ -355,14 +355,16 @@ old: say so instead of half working.
     `/api/merge-queue`;
   - writes to `/api/overseer`, a project overseer's routes, to-dos and ideas included, `/api/settings`,
     `/api/mode`, `/api/baton`, `/api/orgs`, `/api/outreach` and `/api/mesh`;
-  - `session.group.send`, an offer's button, dismissing a Needs You item, and approving anything.
+  - `session.group.send`, a new chat's first prompt (`prompt` on `POST /api/sessions`: open it, then
+    `session.send`), an offer's button, dismissing a Needs You item, and approving anything.
 - **Its own cards only.** A key raises and changes only your card types, and answers only your cards,
   never pressing a button that acts. A click on one of your trusted cards can't run any command a key
   is refused, and what its `send` button sends goes out under your name.
 - **Send from your backend, with its key.** Your page runs on Sova's address with the user's login, and
   Sova doesn't tell it apart from the user. A `session.send` from a page under `/ext/<id>/` gets your
   badge when its `Referer` says so. That guards against accidents and nothing more: a page can leave it
-  out, and a socket has none. Installing an extension stays a trust decision: none of this stops a
+  out, and a socket has none. With that `Referer`, `POST /api/chat/frames`, a group send and a new
+  chat's first prompt are answered as your key would be. A page's chat socket isn't spotted at all. Installing an extension stays a trust decision: none of this stops a
   hostile one, and any program on this computer can read Sova's token.
 
 **Hearing about cards.** On `/ws/events`, `card.raised`, `card.changed` and `card.answered` carry
@@ -372,6 +374,10 @@ Read those with `session.card.get`, and read again after a `gap` frame. `sova wa
 **Cards that update.** A card whose type takes no answer starts open: `session.card.post` with `card`
 and new `data` changes it in place, and `done: true` ends it. Nobody waits on it and it's no Needs You
 item. The merge queue's own chats take none of an extension's card types.
+
+**Beside an open alignment question.** Cards and offers can be raised, changed and answered while one
+is open. Answering one never answers the question or ends the chat's wait on it: the question stays
+open and in Needs You.
 
 **In a session's ⋯ menu** (extension contract v1.16). A command with `"menu": "session"`
 is also an entry in the ⋯ menu of each Agents board row for a session on this machine, after

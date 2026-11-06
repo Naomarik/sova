@@ -6,6 +6,7 @@ import { readOverseerState } from "./overseer-store";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { getSessionSummary, idOf, indexedSessionPaths, listSessionFiles } from "./sessions-index";
 import { ARCHIVED_REFUSAL } from "./archived-sessions";
+import { EXTENSION_CARD_DOORS } from "./extension-doors";
 import type { ExtensionSender } from "./extension-sender";
 import { queueChatRole } from "../shared/merge-queue";
 import { sessionSentHeader } from "../shared/profiles";
@@ -89,7 +90,7 @@ export async function promptSession(
   if (projectOverseerOfPath(path)) return { ok: false, status: 409, error: "That is a project overseer's own conversation." };
   // Only a baton session's participants write in it, each through their own channel (§app.baton/attribution).
   if (s.baton) return { ok: false, status: 409, error: "That is a baton session: only its participants write in it." };
-  if (fromExtension && queueChatRole(s.profile)) return { ok: false, status: 409, error: "That is one of the merge queue's own chats: an extension doesn't write in it." };
+  if (fromExtension && queueChatRole(s.profile)) return { ok: false, status: 409, error: EXTENSION_CARD_DOORS.sendToQueueChat };
   if (s.live) return { ok: false, status: 409, error: `It is open in a terminal (pid ${s.live.pid}), so this server must not write to it.` };
   // An archived chat starts for no message (§chat.transcript/instant-open, "An archived chat").
   if (s.archived) return { ok: false, status: 409, error: ARCHIVED_REFUSAL };

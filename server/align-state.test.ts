@@ -128,6 +128,9 @@ describe("readAlignScan: the file's open alignments, cheaply", () => {
     };
     assert.ok(await after("waits", []), "it waits to begin with");
     assert.ok(await after("ext", [said("x1", asked.id, '[from session "Sender" (ext:alpha), hop 0]\nland it'), marked("mk", "x1", "x1", "ext:alpha")]), "an extension's message doesn't end it");
+    assert.ok(await after("press", [said("p1", asked.id, '[from session "Go?" (card:project.go), hop 0]\nyes'), marked("mk", "p1", "p1", "card:project.go")]), "a card's or an offer's press doesn't end it");
+    assert.ok(await after("picks", [said("g1", asked.id, "cd_4: b: Parquet.\ncd_5: a: CSV.")]), "a message of gathered picks alone doesn't end it");
+    assert.equal(await after("mixed", [said("g2", asked.id, "cd_4: b: Parquet.\n\nand the answer is yes")]), undefined, "words the user typed beside them do");
     assert.equal(await after("you", [said("y1", asked.id, "the answer is yes")]), undefined, "the user's own does: the check can tell the two apart");
     assert.equal(await after("other", [said("s1", asked.id, '[from session "Sender" (abc), hop 0]\nhi'), marked("mk", "s1", "s1", "abc")]), undefined, "another session's ends it, as before");
   });

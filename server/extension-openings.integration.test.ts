@@ -114,14 +114,18 @@ test("a body or a header can't name another sender", async () => {
   assert.equal(t, '[from session "Alpha Bot" (ext:alpha), hop 0]\nhello');
 });
 
-test("a new chat's first message from a key is marked too", async () => {
-  const made = await call("POST", "/api/sessions", asKey(), { cwd: s.work, profile: "default", prompt: "land it" });
-  assert.ok(made.status === 201, JSON.stringify(made.body));
-  const m = await until("the first message's mark", () => {
-    const n = newestUserMessage(branchOf(made.body.path));
-    return n.sentBy ? n : false;
-  });
-  assert.equal(typedGoAhead(m.text), null);
+test("a new chat's first prompt from a key or its page is refused, and no chat is made", async () => {
+  const count = async () => (await call("GET", "/api/sessions", asToken())).body.length;
+  const was = await count();
+  const body = { cwd: s.work, profile: "default", prompt: "land it" };
+  for (const headers of [asKey(), { ...asToken(), referer: `${s.base}/ext/alpha/index.html` }]) {
+    const r = await call("POST", "/api/sessions", headers, body);
+    assert.equal(r.status, 403, JSON.stringify(r.body));
+    assert.equal(r.body.extensionRefused, true);
+  }
+  assert.equal(await count(), was);
+  assert.equal((await call("POST", "/api/sessions", asKey(), { cwd: s.work })).status, 201, "opening one with no prompt stays open");
+  assert.equal((await call("POST", "/api/sessions", asToken(), body)).status, 201, "the token's isn't refused: the check can tell them apart");
 });
 
 for (const type of ["prompt", "steer"] as const)
@@ -135,7 +139,8 @@ for (const type of ["prompt", "steer"] as const)
     ws.close();
     assert.deepEqual(userTexts(path), []);
     const draft = await call("GET", `/api/sessions/draft?path=${encodeURIComponent(path)}`, asToken());
-    assert.equal(JSON.stringify(draft.body).includes("land it"), false, "nothing went back as a draft");
+    assert.equal(draft.status, 200);
+    assert.equal(draft.body.text, null, "nothing went back as a draft");
   });
 
 test("the frames route: a key's prompt is a 403; the same frame from the token runs", async () => {
@@ -146,6 +151,13 @@ test("the frames route: a key's prompt is a 403; the same frame from the token r
   assert.equal(refused.status, 403);
   assert.deepEqual(userTexts(path), []);
   assert.equal((await call("POST", url, { ...asKey(), "x-sova-caller": "pretend" }, { frames })).status, 403, "a caller's mark beside the key changes nothing");
+  // A stale writing number puts a page's frames back as the draft: a key's are refused first, so it plants nothing.
+  const stale = { "X-Sova-Composer": "999999" };
+  assert.equal((await call("POST", url, { ...asKey(), ...stale }, { frames })).status, 403);
+  assert.equal((await call("GET", `/api/sessions/draft?path=${encodeURIComponent(path)}`, asToken())).body.text, null, "nothing planted");
+  const page = await newChat();
+  await call("POST", `/api/chat/frames?path=${encodeURIComponent(page)}`, { ...asToken(), ...stale }, { frames });
+  assert.equal((await call("GET", `/api/sessions/draft?path=${encodeURIComponent(page)}`, asToken())).body.text, "land it", "the same call with the token does: the check can tell them apart");
   assert.equal((await call("POST", url, asToken(), { frames })).status, 202);
   await until("the token's frame", () => userTexts(path)[0]);
 });
@@ -206,6 +218,23 @@ test("a page under /ext/<id>/ is badged when it says so; Sova's own page and an 
   assert.equal(await send(`${s.base}/`), "hello");
   assert.equal(await send(`${s.base}/ext/nobody/index.html`), "hello");
   assert.equal(await send("http://elsewhere.example/ext/alpha/"), "hello");
+  const page = { ...asToken(), referer: `${s.base}/ext/alpha/index.html` };
+  const path = await newChat();
+  const frames = await call("POST", `/api/chat/frames?path=${encodeURIComponent(path)}`, page, { frames: [{ type: "prompt", text: "land it" }] });
+  assert.equal(frames.status, 403);
+  assert.deepEqual(userTexts(path), []);
+  const group = await call("POST", "/api/session-groups/g/prompt", page, { text: "land it" });
+  assert.equal(group.status, 403);
+  assert.equal(group.body.extensionRefused, true);
+  assert.notEqual((await call("POST", "/api/session-groups/g/prompt", asToken(), { text: "x" })).body.extensionRefused, true);
+});
+
+test("the queue's settings and land-how are closed by every method", async () => {
+  for (const [method, path] of [["PUT", "/api/merge-queue/projects/p/land-how"], ["DELETE", "/api/merge-queue/projects/p/land-how/override"], ["PUT", "/api/merge-queue/projects/p/models"], ["DELETE", "/api/merge-queue/projects/p/settings/pending"], ["POST", "/api/merge-queue/entries/e/publish"]] as const) {
+    const r = await call(method, path, asKey(), {});
+    assert.equal(r.status, 403, `${method} ${path}`);
+    assert.equal(r.body.extensionRefused, true);
+  }
 });
 
 for (const [what, method, path, body] of [

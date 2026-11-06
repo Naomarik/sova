@@ -79,13 +79,19 @@ list, or an extension, by default, without anyone re-implementing it. Spec: `§a
   as the row always drew its badge, then `RowAdded`, plain text, never a control: the row is the
   link). The pane (`Sidebar.tsx`) runs the one lane and hands it to every row through
   `RowPlaceContext`.
-- Menu places: a menu Sova's own items and extensions both add to. Today there is one, `session`,
-  the Agents board row's ⋯ menu: `src/lib/menu-place.ts` (built-ins, which commands are entries
-  (`"menu": "session"` on a manifest command, `MENU_PLACES` in `shared/extension-offers.ts`), the
-  8-row cap, and running one through the proxy), `src/components/MenuPlace.tsx` (draws
-  `MenuBuiltIns` where the menu stands them, then `MenuAdded`, one group per extension),
-  `src/components/SessionRowMenu.tsx` (the menu; Copy Path is its built-in). It reads the page's
-  extension list and asks no backend until a row runs.
+- Menus and menu places. Every Sova menu (session, group, pane, message, worktree) is one
+  declaration, `MenuDecl` in `src/lib/menu-place.ts`: its name, its table of rows (one row type:
+  label, icon, the reason it can't run, and one act: a catalogue command with its params, a local
+  act, or a second screen), and, for a menu place, its extension lane (`place`, the `payload` an
+  entry is sent, null on another host's thing). Each table lives in `src/lib/<place>-menu.ts`.
+  `src/components/MenuPlace.tsx` draws any declaration (`MenuBody`: the rows, the one name box, the
+  one question, a list of rows, then `MenuAdded`, one group per extension), for the place's ⋯
+  (`PlaceMenu`) and its right-click (`openMenu`). A row that names a command runs it with
+  `sendCommand` (`src/lib/api.ts`: the entry's own request) through the place's `via`, which keeps
+  its toasts, refusals and refresh. A menu place is a menu extensions add to: today only `session`
+  (`"menu": "session"` on a manifest command, `MENU_PLACES` in `shared/extension-offers.ts`), with
+  the 8-row cap and running an entry through the proxy. It reads the page's extension list and
+  asks no backend until a row runs.
 
 ## Rules, and the test that holds each
 
@@ -103,7 +109,7 @@ list, or an extension, by default, without anyone re-implementing it. Spec: `§a
 | An extension's actions are only ever `ext.<id>.<name>`, run through the existing proxy (which strips the token) | `shared/commands-ext.test.ts`, `server/sova-cli.integration.test.ts` |
 | Extension content on Sova's screens is data Sova draws, or a walled-off frame (`sandbox=""`, its own CSP, no pointer or focus), never markup in the page | `src/lib/reply-slot.test.ts`, `src/lib/reply-place-rule.test.ts` |
 | Sova's own features use the same places as extensions: a place draws its built-ins first, then what extensions add, through one component; no second strip beside it | `src/lib/reply-place-rule.test.ts`, `src/lib/reply-place.browser.test.ts` |
-| The session ⋯ menu draws Sova's items exactly as before (snapshot), its built-ins through the place, then extension rows through `MenuAdded` only; a down backend or a session on another host shows none | `src/lib/session-row-menu.test.ts`, `src/lib/menu-place-rule.test.ts`, `src/lib/menu-place.test.ts` |
+| The session ⋯ menu draws Sova's items exactly as before (snapshot), then extension rows through `MenuAdded` only, drawn by the one body after every one of Sova's rows; a down backend or a session on another host shows none | `src/lib/session-row-menu.test.ts`, `src/lib/menu-place-rule.test.ts`, `src/lib/menu-place.test.ts` |
 | A command's `menu` key is validated on the server; a bad value drops the menu entry, never the command | `server/extension-offers-menu.test.ts` |
 | A place asks only extensions whose offers name it: none, no request; one per extension when the view opens and when a run ends, never one per item | `src/lib/reply-place.browser.test.ts`, `src/lib/reply-slot-answers.test.ts` |
 | A session row draws exactly what it drew before line 3 became a place (snapshot), its readiness badge as the place's built-in; extension chips only through `RowAdded`, plain data, never a control; one request per extension per list, never per row; none on another host's rows | `src/lib/session-row.test.ts`, `src/lib/row-place-rule.test.ts`, `src/lib/row-place.test.ts`, `src/lib/row-place.browser.test.ts` |
@@ -240,7 +246,7 @@ of retired ids that must stay listed.
 | `server/mesh/access.ts` classification of a route an entry uses | the entry's `meshNeed` |
 | the `commands` or `screens` manifest key, or the `offers` field | `docs/customization.md` "Sova extensions", `§app.extensions/offers`, the extension contract version in `§app/extensions` |
 | add a place on Sova's screens | its name in `shared/extension-offers.ts` `SCREEN_PLACES` and `ScreenPlace`; Sova's own items there as its built-ins; the rule test above; `docs/customization.md` |
-| add a menu place | its name in `shared/extension-offers.ts` `MENU_PLACES` and `ExtensionCommandInfo.menu`; Sova's own items there as its built-ins (`MenuBuiltIns`); `src/lib/menu-place-rule.test.ts`; `docs/customization.md` |
+| add a menu place | its name in `shared/extension-offers.ts` `MENU_PLACES` and `ExtensionCommandInfo.menu`; the menu's declaration gets its `extensions` lane (`src/lib/menu-place.ts` `MenuDecl`); `src/lib/menu-place-rule.test.ts`; `docs/customization.md` |
 | add or change an item in the session ⋯ menu | `src/lib/session-row-menu.snapshot.json` (regenerate as its test's header says, and review the diff) |
 | add a Sova action under a message | a built-in of the reply place (`ReplyPlace.builtIns` in the view), never a strip of its own |
 | the in-chat actions' route or outcomes (`server/chat-actions.ts`) | `shared/commands/chat.ts`, `§app/chat-actions`, exit 5 in `scripts/sova.mjs` |

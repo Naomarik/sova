@@ -150,8 +150,8 @@ never blocked: on a project the queue serves they record a go-ahead that lands a
 
 **After approval.**
 - **A new commit on the branch** doesn't change the entry. The approved commit lands, and the row
-  says "1 newer commit not included" (or "{n} newer commits"). Landing the newer commits takes a new
-  Land.
+  says "1 newer commit not included" (or "{n} newer commits"), counting the branch's own first-parent
+  commits past it, none the target already has. Landing the newer commits takes a new Land.
 - **Drafts edited after approval** (the branch's own drafts no longer match the pinned hash; an edit
   to any other draft in its worktree doesn't count) stop the entry before
   its run starts, or void a run already started. It waits as "Drafts changed since you approved",
@@ -160,12 +160,27 @@ never blocked: on a project the queue serves they record a go-ahead that lands a
   and the old one is cancelled as "approved again".
 
 **After a send-back.** A sent-back entry (Needs a fix) is final: nothing moves it on by itself.
-- **Land This Commit Again**, on every Needs a fix row and card, is an ordinary new approval of the
-  sent-back commit (`merge.add` at that commit): it pins the branch's drafts as they are now and
-  runs every check from the start, whatever it was sent back for.
+- **The re-land button**, on every Needs a fix row and card, is an ordinary new approval of the
+  branch's **newest commit** (`merge.add` with no commit: its head at that moment; the project page's
+  menu, which reads the branch itself, pins the head it read), never of the sent-back one once the
+  branch has moved: it pins the branch's drafts as they are now and runs every check from the start,
+  whatever it was sent back for. There is one such button, never a second one for the old commit.
+  - **Land This Commit Again** while the branch has nothing new of its own past the sent-back commit.
+  - **Land Newest Commit** once it has, with "{n} newer commits included" ("1 newer commit included").
+    The count is the branch's own line only: its first-parent commits past the sent-back one, none the
+    target already has, so a merge of the target into the branch counts once and what it brought in
+    never counts.
+  - **Land Newest Commit** too once the branch was rewritten (amended or rebased, so the sent-back
+    commit is no ancestor of its head), with "the branch was rewritten since it was sent back" and no
+    count.
+  - When that newest commit isn't Ready to land, the row and card add "The newest commit isn't Ready
+    to land: {why}.", in the Ready to land reading's own words
+    (§chat.worktrees/ready-to-land, "Why a sent-back branch's newest commit isn't"). That reason only
+    reports: the approval's own refusals still apply (uncommitted files are refused, as for any Land).
 - **Land**, once it comes back on a branch sent back for its drafts whose drafts now fit
   (§chat.composer/worktrees-control), approves the same commit the same way.
-- **"land it" typed in its chat** at the sent-back commit is that same approval too.
+- **"land it" typed in its chat** is an approval of the head at that moment, as always: at the
+  sent-back commit, that commit again.
 - **Remove from Queue**, on every Needs a fix row and card, takes the entry off the queue with no
   confirm and deletes nothing (branch, folder, commits, drafts and run logs stay): it ends cancelled,
   "removed by you", its card gets a final Removed revision, and the branch reads as itself again.
@@ -301,14 +316,16 @@ change to its paths"). Sova's checks are standalone scripts (`scripts/merge-chec
 **Extra checks picked by blast radius.** While the entry waits, the merge thread may add checks
 the change could break: statecharts tests when statecharts changed, the end-to-end
 walkthroughs (a build, then the named walkthroughs) when the composer or transcript changed, the spec replay when the spec engine changed. Each pick carries its
-reason. It can add checks, never drop the required ones. Picks count only if they arrive before
+reason and, for a check that takes one, its selection: the slow integration group, or the
+walkthroughs, it names (`merge.extend`'s `select`, §chat.merge-queue/thread). It can add checks, never drop the required ones. Picks count only if they arrive before
 the run's checks start; otherwise the run uses the required checks and their triggers alone.
 
 **Each check is shown tagged.**
 - **Required** — the project declares it.
 - **Triggered** — the change's files call for it.
 - **Added by merge thread** — with the thread's reason.
-- **Skipped** — with the reason.
+- **Skipped** — with the reason (a test check broken on the target among them,
+  §app.merge-queue/blame).
 
 Each also shows its time, its counts when it writes them (`SOVA_OUT`), and its log.
 
@@ -411,6 +428,34 @@ in the same copy. Every rerun below runs fresh (§app.merge-queue/checks).
       The queue doesn't pause, and the branches after it go on. When it failed on the target, the
       view says the check is red on the target alone ("Red on {target} alone: {check}"); one that
       only ran no test there isn't called red.
+- **A test check broken on the target.** A **test check** is one whose command holds the project's
+  whole test command (`test.run`), after any wrapper such as `nice` and with any flags after it; a
+  project with no `test.run` has none. A test check is **broken on the target**, neither the branch's
+  failure nor a Can't tell whose failure, when it names no failure and its three runs (on the merge,
+  its rerun there, and on the target alone) each fail with the same non-zero exit code and **no test
+  run**.
+  - **No test run** means the run's report exists and counts zero tests, with no failing files or
+    names and no file listed as run. A run with no report at all (a crash midway, or a runner that
+    writes none) shows nothing, and stays Can't tell whose failure: real failures may be in there.
+    Sova's own runner writes a zero-count report on its usage-error exits
+    (§app.server-runtime/test-tiers).
+  - **For the branch.** The queue skips that check for this branch: its steps read Skipped, and the
+    branch carries on, its other checks deciding as usual, so it lands when they pass. The queue
+    doesn't pause, and nothing waits for the user.
+  - **The flag.** "{check} is broken on {target}: no test ran ({first line it printed})" ("exit {code}"
+    in the brackets when it printed nothing but the runner's framing), so the user can start a chat
+    to fix the target. It shows on the run (§app.merge-queue/view), in the Merge Queue tab's Needs
+    you, in the landing's note as a Red on the target too note, on the strip's "Red on {target} alone:
+    {check}", and as one push notification per check (§app.notifications/delivery). Finding it again
+    in later runs updates the flag and sends no second notification.
+  - **When it clears.** A later run of that check that runs tests again (its step passes, or counts a
+    test passed or failed) lifts the flag. A run the queue voided proves nothing either way.
+  - **Never on a release.** A release's run is never skipped past its gates: there the same failure
+    waits on the user as Can't tell whose failure, with its gates unrun (§app.release/checks).
+
+  Any other run of it (a different exit code on one side, or one that ran a test) is blamed as above. A
+  check that isn't a test check (a build, a type check) failing on both sides keeps the rule above:
+  it waits as Can't tell whose failure, and the queue doesn't pause.
 - **Setup fails** on the merged tree. It is first rerun once on the merge; passing then makes it
   **flaky**, as above. Failing again, setup is rerun on the target alone, with nothing reused.
   - If the target passes, it's the **branch's**, with the setup log.
@@ -521,6 +566,7 @@ Sova restarts itself once the queue is idle", or "regenerated the lockfile". Sov
 - the review's notes;
 - flaky tests;
 - tests already failing on the target;
+- a test check broken on the target, with its flag line (§app.merge-queue/blame);
 - what a conflict resolution did;
 - "No checks declared".
 
@@ -803,20 +849,34 @@ shows, top to bottom:
   - **Drafts changed since you approved**, with Land and Cancel;
   - **Review the request**, a request's words waiting for you before it goes to the host, with
     Review Request (§app.merge-queue/requests);
-  - a **Conflict** while it is being judged.
+  - a **Conflict** while it is being judged;
+  - and, first and apart from the entries, one row per test check broken on the target
+    (§app.merge-queue/blame), which brings the section up even with no entry in it: a **Broken on
+    {target}** chip and when it was first found, "{check} is broken on {target}: no test ran ({first
+    line})", "Every branch skips it until it's fixed, and lands without it. Start a chat in this
+    project to fix it on {target}.", and **View the Log**, which opens the run that found it. It asks
+    nothing and holds nothing up.
 - **Waiting on the host · {n}**: entries whose request is open, each with its request and its host
   state in the request's words (§app.merge-queue/requests), its chat as a link, **Open on GitHub**
   (or GitLab), and **Send Back to Chat** or **Land Again** where they apply. Opening the tab checks
   them on the host.
 - **Sent back to its chat**: only entries that still need a fix, the newest 20, each with **See
-  Why**, **Land This Commit Again** and **Remove from Queue**, and never Land
-  (§chat.composer/worktrees-control). An entry leaves this list, and isn't
+  Why**, the re-land button and **Remove from Queue**, and never Land
+  (§chat.composer/worktrees-control). The re-land button lands the branch's newest commit
+  (§app.merge-queue/approve). Once the branch moved, the row's facts read "sent back at {sha}", since
+  that is no longer the commit the button lands, and the row adds what the button brings in ("{n} newer
+  commits included", or "the branch was rewritten since it was sent back") and, when it applies, "The
+  newest commit isn't Ready to land: {why}.". The row also reads "Sent back to its chat. Land comes
+  back once its chat fixes it, or land its newest commit now." An entry leaves this list, and isn't
   shown dimmed or anywhere else here (See Why on its run still opens), once:
   - its branch was approved again later, whatever became of that approval (in line, checking,
     waiting for you, landed, sent back again or cancelled): the newer row stands for it;
   - its sent-back commit, or the branch, is already in {target}, by any route;
   - its branch was deleted, or its worktree folder removed, even when the branch remains;
-  - its branch reads ready again at a newer commit: its Ready to land row, with Land, stands for it;
+  - its branch reads ready again at a newer commit: its Ready to land row, with Land, stands for it.
+    While the entry is sent back and that newest commit isn't Ready to land (the reason above), a
+    moved, clean tip is not listed under Ready to land, so the sent-back row and its button stay
+    visible;
   - it was sent back for its spec drafts, and its drafts have changed since it was sent back and now
     fit: its Ready to land row at the same commit, with Land, stands for it, with no reload;
   - it was removed with Remove from Queue (the branch then shows as itself, in Ready to land when it
@@ -827,8 +887,9 @@ shows, top to bottom:
   says pushed or not pushed; a pushed branch reads "Pushed {branch} at {sha}".
 - **Ready to land, not approved**: the project's worktree branches with commits the target hasn't, a
   clean tree, a head that isn't a temporary commit, and no entry in line, landed or sent back at
-  that commit (a sent-back branch shows here only at a newer commit, or, sent back for its drafts,
-  at the same commit once they changed and fit, or once removed from the queue,
+  that commit (a sent-back branch shows here only at a newer commit with nothing saying it isn't
+  Ready to land, or, sent back for its drafts, at the same commit once they changed and fit, or once
+  removed from the queue,
   §chat.composer/worktrees-control;
   the list is read at most every 15 seconds, so that row may take that long to appear).
   Each shows its chat and branch, then its chip, commit and "{n} commits ahead · +{a} −{d} · {when}",
@@ -923,7 +984,10 @@ Land's size. Nothing is offered only on hover.
 - a verdict in plain words: the branch broke a check; the merge thread's resolution failed one (back
   to you, the branch not blamed); red on the target too, or flaky (noted, not blocking); can't tell
   whose failure it is ("Can't tell whose failure · waiting for you", with the checks that failed
-  on both sides, Land Anyway and Send Back); stopped at a
+  on both sides, Land Anyway and Send Back); a test check broken on the target (a warning banner per
+  such check, "{check} is broken on {target}: no test ran ({first line})", with "Skipped for this
+  branch; it doesn't block. Every branch skips it until it's fixed on {target}: start a chat to fix it
+  there.", beside the run's own verdict, §app.merge-queue/blame); stopped at a
   step, not the branch's fault (retried once, then paused, no chat told); stopped before it
   finished (nothing blamed); or passed, the target moved to exactly the tested commit;
 - for a red run, a "Whose failure is it?" block (machine or setup, already failing on the target,
@@ -952,7 +1016,8 @@ was waiting when the page loaded and is running when its log is opened follows. 
 to fit its panel counts as at its bottom, and keeps following as it grows past it. Scrolling up
 stops following; scrolling back to the end resumes it.
 
-Every action here is a catalogue command: Land, Land This Commit Again, Cancel, Remove from Queue,
+Every action here is a catalogue command: Land, Land This Commit Again (read Land Newest Commit
+once the branch moved on), Cancel, Remove from Queue,
 Pause, Resume, Accept, Send Back, Land Anyway, Start Fresh, Send Answer, Clear and Clear All over the merge verbs (§app.project-services/merge-verbs), Update Local Main, Publish and a
 branch summary's Try Again over the queue's own routes, which the merge thread can't call. Queue Settings and Open on GitHub only
 open a place. The view follows the queue live,
@@ -1216,8 +1281,9 @@ chat tracks which worktree, and updates it as those chats' worktree records chan
 
 The merge thread (§chat.merge-queue/thread) and every reviewer chat (§app.merge-queue/review) are
 the **queue's own chats**. Sova knows them by the profile entry in the chat's own file (Sova's
-system profile `merge-thread` or `merge-reviewer`), never by title, so a renamed chat stays one and
-a chat titled "Review · …", or started on a profile of yours with the same id, never becomes one.
+system profile `merge-thread` or `merge-reviewer`), never by title, so a chat titled "Review · …",
+or started on a profile of yours with the same id, never becomes one. Its name is Sova's too: the
+title Sova starts it with, which nothing renames (§app.session-list/fixed-names).
 The mark holds for chats started before this shipped and after a restart.
 
 **Out of every list.** No session list shows them:

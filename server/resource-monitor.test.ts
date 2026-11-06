@@ -662,3 +662,19 @@ test("titleOf (Sova's title, from memory) wins over pi's session name", async ()
   assert.equal((await m.history(0, "5s")).groups["/s/a.jsonl"]!.label, "Renamed in Sova");
   assert.deepEqual(asked, ["/s/a.jsonl"]);
 });
+
+test("a chat Sova names itself (fixedOf) reads its name on the row and the chart, and says when it is the Overseer's", async () => {
+  const fx = fixture("fixed", [{ pid: SERVER, ppid: 1, argv: ["node"] }, { pid: 200, ppid: SERVER, argv: ["claude", "-p"] }], { unit: false });
+  let name = "huh"; // what the history recorded before the name was fixed
+  const m = new ResourceMonitor({ procRoot: fx.proc, logDir: join(root, "fixed-log"), serverPid: SERVER, eventLoop: false, platform: "linux",
+    hosted: () => [hostedA({ title: "huh" })], titleOf: () => name,
+    fixedOf: (p, fresh) => (p === "/s/a.jsonl" && (fresh || name === "Overseer") ? { title: "Overseer", overseer: "current" } : undefined) });
+  await m.tick();
+  // The tick before the rule: the ring holds "huh"; the read relabels it.
+  assert.equal(m.snapshot()!.sessions[0]!.title, "huh");
+  assert.deepEqual((await m.history(0, "5s")).groups["/s/a.jsonl"], { label: "Overseer", sessionPath: "/s/a.jsonl", overseer: "current" });
+  name = "Overseer";
+  await m.tick();
+  const row = m.snapshot()!.sessions[0]!;
+  assert.deepEqual({ title: row.title, overseer: row.overseer }, { title: "Overseer", overseer: "current" });
+});

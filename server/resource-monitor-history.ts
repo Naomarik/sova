@@ -25,7 +25,7 @@ export interface TickPoint {
   workers: Map<string, Map<string, [number, number]>>;
   top: MonitorPointProc[];
   /** Labels for the group keys used (session title, …). */
-  labels: Map<string, { label: string; sessionPath?: string }>;
+  labels: Map<string, { label: string; sessionPath?: string; overseer?: "current" | "earlier" }>;
   /** group key → worker id → worker name, where known. */
   workerLabels?: Map<string, Map<string, string>>;
 }

@@ -245,7 +245,8 @@
     "code": [
       "src/components/OverseerView.tsx",
       "src/components/OverseerApprovalsPanel.tsx",
-      "src/lib/overseer-approvals.ts"
+      "src/lib/overseer-approvals.ts",
+      "src/lib/overseer.ts"
     ]
   },
   "§design.copy-deck/overseer-orgs": {
@@ -269,7 +270,7 @@
   "§design.copy-deck/project-coding": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "verified"
+    "evidence": "reviewed"
   },
   "§design.copy-deck/project-costs": {
     "kind": "note",
@@ -299,7 +300,8 @@
       "src/lib/project-overseer-view.ts",
       "src/components/SessionView.tsx",
       "src/components/PowersGrid.tsx",
-      "src/lib/powers-view.ts"
+      "src/lib/powers-view.ts",
+      "src/lib/overseer.ts"
     ]
   },
   "§design.copy-deck/project-powers": {

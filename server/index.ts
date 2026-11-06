@@ -6,8 +6,10 @@ import type { Server } from "node:http";
 import { join } from "node:path";
 import { serve } from "@hono/node-server";
 import { buildApp, SERVER_HEAD, SERVER_RUNTIME } from "./app";
+import { statingOwnNumber } from "./wire-gate";
 import { readBranch } from "./harness/pi/reader";
 import { extensionEntries } from "./harness/pi/state";
+import { startModelCheck } from "./harness/pi/model-sync";
 import { markShutdown } from "./wrapup-recovery";
 import { startBudgetRecount } from "./baton-recount";
 import { listProjects, openRegisteredProjects } from "./projects/spaces";
@@ -38,7 +40,7 @@ import { usageHistory } from "./usage-history";
 import { readCache } from "../pi-config/extensions/usage-status/fetch.ts";
 import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/client";
 import { wireRequestChats } from "./owner-request-chat";
-import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, listSessionsTracked, listStamps, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
+import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, listSessionsTracked, listStamps, monitorFixedOf, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
 import { startScheduleKeeper } from "./schedule-routes";
 import { cancelChatWakes, startWakeKeeper } from "./wake-keeper-live";
 import { monitorJobs, startJobKeeper, stopJobsOf, sweepJobs } from "./background-jobs";
@@ -130,6 +132,7 @@ setInterval(pruneVisitors, 24 * 60 * 60_000).unref();
 
 // The app, for whoever imports the server (routes in-process through app.request()).
 export { app };
+const internalRequest = statingOwnNumber(app);
 
 /** Where the link extension's tools call this server back: loopback for a wildcard bind. */
 const linkOrigin = (port: number) => `http://${HOST === "0.0.0.0" || HOST === "::" ? "127.0.0.1" : HOST.includes(":") ? `[${HOST}]` : HOST}:${port}`;
@@ -182,9 +185,11 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   // Project instances back to their desired state (server/project-services/routes.ts).
   void reconcileProjectServices();
   // The merge queue: its verbs, its queues recovered, the typed "land it" door (server/merge-queue/wire.ts).
-  void startMergeQueue({ request: (path, init) => app.request(path, init) }).catch((err) => console.error("[merge-queue] start failed:", err instanceof Error ? err.message : err));
+  void startMergeQueue({ request: internalRequest }).catch((err) => console.error("[merge-queue] start failed:", err instanceof Error ? err.message : err));
   // Updates: the daily check, on the schedule updates.json keeps across restarts.
   startUpdates(info.port, HOST);
+  // Ollama Cloud's model list: the daily check, and the model list re-applied whenever its file changes (§app.model-levels/server-check).
+  startModelCheck();
 }) as Server;
 server.on("error", (err) => {
   // e.g. EADDRINUSE: don't linger half-alive behind the uncaughtException handler
@@ -215,13 +220,13 @@ try {
 }
 
 // The Overseer's tools call these same routes in-process (no socket, every guard applies).
-setOverseerDispatch((path, init) => app.request(path, init));
+setOverseerDispatch(internalRequest);
 // An offer card's buttons call the same routes in-process (§chat.offers/buttons).
-setOffersDispatch((path, init) => app.request(path, init));
-setCardsDispatch((path, init) => app.request(path, init));
+setOffersDispatch(internalRequest);
+setCardsDispatch(internalRequest);
 startOverseerLoop();
 startProjectOverseerLoop();
-startScheduleKeeper((path, init) => app.request(path, init));
+startScheduleKeeper(internalRequest);
 startWakeKeeper();
 startJobKeeper();
 noteStallHead(SERVER_HEAD);
@@ -233,6 +238,7 @@ startResourceMonitor({
   titleOf: cachedTitleOf,
   // A background job has left its chat's unit: charged to that chat through its record.
   jobs: () => monitorJobs(wakeOwnerOf),
+  fixedOf: (path, fresh) => monitorFixedOf(path, fresh),
 });
 // Every attached org's workspace repo: its residence statechart commits whatever changed at most hourly, then pushes.
 // Messages a crash or kill lost stop counting against their session's limit.

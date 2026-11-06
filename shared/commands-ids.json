@@ -228,6 +228,8 @@
     "project.verb.merge.hold",
     "project.merge-queue.landing-summary",
     "project.glance",
+    "settings.models.check.status",
+    "settings.models.check",
     "session.job.list",
     "session.job.stop"
   ],

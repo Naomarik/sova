@@ -1,7 +1,7 @@
 import { MERGE_QUEUE_SENT_PREFIX } from "../shared/senders";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ReadinessState, WorktreeLanding, WorktreeLandingDocs } from "../shared/protocol";
+import type { ReadinessState, WorktreeLanding, WorktreeLandingDocs, WorktreeReadiness } from "../shared/protocol";
 import { isExcluded, readDecisionSettings } from "./decide-settings";
 import { stateRoot } from "./state-root";
 import { latestOutcome, type TurnOutcomeRecord } from "./turn-outcomes";
@@ -37,8 +37,46 @@ export interface LandingTree {
 export interface LandingSession {
   running: boolean;
   openQuestions: number;
-  lastCheck?: { at: number; ok: boolean };
+  lastCheck?: LastCheck;
 }
+
+/** The chat's newest check run (test, typecheck, build): when, whether it passed, and for a failed one what kind of
+    run it was and what it names as failing (checkFailureOf), when its output says. */
+export interface LastCheck {
+  at: number;
+  ok: boolean;
+  /** "test run" | "typecheck" | "build" | "check run". */
+  what?: string;
+  /** "1 failing file, server/a.test.ts"; absent when the output names nothing. */
+  failed?: string;
+}
+
+const listed = (xs: readonly string[], n = 3) => `${xs.slice(0, n).join(", ")}${xs.length > n ? `, +${xs.length - n} more` : ""}`;
+
+/**
+ * What a failed check's output (its tail) says failed, in a few words: Sova's runner's "N failing files" and its
+ * FAIL lines, a node:test or vitest count, or the type errors and their files. Pure; nothing found, `what` alone.
+ */
+export function checkFailureOf(output: string): { what: string; failed?: string } {
+  const summary = [...output.matchAll(/\b(\d+) failing files?\b/g)].pop();
+  const fails = [...new Set([...output.matchAll(/^\s*FAIL\s+(\S+\.[cm]?[jt]sx?)\b/gm)].map((m) => m[1]!.replace(/^\.\//, "")))];
+  if (summary || fails.length) {
+    const n = summary ? Number(summary[1]) : fails.length;
+    if (n > 0) return { what: "test run", failed: `${plural(n, "failing file")}${fails.length ? `, ${listed(fails)}` : ""}` };
+  }
+  const tests = /(?:^|\n)\s*(?:#|ℹ)\s*fail\s+([1-9]\d*)|Tests?:\s+([1-9]\d*)\s+failed|\b([1-9]\d*)\s+(?:failed|failing)\b/.exec(output);
+  if (tests) return { what: "test run", failed: plural(Number(tests[1] ?? tests[2] ?? tests[3]), "failing test") };
+  const ts = [...output.matchAll(/^(\S+?)\(\d+,\d+\): error TS\d+/gm)];
+  if (ts.length || /\berror TS\d+/.test(output)) {
+    const files = [...new Set(ts.map((m) => m[1]!))];
+    const n = ts.length || (output.match(/\berror TS\d+/g) ?? []).length;
+    return { what: "typecheck", failed: `${plural(n, "type error")}${files.length ? `, ${listed(files)}` : ""}` };
+  }
+  return { what: "check run" };
+}
+
+/** Whose run failed and what it names: "this chat's last test run failed: 1 failing file, server/a.test.ts". */
+export const lastCheckWords = (c: Pick<LastCheck, "what" | "failed">): string => `this chat's last ${c.what ?? "check run"} failed${c.failed ? `: ${c.failed}` : ""}`;
 
 /** "yes": the latest turn outcome says the work is done; "no": it doesn't, or there is none for the
     last reply; "off": no outcome is ever recorded for this session (attention off, or its folder
@@ -80,7 +118,7 @@ export function landingBlockers(t: LandingTree, s: LandingSession): LandingBlock
   }
   if (t.conflicts) out.push({ kind: "conflicts", text: `conflicts with ${t.base ?? "its base"} in ${plural(t.conflicts, "file")}`, fix: `merge ${t.base ?? "its base"} in and resolve them` });
   if (t.tempCommit) out.push({ kind: "temp", text: `a temporary commit ("${t.tempCommit.slice(0, 60)}")`, fix: "reword or squash the temporary commit" });
-  if (s.lastCheck && !s.lastCheck.ok) out.push({ kind: "check", text: "a failing check run", fix: "fix what the check reports and run it again" });
+  if (s.lastCheck && !s.lastCheck.ok) out.push({ kind: "check", text: lastCheckWords(s.lastCheck), fix: "fix what the check reports and run it again" });
   return out;
 }
 
@@ -92,6 +130,37 @@ export function blockedNoteText(branch: string, commit: string, blockers: readon
   const list = blockers.map((b) => b.text).join(", ");
   const fixes = blockers.map((b) => b.fix).join("; ");
   return `${MERGE_QUEUE_SENT_PREFIX} ${branch} is finished at ${commit.slice(0, 7)}, but it can't be queued to land yet: ${list}. On ${branch}, ${fixes}. Once nothing blocks it, the user's go-ahead lands it through the merge queue: they press Land, or type "land it" in this chat, which you record with the worktree tool's land action.`;
+}
+
+/**
+ * Why a sent-back branch's newest commit `tip` isn't Ready to land, from the tree as readiness publishes it: its chat's
+ * last check, a conflict, open questions, a running turn, drafts that don't fit. null: it is Ready to land at `tip`.
+ * undefined: this reading can't say (none, the tree merged or gone, or Ready to land at another commit, so it predates
+ * `tip`). Pure.
+ */
+export function newestBlockedOf(t: WorktreeReadiness | undefined, tip: string): string | null | undefined {
+  if (!t || t.merged || t.state === "merged" || t.state === "removed") return undefined;
+  if (t.landing) {
+    if (t.landing.commit !== tip) return undefined;
+    return t.landing.state === "ready" ? null : "its spec drafts don't fit";
+  }
+  if (t.state === "ready" || t.state === "waiting-approval") {
+    if (t.dirtyCount) return `${plural(t.dirtyCount, "uncommitted file")} in its folder: commit or remove them first`;
+    return "its chat hasn't said the work is finished";
+  }
+  return t.why ?? t.reason;
+}
+
+/** newestBlockedOf for a worktree, from its owning chat's last reading (never a fresh read). No owner, an archived one,
+ *  a chat never read, or a reading without this tree: undefined. */
+export async function newestReadingOf(worktree: string, tip: string, d: { owner(worktree: string): Promise<{ session: string; archived?: boolean } | null>; pathOf(session: string): Promise<string | undefined>; reading(path: string): { known: false } | { known: true; value?: { trees: WorktreeReadiness[] } }; canonical(path: string): string }): Promise<string | null | undefined> {
+  const owner = await d.owner(worktree).catch(() => null);
+  if (!owner || owner.archived) return undefined;
+  const path = await d.pathOf(owner.session);
+  const reading = path ? d.reading(path) : null;
+  if (!reading?.known) return undefined;
+  const tree = d.canonical(worktree);
+  return newestBlockedOf(reading.value?.trees.find((t) => t.path === tree), tip);
 }
 
 /** The line a session answers with when it can't land its specs. */

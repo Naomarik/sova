@@ -18,6 +18,33 @@ export function overseerHistoryId(hash: string): string | null {
 }
 export const overseerHistoryHref = (id: string) => `${OVERSEER_HASH}/h/${encodeURIComponent(id)}`;
 
+/**
+ * The History screens' rows (the Overseer's and a project overseer's): each says what that earlier conversation was
+ * about (`about`), never the fixed name all of them share; a file with no message yet says "No messages". An older
+ * server sends no `about`: its `title` was that.
+ */
+export function historyRows<T extends { title: string; about?: string }>(rows: readonly T[]): T[] {
+  return rows.map((h) => {
+    const about = h.about ?? h.title;
+    return { ...h, title: about === "Untitled" ? "No messages" : about };
+  });
+}
+
+/**
+ * Where a session route to one of the Overseer's own files goes instead (old bookmarks, links from other chats):
+ * the Overseer page for its current conversation, the History page of an earlier one. Null for every other path,
+ * and while the Overseer's info isn't read yet (the caller asks again when it lands). A project overseer's file is
+ * left alone: its route opens its own page.
+ */
+export function overseerRedirect(path: string, info: { path: string; history: readonly { id: string; path: string }[] } | null | undefined): string | null {
+  if (info) {
+    if (info.path === path) return OVERSEER_HASH;
+    const earlier = info.history.find((h) => h.path === path);
+    if (earlier) return overseerHistoryHref(earlier.id);
+  }
+  return null;
+}
+
 /** A proactive "Brief me" prompt: a machine row, never "You", and never a turn any tab navigates on.
     One rule with the Timeline and the input counts (shared/senders.ts). */
 import { isBriefText } from "../../shared/senders";

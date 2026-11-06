@@ -8,8 +8,10 @@ const text = "Every 30 min · When a Claude limit resets";
 
 test("each state reads as the schedule, then its state", () => {
   assert.equal(scheduleLine({ when: "x", text, state: "needs-approval", pin: "p" }), `${text} · Needs approval`);
-  const next = new Date(Date.now() + 10 * 60_000).toISOString();
-  assert.equal(scheduleLine({ when: "x", text, state: "active", id: "s1", next }), `${text} · Next ${clockTime(next)}`);
+  // A fixed noon: from ten minutes before midnight, a real clock's "next" falls on another day and reads with its date.
+  const now = new Date(2026, 5, 15, 12).getTime();
+  const next = new Date(now + 10 * 60_000).toISOString();
+  assert.equal(scheduleLine({ when: "x", text, state: "active", id: "s1", next }, now), `${text} · Next ${clockTime(next)}`);
   assert.equal(scheduleLine({ when: "x", text: "When a Claude limit resets", state: "active", id: "s1" }), "When a Claude limit resets · Approved");
   assert.equal(scheduleLine({ when: "x", text, state: "paused", id: "s1", reason: "Changed since you approved it" }), `${text} · Paused: Changed since you approved it`);
   assert.equal(scheduleLine({ when: "x", text, state: "paused", id: "s1", reason: "Paused after 10 runs nobody opened." }), `${text} · Paused after 10 runs nobody opened.`);

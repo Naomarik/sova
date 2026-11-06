@@ -911,3 +911,62 @@ describe("sandbox on sova_set_session and sova_create_session (§app.overseer/to
     assert.deepEqual(bad.calls, []);
   });
 });
+
+describe("sova_set_session never renames or aliases a chat Sova names itself (shared/fixed-names.ts)", () => {
+  /** `po`: a project's overseer; `rel`: a release chat; `a`: an ordinary chat. */
+  function harness() {
+    const calls: { path: string; body: any }[] = [];
+    const aliases: [string, string][] = [];
+    const summary = (id: string): SessionSummary =>
+      ({
+        id,
+        path: `/s/${id}.jsonl`,
+        cwd: "/w",
+        ...(id === "po" ? { title: "Overseer · Portal", fixedName: "project-overseer", projectOverseer: { projectId: "p1" } } : id === "rel" ? { title: "Release v1 of sova", fixedName: "release" } : { title: "huh" }),
+      }) as SessionSummary;
+    const host = {
+      request: async (path: string, init?: RequestInit) => {
+        calls.push({ path, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+        return Response.json(summary("a"));
+      },
+      overseerId: () => "ov",
+      confirmed: () => null,
+      attended: () => true,
+      permit: () => null,
+      used: () => {},
+      caps: () => DEFAULT_CAPS,
+      session: async (ref: string) => (["po", "rel", "a"].includes(ref) ? summary(ref) : null),
+      setAlias: (id: string, alias: string) => {
+        aliases.push([id, alias]);
+        return null;
+      },
+      started: () => {},
+      runningStarted: () => 0,
+      counted: () => false,
+    } as unknown as OverseerToolHost;
+    const tools = overseerTools(host, new TurnLimits());
+    const run = (params: Record<string, unknown>) =>
+      tools.find((t) => t.name === "sova_set_session")!.execute("tc", params, undefined, undefined, undefined as never).then(
+        (r) => r.content.map((c) => (c as { text: string }).text).join("\n"),
+        (e: Error) => `ERROR: ${e.message}`,
+      );
+    return { run, calls, aliases };
+  }
+
+  test("a title or an alias is refused with the kind's sentence, before anything is called", async () => {
+    const h = harness();
+    assert.equal(await h.run({ session: "po", title: "huh" }), "ERROR: An overseer keeps its own name. Nothing was changed.");
+    assert.equal(await h.run({ session: "po", alias: "huh" }), "ERROR: An overseer keeps its own name. Nothing was changed.");
+    assert.equal(await h.run({ session: "rel", title: "" }), "ERROR: A release chat keeps the name Sova gives it. Nothing was changed.");
+    assert.equal(await h.run({ session: "rel", alias: "rel" }), "ERROR: A release chat keeps the name Sova gives it. Nothing was changed.");
+    assert.deepEqual(h.calls, [], "no rename route was called");
+    assert.deepEqual(h.aliases, [], "no alias was stored");
+  });
+
+  test("an ordinary chat is still renamed and aliased", async () => {
+    const h = harness();
+    assert.match(await h.run({ session: "a", title: "Named", alias: "named" }), /renamed to "Named"/);
+    assert.deepEqual(h.calls.map((c) => c.path), ["/api/sessions/title"]);
+    assert.deepEqual(h.aliases, [["a", "named"]]);
+  });
+});

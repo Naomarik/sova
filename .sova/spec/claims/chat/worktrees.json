@@ -225,8 +225,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T21:36Z",
-      "source": "pi-session:6295e4a0-38a1-4768-a7a6-2787ccf54172#23af1717"
+      "at": "2026-11-05T19:18Z",
+      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
     }
   },
   "§chat.worktrees/readiness": {
@@ -294,7 +294,8 @@
       "server/merge-queue/queue.test.ts",
       "server/merge-queue/testing/harness.ts",
       "server/session-branches.test.ts",
-      "server/merge-queue/scenarios-landed-drafts.integration.test.ts"
+      "server/merge-queue/scenarios-landed-drafts.integration.test.ts",
+      "server/merge-queue/queue-newest-blocked.test.ts"
     ],
     "requires": [
       "§chat.worktrees/readiness",
@@ -303,8 +304,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T10:48Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#7ee12135"
+      "at": "2026-11-05T19:18Z",
+      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
     }
   },
   "§chat.worktrees/sandbox": {

@@ -362,7 +362,7 @@ export function shortenable(t: StoredTitle | undefined): boolean {
 /** Why the button won't name this session, before any model call, or null. Pure. */
 export function buttonSkip(s: SessionSummary | null): AutoTitleSkip | null {
   if (!s) return "not-found";
-  if (s.workerSession || s.queueChat || s.overseer || s.projectOverseer) return "not-listed";
+  if (s.workerSession || s.queueChat || s.overseer || s.projectOverseer || s.fixedName) return "not-listed";
   if (s.titleBy && s.titleBy !== "auto") return "explicit";
   // An older server's summary has no titleBy: any override counts as explicit there.
   if (!s.titleBy && s.originalTitle !== undefined) return "explicit";
@@ -386,9 +386,9 @@ export async function nameSession(path: string, mode: NameMode, deps: NameDeps, 
   // Read when the call starts: the write goes through only over exactly this entry.
   const seen = replacing ? (deps.stored ?? ((id: string) => readSessionTitleRecords()[id]))(s.id) : undefined;
   if (mode === "regenerate") {
-    if (s.workerSession || s.queueChat || s.overseer || s.projectOverseer) return { outcome: "skipped", reason: "not-listed" };
+    if (s.workerSession || s.queueChat || s.overseer || s.projectOverseer || s.fixedName) return { outcome: "skipped", reason: "not-listed" };
   } else if (mode === "shorten") {
-    if (s.workerSession || s.queueChat || s.overseer || s.projectOverseer) return { outcome: "skipped", reason: "not-listed" };
+    if (s.workerSession || s.queueChat || s.overseer || s.projectOverseer || s.fixedName) return { outcome: "skipped", reason: "not-listed" };
     if (seen?.by === "user" && !seen.legacy) return { outcome: "skipped", reason: "explicit", detail: "typed by hand" };
     if (!shortenable(seen)) return { outcome: "skipped", reason: "short" };
   } else {
@@ -453,7 +453,7 @@ export const SHORTEN_MAX_PER_CALL = 200;
  */
 export function shortenPicks(listed: readonly SessionSummary[], records: Readonly<Record<string, StoredTitle>>): SessionSummary[] {
   return listed
-    .filter((s) => !s.workerSession && !s.queueChat && !s.overseer && !s.projectOverseer && shortenable(records[s.id]))
+    .filter((s) => !s.workerSession && !s.queueChat && !s.overseer && !s.projectOverseer && !s.fixedName && shortenable(records[s.id]))
     .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))
     .slice(0, SHORTEN_MAX_PER_CALL);
 }
@@ -470,7 +470,7 @@ const NUDGE_SLACK_MS = 5_000;
 export function sweepEligible(s: SessionSummary, now: number, quietMs: number): boolean {
   if (s.titleBy || s.originalTitle !== undefined) return false; // any stored title: named once, or explicit
   if (s.archived || !s.outlineGist) return false;
-  if (s.workerSession || s.queueChat || s.overseer || s.projectOverseer || s.draftPreview !== undefined) return false;
+  if (s.workerSession || s.queueChat || s.overseer || s.projectOverseer || s.fixedName || s.draftPreview !== undefined) return false;
   const last = Date.parse(s.lastActiveAt);
   return Number.isFinite(last) && now - last >= quietMs;
 }

@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 546 |
-| Routes a catalogue entry points at | 168 |
-| Catalogue entries | 229 |
+| Routes registered | 553 |
+| Routes a catalogue entry points at | 170 |
+| Catalogue entries | 231 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -27,7 +27,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Trust grants | 17 |
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
-| Class: Left as is, by choice | 256 |
+| Class: Left as is, by choice | 261 |
 | Class: Page plumbing | 11 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
@@ -237,6 +237,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `server.restart` | Restart Sova | changes | `POST /api/updates/restart` | full |
 | `settings.sova.get` | Sova's Own Settings | looks | `GET /api/settings` | sessions |
 | `settings.models.get` | Model Policy | looks | `GET /api/settings/models` | sessions |
+| `settings.models.check.status` | Model List Check | looks | `GET /api/settings/models/check` | sessions |
+| `settings.models.check` | Check Model List Now | changes | `POST /api/settings/models/check` | admin |
 | `settings.provider-limits.get` | Provider Limits | looks | `GET /api/settings/provider-limits` | sessions |
 | `settings.align.get` | Alignment Settings | looks | `GET /api/settings/align` | sessions |
 | `settings.delegate.get` | Delegate Settings | looks | `GET /api/settings/delegate` | sessions |
@@ -459,7 +461,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `ALL /*` | full |
 | `ALL /api/*` | full |
 
-### Left as is, by choice (256)
+### Left as is, by choice (261)
 
 Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inventory/scan.ts`). A route there that a catalogue entry points at stays a command; the rest are not pending, and a new route there needs no entry.
 
@@ -639,6 +641,11 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `GET /api/session-shares/preview` | sessions |
 | `GET /api/session-shares/preview/img/:n` | sessions |
 | `PUT /api/settings` | admin |
+| `GET /api/settings/accounts/keys` | sessions |
+| `DELETE /api/settings/accounts/keys/:provider` | admin |
+| `PUT /api/settings/accounts/keys/:provider` | admin |
+| `POST /api/settings/accounts/keys/:provider/reveal` | admin |
+| `POST /api/settings/accounts/keys/:provider/test` | admin |
 | `DELETE /api/settings/accounts/openai` | admin |
 | `GET /api/settings/accounts/openai` | sessions |
 | `DELETE /api/settings/accounts/openai/login` | admin |
@@ -921,6 +928,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/settings/delegate` | sessions | `settings.delegate.get` |
 | `GET /api/settings/memory` | sessions | `settings.memory.get` |
 | `GET /api/settings/models` | sessions | `settings.models.get` |
+| `GET /api/settings/models/check` | sessions | `settings.models.check.status` |
+| `POST /api/settings/models/check` | admin | `settings.models.check` |
 | `GET /api/settings/overseer` | sessions | `settings.overseer.get` |
 | `PUT /api/settings/project-assistant` | admin | `settings.assistant-default.set` |
 | `GET /api/settings/provider-limits` | sessions | `settings.provider-limits.get` |

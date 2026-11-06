@@ -91,7 +91,7 @@
   "§app.project-overseer/coding-worktrees": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app.project-overseer/tools",
       "§chat.worktrees/tool"
@@ -143,8 +143,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T04:27Z",
-      "source": "pi-session:5237ac07-5286-4632-8d26-5f547fe2c4bb#0870b98d"
+      "at": "2026-11-05T19:18Z",
+      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
     }
   },
   "§app.project-overseer/confirm-brief": {
@@ -493,7 +493,11 @@
       "src/lib/api.ts",
       "src/orgs.css",
       "src/components/PowersGrid.tsx",
-      "src/lib/powers-view.ts"
+      "src/lib/powers-view.ts",
+      "server/project-overseer.ts",
+      "shared/project-overseer.ts",
+      "src/lib/overseer.ts",
+      "src/lib/overseer.test.ts"
     ],
     "requires": [
       "§app.project-overseer/identity",

@@ -100,7 +100,7 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
-import { WIRE_PARAM } from "../../shared/protocol";
+import { WIRE_PARAM, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
 import { LIST_VERSION_HEADER, parseListVersion } from "./summary-diff";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
 import type {
@@ -150,6 +150,7 @@ import type { BackgroundJob } from "../../shared/protocol";
 import type { AlignTriage, WorkerChecks, DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
 import { upgradeLegacyRows } from "./legacy-rows";
+import { COMPOSER_QUERY } from "./wire-stamp";
 import { onAuthorized, onUnauthorized } from "./auth";
 import type { PreviewList, PreviewMint, PreviewMinted, PreviewView } from "../../shared/preview-links";
 
@@ -270,6 +271,9 @@ export const getModelPolicy = (host?: string | null) => request<ModelPolicy>(hos
 export const putModelPolicy = (policy: ModelPolicy) =>
   request<ModelPolicy>("/api/settings/models", { method: "PUT", body: JSON.stringify(policy) });
 /** How many of each provider's requests may run at once on this device (§app.provider-limits/setting). */
+/** Ollama Cloud's model list check (§app.model-levels/settings-line): its status, and Check now (answers once done). */
+export const getModelCheck = () => request<ModelCheckStatus>("/api/settings/models/check");
+export const runModelCheck = () => request<ModelCheckStatus>("/api/settings/models/check", { method: "POST" });
 export const getProviderLimits = () => request<ProviderLimitsInfo>("/api/settings/provider-limits");
 export const putProviderLimits = (limits: ProviderLimits) =>
   request<ProviderLimitsInfo>("/api/settings/provider-limits", { method: "PUT", body: JSON.stringify({ limits }) });
@@ -337,6 +341,13 @@ export const getOpenAiLogin = () => request<OpenAiLoginFlow | null>("/api/settin
 export const sendOpenAiLoginAnswer = (text: string) =>
   request<OpenAiLoginFlow>("/api/settings/accounts/openai/login/answer", { method: "POST", body: JSON.stringify({ text }) });
 export const cancelOpenAiLogin = () => request<OpenAiAccountInfo>("/api/settings/accounts/openai/login", { method: "DELETE" });
+/** Settings → Accounts' API keys (§app/provider-keys): the rows (never a key), save (checked first), remove, Test, and the reveal. */
+export const getProviderKeys = () => request<ProviderKeysInfo>("/api/settings/accounts/keys");
+const keyUrl = (provider: string, tail = "") => `/api/settings/accounts/keys/${encodeURIComponent(provider)}${tail}`;
+export const saveProviderKey = (provider: string, key: string) => request<ProviderKeyWrite>(keyUrl(provider), { method: "PUT", body: JSON.stringify({ key }) });
+export const removeProviderKey = (provider: string) => request<ProviderKeyWrite>(keyUrl(provider), { method: "DELETE" });
+export const testProviderKey = (provider: string) => request<ProviderKeyRow>(keyUrl(provider, "/test"), { method: "POST" });
+export const revealProviderKey = (provider: string) => request<{ key: string }>(keyUrl(provider, "/reveal"), { method: "POST" });
 export const setClaudePoolKeeper = (device: string) =>
   request<ClaudePoolInfo>("/api/claude/pool/keeper", { method: "PUT", body: JSON.stringify({ device }) });
 export const pinClaudePoolLogin = (id: string, pin: string | null) =>
@@ -1057,7 +1068,8 @@ export const removeWorktrees = (path: string, expect: string[]) =>
  * something that isn't a TUI. It never overrides a live TUI.
  */
 export function wsUrl(endpoint: "/ws/chat" | "/ws/watch", path: string, force = false, host: string | null = hostOf(path)): string {
-  return `${wsOrigin()}${peerBase(host)}${endpoint}?path=${encodeURIComponent(path)}${force ? "&force=1" : ""}&${WIRE}`;
+  // A chat socket states this page's writing number (§mesh.compatibility/every-send-states-a-version).
+  return `${wsOrigin()}${peerBase(host)}${endpoint}?path=${encodeURIComponent(path)}${force ? "&force=1" : ""}&${WIRE}${endpoint === "/ws/chat" ? `&${COMPOSER_QUERY}` : ""}`;
 }
 
 function wsOrigin(): string {

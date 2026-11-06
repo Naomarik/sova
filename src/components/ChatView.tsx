@@ -73,7 +73,7 @@ import { sendFrame } from "../lib/send-frame";
 import { codeFailure, codeView, type CodeControl, type CodeView } from "../lib/code-state";
 import { isObj, str } from "../lib/message";
 import { ensureModelPolicy, modelEnabled, modelPolicy } from "../lib/model-policy";
-import { HOST_MOVE_GRACE_MS, hostOf, mayBeHostMove, meshOn, recheckHost, sessionHrefOn, sessionViewKey } from "../lib/mesh";
+import { HOST_MOVE_GRACE_MS, hostOf, mayBeHostMove, meshOn, recheckHost, sendingOff, sessionHrefOn, sessionViewKey } from "../lib/mesh";
 import { cachedTranscript, cacheItems, cacheSpot, keptOlder, transcripts } from "../lib/transcript-cache";
 import { inputsPending, knownInputs, knownWorkers, workersShown } from "../lib/known-before-mount";
 import { composerSeen, knownComposer, listFetchedAt, rememberComposer, sameKnown } from "../lib/composer-known";
@@ -145,6 +145,7 @@ import { liveTourCalls } from "../lib/tour-rows";
 import { alignRowFromDetails, foldAlignRows, isOpenDoc, openCount, recommendedOption, type AlignEntry } from "../lib/align";
 import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
+import { HostSendNotice } from "./HostStateNotices";
 import { OverseerMemoryMenu, projectOverseerMemory } from "./OverseerMemoryMenu";
 import { type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
@@ -586,11 +587,14 @@ export function ChatView(props: {
   const [memoryStatus, setMemoryStatus] = createSignal<MemoryStatus | null>(null);
   /** A compaction is in flight: a manual /compact runs with no turn, so `live.running` misses it. */
   const [compacting, setCompacting] = createSignal(false);
+  /** The host holding this chat can't take sends from this page (§mesh.compatibility/states): the chat
+      stays open and live, and nothing goes out of it, reads included (a socket frame is a writing request). */
+  const hostGate = createMemo(() => sendingOff(props.path));
   /** This chat process's code (WS "code", §app.chat-processes/code-pickup); null: current, or no message since the hello. */
   const [code, setCode] = createSignal<CodeView | null>(null);
   /** Reload Now, and the failed banner's Try Again: the chat reloads at once if quiet, else when it is. */
   const reloadCode = () => void chatSend({ type: "reload_code" });
-  props.onCode?.({ view: code, quiet: () => ({ running: live.running, workersWorking: workersWorking() }), reload: reloadCode });
+  props.onCode?.({ view: () => (hostGate() ? null : code()), quiet: () => ({ running: live.running, workersWorking: workersWorking() }), reload: reloadCode });
   onCleanup(() => props.onCode?.(null));
   let modelTimer: ReturnType<typeof setTimeout> | undefined;
   let thinkingTimer: ReturnType<typeof setTimeout> | undefined;
@@ -808,7 +812,7 @@ export function ChatView(props: {
       );
   /** Archived when this view opened: it shows the file's rows and holds no socket (asleep) until it is unarchived and needed. */
   const archivedAtOpen = untrack(archived);
-  const socket = createReconnectingSocket<ChatServerMessage>(() => withHave(newestOnly(wsUrl("/ws/chat", props.path, props.force)), untrack(items)?.at(-1)?.id), {
+  const connection = createReconnectingSocket<ChatServerMessage>(() => withHave(newestOnly(wsUrl("/ws/chat", props.path, props.force)), untrack(items)?.at(-1)?.id), {
     // Archived: the first connect waits for a promise, so the close below lands before it (no upgrade at all).
     after: archivedAtOpen ? (fromFile ?? Promise.resolve()) : fromFile,
     afterMs: FILE_READ_WAIT_MS,
@@ -847,7 +851,9 @@ export function ChatView(props: {
             setNewFrom(msg.after !== undefined ? firstHeld : (msg.items[0]?.id ?? null));
             setHelloed(true);
             setWait(waitOnHello(untrack(wait)));
-            setFeed(feedOnHello);
+            const helloStep = feedOnHello(untrack(feed));
+            setFeed(helloStep.feed);
+            sayFeed(helloStep.says);
             setHellos((n) => n + 1);
             // A client that connects mid-compaction shows it, as the compaction_start it missed would.
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming, activity: msg.isCompacting ? "Compacting context" : null }));
@@ -1172,9 +1178,13 @@ export function ChatView(props: {
               }
               if (msg.profileRunning) setProfileRace({ label: profileInfo()?.profile?.label ?? "This profile", running: msg.profileRunning });
               restoreUnsent();
-              if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
-              // Before this connection's hello it is the chat failing to open (its retry included,
-              // server/ws.ts): quiet here, said by the start failure that follows (lib/error-feed).
+              // A refused Stop: the turn runs on, and the button comes back with the words below.
+              if (live.stopping) setLive("stopping", false);
+              // Only a refused send has a clientId; a refused Stop or model pick leaves the running turn alone.
+              if (msg.clientId && !live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
+              // Before this connection's hello it is usually the chat failing to open (its retry
+              // included, server/ws.ts): quiet here, said by the start failure that follows, or by
+              // the hello when the chat opens after all, as on a version refusal (lib/error-feed).
               const step = feedOnRefused(untrack(feed), { message: msg.message, beforeHello: unopened, back: taken.length });
               setFeed(step.feed);
               sayFeed(step.says);
@@ -1248,6 +1258,8 @@ export function ChatView(props: {
       }
     },
   });
+  /** The chat's socket: with sending off nothing goes out on it, whatever asks (§mesh.compatibility/read-only). */
+  const socket = { ...connection, send: (msg: unknown) => !hostGate() && connection.send(msg) };
 
   // An archived chat opens on its file's rows and holds no socket: asleep, and nothing wakes it until
   // it is unarchived (§chat.transcript/instant-open, "An archived chat"). One archived while open is
@@ -1681,7 +1693,7 @@ export function ChatView(props: {
   /** The connection's own reason to wait, or null (lib/chat-wait waitReason). */
   const waitingReason = (): ComposerReason | null => waitReason(socket.status(), wait()) ?? (listHere() ? null : waitReason("connecting", wait()));
   // Offer cards (§chat.offers/card): an ordinary chat's, read from the server, again after each turn.
-  const offers = props.overseer || props.projectOverseer ? undefined : createOfferControls(() => props.path, (c) => !!c.toolCallId, () => !archivedPane() && !batonGate());
+  const offers = props.overseer || props.projectOverseer ? undefined : createOfferControls(() => props.path, (c) => !!c.toolCallId, () => !archivedPane() && !batonGate() && !hostGate());
   if (offers) createEffect(on(() => live.running, (now, before) => void (before && !now && offers.refresh()), { defer: true }));
   // Transcript cards (§chat/transcript-cards): an ordinary chat's, read from the server, again after each turn.
   // A card's view stages text at the end of the draft (§chat.transcript-cards/view-api), as `staged` below.
@@ -1689,7 +1701,7 @@ export function ChatView(props: {
   const raisedCards =
     props.overseer || props.projectOverseer
       ? undefined
-      : createCardControls(() => props.path, () => !archivedPane() && !batonGate(), {
+      : createCardControls(() => props.path, () => !archivedPane() && !batonGate() && !hostGate(), {
           stage: (text) => setStagedText({ text }),
           session: () => ({ id: props.summary?.()?.id ?? "", title: props.summary?.()?.title ?? "" }),
         });
@@ -1741,6 +1753,7 @@ export function ChatView(props: {
     else toast("That card isn't in the transcript on screen.");
   };
   const blocked = (): ComposerReason | null => {
+    if (hostGate()) return { icon: "attention", text: "This page can't send to that host." };
     if (archivedPane()) return { icon: "archive", text: "This session is archived. Unarchive it to send." };
     // A baton session (§app.baton/attribution): the operator writes only while holding the baton.
     const baton = batonGate();
@@ -1772,7 +1785,7 @@ export function ChatView(props: {
       (not the Overseer's, a project overseer's or a baton session's). Only the socket's own mode
       counts: a mode known before it says (lib/composer-known) never arms answering. */
   const alignAnswerable = () =>
-    !props.overseer && !props.projectOverseer && !props.summary?.()?.baton && !props.summary?.()?.projectOverseer && !!saidMode()?.minorModes.includes("align");
+    !props.overseer && !props.projectOverseer && !props.summary?.()?.baton && !props.summary?.()?.projectOverseer && !hostGate() && !!saidMode()?.minorModes.includes("align");
   /** This session's picks that still apply: open questions of each alignment's newest revision. */
   const picks = createMemo(() => (alignAnswerable() ? prunePicks(picksOf(props.path), aligns()) : {}), {}, { equals: samePicks });
   /** Whether the composer holds typed text or an attachment: the card's button then waits. */
@@ -2546,6 +2559,7 @@ export function ChatView(props: {
         <For each={feed().entries}>{(m) => <><Show when={feedBanner(m) === "turn"}><TurnError message={m.message} /></Show><Show when={feedBanner(m) === "start"}><StartError message={m.message} back={m.back ?? 0} /></Show><Show when={!failureHasRow(live.entries, m.message)}><SubagentLimitRow path={props.path} message={m.message} provider={m.provider} /></Show></>}</For>
       </ThreadScroller>
       </ToolSourceContext.Provider>
+      <Show when={!hostGate()} fallback={<HostSendNotice host={hostOf(props.path)!} reading={hostGate()!} />}>
       <Composer
         path={props.path}
         cwd={props.summary?.()?.cwd ?? null}
@@ -2638,7 +2652,8 @@ export function ChatView(props: {
         restored={restored()}
         staged={stagedText()}
       />
-      <Show when={showPlaybooks()}>
+      </Show>
+      <Show when={showPlaybooks() && !hostGate()}>
         <PlaybooksDialog
           path={props.path}
           cwd={props.summary?.()?.cwd ?? null}
@@ -2663,7 +2678,7 @@ export function ChatView(props: {
           }}
         />
       </Show>
-      <Show when={dialogs()[0]} keyed>
+      <Show when={hostGate() ? null : dialogs()[0]} keyed>
         {(d) => (
           <Portal>
             <UiDialog request={d.request} onAnswer={(v) => answer(d.id, v)} />

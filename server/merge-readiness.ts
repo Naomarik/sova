@@ -15,7 +15,7 @@ import { asksUserOf } from "./signals-store";
 import { type AncestorCheck, type DraftsHash, draftsHash, draftsLeft } from "./spec-drafts-state";
 import { previewDocs, previewOf } from "./docs-preview";
 export { previewOf };
-import { blockedNoteText, type DocsPreview, docsNudgeText, type Finished, fileLandingStore, finishedOf, type LandingBlocker, landingBlockers, type LandingDocs, landingLive, landingOf, landingReason, type LandingStore, specsWhyOf } from "./ready-to-land";
+import { blockedNoteText, checkFailureOf, type DocsPreview, docsNudgeText, type Finished, type LastCheck, lastCheckWords, fileLandingStore, finishedOf, type LandingBlocker, landingBlockers, type LandingDocs, landingLive, landingOf, landingReason, type LandingStore, specsWhyOf } from "./ready-to-land";
 import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
 import { WORKTREES } from "./harness/state-kinds";
@@ -95,7 +95,7 @@ export interface SessionFacts {
   /** Open alignment questions the session waits on (SessionSummary.align). */
   openQuestions: number;
   /** The newest check run (test, typecheck, build) on the branch. */
-  lastCheck?: { at: number; ok: boolean };
+  lastCheck?: LastCheck;
   /** The last reply asks the user something (the attention signal, else the merge-ask fallback). */
   asks: boolean;
 }
@@ -174,7 +174,7 @@ function treeState(t: TreeFacts, s: SessionFacts): { state: ReadinessState; why?
   if (t.ahead === undefined) return { state: "in-progress", why: COMMITS_UNCOUNTED };
   if (t.conflicts) return { state: "in-progress", why: `conflicts with ${t.base ?? "the base"}: ${t.conflicts} file${t.conflicts === 1 ? "" : "s"}` };
   if (t.tempCommit) return { state: "in-progress", why: `temporary commit: ${t.tempCommit}` };
-  if (s.lastCheck && !s.lastCheck.ok) return { state: "in-progress", why: "the last check failed" };
+  if (s.lastCheck && !s.lastCheck.ok) return { state: "in-progress", why: lastCheckWords(s.lastCheck) };
   const checks = s.lastCheck ? "checks passed" : "no check run seen";
   const why = dirty > 0 ? `${checks} · ${uncommittedWords(dirty, t.dirtyFiles)}` : checks;
   return s.asks ? { state: "waiting-approval", why } : { state: "ready", why };
@@ -303,7 +303,7 @@ export interface MergeCard {
 export interface FileFacts {
   trees: TrackedWorktree[];
   merges: MergeCard[];
-  lastCheck?: { at: number; ok: boolean };
+  lastCheck?: LastCheck;
   /** The branch's last word is this reply (no user prompt after it). */
   lastReply?: { id: string; at: number; text: string };
   /** The newest replies that ended a turn, oldest first (at most REPLIES_KEPT): a queue landing's follow-up check
@@ -349,7 +349,7 @@ interface ScanEntry {
   /** An assistant message's check-run tool calls. */
   checkCalls?: string[];
   /** A check run's result. */
-  check?: { toolCallId: string; ok: boolean };
+  check?: { toolCallId: string; ok: boolean; what?: string; failed?: string };
   userPrompt?: true;
 }
 
@@ -408,7 +408,10 @@ export function scanLine(line: string, checkIds: Set<string>): ScanEntry | null 
       for (const c of calls) checkIds.add(c);
     }
   } else if (h?.kind === "tool-result" && typeof h.callId === "string" && checkIds.has(h.callId)) {
-    e.check = { toolCallId: h.callId, ok: !checkFailed(h.isError === true, textOf(h.blocks).slice(-4000)) };
+    const tail = textOf(h.blocks).slice(-4000);
+    const ok = !checkFailed(h.isError === true, tail);
+    // A failed run keeps what it names (a few words, a fresh copy: never a slice of the output).
+    e.check = { toolCallId: h.callId, ok, ...(ok ? {} : (JSON.parse(JSON.stringify(checkFailureOf(tail))) as ReturnType<typeof checkFailureOf>)) };
   } else if (h?.kind === "user") {
     const text = textOf(h.blocks);
     if (parseWakeNudge(text) === null && !isLinkMessage(text) && !isTopicBatch(text)) e.userPrompt = true;
@@ -433,7 +436,7 @@ export function factsOf(branch: readonly ScanEntry[]): FileFacts {
       for (const c of merges) c.reply ??= reply;
     }
     if (e.userPrompt) lastReply = undefined;
-    if (e.check) lastCheck = { at: e.at ?? 0, ok: e.check.ok };
+    if (e.check) lastCheck = { at: e.at ?? 0, ok: e.check.ok, ...(e.check.what ? { what: e.check.what } : {}), ...(e.check.failed ? { failed: e.check.failed } : {}) };
   }
   return { trees: set?.trees ?? [], merges, ...(lastCheck ? { lastCheck } : {}), ...(lastReply ? { lastReply } : {}), ...(replies.length ? { replies } : {}) };
 }
@@ -1361,7 +1364,7 @@ export function pruneReadiness(listed: readonly SessionSummary[]): void {
 /** A session's last check run and each tracked worktree's newest commit time, as the last
     readiness read saw them (sova_session's Merge line, §app.overseer/session-truth). */
 export interface ReadinessChecks {
-  lastCheck?: { at: number; ok: boolean };
+  lastCheck?: LastCheck;
   /** Tree path → its newest commit's time (ms). */
   heads: Record<string, number>;
 }

@@ -12,7 +12,9 @@ close codes arrive exactly as the peer sent them. A peer that can't be reached i
 unreachable (an HTTP error before upgrade, or a close that the client retries), never as a code the
 client treats as final. A peer that takes the connection but sends no answer within 30 seconds is
 reported as timed out; an answer that has started is never cut off. A peer this host doesn't grant
-`full` (§mesh.peers/grants) learns nothing of this host or the browser from a forwarded request.
+`full` (§mesh.peers/grants) learns nothing of this host or the browser from a forwarded request,
+except the version numbers a page states (§mesh.compatibility/every-send-states-a-version), which
+pass through unchanged on every grant.
 
 A peer's REST answer reaches the browser on this host's origin, so it comes back hardened, whatever
 the peer's grant and whether it is a tailnet peer or a dial-out pairing (§mesh/lan): only the headers
@@ -33,25 +35,29 @@ answer. A host that is down (not answering; a host on another version answers an
 keeps its last known rows, but the list leaves them out everywhere, in every region, count and
 search hit, unless the host filter names that host (§mesh.remote-sessions/host-filter): there they
 show, marked down, and can't be opened until it returns. Once it answers again its rows are back
-everywhere with the next list. A host that withholds its sessions from this host (it answers `denied`,
+everywhere with the next list. A host on another version keeps its rows everywhere, whatever its
+state (§mesh.compatibility/states): each carries that state (§mesh.remote-sessions/row-host-state),
+and one in Update needed can't be opened. A host that withholds its sessions from this host (it answers `denied`,
 §mesh.peers/grants) keeps no rows, and the list filtered to it says "Hidden by {host}". The existing
 session list route is unchanged.
 
 ## §mesh.remote-sessions/row-host-state — A peer row's host word names its state
 
-A peer session's row carries its host's name beside the time; when that host can't be used from
-here, a dot and a word after the name name its state in the host menu's words
-(§mesh.remote-sessions/host-filter): "other version" and "hidden" in amber, "down" and "refused" in
-red. An up host that keeps its sessions from this host says "hidden" in amber. A plain up host
-shows no dot and no word. The name gives way (ellipsis) before the word. The hover title is the
-sentence saying why the host is unavailable. The row's accessible name says the same word after
-the host (", on {host}, other version"); only a down host says ", which can't be reached".
+A peer session's row carries its host's name beside the time; when that host can't be fully used
+from here, a dot and a word after the name name its state in the host menu's words
+(§mesh.remote-sessions/host-filter): "read only", "display may be wrong", "update needed" and
+"hidden" in amber, "down" and "refused" in red. An up host that keeps its sessions from this host
+says "hidden" in amber. A host that works fully, on whatever build, shows no dot and no word. The name gives way (ellipsis) before the word. The hover title is the
+sentence saying what that state costs. The row's accessible name says the same word after
+the host (", on {host}, read only"); only a down host says ", which can't be reached".
 
 ## §mesh.remote-sessions/host-picker — New session: Host
 
 While the mesh is on, New Session has a **Host** choice above Project | This Computer | Remote: where the
 agent runs and the conversation is stored. It defaults to the host serving the page, labelled by
-name. Down or skewed hosts, and hosts that hide their sessions from this one, are disabled with the reason. Choosing a host re-scopes folders, recent
+name. Only that host and hosts that work fully (§mesh.compatibility/states) can be chosen: any other
+host, whether down, refusing, Read only, Display may be wrong, Update needed or hiding its sessions
+from this one, is disabled, with its state's word and the reason. Choosing a host re-scopes folders, recent
 folders, targets and models to that host. Remote keeps meaning where the tools run. Project
 (§app/new-session-dialog) is offered only while the Host is the host serving the page: choosing
 another host drops the tab, and moves the dialog to This Computer when Project was shown.
@@ -82,12 +88,13 @@ from this host; one that refused this host doesn't). On a phone the foot's rows 
 (§app.insights/sidebar-foot-phone), this one first, drawn exactly as here. The whole row is one target: a click anywhere on it opens the host
 menu (upward when there is no room below; a bottom sheet on a narrow screen), and the click itself
 changes no filter. The collapsed pane has no host item. The menu lists `All hosts` and then each
-host by name with its dot, whose tone and word follow the host's state: up is a green dot and no
-word; on another version (`skewed`) an amber dot and "other version"; not answering a red dot and
+host by name with its dot, whose tone and word follow the host's state: working fully is a green
+dot and no word; Read only, Display may be wrong and Update needed an amber dot and that state's word
+(§mesh.compatibility/marks); not answering a red dot and
 "down"; refusing this host a red dot and "refused"; hiding everything from this host
-(§mesh.peers/grants) an amber dot and "hidden". A host on another version also says, under its
-name, where its build sits against this host's, and one that is behind has `Resync` beside it
-(§mesh.peers/resync). Exactly one is chosen.
+(§mesh.peers/grants) an amber dot and "hidden". A host on another build, in any state and a host
+that works fully included, also says, under its name, where its build sits against this host's, and
+one that is behind has `Resync` beside it (§mesh.peers/resync). Exactly one is chosen.
 `All hosts` is the default and shows every host's sessions but a down host's; a host shows only
 that host's sessions, and a down host its last known ones (§mesh.remote-sessions/list).
 It narrows together with the text filter, and the choice is remembered across reloads; a remembered
@@ -134,8 +141,8 @@ the host keeps its whole name unless that name alone is longer than half the lin
 
 A peer session's host, in the single-session head and in a workspace pane's head, is a small dot
 and the host's name in ink, without "on". The dot takes the host filter's tone from the mesh state
-(up green; other version or hidden amber; down or refused red). No state word shows; the hover
-title and accessible name carry it: "This session lives on <peer> · up", or the peer's unavailable
-sentence. While the mesh state or the peer is unknown, the host is today's plain muted label with
+(working fully green, on whatever build; Read only, Display may be wrong, Update needed or hidden
+amber; down or refused red). No state word shows; the hover title and accessible name carry it:
+"This session lives on <peer> · up", or the sentence saying what the state costs. While the mesh state or the peer is unknown, the host is today's plain muted label with
 no dot. A pane's head keeps the mark after the name, and the name gives way before it. A local
 session shows no host.

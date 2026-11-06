@@ -29,8 +29,9 @@ import { RemoteChip, RemoteHeadChip } from "./RemoteStatus";
 import type { PaneInsight, TabId } from "./SessionPane";
 import { WatchView } from "./WatchView";
 import { Banner, Chip, Icon } from "./ui";
-import { hostOf } from "../lib/mesh";
+import { hostOf, sendingOff, updateNeededFor } from "../lib/mesh";
 import { HostStateMark } from "./HostStateMark";
+import { HostDisplayBar, HostUpdatePage } from "./HostStateNotices";
 import { HostScopeProvider } from "../lib/host-scope";
 import { mergeChanged } from "../lib/merge-queue-client";
 
@@ -278,7 +279,10 @@ export function SessionView(props: {
         </h1>
         <p class="session-head-meta">
           {/* First on the path line, so the title above keeps the head's whole width. */}
-          <RegenerateTitleButton path={path} onDone={props.onRefresh} />
+          {/* A chat Sova names itself keeps that name: nothing to regenerate. */}
+          <Show when={!s().fixedName}>
+            <RegenerateTitleButton path={path} onDone={props.onRefresh} />
+          </Show>
           {/* A peer's session names its host first: the folder and everything else are that host's. */}
           <Show when={hostOf(path)}>
             {(h) => (
@@ -408,7 +412,10 @@ export function SessionView(props: {
         onOpenTimeline={() => props.showTimeline(path)}
       />
 
-      <Show when={viewKey()} keyed>
+      {/* The host's state, whichever view is open (§mesh/compatibility). */}
+      <Show when={sendingOff(path) === "display" && hostOf(path)}>{(h) => <HostDisplayBar host={h()} />}</Show>
+      <Show when={updateNeededFor(path) && hostOf(path)}>{(h) => <HostUpdatePage host={h()} />}</Show>
+      <Show when={updateNeededFor(path) ? null : viewKey()} keyed>
         {(_key) => {
           const d = decision();
           return (

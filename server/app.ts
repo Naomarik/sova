@@ -48,7 +48,9 @@ import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
 import { mountOutreachRelay } from "./outreach/relay";
 import { mountOutreach } from "./outreach/routes";
-import { deliverFrames, postedFrames, POSTED_FRAMES_MAX } from "./ws";
+import { deliverFrames, framesDraft, postedFrames, POSTED_FRAMES_MAX } from "./ws";
+import { COMPOSER_HEADER, type NewSessionBody, type SessionPromptBody } from "../shared/wire-areas";
+import { mountWritingGate, refusedAnswer, writingRefused } from "./wire-gate";
 import { mountChatActions } from "./chat-actions";
 import { acquireChatHandle, type ChatHandle, chatHandle, chatHandleById, chatHandles, getModelRuntime, ModeRefusedError, setOpeningChoice } from "./chat-handle";
 import { restorePick } from "../pi-config/extensions/subagents/subagent-profiles.ts";
@@ -59,7 +61,7 @@ import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } 
 import { setFavorite } from "./model-favorites";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
-import { draftForClient, setDraft } from "./drafts";
+import { draftForClient, putBackDraft, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
 import { getAgentsInsight, getHiddenWorkers, getMemberInbox, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
@@ -69,10 +71,13 @@ import { LIST_VERSION_HEADER } from "../src/lib/summary-diff";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
 import { QUEUE_CHAT_MODE_REFUSAL, queueChatRole } from "../shared/merge-queue";
 import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
+import { fixedNameRefusal } from "../shared/fixed-names";
 import { rowsOf } from "./transcript";
 import { readBranch, unknownEntries } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
 import { appendToClosedFile, createSessionFile, type NewSessionFile } from "./harness/pi/state";
+import { modelCheck, modelCheckStatus } from "./harness/pi/model-sync";
+import { reapplyModelLevels } from "./harness/pi/open";
 import { LINK_MEMBER, SUBAGENT_PROFILE } from "./harness/state-kinds";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
 import { listFolders } from "./folders";
@@ -115,6 +120,7 @@ import { parseSessionTitleSettings, readSessionTitleSettings, sessionTitleSettin
 import type { LlmRuntime } from "./decide-llm";
 import { claudeLoginEnv, registerClaudeAccountRoutes } from "./claude-accounts";
 import { OpenAiLoginService, registerOpenAiLoginRoutes } from "./openai-login";
+import { linkOllamaReading, ProviderKeysService, registerProviderKeyRoutes } from "./provider-keys";
 import { chatOnlyModes, CREATE_NOT_TAKEN, modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { defaultMemoryChoice } from "./memory/settings";
 import { registerMemoryRoutes } from "./memory/routes";
@@ -125,7 +131,7 @@ import { registerCommandsRoutes } from "./commands-routes";
 import { auditStart, registerAuditRoutes } from "./command-audit";
 import { mountDetails } from "./mesh/details";
 import { mountResync } from "./mesh/resync";
-import { probePeer } from "./mesh/hello";
+import { areasForbid, probePeer } from "./mesh/hello";
 import { LINK_LIVE, meshLinks } from "./mesh/links";
 import { mountLinks } from "./mesh/links-routes";
 import { deliverLinkMessage, heldSessionPath, notifyLinksChanged, setLinksSource } from "./link-delivery";
@@ -257,6 +263,9 @@ export function buildApp(deps: AppDeps) {
     }
     audited?.(c.res.status, c.req.routePath);
   });
+
+  // A writing request from another version never reaches its route (§mesh.compatibility/refusal).
+  mountWritingGate(app);
 
   // A request that may change something starts the next session listing afresh, before it runs and
   // again once it answered, so its caller's next listing shows the change (§app.session-list/listing-reuse).
@@ -394,7 +403,7 @@ export function buildApp(deps: AppDeps) {
   // `target` flag, so the remote extension runs every tool on the far side. `link: true` makes it a
   // link member session (§app.overseer/links-tools): only the Overseer's create sends it.
   app.post("/api/sessions", async (c) => {
-    let body: { cwd?: unknown; target?: unknown; remoteCwd?: unknown; profile?: unknown; prompt?: unknown; subagent_profile?: unknown; link?: unknown; model?: unknown; thinking?: unknown };
+    let body: Partial<Record<keyof NewSessionBody, unknown>>;
     try {
       body = await c.req.json();
     } catch {
@@ -655,6 +664,8 @@ export function buildApp(deps: AppDeps) {
     // archive mark and the group assignment are keyed by too.
     const before = await getSessionSummary(path);
     if (!before) return c.json({ error: "Session file not found" }, 404);
+    // A chat Sova names itself (shared/fixed-names.ts) keeps that name: nothing is stored.
+    if (before.fixedName) return c.json({ error: fixedNameRefusal(before.fixedName) }, 409);
     setSessionTitle(before.id, title, source);
     const summary = await getSessionSummary(path);
     return c.json(summary ?? { ...before, title: title ?? before.originalTitle ?? before.title });
@@ -1002,6 +1013,17 @@ export function buildApp(deps: AppDeps) {
   // set_model and on the next message of a session already sitting on one, and the pi extensions
   // pick the same file up per model change, per turn and per spawn, TUI sessions included.
   app.get("/api/settings/models", (c) => c.json(readModelPolicy()));
+  // Ollama Cloud's model list check (§app.model-levels/server-check): its status for Settings → Models'
+  // line, and Check now, which answers once the check is done (the model list has then been re-applied).
+  app.get("/api/settings/models/check", (c) => c.json(modelCheckStatus(), 200, { "Cache-Control": "no-store" }));
+  app.post("/api/settings/models/check", async (c) => {
+    // The round checks the Ollama Cloud key too (linkOllamaReading): one record, read by Accounts as well.
+    const record = await modelCheck().checkNow();
+    if (!record) return c.json({ error: "Model checks are off on this server (PI_OFFLINE or SOVA_MODELS_FETCH=off)." }, 409);
+    // The shared runtime applies the file before the answer, so the client's next /api/models has the new list.
+    await reapplyModelLevels();
+    return c.json(modelCheckStatus());
+  });
   app.put("/api/settings/models", async (c) => {
     let body: unknown;
     try {
@@ -1247,12 +1269,17 @@ export function buildApp(deps: AppDeps) {
   // Settings → Accounts' OpenAI sign-in (§app.openai-login): the ChatGPT subscription through pi's own
   // login. A change re-checks the shared runtime's providers, so the model menu and opening choices
   // see it at once, and asks for a usage reading.
-  const openAiLogin = registerOpenAiLoginRoutes(app, new OpenAiLoginService({
-    afterChange: async () => {
-      await (await getModelRuntime()).getAvailable().catch(() => []);
-      await refreshUsageInsight().catch(() => undefined);
-    },
-  }));
+  /** A sign-in or a key changed: the shared runtime re-checks its providers (the model menu follows at once) and usage is read again. */
+  const afterAccountChange = async () => {
+    await (await getModelRuntime()).getAvailable().catch(() => []);
+    await refreshUsageInsight().catch(() => undefined);
+  };
+  const openAiLogin = registerOpenAiLoginRoutes(app, new OpenAiLoginService({ afterChange: afterAccountChange }));
+
+  // Settings → Accounts' API keys (§app/provider-keys): checked before saving, stored by pi's own login,
+  // read back only to a browser on this computer. Ollama Cloud's key is checked in Settings → Models' model list
+  // round: one record, shown in both places.
+  registerProviderKeyRoutes(app, linkOllamaReading(new ProviderKeysService({ afterChange: afterAccountChange })));
 
   // The mode is per session. ~/.pi/agent/mode.json is the default new sessions
   // start from; GET reads it, POST without ?path= writes it and changes no open chat. A switch never writes
@@ -1400,6 +1427,12 @@ export function buildApp(deps: AppDeps) {
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
     const frames = postedFrames(await c.req.json().catch(() => null));
     if (!frames) return c.json({ error: `Expected { frames: [...] }, 1 to ${POSTED_FRAMES_MAX} objects with a type` }, 400);
+    // The page is going, so nobody hears a refusal: what it carried goes back as the draft.
+    const refused = writingRefused(c.req.header(COMPOSER_HEADER));
+    if (refused) {
+      putBackDraft(idOf(path), framesDraft(frames));
+      return refusedAnswer(c, refused);
+    }
     sessionsChanged();
     deliverFrames(path, frames, notPage(c));
     return c.json({ accepted: frames.length }, 202);
@@ -1855,7 +1888,7 @@ export function buildApp(deps: AppDeps) {
   // prompt): idle it starts a turn; mid-turn it is queued as `delivery` (followUp by default, or
   // steer). Refused TUI-live, for the Overseer's own file, or when a foreign writer holds it.
   app.post("/api/sessions/prompt", async (c) => {
-    let body: { path?: unknown; text?: unknown; delivery?: unknown };
+    let body: Partial<Record<keyof SessionPromptBody, unknown>>;
     try {
       body = await c.req.json();
     } catch {
@@ -1929,6 +1962,7 @@ export function buildApp(deps: AppDeps) {
     held: heldSessionPath,
     deliver: deliverLinkMessage,
     probe: async (peer) => (await probePeer(peer)).state,
+    updateNeeded: async (peer) => areasForbid(await probePeer(peer)),
     notify: notifyLinksChanged,
     renderPeerRead,
     // File transfers: a session's sandbox binds what the server packs and where it extracts.

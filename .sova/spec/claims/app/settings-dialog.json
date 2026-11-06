@@ -138,11 +138,14 @@
       "src/lib/model-policy.ts",
       "src/lib/model-policy-draft.ts",
       "src/lib/settings-draft.ts",
-      "src/lib/settings-draft.test.ts"
+      "src/lib/settings-draft.test.ts",
+      "src/lib/model-check.ts",
+      "src/design/base.css"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-15T04:52Z"
+      "at": "2026-11-05T16:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
     }
   },
   "§app.settings-dialog/modes": {

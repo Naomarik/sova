@@ -2,7 +2,7 @@
   "§app.merge-queue/approve": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§chat.worktrees/tool",
       "§chat.worktrees/land-own-word",
@@ -13,8 +13,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T21:36Z",
-      "source": "pi-session:6295e4a0-38a1-4768-a7a6-2787ccf54172#23af1717"
+      "at": "2026-11-05T19:18Z",
+      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
     },
     "code": [
       "server/merge-queue/queue.ts",
@@ -36,7 +36,15 @@
       "server/merge-queue/cards.ts",
       "src/components/MergeQueueCard.tsx",
       "src/components/MergeQueueTab.tsx",
-      "src/components/WorktreesModal.tsx"
+      "src/components/WorktreesModal.tsx",
+      "server/merge-queue/guard.ts",
+      "server/merge-queue/guard.test.ts",
+      "server/merge-queue/scenarios-blame.integration.test.ts",
+      "server/merge-queue/queue-newest-blocked.test.ts",
+      "server/ready-to-land.ts",
+      "src/lib/merge-queue.ts",
+      "src/lib/merge-queue-sent-back.test.ts",
+      "src/components/ProjectOverseerPanel.tsx"
     ]
   },
   "§app.merge-queue/blame": {
@@ -49,8 +57,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T03:57Z",
-      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
+      "at": "2026-11-05T19:18Z",
+      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
     },
     "code": [
       "server/merge-queue/attribute.ts",
@@ -59,7 +67,15 @@
       "server/merge-queue/checks.test.ts",
       "server/merge-queue/run.ts",
       "server/merge-queue/run.integration.test.ts",
-      "server/merge-queue/scenarios-blame.integration.test.ts"
+      "server/merge-queue/scenarios-blame.integration.test.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/contract.ts",
+      "server/merge-queue/store.ts",
+      "server/merge-queue/testing/harness.ts",
+      "server/merge-queue/testing/repo.ts",
+      "shared/merge-queue.ts",
+      "scripts/run-tests.mjs",
+      "scripts/run-tests.integration.test.ts"
     ]
   },
   "§app.merge-queue/branch-summary": {
@@ -159,7 +175,9 @@
       "server/merge-queue/review-step.ts",
       "server/merge-queue/thread.ts",
       "server/merge-queue-ui.integration.test.ts",
-      "src/app.css"
+      "src/app.css",
+      "server/merge-queue/reviewer.ts",
+      "shared/fixed-names.ts"
     ],
     "agreed": {
       "by": "Omar",
@@ -178,8 +196,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T03:57Z",
-      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
+      "at": "2026-11-05T19:18Z",
+      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
     },
     "code": [
       "server/merge-queue/checks.ts",
@@ -459,15 +477,17 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T23:49Z",
-      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
+      "at": "2026-11-05T20:05Z",
+      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
     },
     "code": [
       "server/merge-queue/queue.ts",
       "server/merge-queue/notices.ts",
       "server/merge-queue/view.ts",
       "server/merge-queue/scenarios-thread-review.integration.test.ts",
-      "server/merge-queue/queue.test.ts"
+      "server/merge-queue/queue.test.ts",
+      "server/merge-queue/attribute.ts",
+      "server/merge-queue/scenarios-blame.integration.test.ts"
     ]
   },
   "§app.merge-queue/owner": {
@@ -862,7 +882,7 @@
   "§app.merge-queue/view": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app.organizations/project-page",
       "§app.project-services/merge-verbs",
@@ -876,8 +896,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T04:24Z",
-      "source": "pi-session:01a1a9da-15c8-731e-9587-23927c9ff121#9c4c7735"
+      "at": "2026-11-05T19:18Z",
+      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
     },
     "code": [
       "server/merge-queue/view.ts",
@@ -917,7 +937,9 @@
       "src/components/ui.tsx",
       "src/components/BranchSummary.tsx",
       "server/merge-queue/run.ts",
-      "server/merge-queue/checks.ts"
+      "server/merge-queue/checks.ts",
+      "server/merge-queue/queue-newest-blocked.test.ts",
+      "server/merge-queue/scenarios-blame.integration.test.ts"
     ]
   },
   "§app/merge-queue": {

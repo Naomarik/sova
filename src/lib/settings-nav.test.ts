@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { clearSettingsSection, closeSettings, openSettings, SETTINGS_TABS, setSubagentSettingsPath, settingsOpenAt, settingsSection, settingsProjectFromHash, settingsTabFromHash, subagentSettingsPath } from "./settings-nav";
+import { ACCOUNT_TABS, accountTabRequest, clearSettingsSection, closeSettings, openSettings, settingsAccountFromHash, SETTINGS_TABS, setSubagentSettingsPath, settingsOpenAt, settingsSection, settingsProjectFromHash, settingsTabFromHash, subagentSettingsPath } from "./settings-nav";
 
 test("Configure Spec opens Subagents at the Spec section, and a plain open asks for none", () => {
   openSettings("subagents", "spec");
@@ -70,4 +70,30 @@ test("#/settings/<tab> names a tab (a Needs you row, a notification's tap); anyt
   assert.equal(settingsTabFromHash("#/settings/memory/prj_ab12cd34"), null);
   assert.equal(settingsTabFromHash("#/settings"), null);
   assert.equal(settingsTabFromHash("#/overseer"), null);
+});
+
+test("#/settings/accounts/<provider> opens Accounts on that provider tab; anything else names none", () => {
+  assert.deepEqual([...ACCOUNT_TABS], ["claude", "openai", "ollama-cloud", "deepseek", "zai", "other"]);
+  for (const t of ACCOUNT_TABS) {
+    assert.equal(settingsTabFromHash(`#/settings/accounts/${t}`), "accounts", t);
+    assert.equal(settingsAccountFromHash(`#/settings/accounts/${t}`), t);
+  }
+  assert.equal(settingsTabFromHash("#/settings/accounts"), "accounts", "the plain tab still opens");
+  assert.equal(settingsAccountFromHash("#/settings/accounts"), null, "and names no provider: the last one opens");
+  for (const bad of ["#/settings/accounts/anthropic", "#/settings/accounts/", "#/settings/accounts/claude/x", "#/settings/models/claude"]) {
+    assert.equal(settingsAccountFromHash(bad), null, bad);
+  }
+  assert.equal(settingsTabFromHash("#/settings/accounts/nope"), null);
+  assert.equal(settingsTabFromHash("#/settings/merge-queue/prj_abc"), "merge-queue", "the project link is unchanged");
+});
+
+test("openSettings asks Accounts for a provider tab, and closing forgets it", () => {
+  openSettings("accounts", null, { account: "claude" });
+  assert.equal(settingsOpenAt(), "accounts");
+  assert.equal(accountTabRequest(), "claude", "the Mesh page's Claude login line opens Accounts → Claude");
+  openSettings("accounts");
+  assert.equal(accountTabRequest(), null, "a plain open asks for none");
+  openSettings("accounts", null, { account: "zai" });
+  closeSettings();
+  assert.equal(accountTabRequest(), null);
 });

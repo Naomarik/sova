@@ -1,7 +1,7 @@
 import { createEffect, createResource, createSignal, onCleanup, Show } from "solid-js";
 import { cancelOpenAiLogin, fetchUsage, getOpenAiAccount, getOpenAiLogin, sendOpenAiLoginAnswer, signOutOpenAi, startOpenAiLogin } from "../lib/api";
 import { loadModels } from "../lib/models";
-import { EXPIRED_TEXT, failedText, flowOpen, type OpenAiAccountInfo, type OpenAiLoginFlow, sectionNote, signedInFacts, signOutText, standingOf } from "../lib/openai-login";
+import { EXPIRED_TEXT, failedText, flowOpen, introText, type OpenAiAccountInfo, type OpenAiLoginFlow, sectionNote, signedInFacts, signOutText, standingOf } from "../lib/openai-login";
 import { TextField } from "./form";
 import { Banner, Chip } from "./ui";
 import { RetryButton, sentence } from "./WorkerSlotRow";
@@ -12,7 +12,7 @@ const USAGE_TRIES = 6;
 const USAGE_TRY_MS = 2500;
 
 /**
- * Settings → Accounts, below the Claude logins (§app.openai-login/section): this device's one
+ * Settings → Accounts' OpenAI tab, above its API key (§app.openai-login/section): this device's one
  * OpenAI sign-in (a ChatGPT subscription, pi's `openai-codex`), and the sign-in panel
  * (§app.openai-login/sign-in): the code route first, the browser route when OpenAI refuses it.
  */
@@ -239,7 +239,7 @@ export function OpenAiAccountSection() {
           OpenAI
         </h3>
       </div>
-      <p class="settings-intro">Sova's chats use OpenAI's models through your ChatGPT subscription. Sign in once on this device; chats pick it up on their next message.</p>
+      <p class="settings-intro">{introText(loaded())}</p>
 
       <Show when={info.error}>
         <Banner tone="error" title="Couldn't load the OpenAI sign-in." body={message(info.error)} action={<RetryButton label="Try Again" onClick={() => void refetch()} />} />

@@ -58,6 +58,14 @@ export interface SessionSummary {
       is stored for this session, even one equal to the derived title; absent when none is, and
       from older servers. "user" and "overseer" are explicit and never renamed automatically. */
   titleBy?: SessionTitleBy;
+  /** A chat whose name Sova fixes (shared/fixed-names.ts): `title` is that name, whatever its first message,
+      an automatic title, a rename, an alias or a pi session name says. "overseer": "Overseer" (current and earlier
+      conversations); "project-overseer": "Overseer · {project}" with the project's current name; the merge queue's
+      thread and reviewers, release chats and gathering sessions: the name Sova gave each when it started (a
+      gathering's public title). With it, no `originalTitle` or `titleBy` is sent, and a rename is refused
+      (POST /api/sessions/title answers 409 with the sentence). The client offers no Rename… or Regenerate title
+      for it. Safe by absence: an older server. */
+  fixedName?: import("./fixed-names").FixedNameKind;
   createdAt: string; // ISO, from header
   lastActiveAt: string; // ISO, file mtime
   /** Latest "provider/model": the model_change or assistant message closest to the end of the
@@ -1265,6 +1273,70 @@ export interface OpenAiAccountInfo {
 export interface OpenAiLoginStart { method?: "code" | "browser" }
 /** POST /api/settings/accounts/openai/login/answer: the address the browser route's page ended on. */
 export interface OpenAiLoginAnswer { text: string }
+
+// Settings → Accounts' API keys (§app/provider-keys). Every answer is Cache-Control: no-store.
+// GET    /api/settings/accounts/keys                    -> ProviderKeysInfo (never a key value)
+// PUT    /api/settings/accounts/keys/:provider          { key } -> ProviderKeyWrite (checked first; refused: saved false)
+// DELETE /api/settings/accounts/keys/:provider          -> ProviderKeyWrite (a logout login sync spreads)
+// POST   /api/settings/accounts/keys/:provider/test     -> ProviderKeyRow (the key in use checked again)
+// POST   /api/settings/accounts/keys/:provider/reveal   -> { key } only to the page in a browser on this computer, else 403
+// PUT, DELETE and reveal answer 403 to anything but the page's own request (§app.provider-keys/your-click).
+/** Accounts' provider tabs, in order (`#/settings/accounts/<tab>`). */
+export type ProviderKeyTab = "claude" | "openai" | "ollama-cloud" | "deepseek" | "zai" | "other";
+/** A key row's chip: Connected, No key, Key refused, Not checked yet, or Saved, not checked (no check exists). */
+export type ProviderKeyStatus = "connected" | "nokey" | "refused" | "unchecked" | "saved";
+export interface ProviderKeyCheck {
+  at: number;
+  result: "accepted" | "refused" | "unreachable";
+  /** The provider's reason (refused) or why it couldn't be reached. */
+  reason?: string;
+}
+export interface ProviderKeyRow {
+  /** pi's provider id. */
+  provider: string;
+  name: string;
+  tab: ProviderKeyTab;
+  /** A key is saved here (in pi's auth.json). */
+  saved: boolean;
+  /** The saved key's last 4 characters: the only part of a key on this wire. */
+  last4?: string;
+  /** The saved key is a command pi runs (device config): never read back or checked. */
+  command?: true;
+  /** pi holds a sign-in of another kind under this provider's id: no key can be saved over it. */
+  otherSignIn?: true;
+  /** Where the key in use comes from: saved here wins over the environment's. */
+  source: "saved" | "env" | "none";
+  /** The environment variable that can serve this provider, when there is one. */
+  envName?: string;
+  envSet: boolean;
+  status: ProviderKeyStatus;
+  /** The last check of the key in use (absent when that key was never checked). */
+  lastCheck?: ProviderKeyCheck;
+  /** Sova can check this provider's key (Test; check before save). */
+  checkable: boolean;
+  /** False when Settings → Models switches the provider off. */
+  providerEnabled: boolean;
+}
+export interface ProviderKeysInfo {
+  /** The five tab providers, then each other provider with a saved key. */
+  rows: ProviderKeyRow[];
+  /** The Other provider picker: every provider that takes a key and has no tab. */
+  others: { id: string; name: string }[];
+  /** This request may read a key back (a browser on this computer, the page's own request). */
+  revealAllowed: boolean;
+  /** The mesh is on and shares logins: keys reach the mesh computers that get logins. */
+  meshSharesLogins: boolean;
+  /** The subscription sign-ins' standing, for the Claude and OpenAI tabs' marks. */
+  signIns: { claude: boolean; openai: boolean };
+}
+export interface ProviderKeyPut { key: string }
+export interface ProviderKeyWrite {
+  /** The pasted key was written (PUT), or a key is still saved (DELETE: false once removed). */
+  saved: boolean;
+  /** PUT: the provider refused the paste, in its words; nothing was written. */
+  refused?: string;
+  row: ProviderKeyRow;
+}
 /** PUT /api/claude/pool/keeper */
 export interface ClaudePoolKeeperRequest { device: string }
 /** PATCH /api/claude/pool/:id */
@@ -1334,6 +1406,36 @@ export interface ModelInfo {
       independent of any session, so two models can be compared by it;
       ContextInfo.window cannot, because it describes one session's current model. */
   contextWindow?: number;
+}
+
+// GET  /api/settings/models/check -> ModelCheckStatus (Settings → Models' line under Ollama Cloud)
+// POST /api/settings/models/check -> ModelCheckStatus once the check it runs at once has finished
+//                                    (409 when checks are off on this server)
+/** The server's check of Ollama Cloud's model list (§app.model-levels/server-check, /settings-line). */
+export interface ModelCheckStatus {
+  /** The provider checked: `ollama-cloud`. */
+  provider: string;
+  /** False with PI_OFFLINE or SOVA_MODELS_FETCH=off: nothing is checked. */
+  enabled: boolean;
+  /** A check is running now. */
+  checking: boolean;
+  /** The last check; absent before any. */
+  last?: {
+    at: number;
+    ok: boolean;
+    /** Why it failed (ok false). */
+    error?: string;
+    /** When the server tries again on its own after a failure. */
+    retryAt?: number;
+    /** Model ids new to the list at that check. */
+    added: string[];
+    /** Model ids that check found retired. */
+    retired: string[];
+    /** The API key, checked in the same round: Settings → Accounts' Ollama Cloud tab shows this reading. */
+    key?: { result: "accepted" | "refused" | "unreachable"; reason?: string };
+  };
+  /** Models the check added in the last week (the New mark), as provider/id refs. */
+  newModels: { ref: string; firstSeenAt: number }[];
 }
 
 /** One folder's subfolders (GET /api/folders). Directories only, never files: a symlink is listed
@@ -3723,8 +3825,11 @@ export interface OverseerInfo {
   /** The current Overseer file: mount the normal chat on it (keyed on path). */
   path: string;
   id: string;
-  /** Up to 20 previous Overseer files, newest first; openable read-only (watch, no chat). */
-  history: { id: string; path: string; title: string; lastActiveAt: string }[];
+  /** Up to 20 previous Overseer files, newest first; openable read-only (watch, no chat). `title` is the fixed
+      name ("Overseer") every summary hands out; `about` says what that conversation was about (its automatic
+      title, else its first message, else "Untitled"), what the History screen shows. `about` absent: an older
+      server, whose `title` was that. */
+  history: { id: string; path: string; title: string; about?: string; lastActiveAt: string }[];
   /** Attention counts for the entry button (from the digest). act = blockers; decide = finished/look;
       needsYou = sessions Needs you lists (act or soft items, shared/needs-you.ts), the head's "need
       you" (additive: absent from older servers, then read `act`). */
@@ -5371,6 +5476,9 @@ export interface MonitorSession {
   sessionPath?: string;
   /** Session display title, when known. */
   title?: string;
+  /** The session is the Overseer's current conversation or an earlier one: Open Session goes to the Overseer page
+      (or that earlier conversation's), never the plain session route. Absent for every other session. */
+  overseer?: "current" | "earlier";
   cwd?: string;
   /** Hosted in this server (its tool children are the server's children). */
   hosted: boolean;
@@ -5551,7 +5659,7 @@ export interface MonitorHistory {
   /** Oldest first. */
   points: MonitorPoint[];
   /** Labels for every group key used in `points`. Session groups are keyed by session path. */
-  groups: Record<string, { label: string; sessionPath?: string }>;
+  groups: Record<string, { label: string; sessionPath?: string; overseer?: "current" | "earlier" }>;
   /** Worker names by group key, then worker id, for the workers in `points` that had one. */
   workerLabels?: Record<string, Record<string, string>>;
 }

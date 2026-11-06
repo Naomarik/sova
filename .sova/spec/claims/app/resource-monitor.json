@@ -121,7 +121,12 @@
       "src/monitor.css",
       "src/lib/api.ts",
       "server/session-titles.ts",
-      "server/sessions-index.ts"
+      "server/sessions-index.ts",
+      "server/resource-monitor.ts",
+      "server/resource-monitor-history.ts",
+      "server/resource-monitor.test.ts",
+      "server/index.ts",
+      "shared/protocol.ts"
     ],
     "agreed": {
       "by": "naomarik",

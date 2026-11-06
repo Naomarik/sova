@@ -11,6 +11,7 @@ const full = (): Required<SessionSummary> => ({
   title: "Title",
   originalTitle: "first message",
   titleBy: "user",
+  fixedName: "overseer",
   createdAt: "2026-09-20T00:00:00.000Z",
   lastActiveAt: "2026-09-20T00:01:00.000Z",
   model: "ollama-cloud/glm-5.3",

@@ -378,9 +378,9 @@ the project's Releases tab, never pushed:
 - `release-failed`: "{tag}: {label} failed{: summary}", one per failed step, after and withdraw steps
   of the last finished release included. A failed Publish is one item, "{tag}: Publish failed: {why}",
   in place of `release-ready`, and a Publish that succeeds clears it (`release.retry` on the step puts
-  `release-ready` back). Its row is titled "Publish failed", chip **Failed**, with "{tag}: {why}" as its
-  detail and the whole sentence as the detail's tooltip (§app.session-list/needs-you); any other failed
-  step's row keeps the title "Release step failed" and its sentence. Any other failed or held step
+  `release-ready` back). Its row is titled "Publish failed", chip **Failed**, with the whole sentence as
+  its hover text (§app.session-list/needs-you); any other failed
+  step's row keeps the title "Release step failed", its sentence as hover text. Any other failed or held step
   still shows beside `release-ready`.
 - `release-quiet`: "No word from the release chat for {n} min", while a release is Preparing or
   Checking, no step is held, no gating check runs, and its chat hasn't reported for longer than

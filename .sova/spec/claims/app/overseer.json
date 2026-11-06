@@ -92,7 +92,7 @@
   "§app.overseer/attention-digest": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/attention.ts",
       "server/live.ts",
@@ -113,15 +113,20 @@
       "server/tours/sign-in-notice.ts",
       "server/tours/sign-in-notice.test.ts",
       "server/project-services/release-wire.ts",
-      "server/projects/setup-chat.ts"
+      "server/projects/setup-chat.ts",
+      "server/needs-you-dismissed.ts",
+      "src/lib/needs-you.ts",
+      "src/lib/needs-you.test.ts",
+      "src/lib/org-region.ts",
+      "src/lib/org-region.test.ts"
     ],
     "requires": [
       "§app.overseer/seen"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T07:46Z",
-      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+      "at": "2026-11-06T01:40Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
     }
   },
   "§app.overseer/auto-resume": {
@@ -1240,7 +1245,7 @@
   "§app.overseer/run-note": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/overseer.ts",
       "server/overseer-run-note.ts",
@@ -1249,7 +1254,8 @@
       "server/overseer-opening.test.ts",
       "server/harness/pi/golden/session/S11-overseer.jsonl",
       "server/harness/pi/golden/state/G7-overseer-cleared.jsonl",
-      "server/harness/pi/golden/state/G7-overseer-first.jsonl"
+      "server/harness/pi/golden/state/G7-overseer-first.jsonl",
+      "server/attention.ts"
     ],
     "requires": [
       "§app.overseer/confirm",
@@ -1260,8 +1266,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-27T21:10Z",
-      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
+      "at": "2026-11-06T02:49Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
     }
   },
   "§app.overseer/seen": {

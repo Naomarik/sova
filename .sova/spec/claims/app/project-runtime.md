@@ -239,8 +239,8 @@ definition on the branch, "{Title} proposes changes on {branch}." with "Its bran
 definition: read its report."); a run that proposes `release` names no hash there, since its hash
 pins settings and playbook files together: "{Title} proposes a release setup on {branch}.", its action **Merge Branch** (§app.project-runtime/merge; none when
 there is nothing valid to merge) and a link to the run's session, **Read Report**. The Needs-you row
-of a `playbook-review` item carries the same button beside the row's link, and its action words read
-"Read Report" (§app.session-list/needs-you). A Setup chat's proposal (§app.project-setup/proposal)
+of a `playbook-review` item carries the same button beside the row's link, and pressing the row opens
+the run's session (§app.session-list/needs-you). A Setup chat's proposal (§app.project-setup/proposal)
 raises the same item, banner and push, labelled "Project setup": "Project setup proposes the project's
 setup on {branch}." (the banner's body and button are the Setup chat's own, read from its proposal,
 §app.project-setup/proposal), the item's body "Read it, then merge it into {target}." (with no valid setup at its head,

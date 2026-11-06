@@ -80,7 +80,10 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `mcp.server.status`, `project.verb.release.note`, `project.coding.start`, `project.icon.get`,
   `project.icon.upload`, `project.icon.letters`, `project.icon.remove`,
   `project.merge-queue.landing-summary`, `project.glance`, `session.job.list`,
-  `session.job.stop`, `session.pairs.list`, `session.pairs.unpair`, `session.pairs.resume`.
+  `session.job.stop`, `session.pairs.list`, `session.pairs.unpair`, `session.pairs.resume`,
+  `attention.dismiss`, `attention.undismiss`.
+  `attention.dismiss` and `attention.undismiss` are Needs you's Dismiss and its Undo
+  (§app.session-list/needs-you-dismiss), `meshNeed` `full`.
   The `project.verb.*` ids are made from the verb lists of `shared/project-contract.ts`, so a new
   verb is a new entry. The in-chat actions are the `chat.*` entries (§app.chat-actions/catalogue),
   and `chat.mode-command` runs a project mode's command (§chat.mode-menu/project-mode-commands).

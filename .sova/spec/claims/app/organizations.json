@@ -173,7 +173,7 @@
   "§app.organizations/org-cards": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "shared/orgs.ts",
       "server/org-routes.ts",
@@ -184,12 +184,18 @@
       "src/orgs.css",
       "server/orgs.ts",
       "src/lib/org-tabs.ts",
-      "src/lib/org-tabs.test.ts"
+      "src/lib/org-tabs.test.ts",
+      "server/needs-you-dismissed.ts"
     ],
     "requires": [
       "§app.organizations/registry",
       "§app.organizations/referrals"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T01:40Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
+    }
   },
   "§app.organizations/org-page": {
     "kind": "behavior",

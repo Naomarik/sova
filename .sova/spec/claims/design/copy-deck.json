@@ -489,7 +489,7 @@
   "§design.copy-deck/sidebar": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/Sidebar.tsx",
       "src/lib/drag-archive.ts",

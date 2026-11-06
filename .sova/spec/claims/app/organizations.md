@@ -97,7 +97,8 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   counted once, as that session's reply); and projects whose main stakeholder left
   (§app.organizations/stakeholder); and acts a project's statechart holds before they reach a person or
   the code (§app.project-overseer/holds); and the owner's requests still with the team
-  (§app.project-assistant/requests).
+  (§app.project-assistant/requests). A session you dismissed (§app.session-list/needs-you-dismiss)
+  counts in none of these until it has something new; what belongs to no session always counts.
 - **Last activity** is the newest of the org's creation and its newest transition-log row
   (§app.project-overseer/statecharts): a roster change, a baton session's start, hand-off, offer or
   close, a person's message, anything any of its statecharts took.

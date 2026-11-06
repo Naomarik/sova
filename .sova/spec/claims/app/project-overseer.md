@@ -1517,11 +1517,11 @@ judgement.
   {n} min unless you cancel it." (`what` names the act, whom it reaches and about what, never a gap's id: "A gathering with Sam
   Okafor: Pricing tier names", "A gathering with you: …", "An offer to 3 people: …", "A coding
   session for {gap title}"; an act that reaches no one keeps the statechart's own words). The Organizations region's Needs you lists them first, soonest
-  on top, each a row naming the project, the sentence recounted as time passes and the org, opening
-  the project page, with **Cancel** beside it; the project page's Pipeline card lists the
+  on top, each a row naming the project and the org, the sentence, recounted as time passes, its hover text,
+  opening the project page, with **Cancel** beside it; the project page's Pipeline card lists the
   project's held acts first, under "Waiting to start", soonest first, the go-ahead time as each
   one's title ("Goes ahead at {stamp}."), each with **Cancel** ("Cancel: {what}"); the operator's Cancel needs no reason. Once its time is up and until it has
-  gone, a held act's row reads "{what} is starting now." instead. Cancel (`POST /api/projects/:pid/held/:holdId/cancel`)
+  gone, a held act's hover text reads "{what} is starting now." instead. Cancel (`POST /api/projects/:pid/held/:holdId/cancel`)
   drops it and it never runs; it says "Cancelled. {what} won't happen.", or the server's sentence
   when it can't (404 for an unknown hold; 409 once it already went ahead), and Needs you is read
   again at once. A held act's id is its session's id and the statechart's hold id (`<session>:<hold>`),

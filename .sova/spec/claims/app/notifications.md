@@ -85,6 +85,9 @@ tier and comes back is new again.
   its own page: WhatsApp down opens Settings → Outreach, `#/settings/outreach`; App down the org's People tab), the Overseer
   (`#/overseer`) for several. An open Sova window is focused and navigated in place; with none, a new one opens
   there.
+- **A dismissed chat is not told** (§app.session-list/needs-you-dismiss): its items leave the digest,
+  so this decision and the badge's count lose them. Something new in it is a new blocker; an Undo sends
+  nothing.
 - **App badge.** Each notification carries how many sessions need you now; where the browser
   supports app badges (an installed app), the icon shows that number. An open Sova page keeps it
   current from the digest it already reads, clearing it at zero, once notifications are allowed

@@ -24,7 +24,7 @@
   "§app.decisions/asks-user": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/attention-signals.ts",
       "server/signals-store.ts",
@@ -40,17 +40,23 @@
       "src/lib/agents-board.test.ts",
       "server/sessions-index.ts",
       "server/session-offers.ts",
-      "server/overseer.ts"
+      "server/overseer.ts",
+      "server/merge-readiness.ts",
+      "server/merge-readiness.test.ts",
+      "server/session-branches.test.ts",
+      "server/merge-queue/wire.ts"
     ],
     "requires": [
       "§app.decisions/attention-signals",
       "§chat.alignment/session-mark",
-      "§chat.offers/card"
+      "§chat.offers/card",
+      "§app.merge-queue/approve",
+      "§chat.worktrees/readiness"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-24T09:23Z",
-      "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+      "at": "2026-11-06T01:40Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
     }
   },
   "§app.decisions/attention-signals": {

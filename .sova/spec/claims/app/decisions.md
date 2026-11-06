@@ -207,17 +207,45 @@ appends (one line each).
   three sentences, the last that ends in "?", else the last), redacted and at most 160
   characters, is stored with the answer for the attention digest only; it never reaches the
   session list or the feed.
-- **A restart or merge go is not asked again.** When the asking sentence only asks for a server
-  restart or a merge (or push) go-ahead and the session's merge readiness already says a restart
-  is owed (§chat.worktrees/readiness, `restartPending`), the row carries no `asks-you`: the
-  readiness badge says it.
+- **A restart or merge go is not asked again.** A reply asks for this when its ask kind is
+  `restart-or-merge-go`; a record from before the turn card, which has no kind, when its asking sentence
+  names a server restart, a Land, a merge or a push. The row carries no `asks-you`, and so leaves Needs
+  you, while any of these holds:
+  - the session's merge readiness already says a restart is owed (§chat.worktrees/readiness,
+    `restartPending`): the readiness badge says it;
+  - **the version that reply was about has landed**, in every worktree that counts (below): its branch
+    is merged into its target, whatever uncommitted files the worktree has now, or its newest queue
+    entry (§app.merge-queue/approve) is for that version and landed or pushed;
+  - **that version is in the merge queue**: each such worktree has landed as above or its newest entry
+    is for that version and queued or checking.
+
+  An entry is for that version when it holds the commit the branch had when the reply ended, or was
+  approved after the reply. An older entry is not: a newer commit needs a new Land.
+
+  Only a landed version is **noted on the stored signal** (`signals.json`), when first seen; the note
+  decides from then on: dropping the worktree and restarting Sova don't bring the ask back. A queued
+  version leaves no note: it is read live from the queue's current view, so cancelling the entry, or
+  the entry stopping short of landing, brings the ask back, and after a restart of Sova a queued ask
+  can show briefly until the first background read.
+
+  Every tracked worktree counts, an inherited one too, except an **empty leftover**, the merged badge's
+  own test (§chat.worktrees/readiness): clean with no commit of its own, or removed with none. It holds
+  no ask; one with uncommitted files does. With every worktree empty, or none tracked, only the restart
+  case applies and the ask stays.
+
+  The note belongs to that reply. A newer turn replaces it, so a newer commit with a new ask is
+  judged afresh and stays listed until its version is queued or landed. No model call: code
+  compares the commits, and the turn card's stored kind says what counts as this ask.
+  Every other ask is untouched.
 - **Where it came from.** The mark's tooltip ends with its source: "Guessed by {provider}" for a
   decision's answer, named by the provider that actually answered (Jev, or the configured
   model's name), and "From code." for a mark counted in code (open questions, a team gone quiet).
 - It shows while the feature is on and the session is idle, and, unlike the other signals, a look
   does not clear it: opening or viewing the session leaves it, as with open questions. It clears
-  when the user answers (a turn runs, and the next turn replaces or drops it) or the session is
-  archived. An open alignment question that appears later takes its place.
+  when the user answers (a turn runs, and the next turn replaces or drops it), the session is
+  archived, or, for a restart or merge go, while its version is queued and for good once it has landed (above). Dismissing the row
+  takes it out of Needs you until the chat has something new (§app.session-list/needs-you-dismiss)
+  and leaves this mark. An open alignment question that appears later takes its place.
 - It is a guess, so it is **never a blocker**: the attention digest carries it as a **soft decide**
   item (§app.overseer/attention-digest), a quiet mark on the session's row (a chat glyph in muted
   ink, never the accent, §app.session-list/anatomy) and a line in the

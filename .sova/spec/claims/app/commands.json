@@ -21,15 +21,16 @@
       "shared/commands/other.ts",
       "server/commands-inventory/scan.ts",
       "server/commands-inventory/baseline.json",
-      "server/topic-pairs.ts",
       "src/card-toolkit/commands.gen.ts",
+      "server/mesh/access.ts",
+      "server/topic-pairs.ts",
       "server/create-guide-growth.json"
     ],
     "authority": "accepted",
     "agreed": {
       "by": "user",
-      "at": "2026-11-06T01:43Z",
-      "source": "pi-session:01a1ab3a-26bd-72b7-9a70-7646430041e9#4cfa08b1"
+      "at": "2026-11-06T03:12Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#30549fa4"
     },
     "evidence": "verified"
   },

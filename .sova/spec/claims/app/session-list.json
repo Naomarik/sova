@@ -177,13 +177,14 @@
       "server/merge-queue/wire-unserved.integration.test.ts",
       "shared/merge-queue.ts",
       "src/lib/session-row.snapshot.json",
+      "src/components/NeedsYouRow.tsx",
       "server/sessions-index-jobs.test.ts",
       "src/lib/session-row.test.ts"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-05T11:12Z",
-      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#b0d1af6b"
+      "by": "user",
+      "at": "2026-11-06T03:12Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#30549fa4"
     }
   },
   "§app.session-list/drop-overlay": {
@@ -436,9 +437,49 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T07:21Z",
-      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+      "at": "2026-11-06T01:40Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
     }
+  },
+  "§app.session-list/needs-you-dismiss": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§app.session-list/needs-you",
+      "§app.overseer/attention-digest",
+      "§app.decisions/push",
+      "§app.notifications/delivery"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T01:40Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
+    },
+    "code": [
+      "server/needs-you-dismissed.ts",
+      "server/needs-you-dismissed.test.ts",
+      "server/needs-you-dismiss.integration.test.ts",
+      "server/attention.ts",
+      "server/attention.test.ts",
+      "server/app.ts",
+      "server/overseer.ts",
+      "server/push.ts",
+      "server/push.test.ts",
+      "server/org-routes.ts",
+      "server/org-list.test.ts",
+      "server/mesh/access.ts",
+      "server/needs-you-rows-ui.integration.test.ts",
+      "shared/protocol.ts",
+      "src/components/NeedsYouRow.tsx",
+      "src/components/Sidebar.tsx",
+      "src/lib/needs-you.ts",
+      "src/lib/needs-you.test.ts",
+      "src/lib/org-region.ts",
+      "src/lib/org-region.test.ts",
+      "src/lib/api.ts",
+      "src/app.css"
+    ]
   },
   "§app.session-list/ordinary-surfaces": {
     "kind": "behavior",
@@ -468,7 +509,7 @@
   "§app.session-list/organizations": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app.session-list/ordinary-surfaces",
       "§app.organizations/org-sessions",
@@ -500,8 +541,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T00:57Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-06T01:40Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
     }
   },
   "§app.session-list/recent": {

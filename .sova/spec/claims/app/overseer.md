@@ -965,7 +965,8 @@ who the run belongs to (§app.overseer/tools).
   came after the note that told it. The first run note of a conversation records the opening values
   the prompt is rendered from.
 - **Cleared since briefed.** Each blocker a brief (§app.overseer/proactivity) on the branch named in
-  the last 24 hours that is not a Needs-you item now is listed as cleared, with the session as a
+  the last 24 hours that is not a Needs-you item now, and not one you dismissed
+  (§app.session-list/needs-you-dismiss), is listed as cleared, with the session as a
   link, the blocker's kind, why, and when it was briefed. Why is the first that holds: the session is
   gone; it is archived; it is merged (its readiness badge is merged or restart pending,
   §chat.worktrees/readiness); its questions were answered in the session (an open-questions blocker
@@ -1557,10 +1558,23 @@ feed's last list while nothing has changed since it was built, and builds a list
   (`unverified`) — are decide items marked `soft`. Needs you lists them and the Overseer's "need
   you" count counts them, after the blockers; they never wake the Overseer with a brief and
   never send a phone notification. A soft item goes when the thing it guessed is acted on: the
-  next turn replaces it, archiving drops it, and either goes after **7 idle days** (no reply since); looking at the session never clears either. A blocker never expires:
-  it stays until it is handled.
-- **Nothing puts an item away.** The digest lists act items by the rules above and nothing else:
-  no choice of the user's hides one. A `<stateRoot>/needs-you-later.json` left by an earlier
+  next turn replaces it, archiving drops it, an ask for a go whose version is already queued or landed
+  leaves it (§app.decisions/asks-user), and either goes after **7 idle days** (no reply since); looking at the session never clears either. A blocker never expires:
+  it stays until it is handled or dismissed.
+- **What you dismissed is left out, here and only here.** A chat's items that list in Needs you are
+  dropped from the digest while that chat is dismissed (§app.session-list/needs-you-dismiss), before
+  the 30-item cap, so every reader agrees with no filter of its own: the Needs you lists, every count,
+  briefs, phone notifications, the app badge, `sova_attention` and the Overseer's other tools. The
+  chat's other lines (finished, ready to merge, FYI) stay, and an item of no session can't be dismissed.
+  A dialog is dated by when it opened and a worker's error by its failure, so a new one can be told
+  from what a dismissal covered.
+- **Each chat's newest listed time.** For each chat with an item that lists in Needs you, the digest
+  carries that item's time, taken before the cap (`newestListed`, session path → ms). A row takes it as
+  its own time and sends it as what its Dismiss covers, so a row orders by it and a dismissal covers it
+  whatever the cap cut; the server never picks the time. `dismissed` (path → the time covered) says
+  which chats are dismissed now, for the waits read from the session list. Both reach `sova_attention`'s
+  details; its text to the model doesn't change.
+  No other choice of the user's hides an item: a `<stateRoot>/needs-you-later.json` left by an earlier
   version, whose choices once hid items, is deleted once when the server starts (best-effort; a
   failure is logged and never stops the start), so no old choice keeps anything hidden.
 - **Finished (decide), from signals** (§app.decisions/attention-signals, only while the list carries them):

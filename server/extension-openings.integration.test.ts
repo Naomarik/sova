@@ -148,7 +148,7 @@ test("the frames route: a key's prompt is a 403; the same frame from the token r
   assert.deepEqual(userTexts(path), []);
   assert.equal((await call("POST", url, { ...asKey(), "x-sova-caller": "pretend" }, { frames })).status, 403, "a caller's mark beside the key changes nothing");
   // A stale writing number puts a page's frames back as the draft: a key's are refused first, so it plants nothing.
-  const stale = { "X-Sova-Composer": "0" };
+  const stale = { "X-Sova-Composer": "999999" };
   assert.equal((await call("POST", url, { ...asKey(), ...stale }, { frames })).status, 403);
   assert.equal((await call("GET", `/api/sessions/draft?path=${encodeURIComponent(path)}`, asToken())).body.text, null, "nothing planted");
   const page = await newChat();

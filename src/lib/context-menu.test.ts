@@ -12,6 +12,7 @@ import {
   contextPointerKind,
   createKeyEcho,
   createOpenOnRelease,
+  createPressSelection,
   type ElementLike,
   holdOwns,
   inPopover,
@@ -411,4 +412,22 @@ test("a newer contextmenu abandons the waiting one: only the newer place's menu 
   w.pointerup();
   w.tick();
   assert.deepEqual(w.opened, ["row B"]);
+});
+
+test("a right-click counts the selection its press found, never the word a Mac's browser selects on that press", () => {
+  let now: string[] = ["before any press"];
+  const sel = createPressSelection(() => now);
+  assert.deepEqual(sel.counted(), ["before any press"], "with no press yet, what is selected now");
+  assert.equal(sel.madeByPress(), false);
+  // Nothing selected as the button goes down; the browser then selects the word under it.
+  now = [];
+  sel.pressed();
+  now = ["word"];
+  assert.deepEqual(sel.counted(), [], "the press's own word isn't the user's selection");
+  assert.equal(sel.madeByPress(), true, "so Sova's menu takes it back");
+  // The user's own selection, right-clicked: it counts, and the press didn't make it.
+  now = ["the user's text"];
+  sel.pressed();
+  assert.deepEqual(sel.counted(), ["the user's text"]);
+  assert.equal(sel.madeByPress(), false);
 });

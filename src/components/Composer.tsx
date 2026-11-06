@@ -1354,8 +1354,7 @@ export function Composer(props: {
                 type="button"
                 class="button button-destructive button-icon"
                 aria-label="Stop"
-                title="Stop (Esc)"
-                aria-keyshortcuts="Escape"
+                title="Stop · Esc in the message box"
                 aria-disabled={stopState() === "disabled" ? "true" : undefined}
                 aria-describedby={props.stopBlocked ? paneId("composer-reason") : undefined}
                 onPointerDown={notePress}

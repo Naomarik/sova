@@ -150,3 +150,17 @@ describe("the outline and the span", () => {
     assert.equal(await shareSpan(src(p, "a2", "u3")), undefined, "a slice that no longer reads");
   });
 });
+
+describe("a reply to an earlier message (§app.session-share/content)", () => {
+  test("the page gets its quote and words, never the quoted message's id; the picker names its words", async () => {
+    const { composeReply, parseReply, SHARED_REPLY_ID } = await import("../shared/reply-quote");
+    const sent = composeReply({ entryId: "a1b2c3d4", role: "assistant", part: true, quote: "reply one", trimmed: false }, "why one?");
+    const p = write("reply.jsonl", [msg("u1", null, "user", "one"), msg("a1b2c3d4", "u1", "assistant", "reply one"), msg("u2", "a1b2c3d4", "user", sent), msg("a2", "u2", "assistant", "because")]);
+    const view = (await sessionShareView(src(p, "a2", null)))!;
+    const mine = view.items.find((i) => i.kind === "user" && i.text?.startsWith("[Replying"))!;
+    assert.ok(!JSON.stringify(view.items).includes("a1b2c3d4"), "the quoted message's id never reaches the page");
+    assert.deepEqual(parseReply(mine.text!), { entryId: SHARED_REPLY_ID, role: "assistant", part: true, quote: "reply one", words: "why one?" });
+    const o = (await sessionShareOutline({ sessionPath: p, cutEntryId: "a2" }))!;
+    assert.equal(o.items.find((i) => i.id === "u2")?.excerpt, "why one?");
+  });
+});

@@ -19,7 +19,7 @@ import {
   type SessionShareView,
 } from "../shared/session-share";
 import { parseWakeNudge } from "../shared/wake";
-import { withoutReplyId } from "../shared/reply-quote";
+import { replyWords, withoutReplyId } from "../shared/reply-quote";
 import { parsePi, strictBranchTo, typedText, type PiFile } from "./harness/pi/reader";
 import { serverRedactor } from "./overseer-redact";
 
@@ -364,7 +364,8 @@ export async function sessionShareOutline(src: Pick<ShareSource, "sessionPath"> 
       n: it.n,
       kind: it.kind,
       ...(it.at ? { at: it.at } : {}),
-      excerpt: cutAtToken(it.text.replace(/\s+/g, " ").trim(), SESSION_SHARE_EXCERPT_MAX),
+      // A reply's excerpt is its words: the picker names messages, never their quotes.
+      excerpt: cutAtToken((it.kind === "user" ? replyWords(it.text) : it.text).replace(/\s+/g, " ").trim(), SESSION_SHARE_EXCERPT_MAX),
       images: it.images?.length ?? 0,
     })),
   }));

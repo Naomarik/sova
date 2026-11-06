@@ -152,9 +152,10 @@ function TimeSpentBody(props: { path: string; id: string }) {
                           data-seconds={reading().seconds}
                           onClick={() => setReadingOpen(!readingOpen())}
                         >
+                          {/* The chevron after the word, so Reading lines up with the rows beside it and its parts read as under it. */}
                           <span class="time-spent-row-label">
-                            <Icon name="chevron-right" small class={readingOpen() ? "icon-twist time-spent-twist-open" : "icon-twist"} />
                             Reading
+                            <Icon name="chevron-right" small class={readingOpen() ? "icon-twist time-spent-twist-open" : "icon-twist"} />
                           </span>
                           <span class="text-num">{formatSpent(reading().seconds)}</span>
                         </button>

@@ -237,6 +237,9 @@ test("closing leaves the heading, is remembered for this browser, and holds for 
     assert.equal(await toggle.getAttribute("aria-expanded"), "true", "starts open");
     await toggle.click();
     assert.equal(await toggle.getAttribute("aria-expanded"), "false");
+    // The chevron says closed, once its short turn has run.
+    await toggle.locator(".icon").evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+    assert.equal(await toggle.locator(".icon").evaluate((el) => getComputedStyle(el).transform), "none", "the chevron says closed");
     assert.equal(await page.locator("[data-time-you]").count(), 0);
     await page.goto(`${ORIGIN}/#/s/${encodeURIComponent(OTHER)}`);
     await page.reload();

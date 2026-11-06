@@ -44,7 +44,7 @@ const errText = (err: unknown) => sentence(err instanceof Error ? err.message : 
 type Reviewing = { review: ExtensionReview; mode: "install" | "approve" | "folder"; changed?: boolean; folder?: string; forId?: string };
 
 /** The review, before anything is on: a part it doesn't have is left out. */
-function ReviewDialog(props: { at: Reviewing; onClose: () => void; onDone: (r: ExtensionReview) => void; reread: () => Promise<ExtensionInspect> }) {
+function ReviewDialog(props: { at: Reviewing; onClose: () => void; onDone: (r: ExtensionReview) => Promise<void>; reread: () => Promise<ExtensionInspect> }) {
   const [at, setAt] = createSignal(props.at);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -58,7 +58,7 @@ function ReviewDialog(props: { at: Reviewing; onClose: () => void; onDone: (r: E
       if (mode === "install") await installExtension(folder!, r().version);
       else if (mode === "folder") await chooseExtensionFolder(forId!, folder!, r().version);
       else await approveExtension(r().id, r().version);
-      props.onDone(r());
+      await props.onDone(r());
     } catch (err) {
       setBusy(false);
       if (err instanceof ApiError && (err.body as { code?: string } | undefined)?.code === "changed") {
@@ -436,11 +436,12 @@ export function ExtensionsSettingsSection() {
       setRowError(errText(err));
     }
   };
-  const done = (r: ExtensionReview) => {
+  const done = async (r: ExtensionReview) => {
+    // The list first: closing on the old one would flash "No extensions yet" under a first install.
+    await getExtensionsInstalled().then(poll.set, poll.refetch);
     setReviewing(null);
     toast(onToast(r.title, asksCards(r.asks)));
     extensionListChanged();
-    poll.refetch();
   };
   const reread = (): Promise<ExtensionInspect> => {
     const at = reviewing()!;

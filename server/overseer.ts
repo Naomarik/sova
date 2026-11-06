@@ -89,7 +89,8 @@ import { type Redactor, redactExtensionMessages, serverRedactor } from "./overse
 import { canonicalPath, resolveSessionPath } from "./paths";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { UnreadReplies } from "./unread-replies";
-import { cleanupSessions, markArchived, endingOf, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions, summaryReads, type SummaryReads } from "./sessions-index";
+import { aboutOf, cleanupSessions, markArchived, endingOf, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions, summaryReads, type SummaryReads } from "./sessions-index";
+import { readSessionTitleRecords } from "./session-titles";
 import { getSessionInsight } from "./insights";
 import { branchLabels, cardsOnBranch, runNote, runNoteSessionIds, type SessionNow, sessionsInPlay, sessionsInPlayText, type Touched } from "./overseer-run-note";
 import { changedText, openingOn, toldOn, type LivePart, type OpeningDetails } from "./overseer-opening";
@@ -288,17 +289,19 @@ export async function overseerInfo(list?: readonly SessionSummary[]): Promise<Ov
   const history: OverseerInfo["history"] = [];
   const byId = list ? new Map(list.map((s) => [s.id, s])) : null;
   let reads: SummaryReads | undefined;
+  // `title` is the fixed name every summary says ("Overseer"); `about` tells the conversations apart.
+  const titles = readSessionTitleRecords();
   for (const id of st?.history ?? []) {
     const row = byId?.get(id);
     if (row) {
-      history.push({ id, path: row.path, title: row.title, lastActiveAt: row.lastActiveAt });
+      history.push({ id, path: row.path, title: row.title, about: (await aboutOf(row.path, titles)) ?? row.title, lastActiveAt: row.lastActiveAt });
       continue;
     }
     const p = await pathOfId(id);
     if (!p) continue;
     reads ??= summaryReads();
     const s = await getSessionSummary(p, undefined, reads);
-    if (s) history.push({ id, path: p, title: s.title, lastActiveAt: s.lastActiveAt });
+    if (s) history.push({ id, path: p, title: s.title, about: (await aboutOf(p, titles)) ?? s.title, lastActiveAt: s.lastActiveAt });
   }
   const digest = await attentionDigest(list);
   const seenAt = readSeen()[cur.id];

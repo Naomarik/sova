@@ -61,7 +61,7 @@ import { canonicalPath } from "./paths";
 import { startableIn } from "./project-folder";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
-import { displayTitleOf, getSessionSummary, idOf, indexedSessionPaths, listSessions, markArchived } from "./sessions-index";
+import { aboutOf, displayTitleOf, getSessionSummary, idOf, indexedSessionPaths, listSessions, markArchived } from "./sessions-index";
 import { actOrThrow, heldAt, holdByRef, holdRef, refusalError } from "./org-engine";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { listPreviews, PreviewRefused } from "./preview-links";
@@ -467,7 +467,8 @@ export async function projectOverseerInfo(projectId: string): Promise<ProjectOve
     const hp = await pathOfId(id);
     if (!hp) continue;
     const s = await getSessionSummary(hp);
-    if (s) history.push({ id, path: hp, title: s.title, lastActiveAt: s.lastActiveAt });
+    // `title` is the fixed name ("Overseer · {project}"); `about` tells the conversations apart.
+    if (s) history.push({ id, path: hp, title: s.title, about: (await aboutOf(hp)) ?? s.title, lastActiveAt: s.lastActiveAt });
   }
   const memo = readMemo(p);
   const known = indexedSessionPaths();

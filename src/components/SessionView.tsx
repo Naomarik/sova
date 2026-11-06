@@ -279,7 +279,10 @@ export function SessionView(props: {
         </h1>
         <p class="session-head-meta">
           {/* First on the path line, so the title above keeps the head's whole width. */}
-          <RegenerateTitleButton path={path} onDone={props.onRefresh} />
+          {/* A chat Sova names itself keeps that name: nothing to regenerate. */}
+          <Show when={!s().fixedName}>
+            <RegenerateTitleButton path={path} onDone={props.onRefresh} />
+          </Show>
           {/* A peer's session names its host first: the folder and everything else are that host's. */}
           <Show when={hostOf(path)}>
             {(h) => (

@@ -71,6 +71,7 @@ import { LIST_VERSION_HEADER } from "../src/lib/summary-diff";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
 import { QUEUE_CHAT_MODE_REFUSAL, queueChatRole } from "../shared/merge-queue";
 import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
+import { fixedNameRefusal } from "../shared/fixed-names";
 import { rowsOf } from "./transcript";
 import { readBranch, unknownEntries } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
@@ -668,6 +669,8 @@ export function buildApp(deps: AppDeps) {
     // archive mark and the group assignment are keyed by too.
     const before = await getSessionSummary(path);
     if (!before) return c.json({ error: "Session file not found" }, 404);
+    // A chat Sova names itself (shared/fixed-names.ts) keeps that name: nothing is stored.
+    if (before.fixedName) return c.json({ error: fixedNameRefusal(before.fixedName) }, 409);
     setSessionTitle(before.id, title, source);
     const summary = await getSessionSummary(path);
     return c.json(summary ?? { ...before, title: title ?? before.originalTitle ?? before.title });

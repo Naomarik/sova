@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 import type { BatonSession } from "../shared/baton";
 import type { SessionOrg, SessionOrgRef } from "../shared/protocol";
-import { allBatons, batonSummaryField, isRetiredBaton } from "./baton";
+import { allBatons, batonOfPath, batonSummaryField, isRetiredBaton } from "./baton";
 import { contributeSessions } from "./sessions-index";
 import { buildMerged } from "./build-merged";
 import { orgOfSessionPath, orgOfSessionPathReader, readIndex, readOrg, readProjects, type OrgOfSessionPath } from "./orgs";
@@ -178,4 +178,6 @@ contributeSessions({
   // An attached org's workspace sessions (batons, project-overseer conversations) belong to the org: baton.json
   // and overseer state name them, so neither Clean Up nor an empty husk's archive ever deletes one.
   keeps: (path) => (orgOfSessionPath(path) ? "Belongs to an organization's workspace — Clean Up never deletes it." : null),
+  // A gathering session's name is its public title, as its statechart records it (shared/fixed-names.ts).
+  gatheringTitle: (path) => batonOfPath(path)?.row.publicTitle || undefined,
 });

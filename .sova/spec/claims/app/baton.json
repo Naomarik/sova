@@ -149,7 +149,9 @@
       "server/baton-abilities.integration.test.ts",
       "server/baton-vis-guide.ts",
       "server/baton-read-link.ts",
-      "server/share-message.integration.test.ts"
+      "server/share-message.integration.test.ts",
+      "server/sessions-index.ts",
+      "server/org-sessions.ts"
     ],
     "requires": [
       "§app.organizations/privacy",

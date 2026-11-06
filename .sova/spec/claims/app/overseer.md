@@ -35,7 +35,8 @@ are atomic tmp+rename.
   unread count, the proactivity mode and whether it is mid-turn.
 - **Route.** `#/overseer` is the identity. The app resolves it through `GET /api/overseer` and
   mounts the normal chat view on that path, keyed on the path, so a rotation remounts it cleanly.
-  The view's head reads "Overseer" (no cwd).
+  The view's head reads "Overseer" (no cwd). Every other way into the conversation lands there
+  too (§app.overseer/ways-in).
 - **Hidden everywhere else.** `SessionSummary.overseer` is set by that rule. An Overseer file,
   current or historical, is a special session (§app.session-list/ordinary-surfaces, the one list of
   what that means, shared with organization sessions): it appears on no ordinary surface — no
@@ -51,10 +52,27 @@ are atomic tmp+rename.
   and repoints `current`. The requesting tab lands on the new file. Other tabs that showed the
   Overseer re-resolve `#/overseer` when their socket reports the runtime was closed.
 - **History.** A **History** menu in the head (in ⋯ as History… below a 900px head,
-  §app.overseer/head-layout) lists the previous files (≤20), each row its first message (at most two lines, the rest in its tooltip) over how long ago it was active; a list taller than the window scrolls. One opens read-only at
+  §app.overseer/head-layout) lists the previous files (≤20), each row what that conversation was
+  about, its automatic title when it has one, else its first message, never the fixed name "Overseer"
+  every one shares (§app.session-list/fixed-names) (at most two lines, the rest in its tooltip), over how long ago it was active; a list taller than the window scrolls. One opens read-only at
   `#/overseer/h/<id>` (watch view, no composer); the server refuses a chat on any Overseer file
   but the current one. Settings, standing notes, the audit log and live standing rules
   (§app.overseer/approvals) survive a clear.
+
+## §app.overseer/ways-in — Every way into the Overseer lands on its page
+
+The Overseer's conversation has one page: `#/overseer` (§app.overseer/identity-and-clear), the one
+the Overseer button opens (§app.overseer/entry-button), with the Overseer's own head and the title
+"Overseer". Every other way into the current conversation lands on that same page, in the same view
+under the same title, never on an ordinary chat page:
+
+- the resource monitor's **Open Session** on its row (§app.resource-monitor/screen);
+- an old bookmark or link to its chat's own address (`#/s/<path>`);
+- a link to it from another chat (a session link, a card's link or a tool result's).
+
+An earlier (cleared) conversation reached any of these ways lands on its **Earlier Overseer
+Conversation** page (`#/overseer/h/<id>`), read only, as its History row opens it. A project
+overseer's conversations already open under their own head (§app.project-overseer/page).
 
 ## §app.overseer/hosting — Runtime loadout
 
@@ -1272,12 +1290,15 @@ time. Both kinds of approval come only from the user's click on a card option th
   a phone notification's title and lines (§app.notifications/delivery) and a card's echo of its
   session items — the name is the session's alias, else a title the user, the Overseer or Sova's
   auto-title set, else its one-line summary (the outline's gist, else its "now" line), else its
-  title (the first message). The attention item carries it as `name`.
+  title (the first message). One of Sova's own chats (an overseer, a merge thread or reviewer, a
+  release chat, a gathering session) is named by its fixed name alone (§app.session-list/fixed-names),
+  never by an alias, a stored title or a summary. The attention item carries it as `name`.
 - **Aliases.** `sova_set_session {alias}` gives a session a short name the user chose ("overseer
   fixes"): at most 40 characters, one line, unique on this host (case-insensitive); an empty alias
   clears it. It is stored in Sova's own `<stateRoot>/session-aliases.json`, never in the session
   file. Every tool that takes a session also takes its alias, matched case-insensitively and
-  exactly, and `sova_list_sessions` shows it. Setting one is an act (§app.overseer/tools).
+  exactly, and `sova_list_sessions` shows it. One of Sova's own chats takes no alias: setting one
+  is refused with a plain sentence, and one set before never shows as its name. Setting one is an act (§app.overseer/tools).
 
 ## §app.overseer/links-tools — Linking sessions across hosts
 

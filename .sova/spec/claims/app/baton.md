@@ -58,8 +58,8 @@ Scoped `show_tour` presents only checked, operator-reviewed editions already bou
   (§app.project-overseer/statecharts). A session the statechart spawned exists before its file does: if
   the file can't be made, the statechart says so and nothing half-made is left. It is listed in the sidebar's Organizations region (§app.session-list/organizations), under its
   public title, with ` · <holder>` after the title. Open, a strip above its transcript shows org, project,
-  holder, state and message count — and the public title, only when the session head above shows a
-  different one (a renamed session): otherwise it would say the title twice — who started it and
+  holder, state and message count — not the public title, the head's fixed name
+  (§app.session-list/fixed-names), even in a renamed session: otherwise it would say it twice — who started it and
   when (§app.baton/told), its why and goal, folded under **Why and goal** (§app.baton/goal-on-strip),
   What It's Told (§app.baton/told), and Get Link / Delete Link / Take Back / Close
   Session, and, while the org has an owner, Hide From / Show To the owner (§app.owner-page/conversations),

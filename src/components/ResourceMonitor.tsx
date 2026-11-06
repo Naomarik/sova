@@ -3,7 +3,6 @@ import { Portal } from "solid-js/web";
 import type { MonitorHistory, MonitorPoint, MonitorSnapshot } from "../../shared/protocol";
 import { fetchMonitor, fetchMonitorHistory } from "../lib/api";
 import { relativeTime } from "../lib/format";
-import { sessionHrefOn } from "../lib/mesh";
 import {
   bytes,
   CHART_SPAN_MS,
@@ -37,6 +36,7 @@ import {
   type WorkerLabels,
   workerNamer,
   labelsWithTitles,
+  monitorOpenHref,
   withTitles,
   tabLine,
   transient,
@@ -461,9 +461,9 @@ function MonitorTable(props: { rows: GroupRow[]; now: number; live: boolean; onO
                       <Twist open={isOpen(g.key)} label={g.label} what={g.parts?.length ? "parts" : "processes"} onToggle={() => toggle(g.key)} />
                     </Show>
                     <span class="monitor-label">{g.label}</span>
-                    <Show when={g.sessionPath}>
-                      {(path) => (
-                        <a class="monitor-open" href={sessionHrefOn(null, path())} onClick={() => props.onOpen()}>
+                    <Show when={monitorOpenHref(g)}>
+                      {(href) => (
+                        <a class="monitor-open" href={href()} onClick={() => props.onOpen()}>
                           Open Session
                         </a>
                       )}

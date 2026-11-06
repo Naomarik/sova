@@ -4,6 +4,8 @@ import type { TranscriptItem } from "../../shared/protocol";
 import { resultDetails } from "./message";
 import { applyCardCall, type CardDetails } from "../../shared/overseer-card";
 import {
+  historyRows,
+  overseerRedirect,
   briefBody,
   cardFold,
   openCards,
@@ -303,4 +305,23 @@ test("a #c_N link is a card ref: in-app, never the route; any other # href stays
   assert.match(html, /<a class="md-app-link" href="#\/usage">usage<\/a>/, "a #/ route is still a route");
   const { cardRefId } = await import("./card-refs");
   assert.deepEqual(["#c_5", "#c_12", "#c_0", "#c_5x", "c_5", "#/c_5"].map(cardRefId), ["c_5", "c_12", null, null, null, null]);
+});
+
+test("a session route to an Overseer file goes to the Overseer page, an earlier one to its History page; others stay", () => {
+  const info = { path: "/s/ov-now.jsonl", history: [{ id: "old-1", path: "/s/ov-old.jsonl" }] };
+  assert.equal(overseerRedirect("/s/ov-now.jsonl", info), "#/overseer");
+  assert.equal(overseerRedirect("/s/ov-old.jsonl", info), "#/overseer/h/old-1");
+  assert.equal(overseerRedirect("/s/other.jsonl", info), null);
+  assert.equal(overseerRedirect("/s/ov-now.jsonl", null), null, "until the Overseer's info is read: asked again when it lands");
+});
+
+test("History rows say what each earlier conversation was about, never the name they all share", () => {
+  const rows = historyRows([
+    { id: "a", path: "/a", title: "Overseer", about: "alpha", lastActiveAt: "" },
+    { id: "b", path: "/b", title: "Overseer", about: "beta", lastActiveAt: "" },
+    { id: "c", path: "/c", title: "Overseer", about: "Untitled", lastActiveAt: "" },
+    { id: "d", path: "/d", title: "from an older server", lastActiveAt: "" },
+  ]);
+  assert.deepEqual(rows.map((r) => r.title), ["alpha", "beta", "No messages", "from an older server"]);
+  assert.notEqual(rows[0]!.title, rows[1]!.title);
 });

@@ -40,7 +40,7 @@ import { usageHistory } from "./usage-history";
 import { readCache } from "../pi-config/extensions/usage-status/fetch.ts";
 import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/client";
 import { wireRequestChats } from "./owner-request-chat";
-import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, listSessionsTracked, listStamps, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
+import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, listSessionsTracked, listStamps, monitorFixedOf, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
 import { startScheduleKeeper } from "./schedule-routes";
 import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
 import { detachChatHost, startChatHost, stopWorkersOf } from "./chat-host";
@@ -231,6 +231,7 @@ startResourceMonitor({
   logDir: join(stateRoot(), "monitor"),
   held: () => chatHandles().map((c) => ({ path: c.path, sessionId: c.mirror.sessionId, cwd: c.mirror.cwd })),
   titleOf: cachedTitleOf,
+  fixedOf: (path, fresh) => monitorFixedOf(path, fresh),
 });
 // Every attached org's workspace repo: its residence statechart commits whatever changed at most hourly, then pushes.
 // Messages a crash or kill lost stop counting against their session's limit.

@@ -1399,7 +1399,10 @@ a TUI be renamed at all (the webapp must never write a file a TUI owns). Every s
 hands out carries the override as `title` and the derived one as `originalTitle`, so the rename is
 the same everywhere a session is named, and clearing it has something to go back to. Titles are
 capped at `SESSION_TITLE_MAX` (80, the derived title's own cap), trimmed, whitespace collapsed to
-one line; a deleted session's title is forgotten with its file.
+one line; a deleted session's title is forgotten with its file. **Sova's own chats are never
+renamed**: the Overseer, a project overseer, a merge thread or reviewer, a release chat and a
+gathering session keep a fixed name (§app.session-list/fixed-names), so the route refuses a title
+for one, and a title stored for one before is not shown.
 
 **Every stored title says who set it.** The store is version 2: `titles[id]` is either a bare
 string, a title from before provenance existed, or `{title, by, at}` with `by` one of `user`,
@@ -1504,7 +1507,7 @@ refused for length.
   switch on starts a run at once.
 - **Which.** A session with no stored title at all, with a summary line, quiet for the *quiet
   period* (default 5 minutes, by its file's modification time), and none of: archived by hand, an
-  empty husk, a subagent's or team member's own session, an Overseer or project overseer file. A
+  empty husk, a subagent's or team member's own session, an Overseer file or other fixed-name chat (§app.session-list/fixed-names). A
   group member is swept like any session, in a group an older build made included
   (§workspace.groups/legacy-groups). Most recently active first.
 - **How much.** At most 10 sessions per run, 2 at a time. Existing unnamed sessions are backfilled
@@ -1527,7 +1530,7 @@ sessions" ("Name 1 session"), counting the section's rows as the search shows th
 once. A press sends exactly those rows; while it runs the button is disabled, `aria-busy`, and
 titled "Naming {n} sessions…". When it returns the list is fetched again and the rows show their
 new titles. **No toast, no undo**: a title the user doesn't like is renamed or cleared like any
-other (on the Agents board, §app.insights/team-cards; the store is §app.session-list/session-titles). A click or keypress on the button inside a
+other (on the Agents board, §app.insights/team-cards). A click or keypress on the button inside a
 `<summary>` never toggles its section. A row the model failed on stays nameable, so a second press
 tries it again.
 
@@ -1568,6 +1571,58 @@ doesn't like is renamed like any other.
 splits a section's rows by host and sends each peer's rows to that peer
 (`/peer/<id>/api/sessions/auto-title`, the usual routing); a peer whose Sova predates the route
 answers 404, and its rows are skipped silently. Each host's sweep follows that host's own switch.
+
+## §app.session-list/fixed-names — Sova's own chats keep the names Sova gives them
+
+Some chats are Sova's own, and each is named for what it is, never for what was said in it. Their
+name is **fixed**: Sova gives it, and nothing else ever changes it.
+
+| Chat | Its fixed name |
+|---|---|
+| The Overseer (§app/overseer), its current conversation and every earlier one | "Overseer" |
+| A project overseer (§app/project-overseer), current and earlier conversations | "Overseer · {project}", the project's current name: renaming the project renames it |
+| The merge thread (§chat.merge-queue/thread) | the title Sova starts it with, "Merge thread · {project folder} · {date}" |
+| A merge reviewer (§app.merge-queue/review) | the title Sova starts it with, "Review · {branch} · {commit}" (" · attempt {n}") |
+| A release chat (§app.release/start) | the title Sova gives it, "Release {tag} of {project}", which Sova itself changes once the tag is picked; the chat a withdrawal starts reads "Withdraw {tag}" |
+| A gathering session (§app/baton) | its public title |
+
+Sova keeps the name it gives a merge thread, reviewer or release chat in a store of its own,
+apart from the title store every rename writes (§app.session-list/session-titles). A chat started
+before that store existed gets the name Sova gave it rebuilt from Sova's own records, never from
+its stored title: a merge thread from the queue's thread record (its project and the day it
+started); a reviewer from the queue's record of it (branch, attempt, run) and the run's commit
+(else the commit its first message names); a release chat from its release record, with the
+record's tag as it is now, and a withdrawal's chat as "Withdraw {tag}". Only when no record names
+the chat (cleared, pruned, or kept under another state root) does it read the general word:
+"Merge thread", "Merge review" or "Release chat".
+
+- **One name everywhere.** Every summary the server hands out carries the fixed name as the
+  chat's `title`, so every place that names a session reads the same one: the sidebar, the Agents
+  board, the Merge Queue tab, the resource monitor (§app.resource-monitor/screen), the Overseer's
+  tool results, briefs and notifications (§app.overseer/session-names), and every link to it.
+- **Nothing overrides it.** Not its first message (the derived title), not an automatic title (the
+  sweep, Name sessions, Shorten long titles or Regenerate title, §app.session-list/auto-titles),
+  not a rename by the user or by the Overseer (§app.session-list/session-titles), and not an alias
+  (§app.overseer/session-names).
+- **Nothing offers to.** On such a chat the Agents board's ⋯ has no Rename…, Use Gist as Title or
+  Reset to Original Title (§app.insights/team-cards), and an open chat's head has no Regenerate
+  title. Every other way is refused (409 from the title route), nothing stored, with one plain
+  sentence: "An overseer keeps its own name.", "The merge queue's chats keep the names Sova gives
+  them.", "A release chat keeps the name Sova gives it." or "A gathering session keeps its public
+  title as its name." That covers the Overseer's `sova_set_session` with a title or an alias (the
+  sentence, then "Nothing was changed.") and the command palette's Rename Session, which still
+  lists them and is refused by the server. The automatic-title route skips one as `not-listed`.
+- **Names set before.** A title or alias already stored for such a chat stops showing: the fixed
+  name takes its place, with nothing for the user to clear. A merge thread, reviewer, release chat
+  or gathering session someone renamed reads its Sova name again.
+- **What a conversation was about** stays apart from the name. The fixed name can't tell an
+  overseer's conversations apart, so the Overseer's History and a project overseer's History still
+  name each earlier conversation by what it was about: its automatic title when it has one, else
+  its first message, "No messages" when it has none (§app.overseer/identity-and-clear,
+  §app.project-overseer/page). The server sends that line as each History row's `about`, apart from
+  its `title`, which is the fixed name.
+- Sova knows these chats by the marks that make each one what it is (§app.overseer/identity-and-clear,
+  §app.merge-queue/chats), never by a title.
 
 ## §app.session-list/regions-top-and-archive — Regions: top and Archive
 

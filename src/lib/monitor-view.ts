@@ -15,6 +15,9 @@ import type {
   MonitorWorker,
 } from "../../shared/protocol";
 import { duration } from "./format";
+import { sessionHrefOn } from "./mesh";
+import { OVERSEER_HASH, overseerHistoryHref } from "./overseer";
+import { sessionIdOfPath } from "./links";
 import { bytes } from "./mesh-details";
 
 export { bytes };
@@ -258,6 +261,8 @@ export interface GroupRow {
   label: string;
   /** The session to open, when there is one. */
   sessionPath?: string;
+  /** The session is the Overseer's current or an earlier conversation: it opens on the Overseer page. */
+  overseer?: "current" | "earlier";
   /** "hosted" / a folder, as a caption. */
   caption?: string;
   kind: "session" | "server" | "unowned" | "escaped" | "unattributed";
@@ -384,6 +389,18 @@ export function labelsWithTitles(labels: MonitorHistory["groups"], titleOf: Titl
   return out;
 }
 
+/**
+ * Where a row's Open Session goes: the Overseer's chat opens on the Overseer page (an earlier conversation on its
+ * History page), never the plain session route; every other session on its own route. From the monitor's own word,
+ * so it holds before the session list has loaded.
+ */
+export function monitorOpenHref(g: Pick<GroupRow, "sessionPath" | "overseer">): string | null {
+  if (!g.sessionPath) return null;
+  if (g.overseer === "current") return OVERSEER_HASH;
+  const id = g.overseer === "earlier" ? sessionIdOfPath(g.sessionPath) : null;
+  return id ? overseerHistoryHref(id) : sessionHrefOn(null, g.sessionPath);
+}
+
 /** The words for the groups that aren't a session, the same in the table, the chart and transient work. */
 const RESERVED: Record<string, string> = {
   [SERVER_GROUP]: "Backend",
@@ -427,6 +444,7 @@ export function liveRows(s: MonitorSnapshot): GroupRow[] {
       key: x.sessionPath ?? `cwd:${x.cwd ?? ""}`,
       label: sessionLabel(x),
       sessionPath: x.sessionPath,
+      ...(x.overseer ? { overseer: x.overseer } : {}),
       caption: backendCaption(x),
       kind: "session" as const,
       cpuPct: x.cpuPct,
@@ -510,7 +528,8 @@ export function rowsAt(point: MonitorPoint, labels: MonitorHistory["groups"], li
     const procs = point.top
       .filter((p) => p.group === key && !p.workerId)
       .map((p) => ({ key: `${p.pid}`, pid: p.pid, cmd: p.cmd, kind: p.kind, cpuPct: p.cpuPct, rssBytes: m(p.rssBytes) }));
-    return { key, label, sessionPath, kind, cpuPct, rssBytes, workers, procs };
+    const overseer = sessionPath ? labels[key]?.overseer : undefined;
+    return { key, label, sessionPath, ...(overseer ? { overseer } : {}), kind, cpuPct, rssBytes, workers, procs };
   });
   const order: Record<GroupRow["kind"], number> = { server: 0, session: 1, unowned: 2, escaped: 3, unattributed: 4 };
   return rows.sort((a, b) => order[a.kind] - order[b.kind] || (a.kind === "session" ? heaviest(a, b) : 0));

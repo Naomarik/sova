@@ -15,6 +15,7 @@ import type { SessionSummary } from "../../shared/protocol";
 import type { ReviewerStart, StartReviewer } from "./review-step";
 import { retireChat, type RetireDeps, type RetireOutcome } from "./retire";
 import { createChat, type AppRequest, type Result } from "./thread";
+import { reviewerTitle as sharedReviewerTitle } from "../../shared/fixed-names";
 
 export const REVIEWER_PROFILE = "merge-reviewer";
 
@@ -39,10 +40,8 @@ const retireDeps = (deps: ReviewerDeps): RetireDeps => ({
   ...deps.retire,
 });
 
-/** The title a reviewer chat gets: what it reviews, and which attempt. */
-export function reviewerTitle(o: Pick<ReviewerStart, "branch" | "commit" | "attempt">): string {
-  return `Review · ${o.branch} · ${o.commit.slice(0, 7)}${o.attempt > 1 ? ` · attempt ${o.attempt}` : ""}`;
-}
+/** The title a reviewer chat gets: what it reviews, and which attempt (shared/fixed-names.ts, also used to rebuild it). */
+export const reviewerTitle = (o: Pick<ReviewerStart, "branch" | "commit" | "attempt">): string => sharedReviewerTitle(o);
 
 /** The review step's starter over `deps`. A refused start throws (the step counts it as the reviewer's failure). */
 export function reviewerStarter(deps: ReviewerDeps): StartReviewer {

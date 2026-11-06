@@ -15,6 +15,7 @@ const FIELDS: { [K in keyof Required<SessionSummary>]: "compare" | { exempt: str
   title: "compare",
   originalTitle: "compare",
   titleBy: "compare",
+  fixedName: "compare",
   createdAt: "compare",
   lastActiveAt: "compare",
   model: "compare",

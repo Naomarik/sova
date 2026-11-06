@@ -12,6 +12,13 @@ const style = new Map<string, string>();
 const attributes = new Map<string, string>();
 const meta = { content: "unset", setAttribute: (_: string, v: string) => void (meta.content = v) };
 const store = new Map<string, string>();
+/** Every write to the store, so a test can tell "left alone" from "rewritten with the same value". */
+let writes = 0;
+/** The window's `storage` listeners: another tab's save is a write to `store`, then this event. */
+const storageListeners = new Set<(e: { key: string | null }) => void>();
+const otherTabSaved = (key: string | null = "sova:theme") => {
+  for (const l of storageListeners) l({ key });
+};
 
 /** The system's light/dark setting, as `matchMedia("(prefers-color-scheme: light)")` reports it. */
 type Change = (e: { matches: boolean }) => void;
@@ -37,8 +44,14 @@ Object.assign(globalThis, {
   },
   localStorage: {
     getItem: (k: string) => store.get(k) ?? null,
-    setItem: (k: string, v: string) => void store.set(k, v),
+    setItem: (k: string, v: string) => {
+      writes++;
+      store.set(k, v);
+    },
     removeItem: (k: string) => void store.delete(k),
+  },
+  addEventListener: (type: string, l: (e: { key: string | null }) => void) => {
+    if (type === "storage") storageListeners.add(l);
   },
   matchMedia: (query: string) => {
     assert.equal(query, "(prefers-color-scheme: light)");
@@ -382,10 +395,10 @@ test("reconcileTheme: a file edited elsewhere re-applies; an unchanged one touch
   reset();
   pickTheme({ id: "dracula", base: "dark", tokens: { bg: "#282a36" } });
   style.delete("--color-bg"); // if the store rewrites, this comes back
-  store.delete(THEME_KEY); // nor is the record rewritten
+  const before = writes; // nor is the record rewritten
   reconcileTheme(list([info({ tokens: { bg: "#282a36" } })]));
   assert.equal(style.has("--color-bg"), false, "unchanged tokens must not be rewritten every poll");
-  assert.equal(store.has(THEME_KEY), false);
+  assert.equal(writes, before);
   reconcileTheme(list([info({ tokens: { bg: "#111111" } })]));
   assert.equal(style.get("--color-bg"), "#111111");
   assert.equal(stored().dark?.id, "dracula");
@@ -399,6 +412,67 @@ test("reconcileTheme: an edit to the hidden pick is cached, not painted", () => 
   assert.equal(style.get("--color-bg"), "#282a36");
   setThemeMode("light");
   assert.equal(style.get("--color-bg"), "#ffffff");
+});
+
+/* ---- Two tabs on one stored record ------------------------------------- */
+
+const LATTE = { id: "catppuccin-latte", base: "light" as const, tokens: { bg: "#eff1f5", surface: "#e6e9ef" } };
+const TOKYO = { id: "tokyo-night", base: "dark" as const, tokens: { bg: "#1a1b26" } };
+
+test("a tab opened earlier saves only its own part: the review's sequence keeps the other tab's dark pick", () => {
+  reset();
+  // This module is tab B, opened before tab A picked: in its memory both lists are on their built-ins.
+  // Tab A picks Dracula; its save is in the shared store, and its storage event hasn't reached B yet.
+  store.set(THEME_KEY, JSON.stringify({ v: 2, mode: "dark", light: null, dark: DRACULA }));
+  pickTheme(LATTE);
+  setThemeMode("auto");
+  assert.deepEqual({ mode: stored().mode, light: stored().light?.id, dark: stored().dark?.id }, { mode: "auto", light: "catppuccin-latte", dark: "dracula" });
+});
+
+test("an open tab follows another tab's save at once: mode and picks, painted with no reload", () => {
+  reset();
+  pickTheme(DRACULA); // this is tab A
+  store.set(THEME_KEY, JSON.stringify({ v: 2, mode: "auto", light: LATTE, dark: DRACULA })); // tab B's save
+  otherTabSaved();
+  assert.equal(themeMode(), "auto");
+  assert.equal(lightThemeId(), "catppuccin-latte");
+  assert.equal(attributes.get("data-theme"), "dark", "the system is dark: Dracula still shows");
+  setSystem(true);
+  assert.equal(style.get("--color-bg"), "#eff1f5", "and the light pick B made shows when the system goes light");
+  assert.equal(meta.content, "#e6e9ef");
+
+  store.set(THEME_KEY, JSON.stringify({ v: 2, mode: "dark", light: LATTE, dark: TOKYO }));
+  otherTabSaved();
+  assert.equal(style.get("--color-bg"), "#1a1b26", "a new dark pick and Dark mode, painted at once");
+
+  store.set(THEME_KEY, JSON.stringify({ v: 2, mode: "light", light: LATTE, dark: TOKYO }));
+  otherTabSaved("sova:text-size");
+  assert.equal(themeMode(), "dark", "another key's event isn't about the theme");
+
+  store.clear(); // the other tab cleared the whole store
+  otherTabSaved(null);
+  assert.equal(themeMode(), "dark");
+  assert.equal(darkThemeId(), "dark");
+  assert.equal(attributes.has("data-theme"), false, "back on the built-in dark, as a reload would be");
+  assert.equal(style.has("--color-bg"), false);
+});
+
+test("reconcileTheme saves only the list it changed, and never over a newer pick another tab saved", () => {
+  reset();
+  pickTheme(DRACULA);
+  pickTheme(NORD_LIGHT);
+  // Tab B changes the stored dark pick; its event hasn't arrived here yet.
+  store.set(THEME_KEY, JSON.stringify({ v: 2, mode: "dark", light: NORD_LIGHT, dark: TOKYO }));
+  reconcileTheme(list([info(), info({ id: "nord-light", base: "light", tokens: { bg: "#ffffff" } })]));
+  assert.equal(stored().dark?.id, "tokyo-night", "the stored dark pick is still B's");
+  assert.equal((stored().light as { tokens?: { bg?: string } } | null)?.tokens?.bg, "#ffffff", "the edited light file is re-cached");
+
+  // Dracula's file goes away here, but the stored dark pick is B's newer one: that one stays.
+  reconcileTheme(list([info({ id: "nord-light", base: "light", tokens: { bg: "#ffffff" } })]));
+  assert.equal(darkThemeId(), "dark", "this tab drops the pick it was wearing");
+  assert.equal(stored().dark?.id, "tokyo-night", "and leaves the newer stored pick alone");
+  otherTabSaved();
+  assert.equal(darkThemeId(), "tokyo-night", "B's event then brings it here");
 });
 
 test("a new pick in a section clears its fallback notice; a pick in the other section doesn't", () => {

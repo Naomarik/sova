@@ -156,6 +156,7 @@ function writeStoredTextSize(size: TextSize): void {
     chrome color goes last, so the bar follows every switch the page does. */
 function paint(): void {
   watchSystem();
+  followOtherTabs();
   const base = shownBase();
   const theme = pickOf(base);
   const tokens = theme?.tokens ?? {};
@@ -267,8 +268,11 @@ function readStoredThemes(): { record: StoredThemes; migrated: boolean } {
   }
 }
 
-function writeStoredThemes(): void {
-  const record: StoredThemes = { v: 2, mode: themeMode(), light: lightPick(), dark: darkPick() };
+/** Every save re-reads the stored record and changes only its own part: another tab open on the same
+    browser shares the record, and a write of this tab's whole memory would erase what that tab chose
+    since (its storage event may not have arrived yet). */
+function saveThemes(change: (record: StoredThemes) => StoredThemes): void {
+  const record = change(readStoredThemes().record);
   try {
     writeKey(localStorage, THEME_KEY, JSON.stringify(record));
   } catch {
@@ -276,15 +280,37 @@ function writeStoredThemes(): void {
   }
 }
 
+const withPick = (record: StoredThemes, slot: ThemeBase, theme: StoredTheme | null): StoredThemes =>
+  slot === "light" ? { ...record, light: theme } : { ...record, dark: theme };
+
 function setPick(slot: ThemeBase, theme: StoredTheme | null): void {
   if (slot === "light") setLightPick(theme);
   else setDarkPick(theme);
 }
 
+/** Another tab's save, followed at once: its mode and picks become this tab's, and the window repaints,
+    with no reload. A cleared store (key null) reads as the starting setup, as a reload would. Installed
+    once, from the first paint on; guarded, because the unit tests' document has no window events. */
+let followingTabs = false;
+function followOtherTabs(): void {
+  if (followingTabs || typeof addEventListener !== "function") return;
+  followingTabs = true;
+  addEventListener("storage", (e: StorageEvent) => {
+    if (e.key !== THEME_KEY && e.key !== null) return;
+    const { record } = readStoredThemes();
+    setThemeModeSignal(record.mode);
+    setLightPick(record.light);
+    setDarkPick(record.dark);
+    const dropped = droppedTheme();
+    if (dropped && pickOf(dropped.slot)) setDroppedTheme(null); // that list has a pick again
+    paint();
+  });
+}
+
 /** Light, Dark or Auto: persists, and repaints whatever that mode shows. Settings → Themes → Appearance. */
 export function setThemeMode(mode: ThemeMode): void {
   setThemeModeSignal(mode);
-  writeStoredThemes();
+  saveThemes((record) => ({ ...record, mode }));
   paint();
 }
 
@@ -296,7 +322,7 @@ export function setThemeMode(mode: ThemeMode): void {
 export function pickTheme(theme: StoredTheme): void {
   setPick(theme.base, theme);
   if (droppedTheme()?.slot === theme.base) setDroppedTheme(null);
-  writeStoredThemes();
+  saveThemes((record) => withPick(record, theme.base, theme));
   if (theme.base === shownBase()) paint();
 }
 
@@ -327,7 +353,7 @@ export function applyStoredTheme(): void {
   setLightPick(record.light);
   setDarkPick(record.dark);
   setDroppedTheme(null);
-  if (migrated) writeStoredThemes();
+  if (migrated) saveThemes((stored) => stored); // read again, as every save does: written back in the v2 shape
   if (systemQuery) setSystemLight(systemQuery.matches);
   paint(); // with no theme too: the font pick and text size still have to be on before first paint
 }
@@ -356,24 +382,26 @@ function sameTokens(a: ThemeTokens, b: ThemeTokens): boolean {
  * theme missing from it is missing for that reason.
  */
 export function reconcileTheme(list: ThemeList): void {
-  let changed = false;
   let repaint = false;
   for (const slot of ["light", "dark"] as const) {
     const pick = pickOf(slot);
     if (!pick) continue;
     const match = list.themes.find((t) => t.id === pick.id);
     if (!match && list.error) continue; // the folder, not the theme, is what's gone
+    let next: StoredTheme | null;
     if (!match || match.error || match.base !== slot) {
-      setPick(slot, null);
+      next = null;
       setDroppedTheme({ id: pick.id, slot });
     } else if (sameTokens(match.tokens, pick.tokens)) {
       continue; // unchanged is the common case, twice a second: don't rewrite 30 properties to say so
     } else {
-      setPick(slot, { id: match.id, base: slot, tokens: match.tokens });
+      next = { id: match.id, base: slot, tokens: match.tokens };
     }
-    changed = true;
+    setPick(slot, next);
+    // This list's pick only, and only while the stored one is still the pick checked here: a newer pick
+    // another tab saved wins, and its storage event brings it here.
+    saveThemes((record) => (record[slot]?.id === pick.id ? withPick(record, slot, next) : record));
     if (slot === shownBase()) repaint = true;
   }
-  if (changed) writeStoredThemes();
   if (repaint) paint();
 }

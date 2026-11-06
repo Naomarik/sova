@@ -15,6 +15,8 @@ import {
   type MergeQueueView,
   type MergeReady,
   type MergeRun,
+  type MergeTrial,
+  MERGE_TRIALS_KEPT,
   NOTE_MAX,
   type PauseInfo,
   type PauseKind,
@@ -51,6 +53,7 @@ import { gitlabAdapter } from "./hosts/gitlab";
 import { suggestLanding } from "./hosts/repo";
 import { changeWords, editSettingsText, isEmptyChange, REVIEW_KIT_DIR, SettingsEditError } from "./settings-edit";
 import { PROJECT_PLAYBOOK } from "./thread";
+import { isSetupChange, SETUP_UNREADABLE, setupChangeOf, trialReleaseChecks, untriedWhy } from "./setup-branch";
 
 /**
  * One merge queue per project: approved branches wait in line and are checked one at a time; a passed run lands
@@ -104,6 +107,8 @@ export interface QueueDeps {
   flagBroken?: (b: import("../../shared/merge-queue").TargetBroken, root: string) => void;
   /** Tell the branch's chat (server/merge-queue/notices.ts). */
   notify?: (kind: MergeNoticeKind, entry: MergeEntry, extra: { run?: MergeRun; root: string; logDir?: string }) => void;
+  /** A trial (merge.try) ended: the chat that started it is told (wire.ts). */
+  trialEnded?: (trial: MergeTrial, run: MergeRun, root: string) => void;
   /** Wake the merge thread; false: none was asked. */
   thread?: WakeThread;
   /** The chat that owns a branch, when the approval named none (Land on the Merge Queue tab); null: no known chat. */
@@ -210,6 +215,12 @@ interface Current {
 }
 
 type Entry = QueueFile["entries"][number];
+
+/** A trial's picks: every optional merge check its definition declares (a landing runs those only when picked). */
+function optionalPicks(def: ProjectDef): CheckPick[] {
+  const checks = def.merge?.checks;
+  return Array.isArray(checks) ? checks.filter((c) => c.optional).map((c) => ({ id: c.id, label: c.label, source: "picked" as const, why: "a trial runs every proposed check" })) : [];
+}
 
 export class ProjectQueue {
   readonly store: QueueStore;
@@ -436,7 +447,7 @@ export class ProjectQueue {
     if (hold) for (const w of v.waiting) if (w.release !== hold.id) delete w.eta;
     const chats = this.deps.chatsOf?.(this.root) ?? {};
     const readyRows = this.attachSummaries(v, ready.filter((r) => !heldBack.has(r.branch)));
-    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(settings ? { settings } : {}) };
+    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(this.q.trials?.length ? { trials: structuredClone(this.q.trials) } : {}), ...(settings ? { settings } : {}) };
   }
 
   /**
@@ -601,7 +612,7 @@ export class ProjectQueue {
 
   /**
    * Save a settings change (push, review on or off, each check's time limit, rerun and optional) as one commit on the
-   * target, after the user's confirm. Never under a branch being checked: while a run (or Try It on Main, or a
+   * target, after the user's confirm. Never under a branch being checked: while a run (or a dry run, or a
    * landing) holds the target it waits (`pendingSave`, kept in queue.json) and is made at the next quiet point.
    */
   saveSettings(changes: MergeSettingsChange): Promise<MergeSettingsSaveResult> {
@@ -999,6 +1010,9 @@ export class ProjectQueue {
       if ((await countBetween(this.git, this.root, head, commit)) === 0) throw new MergeFailure("invalid-request", `nothing to land: ${branch} at ${commit.slice(0, 7)} has no commit ${target} doesn't`);
       const subject = (await this.git(["log", "-1", "--format=%s", commit], this.root)).stdout.trim();
       if (/^temp\b/i.test(subject)) throw new MergeFailure("invalid-request", `${branch}'s head is a TEMP commit ("${subject.slice(0, 60)}"): it isn't finished`);
+      // A setup branch is checked by the target's checks, not its own: it lands only once a trial of this exact commit passed.
+      const untried = await this.setupUntried(head, commit);
+      if (untried) throw new MergeFailure("invalid-request", untried);
       const wt = (await worktreesOf(this.git, this.root)).find((w) => w.branch === branch && w.path !== this.root)?.path;
       if (wt && commit === tip) {
         const st = await this.git(statusArgs("--porcelain"), wt);
@@ -1380,7 +1394,7 @@ export class ProjectQueue {
 
   /**
    * merge.setup: the onboarding answer (one test command, a list of checks "Label: command", or no automated tests).
-   * `dryRun` (Try It on Main) runs those checks on the target alone in the merge copy and answers the run (it goes on in
+   * `dryRun` (a dry run) runs those checks on the target alone in the merge copy and answers the run (it goes on in
    * the background; merge.logs reads it); a failure there is the project's, never a branch's. Without `dryRun` the
    * answer is written into the definition's `merge` section on the target, as one commit the queue moves the target to
    * (the main folder fast-forwarded with it, never forced).
@@ -1434,7 +1448,7 @@ export class ProjectQueue {
         const runId = newId("mr");
         const runDir = this.store.runDir(runId);
         mkdirSync(runDir, { recursive: true });
-        const run: MergeRun = { id: runId, entry: "setup", project: this.id, branch: this.q.target, base: head, commit: head, steps: [], checks: [], verdict: "running", startedAt: this.iso(), why: "Try It on Main" };
+        const run: MergeRun = { id: runId, entry: "setup", project: this.id, branch: this.q.target, base: head, commit: head, steps: [], checks: [], verdict: "running", startedAt: this.iso(), why: "A dry run of the checks on the target" };
         this.store.writeRun(run);
         const ac = new AbortController();
         const stand: MergeEntry = { id: "setup", project: this.id, target: this.q.target, branch: this.q.target, commit: head, approval: { by: "land-button", at: this.iso(), commit: head }, state: "checking", runs: [runId], picks: [], notes: [], createdAt: this.iso(), updatedAt: this.iso() };
@@ -1540,7 +1554,126 @@ export class ProjectQueue {
     });
   }
 
-  /** Tests: the Try It on Main run in flight, if any. */
+  /** Why `commit` can't land without a trial (a setup branch with no passing trial of that exact commit), or null. */
+  async setupUntried(head: string, commit: string): Promise<string | null> {
+    const change = await setupChangeOf(this.git, this.root, head, commit);
+    // Git can't tell whether it changes the setup: it waits, as a setup branch would (fail closed).
+    if (!change) return SETUP_UNREADABLE;
+    return isSetupChange(change) ? untriedWhy(this.q.trials, commit) : null;
+  }
+
+  /** The trials, newest first. */
+  trials(): MergeTrial[] {
+    return structuredClone(this.q.trials ?? []);
+  }
+
+  /**
+   * merge.try: a trial of a setup branch's head (or any commit) in the merge copy. The copy is reset to that commit,
+   * nothing is merged and nothing saved; the checks are that commit's own definition's (its merge checks and the
+   * services they require, then its release checks). It answers at once and runs on in the background (merge.logs
+   * reads its run). Refused while a landing, a run or another trial holds the copy, or while a release holds the queue.
+   */
+  trial(req: { branch?: string; commit?: string; checkout?: string; checks?: string[]; by: MergeTrial["by"] }): Promise<{ trial: MergeTrial; run: MergeRun }> {
+    return this.serial(async () => {
+      if (this.current || this.trying || this.landing) throw new MergeFailure("busy", "a landing or a run is using the merge copy now: try again when it ends");
+      let branch = req.branch?.replace(/^refs\/heads\//, "");
+      if (!branch && !req.commit && req.checkout) {
+        const r = await this.git(["symbolic-ref", "--quiet", "--short", "HEAD"], req.checkout);
+        if (r.code === 0 && r.stdout.trim()) branch = r.stdout.trim();
+      }
+      if (!branch && !req.commit) throw new MergeFailure("invalid-request", "name the branch or the commit to try");
+      const commit = req.commit ? await revParse(this.git, this.root, req.commit) : await revParse(this.git, this.root, `refs/heads/${branch}`);
+      if (!commit) throw new MergeFailure("not-found", req.commit ? `no commit ${req.commit} in ${this.root}` : `no branch ${branch} in ${this.root}`);
+      if (branch && req.commit) {
+        const tip = await revParse(this.git, this.root, `refs/heads/${branch}`);
+        if (tip && commit !== tip && !(await isAncestor(this.git, this.root, commit, tip))) throw new MergeFailure("invalid-request", `${commit.slice(0, 7)} isn't on ${branch}`);
+      }
+      const shown = await this.git(["show", `${commit}:.sova/project.json`], this.root);
+      if (shown.code !== 0) throw new MergeFailure("invalid-request", `${commit.slice(0, 7)} has no .sova/project.json: there is nothing to try`);
+      let def: ProjectDef;
+      try {
+        def = parseDefinition(shown.stdout);
+      } catch (err) {
+        throw new MergeFailure("invalid-request", `.sova/project.json at ${commit.slice(0, 7)} is invalid: ${err instanceof Error ? err.message : err}`);
+      }
+      // No merge checks declared: the trial is the copy and the setup alone, as "no automated tests" is.
+      if (this.deps.checksOf(def) === "unset") def = { ...def, merge: { ...(def.merge ?? {}), checks: "none" } } as ProjectDef;
+      // Release checks are long: a trial runs those new or changed against the target's release section, and the ones
+      // named for it; the rest are reported not run (unchanged).
+      const onTarget = (await this.declared()).def?.release?.checks ?? [];
+      const { run: releaseRun, notRun } = trialReleaseChecks(def.release?.checks ?? [], onTarget, req.checks ?? []);
+      const unknown = (req.checks ?? []).filter((id) => !(def.release?.checks ?? []).some((c) => c.id === id) && !(Array.isArray(def.merge?.checks) && def.merge.checks.some((c) => c.id === id)));
+      if (unknown.length) throw new MergeFailure("invalid-request", `${commit.slice(0, 7)} declares no check ${unknown.map((u) => `"${u}"`).join(", ")}`);
+      const runId = newId("mr");
+      const runDir = this.store.runDir(runId);
+      mkdirSync(runDir, { recursive: true });
+      const label = branch ?? commit.slice(0, 7);
+      const run: MergeRun = { id: runId, entry: "trial", project: this.id, branch: label, base: commit, commit, steps: [], checks: [], verdict: "running", startedAt: this.iso(), why: `Trial of ${label}` };
+      this.store.writeRun(run);
+      const trial: MergeTrial = { run: runId, commit, ...(branch ? { branch } : {}), verdict: "running", by: req.by, startedAt: run.startedAt, ...(notRun.length ? { notRun: notRun.map((c) => ({ id: c.id, label: c.label })) } : {}) };
+      this.q.trials = [trial, ...(this.q.trials ?? []).filter((t) => t.run !== runId)].slice(0, MERGE_TRIALS_KEPT);
+      this.save();
+      const ac = new AbortController();
+      const stand: MergeEntry = { id: "trial", project: this.id, target: this.q.target, branch: label, commit, approval: { by: "land-button", at: this.iso(), commit }, state: "checking", runs: [runId], picks: [], notes: [], createdAt: this.iso(), updatedAt: this.iso() };
+      const input: RunInput = {
+        runId,
+        entry: stand,
+        project: { id: this.id, root: this.root, target: this.q.target, def },
+        base: commit,
+        commit,
+        runDir,
+        // A trial runs every proposed check, the optional ones too.
+        picks: optionalPicks(def),
+        review: false,
+        tryOnly: true,
+        trialOf: label,
+        ...(releaseRun.length ? { releaseChecks: releaseRun } : {}),
+        signal: ac.signal,
+        awaitReview: () => Promise.reject(new Error("no review in a trial")),
+      };
+      const hooks = {
+        step: (st: RunStep) => {
+          const i = run.steps.findIndex((x) => x.id === st.id);
+          if (i >= 0) run.steps[i] = { ...st };
+          else run.steps.push({ ...st });
+          this.store.writeRun(run);
+        },
+        checks: (list: CheckPick[]) => void (run.checks = list),
+        copy: (path: string) => void (run.copy = path),
+      };
+      const done = (async () => {
+        let out: RunOutcome;
+        try {
+          out = await this.deps.runMerge(input, hooks);
+        } catch (err) {
+          out = { verdict: "machine", why: err instanceof Error ? err.message : String(err), notes: [], checks: [] };
+        }
+        run.verdict = out.verdict === "passed" ? "passed" : out.verdict === "void" ? "void" : out.verdict === "machine" ? "machine" : "failed";
+        run.why = out.verdict === "passed" ? `the proposed checks pass on ${label} at ${commit.slice(0, 7)}` : (out.why ?? "a check failed");
+        run.endedAt = this.iso();
+        if (out.noChecks) run.noChecks = true;
+        this.store.writeRun(run);
+        await this.serial(async () => {
+          const t = (this.q.trials ?? []).find((x) => x.run === runId);
+          if (t) {
+            t.verdict = run.verdict === "passed" ? "passed" : run.verdict === "void" ? "void" : run.verdict === "machine" ? "machine" : "failed";
+            t.why = run.why;
+            t.endedAt = run.endedAt;
+            this.save();
+            if (t.verdict !== "void") this.deps.trialEnded?.(structuredClone(t), structuredClone(run), this.root);
+          }
+          this.trying = null;
+          this.schedulePublish();
+          this.kickSoon();
+        });
+      })();
+      this.trying = { run, ac, done };
+      this.schedulePublish();
+      return { trial: structuredClone(trial), run: structuredClone(run) };
+    });
+  }
+
+  /** Tests: the dry run in flight, if any. */
   tryingNow(): Promise<void> | null {
     return this.trying?.done ?? null;
   }

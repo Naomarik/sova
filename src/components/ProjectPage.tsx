@@ -30,6 +30,7 @@ import { ProjectIconCard } from "./ProjectIconCard";
 import { createProjectSettings, ProjectAllSettings, ProjectSettingsChanges, ProjectSettingsHistory } from "./ProjectSettingsCards";
 import { ActivityCard, CodingSessionsCard, createProjectOverseer, IdeasCard, type ItemSendForm, OverseerSettings, OverseerSummary, type ProjectOverseer, TodosCard } from "./ProjectOverseerPanel";
 import { Banner, Icon } from "./ui";
+import { createSetupPoll, SetupProposalBanner } from "./SetupChat";
 import "../orgs.css";
 import "../projects.css";
 
@@ -110,6 +111,8 @@ export function ProjectPage(props: {
   const runtime = createRuntimePoll(projectId);
   // The project's releases, read once for the page: the Releases tab, its Overview card and the Deploy card's "Runs vX".
   const releases = createReleasesPoll(projectId, () => project().root);
+  // The project's Setup chat, read once for every surface that offers it (Merge Queue, Releases, Deploy).
+  const setup = createSetupPoll(projectId);
   const ideaList = () => (po.ideas.data() ? openIdeas(po.ideas.data()!.ideas) : undefined);
   const archived = () => project().archived ?? null;
   const org = props.org?.({
@@ -253,6 +256,8 @@ export function ProjectPage(props: {
       <ArchiveConfirm from="head" />
       {/* A verb playbook run waits on Merge Branch (§app.project-runtime/review), on every tab. */}
       <PlaybookReviewBanner projectId={projectId} runtime={runtime.data()} onDone={(view) => (view ? runtime.set(view) : runtime.refetch())} />
+      {/* The Setup chat's proposal: read from the Setup read (it is not a verb playbook run). */}
+      <SetupProposalBanner projectId={projectId} poll={setup} />
       <Show when={archived()}>
         {(a) => (
           <div class="project-archive-confirm">
@@ -317,7 +322,7 @@ export function ProjectPage(props: {
                 {/* Its numbered releases: the latest and what landed since, or the one in progress. */}
                 <ReleasesCard projectId={projectId} poll={releases} />
                 {/* Its deploy targets on this host: the deploy panel, which reads deploy.status itself. */}
-                <ProjectDeployPanel projectId={projectId} root={project().root} archived={!!archived()} releases={() => releases.data()?.history} />
+                <ProjectDeployPanel projectId={projectId} root={project().root} archived={!!archived()} releases={() => releases.data()?.history} setup={setup} />
                 {/* Files people sent it (§app.organizations/files-card): while placed, or once it holds one. */}
                 <ProjectFilesCard projectId={projectId} placed={!!org} tick={costTick} />
                 <Show when={org}>
@@ -356,6 +361,7 @@ export function ProjectPage(props: {
               root={project().root}
               name={project().name}
               run={props.run}
+              setup={setup}
               // The queue records a chat by its id (an older record by its path); a worker is named as its chat's.
               chatOf={(id) => chatRefOf(id, props.sessions?.())}
               // A Ready row's chip: its chat's own readiness reading of the branch.
@@ -364,7 +370,7 @@ export function ProjectPage(props: {
           </Match>
           <Match when={tab() === "releases"}>
             {/* The release in progress, then every numbered release. */}
-            <ReleasesTab projectId={projectId} root={project().root} name={project().name} archived={!!archived()} poll={releases} runtime={runtime} />
+            <ReleasesTab projectId={projectId} root={project().root} name={project().name} archived={!!archived()} poll={releases} setup={setup} />
           </Match>
           <Match when={tab() === "cost"}>
             <ProjectCostCard projectId={projectId} poll={cost} />

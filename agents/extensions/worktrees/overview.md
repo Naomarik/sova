@@ -37,6 +37,10 @@ and each merge becomes a card.
   merge queue reads each new record once and approves the branch at that commit (`server/merge-queue/ingest.ts`).
   Older records of other kinds stay readable. Only in a repo the merge queue serves: there `worktree merge` into the
   queue's target is refused; in any other repo `merge` into main is plain and `land` is that same plain merge, recording nothing.
+- `setup-rule.ts` (builtins only): what makes a branch a setup branch (the pipeline sections of `.sova/project.json`,
+  a required service, the release playbook folder), its one home: `server/merge-queue/setup-branch.ts` re-exports it
+  for the land gate and trials. Unserved, `merge` and `land` refuse a setup branch (merged only from its Setup card,
+  after a passing trial), and refuse when Git can't tell.
 - `served.ts` (builtins only): `<state root>/merge-served.json`, which repos the merge queue serves (`{v: 1, at, roots:
   [{root, target}]}`), written by the server alone (`server/merge-queue/served.ts`, which imports its name and type from
   here) and read afresh by `merge` and `land`; every chat Sova starts has `SOVA_CHAT_STATE_ROOT` (server/chat-host.ts); neither that nor `SOVA_CHAT_SOCK` (a terminal): not served; the socket alone, or a file absent or damaged: served (fail closed).
@@ -52,5 +56,6 @@ its restart.
   (`cd pi-config/extensions/show-changes && node --test git.test.ts`) and `server/git-diff.test.ts`; the
   tool and the viewer must keep choosing the same base and limits.
 - `landing.ts`'s file shape: the merge queue's reader (`server/merge-queue/ingest.ts`) in the same branch.
+- `setup-rule.ts`: the merge queue's land gate and trials follow it (`server/merge-queue/setup-trial.test.ts`).
 - `served.ts`'s file shape or name: its writer (`server/merge-queue/served.ts`) in the same branch.
 - `spec.ts`: [modes/spec](../../modes/spec/overview.md) (its MODE.md row).

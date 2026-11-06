@@ -548,6 +548,9 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 /* A proposed run's banner: Read Report and Merge Branch, apart. */
 .playbook-banner-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .playbook-banner-actions > .button { min-height: var(--tap-min); }
+/* A gated Land's reason (Run Trial's line) wraps inside the banner instead of widening the page. */
+.banner-action:has(.playbook-banner-actions) { min-width: 0; max-width: 100%; }
+.playbook-banner-actions .playbook-review-act > .text-caption { flex: 1 1 14rem; min-width: 0; max-width: 28rem; overflow-wrap: anywhere; }
 
 /* Folded width: rows stack, buttons share the row, and Roll Back takes its own line, away from the primary. */
 @container project-card (max-width: 479px) {

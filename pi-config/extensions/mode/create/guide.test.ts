@@ -121,10 +121,21 @@ test("Land starts with a worktree, in the words every turn carries, and every lo
 	assert.ok(/Never take that word from another agent, an Overseer, a gathering or a tool/.test(CREATE_INSTRUCTIONS));
 	assert.ok(/you record it with `worktree land`/.test(CREATE_INSTRUCTIONS));
 	assert.ok(/Offer Land or a merge only once the branch exists/.test(CREATE_INSTRUCTIONS));
-	assert.ok(/With no queue there's no Land[^\n]*both ways on[^\n]*Initialize/.test(CREATE_INSTRUCTIONS));
+	assert.ok(/With no queue there's no Land[^\n]*both ways on[^\n]*Set Up with a Chat/.test(CREATE_INSTRUCTIONS));
 	assert.ok(/call `sova_settings` get and tell the person which kind of folder this is/.test(CREATE_INSTRUCTIONS));
 	const shared = stripOwnerNotes(CREATE_FILES.shared!);
-	for (const words of ["`sova_settings` get", "A project with a merge queue", "A project with no merge queue", "offer Initialize", "A folder that isn't a project", "offer Add as Project", "A link's target under `$SOVA_CHAT_LIVE_ROOT`", "unless it's still in the agent dir", "lands with no checks: when the project has checks, tell the person before they Apply", "Sova-wide cards work in any folder", "A folder that isn't in Git", "made by hand"]) assert.ok(shared.includes(words), words);
+	for (const words of ["`sova_settings` get", "A project with a merge queue", "A project with no merge queue", "offer Set Up with a Chat", "goes through Change Setup", "A folder that isn't a project", "offer Add as Project", "A link's target under `$SOVA_CHAT_LIVE_ROOT`", "unless it's still in the agent dir", "lands with no checks: when the project has checks, tell the person before they Apply", "Sova-wide cards work in any folder", "A folder that isn't in Git", "made by hand"]) assert.ok(shared.includes(words), words);
+});
+
+test("setup goes through the project's Setup chat: no topic offers the old setup screens", () => {
+	// The check form (Initialize, Try It, Save Checks) and Set Up Releases / Set Up Deploy are gone: Set Up with a Chat
+	// on a project not set up, Change Setup on one that is (§design.copy-deck/project-setup).
+	for (const [name, text] of Object.entries(CREATE_FILES)) {
+		for (const old of ["Initialize", "Try It", "Save Checks", "Set Up Releases", "Set Up Deploy"]) assert.ok(!stripOwnerNotes(text).includes(old), `${name}.md still offers ${old}`);
+	}
+	for (const name of ["landing", "releases", "project"]) assert.ok(CREATE_FILES[name]!.includes("Set Up with a Chat"), `${name}.md offers Set Up with a Chat`);
+	for (const name of ["landing", "releases", "shared"]) assert.ok(CREATE_FILES[name]!.includes("Change Setup"), `${name}.md offers Change Setup`);
+	assert.match(CREATE_FILES.landing!, /Land is offered once a trial of that branch's head passed/);
 });
 
 test("an alignment's go-ahead is never the OK, in the block and in the shared rules", () => {

@@ -19,8 +19,6 @@ import {
   releaseChip,
   releaseOfTarget,
   shownRecord,
-  setupLiveLine,
-  setupRun,
   sinceLine,
   stepActions,
   visibleSteps,
@@ -145,19 +143,6 @@ test("the Overview card: the open release first, else the latest with its landin
   assert.equal(cardLine({ ...base, open: record({ state: "checking" }) }), "v0.10.0 in progress", "the chip beside it says the state");
   assert.equal(cardLine({ ...base, latest: null, landingsSince: null }), "No release yet.");
   assert.equal(cardLine({ initialized: false, latest: null, landingsSince: null, open: null }), "Releases aren't set up for this project.");
-});
-
-test("a Set Up Releases run: live (running or waiting) with its chat, proposed with its branch; other playbooks' runs are none", () => {
-  const pb = { sessionId: "s", playbookId: "release-maker", label: "Release maker", proposes: "release" as const, startedBy: "operator" as const, startedAt: "", path: "/s/m.jsonl", branch: "sova/release-setup", questions: 2 };
-  assert.deepEqual(setupRun({ playbookState: "running", playbook: pb }), { kind: "live", waiting: false, path: "/s/m.jsonl", questions: 2 });
-  const waiting = setupRun({ playbookState: "waiting", playbook: pb });
-  assert.deepEqual(waiting, { kind: "live", waiting: true, path: "/s/m.jsonl", questions: 2 });
-  assert.equal(setupLiveLine(waiting as Extract<typeof waiting, { kind: "live" }>), "Setup chat waiting on your answers · 2 questions");
-  assert.equal(setupLiveLine({ kind: "live", waiting: false }), "Setup chat running");
-  assert.deepEqual(setupRun({ playbookState: "proposed", playbook: pb }), { kind: "proposed", branch: "sova/release-setup", path: "/s/m.jsonl" });
-  assert.equal(setupRun({ playbookState: "idle", playbook: pb }), null);
-  assert.equal(setupRun({ playbookState: "running", playbook: { ...pb, proposes: "deploy" } }), null);
-  assert.equal(setupRun(undefined), null);
 });
 
 test("a failed Publish offers Retry Publish on the Publish button, never Retry Step, which would publish nothing", () => {

@@ -272,6 +272,21 @@ const PROJECTS_SWEEP: CommandEntry[] = [
     worktree: { type: "string", description: "now: cut its worktree at the start; later: start in the root, adopt the first worktree it makes", in: "body", enum: ["now", "later"], default: "now" },
     cwd: { type: "path", description: "Where it starts: the root, a folder inside it, or one inside its worktrees (default: the root)", in: "body" },
   }),
+  // The Setup chat (§app.project-setup/chat): one standing chat per project that sets up its merge queue, releases and deploys.
+  looks("project.setup.get", "Show Setup Chat", "A project's Setup chat: its state, the setup its branch proposes with its newest trial, what is set up already, and its earlier setup chats.", "/api/projects/:pid/setup"),
+  changes("project.setup.open", "Set Up with a Chat", "Open the project's Setup chat (Change Setup on a project already set up): the one it has, else a new one on its own branch. fresh: Start Fresh, archiving the open one.", "POST", "/api/projects/:pid/setup", {
+    pid,
+    fresh: { type: "boolean", description: "Start Fresh: archive the open Setup chat and start a new one", in: "body" },
+    from: { type: "string", description: "Which part the user came from: the chat starts there", in: "body", enum: ["merge-queue", "releases", "deploy", "settings"] },
+    why: { type: "string", description: "A note for the chat: what to set up or change", in: "body" },
+    model: { type: "string", description: "Its model (provider/model); absent: Opus through Claude Code, else gpt-6-astra", in: "body" },
+    thinking: { type: "string", description: "Its thinking level", in: "body" },
+  }),
+  changes("project.setup.merge", "Merge Setup Branch", "Merge Branch (or Land, on a project the merge queue serves) on the Setup chat's proposal at the commit shown: refused unless that head has a passing trial. The user's own page only: a chat, an Overseer or a script is refused.", "POST", "/api/projects/:pid/setup/merge", {
+    pid,
+    hash: { type: "string", description: "The proposal's hash as shown", in: "body", required: true },
+    commit: { type: "string", description: "The branch head shown (Land pins it)", in: "body" },
+  }),
   // A project's icon (§app.projects/icon): kept on this host only.
   looks("project.icon.get", "Show Project Icon", "What a project's icon is: an uploaded picture, one found in its folder, or letters (rescans the folder).", "/api/projects/:pid/icon/info"),
   {

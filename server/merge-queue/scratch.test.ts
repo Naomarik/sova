@@ -224,6 +224,22 @@ describe("scratch copies: the queue", () => {
     }
   });
 
+  test("a queue copy that changes the project's setup: Land says it is a queue copy, never to run a trial; a user's branch with the same change gets the trial gate", async () => {
+    let made = new Set<string>();
+    const k = makeKit({ deps: { queueMade: async (p) => made.has(p) } });
+    try {
+      const q = await k.q();
+      const setup = { ".sova/project.json": `${JSON.stringify({ version: 1, merge: { checks: "none" } })}\n` };
+      const old = k.repo.branch("feat/resolve-mq_old3", setup);
+      k.repo.branch("feat/setup-mine", setup);
+      made = new Set([old.path]);
+      await assert.rejects(q.add({ branch: "feat/resolve-mq_old3", by: "land-button" }), /feat\/resolve-mq_old3 is a scratch copy the merge queue made/);
+      await assert.rejects(q.add({ branch: "feat/setup-mine", by: "land-button" }), (e: unknown) => e instanceof MergeFailure && !/scratch copy/.test(e.message) && /trial/i.test(e.message), "the control: the gate still holds a user's setup branch");
+    } finally {
+      await k.done();
+    }
+  });
+
   test("the start's sweep: an open entry keeps its copy and ref; a final one's and one gone from the queue file go", async () => {
     const k = makeKit({ threadAnswers: true });
     try {

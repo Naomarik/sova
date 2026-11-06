@@ -1084,11 +1084,12 @@ export class ProjectQueue {
       if ((await countBetween(this.git, this.root, head, commit)) === 0) throw new MergeFailure("invalid-request", `nothing to land: ${branch} at ${commit.slice(0, 7)} has no commit ${target} doesn't`);
       const subject = (await this.git(["log", "-1", "--format=%s", commit], this.root)).stdout.trim();
       if (/^temp\b/i.test(subject)) throw new MergeFailure("invalid-request", `${branch}'s head is a TEMP commit ("${subject.slice(0, 60)}"): it isn't finished`);
+      const wt = (await worktreesOf(this.git, this.root)).find((w) => w.branch === branch && w.path !== this.root)?.path;
+      // Before the trial gate: a queue copy is never landed, so "run a trial" would be the wrong thing to tell anyone.
+      if (wt && (await this.queueOwned(wt))) throw new MergeFailure("invalid-request", scratchRefusal(branch));
       // A setup branch is checked by the target's checks, not its own: it lands only once a trial of this exact commit passed.
       const untried = await this.setupUntried(head, commit);
       if (untried) throw new MergeFailure("invalid-request", untried);
-      const wt = (await worktreesOf(this.git, this.root)).find((w) => w.branch === branch && w.path !== this.root)?.path;
-      if (wt && (await this.queueOwned(wt))) throw new MergeFailure("invalid-request", scratchRefusal(branch));
       if (wt && commit === tip) {
         const st = await this.git(statusArgs("--porcelain"), wt);
         const n = st.stdout.split("\n").filter(Boolean).length;

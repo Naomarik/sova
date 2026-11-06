@@ -315,7 +315,7 @@ old: say so instead of half working.
 - **Send from your backend, with its key.** Your page runs on Sova's address with the user's login, and
   Sova doesn't tell it apart from the user. A `session.send` from a page under `/ext/<id>/` gets your
   badge when its `Referer` says so. That guards against accidents and nothing more: a page can leave it
-  out, and a socket has none. Installing an extension stays a trust decision: none of this stops a
+  out, and a socket has none. A page's `POST /api/chat/frames` and its chat socket aren't badged at all. Installing an extension stays a trust decision: none of this stops a
   hostile one, and any program on this computer can read Sova's token.
 
 **Hearing about cards.** On `/ws/events`, `card.raised`, `card.changed` and `card.answered` carry

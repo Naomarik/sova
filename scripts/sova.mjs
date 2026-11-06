@@ -284,8 +284,6 @@ export const SERVED_TIMEOUT_MS = 500;
 /** Whether `json` is GET /api/commands's answer, whole enough to print from. */
 export function isServedList(json) {
   if (!json || typeof json !== "object" || json.version !== 1 || !Array.isArray(json.commands) || !json.commands.length) return false;
-  // A server from before ext-contract-v1.19 sends no number; one it sends is a number (§app.served-commands/route).
-  if (json.server?.extensionContract !== undefined && typeof json.server.extensionContract !== "number") return false;
   return json.commands.every(
     (e) => e && typeof e === "object" && typeof e.id === "string" && typeof e.label === "string" && typeof e.effect === "string" && e.params && typeof e.params === "object" && e.route && typeof e.route.path === "string",
   );

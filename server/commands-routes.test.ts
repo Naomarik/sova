@@ -156,8 +156,7 @@ describe("sova watch's lines from the stream", () => {
 
   test("list trusts only an answer shaped as the served list", () => {
     assert.equal(isServedList({ version: 1, commands: JSON.parse(JSON.stringify(COMMANDS)) }), true);
-    assert.equal(isServedList({ version: 1, server: { extensionContract: 19 }, commands: JSON.parse(JSON.stringify(COMMANDS)) }), true);
-    assert.equal(isServedList({ version: 1, server: { extensionContract: "19" }, commands: JSON.parse(JSON.stringify(COMMANDS)) }), false, "a number or nothing");
+    assert.equal(isServedList({ version: 1, server: { extensionContract: 19 }, commands: JSON.parse(JSON.stringify(COMMANDS)) }), true, "the number is the server's to say; the list doesn't read it");
     for (const bad of [null, [], { version: 2, commands: COMMANDS }, { version: 1, commands: [] }, { version: 1, commands: [{ id: "x" }] }, { error: "Not found" }])
       assert.equal(isServedList(bad), false, JSON.stringify(bad));
   });

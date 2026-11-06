@@ -135,7 +135,8 @@ for (const type of ["prompt", "steer"] as const)
     ws.close();
     assert.deepEqual(userTexts(path), []);
     const draft = await call("GET", `/api/sessions/draft?path=${encodeURIComponent(path)}`, asToken());
-    assert.equal(JSON.stringify(draft.body).includes("land it"), false, "nothing went back as a draft");
+    assert.equal(draft.status, 200);
+    assert.equal(draft.body.text, null, "nothing went back as a draft");
   });
 
 test("the frames route: a key's prompt is a 403; the same frame from the token runs", async () => {
@@ -146,6 +147,13 @@ test("the frames route: a key's prompt is a 403; the same frame from the token r
   assert.equal(refused.status, 403);
   assert.deepEqual(userTexts(path), []);
   assert.equal((await call("POST", url, { ...asKey(), "x-sova-caller": "pretend" }, { frames })).status, 403, "a caller's mark beside the key changes nothing");
+  // A stale writing number puts a page's frames back as the draft: a key's are refused first, so it plants nothing.
+  const stale = { "X-Sova-Composer": "0" };
+  assert.equal((await call("POST", url, { ...asKey(), ...stale }, { frames })).status, 403);
+  assert.equal((await call("GET", `/api/sessions/draft?path=${encodeURIComponent(path)}`, asToken())).body.text, null, "nothing planted");
+  const page = await newChat();
+  await call("POST", `/api/chat/frames?path=${encodeURIComponent(page)}`, { ...asToken(), ...stale }, { frames });
+  assert.equal((await call("GET", `/api/sessions/draft?path=${encodeURIComponent(page)}`, asToken())).body.text, "land it", "the same call with the token does: the check can tell them apart");
   assert.equal((await call("POST", url, asToken(), { frames })).status, 202);
   await until("the token's frame", () => userTexts(path)[0]);
 });

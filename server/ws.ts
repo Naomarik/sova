@@ -7,7 +7,7 @@ import { cappedWebSocketServer, streamWebSocketServer } from "./runtime-quirks";
 import type { ChatClientMessage, ChatServerMessage, LlmFeedMessage, SessionFeedMessage, V2EventFrame, WatchServerMessage } from "../shared/protocol";
 import { refuseUpgrade } from "./auth";
 import { type NotPage, notPageSocket, yourClickBody } from "./page-only";
-import { chatClosedToKeys, extensionFrameRefusal } from "./extension-doors";
+import { chatClosedToKeys, EXTENSION_CHAT_DOOR, extensionFrameRefusal } from "./extension-doors";
 import { sandboxAfterRewind, sandboxCommand, sandboxLowers } from "./sandbox-state";
 import { isDirectLocal } from "./compression";
 import { acquireChatHandle, ArchivedError, BusyError, ConfigError, type ChatClient } from "./chat-handle";
@@ -101,7 +101,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
           (closed) => {
             if (!closed) return passOn(open, msg);
             const clientId = (msg as { clientId?: unknown }).clientId;
-            client.send({ type: "error", code: "refused", message: "An extension takes no action in that chat. Nothing changed.", ...(typeof clientId === "string" && clientId ? { clientId } : {}) });
+            client.send({ type: "error", code: "refused", message: EXTENSION_CHAT_DOOR, ...(typeof clientId === "string" && clientId ? { clientId } : {}) });
           },
           (err) => client.send({ type: "error", code: "internal", message: err instanceof Error ? err.message : String(err) }),
         )

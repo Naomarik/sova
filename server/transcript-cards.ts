@@ -33,7 +33,7 @@ import { VIS_OWN_KINDS_HOOK } from "../pi-config/extensions/mode/minor.ts";
 import { DRAWING_VIEW_FILE, DRAWINGS_DIR, GUIDE_FILE, GUIDE_MAX_BYTES, KIND_FILE, KIND_FILE_MAX_BYTES, ownKindLine, parseKindFile, PROJECT_DRAWINGS_MAX, PROJECT_OWNER, type DrawingDecl } from "../shared/drawing-kinds";
 import { typeOwnerWord } from "../shared/transcript-cards";
 import { queueChatRole } from "../shared/merge-queue";
-import { closedDoor } from "./extension-doors";
+import { closedDoor, EXTENSION_CARD_DOORS } from "./extension-doors";
 import { cardSenderHeaders } from "./extension-sender";
 import { checkoutRootOf } from "../pi-config/extensions/mode/project-discovery.ts";
 import { sessionsChanged } from "./list-generation";
@@ -533,19 +533,27 @@ function cardNews(name: CardNews["name"], id: string, path: string, card: CardIn
   }
 }
 
+/** The one rule for cards during an open alignment question: held, whoever asks, but for an update to a card that
+    takes no answer, which asks nothing of the user. To hold those too, drop the second half. */
+const alignmentHoldsCards = (s: SessionSummary, input: RaiseInput): boolean => {
+  if ((s.align?.openQuestions ?? 0) === 0) return false;
+  const updating = input.card !== undefined ? readRecord(input.sessionId ?? s.id)?.cards.find((c) => c.id === input.card) : undefined;
+  return updating?.answerMode !== "none";
+};
+
 /** Raise a card, give an open one a new revision of its data, or mark it done: every rule checked, the card recorded and returned. */
 export async function raiseCard(input: RaiseInput): Promise<CardInfo> {
   const s = await summaryOf(input.path);
   const sessionId = input.sessionId ?? s.id;
   if (s.archived) throw new CardRefusal(`${NOTHING} this session is archived.`);
   if (s.workerSession || s.overseer || s.projectOverseer || s.baton) throw new CardRefusal(`${NOTHING} cards show only in ordinary chats.`);
-  if ((s.align?.openQuestions ?? 0) > 0) throw new CardRefusal(`${NOTHING} an alignment question is open.`);
+  if (alignmentHoldsCards(s, input)) throw new CardRefusal(`${NOTHING} an alignment question is open.`);
   if (input.card !== undefined) return reviseCard(input, sessionId);
   if (typeof input.type !== "string" || !input.type) throw new CardRefusal(`${NOTHING} type names one of the session's card types.`, 400);
   const snapshot = await cardSnapshotFor(sessionId, input.path, s.cwd);
   const decl = snapshot?.types.find((t) => t.type === input.type);
   if (!decl) throw new CardRefusal(`${NOTHING} "${input.type}" is not a card type this session may raise.`, 400);
-  if (input.by.kind === "extension" && decl.ext?.id !== input.by.title) throw new CardRefusal(`${NOTHING} an extension raises only its own card types.`, 403);
+  if (input.by.kind === "extension" && decl.ext?.id !== input.by.title) throw new CardRefusal(`${NOTHING} ${EXTENSION_CARD_DOORS.raiseOthers}`, 403);
   if (decl.ext && queueChatRole(s.profile)) throw new CardRefusal(`${NOTHING} the merge queue's own chats take no extension's cards.`);
   if (input.by.kind === "agent" && !decl.when) throw new CardRefusal(`${NOTHING} "${input.type}" is raised only from outside the chat.`, 400);
   let key: string | undefined;
@@ -598,7 +606,7 @@ function reviseCard(input: RaiseInput, sessionId: string): CardInfo {
   if (!rec || !card) throw new CardRefusal(`${NOTHING} the session has no card ${input.card}.`, 404);
   if (card.state === "superseded" || card.state === "done") throw new CardRefusal(`${NOTHING} ${card.id} is ${card.state === "done" ? "done" : "replaced by a newer revision"}.`);
   if (input.type !== undefined && input.type !== card.type) throw new CardRefusal(`${NOTHING} ${card.id} is a ${card.type} card.`, 400);
-  if (input.by.kind === "extension" && ownerOfType(rec, card.type)?.owner !== extensionOwner(input.by.title)) throw new CardRefusal(`${NOTHING} an extension changes only its own cards.`, 403);
+  if (input.by.kind === "extension" && ownerOfType(rec, card.type)?.owner !== extensionOwner(input.by.title)) throw new CardRefusal(`${NOTHING} ${EXTENSION_CARD_DOORS.changeOthers}`, 403);
   if (input.data !== undefined) {
     const decl = rec.snapshot?.types.find((t) => t.type === card.type);
     if (!decl && card.draws === "view") throw new CardRefusal(`${NOTHING} ${card.type} is no longer one of the session's card types.`, 409);
@@ -643,8 +651,8 @@ export async function answerCard(input: AnswerInput): Promise<CardInfo> {
   const button = card.draws === "buttons" && "button" in a.value && input.via === "at-once" ? (card.data as ButtonsCard).buttons[a.value.button] : undefined;
   const does = button?.does;
   if (input.extensionKey !== undefined) {
-    if (ownerOfType(rec, card.type)?.owner !== extensionOwner(input.extensionKey)) throw new CardRefusal("An extension answers only its own cards. Nothing was answered.", 403);
-    if (does && does.kind !== "answer") throw new CardRefusal("Only the user presses a button that acts. Nothing was answered.", 403);
+    if (ownerOfType(rec, card.type)?.owner !== extensionOwner(input.extensionKey)) throw new CardRefusal(EXTENSION_CARD_DOORS.answerOthers, 403);
+    if (does && does.kind !== "answer") throw new CardRefusal(EXTENSION_CARD_DOORS.pressActing, 403);
   }
   if (does && does.kind !== "answer") {
     const acts = does.kind === "send" || findCommand(does.command)?.effect !== "looks";

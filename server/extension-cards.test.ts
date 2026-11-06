@@ -143,6 +143,22 @@ describe("cards that update (§chat.transcript-cards/updating-cards)", () => {
   });
 });
 
+describe("an open alignment question", () => {
+  test("holds a raise and an answerable card's update, and lets a card that takes no answer update", async () => {
+    const s = fresh();
+    const c = await cards.raiseCard({ path: s.path, type: "alpha.build", data: status("running"), by: key("alpha") });
+    summaries.set(s.path, { align: { openDocs: 1, openQuestions: 1, questionDocs: 1 } } as Partial<SessionSummary>);
+    await assert.rejects(cards.raiseCard({ path: s.path, type: "alpha.build", data: status("x"), by: key("alpha") }), /an alignment question is open/);
+    assert.equal(((await cards.raiseCard({ path: s.path, card: c.id, data: status("passed"), by: key("alpha"), type: undefined })).data as { line: string }).line, "passed");
+    assert.equal((await cards.raiseCard({ path: s.path, card: c.id, done: true, by: key("alpha"), type: undefined })).state, "done");
+    summaries.delete(s.path);
+    const asks = await cards.raiseCard({ path: s.path, type: "alpha.ask", data: question, by: key("alpha") });
+    summaries.set(s.path, { align: { openDocs: 1, openQuestions: 1, questionDocs: 1 } } as Partial<SessionSummary>);
+    await assert.rejects(cards.raiseCard({ path: s.path, card: asks.id, data: question, by: key("alpha"), type: undefined }), /an alignment question is open/);
+    summaries.delete(s.path);
+  });
+});
+
 describe("queue chats (§chat.transcript-cards/queue-chats)", () => {
   const reviewer = { profile: { id: "merge-reviewer", source: "sova" } } as Partial<SessionSummary>;
   test("offered no extension's type, can't raise one; an ordinary chat is offered them", async () => {

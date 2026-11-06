@@ -11,14 +11,13 @@ import { cappedWebSocket, cappedWebSocketServer, connectionRefused, errorCode } 
 import type { ExtensionInfo, ExtensionOffers } from "../shared/protocol";
 import { declaredCommands, offersOf } from "../shared/extension-offers";
 import { extCommandsFrom, extOverseerKeys, type ExtCommandEntry } from "../shared/commands-ext";
+import { EXTENSION_CONTRACT } from "../shared/extension-contract";
 import { stateRoot } from "./state-root";
 import { contractTooNew, parseContract } from "../shared/extension-loader";
 import { approvalOf, codeReadingOf, entryHash, trustDecided } from "./extension-gate";
 import { viewOffersOf } from "./extension-views";
 import { isExtensionKey, sovaToken } from "./auth";
 
-/** The extension rules this Sova has: `ext-contract-v1.<this>`. */
-export const EXTENSION_CONTRACT = 20;
 export const contractWords = (): string => `1.${EXTENSION_CONTRACT}`;
 
 // The generic extension host (ext-contract-v1.20: the folder, the list Sova writes and the program it runs,

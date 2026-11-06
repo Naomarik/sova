@@ -8,7 +8,8 @@ import { offersOf } from "../shared/extension-offers";
 import { contractTooNew, parseContract, type ExtensionAsks } from "../shared/extension-loader";
 import { EXTENSION_DESCRIPTION } from "./extension-fingerprint";
 import { viewOffersOf } from "./extension-views";
-import { contractWords, EXTENSION_CONTRACT, EXTENSION_ID_RE, listedExtensions, plainTitle, TITLE_MAX } from "./extensions";
+import { EXTENSION_CONTRACT } from "../shared/extension-contract";
+import { contractWords, EXTENSION_ID_RE, listedExtensions, plainTitle, TITLE_MAX } from "./extensions";
 
 const KEYS = new Set(["version", "id", "title", "description", "icon", "needsContract", "page", "backend", "commands", "screens", "cards", "drawings"]);
 const BACKEND_KEYS = new Set(["run", "folder"]);

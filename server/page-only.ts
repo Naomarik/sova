@@ -34,10 +34,11 @@ function notPageOf(r: Shown): NotPage | null {
   if (isSenderSecret(r.header(OVERSEER_SENDER_HEADER))) return "overseer";
   // Only the peer listener says so: the relay's header is one any caller of the main listener can send.
   if (r.peer) return "local";
-  if (r.header(CALLER_HEADER) !== undefined) return "chat";
   const token = r.header(TOKEN_HEADER);
   const bearer = /^Bearer\s+(.+)$/i.exec(r.header("authorization") ?? "")?.[1];
+  // Asked before a chat's mark: anyone can send that header, and a key beside it is still the key (§app.extensions/not-you).
   if (extensionCaller(token) !== null || (bearer !== undefined && isExtensionKey(bearer.trim()))) return "extension";
+  if (r.header(CALLER_HEADER) !== undefined) return "chat";
   if (token !== undefined) return "script";
   return (serverAuthEnabled() ? presentsPageCookie(r.header("cookie")) : r.socket) ? null : "script";
 }

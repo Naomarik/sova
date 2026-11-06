@@ -55,7 +55,7 @@ import { setLinkOrigin } from "./link-delivery";
 import { feedFrameKey, feedFrames, setOverseerDispatch, startOverseerLoop } from "./overseer";
 import { watchFeedInputs } from "./session-feed-watch";
 import { setOffersDispatch } from "./session-offers";
-import { setCardsDispatch } from "./transcript-cards";
+import { onCardNews, setCardsDispatch } from "./transcript-cards";
 import { setSovaPort } from "./extensions";
 import { startExtensionKeys } from "./extension-keys";
 import { startExtensionLoader } from "./extension-loader";
@@ -264,6 +264,7 @@ onSummaryLineChanged(() => autoTitleSweep.nudge());
 const events = startEvents({
   onChatEvent,
   onAttention: onAttentionNotified,
+  onCard: onCardNews,
   holdFeed: () => sessionFeed()?.add(() => {}) ?? null,
   isHosted: (path) => chatHandle(path) !== undefined,
   idOf,

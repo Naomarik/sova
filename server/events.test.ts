@@ -6,6 +6,7 @@ import { describe, test } from "node:test";
 import type { EventsServerFrame } from "../shared/events";
 import type { SessionFeedMessage, SessionSummary } from "../shared/protocol";
 import { cursorOf, type Entry, EventHub, type EventSources, type ListedRow } from "./events";
+import { fromStreamFrame } from "../shared/commands-watch";
 import { SessionFeed } from "./session-feed";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -305,5 +306,28 @@ describe("isolation", () => {
     hub.record({ name: "attention.changed" });
     assert.deepEqual(seqs(ok.got), [2]);
     hub.close();
+  });
+});
+
+describe("card news (§app.events/card-news)", () => {
+  const news = { name: "card.answered", id: "s1", path: "/p/s1.jsonl", card: "cd_1", cardType: "alpha.ship" } as const;
+  test("recorded while someone listens, as hosted, with ids and type; asleep, nothing and no listener", async () => {
+    const fns = new Set<(e: typeof news) => void>();
+    const { s } = sources({ onCard: (fn: never) => (fns.add(fn), () => fns.delete(fn)) } as Partial<EventSources>);
+    const hub = new EventHub(s, { lingerMs: 0 });
+    assert.equal(fns.size, 0);
+    const got: Entry[] = [];
+    const sub = hub.subscribe({ deliver: (e) => got.push(e) }, null);
+    assert.equal(fns.size, 1);
+    for (const fn of fns) fn(news);
+    const frame = JSON.parse(got.at(-1)!.json) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(frame).sort(), ["at", "card", "cardType", "id", "name", "path", "seq", "source", "type"]);
+    assert.equal(frame.name, "card.answered");
+    assert.equal(frame.source, "hosted");
+    sub.leave();
+    hub.close();
+  });
+  test("sova watch prints nothing for them", () => {
+    for (const name of ["card.raised", "card.changed", "card.answered"]) assert.equal(fromStreamFrame({ type: "event", seq: 1, name, id: "s", path: "/p" }, "st"), null, name);
   });
 });

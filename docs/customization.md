@@ -211,6 +211,8 @@ same way: `SOVA_TOKEN=$key node scripts/sova.mjs list` (or `run <id>`, or `watch
   backend can run any of Sova's commands, keep `/ws/events` open to hear what happens (a rename, a
   turn that ends), and run its own `ext.<id>.*` actions. The only exception is `/api/auth/*`, which
   answers `403`: a key never pairs a device, reveals the token or unlocks a browser.
+- It is never the user. Since extension contract v1.19 it is refused where it would count as them
+  (below), and what it says in a chat carries your name.
 - Sova accepts it only in that header: never as a cookie and never as an `Authorization`.
 - Every call your backend makes with it is recorded as `ext:<id>` in Sova's record of who ran what
   (`node scripts/sova.mjs run audit.list --caller ext:<id>`). `x-sova-caller` is ignored beside it.
@@ -280,6 +282,49 @@ transcript row's `id` up to its first `:`:
   32 to 320 px high, at most 64 KB.
 - A late, malformed or oversized answer is dropped. After 3 in a row Sova stops asking until the
   page reloads. The user can hide what an extension adds from its page (`Hide Under Replies`).
+
+### Speaking in a chat, and what a key can't do (extension contract v1.19)
+
+An extension is a guest with a name badge. It hears what happens, shows things, asks with a card and
+says things to a chat, always under its own name. Your backend can read the contract's number from
+`GET /api/commands`: `server.extensionContract` is `19`. If it's missing or lower, that Sova is too
+old: say so instead of half working.
+
+- **`session.send` (`POST /api/sessions/prompt`) is the one way to speak.** Sova marks the message with
+  your name, from the key: the chat shows "From {title}" and the model reads a first line
+  `[from session "{title}" (ext:{id}), hop 0]`. So does a new chat's first message
+  (`POST /api/sessions` with `prompt`). No field or header can name another sender. It starts a turn in
+  an idle chat and is a queued row the user can remove in a busy one.
+- **It is never the user's word.** A message of yours can't land a branch and doesn't end a chat's wait
+  on its alignment answers.
+- **What a key is refused**, with a `403` and `extensionRefused: true`, or an `error` frame with code
+  `refused`:
+  - prompt, steer and dialog-answer frames, and rewind, regenerate and compact-with-instructions, on
+    a chat socket, `POST /api/chat/frames` and `POST /api/chat/action`. Stop, plain compact, remove
+    from queue and Reload Now still run;
+  - every frame into an overseer's, a baton's or the merge queue's own chat, and `session.send` to the
+    merge queue's;
+  - `merge.*`, `release.*` and `deploy.*` writes (their status and logs still answer), all of
+    `/api/merge-queue`;
+  - writes to `/api/overseer`, a project overseer's routes, to-dos and ideas included, `/api/settings`,
+    `/api/mode`, `/api/baton`, `/api/orgs`, `/api/outreach` and `/api/mesh`;
+  - `session.group.send`, an offer's button, dismissing a Needs You item, and approving anything.
+- **Its own cards only.** A key raises and changes only your card types, and answers only your cards,
+  never pressing a button that acts. A click on one of your trusted cards can't run any command a key
+  is refused, and what its `send` button sends goes out under your name.
+- **Send from your backend, with its key.** Your page runs on Sova's address with the user's login, and
+  Sova doesn't tell it apart from the user. A `session.send` from a page under `/ext/<id>/` gets your
+  badge when its `Referer` says so. That guards against accidents and nothing more: a page can leave it
+  out, and a socket has none. Installing an extension stays a trust decision: none of this stops a
+  hostile one, and any program on this computer can read Sova's token.
+
+**Hearing about cards.** On `/ws/events`, `card.raised`, `card.changed` and `card.answered` carry
+`id`, `path`, `card` (`cd_N`), `cardType` and `source: "hosted"`: never the card's data or its answer.
+Read those with `session.card.get`, and read again after a `gap` frame. `sova watch` doesn't print them.
+
+**Cards that update.** A card whose type takes no answer starts open: `session.card.post` with `card`
+and new `data` changes it in place, and `done: true` ends it. Nobody waits on it and it's no Needs You
+item. The merge queue's own chats take none of an extension's card types.
 
 **In a session's ⋯ menu** (extension contract v1.16). A command with `"menu": "session"`
 is also an entry in the ⋯ menu of each Agents board row for a session on this machine, after

@@ -310,6 +310,15 @@ describe("attention: decision signals (the list carries them only while unseen a
     assert.deepEqual(buildDigest([row(summary("a"), { teamStall: stall })], NOW).badge, { act: 0, decide: 1, needsYou: 0 });
   });
 
+  test("a chat waiting on an answerable card lists the card, not also the guess; the card gone, the guess is back (§app.decisions/asks-user)", () => {
+    const asked = summary("a", { signals: signals(["asks-you"]) });
+    const cards = [{ id: "cd_1", title: "Ship it?", at: NOW - 1000 }];
+    assert.deepEqual(kinds(row(asked, { cards })), ["act:card-waiting"]);
+    assert.deepEqual(kinds(row(asked, { cards: [] })), ["decide:asks-you"]);
+    assert.deepEqual(kinds(row(asked)), ["decide:asks-you"]);
+    assert.deepEqual(kinds(row(summary("a", { signals: { ...signals(["asks-you"]), kinds: ["asks-you", "unverified"] } }), { cards })), ["act:card-waiting"], "and the guess's stand-in doesn't appear in its place");
+  });
+
   test("a reply that asks is a soft decide asks-you (a row mark and Needs you's softer tier), quoting its sentence; open questions take its place", () => {
     const detail = (s: SessionSummary, t?: AttentionRow["signalText"]) =>
       sessionItems(row(s, t ? { signalText: t } : {}), NOW).map((i) => `${i.tier}:${i.kind}:${i.detail}`);

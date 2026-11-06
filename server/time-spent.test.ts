@@ -100,6 +100,36 @@ describe("one clock per computer", () => {
     assert.equal(s.sums("one").you, 15);
   });
 
+  test("a short run sent again after its answer was lost counts once", () => {
+    const s = freshStore();
+    s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 1), id: 1 }] }, NOW);
+    s.report("one", { pageId: "p", inputAgeMs: 2_000, slices: [{ ...slice("typing", 1, 2_000), id: 1 }] }, NOW + 2_000);
+    assert.equal(s.sums("one").you, 1);
+  });
+
+  test("a resent run counts once and the runs beside it still count, however the next report is cut", () => {
+    const s = freshStore();
+    s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 2, 3_000), id: 1 }, { ...slice("scrolling", 2), id: 2 }] }, NOW);
+    s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("scrolling", 2, 5_000), id: 2 }, { ...slice("other", 2), id: 3 }] }, NOW + 5_000);
+    assert.deepEqual(s.sums("one").rows, { typing: 2, scrolling: 2, other: 2 });
+  });
+
+  test("an id belongs to its page: another page's run with the same one still counts", () => {
+    const s = freshStore();
+    s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 5), id: 1 }] }, NOW);
+    s.report("one", { pageId: "q", inputAgeMs: 0, slices: [{ ...slice("typing", 5), id: 1 }] }, NOW + 60_000);
+    assert.equal(s.sums("one").you, 10);
+  });
+
+  test("a run whose write failed is still counted by its resend", () => {
+    const s = freshStore();
+    writeFileSync(s.dir, "in the way");
+    assert.throws(() => s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 3), id: 1 }] }, NOW));
+    rmSync(s.dir);
+    s.report("one", { pageId: "p", inputAgeMs: 10_000, slices: [{ ...slice("typing", 3, 10_000), id: 1 }] }, NOW + 10_000);
+    assert.equal(s.sums("one").you, 3);
+  });
+
   test("a run older than the clock remembers is dropped, not counted a second time", () => {
     const s = freshStore();
     const tooOld = CLOCK_MEMORY_MS + 60_000;
@@ -225,6 +255,7 @@ describe("alignment facts", () => {
 describe("the report's limits", () => {
   const good = { pageId: "p", path: "/x.jsonl", inputAgeMs: 0, slices: [slice("typing", 1)] };
   test("a good one passes", () => assert.deepEqual(parseTimeSpentReport(good), good));
+  test("a run's id comes through", () => assert.deepEqual(parseTimeSpentReport({ ...good, slices: [{ ...slice("typing", 1), id: 7 }] })!.slices[0]!.id, 7));
   test("a page's own idea of the time doesn't get past the door", () => {
     const skewed = { ...good, sentAt: 1, slices: [{ ...good.slices[0], endAt: 1 }] };
     assert.deepEqual(parseTimeSpentReport(skewed), good);
@@ -238,6 +269,8 @@ describe("the report's limits", () => {
     "too many documents": { ...good, slices: [slice("typing", 1, 0, Array(TIME_SPENT_MAX_DOCS + 1).fill("al_1"))] },
     "a page id too long": { ...good, pageId: "p".repeat(129) },
     "no page id": { ...good, pageId: "" },
+    "a run id that isn't a whole number": { ...good, slices: [{ ...slice("typing", 1), id: 1.5 }] },
+    "a negative run id": { ...good, slices: [{ ...slice("typing", 1), id: -1 }] },
   })) test(`refuses ${name}`, () => assert.equal(parseTimeSpentReport(bad), null));
 });
 
@@ -294,6 +327,14 @@ describe("the routes", () => {
     const r = await read(path);
     assert.ok(r.you > 0);
     assert.equal(r.you, rowsSum(r.rows));
+  });
+
+  test("a report sent twice through the route counts once", async () => {
+    const path = sessionFile("resent", []);
+    const once = { pageId: "resend-page", path, inputAgeMs: 2_000_000, slices: [{ ...slice("typing", 1, 2_000_000), id: 1 }] };
+    assert.equal((await postReport(once)).status, 200);
+    assert.equal((await postReport(once)).status, 200);
+    assert.equal((await read(path)).you, 1);
   });
 
   test("an alignment on the branch reads with its on-screen time and its time to decided", async () => {

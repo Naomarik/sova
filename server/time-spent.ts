@@ -55,8 +55,8 @@ const safeId = (id: string) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id);
 export class TimeSpentStore {
   /** Who holds each remembered moment, oldest first, never overlapping. */
   private held: Claim[] = [];
-  /** Where each page's last run ended. */
-  private pages = new Map<string, number>();
+  /** Where each page's last run ended, and the runs it has had recorded (id to where the run ended). */
+  private pages = new Map<string, { end: number; runs: Map<number, number> }>();
   /** Each session's last line, while its file can still take a merge. */
   private tails = new Map<string, { offset: number; line: Line }>();
 
@@ -81,16 +81,18 @@ export class TimeSpentStore {
     const received = Math.floor(now / 1000);
     const inputAt = now - Math.max(0, report.inputAgeMs);
     for (const slice of report.slices) {
+      const page = this.pages.get(report.pageId);
+      // A resend after a lost answer: already on the record, wherever it would land now.
+      if (slice.id !== undefined && page?.runs.has(slice.id)) continue;
       let end = Math.min(received, Math.round((now - Math.max(0, slice.ageMs)) / 1000));
       let start = end - slice.sec;
       if (start * 1000 < now - CLOCK_MEMORY_MS) continue;
-      const last = this.pages.get(report.pageId);
+      const last = page?.end;
       if (last !== undefined && Math.abs(start - last) <= SAME_PAGE_DRIFT_S) {
         // Bounded by the check above: a page can't get more than the drift ahead of this computer's time.
         start = last;
         end = start + slice.sec;
       }
-      this.pages.set(report.pageId, Math.max(last ?? 0, end));
       this.claim({
         start,
         end,
@@ -101,6 +103,11 @@ export class TimeSpentStore {
         row: slice.row,
         docs: slice.docs,
       });
+      // Only now: a report whose write failed is answered as a failure, and its resend must still count.
+      const seen = page ?? { end: 0, runs: new Map<number, number>() };
+      seen.end = Math.max(seen.end, end);
+      if (slice.id !== undefined) seen.runs.set(slice.id, end);
+      this.pages.set(report.pageId, seen);
     }
   }
 
@@ -162,7 +169,14 @@ export class TimeSpentStore {
   private forget(now: number): void {
     const before = Math.floor((now - CLOCK_MEMORY_MS) / 1000);
     this.held = this.held.filter((c) => c.end > before);
-    for (const [page, end] of this.pages) if (end <= before) this.pages.delete(page);
+    for (const [id, page] of this.pages) {
+      if (page.end <= before) {
+        this.pages.delete(id);
+        continue;
+      }
+      // A resend this old is dropped by its age, so its id needn't be kept.
+      for (const [run, end] of page.runs) if (end <= before) page.runs.delete(run);
+    }
   }
 
   private claim(run: Claim): void {

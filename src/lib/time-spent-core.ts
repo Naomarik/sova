@@ -25,9 +25,17 @@ export interface WorkerView {
   area: number;
   words: number;
 }
+/** A linked session open in the Agents tab: a transcript like the chat's, beside it. */
+export type LinkedView = WorkerView;
+/** A recording: the pane its composer sits in, null for one outside every pane (the single view, Send to All). */
+export interface Recording {
+  id: number;
+  pane: string | null;
+}
 export interface SessionView {
   main: MainView;
   worker: WorkerView;
+  linked: LinkedView;
   /** The session pane covers the whole chat (a phone): what the chat's transcript has "on screen" isn't seen. */
   covered: boolean;
 }
@@ -46,12 +54,15 @@ export interface ClockState {
   keyboardPane: string | null;
   lastActiveAt: number;
   typedAt: number;
+  /** The pane that typing was in. A row's window belongs to its pane: the newest input moving on doesn't carry it along. */
+  typedPane: string | null;
   scrolledAt: number;
+  scrolledPane: string | null;
   /** Until when a raw scroll event is the user's: it follows their wheel, finger or scroll key. */
   intentUntil: number;
   /** The mouse is down: the scrollbar being dragged scrolls with no wheel. */
   pressed: boolean;
-  dictating: number;
+  recordings: readonly Recording[];
   foreground: readonly Foreground[];
   views: Readonly<Record<string, SessionView>>;
   lastTickAt: number;
@@ -80,11 +91,12 @@ export type ClockEvent =
   | { type: "focus"; pane: string | null }
   /** Some element scrolled: the user's only if their input is behind it. The chat following new text isn't. */
   | { type: "scrolled"; at: number }
-  | { type: "dictating"; on: boolean; at: number }
+  | { type: "dictating"; on: boolean; at: number; recording: Recording }
   | { type: "foreground-open"; view: Foreground }
   | { type: "foreground-close"; id: number; at: number }
   | { type: "main-view"; session: string; view: MainView }
   | { type: "worker-view"; session: string; view: WorkerView }
+  | { type: "linked-view"; session: string; view: LinkedView }
   | { type: "covered"; session: string; on: boolean };
 
 export const IDLE_BASE_MS = 60_000;
@@ -103,7 +115,7 @@ export const MAX_TICK_GAP_MS = 5_000;
 
 const NO_MAIN: MainView = { transcript: 0, alignments: 0, words: 0, docs: [] };
 const NO_WORKER: WorkerView = { area: 0, words: 0 };
-const NO_VIEW: SessionView = { main: NO_MAIN, worker: NO_WORKER, covered: false };
+const NO_VIEW: SessionView = { main: NO_MAIN, worker: NO_WORKER, linked: NO_WORKER, covered: false };
 
 /** The clock of a page opening: visible or not, and not yet active, so it waits for the first real input. */
 export function initialClock(now: number, visible = true): ClockState {
@@ -116,10 +128,12 @@ export function initialClock(now: number, visible = true): ClockState {
     keyboardPane: null,
     lastActiveAt: -Infinity,
     typedAt: -Infinity,
+    typedPane: null,
     scrolledAt: -Infinity,
+    scrolledPane: null,
     intentUntil: -Infinity,
     pressed: false,
-    dictating: 0,
+    recordings: [],
     foreground: [],
     views: {},
     lastTickAt: now,
@@ -158,6 +172,10 @@ function withFocus(s: ClockState, pane: string | null): ClockState {
 function withKey(s: ClockState, pane: string | null): ClockState {
   return withPane(withFocus(s, pane), pane);
 }
+/** The user scrolled just now, in the pane this leaves counted. */
+function scrolledHere(s: ClockState, at: number): ClockState {
+  return { ...s, lastActiveAt: at, scrolledAt: at, scrolledPane: countedSession(s) };
+}
 function viewOf(s: ClockState, session: string): SessionView {
   return s.views[session] ?? NO_VIEW;
 }
@@ -183,26 +201,26 @@ export function reduce(s: ClockState, e: ClockEvent): ClockState {
     case "pointer":
       return withPane({ ...s, lastActiveAt: e.at }, e.pane);
     case "wheel":
-      return withPane({ ...s, lastActiveAt: e.at, scrolledAt: e.at, intentUntil: Math.max(s.intentUntil, e.at + WHEEL_INTENT_MS) }, e.pane);
+      return scrolledHere(withPane({ ...s, intentUntil: Math.max(s.intentUntil, e.at + WHEEL_INTENT_MS) }, e.pane), e.at);
     case "fling":
       return { ...s, lastActiveAt: e.at, intentUntil: Math.max(s.intentUntil, e.at + FLING_INTENT_MS) };
     case "press":
       return withPane({ ...s, pressed: e.on, lastActiveAt: e.at }, e.pane);
     case "scroll-key":
-      return withKey({ ...s, lastActiveAt: e.at, scrolledAt: e.at, intentUntil: Math.max(s.intentUntil, e.at + KEY_INTENT_MS) }, e.pane);
+      return scrolledHere(withKey({ ...s, intentUntil: Math.max(s.intentUntil, e.at + KEY_INTENT_MS) }, e.pane), e.at);
     case "key":
       return withKey({ ...s, lastActiveAt: e.at }, e.pane);
-    case "typed":
-      return withKey({ ...s, lastActiveAt: e.at, typedAt: e.at }, e.pane);
+    case "typed": {
+      const next = withKey({ ...s, lastActiveAt: e.at, typedAt: e.at }, e.pane);
+      return { ...next, typedPane: countedSession(next) };
+    }
     case "focus":
       return withFocus(s, e.pane);
     case "scrolled":
-      return s.pressed || e.at < s.intentUntil ? { ...s, lastActiveAt: e.at, scrolledAt: e.at } : s;
-    case "dictating": {
-      const dictating = Math.max(0, s.dictating + (e.on ? 1 : -1));
+      return s.pressed || e.at < s.intentUntil ? scrolledHere(s, e.at) : s;
+    case "dictating":
       // The end of a recording is the last thing the user did, so the cutoff runs from there.
-      return { ...s, dictating, lastActiveAt: e.at };
-    }
+      return { ...s, recordings: e.on ? [...s.recordings, e.recording] : s.recordings.filter((r) => r.id !== e.recording.id), lastActiveAt: e.at };
     case "foreground-open":
       return { ...s, foreground: [...s.foreground, e.view] };
     case "foreground-close":
@@ -211,6 +229,8 @@ export function reduce(s: ClockState, e: ClockEvent): ClockState {
       return { ...s, views: { ...s.views, [e.session]: { ...viewOf(s, e.session), main: e.view } } };
     case "worker-view":
       return { ...s, views: { ...s.views, [e.session]: { ...viewOf(s, e.session), worker: e.view } } };
+    case "linked-view":
+      return { ...s, views: { ...s.views, [e.session]: { ...viewOf(s, e.session), linked: e.view } } };
     case "covered":
       return { ...s, views: { ...s.views, [e.session]: { ...viewOf(s, e.session), covered: e.on } } };
   }
@@ -231,7 +251,7 @@ export function countedSession(s: ClockState): string | null {
 /** What the view says when nothing nearer does: the largest share of the screen, a tie to the alignment. */
 function viewRow(v: SessionView): TimeRow {
   const alignments = v.covered ? 0 : v.main.alignments;
-  const transcript = v.covered ? 0 : v.main.transcript;
+  const transcript = (v.covered ? 0 : v.main.transcript) + v.linked.area;
   const workers = v.worker.area;
   if (alignments > 0 && alignments >= transcript && alignments >= workers) return "reading-alignments";
   if (workers > 0 && workers >= transcript) return "reading-workers";
@@ -240,7 +260,7 @@ function viewRow(v: SessionView): TimeRow {
 }
 
 export function wordsInView(v: SessionView): number {
-  return v.worker.words + (v.covered ? 0 : v.main.words);
+  return v.worker.words + v.linked.words + (v.covered ? 0 : v.main.words);
 }
 
 export interface Counted {
@@ -256,15 +276,17 @@ export function decide(s: ClockState, now: number): Counted | null {
   const session = countedSession(s);
   if (!session) return null;
   const v = viewOf(s, session);
-  if (!s.dictating && now - s.lastActiveAt >= idleCutoffMs(wordsInView(v))) return null;
+  // Any recording holds the count, whichever pane the newest input has named since.
+  if (s.recordings.length === 0 && now - s.lastActiveAt >= idleCutoffMs(wordsInView(v))) return null;
   const top = s.foreground[s.foreground.length - 1];
   // A foreground view is drawn over the chat: the cards under it aren't on screen, its own document is.
   const docs = top ? (top.doc ? [top.doc] : []) : v.covered ? [] : v.main.docs;
-  const row: TimeRow = s.dictating
+  // Each of these names a second only in the pane it happened in.
+  const row: TimeRow = s.recordings.some((r) => r.pane === null || r.pane === session)
     ? "dictating"
-    : now - s.typedAt < TYPING_HOLD_MS
+    : s.typedPane === session && now - s.typedAt < TYPING_HOLD_MS
       ? "typing"
-      : now - s.scrolledAt < SCROLL_HOLD_MS
+      : s.scrolledPane === session && now - s.scrolledAt < SCROLL_HOLD_MS
         ? "scrolling"
         : top
           ? top.kind === "alignment"
@@ -299,6 +321,9 @@ export interface Slice {
   docs: readonly string[];
   sec: number;
   endAt: number;
+  /** Given at its first send, the same on every try, so the host counts a resend once. A run that has one takes no more
+      seconds: they would be dropped as part of a resend. */
+  id?: number;
 }
 
 /** The most kept per session while reports fail: about an hour of a row a minute. A long outage drops the oldest. */
@@ -311,11 +336,17 @@ export function addSeconds(slices: readonly Slice[], c: Pick<Counted, "row" | "d
   if (seconds <= 0) return [...slices];
   const last = slices[slices.length - 1];
   // Adjacent: a run can only continue within a couple of seconds of its end.
-  if (last && last.row === c.row && sameDocs(last.docs, c.docs) && at - last.endAt <= seconds * 1000 + 2000) {
+  if (last && last.id === undefined && last.row === c.row && sameDocs(last.docs, c.docs) && at - last.endAt <= seconds * 1000 + 2000) {
     return [...slices.slice(0, -1), { ...last, sec: last.sec + seconds, endAt: at }];
   }
   const next = [...slices, { row: c.row, docs: c.docs, sec: seconds, endAt: at }];
   return next.length > max ? next.slice(next.length - max) : next;
+}
+
+/** Runs about to be sent: those going for the first time get the next ids, and those being resent keep theirs. */
+export function withRunIds(slices: readonly Slice[], nextId: number): { slices: Slice[]; nextId: number } {
+  let next = nextId;
+  return { slices: slices.map((s) => (s.id === undefined ? { ...s, id: next++ } : s)), nextId: next };
 }
 
 /** What a list of runs adds up to, for the figures on screen. */

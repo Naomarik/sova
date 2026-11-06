@@ -44,6 +44,9 @@ export interface TimeSpentSlice {
   sec: number;
   /** Milliseconds from the run's last second to this report being sent. */
   ageMs: number;
+  /** This run, unique within its pageId and the same on every try: a resend whose answer was lost counts once. The
+      page gives it at the first send and adds no seconds to the run after. A page without it is counted as ever. */
+  id?: number;
 }
 
 /** POST /api/time-spent/report (keepalive). Answers 200 {ok:true}; a report for a session whose file is

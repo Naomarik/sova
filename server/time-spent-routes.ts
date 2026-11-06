@@ -38,7 +38,8 @@ function parseSlice(v: unknown): TimeSpentSlice | null {
   if (!Number.isInteger(s.sec) || s.sec! < 1 || s.sec! > 86_400) return null;
   if (!isAge(s.ageMs)) return null;
   if (!Array.isArray(s.docs) || s.docs.length > TIME_SPENT_MAX_DOCS || !s.docs.every(isId)) return null;
-  return { row: s.row, sec: s.sec!, ageMs: s.ageMs, docs: s.docs };
+  if (s.id !== undefined && (!Number.isSafeInteger(s.id) || s.id < 0)) return null;
+  return { row: s.row, sec: s.sec!, ageMs: s.ageMs, docs: s.docs, ...(s.id !== undefined ? { id: s.id } : {}) };
 }
 
 /** The report, every field checked: a page feeds this route, so nothing unbounded reaches the record. */

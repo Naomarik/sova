@@ -59,10 +59,10 @@ const CONTENT: Record<string, string> = { ".html": "text/html", ".js": "text/jav
 
 interface Reported {
   path: string;
-  slices: { row: string; docs: string[]; sec: number }[];
+  slices: { row: string; docs: string[]; sec: number; id: number }[];
 }
 
-async function open(): Promise<{ page: Page; reports: Reported[] }> {
+async function open(start = "#/g/g1", answer: (report: Reported, nth: number) => number = () => 200): Promise<{ page: Page; reports: Reported[] }> {
   const ctx = await browser.newContext({ viewport: { width: 1500, height: 900 } });
   await ctx.addInitScript(() => sessionStorage.setItem("sova:launched", "1"));
   const page = await ctx.newPage();
@@ -74,9 +74,12 @@ async function open(): Promise<{ page: Page; reports: Reported[] }> {
     if (url.origin !== ORIGIN) return route.abort();
     const p = url.pathname;
     if (p === "/api/time-spent/report") {
-      reports.push(route.request().postDataJSON() as Reported);
-      return route.fulfill(json({ ok: true }));
+      const report = route.request().postDataJSON() as Reported;
+      reports.push(report);
+      const status = answer(report, reports.length);
+      return route.fulfill(json(status === 200 ? { ok: true } : { error: "lost" }, status));
     }
+    if (p === "/api/insights/agents") return route.fulfill(json({ sessions: [], generatedAt: iso(0) }));
     if (p === "/api/sessions") return route.fulfill(json([row(A, "alpha"), row(B, "beta")]));
     if (p === "/api/session-groups") return route.fulfill(json([GROUP]));
     if (p === "/api/projects") return route.fulfill(json({ projects: [] }));
@@ -90,9 +93,11 @@ async function open(): Promise<{ page: Page; reports: Reported[] }> {
     }
     return route.fulfill({ status: 200, contentType: "text/html", body: readFileSync(join(dist, "index.html")) });
   });
-  await page.goto(`${ORIGIN}/#/g/g1`);
-  await pane(page, A).locator("textarea").first().waitFor({ timeout: 20_000 });
-  await pane(page, B).locator("textarea").first().waitFor({ timeout: 20_000 });
+  await page.goto(`${ORIGIN}/${start}`);
+  if (start === "#/g/g1") {
+    await pane(page, A).locator("textarea").first().waitFor({ timeout: 20_000 });
+    await pane(page, B).locator("textarea").first().waitFor({ timeout: 20_000 });
+  }
   return { page, reports };
 }
 
@@ -146,6 +151,21 @@ test("the keyboard in A's composer, the wheel over B: B's Scrolling grows, A get
   assert.ok((typed.rows.typing ?? 0) >= 1, `A's Typing grew: ${JSON.stringify(typed)}`);
   const after = await sums(page, reports, B);
   assert.ok(after.total <= before + 1, `B stopped within the second it was counting: ${before} then ${after.total}`);
+  await page.context().close();
+});
+
+test("typing in A right before the wheel over B: B counts Scrolling and no Typing, A stops", async () => {
+  const { page, reports } = await open();
+  const composer = pane(page, A).locator("textarea").first();
+  await composer.click();
+  await page.keyboard.type("words", { delay: 40 });
+  await wheelOver(page, B, 1_900);
+  const a = await sums(page, reports, A);
+  const b = await sums(page, reports, B);
+  assert.equal(b.rows.typing ?? 0, 0, `A's Typing didn't follow the wheel to B: ${JSON.stringify(b)}`);
+  assert.ok((b.rows.scrolling ?? 0) >= 1, `B counted Scrolling from its first second: ${JSON.stringify(b)}`);
+  await wheelOver(page, B, 1_500);
+  assert.equal((await sums(page, reports, A)).total, a.total, "A stopped");
   await page.context().close();
 });
 
@@ -223,5 +243,60 @@ test("the chat following new text is no Scrolling, and rows on screen name the s
   const carded = await sums(page, reports, A);
   assert.ok((carded.rows["reading-alignments"] ?? 0) >= 1, `the card names the second: ${JSON.stringify(carded)}`);
   assert.ok((carded.docs["doc-1"] ?? 0) >= 1, `and its own count runs: ${JSON.stringify(carded)}`);
+  await page.context().close();
+});
+
+test("a session's pane opened from the Agents board counts on that session; the board alone counts nothing", async () => {
+  const { page, reports } = await open("#/agents");
+  const details = page.getByRole("button", { name: /Session details of .alpha./ });
+  await details.waitFor({ timeout: 20_000 });
+  await page.mouse.move(300, 300);
+  await page.mouse.move(320, 320);
+  await page.waitForTimeout(1_500);
+  assert.equal((await sums(page, reports, A)).total, 0, "the board with no pane open is no session");
+  await details.click();
+  const aside = page.locator('#session-pane[data-time-session="' + A + '"]');
+  await aside.waitFor({ timeout: 20_000 });
+  const box = await aside.boundingBox();
+  assert.ok(box);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.waitForTimeout(2_500);
+  const a = await sums(page, reports, A);
+  assert.ok(a.total >= 1, `the open pane is that session on screen: ${JSON.stringify(a)}`);
+  await page.context().close();
+});
+
+test("a report whose answer was lost goes again with the same run ids, and new seconds under a new one", async () => {
+  // Every answer for a while is lost, as if the host took the report and the network dropped its reply.
+  const { page, reports } = await open("#/g/g1", (_r, nth) => (nth <= 3 ? 500 : 200));
+  const composer = pane(page, A).locator("textarea").first();
+  await composer.click();
+  await page.keyboard.type("lost", { delay: 500 });
+  await page.waitForTimeout(1_200);
+  const resend = async () => {
+    const n = reports.length;
+    await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+    const t0 = Date.now();
+    while (reports.length === n && Date.now() - t0 < 3_000) await page.waitForTimeout(50);
+    assert.ok(reports.length > n, "the page tried again");
+    await page.waitForTimeout(200);
+  };
+  await resend();
+  await page.mouse.move(400, 400);
+  await page.waitForTimeout(1_200);
+  await resend();
+  const tries = reports.filter((r) => r.path === A);
+  assert.ok(tries.length >= 3, `three tries: ${JSON.stringify(tries)}`);
+  const first = tries[0]!.slices;
+  assert.ok(first.length >= 1 && first.every((s) => Number.isSafeInteger(s.id)), `each run has an id at its first send: ${JSON.stringify(first)}`);
+  for (const later of tries.slice(1)) {
+    for (const s of first) {
+      const same = later.slices.find((x) => x.id === s.id);
+      assert.deepEqual(same && { row: same.row, sec: same.sec }, { row: s.row, sec: s.sec }, `run ${s.id} went again unchanged, its seconds not grown: ${JSON.stringify(tries)}`);
+    }
+  }
+  const ids = tries[tries.length - 1]!.slices.map((s) => s.id);
+  assert.equal(new Set(ids).size, ids.length, `a report's ids are distinct: ${ids}`);
+  assert.ok(tries[tries.length - 1]!.slices.some((s) => !first.some((f) => f.id === s.id)), `seconds since came under a new id: ${JSON.stringify(tries)}`);
   await page.context().close();
 });

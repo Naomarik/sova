@@ -25,6 +25,7 @@ import {
   type Slice,
   type Sums,
   type TimeRow,
+  withRunIds,
 } from "./time-spent-core";
 
 export type { TimeRow } from "./time-spent-core";
@@ -72,6 +73,8 @@ const phoneCover = () => typeof matchMedia === "function" && !matchMedia("(min-w
 
 /** Called by the session pane: on a phone it covers the chat, whose rows are then not on screen. */
 export function trackSessionPane(path: string): void {
+  // Open from the Agents board there is no session view: the pane is this session on screen.
+  trackSessionView(path);
   const set = (on: boolean) => dispatch({ type: "covered", session: path, on });
   set(phoneCover());
   if (typeof matchMedia !== "function") return;
@@ -197,6 +200,20 @@ export function trackWorkerTranscript(parent: string, thread: HTMLElement): void
   });
 }
 
+/** Called with the `.thread` of a linked session's transcript in `parent`'s Agents tab: rows on screen, like the chat's. */
+export function trackLinkedTranscript(parent: string, thread: HTMLElement): void {
+  if (!started) return;
+  observeRows(thread, (rows) => {
+    let area = 0;
+    let words = 0;
+    for (const r of rows.values()) {
+      area += r.area;
+      words += r.words;
+    }
+    dispatch({ type: "linked-view", session: parent, view: { area, words } });
+  });
+}
+
 // ── Foreground views and dictating ──
 
 let foregroundSeq = 0;
@@ -224,9 +241,14 @@ export function foregroundSwitch(kind: Foreground["kind"]): (open: boolean) => v
   };
 }
 
-/** Voice input is recording, or stopped. Calls come in pairs. */
-export function noteDictating(on: boolean): void {
-  if (started) dispatch({ type: "dictating", on, at: Date.now() });
+let recordingSeq = 0;
+
+/** Voice input into `input` started recording: it holds the count until the returned call. */
+export function holdDictating(input: Element | undefined): () => void {
+  if (!started) return () => {};
+  const recording = { id: ++recordingSeq, pane: paneOf(input ?? null) };
+  dispatch({ type: "dictating", on: true, at: Date.now(), recording });
+  return () => dispatch({ type: "dictating", on: false, at: Date.now(), recording });
 }
 
 // ── The ledger: counted and not yet in the host's record ──
@@ -238,7 +260,7 @@ interface Ledger {
   /** Accepted by the host, and not yet in a read the section finished. */
   acked: { seq: number; slices: readonly Slice[] }[];
   refused: boolean;
-  /** No report for this session has been answered yet: the first goes at once, so a refusal shows at once. */
+  /** No report for this session has come back yet: the first goes at once, so a refusal shows at once. */
   fresh: boolean;
   lastSentAt: number;
   subscribers: number;
@@ -266,9 +288,10 @@ const pageId = (() => {
 
 function answered(l: Ledger, sent: Slice[], status: number | null): void {
   l.inflight.delete(sent);
+  // Whatever came back: a failing network is retried on the 15-second rhythm, never every second.
+  l.fresh = false;
   const outcome = reportOutcome(status);
   if (outcome === "accepted") {
-    l.fresh = false;
     l.refused = false;
     // With no section open nothing will re-read, and a section opening reads it all.
     if (l.subscribers > 0) l.acked.push({ seq: ++ackSeq, slices: sent });
@@ -276,20 +299,22 @@ function answered(l: Ledger, sent: Slice[], status: number | null): void {
     // What an outage left behind goes next, not in 15 seconds.
     if (l.unsent.length > REPORT_MAX_SLICES) l.lastSentAt = -Infinity;
   } else if (outcome !== "rejected") {
-    if (outcome === "refused") {
-      l.fresh = false;
-      l.refused = true;
-    }
+    if (outcome === "refused") l.refused = true;
     // Kept for the next try, oldest dropped past the bound.
     l.unsent = [...sent, ...l.unsent].slice(-MAX_UNSENT_SLICES);
   }
   bumpFigures();
 }
 
+/** Runs are numbered across this page's sessions: an id is unique within the page id. */
+let nextRunId = 1;
+
 function report(path: string, now: number, going = false): void {
   const l = ledgerOf(path);
   if ((l.inflight.size > 0 && !going) || l.unsent.length === 0) return;
-  const sent = l.unsent.slice(0, REPORT_MAX_SLICES);
+  const numbered = withRunIds(l.unsent.slice(0, REPORT_MAX_SLICES), nextRunId);
+  nextRunId = numbered.nextId;
+  const sent = numbered.slices;
   l.inflight.add(sent);
   l.unsent = l.unsent.slice(sent.length);
   l.lastSentAt = now;
@@ -297,8 +322,8 @@ function report(path: string, now: number, going = false): void {
   const message: TimeSpentReport = {
     pageId,
     path,
-    inputAgeMs: clock.dictating ? 0 : inputAgeMs,
-    slices: sent.map((s) => ({ row: s.row, docs: [...s.docs], sec: s.sec, ageMs: Math.max(0, now - s.endAt) })),
+    inputAgeMs: clock.recordings.length > 0 ? 0 : inputAgeMs,
+    slices: sent.map((s) => ({ row: s.row, docs: [...s.docs], sec: s.sec, ageMs: Math.max(0, now - s.endAt), id: s.id })),
   };
   const body = JSON.stringify(message);
   // keepalive: a report handed over as the page goes still arrives (64 KB budget; the ledger's bound stays under it).

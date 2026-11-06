@@ -13,6 +13,11 @@
 A PR description is one short sentence, a few bullets and at most two short paragraphs. It names
 every LLM model used, and includes screenshots for UI changes if you're willing to upload them.
 
+A PR needs the full run, not just the everyday checks below: `pnpm run typecheck`, `pnpm test:all`
+(integration and every slow group included; Tours need Chrome) and `pnpm run build`. The description
+also includes a short report of what ran, with passed and failed counts, plus anything skipped or
+failing and why.
+
 ## Run a checkout
 
 Requires Git, Node.js ≥22.19, pnpm (the version `packageManager` in `package.json` pins) and

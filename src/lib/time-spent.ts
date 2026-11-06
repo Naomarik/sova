@@ -97,7 +97,7 @@ interface RowSeen {
   area: number;
   ratio: number;
   words: number;
-  /** The row holds an alignment; its document's id when it has one. */
+  /** The alignment document whose content this row shows, if any. */
   doc: string | null;
 }
 const refreshers = new Set<(recount: boolean) => void>();
@@ -105,14 +105,25 @@ const refreshers = new Set<(recount: boolean) => void>();
 /** The rows the transcript's own empty screens and skeletons draw aren't rows. */
 const isRow = (n: Node): n is HTMLElement => n.nodeType === 1 && !(n as HTMLElement).matches(".empty, .skeleton, :has(> .skeleton)");
 
+/** The words a row shows: what a closed disclosure folds away isn't in view, though it is in the DOM. */
+function wordsShown(row: Element): number {
+  let words = countWords(row.textContent ?? "");
+  for (const closed of row.querySelectorAll("details:not([open])")) {
+    if (closed.parentElement?.closest("details:not([open])")) continue;
+    words -= countWords(closed.textContent ?? "") - countWords(closed.querySelector(":scope > summary")?.textContent ?? "");
+  }
+  return words;
+}
+
 /** One IntersectionObserver over a transcript's rows. Observing changes nothing about a row: the box of a
     `content-visibility: auto` row keeps its estimated height, and nothing here may touch that property (app.css). */
 function observeRows(thread: HTMLElement, publish: (rows: ReadonlyMap<Element, RowSeen>) => void): void {
   if (typeof IntersectionObserver !== "function") return;
   const seen = new Map<Element, RowSeen>();
+  // A revision folded to its one line shows none of its content: that row is a transcript row like any other.
   const docOf = (row: Element): string | null => {
     const el = row.querySelector("[data-align-doc]");
-    return el ? (el.getAttribute("data-align-doc") ?? "") : null;
+    return el && !el.matches("details:not([open])") ? el.getAttribute("data-align-doc") : null;
   };
   const stale = new WeakSet<Element>();
   const wordCounts = new WeakMap<Element, number>();
@@ -128,7 +139,7 @@ function observeRows(thread: HTMLElement, publish: (rows: ReadonlyMap<Element, R
         }
         let words = wordCounts.get(r.target);
         if (words === undefined || stale.has(r.target)) {
-          words = countWords(r.target.textContent ?? "");
+          words = wordsShown(r.target);
           wordCounts.set(r.target, words);
           stale.delete(r.target);
         }
@@ -152,6 +163,16 @@ function observeRows(thread: HTMLElement, publish: (rows: ReadonlyMap<Element, R
     if (removed) publish(seen);
   });
   mo.observe(thread, { childList: true });
+  // A row opening or closing what it folds may cross no threshold, and it changes what the row shows.
+  const onToggle = (e: Event) => {
+    let row = e.target instanceof Element ? e.target : null;
+    while (row && row.parentElement !== thread) row = row.parentElement;
+    if (!row || !seen.has(row)) return;
+    stale.add(row);
+    io.unobserve(row);
+    io.observe(row);
+  };
+  thread.addEventListener("toggle", onToggle, true);
   for (const n of thread.childNodes) if (isRow(n)) io.observe(n);
   // Observing again answers with a fresh record, measured by the browser in its own rendering step: no layout read here.
   const refresh = (recount: boolean) => {
@@ -166,6 +187,7 @@ function observeRows(thread: HTMLElement, publish: (rows: ReadonlyMap<Element, R
     refreshers.delete(refresh);
     mo.disconnect();
     io.disconnect();
+    thread.removeEventListener("toggle", onToggle, true);
     publish(new Map());
   });
 }

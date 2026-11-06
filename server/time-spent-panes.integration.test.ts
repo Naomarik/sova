@@ -62,13 +62,16 @@ interface Reported {
   slices: { row: string; docs: string[]; sec: number; id: number }[];
 }
 
-async function open(start = "#/g/g1", answer: (report: Reported, nth: number) => number = () => 200): Promise<{ page: Page; reports: Reported[] }> {
+async function open(start = "#/g/g1", answer: (report: Reported, nth: number) => number = () => 200, items?: unknown[], before?: (page: Page) => Promise<void>): Promise<{ page: Page; reports: Reported[] }> {
   const ctx = await browser.newContext({ viewport: { width: 1500, height: 900 } });
   await ctx.addInitScript(() => sessionStorage.setItem("sova:launched", "1"));
   const page = await ctx.newPage();
   const reports: Reported[] = [];
   const json = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
-  await page.routeWebSocket(/.*/, () => {});
+  await before?.(page);
+  await page.routeWebSocket(/.*/, (ws) => {
+    if (items && new URL(ws.url()).pathname.startsWith("/ws/chat")) ws.send(JSON.stringify({ type: "hello", items, isStreaming: false, model: "mock/m1", thinking: "off", context: null }));
+  });
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     if (url.origin !== ORIGIN) return route.abort();
@@ -79,6 +82,7 @@ async function open(start = "#/g/g1", answer: (report: Reported, nth: number) =>
       const status = answer(report, reports.length);
       return route.fulfill(json(status === 200 ? { ok: true } : { error: "lost" }, status));
     }
+    if (p === "/api/transcript") return route.fulfill(json({ items: items ?? [], context: null }));
     if (p === "/api/insights/agents") return route.fulfill(json({ sessions: [], generatedAt: iso(0) }));
     if (p === "/api/sessions") return route.fulfill(json([row(A, "alpha"), row(B, "beta")]));
     if (p === "/api/session-groups") return route.fulfill(json([GROUP]));
@@ -321,5 +325,117 @@ test("tabs, the session pane open on A: a click on B's tab gives B the count, wi
   const b = await sums(page, reports, B);
   assert.equal(a.total, before, `A stopped at the click: ${JSON.stringify(a)}`);
   assert.ok(b.total >= 2, `B counted from there, the mouse left on the tab strip: ${JSON.stringify(b)}`);
+  await page.context().close();
+});
+
+// A document's revisions as the transcript carries them: every one but the newest folds to its one real line
+// (AlignRevision), its body in the DOM behind the closed disclosure. Thirty fill the screen from the top with lines
+// alone, the newest card far below.
+const WORDS = Array.from({ length: 80 }, (_, i) => `word${i}`).join(" ");
+const revision = (rev: number) => ({
+  id: `rev${rev}`,
+  kind: "align",
+  at: iso(90 - rev),
+  align: {
+    v: 1,
+    line: `revision ${rev}`,
+    changes: [],
+    doc: {
+      id: "al_1",
+      title: "Autonomy settings",
+      summary: WORDS,
+      findings: [{ id: "f1", text: WORDS }],
+      approach: Array.from({ length: 6 }, (_, i) => ({ id: `a${i + 1}`, text: WORDS })),
+      rejected: [],
+      questions: [],
+      phase: "open",
+      next: { f: 2, a: 7, x: 1, q: 1 },
+      rev,
+      createdAt: iso(90),
+      updatedAt: iso(90 - rev),
+    },
+  },
+});
+const REVISIONS = Array.from({ length: 31 }, (_, i) => revision(i + 1));
+
+/** The chat scrolled to its top, with only folded revision lines on screen: that checked, not assumed. */
+async function atFoldedLines(page: Page) {
+  const transcript = page.locator(".transcript");
+  const first = page.locator("details.align-rev").first();
+  await first.waitFor({ timeout: 20_000 });
+  await page.waitForFunction(() => document.querySelectorAll("details.align-rev").length === 30, undefined, { timeout: 20_000 });
+  await transcript.evaluate((el) => (el.scrollTop = 0));
+  await page.waitForTimeout(300);
+  const shown = await transcript.evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    const on = [...el.querySelectorAll(".thread > .entry")].filter((r) => {
+      const b = r.getBoundingClientRect();
+      return b.height > 0 && b.bottom > box.top && b.top < box.bottom;
+    });
+    return { rows: on.length, folded: on.filter((r) => r.querySelector(":scope details.align-rev:not([open])")).length, cards: el.querySelectorAll(".thread .align-doc").length };
+  });
+  assert.ok(shown.rows >= 5 && shown.folded === shown.rows, `only folded lines are on screen: ${JSON.stringify(shown)}`);
+  assert.equal(shown.cards, 1, "and the newest revision is the full card, off screen below");
+  return first;
+}
+
+test("a revision folded to its line isn't on screen and isn't Reading Alignments; opening it starts the count, closing it stops it", async () => {
+  const { page, reports } = await open(`#/s/${encodeURIComponent(A)}`, undefined, REVISIONS);
+  const first = await atFoldedLines(page);
+  const box = await first.boundingBox();
+  assert.ok(box);
+  await page.mouse.move(box.x + 300, box.y + box.height / 2);
+  await page.waitForTimeout(2_500);
+  const folded = await sums(page, reports, A);
+  assert.equal(folded.docs.al_1 ?? 0, 0, `a folded line has no time on screen: ${JSON.stringify(folded)}`);
+  assert.equal(folded.rows["reading-alignments"] ?? 0, 0, `and isn't Reading Alignments: ${JSON.stringify(folded)}`);
+  assert.ok((folded.rows["reading-transcript"] ?? 0) >= 1, `its share of the screen is Reading Transcript: ${JSON.stringify(folded)}`);
+
+  await first.locator(":scope > summary").click();
+  await page.waitForTimeout(2_500);
+  const opened = await sums(page, reports, A);
+  assert.ok((opened.docs.al_1 ?? 0) >= 1, `open, its content is on screen: ${JSON.stringify(opened)}`);
+  assert.ok((opened.rows["reading-alignments"] ?? 0) >= 1, `and it fills the screen: ${JSON.stringify(opened)}`);
+
+  await first.locator(":scope > summary").click();
+  await page.waitForTimeout(300);
+  const closing = (await sums(page, reports, A)).docs.al_1 ?? 0;
+  await page.waitForTimeout(2_500);
+  assert.equal((await sums(page, reports, A)).docs.al_1 ?? 0, closing, "closed again, the count stops");
+  await page.context().close();
+});
+
+test("opening a short revision counts at once, though it stays wholly on screen and crosses no observer threshold", async () => {
+  const short = revision(1);
+  Object.assign(short.align.doc, { summary: "Short.", findings: [], approach: [] });
+  const { page, reports } = await open(`#/s/${encodeURIComponent(A)}`, undefined, [short, ...REVISIONS.slice(1)]);
+  const first = await atFoldedLines(page);
+  const box = await first.boundingBox();
+  assert.ok(box);
+  await page.mouse.move(box.x + 300, box.y + box.height / 2);
+  await page.waitForTimeout(1_500);
+  assert.equal((await sums(page, reports, A)).docs.al_1 ?? 0, 0);
+  await first.locator(":scope > summary").click();
+  await page.waitForTimeout(2_500);
+  const opened = await first.boundingBox();
+  assert.ok(opened && opened.y + opened.height < 800, `it fits the screen: ${JSON.stringify(opened)}`);
+  const a = await sums(page, reports, A);
+  assert.ok((a.docs.al_1 ?? 0) >= 1, `open, its content is on screen: ${JSON.stringify(a)}`);
+  await page.context().close();
+});
+
+test("what a folded line keeps closed doesn't put off the idle cutoff", async () => {
+  // The clock under the page's control: 2 minutes pass in moments. Folded bodies hold far more than 500 words here, so
+  // counting them would give the whole 3 minutes.
+  const { page, reports } = await open(`#/s/${encodeURIComponent(A)}`, undefined, REVISIONS, (p) => p.clock.install());
+  await page.clock.resume();
+  const first = await atFoldedLines(page);
+  const box = await first.boundingBox();
+  assert.ok(box);
+  await page.mouse.move(box.x + 300, box.y + box.height / 2);
+  await page.waitForTimeout(300);
+  await page.clock.runFor(150_000);
+  const { total } = await sums(page, reports, A);
+  assert.ok(total > 30 && total <= 120, `the lines' own few words extend it a little, never to 150 s: counted ${total}`);
   await page.context().close();
 });

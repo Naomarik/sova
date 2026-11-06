@@ -7,13 +7,17 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { after, before, test } from "node:test";
+import { linkPiConfigExtensions } from "./testing/agent-dir";
 import { startHermeticServer, type HermeticServer } from "./testing/hermetic-server";
 
 let s: HermeticServer;
 let project = "";
 const skill = (name: string) => `---\nname: ${name}\ndescription: ${name} does things\n---\n\nThe ${name} recipe.\n`;
 before(async () => {
-  s = await startHermeticServer();
+  s = await startHermeticServer({ bootTimeoutMs: 60_000 });
+  // The Claude Code provider is pi-config's: linked in, then the server boots again so its runtime has it too.
+  linkPiConfigExtensions(s.agentDir);
+  await s.restart();
   project = join(s.work, "project");
   const files: Record<string, string> = {
     ".claude/skills/top/SKILL.md": skill("top"),
@@ -90,7 +94,7 @@ test("a Claude Code worker a chat started: its read's result reaches its model w
   assert.match(parent.reply, /Started 1 background/, parent.reply);
   let reply = "";
   for (const end = Date.now() + 60_000; Date.now() < end && !reply; await sleep(250)) {
-    const files = execFileSync("grep", ["-rl", "--include=*.jsonl", "fake-tool read", join(s.agentDir, "sessions")], { encoding: "utf8" }).split("\n").filter((f) => f && f !== parent.path);
+    const files = execFileSync("grep", ["-rl", "--include=*.jsonl", "deep/d.txt", join(s.agentDir, "sessions")], { encoding: "utf8" }).split("\n").filter((f) => f && f !== parent.path);
     for (const f of files) {
       const said1 = said(lastReply(f));
       if (said1.startsWith("Fake tool result")) reply = said1;

@@ -1,0 +1,23 @@
+{
+  "rows": [
+    { "id": "e1", "kind": "user", "text": "Why does the redirect drop the query?", "at": "2026-11-03T10:00:00.000Z" },
+    { "id": "e2", "kind": "assistant-text", "text": "It rebuilds the address from the path alone.", "model": "zai/glm-5.3", "at": "2026-11-03T10:00:05.000Z" },
+    { "id": "e3", "kind": "tool-call", "text": "read", "toolCallId": "t1", "tool": { "summary": "src/auth.ts", "args": { "path": "src/auth.ts" } } },
+    { "id": "e4", "kind": "tool-result", "text": "export function redirect() {}", "toolCallId": "t1" }
+  ],
+  "hello": {
+    "message": {
+      "model": "zai/glm-5.3",
+      "parts": [
+        { "kind": "thinking", "text": "Check the helper" },
+        { "kind": "text", "text": "The bug is in " }
+      ]
+    },
+    "tools": [{ "callId": "t2", "name": "bash", "args": { "command": "pnpm test" }, "output": "12 passed", "images": [] }]
+  },
+  "frames": [
+    { "type": "event", "v": 2, "event": { "type": "part.delta", "index": 1, "kind": "text", "delta": "auth.ts" } },
+    { "type": "event", "v": 2, "event": { "type": "part.start", "index": 2, "kind": "toolCall", "id": "t3", "name": "read" } },
+    { "type": "event", "v": 2, "event": { "type": "tool.end", "callId": "t2", "isError": false, "output": "14 passed", "images": [] } }
+  ]
+}

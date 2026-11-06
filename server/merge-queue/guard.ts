@@ -35,6 +35,16 @@ export async function countBetween(git: Git, cwd: string, from: string, to: stri
   return r.code === 0 ? Number(r.stdout.trim()) || 0 : 0;
 }
 
+/**
+ * The branch's own commits after `from` up to `to` (a branch's newer commits past the one the queue pinned): its
+ * first-parent line only, so a merge of the target into the branch counts once and the target's commits it brought
+ * in never count; any commit already on `exclude` (the target's head) is left out too.
+ */
+export async function ownCommitsPast(git: Git, cwd: string, from: string, to: string, exclude?: string): Promise<number> {
+  const r = await git(["rev-list", "--count", "--first-parent", to, `^${from}`, ...(exclude ? [`^${exclude}`] : [])], cwd);
+  return r.code === 0 ? Number(r.stdout.trim()) || 0 : 0;
+}
+
 /** Each worktree of the repo: path and branch (short), from `git worktree list --porcelain`. */
 export async function worktreesOf(git: Git, root: string): Promise<{ path: string; branch: string | null; head: string | null }[]> {
   const r = await git(["worktree", "list", "--porcelain"], root);

@@ -7,6 +7,7 @@ import {
   type CheckPick,
   type ChecksDeclared,
   ENTRY_OPEN,
+  type LandingQueueCut,
   type MergeAnswer,
   type MergeApproval,
   type MergeEntry,
@@ -24,8 +25,9 @@ import {
 } from "../../shared/merge-queue";
 import { HOOK_TIMEOUT_MAX, parseDefinition, type ProjectDef } from "../../shared/project-contract";
 import type { ChecksOf, EstimateRun, RunInput, RunMerge, RunOutcome, WakeThread } from "./contract";
-import { countBetween, type Git, isAncestor, realGit, revParse, statusArgs, worktreesOf } from "./guard";
+import { countBetween, type Git, isAncestor, ownCommitsPast, realGit, revParse, statusArgs, worktreesOf } from "./guard";
 import { canLand, checkoutOf, dirtyWhy, firstParents, landTip, pushTip } from "./land";
+import { recordLandedDrafts } from "./landed-drafts";
 import type { MergeNoticeKind } from "./notices";
 import { sanityCheck } from "./conflicts";
 import { estimateFromRuns } from "./estimate";
@@ -65,6 +67,8 @@ export const PUSH_WAITS_NEXT_LANDING = "not pushed yet: goes out with the next l
 export const PUSH_HELD_NAMES = "push held: private names not set up yet";
 /** How long the merge thread's hold (merge.hold) lasts unless it is set again or cleared. */
 export const HOLD_MS = 5 * 60_000;
+/** How long one answer to "why isn't the newest commit Ready to land" is kept (view() runs often). */
+const NEWEST_MEMO_MS = 5_000;
 /** The reason a waiting entry shows while the merge thread holds the queue. */
 export const HOLD_WORDS = "Waiting: Sova is restarting";
 
@@ -92,6 +96,12 @@ export interface QueueDeps {
   listed?: (root: string) => boolean;
   /** A queue's view changed. */
   publish?: (view: MergeQueueView) => void;
+  /** Why the branch's newest commit `tip` isn't Ready to land, from its chat's readiness reading (read only, never a
+   *  fresh read): words, null when it is, undefined when no reading can say (the queue's own checks then answer). */
+  newestReading?: (worktree: string, tip: string) => Promise<string | null | undefined>;
+  /** A test check was found broken on the target (heads.targetBroken): one notification for the user, so a session
+   *  can be started to fix the target. Called once per check until a later run lifts it. */
+  flagBroken?: (b: import("../../shared/merge-queue").TargetBroken, root: string) => void;
   /** Tell the branch's chat (server/merge-queue/notices.ts). */
   notify?: (kind: MergeNoticeKind, entry: MergeEntry, extra: { run?: MergeRun; root: string; logDir?: string }) => void;
   /** Wake the merge thread; false: none was asked. */
@@ -342,12 +352,30 @@ export class ProjectQueue {
         .slice(0, 20)
         .map((e) => e.id),
     );
+    // Sent back (the newest 20 still to fix): Land This Commit Again lands the branch's newest commit, so its row says how
+    // many of the branch's own commits it brings in, and why that commit can't be landed yet when it can't.
+    const recentSentBack = new Set(
+      this.q.entries
+        .filter((e) => e.state === "needs-fix")
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        .slice(0, 20)
+        .map((e) => e.id),
+    );
     for (const e of this.q.entries) {
-      if (isFinal(e) && !recentLanded.has(e.id)) continue;
+      if (isFinal(e) && !recentLanded.has(e.id) && !recentSentBack.has(e.id)) continue;
       const tip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
-      const n = tip && tip !== e.commit && (await isAncestor(this.git, this.root, e.commit, tip)) ? await countBetween(this.git, this.root, e.commit, tip) : 0;
+      const moved = !!tip && tip !== e.commit;
+      const descends = moved && (await isAncestor(this.git, this.root, e.commit, tip));
+      const n = descends ? await ownCommitsPast(this.git, this.root, e.commit, tip, head || undefined) : 0;
       if (n) e.newerCommits = n;
       else delete e.newerCommits;
+      // Amended or rebased after the send-back: nothing to count, and the re-land still lands the tip.
+      const rewritten = moved && !descends && e.state === "needs-fix";
+      if (rewritten) e.newerRewritten = true;
+      else delete e.newerRewritten;
+      const blocked = (n || rewritten) && tip && e.state === "needs-fix" ? await this.newestBlocked(e.branch, tip) : null;
+      if (blocked) e.newerBlocked = blocked;
+      else delete e.newerBlocked;
     }
     const takes = this.deps.estimate ? this.deps.estimate(this.id, this.root) : this.estimateFromHistory();
     const redrafted = await this.redraftedFacts();
@@ -375,6 +403,8 @@ export class ProjectQueue {
       if (cause) e.sentBackFor = cause;
       if (!e.settled && redrafted.has(e.id)) e.redrafted = true;
     }
+    // A sent-back branch whose newest commit isn't Ready to land keeps its row, with why: no Ready row stands in for it.
+    const heldBack = new Set(v.needsFix.filter((e) => !e.settled && e.newerBlocked).map((e) => e.branch));
     const settings = head ? await this.settings().catch((err) => (this.log(`settings unreadable: ${err instanceof Error ? err.message : err}`), null)) : null;
     // Landing by request or push (al_3): what waits on the host, and how far local main is behind origin's.
     const weekAgo = new Date(this.now() - 7 * 24 * 3600_000).toISOString();
@@ -405,8 +435,53 @@ export class ProjectQueue {
     // An entry the hold keeps waiting has no start time: it starts once the release is published or abandoned.
     if (hold) for (const w of v.waiting) if (w.release !== hold.id) delete w.eta;
     const chats = this.deps.chatsOf?.(this.root) ?? {};
-    const readyRows = this.attachSummaries(v, ready);
+    const readyRows = this.attachSummaries(v, ready.filter((r) => !heldBack.has(r.branch)));
     return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(settings ? { settings } : {}) };
+  }
+
+  /**
+   * The landing bar's starting picture (GET /api/merge-queue/landing-summary): the queue's own records and its current
+   * run, with none of view()'s Git reads past the target's head (no Ready list, no newer-commit counts, no settled,
+   * origin or settings reads). `recentMax`: the newest landed entries kept, and of what waits on the host.
+   */
+  async landingCut(recentMax = 5): Promise<LandingQueueCut> {
+    const d = await this.declared();
+    const head = d.head || (await this.targetHead()) || "";
+    const takes = this.deps.estimate ? this.deps.estimate(this.id, this.root) : this.estimateFromHistory();
+    const landed = this.q.entries.filter((e) => e.state === "landed").sort((a, b) => (b.landed?.at ?? b.updatedAt).localeCompare(a.landed?.at ?? a.updatedAt));
+    const keep = new Set(landed.slice(0, recentMax).map((e) => e.id));
+    const q = { ...this.q, entries: this.q.entries.filter((e) => e.state !== "landed" || keep.has(e.id)) };
+    const v = buildView({ q, root: this.root, current: this.current?.run ?? null, checks: d.checks, review: d.review, head, takesMs: takes, now: this.now(), readRun: (id) => this.store.readRun(id) });
+    const served = (this.deps.listed?.(this.root) ?? true) && setUpOf(d.checks, d.invalid);
+    const hold = this.q.release ? (({ checks: _c, ...h }) => h)(this.q.release) : undefined;
+    if (hold) for (const w of v.waiting) if (w.release !== hold.id) delete w.eta;
+    const { reviewing } = this.deps.chatsOf?.(this.root) ?? {};
+    // What waits on the host (a request open, closed or pushed this week), as view() keeps it: the newest few.
+    const weekAgo = new Date(this.now() - 7 * 24 * 3600_000).toISOString();
+    const onHost = this.q.entries
+      .filter((e) => e.state === "requested" || ((e.state === "closed" || e.state === "pushed") && e.updatedAt >= weekAgo))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, recentMax)
+      .map(({ seq: _seq, ...rest }) => structuredClone(rest) as MergeEntry);
+    return {
+      project: v.project,
+      root: v.root,
+      target: v.target,
+      state: v.state,
+      ...(v.paused ? { paused: v.paused } : {}),
+      ...(d.invalid ? { invalid: d.invalid } : {}),
+      served,
+      ...(v.current ? { current: v.current } : {}),
+      checking: v.checking,
+      waiting: v.waiting,
+      needsYou: v.needsYou,
+      recent: v.recent,
+      ...(onHost.length ? { waitingOnHost: onHost } : {}),
+      ...(hold ? { release: structuredClone(hold) } : {}),
+      ...(reviewing ? { reviewing } : {}),
+      heads: v.heads,
+      at: v.at,
+    };
   }
 
   /** The view is read again and published (a branch summary started, was written or failed). */
@@ -851,6 +926,34 @@ export class ProjectQueue {
   private docsChecked(): void {
     this.viewCache = null;
     void this.redraftedFacts().catch((err) => this.log(`docs check: ${err instanceof Error ? err.message : err}`));
+  }
+
+  private newestMemo = new Map<string, { at: number; why: string | null }>();
+  /** Why the branch's newest commit `tip` isn't Ready to land (the chat's readiness reading, deps.newestReading), or
+   *  null when it is. No reading: what Land would refuse (a temporary commit, uncommitted files in its folder). Read
+   *  only; each answer is kept a few seconds, since view() runs often. */
+  private async newestBlocked(branch: string, tip: string): Promise<string | null> {
+    const key = `${branch}\0${tip}`;
+    const hit = this.newestMemo.get(key);
+    if (hit && this.now() - hit.at < NEWEST_MEMO_MS) return hit.why;
+    const why = await this.newestBlockedNow(branch, tip);
+    if (this.newestMemo.size > 100) this.newestMemo.clear();
+    this.newestMemo.set(key, { at: this.now(), why });
+    return why;
+  }
+
+  private async newestBlockedNow(branch: string, tip: string): Promise<string | null> {
+    const wt = (await worktreesOf(this.git, this.root)).find((w) => w.branch === branch && w.path !== this.root)?.path;
+    const reading = wt ? await this.deps.newestReading?.(wt, tip).catch(() => undefined) : undefined;
+    if (reading !== undefined) return reading;
+    const subject = (await this.git(["log", "-1", "--format=%s", tip], this.root)).stdout.trim();
+    if (/^temp\b/i.test(subject)) return `its newest commit is a temporary commit ("${subject.slice(0, 60)}")`;
+    if (wt && existsSync(wt)) {
+      const st = await this.git(statusArgs("--porcelain"), wt);
+      const n = st.code === 0 ? st.stdout.split("\n").filter(Boolean).length : 0;
+      if (n) return `${n} uncommitted file${n === 1 ? "" : "s"} in its folder: commit or remove them first`;
+    }
+    return null;
   }
 
   private estimateCache: { at: number; ms: number | null } | null = null;
@@ -1777,6 +1880,8 @@ export class ProjectQueue {
     if (out.why) run.why = out.why;
     if (out.targetRed) this.q.heads.targetRed = out.targetRed;
     else if (out.verdict === "passed") delete this.q.heads.targetRed;
+    // A run the queue voided (the target moved, a stop, a cancel) proves nothing about a broken check.
+    this.noteBroken(run, cur.voidWhy ? { ...out, verdict: "void", broken: [] } : out);
     const e = this.entry(cur.entry);
     this.current = null;
     if (!e) {
@@ -1924,6 +2029,26 @@ export class ProjectQueue {
         await this.landTested(e, run);
         return;
       }
+    }
+  }
+
+  /**
+   * The broken-on-target flags (heads.targetBroken): one this run found is added (and the user told once, by
+   * notification), one it ran tests with again is lifted. A void or cancelled run proves nothing either way.
+   */
+  private noteBroken(run: MergeRun, out: RunOutcome): void {
+    const had = this.q.heads.targetBroken ?? [];
+    const found = out.broken ?? [];
+    const ranTests = (id: string) =>
+      run.steps.some((s) => s.id === `check:${id}` && (s.result === "passed" || (s.counts && (s.counts.passed ?? 0) + (s.counts.failed ?? 0) > 0)));
+    const kept = out.verdict === "void" ? had : had.filter((b) => found.some((f) => f.check === b.check) || !ranTests(b.check));
+    const fresh = found.filter((f) => !kept.some((b) => b.check === f.check));
+    const next = [...kept.map((b) => ({ ...b, ...(found.find((f) => f.check === b.check) ? { why: found.find((f) => f.check === b.check)!.why, run: run.id } : {}) })), ...fresh.map((f) => ({ check: f.check, label: f.label, why: f.why, run: run.id, step: f.step, at: this.iso() }))];
+    if (next.length) this.q.heads.targetBroken = next;
+    else delete this.q.heads.targetBroken;
+    for (const f of fresh) {
+      this.log(`${f.why} (run ${run.id})`);
+      this.deps.flagBroken?.({ ...f, run: run.id, at: this.iso() }, this.root);
     }
   }
 
@@ -2141,7 +2266,13 @@ export class ProjectQueue {
         this.save();
       },
     );
+    await this.afterPublish(e, out, run);
     this.recordPublish(e, out, run);
+  }
+
+  /** Published: the docs commit is in the branch folder, so its drafts get what the landing wrote for them. */
+  private async afterPublish(e: Entry, out: PublishOutcome, run: MergeRun | null): Promise<void> {
+    if ((out.kind === "pushed" || out.kind === "requested") && run?.tip) await this.markDrafts(e, run, "in-folder", run.tip);
   }
 
   /** What a publication came to, on the entry (then told). */
@@ -2319,9 +2450,11 @@ export class ProjectQueue {
     e.landed = { sha: tip, from: run.base, at: this.iso(), pushed: "pending" };
     e.updatedAt = this.iso();
     const branchTip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
-    const newer = branchTip && branchTip !== e.commit && (await isAncestor(this.git, this.root, e.commit, branchTip)) ? await countBetween(this.git, this.root, e.commit, branchTip) : 0;
+    const newer = branchTip && branchTip !== e.commit && (await isAncestor(this.git, this.root, e.commit, branchTip)) ? await ownCommitsPast(this.git, this.root, e.commit, branchTip, tip) : 0;
     if (newer) e.newerCommits = newer;
     else delete e.newerCommits;
+    // Before the intent goes: a stop here finishes the landing at the next start, and with it this (idempotent) write.
+    await this.markDrafts(e, run, "on-target", tip);
     delete this.q.intent;
     // The revert of an abandoned release lands: the release's hold is lifted with it (its push goes out as any).
     if (e.release && e.releaseKind === "revert" && this.q.release?.id === e.release) this.liftNow();
@@ -2332,6 +2465,13 @@ export class ProjectQueue {
     this.deps.notify?.("landed", e, { run, root: this.root });
     this.wake("landed", e, run.id);
     this.kickSoon();
+  }
+
+  /** The drafts a landing made official stay in the branch folder, marked landed (§chat.worktrees/readiness). */
+  private async markDrafts(e: Entry, run: MergeRun, docs: "on-target" | "in-folder", tip: string): Promise<void> {
+    if (e.approval.withoutSpecs) return;
+    const marked = await recordLandedDrafts({ git: this.git, root: this.root, runDir: this.store.runDir(run.id), worktree: e.worktree, docs, target: this.q.target, tip, run: run.id, now: this.iso(), log: (s) => this.log(s) }).catch(() => []);
+    if (marked.length) this.log(`${e.branch}: marked landed in its folder: ${marked.join(", ")}`);
   }
 
   /** The private names file this project's leak scan and push read. */
@@ -2771,6 +2911,7 @@ export class ProjectQueue {
       const run = this.store.readRun(pub.run);
       if (e && e.state === "request-review" && e.request) {
         const out = await reconcilePublish(await this.publishCtx(pub.how), { how: pub.how, branch: pub.branch, head: pub.head, text: e.request.text ? { title: e.request.text.title, body: e.request.text.body } : undefined }).catch((err: unknown) => ({ kind: "wait" as const, why: err instanceof Error ? err.message : String(err) }));
+        await this.afterPublish(e, out, run);
         this.recordPublish(e, out.kind === "refused" && out.blame === "branch" ? { ...out, blame: "setup" } : out, run);
         did.push(`settled the publication of ${e.branch} Sova stopped in: ${e.state}`);
       } else {

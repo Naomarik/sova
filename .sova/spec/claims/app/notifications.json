@@ -2,7 +2,7 @@
   "§app.notifications/delivery": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/push.ts",
       "server/overseer.ts",
@@ -21,7 +21,8 @@
       "shared/protocol.ts",
       "server/attention-signals.ts",
       "server/merge-queue/asks.ts",
-      "server/merge-queue/asks.test.ts"
+      "server/merge-queue/asks.test.ts",
+      "server/merge-queue/wire.ts"
     ],
     "requires": [
       "§app.overseer/attention-digest",
@@ -29,8 +30,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T18:31Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
+      "at": "2026-11-05T20:05Z",
+      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
     }
   },
   "§app.notifications/settings": {
@@ -44,7 +45,7 @@
       "src/lib/push-draft.ts",
       "src/lib/api.ts",
       "src/design/base.css",
-      "shared/push.ts",
+      "shared/push-limits.ts",
       "shared/protocol.ts",
       "server/push-store.ts",
       "server/push-routes.ts",
@@ -54,7 +55,8 @@
       "src/lib/push-draft.test.ts",
       "src/lib/push.test.ts",
       "server/push.test.ts",
-      "src/lib/settings-nav.ts"
+      "src/lib/settings-nav.ts",
+      "src/components/form/index.tsx"
     ],
     "requires": [
       "§app.settings-dialog/save-bar",

@@ -119,10 +119,15 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   review kit, relative to the checkout (§app.merge-queue/review); `land` (optional: `local`,
   `github-pr`, `gitlab-mr` or `push-branch`; absent: `local`), the project's way of landing, which
   this computer's own choice overrides (§app.merge-queue/strategies); and `request` (optional): the
-  folder of the project's request kit (§app.merge-queue/request-kit). With no `merge` section the queue
+  folder of the project's request kit (§app.merge-queue/request-kit); and `reuse` (optional boolean,
+  absent: true): whether checks may reuse passes from identical code (§app.merge-queue/checks),
+  `false` making every check run every file. With no `merge` section the queue
   uses `test` (§app.merge-queue/checks); with neither, the project's queue isn't set up
   (§app.merge-queue/setup). A check runs with `SOVA_VERB=merge`, `SOVA_STEP` (its id), `SOVA_OUT`,
-  `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP` and `SOVA_MERGE_CHANGED` (a file listing the changed paths).
+  `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP` and `SOVA_MERGE_CHANGED` (a file listing the changed paths),
+  and either `SOVA_FRESH=1` (a rerun that places the blame, a release's check, or reuse turned off:
+  run every file, reuse nothing) or `SOVA_REUSE_SAMPLE` (the share of reusable files to re-check,
+  0.05).
 - **`release`** (optional): how the project releases numbered versions, outside the definition's
   hash: `playbook`, `tag`, `scheme`, `channels`, `commit`, `checks` and `quietMin`
   (§app.release/settings). Absent, the project's releases aren't set up.
@@ -354,8 +359,9 @@ nothing (§app.project-services/adopt).
 
 Both are reads. `status` of an instance reports each service as observed now (stopped, starting,
 ready, degraded, failed, or `external` when something else holds its port) with its unit, pid,
-ports and, while a process service runs, `rssBytes` (the resident memory of its unit's
-processes now), each data resource's existence, the definition's hash, and the supervisor in use
+ports and, while a process service runs, `rssBytes` (the memory its unit's processes use now,
+each process's own memory as the resource monitor measures it, §app.resource-monitor/sampling-and-history:
+on Linux resident less shared pages, on macOS resident memory), each data resource's existence, the definition's hash, and the supervisor in use
 as the one check `supervisor` (informational: it never makes `ok` false). A service the definition
 no longer declares whose unit (or static serve) still runs is listed too, after the declared ones,
 as `degraded` with its unit and pid and the detail "no longer in the definition" (a shared one:
@@ -387,7 +393,8 @@ test command") and nothing changes. Otherwise test holds the instance's lock (§
 brings up the services `test.requires` names, with what they require, as up does
 (§app.project-services/up, on-demand ones included) and waits for their readiness, then runs `run`
 with the selectors appended as its last arguments (none: whatever the command runs with no
-arguments, which for Sova's own runner is the unit tier), in the instance's
+arguments, which for Sova's own runner is the unit tier; that runner reuses passes from identical
+code as it does anywhere, §app.server-runtime/test-reuse, and counts a reused file as passed), in the instance's
 checkout, as one waited-for unit `sova-hook-<state hash>-<instance>-test` with the instance's env
 plus `SOVA_VERB=test`, `SOVA_TEST_SELECT` (the selectors as a JSON array) and `SOVA_OUT`. At its
 timeout, or when the caller aborts (a cancelled tool call), the unit is killed whole. It runs
@@ -649,14 +656,15 @@ the one result shape with its own `merge` key (§app.project-services/result).
 
 - **Reads**: `merge.status` (a project: the queue's view, its state and why it is paused, the
   current run, the waiting line with estimates, what needs the user, what needs a fix, recent
-  landings with their runs, and the target's and pushed heads) and `merge.logs` (a run, optionally
+  landings with their runs, the target's and pushed heads, and the test checks flagged broken on the
+  target) and `merge.logs` (a run, optionally
   one step and a line count).
 - **Setting it up**: `merge.setup` (a project's checks, one test command with its time and what
   starts first, or no automated tests; a dry run tries them, and a save commits them:
   §app.merge-queue/setup), the user's only.
 - **The user's**: `merge.add` (a branch or checkout, its commit by default the head, and the
-  options without its specs and without review: §app.merge-queue/approve; at a sent-back entry's
-  commit it is Land This Commit Again), `merge.cancel` (an entry: one in line, checking or
+  options without its specs and without review: §app.merge-queue/approve; at a sent-back branch's
+  head it is the re-land button, Land This Commit Again or Land Newest Commit), `merge.cancel` (an entry: one in line, checking or
   waiting is taken out of the line; a Needs a fix one is Remove from Queue, cancelled as
   "removed by you", deleting nothing), `merge.pause` and `merge.resume` (a project, with an optional why), and `merge.answer`
   (an entry waiting for the user: `accept` a resolution, `land-anyway` over a blocking review or a failure
@@ -664,7 +672,10 @@ the one result shape with its own `merge` key (§app.project-services/result).
   and the user's answer: §chat.merge-queue/asks), `merge.fresh` (a project: Start Fresh,
   §chat.merge-queue/thread-life) and `merge.clear` (a queue chat's id, or `all`: §app.merge-queue/chats).
 - **The merge thread's**: `merge.note` (an entry and at most 300 characters; empty clears it),
-  `merge.extend` (an entry, the check ids it adds and why; never removes one), `merge.resolve` (an
+  `merge.extend` (an entry, the check ids it adds, why, and a selection, `select`, for a check that
+  takes one: the slow test group, files or walkthroughs it runs; never removes one; the tool's help
+  for `checks` and `select` names the full pick and says a check that takes a selection runs bare
+  without one and fails), `merge.resolve` (an
   entry, its judgement, no behaviour change or behaviour differs, the files, both sides and the
   proposal in plain words, and the commit of its resolution), `merge.retry` (a project or entry
   paused for the machine), `merge.ask` (the question for the user, and the entry it is about:
@@ -730,7 +741,8 @@ hash. Every other slot runs the service as usual, on its allocated ports.
 On an adopted slot 0, Sova only reads the unit (`systemctl --user show`; on macOS `launchctl print
 gui/<uid>/<label>`, with when its main process started and the memory of that process's tree read
 from `ps`), whatever its supervisor:
-status shows the service with the unit's name, its main pid, resident memory and readiness on the
+status shows the service with the unit's name, its main pid, its memory (its processes' own memory,
+measured as for any other service, §app.project-services/status-logs) and readiness on the
 unit's ports, `ready` once that answers, else from the unit's state, and a detail saying it is the
 adopted unit and when it started (for the server's own unit, "this server" and the commit it
 loaded); the copy is wanted running. Logs read the unit's journal (on macOS, the last lines of the
@@ -791,7 +803,9 @@ The operator sees and drives every running copy from two places, both on this ho
   null), usable (how many slots of 1 to 16 the layout can use), unavailable (one sentence per unusable slot), estimate (what a copy takes, or null), host: {totalBytes, availableBytes}}`. It is read every 5 seconds while the tab shows. One row per copy: the main checkout's (slot 0) first, named
   `main`, then each branch copy by slot. A row shows the branch, `slot {n}`, each checkout service's
   ports (a port with HTTP readiness is a link to the site at `http://<this page's host>:<port>/`, never the readiness check's path), the copy's
-  memory (the sum of its services' resident memory, "—" when none reports one), its state as a chip
+  memory (the sum of its services' memory, each process's own memory as the resource monitor
+  measures it, so it reads what a project card's Memory in use counts for that copy,
+  §app.projects/home-glance; "—" when none reports one), its state as a chip
   (Running, Starting, Degraded, Stopped, Absent; Starting while the copy is degraded only because a
   service is still starting, none failed or degraded; a service that is not ready is named under the
   row with its state), and who created it ("by you", "by a coding session", "by its overseer", "by the Overseer",

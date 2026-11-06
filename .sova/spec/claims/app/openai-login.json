@@ -1,0 +1,127 @@
+{
+  "§app.openai-login/chats": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.insights/usage-refresh"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T02:17Z",
+      "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#31e7455c"
+    },
+    "code": [
+      "server/openai-login.ts",
+      "src/components/OpenAiAccount.tsx",
+      "server/openai-login.integration.test.ts"
+    ]
+  },
+  "§app.openai-login/section": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.claude-logins/accounts-tab",
+      "§app.insights/usage-refresh"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T02:17Z",
+      "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#31e7455c"
+    },
+    "code": [
+      "src/components/OpenAiAccount.tsx",
+      "src/lib/openai-login.ts",
+      "src/lib/openai-login.test.ts",
+      "src/components/SettingsDialog.tsx",
+      "src/lib/api.ts",
+      "server/auth-status.ts",
+      "server/openai-login.ts",
+      "shared/protocol.ts",
+      "server/openai-login.test.ts"
+    ]
+  },
+  "§app.openai-login/sign-in": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.openai-login/section"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T02:17Z",
+      "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#31e7455c"
+    },
+    "code": [
+      "src/components/OpenAiAccount.tsx",
+      "src/lib/openai-login.ts",
+      "src/design/base.css",
+      "src/lib/api.ts",
+      "server/openai-login.ts",
+      "server/harness/pi/sign-in.ts",
+      "shared/harness-core.ts",
+      "shared/protocol.ts",
+      "server/app.ts",
+      "server/commands-inventory/baseline.json",
+      "docs/commands.md",
+      "server/openai-login.test.ts",
+      "server/harness/pi/sign-in.test.ts",
+      "server/harness/pi/sign-in.integration.test.ts",
+      "server/openai-login.integration.test.ts",
+      "server/openai-login.integration.fixture.ts",
+      "src/components/form/index.tsx"
+    ]
+  },
+  "§app.openai-login/sign-out": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.openai-login/section",
+      "§mesh.sync/logins"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T02:17Z",
+      "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#31e7455c"
+    },
+    "code": [
+      "src/components/OpenAiAccount.tsx",
+      "src/lib/openai-login.ts",
+      "src/lib/openai-login.test.ts",
+      "src/lib/api.ts",
+      "server/openai-login.ts",
+      "server/harness/pi/sign-in.ts",
+      "server/openai-login.test.ts",
+      "server/openai-login.integration.test.ts"
+    ]
+  },
+  "§app/openai-login": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "notOwned": [
+      "§app.insights/usage-cards",
+      "§mesh.sync/logins"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T02:17Z",
+      "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#31e7455c"
+    },
+    "code": [
+      "server/openai-login.ts",
+      "server/harness/pi/sign-in.ts",
+      "shared/harness-core.ts",
+      "shared/protocol.ts",
+      "server/harness/pi/QUIRKS.md",
+      "server/harness/pi/quirks.ts",
+      "server/harness/pi/contract.test.ts",
+      "server/app.ts",
+      "server/index.ts",
+      "agents/server/harness/overview.md"
+    ]
+  }
+}

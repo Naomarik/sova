@@ -33,6 +33,17 @@ type Ctor = typeof AudioContext;
 /** How long stop keeps recording. */
 const POST_ROLL_MS = 350;
 
+/** How long the mic may take to start while no one is being asked anything (§chat.voice/capture). */
+export const MIC_START_LIMIT_MS = 10_000;
+
+/** The mic didn't start within its limit. Its `name` picks the strip's sentence (format.ts). */
+export class MicStartTimeout extends Error {
+  override name = "MicStartTimeout";
+  constructor() {
+    super("The microphone didn't start in time");
+  }
+}
+
 export function captureSupported(): { secure: boolean; getUserMedia: boolean; audioContext: boolean } {
   const w = window as unknown as { AudioContext?: Ctor; webkitAudioContext?: Ctor };
   return {
@@ -42,26 +53,96 @@ export function captureSupported(): { secure: boolean; getUserMedia: boolean; au
   };
 }
 
-/** Call synchronously in the press handler. Resolves once audio flows; rejects with getUserMedia's error. */
-export function startCapture(ev: CaptureEvents): Promise<Recorder> {
+/** Call synchronously in the press handler. Resolves once audio flows; rejects with getUserMedia's
+    error, or MicStartTimeout when a step outlasts its limit. */
+export function startCapture(ev: CaptureEvents, limitMs: number = MIC_START_LIMIT_MS): Promise<Recorder> {
   const w = window as unknown as { AudioContext?: Ctor; webkitAudioContext?: Ctor };
   const Ctx = (w.AudioContext ?? w.webkitAudioContext)!;
   const ctx = new Ctx();
-  return begin(ctx, ev).catch((err) => {
+  return begin(ctx, ev, limitMs).catch((err) => {
     void ctx.close().catch(() => {});
     throw err;
   });
 }
 
-async function begin(ctx: AudioContext, ev: CaptureEvents): Promise<Recorder> {
+/** The site's mic permission, or null where the browser can't say. */
+async function micPermission(): Promise<PermissionStatus | null> {
+  try {
+    return await navigator.permissions.query({ name: "microphone" as PermissionName });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Asks for the mic at once, in the press, and reads the permission beside it. The limit runs only
+ * while the permission reads `granted`: a person answering the browser's question is never cut
+ * off, and it starts over when they answer Allow. A stream that arrives after the limit is released.
+ */
+function openMic(limitMs: number): Promise<MediaStream> {
   // Raw: the browser's noise suppression and gain control smear consonants and, on top of a
   // system noise gate, cut words; the speech models are trained on unprocessed audio.
-  const stream = await navigator.mediaDevices.getUserMedia({
+  const asked = navigator.mediaDevices.getUserMedia({
     audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
   });
+  return new Promise((resolve, reject) => {
+    let over = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let permission: PermissionStatus | null = null;
+    const follow = () => {
+      clearTimeout(timer);
+      timer = undefined;
+      if (permission?.state !== "granted") return;
+      timer = setTimeout(() => {
+        end();
+        reject(new MicStartTimeout());
+      }, limitMs);
+    };
+    const end = () => {
+      over = true;
+      clearTimeout(timer);
+      permission?.removeEventListener("change", follow);
+    };
+    asked.then(
+      (stream) => {
+        if (over) return stream.getTracks().forEach((t) => t.stop());
+        end();
+        resolve(stream);
+      },
+      (err) => {
+        if (over) return;
+        end();
+        reject(err);
+      },
+    );
+    void micPermission().then((status) => {
+      if (over || !status) return;
+      permission = status;
+      status.addEventListener("change", follow);
+      follow();
+    });
+  });
+}
+
+/** One limit shared by the steps after the stream arrives. */
+function stepLimit(limitMs: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new MicStartTimeout()), limitMs);
+  });
+  expired.catch(() => {}); // it may expire between steps, with nothing racing it yet
+  return {
+    within: <T,>(step: Promise<T>): Promise<T> => Promise.race([step, expired]),
+    end: () => clearTimeout(timer),
+  };
+}
+
+async function begin(ctx: AudioContext, ev: CaptureEvents, limitMs: number): Promise<Recorder> {
+  const stream = await openMic(limitMs);
   const stopTracks = () => stream.getTracks().forEach((t) => t.stop());
+  const steps = stepLimit(limitMs);
   try {
-    await ctx.resume().catch(() => {});
+    await steps.within(ctx.resume().catch(() => {}));
     const batches: Float32Array[] = [];
     let frames = 0;
     let peak = 0;
@@ -75,7 +156,7 @@ async function begin(ctx: AudioContext, ev: CaptureEvents): Promise<Recorder> {
     let node: AudioNode;
     let flush: () => Promise<void>;
     if (ctx.audioWorklet && typeof AudioWorkletNode !== "undefined") {
-      await ctx.audioWorklet.addModule("/voice-capture-worklet.js");
+      await steps.within(ctx.audioWorklet.addModule("/voice-capture-worklet.js"));
       const wn = new AudioWorkletNode(ctx, "voice-capture", { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: "explicit" });
       let flushed: (() => void) | null = null;
       wn.port.onmessage = ({ data }: MessageEvent<{ pcm?: Float32Array; rms?: number; flushed?: boolean }>) => {
@@ -158,5 +239,7 @@ async function begin(ctx: AudioContext, ev: CaptureEvents): Promise<Recorder> {
   } catch (err) {
     stopTracks();
     throw err;
+  } finally {
+    steps.end();
   }
 }

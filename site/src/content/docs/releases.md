@@ -22,7 +22,8 @@ Releases are off until a project is set up for them. On the project page's **Rel
 version, its changelog, its remotes and checks) and asks you how it releases: the version rule, the
 notes, the channel, each step and who does it, the checks only a release runs, a live try-out, and
 what happens after publishing. It then proposes a release playbook and a `release` section of the
-project's `.sova/project.json` on a branch, which you review and **Land**.
+project's `.sova/project.json` on a branch, which you review and **Land**. [Release
+settings](/docs/release-settings/) says what each holds.
 
 ## Start a release
 
@@ -50,6 +51,8 @@ ordinary chat you can talk to.
 - **Failed.** **Retry Step** runs it again.
 - **Quiet.** When the release chat goes quiet for too long, Needs you says "No word from the release
   chat for {n} min".
+
+<!-- screen: release-in-progress | A release in progress: v0.4.0 at step 5 of 9, its version, notes, release commit and gating checks done, Try it on the staging copy held for you with Continue, a failed smoke test with Retry Step, a docs check running, Publish waiting, and Abandon Release. -->
 
 ## The release checks
 
@@ -103,3 +106,5 @@ you to release; its request shows in Needs you.
 The Releases tab lists every numbered version, newest first, with its notes, whether it was
 withdrawn, and which deploy targets run it. Its strip shows the latest release and how many
 landings came since.
+
+<!-- screen: releases-tab | A project's Releases tab with no release open: the latest release and the landings since, Release Note and Start Release, and the history of published releases. -->

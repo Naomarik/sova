@@ -110,7 +110,9 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   - `waiting-for-ok`: one is waiting for your OK.
   - `tree-clean`: the session's folder has no uncommitted changes.
   - `no-open-alignment`: no open alignment question (always enforced; naming it is allowed).
-  - `specs-promoted`: the worktree holds no spec draft left unpromoted.
+  - `specs-promoted`: the worktree holds no spec draft left unpromoted, counted as the Worktrees row
+    counts them (§chat.worktrees/readiness): a draft marked landed is promoted, and `{drafts}`
+    leaves it out.
   An offer shown for one worktree reads these, its branch and its commit from that worktree;
   otherwise from the session's folder.
 - **The repeat guard.** An offer shows at most once per **moment**, whatever happened to the card:

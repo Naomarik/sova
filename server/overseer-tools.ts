@@ -14,6 +14,7 @@ import type {
   TranscriptItem,
 } from "../shared/protocol";
 import type { PeerStateView } from "../shared/mesh-access";
+import { hostState, WIRE_AREAS, type WireAreas } from "../shared/wire-areas";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { fixedNameRefusal } from "../shared/fixed-names";
@@ -237,6 +238,8 @@ export interface PeerRef {
   nodeId: string;
   state: PeerStateView;
   error?: string;
+  /** The area numbers it lists; absent on a host that lists none. */
+  areas?: WireAreas;
 }
 
 /** The acting tools' refusal in a turn the user did not start. */
@@ -651,9 +654,11 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
     return s;
   }
 
-  /** A `host` param: absent or blank is this host; otherwise a peer this host has, up now and on
-      the same protocol. A peer that is down, skewed or refusing is a refusal naming it. */
-  async function peerOf(ref: unknown): Promise<PeerRef | null> {
+  /** A `host` param: absent or blank is this host; otherwise a peer this host has, answering and
+      not in Update needed by this host's own numbers (§mesh.compatibility/host-acts). A peer that is
+      down, refusing or on such a version is a refusal naming it. `write`: this call sends to it, which
+      takes a peer that works fully. */
+  async function peerOf(ref: unknown, write = false): Promise<PeerRef | null> {
     const id = typeof ref === "string" ? ref.trim() : "";
     if (!id) return null;
     const peer = await host.peer(id);
@@ -661,9 +666,12 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
       const ids = host.peerIds();
       throw new Refusal(ids.length ? `This host has no mesh peer "${id}". Its peers: ${ids.join(", ")}.` : "The mesh is off on this host (no peers), so there is no host to name. Leave host out.");
     }
+    const reading = hostState(WIRE_AREAS, peer);
+    if (reading === "update") throw new Refusal(`${peer.label} (${peer.id}) runs another version of Sova, so nothing reaches it from here now.`);
+    if (write && reading !== null && reading !== "works") throw new Refusal(`${peer.label} (${peer.id}) runs another version of Sova: its sessions can be read from here, but nothing can be sent to it or created on it.`);
     if (peer.state !== "up")
       throw new Refusal(
-        `${peer.label} (${peer.id}) is ${peer.state === "skewed" ? "on another protocol version (skewed)" : peer.state === "refused" ? "refusing this host (it doesn't list it as a peer)" : peer.state === "hidden" ? "hiding everything from this host (its grant to this host is none)" : "down"}${peer.error ? `: ${peer.error}` : ""}, so nothing reaches it from here now.`,
+        `${peer.label} (${peer.id}) is ${peer.state === "refused" ? "refusing this host (it doesn't list it as a peer)" : peer.state === "hidden" ? "hiding everything from this host (its grant to this host is none)" : "down"}${peer.error ? `: ${peer.error}` : ""}, so nothing reaches it from here now.`,
       );
     return peer;
   }
@@ -1484,8 +1492,8 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
               };
           }
         }
-        // A peer that is down or skewed refuses before any cap is taken.
-        const peer = onPeer ? await peerOf(p.host) : null;
+        // A peer that is down or doesn't work fully refuses before any cap is taken.
+        const peer = onPeer ? await peerOf(p.host, true) : null;
         if (p.subagent_profile !== undefined) await checkSubagentProfile(p.subagent_profile, peer);
         // Every check and reservation happens with no await between them: parallel creates in one
         // message each see the others' reservations.

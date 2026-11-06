@@ -1,4 +1,5 @@
 import { createSignal, untrack, type Accessor } from "solid-js";
+import { check, type FieldCheck, firstIssue, type Rule } from "../../shared/form-rules";
 import { SETTINGS_TABS, type SettingsTab } from "./settings-nav";
 
 /**
@@ -94,8 +95,13 @@ export interface DraftStoreOptions<D, S, R = S> {
   /** `draft` was an edit of `base`; the server now has `fresh`. Pure. */
   rebase?(draft: D, base: S, fresh: S): D;
   /**
-   * Why `draft` can't be saved: one sentence that names the form, for the dialog's footer (the
-   * form's own fields say it inline too), or null. Save Changes waits for every dirty form's null.
+   * The form's fields in page order, each with its rule (or a sentence of the form's own for what no
+   * one field says). The first that fails is the form's problem: "{label}: {sentence}".
+   */
+  fields?(draft: D, saved: S): readonly (FieldCheck | { message: string | null })[];
+  /**
+   * Why `draft` can't be saved, when `fields` passes: one sentence that names the form, for the
+   * dialog's footer, or null. Save Changes waits for every dirty form's null.
    */
   problem?(draft: D, saved: S): string | null;
   /**
@@ -219,6 +225,10 @@ export function createDraftStore<D, S, R = S>(opts: DraftStoreOptions<D, S, R>):
   const [error, setError] = createSignal<SaveFailure | null>(null);
   const [warnings, setWarnings] = createSignal<string[]>([]);
   const [result, setResult] = createSignal<R | null>(null);
+  const problemOf = (d: D, s: S): string | null => {
+    const bad = opts.fields && firstIssue(opts.fields(d, s));
+    return bad ? `${opts.label}: ${bad.message}` : (opts.problem?.(d, s) ?? null);
+  };
   /** Bumped by `reset`: a save that started before the dialog closed reports nothing after it. */
   let generation = 0;
 
@@ -258,7 +268,7 @@ export function createDraftStore<D, S, R = S>(opts: DraftStoreOptions<D, S, R>):
     problem() {
       const d = draft();
       const s = saved();
-      return d !== null && s !== null && opts.problem ? opts.problem(d, s) : null;
+      return d !== null && s !== null ? problemOf(d, s) : null;
     },
     discard() {
       setError(null);
@@ -277,7 +287,7 @@ export function createDraftStore<D, S, R = S>(opts: DraftStoreOptions<D, S, R>):
     async save() {
       const d = untrack(draft);
       const base = untrack(saved);
-      if (!opts.write || d === null || base === null || untrack(saving) || opts.same(d, base) || opts.problem?.(d, base)) return "skipped";
+      if (!opts.write || d === null || base === null || untrack(saving) || opts.same(d, base) || problemOf(d, base)) return "skipped";
       const gen = generation;
       setSaving(true);
       setError(null);
@@ -331,4 +341,21 @@ export async function saveRebased<D, S, R>(
   const next = io.rebase(draft, base, io.settingsOf(fresh));
   if (io.same(next, io.settingsOf(fresh))) return { result: fresh, wrote: false };
   return { result: await io.write(next), wrote: true };
+}
+
+/**
+ * A box on a screen with no Save (it saves as you type): what was typed stays in the box, red and
+ * unsaved, until its rule takes it; the saved value never changes meanwhile. Give the kit field
+ * `value={f.text()}`, `onInput={f.input}` and the same `rule`.
+ */
+export function createLiveField<T>(rule: Rule, saved: Accessor<T>, save: (value: T) => void) {
+  const [typed, setTyped] = createSignal<string | null>(null);
+  return {
+    text: () => typed() ?? String(saved() ?? ""),
+    input(raw: string) {
+      setTyped(raw);
+      const r = check(rule, raw);
+      if (r.ok) save(r.value as T);
+    },
+  };
 }

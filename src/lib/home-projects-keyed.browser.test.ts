@@ -23,13 +23,13 @@ const PROJECTS = ["a", "b", "c"].map((x) => project(`prj_${x}`, x.toUpperCase())
 function draw(keyed: boolean) {
   const [sessions, setSessions] = solid.createSignal<SessionSummary[]>([chat("prj_a", false), chat("prj_b", false)]);
   const builds: string[] = [];
-  /** What each built card reads now: its id and working count. */
+  /** What each built card reads now: its id, working and open counts. */
   const reads: (() => string)[] = [];
   solid.createRoot(() => {
     const shown = solid.createMemo(() => visibleCards(projectCards(PROJECTS, sessions(), undefined, "badge"), { limit: CARD_LIMIT, expanded: false, filter: "" }));
     const build = (c: () => Card): JSX.Element => {
       builds.push(c().project.id);
-      reads.push(() => `${c().project.id}:${c().working}`);
+      reads.push(() => `${c().project.id}:${c().working}:${c().open}`);
       return null as unknown as JSX.Element;
     };
     const view = keyed
@@ -45,7 +45,11 @@ test("keyed by project id: a chat that starts working keeps every card's DOM, an
   assert.deepEqual(v.builds.sort(), ["prj_a", "prj_b", "prj_c"]);
   v.setSessions([chat("prj_a", true), chat("prj_b", false)]);
   assert.equal(v.builds.length, 3, "no card was built again (an open menu and focus survive)");
-  assert.ok(v.reads.map((r) => r()).includes("prj_a:1"), "the built card follows the fresh row");
+  assert.ok(v.reads.map((r) => r()).includes("prj_a:1:1"), "the built card follows the fresh row");
+  // A chat archived: the card's open count follows, still without a rebuild.
+  v.setSessions([{ ...chat("prj_a", false), archived: true } as SessionSummary, chat("prj_b", false)]);
+  assert.equal(v.builds.length, 3);
+  assert.ok(v.reads.map((r) => r()).includes("prj_a:0:0"), "open drops to 0");
 });
 
 test("a plain <For> over the same rows rebuilds every card: the failure the key prevents", () => {

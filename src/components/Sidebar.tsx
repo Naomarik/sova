@@ -123,11 +123,14 @@ import {
   passesHostFilter,
   peerInfo,
   peerUnavailable,
+  readingOf,
   SELF_FILTER,
   sessionHrefOn,
   sessionsHiddenBy,
 } from "../lib/mesh";
 import { MeshHostMenu } from "./MeshHostMenu";
+import { LandingBarRow, LandingSpineButton, LandingStrip } from "./LandingBar";
+import { useLandingBar } from "../lib/landing-bar-store";
 import { connectedCount, hostFilterAsk, rowHostState } from "../lib/mesh-details";
 import { openMonitor } from "../lib/monitor-nav";
 import { updateAvailable } from "../lib/updates";
@@ -192,8 +195,8 @@ export const sessionHref = (path: string) => sessionHrefOn(hostOf(path), path);
 
 /** A peer row's host state: the host menu's word and tone, or null for a peer that can be used. */
 const rowHostOf = (host: string) => {
-  const peer = peerInfo(host);
-  return peer ? rowHostState(peer.state, !!peerUnavailable(peer)) : null;
+  const reading = readingOf(host);
+  return reading ? rowHostState(reading) : null;
 };
 
 /**
@@ -209,6 +212,8 @@ function HostMark(props: { host: string }) {
       class="session-host"
       classList={{ "session-host-warn": state()?.tone === "warn", "session-host-error": state()?.tone === "error" }}
       title={why() ?? `On ${hostLabel(props.host)}`}
+      data-testid={readingOf(props.host) ? "session-row-host" : undefined}
+      data-host-state={readingOf(props.host) ?? undefined}
     >
       <Show when={state()}>
         <span class="chip-dot" />
@@ -1294,6 +1299,8 @@ export function Sidebar(props: {
 
   /** The pane as the spine on screen: the stored choice, where the viewport allows it. */
   const collapsed = () => spine() && props.unfolded;
+  /** The landing bar (al_1): this computer's merge queue landings and releases, null while nothing shows. */
+  const landing = useLandingBar();
   /** Each state's own toggle. The one pressed is unmounted by the swap, so focus would fall to
       <body>: it moves to the toggle of the new state instead, when it was in the pane at all. */
   let collapseToggle: HTMLButtonElement | undefined;
@@ -1987,7 +1994,7 @@ export function Sidebar(props: {
           title={glanceText() || undefined}
           aria-label={glanceName() || undefined}
         >
-          <Icon name="gauge" />
+          <Icon name="usage-coin" />
           <span class="insights-row-text" classList={{ "usage-glance": glance().length > 0 }}>
             <UsageGlance parts={glance()} />
           </span>
@@ -2111,7 +2118,7 @@ export function Sidebar(props: {
           onClick={(e) => hold.suppressed() && e.preventDefault()}
           onContextMenu={(e) => hold.suppressed() && e.preventDefault()}
         >
-          <Icon name="worker" />
+          <Icon name="agents-working" />
           {/* Two lines (§app.insights/token-velocity): who is working and the 5-minute readout, then
               the 30-minute chart under them. The row's name says it all in words. */}
           <span class="agents-ticker">
@@ -2165,7 +2172,7 @@ export function Sidebar(props: {
 
   /**
    * Folded (<768): the foot as one 44px bar under the list (§app.insights/sidebar-foot-phone) —
-   * the mesh's connected count (while the mesh is on), the working count (the worker icon and the
+   * the mesh's connected count (while the mesh is on), the working count (the agents icon and the
    * Agents row's own figure), the load average, and every provider's usage cap as the glance shows it. Tapping the bar opens the
    * rows as a bottom sheet, verbatim. Focus leaves and returns with the sheet (trapFocus).
    */
@@ -2186,6 +2193,8 @@ export function Sidebar(props: {
     };
     return (
       <>
+        {/* The landing bar's own strip, directly above the foot bar, only while it has something to show. */}
+        <Show when={landing()}>{(m) => <LandingStrip model={m()} />}</Show>
         <button
           type="button"
           class="sidebar-footbar"
@@ -2200,7 +2209,7 @@ export function Sidebar(props: {
             </span>
           </Show>
           <span class="sidebar-footbar-seg">
-            <Icon name="worker" small />
+            <Icon name="agents-working" small />
             <span class="text-num">{work().figure}</span>
           </span>
           <span class="sidebar-footbar-seg sidebar-footbar-velocity">
@@ -2393,7 +2402,7 @@ export function Sidebar(props: {
                 aria-label={workSentence()}
                 onClick={() => toast(workSentence())}
               >
-                <Icon name="worker" />
+                <Icon name="agents-working" />
                 <span class="spine-count text-num">{work().figure}</span>
               </button>
             </Show>
@@ -2407,6 +2416,7 @@ export function Sidebar(props: {
         </Show>
 
         <div class="spine-foot">
+          <Show when={landing()}>{(m) => <LandingSpineButton model={m()} class="spine-item" />}</Show>
           <a
             class="button button-icon spine-item"
             href={usageHref()}
@@ -2414,7 +2424,7 @@ export function Sidebar(props: {
             title={glanceText() || "Usage"}
             aria-label={glanceName() || "Usage"}
           >
-            <Icon name="gauge" />
+            <Icon name="usage-coin" />
           </a>
           <button type="button" class="button button-icon spine-item" title="Resource monitor" aria-label="Resource monitor" onClick={() => openMonitor()}>
             <Icon name="activity" />
@@ -2426,7 +2436,7 @@ export function Sidebar(props: {
             title={agentsLabel()}
             aria-label={agentsLabel()}
           >
-            <Icon name="worker" />
+            <Icon name="agents-working" />
           </a>
           <button type="button" class="button button-icon spine-item" title={settingsLabel()} aria-label={settingsLabel()} onClick={() => props.onOpenSettings()}>
             <Icon name="settings" />
@@ -2999,6 +3009,8 @@ export function Sidebar(props: {
             bottom sheet, verbatim (§app.insights/sidebar-foot-phone). */}
         <Show when={props.unfolded} fallback={<PhoneFoot />}>
           <div class="sidebar-foot">
+            {/* Above the host filter row (mesh on), else above Usage; not drawn while nothing shows. */}
+            <Show when={landing()}>{(m) => <LandingBarRow model={m()} />}</Show>
             <FootRows />
           </div>
         </Show>

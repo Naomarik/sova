@@ -33,6 +33,8 @@ import type {
   ClaudePoolInfo,
   ClaudeCliStatus,
   ClaudeLoginFlowState,
+  OpenAiAccountInfo,
+  OpenAiLoginFlow,
   ContextInfo,
   ExtensionInfo,
   ExplanationInfo,
@@ -147,6 +149,7 @@ import type { CommandEntry } from "../../shared/commands-catalog";
 import type { AlignTriage, WorkerChecks, DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
 import { upgradeLegacyRows } from "./legacy-rows";
+import { COMPOSER_QUERY } from "./wire-stamp";
 import { onAuthorized, onUnauthorized } from "./auth";
 import type { PreviewList, PreviewMint, PreviewMinted, PreviewView } from "../../shared/preview-links";
 
@@ -324,6 +327,16 @@ export const getChatClaudeAccounts = (path: string) =>
 /** Add a login, or (with `login`) sign an existing one in again on this device. */
 export const startClaudeLogin = (login?: string) =>
   request<ClaudeLoginFlowState>("/api/claude/accounts/flow", { method: "POST", ...(login ? { body: JSON.stringify({ login }) } : {}) });
+/** The OpenAI (ChatGPT subscription) sign-in of Settings → Accounts (§app.openai-login). */
+export const getOpenAiAccount = () => request<OpenAiAccountInfo>("/api/settings/accounts/openai");
+export const signOutOpenAi = () => request<OpenAiAccountInfo>("/api/settings/accounts/openai", { method: "DELETE" });
+/** Start pi's sign-in, the code route first; answers once the code (or the browser route's link) is out. */
+export const startOpenAiLogin = () => request<OpenAiLoginFlow>("/api/settings/accounts/openai/login", { method: "POST" });
+export const getOpenAiLogin = () => request<OpenAiLoginFlow | null>("/api/settings/accounts/openai/login");
+/** The browser route: the address the sign-in page ended on. */
+export const sendOpenAiLoginAnswer = (text: string) =>
+  request<OpenAiLoginFlow>("/api/settings/accounts/openai/login/answer", { method: "POST", body: JSON.stringify({ text }) });
+export const cancelOpenAiLogin = () => request<OpenAiAccountInfo>("/api/settings/accounts/openai/login", { method: "DELETE" });
 export const setClaudePoolKeeper = (device: string) =>
   request<ClaudePoolInfo>("/api/claude/pool/keeper", { method: "PUT", body: JSON.stringify({ device }) });
 export const pinClaudePoolLogin = (id: string, pin: string | null) =>
@@ -1033,7 +1046,8 @@ export const removeWorktrees = (path: string, expect: string[]) =>
  * something that isn't a TUI. It never overrides a live TUI.
  */
 export function wsUrl(endpoint: "/ws/chat" | "/ws/watch", path: string, force = false, host: string | null = hostOf(path)): string {
-  return `${wsOrigin()}${peerBase(host)}${endpoint}?path=${encodeURIComponent(path)}${force ? "&force=1" : ""}&${WIRE}`;
+  // A chat socket states this page's writing number (§mesh.compatibility/every-send-states-a-version).
+  return `${wsOrigin()}${peerBase(host)}${endpoint}?path=${encodeURIComponent(path)}${force ? "&force=1" : ""}&${WIRE}${endpoint === "/ws/chat" ? `&${COMPOSER_QUERY}` : ""}`;
 }
 
 function wsOrigin(): string {
@@ -1289,6 +1303,8 @@ export const setProjectStakeholder = (id: string, pid: string, stakeholder: stri
 
 const projectPath = (pid: string) => `/api/projects/${encodeURIComponent(pid)}`;
 export const listProjects = () => request<ProjectList>("/api/projects");
+/** The overview cards' runtime figures (§app.projects/home-glance). */
+export const getProjectGlance = () => request<import("../../shared/projects").ProjectGlanceList>("/api/projects/glance");
 export const getProject = (pid: string) => request<ProjectSummary>(projectPath(pid));
 /** Register a folder as a project (Add Project, Add as Project); its checkout root, said back when it differs. */
 export const addProject = (root: string) => request<ProjectRegistered>("/api/projects", jsonInit("POST", { root }));
@@ -1522,6 +1538,8 @@ export const runReleaseSetup = (projectId: string) =>
   request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", { playbook: "release-maker" }));
 /** A chat's merge queue cards: one per branch it owns, from its approval on (`session.merge-cards`). */
 export const getMergeCards = (sessionId: string) => request<{ cards: import("../../shared/merge-queue").MergeCard[] }>(`/api/merge-queue/cards?session=${encodeURIComponent(sessionId)}`);
+/** Every project's queue and releases in one quick read: the landing bar's starting picture (page open, reconnect). */
+export const getLandingSummary = () => request<import("../../shared/merge-queue").LandingSummary>("/api/merge-queue/landing-summary");
 /** What runs on this host now, every project's (Running branches on `#/projects`). */
 export const getHostServices = () => request<HostServicesView>("/api/services");
 export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);

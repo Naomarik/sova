@@ -19,7 +19,8 @@ import {
 } from "../lib/new-session";
 import { localOnly, remoteLabel, type RemotePlace, remoteRecents, splitRemoteCwd, type TargetInfo, targetDown } from "../lib/remote-session";
 import { home, toast } from "../lib/ui-state";
-import { meshOn, meshPeers, noteHost, peerUnavailable, selfLabel } from "../lib/mesh";
+import { meshOn, meshPeers, noteHost, peerReading, peerUnavailable, selfLabel } from "../lib/mesh";
+import { hostTone } from "../lib/mesh-details";
 import { FolderPicker } from "./FolderPicker";
 import { Banner, Chip, Icon, trapFocus } from "./ui";
 
@@ -340,9 +341,9 @@ export function NewSessionDialog(props: {
                   </option>
                   <For each={meshPeers()}>
                     {(p) => (
-                      <option value={p.id} selected={host() === p.id} disabled={!!peerUnavailable(p)}>
+                      <option value={p.id} selected={host() === p.id} disabled={!!peerUnavailable(p)} data-host-state={peerReading(p)}>
                         {p.label || p.id}
-                        {p.state === "up" ? (peerUnavailable(p) ? " · hidden" : "") : p.state === "skewed" ? " · other version" : p.state === "down" ? " · down" : p.state === "hidden" ? " · hidden" : " · refused"}
+                        {hostTone(peerReading(p)).word ? ` · ${hostTone(peerReading(p)).word}` : ""}
                       </option>
                     )}
                   </For>

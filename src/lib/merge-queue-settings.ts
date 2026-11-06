@@ -1,5 +1,6 @@
 // The words of Settings → Merge Queue and of the Merge Queue tab's summary line: what the queue's
 // settings say, where each lives, and what an edit changes. Pure (no DOM, no Solid).
+import { check, firstIssue, type WholeRule } from "../../shared/form-rules";
 import type { EffectiveModel, MergeQueueSettings, MergeSettingsChange, MergeSettingsSaveResult, SettingSource } from "../../shared/merge-queue-settings";
 import { settingsWaitingWords } from "../../shared/merge-queue-settings";
 import { pickLabel } from "./model-pick";
@@ -63,13 +64,43 @@ export function modelWords(m: EffectiveModel): { value: string; today?: string; 
 export interface ProjectDraft {
   push: boolean;
   review: boolean;
+  /** Reuse passes from identical code. */
+  reuse: boolean;
   checks: Record<string, { timeoutSec: number; rerun: boolean; optional: boolean }>;
+  /** Each time-limit box as typed, once edited (blank, half-typed, out of range kept as is):
+      never sent; a box whose text isn't a time limit holds the save (draftProblem). */
+  minutesText?: Record<string, string>;
 }
+
+/** The longest time limit a check takes, in whole minutes. */
+const capMinOf = (s: MergeQueueSettings): number => Math.floor(s.fixed.checkMaxMin);
+
+/** A time-limit box typed into: its text kept, and the check's limit when the text is one. Pure. */
+export function typedMinutes(d: ProjectDraft, id: string, text: string, s: MergeQueueSettings): ProjectDraft {
+  const cur = d.checks[id];
+  if (!cur) return d;
+  const r = check(minutesRule(capMinOf(s)), text);
+  return { ...d, checks: !r.ok ? d.checks : { ...d.checks, [id]: { ...cur, timeoutSec: r.value! * 60 } }, minutesText: { ...d.minutesText, [id]: text } };
+}
+
+/** What a check's time-limit box shows: what was typed, else the staged minutes. Pure. */
+export const minutesTextOf = (d: ProjectDraft, id: string, s: MergeQueueSettings): string =>
+  d.minutesText?.[id] ?? String(Math.round((d.checks[id]?.timeoutSec ?? s.checks.list.find((c) => c.id === id)?.timeoutSec ?? 0) / 60));
+
+/** A check's time-limit box: whole minutes, 1 to the longest a check may run. */
+export const minutesRule = (capMin: number, check = "A check"): WholeRule => ({ kind: "whole", label: `${check}: the time limit in minutes`, min: 1, max: capMin });
+
+/** Why the staged edit can't be saved (the first box, in the form's order, whose text isn't a time limit), or null. Pure. */
+export const draftProblem = (d: ProjectDraft, s: MergeQueueSettings): string | null =>
+  firstIssue(s.checks.list.filter((c) => d.minutesText?.[c.id] !== undefined).map((c) => ({ rule: minutesRule(capMinOf(s), c.label), value: d.minutesText![c.id] })))?.message ?? null;
+
+/** The staged edit is unsaved work: something changed, or a box holds text that isn't a time limit (that holds the close too). Pure. */
+export const draftHolds = (d: ProjectDraft, s: MergeQueueSettings, hasOrigin: boolean): boolean => changesOf(d, s, hasOrigin) !== null || draftProblem(d, s) !== null;
 
 export function toProjectDraft(s: MergeQueueSettings, hasOrigin: boolean): ProjectDraft {
   const checks: ProjectDraft["checks"] = {};
   for (const c of s.checks.list) checks[c.id] = { timeoutSec: c.timeoutSec, rerun: c.rerun, optional: c.optional };
-  return { push: pushes(s, hasOrigin), review: s.review.on, checks };
+  return { push: pushes(s, hasOrigin), review: s.review.on, reuse: s.reuse !== false, checks };
 }
 
 /** Only what the user changed: an untouched field is never written (absent push stays absent). Pure. */
@@ -78,6 +109,7 @@ export function changesOf(d: ProjectDraft, s: MergeQueueSettings, hasOrigin: boo
   const out: MergeSettingsChange = {};
   if (d.push !== base.push) out.push = d.push;
   if (d.review !== base.review) out.review = d.review;
+  if (typeof d.reuse === "boolean" && d.reuse !== base.reuse) out.reuse = d.reuse;
   const checks: NonNullable<MergeSettingsChange["checks"]> = {};
   for (const [id, c] of Object.entries(d.checks)) {
     const b = base.checks[id];
@@ -97,6 +129,7 @@ export function changeLines(ch: MergeSettingsChange, s: MergeQueueSettings): str
   const lines: string[] = [];
   if (ch.push !== undefined) lines.push(ch.push ? "Push after each landing: on" : "Push after each landing: off");
   if (ch.review !== undefined) lines.push(ch.review ? "Review each landing: on" : "Review each landing: off");
+  if (ch.reuse !== undefined) lines.push(ch.reuse ? "Reuse passes from identical code: on" : "Reuse passes from identical code: off");
   for (const c of s.checks.list) {
     const x = ch.checks?.[c.id];
     if (!x) continue;
@@ -107,14 +140,6 @@ export function changeLines(ch: MergeSettingsChange, s: MergeQueueSettings): str
     lines.push(`${c.label}: ${parts.join(", ")}`);
   }
   return lines;
-}
-
-/** The time-limit field: whole minutes, 1 to the cap. Null when it isn't one. Pure. */
-export function parseMinutes(text: string, capMin: number): number | null {
-  const t = text.trim();
-  if (!/^\d+$/.test(t)) return null;
-  const n = Number(t);
-  return n >= 1 && n <= capMin ? n : null;
 }
 
 /** "Saved to master as 1a2b3c4; pushed with the next landing." */
@@ -131,7 +156,9 @@ export function rebaseDraft(d: ProjectDraft, base: ProjectDraft, fresh: ProjectD
     const was = base.checks[id];
     checks[id] = mine && was ? { timeoutSec: pick(mine.timeoutSec, was.timeoutSec, now.timeoutSec), rerun: pick(mine.rerun, was.rerun, now.rerun), optional: pick(mine.optional, was.optional, now.optional) } : { ...now };
   }
-  return { push: pick(d.push, base.push, fresh.push), review: pick(d.review, base.review, fresh.review), checks };
+  // What was typed stays in its box (for checks still there).
+  const kept = Object.entries(d.minutesText ?? {}).filter(([id]) => id in checks);
+  return { push: pick(d.push, base.push, fresh.push), review: pick(d.review, base.review, fresh.review), reuse: pick(d.reuse, base.reuse, fresh.reuse), checks, ...(kept.length ? { minutesText: Object.fromEntries(kept) } : {}) };
 }
 
 /** A refused call's words: the server's `{error: {code, message}}` envelope, a plain `{error}`, or the error's own message. Pure. */

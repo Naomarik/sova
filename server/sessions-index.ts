@@ -1209,6 +1209,9 @@ export function listSessions(): Promise<SessionSummary[]> {
 /** The last listing's rows by path (buildSessions hands an unchanged row out as the same object). */
 let lastRows = new Map<string, SessionSummary>();
 
+/** The last listing's rows by path, as built (no read): what the project cards' glance joins the monitor's sessions to. */
+export const lastListedRows = (): ReadonlyMap<string, SessionSummary> => lastRows;
+
 /** Deep equality that also holds key order and undefined-valued keys: JSON- and deepStrictEqual-identical. */
 function sameValue(a: unknown, b: unknown): boolean {
   if (a === b) return true;

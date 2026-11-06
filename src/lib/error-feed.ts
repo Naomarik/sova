@@ -34,6 +34,10 @@ export interface ErrorFeed {
   /** Messages a refusal put back before this connection's hello: the start failure that follows
       says them (lib/chat-wait: before the hello, a refusal is the chat failing to open). */
   heldBack?: number;
+  /** The words of the refusals behind `heldBack`, kept until the connection decides what they were:
+      a start failure says them, and a hello means the chat opened and nothing else will
+      (a version refusal, §mesh.compatibility/refusal), so they are said then. */
+  heldWords?: readonly string[];
 }
 
 /** What the view says for a step: announcements and toasts, worded by the view. */
@@ -56,16 +60,18 @@ export const EMPTY_FEED: ErrorFeed = { entries: [], turnError: null };
 const shown = (e: FeedEntry) => !e.superseded;
 
 /** A connection opened (before its hello): nothing it refuses back is counted yet. */
-export const feedOnOpen = (feed: ErrorFeed): ErrorFeed => (feed.heldBack ? { ...feed, heldBack: 0 } : feed);
+export const feedOnOpen = (feed: ErrorFeed): ErrorFeed => (feed.heldBack || feed.heldWords ? { ...feed, heldBack: 0, heldWords: undefined } : feed);
 
 /** This connection's chat said its hello: it started. A start failure that gave nothing back has
     nothing more to say and goes; one that gave a message back stays, saying where it went, until
-    a newer turn starts. */
-export function feedOnHello(feed: ErrorFeed): ErrorFeed {
+    a newer turn starts. A refusal held since before the hello wasn't the chat failing to open
+    after all, so its own words are said now, each once. */
+export function feedOnHello(feed: ErrorFeed): FeedStep {
+  const says: FeedSay[] = [...new Set(feed.heldWords)].map((message) => ({ say: "refused", message }));
   const gone = feed.entries.filter((e) => e.kind === "start" && shown(e) && !e.back);
-  if (!gone.length && !feed.heldBack) return feed;
+  if (!gone.length && !feed.heldBack && !feed.heldWords) return { feed, says };
   const entries = feed.entries.filter((e) => !gone.includes(e));
-  return { entries, turnError: gone.some((e) => e.message === feed.turnError) ? null : feed.turnError, heldBack: 0 };
+  return { feed: { entries, turnError: gone.some((e) => e.message === feed.turnError) ? null : feed.turnError, heldBack: 0 }, says };
 }
 
 /** A newer turn started (agent_start): it supersedes the last turn's failure and a failed start,
@@ -121,10 +127,11 @@ export function feedOnFailure(feed: ErrorFeed, f: { message: string; provider?: 
 }
 
 /** A `refused` error naming a send, whose text (`back`, 1 by default) is already back in the
-    composer. Before the connection's hello it is the chat failing to open: it says nothing of its
-    own, and the start failure that follows says it. After it, the refusal's own words. */
+    composer. Before the connection's hello it is usually the chat failing to open: it says nothing
+    yet, and the start failure that follows says it, or the hello says its words when none does
+    (feedOnHello). After the hello, the refusal's own words at once. */
 export function feedOnRefused(feed: ErrorFeed, r: { message: string; beforeHello: boolean; back?: number }): FeedStep {
-  if (r.beforeHello) return { feed: { ...feed, heldBack: (feed.heldBack ?? 0) + (r.back ?? 1) }, says: [] };
+  if (r.beforeHello) return { feed: { ...feed, heldBack: (feed.heldBack ?? 0) + (r.back ?? 1), heldWords: [...(feed.heldWords ?? []), r.message] }, says: [] };
   return { feed, says: [{ say: "refused", message: r.message }] };
 }
 

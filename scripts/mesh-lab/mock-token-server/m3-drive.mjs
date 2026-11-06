@@ -24,6 +24,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { freshFetch } from "../e2e/fresh-fetch.mjs";
 import { DOMAIN, PEER_PORT, PORTS } from "../lab.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -103,7 +104,18 @@ const shAsync = (host, script) =>
 const claudeSim = (host, cmd, extra = "") =>
   JSON.parse(sh(host, `cd /sova && node scripts/mesh-lab/mock-token-server/claude-sim.mjs ${cmd} --dir "$SOVA_SYNC_CLAUDE_DIR" --mock "$MOCK_TOKEN_URL" ${extra}`).split("\n").at(-1));
 
-const mock = async (path) => (await fetch(new URL(path, MOCK))).json();
+/** GET a mock harness endpoint from the laptop. A failure says what failed, never retried: a step that
+    can't reach the mock fails with its URL and cause. */
+const mock = async (path) => {
+  const url = new URL(path, MOCK);
+  let res;
+  try {
+    res = await freshFetch(url); // a fresh socket: this process blocks its loop in spawnSync between calls
+  } catch (e) {
+    throw new Error(`mock GET ${url}: ${e?.cause?.code ?? e?.cause?.message ?? e?.message} at ${new Date().toISOString()}`);
+  }
+  return res.json();
+};
 const lineage = async (id) => (await mock("/mock/lineages"))[id];
 /** The throwaway provider of the conflict scenarios; a fresh name has no logout history on the mesh. */
 const CONFLICT_PROVIDER = process.env.M3_CONFLICT_PROVIDER ?? "m3conflict";
@@ -418,7 +430,7 @@ async function h11() {
 // ---- pre-sync conflict (first pairing), settled from the Mesh page's routes ----------------------
 
 const mainApi = async (host, path, init) => {
-  const res = await fetch(`http://127.0.0.1:${PORTS.host(host)}${path}`, { ...init, signal: AbortSignal.timeout(10_000) });
+  const res = await freshFetch(`http://127.0.0.1:${PORTS.host(host)}${path}`, { ...init, signal: AbortSignal.timeout(10_000) });
   return { status: res.status, text: await res.text() };
 };
 const loginRow = async (host, key) => JSON.parse((await mainApi(host, "/api/mesh/logins")).text).entries.find((e) => e.key === key);

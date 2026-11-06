@@ -22,7 +22,7 @@ is.
 ```html
 <!-- the sidebar foot's Usage row (§app.insights/sidebar-foot) -->
 <div class="sidebar-foot-row">
-  <a class="list-row list-row-interactive insights-row sidebar-foot-link" href="#/usage" …>…gauge… glance</a>
+  <a class="list-row list-row-interactive insights-row sidebar-foot-link" href="#/usage" …>…usage-coin… glance</a>
   <button type="button" class="button button-icon sidebar-settings"
           title="Resource monitor" aria-label="Resource monitor">
     <span class="icon icon-sm" style="--icon: url(/icons/activity.svg)" aria-hidden="true"></span>
@@ -34,7 +34,7 @@ is.
   in the same column: the same markup and the same class as the gear (`.button.button-icon.sidebar-settings`),
   so both are 44 × 44 with the same margin and right edge, in both themes. Its glyph is
   `activity.svg`, a pulse line (§design.ground-rules/icons).
-- **Collapsed.** The spine carries the same button as a `.spine-item` right after the Usage gauge
+- **Collapsed.** The spine carries the same button as a `.spine-item` right after the Usage link
   (§app.session-list/spine), so the monitor is reachable with the sessions pane collapsed.
 - **What it does.** Opens the monitor modal. Which is open lives in a module signal in
   `src/lib/monitor-nav.ts` (`openMonitor` / `closeMonitor` / `monitorOpen`), rendered through a

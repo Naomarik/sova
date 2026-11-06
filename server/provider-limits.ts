@@ -12,7 +12,8 @@ import {
   waitingBySession,
   writeProviderLimits,
 } from "../pi-config/extensions/provider-limits/gate.ts";
-import type { ProviderLimitsInfo, ProviderWaiting } from "../shared/provider-limits";
+import { LIMIT_RULE, type ProviderLimitsInfo, type ProviderWaiting } from "../shared/provider-limits";
+import { problemOf } from "../shared/form-rules";
 
 // Settings → Models' "At once" field (§app.provider-limits/setting) and the web's waiting state
 // (§app.provider-limits/waiting-shown). The file (~/.pi/agent/provider-limits.json) is read by every
@@ -46,6 +47,9 @@ export function saveProviderLimits(body: unknown, agentDir = agentRoot()): Provi
   if (stored.state === "malformed")
     return { status: 409, body: { error: `${stored.file} can't be read (${stored.errors.join("; ")}), so it wasn't overwritten; fix or delete it first` } };
   const limits = body && typeof body === "object" && !Array.isArray(body) ? (body as { limits?: unknown }).limits : undefined;
+  // Each limit in the form's own words (shared/provider-limits.ts), before the file's parse.
+  const bad = Object.entries(limits && typeof limits === "object" ? limits : {}).map(([p, v]) => problemOf(LIMIT_RULE, typeof v === "number" ? v : null, `${p}'s At once`)).find((m) => m);
+  if (bad) return { status: 400, body: { error: bad } };
   const parsed = parseProviderLimits({ version: 1, limits });
   if (!parsed.ok) return { status: 400, body: { error: parsed.errors.join("; ") } };
   try {

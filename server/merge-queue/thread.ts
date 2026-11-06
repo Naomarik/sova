@@ -210,8 +210,28 @@ export function rereadLine(playbook: string, method: string = DEFAULT_PLAYBOOK_D
 
 const short = (sha: string) => sha.slice(0, 7);
 
-/** The message one event becomes. Each names the verbs to answer with and asks for a short turn. */
+/** Each moment's name in the playbook's "Read as you go" table (PLAYBOOK.md; a project's own playbook may list other pages). */
+export const READ_AS_YOU_GO: Readonly<Record<ThreadEvent["kind"], string>> = {
+  queued: "Queued",
+  conflict: "Conflict",
+  failed: "Failed",
+  paused: "Paused",
+  idle: "Idle",
+  names: "Names",
+  answer: "Answer",
+};
+
+/** The line every event message ends with: the method's pages are read fresh at each event, never from memory. */
+export function readAsYouGoLine(kind: ThreadEvent["kind"]): string {
+  return `Before you act, read your playbook's "Read as you go" row for ${READ_AS_YOU_GO[kind]} and the pages it names, now, never from memory (the project's own playbook wins where its list differs).`;
+}
+
+/** The message one event becomes: the event, then the reread line. Each names the verbs to answer with and asks for a short turn. */
 export function eventText(ev: ThreadEvent): string {
+  return `${eventBody(ev)}\n${readAsYouGoLine(ev.kind)}`;
+}
+
+function eventBody(ev: ThreadEvent): string {
   switch (ev.kind) {
     case "queued": {
       const e = ev.entry;
@@ -219,7 +239,7 @@ export function eventText(ev: ThreadEvent): string {
       return [
         `Queued: entry ${e.id} · ${e.branch} at ${short(e.commit)}, onto ${e.target}${ev.base ? ` (at ${short(ev.base)})` : ""}.`,
         `Read what it changes (\`git diff ${base}...${e.commit}\`, read only; it may land before you finish). Then, in one short turn:`,
-        `1. pick extra checks by blast radius (the method's scripts/blast-radius.mjs --base ${base} --tip ${e.commit}, references/picks.md) and add them with merge.extend {entry: "${e.id}", checks: [id], why} (skip when nothing beyond the floor fits; "landed" or "busy" means too late: go on to the note);`,
+        `1. pick extra checks by blast radius (the method's scripts/blast-radius.mjs --base ${base} --tip ${e.commit}, references/picks.md) and add them with merge.extend {entry: "${e.id}", checks: [id], why, select} (select is part of the pick: copy the pick's select whenever it has one, since a check that takes a group or files fails at once without it; skip when nothing beyond the floor fits; "landed" or "busy" means too late: go on to the note);`,
         `2. write its note with merge.note {entry: "${e.id}", note} ("What's worth noting" in the playbook; an empty note when nothing is).`,
       ].join("\n");
     }

@@ -282,6 +282,9 @@ for assistive technology only (visually hidden): what the eye reads is the note 
 transcript's end (§chat.transcript/instant-open), so nothing is added to the composer. A chat
 closed for being quiet while its tab is open is none of these: its tab holds no socket, Send and
 the controls work and wake it, and they wait as "Chat connecting or starting" only from then on.
+A peer session whose host is Read only or Display may be wrong (§mesh.compatibility/states) is not
+one of the rows below: a notice takes the composer's place, Stop included
+(§mesh.compatibility/read-only).
 
 | Condition | Textarea | Buttons | Reason (with icon) |
 |---|---|---|---|
@@ -766,7 +769,8 @@ approval. Then comes one row per worktree
   - **Cancel** on a queued row;
   - **Accept** and **Send Back** on Behaviour differs;
   - **Land Anyway** and **Send Back** on Review flagged and on Can't tell whose failure;
-  - **Land This Commit Again** and **Remove from Queue** on every Needs a fix row (below);
+  - the re-land button (**Land This Commit Again**, or **Land Newest Commit** once the branch moved
+    on) and **Remove from Queue** on every Needs a fix row (below);
 - its reviewer line while the branch's review runs and after it ends, with **Open Reviewer Chat**,
   the same row as the pane's (§chat.worktrees/pane);
 - **Review Changes**, first among the row's actions, on every row of an active worktree whose folder
@@ -780,7 +784,7 @@ approval. Then comes one row per worktree
 **Land comes back once its chat fixes it.** A branch the queue sent back to its chat (Needs a fix,
 after Send Back or a failed check) offers no Land and no Land menu, here, in the session pane and on
 the Merge Queue tab, until its chat has fixed it. Its line is the queue's reason, else "Sent back to
-its chat. Land comes back once its chat fixes it, or use Land This Commit Again." What counts as
+its chat. Land comes back once its chat fixes it, or land its newest commit now." What counts as
 fixed depends on why it was sent back:
 - **Sent back for its spec drafts** (the docs step found drafts that don't fit,
   §app.merge-queue/run): fixing them needs no commit. Once its drafts have changed since it was sent
@@ -798,12 +802,17 @@ reads **Merged**) or its worktree folder is removed (**Removed**); after that, a
 old sent-back entry never brings Needs a fix back. No row says whether its chat is working on the
 fix meanwhile.
 
-**Land This Commit Again and Remove from Queue.** Every Needs a fix row, here, in the session pane,
+**The re-land button and Remove from Queue.** Every Needs a fix row, here, in the session pane,
 on the Merge Queue tab and on the chat's queue card (§chat.merge-queue/chat-card), offers both,
 whatever it was sent back for:
-- **Land This Commit Again** is a new approval of the sent-back commit, with the branch's drafts as
-  they are now (§app.merge-queue/approve): the entry joins the end of the line and runs every check
-  from the start.
+- **The re-land button** is a new approval of the branch's **newest commit**, with the branch's
+  drafts as they are now (§app.merge-queue/approve): the entry joins the end of the line and runs
+  every check from the start. It reads **Land This Commit Again** until the branch moved, then **Land
+  Newest Commit**. Once it moved the row adds, joined by " · ", "{n} newer commits included" (the
+  branch's own commits past the sent-back one, never the target's a merge brought in) or "the branch
+  was rewritten since it was sent back", and, when that newest commit isn't Ready to land, "The newest
+  commit isn't Ready to land: {why}." (§chat.worktrees/ready-to-land). It is one button: none is
+  offered for the old commit.
 - **Remove from Queue** takes the entry off the queue at once, with no confirm. It deletes nothing:
   the branch, its folder, its commits, its drafts and its run's logs all stay. The entry ends as
   cancelled, "removed by you", the chat's queue card gets a final **Removed** revision, and the row
@@ -826,8 +835,8 @@ column's right edge, never stretched to the column's width. Folded (narrower), t
 sit on their own line under the bullets, right-aligned. Land's confirmation is right-aligned under
 the row in both.
 
-Every row action (Land and its ▾, Cancel, Accept, Land Anyway, Send Back, Land This Commit Again,
-Remove from Queue, See Why, Set Up Queue, Review Changes) and both buttons of Land's confirmation
+Every row action (Land and its ▾, Cancel, Accept, Land Anyway, Send Back, Land This Commit Again
+or Land Newest Commit, Remove from Queue, See Why, Set Up Queue, Review Changes) and both buttons of Land's confirmation
 are one size on every screen, a phone and a touch screen included: a small button's height (36px),
 only as wide as its label.
 

@@ -332,7 +332,8 @@
       "server/tours/bindings-routes.ts",
       "server/tours/bindings-portable.integration.test.ts",
       "server/share/hub.ts",
-      "server/tours/bindings-portable-host.ts"
+      "server/tours/bindings-portable-host.ts",
+      "shared/powers.ts"
     ],
     "requires": [
       "§app.organizations/workspace-repo",
@@ -340,7 +341,12 @@
       "§app.project-overseer/autonomy-levels",
       "§app.baton/links",
       "§app/tours"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-05T03:54Z",
+      "source": "pi-session:4ff7a076-864d-4370-9783-4c5b6119e95c#5bc9ed14"
+    }
   },
   "§app.organizations/privacy": {
     "kind": "behavior",
@@ -411,9 +417,9 @@
       "src/components/InsightsPage.tsx"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T22:53Z",
-      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
+      "by": "naomarik",
+      "at": "2026-11-05T03:54Z",
+      "source": "pi-session:4ff7a076-864d-4370-9783-4c5b6119e95c#5bc9ed14"
     }
   },
   "§app.organizations/projects": {
@@ -595,7 +601,8 @@
       "statecharts/src/sova/statecharts/baton.cljc",
       "server/statecharts.ts",
       "server/statecharts.test.ts",
-      "statecharts/src/sova/statecharts/api.cljs"
+      "statecharts/src/sova/statecharts/api.cljs",
+      "src/components/form/index.tsx"
     ],
     "requires": [
       "§app.organizations/roster",

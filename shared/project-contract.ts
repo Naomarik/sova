@@ -78,7 +78,7 @@ export const VERB_PARAMS: readonly VerbParam[] = [
   { wire: "keepData", type: "boolean", tool: { name: "keep_data", description: "teardown: keep the data resources." }, cli: { flag: "keep-data", description: "Keep the instance's data" } },
   { wire: "resources", type: "list", tool: { name: "resources", description: "reset: only these data resources." }, cli: { flag: "resources", description: "Resource names, comma-separated" } },
   { wire: "ref", type: "string", tool: { name: "ref", description: "conform: the branch or commit whose definition to prove (default the main checkout's HEAD)." }, cli: { flag: "ref", description: "A git ref" } },
-  { wire: "select", type: "list", tool: { name: "select", description: "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite.", maxItems: 50 }, cli: { flag: "select", description: "Test selectors, comma-separated" } },
+  { wire: "select", type: "list", tool: { name: "select", description: "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite. merge.extend: part of a pick: the selectors the picked check runs with (a slow test group, files, tours: the pick's select); a check that takes one runs bare without it and fails.", maxItems: 50 }, cli: { flag: "select", description: "Test selectors, comma-separated" } },
   { wire: "endpoint", type: "string", tool: { name: "endpoint", description: 'share/revoke: the endpoint, "<service>.<port>", one of the definition\'s share.endpoints.' }, cli: { flag: "endpoint", description: "A service endpoint, service.port" } },
   { wire: "days", type: "integer", tool: { name: "days", description: "share: how many days the link lasts (default 1, at most 7 or the definition's share.maxDays).", minimum: 1, maximum: 7 }, cli: { flag: "days", description: "How many days a share link lasts" } },
   { wire: "link", type: "string", tool: { name: "link", description: "revoke: one share link, by its id (pv_…)." }, cli: { flag: "link", description: "A share link id" } },
@@ -105,7 +105,7 @@ export const VERB_PARAMS: readonly VerbParam[] = [
   { wire: "withoutReview", type: "boolean", mergeOnly: true, cli: { flag: "without-review", description: "Land without the review step" } },
   { wire: "chat", type: "string", mergeOnly: true, cli: { flag: "chat", description: "The chat the approval was given in" } },
   { wire: "via", type: "string", mergeOnly: true, cli: { flag: "via", description: "merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed \"open a PR\")" } },
-  { wire: "checks", type: "list", mergeOnly: true, tool: { name: "checks", description: "merge.extend: check ids from the project's merge section to add to this entry's run (never removes one)." }, cli: { flag: "checks", description: "Check ids, comma-separated" } },
+  { wire: "checks", type: "list", mergeOnly: true, tool: { name: "checks", description: "merge.extend {entry, checks, why, select}: check ids from the project's merge section to add to this entry's run (never removes one); send each pick's select with it." }, cli: { flag: "checks", description: "Check ids, comma-separated" } },
   { wire: "verdict", type: "string", mergeOnly: true, tool: { name: "verdict", description: "merge.resolve: no-behaviour-change | behaviour-differs; merge.review: ok | notes | blocking." }, cli: { flag: "verdict", description: "A verdict" } },
   { wire: "files", type: "list", mergeOnly: true, tool: { name: "files", description: "merge.resolve: the conflicted files the judgement covers." }, cli: { flag: "files", description: "Files, comma-separated" } },
   { wire: "ours", type: "string", mergeOnly: true, tool: { name: "ours", description: "merge.resolve: what the target's side does, in plain words." }, cli: { flag: "ours", description: "The target's side, in plain words" } },
@@ -337,7 +337,8 @@ export interface MergeCheckDecl {
  *  main checkout's). `push`: absent means push when an `origin` remote exists. `install`: run in the merge copy when
  *  a merged branch changes one of its `inputs` (an offline install). `review`: the review kit's folder. `land`: how a
  *  branch lands (al_3; absent: merged locally; this computer's own choice wins over it). `request`: the request skill
- *  folder (how a pull or merge request's title and description are written, and their checks). */
+ *  folder (how a pull or merge request's title and description are written, and their checks). `reuse`: false runs
+ *  every check in full (SOVA_FRESH=1); absent or true lets a check's runner reuse passes from identical code. */
 export interface MergeDecl {
   target?: string;
   push?: boolean;
@@ -346,6 +347,7 @@ export interface MergeDecl {
   review?: string;
   land?: import("./merge-queue").LandHow;
   request?: string;
+  reuse?: boolean;
 }
 
 /** The endpoints a copy may share (`"<service>.<port>"`, checkout services only; none when absent), at most `maxDays` per link, and whether at all. */
@@ -488,7 +490,7 @@ export const DEFINITION_KEYS = {
   rollback: [["steps"], ["none"]],
   credential: ["name", "kind", "check"],
   requires: ["tests"],
-  merge: ["target", "push", "checks", "install", "review", "land", "request"],
+  merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse"],
   mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional"],
   mergeInstall: ["run", "inputs", "timeout"],
   release: ["playbook", "tag", "scheme", "channels", "commit", "checks", "quietMin"],
@@ -944,6 +946,10 @@ function mergeDecl(v: unknown, services: readonly ServiceDecl[]): MergeDecl {
     out.land = o.land as (typeof MERGE_LAND_HOWS)[number];
   }
   if (o.request !== undefined) out.request = relPath(o.request, "$.merge.request", true);
+  if (o.reuse !== undefined) {
+    if (typeof o.reuse !== "boolean") throw new DefinitionError("$.merge.reuse", "must be true or false");
+    out.reuse = o.reuse;
+  }
   return out;
 }
 

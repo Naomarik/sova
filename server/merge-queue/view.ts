@@ -67,7 +67,7 @@ export function buildView(a: {
     needsYou,
     needsFix,
     recent,
-    heads: { target: a.head, ...pushedOf(a.q.heads.pushed, a.origin), ...(a.q.heads.pushWhy ? { pushWhy: a.q.heads.pushWhy } : {}), ...(a.q.heads.targetRed?.length ? { targetRed: [...a.q.heads.targetRed] } : {}) },
+    heads: { target: a.head, ...pushedOf(a.q.heads.pushed, a.origin), ...(a.q.heads.pushWhy ? { pushWhy: a.q.heads.pushWhy } : {}), ...(a.q.heads.targetRed?.length ? { targetRed: [...a.q.heads.targetRed] } : {}), ...(a.q.heads.targetBroken?.length ? { targetBroken: structuredClone(a.q.heads.targetBroken) } : {}) },
     at: new Date(a.now).toISOString(),
   };
 }
@@ -135,6 +135,8 @@ export function worktreeQueueInfo(view: MergeQueueView, branch: string): Worktre
     commit: e.commit,
     ...(e.reason ? { reason: e.reason } : {}),
     ...(e.newerCommits ? { newerCommits: e.newerCommits } : {}),
+    ...(e.newerRewritten ? { newerRewritten: e.newerRewritten } : {}),
+    ...(e.newerBlocked ? { newerBlocked: e.newerBlocked } : {}),
     ...(e.eta ? { eta: e.eta } : {}),
     notes: e.notes,
     ...(e.landed ? { landed: e.landed } : {}),
@@ -146,5 +148,38 @@ export function worktreeQueueInfo(view: MergeQueueView, branch: string): Worktre
     ...(e.settled ? { settled: e.settled } : {}),
     ...(e.state === "needs-fix" && e.redrafted ? { redrafted: true as const } : {}),
     ...(view.review ? { reviewKit: true } : {}),
+  };
+}
+
+/**
+ * A project card's cut of a queue view (§app.projects/home-glance): the Ready list's count, what is in line, the run
+ * checking now and the release's hold. Pure: from the view alone, so the glance reads the kept view and nothing else.
+ * null for a view of a queue that doesn't serve its project.
+ */
+export function queueGlanceOf(view: MergeQueueView): import("../../shared/projects").ProjectGlanceQueue | null {
+  if (!view.served) return null;
+  const hold = view.release;
+  const run = view.current;
+  const entry = run ? view.checking.find((e) => e.id === run.entry) : undefined;
+  const branch = entry?.branch ?? run?.branch;
+  const landing =
+    run && branch && !run.endedAt
+      ? {
+          branch,
+          startedAt: run.startedAt,
+          takesMs: entry?.eta && entry.eta.takesMs > 0 ? entry.eta.takesMs : null,
+          steps: run.steps.map((s) => ({ id: s.id, kind: s.kind, label: s.label, result: s.result, ...(s.startedAt ? { startedAt: s.startedAt } : {}) })),
+          checks: run.checks.map((c) => ({ id: c.id, label: c.label })),
+          ...(hold && entry?.release === hold.id ? { release: true as const } : {}),
+        }
+      : undefined;
+  return {
+    ready: view.ready?.length ?? 0,
+    inLine: view.waiting.length + view.checking.length,
+    waiting: view.waiting.length,
+    target: view.target,
+    ...(landing ? { landing } : {}),
+    ...(hold ? { frozen: { tag: hold.tag ?? null, version: hold.version, waiting: view.waiting.filter((w) => w.release !== hold.id).length } } : {}),
+    at: view.at,
   };
 }

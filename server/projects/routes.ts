@@ -14,6 +14,7 @@ import { projectLoginView, setProjectLogin } from "./claude-login";
 import { cloneRepo, overseerRepoProblem } from "./clone";
 import { reservedRoots } from "./contributions";
 import { RegistryError, reservedRootProblem } from "./registry";
+import { readGlance } from "./glance";
 import { registerIconRoutes } from "./icon-routes";
 import { registerRuntimeRoutes } from "./runtime-routes";
 import { editProject, listProjects, readProject, registerProjectIn, setProjectArchived, type OperatorBy } from "./spaces";
@@ -71,6 +72,9 @@ async function overseerAddRoot(rawRoot: unknown): Promise<string> {
 
 export function registerProjectRoutes(app: Hono<any>): void {
   app.get("/api/projects", handle((c) => c.json({ projects: listProjects() } satisfies ProjectList, 200, NO_STORE)));
+  // The overview cards' runtime figures (§app.projects/home-glance): what Sova keeps, one answer for 10 s. Before
+  // `/api/projects/:pid`, which would read "glance" as a project id.
+  app.get("/api/projects/glance", handle(async (c) => c.json(await readGlance(), 200, NO_STORE)));
 
   // Add Project (a folder, a session's folder) or Clone from GitHub: the operator's, on this host only.
   app.post(

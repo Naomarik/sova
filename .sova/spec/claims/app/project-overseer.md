@@ -190,8 +190,7 @@ user row.
   organization places the project), then " Paused: {reason}." while braked, and " Change." It opens
   the project page's switches (§design.copy-deck/project-powers): the always-allowed line, the
   columns, the groups and, opened, their acts, the Paused banner with **Resume** while braked; each
-  switch saves at once (`PATCH …/overseer {powers}`) with the same toasts. The one-time note stays on
-  the project page. Full settings (limits, models, watch pace) stay on the project page
+  switch saves at once (`PATCH …/overseer {powers}`) with the same toasts. Full settings (limits, models, watch pace) stay on the project page
   (§app.project-overseer/limits).
 - **Run Now** (`POST …/overseer/run`, §app.project-overseer/watch-loop): disabled while it works, with
   the reason "Working now"; done: "The overseer is looking now."; refused: the server's sentence.
@@ -296,19 +295,17 @@ user row.
   roster has someone again (then the brake can come back if it empties). Changing a switch alone
   never ends the pause. A standalone project has no roster brake.
 - **Stored with the workspace, readable by an older Sova.** `overseer.json` keeps `powers {version: 1,
-  derivedAutonomy, overseer, assistant, assistantModels?, emptyRosterResumedAt?, note?, stamp}` (`stamp`: a
+  derivedAutonomy, overseer, assistant, assistantModels?, emptyRosterResumedAt?, stamp}` (`stamp`: a
   hash of the whole file as saved, written last, only by a Sova that knows switches) and, on every
   save, `autonomy` set to the highest level whose every old power is On in the overseer column, so
   an older Sova on another host reading only the level is never looser than the switches; the old
   `confirmKinds` and `confirmKindsKnown` are read and ignored, and no longer written (an older reader
-  then confirms every kind: stricter). A bad value of one switch reads as its carry-over default.
+  then confirms every kind: stricter); a `note` an earlier version stored is read and dropped. A bad value of one switch reads as its carry-over default.
 - **Carry-over.** A project with no `powers` (every project before this change) reads its overseer
   column from its level: each power whose old level is at or below the project's level is On, every
-  other Off (`deploy` had no level: Off); the Project Assistant column starts all Off; a one-time note
-  says levels are now switches and that held acts no longer wait for the overseer's own approval
-  (the old checklist), so an On act goes ahead after its waiting period alone. A level written by a
-  Sova that doesn't know switches re-derives the overseer column from that level the same way, and
-  the note says so. Such a save is told by what only a Sova that knows switches controls, never by the
+  other Off (`deploy` had no level: Off); the Project Assistant column starts all Off. No note
+  announces it. A level written by a Sova that doesn't know switches re-derives the overseer
+  column from that level the same way, silently too. Such a save is told by what only a Sova that knows switches controls, never by the
   level's value alone (an older Sova rewriting the same level, to rule coding out, still turns
   `codingStart` Off): `confirmKinds` or `confirmKindsKnown` in the file (an older Sova always writes
   them), a `stamp` that no longer matches the file, or `autonomy` differing from
@@ -986,15 +983,18 @@ judgement.
   reads its queue state in the chips the composer's modal uses (§chat.composer/worktrees-control),
   with its estimates or reason, and while it is queued, checking or waiting for the user its Land is
   disabled: "Already in the merge queue.". While it is sent back to its chat (Needs a fix) its Land
-  is disabled too, "Sent back to its chat. Land comes back once its chat fixes it, or use Land This
-  Commit Again." (§chat.composer/worktrees-control), and beside it the menu offers **Land This
-  Commit Again** ("Approves {sha} again: every check runs from the start."), a new approval of the
-  sent-back commit (§app.merge-queue/approve), disabled while the session is working. A branch sent
+  is disabled too, "Sent back to its chat. Land comes back once its chat fixes it, or land its newest
+  commit now." (§chat.composer/worktrees-control), and beside it the menu offers the re-land item, a
+  new approval of the head this page read (§app.merge-queue/approve), disabled while the session is
+  working. While that head is the sent-back commit it is **Land This Commit Again** ("Approves {sha}
+  again: every check runs from the start."); once the branch moved it is **Land Newest Commit**
+  ("Approves {head}: every check runs from the start."), with what it brings in and why that commit
+  isn't Ready to land after those words. A branch sent
   back for its spec drafts gets Land back here at the same commit once its drafts changed and fit, as
-  on the other screens, and Land This Commit Again leaves the menu. An entry that no longer needs a
+  on the other screens, and the re-land item leaves the menu. An entry that no longer needs a
   fix (approved again later, already in the target, or its branch or folder gone) blocks neither:
-  Land This Commit Again leaves and Land reads as for any branch. After a fix that needed a commit
-  this menu, which reads no readiness, keeps Land off; the branch lands by Land This Commit Again
+  the re-land item leaves and Land reads as for any branch. After a fix that needed a commit
+  this menu, which reads no readiness, keeps Land off; the branch lands by Land Newest Commit
   here, or from the Worktrees modal, the session pane, the Merge Queue tab, or "land it" typed in its
   chat. Remove from Queue isn't in this menu.
   Drafts changed keeps Land. The queue's refusals are shown under the row as Merge

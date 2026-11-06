@@ -361,17 +361,19 @@ export function WorktreeQueueRow(props: {
             Send Back
           </button>
         </Show>
-        <Show when={buttons().includes("Land This Commit Again")}>
-          <button
-            type="button"
-            class="button button-sm"
-            aria-label={`Land ${w().branch} at this commit again`}
-            title="Approve the same commit again: every check runs from the start."
-            disabled={busy()}
-            onClick={() => void run("Land This Commit Again", () => land(w().path, { commit: e().commit }), `Queued ${w().branch} at ${e().commit.slice(0, 7)} again.`)}
-          >
-            Land This Commit Again
-          </button>
+        <Show when={buttons().find((b) => b === "Land This Commit Again" || b === "Land Newest Commit")}>
+          {(label) => (
+            <button
+              type="button"
+              class="button button-sm"
+              aria-label={`Land ${w().branch} at its newest commit`}
+              title={label() === "Land Newest Commit" ? "Approve the branch's newest commit: every check runs from the start." : "Approve the same commit again: every check runs from the start."}
+              disabled={busy()}
+              onClick={() => void run(label(), () => land(w().path, {}), `Queued ${w().branch} at its newest commit.`)}
+            >
+              {label()}
+            </button>
+          )}
         </Show>
         <Show when={buttons().includes("Remove from Queue")}>
           <button

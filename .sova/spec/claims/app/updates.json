@@ -192,7 +192,9 @@
       "src/lib/updates-draft.ts",
       "src/lib/updates-draft.test.ts",
       "src/components/UpdatesSettings.tsx",
-      "src/lib/api.ts"
+      "src/lib/api.ts",
+      "shared/branch-name.ts",
+      "src/components/form/index.tsx"
     ],
     "agreed": {
       "by": "user",

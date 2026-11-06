@@ -184,6 +184,18 @@ describe("the service", () => {
     assert.deepEqual(by.gone, { id: "gone", label: "GONE", state: "down", recipe: null, relation: "unknown" });
   });
 
+  test("info and start: an up host is placed by its commit, whatever its state, and one behind can be resynced", async () => {
+    const w = world({ probes: { vps: { state: "up", hello: skewed(A).hello! }, phone: { state: "up", hello: skewed(C).hello! }, new: { state: "up", hello: skewed(D).hello! }, gone: { state: "hidden" } } });
+    const s = service(w);
+    const by = Object.fromEntries((await s.info())!.hosts.map((h) => [h.id, h]));
+    assert.deepEqual([by.vps!.relation, by.vps!.distance, by.vps!.state], ["behind", 2, "up"]);
+    assert.equal(by.phone!.relation, "same");
+    assert.equal(by.phone!.commit, C);
+    assert.equal(by.new!.relation, "diverged");
+    assert.equal(by.gone!.relation, "unknown");
+    assert.equal((await s.start("vps", { commit: C }, json)).status, 202);
+  });
+
   test("info: a build that can't be named is said once, on self", async () => {
     const w = world({ build: { commit: C, protocol: PROTO, dirty: true, verified: true, blocked: "uncommitted changes" } });
     assert.equal((await service(w).info())!.self.blocked, "uncommitted changes");
@@ -223,12 +235,12 @@ describe("the service", () => {
     assert.deepEqual(w.spawned, []);
   });
 
-  test("start: never a downgrade, a branch jump, an unknown commit or a host that isn't skewed", async () => {
+  test("start: never a downgrade, a branch jump, an unknown commit, the same commit or a host that doesn't answer", async () => {
     const cases: Array<[Partial<World>, RegExp]> = [
       [{ details: { vps: { commit: MISSING, turnsRunning: 0, workers: 0 } } }, /isn't known/],
       [{ details: { vps: { commit: D, turnsRunning: 0, workers: 0 } } }, /another branch/],
       [{ build: { commit: A, protocol: PROTO, dirty: false, verified: true }, details: { vps: { commit: C, turnsRunning: 0, workers: 0 } } }, /newer build than Desk; update Desk instead/],
-      [{ probes: { vps: { state: "up", hello: skewed().hello! } } }, /already runs/],
+      [{ probes: { vps: { state: "up", hello: skewed(C).hello! } } }, /runs the same commit/],
       [{ probes: { vps: { state: "down" } } }, /isn't answering/],
     ];
     for (const [over, why] of cases) {
@@ -250,8 +262,12 @@ describe("the service", () => {
     assert.equal((r.body as ResyncJob).state, "running");
     assert.deepEqual(w.spawned, [[join(repo, "scripts/mesh-vps/deploy.sh"), "--rev", C]]);
     await until(() => s.job("vps")!.state === "waiting");
-    // the peer comes back on this host's protocol
-    w.probes.vps = { state: "up", hello: { ...skewed().hello!, protocol: PROTO } };
+    // Back on this host's fingerprint but another commit: not there yet, so the fingerprint decides nothing.
+    w.probes.vps = { state: "up", hello: { ...skewed(A).hello!, protocol: PROTO } };
+    await new Promise((r) => setTimeout(r, 60)); // the poll is 20 ms: a few rounds of it
+    assert.equal(s.job("vps")!.state, "waiting");
+    // Its hello carries this host's boot commit, whatever its state.
+    w.probes.vps = { state: "up", hello: { ...skewed(C).hello!, protocol: PROTO } };
     await until(() => s.job("vps")!.state === "done");
     const job = s.job("vps")!;
     assert.match(job.tail, /deploying/);

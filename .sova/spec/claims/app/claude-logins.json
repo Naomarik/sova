@@ -19,16 +19,20 @@
       "server/claude-pool/index.ts",
       "src/lib/claude-pool.test.ts",
       "src/lib/claude-login-groups.ts",
-      "src/lib/claude-login-groups.test.ts"
+      "src/lib/claude-login-groups.test.ts",
+      "shared/account-limits.ts",
+      "server/claude-accounts.test.ts",
+      "server/settings-limits-parity.test.ts",
+      "src/components/form/index.tsx"
     ],
     "requires": [
       "§app.claude-logins/add-remove",
       "§app.claude-logins/device-order"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-24T04:43Z",
-      "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      "by": "user",
+      "at": "2026-11-05T02:17Z",
+      "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#31e7455c"
     }
   },
   "§app.claude-logins/active-login": {
@@ -140,7 +144,10 @@
       "server/insights-claude-logins.test.ts",
       "src/lib/claude-login-groups.ts",
       "src/lib/claude-login-groups.test.ts",
-      "src/design/base.css"
+      "src/design/base.css",
+      "shared/account-limits.ts",
+      "server/settings-limits-parity.test.ts",
+      "src/components/form/index.tsx"
     ],
     "agreed": {
       "by": "naomarik",

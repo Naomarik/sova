@@ -284,11 +284,16 @@ While a release is open, the project's merge queue is **frozen** for it (§app.m
 The **release entry** is added by Sova, approved `by: release`, without review, first in line. It must
 be cut from the release's base. It runs the merge's required checks and then the release's gating
 checks in order (a check the merge set already runs fully runs once; a project whose merge checks are
-`none` still runs them), and lands its commit on the target **without a push**. A conflict hands it
+`none` still runs them), every one of them fresh (`SOVA_FRESH=1`): a release reuses no earlier pass
+(§app.server-runtime/test-reuse), so it catches what reuse at landings could hide. It lands its commit on the target **without a push**. A conflict hands it
 straight back. Its outcome reaches the release: running, then **Done** ("passed; {sha} is on {target}
 (not pushed until Publish)") with the release commit recorded, or **Failed** with why, after which the
 operator may Retry Step (the entry runs again) or abandon. A **tag-only** release has no commit: once
 its last prepare step is done, the same entry runs check-only on the frozen tip, and nothing moves.
+
+**A release never skips a check.** A test check the queue would skip for a branch as broken on the
+target (§app.merge-queue/blame) is never skipped on a release's run: the same failure waits on the user
+as Can't tell whose failure, its gates unrun, and the release can't pass with them unrun.
 
 **The gates of Publish**, all of them, never overridable: the checks step is done; every prepare and
 check step is done or skipped; notes are set; a version and its tag exist; the release commit is on
@@ -391,7 +396,9 @@ On, an overseer told to release, publish and deploy does the whole chain, each a
 
 The project page has a **Releases** tab after Merge Queue (§app.organizations/project-page), at
 `#/projects/<pid>/releases`, reading `release.status` every 5 seconds and following the session feed's
-`release` frames; the tab, the Overview card and the Deploy card share that one read. Top to bottom:
+`release` frames; the tab, the Overview card and the Deploy card share that one read. The same frames,
+every project's, also drive the sidebar's landing bar, which never publishes or abandons: its Open
+Releases opens this tab for both (§app.merge-queue/landing-bar). Top to bottom:
 
 - **Head**: "Releases" (a **Not set up** chip while not set up) and **Start Release**, while releases
   are set up and read, no release is open and the project isn't archived. Beside it, **Release Note**,

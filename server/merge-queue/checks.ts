@@ -139,7 +139,22 @@ export function templateVarsOf(def: ProjectDef, s: CopyScope): Record<string, st
   return v;
 }
 
-export function envOf(def: ProjectDef, s: CopyScope, extra: { step?: string; out?: string; picked?: boolean } = {}): Record<string, string> {
+/** The share of would-be-reused test files a landing's check re-runs anyway (at least one: the runner's rule). */
+export const REUSE_SAMPLE = "0.05";
+
+/**
+ * Whether a check runs fresh (SOVA_FRESH=1: reuse nothing, still record its passes): a rerun on the tip or on the
+ * target alone (each exists to get new evidence), every check of a release entry (its own gates and the merge set
+ * alike), and every check when the project file turns reuse off (`merge.reuse: false`). Pure.
+ */
+export function freshOf(def: ProjectDef | null, o: { rerun?: boolean; release?: boolean }): boolean {
+  return !!o.rerun || !!o.release || def?.merge?.reuse === false;
+}
+
+/** What a check's process is told about reuse: fresh, or the re-check share. Never for a setup or install step. */
+export const reuseEnvOf = (fresh: boolean): Record<string, string> => (fresh ? { SOVA_FRESH: "1" } : { SOVA_REUSE_SAMPLE: REUSE_SAMPLE });
+
+export function envOf(def: ProjectDef, s: CopyScope, extra: { step?: string; out?: string; picked?: boolean; fresh?: boolean } = {}): Record<string, string> {
   const e: Record<string, string> = inheritedEnv(process.env, CHECK_EXTRA);
   Object.assign(e, {
     SOVA_V: "1",
@@ -160,6 +175,7 @@ export function envOf(def: ProjectDef, s: CopyScope, extra: { step?: string; out
     ...(extra.step ? { SOVA_STEP: extra.step } : {}),
     ...(extra.out ? { SOVA_OUT: extra.out } : {}),
     ...(extra.picked ? { SOVA_MERGE_PICKED: "1" } : {}),
+    ...(extra.fresh !== undefined ? reuseEnvOf(extra.fresh) : {}),
   });
   for (const [svc, ps] of Object.entries(portsFor(def, s.slot))) for (const [k, n] of Object.entries(ps)) e[`SOVA_PORT_${svc.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_${k.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`] = String(n);
   return e;
@@ -181,7 +197,57 @@ export interface CheckReport {
   failingNames: string[];
   /** The test files the runner says it actually ran (`ranFiles`), when it says so; absent from a runner that doesn't. */
   ranFiles?: string[];
+  /** Test files that already passed on identical code and weren't run again (SOVA_OUT `reused`), when any. */
+  reused?: ReusedReport;
   notes: string[];
+}
+
+/** SOVA_OUT's `reused`: `files` of the `of` selected weren't run (an earlier pass on identical code stands), `rechecked`
+ *  more would have been and ran anyway (the random re-check); `at`/`from` the newest source; `list` each one's source. */
+export interface ReusedReport {
+  files: number;
+  of: number;
+  rechecked: number;
+  at?: string;
+  from?: string;
+  list: { file: string; at?: string; from?: string; run?: string }[];
+}
+
+/** SOVA_OUT's `reused`, read leniently; null when absent or unreadable. */
+function readReused(v: unknown): ReusedReport | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const o = v as Record<string, unknown>;
+  const n = (x: unknown) => (typeof x === "number" && Number.isInteger(x) && x >= 0 ? x : null);
+  const files = n(o.files);
+  const of = n(o.of);
+  if (files === null || of === null || files > of) return null;
+  const str = (x: unknown, max = 200) => (typeof x === "string" && x ? x.slice(0, max) : undefined);
+  const list: ReusedReport["list"] = [];
+  for (const x of Array.isArray(o.list) ? o.list.slice(0, 5000) : []) {
+    if (!x || typeof x !== "object") continue;
+    const y = x as Record<string, unknown>;
+    const file = str(y.file, 500);
+    if (!file) continue;
+    const at = str(y.at);
+    const from = str(y.from);
+    const run = str(y.run);
+    list.push({ file, ...(at ? { at } : {}), ...(from ? { from } : {}), ...(run ? { run } : {}) });
+  }
+  const at = str(o.at);
+  const from = str(o.from);
+  return { files, of, rechecked: Math.min(n(o.rechecked) ?? 0, of - files), ...(at ? { at } : {}), ...(from ? { from } : {}), list };
+}
+
+/**
+ * A passed check's detail when it reused passes: "412 ran, 568 already passed on identical code (28 re-checked)".
+ * The two split the selection: "ran" the files with no pass on identical code, "already passed" every file with one,
+ * the re-checked ones (which ran again) among them. Null when nothing was reused. Pure.
+ */
+export function reusedWords(r: Pick<ReusedReport, "files" | "of" | "rechecked">): string | null {
+  if (r.files <= 0 && r.rechecked <= 0) return null;
+  const ran = Math.max(0, r.of - r.files - r.rechecked);
+  const hits = r.files + r.rechecked;
+  return `${ran} ran, ${hits} already passed on identical code${r.rechecked ? ` (${r.rechecked} re-checked)` : ""}`;
 }
 
 /**
@@ -222,15 +288,18 @@ export function readCheckOut(file: string): CheckReport | null {
   const failingNames = [...new Set((Array.isArray(o.failures) ? o.failures : []).flatMap((f) => (f && typeof f === "object" && typeof (f as Record<string, unknown>).name === "string" && (f as Record<string, unknown>).name ? [testKey(String((f as Record<string, unknown>).name).slice(0, 500))] : [])).filter(Boolean))];
   const skippedWhy = typeof o.skipped === "string" && o.skipped ? o.skipped.slice(0, 300) : undefined;
   const ranFiles = Array.isArray(o.ranFiles) ? [...new Set(o.ranFiles.filter((f): f is string => typeof f === "string" && !!f))] : undefined;
+  const reused = readReused(o.reused);
   return {
     passed: n(o.passed),
     failed: n(o.failed),
-    skipped: typeof o.skipped === "number" ? n(o.skipped) : null,
+    // A string `skipped` is the why; the skipped-test count then rides in `skippedTests` (never lost).
+    skipped: typeof o.skipped === "number" ? n(o.skipped) : n(o.skippedTests),
     ...(skippedWhy ? { skippedWhy } : {}),
     failures,
     failingFiles,
     failingNames,
     ...(ranFiles ? { ranFiles } : {}),
+    ...(reused ? { reused } : {}),
     notes: Array.isArray(o.notes) ? o.notes.filter((x): x is string => typeof x === "string").map((x) => x.slice(0, 300)).slice(0, 10) : [],
   };
 }
@@ -269,6 +338,35 @@ export function rerunArgvOf(def: ProjectDef, check: Pick<PlannedCheck, "run" | "
   return [...rendered, ...(check.select ?? [])];
 }
 
+/**
+ * A test check: one whose command is the project's own test command (`test.run`, found whole inside the check's
+ * command, after any wrapper such as `nice`, with any selection flags after it: the same reading rerunArgvOf makes).
+ * Only such a check is ever "broken on the target" (it ran no test at all, everywhere): a build or typecheck that
+ * fails on both sides keeps its own rules. A project with no `test.run` has no test check. Pure.
+ */
+export function isTestCheck(def: Pick<ProjectDef, "test"> | null, check: Pick<PlannedCheck, "run">): boolean {
+  const test = def?.test?.run ?? [];
+  if (!test.length || test.length > check.run.length) return false;
+  for (let i = 0; i + test.length <= check.run.length; i++) if (test.every((a, j) => check.run[i + j] === a)) return true;
+  return false;
+}
+
+/** A failed run that shows it ran no test: its report counts none and names no failing file or test. No report shows
+ *  nothing (a crash midway, or a runner that writes none: real failures may be in there). */
+export function ranNoTest(r: Pick<CheckRun, "failingFiles" | "report">): boolean {
+  if (!r.report || r.failingFiles.length || r.report.failingNames.length || r.report.ranFiles?.length) return false;
+  return (r.report.passed ?? 0) + (r.report.failed ?? 0) === 0;
+}
+
+/** The first line a run printed that isn't the runner's own framing (the log's `$ …` and `[…]` lines): its error. */
+export function firstOutputLine(out: string): string | undefined {
+  for (const raw of out.split("\n")) {
+    const line = raw.trim();
+    if (line && !line.startsWith("$ ") && !/^\[.*\]$/.test(line)) return line.slice(0, 200);
+  }
+  return undefined;
+}
+
 /** Run `check` (with `files` appended, for a rerun) in the copy, its output appended to `logFile`. */
 export async function runCheck(o: {
   def: ProjectDef;
@@ -277,6 +375,8 @@ export async function runCheck(o: {
   stepId: string;
   logFile: string;
   files?: string[];
+  /** SOVA_FRESH=1 (freshOf); else SOVA_REUSE_SAMPLE. */
+  fresh: boolean;
   signal?: AbortSignal;
 }): Promise<CheckRun> {
   const vars = templateVarsOf(o.def, o.scope);
@@ -287,7 +387,8 @@ export async function runCheck(o: {
   mkdirSync(dirname(o.logFile), { recursive: true });
   const log = (s: string) => writeFileSync(o.logFile, s, { flag: "a" });
   log(`$ ${argv.join(" ")}\n`);
-  const proc = await runProc(argv, { cwd: o.scope.copy, env: envOf(o.def, o.scope, { step: o.stepId, out, picked: !!o.check.picked }), timeoutMs: o.check.timeoutSec * 1000, ...(o.signal ? { signal: o.signal } : {}), log });
+  log(o.fresh ? "[fresh: every test file runs (SOVA_FRESH=1)]\n" : `[passes from identical code may stand; ${Number(REUSE_SAMPLE) * 100}% of them re-checked (SOVA_REUSE_SAMPLE=${REUSE_SAMPLE})]\n`);
+  const proc = await runProc(argv, { cwd: o.scope.copy, env: envOf(o.def, o.scope, { step: o.stepId, out, picked: !!o.check.picked, fresh: o.fresh }), timeoutMs: o.check.timeoutSec * 1000, ...(o.signal ? { signal: o.signal } : {}), log });
   log(`\n[exit ${proc.code}${proc.timedOut ? `, timed out after ${o.check.timeoutSec} s` : ""}${proc.aborted ? ", aborted" : ""}, ${Math.round(proc.ms / 1000)} s]\n`);
   const report = readCheckOut(out);
   const failingFiles = report?.failingFiles.length ? report.failingFiles : proc.code !== 0 ? failingFilesIn(proc.out) : [];

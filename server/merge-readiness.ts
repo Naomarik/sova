@@ -12,10 +12,10 @@ import { canonical, normalizeMergeDetails, sharedWith, type TrackedWorktree, WOR
 import { stateRoot } from "./state-root";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { asksUserOf } from "./signals-store";
-import { type DraftsHash, draftsHash, unofficialDrafts } from "./spec-drafts-state";
+import { type AncestorCheck, type DraftsHash, draftsHash, draftsLeft } from "./spec-drafts-state";
 import { previewDocs, previewOf } from "./docs-preview";
 export { previewOf };
-import { blockedNoteText, type DocsPreview, docsNudgeText, type Finished, fileLandingStore, finishedOf, type LandingBlocker, landingBlockers, type LandingDocs, landingLive, landingOf, landingReason, type LandingStore, specsWhyOf } from "./ready-to-land";
+import { blockedNoteText, checkFailureOf, type DocsPreview, docsNudgeText, type Finished, type LastCheck, lastCheckWords, fileLandingStore, finishedOf, type LandingBlocker, landingBlockers, type LandingDocs, landingLive, landingOf, landingReason, type LandingStore, specsWhyOf } from "./ready-to-land";
 import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
 import { WORKTREES } from "./harness/state-kinds";
@@ -95,7 +95,7 @@ export interface SessionFacts {
   /** Open alignment questions the session waits on (SessionSummary.align). */
   openQuestions: number;
   /** The newest check run (test, typecheck, build) on the branch. */
-  lastCheck?: { at: number; ok: boolean };
+  lastCheck?: LastCheck;
   /** The last reply asks the user something (the attention signal, else the merge-ask fallback). */
   asks: boolean;
 }
@@ -174,7 +174,7 @@ function treeState(t: TreeFacts, s: SessionFacts): { state: ReadinessState; why?
   if (t.ahead === undefined) return { state: "in-progress", why: COMMITS_UNCOUNTED };
   if (t.conflicts) return { state: "in-progress", why: `conflicts with ${t.base ?? "the base"}: ${t.conflicts} file${t.conflicts === 1 ? "" : "s"}` };
   if (t.tempCommit) return { state: "in-progress", why: `temporary commit: ${t.tempCommit}` };
-  if (s.lastCheck && !s.lastCheck.ok) return { state: "in-progress", why: "the last check failed" };
+  if (s.lastCheck && !s.lastCheck.ok) return { state: "in-progress", why: lastCheckWords(s.lastCheck) };
   const checks = s.lastCheck ? "checks passed" : "no check run seen";
   const why = dirty > 0 ? `${checks} · ${uncommittedWords(dirty, t.dirtyFiles)}` : checks;
   return s.asks ? { state: "waiting-approval", why } : { state: "ready", why };
@@ -303,7 +303,7 @@ export interface MergeCard {
 export interface FileFacts {
   trees: TrackedWorktree[];
   merges: MergeCard[];
-  lastCheck?: { at: number; ok: boolean };
+  lastCheck?: LastCheck;
   /** The branch's last word is this reply (no user prompt after it). */
   lastReply?: { id: string; at: number; text: string };
   /** The newest replies that ended a turn, oldest first (at most REPLIES_KEPT): a queue landing's follow-up check
@@ -349,7 +349,7 @@ interface ScanEntry {
   /** An assistant message's check-run tool calls. */
   checkCalls?: string[];
   /** A check run's result. */
-  check?: { toolCallId: string; ok: boolean };
+  check?: { toolCallId: string; ok: boolean; what?: string; failed?: string };
   userPrompt?: true;
 }
 
@@ -408,7 +408,10 @@ export function scanLine(line: string, checkIds: Set<string>): ScanEntry | null 
       for (const c of calls) checkIds.add(c);
     }
   } else if (h?.kind === "tool-result" && typeof h.callId === "string" && checkIds.has(h.callId)) {
-    e.check = { toolCallId: h.callId, ok: !checkFailed(h.isError === true, textOf(h.blocks).slice(-4000)) };
+    const tail = textOf(h.blocks).slice(-4000);
+    const ok = !checkFailed(h.isError === true, tail);
+    // A failed run keeps what it names (a few words, a fresh copy: never a slice of the output).
+    e.check = { toolCallId: h.callId, ok, ...(ok ? {} : (JSON.parse(JSON.stringify(checkFailureOf(tail))) as ReturnType<typeof checkFailureOf>)) };
   } else if (h?.kind === "user") {
     const text = textOf(h.blocks);
     if (parseWakeNudge(text) === null && !isLinkMessage(text) && !isTopicBatch(text)) e.userPrompt = true;
@@ -433,7 +436,7 @@ export function factsOf(branch: readonly ScanEntry[]): FileFacts {
       for (const c of merges) c.reply ??= reply;
     }
     if (e.userPrompt) lastReply = undefined;
-    if (e.check) lastCheck = { at: e.at ?? 0, ok: e.check.ok };
+    if (e.check) lastCheck = { at: e.at ?? 0, ok: e.check.ok, ...(e.check.what ? { what: e.check.what } : {}), ...(e.check.failed ? { failed: e.check.failed } : {}) };
   }
   return { trees: set?.trees ?? [], merges, ...(lastCheck ? { lastCheck } : {}), ...(lastReply ? { lastReply } : {}), ...(replies.length ? { replies } : {}) };
 }
@@ -561,8 +564,9 @@ export interface ReadinessDeps {
   /** Whether the session's last reply finished its work (§chat.worktrees/ready-to-land); "off" when
       no outcome is ever recorded for it. */
   finished: (sessionId: string, cwd: string, lastReplyId: string | undefined) => Finished;
-  /** The spec drafts a tree holds not promoted, by name. */
-  drafts: (dir: string) => string[] | undefined;
+  /** The spec drafts a tree holds not promoted, by name: neither official in the tree nor carrying a receipt of a
+      landing that is on its target (spec-drafts-state draftsLeft). */
+  drafts: (dir: string) => Promise<string[] | undefined> | string[] | undefined;
   /** The drafts' hash (spec-drafts-state draftsHash): Sova's try of the drafts runs once per head and hash. */
   draftsHash?: (dir: string) => DraftsHash | undefined;
   /** Sova's try of a tree's drafts at a head and drafts hash, the way the landing will (§chat.worktrees/ready-to-land):
@@ -636,7 +640,7 @@ const defaultDeps = (): ReadinessDeps => ({
   treeStamp: (dir, together) => worktreeInsights.quietStamp(dir, together),
   inputsStamp: gitInputsStamp,
   finished: finishedOf,
-  drafts: (dir) => unofficialDrafts(dir),
+  drafts: (dir) => draftsLeft(dir, ancestorVia(execGit)),
   draftsHash,
   docsPreview: previewDocs,
   landing: fileLandingStore(),
@@ -687,6 +691,11 @@ export function servedReader(rootOf: (dir: string) => Promise<string | null>, se
 const blockedBySession = new Map<string, { path: string; branch: string; commit: string; blockers: LandingBlocker[] }[]>();
 
 let deps: ReadinessDeps = defaultDeps();
+
+/** spec-drafts-state's ancestry question asked through a GitRunner. */
+function ancestorVia(git: GitRunner): AncestorCheck {
+  return async (commit, ref, cwd) => (await git(["merge-base", "--is-ancestor", commit, ref], { cwd }).catch(() => ({ code: 1 }))).code === 0;
+}
 
 /** The chats the merge queue starts itself (its merge thread and its review step) run as these profiles: they
     never own a branch, and their replies after a merge are about the queue's branches. */
@@ -815,7 +824,7 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
     const servedHere = landingOn && (deps.served ? await deps.served(t.path).catch(() => false) : true);
     let landing: WorktreeReadiness["landing"];
     // Drafts that aren't official: a landing's, or a merged tree's that didn't make it (§chat.worktrees/readiness).
-    const unofficial = tf.readable && (landingOn || tf.merged) ? deps.drafts(t.path) : undefined;
+    const unofficial = tf.readable && (landingOn || tf.merged) ? await deps.drafts(t.path) : undefined;
     if (servedHere) {
       const held = deps.landing.held(s.id, t.path);
       const heldHere = !!held && held.commit === tf.head;
@@ -876,7 +885,7 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
   const r = sessionReadinessOf(trees, { ...(newest ? { lastMerge: { at: newest.at, branch: newest.branch } } : {}), restartPending, pushPending, followUp }, lastReplyAt);
   if (!r || !newest) return r;
   // The branch status line (§chat.worktrees/readiness): code only, for the newest merge.
-  const drafts = newest.path && existsSync(newest.path) ? unofficialDrafts(newest.path)?.length : undefined;
+  const drafts = newest.path && existsSync(newest.path) ? (await draftsLeft(newest.path, ancestorVia(deps.git)))?.length : undefined;
   const status: BranchStatus = {
     branch: newest.branch,
     commit: newest.sha.slice(0, 7),
@@ -1355,7 +1364,7 @@ export function pruneReadiness(listed: readonly SessionSummary[]): void {
 /** A session's last check run and each tracked worktree's newest commit time, as the last
     readiness read saw them (sova_session's Merge line, §app.overseer/session-truth). */
 export interface ReadinessChecks {
-  lastCheck?: { at: number; ok: boolean };
+  lastCheck?: LastCheck;
   /** Tree path → its newest commit's time (ms). */
   heads: Record<string, number>;
 }

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LANDING_FILE_NAME } from "../../pi-config/extensions/worktrees/landing.ts";
 import { stateRoot } from "../state-root";
-import { type BranchSummary, branchQueueOf, type MergeQueueView, type WorktreeMergeProject, type WorktreeMergeStats, type WorktreeQueueInfo } from "../../shared/merge-queue";
+import { type BranchSummary, branchQueueOf, type LandingSummary, type LandingSummaryProject, type MergeQueueView, type WorktreeMergeProject, type WorktreeMergeStats, type WorktreeQueueInfo } from "../../shared/merge-queue";
 import type { RunMerge, ThreadEvent, WakeThread } from "./contract";
 import { type IngestDeps, startIngest } from "./ingest";
 import { setLandingNoteSource, setMergeCardNoteSource } from "./card-note";
@@ -15,7 +15,8 @@ import { canonical } from "../../pi-config/extensions/worktrees/state.ts";
 import type { QueueSubject } from "../git-diff";
 import { type Owner, WorktreeOwners } from "./owners";
 import { engineServices, makeRunMerge } from "./run";
-import { worktreeQueueInfo } from "./view";
+import { queueGlanceOf, worktreeQueueInfo } from "./view";
+import type { ProjectGlanceQueue } from "../../shared/projects";
 import type { SessionBranchQueue, SessionBranchRow, SessionWorktreeInfo } from "../../shared/protocol";
 import { BranchSummaries, branchBulletWriter, readBranchFacts } from "./branch-summaries";
 import { SummarySweep } from "./summary-sweep";
@@ -161,6 +162,8 @@ interface KeptView {
   drafts: string[];
   /** The look taken before the newest view read for the list: at those refs, its stamp, and when. */
   seen?: { refs: string; stamp: string | null; at: number };
+  /** The project cards' cut of it (§app.projects/home-glance). */
+  glance: ProjectGlanceQueue | null;
 }
 
 /** Each queue's newest view, indexed by branch (the session list joins its rows' entries here, no Git read): kept from
@@ -222,6 +225,7 @@ export function noteQueueView(view: Pick<MergeQueueView, "root" | "at" | "projec
     worktrees: view.needsFix.flatMap((e) => (e.worktree ? [e.worktree] : [])),
     drafts: view.needsFix.flatMap((e) => (e.worktree && !e.settled && e.sentBackFor === "drafts" ? [e.worktree] : [])),
     ...(prev?.seen ? { seen: prev.seen } : {}),
+    glance: queueGlanceOf(view),
   });
   // A change re-lists; so does a queue's first view after a start when it holds entries: the rows' background reads
   // may be up to an idle cycle old, and the listing joins this view at once.
@@ -249,6 +253,30 @@ export function checkQueueViews(): number {
     n++;
   }
   return n;
+}
+
+/** A project card's figures from its queue's newest kept view (§app.projects/home-glance): null when no view of that
+ *  queue is kept (a queue that doesn't serve the project keeps none). Synchronous: never builds a view, never makes a
+ *  queue, no Git. */
+export function queueGlanceNow(root: string): ProjectGlanceQueue | null {
+  return latestViews.get(servedKey(root))?.glance ?? null;
+}
+
+/**
+ * A project card's queue state (§app.projects/home-glance): `served` with the kept view's cut; `reading` for a root the
+ * queue serves (listed and set up, as the served writer last named them) whose view isn't kept yet, which starts that
+ * view's one read here (deduped with any read in flight; once kept, the list's watch maintains it like every kept
+ * view); `unserved` otherwise, which reads nothing and makes no queue. Synchronous: the first read of a served root is
+ * the only one that leads to Git, and it runs in the background.
+ */
+export function queueGlanceState(root: string): { state: "served"; cut: ProjectGlanceQueue } | { state: "reading" | "unserved" } {
+  const key = servedKey(root);
+  const kept = latestViews.get(key)?.glance;
+  if (kept) return { state: "served", cut: kept };
+  if (!servedNow.has(key)) return { state: "unserved" };
+  const d = listDeps;
+  if (d && !viewing.has(key)) void readView(d, key, lookAt(d, key, [], [])).catch((err) => console.warn(`[merge-queue] ${key}: glance view failed: ${err instanceof Error ? err.message : err}`));
+  return { state: "reading" };
 }
 
 /** A branch's newest entry in its queue's newest view: undefined when it has none there, null when no view of that
@@ -710,6 +738,21 @@ export async function startMergeQueue(
       publishFeed({ type: "merge_queue", project: view.project, view });
       cardsDo(mc.sync(view));
     },
+    // Why a sent-back branch's newest commit isn't Ready to land: its chat's last readiness reading, never a fresh read.
+    newestReading: async (worktree, tip) => {
+      const [{ listSessions }, { readinessReading }, { newestReadingOf }] = await Promise.all([import("../sessions-index"), import("../merge-readiness"), import("../ready-to-land")]);
+      return newestReadingOf(worktree, tip, { owner: worktreeOwnerOf, pathOf: async (id) => (await listSessions()).find((s) => s.id === id)?.path, reading: readinessReading, canonical });
+    },
+    // A test check broken on the target: one notification that opens the project's Merge Queue tab (its Needs you
+    // holds the flag), so the user can start a chat to fix the target.
+    flagBroken: (b, root) => {
+      const id = projectIdOf(root);
+      void import("../push")
+        .then(({ notifyOnce }) =>
+          notifyOnce({ title: `The merge queue needs you · ${root.split("/").pop() ?? root}`, body: `${b.why}. Branches skip it until it's fixed: start a chat to fix it.`, hash: id ? `#/projects/${encodeURIComponent(id)}/merge-queue` : "#/projects", tag: `sova:merge-broken:${id ?? root}:${b.check}` }),
+        )
+        .catch((err) => console.warn(`[merge-queue] ${root}: notification not sent: ${err instanceof Error ? err.message : String(err)}`));
+    },
     // The branch's card in its own chat: raised at the approval, a revision at each outcome (cards.ts).
     notify: (kind, e, extra) => {
       // An approved branch was Ready to land at its commit: its summary is written if it has none yet.
@@ -879,6 +922,48 @@ export async function startMergeQueue(
       refused: (session, text) => mc.addLine(session, `refused:${Date.now()}`, text),
     }),
   );
+}
+
+type LandingListed = { id: string; root: string; name: string; archived?: unknown };
+let landingList: (() => LandingListed[]) | null = null;
+/** Tests only: the Projects list the landing summary names projects from (null: listProjects). */
+export function setLandingListForTest(f: (() => LandingListed[]) | null): void {
+  landingList = f;
+}
+
+/**
+ * GET /api/merge-queue/landing-summary: every listed project's queue cut (ProjectQueue.landingCut, loaded queues that
+ * serve it) and release cut (Releaser.landingCut), one answer, no Ready-list or tag-history reads. A project with
+ * neither is left out; one whose read fails has null there. Empty while the queue isn't started.
+ */
+export async function landingSummary(): Promise<LandingSummary> {
+  const at = new Date().toISOString();
+  const q = queues;
+  if (!q) return { projects: [], at };
+  const [{ listProjects }, { releaser }] = await Promise.all([import("../projects/spaces"), import("../project-services/release-wire")]);
+  const listed = new Map(
+    (landingList ?? listProjects)()
+      .filter((p) => !p.archived)
+      .map((p) => [servedKey(p.root), p] as const),
+  );
+  const loaded = new Map((await q.loaded().catch(() => [])).map((pq) => [servedKey(pq.root), pq] as const));
+  const r = releaser();
+  const releaseRoots = new Map((r?.roots() ?? []).map((root) => [servedKey(root), root] as const));
+  const keys = [...new Set([...loaded.keys(), ...releaseRoots.keys()])].filter((k) => listed.has(k));
+  const warn = (what: string, root: string) => (err: unknown) => (console.warn(`[merge-queue] ${root}: landing summary ${what}: ${err instanceof Error ? err.message : err}`), null);
+  const projects = await Promise.all(
+    keys.map(async (key): Promise<LandingSummaryProject | null> => {
+      const p = listed.get(key)!;
+      const pq = loaded.get(key);
+      const relRoot = releaseRoots.get(key);
+      const [queue, release] = await Promise.all([
+        pq ? pq.landingCut().then((c) => (c.served ? c : null), warn("queue", key)) : Promise.resolve(null),
+        r && relRoot ? r.landingCut(relRoot).catch(warn("release", key)) : Promise.resolve(null),
+      ]);
+      return queue || release ? { id: p.id, root: p.root, name: p.name || p.id, queue, release } : null;
+    }),
+  );
+  return { projects: projects.filter((x): x is LandingSummaryProject => !!x), at };
 }
 
 /** Try Again on a branch summary that failed (POST /api/merge-queue/projects/:project/branch-summary). */

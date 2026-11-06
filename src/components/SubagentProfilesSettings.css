@@ -112,13 +112,10 @@ div.subagent-editor-flush { display: flex; flex-direction: column; gap: var(--sp
   padding-left: var(--space-4);
   border-left: var(--stroke-thin) solid var(--color-border);
 }
-/* A 2- to 3-digit value: a short input with its hint beside it, one field per line. */
+/* A 2- to 3-digit value: a short input, its hint under it, one field per line. */
 .subagent-editor .settings-team-numbers { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
 .subagent-editor-number { gap: var(--space-1); }
-.subagent-editor-number-row { display: flex; align-items: center; gap: var(--space-3); }
-.subagent-editor-number-row > .input { flex: none; width: 6rem; }
-.subagent-editor-number-row > .field-hint,
-.subagent-editor-number-row > .field-error { flex: 1; min-width: 0; }
+.subagent-editor-number > .input { width: 6rem; }
 .subagent-editor-instructions > .overseer-fold-summary .overseer-fold-label { font-weight: var(--fw-medium); }
 
 /* A model id longer than its select ends in an ellipsis; the select's title holds the whole id. */

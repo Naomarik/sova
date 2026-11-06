@@ -4,6 +4,8 @@ import type { McpNote, McpProjectServers, McpRowState, SetupMcp } from "../../sh
 import {
   type AddFields,
   canSend,
+  nameTaken,
+  secretNameIssue,
   chatNoteText,
   editedServer,
   errorLineText,
@@ -162,4 +164,19 @@ test("a note in a peer's chat names that computer and links nowhere; a note here
 
 test("a server's tool row reads its server and its tool", () => {
   assert.equal(mcpToolWords({ server: "docs", tool: "search" }), "docs · search");
+});
+
+test("Add Server checks a name clash and the secret's name before the press, in the server's words (Settings QA D12)", () => {
+  assert.equal(nameTaken("qa", ["qa", "docs"]), "There's already a server named qa.");
+  assert.equal(nameTaken(" qa ", ["qa"]), "There's already a server named qa.", "trimmed, as sent");
+  assert.equal(nameTaken("QA", ["qa"]), null, "the server compares names exactly");
+  assert.equal(nameTaken("new", ["qa"]), null);
+  assert.equal(secretNameIssue(""), null, "no name yet is another rule");
+  assert.equal(secretNameIssue("API_KEY"), null);
+  assert.equal(secretNameIssue(" API_KEY "), null, "trimmed, as sent");
+  for (const bad of ["bad-name x", "1KEY", "a.b"]) assert.equal(secretNameIssue(bad), "A secret's name is letters, digits and underscores.", bad);
+  assert.equal(canSend("command", fields({ command: "npx x" }), "qa", ["qa"]), false, "a clash holds the press");
+  assert.equal(canSend("command", fields({ command: "npx x", secret: "v", secretName: "bad-name x" }), "a", []), false);
+  assert.equal(canSend("command", fields({ command: "npx x", secret: "v", secretName: "KEY" }), "a", ["qa"]), true);
+  assert.equal(canSend("command", fields({ command: "npx x" }), null, ["qa"]), true, "Edit: the name is fixed");
 });

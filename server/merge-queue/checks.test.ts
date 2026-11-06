@@ -4,7 +4,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseDefinition, type ProjectDef } from "../../shared/project-contract";
 import { scratchRoot } from "../test-scratch";
-import { checksOf, envOf, failingFilesIn, planChecks, readCheckOut, rerunArgvOf, templateVarsOf, testKey } from "./checks";
+import { checksOf, envOf, failingFilesIn, freshOf, planChecks, readCheckOut, rerunArgvOf, reusedWords, templateVarsOf, testKey } from "./checks";
+import { isReleaseRun, passedEnd } from "./run";
 
 const svc = { web: { cmd: ["node", "web.js"], ports: { http: { base: 5100 } } } };
 const def = (extra: Record<string, unknown>): ProjectDef => parseDefinition(JSON.stringify({ version: 1, services: svc, ...extra }));
@@ -146,5 +147,106 @@ describe("a rerun of named files", () => {
     expect(readCheckOut(f)?.ranFiles).toEqual(["a.test.ts"]);
     writeFileSync(f, JSON.stringify({ passed: 1, failed: 0 }));
     expect(readCheckOut(f)?.ranFiles).toBeUndefined();
+  });
+});
+
+describe("reuse of passes from identical code", () => {
+  test("reuse: fresh on a rerun, a release, or merge.reuse false; else the 5% re-check; only a check is told", () => {
+    expect(freshOf(declared, {})).toBe(false);
+    expect(freshOf(declared, { rerun: true })).toBe(true);
+    expect(freshOf(declared, { release: true })).toBe(true);
+    const off = def({ merge: { checks: [{ id: "unit", run: ["node", "t.mjs"] }], reuse: false } });
+    expect(off.merge?.reuse).toBe(false);
+    expect(freshOf(off, {})).toBe(true);
+    expect(freshOf(def({ merge: { checks: [{ id: "unit", run: ["node", "t.mjs"] }], reuse: true } }), {})).toBe(false);
+    expect(() => def({ merge: { reuse: "no" } })).toThrow(/reuse/);
+    const scope = { project: "/p", projectId: "p", copy: "/c", slot: 1, data: "/d", target: "master", base: "b" };
+    expect(envOf(declared, scope, { fresh: true })).toMatchObject({ SOVA_FRESH: "1" });
+    expect(envOf(declared, scope, { fresh: true }).SOVA_REUSE_SAMPLE).toBeUndefined();
+    expect(envOf(declared, scope, { fresh: false })).toMatchObject({ SOVA_REUSE_SAMPLE: "0.05" });
+    expect(envOf(declared, scope, { fresh: false }).SOVA_FRESH).toBeUndefined();
+    // A setup or install step (no `fresh`) is told nothing; the server's own value never leaks through.
+    process.env.SOVA_FRESH = "1";
+    process.env.SOVA_REUSE_SAMPLE = "0.9";
+    try {
+      const e = envOf(declared, scope, { step: "install" });
+      expect(e.SOVA_FRESH).toBeUndefined();
+      expect(e.SOVA_REUSE_SAMPLE).toBeUndefined();
+      expect(envOf(declared, scope, { fresh: false }).SOVA_REUSE_SAMPLE).toBe("0.05");
+    } finally {
+      delete process.env.SOVA_FRESH;
+      delete process.env.SOVA_REUSE_SAMPLE;
+    }
+    // A release entry: by its release id, gates or none.
+    expect(isReleaseRun({ entry: { release: "rl_1" } as never })).toBe(true);
+    expect(isReleaseRun({ entry: {} as never, releaseChecks: [] })).toBe(true);
+    expect(isReleaseRun({ entry: {} as never })).toBe(false);
+  });
+
+  test("reuse: SOVA_OUT's `reused` is read; a string `skipped` keeps the skipped-test count", () => {
+    const dir = scratchRoot("mq-checks-reused-");
+    mkdirSync(dir, { recursive: true });
+    const f = join(dir, "out.json");
+    writeFileSync(f, JSON.stringify({ passed: 900, failed: 0, skipped: 3, ranFiles: ["a.test.ts"], reused: { files: 540, of: 980, rechecked: 28, at: "2026-11-05T14:02:00Z", from: "feat/x's chat", list: [{ file: "b.test.ts", at: "2026-11-05T14:02:00Z", from: "feat/x's chat", run: "r1" }, { nope: 1 }] } }));
+    expect(readCheckOut(f)!.reused).toEqual({ files: 540, of: 980, rechecked: 28, at: "2026-11-05T14:02:00Z", from: "feat/x's chat", list: [{ file: "b.test.ts", at: "2026-11-05T14:02:00Z", from: "feat/x's chat", run: "r1" }] });
+    writeFileSync(f, JSON.stringify({ passed: 9, failed: 0, skipped: "already passed on identical code at 14:02", skippedTests: 2, reused: { files: 4, of: 4 } }));
+    expect(readCheckOut(f)).toMatchObject({ passed: 9, failed: 0, skipped: 2, skippedWhy: "already passed on identical code at 14:02", reused: { files: 4, of: 4, rechecked: 0, list: [] } });
+    // Unreadable `reused` (more reused than selected, not numbers): absent.
+    writeFileSync(f, JSON.stringify({ passed: 1, reused: { files: 5, of: 4 } }));
+    expect(readCheckOut(f)!.reused).toBeUndefined();
+    writeFileSync(f, JSON.stringify({ passed: 1, reused: { files: "5", of: 9 } }));
+    expect(readCheckOut(f)!.reused).toBeUndefined();
+  });
+
+  test("reuse: a passed check's detail, never Skipped while the re-check ran a file", () => {
+    expect(reusedWords({ files: 540, of: 980, rechecked: 28 })).toBe("412 ran, 568 already passed on identical code (28 re-checked)");
+    expect(reusedWords({ files: 3, of: 10, rechecked: 0 })).toBe("7 ran, 3 already passed on identical code");
+    expect(reusedWords({ files: 0, of: 10, rechecked: 0 })).toBeNull();
+    const rep = (o: object) => ({ report: { passed: 1, failed: 0, skipped: null, failures: [], failingFiles: [], failingNames: [], notes: [], ...o } });
+    const counts = { passed: 1, failed: 0, skipped: null };
+    expect(passedEnd(rep({ reused: { files: 540, of: 980, rechecked: 28, list: [] } }), counts)).toEqual(["passed", { counts, detail: "412 ran, 568 already passed on identical code (28 re-checked)", reused: 568 }]);
+    // Everything reused but one re-checked file: passed, never Skipped, whatever the runner's why.
+    expect(passedEnd(rep({ skippedWhy: "already passed on identical code at 14:02", reused: { files: 9, of: 10, rechecked: 1, list: [] } }), counts)[0]).toBe("passed");
+    // Everything reused, nothing re-checked (a fresh-less run outside the queue's sample): Skipped with its why.
+    expect(passedEnd(rep({ skippedWhy: "already passed on identical code at 14:02", reused: { files: 10, of: 10, rechecked: 0, list: [] } }), counts)).toEqual(["skipped", { counts, detail: "skipped: already passed on identical code at 14:02", reused: 10 }]);
+    expect(passedEnd(rep({}), counts)).toEqual(["passed", { counts }]);
+    expect(passedEnd(rep({ skippedWhy: "no change to its paths" }), counts)).toEqual(["skipped", { counts, detail: "skipped: no change to its paths" }]);
+  });
+});
+
+describe("test checks and runs that ran no test", () => {
+  test("a test check is one whose command holds the project's test command whole (after a wrapper, before its flags)", async () => {
+    const { isTestCheck } = await import("./checks");
+    const def = { test: { run: ["node", "scripts/run-tests.mjs"] } } as Pick<ProjectDef, "test">;
+    expect(isTestCheck(def, { run: ["node", "scripts/nice.mjs", "node", "scripts/run-tests.mjs", "--integration", "--groups"] })).toBe(true);
+    expect(isTestCheck(def, { run: ["node", "scripts/run-tests.mjs"] })).toBe(true);
+    expect(isTestCheck(def, { run: ["pnpm", "run", "typecheck"] })).toBe(false);
+    expect(isTestCheck(def, { run: ["node", "scripts/run-tests.mjs.bak"] })).toBe(false);
+    expect(isTestCheck(null, { run: ["node", "scripts/run-tests.mjs"] })).toBe(false);
+    expect(isTestCheck({} as Pick<ProjectDef, "test">, { run: ["node", "x"] })).toBe(false);
+  });
+
+  test("Sova's own integration-group check is a test check by that rule, and its build and typecheck aren't", async () => {
+    const { isTestCheck } = await import("./checks");
+    const { readFileSync } = await import("node:fs");
+    const raw = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", ".sova", "project.json"), "utf8")) as { test: { run: string[] }; merge: { checks: { id: string; run: string[] }[] } };
+    const by = (id: string) => raw.merge.checks.find((c) => c.id === id)!;
+    expect(isTestCheck(raw as unknown as ProjectDef, by("integration-group"))).toBe(true);
+    expect(isTestCheck(raw as unknown as ProjectDef, by("unit"))).toBe(true);
+    expect(isTestCheck(raw as unknown as ProjectDef, by("typecheck"))).toBe(false);
+    expect(isTestCheck(raw as unknown as ProjectDef, by("build"))).toBe(false);
+  });
+
+  test("ran no test: a report that counts none and names no failing file or test; no report says nothing; the first line is the error", async () => {
+    const { firstOutputLine, ranNoTest } = await import("./checks");
+    const report = (o: Partial<{ passed: number | null; failed: number | null; failingNames: string[]; ranFiles: string[] }>) => ({ passed: null, failed: null, skipped: null, failures: [], failingFiles: [], failingNames: [], notes: [], ...o });
+    expect(ranNoTest({ failingFiles: [], report: null })).toBe(false); // a crash midway, or a runner that writes none: tests may have run
+    expect(ranNoTest({ failingFiles: [], report: report({ passed: 0, failed: 0 }) })).toBe(true);
+    expect(ranNoTest({ failingFiles: ["a.test.ts"], report: null })).toBe(false);
+    expect(ranNoTest({ failingFiles: [], report: report({ passed: 3, failed: 0 }) })).toBe(false);
+    expect(ranNoTest({ failingFiles: [], report: report({ failingNames: ["x"] }) })).toBe(false);
+    expect(ranNoTest({ failingFiles: [], report: report({ ranFiles: ["a.test.ts"] }) })).toBe(false);
+    expect(firstOutputLine("$ node scripts/run-tests.mjs --integration --groups\n[fresh: every test file runs (SOVA_FRESH=1)]\n\nrun-tests: --groups needs a value\nusage: …\n")).toBe("run-tests: --groups needs a value");
+    expect(firstOutputLine("\n\n")).toBe(undefined);
   });
 });

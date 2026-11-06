@@ -21,14 +21,15 @@
       "shared/commands/other.ts",
       "server/commands-inventory/scan.ts",
       "server/commands-inventory/baseline.json",
-      "server/background-jobs-routes.ts",
-      "src/card-toolkit/commands.gen.ts"
+      "server/topic-pairs.ts",
+      "src/card-toolkit/commands.gen.ts",
+      "server/create-guide-growth.json"
     ],
     "authority": "accepted",
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-05T16:21Z",
-      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#4af7e7b6"
+      "by": "user",
+      "at": "2026-11-06T01:43Z",
+      "source": "pi-session:01a1ab3a-26bd-72b7-9a70-7646430041e9#4cfa08b1"
     },
     "evidence": "verified"
   },

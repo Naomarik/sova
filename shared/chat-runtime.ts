@@ -55,7 +55,11 @@ export type ChatId = string;
 /** What a pane hears for a prompt or steer that reached a chat whose process is stopping (or a link
     that is closing or closed): the refusal its page answers by putting the text back in the draft,
     never silence. Null for any other message: those mean nothing to a stopping chat. */
-export function unsentRefusal(msg: ChatClientMessage): { type: "error"; code: "refused"; message: string; clientId?: string } | null {
+export function unsentRefusal(
+  msg: ChatClientMessage,
+): { type: "error"; code: "refused"; message: string; clientId?: string } | { type: "shell_refused"; clientId: string; reason: "unavailable"; message: string } | null {
+  // A command from shell mode goes back to its box the same way, and never runs later (§chat.shell-mode/who).
+  if (msg.type === "shell") return { type: "shell_refused", clientId: String(msg.clientId ?? ""), reason: "unavailable", message: "The chat was restarting; your command didn't run." };
   if (msg.type !== "prompt" && msg.type !== "steer") return null;
   return { type: "error", code: "refused", message: "The chat was restarting; your message wasn't sent.", ...(msg.clientId ? { clientId: msg.clientId } : {}) };
 }

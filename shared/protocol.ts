@@ -273,6 +273,9 @@ export type EntryKind =
   | "card" // a transcript card raised from outside the chat (§chat.transcript-cards/raise-command): the page
            // places it after the entry it was raised after (`card.after`); the server sends no such row. See `card`.
   | "spec-turn" // legacy: the retired spec card; no longer produced, older mesh peers may still send it (renders nothing)
+  | "shell" // a command the user ran: from shell mode (`!`/`!!`, §chat.shell-mode/card) or in pi's own terminal (pi's
+            // bashExecution message). Renders as the command's card, never a "You" bubble; never an input (inputs
+            // count, Timeline, rewind targets, titles). See `shell`. An older server sends it as an "info" row.
   | "unknown";
 
 /**
@@ -467,6 +470,8 @@ export interface TranscriptItem {
       call, whose tool-call row renders nothing once this row is there. A failed call, a `get`, or
       details that don't check out stay an ordinary tool-result. */
   align?: AlignRowInfo;
+  /** kind "shell" only: the saved command (§chat.shell-mode/card). `text` is `$ {command}`. */
+  shell?: ShellRowInfo;
   /** kind "card": the card, as GET /api/session-cards reads it (§chat/transcript-cards). */
   card?: CardInfo;
   /** The entry's timestamp (ISO), on every row whose entry has one. */
@@ -2520,7 +2525,82 @@ export type ChatClientMessage =
   /** Reload this chat on its server's current code (§app.chat-processes/code-pickup, "Reload Now"):
       at once when it is quiet, else at its next quiet moment (`code.pending`). A chat already on the
       current code, or hosted in the server itself, answers the sender with `code{state:"current"}`. */
-  | { type: "reload_code" };
+  | { type: "reload_code" }
+  /** Run `command` from shell mode (§chat.shell-mode/running): the composer sends it only from shell mode,
+      over this live socket (POST /api/chat/frames drops it; POST /api/chat/action takes none), and the server
+      never reads a leading `!` in any text. `private` (`!!`): its output never reaches the model.
+      `clientId` is the sender's own id: the run's `shell_start` carries it (the composer clears its draft),
+      or its `shell_refused` does (the draft stays). */
+  | { type: "shell"; command: string; private?: boolean; clientId: string }
+  /** Stop the command running in this chat (the card's Stop Command); `id` names the run, and a stop for a
+      run that already ended does nothing. Never stops the model's reply (that is `abort`). */
+  | { type: "shell_stop"; id: string };
+
+/** Why a command from shell mode was cut short (§chat.shell-mode/card): `user` = Stop Command, or
+    pi's own Stop in its terminal; `closed` = its chat closed (archived, restarted, reloaded onto new code,
+    switched or anything else that closes it) and the run was stopped as it went. */
+export type ShellCancelReason = "user" | "closed";
+
+/** What a cut output kept (§chat.shell-mode/card): its last `max` lines, or its last `max` bytes, whichever
+    limit cut it (the harness's, pi's: 2,000 lines or 50 KB). The whole output is at `fullOutputPath`. */
+export type ShellTruncation = { by: "lines"; max: number } | { by: "bytes"; max: number };
+
+/** How a command ended. Every field is absent when it doesn't apply. */
+export interface ShellOutcome {
+  /** The exit code; absent when the command was killed (stopped) or the harness gave none. */
+  exitCode?: number;
+  /** It was stopped before it ended on its own; `cancelReason` says by what. */
+  cancelled?: true;
+  cancelReason?: ShellCancelReason;
+  /** The output was cut to what it kept. */
+  truncated?: ShellTruncation;
+  /** Where the whole output was saved, on the chat's machine (when it was cut). */
+  fullOutputPath?: string;
+}
+
+/** A saved command's row (TranscriptItem `shell`): its command, the output as saved (already cut to
+    `truncated`), how it ended, and `private` for a `!!` command, which the model never sees. Rows are in
+    branch order: a command that ended while the model replied is saved after that reply, so its row is
+    already below it. */
+export interface ShellRowInfo extends ShellOutcome {
+  command: string;
+  output: string;
+  private?: true;
+}
+
+/** At most this many characters of a running command's output are kept live, the newest (the hello's
+    `shell[].output` and what a client keeps from `shell_output` deltas). The saved output is the harness's. */
+export const SHELL_LIVE_MAX = 100_000;
+
+/**
+ * A command from shell mode that is not a saved row yet (§chat.shell-mode/card): running, or ended and
+ * waiting for the harness to save it (one that ends while the model replies is saved after that reply).
+ * The hello carries each such run (`hello.shell`), so every device, a reconnect and a server restart show
+ * it with its output so far; `shell_saved` retires it in favour of its row.
+ */
+export interface ShellRun extends ShellOutcome {
+  /** Sova's id for the run: its events', and `shell_stop`'s. */
+  id: string;
+  command: string;
+  private?: true;
+  /** Running: the newest SHELL_LIVE_MAX characters so far. Ended: the output as it will be saved. */
+  output: string;
+  state: "running" | "ended";
+  /** When it started, ms epoch. */
+  startedAt: number;
+  /** The model was replying while it ran: it gets the output after that reply, and the run is saved below
+      it (the card sits under the streaming reply, and reads "The model gets this after its reply."). */
+  underReply?: true;
+}
+
+/** Why a command from shell mode was refused: it never ran, was never saved and never reaches the model
+    (§chat.shell-mode/running). The composer shows `message` under the box and keeps the draft.
+    `running` = a command already runs in this chat; `kill-guard` = the macOS kill guard refused it
+    (§chat.kill-guard/refusal); `sandbox` = the chat's sandbox is On and couldn't be prepared;
+    `busy` = a terminal owns the session; `recent` = an unknown process wrote it (reconnect with force);
+    `unavailable` = this chat has no shell mode (the Overseer, a project overseer or assistant, a gathering
+    session), or the chat is closing; `empty` = no command. */
+export type ShellRefusal = "running" | "kill-guard" | "sandbox" | "busy" | "recent" | "unavailable" | "empty";
 
 /** Why a rewind was refused: busy = a TUI owns the session; recent = an unknown process wrote it
     (reconnect with force); not_on_branch = the id is unknown, not a user message, or not on the
@@ -2754,7 +2834,10 @@ export type ChatServerMessage =
       none); `olderSummary` sums up all `older` of them, the client's own included. */
   /** `cwdFallback` (§app.shell/missing-folder-home): the chat runs in the home folder because its stored
       local folder is gone; absent when it runs in its own folder. */
-  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive; after?: string; cwdFallback?: CwdFallback }
+  /** `shell` (§chat.shell-mode/card): the chat's commands from shell mode not yet saved as rows (running, or
+      ended and waiting to be saved after the reply in flight), oldest first; absent when there are none.
+      Sent on every wire. */
+  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive; after?: string; cwdFallback?: CwdFallback; shell?: ShellRun[] }
   /** Which code a chat in its own process runs (§app.chat-processes/code-pickup). Sent after the
       hello when not current, and to every client on each change; none received = current. A chat
       hosted in the server sends it only to answer `reload_code`. See ChatCodeState. */
@@ -2888,6 +2971,20 @@ export type ChatServerMessage =
       opened it (§chat.transcript/instant-open). A client that doesn't know it reconnects on the
       close, as before. */
   | { type: "closed"; reason: "idle" | "archived" }
+  /** A command from shell mode started (§chat.shell-mode/card), to every client: its card shows at once.
+      `clientId`: the sender's `shell` frame's, so that composer clears its draft. */
+  | { type: "shell_start"; run: ShellRun; clientId?: string }
+  /** More of a running command's output, to every client, throttled (a few per second at most): append
+      `delta` to the run's output, keeping its newest SHELL_LIVE_MAX characters. */
+  | { type: "shell_output"; id: string; delta: string }
+  /** The command ended, to every client: the run is `ended` (its output now the harness's own, already cut)
+      and waits to be saved (`shell_saved`). `underReply`: it is saved after the reply in flight. */
+  | ({ type: "shell_end"; id: string; output: string; underReply?: true } & ShellOutcome)
+  /** The run is saved, to every client: an `append` carrying its row (TranscriptItem kind "shell") came
+      just before; the live card goes. `entryId` is that row's id. */
+  | { type: "shell_saved"; id: string; entryId: string }
+  /** The sender's `shell` frame was refused and nothing ran (ShellRefusal), to the sender only. */
+  | { type: "shell_refused"; clientId: string; reason: ShellRefusal; message: string }
   // Codes: "busy" = a TUI owns the session (never retry with force); "recent" = file written by an
   // unknown process, at connect or mid-chat (client may reconnect with &force=1);
   // "reloaded" = runtime reloaded by another client, or message sent to a closed runtime (reconnect);

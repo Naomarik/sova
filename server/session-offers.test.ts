@@ -231,10 +231,11 @@ describe("showing an offer", () => {
     await show(id, "r", { replyId: "u2" });
   });
 
-  test("an open alignment question holds no offer, a file naming it stays valid, and a press beside it goes out marked", async () => {
-    writeOffers({ merge: def({ onlyIf: ["no-open-alignment"] }) });
+  test("an open alignment question holds an offer only when it names no-open-alignment, and a press beside it goes out marked", async () => {
+    writeOffers({ merge: def(), careful: def({ onlyIf: ["no-open-alignment"] }) });
     const id = sid();
     summaryOver = { align: { openDocs: 1, openQuestions: 2 } } as Partial<SessionSummary>;
+    await refused(show(id, "careful"), /no alignment question is open/);
     const card = await show(id, "merge");
     assert.equal(card.state, "open");
     await offers.chooseOffer(pathOf(id), id, card.id, 0);
@@ -243,7 +244,7 @@ describe("showing an offer", () => {
     assert.deepEqual(extensionSenderOf(ctx(sentHeaders.at(-1)!)), { sessionId: "card:offer.merge", title: "merge", hop: 0 });
     summaryOver = {};
     const plain = sid();
-    await offers.chooseOffer(pathOf(plain), plain, (await show(plain, "merge")).id, 0);
+    await offers.chooseOffer(pathOf(plain), plain, (await show(plain, "careful")).id, 0);
     assert.equal(extensionSenderOf(ctx(sentHeaders.at(-1)!)), null, "with nothing open the same press is as it was");
   });
 

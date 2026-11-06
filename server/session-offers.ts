@@ -438,9 +438,9 @@ async function conditionHolds(c: OfferCondition, s: SessionSummary, trees: Trees
       const r = await deps.git(["status", "--porcelain"], s.cwd).catch(() => ({ code: 1, stdout: "x" }));
       return r.code === 0 && r.stdout.trim() === "";
     }
-    // Offers no longer wait on an open alignment question; a file that still names this stays valid.
+    // Only when an offer names it: an open alignment question holds no other offer.
     case "no-open-alignment":
-      return true;
+      return !(s.align?.openQuestions ?? 0);
   }
 }
 

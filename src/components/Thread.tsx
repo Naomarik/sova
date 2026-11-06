@@ -39,8 +39,8 @@ import { backWords } from "../lib/error-feed";
 import type { ReplyPlace } from "../lib/reply-place";
 import { ReplyPlaceView } from "./ReplyPlace";
 import { closeContextMenuOf } from "./ContextMenu";
-import { openMessageMenu } from "./MessageMenu";
-import { menuStripOf, repliesByEntry, stripBlocks } from "../lib/message-menu";
+import { openMenu } from "./MenuPlace";
+import { focusOnce, MESSAGE_MENU, menuStripOf, messageMenuOf, repliesByEntry, stripBlocks } from "../lib/message-menu";
 import { InfoRow } from "./InfoRow";
 import { TranscriptKindRow } from "./TranscriptKind";
 import { kindOf, liveBlockInput, liveEndsOf, liveKindOf, outsideWork, sameHit, type KindContext, type KindHit, type LiveBlockFacts, type LiveInput } from "../lib/transcript-kinds";
@@ -564,11 +564,16 @@ export function HistoryItems(props: {
             style={{ "--entry-est": rowEst() }}
             ref={(el) => onCleanup(() => closeContextMenuOf(el))}
             onContextMenu={(e) => {
-              // A message with a strip opens its actions as a menu (components/MessageMenu.tsx), from
-              // any of its text blocks; what extensions add under it and a work run's fold are not the message.
+              // A message with a strip opens its actions as a menu (lib/message-menu), from any of its
+              // text blocks; what extensions add under it and a work run's fold are not the message.
+              // Focus goes back to the row itself (`focusOnce`), so the strip isn't left showing.
               const s = menuStripOf(item, strip(), replies());
+              const el = e.currentTarget;
               if (!s || (e.target instanceof Element && e.target.closest(".reply-slot, .chain-fold"))) return;
-              openMessageMenu(e, { el: e.currentTarget, place: props.actions!, strip: s, blocks: () => stripBlocks(rows(), s) });
+              openMenu(e, MESSAGE_MENU, () => messageMenuOf(props.actions!, s, () => stripBlocks(rows(), s), el.parentElement ?? document), {
+                el,
+                origin: () => focusOnce(el, (to) => to instanceof Element && !!to.closest("[popover]")),
+              });
             }}
           >
             <Show when={foldable(chain()) ? chain() : null}>{(run) => <ChainFold run={run()} />}</Show>

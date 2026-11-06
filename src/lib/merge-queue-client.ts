@@ -66,15 +66,15 @@ export interface LandOptions {
 const opts = (o: LandOptions) => ({ ...(o.commit ? { commit: o.commit } : {}), ...(o.withoutReview ? { withoutReview: true } : {}), ...(o.withoutSpecs ? { withoutSpecs: true } : {}) });
 
 /** Each action: the verb's answer, and readers told to reload. */
-async function act(project: string | null, verb: `merge.${string}`, body: Record<string, unknown>): Promise<VerbResult> {
-  const r = await runMergeVerb(project, verb, body);
+async function act(project: string | null, verb: `merge.${string}`, body: Record<string, unknown>, send = () => runMergeVerb(project, verb, body)): Promise<VerbResult> {
+  const r = await send();
   noteMergeChanged();
   return r;
 }
 
 /** Land: queue a worktree's branch at its head commit (the approval pins it and its drafts). */
-export const land = (worktree: string, o: LandOptions = {}) =>
-  act(null, "merge.add", { checkout: worktree, ...opts(o) });
+export const land = (worktree: string, o: LandOptions = {}, send?: () => Promise<VerbResult>) =>
+  act(null, "merge.add", { checkout: worktree, ...opts(o) }, send);
 /** Land on the queue's own rows, by branch. */
 export const landBranch = (project: string, branch: string, o: LandOptions = {}) => act(project, "merge.add", { branch, ...opts(o) });
 /** Run Trial on a Setup chat's proposal: `merge.try` of its setup branch at `commit` in the merge copy (its own

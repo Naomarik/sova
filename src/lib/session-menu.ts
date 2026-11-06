@@ -1,20 +1,20 @@
-// The session menu's own rows (§app.extensions/session-menu, §app.insights/team-cards "⋯ menu"), as
-// data: what each row says, why it can't run, and what pressing it does. One list for every door
-// — the Agents board row's ⋯, a right-click (or Shift+F10) on a board row or on a session row in
-// any section of the sidebar — so the doors can't drift. components/SessionRowMenu.tsx draws it,
-// then the place's built-ins and what extensions add. Each door differs only in its
-// `SessionMenuCtx`: where Session Details and Open Subagents lead from there.
+// The session menu (§app.extensions/session-menu, §app.insights/team-cards "⋯ menu"), as one
+// declaration (lib/menu-place): for every door — the Agents board row's ⋯, a right-click (or
+// Shift+F10) on a board row or on a session row in any section of the sidebar — so the doors can't
+// drift. Each door differs only in its `SessionMenuCtx`: where Session Details and Open Subagents
+// lead from there.
 
-import type { SessionSummary } from "../../shared/protocol";
-import type { IconName } from "../components/ui";
+import { SESSION_TITLE_MAX, type SessionSummary } from "../../shared/protocol";
 import { gistTitle } from "./agents-board";
 import { archiveBlockReason } from "./archive-block";
 import { archivedProjectOf, unarchivedProjectOf } from "./drag-archive";
 import { hostOf } from "./mesh";
 import { groupRefusal } from "./regions";
 import { archiveSession, renameSession } from "./session-actions";
-import { groupNameOf, loadSessionGroups, quoted, sessionGroups } from "./session-groups";
+import type { MenuAct, MenuDecl, MenuItem } from "./menu-place";
+import { groupNameOf, loadSessionGroups, quoted, sessionGroups, setSessionGroup } from "./session-groups";
 import { summaryLineOf } from "./summary-row";
+import { announce, copyText, toast } from "./ui-state";
 
 /** What the menu needs from the door that opened it: the gestures that reach past it. */
 export interface SessionMenuCtx {
@@ -40,113 +40,113 @@ export function sessionArchiveRow(s: SessionSummary, running: Readonly<Record<st
   return { label: s.archived ? "Unarchive" : "Archive", blocked: reason ? `Can't archive: ${reason}.` : null };
 }
 
-/** What the rows reach the server through; the tests pass stand-ins. */
-export interface SessionMenuActs {
-  setTitle(s: SessionSummary, title: string | null): Promise<boolean | undefined>;
-  setArchived(s: SessionSummary, archived: boolean): Promise<boolean>;
-  loadGroups(): void;
+/** What the session menu is about, and the door's context. */
+export interface SessionMenuSubject {
+  session: SessionSummary;
+  ctx: SessionMenuCtx;
+  archive: SessionArchiveRow;
 }
 
-export const SESSION_MENU_ACTS: SessionMenuActs = {
-  setTitle: (s, title) => renameSession(s, title),
-  setArchived: (s, next) => archiveSession(s.path, next, next ? archivedProjectOf(s) : unarchivedProjectOf(s, hostOf(s.path) === null)),
-  loadGroups: () => void loadSessionGroups(),
+/** The session menu: every door's, so the doors can't drift. A menu place: extensions add to it, for a session on this host only. */
+export const SESSION_MENU: MenuDecl<SessionMenuSubject> = {
+  label: ({ session: s }) => `Actions for ${quoted(s.title)}`,
+  extensions: { place: "session", payload: ({ session: s }) => (hostOf(s.path) === null ? { session: s.id } : null), name: ({ session: s }) => quoted(s.title) },
+  table: ({ session: s, ctx, archive }) => {
+    const name = quoted(s.title);
+    const gist = gistTitle(s);
+    const detailsOpen = ctx.detailsPath === s.path;
+    const titled = async (to: string | null, send: () => Promise<unknown>) => (await renameSession(s, to, send)) && ctx.onRefresh();
+    const set = (to: string): MenuAct => ({ command: "session.title.set", params: { session: s.path, title: to }, via: (send) => titled(to, send) });
+    const reset: MenuAct = { command: "session.title.reset", params: { session: s.path }, via: (send) => titled(null, send) };
+    /** Into a group (or out of it, null), and say where it went. */
+    const move = async (id: string | null, send: () => Promise<unknown>) => {
+      const before = groupNameOf(sessionGroups(), s.groupId);
+      if (id === (s.groupId ?? null) || !(await setSessionGroup(s.path, id, undefined, send))) return;
+      const after = groupNameOf(sessionGroups(), id ?? undefined);
+      const done = id === null ? `Removed from ${before ? quoted(before) : "the group"}.` : `${before ? "Moved" : "Added"} to ${quoted(after ?? "the group")}.`;
+      toast(done);
+      announce(done);
+      ctx.onRefresh();
+    };
+    const groups = [{ id: null as string | null, name: "No group" }, ...sessionGroups().map((g) => ({ id: g.id as string | null, name: g.name }))].map(
+      (g): MenuItem => ({
+        label: g.name,
+        aria: g.id ? `Move ${name} to ${quoted(g.name)}` : `Take ${name} out of its group`,
+        icon: g.id === (s.groupId ?? null) ? "check" : "folder",
+        act: { command: "session.group.assign", params: { session: s.path, group: g.id }, via: (send) => move(g.id, send) },
+      }),
+    );
+    const next = !s.archived;
+    const organize: MenuItem[] = [
+      // The drag's own refusal: an organization's session stays with its project.
+      {
+        label: "Move to Group…",
+        aria: `Move ${name} into a group`,
+        icon: "folder",
+        description: groupNameOf(sessionGroups(), s.groupId) ?? undefined,
+        disabled: groupRefusal(s) ?? "",
+        act: { screen: { kind: "rows", label: "Move to group", load: () => void loadSessionGroups(), sections: [{ name: "Groups", heading: "Groups", rows: groups }] } },
+      },
+      ...(archive
+        ? [
+            {
+              label: archive.label,
+              aria: `${archive.label} ${name}`,
+              icon: "archive",
+              disabled: archive.blocked ?? "",
+              act: {
+                command: next ? "session.archive" : "session.unarchive",
+                params: { session: s.path },
+                via: async (send) => (await archiveSession(s.path, next, next ? archivedProjectOf(s) : unarchivedProjectOf(s, hostOf(s.path) === null), send)) && ctx.onArchiveChanged(s.path, next),
+              },
+            } satisfies MenuItem,
+          ]
+        : []),
+      { label: "Copy Path", aria: `Copy the path of ${name}`, icon: "copy", act: { local: () => copyText(s.path, "Copied path.") } },
+    ];
+    // Asks for the name inside the menu, whichever door opened it; empty restores the derived title.
+    const rename: MenuAct = {
+      screen: {
+        kind: "name",
+        label: `Rename ${name}`,
+        initial: s.title,
+        placeholder: "Session title",
+        max: SESSION_TITLE_MAX,
+        hint: `Kept in Sova only. Empty restores ${quoted(s.originalTitle ?? s.title)}.`,
+        save: (typed, opened) => {
+          const to = renameValue(opened, typed);
+          return to === undefined ? null : to === null ? reset : set(to);
+        },
+      },
+    };
+    return [
+      {
+        name: "Open",
+        rows: [
+          { label: detailsOpen ? "Close Session Details" : "Session Details", aria: `${detailsOpen ? "Close the session details" : "Session details"} of ${name}`, icon: "info", act: { local: () => ctx.onOpenDetails(s.path) } },
+          { label: "Open Subagents", aria: `Open the subagents pane of ${name}`, icon: "worker", act: { local: () => ctx.onOpenSubagents(s.path), keepFocus: true } },
+        ],
+      },
+      {
+        name: "Title",
+        // A chat Sova names itself keeps that name: no title actions at all, from any door.
+        rows: s.fixedName
+          ? []
+          : [
+              { label: "Rename…", aria: `Rename ${name}`, icon: "pencil", act: rename },
+              { label: "Use Gist as Title", aria: `Use the gist as the title of ${name}`, icon: "pencil", description: gist ?? undefined, disabled: gist ? "" : summaryLineOf(s) ? "The gist is already the title." : "No gist yet.", act: set(gist ?? "") },
+              { label: "Reset to Original Title", aria: `Reset ${name} to its original title`, icon: "undo", description: s.originalTitle, disabled: s.originalTitle === undefined ? "Not renamed." : "", act: reset },
+            ],
+      },
+      { name: "Organize", rows: organize },
+    ];
+  },
 };
 
-/** One of Sova's rows: an ActionMenu Item's props, its icon named. */
-export interface SessionMenuRow {
-  label: string;
-  aria: string;
-  icon: IconName;
-  description?: string;
-  /** Why it can't run, or "" when it can. */
-  disabled?: string;
-  keepFocus?: boolean;
-  stayOpen?: boolean;
-  run(): void;
-}
-
-/** Sova's rows, in their groups and order. `show` swaps the menu's rows for a screen ("rename", "groups"). */
-export function sessionMenuRows(
-  s: SessionSummary,
-  ctx: SessionMenuCtx,
-  archive: SessionArchiveRow,
-  show: (screen: string) => void,
-  acts: SessionMenuActs = SESSION_MENU_ACTS,
-): { open: SessionMenuRow[]; title: SessionMenuRow[]; organize: SessionMenuRow[] } {
-  const name = quoted(s.title);
-  const gist = gistTitle(s);
-  const detailsOpen = ctx.detailsPath === s.path;
-  const setTitle = async (title: string | null) => {
-    if (await acts.setTitle(s, title)) ctx.onRefresh();
-  };
-  const organize: SessionMenuRow[] = [
-    {
-      label: "Move to Group…",
-      aria: `Move ${name} into a group`,
-      icon: "folder",
-      description: groupNameOf(sessionGroups(), s.groupId) ?? undefined,
-      // The drag's own refusal: an organization's session stays with its project.
-      disabled: groupRefusal(s) ?? "",
-      stayOpen: true,
-      run: () => {
-        acts.loadGroups();
-        show("groups");
-      },
-    },
-  ];
-  if (archive)
-    organize.push({
-      label: archive.label,
-      aria: `${archive.label} ${name}`,
-      icon: "archive",
-      disabled: archive.blocked ?? "",
-      run: () => {
-        const next = !s.archived;
-        void acts.setArchived(s, next).then((ok) => ok && ctx.onArchiveChanged(s.path, next));
-      },
-    });
-  return {
-    open: [
-      {
-        label: detailsOpen ? "Close Session Details" : "Session Details",
-        aria: `${detailsOpen ? "Close the session details" : "Session details"} of ${name}`,
-        icon: "info",
-        run: () => ctx.onOpenDetails(s.path),
-      },
-      { label: "Open Subagents", aria: `Open the subagents pane of ${name}`, icon: "worker", keepFocus: true, run: () => ctx.onOpenSubagents(s.path) },
-    ],
-    // A chat Sova names itself keeps that name: no title actions at all, from any door.
-    title: s.fixedName
-      ? []
-      : [
-          // Asks for the name inside the menu, whichever door opened it.
-          { label: "Rename…", aria: `Rename ${name}`, icon: "pencil", stayOpen: true, run: () => show("rename") },
-          {
-            label: "Use Gist as Title",
-            aria: `Use the gist as the title of ${name}`,
-            icon: "pencil",
-            description: gist ?? undefined,
-            disabled: gist ? "" : summaryLineOf(s) ? "The gist is already the title." : "No gist yet.",
-            run: () => void setTitle(gist),
-          },
-          {
-            label: "Reset to Original Title",
-            aria: `Reset ${name} to its original title`,
-            icon: "undo",
-            description: s.originalTitle,
-            disabled: s.originalTitle === undefined ? "Not renamed." : "",
-            run: () => void setTitle(null),
-          },
-        ],
-    organize,
-  };
-}
-
 /**
- * What the rename screen saves: the trimmed name, `null` (empty: back to the derived title), or
- * `undefined` for a cancel — the title the field opened with, which is never a write, even when
- * the session's title moved while the field was open. Pure.
+ * What the rename box saves: the trimmed name, `null` (empty: back to the derived title), or
+ * `undefined` for a cancel — the title the box opened with, which is never a write, even when
+ * the session's title moved while the box was open. Pure.
  */
 export function renameValue(opened: string, typed: string | null): string | null | undefined {
   const t = typed?.trim() ?? "";

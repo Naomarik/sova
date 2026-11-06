@@ -1,29 +1,57 @@
 // The message's right-click menu (§chat.transcript/message-actions "Right-click", §app/context-menus),
-// as data: its rows are the strip's own items (lib/message-actions `messageItems`, through the reply
-// place's built-ins) in the strip's order, plus one row of the menu's own, Copy as Plain Text, right
-// after Copy. What a press does, and the plain text that row copies. No DOM here: the drawn body and
-// the reading of the rendered message are components/MessageMenu.tsx.
-import MarkdownIt from "markdown-it";
+// as one declaration (lib/menu-place): its rows are the strip's own items (the reply place's
+// built-ins) in the strip's order, plus one row of the menu's own, Copy as Plain Text, right after
+// Copy; Rewind… and Regenerate… ask with the strip's confirm. Every row runs the strip's own act
+// (a chat's socket request, its refusals and its note under the message), never a catalogue command.
 import type { TranscriptItem } from "../../shared/protocol";
 import type { MessageActionItem } from "../components/MessageActions";
 import { entryIdOf } from "./jump";
-import { ACTION_CONFIRM, ACTION_LABEL, COPY_PLAIN, type LandedActionKind, MENU_LABEL, type MessageStrip } from "./message-actions";
+import { renderMarkdown } from "./markdown";
+import type { MenuDecl, MenuItem } from "./menu-place";
+import { ACTION_CONFIRM, ACTION_ICON, ACTION_LABEL, COPY_PLAIN, MENU_LABEL, type MessageStrip, stripLabel } from "./message-actions";
+import { builtInItems, type ReplyPlace } from "./reply-place";
+import { copyText } from "./ui-state";
 
-export type MessageMenuKind = LandedActionKind | "copy-plain";
-
-/** One row of the menu. */
-export interface MessageMenuRow {
-  kind: MessageMenuKind;
-  /** The menu's words (MENU_LABEL). */
-  label: string;
-  /** The strip button's accessible name. */
-  aria: string;
-  /** Why it can't run now: the strip's own reason. */
-  disabled?: string;
-  /** A branch action asks first, with the strip's own confirm. */
-  confirm?: { label: string; note: string };
-  run(): void | Promise<void>;
+/** What a message's menu is about: its strip, the strip's items as they are now, and Copy as Plain Text. */
+export interface MessageMenuSubject {
+  strip: MessageStrip;
+  items: readonly MessageActionItem[];
+  copyPlain(): unknown;
 }
+
+/** The copy and share rows, then, past a divider, the ones that change the branch or fork it. */
+export const MESSAGE_MENU: MenuDecl<MessageMenuSubject> = {
+  label: ({ strip }) => stripLabel(strip.role),
+  table: ({ items, copyPlain }) => {
+    const safe: MenuItem[] = [];
+    const branch: MenuItem[] = [];
+    for (const it of items) {
+      if (it.kind === "remove") continue; // a queued message's: it has no menu
+      const confirm = ACTION_CONFIRM[it.kind];
+      const disabled = it.reason ?? undefined;
+      const row: MenuItem = {
+        label: MENU_LABEL[it.kind],
+        aria: it.label ?? ACTION_LABEL[it.kind],
+        icon: ACTION_ICON[it.kind],
+        disabled,
+        act: confirm ? { screen: { kind: "confirm", note: confirm.note, confirm: confirm.label, act: { local: it.run } } } : { local: it.run },
+      };
+      (it.kind === "copy" || it.kind === "share" ? safe : branch).push(row);
+      if (it.kind === "copy") safe.push({ label: COPY_PLAIN.label, aria: COPY_PLAIN.aria, icon: "copy", disabled, act: { local: copyPlain } });
+    }
+    return [
+      { name: "Copy and share", rows: safe },
+      { name: "Branch", rows: branch },
+    ];
+  },
+};
+
+/** A strip's menu as its door builds it: the items as the strip draws them now, and the plain text read from `scope`, the thread. */
+export const messageMenuOf = (place: ReplyPlace, strip: MessageStrip, blocks: () => MessageBlock[], scope: ParentNode): MessageMenuSubject => ({
+  strip,
+  items: builtInItems(place, strip),
+  copyPlain: () => copyText(plainText(blocks(), scope), COPY_PLAIN.done),
+});
 
 /** Each reply's strip by its entry: where an earlier text block of a reply drawn as several finds the strip hung off its last. */
 export function repliesByEntry(strips: Iterable<MessageStrip>): Map<string, MessageStrip> {
@@ -69,29 +97,6 @@ export function focusOnce<T extends FocusRow>(row: T, intoMenu: (to: unknown) =>
   return row;
 }
 
-/** The screen a branch action's confirm is shown on. */
-export const confirmScreen = (kind: MessageMenuKind) => `confirm:${kind}`;
-
-/**
- * The menu's rows from the strip's items: each item one row, in order, running the item's own
- * `run`; Copy as Plain Text right after Copy, present and off exactly when Copy is.
- */
-export function messageMenuRows(items: readonly MessageActionItem[], copyPlain: () => void | Promise<void>): MessageMenuRow[] {
-  return items.flatMap((it): MessageMenuRow[] => {
-    if (it.kind === "remove") return []; // a queued message's: it has no menu
-    const row: MessageMenuRow = { kind: it.kind, label: MENU_LABEL[it.kind], aria: it.label ?? ACTION_LABEL[it.kind], disabled: it.reason ?? undefined, confirm: ACTION_CONFIRM[it.kind], run: it.run };
-    if (it.kind !== "copy") return [row];
-    return [row, { kind: "copy-plain", label: COPY_PLAIN.label, aria: COPY_PLAIN.aria, disabled: row.disabled, run: copyPlain }];
-  });
-}
-
-/** What pressing a row does (the menu closes first, unless it asks): a branch action shows its confirm, every other row runs. */
-export const rowAct = (row: MessageMenuRow, show: (screen: string) => void) => () => (row.confirm ? show(confirmScreen(row.kind)) : row.run());
-
-/** The row a confirm screen asks about, while it can still run; none: the screen gives way to the rows. */
-export const confirmRow = (rows: readonly MessageMenuRow[], screen: string | null): MessageMenuRow | undefined =>
-  rows.find((r) => r.confirm && !r.disabled && confirmScreen(r.kind) === screen);
-
 // ---- Copy as Plain Text --------------------------------------------------------------------------
 
 /** One rendered row of a strip's message: its id (the row's `data-entry`), its source, and whether that is Markdown. */
@@ -110,81 +115,55 @@ export function stripBlocks(rows: readonly TranscriptItem[], strip: MessageStrip
     .map((r) => ({ id: r.id, text: r.text ?? "", markdown: strip.role === "assistant" }));
 }
 
-/**
- * The message as it reads: each block's drawn text (`read`: the rendered body's visible text, null
- * when it isn't drawn), else its source without Markdown's marks; blocks joined by a blank line, as
- * Copy joins them.
- */
-export function plainText(blocks: readonly MessageBlock[], read: (id: string) => string | null): string {
-  return blocks
-    .map((b) => read(b.id) ?? (b.markdown ? plainMarkdown(b.text) : b.text))
-    .map((t) => t.trim())
-    .filter(Boolean)
-    .join("\n\n");
-}
-
-const md = new MarkdownIt({ html: false, linkify: true });
-type Token = ReturnType<typeof md.parse>[number];
-
-/** An inline run's words: code keeps its text, a link its words, an image its alt. */
-const inlineText = (t: Token): string =>
-  (t.children ?? []).map((c) => (c.type === "text" || c.type === "code_inline" ? c.content : c.type === "softbreak" || c.type === "hardbreak" ? "\n" : c.type === "image" ? c.content : "")).join("");
+/** What the rendered body leaves out of the words you read: a code block's head (its language and
+    buttons), a drawing in place of its source, drawings, screen-reader-only notes, decoration. */
+const NOT_WORDS = ".md-code-head, .md-code-rendered, .md-vis, .md-vis-pending, .visually-hidden, [aria-hidden='true']";
 
 /**
- * Markdown source without its marks, for a block that isn't drawn: paragraphs, headings and quotes
- * as their words, code blocks as their code, lists with a bullet or their number, table cells
- * split by tabs.
+ * The message as it reads on screen: each block's body as the page draws it (cloned from the thread
+ * in `scope`; a block that isn't on screen, such as a step inside a folded work run, is drawn off
+ * screen by the page's own Markdown drawing just for this), without the author line, images,
+ * attachment chips or code-block controls; list items keep their bullet or number, and folded
+ * working notes are read open. Its paragraphs, lists, code blocks and tables, and its blocks, are
+ * apart by a blank line, as Copy joins blocks.
  */
-export function plainMarkdown(src: string): string {
-  let out = "";
-  const lists: { n: number | null }[] = [];
-  let line = "";
-  let cells: string[] | null = null;
-  /** A list or a table starts: a blank line before its first line, as before a paragraph. */
-  let gap = false;
-  /** A block on its own line: a blank line between paragraphs, none between a list's items or a table's rows. */
-  const push = (text: string, tight = lists.length > 0) => {
-    out += (out ? (tight && !gap ? "\n" : "\n\n") : "") + text;
-    gap = false;
-  };
-  for (const t of md.parse(src, {})) {
-    switch (t.type) {
-      case "bullet_list_open":
-      case "ordered_list_open":
-        if (!lists.length) gap = true;
-        lists.push({ n: t.type === "bullet_list_open" ? null : Number(t.attrGet("start") ?? 1) });
-        break;
-      case "bullet_list_close":
-      case "ordered_list_close":
-        lists.pop();
-        break;
-      case "list_item_open": {
-        const list = lists[lists.length - 1]!;
-        line = `${"  ".repeat(lists.length - 1)}${list.n === null ? "•" : `${list.n++}.`} `;
-        break;
-      }
-      case "table_open":
-        gap = true;
-        break;
-      case "tr_open":
-        cells = [];
-        break;
-      case "tr_close":
-        push(cells!.join("\t"), true);
-        cells = null;
-        break;
-      case "inline":
-        if (cells) cells.push(inlineText(t));
-        else {
-          push(line + inlineText(t));
-          line = "";
-        }
-        break;
-      case "fence":
-      case "code_block":
-        push(t.content.replace(/\n$/, ""));
-        break;
+export function plainText(blocks: readonly MessageBlock[], scope: ParentNode): string {
+  const copy = document.createElement("div");
+  for (const b of blocks) {
+    const parts = scope.querySelectorAll(`.entry[data-entry="${CSS.escape(b.id)}"] article.message > :is(.message-body, .md-working-notes)`);
+    if (parts.length) for (const p of parts) copy.append(p.cloneNode(true));
+    else {
+      const body = copy.appendChild(document.createElement("div"));
+      body.className = "message-body";
+      if (b.markdown) body.innerHTML = renderMarkdown(b.text).html;
+      else body.textContent = b.text;
     }
   }
-  return out.trim();
+  for (const n of copy.querySelectorAll(NOT_WORDS)) n.remove();
+  for (const d of copy.querySelectorAll("details")) d.open = true;
+  for (const li of copy.querySelectorAll("li")) {
+    const list = li.parentElement;
+    let depth = 0;
+    for (let up = list; up && up !== copy; up = up.parentElement) if (up.tagName === "LI") depth++;
+    const mark = list?.tagName === "OL" ? `${(list as HTMLOListElement).start + Array.from(list.children).indexOf(li)}.` : "•";
+    // In a span of its own that keeps its spaces: innerText drops leading white space, and the indent with it.
+    const lead = document.createElement("span");
+    lead.style.whiteSpace = "pre";
+    lead.textContent = `${"  ".repeat(depth)}${mark} `;
+    li.prepend(lead);
+  }
+  // innerText needs a laid-out box: the copy sits off screen for the one read, then goes.
+  copy.setAttribute("aria-hidden", "true");
+  copy.style.cssText = "position:fixed;left:-10000px;top:0;width:40rem;pointer-events:none";
+  document.body.append(copy);
+  try {
+    // A body's own blocks one by one: innerText gives a list and the code block after it one line break, not a blank line.
+    const reads = Array.from(copy.children).flatMap((part) => (part.classList.contains("message-body") && part.children.length ? Array.from(part.children) : [part]));
+    return reads
+      .map((el) => (el as HTMLElement).innerText.trim())
+      .filter(Boolean)
+      .join("\n\n");
+  } finally {
+    copy.remove();
+  }
 }

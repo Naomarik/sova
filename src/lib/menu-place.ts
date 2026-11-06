@@ -1,35 +1,87 @@
 /**
- * Menu places: a menu that Sova's own items and extensions both add to, the reply place's pattern
- * (src/lib/reply-place.ts) for a menu. Two lanes, always in this order: Sova's built-ins (trusted,
- * interactive rows it draws), then what extensions add (data Sova draws: a label, a summary and a
- * declared command, never markup). The one menu place today is "session", the Agents board row's
- * ⋯ menu (src/components/SessionRowMenu.tsx); src/components/MenuPlace.tsx draws both lanes.
+ * Sova's menus, as data. Every menu — a session's, a group's, a pane's, a message's, a worktree's —
+ * is one declaration (`MenuDecl`): its name, its table of rows, and, for a menu place, what
+ * extensions add. One body draws any declaration (src/components/MenuPlace.tsx `MenuBody`), and a
+ * place's ⋯ and its right-click or Shift+F10 (§app/context-menus) both draw it, so the doors can't
+ * drift and a test reads each table without a DOM.
  *
- * An extension adds to a menu by declaring `"menu": "<place>"` on one of its manifest `commands`
- * (shared/extension-offers.ts MENU_PLACES); GET /api/extensions carries it in `offers.commands`.
- * The extension lane costs nothing beyond the list the page already polls: no request until a row
- * runs, and none of its rows when no running extension declares one.
+ * A menu place is a menu that Sova's own rows and extensions both add to, the reply place's pattern
+ * (src/lib/reply-place.ts) for a menu: Sova's rows first (trusted, interactive), then what
+ * extensions add (data Sova draws: a label, a summary and a declared command, never markup). The one
+ * menu place today is "session". An extension adds to it by declaring `"menu": "<place>"` on one
+ * of its manifest `commands` (shared/extension-offers.ts MENU_PLACES); GET /api/extensions carries
+ * it in `offers.commands`. The extension lane costs nothing beyond the list the page already polls:
+ * no request until a row runs, and none of its rows when no running extension declares one.
  */
 import type { ExtensionInfo } from "../../shared/protocol";
 import type { MenuPlace } from "../../shared/extension-offers";
 import type { IconName } from "../components/ui";
 
-/** One row a built-in draws: what ActionMenu's row needs, with a Sova icon by name. */
-export interface MenuRow {
+/**
+ * What pressing a row does: exactly one of a catalogue command (shared/commands-catalog.ts, named
+ * with the params its route takes; `via` is the place's own wrapper around `send`, the command's
+ * request: its toasts, refusals and refresh), a local act (`local`, or a link row's `href`: what
+ * only the browser does), or a second screen in the same menu. `keepFocus`: the act moves focus
+ * itself, so the menu doesn't put it back on the thing.
+ */
+export type MenuAct =
+  | { command: string; params: Readonly<Record<string, unknown>>; via(send: () => Promise<unknown>): unknown; keepFocus?: boolean }
+  | { local(): unknown; keepFocus?: boolean }
+  | { href: string }
+  | { screen: MenuScreen };
+
+/** A row's second screen: the one name box, the one question, or a list of rows (Move to Group…). */
+export type MenuScreen =
+  | {
+      kind: "name";
+      /** The box's accessible name: "Rename “Work”". */
+      label: string;
+      initial: string;
+      placeholder: string;
+      max: number;
+      /** The line under the box. */
+      hint?: string;
+      /** Leaving the box (a click outside) saves what's there; otherwise it saves nothing. */
+      leaveSaves?: boolean;
+      /** What saving `value` (as typed) does; `opened` is what the box opened with. Null: nothing to write. */
+      save(value: string, opened: string): MenuAct | null;
+    }
+  | { kind: "confirm"; note: string; confirm: string; act: MenuAct }
+  | { kind: "rows"; label: string; sections: MenuSection[]; load?(): void };
+
+/** One row, in every menu: its words, its icon, why it can't run, and what it does. */
+export interface MenuItem {
   label: string;
   /** The row's accessible name: it says which thing the row acts on. */
   aria: string;
   icon?: IconName;
   title?: string;
   description?: string;
-  run(): void;
+  /** Why it can't run, said before the press; absent or "" when it can. */
+  disabled?: string;
+  act: MenuAct;
 }
 
-/** One of Sova's own contributions to a menu place: the rows it adds for that subject. */
-export interface MenuBuiltIn<T> {
-  id: string;
-  rows(subject: T): MenuRow[];
+/** Rows drawn together: `name` makes them a named group (none: bare rows); `heading` shows a label over them. */
+export interface MenuSection {
+  name?: string;
+  heading?: string;
+  rows: MenuItem[];
 }
+
+/** One place's menu, for every door. */
+export interface MenuDecl<T> {
+  /** The menu's name, the ⋯ trigger's: every door names it the same. */
+  label(subject: T): string;
+  /** Sova's rows, in their sections and order; a section with no rows isn't drawn. */
+  table(subject: T): MenuSection[];
+  /** A menu place: what extensions add after Sova's rows. `payload` is what an entry is sent
+      (null: none here, such as another computer's); `name` how its rows name the subject. */
+  extensions?: { place: MenuPlace; payload(subject: T): Record<string, string> | null; name(subject: T): string };
+}
+
+/** An act's kind, as the tables are tested: a command, a local act (a link included), or a screen. */
+export const actKind = (a: MenuAct): "command" | "local" | "screen" => ("command" in a ? "command" : "screen" in a ? "screen" : "local");
 
 /** One extension's entry in a menu: copied field by field from its validated offers. */
 export interface MenuEntry {
@@ -125,14 +177,14 @@ export const entryTitle = (e: MenuEntry): string => `${e.label} · From ${e.exte
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
 /**
- * Run one extension entry for a session: POST /ext/<id>/api/commands/<name> with {session},
+ * Run one extension entry: POST /ext/<id>/api/commands/<name> with its menu's payload ({session}),
  * through Sova's extension proxy (which takes Sova's token off), the path a reply chip's action
  * takes. Resolves to the sentence to tell the user; never throws. No answer within `timeoutMs`
  * (headers and body) is the same as no answer at all.
  */
 export async function runMenuEntry(
   entry: MenuEntry,
-  session: string,
+  payload: Readonly<Record<string, string>>,
   fetch: Fetch = (url, init) => globalThis.fetch(url, init),
   timeoutMs = MENU_RUN_TIMEOUT_MS,
 ): Promise<string> {
@@ -141,7 +193,7 @@ export async function runMenuEntry(
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
       credentials: "same-origin",
-      body: JSON.stringify({ session }),
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(timeoutMs),
     });
     await res.body?.cancel();

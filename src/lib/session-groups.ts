@@ -190,9 +190,10 @@ export async function createGroup(name: string): Promise<SessionGroup | null> {
   }
 }
 
-export async function renameGroup(id: string, name: string): Promise<boolean> {
+/** `send`, here and below: the write, a menu row's command (src/lib/menu-place.ts), else the page's own call. */
+export async function renameGroup(id: string, name: string, send: () => Promise<unknown> = () => renameSessionGroup(id, name)): Promise<boolean> {
   try {
-    const group = await renameSessionGroup(id, name);
+    const group = (await send()) as SessionGroup;
     setGroups((list) => list.map((g) => (g.id === id ? group : g)));
     return true;
   } catch (err) {
@@ -201,9 +202,9 @@ export async function renameGroup(id: string, name: string): Promise<boolean> {
   }
 }
 
-export async function removeGroup(id: string): Promise<boolean> {
+export async function removeGroup(id: string, send: () => Promise<unknown> = () => deleteSessionGroup(id)): Promise<boolean> {
   try {
-    await deleteSessionGroup(id);
+    await send();
     setGroups((list) => list.filter((g) => g.id !== id));
     return true;
   } catch (err) {
@@ -222,9 +223,10 @@ export async function setSessionGroup(
   path: string,
   groupId: string | null,
   opts?: { label?: string | null; index?: number },
+  send: () => Promise<unknown> = () => assignSessionGroup(path, groupId, opts),
 ): Promise<AssignGroupResult | null> {
   try {
-    return await assignSessionGroup(path, groupId, opts);
+    return (await send()) as AssignGroupResult;
   } catch (err) {
     toast(`Couldn't move this session. ${(err as Error).message}`);
     return null;

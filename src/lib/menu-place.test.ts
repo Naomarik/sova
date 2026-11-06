@@ -104,7 +104,7 @@ describe("runMenuEntry", () => {
 
   test("POSTs {session} to the extension's command through the proxy, and says it was sent", async () => {
     const r = record(async () => new Response("{}", { status: 200 }));
-    assert.equal(await runMenuEntry(entry, "s-1", r.fetch), "Sent to Tickets.");
+    assert.equal(await runMenuEntry(entry, { session: "s-1" }, r.fetch), "Sent to Tickets.");
     assert.equal(r.calls.length, 1);
     assert.equal(r.calls[0]!.url, "/ext/my%20ext/api/commands/file");
     assert.equal(r.calls[0]!.init.method, "POST");
@@ -118,13 +118,13 @@ describe("runMenuEntry", () => {
     const hang = (_url: string, init: RequestInit) =>
       new Promise<Response>((_, reject) => init.signal?.addEventListener("abort", () => reject(init.signal!.reason)));
     const stuck = new Promise<string>((r) => setTimeout(() => r("still waiting after 3 s"), 3_000).unref?.());
-    assert.equal(await Promise.race([runMenuEntry(entry, "s-1", hang, 50), stuck]), "Tickets isn't answering.");
+    assert.equal(await Promise.race([runMenuEntry(entry, { session: "s-1" }, hang, 50), stuck]), "Tickets isn't answering.");
   });
 
   test("a refusal says the status; no answer says so", async () => {
-    assert.equal(await runMenuEntry(entry, "s-1", record(async () => new Response("no", { status: 502 })).fetch), "Tickets answered HTTP 502.");
+    assert.equal(await runMenuEntry(entry, { session: "s-1" }, record(async () => new Response("no", { status: 502 })).fetch), "Tickets answered HTTP 502.");
     assert.equal(
-      await runMenuEntry(entry, "s-1", record(() => Promise.reject(new TypeError("failed"))).fetch),
+      await runMenuEntry(entry, { session: "s-1" }, record(() => Promise.reject(new TypeError("failed"))).fetch),
       "Tickets isn't answering.",
     );
   });

@@ -38,8 +38,8 @@ import {
   removeCodingWorktreeAnyway,
   codingWorktreeHold,
   runProjectOverseer,
-  mergeCodingWorktree,
   startProjectCoding,
+  verbResult,
 } from "../lib/api";
 import { ForKey } from "../lib/for-key";
 import type { GatheringAbilities } from "../../shared/baton";
@@ -52,10 +52,9 @@ import { createPoll, type Poll } from "../lib/poll";
 import { ACTIVITY_SHOWN, LIMIT_COLUMN_LABEL, LIMIT_COLUMNS, LIMIT_ROWS, limitCell, paceLine, type LimitColumn } from "../lib/project-page";
 import { actionLine, allowanceLine, gapArea, gapWords, holdHint, holdWords, isGap, IDEA_TITLE_MAX, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
 import { adoptSession, announce, home, toast } from "../lib/ui-state";
-import { ActionMenu } from "./ActionMenu";
-import { closeContextMenuOf, openContextMenu } from "./ContextMenu";
-import { MenuRows } from "./MenuRows";
-import { worktreeMenuLabel, worktreeMenuOffered, worktreeMenuRows } from "../lib/worktree-menu";
+import { closeContextMenuOf } from "./ContextMenu";
+import { openMenu, PlaceMenu } from "./MenuPlace";
+import { WORKTREE_MENU, worktreeMenuOffered } from "../lib/worktree-menu";
 import { land, refusal } from "../lib/merge-queue-client";
 import { queueRow } from "../lib/merge-queue";
 import { createProjectQueue } from "../lib/project-queue";
@@ -962,11 +961,11 @@ function CodingSessions(props: {
   };
   /** A refusal stays under its own row. */
   const [errors, setErrors] = createSignal<Record<string, string>>({});
-  const act = async (w: CodingRow, fn: () => Promise<ProjectWorktrees>, done: string) => {
+  const act = async (w: CodingRow, fn: () => Promise<unknown>, done: string) => {
     if (working() || !po().worktrees.fresh()) return;
     setWorking(w.sessionId);
     try {
-      po().worktrees.set(await fn());
+      po().worktrees.set((await fn()) as ProjectWorktrees);
       po().info.refetch();
       setErrors(({ [w.sessionId]: _, ...rest }) => rest);
       toast(done);
@@ -981,12 +980,12 @@ function CodingSessions(props: {
   };
   /** Land: the branch joins the project's merge queue at its head commit; the queue merges it onto
       the target in its own copy, checks it there and moves the target to exactly that commit. */
-  const landRow = async (w: CodingRow & { worktree: string }) => {
+  const landRow = async (w: CodingRow & { worktree: string }, send: () => Promise<unknown>) => {
     if (working() || !po().worktrees.fresh()) return;
     setWorking(w.sessionId);
     try {
       // The head this page read (CodingWorktree.head): the queue pins it, never a newer one.
-      const no = refusal(await land(w.worktree, { commit: w.head }));
+      const no = refusal(await land(w.worktree, { commit: w.head }, () => verbResult(send())));
       if (no) throw new Error(no);
       po().worktrees.refetch();
       setErrors(({ [w.sessionId]: _, ...rest }) => rest);
@@ -1065,19 +1064,18 @@ function CodingSessions(props: {
             // Remembered branch facts (a reopened project) show at once, but no gesture acts on them.
             const gestures = () => rowGestures(row(), po().worktrees.fresh());
             const facts = () => (row().facts && row().state !== undefined ? (row() as CodingRow & CodingWorktree) : null);
-            /** The ⋯'s rows, which a right-click on the row draws too: each acts on the row as it reads when chosen. */
-            const menuRows = () =>
-              worktreeMenuRows(
-                { row: row(), title: title(), gestures: gestures(), queued: queue.setUp(), queue: queue.info(row().branch), working: !!working() },
-                {
-                  merge: () => void act(row(), () => mergeCodingWorktree(po().projectId(), row().sessionId), `Merged ${row().branch} into ${row().target}.`),
-                  land: () => {
-                    const r = row();
-                    if (r.worktree) void landRow({ ...r, worktree: r.worktree });
-                  },
-                  remove: () => setConfirming(row().sessionId),
+            /** The ⋯'s menu, which a right-click on the row draws too: each row acts on the row as it reads when chosen. */
+            const menu = () => ({
+              facts: { project: po().projectId(), row: row(), title: title(), gestures: gestures(), queued: queue.setUp(), queue: queue.info(row().branch), working: !!working() },
+              acts: {
+                merge: (send: () => Promise<unknown>) => void act(row(), send, `Merged ${row().branch} into ${row().target}.`),
+                land: (send: () => Promise<unknown>) => {
+                  const r = row();
+                  if (r.worktree) void landRow({ ...r, worktree: r.worktree }, send);
                 },
-              );
+                remove: () => setConfirming(row().sessionId),
+              },
+            });
             let li!: HTMLLIElement;
             onCleanup(() => closeContextMenuOf(li));
             /** A right-click or Shift+F10 on the row: its ⋯ menu, at the pointer or under the row. The title link is the row's own. */
@@ -1085,11 +1083,7 @@ function CodingSessions(props: {
               if (!worktreeMenuOffered(gestures())) return;
               const link = li.querySelector<HTMLElement>(":scope > .list-main > a.project-worktree-title");
               const trigger = li.querySelector<HTMLElement>(":scope > button[aria-haspopup='menu']");
-              openContextMenu(e, {
-                el: e.currentTarget,
-                ownLink: link,
-                menu: () => ({ label: worktreeMenuLabel(title()), origin: link ?? trigger ?? li, body: (menu) => <MenuRows menu={menu} rows={menuRows()} /> }),
-              });
+              openMenu(e, WORKTREE_MENU, menu, { el: e.currentTarget, ownLink: link, origin: () => link ?? trigger ?? li });
             };
             return (
               <li ref={li} class="list-row orgs-row project-worktree" onContextMenu={onContextMenu}>
@@ -1147,9 +1141,7 @@ function CodingSessions(props: {
                   </Show>
                 </span>
                 <Show when={worktreeMenuOffered(gestures())}>
-                  <ActionMenu label={worktreeMenuLabel(title())} title="Actions" icon="more">
-                    {(menu) => <MenuRows menu={menu} rows={menuRows()} />}
-                  </ActionMenu>
+                  <PlaceMenu decl={WORKTREE_MENU} subject={menu()} title="Actions" />
                 </Show>
                 <Show when={errors()[row().sessionId]}>{(e) => <p class="field-error project-worktree-note">{e()}</p>}</Show>
                 <Show when={armed() && facts() && po().worktrees.fresh()}>

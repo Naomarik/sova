@@ -39,6 +39,16 @@ export function announce(text: string) {
   queueMicrotask(() => setAnnouncement(text));
 }
 
+/** Takes `text` back out of the region once it no longer holds (the reason it said cleared on
+    screen), even one `announce` is still putting in; any other sentence since stays. */
+export function unannounce(text: string) {
+  const clear = () => {
+    if (announcement() === text) setAnnouncement("");
+  };
+  clear();
+  queueMicrotask(clear); // after an `announce` of it made in this same tick lands
+}
+
 export const [home, setHome] = createSignal<string | null>(null);
 
 /** App's adoptCreated: opens a session made outside a view that could hand it over (the project

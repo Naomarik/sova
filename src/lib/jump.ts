@@ -50,6 +50,13 @@ export function registerTranscript(path: string, el: HTMLElement | null): void {
   else transcripts.delete(path);
 }
 
+/** The session path of the registered transcript holding `el`, so a row that doesn't know its
+    session (a reply's quote) jumps within its own pane; null outside any. */
+export function transcriptPathOf(el: Element): string | null {
+  for (const [path, root] of transcripts) if (root.contains(el)) return path;
+  return null;
+}
+
 /**
  * The transcript to search: the pane for `path` when there is one, else the one on the page.
  */

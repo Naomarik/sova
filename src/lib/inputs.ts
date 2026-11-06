@@ -6,6 +6,7 @@ import { isInput } from "./turn";
 import { wakeTitle } from "../../shared/wake";
 import { isBriefText, messageBody, rowSender, sendersOf, type Sender } from "../../shared/senders";
 import { stripSessionHeader } from "../../shared/profiles";
+import { parseReply } from "../../shared/reply-quote";
 
 export type { Sender };
 
@@ -42,6 +43,9 @@ export interface InputRow {
   sender?: Sender;
   /** A fired wake nudge: an input, never one the user typed. */
   wake?: boolean;
+  /** It replies to an earlier message (§chat.transcript/reply-quote): `text` and `preview` are its
+      words, never the quote, and the row is marked as a reply. */
+  reply?: boolean;
 }
 
 /** Whether the user typed the row: not a wake nudge, and no sender. For an input row it is
@@ -61,7 +65,9 @@ export function inputRows(items: readonly TranscriptItem[]): InputRow[] {
     .filter(isInput)
     .map((it) => {
       const sender = it.kind === "user" ? rowSender(it, senders) : undefined;
-      const text = messageBody(it.text ?? "", sender, it.kind === "user" && isBriefText(it.text));
+      const body = messageBody(it.text ?? "", sender, it.kind === "user" && isBriefText(it.text));
+      const reply = it.kind === "user" ? parseReply(body) : null;
+      const text = reply ? reply.words : body;
       const preview =
         it.kind === "wake" && it.wake
           ? it.wake.job
@@ -71,6 +77,7 @@ export function inputRows(items: readonly TranscriptItem[]): InputRow[] {
       const row: InputRow = { id: it.id, preview, text, images: it.images?.length ?? 0, at: it.at };
       if (sender) row.sender = sender;
       if (it.kind === "wake") row.wake = true;
+      if (reply) row.reply = true;
       return row;
     });
 }

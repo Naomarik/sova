@@ -5,6 +5,8 @@ import { avatarLogins, composerLogin } from "../lib/claude-login";
 import { runControls, stopButton } from "../lib/compact";
 import { composerKey, createEscTimes, createTouchMode, enterSends, notePress as pressAt, refocusAfterSend, toEnd, type SendPress } from "../lib/input-mode";
 import { watchKeyboard } from "../lib/voice/keyboard";
+import { REPLY_TRIMMED_NOTE } from "../lib/reply-stage";
+import { draftCounts } from "../lib/draft-mark";
 import { enterRunsLocal, insertCommand, localCommand, menuCommands, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { canRun, codeSpans, folderName, SHELL_MARKER, shellPlaceholder, type ShellControl, type ShellMode } from "../lib/shell-mode";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
@@ -252,6 +254,19 @@ export function Composer(props: {
     /** After a send that carried them (before clear): a gathering transcript card's picks are recorded as its answers. */
     sent?(): void;
   } | null;
+  /** A message staged by its Reply (§chat.composer/replying), part of this session's draft: the
+      row names it, `compose` writes its quote ahead of everything else in the message, `jump`
+      shows the original and `remove` takes it off. It never enables Send on its own. */
+  reply?: {
+    label: string;
+    /** The quote's first line, for the one-line preview. */
+    preview: string;
+    /** Over the cap: the model gets its start and end. */
+    trimmed: boolean;
+    compose(text: string): string;
+    jump(): void;
+    remove(): void;
+  } | null;
   /** Whether the draft holds anything to send (text or an attachment), as it changes. */
   onDraft?(has: boolean): void;
   /** The merge queue's note held "not sent yet" for the user's next message (§chat.merge-queue/decision), or the merge
@@ -429,7 +444,9 @@ export function Composer(props: {
   // wait for the next message (§chat.composer/disabled-states).
   const canSend = () =>
     shellMode() ? canRun(text(), disabled(), pendingRun() !== null) : !disabled() && uploading() === 0 && (text().trim().length > 0 || images().length > 0 || !!props.picks);
-  createEffect(() => props.onDraft?.(text().trim().length > 0 || images().length > 0));
+  // A staged reply is part of the draft (§chat.composer/replying): it counts here as in the
+  // sidebar's pencil (lib/draft-mark), so a card's button waits for it, though Send doesn't.
+  createEffect(() => props.onDraft?.(draftCounts(text(), images(), props.reply)));
 
   // ---- Model indicator: this session's model and thinking level, and
   // the second trigger for the flyout that changes them. -----------------------------------
@@ -706,7 +723,7 @@ export function Composer(props: {
     const off = registerComposer(props.path, {
       commands: () => menuCommands(props.commands ?? []),
       off: () => reason()?.text ?? null,
-      hasDraft: () => text().trim().length > 0 || images().length > 0,
+      hasDraft: () => draftCounts(text(), images(), props.reply),
       insert: (name) => {
         if (disabled()) return;
         const next = `/${name} `;
@@ -909,7 +926,7 @@ export function Composer(props: {
     if (!canSend()) return;
     // "/agents" is ours: it opens the subagents pane instead of reaching a runtime whose own
     // monitor is TUI-only. With images attached it's a message like any other.
-    if (!props.picks && localCommand(text()) === "subagents" && props.onShowWorkers && images().length === 0) {
+    if (!props.picks && !props.reply && localCommand(text()) === "subagents" && props.onShowWorkers && images().length === 0) {
       if (!props.workersOpen) props.onShowWorkers();
       setDraft("");
       input.value = "";
@@ -920,7 +937,7 @@ export function Composer(props: {
     // "/tree" is ours as well: pi's is a TUI built-in, so it would reach the model as literal
     // text. Here it opens the Timeline on your own messages, where each row rewinds to before
     // that message.
-    if (!props.picks && localCommand(text()) === "tree" && props.onShowTimeline && images().length === 0) {
+    if (!props.picks && !props.reply && localCommand(text()) === "tree" && props.onShowTimeline && images().length === 0) {
       props.onShowTimeline(true);
       setDraft("");
       input.value = "";
@@ -930,7 +947,7 @@ export function Composer(props: {
     }
     // "/timeline" is ours in the same way: pi has no such built-in, so it would reach the model as
     // literal text. Here it opens the Timeline tab, the session's one time axis.
-    if (!props.picks && localCommand(text()) === "timeline" && props.onShowTimeline && images().length === 0) {
+    if (!props.picks && !props.reply && localCommand(text()) === "timeline" && props.onShowTimeline && images().length === 0) {
       props.onShowTimeline();
       setDraft("");
       input.value = "";
@@ -940,7 +957,7 @@ export function Composer(props: {
     }
     // "/new" is ours too: a fresh session in this folder, and this one archived. Nothing
     // reaches the runtime, so no "Ran" row. The draft stays if no session was made.
-    if (!props.picks && localCommand(text()) === "new" && props.onNewSession && images().length === 0) {
+    if (!props.picks && !props.reply && localCommand(text()) === "new" && props.onNewSession && images().length === 0) {
       if (startingNew) return;
       startingNew = true;
       const cwd = await props.onNewSession().finally(() => (startingNew = false));
@@ -953,7 +970,7 @@ export function Composer(props: {
     }
     // "/clear" in the Overseer: a new conversation. Nothing reaches the runtime; the old one stays
     // in the Overseer's history.
-    if (!props.picks && localCommand(text(), localOpts()) === "clear" && props.onClear && images().length === 0) {
+    if (!props.picks && !props.reply && localCommand(text(), localOpts()) === "clear" && props.onClear && images().length === 0) {
       if (startingNew) return;
       startingNew = true;
       const cleared = await props.onClear().finally(() => (startingNew = false));
@@ -966,7 +983,7 @@ export function Composer(props: {
     }
     // "/mode" in the Overseer: it is always in normal mode, so a switch is answered here and
     // nothing reaches the runtime. With images too: they stay in the draft.
-    if (!props.picks && localCommand(text(), localOpts()) === "mode" && props.onMode) {
+    if (!props.picks && !props.reply && localCommand(text(), localOpts()) === "mode" && props.onMode) {
       props.onMode();
       setDraft("");
       input.value = "";
@@ -978,7 +995,11 @@ export function Composer(props: {
     const pending = draftAttachments(props.path);
     const attachments = pending.map((a) => ({ ...a, name: a.path.slice(a.path.lastIndexOf("/") + 1) }));
     const picks = props.picks;
-    if (props.onSend(withImagePaths(picks ? picks.compose(text().trim()) : text().trim(), pending), props.running, attachments)) {
+    const reply = props.reply;
+    // The order the model reads (§chat.composer/reply-text): the reply's quote, the picks' lines,
+    // the typed words, then the images' paths.
+    const body = picks ? picks.compose(text().trim()) : text().trim();
+    if (props.onSend(withImagePaths(reply ? reply.compose(body) : body, pending), props.running, attachments)) {
       box.sent();
       picks?.sent?.();
       picks?.clear();
@@ -1193,6 +1214,27 @@ export function Composer(props: {
             </div>
           )}
         </For>
+        <Show when={props.reply}>
+          {(r) => (
+            <div class="composer-reply" role="group" aria-label="Replying to">
+              <Icon name="reply" small />
+              <div class="composer-reply-main">
+                <button type="button" class="composer-reply-jump" title="Show the message" onClick={() => r().jump()}>
+                  <span class="composer-reply-label">{r().label}</span>
+                  <Show when={r().preview}>
+                    <span class="composer-reply-quote">{r().preview}</span>
+                  </Show>
+                </button>
+                <Show when={r().trimmed}>
+                  <p class="composer-reply-note">{REPLY_TRIMMED_NOTE}</p>
+                </Show>
+              </div>
+              <button type="button" class="button button-icon button-ghost" aria-label="Remove Reply" title="Remove Reply" onClick={() => r().remove()}>
+                <Icon name="close" small />
+              </button>
+            </div>
+          )}
+        </Show>
         <Show when={props.picks}>
           {(p) => (
             <div class="align-picks" role="group" aria-label="Staged answers">

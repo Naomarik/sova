@@ -10,6 +10,7 @@ import { isObj, resultDetails as detailsOf, str, toolResultView } from "../lib/m
 import { toolContent, type ToolSource } from "../lib/tool-content";
 import { focusView, setFocusView } from "../lib/ui-state";
 import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, registerRows, registerTranscript, transcriptRoot } from "../lib/jump";
+import { attachSwipeReply } from "../lib/swipe-reply-dom";
 import type { RowTarget } from "../lib/older-rows";
 import type { ScrollSpot } from "../lib/transcript-cache";
 import { anchorCorrection, anchorIndex } from "../lib/scroll-anchor";
@@ -1499,6 +1500,9 @@ export function ThreadScroller(props: {
             registerTranscript(path, node);
             onCleanup(() => registerTranscript(path, null));
           }
+          // A finger swiping a message to the right presses its Reply (§chat.transcript/reply); a
+          // message whose Reply is off or absent (a watch, a worker's transcript) ignores it.
+          onCleanup(attachSwipeReply(node));
           for (const type of ["wheel", "touchstart", "pointerdown", "keydown"]) node.addEventListener(type, onTouch, { passive: true });
           for (const type of ["wheel", "touchstart", "touchmove", "touchend", "pointerdown", "keydown"]) node.addEventListener(type, onInput, { passive: true });
           // Kept rows refetched in the background (lib/recent-preload) may already hold rows added

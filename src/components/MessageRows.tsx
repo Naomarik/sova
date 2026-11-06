@@ -1,5 +1,9 @@
-import { For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { isCardSender, isSessionlessSender, mergeQueueBody } from "../../shared/senders";
+import { parseReply, quoteFirstLine, replyLabel, type ParsedReply } from "../../shared/reply-quote";
+import { jumpWhenArrived, transcriptPathOf } from "../lib/jump";
+import { usePaneAnnounce } from "../lib/pane-scope";
+import { REPLY_GONE } from "../lib/reply-stage";
 import type { TmpAttachment } from "../../shared/protocol";
 import { stripSessionHeader } from "../../shared/profiles";
 import type { ReplyTiming } from "../../shared/usage/perf";
@@ -56,6 +60,52 @@ const PENDING_LABEL: Partial<Record<LiveUserState, string>> = { sending: "Sendin
     "You" over a message you never wrote is the kind of small lie that makes the rest suspect. */
 const AUTHOR = { client: "You", server: "Sent by Sova" } as const;
 
+/** A quote's accessible name carries its first line, cut short: the button names what it opens. */
+const QUOTE_NAME_MAX = 120;
+
+/**
+ * The quote above a reply's words (§chat.transcript/reply-quote): its label and the quote, clamped to
+ * two lines. Pressing it jumps to the original in this transcript, reading older rows first when
+ * needed; an original no longer in the conversation keeps the quote and says so under it.
+ */
+export function ReplyQuote(props: { reply: ParsedReply }) {
+  const announce = usePaneAnnounce();
+  const [gone, setGone] = createSignal(false);
+  const label = () => replyLabel(props.reply);
+  const name = () => {
+    const first = quoteFirstLine(props.reply.quote).trim();
+    const cut = first.length > QUOTE_NAME_MAX ? `${first.slice(0, QUOTE_NAME_MAX - 1)}…` : first;
+    return `Show the quoted message. ${label()}: ${cut}`;
+  };
+  return (
+    <>
+      <button
+        type="button"
+        class="message-reply-quote"
+        aria-label={name()}
+        onClick={(e) => {
+          setGone(false);
+          jumpWhenArrived(props.reply.entryId, transcriptPathOf(e.currentTarget), () => {
+            setGone(true);
+            announce(REPLY_GONE);
+          });
+        }}
+      >
+        <span class="message-reply-quote-label">
+          <Icon name="reply" small />
+          {label()}
+        </span>
+        <span class="message-reply-quote-text">{props.reply.quote}</span>
+      </button>
+      <Show when={gone()}>
+        <p class="message-reply-gone" role="note">
+          {REPLY_GONE}
+        </p>
+      </Show>
+    </>
+  );
+}
+
 export function UserTurn(props: {
   text: string;
   time?: string;
@@ -80,6 +130,9 @@ export function UserTurn(props: {
   const held = () => (props.fromSession || props.mergeQueue ? null : splitHeldNote(props.text));
   // The model reads the header line; the row shows it as the sender header instead.
   const text = () => (props.fromSession ? stripSessionHeader(props.text) : props.mergeQueue ? mergeQueueBody(props.text) : (held()?.user ?? props.text));
+  /** A reply to an earlier message: its quote is drawn above the words, never its first line. */
+  const reply = createMemo(() => parseReply(text()));
+  const words = () => reply()?.words ?? text();
   return (
     <>
     <Show when={props.fromSession}>
@@ -134,10 +187,11 @@ export function UserTurn(props: {
           {(label) => <span class="message-pending">{label()}</span>}
         </Show>
       </div>
+      <Show when={reply()}>{(r) => <ReplyQuote reply={r()} />}</Show>
       <ImageStrip images={props.images} where="in your message" />
       <For each={props.attachments}>{(a) => <PathAttachment attachment={a} where="in your message" />}</For>
-      <Show when={text()}>
-        <div class="message-body message-text">{text()}</div>
+      <Show when={words()}>
+        <div class="message-body message-text">{words()}</div>
       </Show>
       <Show when={held()}>
         {(h) => (

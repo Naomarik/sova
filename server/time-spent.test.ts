@@ -39,9 +39,11 @@ const rowsSum = (rows: Partial<Record<TimeSpentRow, number>>) => Object.values(r
 describe("one clock per computer", () => {
   test("two pages reporting one moment count it once, for the newest input, and the rows add up", () => {
     const s = freshStore();
-    // Ages are all a page sends, so its clock can't enter: these two could be hours apart and send the same.
-    s.report("one", { pageId: "desktop", inputAgeMs: 9_000, slices: [slice("reading-transcript", 15)] }, NOW);
-    s.report("one", { pageId: "phone", inputAgeMs: 1_000, slices: [slice("typing", 15, 1_000)] }, NOW + 1_000);
+    // Each page's own clock is hours off the other's, and what it thinks the time is rides along (the page's ledger
+    // keeps `endAt` on its clock): the seconds still land on this computer's time, so they are one moment.
+    const skewed = (clock: number) => ({ sentAt: clock, nowMs: clock, endAt: clock });
+    s.report("one", { pageId: "desktop", inputAgeMs: 9_000, ...skewed(NOW - 3 * 3_600_000), slices: [{ ...slice("reading-transcript", 15), ...skewed(NOW - 3 * 3_600_000) }] }, NOW);
+    s.report("one", { pageId: "phone", inputAgeMs: 1_000, ...skewed(NOW + 2 * 3_600_000), slices: [{ ...slice("typing", 15, 1_000), ...skewed(NOW + 2 * 3_600_000) }] }, NOW + 1_000);
     const sums = s.sums("one");
     assert.equal(sums.you, 15, "the same 15 seconds, once");
     assert.equal(rowsSum(sums.rows), sums.you);
@@ -223,6 +225,10 @@ describe("alignment facts", () => {
 describe("the report's limits", () => {
   const good = { pageId: "p", path: "/x.jsonl", inputAgeMs: 0, slices: [slice("typing", 1)] };
   test("a good one passes", () => assert.deepEqual(parseTimeSpentReport(good), good));
+  test("a page's own idea of the time doesn't get past the door", () => {
+    const skewed = { ...good, sentAt: 1, slices: [{ ...good.slices[0], endAt: 1 }] };
+    assert.deepEqual(parseTimeSpentReport(skewed), good);
+  });
   for (const [name, bad] of Object.entries({
     "an unknown row": { ...good, slices: [slice("playing" as TimeSpentRow, 1)] },
     "a fractional second": { ...good, slices: [slice("typing", 1.5)] },

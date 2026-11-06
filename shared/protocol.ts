@@ -2839,7 +2839,7 @@ export type ChatServerMessage =
       local folder is gone; absent when it runs in its own folder. */
   /** `shell` (§chat.shell-mode/card): the chat's commands from shell mode not yet saved as rows (running, or
       ended and waiting to be saved after the reply in flight), oldest first; absent when there are none.
-      Sent on every wire. `shellMode` (§chat.shell-mode/box): this chat runs commands from shell mode (it
+      Wire 2 only, as every shell_* message is (a wire-1 consumer gets neither). `shellMode` (§chat.shell-mode/box): this chat runs commands from shell mode (it
       has its own agent and folder: not the Overseer, a project overseer or assistant, or a gathering
       session); absent where it doesn't, and from servers that predate shell mode. */
   | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive; after?: string; cwdFallback?: CwdFallback; shell?: ShellRun[]; shellMode?: true }

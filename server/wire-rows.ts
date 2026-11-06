@@ -61,15 +61,23 @@ export function withRows<M extends ChatServerMessage | WatchServerMessage>(msg: 
   const m = msg as unknown as RowsMessage;
   if (wire === 1) {
     const items = rowsFor(m.items, 1);
+    // Shell mode is wire 2's (§chat.shell-mode/card): a wire-1 hello is the one it always was.
+    if (msg.type === "hello" && ("shell" in msg || "shellMode" in msg)) {
+      const { shell: _shell, shellMode: _mode, ...rest } = msg as unknown as Extract<ChatServerMessage, { type: "hello" }>;
+      return { ...rest, items } as unknown as M;
+    }
     return items === m.items ? msg : { ...msg, items };
   }
   return { ...msg, items: rowsFor(m.items, 2, replies) };
 }
 
+/** A command's live messages (§chat.shell-mode/card): wire 2's alone, so a wire-1 consumer gets none. */
+export const isShellMessage = (msg: { type: string }): boolean => msg.type.startsWith("shell_");
+
 /** What a chat message is on `wire`: on wire 2 a live event is its wire-2 frames (none, one or more),
-    any other message its rows mapped; on wire 1 the message itself. */
+    any other message its rows mapped; on wire 1 the message itself (none for a command's live messages). */
 export function onWire(msg: ChatServerMessage, wire: WireVersion, replies?: ReplyLookup): (ChatServerMessage | V2EventFrame)[] {
-  if (wire === 1) return [withRows(onWire1(msg), 1)];
+  if (wire === 1) return isShellMessage(msg) ? [] : [withRows(onWire1(msg), 1)];
   if (msg.type === "event") return v2Frames(msg as V1EventFrame);
   return [withRows(msg, 2, replies)];
 }

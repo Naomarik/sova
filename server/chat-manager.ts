@@ -30,7 +30,7 @@ import { applySandbox, onSandboxAppend, sandboxInfo, sandboxMessage, type Sandbo
 import type { SandboxState } from "../pi-config/extensions/sandbox/state.ts";
 import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick, loginName } from "./claude-login-state";
 import { rowsOf, rowsOfEntry } from "./transcript";
-import { onWire, onWire1, rowFor, withRows, type ReplyLookup } from "./wire-rows";
+import { isShellMessage, onWire, onWire1, rowFor, withRows, type ReplyLookup } from "./wire-rows";
 import { perfRecordOf, ReplyTimer, type ReplyOutcome } from "./reply-timing";
 import { appendPerfRecord, replyTimingOf, type PerfKind } from "./perf-record";
 import { replyTimingsOf } from "./reply-facts";
@@ -3960,8 +3960,9 @@ class ChatSession {
     let on1: ChatServerMessage | undefined;
     for (const c of this.clients) {
       if (c.wire === 2) for (const m of (on2 ??= onWire(msg, 2, this.replyLookup))) c.send(m);
-      // Wire 1 stays byte for byte: a message_end's reply timing rides wire 2 only, and so does a command's row.
-      else c.send((on1 ??= withRows(onWire1(msg), 1)));
+      // Wire 1 stays byte for byte: a message_end's reply timing rides wire 2 only, and so does shell mode
+      // (a command's row and its live messages).
+      else if (!isShellMessage(msg)) c.send((on1 ??= withRows(onWire1(msg), 1)));
     }
   }
 

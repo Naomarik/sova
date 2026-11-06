@@ -6,7 +6,7 @@ import "../command-palette.css";
 
 /** The one panel key the sheet lists: Esc in a chat's message box, which stops a running reply. */
 const MESSAGE_BOX_KEYS: readonly { keys: string; does: string }[] = [
-  { keys: "Esc", does: "In the message box while a reply runs: stops it, as Stop does." },
+  { keys: "Esc", does: "In the message box while a reply runs: stops it and puts its text so far in the box." },
 ];
 
 /** The palette's own keys, after the app-wide ones (§app.command-palette/shortcut-sheet). */

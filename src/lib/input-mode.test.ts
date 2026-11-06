@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { stopButton } from "./compact";
 import {
+  aheadOfDraft,
   composerKey,
   createPressTracker,
   enterSends,
@@ -227,6 +228,16 @@ test("every key in every state: the one rule, key by key", () => {
       want,
       name,
     );
+});
+
+test("what comes back goes ahead of the draft, one blank line between, and nothing typed is lost", () => {
+  assert.equal(aheadOfDraft("The reply so far", "my words"), "The reply so far\n\nmy words");
+  assert.equal(aheadOfDraft("The reply so far", ""), "The reply so far");
+  assert.equal(aheadOfDraft("The reply so far", " \n "), "The reply so far");
+  assert.equal(aheadOfDraft("", "my words"), "my words");
+  // An Esc stop's reply text lands first, the queued messages the server drains after it:
+  // queued, then the reply's text, then what was typed.
+  assert.equal(aheadOfDraft("queued one\n\nqueued two", aheadOfDraft("The reply so far", "my words")), "queued one\n\nqueued two\n\nThe reply so far\n\nmy words");
 });
 
 test("a key send, with no press, returns focus to the textarea", () => {

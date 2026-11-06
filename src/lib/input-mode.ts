@@ -112,6 +112,15 @@ function menuKey(e: EscKey, matches: number): "move" | "pick" | "close" | "defau
 }
 
 /**
+ * The box's text after something comes back to it (queued messages a Stop took back, a rewound
+ * message, the reply's text an Esc stop returned): the returned text first, then what was already
+ * there, one blank line between, a part with only whitespace left out. Nothing typed is lost.
+ */
+export function aheadOfDraft(returned: string, draft: string): string {
+  return [returned, draft].filter((t) => t.trim()).join("\n\n");
+}
+
+/**
  * Touch mode for one composer: how its textarea was last pressed. A tap turns it on, a mouse or
  * pen press turns it off, and keyboard or programmatic focus leaves it. Starts off.
  */

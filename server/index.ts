@@ -181,8 +181,8 @@ export const tourSweep = startTourSweep();
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);
   setAuthPort(info.port);
-  // The first start's approvals and a reading of what is approved, before anything is answered (§app.extensions/loader),
-  // then each active extension's own key, kept in step with the list (§app.extensions/backend-key).
+  // The first start's approvals and a reading of what is approved, before anything is answered,
+  // then each active extension's own key, kept in step with the list.
   startExtensionLoader();
   startExtensionKeys();
   // The link extension's tools call this server back here: the real bound port (PORT=0 in tests).

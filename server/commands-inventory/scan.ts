@@ -57,7 +57,7 @@ const exactly = (routes: readonly RouteKey[]) => (m: string, p: string) => route
 export const PAGE_PLUMBING: readonly RouteKey[] = [
   "GET /api/attachment", "DELETE /api/attachment", "POST /api/upload", "GET /api/transcript/tool",
   "GET /api/links/:id/thread", "POST /api/links/:id/seen", "GET /api/targets/:name/folders", "GET /api/explanations",
-  // Settings → Extensions drawing itself (§app.extensions/loader): no action, and no catalogue entry.
+  // Settings → Extensions drawing itself: no action, and no catalogue entry.
   "GET /api/extensions/installed", "GET /api/extensions/:id/log",
   "GET /api/sessions/dir", "GET /api/projects/:pid/mcp", "GET /api/projects/:pid/icon",
 ];
@@ -123,7 +123,7 @@ export const ROUTE_CLASSES: readonly RouteClass[] = [
   {
     id: "trust-grants",
     label: "Trust grants",
-    why: "Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval; a project's transcript cards, §chat.transcript-cards/trust), applying a settings card with its approvals (§app.project-overseer/settings), adding, approving, signing in to and changing an MCP server (§app.mcp/approval), adding, approving and changing an extension (§app.extensions/loader) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.",
+    why: "Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval; a project's transcript cards, §chat.transcript-cards/trust), applying a settings card with its approvals (§app.project-overseer/settings), adding, approving, signing in to and changing an MCP server (§app.mcp/approval), adding, approving and changing an extension and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.",
     matches: (m, p) => (p.startsWith("/api/mcp/") && !MCP_READS.includes(routeKey(m, p))) || (p.startsWith("/api/extensions/") && !EXTENSION_READS.includes(routeKey(m, p))) || (m === "POST" && (p === "/api/projects/:pid/offers/approve" || p === "/api/projects/:pid/settings/apply" || p === "/api/session-cards/trust")) || (m === "PUT" && p === "/api/projects/:pid/services/limit") || (m === "GET" && p === "/api/session-cards/trust"),
   },
   {

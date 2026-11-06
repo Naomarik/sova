@@ -124,7 +124,7 @@ async function sourceOrHold(make: () => Source | { error: string; hash: string }
   return src;
 }
 
-/** The builds of an extension's views already checked against what you approved (§app.extensions/views). */
+/** The builds of an extension's views already checked against what you approved. */
 const checkedBuilds = new Map<string, string>();
 
 /**

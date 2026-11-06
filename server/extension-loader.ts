@@ -1,4 +1,4 @@
-// The list Sova writes and what you approve (§app.extensions/loader): adding, approving, Turn On, Turn Off,
+// The list Sova writes and what you approve: adding, approving, Turn On, Turn Off,
 // Remove and Choose Folder, each on your own page only (server/extension-routes.ts), and the background pass,
 // about every 3 s while anything is listed, that notices changed code, a folder gone, an entry taken off the list
 // by hand and a program that stopped. With nothing listed and nothing kept it stops, and only the list's own
@@ -162,7 +162,7 @@ async function startNow(raw: Record<string, unknown>, restart: boolean, you: boo
 
 /**
  * Before a new build of a view is handed over: the code folders read afresh, because a save reaches a page
- * within a second and the pass may not have come yet (§app.extensions/views). Without holding up other requests.
+ * within a second and the pass may not have come yet. Without holding up other requests.
  */
 export async function codeStillApproved(id: string): Promise<boolean> {
   if (named()) return true;

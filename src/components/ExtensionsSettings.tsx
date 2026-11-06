@@ -43,7 +43,7 @@ const errText = (err: unknown) => sentence(err instanceof Error ? err.message : 
 /** What Review shows and what its button does. `to`: a new folder (Install, or Choose Folder), or the entry as it stands. */
 type Reviewing = { review: ExtensionReview; mode: "install" | "approve" | "folder"; changed?: boolean; folder?: string; forId?: string };
 
-/** The review, before anything is on (§app.settings-dialog/extensions): a part it doesn't have is left out. */
+/** The review, before anything is on: a part it doesn't have is left out. */
 function ReviewDialog(props: { at: Reviewing; onClose: () => void; onDone: (r: ExtensionReview) => void; reread: () => Promise<ExtensionInspect> }) {
   const [at, setAt] = createSignal(props.at);
   const [busy, setBusy] = createSignal(false);
@@ -415,7 +415,7 @@ function Row(props: { row: ExtensionRow; through?: string; onChange: () => void;
   );
 }
 
-/** Settings → Extensions (§app.settings-dialog/extensions): this computer's extensions. Every action on it saves at once. */
+/** Settings → Extensions: this computer's extensions. Every action on it saves at once. */
 export function ExtensionsSettingsSection() {
   const poll = createPoll<ExtensionsInstalled>(getExtensionsInstalled, EXT_POLL_MS, { cacheKey: "extensions:installed" });
   const [choosing, setChoosing] = createSignal<{ forId?: string } | null>(null);

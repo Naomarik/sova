@@ -1791,7 +1791,7 @@ export const saveMergeSettings = (projectId: string, changes: import("../../shar
 /** Cancels a save waiting for the current branch. */
 export const cancelMergeSettings = (projectId: string) => request<unknown>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/settings/pending`, { method: "DELETE" });
 
-// -- Settings → Extensions (§app.extensions/loader) --
+// -- Settings → Extensions --
 const extPath = (id: string, tail = "") => `/api/extensions/${encodeURIComponent(id)}${tail}`;
 const extPost = <T = { ok: true },>(path: string, body: unknown = {}) => request<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 export const getExtensionsInstalled = () => request<ExtensionsInstalled>("/api/extensions/installed", { cache: "no-store" });

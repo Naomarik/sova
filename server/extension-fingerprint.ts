@@ -1,4 +1,4 @@
-// An extension's code folders (§app.extensions/loader): the description file, its page folder and its
+// An extension's code folders: the description file, its page folder and its
 // program folder, read two ways. `sig` is their files' sizes and times, cheap enough for the background
 // pass; `hash` is their bytes, only when the sig moved or at Review, Approve and a program start. Both are
 // generators that yield every few files, so the same walk runs whole at a server's start and in steps

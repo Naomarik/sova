@@ -1,6 +1,6 @@
-// An extension's folder and its description file (§app.extensions/folder). Reading a folder runs nothing:
+// An extension's folder and its description file. Reading a folder runs nothing:
 // it reads that one file and checks the paths it names. The first thing that fails is the one answer, in the
-// words of §design.copy-deck/settings-extensions. One bad command, screen, card or drawing leaves out only
+// words of the copy deck. One bad command, screen, card or drawing leaves out only
 // itself, by the same rules a list entry is read with, and the review says so on screen.
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";

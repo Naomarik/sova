@@ -1,5 +1,5 @@
 // Run: pnpm test -- server/extension-loader.test.ts
-// §app.extensions/folder and /loader, in-process: what a folder says, the one reason it can't be used, the two
+// The folder and the loader, in-process: what a folder says, the one reason it can't be used, the two
 // readers, approval by version, the first start's approvals, peers, the doors and what cards do. The running of
 // a program is server/extension-loader.integration.test.ts.
 import assert from "node:assert/strict";
@@ -61,7 +61,7 @@ beforeEach(() => {
   gate.migrateTrust(() => ({}));
 });
 
-describe("a folder names an extension or says why not (§app.extensions/folder)", () => {
+describe("a folder names an extension or says why not", () => {
   test("in the deck's order, the first thing that fails is the one answer", () => {
     assert.match(reason(folder(undefined)), /no extension description/);
     assert.match(reason(folder("{nope")), /can't be read/);
@@ -108,7 +108,7 @@ describe("a folder names an extension or says why not (§app.extensions/folder)"
   });
 });
 
-describe("code stays where approval can see it (§app.extensions/folder)", () => {
+describe("code stays where approval can see it", () => {
   test("a page, a program folder or a program file inside a folder approval skips is refused, in plain words", () => {
     assert.equal(reason(folder(base({ page: "data/dist" }), { "data/dist/index.html": "" })), "Its page is in data, which approval doesn't check, so this can't be added. Move it to another folder.");
     assert.equal(reason(folder(base({ backend: { run: ["node", "s.mjs"], folder: "logs/b" } }), { "logs/b/s.mjs": "" })), "Its program is in logs, which approval doesn't check, so this can't be added. Move it to another folder.");
@@ -127,7 +127,7 @@ describe("code stays where approval can see it (§app.extensions/folder)", () =>
   });
 });
 
-describe("two readers, and approval by version (§app.extensions/loader)", () => {
+describe("two readers, and approval by version", () => {
   const entry = (d: string, over: object = {}) => ({ id: "notes", title: "Notes", folder: d, dist: join(d, "dist"), ...over });
   const page = () => folder(base({ page: "dist" }), { "dist/index.html": "<p>", "dist/data/x": "1", "dist/logs/x": "1", "dist/a.log": "1" });
   const state = () => ext.listedExtensions()![0]!.state;
@@ -255,7 +255,7 @@ describe("two readers, and approval by version (§app.extensions/loader)", () =>
   });
 });
 
-describe("the code folders (§app.extensions/loader)", () => {
+describe("the code folders", () => {
   test("data, logs, libraries and *.log never count; anything else does; only what the entry names", () => {
     const d = folder(base(), { "s.mjs": "1", "data/a": "1", "logs/a": "1", "node_modules/m/a": "1", ".git/x": "1", "run.log": "1", "other/o": "1" });
     const raw = { id: "x", folder: d, run: ["node"] };
@@ -294,7 +294,7 @@ describe("the code folders (§app.extensions/loader)", () => {
   });
 });
 
-describe("the program's environment (§app.extensions/program)", () => {
+describe("the program's environment", () => {
   test("bare node always has an answer, a relative path starts from its folder, an unknown name has none", () => {
     const d = folder(base(), {});
     const exe = join(d, "bin/run");
@@ -321,7 +321,7 @@ describe("the program's environment (§app.extensions/program)", () => {
   });
 });
 
-describe("rows (§app.settings-dialog/extensions)", () => {
+describe("rows", () => {
   test("one state and its line, the first that applies; no switch until it can be switched", async () => {
     const d = folder(base());
     const e = { id: "w", title: "W", folder: d };
@@ -338,7 +338,7 @@ describe("rows (§app.settings-dialog/extensions)", () => {
   });
 });
 
-describe("across computers, mixed versions (§mesh.sync/categories)", () => {
+describe("across computers, mixed versions", () => {
   const sync = (local: ReturnType<typeof ext.publishedExtensions>, validate: (r: unknown) => { entry: never } | { error: string }, listed?: string[]) =>
     new ExtensionSync({ hostId: `h${++n}`, file: join(root, `mesh-${n}.json`), local: () => local, validate: validate as never, ...(listed ? { listedIds: () => listed } : {}) });
   /** The rule of a Sova before this version. */
@@ -379,7 +379,7 @@ describe("across computers, mixed versions (§mesh.sync/categories)", () => {
   });
 });
 
-describe("old cards (§app.extensions/views, §chat.transcript-cards/answering)", () => {
+describe("old cards", () => {
   const project = join(root, "project");
   const e = { id: "notes", title: "Notes", cards: [{ name: "ok", title: "OK?", draws: "buttons", answer: "at-once", toolkit: 1 }] };
   let s = 0;

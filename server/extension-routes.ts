@@ -1,5 +1,5 @@
-// Settings → Extensions' routes (§app.extensions/loader). The two reads answer anyone the gate let in, and need
-// `full` from another computer (server/mesh/access.ts); every change is your own page's (§app.access/your-click),
+// Settings → Extensions' routes. The two reads answer anyone the gate let in, and need
+// `full` from another computer (server/mesh/access.ts); every change is your own page's,
 // and a request from an extension's own page is refused too, as an accident guard.
 import type { Context, Hono } from "hono";
 import type { ExtensionRow, ExtensionsInstalled } from "../shared/extension-loader";
@@ -19,7 +19,7 @@ const LINES: Partial<Record<ListedExtension["state"], string>> = {
   changed: "Changed since you approved it. It is still running the old code, and its page is off.",
 };
 
-/** One row's one state, the first that applies (§app.settings-dialog/extensions). */
+/** One row's one state, the first that applies. */
 export async function rowOf(l: ListedExtension): Promise<ExtensionRow> {
   if (!l.valid) {
     const named = typeof l.raw.id === "string" ? l.raw.id : "";

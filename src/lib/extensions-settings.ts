@@ -1,4 +1,4 @@
-// Settings → Extensions' words and small rules (§design.copy-deck/settings-extensions), apart from the
+// Settings → Extensions' words and small rules, apart from the
 // component so a test can read them.
 import type { ExtensionAsks, ExtensionRowState } from "../../shared/extension-loader";
 
@@ -38,7 +38,7 @@ export const removeQuestion = (title: string): string => `Remove ${title}? Its p
 export const throughWords = (computer: string): string => `These extensions are on ${computer}. To change them, open Sova on that computer.`;
 export const asksCards = (a: ExtensionAsks): boolean => !!a.cards?.length;
 
-/** What the row offers beside its switch (§app.settings-dialog/extensions), in its order. */
+/** What the row offers beside its switch, in its order. */
 export type RowAction = "review" | "start" | "restart" | "log" | "choose-folder" | "updates" | "remove";
 export function rowActions(state: ExtensionRowState, r: { hasProgram?: boolean; ownProgram?: boolean }): RowAction[] {
   const log: RowAction[] = r.hasProgram ? ["log"] : [];

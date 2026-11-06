@@ -721,7 +721,7 @@ function viewCardOf(rec: SessionRecord | null, id: unknown): CardInfo {
   if (card.draws !== "view") throw new CardRefusal(`${card.id} isn't a view: only a view keeps state or runs commands.`, 400);
   const ext = rec.snapshot?.types.find((t) => t.type === card.type)?.ext;
   if (ext) {
-    // Its view runs no command and keeps no state while it isn't what you approved (§app.extensions/views).
+    // Its view runs no command and keeps no state while it isn't what you approved.
     const now = findExtension(ext.id);
     if (!now) throw new CardRefusal(`${ext.title} isn't on, so this card's view can't do that.`, 409);
     if (now.changed) throw new CardRefusal(`${ext.title} changed and is waiting for your approval.`, 409);
@@ -854,7 +854,7 @@ export async function sessionCardsAt(path: string): Promise<SessionCardsAnswer> 
   const s = await summaryOf(path);
   const rec = readRecord(s.id);
   const owner = rec?.root ? projectOwner(rec.root) : null;
-  // An extension no longer on the list, or on it but not active: its cards show their error box (§app.extensions/views).
+  // An extension no longer on the list, or on it but not active: its cards show their error box.
   const owners = [...new Set((rec?.snapshot?.types ?? []).flatMap((t) => (t.ext ? [t.ext.id] : [])))];
   const listed = owners.length ? (listedExtensions() ?? []) : [];
   const standing = (id: string) => listed.find((l) => l.valid?.entry.id === id);
@@ -958,11 +958,11 @@ export function openCardsOf(sessionId: string): OpenCard[] {
   });
 }
 
-/** What is active changed, so what waits on an answer may have (§chat.transcript-cards/answering). */
+/** What is active changed, so what waits on an answer may have. */
 export const cardOwnersChanged = (): void => sessionsChanged();
 
 /**
- * Remove (§app.extensions/loader): its open cards close, so none stays in Needs You with nothing left to
+ * Remove: its open cards close, so none stays in Needs You with nothing left to
  * answer it. Scans every record: it happens only when an extension leaves.
  */
 export function closeCardsOfExtension(id: string): void {

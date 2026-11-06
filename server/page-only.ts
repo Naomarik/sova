@@ -103,7 +103,7 @@ export function yourClickRefusal(c: Context, door: YourClickDoor, opts: { overse
 }
 
 /**
- * The extension door's one addition (§app.extensions/loader): a request from a page under `/ext/`, or from
+ * The extension door's one addition: a request from a page under `/ext/`, or from
  * a frame. An extension's page runs on Sova's address with the page's own cookie, so this is an accident guard:
  * a hostile page can leave the `Referer` off, as the screen says.
  */

@@ -1,5 +1,5 @@
 // Run: pnpm test:int -- server/extension-views-changed.integration.test.ts
-// §app.extensions/views, the operator's rule: edited trusted view code must not run. A real build of a view (esbuild
+// The operator's rule: edited trusted view code must not run. A real build of a view (esbuild
 // is a program, hence this tier) over the real routes: a save that reaches the page before the background pass still
 // isn't handed over, a page already told waits and hears Approve, and the view's command doesn't run.
 import assert from "node:assert/strict";

@@ -120,7 +120,7 @@ export function validateExtension(raw: unknown): { entry: ExtensionEntry; offers
   return offers ? { entry, offers } : { entry };
 }
 
-/** The active entries, in manifest order (§app.extensions/loader). A missing file is no extensions; a malformed
+/** The active entries, in manifest order. A missing file is no extensions; a malformed
     one is too, logged. A later duplicate of an id is dropped. */
 export const readExtensions = (): ExtensionEntry[] => readManifest().map((m) => m.entry);
 
@@ -260,7 +260,7 @@ function stateOf(raw: Record<string, unknown>, id: string): Pick<ListedExtension
 
 /**
  * Every entry with its state, in list order: the one reader Settings → Extensions uses
- * (§app.extensions/loader). null when the list can't be read whole.
+ *. null when the list can't be read whole.
  */
 export function listedExtensions(): ListedExtension[] | null {
   const raws = manifestRaw();
@@ -297,7 +297,7 @@ function manifestEntries(): Valid[] | null {
   return out;
 }
 
-/** Every id on the list, active or not: a peer's entry never takes one (§mesh.sync/categories). */
+/** Every id on the list, active or not: a peer's entry never takes one. */
 export const listedIds = (): string[] => (listedExtensions() ?? []).flatMap((l) => (l.valid ? [l.valid.entry.id] : []));
 
 /** One entry on the list whatever its state: a title, an old card's words. */
@@ -377,7 +377,7 @@ function health(entry: ExtensionEntry): Promise<Health> {
 
 /** For tests: forget every cached health answer. */
 export const clearHealthCache = (): void => healthCache.clear();
-/** A program was just started: its next reading is a fresh one (§app.extensions/program). */
+/** A program was just started: its next reading is a fresh one. */
 export const clearHealthOf = (id: string): void => {
   for (const key of healthCache.keys()) if (key.startsWith(`${id}\n`)) healthCache.delete(key);
 };

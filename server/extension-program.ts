@@ -1,4 +1,4 @@
-// The program an extension names (§app.extensions/program): started, stopped and logged through the project
+// The program an extension names: started, stopped and logged through the project
 // services driver, as a unit of its own, so it outlives a server restart and Turn Off still finds it. Both
 // drivers run with no restart of their own: a driver's Restart=on-failure would bring a program back on code
 // you haven't approved, so a failed one comes back through Sova's pass (server/extension-loader.ts).

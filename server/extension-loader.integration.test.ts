@@ -1,5 +1,5 @@
 // Run: pnpm test:int -- server/extension-loader.integration.test.ts
-// §app.extensions/loader and /program, end to end: a whole server as a child process in a throwaway state root,
+// The loader and the program it runs, end to end: a whole server as a child process in a throwaway state root,
 // a stand-in extension in a plain folder, and the page's cookie. Through both drivers where the host has both:
 // install, the key, logging that never asks again, a crash, Turn Off and On, changed code, a restart of the
 // server with its program still running, Waiting for You, Remove and an entry leaving by hand.

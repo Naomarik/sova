@@ -1,4 +1,4 @@
-// What you approved of each extension (§app.extensions/loader): `<state root>/extension-trust.json`,
+// What you approved of each extension: `<state root>/extension-trust.json`,
 // outside every repository, and what the background pass last read of its code folders. A request
 // reads these and never walks a folder; only server/extension-fingerprint.ts walks, off a request's path.
 import { createHash } from "node:crypto";
@@ -76,7 +76,7 @@ export function forgetApproval(id: string): void {
 let migrated = false;
 
 /**
- * The first start of this version (§app.extensions/loader): with no trust file, every valid entry is
+ * The first start of this version: with no trust file, every valid entry is
  * approved once by `seed`, and the file is written even with none, so anything later waits. Before
  * this has run, no file means nothing has been decided, so entries count as approved.
  */

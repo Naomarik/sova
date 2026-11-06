@@ -201,7 +201,7 @@ async function forgetSetup(copy: string): Promise<void> {
 export function makeRunMerge(deps: RunDeps = {}): RunMerge {
   // Services a check needs start through the server's project engine unless the caller gives another way.
   const withServices: RunDeps = { services: lazyEngineServices(), ...deps };
-  // RunInput.tryOnly (Try It on Main): nothing merged (tryOnce).
+  // RunInput.tryOnly (a dry run or a trial): nothing merged (tryOnce).
   return (input, hooks) => (input.tryOnly ? tryOnce(input, hooks, withServices) : runOnce(input, hooks, withServices)).catch((err): RunOutcome => {
     // Never a throw: anything unexpected is the machine's, never the branch's.
     return { verdict: "machine", why: `the run stopped: ${err instanceof Error ? err.message : String(err)}`, notes: [], checks: [] };
@@ -593,7 +593,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
 }
 
 /**
- * Try It on Main (onboarding; RunInput.tryOnly): the checks a project is about to declare, run on the target itself,
+ * A dry run (merge.setup dryRun; RunInput.tryOnly): the checks a project is about to declare, run on the target itself,
  * merging nothing. The copy reset to `base`, setup, then the checks `input.project.def` declares (the user's unsaved
  * answer), each failure run once more (a pass then is noted flaky). No docs, no review, no attribution: a red here is
  * the project's own, never a branch's. Outcome: passed (noChecks when "none"), failed with the failing step's label,
@@ -602,6 +602,8 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
 async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise<RunOutcome> {
   const { project, base, signal } = input;
   const target = project.target;
+  // A trial (merge.try) runs on the setup branch's head, not the target: its words say whose it is.
+  const where = input.trialOf ? `${input.trialOf} at ${short(base)}` : `${target} itself`;
   const steps = new Steps(input.runDir, hooks);
   const notes: MergeNote[] = [];
   let checksShown: CheckPick[] = [];
@@ -613,7 +615,7 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   try {
     assertCopyOutsideState(copy, { root: project.root, ...(deps.state ? { state: deps.state } : {}), ...(deps.home ? { home: deps.home } : {}) });
     hooks.copy?.(copy);
-    cs.log(`copy: ${copy}\nbase: ${base} (${target}), nothing merged\n`);
+    cs.log(`copy: ${copy}\nbase: ${base} (${input.trialOf ?? target}), nothing merged\n`);
     await prepareCopy({ root: project.root, path: copy, base, log: cs.log, signal, ...(deps.state ? { state: deps.state } : {}), ...(deps.home ? { home: deps.home } : {}) });
   } catch (err) {
     if (signal.aborted) return (cs.end("failed", { detail: "aborted" }), voided("aborted"));
@@ -626,7 +628,8 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   const declared = checksOf(def);
   if (declared === "unset") return out({ verdict: "machine", why: "no checks given to try", copy });
   const changedFile = join(input.runDir, "changed.txt");
-  writeFileSync(changedFile, "\n");
+  // A trial runs every check in full: every tracked file of the commit reads as changed, and each check as picked.
+  writeFileSync(changedFile, input.trialOf ? `${(await gitOut(copy, ["ls-tree", "-r", "--name-only", "HEAD"]).catch(() => "")).trim()}\n` : "\n");
   const names = input.namesFile ?? deps.leakNames?.({ id: project.id, root: project.root }) ?? null;
   const scope: CopyScope = { project: project.root, projectId: project.id, copy, slot: mergeSlotOf(def), data: join(input.runDir, "data"), target, base, tip: base, changedFile, ...(names ? { leakNames: names } : {}) };
   mkdirSync(scope.data, { recursive: true });
@@ -636,10 +639,10 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     if (failed.timedOut) return voided(`setup ${failed.failed.id} timed out`);
     const again = await runSetup({ def, scope, steps, idPrefix: "rerun-tip:setup:", labelPrefix: "Setup again: ", kind: "rerun-tip", fresh: true, signal });
     if (signal.aborted) return voided("aborted");
-    if (again) return out({ verdict: "failed", why: `setup (${again.failed.id}) fails on ${target} itself (log: ${again.step.log})`, copy });
+    if (again) return out({ verdict: "failed", why: `setup (${again.failed.id}) fails on ${where} (log: ${again.step.log})`, copy });
     notes.push({ kind: "flaky", text: `setup (${failed.failed.id}) failed, then passed on a rerun`, at: now() });
   }
-  const list = planChecks(def, input.picks, input.releaseChecks);
+  const list = planChecks(def, input.picks, input.releaseChecks).map((c) => (input.trialOf ? { ...c, picked: true as const } : c));
   checksShown = picksOf(list);
   hooks.checks(checksShown);
   if (declared === "none" && !list.length) return out({ verdict: "passed", noChecks: true, copy });
@@ -663,7 +666,7 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       const st = steps.start(`check:${check.id}`, "check", check.label, { source: check.source });
       const r = await runCheck({ def, scope, check, stepId: check.id, logFile: st.file, fresh: freshOf(def, { release: isReleaseRun(input) }), signal });
       if (r.proc.aborted || signal.aborted) return (st.end("failed", { detail: "aborted" }), voided("aborted"));
-      if (r.proc.timedOut) return (st.end("failed", { detail: `timed out after ${check.timeoutSec} s` }), out({ verdict: "failed", why: `${check.label} timed out after ${check.timeoutSec} s on ${target} itself`, copy }));
+      if (r.proc.timedOut) return (st.end("failed", { detail: `timed out after ${check.timeoutSec} s` }), out({ verdict: "failed", why: `${check.label} timed out after ${check.timeoutSec} s on ${where}`, copy }));
       logReused(st, r);
       if (r.proc.code === 0) {
         st.end(...passedEnd(r, countsOf(r.report)));
@@ -681,7 +684,7 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
         red.push(check.label);
       }
     }
-    if (red.length) return out({ verdict: "failed", why: `${red.join(", ")} fail${red.length === 1 ? "s" : ""} on ${target} itself`, copy });
+    if (red.length) return out({ verdict: "failed", why: `${red.join(", ")} fail${red.length === 1 ? "s" : ""} on ${where}`, copy });
     return out({ verdict: "passed", copy });
   } finally {
     await services?.down().catch(() => undefined);

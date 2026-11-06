@@ -24,6 +24,7 @@ import { projectKey } from "./store";
 import { sessionsChanged } from "../list-generation";
 import { LandingNotes, SERVED_FILE_NAME, ServedRule, servedKey, servedRule, setServedRule, type SetupOf, startServedWriter } from "./served";
 import type { ProjectOf } from "../project-root";
+import { trialEndedText } from "./setup-branch";
 import { gitRefsStamp } from "../worktrees";
 
 /**
@@ -312,6 +313,38 @@ let bareSettingsOf: ((root: string) => Promise<import("../../shared/merge-queue-
 
 /** A listed project's settings while the queue doesn't serve it, made without a queue (settings.ts bareSettings);
  *  null while the queue isn't started or its target has no commit. */
+/** The gate's answer when it can't read what it needs: never a quiet pass. */
+export const TRIAL_UNREADABLE = "Sova can't confirm a passing trial of this branch now: try again in a moment.";
+
+/**
+ * Why a branch head can't merge or land yet as a setup branch (setup-branch.ts): it changes the project's setup and no
+ * trial of exactly `head` passed; null when it isn't a setup branch or its trial passed. Merge Branch on a project the
+ * queue doesn't serve asks this too. Fails closed: when the trials can't be read, a setup branch is refused.
+ */
+export async function setupUntriedAt(root: string, head: string): Promise<string | null> {
+  if (!head || !root) return TRIAL_UNREADABLE;
+  const q = queues ? ((await queues.peek(root)) ?? (await queues.get(root).catch(() => null))) : null;
+  if (q) {
+    const target = await q.targetHead();
+    return target ? q.setupUntried(target, head) : TRIAL_UNREADABLE;
+  }
+  // No queue here: a branch that leaves the setup alone needs none; a setup branch can't be checked, so it waits.
+  const { isSetupChange, setupChangeOf } = await import("./setup-branch");
+  const { resolveTarget } = await import("./served");
+  const { definitionAt } = await import("../project-services/deploy-recipe");
+  const target = await resolveTarget(realGit, root, (r, ref) => definitionAt(r, ref)).catch(() => null);
+  const change = target ? await setupChangeOf(realGit, root, target, head) : null;
+  return change && !isSetupChange(change) ? null : TRIAL_UNREADABLE;
+}
+
+/** A project's trials and target as its queue keeps them (the Setup chat's tab reads them); null: no queue here. */
+export async function setupTrialsAt(root: string): Promise<{ target: string; trials: import("../../shared/merge-queue").MergeTrial[]; readRun: (id: string) => import("../../shared/merge-queue").MergeRun | null } | null> {
+  if (!queues || !root) return null;
+  const q = await queues.peek(root);
+  if (!q) return null;
+  return { target: q.target, trials: q.trials(), readRun: (id) => q.store.readRun(id) };
+}
+
 export function mergeBareSettings(root: string): Promise<import("../../shared/merge-queue-settings").MergeQueueSettings | null> {
   return bareSettingsOf ? bareSettingsOf(root) : Promise.resolve(null);
 }
@@ -745,6 +778,17 @@ export async function startMergeQueue(
       publishFeed({ type: "merge_queue", project: view.project, view });
       cardsDo(mc.sync(view));
     },
+    // A trial's end reaches the chat that started it, as a queue wake (it ends its turn and is woken).
+    trialEnded: (t, run) => {
+      if (t.by.kind !== "chat" || !t.by.session) return;
+      const session = t.by.session;
+      void (async () => {
+        const path = await sessionPath(session);
+        if (!path) return;
+        (await import("../merge-readiness")).rereadReadiness(path);
+        await (await import("./wake")).sendQueueWake(path, trialEndedText(t, run));
+      })().catch((err) => console.warn(`[merge-queue] trial note to ${session}: ${err instanceof Error ? err.message : err}`));
+    },
     // Why a sent-back branch's newest commit isn't Ready to land: its chat's last readiness reading, never a fresh read.
     newestReading: async (worktree, tip) => {
       const [{ listSessions }, { readinessReading }, { newestReadingOf }] = await Promise.all([import("../sessions-index"), import("../merge-readiness"), import("../ready-to-land")]);
@@ -798,6 +842,14 @@ export async function startMergeQueue(
   // A served tree that reads Ready to land at a commit (merge-readiness.ts): its branch summary is written.
   const { configureReadiness } = await import("../merge-readiness");
   configureReadiness({
+    // A setup branch is Ready to land only once a trial of its exact head passed (setup-branch.ts).
+    setupUntried: async (dir, head) => {
+      const p = await projectOf(dir);
+      if (p.state !== "ok" || !p.git || !served.isListed(p.root)) return null;
+      const queue = (await q.peek(p.root)) ?? (await q.get(p.root));
+      const target = await queue.targetHead();
+      return target ? queue.setupUntried(target, head) : null;
+    },
     readyToLand: (t) =>
       void projectOf(t.path)
         .then((p) => (p.state === "ok" && p.git ? summaryFor(p.root, t.branch, t.commit) : undefined))
@@ -845,6 +897,7 @@ export async function startMergeQueue(
     },
     isThreadChat: (root, sid) => threadMod.mergeThread().isThreadChat(root, sid),
     reviewerOf: review.reviewerOf,
+    isReviewerChat: review.isReviewerChat,
     deliverReview: review.deliverReview,
     ...(await threadVerbDeps(served)),
   });

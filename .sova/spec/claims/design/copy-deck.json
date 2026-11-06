@@ -170,7 +170,6 @@
       "src/components/WorktreesModal.tsx",
       "src/components/MergeQueueTab.tsx",
       "src/components/MergeRunView.tsx",
-      "src/components/MergeOnboarding.tsx",
       "src/lib/merge-queue.ts",
       "shared/merge-queue.ts",
       "src/components/MergeQueueCard.tsx",
@@ -318,6 +317,20 @@
     "requires": [
       "§app.project-overseer/autonomy-levels",
       "§app.organizations/project-page"
+    ]
+  },
+  "§design.copy-deck/project-setup": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "about": [
+      "§app/project-setup"
+    ],
+    "code": [
+      "src/lib/setup-chat.ts",
+      "src/components/SetupChat.tsx",
+      "server/projects/runtime-routes.ts",
+      "shared/playbook-review.ts"
     ]
   },
   "§design.copy-deck/project-stakeholder": {

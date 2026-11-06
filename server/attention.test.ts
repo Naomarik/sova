@@ -87,6 +87,13 @@ describe("attention: which signal lands in which tier", () => {
     assert.deepEqual(kinds(row(summary("ar2", { archived: true, activity: { state: "error" } }))), ["act:error"]);
   });
 
+  test("an archived Setup chat lists nothing, not even a failed turn or a failed worker; while it is open, its failure shows", () => {
+    const failed = { turnError: {}, activity: { state: "error" as const } };
+    assert.deepEqual(kinds(row(summary("su", { ...failed, archived: true }), { setupChat: true, failedWorkers: 2 })), []);
+    assert.deepEqual(kinds(row(summary("su2", failed), { setupChat: true })), ["act:error"], "the open Setup chat's failure is a blocker");
+    assert.deepEqual(kinds(row(summary("ar3", { ...failed, archived: true }))), ["act:error"], "any other archived chat's still comes back");
+  });
+
   test("a TUI-live session is flagged read-only on its items", () => {
     const [it] = sessionItems(row(summary("t", { live: { pid: 9, status: "Needs input" }, activity: { state: "needs-input" } })), NOW);
     assert.equal(it?.tuiLive, true);

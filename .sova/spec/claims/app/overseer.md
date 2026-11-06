@@ -1436,7 +1436,9 @@ feed's last list while nothing has changed since it was built, and builds a list
   `endedAt` (else `lastActivity`, else `startedAt`); when rows were dropped from the live record
   for size, the time this server saw the error count rise stands in (in memory, so after a restart
   such an error shows again until the session is seen or finishes a turn). A session never seen, or an error of
-  unknown time, still shows. This holds for archived sessions too.
+  unknown time, still shows. This holds for archived sessions too, except a project's Setup chat
+  (§app.project-setup/chat), current or replaced by Start Fresh: once archived it lists nothing here,
+  not even a failed turn or a failed worker.
 - **Needs you, open questions** (§chat.alignment/session-mark): an idle session that is not
   archived, whose `align` counts say it waits on the user's answers (align on, and no user prompt
   since the alignment last changed), is `open-questions` ("{n} open

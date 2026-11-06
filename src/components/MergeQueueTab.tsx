@@ -8,12 +8,12 @@ import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, m
 import { createPoll } from "../lib/poll";
 import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
-import { MergeOnboarding } from "./MergeOnboarding";
 import { MergeRunView } from "./MergeRunView";
 import { LocalBehind, RequestRow, WaitingOnHost, type RequestEntry } from "./MergeQueueRequests";
 import { introWords, isRequestState } from "../lib/merge-queue-requests";
 import { QueueSettingsButton, QueueSummaryLine } from "./settings/MergeQueueSummary";
-import { notSetUp, takeInitialize } from "../lib/merge-queue-initialize";
+import { notSetUp } from "../lib/merge-queue";
+import { createSetupPoll, SetupChatButton, SetupChatState, SetupNotSetUp, type SetupPoll } from "./SetupChat";
 import { Banner, Icon } from "./ui";
 import { createLandConfirm, LandConfirms, LandSplit, QueueChip, UnclearChecks } from "./WorktreesModal";
 import type { LandHow, MergeReady, TargetBroken } from "../../shared/merge-queue";
@@ -27,10 +27,12 @@ const POLL_MS = 4000;
 /**
  * A project's Merge Queue tab: the target and what's pushed, the queue's state with Pause / Resume and
  * the merge thread's chat, what's being checked now, the line with its estimates, what waits for you,
- * what went back to its chat, and recent landings with their notes. A project with no checks declared
- * gets the onboarding instead. `run`: one run's page (`…/merge-queue/<run>`).
+ * what went back to its chat, and recent landings with their notes, with Change Setup and the Setup chat. A project
+ * with no merge setup gets what the queue does and Set Up with a Chat instead. `run`: one run's page
+ * (`…/merge-queue/<run>`). `setup`: the page's read of the Setup chat (one of its own when absent).
  */
-export function MergeQueueTab(props: { projectId: string; root: string; name: string; run?: string; chatOf?: ChatOf; treesOf?: TreesOf }) {
+export function MergeQueueTab(props: { projectId: string; root: string; name: string; run?: string; chatOf?: ChatOf; treesOf?: TreesOf; setup?: SetupPoll }) {
+  const setup = props.setup ?? createSetupPoll(props.projectId);
   const poll = createPoll(() => readQueue(props.root), POLL_MS, { cacheKey: `project:${props.projectId}:merge-queue` });
   createEffect(on(mergeChanged, () => poll.refetch(), { defer: true }));
   // What the feed pushes for this project is the newest view: adopt it as is.
@@ -51,9 +53,9 @@ export function MergeQueueTab(props: { projectId: string; root: string; name: st
             when={!props.run}
             fallback={<MergeRunView projectId={props.projectId} view={v()} runId={props.run!} chatOf={props.chatOf} />}
           >
-            {/* An invalid definition reads "unset" too: its error is said, never the onboarding. */}
-            <Show when={!notSetUp(v())} fallback={<NotSetUp projectId={props.projectId} name={props.name} view={v()} onSaved={() => poll.refetch()} />}>
-              <QueueBody projectId={props.projectId} view={v()} chatOf={props.chatOf} treesOf={props.treesOf} onChanged={() => poll.refetch()} />
+            {/* An invalid definition reads "unset" too: its error is said, never the not-set-up words. */}
+            <Show when={!notSetUp(v())} fallback={<NotSetUp projectId={props.projectId} view={v()} setup={setup} />}>
+              <QueueBody projectId={props.projectId} view={v()} chatOf={props.chatOf} treesOf={props.treesOf} setup={setup} onChanged={() => poll.refetch()} />
             </Show>
           </Show>
         )}
@@ -66,36 +68,20 @@ export function MergeQueueTab(props: { projectId: string; root: string; name: st
 const holdName = (r: { version: string | null; tag?: string | null }): string => (r.tag ? `release ${r.tag}` : r.version ? `release ${r.version}` : "a release");
 
 /**
- * A listed project with no merge setup: its chats merge plainly. The tab says so, and Initialize opens the
- * setup (the onboarding: Try It on Main, then Save Checks).
+ * A listed project with no merge setup: its chats merge plainly. The tab says what the queue does and what setting it
+ * up changes, with Set Up with a Chat (the project's Setup chat), then that chat's state and its proposal.
  */
-function NotSetUp(props: { projectId: string; name: string; view: MergeQueueView; onSaved(): void }) {
-  // Initialize pressed in Settings → Merge Queue: open on the setup at once.
-  const [open, setOpen] = createSignal(takeInitialize(props.projectId));
+function NotSetUp(props: { projectId: string; view: MergeQueueView; setup: SetupPoll }) {
   return (
-    <Show
-      when={!open()}
-      fallback={<MergeOnboarding projectId={props.projectId} name={props.name} view={props.view} onSaved={props.onSaved} />}
-    >
-      <div class="stack mq-body mq-unset">
-        <div class="cluster">
-          <h2 class="orgs-h2" id="mq-title">
-            Merge queue
-          </h2>
-          <QueueChip row={{ label: "Not set up", tone: "warn" }} />
-        </div>
-        <Banner
-          tone="info"
-          title="No merge queue settings are set up for this project"
-          body={`Until they are, its chats merge branches into ${props.view.target} themselves when you ask.`}
-          action={
-            <button type="button" class="button button-sm" onClick={() => setOpen(true)}>
-              Initialize
-            </button>
-          }
-        />
+    <div class="stack mq-body mq-unset">
+      <div class="cluster">
+        <h2 class="orgs-h2" id="mq-title">
+          Merge queue
+        </h2>
+        <QueueChip row={{ label: "Not set up", tone: "warn" }} />
       </div>
-    </Show>
+      <SetupNotSetUp projectId={props.projectId} surface="merge-queue" target={props.view.target} poll={props.setup} />
+    </div>
   );
 }
 
@@ -247,7 +233,7 @@ export function useAct(onChanged: () => void) {
   return { busy, error, run };
 }
 
-function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: ChatOf; treesOf?: TreesOf; onChanged(): void }) {
+function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: ChatOf; treesOf?: TreesOf; setup: SetupPoll; onChanged(): void }) {
   const v = () => props.view;
   const chip = () => (v().release && v().state !== "paused" && !v().invalid ? { label: "Frozen for a release", tone: "warn" as const } : queueStateChip(v()));
   const head = useAct(props.onChanged);
@@ -264,6 +250,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
           <QueueChip row={chip()} />
         </div>
         <div class="button-row">
+          <SetupChatButton projectId={props.projectId} setUp from="merge-queue" poll={props.setup} />
           <QueueSettingsButton projectId={props.projectId} />
           <Show
             when={paused()}
@@ -282,6 +269,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
       </div>
       <QueueSummaryLine view={v()} />
       <MergeThreadCard projectId={props.projectId} view={v()} chatOf={props.chatOf} onChanged={props.onChanged} />
+      <SetupChatState projectId={props.projectId} poll={props.setup} fresh />
       <p class="text-caption text-muted mq-intro">
         {introWords(v().target, v().settings?.how?.effective)}
         <Show when={v().checks === "none"}> This project declares no automated tests: landings say "No checks declared".</Show>

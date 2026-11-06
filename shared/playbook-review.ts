@@ -12,10 +12,10 @@ export interface PlaybookReviewWords {
   /** The definition its branch proposes; absent when it has none, or an invalid one. */
   hash?: string;
   /** What the run proposes: a deploy-setup run's is its deploy recipe, a release-setup run's its release setup. */
-  proposes?: "definition" | "deploy" | "release";
+  proposes?: "definition" | "deploy" | "release" | "pipeline";
 }
 
-const nothingValid = (r: PlaybookReviewWords) => (r.proposes === "deploy" ? "no valid deploy recipe" : r.proposes === "release" ? "no valid release setup" : "no valid definition");
+const nothingValid = (r: PlaybookReviewWords) => (r.proposes === "deploy" ? "no valid deploy recipe" : r.proposes === "release" ? "no valid release setup" : r.proposes === "pipeline" ? "no valid setup" : "no valid definition");
 
 export const hash12 = (h: string): string => h.replace(/^sha256:/, "").slice(0, 12);
 
@@ -29,7 +29,7 @@ export function reviewDetail(r: PlaybookReviewWords): string {
 export function reviewBanner(r: PlaybookReviewWords): { title: string; body: string } {
   if (!r.hash) return { title: `${r.label} proposes changes on ${r.branch}.`, body: `Its branch has ${nothingValid(r)}: read its report.` };
   // A release setup's hash pins settings and playbook files together: no definition hash to show, so it is named.
-  const what = r.proposes === "release" ? "a release setup" : hash12(r.hash);
+  const what = r.proposes === "release" ? "a release setup" : r.proposes === "pipeline" ? "the project's setup" : hash12(r.hash);
   return { title: `${r.label} proposes ${what} on ${r.branch}.`, body: `Read it, then merge it into ${r.target}.` };
 }
 

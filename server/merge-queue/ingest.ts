@@ -117,7 +117,7 @@ export async function ingestOnce(deps: IngestDeps): Promise<string[]> {
     } catch (err) {
       const why = err instanceof Error ? err.message : String(err);
       did.push(`typed go-ahead for ${g.branch} refused: ${why}`);
-      if (g.session && err instanceof MergeFailure) deps.refused?.(g.session, `${g.branch} at ${g.commit.slice(0, 7)} couldn't be queued to land: ${why}.`);
+      if (g.session && err instanceof MergeFailure) deps.refused?.(g.session, `${g.branch} at ${g.commit.slice(0, 7)} couldn't be queued to land: ${why.replace(/\.+$/, "")}.`);
     }
   }
   return did;

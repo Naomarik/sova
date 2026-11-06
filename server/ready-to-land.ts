@@ -91,7 +91,7 @@ export const landingLive = (t: LandingTree, state: ReadinessState): boolean =>
 
 /** One thing that keeps a finished branch from Ready to land, as Sova's note counts it, and what fixes it. */
 export interface LandingBlocker {
-  kind: "uncommitted" | "conflicts" | "temp" | "check";
+  kind: "uncommitted" | "conflicts" | "temp" | "check" | "trial";
   /** "1 uncommitted folder", "conflicts with master in 2 files". */
   text: string;
   /** What the session does about it. */

@@ -863,7 +863,8 @@ judgement.
 ## §app.project-overseer/coding-worktrees — Each coding session in its own worktree
 
 - **Always, in a Git project.** Every coding session the project starts (the overseer's
-  `sova_create_session`, or the operator's Start Coding Session or New Coding Session) runs in a new git worktree on a
+  `sova_create_session`, or the operator's Start Coding Session or New Coding Session) runs in a new
+  git worktree on a
   new branch, cut from the commit the project root's checkout has checked out (`HEAD`), whose
   branch is the one it merges back into. The project root's checkout is never switched, and the
   session's cwd is the worktree (or, for a folder inside the root, the same folder inside the
@@ -899,7 +900,8 @@ judgement.
   itself creates with its `worktree` tool (the session's tracked set, §chat.worktrees/tool: made by
   this session, not attached; active or already merged, never dropped) in the project's repository
   (the same git common directory as the project root). It is checked at the end of each of the
-  session's turns, and on each branch read of the project page (**Read in two steps**), so a session run in a terminal is
+  session's turns, and on each branch read of the project page (**Read in two steps**), so a session
+  run in a terminal is
   adopted too. The row records the tool's branch and path as named, its `base` as the tool's base,
   and its `target` as the tool's base branch, or, when the tool recorded none, the branch the
   project root has checked out then. From then on the row is a worktree row like any other: its
@@ -916,12 +918,15 @@ judgement.
   HEAD."), and so does each such session's row ("In the project root: …"). A worktree that
   can't be made in a Git project (git refuses) starts no session: "No session was started: its
   worktree could not be made ({git's first line}).".
-- **Recorded with the session.** The coding session's statechart (kind `coding` or `operator-coding`,
-  §app.project-overseer/statecharts; its gap and the decisions it builds when it has them) carries `worktree: {branch, base, target, path}` (`base` the commit it was
+- **Recorded with the session.** The coding session's statechart (kind `coding` or
+  `operator-coding`,
+  §app.project-overseer/statecharts; its gap and the decisions it builds when it has them) carries
+  `worktree: {branch, base, target, path}` (`base` the commit it was
   cut from, `target` the branch it merges into) and its later `merged: {at, commit}` (the last
   Merge Branch: history, not the branch's state) or `removed: at`, or `inRoot` (the reason it runs
   in the root). A worktree folder deleted by hand shows as missing ("Worktree folder missing");
-  its branch can still be merged. The tool result and the Start Coding Session and New Coding Session answers name the branch and the path.
+  its branch can still be merged. The tool result and the Start Coding Session and New Coding
+  Session answers name the branch and the path.
   `path` is this host's, like the row's session path: on a host where it doesn't exist the row
   shows the branch only, and no gesture acts on it ("On another host: its worktree is there.").
   Each row records a title when its session starts (the title given, else the first prompt's
@@ -935,7 +940,8 @@ judgement.
   gaps started, gathering and coding, at most 200. Past 200, the oldest *settled* one is retired
   from it: a gathering session closed or done whose wrap-up has ended (done or skipped; a failed one
   may still be retried), or a coding session merged or removed with no turn running, or retired. A
-  live one (a coding session working, a gathering session open or needing you) is never retired, so the list is longer than 200 only while more than 200 are live, and trims back as they
+  live one (a coding session working, a gathering session open or needing you) is never retired, so
+  the list is longer than 200 only while more than 200 are live, and trims back as they
   settle. A retired session is no longer organizational (§app.organizations/org-sessions); its
   transcript and its cost stay.
 - **The project page lists them.** "Coding sessions" lists every coding session the project started
@@ -962,7 +968,8 @@ judgement.
   session list, so the rows show with the page. A row shows its branch as recorded until its
   branch facts arrive. Until then a row with a recorded branch, not removed, has its **⋯** menu
   with Merge Branch and Remove Worktree… both disabled, "Reading its branch": no branch gesture
-  acts on a state the page hasn't read. Once they arrive the menu is as above. Merge Branch and Remove Worktree
+  acts on a state the page hasn't read. Once they arrive the menu is as above. Merge Branch and
+  Remove Worktree
   answer the branch read's shape, and the page reads the overseer's state again after either.
   A refresh (either read again, or any chat changing) updates the rows in place, each matched by
   its session, and never rebuilds the list: an open **⋯** menu stays open and the page keeps its
@@ -983,23 +990,26 @@ judgement.
   reads its queue state in the chips the composer's modal uses (§chat.composer/worktrees-control),
   with its estimates or reason, and while it is queued, checking or waiting for the user its Land is
   disabled: "Already in the merge queue.". While it is sent back to its chat (Needs a fix) its Land
-  is disabled too, "Sent back to its chat. Land comes back once its chat fixes it, or land its newest
+  is disabled too, "Sent back to its chat. Land comes back once its chat fixes it, or land its
+  newest
   commit now." (§chat.composer/worktrees-control), and beside it the menu offers the re-land item, a
   new approval of the head this page read (§app.merge-queue/approve), disabled while the session is
   working. While that head is the sent-back commit it is **Land This Commit Again** ("Approves {sha}
   again: every check runs from the start."); once the branch moved it is **Land Newest Commit**
   ("Approves {head}: every check runs from the start."), with what it brings in and why that commit
   isn't Ready to land after those words. A branch sent
-  back for its spec drafts gets Land back here at the same commit once its drafts changed and fit, as
+  back for its spec drafts gets Land back here at the same commit once its drafts changed and fit,
+  as
   on the other screens, and the re-land item leaves the menu. An entry that no longer needs a
   fix (approved again later, already in the target, or its branch or folder gone) blocks neither:
   the re-land item leaves and Land reads as for any branch. After a fix that needed a commit
   this menu, which reads no readiness, keeps Land off; the branch lands by Land Newest Commit
-  here, or from the Worktrees modal, the session pane, the Merge Queue tab, or "land it" typed in its
+  here, or from the Worktrees modal, the session pane, the Merge Queue tab, or "land it" typed in
+  its
   chat. Remove from Queue isn't in this menu.
   Drafts changed keeps Land. The queue's refusals are shown under the row as Merge
   Branch's are. A project whose queue isn't set up keeps Merge Branch as above, and its Merge Queue
-  tab shows the note "No merge queue settings are set up for this project" with Initialize
+  tab shows the note "No merge queue settings are set up for this project" with Set Up with a Chat
   (§app.merge-queue/setup). A project whose definition doesn't parse
   counts as set up: its rows show Land, so a branch that fixes the file can get in.
 - **Merged is read from git.** Whether a row's branch is merged is decided from git on every branch
@@ -1018,7 +1028,8 @@ judgement.
   unmerged branch keeps its commits, and Merge Branch stays on its row. It is refused while the
   session is working or has workers running. When the worktree has a running copy of the project
   (an instance, §app.project-services/instances), Remove Worktree first tears that copy down
-  (§app.project-services/teardown, as the operator), which also ends its share links; if the teardown
+  (§app.project-services/teardown, as the operator), which also ends its share links; if the
+  teardown
   fails, nothing is removed and the refusal says why ("Its running copy could not be torn down:
   …"). Merge Branch never touches the copy: it keeps running, with its links, until it is stopped or
   torn down, or its worktree is removed. Merge Branch also reloads the main copy's onMerge services

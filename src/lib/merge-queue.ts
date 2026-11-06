@@ -763,20 +763,8 @@ export function pausedTitle(v: Pick<MergeQueueView, "paused">): string {
   }
 }
 
-/** The onboarding's "List its checks": one per line, "Name: command". Lines that aren't are named back. */
-export function parseCheckList(text: string): { checks: { label: string; command: string }[]; bad: number[] } {
-  const checks: { label: string; command: string }[] = [];
-  const bad: number[] = [];
-  text.split("\n").forEach((line, i) => {
-    if (!line.trim()) return;
-    const at = line.indexOf(":");
-    const label = at > 0 ? line.slice(0, at).trim() : "";
-    const command = at > 0 ? line.slice(at + 1).trim() : "";
-    if (label && command) checks.push({ label, command });
-    else bad.push(i + 1);
-  });
-  return { checks, bad };
-}
+/** The queue doesn't serve this listed project: it has no merge setup (an invalid one is still a setup, said as such). Pure. */
+export const notSetUp = (v: Pick<MergeQueueView, "served" | "checks" | "invalid">): boolean => !v.invalid && (v.served === false || v.checks === "unset");
 
 /** "Whose failure is it?": the evidence a red run gathered, in the order it was checked. */
 export function attribution(r: Pick<MergeRun, "steps" | "verdict" | "blame">): { question: string; answer: string; result: "ok" | "failed" | "skipped" | "running" }[] | null {

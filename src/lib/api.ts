@@ -1508,9 +1508,6 @@ export async function runRootVerb(root: string, verb: ServicesUiVerb, body: Reco
     throw err;
   }
 }
-/** Run the Project deploy playbook (§app.project-runtime/deploy-playbook): a verb playbook run that proposes a deploy recipe. */
-export const runDeploySetup = (projectId: string) =>
-  request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", { playbook: "project-deploy" }));
 /** A deploy verb as the operator (§app.project-services/deploy): a refusal is a result too, never thrown. */
 export async function runDeployVerb(root: string, verb: DeployVerb, body: Record<string, unknown>): Promise<VerbResult> {
   try {
@@ -1543,9 +1540,6 @@ export async function runReleaseVerb(project: string, verb: `release.${string}`,
     throw err;
   }
 }
-/** Set Up Releases: the Release playbook maker, a guided setup that proposes the project's release playbook and settings. */
-export const runReleaseSetup = (projectId: string) =>
-  request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", { playbook: "release-maker" }));
 /** A chat's merge queue cards: one per branch it owns, from its approval on (`session.merge-cards`). */
 export const getMergeCards = (sessionId: string) => request<{ cards: import("../../shared/merge-queue").MergeCard[] }>(`/api/merge-queue/cards?session=${encodeURIComponent(sessionId)}`);
 /** Every project's queue and releases in one quick read: the landing bar's starting picture (page open, reconnect). */
@@ -1553,8 +1547,22 @@ export const getLandingSummary = () => request<import("../../shared/merge-queue"
 /** What runs on this host now, every project's (Running branches on `#/projects`). */
 export const getHostServices = () => request<HostServicesView>("/api/services");
 export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);
-/** Merge Branch on a proposed playbook run (§app.project-runtime/merge): the hash shown; a refused merge's error says why. */
-export const mergeProjectRun = (projectId: string, hash: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/merge`, jsonInit("POST", { hash }));
+/** Merge Branch on a proposed playbook run (§app.project-runtime/merge): the hash shown (and the Setup chat's, the commit
+    its proposal was read at); a refused merge's error says why. */
+export const mergeProjectRun = (projectId: string, hash: string, commit?: string) =>
+  request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/merge`, jsonInit("POST", commit ? { hash, commit } : { hash }));
+/** A project's Setup chat (the one standing chat that sets up its merge queue, releases and deploys): its state and its
+    branch's proposal, and whether it may open now. */
+export const getSetupChat = (projectId: string) =>
+  request<import("../../shared/setup-chat").SetupStatus>(`${projectPath(projectId)}/setup`);
+/** Opens the project's Setup chat, starting it the first time; `from`: the part the user came from (the chat starts
+    there). `fresh`: Start Fresh (this chat is archived once its turn ends; the next open starts a new one). */
+export const openSetupChat = (projectId: string, opts: { from?: "merge-queue" | "releases" | "deploy" | "settings"; fresh?: boolean } = {}) =>
+  request<import("../../shared/setup-chat").SetupOpened>(`${projectPath(projectId)}/setup`, jsonInit("POST", { ...(opts.from ? { from: opts.from } : {}), ...(opts.fresh ? { fresh: true } : {}) }));
+/** Land or Merge Branch on the Setup chat's proposal (the user's own page only): the hash and commit the card read.
+    `queued`: the branch joined the merge queue (a served project); else it was merged. A 409 says why not. */
+export const mergeSetupProposal = (projectId: string, hash: string, commit: string) =>
+  request<{ queued: boolean; setup: import("../../shared/setup-chat").SetupStatus }>(`${projectPath(projectId)}/setup/merge`, jsonInit("POST", { hash, commit }));
 /** Run the Project verbs playbook on the project: a coding session on its own branch. */
 export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
   request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));

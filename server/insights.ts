@@ -1441,8 +1441,13 @@ export async function getHiddenWorkers(path: string): Promise<SessionHiddenWorke
 
 async function worktreeRows(facts: SessionFacts, workers: WorkerInfo[] | null, path: string): Promise<Pick<SessionInsight, "worktrees">> {
   if (!facts.worktrees?.trees.length) return {};
+  // A merge queue chat's own trees are the conflicts' scratch copies the thread made itself: never work to land or
+  // clean up from its Worktrees section.
+  const { queueChatOf } = await import("./sessions-index");
+  const set = (await queueChatOf(path).catch(() => undefined)) ? { ...facts.worktrees, trees: facts.worktrees.trees.filter((t) => t.how !== "created") } : facts.worktrees;
+  if (!set.trees.length) return {};
   const cwds = workerCwds(facts.workerRecords.all);
-  const rows = await describeWorktrees(facts.worktrees, facts.sessionId, (workers ?? []).map((w) => ({ status: w.status, cwd: cwds.get(w.id) })));
+  const rows = await describeWorktrees(set, facts.sessionId, (workers ?? []).map((w) => ({ status: w.status, cwd: cwds.get(w.id) })));
   // Each row's merge readiness, as the session list last read it (§chat.worktrees/readiness).
   if (!rows) return {};
   const trees = facts.worktrees.trees;

@@ -1,10 +1,10 @@
-// Removing one worktree forgets only that one (Remove Worktree, a deploy's fresh checkout, a
+// Removing one worktree forgets only that one (Remove Worktree, a deploy's fresh checkout, a merge scratch copy, a
 // conformance run's scratch copies): never a bare `git worktree prune`, which forgets every
 // worktree whose folder is missing. Real git in throwaway repositories; each case has two
 // worktrees whose folders are gone, removes one, and the other is still in git's list.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -80,3 +80,66 @@ test("removing a conformance run's scratch copies forgets those only", async () 
   assert.deepEqual(listed(root), [root, paths[2]], "someone else's missing worktree is still listed");
   assert.equal(sh(root, "branch", "--list", "sova/conform-r1-*"), "");
 });
+
+/** A scratch copy's case: `root`, and another worktree of the repository whose folder is gone. */
+function withOtherGone(tag: string): { root: string; other: string; base: string; entry: string } {
+  const root = repo();
+  const other = join(tmp, `wt-${tag}-${n}`);
+  sh(root, "worktree", "add", "-q", "-b", `sova/${tag}`, other);
+  rmSync(other, { recursive: true, force: true });
+  return { root, other, base: sh(root, "rev-parse", "HEAD"), entry: `mq_${tag}${n}` };
+}
+const sorted = (paths: string[]) => [...paths].sort();
+
+test("making a merge scratch copy over a stale record of its own path forgets that record only", async () => {
+  const { makeScratchCopy, scratchCopyPath, isScratchCopy, scratchCopiesIn } = await import("./merge-queue/scratch");
+  const { realGit } = await import("./merge-queue/guard");
+  const { root, other, base, entry } = withOtherGone("makestale");
+  // An interrupted cut: the copy's record is there, its folder isn't. Its folder is one of the two that are gone.
+  const path = scratchCopyPath(root, entry);
+  sh(root, "worktree", "add", "-q", "--detach", path);
+  rmSync(path, { recursive: true, force: true });
+  assert.equal(await makeScratchCopy(realGit, { root, entry, base }), path);
+  assert.deepEqual(sorted(listed(root)), sorted([root, other, path]), "one record of the copy, and the other missing worktree is still listed");
+  assert.ok(isScratchCopy(path), "the new copy is the queue's");
+  assert.deepEqual(scratchCopiesIn(join(root, ".git")).map((c) => c.path), [path]);
+});
+
+test("making a merge scratch copy with no record of its own forgets nothing else", async () => {
+  const { makeScratchCopy, scratchCopyPath } = await import("./merge-queue/scratch");
+  const { realGit } = await import("./merge-queue/guard");
+  const { root, other, base, entry } = withOtherGone("makefresh");
+  const second = join(tmp, `wt-second-${n}`);
+  sh(root, "worktree", "add", "-q", "-b", `sova/second-${n}`, second);
+  rmSync(second, { recursive: true, force: true });
+  const path = await makeScratchCopy(realGit, { root, entry, base });
+  assert.equal(path, scratchCopyPath(root, entry));
+  assert.deepEqual(sorted(listed(root)), sorted([root, other, second, path]));
+});
+
+test("replacing a merge scratch copy forgets only the copy it replaces", async () => {
+  const { makeScratchCopy } = await import("./merge-queue/scratch");
+  const { realGit } = await import("./merge-queue/guard");
+  const { root, other, base, entry } = withOtherGone("replace");
+  const path = await makeScratchCopy(realGit, { root, entry, base });
+  await makeScratchCopy(realGit, { root, entry, base });
+  assert.deepEqual(sorted(listed(root)), sorted([root, other, path]));
+});
+
+for (const [how, gone] of [
+  ["its folder is gone", (p: string) => rmSync(p, { recursive: true, force: true })],
+  ["git refuses it (its .git file is gone)", (p: string) => rmSync(join(p, ".git"))],
+  ["its folder is whole", () => {}],
+] as const) {
+  test(`dropping a merge scratch copy when ${how} forgets that copy only`, async () => {
+    const { dropScratch, makeScratchCopy, scratchCopiesIn } = await import("./merge-queue/scratch");
+    const { realGit } = await import("./merge-queue/guard");
+    const { root, other, base, entry } = withOtherGone(`drop${how.length}`);
+    const path = await makeScratchCopy(realGit, { root, entry, base });
+    gone(path);
+    assert.equal((await dropScratch(realGit, root, entry)).copy, true, "the copy is cleaned up");
+    assert.ok(!existsSync(path), "its folder is gone");
+    assert.deepEqual(sorted(listed(root)), sorted([root, other]), "the other missing worktree is still listed");
+    assert.deepEqual(scratchCopiesIn(join(root, ".git")), [], "its record went with it");
+  });
+}

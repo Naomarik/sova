@@ -510,11 +510,18 @@ async function threadVerbDeps(served: { projectIdOf(root: string): string | null
 let owners: WorktreeOwners | null = null;
 /** The chat a worktree's branch belongs to (owners.ts), the rule Ready rows and Land share. */
 export async function worktreeOwnerOf(worktree: string): Promise<Owner | null> {
+  return (await ownersNow()).ownerOf(worktree);
+}
+async function ownersNow(): Promise<WorktreeOwners> {
   if (!owners) {
     const [{ listSessions }, { trackedWorktrees }] = await Promise.all([import("../sessions-index"), import("../merge-readiness")]);
     owners = new WorktreeOwners({ sessions: () => listSessions(), tracked: trackedWorktrees, canonical });
   }
-  return owners.ownerOf(worktree);
+  return owners;
+}
+/** A worktree one of the merge queue's own chats created (owners.ts queueMade): never on a list you land from. */
+export async function worktreeQueueMade(worktree: string): Promise<boolean> {
+  return (await ownersNow()).queueMade(worktree);
 }
 
 /** A worktree row's owner: its chat's id, file, title and archived mark. */
@@ -680,7 +687,7 @@ export async function startMergeQueue(
       ev.kind === "queued"
         ? { kind: "queued" as const, entry, ...base }
         : ev.kind === "conflict"
-          ? { kind: "conflict" as const, entry, run: ev.run ?? "", files: ev.files ?? [], ...base }
+          ? { kind: "conflict" as const, entry, run: ev.run ?? "", files: ev.files ?? [], ...base, ...(ev.scratch ? { scratch: ev.scratch } : {}), ...(ev.scratchError ? { scratchError: ev.scratchError } : {}) }
           : ev.kind === "failed"
             ? { kind: "failed" as const, entry, run: ev.run ?? "", ...(ev.why ? { summary: ev.why } : {}), ...base }
             : ev.kind === "paused"
@@ -808,6 +815,8 @@ export async function startMergeQueue(
     pruneSummaries: (root, live, shown) => void bs.prune(root, live, shown),
     // The branch's chat (owners.ts): the Ready rows show it, and a Land naming no chat records it.
     ownerOf: async (_root, _branch, worktree) => (worktree ? worktreeOwnerOf(worktree) : null),
+    // A conflict's scratch copy the merge thread made itself (old style): hidden from Ready, refused by Land.
+    queueMade: (worktree) => worktreeQueueMade(worktree),
     thread,
     draftsHash: (dir) => draftsHash(dir),
     // A branch sent back for its drafts: Sova's docs check of them, the one readiness runs (one cache).

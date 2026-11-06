@@ -10,6 +10,7 @@ import { WorktreeOwners } from "./owners";
 import { BranchSummaries, readBranchFacts } from "./branch-summaries";
 import { realGit } from "./guard";
 import { SummarySweep } from "./summary-sweep";
+import { makeScratchCopy } from "./scratch";
 import type { SessionSummary } from "../../shared/protocol";
 
 /** Landed, and its push answered (pushed or not). */
@@ -1490,6 +1491,38 @@ describe("the view's extras", () => {
       await q.view({ fresh: true });
       await q.view({ fresh: true });
       assert.equal(asked, 3);
+    } finally {
+      await k.done();
+    }
+  });
+  test("the sweep never writes bullets for the queue's own copies: a scratch copy on a branch, or one the merge thread made itself", async () => {
+    const written: string[] = [];
+    let summaries: BranchSummaries | null = null;
+    const made = new Set<string>();
+    const k = makeKit({ deps: { summaryOf: (root, branch, commit) => summaries!.summaryOf(root, branch, commit), queueMade: async (p) => made.has(p) } });
+    try {
+      const q = await k.q();
+      summaries = new BranchSummaries({
+        fileOf: () => join(q.store.dir, "branch-summaries.json"),
+        facts: async (root, branch, commit) => readBranchFacts(realGit, root, { branch, commit, target: q.target, targetHead: (await q.declared()).head ?? "" }),
+        writer: () => async (prompt) => (written.push(prompt), { bullets: ["Adds a file"], model: "prov/a" }),
+        projectOf: () => "p1",
+        changed: () => q.republish(),
+      });
+      await q.pause("hold");
+      const mine = k.repo.branch("feat/mine", { "m.txt": "m\n" });
+      const old = k.repo.branch("feat/resolve-mq_old2", { "o.txt": "o\n" });
+      made.add(old.path);
+      // A scratch copy the queue made, put on a branch ahead of master.
+      const copy = await makeScratchCopy(realGit, { root: k.repo.root, entry: "mq_sweep1", base: k.repo.head() });
+      k.repo.commitOn(copy, { "s.txt": "s\n" }, "in the copy");
+      sh(copy, "switch", "-q", "-c", "feat/in-copy");
+      const sweep = new SummarySweep({ roots: () => [q.root], readyOf: () => q.readyRows(), targetHead: async () => (await q.declared()).head || null, chatIdle: async () => true, summaries });
+      await sweep.tick();
+      await until(async () => written.length >= 1 && !summaries!.isWriting(q.root, mine.head), "the user's branch written");
+      await sweep.tick();
+      assert.equal(written.length, 1, "one model call: the user's branch alone, none for a queue copy");
+      assert.match(written[0]!, /m\.txt/, "it is the user's branch");
     } finally {
       await k.done();
     }

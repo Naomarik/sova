@@ -186,7 +186,7 @@ test("the comparison is cached until HEAD or the base moves; dirty is re-read af
   assert.equal(ins.computeCount, 1);
   assert.equal(t.ahead, 1);
   assert.ok(!calls.some((a) => a[0] === "status"), "dirty within its TTL is not re-read");
-  assert.ok(!calls.some((a) => a[0] === "rev-list" || a[0] === "merge-tree" || a[0] === "diff-tree"));
+  assert.ok(!calls.some((a: string[]) => a[0] === "rev-list" || a.includes("merge-tree") || a[0] === "diff-tree"));
 
   now += 20_000;
   writeFileSync(join(wt, "b.txt"), "x\nmore\n");
@@ -829,10 +829,10 @@ test("merge drivers (§app/idle-git-cache): an unchanged branch's repeated check
   const changed = await ins.treeStatus(wt);
   assert.equal(changed?.merged, "content", "a change to the driver's code alone changes the answer");
   assert.equal(changed?.conflicts, undefined);
-  assert.ok(calls.some((a) => a[0] === "merge-tree"));
+  assert.ok(calls.some((a: string[]) => a.includes("merge-tree")));
   calls.length = 0;
   await ins.treeStatus(wt);
-  assert.ok(!calls.some((a) => a[0] === "merge-tree"), "and is reused again");
+  assert.ok(!calls.some((a: string[]) => a.includes("merge-tree")), "and is reused again");
 
   git(r, "config", "merge.drv.driver", "false %A");
   assert.equal((await ins.treeStatus(wt))?.conflicts, 1, "a changed driver command reads it again");
@@ -856,7 +856,7 @@ test("merge drivers: a relative driver is each worktree's own copy, and a workin
   writeFileSync(join(wt, "sub", ".gitattributes"), "* merge=drv\n");
   calls.length = 0;
   assert.equal((await ins.treeStatus(wt))?.conflicts, 1, "attributes in a folder no changed path is in");
-  assert.ok(!calls.some((a) => a[0] === "merge-tree"), "can't change the answer, and don't read it again");
+  assert.ok(!calls.some((a: string[]) => a.includes("merge-tree")), "can't change the answer, and don't read it again");
   writeFileSync(join(wt, ".gitattributes"), "a.txt merge=drv\n");
   assert.equal((await ins.treeStatus(wt))?.merged, "content");
 });
@@ -973,7 +973,7 @@ test("more trees than the old bound: a second look runs no Git (they are never r
     if (args[0] === "log") return done("a commit\n");
     if (args[0] === "merge-base" && args.includes("--is-ancestor")) return done("", 1);
     if (args[0] === "merge-base") return done(`${oid("b")}\n`);
-    if (args[0] === "merge-tree") return done(`${oid("c")}\n`);
+    if (args.includes("merge-tree")) return done(`${oid("c")}\n`);
     if (args[0] === "rev-list") return done("0\t1\n");
     if (args[0] === "config") return done("", 1);
     return done("");

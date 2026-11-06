@@ -109,3 +109,25 @@ describe("the owners' index", () => {
     assert.equal(walks, 2);
   });
 });
+
+describe("a worktree one of the merge queue's own chats made", () => {
+  test("queueMade: created by a queue chat (the merge thread's own scratch copy); never one it only attached, nor a user's", async () => {
+    const OLD = "/w/.worktrees/proj-resolve-mq_1";
+    const ATT = "/w/.worktrees/proj-attached";
+    const trees: [string, TrackedWorktree[]][] = [
+      ["/s/T.jsonl", [{ path: OLD, status: "active", how: "created" } as TrackedWorktree, { path: ATT, status: "active", how: "attached" } as TrackedWorktree]],
+      ["/s/A.jsonl", [{ path: WT, status: "active", how: "created" } as TrackedWorktree, { path: ATT, status: "active", how: "created" } as TrackedWorktree]],
+    ];
+    const owners = new WorktreeOwners({
+      sessions: async () => [row("T", "/w/proj", 5, { queueChat: { role: "thread" } }), row("A", "/w/proj", 60)],
+      tracked: () => ({ version: 1, each: () => trees }),
+      canonical: (p) => p,
+    });
+    assert.equal(await owners.queueMade(OLD), true);
+    assert.equal(await owners.queueMade(WT), false, "a user's chat made it");
+    assert.equal(await owners.queueMade(ATT), false, "the thread only attached it");
+    assert.equal(await owners.queueMade("/w/.worktrees/nobody"), false);
+    // And it owns no branch, as before: the scratch copy reads as no one's.
+    assert.equal(await owners.ownerOf(OLD), null);
+  });
+});

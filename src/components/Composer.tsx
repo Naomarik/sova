@@ -52,7 +52,7 @@ import {
   setDraftAttachments,
   setDraftText,
 } from "../lib/ui-state";
-import { paneScopedId, usePaneAnnounce, usePaneScope } from "../lib/pane-scope";
+import { paneScopedId, usePaneAnnounce, usePaneScope, usePaneUnannounce } from "../lib/pane-scope";
 import { inputsText } from "../lib/input-count";
 import { createWaiting, WaitingBadge, type WaitingSource } from "./WaitingBadge";
 import { runStatusEnd } from "../lib/run-status";
@@ -317,6 +317,14 @@ export function Composer(props: {
   const scope = usePaneScope();
   const paneId = (base: string) => paneScopedId(scope, base);
   const announce = usePaneAnnounce();
+  const unannounce = usePaneUnannounce();
+  // A shell reason said aloud goes with it from the screen: the live region never keeps a reason
+  // the line under the box no longer shows (connected, the command changed, the mode left).
+  createEffect(
+    on(shellReason, (now, before) => {
+      if (before && before !== now) unannounce(before);
+    }),
+  );
   /** Dictation into this box (§chat/voice): the mic in the row, its strip above it. */
   const voice = createVoiceInput({
     input: () => input,

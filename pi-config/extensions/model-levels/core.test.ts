@@ -8,6 +8,9 @@ import {
 	LOCK_FILE,
 	STALE_MS,
 	applyModelLevels,
+	checkListedProvider,
+	checkServerProvider,
+	DEFAULT_MAX_TOKENS,
 	fetchProvider,
 	fromModelsDev,
 	fromOllama,
@@ -315,4 +318,146 @@ test("refreshStale: a failed fetch keeps the last cache and isn't retried at onc
 	assert.ok(tries > 0);
 	assert.deepEqual(await refreshStale({ agentDir: dir, env: TUI, fetch, now: () => STALE_MS * 2 + 1000, modelsDev: async () => ({}) }), []);
 	assert.equal(log.length, tries, "backed off");
+});
+
+// ---------------------------------------------------------------- the server's check, discovered models
+
+const OC = "ollama-cloud";
+const ORIGIN = "https://ollama.com";
+
+test("overlay: discovered models join a SERVER_CHECKED provider named `<id> (<name>)`; models.json wins; retired drop", () => {
+	const cached: CachedProvider = {
+		...CACHED,
+		models: { ...CACHED.models, fresh: { source: "ollama", values: [false, "low", "high"], capabilities: ["completion", "thinking"] }, gone: { source: "ollama", retired: true } },
+		discovered: {
+			fresh: { firstSeenAt: 9, contextWindow: 200000, maxTokens: 64000, input: ["text", "image"] },
+			gone: { firstSeenAt: 9, contextWindow: 1, maxTokens: 1, input: ["text"] },
+			ds: { firstSeenAt: 9, contextWindow: 7, maxTokens: 7, input: ["text"] },
+		},
+	};
+	const plain = overlayProvider(RAW, composedOf(RAW), cached)!;
+	assert.ok(!plain.models.some((m) => m.id === "fresh"), "no label: a provider's list stays models.json's");
+	const o = overlayProvider(RAW, composedOf(RAW), cached, "Ollama Cloud")!;
+	const by = Object.fromEntries(o.models.map((m) => [m.id as string, m as Record<string, any>]));
+	assert.deepEqual(Object.keys(by), ["ds", "glm", "hand", "plain", "unknown", "fresh"], "models.json's first, then discovered; retired left out");
+	assert.equal(by.fresh.name, "fresh (Ollama Cloud)");
+	assert.equal(by.fresh.contextWindow, 200000);
+	assert.equal(by.fresh.maxTokens, 64000);
+	assert.deepEqual(by.fresh.input, ["text", "image"]);
+	assert.equal(by.fresh.api, "openai-completions");
+	assert.equal(by.fresh.compat.supportsDeveloperRole, false, "the provider's settings");
+	assert.deepEqual(levels(by.fresh), ["off", "low", "high"]);
+	assert.equal(by.ds.contextWindow, 1000, "models.json's entry is the model, not the discovered record");
+
+	// Registered, then applied again: nothing to change, and the guard doesn't mistake them for a built-in base.
+	const registered = o.models.map((m) => ({ ...m, provider: OC })) as unknown as ComposedModel[];
+	assert.equal(overlayProvider(RAW, registered, cached, "Ollama Cloud")!.changed, false);
+	// models.json now lists it: that entry wins, rebuilt from models.json, not the discovered base.
+	const raw2 = { ...RAW, models: [...RAW.models!, { id: "fresh", name: "Fresh by hand", contextWindow: 5 }] };
+	const o2 = overlayProvider(raw2, registered, cached, "Ollama Cloud")!;
+	const f2 = o2.models.find((m) => m.id === "fresh") as Record<string, any>;
+	assert.equal(f2.name, "Fresh by hand");
+	assert.equal(f2.contextWindow, 5);
+	assert.equal(o2.models.filter((m) => m.id === "fresh").length, 1);
+	// A model pi lists that neither names is still a built-in base.
+	assert.equal(overlayProvider(RAW, [...registered, { id: "builtin-only", provider: OC, api: "x", baseUrl: "y" }], cached, "Ollama Cloud"), undefined);
+});
+
+const show = (caps: string[], extra: Record<string, unknown> = {}) => ({ status: 200, body: { capabilities: caps, ...extra } });
+
+test("checkListedProvider: new listed models with completion and a context size join; limits from models.dev else 32768", async () => {
+	const raw: RawProvider = { baseUrl: "https://ollama.com/v1", models: [{ id: "known" }, { id: "dying" }] };
+	const previous: CachedProvider = { fetchedAt: 1, baseUrl: raw.baseUrl!, models: { known: { source: "ollama", values: [true] } }, discovered: { old: { firstSeenAt: 3, contextWindow: 10, maxTokens: 10, input: ["text"] } } };
+	const fetch = fakeFetch({
+		[`${ORIGIN}/api/tags`]: { status: 200, body: { models: ["known", "a", "b", "embed", "noctx", "devctx", "gone2"].map((name) => ({ name })) } },
+		[`${ORIGIN}/api/show known`]: show(["completion", "thinking"], { thinking: { values: [false, "high"] } }),
+		[`${ORIGIN}/api/show dying`]: { status: 410, body: { error: "dying was retired" } },
+		[`${ORIGIN}/api/show a`]: show(["completion", "thinking", "vision"], { thinking: { values: ["low", "high"] }, model_info: { "x.context_length": 262144 } }),
+		[`${ORIGIN}/api/show b`]: show(["completion"], { model_info: { "y.context_length": 131072 } }),
+		[`${ORIGIN}/api/show embed`]: show(["embedding"], { model_info: { "z.context_length": 8192 } }),
+		[`${ORIGIN}/api/show noctx`]: show(["completion"]),
+		[`${ORIGIN}/api/show devctx`]: show(["completion"]),
+		[`${ORIGIN}/api/show gone2`]: { status: 404, body: { error: "gone2 was retired" } },
+		[`${ORIGIN}/api/show old`]: show(["completion"]),
+	});
+	const modelsDev = async () => ({ oc: { api: "https://ollama.com/v1", models: { a: { limit: { context: 1, output: 65536 } }, devctx: { limit: { context: 50000 } } } } });
+	const got = await checkListedProvider(raw, previous, { fetch, now: 100, modelsDev });
+	assert.deepEqual(got.added.sort(), ["a", "b", "devctx"]);
+	assert.deepEqual(got.provider.discovered!.a, { firstSeenAt: 100, contextWindow: 262144, maxTokens: 65536, input: ["text", "image"] }, "Ollama's context first; models.dev's output");
+	assert.deepEqual(got.provider.discovered!.b, { firstSeenAt: 100, contextWindow: 131072, maxTokens: DEFAULT_MAX_TOKENS, input: ["text"] });
+	assert.equal(got.provider.discovered!.devctx.contextWindow, 50000, "models.dev's context when Ollama gives none");
+	assert.equal(got.provider.discovered!.noctx, undefined, "no context size: not yet");
+	assert.equal(got.provider.discovered!.embed, undefined, "no completion: never");
+	assert.equal(got.provider.discovered!.gone2, undefined, "retired: never added");
+	assert.deepEqual(got.provider.discovered!.old, previous.discovered!.old, "an earlier discovery keeps its first-seen time");
+	assert.deepEqual(got.retired, ["dying"]);
+	assert.deepEqual(got.provider.models.a.values, ["low", "high"]);
+	// The next check: noctx still has no context; nothing is new again.
+	const again = await checkListedProvider(raw, got.provider, { fetch, now: 200, modelsDev });
+	assert.deepEqual(again.added, []);
+	assert.deepEqual(again.retired, [], "already retired: not news");
+	assert.equal(again.provider.discovered!.a.firstSeenAt, 100);
+});
+
+test("checkListedProvider: unreachable or an error answer throws a reason", async () => {
+	const raw: RawProvider = { baseUrl: "https://ollama.com/v1", models: [{ id: "k" }] };
+	await assert.rejects(checkListedProvider(raw, undefined, { fetch: fakeFetch({}), now: 1, modelsDev: async () => ({}) }), /couldn't reach ollama.com/);
+	await assert.rejects(
+		checkListedProvider(raw, undefined, { fetch: fakeFetch({ [`${ORIGIN}/api/tags`]: { status: 503, body: {} } }), now: 1, modelsDev: async () => ({}) }),
+		/ollama.com answered 503/,
+	);
+});
+
+test("checkServerProvider: records success and failure in the file, keeps the last list on failure, tells listeners", async () => {
+	const dir = scratch();
+	writeJson(path.join(dir, "models.json"), { providers: { [OC]: { baseUrl: "https://ollama.com/v1", models: [{ id: "k" }] }, lo: { baseUrl: "http://localhost:11434/v1", models: [{ id: "q" }] } } });
+	writeJson(path.join(dir, CACHE_FILE), { v: 1, providers: { lo: { fetchedAt: 4, baseUrl: "http://localhost:11434/v1", models: {} } } });
+	const fetch = fakeFetch({
+		[`${ORIGIN}/api/tags`]: { status: 200, body: { models: [{ name: "k" }, { name: "n" }] } },
+		[`${ORIGIN}/api/show k`]: show(["completion"]),
+		[`${ORIGIN}/api/show n`]: show(["completion"], { model_info: { "n.context_length": 4096 } }),
+	});
+	const { onLevelsUpdated } = await import("./core.ts");
+	let told = 0;
+	const off = onLevelsUpdated(() => told++);
+	try {
+		const ok = await checkServerProvider({ agentDir: dir, provider: OC, fetch, now: () => 1000, modelsDev: async () => ({}) });
+		assert.deepEqual(ok, { at: 1000, ok: true, added: ["n"], retired: [] });
+		const cache = readCache(dir)!;
+		assert.equal(cache.providers.lo.fetchedAt, 4, "other providers kept");
+		assert.equal(cache.providers[OC].discovered!.n.contextWindow, 4096);
+		assert.deepEqual(cache.checks![OC], ok);
+		const bad = await checkServerProvider({ agentDir: dir, provider: OC, fetch: fakeFetch({}), now: () => 2000, modelsDev: async () => ({}) });
+		assert.equal(bad.ok, false);
+		assert.match(bad.error!, /couldn't reach/);
+		assert.equal(bad.retryAt, 2000 + 60 * 60 * 1000);
+		const after = readCache(dir)!;
+		assert.deepEqual(after.providers[OC], cache.providers[OC], "the last list stays");
+		assert.deepEqual(after.checks![OC], bad);
+		assert.equal(told, 2);
+	} finally {
+		off();
+	}
+});
+
+test("refreshStale never fetches a SERVER_CHECKED provider, and keeps the server's records when it writes", async () => {
+	const dir = scratch();
+	writeJson(path.join(dir, "models.json"), { providers: { [OC]: { baseUrl: "https://ollama.com/v1", models: [{ id: "g" }] }, oc: { baseUrl: "https://ollama.com/v1", models: [{ id: "g" }] } } });
+	const check = { at: 1, ok: true, added: ["z"], retired: [] };
+	const disc = { z: { firstSeenAt: 1, contextWindow: 9, maxTokens: 9, input: ["text"] } };
+	writeJson(path.join(dir, CACHE_FILE), { v: 1, providers: { [OC]: { fetchedAt: 0, baseUrl: "https://ollama.com/v1", models: {}, discovered: disc } }, checks: { [OC]: check } });
+	const log: string[] = [];
+	const fetch = fakeFetch(
+		{
+			"https://ollama.com/api/tags": { status: 200, body: {} },
+			"https://ollama.com/api/show g": { status: 200, body: { thinking: { values: ["low", "high"] }, capabilities: ["thinking"] } },
+		},
+		log,
+	);
+	assert.deepEqual(await refreshStale({ agentDir: dir, env: TUI, fetch, now: () => STALE_MS * 5 }), ["oc"]);
+	const cache = readCache(dir)!;
+	assert.equal(cache.providers[OC].fetchedAt, 0, "ollama-cloud untouched");
+	assert.deepEqual(cache.providers[OC].discovered, disc);
+	assert.deepEqual(cache.checks![OC], check);
+	assert.equal(log.filter((l) => l.includes("show")).length, 1, "only oc's model was asked for");
 });

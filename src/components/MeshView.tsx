@@ -61,13 +61,13 @@ const CHIP_TONE = { up: "success", skewed: "warn", down: "error" } as const;
 /** A peer's state in a word as well as a colour; the reason rides the title. */
 /**
  * The Claude login a device holds from the pool (§app.claude-logins/pool), or "No Claude login",
- * on the host's meta line; it opens Settings → Accounts. An email is not a chip word, so it is text.
+ * on the host's meta line; it opens Settings → Accounts → Claude. An email is not a chip word, so it is text.
  */
 function ClaudeLoginChip(props: { pool: ClaudePoolInfo; device: string }) {
   const chip = () => deviceLoginChip(props.pool, props.device);
   return (
     <p class="list-meta">
-      <button type="button" class="mesh-login-link" title={chip().title} onClick={() => openSettings("accounts")}>
+      <button type="button" class="mesh-login-link" title={chip().title} onClick={() => openSettings("accounts", null, { account: "claude" })}>
         {chip().text}
       </button>
     </p>

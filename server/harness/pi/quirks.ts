@@ -528,6 +528,19 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi takes the login method as an option and reports a refused method as its own error",
   },
   {
+    id: "P38",
+    name: "api-key-login",
+    kind: "semantic",
+    relies: "A provider's api-key login (pi-ai's `envApiKeyAuth`) prompts once with `type: \"secret\"` and stores `{ type: \"api_key\", key }` under the provider's id by a modify under pi's lock; `ModelRuntime.logout` deletes only that entry; a provider that takes a key carries `auth.apiKey.login` in `getProviders()`, models.json's included; `readStoredCredential` reads the entry without resolving it.",
+    pi: ["ModelRuntime.login", "ModelRuntime.logout", "ModelRuntime.getProviders", "readStoredCredential", "pi-ai `envApiKeyAuth`"],
+    where: [
+      { file: "server/harness/pi/sign-in.ts", symbol: "piProviderKeys" },
+      { file: "server/harness/pi/sign-in.ts", symbol: "storedKeyOf" },
+    ],
+    canary: "P38 api-key-login: the api-key login asks one secret prompt and stores the key under the provider, logout removes only that entry, and the key providers carry an api-key login",
+    retireWhen: "pi exports a store-a-key call (AuthStorage or a ModelRuntime method that persists)",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

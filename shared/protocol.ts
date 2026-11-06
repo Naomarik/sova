@@ -2602,7 +2602,8 @@ export interface ShellRun extends ShellOutcome {
     extension's command hook failed before it could start;
     `busy` = a terminal owns the session; `recent` = an unknown process wrote it (reconnect with force);
     `unavailable` = this chat has no shell mode (the Overseer, a project overseer or assistant, a gathering
-    session), or the chat is closing; `empty` = no command. */
+    session), the chat is closing, or the socket is neither the page's nor a peer's (a script's, a chat's, an
+    extension's, the Overseer's: §chat.shell-mode/who); `empty` = no command. */
 export type ShellRefusal = "running" | "kill-guard" | "sandbox" | "failed" | "busy" | "recent" | "unavailable" | "empty";
 
 /** Why a rewind was refused: busy = a TUI owns the session; recent = an unknown process wrote it

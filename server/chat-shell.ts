@@ -17,6 +17,8 @@ export const SHELL_CLOSE_WAIT_MS = 5_000;
 /** The refusal of a second command while one runs (t21). */
 export const SHELL_RUNNING_TEXT = "A command is already running in this chat.";
 export const SHELL_EMPTY_TEXT = "Type a command to run.";
+/** A `shell` frame from a socket that is neither the page nor a peer (server/ws.ts, §chat.shell-mode/who). */
+export const SHELL_NOT_PAGE_TEXT = "Only the message box can run a command. Ask the user to type it in shell mode in this chat's message box. Nothing ran.";
 
 /** Who may hear a refusal: the sender alone. */
 export interface ShellClient {

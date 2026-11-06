@@ -11,6 +11,7 @@ import { entryOfRow } from "../shared/row-counts";
 import type { ReplyTiming } from "../shared/usage/perf";
 import { factsFromMeta } from "../shared/wire-v1";
 import { v2Frames } from "./harness/pi/wire";
+import { legacyShellRow } from "./transcript";
 
 /** The wire a request asked for: 2 for `wire=2`, anything else (absent included) 1. */
 export const wireOf = (search: URLSearchParams | { get(name: string): string | null | undefined }): WireVersion =>
@@ -34,7 +35,9 @@ function factsOf(it: TranscriptItem, replies: ReplyLookup | undefined) {
 /** A row on `wire`: on wire 1 the row itself; on wire 2, a row with `meta` gets `facts` in its place
     (with the reply's timing from `replies`, when given). */
 export function rowFor(it: TranscriptItem, wire: WireVersion, replies?: ReplyLookup): TranscriptItem {
-  if (wire === 1 || it.meta === undefined) return it;
+  // A command's card row is wire 2's: wire 1 keeps the plain row it always had (§chat.shell-mode/card).
+  if (wire === 1) return it.kind === "shell" ? legacyShellRow(it) : it;
+  if (it.meta === undefined) return it;
   const out: Record<string, unknown> = {};
   // for-in, not Object.entries: a row is a plain object, so the same own keys in the same order, unallocated.
   for (const k in it) {
@@ -46,7 +49,7 @@ export function rowFor(it: TranscriptItem, wire: WireVersion, replies?: ReplyLoo
 
 /** Rows on `wire` (the same array on wire 1). */
 export const rowsFor = (items: TranscriptItem[], wire: WireVersion, replies?: ReplyLookup): TranscriptItem[] =>
-  wire === 1 ? items : items.map((it) => rowFor(it, 2, replies));
+  wire === 1 ? (items.some((it) => it.kind === "shell") ? items.map((it) => rowFor(it, 1)) : items) : items.map((it) => rowFor(it, 2, replies));
 
 type RowsMessage = { type: "hello" | "snapshot" | "append" | "history"; items: TranscriptItem[] };
 const ROWS_MESSAGES = new Set(["hello", "snapshot", "append", "history"]);
@@ -54,15 +57,19 @@ const ROWS_MESSAGES = new Set(["hello", "snapshot", "append", "history"]);
 /** A message's rows on `wire`: a hello, snapshot, append or history with its rows mapped (rowFor); any
     other message, and every message on wire 1, as it is. */
 export function withRows<M extends ChatServerMessage | WatchServerMessage>(msg: M, wire: WireVersion, replies?: ReplyLookup): M {
-  if (wire === 1 || !ROWS_MESSAGES.has(msg.type)) return msg;
+  if (!ROWS_MESSAGES.has(msg.type)) return msg;
   const m = msg as unknown as RowsMessage;
+  if (wire === 1) {
+    const items = rowsFor(m.items, 1);
+    return items === m.items ? msg : { ...msg, items };
+  }
   return { ...msg, items: rowsFor(m.items, 2, replies) };
 }
 
 /** What a chat message is on `wire`: on wire 2 a live event is its wire-2 frames (none, one or more),
     any other message its rows mapped; on wire 1 the message itself. */
 export function onWire(msg: ChatServerMessage, wire: WireVersion, replies?: ReplyLookup): (ChatServerMessage | V2EventFrame)[] {
-  if (wire === 1) return [onWire1(msg)];
+  if (wire === 1) return [withRows(onWire1(msg), 1)];
   if (msg.type === "event") return v2Frames(msg as V1EventFrame);
   return [withRows(msg, 2, replies)];
 }

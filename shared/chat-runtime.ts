@@ -125,6 +125,9 @@ export interface ChatStateMirror {
   special: ChatSpecialKind | null;
   /** A run is in progress. */
   running: boolean;
+  /** A command from shell mode runs, or ran and isn't saved yet (§chat.shell-mode/lifecycle): the chat isn't
+      quiet. Absent from an older chat process. */
+  shell?: boolean;
   compacting: boolean;
   /** A turn was handed to the agent and has not started yet. */
   starting: boolean;

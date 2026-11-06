@@ -5,7 +5,7 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P39 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P40 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
@@ -109,6 +109,8 @@ interface QuirkSessionOptions {
   beforeBuild?: (sm: any) => void;
   /** Keep pi's built-in tools (default: none). */
   builtinTools?: boolean;
+  /** The extensions' event bus (the loader's `eventBus`). */
+  eventBus?: unknown;
 }
 
 /** A real pi session the way Sova builds one (a resource loader, extensions bound), its turns on a
@@ -125,6 +127,7 @@ async function quirkSession(o: QuirkSessionOptions = {}) {
     extensionFactories: (o.extensions ?? []) as never,
     additionalExtensionPaths: o.extensionPaths ?? [],
     ...(o.appendSystemPrompt ? { appendSystemPromptOverride: o.appendSystemPrompt } : {}),
+    ...(o.eventBus ? { eventBus: o.eventBus as never } : {}),
   });
   await resourceLoader.reload();
   const sessionManager = o.file ? SessionManager.open(o.file, undefined, cwd) : SessionManager.inMemory(cwd);
@@ -1119,6 +1122,86 @@ describe("pi contract", () => {
     assert.deepEqual(asked.sort(), ["first", "second"], "createTransport builds both");
     assert.deepEqual(declared, ["mcp__second__t"], "the first request declares the swapped list");
     session.dispose();
+  });
+
+  test("P40 user-bash: executeBash emits no user_bash, runs the operations with the prefixed command, defers its record while streaming until the run settles, and cuts the tail at pi's limits; the loader's event bus is the extensions'", async () => {
+    const { sandboxBus, sandboxOf } = await import("./shell");
+    const { PI_SHELL_MAX_BYTES, PI_SHELL_MAX_LINES, shellTruncation } = await import("./reader");
+    const hooked: string[] = [];
+    const ran: string[] = [];
+    const ops = (lines: string[] = ["hi"]) => ({
+      exec: async (command: string, _cwd: string, o: { onData(d: Buffer): void }) => {
+        ran.push(command);
+        o.onData(Buffer.from(lines.join("\n")));
+        return { exitCode: 0 };
+      },
+    });
+    const sb = sandboxBus();
+    const { session, model } = await quirkSession({
+      settings: { shellCommandPrefix: "PREFIX" },
+      eventBus: sb.bus,
+      extensions: [
+        (api) => {
+          api.on("user_bash", (e: { command: string }) => void hooked.push(e.command));
+          api.events.emit("sandbox:state", { version: 1, on: true, scope: { worktreeRoots: ["/w"] } });
+        },
+      ],
+    });
+    sb.attach(session);
+    assert.deepEqual(sandboxOf(session), { on: true, scope: { worktreeRoots: ["/w"] } }, "the loader's bus is the one its extensions emit on");
+    const sm = session.sessionManager as any;
+    const bashEntries = () => sm.getEntries().filter((e: any) => e.type === "message" && e.message.role === "bashExecution");
+
+    // Idle: no user_bash from executeBash, the prefixed command reaches the operations, the record is written at once.
+    const idle = await session.executeBash("echo hi", undefined, { operations: ops() as never });
+    assert.deepEqual(hooked, [], "executeBash emits user_bash now: drop Sova's own emitUserBash call");
+    assert.deepEqual(ran, ["PREFIX\necho hi"], "the operations get the settings' prefix, then the command");
+    assert.equal(idle.exitCode, 0);
+    assert.equal(bashEntries().length, 1, "an idle record is written before executeBash resolves");
+    assert.equal(await session.extensionRunner.emitUserBash({ type: "user_bash", command: "x", excludeFromContext: false, cwd: "/" }), undefined);
+    assert.deepEqual(hooked, ["x"], "emitUserBash runs the handlers, and a handler returning nothing means run locally");
+
+    // Streaming: the record waits in the pending list, with no event, and is written before agent_settled.
+    const release = model.hold();
+    model.reply({ text: "done" });
+    const turn = session.prompt("go");
+    await until(() => session.isStreaming, "the reply to start");
+    await session.executeBash("echo mid", undefined, { operations: ops() as never });
+    assert.equal(session.hasPendingBashMessages, true, "a record made mid-stream is no longer deferred");
+    assert.equal((session as any)._pendingBashMessages.length, 1);
+    assert.equal(bashEntries().length, 1, "nothing written while the reply streams");
+    let atSettle = -1;
+    session.subscribe((e: any) => {
+      if (e.type === "agent_settled") atSettle = bashEntries().length;
+    });
+    release();
+    await turn;
+    assert.equal(atSettle, 2, "the deferred record is written before agent_settled");
+
+    // The saved output is the tail at pi's limits, and the cut tells which limit by the lines it kept.
+    assert.equal(pi.agent.DEFAULT_MAX_LINES, PI_SHELL_MAX_LINES);
+    assert.equal(pi.agent.DEFAULT_MAX_BYTES, PI_SHELL_MAX_BYTES);
+    const long = await session.executeBash("seq", undefined, { operations: ops(Array.from({ length: 2500 }, (_, i) => String(i))) as never });
+    assert.equal(long.truncated, true);
+    assert.equal(long.output.split("\n").length, PI_SHELL_MAX_LINES);
+    assert.deepEqual(shellTruncation(long.output), { by: "lines", max: PI_SHELL_MAX_LINES });
+    const wide = await session.executeBash("wide", undefined, { operations: ops(["x".repeat(30_000), "y".repeat(30_000)]) as never });
+    assert.equal(wide.truncated, true);
+    assert.deepEqual(shellTruncation(wide.output), { by: "bytes", max: PI_SHELL_MAX_BYTES });
+
+    // dispose stops a running command (its operations see the abort).
+    let aborted = false;
+    const running = session.executeBash("sleep", undefined, {
+      operations: {
+        exec: (_c: string, _d: string, o: { signal?: AbortSignal }) =>
+          new Promise((_r, reject) => o.signal?.addEventListener("abort", () => ((aborted = true), reject(new Error("aborted"))))),
+      } as never,
+    });
+    await until(() => session.isBashRunning, "the command to run");
+    session.dispose();
+    const stopped = await running;
+    assert.equal(aborted, true, "dispose no longer aborts a running command");
+    assert.equal(stopped.cancelled, true);
   });
 
   test("P36 mcp-http-transport: a url server's transport gets pi's auth provider, which reads the store and refreshes with an escaped secret literally; pi-mcp's HTTP client sends headers as given and reports a dropped session", async () => {

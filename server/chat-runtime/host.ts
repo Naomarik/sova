@@ -885,12 +885,13 @@ export class ChatRuntimeHost {
     return this.clients.size + (this.orphaned ? 1 : 0);
   }
 
-  /** Nothing in flight: no run, compaction, start, queue, dialog, working worker, server call or
-      action, unacked run fact or wait-ask. For a reload, only a worker inside this process counts:
-      the rest run in processes of their own and are reattached (§app.chat-processes/code-pickup). */
+  /** Nothing in flight: no run, command from shell mode, compaction, start, queue, dialog, working worker,
+      server call or action, unacked run fact or wait-ask. For a reload, only a worker inside this process
+      counts: the rest run in processes of their own and are reattached (§app.chat-processes/code-pickup). */
   private quietOf(m: ChatStateMirror, reload = false, unlinked = false): boolean {
     return (
       !m.running &&
+      !m.shell &&
       !m.compacting &&
       !m.starting &&
       m.queue.web === 0 &&

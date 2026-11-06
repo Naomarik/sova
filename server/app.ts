@@ -1454,6 +1454,8 @@ export function buildApp(deps: AppDeps) {
       putBackDraft(idOf(path), framesDraft(frames));
       return refusedAnswer(c, refused);
     }
+    // Only shell-mode frames, all dropped: nothing to deliver, so the chat isn't opened for it.
+    if (!frames.length) return c.json({ accepted: 0 }, 202);
     sessionsChanged();
     deliverFrames(path, frames, notPage(c));
     return c.json({ accepted: frames.length }, 202);

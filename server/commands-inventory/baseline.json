@@ -562,7 +562,7 @@
     "PUT /api/visitor-logging": {"need":"admin","is":"opted-out"},
     "PUT /api/voice/calibration/clips/:n": {"need":"admin","is":"opted-out"}
   },
-  "frames": ["prompt","steer","abort","set_model","set_thinking","set_claude_login","ui_response","rewind","regenerate","compact","queue_remove","reload_code"],
+  "frames": ["prompt","steer","abort","set_model","set_thinking","set_claude_login","ui_response","rewind","regenerate","compact","queue_remove","reload_code","shell","shell_stop"],
   "keydown": {
     "src/commands/keys.ts": ["window","document"],
     "src/components/ChangesViewer.tsx": ["document"],

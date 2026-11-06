@@ -1,11 +1,12 @@
-import { createEffect, on, Show } from "solid-js";
+import { createEffect, on, onCleanup, Show } from "solid-js";
 import { tildePath } from "../lib/format";
 import { AFTER_REPLY, NOT_SHARED, shellNotes, shellStatus, type ShellCardData } from "../lib/shell-runs";
 import { home } from "../lib/ui-state";
 import { Chip } from "./ui";
 import "../shell-mode.css";
 
-/** Within this many px of the output's end, a running command's output keeps following its end. */
+/** Within this many px of the output's end, a running command's output keeps following its end; a
+    card opens at that end. */
 const FOLLOW_SLACK = 24;
 
 /**
@@ -59,7 +60,16 @@ export function ShellCard(props: {
       <Show when={props.card.output}>
         <pre
           class="shell-card-output"
-          ref={out}
+          ref={(el) => {
+            out = el;
+            // It opens at the end of the output, where the latest lines are (a cut one most of all):
+            // at its first layout, which may come later than now (a row drawn off screen).
+            const sized = new ResizeObserver(() => {
+              if (atEnd) el.scrollTop = el.scrollHeight;
+            });
+            sized.observe(el);
+            onCleanup(() => sized.disconnect());
+          }}
           tabindex="0"
           aria-label="Output"
           onScroll={(e) => {

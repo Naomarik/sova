@@ -2591,6 +2591,8 @@ export interface ShellRun extends ShellOutcome {
   /** The model was replying while it ran: it gets the output after that reply, and the run is saved below
       it (the card sits under the streaming reply, and reads "The model gets this after its reply."). */
   underReply?: true;
+  /** The sender's `shell` frame's id, so a tab whose socket dropped before `shell_start` finds its run. */
+  clientId?: string;
 }
 
 /** Why a command from shell mode was refused: it never ran, was never saved and never reaches the model
@@ -2837,8 +2839,10 @@ export type ChatServerMessage =
       local folder is gone; absent when it runs in its own folder. */
   /** `shell` (§chat.shell-mode/card): the chat's commands from shell mode not yet saved as rows (running, or
       ended and waiting to be saved after the reply in flight), oldest first; absent when there are none.
-      Sent on every wire. */
-  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive; after?: string; cwdFallback?: CwdFallback; shell?: ShellRun[] }
+      Sent on every wire. `shellMode` (§chat.shell-mode/box): this chat runs commands from shell mode (it
+      has its own agent and folder: not the Overseer, a project overseer or assistant, or a gathering
+      session); absent where it doesn't, and from servers that predate shell mode. */
+  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive; after?: string; cwdFallback?: CwdFallback; shell?: ShellRun[]; shellMode?: true }
   /** Which code a chat in its own process runs (§app.chat-processes/code-pickup). Sent after the
       hello when not current, and to every client on each change; none received = current. A chat
       hosted in the server sends it only to answer `reload_code`. See ChatCodeState. */

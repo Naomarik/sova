@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SHELL_LIVE_MAX, type ChatServerMessage, type ShellRun } from "../../shared/protocol";
-import { AFTER_REPLY, cardOfRow, cardOfRun, cutWords, nextShellRuns, runShell, shellAnswerOf, shellFrame, shellNotes, shellStatus } from "./shell-runs";
+import { AFTER_REPLY, answersAtHello, SHELL_DROPPED, cardOfRow, cardOfRun, cutWords, nextShellRuns, runShell, shellAnswerOf, shellFrame, shellNotes, shellStatus } from "./shell-runs";
 import { ALREADY_RUNNING, NOT_CONNECTED } from "./shell-mode";
 
 const run = (over: Partial<ShellRun> = {}): ShellRun => ({ id: "s1", command: "pnpm test", output: "", state: "running", startedAt: 1, ...over });
@@ -97,4 +97,10 @@ test("Run sends nothing while a command runs or with no open connection, and say
   assert.deepEqual(sent, []);
   // The socket refusing the frame keeps the command too.
   assert.deepEqual(runShell({ running: false, open: true, send: () => false, newId: () => "c1" }, "ls", false), { refused: NOT_CONNECTED });
+});
+
+test("after a dropped connection, the hello answers a waiting Run: started when a run carries its id, else the dropped answer", () => {
+  const runs = [run({ clientId: "c1" }), run({ id: "s2" })];
+  assert.deepEqual(answersAtHello(["c1", "c9"], runs), [{ clientId: "c1" }, { clientId: "c9", refused: SHELL_DROPPED }]);
+  assert.deepEqual(answersAtHello([], runs), []);
 });

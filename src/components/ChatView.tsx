@@ -147,7 +147,7 @@ import { alignRowFromDetails, foldAlignRows, isOpenDoc, openCount, recommendedOp
 import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
 import { ShellCard } from "./ShellCard";
-import { cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf } from "../lib/shell-runs";
+import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf } from "../lib/shell-runs";
 import type { ShellAnswer, ShellControl } from "../lib/shell-mode";
 import type { ShellRun } from "../../shared/protocol";
 import { HostSendNotice } from "./HostStateNotices";
@@ -575,6 +575,8 @@ export function ChatView(props: {
   /** The newest answer to a Run from this tab's composer; `shellWaiting` the Runs not answered yet. */
   const [shellAnswer, setShellAnswer] = createSignal<ShellAnswer | null>(null);
   const shellWaiting = new Set<string>();
+  /** This chat runs commands from shell mode, as its last hello said; null before this view's first hello. */
+  const [shellMode, setShellMode] = createSignal<boolean | null>(null);
   /** Subagents working now (WS "workers"); 0 until the first one arrives. */
   const [workersWorking, setWorkersWorking] = createSignal(0);
   /** The same message's list, so the status row can split the count against this session's teams. */
@@ -845,6 +847,14 @@ export function ChatView(props: {
       if (loginUnsaid !== undefined && msg.type !== "claude_login") awaitLogin();
       // Shell mode's runs and answers (§chat.shell-mode/card): a hello rebuilds the live cards, each
       // event moves one, and the answer to this tab's Run reaches its composer.
+      if (msg.type === "hello") {
+        setShellMode(!!msg.shellMode);
+        // A Run sent before the connection dropped: its run, by its id, or the dropped answer.
+        for (const a of answersAtHello(shellWaiting, msg.shell ?? [])) {
+          shellWaiting.delete(a.clientId);
+          setShellAnswer(a);
+        }
+      }
       const runs = nextShellRuns(untrack(shellRuns), msg);
       if (runs) {
         setShellRuns(runs);
@@ -2207,14 +2217,17 @@ export function ChatView(props: {
         priv,
       );
       if ("clientId" in sent) shellWaiting.add(sent.clientId);
+      // A chat closed while quiet: nothing was sent, and the chat starts so the next Run can go.
+      else if (holding()) wake();
       return sent;
     },
     answer: shellAnswer,
   };
-  // The connection went before the chat answered a Run: say so, and the command stays in the box.
+  // The connection is gone for good before the chat answered a Run: say so, and the command stays in
+  // the box. A reconnect answers at its hello instead (answersAtHello).
   createEffect(
     on(socket.status, (s) => {
-      if (s === "open") return;
+      if (s !== "failed" && s !== "closed") return;
       for (const clientId of [...shellWaiting]) {
         shellWaiting.delete(clientId);
         setShellAnswer({ clientId, refused: SHELL_DROPPED });
@@ -2226,8 +2239,10 @@ export function ChatView(props: {
     if (socket.send({ type: "shell_stop", id })) setShellStopping((s) => new Set([...s, id]));
   };
   /** Shell mode is in every chat with its own agent and folder (§chat.shell-mode/box); not in the
-      Overseer, a project overseer or assistant, a gathering session, or a read-only box. */
-  const shellAllowed = () => !props.overseer && !props.projectOverseer && !props.summary?.()?.projectOverseer && !props.summary?.()?.baton && !batonGate();
+      Overseer, a project overseer or assistant, a gathering session, or a read-only box. The hello
+      says (`shellMode`); before this view's first one, what the session list knows decides. */
+  const shellAllowed = () =>
+    (shellMode() ?? true) && !props.overseer && !props.projectOverseer && !props.summary?.()?.projectOverseer && !props.summary?.()?.baton && !batonGate();
 
   const abort = () => {
     // Stop before the waking connection opened: what the tab kept never goes, and its text comes back.

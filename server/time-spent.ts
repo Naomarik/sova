@@ -54,7 +54,7 @@ const safeId = (id: string) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id);
 
 export class TimeSpentStore {
   /** Who holds each remembered moment, oldest first, never overlapping. */
-  private claims: Claim[] = [];
+  private held: Claim[] = [];
   /** Where each page's last run ended. */
   private pages = new Map<string, number>();
   /** Each session's last line, while its file can still take a merge. */
@@ -152,7 +152,7 @@ export class TimeSpentStore {
     if (!safeId(session)) return;
     rmSync(this.file(session), { force: true });
     this.tails.delete(session);
-    this.claims = this.claims.filter((c) => c.session !== session);
+    this.held = this.held.filter((c) => c.session !== session);
   }
 
   private file(session: string): string {
@@ -161,7 +161,7 @@ export class TimeSpentStore {
 
   private forget(now: number): void {
     const before = Math.floor((now - CLOCK_MEMORY_MS) / 1000);
-    this.claims = this.claims.filter((c) => c.end > before);
+    this.held = this.held.filter((c) => c.end > before);
     for (const [page, end] of this.pages) if (end <= before) this.pages.delete(page);
   }
 
@@ -170,7 +170,7 @@ export class TimeSpentStore {
     const free: [number, number][] = [];
     let cursor = run.start;
     const lost = new Map<string, [number, number][]>();
-    for (const c of this.claims) {
+    for (const c of this.held) {
       if (c.end <= run.start || c.start >= run.end) {
         kept.push(c);
         continue;
@@ -198,7 +198,7 @@ export class TimeSpentStore {
       kept.push({ ...run, start, end });
       this.writeRun(run.session, { s: start, e: end, r: run.row, ...(run.docs.length ? { d: run.docs } : {}) });
     }
-    this.claims = kept.sort((a, b) => a.start - b.start);
+    this.held = kept.sort((a, b) => a.start - b.start);
   }
 
   private writeTakeBack(session: string, from: number, to: number): void {

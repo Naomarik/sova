@@ -1,0 +1,186 @@
+{
+  "§chat.wake-nudges/archive": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "pi-config/extensions/wake-nudge.ts",
+      "pi-config/extensions/subagents/wake-store.ts",
+      "server/wake-keeper-live.ts",
+      "server/index.ts",
+      "server/chat-workers.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "server/wake-keeper.test.ts",
+      "pi-config/extensions/subagents/wake-nudge.test.ts",
+      "pi-config/extensions/subagents/restore.test.ts",
+      "scripts/chat-runtime-trial/run.mjs",
+      "server/chat-runtime/trial-wake-tw3.integration.test.ts"
+    ],
+    "requires": [
+      "§chat.wake-nudges/on-time"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T11:00Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+    },
+    "evidence": "verified"
+  },
+  "§chat.wake-nudges/kinds": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "pi-config/extensions/wake-nudge.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/wake-store.ts",
+      "server/wake-keeper.ts",
+      "server/wake-keeper-live.ts",
+      "server/chat-workers.ts",
+      "server/chat-host.ts",
+      "pi-config/extensions/subagents/coordination.ts",
+      "server/wake-keeper.test.ts",
+      "pi-config/extensions/subagents/restore.test.ts",
+      "scripts/chat-runtime-trial/run.mjs",
+      "server/chat-runtime/trial-wake-tw5.integration.test.ts",
+      "server/chat-runtime/trial-wake-tw6.integration.test.ts",
+      "server/chat-runtime/trial-wake-tw8.integration.test.ts"
+    ],
+    "requires": [
+      "§chat.wake-nudges/on-time",
+      "§chat.wake-nudges/tries",
+      "§teams.defaults/wake-nudge",
+      "§app.chat-processes/workers"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T11:00Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+    },
+    "evidence": "verified"
+  },
+  "§chat.wake-nudges/late": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "pi-config/extensions/wake-nudge.ts",
+      "shared/wake.ts",
+      "server/wake-keeper.ts",
+      "server/wake-keeper.test.ts",
+      "scripts/chat-runtime-trial/run.mjs",
+      "server/chat-runtime/trial-wake-tw2.integration.test.ts"
+    ],
+    "requires": [
+      "§chat.wake-nudges/on-time"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T11:00Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+    },
+    "evidence": "verified"
+  },
+  "§chat.wake-nudges/limits": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "pi-config/extensions/wake-nudge.ts"
+    ],
+    "requires": [
+      "§chat/wake-nudges"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T11:00Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+    },
+    "evidence": "verified"
+  },
+  "§chat.wake-nudges/on-time": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "pi-config/extensions/wake-nudge.ts",
+      "pi-config/extensions/subagents/wake-store.ts",
+      "server/wake-keeper.ts",
+      "server/wake-keeper-live.ts",
+      "server/index.ts",
+      "server/chat-host.ts",
+      "server/chat-runtime/host.ts",
+      "server/wake-keeper.test.ts",
+      "pi-config/extensions/subagents/wake-nudge.test.ts",
+      "scripts/chat-runtime-trial/run.mjs",
+      "server/chat-runtime/trial-wake-tw1.integration.test.ts",
+      "server/chat-runtime/trial-wake-tw2.integration.test.ts",
+      "server/chat-runtime/trial-wake-tw8.integration.test.ts"
+    ],
+    "requires": [
+      "§chat/wake-nudges",
+      "§app.chat-processes/idle-stop"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T11:00Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+    },
+    "evidence": "verified"
+  },
+  "§chat.wake-nudges/tries": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "pi-config/extensions/wake-nudge.ts",
+      "pi-config/extensions/subagents/wake-store.ts",
+      "server/wake-keeper.ts",
+      "server/wake-keeper.test.ts",
+      "pi-config/extensions/subagents/wake-nudge.test.ts",
+      "scripts/chat-runtime-trial/run.mjs",
+      "server/chat-runtime/trial-wake-tw4.integration.test.ts"
+    ],
+    "requires": [
+      "§chat.wake-nudges/on-time"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T14:17Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#a22a19ea"
+    },
+    "evidence": "verified"
+  },
+  "§chat.wake-nudges/wake-limit": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "pi-config/extensions/wake-nudge.ts",
+      "server/chat-host.ts",
+      "pi-config/extensions/subagents/wake-nudge.test.ts",
+      "scripts/chat-runtime-trial/run.mjs",
+      "server/chat-runtime/trial-wake-tw7.integration.test.ts"
+    ],
+    "requires": [
+      "§chat/wake-nudges",
+      "§app.overseer/input-source"
+    ],
+    "evidence": "verified"
+  },
+  "§chat/wake-nudges": {
+    "kind": "surface",
+    "authority": "accepted",
+    "code": [
+      "pi-config/extensions/wake-nudge.ts",
+      "shared/wake.ts",
+      "pi-config/extensions/subagents/wake-store.ts",
+      "server/wake-keeper.ts",
+      "server/wake-keeper-live.ts",
+      "server/index.ts"
+    ],
+    "notOwned": [
+      "§teams.defaults/wake-nudge",
+      "§chat/schedules"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T11:00Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+    },
+    "evidence": "verified"
+  }
+}

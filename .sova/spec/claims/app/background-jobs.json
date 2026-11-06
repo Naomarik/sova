@@ -1,0 +1,265 @@
+{
+  "§app.background-jobs/end-card": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.background-jobs/keeping",
+      "§chat.wake-nudges/wake-limit",
+      "§chat.wake-nudges/tries",
+      "§chat.wake-nudges/kinds"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T11:02Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#a22a19ea"
+    },
+    "code": [
+      "pi-config/extensions/subagents/job-store.ts",
+      "pi-config/extensions/wake-nudge.ts",
+      "server/background-jobs.ts",
+      "server/chat-host.ts",
+      "server/chat-manager.ts",
+      "server/background-jobs.test.ts",
+      "server/chat-runtime/trial-jobs-tj1.integration.test.ts",
+      "server/chat-runtime/trial-jobs-tj3.integration.test.ts",
+      "scripts/chat-runtime-trial/run.mjs",
+      "pi-config/extensions/subagents/wake-nudge-jobs.test.ts",
+      "server/background-jobs-ends.test.ts"
+    ],
+    "evidence": "verified"
+  },
+  "§app.background-jobs/keeping": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app/background-jobs",
+      "§app.chat-processes/supervision"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T14:17Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#a22a19ea"
+    },
+    "code": [
+      "server/background-jobs-capture.ts",
+      "server/harness/pi/background-jobs.ts",
+      "server/background-jobs.ts",
+      "pi-config/extensions/subagents/job-store.ts",
+      "server/chat-manager.ts",
+      "server/chat-host.ts",
+      "server/chat-runtime/supervisor.ts",
+      "server/background-jobs.test.ts",
+      "server/harness/pi/background-jobs.integration.test.ts",
+      "server/chat-runtime/trial-jobs-tj1.integration.test.ts",
+      "server/chat-runtime/trial-jobs-tj2.integration.test.ts",
+      "server/chat-runtime/trial-jobs-tj4.integration.test.ts",
+      "scripts/chat-runtime-trial/run.mjs",
+      "server/chat-runtime/trial-jobs-tj5.integration.test.ts"
+    ],
+    "evidence": "verified"
+  },
+  "§app.background-jobs/limits": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.background-jobs/keeping"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T10:59Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+    },
+    "code": [
+      "pi-config/extensions/subagents/job-store.ts",
+      "server/background-jobs-capture.ts",
+      "server/background-jobs-request.ts",
+      "server/background-jobs.ts",
+      "server/background-jobs.test.ts",
+      "server/background-jobs-request.test.ts",
+      "server/chat-runtime/trial-jobs-tj2.integration.test.ts",
+      "scripts/chat-runtime-trial/run.mjs",
+      "server/background-jobs-ends.test.ts",
+      "pi-config/extensions/subagents/wake-nudge-jobs.test.ts"
+    ],
+    "evidence": "verified"
+  },
+  "§app.background-jobs/machine-restart": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.background-jobs/end-card"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T10:59Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+    },
+    "code": [
+      "server/background-jobs.ts",
+      "pi-config/extensions/wake-nudge.ts",
+      "pi-config/extensions/subagents/job-store.ts",
+      "server/background-jobs-ends.test.ts",
+      "pi-config/extensions/subagents/wake-nudge-jobs.test.ts"
+    ],
+    "evidence": "verified"
+  },
+  "§app.background-jobs/output": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.background-jobs/keeping"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T10:59Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+    },
+    "code": [
+      "server/background-jobs-capture.ts",
+      "pi-config/extensions/subagents/job-store.ts",
+      "server/background-jobs-request.ts",
+      "server/background-jobs.test.ts",
+      "server/chat-runtime/trial-jobs-tj1.integration.test.ts",
+      "server/chat-runtime/trial-jobs-tj3.integration.test.ts",
+      "scripts/chat-runtime-trial/run.mjs",
+      "scripts/chat-runtime-trial/mock-llm.mjs"
+    ],
+    "evidence": "verified"
+  },
+  "§app.background-jobs/pane": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.background-jobs/keeping",
+      "§app.subagents-pane/tabs"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T11:02Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#a22a19ea"
+    },
+    "code": [
+      "src/components/BackgroundJobs.tsx",
+      "src/lib/background-jobs.ts",
+      "src/components/SessionDetails.tsx",
+      "src/lib/api.ts",
+      "server/background-jobs-routes.ts",
+      "server/app.ts",
+      "server/background-jobs.ts",
+      "shared/protocol.ts",
+      "server/sessions-index.ts",
+      "src/components/Sidebar.tsx",
+      "src/lib/summary-diff.ts",
+      "shared/commands/sessions.ts",
+      "src/lib/background-jobs.test.ts",
+      "src/lib/background-jobs.browser.test.ts",
+      "server/sessions-index-jobs.test.ts",
+      "src/lib/session-row.test.ts"
+    ],
+    "evidence": "verified"
+  },
+  "§app.background-jobs/request": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app/background-jobs",
+      "§chat.worktrees/workers",
+      "§chat.sandbox/limits",
+      "§app.chat-processes/server-actions"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T14:17Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#a22a19ea"
+    },
+    "code": [
+      "server/background-jobs-request.ts",
+      "server/chat-handle.ts",
+      "server/chat-manager.ts",
+      "shared/profiles.ts",
+      "server/background-jobs.ts",
+      "server/background-jobs-request.test.ts",
+      "server/background-jobs-request.integration.test.ts",
+      "server/chat-runtime/trial-jobs-tj3.integration.test.ts",
+      "scripts/chat-runtime-trial/run.mjs",
+      "scripts/chat-runtime-trial/mock-llm.mjs"
+    ],
+    "evidence": "verified"
+  },
+  "§app.background-jobs/stopping": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.background-jobs/keeping"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T11:02Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#a22a19ea"
+    },
+    "code": [
+      "server/background-jobs.ts",
+      "server/background-jobs-routes.ts",
+      "server/index.ts",
+      "server/chat-workers.ts",
+      "scripts/stop-chats.ts",
+      "server/background-jobs-capture.ts",
+      "server/background-jobs-request.ts",
+      "server/background-jobs.test.ts",
+      "server/chat-runtime/trial-jobs-tj1.integration.test.ts",
+      "server/chat-runtime/trial-jobs-tj2.integration.test.ts",
+      "server/chat-runtime/trial-jobs-tj3.integration.test.ts",
+      "server/chat-runtime/trial-jobs-tj4.integration.test.ts",
+      "scripts/chat-runtime-trial/run.mjs"
+    ],
+    "evidence": "verified"
+  },
+  "§app.background-jobs/where": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app/background-jobs",
+      "§app.chat-processes/supervision",
+      "§chat.sandbox/limits"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T10:59Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+    },
+    "code": [
+      "server/background-jobs.ts",
+      "server/background-jobs-request.ts",
+      "server/background-jobs-capture.ts",
+      "server/chat-host.ts",
+      "server/chat-handle.ts",
+      "server/chat-manager.ts",
+      "server/background-jobs.test.ts",
+      "server/background-jobs-request.test.ts",
+      "server/chat-runtime/trial-jobs-tj4.integration.test.ts",
+      "scripts/chat-runtime-trial/run.mjs",
+      "server/background-jobs-ends.test.ts"
+    ],
+    "evidence": "verified"
+  },
+  "§app/background-jobs": {
+    "kind": "surface",
+    "authority": "accepted",
+    "requires": [
+      "§app/chat-processes"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T11:00Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+    },
+    "code": [
+      "server/background-jobs.ts",
+      "server/background-jobs-capture.ts",
+      "pi-config/extensions/subagents/job-store.ts",
+      "server/index.ts",
+      "server/chat-runtime/trial-jobs-tj1.integration.test.ts"
+    ],
+    "evidence": "verified"
+  }
+}

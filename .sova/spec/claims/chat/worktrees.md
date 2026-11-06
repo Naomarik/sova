@@ -189,6 +189,10 @@ read means no browser, never a refused start.
   gone, and the worker runs in a user namespace, where root-owned files belong to the overflow
   user: ssh refuses a root-owned config file ("Bad owner or permissions"; `ssh -F /dev/null`
   works). A worker that needs Docker or the host's own ssh config needs Off.
+- **Long jobs.** A background process ends with its command here (§chat.sandbox/limits). A write-only
+  worker runs a long job through `background_job`, under this same confinement: the job writes only
+  where the worker can, and it is listed and reported as any job is
+  (§app.background-jobs/request). A worker under On has no such way (§app.background-jobs/where).
 
 Under Off the worker starts unconfined, like one outside a worktree. Under On or Subagents only,
 if the sandbox extension is missing or gives no scope for the worktree, the spawn is refused. A

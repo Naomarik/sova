@@ -20,13 +20,15 @@
       "docs/commands.md",
       "shared/commands/other.ts",
       "server/commands-inventory/scan.ts",
-      "server/commands-inventory/baseline.json"
+      "server/commands-inventory/baseline.json",
+      "server/background-jobs-routes.ts",
+      "src/card-toolkit/commands.gen.ts"
     ],
     "authority": "accepted",
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T03:27Z",
-      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#f0aa11bd"
+      "by": "omar",
+      "at": "2026-11-05T16:21Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#4af7e7b6"
     },
     "evidence": "verified"
   },

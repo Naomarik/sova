@@ -128,7 +128,10 @@
     "authority": "accepted",
     "evidence": "verified",
     "code": [
-      "src/lib/git-summary.ts"
+      "src/lib/git-summary.ts",
+      "src/components/WakeCard.tsx",
+      "shared/wake.ts",
+      "src/lib/wake-card.test.ts"
     ]
   },
   "§design.copy-deck/markdown-and-code": {
@@ -499,7 +502,8 @@
       "src/lib/regions.ts",
       "src/lib/needs-you-row.ts",
       "src/components/NeedsYouRow.tsx",
-      "src/lib/branch-status.ts"
+      "src/lib/branch-status.ts",
+      "src/lib/session-row.test.ts"
     ]
   },
   "§design.copy-deck/slash-commands": {
@@ -520,7 +524,11 @@
       "src/components/SubagentPane.tsx",
       "src/lib/spend.ts",
       "src/components/CostBreakdown.tsx",
-      "src/lib/cost-history.ts"
+      "src/lib/cost-history.ts",
+      "src/components/BackgroundJobs.tsx",
+      "src/lib/background-jobs.ts",
+      "src/lib/background-jobs.test.ts",
+      "src/lib/background-jobs.browser.test.ts"
     ]
   },
   "§design.copy-deck/timeline-tab": {

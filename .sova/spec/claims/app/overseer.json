@@ -367,9 +367,9 @@
       "§app.project-services/instances"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-28T13:39Z",
-      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+      "by": "omar",
+      "at": "2026-11-04T10:59Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
     }
   },
   "§app.overseer/default-quick-actions": {
@@ -688,11 +688,19 @@
       "server/chat-manager.ts",
       "server/queue.ts",
       "server/group-prompt.ts",
-      "server/input-source.test.ts"
+      "server/input-source.test.ts",
+      "pi-config/extensions/wake-nudge.ts",
+      "pi-config/extensions/subagents/job-store.ts",
+      "server/harness/pi/job-card-input-source.test.ts"
     ],
     "requires": [
       "§app.overseer/tools"
-    ]
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T10:59Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+    }
   },
   "§app.overseer/links": {
     "kind": "behavior",

@@ -10,7 +10,7 @@ once the first message is sent, and kept by the session itself. The UI says
 ## §chat.profiles/model — Capabilities, sources and the session's copy
 
 - **Capabilities, not tool names.** A profile names groups (`shared/profiles.ts`, one map for server
-  and client). Removable: **Shell** (`bash`), **Edit files** (`edit`, `write`), **Workers & teams**
+  and client). Removable: **Shell** (`bash`, `background_job`), **Edit files** (`edit`, `write`), **Workers & teams**
   (`agent_*`, `team_*`), **Web** (`web_search`, `fetch_content`, `get_search_content`,
   `source_check`), **Worktrees** (`worktree`), **Timers** (`wake_nudge`), **MCP Servers** (every
   tool of the chat's MCP servers, §app.mcp/who-gets). The link tools are no
@@ -285,8 +285,8 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   from the server's own record of the message, never from its text.
 - **Per message you send, 10.** Sends in runs the user started, counted until the user's next
   message.
-- **On its own, 40 a day.** Sends in runs the user didn't start (a timer's wake-up, another session's
-  message), counted per local day. A wake-up turn may send; it spends this allowance.
+- **On its own, 40 a day.** Sends in runs the user didn't start (a timer's wake-up, a background job's
+  end card, another session's message), counted per local day. A wake-up turn may send; it spends this allowance.
 - **Targets per run, 5.** Distinct sessions one run sends to.
 - **To one session per 10 minutes, 6.** Sends from this session to one target in any 10 minutes.
 - A refused send takes nothing from any allowance. The per-message and per-day counts outlive a

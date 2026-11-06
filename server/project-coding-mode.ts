@@ -13,8 +13,6 @@ import { requireSubagentProfile, subagentProfilesInfo } from "./subagent-profile
  *
  * - Unnamed, a coding session starts in this computer's default mode (mode.json, read at start time,
  *   `hostDefaultMode`) with no subagent profile picked, and is pinned there.
- * - Spec is always on (§app.project-overseer/coding-mode): every start adds it to the default's minor
- *   modes, and a set of minor modes that leaves it out is refused, from an Overseer or the mode menu.
  * - Both Overseers may name any mode but Create, any minor modes (spec among them) and any subagent profile, on a
  *   start or on a running session: there is no other ceiling. Only unknown names and Create are refused
  *   (`codingModeChoice`, `codingModeSwitch`; a profile is checked against this computer's library by the caller).
@@ -24,24 +22,6 @@ import { requireSubagentProfile, subagentProfilesInfo } from "./subagent-profile
 
 /** The minor modes a coding session can have: every one but the web-only ones (memory, §chat.memory/where). */
 const CODING_MINOR_MODES = MINOR_MODES.filter((m) => MINOR_SURFACES[m] !== "web");
-
-/** An Overseer's minor modes that leave spec out of a coding session. */
-export const SPEC_ALWAYS_ON = "Spec is always on for coding sessions; it can't be turned off. Name spec among minor_modes.";
-/** The mode menu's switch of a project coding session that leaves spec out (409). */
-export const SPEC_ALWAYS_ON_MENU = "Spec is always on for coding sessions; it can't be turned off.";
-
-/** A minor-mode set with spec in it (normalized order, never twice). */
-export function withSpec(minorModes: readonly string[]): string[] {
-  if (minorModes.includes("spec")) return [...minorModes];
-  const p = parseModePatch({ minorModes: [...minorModes, "spec"] });
-  return "error" in p ? [...minorModes, "spec"] : (p.minorModes ?? [...minorModes, "spec"]);
-}
-
-/** Why the mode menu's switch of a project coding session is refused (it leaves spec out), or null.
-    A switch that names no minor modes keeps the session's own, spec among them. */
-export function codingSpecRefusal(minorModes: readonly string[] | undefined): string | null {
-  return minorModes !== undefined && !minorModes.includes("spec") ? SPEC_ALWAYS_ON_MENU : null;
-}
 
 /** The names a request carries, checked with the copy's own sentences. */
 function checkNames(mode: unknown, minors: unknown, by: CreateNamer): { mode?: ProjectCodingMode["mode"]; minorModes?: string[] } | { error: string } {
@@ -56,7 +36,6 @@ function checkNames(mode: unknown, minors: unknown, by: CreateNamer): { mode?: P
     if (minors.includes("memory")) return { error: `${MEMORY_CODING_REFUSAL}.` };
     const unknown = minors.find((m) => typeof m !== "string" || !(CODING_MINOR_MODES as readonly string[]).includes(m));
     if (unknown !== undefined) return { error: `Unknown minor mode ${String(unknown)}: use ${CODING_MINOR_MODES.slice(0, -1).join(", ")} or ${CODING_MINOR_MODES[CODING_MINOR_MODES.length - 1]}.` };
-    if (!minors.includes("spec")) return { error: SPEC_ALWAYS_ON };
     const p = parseModePatch({ minorModes: minors });
     out.minorModes = "error" in p ? [] : (p.minorModes ?? []);
   }
@@ -64,10 +43,10 @@ function checkNames(mode: unknown, minors: unknown, by: CreateNamer): { mode?: P
 }
 
 /** This computer's default mode now (mode.json, the default every new session starts from), less memory
-    (coding sessions never get it, §chat.memory/where), with spec always on. */
+    (coding sessions never get it, §chat.memory/where). */
 export function hostDefaultMode(file?: string): ProjectCodingMode {
   const s = file ? readMode(file) : readMode();
-  return { mode: defaultModeOf(s), minorModes: withSpec(s.minorModes.filter((m) => m !== "memory")) };
+  return { mode: defaultModeOf(s), minorModes: s.minorModes.filter((m) => m !== "memory") };
 }
 
 /** An Overseer's request (the tools' `mode` / `minor_modes` / `subagent_profile`), validated by name only. */
@@ -187,7 +166,7 @@ export const asksToConfirmBrief = (prompt: unknown): boolean => typeof prompt ==
 
 /**
  * The mode an Overseer's start runs in (§app.project-overseer/confirm-brief): with no `already_agreed`, align on
- * beside what it asked for (as a verb playbook's run, never twice; spec stays), since the operator answers the
+ * beside what it asked for (as a verb playbook's run, never twice), since the operator answers the
  * confirm question and the Overseer never decides for them; with it, the mode as given. Pure.
  */
 export const overseerStartMode = (mode: ProjectCodingMode, alreadyAgreed: boolean): ProjectCodingMode =>

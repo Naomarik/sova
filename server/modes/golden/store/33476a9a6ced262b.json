@@ -85,7 +85,7 @@
  },
  "useWorktreeConfig": {
   "type": "boolean",
-  "description": "Pi only: run the worker on its worktree's own agent dir (<worktree>/.agent: its settings, auth and mode extension, normal mode + spec). Valid only when cwd is inside an active worktree this session tracks that has a .agent."
+  "description": "Pi only: run the worker on its worktree's own agent dir (<worktree>/.agent: its settings, auth and mode extension, normal mode, spec only while this session has it on). Valid only when cwd is inside an active worktree this session tracks that has a .agent."
  },
  "agents": {
   "anyOf": [
@@ -96,7 +96,7 @@
      "required": [
       "prompt"
      ],
-     "properties": "@f43f0aabe3070ff0"
+     "properties": "@9c520de0f76d6076"
     },
     "minItems": 1
    },

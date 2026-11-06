@@ -397,9 +397,11 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
     assert.match((r.content[0] as { text: string }).text, /mode delegate · align · spec, subagent profile House\. It first asks the operator to confirm the brief\.$/);
   });
 
-  test("every mode, minor mode and profile is accepted on a start and on a running session; spec stays on", async () => {
+  test("every mode, minor mode and profile is accepted on a start and on a running session", async () => {
     const asks: Record<string, unknown>[] = [
       { mode: "delegate" },
+      { minor_modes: [] },
+      { minor_modes: ["align"] },
       { minor_modes: ["spec"] },
       { minor_modes: ["align", "spec"] },
       { mode: "delegate", minor_modes: ["align", "spec", "vis"] },
@@ -418,13 +420,9 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
     const r = await f.run("sova_create_session", { gap: "none", prompt: "p", mode: "delegate", minor_modes: ["spec", "vis"], subagent_profile: "big", already_agreed: true });
     assert.deepEqual(f.modes, [{ mode: "delegate", minorModes: ["spec", "vis"], subagentProfile: "big" }]);
     assert.match((r.content[0] as { text: string }).text, /mode delegate · spec · visuals, subagent profile Big team\. Started as already agreed\.$/);
-    // Spec is always on (§app.project-overseer/coding-mode): a set without it is refused before anything.
-    for (const minor_modes of [[], ["align"], ["align", "vis"]]) {
-      const g = fake({ attended: true });
-      await assert.rejects(() => g.run("sova_create_session", { gap: "none", prompt: "p", minor_modes }), /Spec is always on for coding sessions; it can't be turned off\. Name spec among minor_modes\./);
-      await assert.rejects(() => g.run("sova_send", { session: "in-root", text: "p", minor_modes }), /Spec is always on for coding sessions/);
-      assert.deepEqual([g.calls, g.modes, g.limited], [[], [], []], JSON.stringify(minor_modes));
-    }
+    const none = fake({ attended: true });
+    await none.run("sova_create_session", { gap: "none", prompt: "p", minor_modes: [], already_agreed: true });
+    assert.deepEqual(none.modes, [{ mode: "normal", minorModes: [] }], "[] is taken as named: no spec, nothing added");
   });
 
   test("only unknown names are refused: nothing is created or sent, and no cap is taken", async () => {

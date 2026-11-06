@@ -162,7 +162,7 @@
   "description": "@0d908603ee9b8814",
   "parameters": {
    "type": "object",
-   "properties": "@f4056e757b20236c",
+   "properties": "@33476a9a6ced262b",
    "additionalProperties": false
   }
  },
@@ -504,33 +504,6 @@
   }
  },
  {
-  "name": "align",
-  "description": "@10b18c09da2ac44c",
-  "parameters": {
-   "type": "object",
-   "required": [
-    "ops"
-   ],
-   "properties": {
-    "doc": {
-     "type": "string",
-     "minLength": 1,
-     "description": "The alignment to change, e.g. \"al_2\". Required while more than one alignment is open; omit for create, import, exempt and change_request.",
-     "pattern": "^al_[1-9][0-9]*$"
-    },
-    "ops": {
-     "type": "array",
-     "items": {
-      "anyOf": "@7a2b49b5246df006"
-     },
-     "description": "Operations, applied in order. change_request, when given, comes before every other op; create or import comes next (else first) and appears once.",
-     "minItems": 1
-    }
-   },
-   "additionalProperties": false
-  }
- },
- {
   "name": "vis_guide",
   "description": "@4e03995211272eb1",
   "parameters": {
@@ -590,6 +563,41 @@
    "required": [
     "kind",
     "source"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "record_tour",
+  "description": "@f2a84afb9f865e94",
+  "parameters": {
+   "type": "object",
+   "properties": "@852078159a752148",
+   "required": [
+    "op"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "show_tour",
+  "description": "Present one complete checked tour edition from this chat. Record and visually check it first; never records on display. Read vis_guide with tour for the workflow.",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "tourId": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 100
+    },
+    "editionId": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 100
+    }
+   },
+   "required": [
+    "tourId"
    ],
    "additionalProperties": false
   }

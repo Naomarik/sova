@@ -156,7 +156,7 @@
   "description": "@0d908603ee9b8814",
   "parameters": {
    "type": "object",
-   "properties": "@f4056e757b20236c",
+   "properties": "@33476a9a6ced262b",
    "additionalProperties": false
   }
  },
@@ -509,57 +509,6 @@
      "minItems": 1
     }
    },
-   "additionalProperties": false
-  }
- },
- {
-  "name": "create_guide",
-  "description": "@d8d27a6f2379e44a",
-  "parameters": {
-   "type": "object",
-   "required": [
-    "topic"
-   ],
-   "properties": {
-    "topic": {
-     "type": "string",
-     "enum": [
-      "appearance",
-      "models",
-      "workers",
-      "instructions",
-      "skills",
-      "modes",
-      "profiles",
-      "tools",
-      "extensions",
-      "pi-extensions",
-      "scripts",
-      "safety",
-      "project",
-      "landing",
-      "releases",
-      "automation",
-      "cards",
-      "overseers",
-      "attention",
-      "computers"
-     ],
-     "description": "The topic, as Create's table of contents lists it"
-    }
-   },
-   "additionalProperties": false
-  }
- },
- {
-  "name": "sova_settings",
-  "description": "@33a84d06d908f213",
-  "parameters": {
-   "type": "object",
-   "properties": "@d2075d1e687bf90b",
-   "required": [
-    "op"
-   ],
    "additionalProperties": false
   }
  }

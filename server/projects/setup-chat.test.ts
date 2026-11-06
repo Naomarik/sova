@@ -51,7 +51,7 @@ describe("the Setup chat's first message", () => {
     assert.equal(setup.mode, "normal");
     assert.deepEqual([...setup.minorModes].sort(), ["align", "vis"], "align and vis, nothing else");
     assert.equal(setup.minorModes.includes("spec"), false);
-    assert.ok(run("project-verbs").minorModes.includes("spec"), "another playbook run keeps spec");
+    assert.ok(run("project-verbs").minorModes.includes("spec"), "another playbook run keeps its base's spec");
     assert.ok(run("project-verbs").minorModes.includes("align"));
     // The Start Fresh carry-on chat switches to the same SETUP_MODE (runtime-routes.ts startChat).
     assert.deepEqual([...SETUP_MODE.minorModes].sort(), ["align", "vis"]);

@@ -266,7 +266,7 @@ worktree-confined, since nothing confines it.
 `useWorktreeConfig: true` (agent_spawn, pi or claude-code, cwd inside an active tracked worktree with a
 `.agent`) runs the worker on `<worktree>/.agent`: `PI_CODING_AGENT_DIR` set to it, its session
 in the parent's sessions directory for that cwd (so Sova lists and watches it like any worker), the
-tree's `extensions/mode` loaded by path with the flags `major normal` and `minor spec`, and the
+tree's `extensions/mode` loaded by path with the flag `major normal` (and `minor spec` while the parent has spec on), and the
 project's files trusted as for every chat.
 Discovery stays off and the model policy is the parent's. It is recorded in the launch spec, so
 `agent_resume` applies it again. A worker never loads any copy of `subagents` or `worktrees`
@@ -285,7 +285,7 @@ appended last to its system prompt (after its agent type, its brief and any remo
 the text is never interpreted here. It is a snapshot: a later switch never reaches a running
 worker, and `agent_resume` takes the session's current announcement (the launch spec keeps the raw
 brief). Two exceptions get nothing: a team's monitor (it has no tools) and a `useWorktreeConfig`
-worker (its tree's mode extension gives it spec itself). The minor modes given are recorded with
+worker (its mode extension gives it spec itself, while the parent has spec on). The minor modes given are recorded with
 the worker (the manifest's `modes`, newest start winning; `[]` for none; project modes by id after
 the built-in ones) and published in the workers snapshot (`modes`, absent for none), which Sova
 shows on the worker's view head.

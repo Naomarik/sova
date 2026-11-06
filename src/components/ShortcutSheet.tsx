@@ -1,6 +1,7 @@
 import { createUniqueId, For } from "solid-js";
 import { Portal } from "solid-js/web";
 import { KEYS } from "../commands/keys";
+import { SHELL_KEYS } from "../lib/shell-mode";
 import { trapFocus } from "./ui";
 import "../command-palette.css";
 
@@ -13,7 +14,8 @@ const PALETTE_KEYS: readonly { keys: string; does: string }[] = [
 
 /**
  * The shortcut sheet (§app.command-palette/shortcut-sheet): every app-wide key in the one table
- * (commands/keys), then the palette's own. Loaded on the first "?" (App's `lazy`).
+ * (commands/keys), then the palette's own, then the message box's shell-mode keys. Loaded on the
+ * first "?" (App's `lazy`).
  */
 export default function ShortcutSheet(props: { onClose(): void }) {
   const uid = createUniqueId();
@@ -41,7 +43,7 @@ export default function ShortcutSheet(props: { onClose(): void }) {
         </div>
         <div class="modal-body">
           <dl class="shortcut-list">
-            <For each={[...KEYS.map((k) => ({ keys: k.label, does: k.does })), ...PALETTE_KEYS]}>
+            <For each={[...KEYS.map((k) => ({ keys: k.label, does: k.does })), ...PALETTE_KEYS, ...SHELL_KEYS]}>
               {(k) => (
                 <div class="shortcut-row">
                   <dt>

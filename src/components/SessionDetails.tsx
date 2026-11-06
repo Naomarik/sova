@@ -35,6 +35,7 @@ import {
 import { announce, copyText, home, setActiveTab, toast } from "../lib/ui-state";
 import { sessionWorking } from "../lib/workers";
 import { Banner, CopyButton, Icon } from "./ui";
+import { BackgroundJobsSection } from "./BackgroundJobs";
 import { sessionHref } from "./Sidebar";
 import { MoveToGroupMenu } from "./Groups";
 import { ChangesDialog } from "./ChangesViewer";
@@ -185,6 +186,10 @@ export function SessionDetails(props: {
       >
         {(i) => <WorktreesSection rows={i().worktrees ?? []} path={props.path} cwd={summary()?.cwd} labelId={id("worktrees")} />}
       </Show>
+
+      {/* 4b · Background jobs. What the chat and its workers keep running, with Stop: present
+          only while one runs, read on its own schedule (never part of the insight poll). */}
+      <BackgroundJobsSection path={props.path} now={now()} labelId={id("jobs")} />
 
       {/* 5 · Identity. What this session is, where it runs, and since when. */}
       <Show when={summary()}>

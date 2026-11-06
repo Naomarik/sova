@@ -40,9 +40,9 @@ function fakePi() {
   return { pi, tools, hooks };
 }
 
-test("a worker or team member is served project_verbs; a hidden chat nothing", () => {
+test("a worker or team member is served project_verbs and background_job; a hidden chat nothing", () => {
   const names = (kind: string) => workerServed({ kind }, join(agentDir, `${kind}.jsonl`)).map((d) => d.name);
-  assert.deepEqual(names("worker"), ["project_verbs"]);
+  assert.deepEqual(names("worker"), ["project_verbs", "background_job"]);
   for (const hidden of ["explain", "handoff", "btw"]) assert.deepEqual(names(hidden), [], hidden);
 });
 
@@ -51,13 +51,14 @@ test("a worker chat loads project_verbs with its instance note; a hidden chat ne
   setServedTools(workerServed({ kind: "worker" }, path));
   setChatHosts({ instanceNote: async () => "Your copy: slot 1." });
   const factories = workerExtensionFactories({ kind: "worker" }, path);
-  // The spec tool comes last, so nothing before it moves.
-  assert.deepEqual(factories.map((f) => f.name), ["sova-shell-guard", "sova-deeper-context", "sova-project-verbs", "sova-spec"]);
+  // A worker with bash keeps what its commands leave running, and may ask for a job (background jobs).
+  // The spec tool comes last, after background_job, so nothing before it moves.
+  assert.deepEqual(factories.map((f) => f.name), ["sova-shell-guard", "sova-deeper-context", "sova-background-jobs", "sova-project-verbs", "sova-background-job", "sova-spec"]);
   const spec = fakePi();
-  factories[3]!.factory(spec.pi as never);
+  factories.find((f) => f.name === "sova-spec")!.factory(spec.pi as never);
   assert.deepEqual(spec.tools, ["spec"], "a worker or team member has the spec tool");
   const { pi, tools, hooks } = fakePi();
-  factories[2]!.factory(pi as never);
+  factories.find((f) => f.name === "sova-project-verbs")!.factory(pi as never);
   assert.deepEqual(tools, ["project_verbs"]);
   const ctx = { cwd: agentDir, sessionManager: { getSessionId: () => "w1", getLeafId: () => null, getBranch: () => [], getSessionFile: () => path } };
   const out = (await hooks.get("before_agent_start")!({}, ctx)) as { message?: { content?: unknown; customType?: string } } | undefined;

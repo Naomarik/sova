@@ -16,6 +16,29 @@ import type { OwnerRequestCard } from "./project-assistant";
 import type { CardInfo } from "./transcript-cards";
 export type { WakeInfo };
 
+/** One running background job, as `GET /api/sessions/jobs?path=` lists it (§app.background-jobs/pane):
+    the chat's own and its workers'. The server's `JobView` (server/background-jobs.ts). */
+export interface BackgroundJob {
+  /** `j1`, `j2`, …: unique within its chat (`sessionId`). */
+  id: string;
+  /** The chat that owns it: the session's own id, or one of its workers'. */
+  sessionId: string;
+  /** What runs: the command the chat ran, or the one it asked Sova to start. */
+  command: string;
+  cwd: string;
+  kind: "kept" | "requested";
+  /** When it was kept or started (ms). */
+  startedAt: number;
+  /** The file its output goes to, or null when it has none. */
+  output: string | null;
+  /** Its output still points at its command's closed output (§app.background-jobs/output). */
+  noOutput: boolean;
+  /** The worker it belongs to (its worker id), or null for the chat's own. */
+  worker: string | null;
+  /** Stop was pressed and the job hasn't ended yet. */
+  stopping: boolean;
+}
+
 export interface SessionSummary {
   /** Session id from the JSONL header line. */
   id: string;
@@ -101,6 +124,10 @@ export interface SessionSummary {
       socket's hello (§chat.composer/known-on-switch). The model supersedes the file-tail `model`.
       Absent for a session the server doesn't hold, and from older servers and peers. */
   chat?: HeldChatState;
+  /** How many background jobs this session's chat keeps running (§app.background-jobs/pane), its
+      workers' not counted. Present (≥ 1) only while the chat has shut down, i.e. `chat` is absent:
+      the session list's `job running` marker. Absent otherwise, and from older servers. */
+  jobsRunning?: number;
   /** "web" if spawned via this webapp's POST /api/sessions (tracked persistently by the server,
       survives restarts); "external" for anything else. Pane rule: top region shows
       live!=null || (origin==="web" && !archived); everything else goes to the bottom archive section. */
@@ -286,6 +313,8 @@ export const EAGER_TOOLS: ReadonlySet<string> = new Set([
   "sova_confirm",
   "sova_link",
   "sova_unlink",
+  // A pairing made or ended (§app.overseer/pairs): its details are the action card.
+  "sova_pair",
   "align",
   "session_send",
   "sova_create_session",
@@ -968,9 +997,10 @@ export interface ThemeList {
 export const PLAYBOOK_ENTRIES = ["PLAYBOOK.md", "SKILL.md"] as const;
 export type PlaybookEntry = (typeof PLAYBOOK_ENTRIES)[number];
 
-/** What a verb playbook's branch proposes: the project's settings, its deploy section, or its releases (the release
-    section plus the project's release playbook). */
-export const PLAYBOOK_PROPOSES = ["definition", "deploy", "release"] as const;
+/** What a verb playbook's branch proposes: the project's settings, its deploy section, its releases (the release
+    section plus the project's release playbook), or its whole pipeline (the Setup chat: services, merge, release and
+    deploy together, §app.project-setup/chat). */
+export const PLAYBOOK_PROPOSES = ["definition", "deploy", "release", "pipeline"] as const;
 export type PlaybookProposes = (typeof PLAYBOOK_PROPOSES)[number];
 
 /** One entry in the Sova playbook catalog. */
@@ -979,7 +1009,7 @@ export interface PlaybookInfo {
   title: string;              // frontmatter title, else name, else the id
   description: string;        // frontmatter description, else ""
   promptHint?: string;        // frontmatter promptHint: what the reader may want to specify for the first turn
-  /** Frontmatter `proposes: definition | deploy | release`: a verb playbook, whose branch the operator merges
+  /** Frontmatter `proposes: definition | deploy | release | pipeline`: a verb playbook, whose branch the operator merges
       (§app.project-runtime/verb-playbooks). Absent (or any other value): not a verb playbook. */
   proposes?: PlaybookProposes;
   source: "sova" | "user" | "project";
@@ -3964,6 +3994,14 @@ export interface AttentionDigest {
   generatedAt: number;
   counts: { act: number; decide: number; fyi: number };
   items: AttentionItem[];
+  /** The chats dismissed from Needs you right now, session path → the newest item each dismissal covers
+      (§app.session-list/needs-you-dismiss). Their items are already left out of `items` and `counts`: this is for
+      what reads waits from the session list instead (the Organizations region's baton waits). Absent: none. */
+  dismissed?: Record<string, number>;
+  /** Each chat with an item that lists in Needs you, session path → that chat's newest such item, taken before the
+      30-item cap (§app.session-list/needs-you-dismiss): what a Dismiss covers, whatever the cap cut. Absent: none, or
+      an older server. */
+  newestListed?: Record<string, number>;
 }
 
 /** One line of `<stateRoot>/overseer-actions.jsonl`. */
@@ -6072,3 +6110,35 @@ export interface UpdateApplyRequest {
   target: string;
   confirm: true;
 }
+
+// ---- the Overseer's pairings (§app.overseer/pairs) ---------------------------------------------
+// GET  /api/sessions/pairs?id=<session id>     -> { pairs: PairView[] }  (no id: every pairing in force)
+// POST /api/sessions/pairs/unpair { pairing }  -> { pair: PairView }      (404 none, 409 already ended)
+// POST /api/sessions/pairs/resume { pairing, direction? } -> { pair: PairView }
+
+/** One chat of a pairing, as the page and the Overseer read it. `paused`: notes TO this chat have
+    reached the ceiling and wait for a resume. */
+export interface PairSideView {
+  sessionId: string;
+  path: string;
+  title: string;
+  topic: string;
+  job: string;
+  /** Notes pushed to this chat since that direction was last resumed. */
+  notesIn: number;
+  paused: boolean;
+}
+
+export interface PairView {
+  id: string;
+  createdAt: string;
+  a: PairSideView;
+  b: PairSideView;
+  /** The ceiling per direction. */
+  limit: number;
+  endedAt?: string;
+  endedWhy?: "unpaired" | "archived" | "gone";
+}
+
+/** A direction of a pairing, by its two chats' places in it. */
+export type PairResumeDirection = "a_to_b" | "b_to_a";

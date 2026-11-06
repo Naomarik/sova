@@ -1,5 +1,5 @@
 import { createContext, createEffect, createMemo, createSignal, For, type JSX, on, Show, useContext } from "solid-js";
-import type { OverseerQuickAction, SovaConfirmDetails, SovaConfirmItem } from "../../shared/protocol";
+import type { OverseerQuickAction, PairView, SovaConfirmDetails, SovaConfirmItem } from "../../shared/protocol";
 import {
   answerOptions,
   cardLetter,
@@ -698,6 +698,45 @@ function ConfirmItemRow(props: { item: SovaConfirmItem; since?: string; children
       <ItemNote note={it.note} sends={it.sends} />
       {props.children}
     </li>
+  );
+}
+
+/** A sova_pair pair / unpair result's details (the pairing as it stood then), or null: resume and
+    list stay plain tool cards. */
+export function pairDetails(v: unknown): { op: "pair" | "unpair"; pair: PairView; existing?: true } | null {
+  const d = v as { v?: unknown; op?: unknown; pair?: PairView; existing?: true } | null | undefined;
+  if (!d || typeof d !== "object" || (d.op !== "pair" && d.op !== "unpair")) return null;
+  const p = d.pair;
+  if (!p || typeof p.id !== "string" || typeof p.a?.sessionId !== "string" || typeof p.b?.sessionId !== "string") return null;
+  return { op: d.op, pair: p, ...(d.existing ? { existing: true as const } : {}) };
+}
+
+/**
+ * `sova_pair`'s pair and unpair, drawn as the pairing they made or ended, naming both chats
+ * (§app.overseer/pairs). A snapshot of the call: each chat's own Paired with line is the live view.
+ */
+export function PairCard(props: { op: "pair" | "unpair"; pair: PairView; existing?: boolean }) {
+  const title = () => (props.op === "unpair" ? "Pairing ended" : props.existing ? "Already paired" : "Paired 2 chats");
+  return (
+    <section class="card overseer-link" aria-label={`${title()}: ${props.pair.id}`}>
+      <div class="card-head">
+        <Icon name="network" small />
+        <h3 class="card-title">{title()}</h3>
+        <span class="overseer-link-id">{props.pair.id}</span>
+      </div>
+      <ul class="card-body overseer-link-members">
+        <For each={[props.pair.a, props.pair.b]}>
+          {(side) => (
+            <li>
+              <span class="overseer-link-host">{side.topic}</span>
+              <a href={`#/s/${encodeURIComponent(side.path)}`} title={side.sessionId}>
+                {side.title}
+              </a>
+            </li>
+          )}
+        </For>
+      </ul>
+    </section>
   );
 }
 

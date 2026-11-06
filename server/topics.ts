@@ -4,7 +4,7 @@ import { toPiTool } from "./harness/pi/tools";
 import { existsSync } from "node:fs";
 import { isArchived } from "./archived-sessions";
 import { Refusal, text } from "./session-guards";
-import { TOPIC_TEXT_MAX, TopicStore } from "./topic-store";
+import { pairPaused, type PairRecord, TOPIC_TEXT_MAX, TopicStore } from "./topic-store";
 
 /**
  * Topic queues' tools (§chat.topics/open, §chat.topics/push). `queue_push` is in every ordinary
@@ -30,6 +30,22 @@ export function onTopicPush(fn: (topic: string) => void): () => void {
   pushListeners.add(fn);
   return () => pushListeners.delete(fn);
 }
+
+/** End a pairing (§app.overseer/pairs): both topics close, their waiting notes drop, each close is
+    audited. Neither chat is told. Null when it wasn't in force. */
+export function endPairing(id: string, why: NonNullable<PairRecord["endedWhy"]>): PairRecord | null {
+  const s = topicStore();
+  const ended = s.endPair(id, why);
+  if (!ended) return null;
+  for (const side of ["a", "b"] as const)
+    s.audit({ sessionId: ended.pair[side].sessionId, tool: "queue_open", topic: ended.pair[side].topic, outcome: "closed", dropped: ended.dropped[side], pairing: id });
+  return ended.pair;
+}
+
+/** A push to a pairing's topic once the pairing ended, from the partner it was opened for. */
+export const PAIRING_ENDED = "This pairing has ended.";
+/** A push past one direction's ceiling (§app.overseer/pairs). */
+export const PAIRING_PAUSED = "This pairing is paused: note limit reached.";
 
 export const PUSH_WINDOW_MS = 10 * 60_000;
 export const PUSHES_PER_WINDOW = 5;
@@ -65,12 +81,13 @@ export interface PushingSession extends Omit<PusherContext, "title"> {
  * its text names as a whole word invites the target there, once the send is accepted. They are
  * recorded BEFORE the hand-off, since the target's turn may push before the send returns; the
  * caller then says `accepted()` (each new one is audited) or `refused()` (the new ones are taken
- * back, so a refused send invites no one; an invitation the target already had stays).
+ * back, so a refused send invites no one; an invitation the target already had stays). A pairing's
+ * topic never invites anyone this way: its partner is its one sender (§chat.topics/open).
  */
 export function inviteFromSend(senderId: string, targetId: string, sent: string): { accepted(): string[]; refused(): void } {
   const s = topicStore();
   const made: string[] = [];
-  for (const [name, t] of s.openTopics()) if (t.receiver.sessionId === senderId && namesTopic(sent, name) && s.invite(name, targetId)) made.push(name);
+  for (const [name, t] of s.openTopics()) if (t.receiver.sessionId === senderId && !t.pairing && namesTopic(sent, name) && s.invite(name, targetId)) made.push(name);
   return {
     accepted: () => {
       for (const name of made) s.audit({ sessionId: senderId, tool: "session_send", topic: name, outcome: "invited", target: targetId });
@@ -105,16 +122,32 @@ export function pushNote(ctx: PusherContext, params: { topic?: unknown; text?: u
   const s = topicStore();
   const sessionId = ctx.sessionId();
   const topic = typeof params?.topic === "string" ? params.topic.trim() : "";
-  const refuse = (error: string, reason?: "not-open" | "not-invited" | "receiver-gone"): never => {
+  const refuse = (error: string, reason?: "not-open" | "not-invited" | "receiver-gone" | "pairing-ended" | "pairing-paused"): never => {
     s.audit({ sessionId, tool: "queue_push", ...(topic ? { topic: topic.slice(0, 64) } : {}), outcome: "refused", error, ...(reason ? { reason } : {}) });
     throw new Refusal(error);
   };
   const notOpen = `No open topic "${topic.slice(0, 64)}".`;
+  // A pairing's topic closed because its pairing ended (§app.overseer/pairs): the partner it was
+  // opened for hears that plainly; anyone else still gets "No open topic".
+  const endedFor = (): boolean => {
+    const of = s.pairOfTopic(topic);
+    if (!of?.pair.endedAt) return false;
+    return (of.dir === "toA" ? of.pair.b.sessionId : of.pair.a.sessionId) === sessionId;
+  };
   const rec = s.topic(topic);
-  if (!rec) refuse(notOpen, "not-open");
+  if (!rec) {
+    if (endedFor()) refuse(PAIRING_ENDED, "pairing-ended");
+    refuse(notOpen, "not-open");
+  }
   if (receiverGone(rec!.receiver)) {
-    const dropped = s.close(topic);
-    s.audit({ sessionId: rec!.receiver.sessionId, tool: "queue_open", topic, outcome: "closed", dropped });
+    // A paired chat gone or archived ends its pairing: both topics close together.
+    const ended = rec!.pairing ? endPairing(rec!.pairing, isArchived(rec!.receiver.sessionId) ? "archived" : "gone") : null;
+    if (ended) {
+      if (endedFor()) refuse(PAIRING_ENDED, "pairing-ended");
+    } else {
+      const dropped = s.close(topic);
+      s.audit({ sessionId: rec!.receiver.sessionId, tool: "queue_open", topic, outcome: "closed", dropped });
+    }
     refuse(notOpen, "receiver-gone");
   }
   if (rec!.receiver.sessionId === sessionId) refuse(`This session is "${topic}"'s receiver; a topic is for other sessions.`);
@@ -122,6 +155,9 @@ export function pushNote(ctx: PusherContext, params: { topic?: unknown; text?: u
   const body = typeof params?.text === "string" ? params.text.trim() : "";
   if (!body) refuse("text must not be blank.");
   if (body.length > TOPIC_TEXT_MAX) refuse(`Too long: at most ${TOPIC_TEXT_MAX} characters.`);
+  // The pairing's ceiling: once a direction has taken its notes, it pauses until resumed.
+  const paired = rec!.pairing ? s.pairOfTopic(topic) : null;
+  if (paired && pairPaused(paired.pair, paired.dir)) refuse(PAIRING_PAUSED, "pairing-paused");
   const now = (ctx.now ?? Date.now)();
   const key = `${sessionId}\u0000${topic}`;
   const recent = (pushTimes.get(key) ?? []).filter((t) => now - t < PUSH_WINDOW_MS);
@@ -130,6 +166,7 @@ export function pushNote(ctx: PusherContext, params: { topic?: unknown; text?: u
   if (!r.ok) refuse(r.error);
   recent.push(now);
   pushTimes.set(key, recent);
+  if (paired) s.countPairNote(paired.pair.id, paired.dir);
   s.audit({ sessionId, tool: "queue_push", topic, outcome: "ok", item: (r as { id: string }).id });
   for (const fn of pushListeners) {
     try {

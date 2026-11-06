@@ -319,6 +319,8 @@ describe("turns the user did not start are read-only", () => {
     sova_todo: { op: "add", text: "A probe" },
     sova_link: { members: [{ session: "some-id" }, { host: "peer", session: "other-id" }] },
     sova_unlink: { link: "lk_0123456789abcdef" },
+    // §app.overseer/pairs: pair, unpair and resume act (list reads, through the same tool).
+    sova_pair: { op: "pair", a: "some-id", b: "other-id", job_a: "a", job_b: "b" },
     // §app.overseer/org-tools: every organization act.
     sova_org: { op: "create", name: "Probe Org" },
     sova_org_project: { op: "edit", project: "any", name: "p" },

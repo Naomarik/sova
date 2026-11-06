@@ -6,7 +6,8 @@
     "requires": [
       "§app.project-runtime/deploy-standing",
       "§app.project-services/deploy-plan",
-      "§app.project-services/deploy-run"
+      "§app.project-services/deploy-run",
+      "§app.project-setup/start"
     ],
     "code": [
       "src/components/ProjectDeployPanel.tsx",
@@ -16,7 +17,8 @@
       "src/components/ProjectPage.tsx",
       "src/projects.css",
       "src/lib/releases-client.ts",
-      "server/project-releases-ui.integration.test.ts"
+      "server/project-releases-ui.integration.test.ts",
+      "src/components/SetupChat.tsx"
     ],
     "agreed": {
       "by": "user",
@@ -30,15 +32,23 @@
     "evidence": "verified",
     "requires": [
       "§app.project-runtime/verb-playbooks",
-      "§app.project-services/deploy-check"
+      "§app.project-services/deploy-check",
+      "§app/project-setup"
     ],
     "code": [
       "playbooks/project-deploy/PLAYBOOK.md",
       "playbooks/project-deploy/references/deploy.md",
       "playbooks/project-deploy/scripts/project-deploy.mjs",
       "server/project-services/deploy-playbook.test.ts",
-      "server/project-services/deploy-playbook.integration.test.ts"
-    ]
+      "server/project-services/deploy-playbook.integration.test.ts",
+      "playbooks/project-setup/references/questions.md",
+      "server/projects/onboard.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T04:53Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+    }
   },
   "§app.project-runtime/deploy-standing": {
     "kind": "behavior",
@@ -70,7 +80,8 @@
       "server/merge-queue-ui.integration.test.ts",
       "server/projects/playbook-review.ts",
       "server/projects/release-proposal.ts",
-      "server/projects/runtime.test.ts"
+      "server/projects/runtime.test.ts",
+      "shared/playbook-review.ts"
     ],
     "requires": [
       "§app.project-runtime/review",
@@ -78,8 +89,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-05T06:42Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
     }
   },
   "§app.project-runtime/onboard": {
@@ -111,8 +122,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-05T06:42Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
     }
   },
   "§app.project-runtime/playbook": {
@@ -191,7 +202,12 @@
       "src/lib/project-software.test.ts",
       "src/components/NeedsYouRow.tsx",
       "src/lib/needs-you-row.ts",
-      "server/needs-you-rows-ui.integration.test.ts"
+      "server/needs-you-rows-ui.integration.test.ts",
+      "src/components/SetupChat.tsx",
+      "src/projects.css",
+      "server/projects/setup-chat.ts",
+      "server/projects/runtime.ts",
+      "server/projects/setup-chat-open.test.ts"
     ],
     "requires": [
       "§app.project-runtime/onboard",
@@ -199,8 +215,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-06T01:40Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
     }
   },
   "§app.project-runtime/run-progress": {
@@ -316,15 +332,17 @@
       "statecharts/test/sova/statecharts/refit/runtime_test.cljs",
       "statecharts/EVENTS.md",
       "server/overseer-tools.ts",
-      "server/projects/playbook-review.ts"
+      "server/projects/playbook-review.ts",
+      "server/projects/folded-playbooks.test.ts"
     ],
     "requires": [
-      "§app.project-runtime/onboard"
+      "§app.project-runtime/onboard",
+      "§app/project-setup"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-05T04:53Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
     }
   },
   "§app/project-runtime": {

@@ -74,7 +74,7 @@ export class ReleaseFailure extends Error {
 export const FROM_CHAT = "a chat's script never acts as the operator on a release: the operator does it on the Releases tab";
 export const REPORTS_FROM_THREAD = "reports come from the release chat's own tool, never the operator's route";
 export const SESSION_NEVER = "a coding session never starts or asks for a release: tell the operator in your report";
-export const NOT_INITIALIZED = "releases aren't set up for this project: Set Up Releases on its Releases tab (the release section of .sova/project.json and its playbook's release.json)";
+export const NOT_INITIALIZED = "releases aren't set up for this project: Set Up with a Chat on its Releases tab (the release section of .sova/project.json and its playbook's release.json)";
 export const ASK_INSTEAD = "ask for it instead: release.request {why} raises it for the operator";
 
 const OPERATOR_ACTS: readonly ReleaseVerb[] = ["release.start", "release.continue", "release.retry", "release.publish", "release.abandon", "release.withdraw"];

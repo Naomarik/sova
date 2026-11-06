@@ -1,7 +1,7 @@
 {
   "families": {
     "overseer": {
-      "bytes": 92353,
+      "bytes": 94566,
       "tools": [
         {
           "name": "sova_attention",
@@ -875,7 +875,8 @@
                                         "sova_set_session",
                                         "sova_archive",
                                         "sova_answer_dialog",
-                                        "sova_group"
+                                        "sova_group",
+                                        "sova_pair"
                                       ]
                                     },
                                     "description": "The acts it covers (default: all of them)."
@@ -1728,6 +1729,63 @@
           }
         },
         {
+          "name": "sova_pair",
+          "label": "Pair chats",
+          "description": "Pair two chats on this host so they can work together: each may send the other short notes with queue_push (a tool every ordinary chat already has), which arrive between turns as a queue batch. Neither chat gains or loses a tool, and its system prompt is unchanged. op pair {a, b, job_a, job_b}: job_a says in your words what a does (b is told it), job_b what b does (a is told it); each chat gets one introduction from you naming its partner, the partner's job, and the topic to push to. Pairing the same two again returns the existing pairing. Refused for a terminal-owned, archived, subagent, baton, project-overseer or other organization session, your own, a chat on another host, the same chat twice, or a chat already holding 10 topics. 40 notes each way, then that direction pauses until resumed. op unpair {pairing} ends it (both topics close, neither chat is told); op resume {pairing, direction?} lifts a pause; op list {session?} lists pairings in force. pair, unpair and resume are acts: only in a turn the user started, or under an approval for later or a standing rule that covers both chats. Pair only on the user's word.",
+          "promptSnippet": "pair two chats on this host so they can send each other notes between turns",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "description": "pair, unpair, resume or list.",
+                "enum": [
+                  "pair",
+                  "unpair",
+                  "resume",
+                  "list"
+                ]
+              },
+              "a": {
+                "type": "string",
+                "description": "pair: the first chat's session id."
+              },
+              "b": {
+                "type": "string",
+                "description": "pair: the second chat's session id."
+              },
+              "job_a": {
+                "type": "string",
+                "description": "pair: what a does, in your words (told to b)."
+              },
+              "job_b": {
+                "type": "string",
+                "description": "pair: what b does, in your words (told to a)."
+              },
+              "pairing": {
+                "type": "string",
+                "description": "unpair, resume: the pairing id (pr_…, from list)."
+              },
+              "direction": {
+                "type": "string",
+                "description": "resume: a_to_b or b_to_a; both when left out.",
+                "enum": [
+                  "a_to_b",
+                  "b_to_a"
+                ]
+              },
+              "session": {
+                "type": "string",
+                "description": "list: only this chat's pairings."
+              }
+            },
+            "required": [
+              "op"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
           "name": "sova_project_verbs",
           "label": "Project verbs",
           "description": "Run any project's instances on this host: status/logs/doctor anywhere; create, up, down (a copy with share links included), apply, test, conform and share in a turn the user started (share only of an endpoint the definition declares, never a copy whose data is sensitive, at most 7 days or share.maxDays; refused in a run the user did not start); revoke a copy's share links. Reset and teardown of an instance you did not create run on the user's word once its conversation is finished or archived; stopping a shared service is the operator's (needs-confirm): tell them. Verbs over the project's .sova/project.json, each answering one JSON result (ok, changed, state, steps, services, data, error {code, message}). create (a worktree's instance: slot, ports, data, setup), up (start and wait until ready; creates first), down (stop; keeps data), apply (build + reload each running service, wait until ready), status, logs, doctor (preflight), reset (fresh data), teardown (the only destructive verb: stops, deletes its data, removes a worktree Sova cut; never the branch), conform (Sova's conformance suite in two scratch copies), test (runs the project's test command in that instance, starting what it requires; tests {pass, passed, failed, failures…}; error tests-failed when it did not pass, unsupported when the project declares none). share {instance, endpoint, days?} gives a running copy a preview link to one endpoint the definition lists in share.endpoints (never anything else; never a copy whose data is sensitive); the result names the link by its id and carries its URL: give it to the user in your reply when they ask for it (status lists each copy's links with theirs too). revoke {link} or {instance, endpoint?} ends links at once (never held). Teardown ends every link of its copy. Error busy: another verb is running on that instance; try again later. Deploy (a target of the definition's deploy section, never an instance): deploy.status {target?} (each target's standing, last deploy and history) and deploy.logs {target | deploy} read; deploy.check {ref?} proves a recipe offline (programs, host values, credentials by presence; runs nothing). Shipping is the operator's: deploy.run and deploy.rollback answer forbidden to this tool; deploy.plan is the operator's (yours in a turn the user started); to ask for a deploy, deploy.request {target, commit?, why} raises it for the operator. onboard {why} starts the Project verbs playbook as a coding session on its own branch (counted and held like a coding session's start): it writes or updates .sova/project.json, proves it with conform and proposes it on its branch; the operator merges it, never you.",
@@ -1781,7 +1839,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
               },
               "from": {
                 "type": "string",
@@ -1847,7 +1905,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
               },
               "plan": {
                 "type": "string",
@@ -2899,7 +2957,7 @@
       ]
     },
     "overseer+copies": {
-      "bytes": 98138,
+      "bytes": 100351,
       "tools": [
         {
           "name": "sova_attention",
@@ -3773,7 +3831,8 @@
                                         "sova_set_session",
                                         "sova_archive",
                                         "sova_answer_dialog",
-                                        "sova_group"
+                                        "sova_group",
+                                        "sova_pair"
                                       ]
                                     },
                                     "description": "The acts it covers (default: all of them)."
@@ -4710,6 +4769,63 @@
           }
         },
         {
+          "name": "sova_pair",
+          "label": "Pair chats",
+          "description": "Pair two chats on this host so they can work together: each may send the other short notes with queue_push (a tool every ordinary chat already has), which arrive between turns as a queue batch. Neither chat gains or loses a tool, and its system prompt is unchanged. op pair {a, b, job_a, job_b}: job_a says in your words what a does (b is told it), job_b what b does (a is told it); each chat gets one introduction from you naming its partner, the partner's job, and the topic to push to. Pairing the same two again returns the existing pairing. Refused for a terminal-owned, archived, subagent, baton, project-overseer or other organization session, your own, a chat on another host, the same chat twice, or a chat already holding 10 topics. 40 notes each way, then that direction pauses until resumed. op unpair {pairing} ends it (both topics close, neither chat is told); op resume {pairing, direction?} lifts a pause; op list {session?} lists pairings in force. pair, unpair and resume are acts: only in a turn the user started, or under an approval for later or a standing rule that covers both chats. Pair only on the user's word.",
+          "promptSnippet": "pair two chats on this host so they can send each other notes between turns",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "description": "pair, unpair, resume or list.",
+                "enum": [
+                  "pair",
+                  "unpair",
+                  "resume",
+                  "list"
+                ]
+              },
+              "a": {
+                "type": "string",
+                "description": "pair: the first chat's session id."
+              },
+              "b": {
+                "type": "string",
+                "description": "pair: the second chat's session id."
+              },
+              "job_a": {
+                "type": "string",
+                "description": "pair: what a does, in your words (told to b)."
+              },
+              "job_b": {
+                "type": "string",
+                "description": "pair: what b does, in your words (told to a)."
+              },
+              "pairing": {
+                "type": "string",
+                "description": "unpair, resume: the pairing id (pr_…, from list)."
+              },
+              "direction": {
+                "type": "string",
+                "description": "resume: a_to_b or b_to_a; both when left out.",
+                "enum": [
+                  "a_to_b",
+                  "b_to_a"
+                ]
+              },
+              "session": {
+                "type": "string",
+                "description": "list: only this chat's pairings."
+              }
+            },
+            "required": [
+              "op"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
           "name": "sova_project_verbs",
           "label": "Project verbs",
           "description": "Run any project's instances on this host: status/logs/doctor and leftovers anywhere; create, up, down (a copy with share links included), apply, test, conform and share in a turn the user started (share only of an endpoint the definition declares, never a copy whose data is sensitive, at most 7 days or share.maxDays; refused in a run the user did not start); revoke a copy's share links. Tearing down or resetting a copy you did not start runs on the user's word once its conversation is finished or archived; while it still works, and to stop a leftover process, only in the turn the user's click on a card listing it opens (below). Stopping a shared service and resetting or tearing down any project's main copy (slot 0) are the operator's (needs-confirm): tell them. Verbs over the project's .sova/project.json, each answering one JSON result (ok, changed, state, steps, services, data, error {code, message}). create (a worktree's instance: slot, ports, data, setup), up (start and wait until ready; creates first), down (stop; keeps data), apply (build + reload each running service, wait until ready), status, logs, doctor (preflight), reset (fresh data), teardown (the only destructive verb: stops, deletes its data, removes a worktree Sova cut; never the branch), conform (Sova's conformance suite in two scratch copies), test (runs the project's test command in that instance, starting what it requires; tests {pass, passed, failed, failures…}; error tests-failed when it did not pass, unsupported when the project declares none). share {instance, endpoint, days?} gives a running copy a preview link to one endpoint the definition lists in share.endpoints (never anything else; never a copy whose data is sensitive); the result names the link by its id and carries its URL: give it to the user in your reply when they ask for it (status lists each copy's links with theirs too). revoke {link} or {instance, endpoint?} ends links at once (never held). Teardown ends every link of its copy. Error busy: another verb is running on that instance; try again later. Deploy (a target of the definition's deploy section, never an instance): deploy.status {target?} (each target's standing, last deploy and history) and deploy.logs {target | deploy} read; deploy.check {ref?} proves a recipe offline (programs, host values, credentials by presence; runs nothing). Shipping is the operator's: deploy.run and deploy.rollback answer forbidden to this tool; deploy.plan is the operator's (yours in a turn the user started); to ask for a deploy, deploy.request {target, commit?, why} raises it for the operator. onboard {why} starts the Project verbs playbook as a coding session on its own branch (counted and held like a coding session's start): it writes or updates .sova/project.json, proves it with conform and proposes it on its branch; the operator merges it, never you. leftovers {project} lists each process holding one of the project's copy ports (slots 1 to 16) that no copy of Sova's owns: safe to stop (its folder was deleted, or its branch's own commits are already merged) or in use, with why. On the user's word (a turn they started, typed or a click): down of any copy, one with share links included (its data and links are kept; the links work again once it is up), and teardown or reset of a copy you did not start once the conversation that started it is finished or archived. In the turn the user's click on a sova_card card opens, and only for a row whose chosen label names the act: teardown or reset of a copy you did not start while its conversation is still working (items.copies), and stop-leftover {project, port} of a leftover process (items.leftovers; Sova checks it is still the same process). A typed yes never answers such a card. A teardown keeps a folder's uncommitted edits in that folder (its worktree step says kept): tell them so. A project's main copy (slot 0) and stopping a shared service are never yours.",
@@ -4765,7 +4881,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
               },
               "from": {
                 "type": "string",
@@ -4831,7 +4947,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
               },
               "plan": {
                 "type": "string",
@@ -6082,7 +6198,7 @@
       ]
     },
     "project-overseer": {
-      "bytes": 39609,
+      "bytes": 39703,
       "tools": [
         {
           "name": "sova_project",
@@ -7155,7 +7271,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
               },
               "from": {
                 "type": "string",
@@ -7221,7 +7337,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
               },
               "plan": {
                 "type": "string",
@@ -7476,7 +7592,7 @@
       ]
     },
     "project-overseer+onboard": {
-      "bytes": 40005,
+      "bytes": 40099,
       "tools": [
         {
           "name": "sova_project",
@@ -8555,7 +8671,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
               },
               "from": {
                 "type": "string",
@@ -8621,7 +8737,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
               },
               "plan": {
                 "type": "string",
@@ -8673,7 +8789,7 @@
       ]
     },
     "project-overseer+gaps": {
-      "bytes": 40050,
+      "bytes": 40144,
       "tools": [
         {
           "name": "sova_project",
@@ -9758,7 +9874,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
               },
               "from": {
                 "type": "string",
@@ -9824,7 +9940,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
               },
               "plan": {
                 "type": "string",
@@ -9876,7 +9992,7 @@
       ]
     },
     "project-overseer+copies": {
-      "bytes": 45627,
+      "bytes": 45721,
       "tools": [
         {
           "name": "sova_project",
@@ -11041,7 +11157,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
               },
               "from": {
                 "type": "string",
@@ -11107,7 +11223,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
               },
               "plan": {
                 "type": "string",
@@ -11505,7 +11621,7 @@
       ]
     },
     "project-verbs:session": {
-      "bytes": 8667,
+      "bytes": 8829,
       "tools": [
         {
           "name": "project_verbs",
@@ -11556,6 +11672,7 @@
                   "merge.fresh",
                   "merge.clear",
                   "merge.hold",
+                  "merge.try",
                   "release.status",
                   "release.logs",
                   "release.request",
@@ -11584,7 +11701,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
               },
               "from": {
                 "type": "string",
@@ -11650,7 +11767,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
               },
               "plan": {
                 "type": "string",
@@ -11713,7 +11830,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "merge.extend {entry, checks, why, select}: check ids from the project's merge section to add to this entry's run (never removes one); send each pick's select with it."
+                "description": "merge.extend {entry, checks, why, select}: check ids from the project's merge section to add to this entry's run (never removes one); send each pick's select with it; merge.try: release check ids to run although unchanged."
               },
               "verdict": {
                 "type": "string",
@@ -11760,7 +11877,7 @@
       ]
     },
     "project-verbs:overseer": {
-      "bytes": 6212,
+      "bytes": 6306,
       "tools": [
         {
           "name": "sova_project_verbs",
@@ -11810,7 +11927,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
               },
               "from": {
                 "type": "string",
@@ -11876,7 +11993,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
               },
               "plan": {
                 "type": "string",
@@ -11928,7 +12045,7 @@
       ]
     },
     "project-verbs:overseer+onboard": {
-      "bytes": 6608,
+      "bytes": 6702,
       "tools": [
         {
           "name": "sova_project_verbs",
@@ -11984,7 +12101,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
               },
               "from": {
                 "type": "string",
@@ -12050,7 +12167,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
               },
               "plan": {
                 "type": "string",
@@ -12102,7 +12219,7 @@
       ]
     },
     "project-verbs:project-overseer": {
-      "bytes": 7123,
+      "bytes": 7217,
       "tools": [
         {
           "name": "sova_project_verbs",
@@ -12152,7 +12269,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
               },
               "from": {
                 "type": "string",
@@ -12218,7 +12335,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
               },
               "plan": {
                 "type": "string",
@@ -12270,7 +12387,7 @@
       ]
     },
     "project-verbs:overseer+copies": {
-      "bytes": 8057,
+      "bytes": 8151,
       "tools": [
         {
           "name": "sova_project_verbs",
@@ -12328,7 +12445,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
               },
               "from": {
                 "type": "string",
@@ -12394,7 +12511,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
               },
               "plan": {
                 "type": "string",
@@ -12452,7 +12569,7 @@
       ]
     },
     "project-verbs:project-overseer+copies": {
-      "bytes": 8801,
+      "bytes": 8895,
       "tools": [
         {
           "name": "sova_project_verbs",
@@ -12510,7 +12627,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
               },
               "from": {
                 "type": "string",
@@ -12576,7 +12693,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
               },
               "plan": {
                 "type": "string",

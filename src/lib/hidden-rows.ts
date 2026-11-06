@@ -46,8 +46,17 @@ export function isAlignMarkOnly(name: string | undefined, args: unknown): boolea
   return Array.isArray(ops) && ops.length > 0 && ops.every((o) => typeof o === "object" && o !== null && (o as { op?: unknown }).op === "change_request");
 }
 
+/** `sova_pair`'s pair and unpair are action cards (§app.overseer/pairs): "Hide tool calls" never folds
+    them. Its list and resume are working, folded like any tool. Read from the call's own arguments. */
+export function isPairCardCall(name: string | undefined, args: unknown): boolean {
+  if (name !== "sova_pair" || typeof args !== "object" || args === null) return false;
+  const op = (args as { op?: unknown }).op;
+  return op === "pair" || op === "unpair";
+}
+
 /** Whether a call row (by its tool name and arguments) is drawn as a card rather than a tool card. */
-const isCardCall = (it: TranscriptItem) => CARD_TOOLS.has(it.text ?? "") && !isAlignMarkOnly(it.text, toolCallArgs(it));
+const isCardCall = (it: TranscriptItem) =>
+  (CARD_TOOLS.has(it.text ?? "") && !isAlignMarkOnly(it.text, toolCallArgs(it))) || isPairCardCall(it.text, toolCallArgs(it));
 
 /** Ids of the calls that render as cards (their paired results go with them). */
 const cardCallIds = (items: TranscriptItem[]) =>
@@ -95,7 +104,8 @@ export function splitHidden(items: TranscriptItem[], hide: HideKinds): HiddenSpl
 
 /** Whether a streaming block is one the preferences hide. */
 export const isHiddenBlock = (b: LiveBlock | undefined, hide: HideKinds) =>
-  !!b && ((hide.tools && b.type === "toolCall" && (!CARD_TOOLS.has(b.name) || isAlignMarkOnly(b.name, b.args))) || (hide.thinking && b.type === "thinking"));
+  !!b &&
+  ((hide.tools && b.type === "toolCall" && (!CARD_TOOLS.has(b.name) || isAlignMarkOnly(b.name, b.args)) && !isPairCardCall(b.name, b.args)) || (hide.thinking && b.type === "thinking"));
 
 /** The streaming turn's hidden blocks, counted from its blocks and, for tool calls, their live status. */
 export function liveHiddenCounts(live: LiveState, hide: HideKinds): { calls: number; failed: number; running: number; thinking: number } {

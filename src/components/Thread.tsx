@@ -1,6 +1,7 @@
 import { children, createContext, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, untrack, useContext, type JSX } from "solid-js";
 import type { TranscriptItem } from "../../shared/protocol";
 import { rowFacts } from "../../shared/wire-v1";
+import { rendersSomething } from "../lib/rendered";
 import { wrapupRowIds } from "../lib/wrapup-rows";
 import { readHoldTop } from "../lib/read-hold";
 import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState } from "../lib/live";
@@ -841,6 +842,8 @@ export function holdReaderAcrossSwap(path: string): void {
 export function ThreadScroller(props: {
   children: JSX.Element;
   banner?: JSX.Element;
+  /** Lines above the scroll region: they take their own height, never covering a row. */
+  header?: JSX.Element;
   /** Number of rendered entries, for the "N new" count. */
   count: number;
   resume?: number;
@@ -867,6 +870,9 @@ export function ThreadScroller(props: {
   const [away, setAway] = createSignal<number | null>(null); // count when the user scrolled away
   // Resolve once: reading a JSX prop twice would build its DOM twice.
   const banner = children(() => props.banner);
+  const header = children(() => props.header);
+  // Not header() itself: a <For> with nothing to draw resolves to [], which is truthy.
+  const hasHeader = createMemo(() => rendersSomething(header()));
 
   /** How far the view was from the end when last read: 0 right after a scroll to the bottom. */
   let lastGap = 0;
@@ -1456,6 +1462,9 @@ export function ThreadScroller(props: {
 
   return (
     <div class="transcript-wrap">
+      <Show when={hasHeader()}>
+        <div class="transcript-header">{header()}</div>
+      </Show>
       <section
         class="transcript pane"
         id={paneId("transcript")}

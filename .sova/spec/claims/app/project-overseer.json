@@ -290,12 +290,21 @@
       "server/org-host/index.ts",
       "server/statecharts.ts",
       "src/lib/pipeline-view.test.ts",
-      "server/outreach.test.ts"
+      "server/outreach.test.ts",
+      "src/lib/needs-you-row.ts",
+      "src/lib/needs-you-row.test.ts",
+      "src/components/NeedsYouRow.tsx",
+      "server/needs-you-rows-ui.integration.test.ts"
     ],
     "requires": [
       "§app.project-overseer/statecharts",
       "§app.project-overseer/corrections"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T01:40Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
+    }
   },
   "§app.project-overseer/ideas-and-todos": {
     "kind": "behavior",

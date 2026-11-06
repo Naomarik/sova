@@ -20,6 +20,11 @@
 //                                  "[fake-slow <ms>]" streams its first words, then waits <ms>
 //                                  before it finishes (a turn still running).
 //                                  A message asking for a <handoff> note gets one.
+//                                  A message containing "[fake-tool <name> <json args>]" (json on
+//                                  one line) calls the host's tool <name> once, as the real CLI does:
+//                                  a streamed tool_use block for mcp__<server>__<name>, then a
+//                                  tools/call over the control channel; its answer is a second
+//                                  message, "Fake tool result: <the result's text, cut>".
 //   With FAKE_CLAUDE_ONESHOT=1, a -p run without --input-format stream-json (a one-shot, such as a
 //                                  memory summary) reads its whole input and answers one result
 //                                  envelope, "Fake summary: <the input's last line, cut>"; without it,
@@ -179,6 +184,34 @@ if (args[0] === "auth" && args[1] === "login") {
     // Asked for a handoff note (/compact-handoff's fork), it writes one.
     const text = said.includes("<handoff>") ? `<handoff>HANDOFF-NOTE fake claude, login ${who}</handoff>` : `Fake answer from login ${who}.`;
     const slow = Number(/\[fake-slow (\d+)\]/.exec(said)?.[1] ?? 0);
+    const tool = /\[fake-tool (\S+) (\{.*?\})\]/.exec(typeof frame.message?.content === "string" ? frame.message.content : (frame.message?.content ?? []).map((c) => c.text ?? "").join(""));
+    if (tool && sdkServers.length) {
+      const [, name, json] = tool;
+      const id = `toolu_fake_${randomUUID().slice(0, 8)}`;
+      const full = `mcp__${sdkServers[0]}__${name}`;
+      out({ type: "stream_event", event: { type: "message_start", message: { model: "fake", usage: { input_tokens: 10, output_tokens: 0 } } }, session_id: sessionId });
+      out({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "tool_use", id, name: full, input: {} } }, session_id: sessionId });
+      out({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: json } }, session_id: sessionId });
+      out({ type: "assistant", message: { model: "fake", role: "assistant", content: [{ type: "tool_use", id, name: full, input: JSON.parse(json) }], stop_reason: null, usage: { input_tokens: 10, output_tokens: 8 } }, parent_tool_use_id: null, session_id: sessionId });
+      out({ type: "stream_event", event: { type: "content_block_stop", index: 0 }, session_id: sessionId });
+      out({ type: "stream_event", event: { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { input_tokens: 10, output_tokens: 8 } }, session_id: sessionId });
+      out({ type: "stream_event", event: { type: "message_stop" }, session_id: sessionId });
+      ask({ subtype: "mcp_message", server_name: sdkServers[0], message: { jsonrpc: "2.0", id: askedSeq + 1, method: "tools/call", params: { name, arguments: JSON.parse(json) } } }).then((r) => {
+        const res = r?.response?.mcp_response?.result;
+        const got = (res?.content ?? []).map((c) => c.text ?? "").join("") || JSON.stringify(r?.response ?? null);
+        const said2 = `Fake tool result: ${got.slice(0, 600)}`;
+        out({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: got }] }, session_id: sessionId });
+        out({ type: "stream_event", event: { type: "message_start", message: { model: "fake", usage: { input_tokens: 10, output_tokens: 0 } } }, session_id: sessionId });
+        out({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }, session_id: sessionId });
+        out({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: said2 } }, session_id: sessionId });
+        out({ type: "stream_event", event: { type: "content_block_stop", index: 0 }, session_id: sessionId });
+        out({ type: "stream_event", event: { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { input_tokens: 10, output_tokens: 8 } }, session_id: sessionId });
+        out({ type: "stream_event", event: { type: "message_stop" }, session_id: sessionId });
+        out({ type: "assistant", message: { model: "fake", role: "assistant", content: [{ type: "text", text: said2 }], stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 8 } }, parent_tool_use_id: null, session_id: sessionId });
+        out({ type: "result", subtype: "success", is_error: false, result: said2, num_turns: 2, session_id: sessionId, usage: { input_tokens: 20, output_tokens: 16 }, ...correlate });
+      });
+      return;
+    }
     out({ type: "stream_event", event: { type: "message_start", message: { model: "fake", usage: { input_tokens: 10, output_tokens: 0 } } }, session_id: sessionId });
     out({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }, session_id: sessionId });
     if (slow) {

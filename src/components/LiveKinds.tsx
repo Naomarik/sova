@@ -32,7 +32,7 @@ import { ShowChangesCard } from "./ChangesViewer";
 import { OfferCardView } from "./OfferCard";
 import { SettingsToolCard } from "./SettingsChangeCard";
 import { ToolCard, type ToolStatus } from "./ToolCard";
-import { BriefRow, CardRevision, DeckCard, LinkCard, linkDetails, NavigateGo, useOverseerThread } from "./OverseerCards";
+import { BriefRow, CardRevision, DeckCard, LinkCard, linkDetails, NavigateGo, PairCard, pairDetails, useOverseerThread } from "./OverseerCards";
 
 /** A card the running turn raised, before its row settles: the toolkit's own card view, loaded when
     first needed; a failed load says so (lib/module-load). */
@@ -162,6 +162,8 @@ function LiveToolRow(props: LiveKindViewProps<LiveCallBlock>) {
     return newest.rev > own.rev ? null : newest;
   };
   const linked = () => ((b.name === "sova_link" || b.name === "sova_unlink") && status() === "done" ? linkDetails(tool()?.details) : null);
+  /** A pairing made or ended reads as a card naming both chats (§app.overseer/pairs). */
+  const paired = () => (b.name === "sova_pair" && status() === "done" ? pairDetails(tool()?.details) : null);
   /** An earlier call of a tour this run called again: its line (§app.tours/one-card). */
   const tourEarlier = () => {
     const d = TOUR_TOOLS.has(b.name) && status() === "done" ? normalizeTourCardDetails(tool()?.details) : undefined;
@@ -179,18 +181,25 @@ function LiveToolRow(props: LiveKindViewProps<LiveCallBlock>) {
       <Show
         when={linked()}
         fallback={
-          <ToolCard
-            name={b.name}
-            mcp={b.mcp ?? tool()?.mcp}
-            summary={tourEarlier()}
-            args={b.args ?? tool()?.args}
-            argsText={b.argsText}
-            details={tool()?.details}
-            status={status()}
-            output={tool()?.output}
-            images={tool()?.images}
-            action={b.name === "sova_navigate" && status() === "done" ? <NavigateGo details={tool()?.details} /> : undefined}
-          />
+          <Show
+            when={paired()}
+            fallback={
+              <ToolCard
+                name={b.name}
+                mcp={b.mcp ?? tool()?.mcp}
+                summary={tourEarlier()}
+                args={b.args ?? tool()?.args}
+                argsText={b.argsText}
+                details={tool()?.details}
+                status={status()}
+                output={tool()?.output}
+                images={tool()?.images}
+                action={b.name === "sova_navigate" && status() === "done" ? <NavigateGo details={tool()?.details} /> : undefined}
+              />
+            }
+          >
+            {(d) => <PairCard op={d().op} pair={d().pair} existing={!!d().existing} />}
+          </Show>
         }
       >
         {(d) => <LinkCard details={d()} ended={b.name === "sova_unlink"} />}

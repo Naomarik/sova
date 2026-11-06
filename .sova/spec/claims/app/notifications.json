@@ -22,7 +22,8 @@
       "server/attention-signals.ts",
       "server/merge-queue/asks.ts",
       "server/merge-queue/asks.test.ts",
-      "server/merge-queue/wire.ts"
+      "server/merge-queue/wire.ts",
+      "server/needs-you-dismissed.ts"
     ],
     "requires": [
       "§app.overseer/attention-digest",
@@ -30,8 +31,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T20:05Z",
-      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
+      "at": "2026-11-06T01:40Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
     }
   },
   "§app.notifications/settings": {

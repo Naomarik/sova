@@ -11,7 +11,7 @@ import { isTopicBatch } from "../shared/topic-message";
 import { canonical, normalizeMergeDetails, sharedWith, type TrackedWorktree, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
 import { stateRoot } from "./state-root";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
-import { asksUserOf } from "./signals-store";
+import { type AskTree, asksUserOf, isGoAsk, readSignals } from "./signals-store";
 import { type AncestorCheck, type DraftsHash, draftsHash, draftsLeft } from "./spec-drafts-state";
 import { previewDocs, previewOf } from "./docs-preview";
 export { previewOf };
@@ -134,6 +134,11 @@ export const COMMITS_UNCOUNTED = "commits not counted";
     (`ahead` absent) is not one. Merged needs a commit of its own, so a merged branch is never empty. */
 export const hasNoCommits = (t: Pick<TreeFacts, "readable" | "merged" | "ahead">): boolean => t.readable && !t.merged && t.ahead === 0;
 
+/** An empty leftover worktree (clean, no commit of its own, nothing running, or gone with no commits): it hides no
+    merged badge and holds no go-ahead ask, since there is no version in it to land. */
+export const isEmptyLeftover = (t: Pick<WorktreeReadiness, "state" | "why" | "dirtyCount">): boolean =>
+  (t.state === "in-progress" && t.why === NO_COMMITS && !t.dirtyCount) || (t.state === "removed" && t.why === REMOVED_EMPTY);
+
 /**
  * One worktree's state, a few words why, and the line a person reads (§chat.worktrees/readiness):
  * "Ready to merge · checks passed · 19 commits ahead", "Conflicts with master · 17 files".
@@ -230,10 +235,8 @@ export function sessionReadinessOf(trees: WorktreeReadiness[], flags: MergeFlags
   const ready = trees.find((t) => t.state === "ready");
   if (waiting) return { ...out, badge: "waiting", branch: waiting.branch };
   if (ready) return { ...out, badge: "ready", branch: ready.branch };
-  // An empty leftover worktree (clean, no commit of its own, nothing running) hides no merged badge.
-  const empty = (t: WorktreeReadiness) => (t.state === "in-progress" && t.why === NO_COMMITS && !t.dirtyCount) || (t.state === "removed" && t.why === REMOVED_EMPTY);
   const merged = trees.filter((t) => t.state === "merged");
-  if (!merged.length || trees.some((t) => t.state !== "merged" && !empty(t))) return out;
+  if (!merged.length || trees.some((t) => t.state !== "merged" && !isEmptyLeftover(t))) return out;
   const branch = flags.lastMerge?.branch ?? merged[merged.length - 1]!.branch;
   const since = flags.lastMerge?.at ?? lastReplyAt;
   if (flags.restartPending) return { ...out, badge: "restart", branch, since };
@@ -558,6 +561,9 @@ export interface ReadinessDeps {
   /** What a tree's readiness rests on besides the session, read without Git (WorktreeInsights.quietStamp):
       "gone" for a missing folder, null when it can't be read. */
   treeStamp?: (dir: string, together?: Map<string, unknown>) => string | null;
+  /** A served tree's branch at `head` that changes the project's setup without a passing trial of that commit: why it
+      can't land yet (server/merge-queue/setup-branch.ts); null when it isn't a setup branch or its trial passed. */
+  setupUntried?: (dir: string, head: string) => Promise<string | null>;
   /** The Git inputs a tree's readiness reads, as stat stamps (worktrees.ts gitInputsStamp): the
       session feed's readiness watch compares them (checkReadinessInputs). */
   inputsStamp?: (dir: string, baseBranch?: string) => string | null;
@@ -602,6 +608,11 @@ export interface ReadinessDeps {
   /** A queue's project facts in its newest view, read at listing time (wire.ts branchProjectNow): null when no view
       of that queue is known yet. Absent: the background read's answer stands. */
   projectNow?: (root: string) => SessionBranchRow["mergeProject"] | null;
+  /** When a branch's newest queue entry was approved, read at listing time (wire.ts branchQueueBegan), ms epoch. */
+  queueBegan?: (root: string, branch: string) => number | undefined;
+  /** The session's last classified reply, while it asks for a go-ahead not yet noted queued or landed
+      (signals-store.ts isGoAsk): the only reply whose head commit is ever looked up. */
+  goAsk?: (sessionId: string) => { turnId: string; replyAt: number } | undefined;
 }
 
 let wireMod: typeof import("./merge-queue/wire") | null = null;
@@ -665,6 +676,11 @@ const defaultDeps = (): ReadinessDeps => ({
     return w ? w.branchQueueNow(root, branch) : null;
   },
   projectNow: (root) => loadWire()?.branchProjectNow(root) ?? null,
+  queueBegan: (root, branch) => loadWire()?.branchQueueBegan(root, branch),
+  goAsk: (id) => {
+    const t = readSignals().sessions[id];
+    return t && !t.settled && isGoAsk(t) ? { turnId: t.turnId, replyAt: t.replyAt } : undefined;
+  },
 });
 
 /** How long one repository's served answer stands: the served rule keeps its merge setup this long, and Ready to land
@@ -837,10 +853,13 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
         docs = { drafts, preview };
       }
       landing = landingOf(tf, r.state, finished, heldHere, docs, specsWhy);
+      // A setup branch is offered Land only once a trial of its exact head passed (§app.project-setup/land-gate).
+      const untried = tf.head && landingLive(tf, r.state) && deps.setupUntried ? await deps.setupUntried(t.path, tf.head).catch(() => null) : null;
+      if (untried) landing = undefined;
       // Finished but not Ready to land: what the session can fix, for Sova's once-per-commit note.
       if (!landing && finished === "yes" && tf.head) {
-        const blockers = landingBlockers(tf, sf);
-        if (blockers?.length) blocked.push({ path: t.path, branch: tf.branch, commit: tf.head, blockers });
+        const blockers = [...(landingBlockers(tf, sf) ?? []), ...(untried ? [{ kind: "trial" as const, text: "no passing trial of its head", fix: "run a trial of its head (merge.try) and land it once that passes" }] : [])];
+        if (blockers.length) blocked.push({ path: t.path, branch: tf.branch, commit: tf.head, blockers });
       }
       if (writes) {
         if (landing?.state === "ready") deps.readyToLand?.({ path: t.path, branch: tf.branch, commit: landing.commit });
@@ -1058,6 +1077,8 @@ interface Cached {
   /** Its own trees' Git inputs (inputsStamp) as read before this answer's Git read: a commit there,
       with no session-file write, re-reads this row (checkReadinessInputs). */
   watch?: string;
+  /** Per tree, the branch's head when the session's go-ahead ask was written (headsAtReply). */
+  replyHeads?: { turnId: string; heads: Record<string, string> };
 }
 
 interface RefreshInput { row: SessionSummary; key: string; file: string; size: number }
@@ -1211,17 +1232,60 @@ async function refresh(input: RefreshInput): Promise<void> {
   const branches = facts ? await computeBranches(s, facts) : undefined;
   if (!current()) return;
   const stamps = idleStamps(s, value, before);
-  cache.set(s.path, { scan, facts, ...(value ? { value } : {}), ...(branches ? { branches } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}), ...(watch ? { watch } : {}) });
+  const replyHeads = facts ? await headsAtReply(s, facts, prev?.replyHeads) : undefined;
+  if (!current()) return;
+  const heard = replyHeads ? { replyHeads } : {};
+  cache.set(s.path, { scan, facts, ...(value ? { value } : {}), ...(branches ? { branches } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}), ...(watch ? { watch } : {}), ...heard });
   if (value) nudgeSpecs(s, value);
   if (facts && value && (await checkFollowUps(s, facts, value).catch(() => false))) {
     if (!current()) return;
     const again = await computeReadiness(s, facts, current);
-    if (current()) cache.set(s.path, { scan, facts, ...(again ? { value: again } : {}), ...(branches ? { branches } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}), ...(watch ? { watch } : {}) });
+    if (current()) cache.set(s.path, { scan, facts, ...(again ? { value: again } : {}), ...(branches ? { branches } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}), ...(watch ? { watch } : {}), ...heard });
   }
   // A new answer shows on the next listing: the session feed compares at once (§app.decisions/push)
   // instead of waiting for a listing that happens to come.
   const now = cache.get(s.path);
-  if (JSON.stringify([now?.value ?? null, now?.branches ?? null]) !== JSON.stringify([prev?.value ?? null, prev?.branches ?? null])) sessionsChanged();
+  if (JSON.stringify([now?.value ?? null, now?.branches ?? null, now?.replyHeads ?? null]) !== JSON.stringify([prev?.value ?? null, prev?.branches ?? null, prev?.replyHeads ?? null])) sessionsChanged();
+}
+
+/** Each tracked branch's head when the session's go-ahead ask was written: the newest commit at or
+    before the reply. Asked only for such a reply, and once per reply and tree: a found head never moves. */
+async function headsAtReply(s: SessionSummary, facts: FileFacts, before: Cached["replyHeads"]): Promise<Cached["replyHeads"]> {
+  const ask = deps.goAsk?.(s.id);
+  if (!ask) return undefined;
+  const heads: Record<string, string> = before?.turnId === ask.turnId ? { ...before.heads } : {};
+  for (const t of facts.trees) {
+    if (t.status === "dropped" || heads[t.path] || !existsSync(t.path)) continue;
+    const r = await deps.git(["rev-list", "-1", `--before=${Math.floor(ask.replyAt / 1000)}`, t.branch, "--"], { cwd: t.path }).catch(() => null);
+    const sha = r?.code === 0 ? r.stdout.trim() : "";
+    if (sha) heads[t.path] = sha;
+  }
+  return { turnId: ask.turnId, heads };
+}
+
+/**
+ * What the go-ahead check reads for a listed row (signals-store.ts settleGoAsk): every worktree the
+ * session tracks, inherited ones too, but for an empty leftover, from the last background read and the
+ * queue's newest view. No Git, no file read. Undefined when it tracks none or hasn't been read yet;
+ * empty when every tree is a leftover, which covers nothing.
+ */
+export function askTreesOf(s: Pick<SessionSummary, "id" | "path" | "readiness" | "signals">): AskTree[] | undefined {
+  const hit = cache.get(s.path);
+  const trees = hit?.facts?.trees.filter((t) => t.status !== "dropped");
+  if (!trees?.length) return undefined;
+  const heads = hit!.replyHeads?.turnId === s.signals?.turnId ? hit!.replyHeads?.heads : undefined;
+  return trees.flatMap((t) => {
+    const own = s.readiness?.trees.find((r) => r.path === t.path);
+    if (own && isEmptyLeftover(own)) return [];
+    const reading = hit!.branches?.find((b) => b.row.path === t.path);
+    const row = reading ? joinBranches([reading], deps.queueNow)[0] : undefined;
+    const began = reading?.root ? deps.queueBegan?.(reading.root, t.branch) : undefined;
+    return [{
+      merged: own ? !!own.merged : !!row?.mergedInto || row?.status === "merged",
+      ...(heads?.[t.path] ? { headAtReply: heads[t.path] } : {}),
+      ...(row?.queue ? { entry: { state: row.queue.state, commit: row.queue.commit, ...(began !== undefined ? { began } : {}) } } : {}),
+    }];
+  });
 }
 
 /** A session's own trees' Git inputs, or undefined when none can be read. */
@@ -1278,6 +1342,11 @@ function nudgeSpecs(s: SessionSummary, value: SessionReadiness): void {
 }
 
 /** Read a session's readiness again soon (Sova's try of its drafts has answered). */
+/** Read a session's readiness again now (a fact outside Git moved: a trial of its branch ended). */
+export function rereadReadiness(path: string): void {
+  requeue(path);
+}
+
 function requeue(path: string): void {
   const hit = cache.get(path);
   if (!hit || queued.has(path)) return;

@@ -1,9 +1,10 @@
 import { existsSync } from "node:fs";
 import { linkedPlaybook, playbookTurnText } from "../../shared/playbooks";
 import type { PlaybookInfo, PlaybookProposes } from "../../shared/protocol";
+import type { ProjectCodingMode } from "../../shared/project-overseer";
 import { defaultRemoteOf } from "../files";
 import { listModels } from "../models";
-import { listPlaybooks } from "../playbooks";
+import { FOLDED_SETUP_PLAYBOOKS, listPlaybooks } from "../playbooks";
 import { OrgError } from "../org-error";
 import { readProject } from "./spaces";
 import { latestClaude } from "../../pi-config/extensions/claude-code/catalog.ts";
@@ -16,6 +17,22 @@ import { latestClaude } from "../../pi-config/extensions/claude-code/catalog.ts"
  */
 
 export const ONBOARD_PLAYBOOK_ID = "project-verbs";
+/** The Setup chat's playbook (§app.project-setup/chat): it proposes the whole pipeline. */
+export const SETUP_PLAYBOOK_ID = "project-setup";
+/** The setup playbooks folded into the Setup chat: a start by their id opens the Setup chat (old ids still resolve). */
+export const FOLDED_PLAYBOOKS: readonly string[] = FOLDED_SETUP_PLAYBOOKS;
+/** The Setup chat's mode: normal with align and vis (it draws the plan with vis fences and vis_guide), spec off and
+    nothing else, whatever this host's coding default adds. Its work is the project's pipeline settings, configuration
+    rather than a product change, so never Sova's spec procedure for the project. */
+export const SETUP_MODE = { mode: "normal", minorModes: ["align", "vis"] } as const;
+
+/** The mode a verb playbook run of `playbookId` is pinned to: the Setup chat's; undefined (every other run): the
+    host's coding default, with align added (project-coding-mode.ts playbookRunMode). Pure. */
+export const onboardRunMode = (playbookId: string): ProjectCodingMode | undefined =>
+  playbookId === SETUP_PLAYBOOK_ID ? { mode: SETUP_MODE.mode, minorModes: [...SETUP_MODE.minorModes] } : undefined;
+
+/** The playbook a start by `id` runs: a folded one's is the Setup chat's. Pure. */
+export const resolvePlaybookId = (id: string): string => (FOLDED_PLAYBOOKS.includes(id) ? SETUP_PLAYBOOK_ID : id);
 
 export interface ModelChoice {
   model: string;
@@ -82,7 +99,7 @@ export async function onboardFacts(projectId: string, playbookId = ONBOARD_PLAYB
   const p = readProject(projectId);
   const remote = defaultRemoteOf(p.root);
   const local = !remote && !!p.root;
-  const catalog = local && existsSync(p.root) ? await listPlaybooks(p.root) : null;
+  const catalog = local && existsSync(p.root) ? await listPlaybooks(p.root, { withSetup: true }) : null;
   return {
     name: p.name || p.id,
     root: p.root,
@@ -103,19 +120,21 @@ async function offeredRefs(): Promise<string[] | null> {
 }
 
 /** The run's first prompt, title and model from the facts, or why it can't start. Pure. */
-export function onboardStartFrom(facts: OnboardFacts, input: { why?: string | null; model?: string | null; thinking?: string | null }, offered: readonly string[] | null): OnboardStart {
+export function onboardStartFrom(facts: OnboardFacts, input: { why?: string | null; model?: string | null; thinking?: string | null; context?: string | null; title?: string | null }, offered: readonly string[] | null): OnboardStart {
   const choice = onboardModel(input, offered);
   const label = facts.playbook?.title || "Project verbs";
   const who = { playbookId: facts.playbookId ?? ONBOARD_PLAYBOOK_ID, label, proposes: facts.playbook?.proposes ?? "definition" };
-  const title = onboardTitle(facts.name, label);
+  const title = input.title?.trim() || onboardTitle(facts.name, label);
   const invalid = onboardInvalid(facts) ?? (choice ? null : NO_ONBOARD_MODEL);
   if (invalid || !facts.playbook || !choice) return { prompt: "", title, model: choice?.model ?? "", thinking: choice?.thinking ?? ONBOARD_THINKING, ...who, invalid: invalid ?? "" };
-  return { prompt: playbookTurnText(facts.playbook, input.why ?? ""), title, ...choice, ...who };
+  // The host's own context (the Setup chat's project, current setup and earlier chats) follows the playbook's turn.
+  const turn = playbookTurnText(facts.playbook, input.context?.trim() ? "" : (input.why ?? ""));
+  return { prompt: input.context?.trim() ? `${turn}\n---\n\n${input.context.trim()}\n` : turn, title, ...choice, ...who };
 }
 
 /** The first prompt, title and model of a Project verbs run on `projectId`, or why it can't start. */
-export async function onboardStart(projectId: string, input: { why?: string | null; model?: string | null; thinking?: string | null; playbook?: string | null } = {}): Promise<OnboardStart> {
-  const id = input.playbook?.trim() || ONBOARD_PLAYBOOK_ID;
+export async function onboardStart(projectId: string, input: { why?: string | null; model?: string | null; thinking?: string | null; playbook?: string | null; context?: string | null; title?: string | null } = {}): Promise<OnboardStart> {
+  const id = resolvePlaybookId(input.playbook?.trim() || ONBOARD_PLAYBOOK_ID);
   if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) throw new OrgError(`No playbook "${id}": a playbook id is lower case letters, digits and hyphens.`, 400);
   return onboardStartFrom(await onboardFacts(projectId, id), input, input.model?.trim() ? null : await offeredRefs());
 }

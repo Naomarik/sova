@@ -24,6 +24,7 @@ import { projectKey } from "./store";
 import { sessionsChanged } from "../list-generation";
 import { LandingNotes, SERVED_FILE_NAME, ServedRule, servedKey, servedRule, setServedRule, type SetupOf, startServedWriter } from "./served";
 import type { ProjectOf } from "../project-root";
+import { trialEndedText } from "./setup-branch";
 import { gitRefsStamp } from "../worktrees";
 
 /**
@@ -153,6 +154,8 @@ export async function branchQueueFields(path: string, branch: string): Promise<{
 interface KeptView {
   at: string;
   byBranch: Map<string, SessionBranchQueue>;
+  /** When each branch's newest entry was approved (ms epoch): never on the wire. */
+  began: Map<string, number>;
   project: BranchProject;
   digest: string;
   /** What a change no `save()` tells of would move (checkQueueViews): the target and the sent-back branches. */
@@ -209,16 +212,22 @@ export function noteQueueView(view: Pick<MergeQueueView, "root" | "at" | "projec
   const prev = latestViews.get(key);
   if (prev && prev.at > view.at) return;
   const branches = new Set([...view.checking, ...view.waiting, ...view.needsYou, ...view.needsFix, ...(view.waitingOnHost ?? []), ...view.recent.map((r) => r.entry)].map((e) => e.branch));
+  const entries = [...view.checking, ...view.waiting, ...view.needsYou, ...view.needsFix, ...(view.waitingOnHost ?? []), ...view.recent.map((r) => r.entry)];
   const byBranch = new Map<string, SessionBranchQueue>();
+  const began = new Map<string, number>();
   for (const b of branches) {
     const q = worktreeQueueInfo(view, b);
-    if (q) byBranch.set(b, branchQueueOf(q));
+    if (!q) continue;
+    byBranch.set(b, branchQueueOf(q));
+    const at = Date.parse(entries.find((e) => e.id === q.id)?.approval?.at ?? "");
+    if (Number.isFinite(at)) began.set(b, at);
   }
   const project = projectCut(view);
   const digest = JSON.stringify([project, ...[...byBranch].sort(([a], [b]) => a.localeCompare(b))]);
   latestViews.set(key, {
     at: view.at,
     byBranch,
+    began,
     project,
     digest,
     refs: [...targetRefs(view.target), ...view.needsFix.map((e) => `refs/heads/${e.branch}`)],
@@ -286,6 +295,11 @@ export function branchQueueNow(root: string, branch: string): SessionBranchQueue
   return v ? v.byBranch.get(branch) : null;
 }
 
+/** When a branch's newest entry in its queue's newest view was approved (ms epoch). Synchronous, no Git. */
+export function branchQueueBegan(root: string, branch: string): number | undefined {
+  return latestViews.get(servedKey(root))?.began.get(branch);
+}
+
 /** A queue's project facts in its newest view; null when none has been seen yet. Synchronous, no Git. */
 export function branchProjectNow(root: string): BranchProject | null {
   return latestViews.get(servedKey(root))?.project ?? null;
@@ -312,6 +326,38 @@ let bareSettingsOf: ((root: string) => Promise<import("../../shared/merge-queue-
 
 /** A listed project's settings while the queue doesn't serve it, made without a queue (settings.ts bareSettings);
  *  null while the queue isn't started or its target has no commit. */
+/** The gate's answer when it can't read what it needs: never a quiet pass. */
+export const TRIAL_UNREADABLE = "Sova can't confirm a passing trial of this branch now: try again in a moment.";
+
+/**
+ * Why a branch head can't merge or land yet as a setup branch (setup-branch.ts): it changes the project's setup and no
+ * trial of exactly `head` passed; null when it isn't a setup branch or its trial passed. Merge Branch on a project the
+ * queue doesn't serve asks this too. Fails closed: when the trials can't be read, a setup branch is refused.
+ */
+export async function setupUntriedAt(root: string, head: string): Promise<string | null> {
+  if (!head || !root) return TRIAL_UNREADABLE;
+  const q = queues ? ((await queues.peek(root)) ?? (await queues.get(root).catch(() => null))) : null;
+  if (q) {
+    const target = await q.targetHead();
+    return target ? q.setupUntried(target, head) : TRIAL_UNREADABLE;
+  }
+  // No queue here: a branch that leaves the setup alone needs none; a setup branch can't be checked, so it waits.
+  const { isSetupChange, setupChangeOf } = await import("./setup-branch");
+  const { resolveTarget } = await import("./served");
+  const { definitionAt } = await import("../project-services/deploy-recipe");
+  const target = await resolveTarget(realGit, root, (r, ref) => definitionAt(r, ref)).catch(() => null);
+  const change = target ? await setupChangeOf(realGit, root, target, head) : null;
+  return change && !isSetupChange(change) ? null : TRIAL_UNREADABLE;
+}
+
+/** A project's trials and target as its queue keeps them (the Setup chat's tab reads them); null: no queue here. */
+export async function setupTrialsAt(root: string): Promise<{ target: string; trials: import("../../shared/merge-queue").MergeTrial[]; readRun: (id: string) => import("../../shared/merge-queue").MergeRun | null } | null> {
+  if (!queues || !root) return null;
+  const q = await queues.peek(root);
+  if (!q) return null;
+  return { target: q.target, trials: q.trials(), readRun: (id) => q.store.readRun(id) };
+}
+
 export function mergeBareSettings(root: string): Promise<import("../../shared/merge-queue-settings").MergeQueueSettings | null> {
   return bareSettingsOf ? bareSettingsOf(root) : Promise.resolve(null);
 }
@@ -477,11 +523,18 @@ async function threadVerbDeps(served: { projectIdOf(root: string): string | null
 let owners: WorktreeOwners | null = null;
 /** The chat a worktree's branch belongs to (owners.ts), the rule Ready rows and Land share. */
 export async function worktreeOwnerOf(worktree: string): Promise<Owner | null> {
+  return (await ownersNow()).ownerOf(worktree);
+}
+async function ownersNow(): Promise<WorktreeOwners> {
   if (!owners) {
     const [{ listSessions }, { trackedWorktrees }] = await Promise.all([import("../sessions-index"), import("../merge-readiness")]);
     owners = new WorktreeOwners({ sessions: () => listSessions(), tracked: trackedWorktrees, canonical });
   }
-  return owners.ownerOf(worktree);
+  return owners;
+}
+/** A worktree one of the merge queue's own chats created (owners.ts queueMade): never on a list you land from. */
+export async function worktreeQueueMade(worktree: string): Promise<boolean> {
+  return (await ownersNow()).queueMade(worktree);
 }
 
 /** A worktree row's owner: its chat's id, file, title and archived mark. */
@@ -647,7 +700,7 @@ export async function startMergeQueue(
       ev.kind === "queued"
         ? { kind: "queued" as const, entry, ...base }
         : ev.kind === "conflict"
-          ? { kind: "conflict" as const, entry, run: ev.run ?? "", files: ev.files ?? [], ...base }
+          ? { kind: "conflict" as const, entry, run: ev.run ?? "", files: ev.files ?? [], ...base, ...(ev.scratch ? { scratch: ev.scratch } : {}), ...(ev.scratchError ? { scratchError: ev.scratchError } : {}) }
           : ev.kind === "failed"
             ? { kind: "failed" as const, entry, run: ev.run ?? "", ...(ev.why ? { summary: ev.why } : {}), ...base }
             : ev.kind === "paused"
@@ -738,6 +791,17 @@ export async function startMergeQueue(
       publishFeed({ type: "merge_queue", project: view.project, view });
       cardsDo(mc.sync(view));
     },
+    // A trial's end reaches the chat that started it, as a queue wake (it ends its turn and is woken).
+    trialEnded: (t, run) => {
+      if (t.by.kind !== "chat" || !t.by.session) return;
+      const session = t.by.session;
+      void (async () => {
+        const path = await sessionPath(session);
+        if (!path) return;
+        (await import("../merge-readiness")).rereadReadiness(path);
+        await (await import("./wake")).sendQueueWake(path, trialEndedText(t, run));
+      })().catch((err) => console.warn(`[merge-queue] trial note to ${session}: ${err instanceof Error ? err.message : err}`));
+    },
     // Why a sent-back branch's newest commit isn't Ready to land: its chat's last readiness reading, never a fresh read.
     newestReading: async (worktree, tip) => {
       const [{ listSessions }, { readinessReading }, { newestReadingOf }] = await Promise.all([import("../sessions-index"), import("../merge-readiness"), import("../ready-to-land")]);
@@ -764,6 +828,8 @@ export async function startMergeQueue(
     pruneSummaries: (root, live, shown) => void bs.prune(root, live, shown),
     // The branch's chat (owners.ts): the Ready rows show it, and a Land naming no chat records it.
     ownerOf: async (_root, _branch, worktree) => (worktree ? worktreeOwnerOf(worktree) : null),
+    // A conflict's scratch copy the merge thread made itself (old style): hidden from Ready, refused by Land.
+    queueMade: (worktree) => worktreeQueueMade(worktree),
     thread,
     draftsHash: (dir) => draftsHash(dir),
     // A branch sent back for its drafts: Sova's docs check of them, the one readiness runs (one cache).
@@ -789,6 +855,14 @@ export async function startMergeQueue(
   // A served tree that reads Ready to land at a commit (merge-readiness.ts): its branch summary is written.
   const { configureReadiness } = await import("../merge-readiness");
   configureReadiness({
+    // A setup branch is Ready to land only once a trial of its exact head passed (setup-branch.ts).
+    setupUntried: async (dir, head) => {
+      const p = await projectOf(dir);
+      if (p.state !== "ok" || !p.git || !served.isListed(p.root)) return null;
+      const queue = (await q.peek(p.root)) ?? (await q.get(p.root));
+      const target = await queue.targetHead();
+      return target ? queue.setupUntried(target, head) : null;
+    },
     readyToLand: (t) =>
       void projectOf(t.path)
         .then((p) => (p.state === "ok" && p.git ? summaryFor(p.root, t.branch, t.commit) : undefined))
@@ -836,6 +910,7 @@ export async function startMergeQueue(
     },
     isThreadChat: (root, sid) => threadMod.mergeThread().isThreadChat(root, sid),
     reviewerOf: review.reviewerOf,
+    isReviewerChat: review.isReviewerChat,
     deliverReview: review.deliverReview,
     ...(await threadVerbDeps(served)),
   });

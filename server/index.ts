@@ -28,7 +28,7 @@ import { startShareRuntime, stopShareRuntime } from "./share/runtime";
 import { startTourSweep } from "./tours/sweep";
 import { flushOpenVisits } from "./visits";
 import { pruneVisitorLogs } from "./visitor-identity";
-import { acquireChatHandle, chatHandle, chatHandles, disposeAllChats, onAgentSettled, onChatEvent, onReceiverIdle, warmChatRuntime } from "./chat-handle";
+import { acquireChatHandle, chatHandle, chatHandles, disposeAllChats, onAgentSettled, onChatEvent, onCompacted, onReceiverIdle, warmChatRuntime } from "./chat-handle";
 import { receiverSpecial, startTopicDelivery } from "./topic-delivery";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { stateRoot } from "./state-root";
@@ -42,8 +42,11 @@ import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/cl
 import { wireRequestChats } from "./owner-request-chat";
 import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, listSessionsTracked, listStamps, monitorFixedOf, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
 import { startScheduleKeeper } from "./schedule-routes";
+import { cancelChatWakes, startWakeKeeper } from "./wake-keeper-live";
+import { monitorJobs, startJobKeeper, stopJobsOf, sweepJobs } from "./background-jobs";
+import { onWorkerKilled } from "./chat-workers";
 import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
-import { detachChatHost, startChatHost, stopWorkersOf } from "./chat-host";
+import { detachChatHost, startChatHost, stopWorkersOf, wakeOwnerOf, workerChatsOf } from "./chat-host";
 import { expectChatRouter } from "./chat-handle";
 import { meshApi, startMesh, stopMesh } from "./mesh";
 import { captureBootBuild } from "./mesh/build-id";
@@ -104,12 +107,18 @@ startTopicDelivery({
   async summary(path) {
     const s = await getSessionSummary(path);
     if (!s) return null;
-    return { archived: s.archived, live: s.live, special: receiverSpecial(s, projectOverseerOfPath(path)) };
+    return { archived: s.archived, live: s.live, special: receiverSpecial(s, projectOverseerOfPath(path)), title: s.title };
   },
   acquire: (path) => acquireChatHandle(path),
   onIdle: onReceiverIdle,
   onChatEvent,
   onArchived: onSessionArchived,
+  // A paired chat's reminder after its compaction (§app.overseer/pairs): a note that starts no turn.
+  onCompacted,
+  note: async (path, noteType, text) => {
+    const held = chatHandle(path);
+    return held ? held.appendNote(noteType, text) : false;
+  },
 });
 // Outreach (§app/outreach): receipts of earlier sends find their log lines once the sender replays them.
 startOutreach();
@@ -198,6 +207,12 @@ server.on("error", (err) => {
 startChatHost();
 // An archived chat's workers stop with it (§app.chat-processes/workers).
 onSessionArchived((sessionId) => void stopWorkersOf(sessionId, "its parent was archived").catch(() => {}));
+// Archiving or deleting a chat cancels its wake nudges for good, its workers' too (§chat.wake-nudges/archive).
+onSessionArchived(cancelChatWakes);
+// Archiving or deleting a chat stops its background jobs and its workers' (§app.background-jobs/stopping);
+// stopping a worker stops its own.
+onSessionArchived((sessionId) => void stopJobsOf([sessionId, ...workerChatsOf(sessionId)], "archive").then(() => sweepJobs()).catch(() => {}));
+onWorkerKilled((chatId) => void stopJobsOf([chatId], "worker").catch(() => {}));
 // An owner request follows the chat Start Chat opened for it (§app.project-assistant/request-chat).
 wireRequestChats();
 attachWebSockets(server);
@@ -218,6 +233,8 @@ setCardsDispatch(internalRequest);
 startOverseerLoop();
 startProjectOverseerLoop();
 startScheduleKeeper(internalRequest);
+startWakeKeeper();
+startJobKeeper();
 noteStallHead(SERVER_HEAD);
 stallGauge("chat processes", () => chatHandles().length);
 // Samples CPU and memory in the background from startup, open modal or not (§app.resource-monitor/sampling-and-history).
@@ -225,6 +242,8 @@ startResourceMonitor({
   logDir: join(stateRoot(), "monitor"),
   held: () => chatHandles().map((c) => ({ path: c.path, sessionId: c.mirror.sessionId, cwd: c.mirror.cwd })),
   titleOf: cachedTitleOf,
+  // A background job has left its chat's unit: charged to that chat through its record.
+  jobs: () => monitorJobs(wakeOwnerOf),
   fixedOf: (path, fresh) => monitorFixedOf(path, fresh),
 });
 // Every attached org's workspace repo: its residence statechart commits whatever changed at most hourly, then pushes.

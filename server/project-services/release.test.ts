@@ -661,7 +661,7 @@ describe("the quiet release chat (t23) and Needs you", () => {
     try {
       const s = await r.run("release.start", { project: repo.root }, { kind: "operator" });
       assert.equal(s.error?.code, "release-refused");
-      assert.match(s.error!.message, /Set Up Releases/);
+      assert.match(s.error!.message, /Set Up with a Chat on its Releases tab/);
       const v = await r.run("release.status", { project: repo.root }, { kind: "operator" });
       assert.equal(v.release!.view!.initialized, false);
     } finally {

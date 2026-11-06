@@ -78,6 +78,21 @@ export interface BranchFacts {
   deploy: { hash: string } | null;
   /** Its release setup's own hash (server/projects/release-proposal.ts); null when it declares none or it is invalid. */
   release: { hash: string } | null;
+  /** Its whole pipeline's hash (the Setup chat's proposal: services, merge, release and deploy, and the release
+      playbook folder through the release setup's hash); null when its definition is absent or invalid. */
+  pipeline?: { hash: string } | null;
+}
+
+/** The pipeline hash of a definition at a commit: its services, merge, release and deploy sections and its release setup. Pure. */
+export function pipelineHashOf(def: ProjectDef, releaseHash: string | null): string {
+  const pick = { services: def.services, merge: def.merge ?? null, release: def.release ?? null, deploy: def.deploy ?? null, releaseSetup: releaseHash };
+  return `sha256:${createHash("sha256").update(stableText(pick)).digest("hex")}`;
+}
+
+function stableText(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableText).join(",")}]`;
+  if (v && typeof v === "object") return `{${Object.keys(v as object).sort().map((k) => `${JSON.stringify(k)}:${stableText((v as Record<string, unknown>)[k])}`).join(",")}}`;
+  return JSON.stringify(v ?? null);
 }
 
 const kindOf = (s: ServiceDecl): SoftwareFact["kind"] => (s.static !== undefined ? "static" : s.container ? "container" : "process");
@@ -162,6 +177,7 @@ export async function branchFacts(root: string, ref: string, git: Git = realGit)
     proof: hash ? proofOf(root, hash) : null,
     deploy: dh ? { hash: dh } : null,
     release: rs?.hash ? { hash: rs.hash } : null,
+    pipeline: def ? { hash: pipelineHashOf(def, rs?.hash || null) } : null,
   };
 }
 

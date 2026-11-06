@@ -81,6 +81,21 @@ test("a Sova-owned worker's build puts Sova's modules in the mode slots, in plac
   assert.deepEqual(build.flags(), { extra: { major: "normal", minor: "spec" } }, "the entry reads the same flags");
 });
 
+test("job cards load whichever owner runs modes: Sova's slots in place, one each, the cards file after them", () => {
+  const e = modesEntries();
+  const cards = join(ROOT, "pi-config", "extensions", "wake-nudge.ts");
+  const was = process.env.SOVA_JOB_CARDS;
+  process.env.SOVA_JOB_CARDS = "only";
+  try {
+    assert.deepEqual(workerBuild(spec({ modes: "sova" }), "/w.jsonl").loader.additionalExtensionPaths, [OTHER, e.entry, e.specWorker, e.projectToolsWorker, cards]);
+    const w = spec();
+    assert.deepEqual(workerBuild(w, "/w.jsonl").loader.additionalExtensionPaths, [...w.extensions, cards]);
+  } finally {
+    if (was === undefined) delete process.env.SOVA_JOB_CARDS;
+    else process.env.SOVA_JOB_CARDS = was;
+  }
+});
+
 test("an extension-owned worker's build lists exactly what its parent listed", () => {
   const w = spec();
   assert.deepEqual(workerBuild(w, "/w.jsonl").loader.additionalExtensionPaths, w.extensions);

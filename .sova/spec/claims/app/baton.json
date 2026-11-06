@@ -312,7 +312,7 @@
   "§app.baton/needs-you": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/attention.ts",
       "server/baton.ts",
@@ -334,15 +334,16 @@
       "server/baton-links.ts",
       "src/components/Sidebar.tsx",
       "shared/baton.ts",
-      "src/lib/needs-you-row.ts"
+      "src/lib/needs-you-row.ts",
+      "src/lib/org-region.test.ts"
     ],
     "requires": [
       "§app.overseer/attention-digest"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T00:57Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-06T01:40Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
     }
   },
   "§app.baton/offers-and-leases": {
@@ -398,7 +399,12 @@
     "requires": [
       "§app.baton/links",
       "§app.baton/outsider-view"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T01:40Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
+    }
   },
   "§app.baton/outsider-view": {
     "kind": "behavior",

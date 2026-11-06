@@ -49,6 +49,11 @@ export type CommandId =
   | "session.worktree.summary"
   | "session.worktree.cleanup"
   | "session.diff.summary"
+  | "session.job.list"
+  | "session.job.stop"
+  | "session.pairs.list"
+  | "session.pairs.unpair"
+  | "session.pairs.resume"
   | "project.verb.create"
   | "project.verb.up"
   | "project.verb.down"
@@ -87,6 +92,7 @@ export type CommandId =
   | "project.verb.merge.fresh"
   | "project.verb.merge.clear"
   | "project.verb.merge.hold"
+  | "project.verb.merge.try"
   | "project.verb.release.status"
   | "project.verb.release.logs"
   | "project.verb.release.request"
@@ -121,6 +127,9 @@ export type CommandId =
   | "project.claude-login.get"
   | "project.claude-login.set"
   | "project.coding.start"
+  | "project.setup.get"
+  | "project.setup.open"
+  | "project.setup.merge"
   | "project.icon.get"
   | "project.icon.upload"
   | "project.icon.letters"
@@ -167,6 +176,8 @@ export type CommandId =
   | "overseer.notes.set"
   | "overseer.get"
   | "overseer.memory.get"
+  | "attention.dismiss"
+  | "attention.undismiss"
   | "models.list"
   | "extensions.list"
   | "targets.list"
@@ -560,6 +571,37 @@ export interface CommandParams {
     "path": string;
     /** With commit or merge: the commit */
     "sha"?: string;
+  };
+  /** A chat's running background jobs and its workers': what runs, since when, where its output goes. Starts no chat. (only looks; needs the card's owner trusted) */
+  "session.job.list": {
+    /** The session, by id or by path */
+    "session"?: string;
+  };
+  /** Stop one background job: 15 s to finish, then the rest ends. Never starts or wakes the chat. (changes something; needs the card's owner trusted) */
+  "session.job.stop": {
+    /** The session, by id or by path */
+    "session"?: string;
+    /** The job, such as j1 */
+    "id": string;
+    /** A worker's job: that worker's chat id (the job's sessionId) */
+    "sessionId"?: string;
+  };
+  /** The Overseer's pairings in force: each pairing's two chats, their topics, notes each way and pauses; one chat's with a session. (only looks; needs the card's owner trusted) */
+  "session.pairs.list": {
+    /** Only this chat's pairings, by id or by path */
+    "session"?: string;
+  };
+  /** End a pairing: both of its topics close and the notes waiting on them are dropped. Neither chat is told. (changes something; needs the card's owner trusted) */
+  "session.pairs.unpair": {
+    /** The pairing id (pr_…) */
+    "pairing": string;
+  };
+  /** Lift a pairing's pause after its note limit: one direction, or both; its note count goes back to 0. (changes something; needs the card's owner trusted) */
+  "session.pairs.resume": {
+    /** The pairing id (pr_…) */
+    "pairing": string;
+    /** Only this direction (both when left out) */
+    "direction"?: "a_to_b" | "b_to_a";
   };
   /** The project verb create, as the operator (sova-project create). (changes something; needs the card's owner trusted) */
   "project.verb.create": {
@@ -1289,7 +1331,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1354,7 +1396,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1419,7 +1461,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1484,7 +1526,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1549,7 +1591,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1614,7 +1656,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1679,7 +1721,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1744,7 +1786,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1809,7 +1851,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1874,7 +1916,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1939,7 +1981,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -2004,7 +2046,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -2069,7 +2111,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -2134,7 +2176,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -2199,7 +2241,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -2264,7 +2306,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -2329,7 +2371,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -2394,7 +2436,72 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
+    "dry-run"?: boolean;
+    /** A merge thread question id */
+    "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
+  };
+  /** The project verb merge.try, as the operator (sova-project merge.try). (changes something; needs the card's owner trusted) */
+  "project.verb.merge.try": {
+    /** The project's root */
+    "project"?: string;
+    /** A branch name */
+    "branch"?: string;
+    /** A checkout's path */
+    "checkout"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** A merge queue entry id */
+    "entry"?: string;
+    /** A merge run id */
+    "run"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** A note on the entry */
+    "note"?: string;
+    /** Land without its spec drafts */
+    "without-specs"?: boolean;
+    /** Land without the review step */
+    "without-review"?: boolean;
+    /** The chat the approval was given in */
+    "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
+    /** Check ids, comma-separated */
+    "checks"?: string[];
+    /** Test selectors, comma-separated */
+    "select"?: string[];
+    /** Why */
+    "why"?: string;
+    /** A verdict */
+    "verdict"?: string;
+    /** Files, comma-separated */
+    "files"?: string[];
+    /** The target's side, in plain words */
+    "ours"?: string;
+    /** The branch's side, in plain words */
+    "theirs"?: string;
+    /** The proposed resolution, in plain words */
+    "proposal"?: string;
+    /** accept | send-back | land-anyway */
+    "answer"?: string;
+    /** Text */
+    "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -2943,6 +3050,35 @@ export interface CommandParams {
     /** Where it starts: the root, a folder inside it, or one inside its worktrees (default: the root) */
     "cwd"?: string;
   };
+  /** A project's Setup chat: its state, the setup its branch proposes with its newest trial, what is set up already, and its earlier setup chats. (only looks; needs the card's owner trusted) */
+  "project.setup.get": {
+    /** The project's id */
+    "pid": string;
+  };
+  /** Open the project's Setup chat (Change Setup on a project already set up): the one it has, else a new one on its own branch. fresh: Start Fresh, archiving the open one. (changes something; needs the card's owner trusted) */
+  "project.setup.open": {
+    /** The project's id */
+    "pid": string;
+    /** Start Fresh: archive the open Setup chat and start a new one */
+    "fresh"?: boolean;
+    /** Which part the user came from: the chat starts there */
+    "from"?: "merge-queue" | "releases" | "deploy" | "settings";
+    /** A note for the chat: what to set up or change */
+    "why"?: string;
+    /** Its model (provider/model); absent: Opus through Claude Code, else gpt-6-astra */
+    "model"?: string;
+    /** Its thinking level */
+    "thinking"?: string;
+  };
+  /** Merge Branch (or Land, on a project the merge queue serves) on the Setup chat's proposal at the commit shown: refused unless that head has a passing trial. The user's own page only: a chat, an Overseer or a script is refused. (changes something; needs the card's owner trusted) */
+  "project.setup.merge": {
+    /** The project's id */
+    "pid": string;
+    /** The proposal's hash as shown */
+    "hash": string;
+    /** The branch head shown (Land pins it) */
+    "commit"?: string;
+  };
   /** What a project's icon is: an uploaded picture, one found in its folder, or letters (rescans the folder). (only looks; needs the card's owner trusted) */
   "project.icon.get": {
     /** The project's id */
@@ -3250,6 +3386,18 @@ export interface CommandParams {
   "overseer.get": Record<string, never>;
   /** The Overseer's memory switch: on or off, its type and size, and its state. (only looks; needs the card's owner trusted) */
   "overseer.memory.get": Record<string, never>;
+  /** Take a chat's row out of Needs you and every count until the chat has something new. (changes something; needs the card's owner trusted) */
+  "attention.dismiss": {
+    /** The session, by id or by path */
+    "session"?: string;
+    /** The newest waiting item it covers, in ms since the epoch */
+    "since": number;
+  };
+  /** Put a dismissed chat's row back in Needs you, with no new notification. (changes something; needs the card's owner trusted) */
+  "attention.undismiss": {
+    /** The session, by id or by path */
+    "session"?: string;
+  };
   /** The models this server can run, with favorites and the policy's verdicts. (only looks; needs the card's owner trusted) */
   "models.list": Record<string, never>;
   /** The installed extensions and whether each backend answers. (only looks; needs the card's owner trusted) */
@@ -3634,6 +3782,11 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "session.worktree.summary": "looks",
   "session.worktree.cleanup": "changes",
   "session.diff.summary": "looks",
+  "session.job.list": "looks",
+  "session.job.stop": "changes",
+  "session.pairs.list": "looks",
+  "session.pairs.unpair": "changes",
+  "session.pairs.resume": "changes",
   "project.verb.create": "changes",
   "project.verb.up": "changes",
   "project.verb.down": "changes",
@@ -3672,6 +3825,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.verb.merge.fresh": "changes",
   "project.verb.merge.clear": "changes",
   "project.verb.merge.hold": "changes",
+  "project.verb.merge.try": "changes",
   "project.verb.release.status": "looks",
   "project.verb.release.logs": "looks",
   "project.verb.release.request": "changes",
@@ -3706,6 +3860,9 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.claude-login.get": "looks",
   "project.claude-login.set": "changes",
   "project.coding.start": "changes",
+  "project.setup.get": "looks",
+  "project.setup.open": "changes",
+  "project.setup.merge": "changes",
   "project.icon.get": "looks",
   "project.icon.upload": "changes",
   "project.icon.letters": "changes",
@@ -3752,6 +3909,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "overseer.notes.set": "changes",
   "overseer.get": "looks",
   "overseer.memory.get": "looks",
+  "attention.dismiss": "changes",
+  "attention.undismiss": "changes",
   "models.list": "looks",
   "extensions.list": "looks",
   "targets.list": "looks",

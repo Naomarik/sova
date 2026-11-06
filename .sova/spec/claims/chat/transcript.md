@@ -237,6 +237,11 @@ a machine event fired the turn, not the person. Same `.toolcard` shell as tool-c
 - **An extension job's end** (§app.overseer/extension-commands) is a wake too: tagged
   `[ext_job x1] …`, it draws the same card named "Extension job x1", its `Reason:` line in the arg
   slot, and is treated as a wake everywhere below.
+- **A background job's end** (§app.background-jobs/end-card) is a wake too: tagged `[job j1] …`, it
+  draws the same card named "Background job j1", with what ran in the arg slot, `ended {HH:MM}` for
+  when the job ended, read from its `Ended at` line (a card with none shows when it arrived), `· {late} late` from its "Late by … (Sova was not running)." line, and is treated as a
+  wake everywhere below. Open, it shows the whole message: how long the job ran, where its output
+  is or that it has none, how it ended, and its instruction.
 - **Arg slot.** The parsed reason (`WakeInfo.reason`), muted, truncated with an ellipsis, full text
   in `title`. Empty when the extension wrote `Reason: (none)`.
 - **Fired time.** Muted, `fired {HH:MM}` from the entry's own timestamp, same clock as every other
@@ -1135,8 +1140,8 @@ unchanged.
   (§workspace.groups/layout-tabs); moving focus between panes on screen doesn't. A jump to a row
   the tab doesn't hold and scrolling up for older rows start nothing of their own: they load from
   the file ("Rows from the file first", above).
-  When something else opens the chat meanwhile (another tab, a worker's report), the tab connects
-  to it. Reloading the page, or opening the chat again, starts it (above).
+  When something else opens the chat meanwhile (another tab, a worker's report, a wake nudge coming
+  due, a background job's end card), the tab connects to it. Reloading the page, or opening the chat again, starts it (above).
   Archiving a chat tells its open tabs the same way (`closed`), so no tab reconnects and starts the
   archived chat again; whatever the chat answered before it closed (a send it took) reaches the tab
   first, so nothing it took comes back to the composer, and a server call it took is answered by it,
@@ -1162,7 +1167,9 @@ unchanged.
   handed the server for it comes back as the session's draft. A worker's report never opens an
   archived parent. Every way of archiving (the Archive button, a drop on the Archive tile, the
   board's ⋯ menu, a project overseer's conversation pushed past its history) marks it archived,
-  closes its chat quietly and cancels any report still waiting to open it. A chat still starting
+  closes its chat quietly, cancels any report still waiting to open it, cancels its pending wake
+  nudges for good (§chat.wake-nudges/archive) and stops its background jobs
+  (§app.background-jobs/stopping). A chat still starting
   when it is archived closes as soon as its start finishes; a chat found running while archived
   (left from before this rule, or taken back by a restarted server) is closed quietly too, and its
   open tabs keep what they show. The special chats (the Overseer, a project overseer, a baton

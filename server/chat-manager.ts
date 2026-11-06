@@ -2,6 +2,7 @@ import { CREATE_SETTINGS_TOOL, createSettingsTool } from "./create-settings-tool
 import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync } from "node:fs";
 import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type ChatSpecialKind, type RunStartAnswer, type ServerToolCall, type ServerToolDecl, type ServerToolOutcome, type SpecialSpec, unsentRefusal, type WorkerHost, type WorkerSpec } from "../shared/chat-runtime";
 import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORKER_HOST_EVENT, type WorkerHostAnnouncement } from "../pi-config/extensions/subagents/worker-host.ts";
 import { prepareOwnerArea } from "../shared/decisions";
@@ -66,6 +67,7 @@ import { forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache
 import { VIS_CHECK_TOOL, visCheckExtension, type VisCheckHost } from "./vis-check";
 import { MEMORY_COMPACTION_REFUSAL, memoryExtension, type MemoryHost } from "./harness/pi/memory";
 import { deeperContextExtension } from "./harness/pi/deeper-context";
+import { backgroundJobsExtension } from "./harness/pi/background-jobs";
 import { mcpExtension } from "./harness/pi/mcp";
 import { nothingDeclared } from "./mcp/folder";
 import { NO_MCP, normalizeChatList, type McpChatList } from "./mcp/list";
@@ -102,6 +104,10 @@ import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension, sessionInstanceNote } from "./project-services/tools";
 import { servedToolsExtension, servedVisToolsExtension } from "./served-tools";
 import { specCodingTool } from "./spec-coding-tool";
+import { BACKGROUND_JOB_TOOL } from "./background-jobs-request";
+import { JOB_CARDS_ENV } from "./background-jobs";
+/** wake-nudge.ts of this code copy: a worker with no wake_nudge of its own still delivers its jobs' end cards (cards only). */
+const JOB_CARDS_EXTENSION = fileURLToPath(new URL("../pi-config/extensions/wake-nudge.ts", import.meta.url));
 import { TOUR_TOOLS } from "../shared/tour";
 import { tourTools } from "./tours/tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
@@ -286,6 +292,8 @@ export const DEFAULT_EXTENSION_FACTORIES = [
   SHELL_GUARD_FACTORY,
   // Subfolder AGENTS.md / CLAUDE.md files, attached to the read/edit/write result that first reaches them.
   deeperContextExtension(),
+  // What a bash call leaves running is kept as a background job (§app.background-jobs/keeping).
+  backgroundJobsExtension(),
 ];
 
 const mcpListHere: NonNullable<ChatHosts["mcpList"]> = async (ask) => (await import("./mcp/chat")).chatListFor(ask);
@@ -815,19 +823,23 @@ const specToolExtension = () => servedToolsExtension("sova-spec", [specCodingToo
 export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtins?: string[] | null } & Partial<Pick<WorkerSpec, "mcp" | "parent">>, path: string) {
   // Subfolder instruction files load for every kind whose loadout has a file tool (server/deeper-context.ts).
   const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension()] : [];
+  // A hidden chat keeps no job: nothing would deliver its card or stop it.
   if (w.kind !== "worker") return [SHELL_GUARD_FACTORY, ...files];
   // Only what the chat named: a worker's list is fixed at its start and kept when it resumes (§app.mcp/who-gets).
   const mcp = w.mcp ? normalizeChatList(w.mcp) : null;
   return [
     SHELL_GUARD_FACTORY,
     ...files,
+    ...(!w.builtins || w.builtins.includes("bash") ? [backgroundJobsExtension()] : []),
     ...(mcp?.servers.length
       ? [mcpExtension({ list: async () => mcp, label: () => w.parent?.workerId ?? "A worker", tellParent: (note) => (chatHosts.mcpTell ?? mcpTellHere)(w.parent?.path ?? "", note) })]
       : []),
     servedDecls
       ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
       : projectVerbsExtension(projectEngine),
-    // spec: the read-only spec look-up, last so nothing else moves.
+    // background_job: a job under the worker's own confinement, run by the server (§app.background-jobs/request).
+    ...(servedDecls && (!w.builtins || w.builtins.includes("bash")) ? [servedToolsExtension("sova-background-job", servedSpecs(path, (n) => n === BACKGROUND_JOB_TOOL))] : []),
+    // spec: the read-only spec look-up, last of all so nothing else moves.
     specToolExtension(),
   ];
 }
@@ -844,7 +856,7 @@ export function workerBuild(w: WorkerSpec, path: string): PiBuild {
       // The mode extension's files in their own slots: Sova's when its parent's modes ran on Sova at this
       // start (§chat.mode-menu/sova-runs-modes); otherwise as listed, but a worker file this copy no
       // longer has (listed by a parent on older code) is Sova's instead of failing the start.
-      additionalExtensionPaths: workerModePaths(w.extensions, w.modes === "sova", modesEntries()),
+      additionalExtensionPaths: [...workerModePaths(w.extensions, w.modes === "sova", modesEntries()), ...(process.env[JOB_CARDS_ENV] === "only" ? [JOB_CARDS_EXTENSION] : [])],
       extensionFactories: workerExtensionFactories(w, path),
       ...(w.appendSystemPrompt ? { appendSystemPrompt: [w.appendSystemPrompt] } : {}),
     },
@@ -2094,6 +2106,7 @@ class ChatSession {
           if (!this.harness.isRunning() && !this.starting) for (const m of stale) this.dropTopicMark(m);
         }, 0);
       }
+      if (event.type === "compaction.end" && event.wrote) emitChatEvent(this.path, "compacted");
       if (event.type === "run.settled" || event.type === "compaction.end") emitChatEvent(this.path, "receiverIdle");
       if (event.type === "run.settled" && this.senderMarks.length) {
         // A mark that never found its message this run (the prompt was swallowed or failed early)
@@ -4163,6 +4176,7 @@ const LISTENER_NAME: Record<ChatLifecycleEvent["type"], string> = {
   closed: "closed",
   topicEntered: "topic-entered",
   topicGone: "topic-gone",
+  compacted: "compacted",
 };
 /** Listeners run inside the event, each on its own: one that throws is logged and the rest still run. */
 export function onChatEvent(fn: (event: ChatLifecycleEvent) => void): () => void {
@@ -4192,6 +4206,8 @@ export const onAgentStarted = (fn: (path: string) => void): (() => void) => onEv
 /** A hosted runtime's turn settled or its compaction ended: a topic receiver may take its next
     batch (server/topic-delivery.ts). Called inside the event; listeners defer their own work. */
 export const onReceiverIdle = (fn: (path: string) => void): (() => void) => onEventOf("receiverIdle", fn);
+/** A hosted chat's compaction wrote its summary (a paired chat's reminder, server/topic-delivery.ts). */
+export const onCompacted = (fn: (path: string) => void): (() => void) => onEventOf("compacted", fn);
 /** A hosted chat's run settled (attention signals, tags). */
 export const onAgentSettled = (fn: (path: string) => void): (() => void) => onEventOf("settled", fn);
 

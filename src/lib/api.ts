@@ -74,6 +74,7 @@ import type {
   SessionSetupFileText,
   SessionContextView,
   SessionTools,
+  PairView,
   SessionSummary,
   ThemeList,
   TmpAttachment,
@@ -146,6 +147,7 @@ import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../
 import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../shared/provider-limits";
 import type { TargetInfo } from "./remote-session";
 import type { CommandEntry } from "../../shared/commands-catalog";
+import type { BackgroundJob } from "../../shared/protocol";
 import type { AlignTriage, WorkerChecks, DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
 import { upgradeLegacyRows } from "./legacy-rows";
@@ -223,6 +225,16 @@ export const mintAccessCode = () =>
 export const revealAccessToken = () => request<{ token: string }>("/api/auth/token", { cache: "no-store" });
 
 export const listSessions = () => request<SessionSummary[]>("/api/sessions");
+
+/** A chat's pairings in force (§app.overseer/pairs): its Paired with lines. */
+export const listPairs = (sessionId: string) =>
+  request<{ pairs: PairView[] }>(`/api/sessions/pairs?id=${encodeURIComponent(sessionId)}`, { cache: "no-store" });
+/** Unpair: both topics close, their waiting notes drop. */
+export const unpairChats = (pairing: string) =>
+  request<{ pair: PairView }>("/api/sessions/pairs/unpair", { method: "POST", body: JSON.stringify({ pairing }) });
+/** Resume a paused pairing (both directions): their note counts go back to 0. */
+export const resumePairing = (pairing: string) =>
+  request<{ pair: PairView }>("/api/sessions/pairs/resume", { method: "POST", body: JSON.stringify({ pairing }) });
 /** The list and the feed version it is at (`X-Sova-List-Version`; null from a server without it). */
 export const listSessionsVersioned = async () => {
   const { body, headers } = await requestWithHeaders<SessionSummary[]>("/api/sessions");
@@ -466,6 +478,9 @@ export const clearDoneOverseerTodos = () => request<OverseerTodosInfo>("/api/ove
 
 /** The attention digest: what needs the user, what finished, what is running (≤30 items, tier first). */
 export const getAttention = () => request<AttentionDigest>("/api/overseer/attention");
+/** Dismiss a chat's Needs you row, covering what waits up to `since` (§app.session-list/needs-you-dismiss). */
+export const dismissNeedsYou = (path: string, since: number) => request<{ path: string; since: number }>("/api/attention/dismiss", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, since }) });
+export const undoDismissNeedsYou = (path: string) => request<{ path: string; undone: boolean }>(`/api/attention/dismiss?path=${encodeURIComponent(path)}`, { method: "DELETE" });
 
 /** Settings → Overseer. */
 export const getOverseerSettings = () => request<OverseerSettingsInfo>("/api/settings/overseer");
@@ -1021,6 +1036,17 @@ export const fetchTeamInboxBody = (path: string, teamId: string, workerId: strin
     `/api/insights/session/inbox?path=${encodeURIComponent(path)}&team=${encodeURIComponent(teamId)}&worker=${encodeURIComponent(workerId)}&item=${encodeURIComponent(id)}`,
   );
 
+/** A chat's running background jobs and its workers' (§app.background-jobs/pane). Starts no chat. */
+export const fetchSessionJobs = (path: string) => request<{ jobs: BackgroundJob[] }>(`/api/sessions/jobs?path=${encodeURIComponent(path)}`);
+
+/** Stop one background job: 15 s to finish, then the rest ends. Never starts or wakes the chat.
+    `sessionId` names a worker's job (the job's own `sessionId`). */
+export const stopSessionJob = (path: string, id: string, sessionId?: string) =>
+  request<{ ok: true; id: string; ended: boolean }>("/api/sessions/jobs/stop", {
+    method: "POST",
+    body: JSON.stringify({ path, id, ...(sessionId ? { sessionId } : {}) }),
+  });
+
 /** The repository around a session's folder (read-only git). `fresh` skips the server's ~10s cache.
     Use loadGitSummary (lib/git-summary.ts), which shares a request already running. */
 export const fetchGitSummary = (path: string, fresh = false) =>
@@ -1508,9 +1534,6 @@ export async function runRootVerb(root: string, verb: ServicesUiVerb, body: Reco
     throw err;
   }
 }
-/** Run the Project deploy playbook (§app.project-runtime/deploy-playbook): a verb playbook run that proposes a deploy recipe. */
-export const runDeploySetup = (projectId: string) =>
-  request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", { playbook: "project-deploy" }));
 /** A deploy verb as the operator (§app.project-services/deploy): a refusal is a result too, never thrown. */
 export async function runDeployVerb(root: string, verb: DeployVerb, body: Record<string, unknown>): Promise<VerbResult> {
   try {
@@ -1543,9 +1566,6 @@ export async function runReleaseVerb(project: string, verb: `release.${string}`,
     throw err;
   }
 }
-/** Set Up Releases: the Release playbook maker, a guided setup that proposes the project's release playbook and settings. */
-export const runReleaseSetup = (projectId: string) =>
-  request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", { playbook: "release-maker" }));
 /** A chat's merge queue cards: one per branch it owns, from its approval on (`session.merge-cards`). */
 export const getMergeCards = (sessionId: string) => request<{ cards: import("../../shared/merge-queue").MergeCard[] }>(`/api/merge-queue/cards?session=${encodeURIComponent(sessionId)}`);
 /** Every project's queue and releases in one quick read: the landing bar's starting picture (page open, reconnect). */
@@ -1553,8 +1573,22 @@ export const getLandingSummary = () => request<import("../../shared/merge-queue"
 /** What runs on this host now, every project's (Running branches on `#/projects`). */
 export const getHostServices = () => request<HostServicesView>("/api/services");
 export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);
-/** Merge Branch on a proposed playbook run (§app.project-runtime/merge): the hash shown; a refused merge's error says why. */
-export const mergeProjectRun = (projectId: string, hash: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/merge`, jsonInit("POST", { hash }));
+/** Merge Branch on a proposed playbook run (§app.project-runtime/merge): the hash shown (and the Setup chat's, the commit
+    its proposal was read at); a refused merge's error says why. */
+export const mergeProjectRun = (projectId: string, hash: string, commit?: string) =>
+  request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime/merge`, jsonInit("POST", commit ? { hash, commit } : { hash }));
+/** A project's Setup chat (the one standing chat that sets up its merge queue, releases and deploys): its state and its
+    branch's proposal, and whether it may open now. */
+export const getSetupChat = (projectId: string) =>
+  request<import("../../shared/setup-chat").SetupStatus>(`${projectPath(projectId)}/setup`);
+/** Opens the project's Setup chat, starting it the first time; `from`: the part the user came from (the chat starts
+    there). `fresh`: Start Fresh (this chat is archived once its turn ends; the next open starts a new one). */
+export const openSetupChat = (projectId: string, opts: { from?: "merge-queue" | "releases" | "deploy" | "settings"; fresh?: boolean } = {}) =>
+  request<import("../../shared/setup-chat").SetupOpened>(`${projectPath(projectId)}/setup`, jsonInit("POST", { ...(opts.from ? { from: opts.from } : {}), ...(opts.fresh ? { fresh: true } : {}) }));
+/** Land or Merge Branch on the Setup chat's proposal (the user's own page only): the hash and commit the card read.
+    `queued`: the branch joined the merge queue (a served project); else it was merged. A 409 says why not. */
+export const mergeSetupProposal = (projectId: string, hash: string, commit: string) =>
+  request<{ queued: boolean; setup: import("../../shared/setup-chat").SetupStatus }>(`${projectPath(projectId)}/setup/merge`, jsonInit("POST", { hash, commit }));
 /** Run the Project verbs playbook on the project: a coding session on its own branch. */
 export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
   request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));

@@ -27,10 +27,13 @@ method" and "This project's" (§app.merge-queue/settings).
 **Read as you go.** Sova's method playbook has a **Read as you go** table: one row per moment Sova
 calls the thread in for (**Queued**, **Conflict**, **Failed**, **Paused**, **Idle**, **Names**,
 **Answer**), naming the pages to read again at that moment, every time. Each message Sova sends the
-thread ends: "Before you act, read your playbook's "Read as you go" row for {moment} and the pages it
+thread ends: "Before you act, read your playbook's "Read as you go" row for {moment} and the pages
+it
 names, now, never from memory (the project's own playbook wins where its list differs)." Its memory
-is for history only (a check that failed before, how it judged a branch like this one), never for the
-current state or the method. A project's own merge playbook may give its own table: its row wins where
+is for history only (a check that failed before, how it judged a branch like this one), never for
+the
+current state or the method. A project's own merge playbook may give its own table: its row wins
+where
 it differs; without one, Sova's stands, with the project playbook's section of the same name added.
 
 **One thread, with memory, on its own.** Each project keeps one merge thread, whose only mode is
@@ -49,11 +52,14 @@ approval, when:
   `merge.extend`, each with its reason, add-only (§app.merge-queue/checks). Picks count only if they
   arrive before the run's checks start. The message for every queued branch gives the full pick,
   `merge.extend {entry, checks: [id], why, select}`, and says `select` is part of it, to be copied
-  whenever the pick has one; the tool's own help says the same (§app.project-services/merge-verbs). No
+  whenever the pick has one; the tool's own help says the same (§app.project-services/merge-verbs).
+  No
   setting governs this, and the queue doesn't handle a pick sent with no selection specially.
 - **a merge conflicted.** It judges the conflict with `merge.resolve`, saying no behaviour change or
   behaviour differs, with the target's side and the branch's side in plain words
-  (§app.merge-queue/conflicts).
+  (§app.merge-queue/conflicts). It works the resolution out in the scratch copy Sova made for that
+  attempt, whose folder the call names, and never makes a worktree or a branch of its own for it
+  (§app.merge-queue/resolve-copy).
 - **a run failed on the branch.** It explains the failure as the entry's note.
 - **the queue paused.**
 - **the queue has nothing left to check** (§app.merge-queue/empty).
@@ -73,7 +79,9 @@ replaced within the hour, counts as the thread for the merge verbs.
 - hold its queue's new starts for a few minutes, and clear that hold (§app.merge-queue/empty).
 
 It may not approve, cancel or land an entry, pause or resume the queue, merge into the target, or
-push. It messages no other
+push. It never sets the queue up or changes its setup: that is the project's Setup chat, a separate
+chat the user talks to (§app/project-setup), and the thread neither starts it nor calls `merge.try`
+or `merge.setup`. It messages no other
 chat directly. When it needs the user (the names interview below, or any question it can't settle
 itself), it asks through the merge verbs, and Sova carries the question to the branch's chat
 (§chat.merge-queue/asks). Its profile has no web, no workers and no timers, grants no session
@@ -94,7 +102,8 @@ When their answer comes back, it adds their names to the list, then asks the sam
 list is complete, giving only its kinds and counts. A question never quotes a name: to see the
 names themselves the user opens the merge thread, which shows the list there only. Once they
 confirm, it says in the entry's note (with no names) that the push hold lifts with the next
-landing. The names are kept only in the project's names file (`<state root>/merge-queue/<project key>/names.json`; Sova's own
+landing. The names are kept only in the project's names file (`<state root>/merge-queue/<project
+key>/names.json`; Sova's own
 repository falls back to `<state root>/merge-round.json`), which the leak scan reads
 (§app.merge-queue/push); Sova's own project keeps `<state root>/merge-round.json`. The file is
 private to the user (mode 0600), only ever added to, and never committed. The finder prints the

@@ -8,15 +8,22 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { MergeEntry, MergeQueueView } from "../../../shared/merge-queue";
 import type { ProjectDef } from "../../../shared/project-contract";
+import { NO_BACKGROUND_CLEANUP } from "../../git-no-background";
 import { scratchRoot } from "../../test-scratch";
 import type { RunInput, RunMerge, RunOutcome, ThreadEvent } from "../contract";
 import type { MergeNoticeKind } from "../notices";
 import { MergeQueues, type ProjectQueue, type QueueDeps } from "../queue";
 
-const ENV = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid", GIT_CONFIG_NOSYSTEM: "1" };
+const IDENT = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid", GIT_CONFIG_NOSYSTEM: "1" };
 
+/**
+ * Git as the kit runs it: starting no background cleanup, as the server's own commits don't. A `git commit` otherwise
+ * starts `git maintenance run --auto --detach`, whose repack (Git 2.54: `repack -d --cruft --write-midx`, once a commit
+ * leaves enough loose objects) runs on under the test's next writes and reads in the same object store and can lose
+ * objects outright (fsck: missing commit), so the queue's reads fail for good ("bad object").
+ */
 export function sh(cwd: string, ...args: string[]): string {
-  return execFileSync("git", args, { cwd, env: ENV, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  return execFileSync("git", [...NO_BACKGROUND_CLEANUP, ...args], { cwd, env: { ...process.env, ...IDENT }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 export function tryGit(cwd: string, ...args: string[]): { code: number; out: string } {
   try {

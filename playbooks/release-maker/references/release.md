@@ -4,7 +4,7 @@ Two parts, both on the maker's branch and landed together. Sova reads both from 
 
 ## The settings: `.sova/project.json` → `release`
 
-Parsed as strictly as the rest of the definition (Sova's own parser, `release-maker.mjs check`): an unknown key or a wrong type makes the whole file invalid. Absent: releases are not set up, and the Releases tab offers Set Up Releases. Outside the definition's hash.
+Parsed as strictly as the rest of the definition (Sova's own parser, `release-maker.mjs check`): an unknown key or a wrong type makes the whole file invalid. Absent: releases are not set up, and the Releases tab offers Set Up with a Chat. Outside the definition's hash.
 
 ```json
 "release": {

@@ -67,7 +67,7 @@ export interface RuntimePlaybook {
       every sentence about the run names it by, and what it proposes. */
   playbookId: string;
   label: string;
-  proposes: "definition" | "deploy" | "release";
+  proposes: "definition" | "deploy" | "release" | "pipeline";
   /** While waiting: the open alignment questions its session asks the operator. */
   questions?: number;
   /** Its session file on this host, when known (the card links it). */
@@ -113,6 +113,17 @@ export interface RuntimeRunReview {
   deploy?: DeployReview;
   /** A release-setup run's settings and steps at the branch's tip (server/projects/release-proposal.ts). */
   release?: ReleaseSetupReview;
+  /** A pipeline run's (the Setup chat's) merge section at the tip; null when it declares none. */
+  merge?: MergeSetupReview | null;
+}
+
+/** The merge section a Setup chat's branch proposes, as its tab shows it. */
+export interface MergeSetupReview {
+  /** "none": declared, no automated tests. */
+  checks: { id: string; label: string; run: string[]; timeoutSec: number; optional: boolean; requires: string[] }[] | "none" | null;
+  target?: string;
+  push?: boolean;
+  land?: string;
 }
 
 /** What a Release playbook maker run's branch proposes: the `release` section and the playbook folder's step list. */

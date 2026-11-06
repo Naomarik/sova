@@ -15,6 +15,8 @@ import {
   type MergeQueueView,
   type MergeReady,
   type MergeRun,
+  type MergeTrial,
+  MERGE_TRIALS_KEPT,
   NOTE_MAX,
   type PauseInfo,
   type PauseKind,
@@ -51,6 +53,12 @@ import { gitlabAdapter } from "./hosts/gitlab";
 import { suggestLanding } from "./hosts/repo";
 import { changeWords, editSettingsText, isEmptyChange, REVIEW_KIT_DIR, SettingsEditError } from "./settings-edit";
 import { PROJECT_PLAYBOOK } from "./thread";
+import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, sweepScratch } from "./scratch";
+import { isSetupChange, SETUP_UNREADABLE, setupChangeOf, trialReleaseChecks, untriedWhy } from "./setup-branch";
+
+/** Land's refusal of a worktree the merge queue made for itself (a conflict's scratch copy). */
+export const scratchRefusal = (what: string): string =>
+  `${what} is a scratch copy the merge queue made to resolve a conflict, not work of yours to land: land the branch it was made for instead`;
 
 /**
  * One merge queue per project: approved branches wait in line and are checked one at a time; a passed run lands
@@ -104,6 +112,8 @@ export interface QueueDeps {
   flagBroken?: (b: import("../../shared/merge-queue").TargetBroken, root: string) => void;
   /** Tell the branch's chat (server/merge-queue/notices.ts). */
   notify?: (kind: MergeNoticeKind, entry: MergeEntry, extra: { run?: MergeRun; root: string; logDir?: string }) => void;
+  /** A trial (merge.try) ended: the chat that started it is told (wire.ts). */
+  trialEnded?: (trial: MergeTrial, run: MergeRun, root: string) => void;
   /** Wake the merge thread; false: none was asked. */
   thread?: WakeThread;
   /** The chat that owns a branch, when the approval named none (Land on the Merge Queue tab); null: no known chat. */
@@ -163,6 +173,9 @@ export interface QueueDeps {
   drafter?: Drafter;
   /** How often open requests are read on the host (default 3 min). */
   pollMs?: number;
+  /** The worktree was made by one of the merge queue's own chats (its creating tracker is a queue chat, owners.ts
+   *  queueMade): one of the scratch copies the merge thread made itself before Sova made them. Default: none is. */
+  queueMade?: (worktree: string) => Promise<boolean>;
 }
 
 /** What the queue tells the releaser about one of a release's entries. */
@@ -211,6 +224,12 @@ interface Current {
 
 type Entry = QueueFile["entries"][number];
 
+/** A trial's picks: every optional merge check its definition declares (a landing runs those only when picked). */
+function optionalPicks(def: ProjectDef): CheckPick[] {
+  const checks = def.merge?.checks;
+  return Array.isArray(checks) ? checks.filter((c) => c.optional).map((c) => ({ id: c.id, label: c.label, source: "picked" as const, why: "a trial runs every proposed check" })) : [];
+}
+
 export class ProjectQueue {
   readonly store: QueueStore;
   private q!: QueueFile;
@@ -230,6 +249,10 @@ export class ProjectQueue {
   private publishTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
   private checksCache: { head: string; def: ProjectDef | null; checks: ChecksDeclared; review: boolean; invalid?: string } | null = null;
+  /** Entries that may have a scratch copy or a pinned resolution (scratch.ts): each is removed once the entry is final. */
+  private scratchIds = new Set<string>();
+  /** Scratch copies are made and removed one at a time, in order (a retry's new copy never races the old one's removal). */
+  private scratchChain: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly deps: QueueDeps,
@@ -284,6 +307,65 @@ export class ProjectQueue {
     this.viewCache = null;
     this.store.write(this.q);
     this.schedulePublish();
+    this.tidyScratch();
+  }
+
+  // ---- scratch copies (scratch.ts) --------------------------------------------------------------
+
+  private scratchStep<T>(fn: () => Promise<T>): Promise<T> {
+    const p = this.scratchChain.then(fn, fn);
+    this.scratchChain = p.catch(() => {});
+    return p;
+  }
+
+  /** Each entry whose attempt ended (final: landed, sent back, cancelled, superseded) loses its copy and its ref. */
+  private tidyScratch(): void {
+    for (const id of [...this.scratchIds]) {
+      const e = this.entry(id);
+      if (e && !isFinal(e)) continue;
+      this.scratchIds.delete(id);
+      void this.scratchStep(async () => {
+        const r = await dropScratch(this.git, this.root, id);
+        if (r.copy || r.ref) this.log(`removed ${[r.copy ? "the scratch copy" : "", r.ref ? "the pinned resolution" : ""].filter(Boolean).join(" and ")} of ${id}`);
+      });
+    }
+  }
+
+  /** The conflict's scratch copy for the merge thread, at the target's head: its path, or why it couldn't be made. */
+  private makeScratch(e: Entry, base: string): Promise<{ scratch: string } | { scratchError: string }> {
+    this.scratchIds.add(e.id);
+    return this.scratchStep(async () => {
+      try {
+        return { scratch: await makeScratchCopy(this.git, { root: this.root, entry: e.id, base }) };
+      } catch (err) {
+        const why = err instanceof Error ? err.message : String(err);
+        this.log(`the scratch copy of ${e.id} couldn't be made: ${why}`);
+        return { scratchError: why };
+      }
+    });
+  }
+
+  /** At start: drop every copy and ref whose entry is final or gone from the queue file (pruned: final); keep the
+   *  open ones', and remember them for when they end. */
+  async sweepScratch(): Promise<string[]> {
+    const open = (id: string) => {
+      const e = this.entry(id);
+      const keep = !!e && !isFinal(e);
+      if (keep) this.scratchIds.add(id);
+      return keep;
+    };
+    return this.scratchStep(() => sweepScratch(this.git, this.root, open)).catch(() => [] as string[]);
+  }
+
+  /** Tests: wait for the scratch copies' makes and removals in flight. */
+  scratchIdle(): Promise<unknown> {
+    return this.scratchChain;
+  }
+
+  /** A worktree the merge queue made for itself: a scratch copy (by its mark), or one a queue chat created. */
+  private async queueOwned(path: string): Promise<boolean> {
+    if (isScratchCopy(path)) return true;
+    return (await this.deps.queueMade?.(path).catch(() => false)) ?? false;
   }
 
   private schedulePublish(): void {
@@ -436,7 +518,7 @@ export class ProjectQueue {
     if (hold) for (const w of v.waiting) if (w.release !== hold.id) delete w.eta;
     const chats = this.deps.chatsOf?.(this.root) ?? {};
     const readyRows = this.attachSummaries(v, ready.filter((r) => !heldBack.has(r.branch)));
-    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(settings ? { settings } : {}) };
+    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(this.q.trials?.length ? { trials: structuredClone(this.q.trials) } : {}), ...(settings ? { settings } : {}) };
   }
 
   /**
@@ -601,7 +683,7 @@ export class ProjectQueue {
 
   /**
    * Save a settings change (push, review on or off, each check's time limit, rerun and optional) as one commit on the
-   * target, after the user's confirm. Never under a branch being checked: while a run (or Try It on Main, or a
+   * target, after the user's confirm. Never under a branch being checked: while a run (or a dry run, or a
    * landing) holds the target it waits (`pendingSave`, kept in queue.json) and is made at the next quiet point.
    */
   saveSettings(changes: MergeSettingsChange): Promise<MergeSettingsSaveResult> {
@@ -834,6 +916,8 @@ export class ProjectQueue {
     for (const w of await worktreesOf(this.git, this.root)) {
       if (!w.branch || !w.head || w.path === this.root || w.branch === this.q.target || w.branch === "master" || w.branch === "main" || !existsSync(w.path)) continue;
       if (w.branch.startsWith("sova/")) continue;
+      // The queue's own scratch copies are never work to land, whatever branch one is on.
+      if (await this.queueOwned(w.path)) continue;
       const ahead = await countBetween(this.git, this.root, head, w.head);
       if (!ahead) continue;
       // Its subject and when it last changed (the head's committer date), in one read.
@@ -976,6 +1060,7 @@ export class ProjectQueue {
   add(req: AddRequest): Promise<{ entry: MergeEntry; changed: boolean }> {
     return this.serial(async () => {
       let branch = req.branch?.replace(/^refs\/heads\//, "");
+      if (req.checkout && (await this.queueOwned(req.checkout))) throw new MergeFailure("invalid-request", scratchRefusal(req.checkout));
       if (!branch && req.checkout) {
         const r = await this.git(["symbolic-ref", "--quiet", "--short", "HEAD"], req.checkout);
         if (r.code !== 0 || !r.stdout.trim()) throw new MergeFailure("invalid-request", `${req.checkout} isn't on a branch`);
@@ -1000,6 +1085,11 @@ export class ProjectQueue {
       const subject = (await this.git(["log", "-1", "--format=%s", commit], this.root)).stdout.trim();
       if (/^temp\b/i.test(subject)) throw new MergeFailure("invalid-request", `${branch}'s head is a TEMP commit ("${subject.slice(0, 60)}"): it isn't finished`);
       const wt = (await worktreesOf(this.git, this.root)).find((w) => w.branch === branch && w.path !== this.root)?.path;
+      // Before the trial gate: a queue copy is never landed, so "run a trial" would be the wrong thing to tell anyone.
+      if (wt && (await this.queueOwned(wt))) throw new MergeFailure("invalid-request", scratchRefusal(branch));
+      // A setup branch is checked by the target's checks, not its own: it lands only once a trial of this exact commit passed.
+      const untried = await this.setupUntried(head, commit);
+      if (untried) throw new MergeFailure("invalid-request", untried);
       if (wt && commit === tip) {
         const st = await this.git(statusArgs("--porcelain"), wt);
         const n = st.stdout.split("\n").filter(Boolean).length;
@@ -1260,6 +1350,11 @@ export class ProjectQueue {
         if (!s.ok) verdict = "behaviour-differs";
       } else if (verdict === "no-behaviour-change") throw new MergeFailure("invalid-request", "a resolution judged to change no behaviour names its commit (a merge of the target and the approved commit)");
       this.clearConflictTimer(e.id);
+      // The resolution stays reachable under a hidden ref until the run uses it (or the attempt ends).
+      if (commit) {
+        this.scratchIds.add(e.id);
+        await this.scratchStep(() => pinResolution(this.git, this.root, e.id, commit!)).catch((err) => this.log(`pinning the resolution of ${e.id} failed: ${err instanceof Error ? err.message : err}`));
+      }
       e.conflict = { files, verdict, ours: j.ours.trim(), theirs: j.theirs.trim(), proposal: j.proposal.trim(), ...(commit ? { commit } : {}), ...(sanity ? { sanity } : {}), at: this.iso() };
       if (j.note !== undefined) this.setNote(e, j.note, "thread");
       if (verdict === "no-behaviour-change") {
@@ -1361,6 +1456,11 @@ export class ProjectQueue {
         delete e.reason;
         delete e.sentBackFor;
         delete e.sentBackDrafts;
+        // Its resolution's pin went when it was sent back: one git no longer has is judged afresh by the next run.
+        if (e.conflict?.commit && (await this.git(["cat-file", "-e", `${e.conflict.commit}^{commit}`], this.root)).code !== 0) {
+          delete e.conflict;
+          e.notes = e.notes.filter((n) => n.kind !== "resolved");
+        }
         this.toFront(e);
       }
       if (this.q.paused && this.q.paused.kind !== "main-checkout-dirty") {
@@ -1380,7 +1480,7 @@ export class ProjectQueue {
 
   /**
    * merge.setup: the onboarding answer (one test command, a list of checks "Label: command", or no automated tests).
-   * `dryRun` (Try It on Main) runs those checks on the target alone in the merge copy and answers the run (it goes on in
+   * `dryRun` (a dry run) runs those checks on the target alone in the merge copy and answers the run (it goes on in
    * the background; merge.logs reads it); a failure there is the project's, never a branch's. Without `dryRun` the
    * answer is written into the definition's `merge` section on the target, as one commit the queue moves the target to
    * (the main folder fast-forwarded with it, never forced).
@@ -1434,7 +1534,7 @@ export class ProjectQueue {
         const runId = newId("mr");
         const runDir = this.store.runDir(runId);
         mkdirSync(runDir, { recursive: true });
-        const run: MergeRun = { id: runId, entry: "setup", project: this.id, branch: this.q.target, base: head, commit: head, steps: [], checks: [], verdict: "running", startedAt: this.iso(), why: "Try It on Main" };
+        const run: MergeRun = { id: runId, entry: "setup", project: this.id, branch: this.q.target, base: head, commit: head, steps: [], checks: [], verdict: "running", startedAt: this.iso(), why: "A dry run of the checks on the target" };
         this.store.writeRun(run);
         const ac = new AbortController();
         const stand: MergeEntry = { id: "setup", project: this.id, target: this.q.target, branch: this.q.target, commit: head, approval: { by: "land-button", at: this.iso(), commit: head }, state: "checking", runs: [runId], picks: [], notes: [], createdAt: this.iso(), updatedAt: this.iso() };
@@ -1540,7 +1640,126 @@ export class ProjectQueue {
     });
   }
 
-  /** Tests: the Try It on Main run in flight, if any. */
+  /** Why `commit` can't land without a trial (a setup branch with no passing trial of that exact commit), or null. */
+  async setupUntried(head: string, commit: string): Promise<string | null> {
+    const change = await setupChangeOf(this.git, this.root, head, commit);
+    // Git can't tell whether it changes the setup: it waits, as a setup branch would (fail closed).
+    if (!change) return SETUP_UNREADABLE;
+    return isSetupChange(change) ? untriedWhy(this.q.trials, commit) : null;
+  }
+
+  /** The trials, newest first. */
+  trials(): MergeTrial[] {
+    return structuredClone(this.q.trials ?? []);
+  }
+
+  /**
+   * merge.try: a trial of a setup branch's head (or any commit) in the merge copy. The copy is reset to that commit,
+   * nothing is merged and nothing saved; the checks are that commit's own definition's (its merge checks and the
+   * services they require, then its release checks). It answers at once and runs on in the background (merge.logs
+   * reads its run). Refused while a landing, a run or another trial holds the copy, or while a release holds the queue.
+   */
+  trial(req: { branch?: string; commit?: string; checkout?: string; checks?: string[]; by: MergeTrial["by"] }): Promise<{ trial: MergeTrial; run: MergeRun }> {
+    return this.serial(async () => {
+      if (this.current || this.trying || this.landing) throw new MergeFailure("busy", "a landing or a run is using the merge copy now: try again when it ends");
+      let branch = req.branch?.replace(/^refs\/heads\//, "");
+      if (!branch && !req.commit && req.checkout) {
+        const r = await this.git(["symbolic-ref", "--quiet", "--short", "HEAD"], req.checkout);
+        if (r.code === 0 && r.stdout.trim()) branch = r.stdout.trim();
+      }
+      if (!branch && !req.commit) throw new MergeFailure("invalid-request", "name the branch or the commit to try");
+      const commit = req.commit ? await revParse(this.git, this.root, req.commit) : await revParse(this.git, this.root, `refs/heads/${branch}`);
+      if (!commit) throw new MergeFailure("not-found", req.commit ? `no commit ${req.commit} in ${this.root}` : `no branch ${branch} in ${this.root}`);
+      if (branch && req.commit) {
+        const tip = await revParse(this.git, this.root, `refs/heads/${branch}`);
+        if (tip && commit !== tip && !(await isAncestor(this.git, this.root, commit, tip))) throw new MergeFailure("invalid-request", `${commit.slice(0, 7)} isn't on ${branch}`);
+      }
+      const shown = await this.git(["show", `${commit}:.sova/project.json`], this.root);
+      if (shown.code !== 0) throw new MergeFailure("invalid-request", `${commit.slice(0, 7)} has no .sova/project.json: there is nothing to try`);
+      let def: ProjectDef;
+      try {
+        def = parseDefinition(shown.stdout);
+      } catch (err) {
+        throw new MergeFailure("invalid-request", `.sova/project.json at ${commit.slice(0, 7)} is invalid: ${err instanceof Error ? err.message : err}`);
+      }
+      // No merge checks declared: the trial is the copy and the setup alone, as "no automated tests" is.
+      if (this.deps.checksOf(def) === "unset") def = { ...def, merge: { ...(def.merge ?? {}), checks: "none" } } as ProjectDef;
+      // Release checks are long: a trial runs those new or changed against the target's release section, and the ones
+      // named for it; the rest are reported not run (unchanged).
+      const onTarget = (await this.declared()).def?.release?.checks ?? [];
+      const { run: releaseRun, notRun } = trialReleaseChecks(def.release?.checks ?? [], onTarget, req.checks ?? []);
+      const unknown = (req.checks ?? []).filter((id) => !(def.release?.checks ?? []).some((c) => c.id === id) && !(Array.isArray(def.merge?.checks) && def.merge.checks.some((c) => c.id === id)));
+      if (unknown.length) throw new MergeFailure("invalid-request", `${commit.slice(0, 7)} declares no check ${unknown.map((u) => `"${u}"`).join(", ")}`);
+      const runId = newId("mr");
+      const runDir = this.store.runDir(runId);
+      mkdirSync(runDir, { recursive: true });
+      const label = branch ?? commit.slice(0, 7);
+      const run: MergeRun = { id: runId, entry: "trial", project: this.id, branch: label, base: commit, commit, steps: [], checks: [], verdict: "running", startedAt: this.iso(), why: `Trial of ${label}` };
+      this.store.writeRun(run);
+      const trial: MergeTrial = { run: runId, commit, ...(branch ? { branch } : {}), verdict: "running", by: req.by, startedAt: run.startedAt, ...(notRun.length ? { notRun: notRun.map((c) => ({ id: c.id, label: c.label })) } : {}) };
+      this.q.trials = [trial, ...(this.q.trials ?? []).filter((t) => t.run !== runId)].slice(0, MERGE_TRIALS_KEPT);
+      this.save();
+      const ac = new AbortController();
+      const stand: MergeEntry = { id: "trial", project: this.id, target: this.q.target, branch: label, commit, approval: { by: "land-button", at: this.iso(), commit }, state: "checking", runs: [runId], picks: [], notes: [], createdAt: this.iso(), updatedAt: this.iso() };
+      const input: RunInput = {
+        runId,
+        entry: stand,
+        project: { id: this.id, root: this.root, target: this.q.target, def },
+        base: commit,
+        commit,
+        runDir,
+        // A trial runs every proposed check, the optional ones too.
+        picks: optionalPicks(def),
+        review: false,
+        tryOnly: true,
+        trialOf: label,
+        ...(releaseRun.length ? { releaseChecks: releaseRun } : {}),
+        signal: ac.signal,
+        awaitReview: () => Promise.reject(new Error("no review in a trial")),
+      };
+      const hooks = {
+        step: (st: RunStep) => {
+          const i = run.steps.findIndex((x) => x.id === st.id);
+          if (i >= 0) run.steps[i] = { ...st };
+          else run.steps.push({ ...st });
+          this.store.writeRun(run);
+        },
+        checks: (list: CheckPick[]) => void (run.checks = list),
+        copy: (path: string) => void (run.copy = path),
+      };
+      const done = (async () => {
+        let out: RunOutcome;
+        try {
+          out = await this.deps.runMerge(input, hooks);
+        } catch (err) {
+          out = { verdict: "machine", why: err instanceof Error ? err.message : String(err), notes: [], checks: [] };
+        }
+        run.verdict = out.verdict === "passed" ? "passed" : out.verdict === "void" ? "void" : out.verdict === "machine" ? "machine" : "failed";
+        run.why = out.verdict === "passed" ? `the proposed checks pass on ${label} at ${commit.slice(0, 7)}` : (out.why ?? "a check failed");
+        run.endedAt = this.iso();
+        if (out.noChecks) run.noChecks = true;
+        this.store.writeRun(run);
+        await this.serial(async () => {
+          const t = (this.q.trials ?? []).find((x) => x.run === runId);
+          if (t) {
+            t.verdict = run.verdict === "passed" ? "passed" : run.verdict === "void" ? "void" : run.verdict === "machine" ? "machine" : "failed";
+            t.why = run.why;
+            t.endedAt = run.endedAt;
+            this.save();
+            if (t.verdict !== "void") this.deps.trialEnded?.(structuredClone(t), structuredClone(run), this.root);
+          }
+          this.trying = null;
+          this.schedulePublish();
+          this.kickSoon();
+        });
+      })();
+      this.trying = { run, ac, done };
+      this.schedulePublish();
+      return { trial: structuredClone(trial), run: structuredClone(run) };
+    });
+  }
+
+  /** Tests: the dry run in flight, if any. */
   tryingNow(): Promise<void> | null {
     return this.trying?.done ?? null;
   }
@@ -1944,6 +2163,9 @@ export class ProjectQueue {
           this.kickSoon();
           return;
         }
+        // The thread's scratch copy, made by Sova at the target's head (the thread never makes its own), before the
+        // entry reads as a conflict: once it does, the thread has been told where to work. Only when a thread is there.
+        const scratch = this.deps.thread ? await this.makeScratch(e, (await this.targetHead()) ?? run.base) : {};
         e.state = "conflict";
         const files = out.conflict?.files ?? [];
         delete e.conflict;
@@ -1951,7 +2173,8 @@ export class ProjectQueue {
         e.reason = `conflicts with ${this.q.target}${files.length ? ` in ${files.length} file${files.length === 1 ? "" : "s"}: ${files.slice(0, 3).join(", ")}${files.length > 3 ? ", …" : ""}` : ""}`;
         e.updatedAt = this.iso();
         this.save();
-        const asked = this.wake("conflict", e, run.id, { files });
+        const asked = this.wake("conflict", e, run.id, { files, ...scratch });
+        // No thread took it: the copy goes with the hand-back below (tidyScratch).
         if (!asked) this.handBack(e, run, `${e.reason}; no merge thread is there to judge it`, "conflict");
         else this.armConflictTimer(e, run);
         this.kickSoon();
@@ -2517,7 +2740,7 @@ export class ProjectQueue {
     kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names" | "idle",
     e: Entry,
     run?: string,
-    extra: { files?: string[]; why?: string; namesFile?: string; lastLanded?: { id: string; branch: string; sha: string }; head?: string } = {},
+    extra: { files?: string[]; why?: string; namesFile?: string; lastLanded?: { id: string; branch: string; sha: string }; head?: string; scratch?: string; scratchError?: string } = {},
   ): boolean {
     if (!this.deps.thread) return false;
     // What the thread diffs against: the run's base, else the target as the queue last saw it.
@@ -2983,6 +3206,8 @@ export class MergeQueues {
         const q = new ProjectQueue(this.deps, root, this.deps.projectIdOf?.(root) ?? root);
         await q.load();
         const did = await q.recover();
+        const swept = await q.sweepScratch();
+        if (swept.length) did.push(`removed the scratch copies and pinned resolutions of ${swept.length} finished entr${swept.length === 1 ? "y" : "ies"} (${swept.join(", ")})`);
         for (const d of did) (this.deps.log ?? console.log)(`[merge-queue] ${q.id}: ${d}`);
         q.kickSoon();
         return q;

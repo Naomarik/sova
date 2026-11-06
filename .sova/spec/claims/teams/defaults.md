@@ -238,7 +238,16 @@ working again; every worker state change and every accepted steer schedules one,
 thread steering a member or a member starting a task resumes the checks. A paused team's nudges
 always fire on time, so the resume check runs while everyone is idle; those fires are bounded:
 after 30 consecutive fires with no other member working, scheduling is refused until some member
-works again. Pending nudges, held or not, are kept in the team's mailbox and armed again when the parent's session starts after a reload or a restart; a nudge that came due meanwhile fires then. The pause survives one too: a team whose last `pause`/`resume`
+works again. Pending nudges, held or not, are kept in the team's mailbox and armed again when the parent's session starts after a reload or a restart, whether or not any member is still running; a nudge that came due meanwhile fires then.
+
+**A paused team doesn't depend on its parent staying up.** When a nudge that isn't held comes due and
+the parent has shut down, Sova brings the parent back, as for any chat's nudge
+(§chat.wake-nudges/on-time, §chat.wake-nudges/kinds). The parent restarts a stopped monitor and only then
+delivers the nudge. A due nudge stays in the mailbox until it has been delivered, and is never
+dropped because its monitor wasn't running. Tries are bounded (§chat.wake-nudges/tries). A held nudge
+brings nothing back. Archiving the parent cancels them all (§chat.wake-nudges/archive).
+
+The pause survives a reload or restart too: a team whose last `pause`/`resume`
 event on the active branch is `pause` is paused again at `session_start`, and when its monitor
 rejoins (picked back up or `agent_resume`d) with no nudge pending it is sent its resume check at once, as an urgent `notice` item (run `team_roster`; resume if the window is back under the threshold or has reset,
 otherwise schedule the check); the `agent_resume` result says so instead of "nothing was sent to

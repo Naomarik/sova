@@ -274,6 +274,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "session.sandbox.set": "acquires a chat handle, which starts the chat's process",
   "worker.resume": "acquires a chat handle, which starts the chat's process, and resumes a worker process",
   "session.group.send": "prompts each member, which starts their chat processes",
+  "session.job.stop": "a valid stop runs systemctl --user stop on the job's unit, the user's own service manager",
   "project.costs": "a valid call asks the usage helper, a process of its own (without it the route answers 503 usage-unavailable)",
   "project.preview.off": "needs a minted preview, and minting connects to the port it shows",
   "project.worktree.merge": "a valid call needs a coding session of the project (its build row and git worktree), which only starting a coding session makes, and that starts its chat process",
@@ -310,6 +311,9 @@ const VALIDATE_ONLY: Record<string, string> = {
   "session.worktree.cleanup": "a valid removal needs a git repository with a merged worktree; the dry run changes nothing, so no oracle can read it back",
   "insights.usage.refresh": "asks every provider for its usage over the network, which the unit tier may not",
   "project.coding.start": "a valid call starts a coding session in the project, which starts its chat process",
+  "project.setup.open": "a valid call starts the project's Setup chat, a coding session whose chat process starts",
+  "project.setup.get": "a valid call reads the project's runtime, which runs the supervisor's status and git",
+  "project.setup.merge": "the user's own page only: a valid call merges or lands a branch",
 };
 
 /**
@@ -325,6 +329,7 @@ function anchors(c: CommandEntry): Anchor[] {
   if (c.id.startsWith("project.verb.")) return [{ anchor: { project: join(outside, "no-project") }, refuse: true, kind: "refused" }];
   // An unknown project: refused before anything starts (a valid call would start a coding session's chat).
   if (c.id === "project.coding.start") return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }];
+  if (c.id === "project.setup.open" || c.id === "project.setup.get" || c.id === "project.setup.merge") return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }];
   // A real folder too, but only wrong-typed values: a string profile would start a chat.
   if (c.id === "session.create") return [{ anchor: { cwd: join(outside, "no-dir") }, refuse: true, kind: "refused" }, { anchor: { cwd: workDir() }, refuse: false, kind: "real", onlyWrongTypes: true }];
   if (c.id === "project.services.view") return [{ anchor: { pid: "no-such-project" }, refuse: false, kind: "real" }];
@@ -363,6 +368,8 @@ function anchors(c: CommandEntry): Anchor[] {
   if (c.id === "insights.usage.refresh") return [];
   const out: Anchor[] = [];
   // Tags are kept by id, for any id: a missing session is no refusal there (a finding, reported).
+  // The job id is checked before the session: a refused anchor (no such session) and a real one (no such job) both carry one.
+  if (c.id === "session.job.stop") return [{ anchor: { session: missing[0], id: "j1" }, refuse: true, kind: "refused" }, { anchor: { session: session()[0], id: "j1" }, refuse: false, kind: "real" }];
   if (c.id === "session.tags.set") return [{ anchor: { session: "no-such-id" }, refuse: false, kind: "real" }, { anchor: { session: session()[1] }, refuse: false, kind: "real" }];
   if (c.params.session) {
     out.push({ anchor: { session: sessionArg(c, missing) }, refuse: true, kind: "refused" });
@@ -449,6 +456,9 @@ const FIXTURES: Record<string, Fixture> = {
   "session.list": { values: () => ({}), status: 200 },
   "session.get": { values: () => ({ session: session()[1] }), status: 200 },
   "session.read": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.pairs.list": { values: () => ({}), status: 200 },
+  "session.pairs.unpair": { values: () => { const v: Record<string, unknown> = {}; pendingSetup.push(async () => { v.pairing = (await import("./topics")).topicStore().openPair({ sessionId: `fz-a-${++n}`, path: join(root, `fz-a-${n}.jsonl`), job: "A." }, { sessionId: `fz-b-${n}`, path: join(root, `fz-b-${n}.jsonl`), job: "B." }).pair.id; }); return v; }, status: 200, oracle: async (_b, v) => assert.ok((await import("./topics")).topicStore().pair(String(v.pairing))?.endedAt) },
+  "session.pairs.resume": { values: () => { const v: Record<string, unknown> = {}; pendingSetup.push(async () => { const s = (await import("./topics")).topicStore(); const p = s.openPair({ sessionId: `fz-c-${++n}`, path: join(root, `fz-c-${n}.jsonl`), job: "C." }, { sessionId: `fz-d-${n}`, path: join(root, `fz-d-${n}.jsonl`), job: "D." }).pair; for (let i = 0; i < 40; i++) s.countPairNote(p.id, "toA"); v.pairing = p.id; }); return v; }, status: 200, oracle: async (_b, v) => assert.equal((await import("./topics")).topicStore().pair(String(v.pairing))?.notes.toA, 0) },
   "project.services.view": { values: () => ({ pid: "no-such-project" }), status: 404 },
   "org.owner.request.done": ownerRequestFixture("done"),
   "org.owner.request.decline": ownerRequestFixture("declined"),
@@ -512,10 +522,25 @@ const FIXTURES: Record<string, Fixture> = {
     status: 200,
     oracle: async (_b, v) => assert.equal((await read("GET", `/api/sessions/summary?id=${pathToId(v.session)}`)).archived, true),
   },
+  "session.job.list": {
+    values: () => ({ session: session()[0] }),
+    status: 200,
+    oracle: async (body) => assert.deepEqual(body, { jobs: [] }),
+  },
   "session.unarchive": {
     values: () => { const s = session(true); archived.push(s[0]); return { session: s[0] }; },
     status: 200,
     oracle: async (_b, v) => assert.notEqual((await read("GET", `/api/sessions/summary?id=${pathToId(v.session)}`)).archived, true),
+  },
+  "attention.dismiss": {
+    values: () => ({ session: session()[0], since: 1 }),
+    status: 200,
+    oracle: async (b) => assert.equal((b as { since: number }).since, 1),
+  },
+  "attention.undismiss": {
+    values: () => { const s = session(); mkdirSync(join(agentDir, "sova"), { recursive: true }); writeFileSync(join(agentDir, "sova", "needs-you-dismissed.json"), JSON.stringify({ [s[0]]: { since: 1, at: 1 } })); return { session: s[0] }; },
+    status: 200,
+    oracle: async (b) => assert.equal((b as { undone: boolean }).undone, true),
   },
   "overseer.todo.add": {
     values: () => ({ text: "Fuzz to-do" }),

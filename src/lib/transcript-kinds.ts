@@ -45,7 +45,7 @@ import { newestByKey } from "./transcript-placement";
 import { explainOf } from "./explain";
 import { isLoginNoteRow } from "./change-rows";
 import { infoEstimate } from "./tail-render";
-import { CARD_TOOLS, isAlignMarkOnly } from "./hidden-rows";
+import { CARD_TOOLS, isAlignMarkOnly, isPairCardCall } from "./hidden-rows";
 import { toolCallArgs } from "./message";
 import { loadsModule } from "./module-load";
 
@@ -367,7 +367,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
     view: { page: "tool" },
     live: { match: (input) => input.kind === "call" && input.block, view: "tool" },
     // The value is the settled row or the streamed call block: either gives the call's arguments.
-    outsideWork: (name, value) => OUTSIDE_WORK_NAMES.has(name) && !isAlignMarkOnly(name, callArgs(value)),
+    outsideWork: (name, value) => (OUTSIDE_WORK_NAMES.has(name) && !isAlignMarkOnly(name, callArgs(value))) || isPairCardCall(name, callArgs(value)),
   }),
   // A paired result draws inside its call's card: its own row draws nothing.
   kind({ id: "tool-result-paired", match: (it, ctx) => it.kind === "tool-result" && !!it.toolCallId && !!ctx.hasCall?.(it.toolCallId), host: "page", placement: "anchored", drawsNothing: true }),

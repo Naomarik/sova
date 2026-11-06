@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 551 |
-| Routes a catalogue entry points at | 168 |
-| Catalogue entries | 229 |
+| Routes registered | 561 |
+| Routes a catalogue entry points at | 178 |
+| Catalogue entries | 240 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -35,7 +35,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Pending (not yet a command) | 23 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 11 |
-| Hand-written tool specs | 130 |
+| Hand-written tool specs | 132 |
 
 ## Catalogue entries
 
@@ -87,6 +87,11 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.worktree.summary` | Count Merged Worktrees | looks | `GET /api/worktrees/summary` | sessions |
 | `session.worktree.cleanup` | Clean Up Worktrees | changes | `POST /api/worktrees/cleanup` | sessions |
 | `session.diff.summary` | Show Changes | looks | `GET /api/diff/summary` | sessions |
+| `session.job.list` | List Background Jobs | looks | `GET /api/sessions/jobs` | sessions |
+| `session.job.stop` | Stop Background Job | changes | `POST /api/sessions/jobs/stop` | sessions |
+| `session.pairs.list` | List Pairings | looks | `GET /api/sessions/pairs` | sessions |
+| `session.pairs.unpair` | Unpair | changes | `POST /api/sessions/pairs/unpair` | sessions |
+| `session.pairs.resume` | Resume Pairing | changes | `POST /api/sessions/pairs/resume` | sessions |
 | `project.verb.create` | Project create | changes | `POST /api/project-services/create` | admin |
 | `project.verb.up` | Project up | changes | `POST /api/project-services/up` | admin |
 | `project.verb.down` | Project down | changes | `POST /api/project-services/down` | admin |
@@ -125,6 +130,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.verb.merge.fresh` | Project merge.fresh | changes | `POST /api/project-services/merge.fresh` | admin |
 | `project.verb.merge.clear` | Project merge.clear | changes | `POST /api/project-services/merge.clear` | admin |
 | `project.verb.merge.hold` | Project merge.hold | changes | `POST /api/project-services/merge.hold` | admin |
+| `project.verb.merge.try` | Project merge.try | changes | `POST /api/project-services/merge.try` | admin |
 | `project.verb.release.status` | Project release.status | looks | `POST /api/project-services/release.status` | admin |
 | `project.verb.release.logs` | Project release.logs | looks | `POST /api/project-services/release.logs` | admin |
 | `project.verb.release.request` | Project release.request | changes | `POST /api/project-services/release.request` | admin |
@@ -159,6 +165,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.claude-login.get` | Show Project Claude Login | looks | `GET /api/projects/:pid/claude-login` | sessions |
 | `project.claude-login.set` | Set Project Claude Login | changes | `PUT /api/projects/:pid/claude-login` | admin |
 | `project.coding.start` | New Chat in Project | changes | `POST /api/projects/:pid/overseer/coding` | admin |
+| `project.setup.get` | Show Setup Chat | looks | `GET /api/projects/:pid/setup` | sessions |
+| `project.setup.open` | Set Up with a Chat | changes | `POST /api/projects/:pid/setup` | admin |
+| `project.setup.merge` | Merge Setup Branch | changes | `POST /api/projects/:pid/setup/merge` | admin |
 | `project.icon.get` | Show Project Icon | looks | `GET /api/projects/:pid/icon/info` | sessions |
 | `project.icon.upload` | Upload Project Icon | changes | `PUT /api/projects/:pid/icon` | admin |
 | `project.icon.letters` | Use Project Letters | changes | `PATCH /api/projects/:pid/icon` | admin |
@@ -205,6 +214,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `overseer.notes.set` | Set Standing Notes | changes | `PUT /api/overseer/notes` | admin |
 | `overseer.get` | Show Overseer | looks | `GET /api/overseer` | sessions |
 | `overseer.memory.get` | Show Overseer Memory | looks | `GET /api/overseer/memory` | sessions |
+| `attention.dismiss` | Dismiss from Needs You | changes | `POST /api/attention/dismiss` | full |
+| `attention.undismiss` | Undo Dismiss from Needs You | changes | `DELETE /api/attention/dismiss` | full |
 | `models.list` | List Models | looks | `GET /api/models` | sessions |
 | `extensions.list` | List Extensions | looks | `GET /api/extensions` | sessions |
 | `targets.list` | List Remote Targets | looks | `GET /api/targets` | sessions |
@@ -778,6 +789,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 
 | Route | Mesh need | Entries |
 | --- | --- | --- |
+| `DELETE /api/attention/dismiss` | full | `attention.undismiss` |
+| `POST /api/attention/dismiss` | full | `attention.dismiss` |
 | `GET /api/audit` | full | `audit.list` |
 | `POST /api/chat/action` | sessions | `chat.compact`, `chat.queue.remove`, `chat.regenerate`, `chat.reload-code`, `chat.rewind`, `chat.stop` |
 | `GET /api/cwds` | sessions | `cwds.list` |
@@ -838,7 +851,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `PUT /api/overseer/todos/order` | admin | `overseer.todo.reorder` |
 | `GET /api/playbooks` | sessions | `playbook.list` |
 | `POST /api/previews/:id/off` | admin | `project.preview.off` |
-| `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.merge.add`, `project.verb.merge.answer`, `project.verb.merge.ask`, `project.verb.merge.cancel`, `project.verb.merge.clear`, `project.verb.merge.extend`, `project.verb.merge.fresh`, `project.verb.merge.hold`, `project.verb.merge.logs`, `project.verb.merge.note`, `project.verb.merge.pause`, `project.verb.merge.reply`, `project.verb.merge.resolve`, `project.verb.merge.resume`, `project.verb.merge.retry`, `project.verb.merge.review`, `project.verb.merge.setup`, `project.verb.merge.status`, `project.verb.release.abandon`, `project.verb.release.continue`, `project.verb.release.logs`, `project.verb.release.note`, `project.verb.release.notes`, `project.verb.release.publish`, `project.verb.release.request`, `project.verb.release.retry`, `project.verb.release.start`, `project.verb.release.status`, `project.verb.release.step`, `project.verb.release.withdraw`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
+| `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.merge.add`, `project.verb.merge.answer`, `project.verb.merge.ask`, `project.verb.merge.cancel`, `project.verb.merge.clear`, `project.verb.merge.extend`, `project.verb.merge.fresh`, `project.verb.merge.hold`, `project.verb.merge.logs`, `project.verb.merge.note`, `project.verb.merge.pause`, `project.verb.merge.reply`, `project.verb.merge.resolve`, `project.verb.merge.resume`, `project.verb.merge.retry`, `project.verb.merge.review`, `project.verb.merge.setup`, `project.verb.merge.status`, `project.verb.merge.try`, `project.verb.release.abandon`, `project.verb.release.continue`, `project.verb.release.logs`, `project.verb.release.note`, `project.verb.release.notes`, `project.verb.release.publish`, `project.verb.release.request`, `project.verb.release.retry`, `project.verb.release.start`, `project.verb.release.status`, `project.verb.release.step`, `project.verb.release.withdraw`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
 | `GET /api/projects` | sessions | `project.list` |
 | `POST /api/projects` | admin | `project.create` |
 | `GET /api/projects/:pid` | sessions | `project.get` |
@@ -877,6 +890,9 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/projects/:pid/settings/cards/:card/withdraw` | admin | `project.settings.propose.withdraw` |
 | `GET /api/projects/:pid/settings/history` | sessions | `project.settings.history` |
 | `POST /api/projects/:pid/settings/undo` | admin | `project.settings.undo` |
+| `GET /api/projects/:pid/setup` | sessions | `project.setup.get` |
+| `POST /api/projects/:pid/setup` | admin | `project.setup.open` |
+| `POST /api/projects/:pid/setup/merge` | admin | `project.setup.merge` |
 | `POST /api/projects/:pid/unarchive` | admin | `project.unarchive` |
 | `GET /api/projects/glance` | sessions | `project.glance` |
 | `POST /api/push/test` | admin | `push.test` |
@@ -909,6 +925,11 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/sessions/draft` | sessions | `session.draft.get` |
 | `PUT /api/sessions/draft` | sessions | `session.draft.set` |
 | `POST /api/sessions/fork` | sessions | `session.fork` |
+| `GET /api/sessions/jobs` | sessions | `session.job.list` |
+| `POST /api/sessions/jobs/stop` | sessions | `session.job.stop` |
+| `GET /api/sessions/pairs` | sessions | `session.pairs.list` |
+| `POST /api/sessions/pairs/resume` | sessions | `session.pairs.resume` |
+| `POST /api/sessions/pairs/unpair` | sessions | `session.pairs.unpair` |
 | `POST /api/sessions/prompt` | sessions | `session.send` |
 | `POST /api/sessions/shorten-titles` | sessions | `session.title.shorten` |
 | `GET /api/sessions/summary` | sessions | `session.get` |
@@ -977,6 +998,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | --- | ---: | --- |
 | `server/assistant-news.ts` | 1 | `project_news` |
 | `server/assistant-request-tools.ts` | 3 | `owner_requests`, `close_request`, `reopen_request` |
+| `server/background-jobs-request.ts` | 1 | `background_job` |
 | `server/baton-files.ts` | 2 | `<computed: INSPECT_TOOL>`, `confirm_file` |
 | `server/baton-loadout.ts` | 4 | `record_decision`, `hand_to`, `goal_done`, `propose_roster_edit` |
 | `server/baton-read-link.ts` | 1 | `read_link` |
@@ -997,6 +1019,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/overseer-link-tools.ts` | 3 | `sova_link`, `sova_unlink`, `sova_links` |
 | `server/overseer-org-part.ts` | 10 | `sova_decisions`, `sova_roster`, `sova_start_gathering`, `sova_offer`, `sova_close_gathering`, `sova_owner_update`, `sova_send_to_person`, `sova_send_status`, `sova_reconcile`, `sova_promote` |
 | `server/overseer-org-tools.ts` | 10 | `sova_orgs`, `sova_org_person`, `sova_projects`, `sova_org_project`, `sova_org`, `sova_roster`, `sova_owner`, `sova_project_decisions`, `sova_gather`, `sova_project_overseer` |
+| `server/overseer-pair-tools.ts` | 1 | `sova_pair` |
 | `server/overseer-todo-tools.ts` | 2 | `sova_todos`, `sova_todo` |
 | `server/overseer-tools.ts` | 23 | `sova_attention`, `sova_list_sessions`, `sova_outstanding`, `sova_search_sessions`, `sova_session`, `sova_public_links`, `sova_alignment`, `sova_read_session`, `sova_list_groups`, `sova_list_targets`, `sova_list_models`, `sova_list_subagent_profiles`, `sova_list_folders`, `sova_create_session`, `sova_send`, `sova_set_session`, `sova_archive`, `sova_group`, `sova_answer_dialog`, `sova_navigate`, `sova_note`, `sova_org_history`, `<computed: SPEC_LOOKUP_TOOL>` |
 | `server/overseer-whatsapp.ts` | 1 | `sova_whatsapp` |

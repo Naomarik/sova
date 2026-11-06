@@ -53,12 +53,12 @@ function repo(name: string, def?: object): string {
   return r;
 }
 
-test("the playbook is listed as a verb playbook that proposes deploy", async () => {
+test("the playbook proposes deploy but is folded into the Setup chat: never listed", async () => {
   const cat = await listPlaybooks(dir);
-  const pb = cat.playbooks.find((p) => p.id === "project-deploy");
-  assert.ok(pb, "shipped");
-  assert.equal(pb!.title, "Project deploy");
-  assert.equal(pb!.proposes, "deploy");
+  assert.equal(cat.playbooks.find((p) => p.id === "project-deploy"), undefined, "folded: only the Setup chat runs it");
+  const head = readFileSync(join(PLAYBOOK, "PLAYBOOK.md"), "utf8").split("\n---")[0]!;
+  assert.match(head, /^title: Project deploy$/m);
+  assert.match(head, /^proposes: deploy$/m);
 });
 
 test("its text: interview first, the only verbs it calls are the two that read, and it never runs a deploy", () => {

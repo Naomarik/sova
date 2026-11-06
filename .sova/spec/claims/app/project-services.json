@@ -452,7 +452,9 @@
       "§app/merge-queue",
       "§chat.merge-queue/thread",
       "§chat.worktrees/tool",
-      "§app/commands"
+      "§app/commands",
+      "§app.project-setup/trial",
+      "§app.project-setup/trust"
     ],
     "agreed": {
       "by": "user",
@@ -478,6 +480,7 @@
       "server/merge-queue/queue.ts",
       "server/merge-queue/queue.test.ts",
       "server/merge-queue/scenarios-approval.integration.test.ts",
+      "server/merge-queue/setup-trust.test.ts",
       "server/merge-queue/view.ts"
     ]
   },
@@ -723,11 +726,13 @@
       "server/preview-sweep.integration.test.ts",
       "server/project-services/drivers.integration.test.ts",
       "server/project-services/engine.integration.test.ts",
-      "server/project-services/restart.test.ts"
+      "server/project-services/restart.test.ts",
+      "server/background-jobs-request.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-13T04:53Z"
+      "by": "omar",
+      "at": "2026-11-04T10:59Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
     }
   },
   "§app.project-services/teardown": {

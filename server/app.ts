@@ -1,6 +1,7 @@
 // The server's Hono app and its routes (buildApp), with nothing started: no listener, no
 // usage-helper child, no timers or loops. server/index.ts builds it, listens and boots everything
 // else; tests build it to drive routes through app.request() (no socket).
+import { registerJobRoutes } from "./background-jobs-routes";
 import { chatHostHealth } from "./chat-host";
 import { holderAlive, readLock } from "./chat-runtime/writer-lock";
 import { execFileSync } from "node:child_process";
@@ -27,6 +28,7 @@ import { registerProjectFileRoutes } from "./project-files-routes";
 import { registerMcpRoutes } from "./mcp/routes";
 import { registerSessionOfferRoutes } from "./session-offers-routes";
 import { registerTranscriptCardRoutes } from "./transcript-cards-routes";
+import { registerPairRoutes } from "./topic-pairs";
 import { setFileCopyGuards } from "./project-files-tool";
 import { registerProjectRoutes } from "./projects/routes";
 import { registerProjectServiceRoutes } from "./project-services/routes";
@@ -167,6 +169,8 @@ import { tagRoutes } from "./tags-backfill";
 import { pushRoutes } from "./push-routes";
 import { chatTrialRoutes } from "./chat-trial-routes";
 import { sessionsChanged } from "./list-generation";
+import { attentionChanged } from "./attention-memo";
+import { dismissChat, undoDismissal } from "./needs-you-dismissed";
 import { resourceMonitor } from "./resource-monitor";
 import { routeOpName } from "./stall-recorder-route";
 import { opEnd, opStart, stallRecording } from "./stall-recorder";
@@ -480,6 +484,14 @@ export function buildApp(deps: AppDeps) {
   // MCP servers: the Settings tab, the project page's section, Check, approval and sign-in (§app/mcp).
   registerMcpRoutes(app);
   registerTranscriptCardRoutes(app);
+  // The Overseer's pairings (§app.overseer/pairs): each paired chat's line, Unpair and Resume.
+  registerPairRoutes(app, {
+    title: async (id) => {
+      const path = await pathOfId(id);
+      return path ? (await getSessionSummary(path))?.title : undefined;
+    },
+    exists: async (id) => (await pathOfId(id)) !== null,
+  });
   // The usage ledger: every figure of spend, answered by the usage helper (§app.insights/usage-ledger).
   registerUsageRoutes(app);
   registerProjectRoutes(app);
@@ -630,6 +642,9 @@ export function buildApp(deps: AppDeps) {
     const r = await archiveSession(path, body.archived);
     return r.ok ? c.json(r.summary) : c.json({ error: r.error }, r.status);
   });
+
+  // A chat's background jobs and Stop (§app.background-jobs/pane).
+  registerJobRoutes(app);
 
   // Renames a session, in Sova ONLY (server/session-titles.ts): the id gets a stored title and
   // the .jsonl is never opened, let alone written — a session open in a TUI can be renamed here
@@ -875,7 +890,13 @@ export function buildApp(deps: AppDeps) {
   // Merged worktrees of the session's repository (server/worktree-cleanup.ts, §chat.worktrees/cleanup):
   // the count for a new session's empty state, the dry run, and a removal of exactly the confirmed
   // paths that are still removable. Only when asked; never --force.
-  configureCleanup({ summary: (path) => getSessionSummary(path), sessionFiles: listSessionFiles, readBranch });
+  configureCleanup({
+    summary: (path) => getSessionSummary(path),
+    sessionFiles: listSessionFiles,
+    readBranch,
+    // A conflict's scratch copy the merge thread made itself: the queue's own, never listed (merge-queue/owners.ts).
+    queueMade: async (path) => (await import("./merge-queue/wire")).worktreeQueueMade(path),
+  });
   app.get("/api/worktrees/summary", async (c) => {
     const path = resolveSessionPath(c.req.query("path"));
     if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
@@ -1693,6 +1714,37 @@ export function buildApp(deps: AppDeps) {
   app.get("/api/overseer", async (c) => c.json(await overseerInfo(), 200, { "Cache-Control": "no-store" }));
   app.post("/api/overseer/clear", async (c) => c.json(await clearOverseer()));
   app.get("/api/overseer/attention", async (c) => c.json(await attentionForWire(), 200, { "Cache-Control": "no-store" }));
+  // Dismiss a chat's Needs you row until it has something new, and Undo (§app.session-list/needs-you-dismiss).
+  // A chat's only: an item of no session has no session file to name. Each write drops the 3 s digest and pushes.
+  app.post("/api/attention/dismiss", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { path?: unknown; since?: unknown } | null;
+    const since = body?.since;
+    if (typeof since !== "number" || !Number.isFinite(since) || since < 0) return c.json({ error: "since must be the newest item's time, in ms" }, 400);
+    const path = resolveSessionPath(typeof body?.path === "string" ? body.path : null);
+    if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    try {
+      const d = dismissChat(path, since);
+      attentionChanged();
+      sessionsChanged();
+      return c.json({ path, since: d.since });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
+  app.delete("/api/attention/dismiss", async (c) => {
+    const path = resolveSessionPath(c.req.query("path") ?? null);
+    if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    try {
+      const undone = undoDismissal(path);
+      attentionChanged();
+      sessionsChanged();
+      return c.json({ path, undone });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
   // What it can do, for its About panel (§app.overseer/about): the same reading of extension commands as sova_ext.
   app.get("/api/overseer/abilities", async (c) => c.json(await overseerAbilities(), 200, { "Cache-Control": "no-store" }));
   // Approvals for later, standing rules and the running count (§app.overseer/approvals, §app.overseer/caps).

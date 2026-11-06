@@ -24,6 +24,17 @@ const base: Omit<import("./push").PushDecisionInput, "current" | "announced"> = 
 const keysOf = (d: { send: { id: string; kind: string }[] }) => d.send.map((x) => `${x.id}:${x.kind}`);
 
 describe("pushDecision", () => {
+  test("Undo sends nothing: the row a dismissal took away is back as told; something new in it is a new blocker", () => {
+    const told = new Set(["a:error"]);
+    const away = pushDecision({ ...base, current: [], announced: told });
+    assert.equal(away.announced.has("a:error"), false, "dismissed: out of the digest, so out of the told-set");
+    assert.equal(pushDecision({ ...base, current: [b("a", "error")], announced: away.announced }).send.length, 1, "control: back with no word from Undo, it reads as new");
+    const undone = pushDecision({ ...base, current: [b("a", "error")], announced: away.announced, told: ["a:error"] });
+    assert.deepEqual(undone.send, []);
+    assert.equal(undone.announced.has("a:error"), true);
+    assert.equal(pushDecision({ ...base, current: [b("a", "error")], announced: away.announced, told: [] }).send.length, 1, "something new: no Undo names it, so it goes out");
+  });
+
   test("the first reading is the baseline: nothing already there is sent", () => {
     const d = pushDecision({ ...base, current: [b("a", "error")], announced: null });
     assert.deepEqual(d.send, []);

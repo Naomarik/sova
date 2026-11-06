@@ -169,9 +169,9 @@
       "§chat.merge-queue/asks"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T19:18Z",
-      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
+      "by": "naomarik",
+      "at": "2026-11-06T00:58Z",
+      "source": "pi-session:01a1ac85-7019-77e8-b78d-58217842f2ef#e4f5f750"
     },
     "code": [
       "server/merge-queue/thread.ts",
@@ -193,7 +193,12 @@
       "playbooks/merge-queue/references/names.md",
       "playbooks/merge-queue/scripts/discover-names.mjs",
       "server/merge-queue/discover-names.integration.test.ts",
-      "server/merge-queue/scenarios-thread-review.integration.test.ts"
+      "server/merge-queue/scenarios-thread-review.integration.test.ts",
+      "server/merge-queue/routes.ts",
+      "server/merge-queue/setup-trial.test.ts",
+      "server/merge-queue/contract.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/scratch.ts"
     ]
   },
   "§chat.merge-queue/thread-life": {

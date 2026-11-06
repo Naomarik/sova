@@ -93,14 +93,18 @@
       "server/session-powers.ts",
       "server/session-profiles.test.ts",
       "server/session-profiles-runtime.test.ts",
-      "server/session-powers.integration.test.ts"
+      "server/session-powers.integration.test.ts",
+      "pi-config/extensions/subagents/job-store.ts",
+      "pi-config/extensions/wake-nudge.ts",
+      "server/job-card-limits.test.ts"
     ],
     "requires": [
       "§chat.profiles/session-tools"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-12T18:54Z"
+      "by": "omar",
+      "at": "2026-11-04T11:00Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
     }
   },
   "§chat.profiles/live-commit": {
@@ -136,9 +140,9 @@
       "§chat.create-mode/per-chat-only"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T12:30Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#78234ec6"
+      "by": "omar",
+      "at": "2026-11-05T11:12Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#b0d1af6b"
     }
   },
   "§chat.profiles/picker": {

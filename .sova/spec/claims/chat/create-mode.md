@@ -117,7 +117,7 @@ Create is offered in any of the person's own chats, in any project and in any fo
 | Where the chat is | Topics about this computer | Topics about the project |
 |---|---|---|
 | A project with a merge queue | Work | Work, by card and Land |
-| A project with no merge queue | Work | The chat or a worker works on a branch in a worktree, and the chat merges on the person's word; Create says what is missing and offers Initialize |
+| A project with no merge queue | Work | The chat or a worker works on a branch in a worktree, and the chat merges on the person's word; Create says what is missing and offers Set Up with a Chat |
 | A folder that isn't a project | Work | Create says what is missing and offers Add as Project |
 | A folder that isn't in Git | Work | Create says project changes are made by hand |
 
@@ -208,8 +208,11 @@ included.
   A merge queue change in the settings history has no Undo: it is changed back in Settings → Merge Queue.
   Settings the
   queue keeps on this computer apply when the card does. Check commands, the install step, the target
-  and the kits go by Land (§chat.create-mode/card-or-land). First setup stays the person's own, on the
-  Merge Queue tab.
+  and the kits go by Land (§chat.create-mode/card-or-land), once a trial of the branch's head passed
+  (§app.project-setup/land-gate). First setup stays the person's own, through the project's Setup
+  chat (Set Up with a Chat on the Merge Queue tab or in Settings → Merge Queue, §app/project-setup);
+  Create never writes a first setup itself, and points at Change Setup for a later change of how the
+  project lands, releases or ships.
 - **Credentials never pass through Create.** No card, file or message of Create's carries a key, a
   token or a sign-in. Provider sign-ins stay in a terminal: Create names the command and the person
   runs it. A key pasted into a Create chat isn't used, and Create says to sign in the supported way. A

@@ -142,7 +142,7 @@ When the agent's latest alignment change came after your last message and questi
 session is **waiting on your answers**:
 
 - Its row in the session list shows the number of open questions.
-- It's listed in **Needs you** at the top of the sidebar, as "3 open questions in al_3 {title}".
+- It's listed in **Needs you** at the top of the sidebar. Hover the row for the reason, "3 open questions in al_3 {title}".
 - It can send a phone notification, **Open questions**, on by default. See
   [Needs you](/docs/needs-you/).
 

@@ -41,6 +41,7 @@ import { InfoRow } from "./InfoRow";
 import { TranscriptKindRow } from "./TranscriptKind";
 import { kindOf, liveBlockInput, liveEndsOf, liveKindOf, outsideWork, sameHit, type KindContext, type KindHit, type LiveBlockFacts, type LiveInput } from "../lib/transcript-kinds";
 import { isErroredTurnStop } from "../lib/turn";
+import { trackTranscript } from "../lib/time-spent";
 
 /** Whose transcript the rows inside are (lib/tool-content): a tool card asks it for the content its
     row doesn't carry. Absent: the rows carry all they draw. */
@@ -1507,7 +1508,13 @@ export function ThreadScroller(props: {
           <div class="transcript-banner">{banner()}</div>
         </Show>
         <div class="transcript-inner">
-          <div class="thread" ref={(thread) => resized?.observe(thread)}>
+          <div
+            class="thread"
+            ref={(thread) => {
+              resized?.observe(thread);
+              if (props.path) trackTranscript(props.path, thread);
+            }}
+          >
             <ScrollerContext.Provider value={api}>{props.children}</ScrollerContext.Provider>
           </div>
           <div class="entry-measure" aria-hidden="true" ref={(probe) => measured?.observe(probe)} />

@@ -12,7 +12,7 @@ export function AlignCard(props: { report: ReportInfo; align: AlignInfo; attachm
   const [open, setOpen] = createSignal(false);
   const chip = () => alignChip(props.align);
   return (
-    <div class="disclosure report align-card">
+    <div class="disclosure report align-card" ref={(el) => el.setAttribute("data-align-doc", "")}>
       <button type="button" class="disclosure-summary report-summary align-card-summary" aria-haspopup="dialog" onClick={() => setOpen(true)}>
         <Icon name="chevron-right" small />
         <span class="report-from">Alignment</span>

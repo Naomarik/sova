@@ -26,6 +26,7 @@ import { TeamInbox } from "./TeamInbox";
 import { inboxTabLabel, openChip, openChipTitle } from "../lib/team-inbox";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
+import { trackWorkerTranscript } from "../lib/time-spent";
 
 /** Within this distance of the end, the transcript follows new content. */
 const FOLLOW_PX = 80;
@@ -648,6 +649,7 @@ export function SubagentPane(props: {
                   <WorkerTranscript
                     source={sourceOf(key)}
                     host={hostOf(props.path)}
+                    parent={props.path}
                     name={label(w())}
                     author={modelLabel(w().model) ?? label(w())}
                     streaming={w().working}
@@ -883,6 +885,8 @@ const watchUrl = (s: TranscriptSource, host: string | null): string =>
  */
 function WorkerTranscript(props: {
   source: TranscriptSource; host: string | null; name: string; author: string; streaming: boolean;
+  /** The session whose Agents tab this is a worker of: reading it counts there. */
+  parent?: string;
   /** What the transcript is, for its not-found copy: a worker's (default) or a linked session's. */
   what?: "worker" | "session";
   /** Each snapshot/append that carries a context fill (the whole message; the caller reads it). */
@@ -1010,7 +1014,12 @@ function WorkerTranscript(props: {
             />
           </Show>
         </div>
-        <div class="thread">
+        <div
+          class="thread"
+          ref={(thread) => {
+            if (props.parent) trackWorkerTranscript(props.parent, thread);
+          }}
+        >
           <Show when={items()} fallback={<Show when={!error()}><TranscriptSkeleton /></Show>}>
             {(list) => (
               <Show

@@ -58,6 +58,14 @@ describe("a command's row", () => {
     const append = { type: "append", items: rows } as ChatServerMessage;
     assert.equal(JSON.stringify((onWire(append, 1)[0] as { items: TranscriptItem[] }).items[0]), JSON.stringify(legacy));
     assert.equal(((onWire(append, 2)[0] as { items: TranscriptItem[] }).items[0])!.kind, "shell");
+    // Shell mode itself is wire 2's: a wire-1 hello carries no runs and no flag, and no live message reaches it.
+    const run = { id: "sh_1", command: "ls", output: "", state: "running" as const, startedAt: 1 };
+    const withShell = { ...hello, shell: [run], shellMode: true } as ChatServerMessage;
+    assert.deepEqual(Object.keys(withRows(withShell, 1)), Object.keys(hello));
+    assert.deepEqual((withRows(withShell, 2) as { shell?: unknown }).shell, [run]);
+    assert.deepEqual(onWire({ type: "shell_start", run }, 1), []);
+    assert.deepEqual(onWire({ type: "shell_output", id: "sh_1", delta: "x" }, 1), []);
+    assert.equal(onWire({ type: "shell_start", run }, 2).length, 1);
     const plain = normalizeEntries([header, msg({ role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 })] as never);
     assert.equal(rowsFor(plain, 1), plain, "rows without a command: the very array, as before");
   });

@@ -60,7 +60,7 @@ When the session merges a worktree, with the tool or with plain git during one o
 
 ## Removing merged worktrees
 
-Sova never removes a worktree on its own: the `worktree` tool's merge and the merge queue's landing both leave the folder in place. A new session's empty screen shows a line like "4 worktrees · 2 merged · 1 empty" for its repository (empty ones are leftovers with no commits of their own), with a **Clean Up Merged** button when some merged or empty ones can go. When the Overseer archives a session, it can remove that session's own worktrees too, with the same checks.
+Sova never removes a worktree of yours on its own, only the scratch copies the merge queue makes for a conflict, once that attempt ends: the `worktree` tool's merge and the merge queue's landing both leave the folder in place. A new session's empty screen shows a line like "4 worktrees · 2 merged · 1 empty" for its repository (empty ones are leftovers with no commits of their own), with a **Clean Up Merged** button when some merged or empty ones can go. When the Overseer archives a session, it can remove that session's own worktrees too, with the same checks.
 
 The button checks first and shows you what goes and what stays, each kept folder with its reason: not merged, uncommitted files, a session still running there, and so on. Only the folders you confirmed are removed, and only if they're still safe to remove at that moment. Git removes them without force, so it refuses a folder that changed. A branch that git finds in your main branch is deleted too; the others keep their commits.
 

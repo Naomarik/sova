@@ -10,8 +10,9 @@ in the project itself, so everyone who works on it releases the same way, and ch
 through the [merge queue](/docs/merge-queue/) like any other change. The one setting kept outside
 the project's files is the **Release Note**, for the next release only.
 
-**Set Up Releases**, on the project's Releases tab, writes both for you: a chat reads the project,
-asks how it releases, and proposes them on a branch you review and Land.
+**Set Up with a Chat**, on the project's Releases tab, writes both for you: the project's Setup chat
+reads the project, asks how it releases, and proposes them on a branch you review. It lands once a
+trial of that commit has passed. **Change Setup** opens the same chat later.
 
 ## The `release` section
 

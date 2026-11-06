@@ -50,7 +50,7 @@ const meshCards = [
               <p>Every host's sessions appear in one list, labelled by host. New Session asks which host.</p>
               <p>Settings, themes, extensions and logins can be kept in step, each behind its own switch.</p>
             </div>
-            <p class="limit"><Icon name="info" size={18} /><span>Hosts trust each other by Tailscale identity. <strong>Every host must be reachable by the same devices and run the same Sova build.</strong> <a href={site.meshDoc}>Mesh setup</a>.</span></p>
+            <p class="limit"><Icon name="info" size={18} /><span>Hosts trust each other by Tailscale identity. <strong>Every host must be reachable by the same devices.</strong> A host on another version can be read-only until it updates. <a href={site.meshDoc}>Mesh setup</a>.</span></p>
           </div>
           <div class="feature-visual"><Mesh /></div>
         </article>
@@ -76,7 +76,7 @@ const meshCards = [
         </div>
         <div class="closing-install">
           <InstallBlock id="install-mesh" />
-          <p class="hero-note">Then run <code>sova</code>, then <code>sova open</code>. Install the same version on every host you add.</p>
+          <p class="hero-note">Then run <code>sova</code>, then <code>sova open</code>. Install the same version on every host you add, so each works fully.</p>
           <a class="button button-ghost" href="/">← Back to Sova</a>
         </div>
       </div>

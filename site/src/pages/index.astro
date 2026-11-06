@@ -35,7 +35,7 @@ const cards = [
   },
   {
     icon: "file", title: "Playbooks and schedules",
-    body: "Markdown recipes an agent runs against a project, picked from the composer or run on a schedule. Sova ships 8.",
+    body: "Markdown recipes an agent runs against a project, picked from the composer or run on a schedule. Sova ships 6.",
     limit: "A schedule fires only after you approve it.",
   },
   {
@@ -73,7 +73,7 @@ const beyond = [
   {
     icon: "network", title: "Mesh: all your machines, one sidebar", href: "/mesh", more: "About Mesh",
     body: "Run Sova on several machines on your tailnet and use them all from one page.",
-    limit: "Needs Tailscale, and the same Sova build on every host.",
+    limit: "Needs Tailscale. A host on another version can be read-only until it updates.",
   },
   {
     icon: "chat", title: "Organizations: ask the people who know", href: "/orgs", more: "About Organizations",
@@ -177,7 +177,7 @@ const beyond = [
             <div class="prose">
               <p>Ask what changed and the agent lays it out as numbered steps, each with a line on why, and no hunk left out. A session also keeps track of the git worktrees it works in.</p>
             </div>
-            <p class="limit"><Icon name="info" size={18} /><span>The changes viewer only reads, and Sova never removes a worktree on its own.</span></p>
+            <p class="limit"><Icon name="info" size={18} /><span>The changes viewer only reads, and Sova never removes a worktree of yours on its own.</span></p>
             <p class="feature-more"><a href="/docs/worktrees-and-changes/">Worktrees and changes docs<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><ScreenFrame at="feature.changes" /></div>
@@ -271,7 +271,7 @@ const beyond = [
               <p>The project's Merge Queue tab shows what is being checked now, the branches waiting in line, and the recent landings. A red check counts against the branch only once the same check has passed on the main branch alone.</p>
               <p>The merge thread, a chat of the queue's own, notes each landing, picks extra tests and judges conflicts. It never moves the main branch itself.</p>
             </div>
-            <p class="limit"><Icon name="info" size={18} /><span>A project joins the queue once you set up its checks, from <strong>Initialize</strong> on its Merge Queue tab. It can land by pull or merge request instead.</span></p>
+            <p class="limit"><Icon name="info" size={18} /><span>A project joins the queue once you set up its checks, with <strong>Set Up with a Chat</strong> on its Merge Queue tab. It can land by pull or merge request instead.</span></p>
             <p class="feature-more"><a href="/docs/merge-queue/">Merge queue docs<Icon name="arrow-right" size={14} /></a><a href="/docs/merge-queue-settings/">Its settings<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><ShotFrame shot="merge-queue-tab" focus="80%" alt="A project's Merge Queue tab: the main branch at its commit, the branch being checked with its meter, the branches waiting in line, and the recent landings with their notes." /></div>
@@ -285,7 +285,7 @@ const beyond = [
               <p><strong>Start Release</strong> opens a chat that follows the project's release playbook: it picks the version, writes the notes and makes the release commit. The queue holds every other branch while it runs, the release checks run on its commit, and a held step, such as trying it on your live server, waits for your Continue.</p>
               <p><strong>Publish</strong> tags the release, moves its channel and pushes them to <code>origin</code> in one step, or changes nothing.</p>
             </div>
-            <p class="limit"><Icon name="info" size={18} /><span>Off until you set them up (<strong>Set Up Releases</strong>). A numbered tag is never moved or deleted; Withdraw moves only the channel back.</span></p>
+            <p class="limit"><Icon name="info" size={18} /><span>Off until you set them up (<strong>Set Up with a Chat</strong> on the Releases tab). A numbered tag is never moved or deleted; Withdraw moves only the channel back.</span></p>
             <p class="feature-more"><a href="/docs/releases/">Releases docs<Icon name="arrow-right" size={14} /></a><a href="/docs/release-settings/">Release settings<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><ShotFrame shot="release-in-progress" alt="A release in progress: v0.4.0 at step 5 of 9, its version, notes, release commit and gating checks done, Try it on the staging copy held for you with Continue, a failed smoke test with Retry Step, a docs check running, Publish waiting, and Abandon Release." /></div>

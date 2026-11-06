@@ -258,6 +258,7 @@ export interface DigestDismissals {
 export function buildDigest(rows: AttentionRow[], now = Date.now(), home?: string, extra: AttentionItem[] = [], dismissals?: DigestDismissals): AttentionDigest & { badge: { act: number; decide: number; needsYou: number }; dismissedKeys: string[] } {
   const badge = { act: 0, decide: 0, needsYou: 0 };
   const dismissed: Record<string, number> = {};
+  const newestListed: Record<string, number> = {};
   const dismissedKeys: string[] = [];
   const ended: string[] = [];
   // Items of no session (an org project's missing main stakeholder): each counts once in the badge.
@@ -282,14 +283,18 @@ export function buildDigest(rows: AttentionRow[], now = Date.now(), home?: strin
     if (items.some((i) => i.tier === "act")) badge.act++;
     else if (items.some((i) => i.tier === "decide")) badge.decide++;
     // The same rule Needs you lists by (shared/needs-you.ts): the two counts agree.
-    if (items.some(listsInNeedsYou)) badge.needsYou++;
+    const listed = items.filter(listsInNeedsYou);
+    if (listed.length) {
+      badge.needsYou++;
+      newestListed[r.summary.path] = Math.max(...listed.map((i) => i.since));
+    }
     all.push(...items);
   }
   all.sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier] || b.since - a.since);
   const counts = { act: 0, decide: 0, fyi: 0 };
   for (const it of all) counts[it.tier]++;
   if (ended.length) dismissals?.ended?.(ended);
-  return { generatedAt: now, counts, items: capKeepingKinds(all), ...(Object.keys(dismissed).length ? { dismissed } : {}), badge, dismissedKeys };
+  return { generatedAt: now, counts, items: capKeepingKinds(all), ...(Object.keys(dismissed).length ? { dismissed } : {}), ...(Object.keys(newestListed).length ? { newestListed } : {}), badge, dismissedKeys };
 }
 
 /**

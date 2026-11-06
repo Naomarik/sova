@@ -30,7 +30,7 @@ export interface NeedsYouRow {
   detail: string | null;
   /** Every act item's detail for this session, newest first, for the line's tooltip. */
   details: string[];
-  /** ms epoch of the session's newest act item; 0 unknown. */
+  /** ms epoch of the session's newest listed item, whatever the digest's cap cut; 0 unknown. */
   since: number;
   /** A proposed verb playbook run's item (`playbook-review`): what the row's Merge Branch needs
       (§app.project-runtime/review), the one button a Needs you row carries. */
@@ -49,7 +49,7 @@ export interface NeedsYouRow {
  * A digest session the list doesn't carry is dropped: the count is the rows.
  */
 export function needsYouRows(
-  digest: Pick<AttentionDigest, "items"> | undefined,
+  digest: Pick<AttentionDigest, "items" | "newestListed"> | undefined,
   sessions: readonly SessionSummary[],
   /** Sessions listed only for a proposal waiting on you (a `playbook-review` item): a project's own Setup chat, which
       the region otherwise leaves to its project's block, keeps its Merge Branch / Run Trial row here; its other items
@@ -76,7 +76,8 @@ export function needsYouRows(
       // Newest first; the sort is stable, so one time keeps the digest's own order (most urgent kind first).
       const sorted = a.details.sort((x, y) => y.at - x.at);
       const details = sorted.map((d) => d.text);
-      return { session: a.session, since: a.since, details, detail: details[0] ?? null, kind: sorted[0]?.kind ?? a.first, soft: a.soft, ...(a.playbook ? { playbook: a.playbook } : {}) };
+      // The wire's newest: the digest's cap may have cut it, and a Dismiss must cover it (§app.session-list/needs-you-dismiss).
+      return { session: a.session, since: Math.max(a.since, digest.newestListed?.[a.session.path] ?? 0), details, detail: details[0] ?? null, kind: sorted[0]?.kind ?? a.first, soft: a.soft, ...(a.playbook ? { playbook: a.playbook } : {}) };
     })
     // Blockers first, then the softer tier; each newest first.
     .sort((a, b) => Number(a.soft) - Number(b.soft) || b.since - a.since || a.session.path.localeCompare(b.session.path));

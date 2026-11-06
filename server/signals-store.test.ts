@@ -56,7 +56,7 @@ describe("a go-ahead ask whose version is queued or landed (§app.decisions/asks
     const file = join(agentDir, `go-${Math.random().toString(36).slice(2)}.json`);
     const data = store.updateSignals((d) => void (d.sessions.a = t), file);
     const after = store.noteAskSettled({ id: "a", signals: sig(t.turnId) }, trees, data, file, NOW);
-    return { file, after, signals: store.withoutRestartAsk({ id: "a", signals: sig(t.turnId), readiness }, after).signals };
+    return { file, after, signals: store.withoutRestartAsk({ id: "a", signals: sig(t.turnId), readiness }, after, trees).signals };
   }
   const HEAD = "b".repeat(40);
   const OLD = "a".repeat(40);
@@ -84,14 +84,55 @@ describe("a go-ahead ask whose version is queued or landed (§app.decisions/asks
     assert.ok(listed(undefined).signals);
   });
 
-  test("once noted, it stays gone: the tree dropped (no readiness), Sova restarted, restartPending cleared, the entry cancelled", () => {
-    const { file } = listed([{ merged: false, headAtReply: HEAD, entry: { state: "queued", commit: HEAD, began: REPLY + 5 } }]);
+  test("queued or checking hides it from the queue's current view and writes no note: cancelled, or stopped short of landing, the ask is back", () => {
+    for (const state of ["queued", "checking"]) {
+      const entry = { state, commit: HEAD, began: REPLY - 1 };
+      const { file, after, signals } = listed([{ merged: false, headAtReply: HEAD, entry }]);
+      assert.equal(signals, undefined, `${state}: hidden`);
+      assert.equal(after.sessions.a!.settled, undefined, `${state}: no note`);
+      assert.equal(JSON.parse(readFileSync(file, "utf8")).sessions.a.settled, undefined, `${state}: none on disk`);
+      for (const next of ["cancelled", "needs-fix", "conflict", "review-flagged"]) {
+        const trees = [{ merged: false, headAtReply: HEAD, entry: { ...entry, state: next } }];
+        const again = store.noteAskSettled({ id: "a", signals: sig() }, trees, after, file, NOW);
+        assert.ok(store.withoutRestartAsk({ id: "a", signals: sig(), readiness: undefined }, again, trees).signals, `${state} then ${next}: back`);
+      }
+      assert.ok(store.withoutRestartAsk({ id: "a", signals: sig(), readiness: undefined }, after, []).signals, `${state}, then no entry at all: back`);
+      assert.ok(store.withoutRestartAsk({ id: "a", signals: sig(), readiness: undefined }, after).signals, `${state}, then no trees known: back`);
+    }
+  });
+
+  test("one tree landed and one queued hides it, but only every tree landed notes it", () => {
+    const landed = { merged: true };
+    const queued = { merged: false, headAtReply: HEAD, entry: { state: "queued", commit: HEAD } };
+    const mixed = listed([landed, queued]);
+    assert.equal(mixed.signals, undefined);
+    assert.equal(mixed.after.sessions.a!.settled, undefined);
+    assert.equal(store.noteAskSettled({ id: "a", signals: sig() }, [landed, landed], mixed.after, mixed.file, NOW).sessions.a!.settled, NOW);
+  });
+
+  test("merged, or a landed or pushed entry that covers it, notes it; an entry for an older commit notes nothing", () => {
+    assert.equal(listed([{ merged: true }]).after.sessions.a!.settled, NOW);
+    for (const state of ["landed", "pushed"]) {
+      assert.equal(listed([{ merged: false, headAtReply: HEAD, entry: { state, commit: HEAD } }]).after.sessions.a!.settled, NOW, `${state}, the reply's head`);
+      assert.equal(listed([{ merged: false, headAtReply: HEAD, entry: { state, commit: "c".repeat(40), began: REPLY + 1 } }]).after.sessions.a!.settled, NOW, `${state}, begun after the reply`);
+      assert.equal(listed([{ merged: false, headAtReply: HEAD, entry: { state, commit: OLD, began: REPLY - 1 } }]).after.sessions.a!.settled, undefined, `${state}, an older commit`);
+    }
+  });
+
+  test("once landed and noted, it stays gone: the tree dropped (no readiness), Sova restarted, restartPending cleared, a later entry cancelled", () => {
+    const { file } = listed([{ merged: false, headAtReply: HEAD, entry: { state: "landed", commit: HEAD, began: REPLY + 5 } }]);
     // A fresh read from disk, as after a restart, with no readiness and no trees left to read.
-    store.updateSignals(() => {}, file);
     const data = JSON.parse(readFileSync(file, "utf8"));
     assert.equal(typeof data.sessions.a.settled, "number");
     assert.equal(store.withoutRestartAsk({ id: "a", signals: sig(), readiness: undefined }, data).signals, undefined);
-    assert.equal(store.noteAskSettled({ id: "a", signals: sig() }, [{ merged: false, entry: { state: "cancelled", commit: HEAD } }], data, file, NOW).sessions.a!.settled, data.sessions.a.settled, "a cancelled entry doesn't undo the note");
+    const cancelled = [{ merged: false, entry: { state: "cancelled", commit: HEAD } }];
+    assert.equal(store.noteAskSettled({ id: "a", signals: sig() }, cancelled, data, file, NOW + 1).sessions.a!.settled, data.sessions.a.settled, "the note stands");
+    assert.equal(store.withoutRestartAsk({ id: "a", signals: sig(), readiness: undefined }, data, cancelled).signals, undefined);
+  });
+
+  test("a live cover speaks for the reply it was read for: another turn's record isn't hidden by it", () => {
+    const data = { version: 1 as const, sessions: { a: turn({ turnId: "t2" }) }, workers: {}, stalls: {} };
+    assert.ok(store.withoutRestartAsk({ id: "a", signals: sig("t1"), readiness: undefined }, data, [{ merged: true }]).signals);
   });
 
   test("a restart owed hides it; with the restart done and nothing noted, it is back only while unnoted", () => {

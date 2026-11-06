@@ -5,6 +5,7 @@ import { type AttentionItem, PUSH_KINDS, type SessionSummary } from "../shared/p
 import { type AttentionRow, blockerCount, blockerKey, buildDigest, DIGEST_MAX, NEVER_BRIEFED, openQuestionsText, sessionItems, STALE_MS, whereOf, workerErrorTime } from "./attention";
 import { workerErrorTimesOf } from "./live";
 import { listsInNeedsYou } from "../shared/needs-you";
+import { needsYouRows } from "../src/lib/needs-you";
 
 const NOW = Date.parse("2026-09-25T12:00:00.000Z");
 
@@ -490,6 +491,62 @@ describe("Dismiss (§app.session-list/needs-you-dismiss): left out here and only
     assert.deepEqual(d.items.filter((i) => i.tier === "act").map((i) => i.id), ["b"]);
     assert.deepEqual(d.dismissed, { "/s/a.jsonl": NOW - 10 }, "on the wire for what reads waits elsewhere");
     assert.deepEqual(d.dismissedKeys, ["a:error"]);
+  });
+
+  describe("under the 30-item cap: what a chat's newest listed item is, whatever the cap cut", () => {
+    // 30 chats' blockers fill the cap, `a`'s among them, so its row lists; its soft ask is newer than its blocker and the
+    // cap cuts it: other chats' newer asks keep that kind in the list, and soft items sort under every blocker.
+    const flood = (aSince: number): AttentionRow[] => {
+      const failed = { message: "boom" } as SessionSummary["turnError"];
+      const rows: AttentionRow[] = [row(summary("a", { turnError: failed, lastActiveAt: new Date(NOW - 5000).toISOString(), signals: { at: aSince, turnId: "ta", provider: "jev", kinds: ["asks-you"] } }))];
+      for (let i = 0; i < 31; i++) rows.push(row(summary(`b${i}`, { turnError: failed, lastActiveAt: new Date(NOW - 6000 - i).toISOString() })));
+      for (let i = 0; i < 3; i++) rows.push(row(summary(`c${i}`, { signals: { at: NOW - 10 - i, turnId: `tc${i}`, provider: "jev", kinds: ["asks-you"] } })));
+      return rows;
+    };
+    const A = "/s/a.jsonl";
+    const sessionsOf = (rows: AttentionRow[]) => rows.map((r) => r.summary);
+
+    test("the setup holds: the row lists, and its newest item is past the cap, so the capped items alone send a time that ends the dismissal", () => {
+      const rows = flood(NOW - 1000);
+      const d = buildDigest(rows, NOW, "/home/u");
+      assert.equal(d.items.length, DIGEST_MAX);
+      const kept = d.items.filter((i) => i.path === A);
+      assert.deepEqual(kept.map((i) => i.kind), ["error"]);
+      const capped = kept[0]!.since;
+      assert.ok(capped < NOW - 1000, "what the capped items say is older than the chat's newest");
+      const ended: string[][] = [];
+      assert.equal(digest(rows, { [A]: { since: capped } }, (p) => void ended.push(p)).dismissed?.[A], undefined);
+      assert.deepEqual(ended, [[A]], "the bug this guards: a dismissal that ends itself on the next digest");
+    });
+
+    test("the wire says it, taken before the cap; the row sends that as the dismissal, and the path stays dismissed", () => {
+      const rows = flood(NOW - 1000);
+      const d = buildDigest(rows, NOW, "/home/u");
+      assert.equal(d.newestListed?.[A], NOW - 1000);
+      const sent = needsYouRows(d, sessionsOf(rows)).find((r) => r.session.path === A)!.since;
+      assert.equal(sent, NOW - 1000);
+      const ended: string[][] = [];
+      const after = digest(rows, { [A]: { since: sent } }, (p) => void ended.push(p));
+      assert.equal(after.dismissed?.[A], sent, "it doesn't end itself on the next digest");
+      assert.deepEqual(ended, []);
+      assert.equal(after.items.some((i) => i.path === A && listsInNeedsYou(i)), false);
+    });
+
+    test("an item newer than what the wire said still brings the row back: the server never picks the time at the press", () => {
+      const wire = buildDigest(flood(NOW - 1000), NOW, "/home/u").newestListed![A]!;
+      const ended: string[][] = [];
+      const after = digest(flood(NOW - 500), { [A]: { since: wire } }, (p) => void ended.push(p));
+      assert.equal(after.dismissed?.[A], undefined);
+      assert.deepEqual(ended, [[A]]);
+    });
+
+    test("it names chats with an item that lists, and no item of no session; a dismissed chat is no longer on it", () => {
+      const quiet = row(summary("q", { unread: true }), { lastReplyAt: NOW - 10 });
+      const extra = { id: "d1", path: "", title: "Shop", where: "/w", tier: "act", kind: "deploy-failed", since: NOW } as AttentionItem;
+      const d = digest([row(summary("a", { turnError: { message: "boom" } as SessionSummary["turnError"] })), quiet], {}, undefined, [extra]);
+      assert.deepEqual(Object.keys(d.newestListed ?? {}), [A]);
+      assert.equal(digest([row(summary("a", { turnError: { message: "boom" } as SessionSummary["turnError"] }))], { [A]: { since: NOW } }).newestListed, undefined);
+    });
   });
 
   test("the chat's other lines stay; only what lists in Needs you goes", () => {

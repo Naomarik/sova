@@ -418,3 +418,9 @@ test("a dismissed session's baton wait is out of the region's Needs you until a 
   assert.equal(orgNeedsYouRows({ items: [], dismissed: { "/s/b.jsonl": 100 } }, [waiting]).length, 0);
   assert.equal(orgNeedsYouRows({ items: [], dismissed: { "/s/b.jsonl": 99 } }, [waiting]).length, 1, "newer than what it covered");
 });
+
+test("a baton wait's row takes the wire's newest listed item when the cap cut the chat's own (§app.session-list/needs-you-dismiss)", () => {
+  const waiting = { path: "/s/b.jsonl", id: "b", title: "B", org: { orgId: "o", orgName: "Acme", kind: "gathering" }, baton: { needsYou: { from: "Kim", question: "OK?", since: 100 } } } as unknown as SessionSummary;
+  assert.equal(orgNeedsYouRows({ items: [], newestListed: { "/s/b.jsonl": 900 } }, [waiting])[0]!.since, 900);
+  assert.equal(orgNeedsYouRows({ items: [] }, [waiting])[0]!.since, 100);
+});

@@ -134,6 +134,11 @@ export const COMMITS_UNCOUNTED = "commits not counted";
     (`ahead` absent) is not one. Merged needs a commit of its own, so a merged branch is never empty. */
 export const hasNoCommits = (t: Pick<TreeFacts, "readable" | "merged" | "ahead">): boolean => t.readable && !t.merged && t.ahead === 0;
 
+/** An empty leftover worktree (clean, no commit of its own, nothing running, or gone with no commits): it hides no
+    merged badge and holds no go-ahead ask, since there is no version in it to land. */
+export const isEmptyLeftover = (t: Pick<WorktreeReadiness, "state" | "why" | "dirtyCount">): boolean =>
+  (t.state === "in-progress" && t.why === NO_COMMITS && !t.dirtyCount) || (t.state === "removed" && t.why === REMOVED_EMPTY);
+
 /**
  * One worktree's state, a few words why, and the line a person reads (§chat.worktrees/readiness):
  * "Ready to merge · checks passed · 19 commits ahead", "Conflicts with master · 17 files".
@@ -230,10 +235,8 @@ export function sessionReadinessOf(trees: WorktreeReadiness[], flags: MergeFlags
   const ready = trees.find((t) => t.state === "ready");
   if (waiting) return { ...out, badge: "waiting", branch: waiting.branch };
   if (ready) return { ...out, badge: "ready", branch: ready.branch };
-  // An empty leftover worktree (clean, no commit of its own, nothing running) hides no merged badge.
-  const empty = (t: WorktreeReadiness) => (t.state === "in-progress" && t.why === NO_COMMITS && !t.dirtyCount) || (t.state === "removed" && t.why === REMOVED_EMPTY);
   const merged = trees.filter((t) => t.state === "merged");
-  if (!merged.length || trees.some((t) => t.state !== "merged" && !empty(t))) return out;
+  if (!merged.length || trees.some((t) => t.state !== "merged" && !isEmptyLeftover(t))) return out;
   const branch = flags.lastMerge?.branch ?? merged[merged.length - 1]!.branch;
   const since = flags.lastMerge?.at ?? lastReplyAt;
   if (flags.restartPending) return { ...out, badge: "restart", branch, since };
@@ -1261,25 +1264,27 @@ async function headsAtReply(s: SessionSummary, facts: FileFacts, before: Cached[
 }
 
 /**
- * What the go-ahead check reads for a listed row (signals-store.ts noteAskSettled): every worktree the
- * session tracks, inherited ones too, from the last background read and the queue's newest view. No
- * Git, no file read. Undefined when it tracks none or hasn't been read yet.
+ * What the go-ahead check reads for a listed row (signals-store.ts settleGoAsk): every worktree the
+ * session tracks, inherited ones too, but for an empty leftover, from the last background read and the
+ * queue's newest view. No Git, no file read. Undefined when it tracks none or hasn't been read yet;
+ * empty when every tree is a leftover, which covers nothing.
  */
 export function askTreesOf(s: Pick<SessionSummary, "id" | "path" | "readiness" | "signals">): AskTree[] | undefined {
   const hit = cache.get(s.path);
   const trees = hit?.facts?.trees.filter((t) => t.status !== "dropped");
   if (!trees?.length) return undefined;
   const heads = hit!.replyHeads?.turnId === s.signals?.turnId ? hit!.replyHeads?.heads : undefined;
-  return trees.map((t) => {
+  return trees.flatMap((t) => {
+    const own = s.readiness?.trees.find((r) => r.path === t.path);
+    if (own && isEmptyLeftover(own)) return [];
     const reading = hit!.branches?.find((b) => b.row.path === t.path);
     const row = reading ? joinBranches([reading], deps.queueNow)[0] : undefined;
-    const own = s.readiness?.trees.find((r) => r.path === t.path);
     const began = reading?.root ? deps.queueBegan?.(reading.root, t.branch) : undefined;
-    return {
+    return [{
       merged: own ? !!own.merged : !!row?.mergedInto || row?.status === "merged",
       ...(heads?.[t.path] ? { headAtReply: heads[t.path] } : {}),
       ...(row?.queue ? { entry: { state: row.queue.state, commit: row.queue.commit, ...(began !== undefined ? { began } : {}) } } : {}),
-    };
+    }];
   });
 }
 

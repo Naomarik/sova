@@ -3959,6 +3959,10 @@ export interface AttentionDigest {
       (§app.session-list/needs-you-dismiss). Their items are already left out of `items` and `counts`: this is for
       what reads waits from the session list instead (the Organizations region's baton waits). Absent: none. */
   dismissed?: Record<string, number>;
+  /** Each chat with an item that lists in Needs you, session path → that chat's newest such item, taken before the
+      30-item cap (§app.session-list/needs-you-dismiss): what a Dismiss covers, whatever the cap cut. Absent: none, or
+      an older server. */
+  newestListed?: Record<string, number>;
 }
 
 /** One line of `<stateRoot>/overseer-actions.jsonl`. */

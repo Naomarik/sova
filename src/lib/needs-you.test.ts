@@ -202,3 +202,9 @@ test("a press hides a chat's listed items ahead of the server; a newer item, or 
   assert.ok(newer.items.some((i) => i.id === "a" && i.kind === "error"), "newer than the press: it stays");
   assert.equal(newer.dismissed?.["/s/a.jsonl"], undefined);
 });
+
+test("a row's since is the wire's newest listed item when the digest's cap cut it, or the row would send a time that ends its own dismissal", () => {
+  const items = [item("a", "act", "error", 100, "boom")];
+  assert.equal(needsYouRows({ items, newestListed: { "/s/a.jsonl": 900 } }, [session("a")])[0]!.since, 900);
+  assert.equal(needsYouRows({ items }, [session("a")])[0]!.since, 100, "an older server's digest: the items' own");
+});

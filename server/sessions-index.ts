@@ -28,7 +28,7 @@ import { type AlignScan, readAlignScan } from "./align-state";
 import { type WorkerParents, WorkerSessions } from "./worker-sessions";
 import { isOverseerId, overseerDir, readOverseerState } from "./overseer-store";
 import { readDecisionSettings } from "./decide-settings";
-import { noteAskSettled, readSignals, type SignalsFile, signalsOverlay, withoutRestartAsk } from "./signals-store";
+import { readSignals, settleGoAsk, type SignalsFile, signalsOverlay } from "./signals-store";
 import { withOpenOffer } from "./session-offers";
 import { dropSessionTags, tagsFor, tagsReader } from "./session-tags";
 import { askTreesOf, branchesOverlay, pruneReadiness, readinessOverlay } from "./merge-readiness";
@@ -1506,9 +1506,10 @@ async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<st
     // The branches its chat's status row counts, each queue entry as the queue has it now (no Git here either).
     const branches = branchesOverlay(row);
     const withMerge = readiness || branches ? { ...row, ...(readiness ? { readiness } : {}), ...(branches ? { branches } : {}) } : row;
-    // A go-ahead ask whose version is queued or landed is noted when first seen, and the note decides from then on.
-    stores.signals = noteAskSettled(withMerge, askTreesOf(withMerge), stores.signals);
-    out.push(redactPreviewLinksDeep(withoutRestartAsk(withMerge, stores.signals), previewLabels));
+    // A go-ahead ask whose version landed is noted when first seen; one in the queue is hidden while the queue says so.
+    const settled = settleGoAsk(withMerge, askTreesOf(withMerge), stores.signals);
+    stores.signals = settled.data;
+    out.push(redactPreviewLinksDeep(settled.row, previewLabels));
   }
   pruneReadiness(out);
   for (let i = 0; i < out.length; i++) out[i] = await withUnreadReplies(out[i]!);
@@ -1595,7 +1596,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
   const readiness = readinessOverlay(row);
   const branches = branchesOverlay(row);
   const withMerge = readiness || branches ? { ...row, ...(readiness ? { readiness } : {}), ...(branches ? { branches } : {}) } : row;
-  return withUnreadReplies(redactPreviewLinksDeep(withoutRestartAsk(withMerge, noteAskSettled(withMerge, askTreesOf(withMerge)))));
+  return withUnreadReplies(redactPreviewLinksDeep(settleGoAsk(withMerge, askTreesOf(withMerge)).row));
 }
 
 const archivedListeners = new Set<(sessionId: string) => void>();

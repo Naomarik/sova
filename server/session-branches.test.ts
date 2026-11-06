@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { after, describe, test } from "node:test";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-branches-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
@@ -12,8 +12,10 @@ process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute 
 import type { MergeEntry, MergeQueueView } from "../shared/merge-queue";
 import type { SessionBranchQueue, SessionSummary } from "../shared/protocol";
 const r = await import("./merge-readiness");
+const store = await import("./signals-store");
+const sessions = await import("./sessions-index");
 const wire = await import("./merge-queue/wire");
-const { listGeneration, onSessionsChanged } = await import("./list-generation");
+const { listGeneration, onSessionsChanged, sessionsChanged } = await import("./list-generation");
 const { describeWorktrees } = await import("./worktrees-state");
 const { rowBranchStatus } = await import("../src/lib/branch-status");
 const { controlWords, queueRow } = await import("../src/lib/merge-queue");
@@ -672,4 +674,172 @@ test("a queue view keeps when each branch's newest entry began, off the wire", (
   assert.equal(Object.hasOwn(wire.branchQueueNow("/repo", "feat/a")!, "began"), false);
   assert.equal(wire.branchQueueBegan("/repo", "feat/none"), undefined);
   wire.resetQueueViewsForTest();
+});
+
+describe("the go-ahead ask, through the rows' own reads (§app.decisions/asks-user)", () => {
+  const OWN_HEAD = "b".repeat(40);
+  const REPLY = Date.now() - 60_000;
+  const go = { asks_user: { type: "boolean", p: 0.95 }, ask_kind: { type: "choice", choice: "restart-or-merge-go", probabilities: {}, confidence: 1 } };
+  let seq = 0;
+  /** One session on disk where listing finds it, with a stored go-ahead ask. Attention signals on. */
+  function asking(trees: (id: string) => object[]): { id: string; path: string; row: () => SessionSummary } {
+    const id = `0199aaaa-bbbb-7ccc-8ddd-${String(++seq).padStart(12, "0")}`;
+    const dir = join(agentDir, "sessions", "--go--");
+    mkdirSync(dir, { recursive: true });
+    mkdirSync(join(agentDir, "sova"), { recursive: true });
+    writeFileSync(join(agentDir, "sova", "decisions.json"), JSON.stringify({ version: 1, jev: { enabled: false }, fallback: null, features: { attention: true, tags: false }, exclusions: [], neverSendTui: false }));
+    const path = join(dir, `2026-09-29T15-34-48-453Z_${id}.jsonl`);
+    const at = (d: number) => new Date(REPLY + d).toISOString();
+    const lines = [
+      { type: "session", version: 3, id, timestamp: at(-5000), cwd: root },
+      { type: "message", id: "u", parentId: null, timestamp: at(-4000), message: { role: "user", content: [{ type: "text", text: "Fix it" }], timestamp: REPLY - 4000 } },
+      { type: "custom", customType: "worktrees", id: "w", parentId: "u", data: { version: 1, trees: trees(id) }, timestamp: at(-3000) },
+      { type: "message", id: "r", parentId: "w", timestamp: at(0), message: { role: "assistant", content: [{ type: "text", text: "Press Land." }], stopReason: "stop", timestamp: REPLY } },
+    ];
+    writeFileSync(path, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
+    store.updateSignals((d) => void (d.sessions[id] = { turnId: "r", replyAt: REPLY, at: REPLY + 1, provider: "jev", model: "m", answers: go as never, detail: "Press Land.", schema: 3 }));
+    const row = () => ({ ...summary(path), id, signals: { at: REPLY + 1, turnId: "r", provider: "jev", kinds: ["asks-you"] } }) as SessionSummary;
+    return { id, path, row };
+  }
+  const settledOf = (id: string) => JSON.parse(readFileSync(store.signalsFile(), "utf8")).sessions[id].settled as number | undefined;
+  const mergedTree = (p: string) => ({ ...status(p), merged: "ancestor" as const, head: OWN_HEAD });
+  const emptyTree = (p: string) => ({ ...status(p), merged: "no" as const, ahead: 0, head: "b0", dirty: false });
+  const openTree = (p: string) => ({ ...status(p), merged: "no" as const, ahead: 1, head: OWN_HEAD, dirty: false });
+  let git = 0;
+  let treeReads = 0;
+  let now: SessionBranchQueue | undefined | null = null;
+  function deps(statusOf: (p: string) => object) {
+    r.resetReadiness();
+    git = 0;
+    treeReads = 0;
+    now = null;
+    r.configureReadiness({
+      served: async () => true,
+      asksUser: () => undefined,
+      now: () => 0,
+      insights: { treeStatus: async (p: string) => { treeReads++; return statusOf(p) as never; } },
+      mergedInto: async () => undefined,
+      branchFields: async () => ({ root, fields: { mergeServed: true } }),
+      queueNow: () => now,
+      queueBegan: () => REPLY - 1000,
+      goAsk: (id) => { const t = store.readSignals().sessions[id]; return t && !t.settled ? { turnId: t.turnId, replyAt: t.replyAt } : undefined; },
+      git: async (args: readonly string[]) => { git++; return { code: args[0] === "rev-list" ? 0 : 1, stdout: args[0] === "rev-list" ? `${OWN_HEAD}\n` : "", stderr: "" }; },
+    });
+  }
+  /** What a reader gets for the row: the list path and the single-row path, each. */
+  async function bothPaths(s: { id: string; path: string }): Promise<{ list: SessionSummary["signals"]; one: SessionSummary["signals"] }> {
+    sessionsChanged();
+    const list = (await sessions.listSessions()).find((x) => x.id === s.id);
+    assert.ok(list, "listed");
+    const one = await sessions.getSessionSummary(s.path);
+    assert.ok(one, "read alone");
+    return { list: list.signals, one: one.signals };
+  }
+  const read = async (s: { path: string; row: () => SessionSummary }) => {
+    r.readinessOverlay(s.row());
+    await r.readinessIdle();
+    const row = s.row();
+    return { ...row, readiness: r.readinessOverlay(row) } as SessionSummary;
+  };
+  const a = join(root, "go-a");
+  const b = join(root, "go-b");
+  mkdirSync(a, { recursive: true });
+  mkdirSync(b, { recursive: true });
+  after(() => {
+    r.resetReadiness();
+    r.configureReadiness({ goAsk: undefined, queueBegan: undefined, queueNow: undefined, now: Date.now });
+  });
+
+  test("a merged tree and a leftover no-commits tree: the empty one is left out, so the ask is noted landed", async () => {
+    deps((p) => (p === a ? mergedTree(p) : emptyTree(p)));
+    const s = asking((id) => [tree(a, "feat/a", { session: id }), tree(b, "feat/b", { session: id })]);
+    const row = await read(s);
+    assert.equal(row.readiness?.trees.find((t) => t.path === b)?.why, r.NO_COMMITS, "the leftover as readiness reads it");
+    assert.equal(r.askTreesOf(row)?.length, 1);
+    store.noteAskSettled(row, r.askTreesOf(row));
+    assert.equal(typeof settledOf(s.id), "number");
+  });
+
+  test("a no-commits tree with uncommitted files still holds the ask: there is work in it", async () => {
+    deps((p) => (p === a ? mergedTree(p) : { ...emptyTree(p), dirty: true, dirtyCount: 1, dirtyFiles: ["x"] }));
+    const s = asking((id) => [tree(a, "feat/a", { session: id }), tree(b, "feat/b", { session: id })]);
+    const row = await read(s);
+    assert.equal(r.askTreesOf(row)?.length, 2);
+    store.noteAskSettled(row, r.askTreesOf(row));
+    assert.equal(settledOf(s.id), undefined);
+    assert.ok((await bothPaths(s)).list?.kinds.includes("asks-you"));
+  });
+
+  test("every tree empty: nothing is covered, the ask stays", async () => {
+    deps(emptyTree);
+    const s = asking((id) => [tree(a, "feat/a", { session: id }), tree(b, "feat/b", { session: id })]);
+    const row = await read(s);
+    store.noteAskSettled(row, r.askTreesOf(row));
+    assert.equal(settledOf(s.id), undefined);
+    const seen = await bothPaths(s);
+    assert.ok(seen.list?.kinds.includes("asks-you"));
+    assert.ok(seen.one?.kinds.includes("asks-you"));
+  });
+
+  test("the empty rule is readiness's own: the one predicate decides the merged badge and the ask", () => {
+    const t = (over: object) => ({ path: "/p", branch: "b", state: "in-progress", why: r.NO_COMMITS, ...over }) as never;
+    assert.equal(r.isEmptyLeftover(t({})), true);
+    assert.equal(r.isEmptyLeftover(t({ dirtyCount: 1 })), false);
+    assert.equal(r.isEmptyLeftover(t({ state: "removed", why: r.REMOVED_EMPTY })), true);
+    assert.equal(r.isEmptyLeftover(t({ state: "merged", why: undefined })), false);
+  });
+
+  test("queued hides it on the list and the single row and writes no note, with no Git at listing time; cancelled, it is back", async () => {
+    deps(openTree);
+    const s = asking((id) => [tree(a, "feat/a", { session: id })]);
+    await read(s);
+    assert.ok((await bothPaths(s)).list?.kinds.includes("asks-you"), "control: not queued yet");
+    await r.readinessIdle();
+    const asked = { git, treeReads };
+
+    now = { state: "queued", commit: OWN_HEAD };
+    let seen = await bothPaths(s);
+    assert.equal(seen.list, undefined, "list: hidden");
+    assert.equal(seen.one, undefined, "single row: hidden");
+    assert.equal(settledOf(s.id), undefined, "no note");
+    assert.deepEqual({ git, treeReads }, asked, "a pure read of what is cached");
+
+    now = { state: "cancelled", commit: OWN_HEAD };
+    seen = await bothPaths(s);
+    assert.ok(seen.list?.kinds.includes("asks-you"), "list: back");
+    assert.ok(seen.one?.kinds.includes("asks-you"), "single row: back");
+    assert.deepEqual({ git, treeReads }, asked, "and again");
+
+    now = { state: "checking", commit: OWN_HEAD };
+    assert.equal((await bothPaths(s)).one, undefined, "checking hides it");
+    now = { state: "needs-fix", commit: OWN_HEAD };
+    assert.ok((await bothPaths(s)).one?.kinds.includes("asks-you"), "stopped short of landing: back");
+    assert.equal(settledOf(s.id), undefined);
+  });
+
+  test("landed notes it, on either path, and it stays hidden after the tree is dropped and after a restart", async () => {
+    for (const via of ["list", "one"] as const) {
+      deps(openTree);
+      const s = asking((id) => [tree(a, "feat/a", { session: id })]);
+      await read(s);
+      now = { state: "landed", commit: OWN_HEAD };
+      sessionsChanged();
+      if (via === "list") await sessions.listSessions();
+      else await sessions.getSessionSummary(s.path);
+      assert.equal(typeof settledOf(s.id), "number", `${via}: noted`);
+
+      // The tree dropped: the file says so. The restart: nothing cached, no view known.
+      const line = { type: "custom", customType: "worktrees", id: "w2", parentId: "r", data: { version: 1, trees: [tree(a, "feat/a", { session: s.id, status: "dropped" })] }, timestamp: new Date().toISOString() };
+      writeFileSync(s.path, `${JSON.stringify(line)}\n`, { flag: "a" });
+      deps(openTree);
+      assert.equal(typeof settledOf(s.id), "number", "the note is on disk");
+      const seen = await bothPaths(s);
+      assert.equal(seen.list, undefined, `${via}: list, hidden`);
+      assert.equal(seen.one, undefined, `${via}: single row, hidden`);
+      await r.readinessIdle();
+      const again = await bothPaths(s);
+      assert.equal(again.list, undefined, `${via}: list, after the tree read`);
+      assert.equal(again.one, undefined, `${via}: single row, after the tree read`);
+    }
+  });
 });

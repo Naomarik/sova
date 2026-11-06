@@ -9,6 +9,13 @@
 // - each driver's command runs from the checkout's top as before, its three inputs named by absolute path.
 // Objects the probe makes (the attributes' tree, the merge) go to the same throwaway folder: the repository is never
 // written. The folder goes when the probe ends.
+//
+// `attr.tree` needs git 2.43 (its release notes; `merge-tree` with an attribute tree also segfaulted before then, so
+// the older `--attr-source` is no way around it). An older git ignores the setting without a word, and with no
+// attributes it would select no driver: a false conflict on the driver's files, or a clean merge a `-merge` file should
+// have refused. So when there are attributes and git isn't proven to read them this way, the merge runs in the checkout
+// as it always did on that git: the same right answer, and only the old risk that a probe killed mid-driver leaves
+// git's temp files there.
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -61,9 +68,16 @@ async function attributesTree(git: GitRunner, top: string, env: Record<string, s
   return tree.code === 0 && tree.stdout.trim() ? tree.stdout.trim() : null;
 }
 
-/** `git merge-tree --write-tree --no-messages base head` for `t`, outside every checkout. Never throws for git's own
-    failure (its result says it); throws only when the throwaway folder can't be made. */
-export async function trialMergeTree(git: GitRunner, t: TrialMerge): Promise<GitResult & { cwd: string }> {
+/** Whether `git version`'s output names a git that honours `attr.tree` (2.43 or newer). Anything else is no. */
+export function honoursAttrTree(version: string): boolean {
+  const m = /^git version (\d+)\.(\d+)/.exec(version.trim());
+  return !!m && (Number(m[1]) > 2 || (Number(m[1]) === 2 && Number(m[2]) >= 43));
+}
+
+/** `git merge-tree --write-tree --no-messages base head` for `t`, outside every checkout when this git can read the
+    attributes from there (above). Never throws for git's own failure (its result says it); throws only when the
+    throwaway folder can't be made. */
+export async function trialMergeTree(git: GitRunner, t: TrialMerge): Promise<GitResult> {
   const drivers = await git(["config", "--get-regexp", "^merge\\..*\\.driver$"], { cwd: t.top });
   const overrides = parseDrivers(drivers.code === 0 ? drivers.stdout : "").flatMap((d) => ["-c", `merge.${d.name}.driver=${driverFromTop(d.command, t.top)}`]);
   const root = await mkdtemp(join(t.scratchParent ?? tmpdir(), "sova-merge-tree-"));
@@ -73,8 +87,9 @@ export async function trialMergeTree(git: GitRunner, t: TrialMerge): Promise<Git
     await Promise.all([mkdir(objects), mkdir(cwd)]);
     const env = { GIT_OBJECT_DIRECTORY: objects, GIT_ALTERNATE_OBJECT_DIRECTORIES: join(t.commonDir, "objects") };
     const attrs = await attributesTree(git, t.top, { ...env, GIT_INDEX_FILE: join(root, "attributes-index") });
-    const r = await git(["--git-dir", t.gitDir, ...(attrs ? ["-c", `attr.tree=${attrs}`] : []), ...overrides, "merge-tree", "--write-tree", "--no-messages", t.base, t.head], { cwd, env });
-    return { ...r, cwd };
+    const merge = ["merge-tree", "--write-tree", "--no-messages", t.base, t.head];
+    if (attrs && !honoursAttrTree((await git(["version"], { cwd })).stdout)) return await git(merge, { cwd: t.top, env });
+    return await git(["--git-dir", t.gitDir, ...(attrs ? ["-c", `attr.tree=${attrs}`] : []), ...overrides, ...merge], { cwd, env });
   } finally {
     await rm(root, { recursive: true, force: true }).catch(() => {});
   }

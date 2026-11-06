@@ -121,8 +121,9 @@ export async function makeScratchCopy(git: Git, o: { root: string; entry: string
     await removeWorktree(git, o.root, path);
   }
   mkdirSync(dirname(path), { recursive: true });
-  // A record an interrupted cut left (folder gone): pruned, so the cut can reuse the name.
-  await git(["worktree", "prune"], o.root);
+  // A record an interrupted cut left (folder gone): dropped, so the cut can reuse the name. This path's only: a bare
+  // `worktree prune` forgets every worktree whose folder is missing.
+  await forgetRecord(git, o.root, path);
   const r = await git(["worktree", "add", "--detach", "--force", path, o.base], o.root);
   if (r.code !== 0) {
     rmSync(path, { recursive: true, force: true });
@@ -137,10 +138,14 @@ export async function makeScratchCopy(git: Git, o: { root: string; entry: string
   return path;
 }
 
+/** Git's command for one worktree: it also drops the record of one whose folder is gone, and is a no-op with no record. */
+const forgetRecord = (git: Git, root: string, path: string) => git(["worktree", "remove", "--force", "--force", "--", path], root);
+
 async function removeWorktree(git: Git, root: string, path: string): Promise<void> {
-  await git(["worktree", "remove", "--force", "--force", "--", path], root);
+  await forgetRecord(git, root, path);
   rmSync(path, { recursive: true, force: true });
-  await git(["worktree", "prune"], root);
+  // Whatever git couldn't remove is gone now: this one's record goes too, never another worktree's.
+  await forgetRecord(git, root, path);
 }
 
 /** Pin an entry's resolution commit under its hidden ref. */

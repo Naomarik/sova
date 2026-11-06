@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpath
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
-import { driverFromTop, parseDrivers, trialMergeTree } from "./merge-tree-probe";
+import { driverFromTop, honoursAttrTree, parseDrivers, trialMergeTree } from "./merge-tree-probe";
 import { mergedByContent, resetContentMerges } from "./removed-worktrees";
 import { execGit, type GitResult, type GitRunner } from "./worktrees";
 
@@ -54,6 +54,10 @@ describe("the trial merge's parts", () => {
       { name: "a.b", command: "sh y %A" },
     ]);
   });
+  test("attr.tree is honoured from git 2.43; what can't be read as a version is no", () => {
+    for (const v of ["git version 2.43.0", "git version 2.54.0\n", "git version 2.100.1", "git version 3.0.0", "git version 2.47.1 (Apple Git-154)"]) assert.equal(honoursAttrTree(v), true, v);
+    for (const v of ["git version 2.42.4", "git version 2.39.5 (Apple Git-154)", "git version 1.99.0", "git version 2.9.0", "", "not git 2.54"]) assert.equal(honoursAttrTree(v), false, v);
+  });
 });
 
 describe("the trial merge", () => {
@@ -75,6 +79,62 @@ describe("the trial merge", () => {
     assert.match(line, new RegExp(`^cwd=${repo} O=/`), `the driver ran from the checkout, its inputs absolute: ${line}`);
     assert.ok(!line.includes(`O=${repo}/`), "its inputs are never in the checkout");
     assert.deepEqual(leftovers(repo), []);
+  });
+
+  describe("on a git that may ignore attr.tree", () => {
+    // Real git underneath, so its answer is checked too; only the version it reports is stood in.
+    const reporting = (version: string) => {
+      const merges: { args: readonly string[]; cwd: string }[] = [];
+      const spy: GitRunner = (args, opts) => {
+        if (args[0] === "version") return Promise.resolve({ code: 0, stdout: `${version}\n`, stderr: "" });
+        if (args.includes("merge-tree")) merges.push({ args, cwd: opts.cwd });
+        return execGit(args, opts);
+      };
+      return { spy, merges };
+    };
+    const inCheckout = () => git(repo, "merge-tree", "--write-tree", "--no-messages", "master", "side").split("\n")[0];
+
+    test("git 2.42 merges in the checkout, where it reads the attributes, and gets the driver's clean merge", async () => {
+      const { spy, merges } = reporting("git version 2.42.4");
+      const r = await trialMergeTree(spy, { top: repo, gitDir: commonDir, commonDir, base: "master", head: "side" });
+      assert.equal(merges.length, 1);
+      assert.equal(merges[0]!.cwd, repo);
+      assert.ok(!merges[0]!.args.some((a) => a.startsWith("attr.tree=")), `no setting it would ignore: ${merges[0]!.args.join(" ")}`);
+      assert.equal(r.code, 0, r.stderr);
+      assert.equal(r.stdout.split("\n")[0], inCheckout());
+      assert.deepEqual(leftovers(repo), []);
+    });
+
+    test("git 2.43 merges outside the checkout, naming the attributes' tree", async () => {
+      const { spy, merges } = reporting("git version 2.43.0");
+      const r = await trialMergeTree(spy, { top: repo, gitDir: commonDir, commonDir, base: "master", head: "side" });
+      assert.equal(merges.length, 1);
+      assert.ok(!merges[0]!.cwd.startsWith(repo), merges[0]!.cwd);
+      assert.ok(merges[0]!.args.some((a) => a.startsWith("attr.tree=")), merges[0]!.args.join(" "));
+      assert.equal(r.code, 0, r.stderr);
+      assert.equal(r.stdout.split("\n")[0], inCheckout());
+    });
+
+    test("what the check guards: with no attributes read, this merge is the false conflict", () => {
+      // The answer an older git would give outside the checkout: the setting ignored, so no attributes and no driver.
+      const away = join(root, "away");
+      mkdirSync(away, { recursive: true });
+      assert.throws(() => git(away, "--git-dir", commonDir, "merge-tree", "--write-tree", "--no-messages", "master", "side"), (e: { status?: number }) => e.status === 1);
+    });
+
+    test("a repository with no attributes needs no check: outside the checkout on any git", async () => {
+      const plain = join(root, "plain");
+      mkdirSync(plain);
+      git(plain, "init", "-q", "-b", "master");
+      writeFileSync(join(plain, "y"), "a\n");
+      git(plain, "add", "-A");
+      git(plain, "commit", "-q", "-m", "base");
+      const common = git(plain, "rev-parse", "--path-format=absolute", "--git-common-dir");
+      const { spy, merges } = reporting("git version 2.38.0");
+      const r = await trialMergeTree(spy, { top: plain, gitDir: common, commonDir: common, base: "master", head: "master" });
+      assert.equal(r.code, 0, r.stderr);
+      assert.ok(!merges[0]!.cwd.startsWith(plain), merges[0]!.cwd);
+    });
   });
 
   test("merged by content (Clean Up Merged's probe) asks git from outside the checkout", async () => {
@@ -129,12 +189,18 @@ describe("the trial merge", () => {
     assert.ok(left.length > 0, "the control leaves .merge_file_ files in the checkout (else this test proves nothing)");
     for (const f of left) rmSync(join(repo, f));
     killed = false;
+    const cwds: string[] = [];
+    const killerSpy: GitRunner = (args, opts) => {
+      if (args.includes("merge-tree")) cwds.push(opts.cwd);
+      return killer(args, opts);
+    };
     try {
-      const r = await trialMergeTree(killer, { top: repo, gitDir: commonDir, commonDir, base: "master", head: "side" });
+      const r = await trialMergeTree(killerSpy, { top: repo, gitDir: commonDir, commonDir, base: "master", head: "side" });
       assert.ok(killed, "git was killed mid-driver");
       assert.equal(r.code, null);
       assert.deepEqual(leftovers(repo), [], "nothing of git's in the checkout");
-      assert.ok(!existsSync(r.cwd), "git's own folder went with whatever it left");
+      assert.equal(cwds.length, 1);
+      assert.ok(!existsSync(cwds[0]!), "git's own folder went with whatever it left");
     } finally {
       // The orphaned driver's sleep.
       stopDriver();

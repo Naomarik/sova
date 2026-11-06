@@ -124,7 +124,8 @@
       "src/components/SessionView.tsx",
       "src/components/SessionTitleSettings.tsx",
       "server/overseer-tools.ts",
-      "server/overseer-tools.test.ts"
+      "server/overseer-tools.test.ts",
+      "server/fixed-names.test.ts"
     ]
   },
   "§app.session-list/cleanup-org-guard": {
@@ -211,6 +212,53 @@
       "by": "omar",
       "at": "2026-10-27T08:48Z",
       "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
+    }
+  },
+  "§app.session-list/fixed-names": {
+    "kind": "behavior",
+    "requires": [
+      "§app.session-list/session-titles",
+      "§app.session-list/auto-titles",
+      "§app.overseer/identity-and-clear",
+      "§app.merge-queue/chats"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "server/sessions-index.ts",
+      "server/app.ts",
+      "server/session-names.ts",
+      "server/overseer-tools.ts",
+      "server/project-overseer.ts",
+      "server/session-autotitle.ts",
+      "src/components/SessionView.tsx",
+      "src/components/OverseerView.tsx",
+      "shared/fixed-names.ts",
+      "server/sova-chat-names.ts",
+      "server/sova-chat-origin.ts",
+      "server/fixed-names.test.ts",
+      "shared/protocol.ts",
+      "server/overseer-tools.test.ts",
+      "server/org-sessions.ts",
+      "shared/project-overseer.ts",
+      "server/overseer.ts",
+      "server/merge-queue/thread.ts",
+      "server/merge-queue/reviewer.ts",
+      "server/project-services/release.ts",
+      "server/project-services/release-wire.ts",
+      "src/components/SessionRowMenu.tsx",
+      "src/lib/session-row-menu.test.ts",
+      "src/lib/auto-title.ts",
+      "src/lib/known-before-mount.ts",
+      "src/lib/summary-diff.ts",
+      "src/lib/summary-diff.test.ts",
+      "src/lib/overseer.ts",
+      "src/lib/overseer.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T10:31Z",
+      "source": "pi-session:01a1ab0e-cb20-7081-a563-521c041eafdd#51e5317f"
     }
   },
   "§app.session-list/group-picker": {
@@ -537,7 +585,10 @@
     "evidence": "reviewed",
     "code": [
       "server/session-titles.ts",
-      "server/session-titles.test.ts"
+      "server/session-titles.test.ts",
+      "server/app.ts",
+      "server/sessions-index.ts",
+      "server/fixed-names.test.ts"
     ]
   },
   "§app.session-list/spine": {

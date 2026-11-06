@@ -195,8 +195,8 @@ user row.
 - **Run Now** (`POST …/overseer/run`, §app.project-overseer/watch-loop): disabled while it works, with
   the reason "Working now"; done: "The overseer is looking now."; refused: the server's sentence.
 - **⋯**: **Stop Watching** / **Start Watching** (`PATCH {watch}`: "Watching." / "Not watching."),
-  **History…** (the earlier conversations, newest first, each its title — "No messages" for an
-  untitled one — and its age, opening it; with none: "No earlier conversations yet."), **Clear**
+  **History…** (earlier conversations, newest first, each what it was about — "No messages" for an
+  untitled one — and its age, opening it; none: "No earlier conversations yet."), **Clear**
   ("Start a new conversation. This one moves to History."), and **Project Page**. Below 480px the level
   and Run Now leave line 1 and are in ⋯ too (Run Now, and "Without You…" with the same switches).
 - **Status strip**, at most 3 lines, each only when it has something to say:

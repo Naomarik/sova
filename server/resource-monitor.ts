@@ -202,6 +202,10 @@ export interface MonitorOptions {
   eventLoop?: boolean;
   /** Sova's display title for a session, from memory only (it is asked each tick; no I/O). */
   titleOf?: (path: string) => string | undefined;
+  /** A chat Sova names itself (shared/fixed-names.ts): its name, and whether it is the Overseer's current or an earlier
+      conversation. Asked each tick (cheap: kept a while) and, `fresh`, at each history read, whose saved labels it
+      replaces, so days recorded under an old title read the name. Undefined: an ordinary session. */
+  fixedOf?: (path: string, fresh?: boolean) => { title: string; overseer?: "current" | "earlier" } | undefined;
   /** Runs `ps` with these arguments and resolves its stdout (macOS; tests inject a table). */
   ps?: (args: string[]) => Promise<string>;
 }
@@ -319,6 +323,7 @@ export class ResourceMonitor {
   private snap: MonitorSnapshot | null = null;
   private readonly idleEvery: number;
   private readonly titleOf?: (path: string) => string | undefined;
+  private readonly fixedOf?: MonitorOptions["fixedOf"];
   private readonly ps: (args: string[]) => Promise<string>;
   /** ps scope: when each pid was first seen (its stand-in starttime), and its last CPU time. */
   private psSeen = new Map<number, { start: number; cpu: number }>();
@@ -335,6 +340,7 @@ export class ResourceMonitor {
     this.log = new MonitorLog(opts.logDir);
     this.plat = opts.platform ?? platform();
     this.titleOf = opts.titleOf;
+    this.fixedOf = opts.fixedOf;
     this.ps = opts.ps ?? runPs;
     this.idleEvery = Math.max(1, Math.round(opts.idleEvery ?? IDLE_EVERY));
     const held = opts.held;
@@ -438,7 +444,8 @@ export class ResourceMonitor {
   }
 
   async history(since: number, res: MonitorResolution): Promise<MonitorHistory> {
-    return res === "30s" ? this.log.history(since, this.now()) : this.ring.history(since);
+    const h = res === "30s" ? await this.log.history(since, this.now()) : this.ring.history(since);
+    return this.fixedOf ? relabelFixed(h, this.fixedOf) : h;
   }
 
   // ── reading ────────────────────────────────────────────────────────────────────────────────
@@ -975,11 +982,13 @@ export class ResourceMonitor {
       const workers = [...s.workers].map(([id, ps]) => workerRow(id, ps, h?.workers.find((w) => w.id === id)))
         .sort((a, b) => b.cpuPct - a.cpuPct || b.rssBytes - a.rssBytes);
       const all = [...s.own, ...[...s.workers.values()].flat()];
-      // Sova's display title (renames included) from memory, else pi's own session name.
-      const title = this.titleOf?.(path) ?? h?.title;
+      // A chat Sova names itself reads that name; else Sova's display title (renames included) from memory, else pi's
+      // own session name.
+      const fixed = this.fixedOf?.(path);
+      const title = fixed?.title ?? this.titleOf?.(path) ?? h?.title;
       const own = sum(s.own);
       sessionRows.push({
-        sessionPath: path, ...(title ? { title } : {}), ...(h?.cwd ? { cwd: h.cwd } : {}), hosted: !!h,
+        sessionPath: path, ...(title ? { title } : {}), ...(fixed?.overseer ? { overseer: fixed.overseer } : {}), ...(h?.cwd ? { cwd: h.cwd } : {}), hosted: !!h,
         ...(h?.backend ? { backend: h.backend } : {}),
         // Its chat's runtime and Claude Code CLI always, so the screen can show each; then its heaviest tools.
         ...sum(all), ...split(s.own), own: [...s.own.filter((p) => partOf(p.kind) !== 3), ...s.own.filter((p) => partOf(p.kind) === 3).slice(0, 5)], ownCpuPct: own.cpuPct, ownRssBytes: own.rssBytes, workers,
@@ -1040,7 +1049,7 @@ export class ResourceMonitor {
     const workerLabels: TickPoint["workerLabels"] = new Map();
     for (const s of sessionRows) {
       addG(s.sessionPath!, s.cpuPct, memory ? s.privBytes! : s.rssBytes);
-      labels.set(s.sessionPath!, { label: s.title ?? s.sessionPath!.split("/").pop()!, sessionPath: s.sessionPath! });
+      labels.set(s.sessionPath!, { label: s.title ?? s.sessionPath!.split("/").pop()!, sessionPath: s.sessionPath!, ...(s.overseer ? { overseer: s.overseer } : {}) });
       if (s.workers.length) {
         workersH.set(s.sessionPath!, new Map(s.workers.map((w) => [w.id, [w.cpuPct, memory ? w.privBytes! : w.rssBytes] as [number, number]])));
         const names = new Map(s.workers.filter((w) => w.name).map((w) => [w.id, w.name!]));
@@ -1106,6 +1115,23 @@ const CORES = availableParallelism();
 // ── The server's instance ────────────────────────────────────────────────────────────────────
 
 let instance: ResourceMonitor | null = null;
+
+/**
+ * A history's labels as Sova names its chats now: each session group of a chat Sova names itself (the Overseer, a
+ * project's overseer, the merge queue's and release chats, gatherings) reads that name, whatever title it was saved
+ * under, and an Overseer conversation says which it is. Every other label stays as recorded. Pure but for `fixedOf`.
+ */
+export function relabelFixed(h: MonitorHistory, fixedOf: NonNullable<MonitorOptions["fixedOf"]>): MonitorHistory {
+  let groups: MonitorHistory["groups"] | null = null;
+  for (const [key, g] of Object.entries(h.groups)) {
+    const path = g.sessionPath ?? (key.startsWith("/") ? key : undefined);
+    const fixed = path ? fixedOf(path, true) : undefined;
+    if (!fixed) continue;
+    groups ??= { ...h.groups };
+    groups[key] = { ...g, label: fixed.title, ...(path ? { sessionPath: path } : {}), ...(fixed.overseer ? { overseer: fixed.overseer } : {}) };
+  }
+  return groups ? { ...h, groups } : h;
+}
 
 export function startResourceMonitor(opts: MonitorOptions): ResourceMonitor {
   if (!instance) {

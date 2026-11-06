@@ -42,6 +42,7 @@ import {
   type StepState,
 } from "../../shared/release";
 import { NO_BACKGROUND_CLEANUP } from "../git-no-background";
+import { releaseChatTitle, withdrawChatTitle } from "../../shared/fixed-names";
 import { type Git, isAncestor, realGit as queueGit, revParse } from "../merge-queue/guard";
 import type { ProjectQueue, ReleaseQueueEvent } from "../merge-queue/queue";
 import type { LandingReleaseCut } from "../../shared/merge-queue";
@@ -91,7 +92,7 @@ export interface ReleaseRequestRecord {
 export interface ReleaseThreadDeps {
   start(input: { root: string; checkout: string; text: string; title: string }): Promise<{ id: string; path: string } | { error: string }>;
   wake(path: string, text: string): Promise<{ ok: true } | { ok: false; error: string }>;
-  /** Name the chat (Sova's own title, never over one the user set). */
+  /** Name the chat: Sova's own name for it (server/sova-chat-names.ts), which no rename changes. */
   retitle?(session: string, title: string): void;
 }
 
@@ -586,7 +587,7 @@ export class Releaser {
 
   /** The release chat's title: the same shape throughout, with the tag once known. */
   titleOf(rec: ReleaseRecord): string {
-    return `Release ${rec.tag ?? "(version not picked yet)"} of ${basename(rec.project)}`;
+    return releaseChatTitle(rec);
   }
 
   private async failStart(rec: ReleaseRecord, q: ProjectQueue, why: string): Promise<never> {
@@ -969,7 +970,7 @@ export class Releaser {
       if (steps.length) {
         const woke = rec.thread?.path ? await this.deps.thread.wake(rec.thread.path, `Release ${tag} was withdrawn: ${why}. Run the withdraw steps now (${steps.map((x) => x.id).join(", ")}) and report each.`).catch(() => ({ ok: false as const, error: "wake failed" })) : { ok: false as const, error: "no chat" };
         if (!woke.ok && rec.thread?.checkout && existsSync(rec.thread.checkout)) {
-          const st = await this.deps.thread.start({ root, checkout: rec.thread.checkout, text: `Release ${rec.id} (${tag}) of ${root} was withdrawn: ${why}. Run its withdraw steps (${steps.map((x) => x.id).join(", ")}) following the project's release playbook, and report each with release.step {release: "${rec.id}", …}.`, title: `Withdraw ${tag}` });
+          const st = await this.deps.thread.start({ root, checkout: rec.thread.checkout, text: `Release ${rec.id} (${tag}) of ${root} was withdrawn: ${why}. Run its withdraw steps (${steps.map((x) => x.id).join(", ")}) following the project's release playbook, and report each with release.step {release: "${rec.id}", …}.`, title: withdrawChatTitle(tag) });
           if (!("error" in st)) {
             rec.thread = { ...rec.thread, session: st.id, path: st.path };
             this.save(rec);

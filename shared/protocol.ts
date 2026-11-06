@@ -35,6 +35,14 @@ export interface SessionSummary {
       is stored for this session, even one equal to the derived title; absent when none is, and
       from older servers. "user" and "overseer" are explicit and never renamed automatically. */
   titleBy?: SessionTitleBy;
+  /** A chat whose name Sova fixes (shared/fixed-names.ts): `title` is that name, whatever its first message,
+      an automatic title, a rename, an alias or a pi session name says. "overseer": "Overseer" (current and earlier
+      conversations); "project-overseer": "Overseer · {project}" with the project's current name; the merge queue's
+      thread and reviewers, release chats and gathering sessions: the name Sova gave each when it started (a
+      gathering's public title). With it, no `originalTitle` or `titleBy` is sent, and a rename is refused
+      (POST /api/sessions/title answers 409 with the sentence). The client offers no Rename… or Regenerate title
+      for it. Safe by absence: an older server. */
+  fixedName?: import("./fixed-names").FixedNameKind;
   createdAt: string; // ISO, from header
   lastActiveAt: string; // ISO, file mtime
   /** Latest "provider/model": the model_change or assistant message closest to the end of the
@@ -3790,8 +3798,11 @@ export interface OverseerInfo {
   /** The current Overseer file: mount the normal chat on it (keyed on path). */
   path: string;
   id: string;
-  /** Up to 20 previous Overseer files, newest first; openable read-only (watch, no chat). */
-  history: { id: string; path: string; title: string; lastActiveAt: string }[];
+  /** Up to 20 previous Overseer files, newest first; openable read-only (watch, no chat). `title` is the fixed
+      name ("Overseer") every summary hands out; `about` says what that conversation was about (its automatic
+      title, else its first message, else "Untitled"), what the History screen shows. `about` absent: an older
+      server, whose `title` was that. */
+  history: { id: string; path: string; title: string; about?: string; lastActiveAt: string }[];
   /** Attention counts for the entry button (from the digest). act = blockers; decide = finished/look;
       needsYou = sessions Needs you lists (act or soft items, shared/needs-you.ts), the head's "need
       you" (additive: absent from older servers, then read `act`). */
@@ -5438,6 +5449,9 @@ export interface MonitorSession {
   sessionPath?: string;
   /** Session display title, when known. */
   title?: string;
+  /** The session is the Overseer's current conversation or an earlier one: Open Session goes to the Overseer page
+      (or that earlier conversation's), never the plain session route. Absent for every other session. */
+  overseer?: "current" | "earlier";
   cwd?: string;
   /** Hosted in this server (its tool children are the server's children). */
   hosted: boolean;
@@ -5618,7 +5632,7 @@ export interface MonitorHistory {
   /** Oldest first. */
   points: MonitorPoint[];
   /** Labels for every group key used in `points`. Session groups are keyed by session path. */
-  groups: Record<string, { label: string; sessionPath?: string }>;
+  groups: Record<string, { label: string; sessionPath?: string; overseer?: "current" | "earlier" }>;
   /** Worker names by group key, then worker id, for the workers in `points` that had one. */
   workerLabels?: Record<string, Record<string, string>>;
 }

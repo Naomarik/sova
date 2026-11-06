@@ -1911,7 +1911,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .toolcard-summary:has(> .chip-count) > .toolcard-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .toolcard-summary > .chip-count { flex: none; }
 
-/* Time Spent on the Session tab. The heading reads as every section's eyebrow; the row around it is
+/* Time Spent on the Session tab. Three text weights, by place and never by a figure's size or value:
+   ink for what the section is read for (You, Agent, each row's time, each document's title), ink-2 for what
+   names it (row labels, sub-headings, the word), muted for detail (Reading's parts, a document's figures, the notes).
+   The heading reads as every section's eyebrow; the row around it is
    the 44px target, pulled back by its padding so the chevron and the eyebrow keep the section's edge. */
 .time-spent-heading { margin: 0; font: inherit; }
 .time-spent-toggle,
@@ -1940,7 +1943,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .time-spent .time-spent-twist-open { transform: rotate(90deg); }
 .time-spent-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-2) var(--space-4); }
 .time-spent-figures { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin: 0; min-width: 0; }
-.time-spent-figure { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-medium); white-space: nowrap; }
+.time-spent-figure { margin: 0; color: var(--color-ink); font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-medium); white-space: nowrap; }
 .time-spent-word { margin: 0; color: var(--color-ink-2); white-space: nowrap; }
 .time-spent-sub { margin: var(--space-1) 0 0; font-weight: var(--fw-medium); color: var(--color-ink-2); }
 .time-spent-rows,
@@ -1956,9 +1959,12 @@ html, body { overflow: clip; overscroll-behavior: none; }
   line-height: var(--lh-caption);
   color: var(--color-ink-2);
 }
-.time-spent-row > .text-num { flex: none; white-space: nowrap; }
+.time-spent-row > .text-num { flex: none; color: var(--color-ink); white-space: nowrap; }
 .time-spent-row-label { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.time-spent-part { padding-left: var(--space-5); }
-.time-spent-doc-title { margin: 0; color: var(--color-ink-2); overflow-wrap: anywhere; }
+.time-spent-part { padding-left: var(--space-5); color: var(--color-ink-muted); }
+.time-spent-part > .text-num { color: var(--color-ink-2); }
+.time-spent-doc-title { margin: 0; color: var(--color-ink); overflow-wrap: anywhere; }
 .time-spent-docs .text-muted { margin: 0; overflow-wrap: anywhere; }
+.time-spent-body > .usage-note { color: var(--color-ink-muted); }
 .time-spent-skeleton { display: flex; flex-direction: column; gap: var(--space-2); }
+.time-spent-skeleton-tall { min-height: var(--tap-min); }

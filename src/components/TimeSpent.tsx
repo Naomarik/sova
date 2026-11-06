@@ -41,6 +41,16 @@ export function TimeSpentSection(props: { path: string; labelId: string }) {
   );
 }
 
+/** One placeholder bar over a line of text: the line keeps the height its real text would have. */
+function Line(props: { class: string; width: string }) {
+  return (
+    <p class={`${props.class} text-skeleton`}>
+      &nbsp;
+      <span class="skeleton" style={{ width: props.width }} />
+    </p>
+  );
+}
+
 function TimeSpentBody(props: { path: string; id: string }) {
   const live = timeSpentLive(props.path);
   const kept = lastTimeSpentRead(props.path);
@@ -96,16 +106,23 @@ function TimeSpentBody(props: { path: string; id: string }) {
           <Show
             when={refused()}
             fallback={
-              /* About the section's usual height, never a zero, so Repository doesn't jump. */
+              /* The usual section's own lines (the figures, Your Time, Reading and two rows, the estimate), so
+                 Repository doesn't jump when the figures land; never a zero. */
               <div class="time-spent-skeleton" aria-hidden="true">
-                <For each={["35%", "60%", "50%", "45%", "85%"]}>
-                  {(width) => (
-                    <p class="text-caption text-skeleton">
-                      &nbsp;
-                      <span class="skeleton" style={{ width }} />
-                    </p>
-                  )}
-                </For>
+                <div>
+                  <Line class="text-caption" width="20%" />
+                  <Line class="time-spent-figure" width="45%" />
+                </div>
+                <Line class="time-spent-sub text-caption" width="25%" />
+                <div class="time-spent-rows">
+                  <Line class="time-spent-skeleton-tall text-caption" width="35%" />
+                  <Line class="time-spent-row" width="30%" />
+                  <Line class="time-spent-row" width="25%" />
+                </div>
+                <div>
+                  <Line class="text-caption" width="90%" />
+                  <Line class="text-caption" width="40%" />
+                </div>
               </div>
             }
           >

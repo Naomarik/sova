@@ -5,10 +5,11 @@
 // read, and opening or closing it is remembered for all sessions; open, it holds a placeholder, never a
 // zero, before the first read; the tick is no live region; and at 375px nothing scrolls sideways and each
 // expander is a 44px target. Every test but the closed ones opens it first, through the heading, and
-// asserts it did. Chrome or Chromium must be installed.
+// asserts it did. Emphasis follows a figure's place: the same colours for any size, Counting or Paused.
+// SPENT_UI_SHOTS=<dir> also saves that test's screenshots. Chrome or Chromium must be installed.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, Page, Route } from "playwright-core";
@@ -19,6 +20,7 @@ import { scratchRoot } from "./test-scratch";
 
 const ROOT = join(import.meta.dirname, "..");
 const ORIGIN = "http://sova.test";
+const SHOTS = process.env.SPENT_UI_SHOTS ?? "";
 let dist = "";
 let browser: Browser;
 
@@ -29,6 +31,7 @@ before(async () => {
     const r = spawnSync(process.execPath.includes("bun") ? "node" : process.execPath, [join(ROOT, "node_modules/vite/bin/vite.js"), "build", "--outDir", dist, "--emptyOutDir", "--logLevel", "error"], { cwd: ROOT, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
   }
+  if (SHOTS) mkdirSync(SHOTS, { recursive: true });
   browser = await launchTourBrowser();
 });
 after(async () => {
@@ -200,19 +203,23 @@ test("while the first read is out it holds a placeholder about its usual height,
   const answered = new Promise<void>((resolve) => (answer = resolve));
   const page = await open(1440, async (r) => {
     await answered;
-    await r.fulfill(json({ ...RECORD, alignments: [], older: false, rows: { typing: 60 } })).catch(() => {});
+    await r.fulfill(json({ ...RECORD, alignments: [], older: false, rows: { "reading-transcript": 100, typing: 60, scrolling: 4 } })).catch(() => {});
   });
   try {
     const section = page.locator(".time-spent");
     assert.equal(await page.locator("[data-time-you]").count(), 0);
     assert.ok((await page.locator(".time-spent .skeleton").count()) > 0);
     const repo = page.locator("section", { has: page.getByRole("heading", { name: "Repository" }) });
-    const before = (await repo.boundingBox())!.y;
+    // Against the section's own top: whatever lands above it (the insight's banner) moves both.
+    const below = async () => (await repo.boundingBox())!.y - (await section.boundingBox())!.y;
+    const before = await below();
+    if (SHOTS) await page.screenshot({ path: join(SHOTS, "placeholder.png") });
     const h = (await section.boundingBox())!.height;
     answer();
     await word(page).waitFor();
-    const moved = Math.abs((await repo.boundingBox())!.y - before);
-    assert.ok(moved < 48, `Repository moved ${moved}px (section was ${h}px)`);
+    const moved = Math.abs((await below()) - before);
+    // Under a row's height and a bit: the tracker may add a live row of its own, Other (22px).
+    assert.ok(moved < 32, `Repository moved ${moved}px (section was ${h}px)`);
   } finally {
     answer();
     await page.context().close();
@@ -223,16 +230,22 @@ test("the rows add up to You, an empty row doesn't show, and Reading opens to it
   const page = await open(1440, (r) => r.fulfill(json(RECORD)));
   try {
     await word(page).waitFor();
-    const you = await seconds(page, "[data-time-you]");
-    const rows = () => page.locator("[data-time-row]").evaluateAll((els) => els.map((e) => [e.getAttribute("data-time-row"), Number(e.getAttribute("data-seconds"))] as const));
+    // You and the rows from one read of the page: the tracker may count a second, or a row of its own, between two reads.
+    const rows = () =>
+      page.locator(".time-spent").evaluate((root) => ({
+        you: Number(root.querySelector("[data-time-you]")?.getAttribute("data-seconds")),
+        rows: [...root.querySelectorAll("[data-time-row]")].map((e) => [e.getAttribute("data-time-row") ?? "", Number(e.getAttribute("data-seconds"))] as const),
+      }));
     const shut = await rows();
-    assert.deepEqual(shut.map(([k]) => k), ["reading", "typing", "scrolling"], "dictating has no time");
-    assert.equal(shut.reduce((n, [, s]) => n + s, 0), you, "the rows add up to You");
+    const shutKeys = shut.rows.map(([k]) => k);
+    assert.deepEqual(shutKeys.filter((k) => k !== "other"), ["reading", "typing", "scrolling"], "in order; dictating, with no time, doesn't show");
+    assert.equal(shut.rows.reduce((n, [, s]) => n + s, 0), shut.you, "the rows add up to You");
     await page.getByRole("button", { name: /^Reading/ }).click();
     const opened = await rows();
-    assert.deepEqual(opened.map(([k]) => k), ["reading", "reading-transcript", "reading-alignments", "typing", "scrolling"], "no time in workers: not shown");
-    const parts = opened.filter(([k]) => k?.startsWith("reading-")).reduce((n, [, s]) => n + s, 0);
-    assert.equal(parts, shut[0]![1], "the parts add up to Reading");
+    const openedKeys = opened.rows.map(([k]) => k);
+    assert.deepEqual(openedKeys.filter((k) => k !== "other"), ["reading", "reading-transcript", "reading-alignments", "typing", "scrolling"], "no time in workers: not shown");
+    const at = (k: string) => opened.rows.find(([key]) => key === k)![1];
+    assert.equal(at("reading-transcript") + at("reading-alignments"), at("reading"), "the parts add up to Reading");
     const text = await page.locator(".time-spent").innerText();
     assert.match(text, /4m 12s on screen · 2m 10s to read · 1h 01m 40s from first shown to decided/);
     assert.match(text, /12s on screen · 40s to read(?! ·)/);
@@ -322,6 +335,85 @@ test("closing leaves the heading, and is remembered for this browser, in another
     await page.context().close();
   }
 });
+
+/** Each place's text colour: the sub-heading, label and figure of a row, a part, a document, a note, and You. */
+const placeColours = (page: Page) =>
+  page.locator(".time-spent").evaluate((root) => {
+    const colour = (q: string) => {
+      const el = root.querySelector(q);
+      if (!el) throw new Error(`nothing at ${q}`);
+      return getComputedStyle(el).color;
+    };
+    return {
+      you: colour("[data-time-you]"),
+      agent: colour("[data-time-agent]"),
+      figureLabel: colour(".time-spent-figures dt"),
+      word: colour("[data-time-word]"),
+      sub: colour(".time-spent-sub"),
+      rowLabel: colour('[data-time-row="typing"] > span'),
+      rowTime: colour('[data-time-row="typing"] > .text-num'),
+      bigRowTime: colour('[data-time-row="reading"] > .text-num'),
+      smallRowTime: colour('[data-time-row="scrolling"] > .text-num'),
+      partLabel: colour('[data-time-row="reading-transcript"] > span'),
+      partTime: colour('[data-time-row="reading-transcript"] > .text-num'),
+      docTitle: colour(".time-spent-doc-title"),
+      docWords: colour(".time-spent-docs .text-muted"),
+      note: colour(".time-spent-body > .usage-note"),
+    };
+  });
+
+for (const [width, height] of [[1440, 1300], [375, 1100]] as const) {
+  test(`at ${width}px emphasis follows the place: three weights, whatever the size, Counting and Paused alike`, async () => {
+    const hours = { ...RECORD, rows: { ...RECORD.rows, "reading-transcript": 90_000, typing: 3_600, scrolling: 1 }, agent: 45_211 };
+    const page = await open(width, (r) => r.fulfill(json(hours)));
+    try {
+      await page.setViewportSize({ width, height });
+      await word(page).waitFor();
+      await page.locator('[data-time-row="reading"]').click();
+      
+      const shots = async (state: string) => {
+        if (!SHOTS) return;
+        for (const theme of ["dark", "light"]) {
+          await page.evaluate((t) => document.documentElement.setAttribute("data-theme", t), theme);
+          await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r(null)))); // the theme's transitions have begun...
+          await page.evaluate(() => Promise.all(document.getAnimations().map((x) => x.finished.catch(() => {})))); // ...and run
+          await page.screenshot({ path: join(SHOTS, `${width}-${state}-${theme}.png`) });
+        }
+        await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+      };
+      await page.mouse.move(5, 5); // off the rows: hover is its own state
+      await page.locator('[data-time-word]:text-is("Counting")').waitFor({ timeout: 10_000 });
+      await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {}))));
+      const counting = await placeColours(page);
+      assert.equal(counting.you, counting.agent);
+      assert.equal(counting.rowTime, counting.you, "a row's time is as bright as the main times");
+      assert.equal(counting.bigRowTime, counting.you, "a large figure gets no colour of its own");
+      assert.equal(counting.smallRowTime, counting.you, "a small one neither");
+      assert.equal(counting.docTitle, counting.you, "a document's title reads as a heading of its line");
+      const named = counting.rowLabel;
+      assert.notEqual(named, counting.you, "a row's label is quieter than its time");
+      assert.equal(counting.sub, named);
+      assert.equal(counting.word, named);
+      const detail = counting.docWords;
+      assert.notEqual(detail, named, "detail is quieter than what names it");
+      assert.notEqual(detail, counting.you);
+      assert.equal(counting.note, detail);
+      assert.equal(counting.partLabel, detail);
+      assert.equal(counting.figureLabel, detail);
+      assert.equal(counting.partTime, named, "a part's time sits a step under a row's");
+      await shots("counting");
+      await page.evaluate(() => {
+        Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await page.locator('[data-time-word]:text-is("Paused")').waitFor({ timeout: 10_000 });
+      assert.deepEqual(await placeColours(page), counting, "the word changes, no colour does");
+      await shots("paused");
+    } finally {
+      await page.context().close();
+    }
+  });
+}
 
 test("at 375px nothing scrolls sideways and the expanders are 44px targets", async () => {
   const long = { ...RECORD, rows: { ...RECORD.rows, "reading-transcript": 360_000 }, agent: 720_000, alignments: [{ ...RECORD.alignments[0]!, title: "A very long alignment title that has to wrap at the edge of a phone screen without widening anything" }] };

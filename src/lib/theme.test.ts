@@ -72,7 +72,9 @@ const {
   applyStoredTheme,
   clearTheme,
   clearTypography,
+  checkedThemeId,
   darkThemeId,
+  droppedNotice,
   droppedTheme,
   lightThemeId,
   pickTheme,
@@ -320,7 +322,7 @@ test("reconcileTheme: a dark id that no longer resolves falls back to dark and n
   reconcileTheme(list([info({ id: "light", name: "Light", base: "light" })]));
   assert.equal(attributes.has("data-theme"), false);
   assert.equal(activeThemeId(), "dark");
-  assert.deepEqual(droppedTheme(), { id: "dracula", slot: "dark" });
+  assert.deepEqual(droppedTheme(), { id: "dracula", slot: "dark", reason: "gone" });
   assert.equal(stored().dark, null);
 });
 
@@ -329,7 +331,7 @@ test("reconcileTheme: a theme that broke since we put it on comes off", () => {
   pickTheme(DRACULA);
   reconcileTheme(list([info({ tokens: {}, error: "accent is image-set(…). A color is a hex value, or one call to rgb, …" })]));
   assert.equal(activeThemeId(), "dark");
-  assert.deepEqual(droppedTheme(), { id: "dracula", slot: "dark" });
+  assert.deepEqual(droppedTheme(), { id: "dracula", slot: "dark", reason: "broken" });
 });
 
 test("reconcileTheme: a missing light pick sends only the light section to its built-in", () => {
@@ -338,7 +340,7 @@ test("reconcileTheme: a missing light pick sends only the light section to its b
   pickTheme(NORD_LIGHT);
   setThemeMode("light");
   reconcileTheme(list([info(), info({ id: "light", name: "Light", base: "light", tokens: {} })]));
-  assert.deepEqual(droppedTheme(), { id: "nord-light", slot: "light" });
+  assert.deepEqual(droppedTheme(), { id: "nord-light", slot: "light", reason: "gone" });
   assert.equal(lightThemeId(), "light");
   assert.equal(darkThemeId(), "dracula", "the dark pick stays");
   assert.equal(attributes.get("data-theme"), "light");
@@ -353,7 +355,7 @@ test("reconcileTheme: a missing hidden pick leaves the shown one alone", () => {
   reconcileTheme(list([info()]));
   assert.equal(style.has("--color-bg"), false, "the light pick went, the dark one on screen wasn't repainted");
   assert.equal(attributes.get("data-theme"), "dark");
-  assert.deepEqual(droppedTheme(), { id: "nord-light", slot: "light" });
+  assert.deepEqual(droppedTheme(), { id: "nord-light", slot: "light", reason: "gone" });
   assert.equal(lightThemeId(), "light");
 });
 
@@ -364,7 +366,7 @@ test("reconcileTheme: the light fallback is tokenless, never a lookup of id ligh
   const brokenLight = info({ id: "light", name: "Light", base: "light", source: "user", path: "/home/u/.pi/agent/sova/themes/light.json", tokens: { bg: "#123456" }, error: "ink is url(//x). A color is a hex value, …" });
   for (let i = 0; i < 2; i++) {
     reconcileTheme(list([info(), brokenLight]));
-    assert.deepEqual(droppedTheme(), { id: "nord-light", slot: "light" }, `run ${i + 1}: the dropped id stays nord-light`);
+    assert.deepEqual(droppedTheme(), { id: "nord-light", slot: "light", reason: "gone" }, `run ${i + 1}: the dropped id stays nord-light`);
     assert.equal(attributes.get("data-theme"), "light");
     assert.deepEqual(colorTokens(), [], "no inline colour token: tokens.css's light block alone");
     assert.equal(meta.content, "#FFFFFF");
@@ -377,7 +379,7 @@ test("reconcileTheme: a pick whose file now stands on the other base goes back t
   pickTheme(DRACULA);
   reconcileTheme(list([info({ base: "light" })]));
   assert.equal(darkThemeId(), "dark");
-  assert.deepEqual(droppedTheme(), { id: "dracula", slot: "dark" });
+  assert.deepEqual(droppedTheme(), { id: "dracula", slot: "dark", reason: "base-changed" });
 });
 
 test("reconcileTheme: an unreadable folder is not evidence a user theme is gone, for either pick", () => {
@@ -479,11 +481,69 @@ test("a new pick in a section clears its fallback notice; a pick in the other se
   reset();
   pickTheme(NORD_LIGHT);
   reconcileTheme(list([info()]));
-  assert.deepEqual(droppedTheme(), { id: "nord-light", slot: "light" });
+  assert.deepEqual(droppedTheme(), { id: "nord-light", slot: "light", reason: "gone" });
   pickTheme(DRACULA);
-  assert.deepEqual(droppedTheme(), { id: "nord-light", slot: "light" }, "the notice is about the light pick");
+  assert.deepEqual(droppedTheme(), { id: "nord-light", slot: "light", reason: "gone" }, "the notice is about the light pick");
   pickTheme({ id: "catppuccin-latte", base: "light", tokens: {} });
   assert.equal(droppedTheme(), null);
+});
+
+/* ---- The fallback notice, and the card each list shows checked -------- */
+
+const sentence = (d: Parameters<typeof droppedNotice>[0]) => {
+  const n = droppedNotice(d);
+  return `${n.lead}${d.id}${n.tail}`;
+};
+
+test("the notice names the list that fell back and why: gone, broken, or on the other base now", () => {
+  reset();
+  pickTheme(DRACULA);
+  pickTheme(NORD_LIGHT);
+  reconcileTheme(list([info({ id: "nord-light", base: "light", tokens: NORD_LIGHT.tokens })]));
+  assert.equal(sentence(droppedTheme()!), "dracula isn't there anymore, so your dark theme is back on the built-in Dark.");
+
+  reset();
+  pickTheme(DRACULA);
+  reconcileTheme(list([info({ tokens: {}, error: "accent is image-set(…)." })]));
+  assert.equal(sentence(droppedTheme()!), "We couldn't read dracula, so your dark theme is back on the built-in Dark.");
+
+  reset();
+  pickTheme(NORD_LIGHT);
+  reconcileTheme(list([info({ id: "nord-light", base: "dark", tokens: {} })]));
+  assert.equal(sentence(droppedTheme()!), "nord-light is a dark theme now, so your light theme is back on the built-in Light.");
+
+  reset();
+  pickTheme(DRACULA);
+  reconcileTheme(list([info({ base: "light" })]));
+  assert.equal(sentence(droppedTheme()!), "dracula is a light theme now, so your dark theme is back on the built-in Dark.");
+
+  for (const [d, want] of [
+    [{ id: "x", slot: "light", reason: "gone" }, "x isn't there anymore, so your light theme is back on the built-in Light."],
+    [{ id: "x", slot: "light", reason: "broken" }, "We couldn't read x, so your light theme is back on the built-in Light."],
+    [{ id: "x", slot: "dark", reason: "base-changed" }, "x is a light theme now, so your dark theme is back on the built-in Dark."],
+  ] as const) assert.equal(sentence(d), want);
+});
+
+const userLight = info({ id: "light", name: "My Light", base: "light", source: "user", path: "/home/u/.pi/agent/sova/themes/light.json", tokens: { bg: "#fafafa" }, replacesBuiltin: true });
+const userDark = info({ id: "dark", name: "My Dark", base: "dark", source: "user", path: "/home/u/.pi/agent/sova/themes/dark.json", tokens: { bg: "#101010" }, replacesBuiltin: true });
+
+test("the check mark is what's worn: a user file holding a built-in's id isn't checked while nothing is picked", () => {
+  reset();
+  const themes = [info(), info({ id: "light", name: "Light", base: "light", tokens: {} }), info({ id: "dark", name: "Dark", tokens: {} })];
+  assert.equal(checkedThemeId("light", themes), "light", "the built-in card, when it is the built-in");
+  assert.equal(checkedThemeId("dark", themes), "dark");
+
+  const replaced = [info(), userLight, userDark];
+  assert.equal(checkedThemeId("light", replaced), null, "your light.json isn't what the window wears");
+  assert.equal(checkedThemeId("dark", replaced), null);
+  setThemeMode("light");
+  assert.deepEqual(colorTokens(), [], "and the window keeps the built-in look");
+
+  pickTheme({ id: "light", base: "light", tokens: userLight.tokens });
+  assert.equal(checkedThemeId("light", replaced), "light", "picked, it is worn and checked");
+  assert.equal(style.get("--color-bg"), "#fafafa");
+  pickTheme(DRACULA);
+  assert.equal(checkedThemeId("dark", replaced), "dracula", "any other pick is checked as always");
 });
 
 /* ---- Typography over the theme: pick > theme > default -------------- */

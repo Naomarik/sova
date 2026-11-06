@@ -69,7 +69,7 @@ const entryModule = () => {
   return new URL(src, ORIGIN).pathname;
 };
 
-async function open(o: { scheme: "light" | "dark"; record?: unknown; hash?: string; search?: string; width?: number; hold?: boolean }): Promise<Opened> {
+async function open(o: { scheme: "light" | "dark"; record?: unknown; hash?: string; search?: string; width?: number; hold?: boolean; themes?: ThemeInfo[] }): Promise<Opened> {
   const ctx = await browser.newContext({ viewport: { width: o.width ?? 1280, height: 1000 }, reducedMotion: "reduce", colorScheme: o.scheme });
   if (o.record !== undefined) await ctx.addInitScript((r) => localStorage.setItem("sova:theme", JSON.stringify(r)), o.record);
   await ctx.addInitScript(() => sessionStorage.setItem("sova:launched", "1"));
@@ -78,12 +78,13 @@ async function open(o: { scheme: "light" | "dark"; record?: unknown; hash?: stri
   let release = () => {};
   const held = o.hold ? new Promise<void>((resolve) => (release = resolve)) : Promise.resolve();
   const json = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
-  await page.routeWebSocket(/.*/, () => {});
-  await page.route("**/*", async (route) => {
+  // On the context, so a second tab in it (the same store) is answered the same way.
+  await ctx.routeWebSocket(/.*/, () => {});
+  await ctx.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     if (url.origin !== ORIGIN) return route.abort();
     const p = url.pathname;
-    if (p === "/api/themes") return route.fulfill(json({ dir: "/t", themes: THEMES }));
+    if (p === "/api/themes") return route.fulfill(json({ dir: "/t", themes: o.themes ?? THEMES }));
     if (p === "/api/explanations") return route.fulfill(json(EXPLAINED));
     if (p === "/api/sessions" || p === "/api/session-groups" || p === "/api/extensions") return route.fulfill(json([]));
     if (p === "/api/projects") return route.fulfill(json({ projects: [] }));
@@ -297,6 +298,58 @@ describe("Light, Dark and Auto", () => {
       assert.match(await panel.innerText(), /Light theme\s*Showing now/);
     } finally {
       await o.ctx.close();
+    }
+  });
+
+  test("a user file holding the built-in's id isn't checked while nothing is picked; the notice names the list and why", async () => {
+    const mine: ThemeInfo = { ...theme("light", "My Light", "light", { bg: "#fafafa", surface: "#f0f0f0" }), source: "user", path: "/t/light.json", replacesBuiltin: true };
+    const themes = [...THEMES.filter((t) => t.id !== "light"), mine];
+    const gone = { id: "gone-dark", base: "dark", tokens: { bg: "#123123" } };
+    const o = await open({ scheme: "dark", record: { v: 2, mode: "light", light: null, dark: gone }, hash: "#/settings/themes", themes });
+    try {
+      const page = o.page;
+      const lightList = page.getByRole("radiogroup", { name: "Light theme" });
+      await lightList.getByRole("radio").first().waitFor();
+      assert.equal(await lightList.locator('[aria-checked="true"]').count(), 0, "no light card is checked: the window wears the built-in Light");
+      assert.equal(await lightList.locator('[tabindex="0"]').count(), 1, "the list keeps one tab stop, its first usable card");
+      assert.equal(await dataTheme(page), "light");
+      assert.deepEqual(await page.evaluate(() => [...document.documentElement.style].filter((p) => p.startsWith("--color-"))), [], "and nothing of My Light is painted");
+      const panel = page.locator("#settings-panel-themes");
+      await page.getByText("gone-dark", { exact: true }).waitFor();
+      assert.match(await panel.innerText(), /gone-dark isn't there anymore, so your dark theme is back on the built-in Dark\./);
+      assert.match(await panel.innerText(), /A pick in the list that's showing applies at once; the other list's pick shows when its mode does\. The choice is remembered in this browser\./);
+      await lightList.getByRole("radio", { name: /^My Light/ }).click();
+      assert.equal(await lightList.getByRole("radio", { name: /^My Light/ }).getAttribute("aria-checked"), "true", "picked, it is worn and checked");
+      assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue("--color-bg")), "#fafafa");
+    } finally {
+      await o.ctx.close();
+    }
+  });
+
+  test("an open tab follows a change made in another tab at once, and neither erases the other's pick", async () => {
+    const a = await open({ scheme: "dark", hash: "#/settings/themes" });
+    try {
+      const b = await a.ctx.newPage(); // the same browser, so the same store
+      await b.goto(`${ORIGIN}/#/settings/themes`);
+      const darkA = a.page.getByRole("radiogroup", { name: "Dark theme" });
+      const lightB = b.getByRole("radiogroup", { name: "Light theme" });
+      await darkA.getByRole("radio").first().waitFor();
+      await lightB.getByRole("radio").first().waitFor();
+      // The review's sequence: A picks Dracula; B, opened before that, then picks Catppuccin Latte and Auto.
+      await darkA.getByRole("radio", { name: /^Dracula/ }).click();
+      await b.waitForFunction(() => document.documentElement.style.getPropertyValue("--color-bg") === "#282a36"); // B wears it at once
+      await lightB.getByRole("radio", { name: /^Catppuccin Latte/ }).click();
+      await b.getByRole("group", { name: "Appearance" }).getByText("Auto", { exact: true }).click();
+      const r = await record(b);
+      assert.deepEqual({ mode: r?.mode, light: r?.light?.id, dark: r?.dark?.id }, { mode: "auto", light: "catppuccin-latte", dark: "dracula" }, "A's dark pick is still stored");
+      await a.page.waitForFunction(() => (document.querySelector('input[type="radio"][value="auto"]') as HTMLInputElement | null)?.checked === true);
+      assert.equal(await a.page.evaluate(() => document.documentElement.style.getPropertyValue("--color-bg")), "#282a36", "A, on a dark system under Auto, wears Dracula");
+      await a.page.emulateMedia({ colorScheme: "light" });
+      await a.page.waitForFunction(() => document.documentElement.style.getPropertyValue("--color-bg") === "#eff1f5"); // and B's light pick on a light one
+      assert.equal(await lightB.getByRole("radio", { name: /^Catppuccin Latte/ }).getAttribute("aria-checked"), "true");
+      assert.equal(await a.page.getByRole("radiogroup", { name: "Light theme" }).getByRole("radio", { name: /^Catppuccin Latte/ }).getAttribute("aria-checked"), "true", "A's list shows B's pick checked");
+    } finally {
+      await a.ctx.close();
     }
   });
 

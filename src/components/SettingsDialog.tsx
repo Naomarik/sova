@@ -37,7 +37,7 @@ import { setShowSummaries, showSummaries } from "../lib/summary-line";
 import { LIMIT_RULE } from "../../shared/provider-limits";
 import { Choice, NumberField, SearchField, Toggle } from "./form";
 import { compressWork, setCompressWork } from "../lib/work-compression";
-import { darkThemeId, droppedTheme, lightThemeId, pickTheme, reconcileTheme, setThemeMode, shownBase, themeMode, type ThemeMode, typography } from "../lib/theme";
+import { checkedThemeId, droppedNotice, droppedTheme, pickTheme, reconcileTheme, setThemeMode, shownBase, themeMode, type ThemeMode, typography } from "../lib/theme";
 import { settingsProject, type SettingsTab } from "../lib/settings-nav";
 import { experimentalDraft, experimentalSaveError, experimentalSaving, setExperimentalDraft, setExperimentalSaved } from "../lib/experimental-draft";
 import { AlignmentSettings } from "./AlignmentSettings";
@@ -960,9 +960,10 @@ function ThemesPanel() {
       dark when it doesn't parse), never the broken ones, which can't be checked. */
   const usableOf = (slot: ThemeBase) => rows().filter((t) => t.base === slot && !t.error);
   const usable = { light: createMemo(() => usableOf("light")), dark: createMemo(() => usableOf("dark")) };
-  const checkedId = (slot: ThemeBase) => (slot === "light" ? lightThemeId() : darkThemeId());
+  const checkedId = (slot: ThemeBase) => checkedThemeId(slot, rows());
   /** Roving tabindex, one per section: the checked row is its group's one tab stop, or the first
-      usable row when the pick isn't in the list (it was just deleted, and the next poll will say so). */
+      usable row when no card is checked (the pick was just deleted, and the next poll will say so;
+      or the built-in is worn while a user file holds its id). */
   const tabStopId = (slot: ThemeBase) => {
     const list = usable[slot]();
     return list.find((t) => t.id === checkedId(slot))?.id ?? list[0]?.id;
@@ -1043,10 +1044,15 @@ function ThemesPanel() {
 
   return (
     <>
-      <p class="settings-intro">Applies as you pick. The choice is remembered in this browser.</p>
+      <p class="settings-intro">
+        A pick in the list that's showing applies at once; the other list's pick shows when its mode does. The choice is remembered in this browser.
+      </p>
       <AppearanceField />
       <Show when={droppedTheme()}>
-        {(d) => <Banner tone="info" title={<><code>{d().id}</code> isn't there anymore, so you're back on {baseWord(d().slot)}.</>} />}
+        {(d) => {
+          const notice = () => droppedNotice(d());
+          return <Banner tone="info" title={<>{notice().lead}<code>{d().id}</code>{notice().tail}</>} />;
+        }}
       </Show>
       <Show when={themes.data()?.error && dir()}>
         {(folder) => (

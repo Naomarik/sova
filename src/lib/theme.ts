@@ -14,7 +14,7 @@
  */
 
 import { createSignal } from "solid-js";
-import type { ThemeList, ThemeTokens } from "../../shared/protocol";
+import type { ThemeInfo, ThemeList, ThemeTokens } from "../../shared/protocol";
 import { BASE_SURFACE, CSS_PROPERTY, DEFAULT_THEME_ID, type ThemeBase } from "../../shared/theme";
 import {
   DEFAULT_TEXT_SIZE,
@@ -69,7 +69,8 @@ const [lightPick, setLightPick] = createSignal<StoredTheme | null>(null);
 const [darkPick, setDarkPick] = createSignal<StoredTheme | null>(null);
 const pickOf = (base: ThemeBase) => (base === "light" ? lightPick() : darkPick());
 
-/** The id each section shows checked: the pick, or its base's built-in when there is none. */
+/** The id each list wears: its pick, or its base's built-in when there is none (`checkedThemeId` is
+    the card it shows checked). */
 export const lightThemeId = (): string => lightPick()?.id ?? "light";
 export const darkThemeId = (): string => darkPick()?.id ?? DEFAULT_THEME_ID;
 
@@ -86,12 +87,41 @@ export const shownBase = (): ThemeBase => {
 /** The id of the theme the window is wearing: the shown base's pick. */
 export const activeThemeId = (): string => (shownBase() === "light" ? lightThemeId() : darkThemeId());
 
-/** A pick we had to take off — the file was deleted, renamed, or broke since the cache was
-    written — and the base whose section went back to its built-in. The copy deck's banner names
-    it in the Themes panel, and a new pick in that section clears it: the notice is about the
-    theme you lost, not the one you have. */
-const [droppedTheme, setDroppedTheme] = createSignal<{ id: string; slot: ThemeBase } | null>(null);
+/** Why a pick came off: its file is gone (deleted or renamed), it broke, or it now stands on the
+    other base. */
+export type DropReason = "gone" | "broken" | "base-changed";
+
+/** A pick we had to take off since the cache was written, the list whose pick went back to its
+    built-in, and why. The copy deck's banner names it in the Themes panel, and a new pick in that
+    list clears it: the notice is about the theme you lost, not the one you have. */
+export interface DroppedTheme {
+  id: string;
+  slot: ThemeBase;
+  reason: DropReason;
+}
+const [droppedTheme, setDroppedTheme] = createSignal<DroppedTheme | null>(null);
 export { droppedTheme };
+
+const BUILTIN_NAME: Record<ThemeBase, string> = { light: "Light", dark: "Dark" };
+
+/** The banner's sentence around the id (shown in mono between `lead` and `tail`): it names the list
+    that fell back, not the window, and why. */
+export function droppedNotice(d: DroppedTheme): { lead: string; tail: string } {
+  const back = `, so your ${d.slot} theme is back on the built-in ${BUILTIN_NAME[d.slot]}.`;
+  if (d.reason === "broken") return { lead: "We couldn't read ", tail: back };
+  if (d.reason === "base-changed") return { lead: "", tail: ` is a ${d.slot === "light" ? "dark" : "light"} theme now${back}` };
+  return { lead: "", tail: ` isn't there anymore${back}` };
+}
+
+/** The card a list shows checked: its pick, or with no pick the base's built-in card, unless a user
+    file has taken the built-in's id (`replacesBuiltin`). That file isn't what the window wears while
+    nothing is picked, so then no card in the list is checked. */
+export function checkedThemeId(slot: ThemeBase, themes: readonly ThemeInfo[]): string | null {
+  const pick = pickOf(slot);
+  if (pick) return pick.id;
+  const builtin = slot === "light" ? "light" : DEFAULT_THEME_ID;
+  return themes.some((t) => t.id === builtin && t.replacesBuiltin) ? null : builtin;
+}
 
 /** Every property a theme can write — what `clearTheme` removes, so no key of the previous
     theme outlives it. `removeProperty` on one that was never set is a no-op. */
@@ -389,7 +419,7 @@ export function reconcileTheme(list: ThemeList): void {
     let next: StoredTheme | null;
     if (!match || match.error || match.base !== slot) {
       next = null;
-      setDroppedTheme({ id: pick.id, slot });
+      setDroppedTheme({ id: pick.id, slot, reason: !match ? "gone" : match.error ? "broken" : "base-changed" });
     } else if (sameTokens(match.tokens, pick.tokens)) {
       continue; // unchanged is the common case, twice a second: don't rewrite 30 properties to say so
     } else {

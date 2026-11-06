@@ -1,10 +1,17 @@
 /* ---- SHELL MODE IN THE MESSAGE BOX (§chat.shell-mode/box). The box's mode in the caution tone:
    its edge, the marker at its left and the foot's chip. Never the tone alone: the marker and the
-   chip's icon and words say it too. The focus ring stays the accent's, as on every control. */
+   chip's icon and words say it too. */
 
 .composer-field[data-shell] > .composer-input,
 .composer-field[data-shell] > .composer-input:hover,
 .composer-field[data-shell] > .composer-input:focus-visible { border-color: var(--status-warn); }
+/* One ring, not two: with focus, the caution edge itself carries it, the focus ring's width drawn
+   in the caution tone right against the edge (no offset), so focus still reads from the edge
+   growing, never from a colour change alone. */
+.composer-field[data-shell] > .composer-input:focus-visible {
+  outline: var(--focus-width) solid var(--status-warn);
+  outline-offset: 0;
+}
 
 /* The marker ("!" or "!!") sits where the text would start, on the first line; the text starts
    after its two-character mono column on every line, so a long command reads as one column. */

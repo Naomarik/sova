@@ -558,6 +558,9 @@ export interface ReadinessDeps {
   /** What a tree's readiness rests on besides the session, read without Git (WorktreeInsights.quietStamp):
       "gone" for a missing folder, null when it can't be read. */
   treeStamp?: (dir: string, together?: Map<string, unknown>) => string | null;
+  /** A served tree's branch at `head` that changes the project's setup without a passing trial of that commit: why it
+      can't land yet (server/merge-queue/setup-branch.ts); null when it isn't a setup branch or its trial passed. */
+  setupUntried?: (dir: string, head: string) => Promise<string | null>;
   /** The Git inputs a tree's readiness reads, as stat stamps (worktrees.ts gitInputsStamp): the
       session feed's readiness watch compares them (checkReadinessInputs). */
   inputsStamp?: (dir: string, baseBranch?: string) => string | null;
@@ -837,10 +840,13 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
         docs = { drafts, preview };
       }
       landing = landingOf(tf, r.state, finished, heldHere, docs, specsWhy);
+      // A setup branch is offered Land only once a trial of its exact head passed (§app.project-setup/land-gate).
+      const untried = tf.head && landingLive(tf, r.state) && deps.setupUntried ? await deps.setupUntried(t.path, tf.head).catch(() => null) : null;
+      if (untried) landing = undefined;
       // Finished but not Ready to land: what the session can fix, for Sova's once-per-commit note.
       if (!landing && finished === "yes" && tf.head) {
-        const blockers = landingBlockers(tf, sf);
-        if (blockers?.length) blocked.push({ path: t.path, branch: tf.branch, commit: tf.head, blockers });
+        const blockers = [...(landingBlockers(tf, sf) ?? []), ...(untried ? [{ kind: "trial" as const, text: "no passing trial of its head", fix: "run a trial of its head (merge.try) and land it once that passes" }] : [])];
+        if (blockers.length) blocked.push({ path: t.path, branch: tf.branch, commit: tf.head, blockers });
       }
       if (writes) {
         if (landing?.state === "ready") deps.readyToLand?.({ path: t.path, branch: tf.branch, commit: landing.commit });
@@ -1278,6 +1284,11 @@ function nudgeSpecs(s: SessionSummary, value: SessionReadiness): void {
 }
 
 /** Read a session's readiness again soon (Sova's try of its drafts has answered). */
+/** Read a session's readiness again now (a fact outside Git moved: a trial of its branch ended). */
+export function rereadReadiness(path: string): void {
+  requeue(path);
+}
+
 function requeue(path: string): void {
   const hit = cache.get(path);
   if (!hit || queued.has(path)) return;

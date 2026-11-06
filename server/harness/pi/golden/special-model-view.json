@@ -1861,7 +1861,7 @@
       },
       "branch": {
        "type": "string",
-       "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)."
+       "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
       },
       "from": {
        "type": "string",
@@ -1927,7 +1927,7 @@
       },
       "commit": {
        "type": "string",
-       "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)."
+       "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
       },
       "plan": {
        "type": "string",
@@ -4253,7 +4253,7 @@
       },
       "branch": {
        "type": "string",
-       "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`)."
+       "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
       },
       "from": {
        "type": "string",
@@ -4319,7 +4319,7 @@
       },
       "commit": {
        "type": "string",
-       "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip)."
+       "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
       },
       "plan": {
        "type": "string",

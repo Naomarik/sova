@@ -48,6 +48,8 @@ export interface PlaybooksDeps {
   userDir?: string;
   /** The remote reading of a cwd (default: server/files.ts's, lexical). */
   remoteOf?: (path: string) => RemoteCwd | null;
+  /** List the Setup chat's own playbook (only its start reads it: it never runs as another chat's turn). */
+  withSetup?: boolean;
 }
 
 /**
@@ -226,6 +228,11 @@ async function projectPlaybooks(
   return { state: { state: "ok" }, entries: entries.sort(byTitle) };
 }
 
+/** Shipped playbooks folded into the Setup chat (server/projects/onboard.ts FOLDED_PLAYBOOKS): kept for their scripts, never listed. */
+export const FOLDED_SETUP_PLAYBOOKS: readonly string[] = ["release-maker", "project-deploy"];
+/** The Setup chat's playbook: listed only for its own start (PlaybooksDeps.withSetup). */
+export const SETUP_PLAYBOOK = "project-setup";
+
 /**
  * The catalog, rescanned, one group after another and each sorted by title (then id): shipped
  * first, minus any the user replaced; then the user's; then the project's. A project playbook never replaces anything: it is
@@ -240,8 +247,9 @@ export async function listPlaybooks(cwd?: string, deps: PlaybooksDeps = {}): Pro
   const shippedIds = new Set(shipped.entries.map((p) => p.id));
   const userIds = new Set(user.entries.map((p) => p.id));
   for (const p of user.entries) if (shippedIds.has(p.id)) p.replacesSova = true;
+  // The setup playbooks folded into the Setup chat are never listed: only the Setup chat runs their parts.
   const playbooks = [
-    ...shipped.entries.filter((p) => !userIds.has(p.id)).sort(byTitle),
+    ...shipped.entries.filter((p) => !userIds.has(p.id) && !FOLDED_SETUP_PLAYBOOKS.includes(p.id) && (deps.withSetup || p.id !== SETUP_PLAYBOOK)).sort(byTitle),
     ...user.entries.sort(byTitle),
     ...project.entries,
   ];

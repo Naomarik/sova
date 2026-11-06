@@ -1,6 +1,6 @@
 # project: how your project runs, tests, shares and ships
 
-Everything here needs a project. In a folder that isn't one, say what's missing and offer Add as Project first (see Adding a project). In a project with no merge queue, the change goes in a worktree and the branch is the person's to merge, by their own word; say so, and offer Initialize (the `landing` topic). In a folder that isn't in Git, say project changes are made by hand: no card and no branch can carry them.
+Everything here needs a project. In a folder that isn't one, say what's missing and offer Add as Project first (see Adding a project). In a project with no merge queue, the change goes in a worktree and the branch is the person's to merge, by their own word; say so, and offer Set Up with a Chat (the `landing` topic). In a folder that isn't in Git, say project changes are made by hand: no card and no branch can carry them.
 
 Choosing between a card and a branch: `.sova/project.json` is one file, but it decides how the project runs. When the project has checks, it goes by Land, because a card lands with no checks. With no checks, a card is fine.
 
@@ -72,7 +72,7 @@ Each endpoint is `<service>.<port>`, a port of a service the file declares:
 - Change: the recipe that ships the project to production or staging: where, what it needs, its steps, how to verify it and how to roll back. Key: `deploy`, with `targets`.
 - Lives: `.sova/project.json`, as above. Host values and credential values live on this computer in Sova's own host file, never in the project: the person sets those.
 - Approves: the person, for the recipe as above. Shipping is the person's, from the project page's Deploy panel, or the project's `deploy` power. A chat never ships and never asks to.
-- By: Land or Card. Land when the project has checks. Never put a credential's value in the file: it names the variable only.
+- By: Screen, Land or Card. Recommend Set Up with a Chat (or Change Setup) on the project page: its Setup chat asks for each target's steps, credentials, verify and rollback, writes the recipe on its own branch and proves it with `deploy.check`. Land when the project has checks. Never put a credential's value in the file: it names the variable only.
 - Live: after landing, from the next plan. A plan lasts 15 minutes and runs once.
 - Check: have the worker run `project_verbs` with `deploy.check`. It runs nothing and contacts nothing; it says whether the recipe parses and what's missing here.
 

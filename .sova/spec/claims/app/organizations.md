@@ -426,7 +426,7 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   conflict is open or a decision is ready to promote). The tab is in the URL:
   `#/projects/<pid>` is Overview, `…/requirements`, `…/branches`, `…/merge-queue` (the project's
   merge queue, or, while the queue doesn't serve the project, its "No merge queue settings are
-  set up" note with Initialize, §app.merge-queue/view,
+  set up" note with Set Up with a Chat, §app.merge-queue/view,
   §app.merge-queue/setup; a run's page is `…/merge-queue/<run>`), `…/releases` (the project's releases, or,
   while they aren't set up, how to set them up, §app.release/tab), `…/cost`, `…/settings` the others
   (`…/overseer` stays the overseer's door). Picking a tab or a chip adds a history entry, so Back

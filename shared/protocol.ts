@@ -970,9 +970,10 @@ export interface ThemeList {
 export const PLAYBOOK_ENTRIES = ["PLAYBOOK.md", "SKILL.md"] as const;
 export type PlaybookEntry = (typeof PLAYBOOK_ENTRIES)[number];
 
-/** What a verb playbook's branch proposes: the project's settings, its deploy section, or its releases (the release
-    section plus the project's release playbook). */
-export const PLAYBOOK_PROPOSES = ["definition", "deploy", "release"] as const;
+/** What a verb playbook's branch proposes: the project's settings, its deploy section, its releases (the release
+    section plus the project's release playbook), or its whole pipeline (the Setup chat: services, merge, release and
+    deploy together, §app.project-setup/chat). */
+export const PLAYBOOK_PROPOSES = ["definition", "deploy", "release", "pipeline"] as const;
 export type PlaybookProposes = (typeof PLAYBOOK_PROPOSES)[number];
 
 /** One entry in the Sova playbook catalog. */
@@ -981,7 +982,7 @@ export interface PlaybookInfo {
   title: string;              // frontmatter title, else name, else the id
   description: string;        // frontmatter description, else ""
   promptHint?: string;        // frontmatter promptHint: what the reader may want to specify for the first turn
-  /** Frontmatter `proposes: definition | deploy | release`: a verb playbook, whose branch the operator merges
+  /** Frontmatter `proposes: definition | deploy | release | pipeline`: a verb playbook, whose branch the operator merges
       (§app.project-runtime/verb-playbooks). Absent (or any other value): not a verb playbook. */
   proposes?: PlaybookProposes;
   source: "sova" | "user" | "project";

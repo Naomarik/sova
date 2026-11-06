@@ -18,6 +18,10 @@ The dialog fetches once each time it opens.
 | **Yours** | `user` | `~/.pi/agent/sova/playbooks/` | Your own. An id that matches a shipped one **replaces** it: the shipped entry is dropped and yours carries `replacesSova: true`. The interface deliberately **does not render** that flag: the row already sits under the Yours heading, so a marker would only repeat it. The field exists in the data, asserted in `server/playbooks.test.ts` |
 | **This project** | `project` | `<project root>/.sova/playbooks/`, then `<project root>/.sova/marketing/playbooks/` | The session's project (§chat.profiles/projects): a worktree or subfolder reads its main checkout's. An id in both folders is listed once, from `.sova/playbooks/`. It never replaces anything. It is always its own group, even when an id matches one above |
 
+Three shipped folders are never listed, in the catalog or anywhere else a playbook is offered:
+`project-setup`, which only the Setup chat's own start sends, and `release-maker` and
+`project-deploy`, its release and deploy halves, which run only inside it (§app/project-setup).
+
 **The grammar is the same in all three folders.** A playbook is a directory `<id>/` whose
 **entry file** is either `PLAYBOOK.md` or `SKILL.md`, plus whatever other files its entry tells
 the agent to read (§chat.playbooks/bundles). One file is the whole entry: Sova's keys go in its

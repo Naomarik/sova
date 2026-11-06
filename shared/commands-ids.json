@@ -230,6 +230,10 @@
     "project.glance",
     "settings.models.check.status",
     "settings.models.check",
+    "project.verb.merge.try",
+    "project.setup.get",
+    "project.setup.open",
+    "project.setup.merge",
     "session.pairs.list",
     "session.pairs.unpair",
     "session.pairs.resume"

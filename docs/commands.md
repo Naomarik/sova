@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 554 |
-| Routes a catalogue entry points at | 171 |
-| Catalogue entries | 232 |
+| Routes registered | 557 |
+| Routes a catalogue entry points at | 174 |
+| Catalogue entries | 236 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -128,6 +128,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.verb.merge.fresh` | Project merge.fresh | changes | `POST /api/project-services/merge.fresh` | admin |
 | `project.verb.merge.clear` | Project merge.clear | changes | `POST /api/project-services/merge.clear` | admin |
 | `project.verb.merge.hold` | Project merge.hold | changes | `POST /api/project-services/merge.hold` | admin |
+| `project.verb.merge.try` | Project merge.try | changes | `POST /api/project-services/merge.try` | admin |
 | `project.verb.release.status` | Project release.status | looks | `POST /api/project-services/release.status` | admin |
 | `project.verb.release.logs` | Project release.logs | looks | `POST /api/project-services/release.logs` | admin |
 | `project.verb.release.request` | Project release.request | changes | `POST /api/project-services/release.request` | admin |
@@ -162,6 +163,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.claude-login.get` | Show Project Claude Login | looks | `GET /api/projects/:pid/claude-login` | sessions |
 | `project.claude-login.set` | Set Project Claude Login | changes | `PUT /api/projects/:pid/claude-login` | admin |
 | `project.coding.start` | New Chat in Project | changes | `POST /api/projects/:pid/overseer/coding` | admin |
+| `project.setup.get` | Show Setup Chat | looks | `GET /api/projects/:pid/setup` | sessions |
+| `project.setup.open` | Set Up with a Chat | changes | `POST /api/projects/:pid/setup` | admin |
+| `project.setup.merge` | Merge Setup Branch | changes | `POST /api/projects/:pid/setup/merge` | admin |
 | `project.icon.get` | Show Project Icon | looks | `GET /api/projects/:pid/icon/info` | sessions |
 | `project.icon.upload` | Upload Project Icon | changes | `PUT /api/projects/:pid/icon` | admin |
 | `project.icon.letters` | Use Project Letters | changes | `PATCH /api/projects/:pid/icon` | admin |
@@ -841,7 +845,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `PUT /api/overseer/todos/order` | admin | `overseer.todo.reorder` |
 | `GET /api/playbooks` | sessions | `playbook.list` |
 | `POST /api/previews/:id/off` | admin | `project.preview.off` |
-| `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.merge.add`, `project.verb.merge.answer`, `project.verb.merge.ask`, `project.verb.merge.cancel`, `project.verb.merge.clear`, `project.verb.merge.extend`, `project.verb.merge.fresh`, `project.verb.merge.hold`, `project.verb.merge.logs`, `project.verb.merge.note`, `project.verb.merge.pause`, `project.verb.merge.reply`, `project.verb.merge.resolve`, `project.verb.merge.resume`, `project.verb.merge.retry`, `project.verb.merge.review`, `project.verb.merge.setup`, `project.verb.merge.status`, `project.verb.release.abandon`, `project.verb.release.continue`, `project.verb.release.logs`, `project.verb.release.note`, `project.verb.release.notes`, `project.verb.release.publish`, `project.verb.release.request`, `project.verb.release.retry`, `project.verb.release.start`, `project.verb.release.status`, `project.verb.release.step`, `project.verb.release.withdraw`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
+| `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.merge.add`, `project.verb.merge.answer`, `project.verb.merge.ask`, `project.verb.merge.cancel`, `project.verb.merge.clear`, `project.verb.merge.extend`, `project.verb.merge.fresh`, `project.verb.merge.hold`, `project.verb.merge.logs`, `project.verb.merge.note`, `project.verb.merge.pause`, `project.verb.merge.reply`, `project.verb.merge.resolve`, `project.verb.merge.resume`, `project.verb.merge.retry`, `project.verb.merge.review`, `project.verb.merge.setup`, `project.verb.merge.status`, `project.verb.merge.try`, `project.verb.release.abandon`, `project.verb.release.continue`, `project.verb.release.logs`, `project.verb.release.note`, `project.verb.release.notes`, `project.verb.release.publish`, `project.verb.release.request`, `project.verb.release.retry`, `project.verb.release.start`, `project.verb.release.status`, `project.verb.release.step`, `project.verb.release.withdraw`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
 | `GET /api/projects` | sessions | `project.list` |
 | `POST /api/projects` | admin | `project.create` |
 | `GET /api/projects/:pid` | sessions | `project.get` |
@@ -880,6 +884,9 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/projects/:pid/settings/cards/:card/withdraw` | admin | `project.settings.propose.withdraw` |
 | `GET /api/projects/:pid/settings/history` | sessions | `project.settings.history` |
 | `POST /api/projects/:pid/settings/undo` | admin | `project.settings.undo` |
+| `GET /api/projects/:pid/setup` | sessions | `project.setup.get` |
+| `POST /api/projects/:pid/setup` | admin | `project.setup.open` |
+| `POST /api/projects/:pid/setup/merge` | admin | `project.setup.merge` |
 | `POST /api/projects/:pid/unarchive` | admin | `project.unarchive` |
 | `GET /api/projects/glance` | sessions | `project.glance` |
 | `POST /api/push/test` | admin | `push.test` |

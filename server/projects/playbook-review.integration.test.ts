@@ -224,8 +224,47 @@ test("a deploy-setup run proposes its deploy recipe: its own hash and its render
   assert.equal(((await stale.json()) as { error: string }).error, "The deploy recipe changed since it was shown: look again.");
   assert.equal((await read()).playbookState, "proposed", "nothing merged");
 
-  const ok = await app.request(`/api/projects/${pid}/runtime/merge`, json("POST", { hash: r.deployHash }));
-  assert.equal(ok.status, 200, await ok.clone().text());
-  const after = await until((x) => x.playbookState === "idle");
-  assert.equal(after.playbook?.result, "merged");
+  // A deploy-only branch is a setup branch: Merge Branch waits for a passing trial of its exact head (al_1).
+  // No queue can say: refused, never merged unchecked.
+  const { setMergeQueuesForTest, TRIAL_UNREADABLE } = await import("../merge-queue/wire");
+  const closed = await app.request(`/api/projects/${pid}/runtime/merge`, json("POST", { hash: r.deployHash }));
+  assert.equal(closed.status, 409);
+  assert.equal(((await closed.json()) as { error: string }).error, TRIAL_UNREADABLE);
+  const { MergeQueues } = await import("../merge-queue/queue");
+  const { standInRun } = await import("../merge-queue/testing/queue-kit");
+  const { definitionAt } = await import("../project-services/deploy-recipe");
+  const { checksOf } = await import("../merge-queue/checks");
+  const stand = standInRun();
+  const queues = new MergeQueues({ base: join(tmp, "merge-queue"), runMerge: stand.run, checksOf, definitionAt: (rt, ref) => definitionAt(rt, ref), notify: () => {}, thread: () => false, publish: () => {}, draftsHash: () => undefined, retryDelayMs: 40, watchMs: 25, conflictWaitMs: 60_000, log: () => {} });
+  setMergeQueuesForTest(queues);
+  try {
+    const shown = git(root, "rev-parse", branch3);
+    const untried = await app.request(`/api/projects/${pid}/runtime/merge`, json("POST", { hash: r.deployHash, commit: shown }));
+    assert.equal(untried.status, 409);
+    assert.match(((await untried.json()) as { error: string }).error, /no passing trial at/);
+    const q = await queues.get(root);
+    await q.trial({ branch: branch3, by: { kind: "operator" } });
+    await q.tryingNow();
+    assert.equal(q.trials()[0]?.verdict, "passed", "a deploy-only proposal with no checks tries as no automated tests");
+    assert.equal(q.trials()[0]?.commit, shown);
+    // A newer commit after the trial (one the recipe's hash doesn't cover): the page still shows the tried one; refused.
+    commit(wt3, { "bin/push": "#!/bin/sh\nexit 1\n" }, "a script the trial never ran");
+    const moved = await app.request(`/api/projects/${pid}/runtime/merge`, json("POST", { hash: r.deployHash, commit: shown }));
+    assert.equal(moved.status, 409);
+    assert.equal(((await moved.json()) as { error: string }).error, "The branch has a newer commit than the one shown: look again.");
+    // Showing the new head isn't enough: its trial is the one that counts.
+    const newer = git(root, "rev-parse", branch3);
+    const untriedNewer = await app.request(`/api/projects/${pid}/runtime/merge`, json("POST", { hash: r.deployHash, commit: newer }));
+    assert.equal(untriedNewer.status, 409);
+    assert.equal((await read()).playbookState, "proposed", "nothing merged");
+    await q.trial({ branch: branch3, by: { kind: "operator" } });
+    await q.tryingNow();
+    const ok = await app.request(`/api/projects/${pid}/runtime/merge`, json("POST", { hash: r.deployHash, commit: newer }));
+    assert.equal(ok.status, 200, await ok.clone().text());
+    const after = await until((x) => x.playbookState === "idle");
+    assert.equal(after.playbook?.result, "merged");
+  } finally {
+    setMergeQueuesForTest(null);
+    await queues.stop();
+  }
 });

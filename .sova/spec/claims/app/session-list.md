@@ -779,7 +779,12 @@ on its row. Neither is a worktree ready to merge or waiting for your OK: that is
 branch status (§app.session-list/content-rules "Row line 3"). The blockers are the attention digest's **act** tier (§app.overseer/attention-digest), read
 from `GET /api/overseer/attention`, the list the Overseer's "{a} need you" counts — less the
 organization sessions (§app.session-list/ordinary-surfaces), which wait in the Organizations
-region's own Needs you (§app.session-list/organizations). **The Overseer's count still includes
+region's own Needs you (§app.session-list/organizations). A registered project's own session (its
+overseer's conversations and its builds, which live in its project's block) joins only for a
+proposal waiting on you, a `playbook-review` item such as its Setup chat's
+(§app.project-runtime/review), with that proposal's button (on a Setup proposal Run Trial, then Land
+or Merge Branch) and Read Report; its other items, a
+failed turn included, stay in its project's block. **The Overseer's count still includes
 them, deliberately**: the Overseer reads the whole digest, like the org and project pages, so its
 "{a} need you" can be higher than this region's count by the org sessions waiting on you. The digest, not the
 session list, is the source: a hosted pending dialog, a worker error and every detail sentence
@@ -854,7 +859,8 @@ thing it waits on being done.
 - **The whole row is one link.** It is stretched over the row, one tab stop, and what it opens is words
   inside it, never a second control. Two things act and are real buttons, each its own tab stop beside
   the link in the row's last line, and pressing one doesn't navigate: **Merge Branch** on a proposed
-  playbook run (`playbook-review`, §app.project-runtime/review), which acts at once and says a refusal's
+  playbook run (`playbook-review`, §app.project-runtime/review; on a Setup proposal, the proposal's own
+  button: Run Trial, then Land or Merge Branch), which acts at once and says a refusal's
   reason, and **Cancel** on a held act (§app.project-overseer/holds).
 - **Not a session row, no put-away.** A row here has none of a session row's marks or gestures: no rail,
   unread dot, time, model, context ring or merge badge, no press-and-hold, lift or drag, and no menu; a
@@ -1852,7 +1858,7 @@ for the same reason: something other than the operator runs them.
 - the **Groups** region and every way into a group (§app.session-list/groups), which add back
   every session a registered project owns (its overseer's conversations and its builds, whoever
   started them): those can be grouped and are drawn in their group, while they stay out of Folders,
-  Needs you, Recent (but for the operator's own builds) and the Archive and keep their place in their project's block;
+  Needs you (but for a Setup proposal waiting on you, §app.session-list/needs-you), Recent (but for the operator's own builds) and the Archive and keep their place in their project's block;
 - the **recent folders** offered for a new session (`GET /api/cwds`, the New Session dialog's Recent
   folders, `sova_list_folders`): never the Overseer's folder
   (`<stateRoot>/overseer/`), never an attached org's workspace dir, and never a folder only an org's

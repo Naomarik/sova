@@ -7,12 +7,14 @@ promptHint: Which targets you ship to and anything Sova can't see: where each li
 
 # Project deploy
 
+This playbook runs only inside the project's Setup chat (`../project-setup/PLAYBOOK.md`), which Set Up with a Chat and Change Setup start: it is the Setup chat's deploy half, its questions, its driver and its references. Sova never starts it on its own.
+
 You write how this project ships: the `deploy` section of `.sova/project.json`, on a branch, from what the operator tells you. A deploy reaches every user and often can't be taken back, so nothing in it is a guess: every target, command, credential, check and rollback you write traces to an answer the operator gave in this session. You read the repository only to offer candidates. You never run a deploy, a plan, a build, a credential check, ssh, or any command that reaches a target. The operator reads each resolved step on Sova's review and merges; you never do.
 
 Paths here are relative to this playbook's folder. `scripts/project-deploy.mjs` does the mechanical reading: run `node scripts/project-deploy.mjs <command> --root <your checkout>` and read its digest. Exit 0 is fine, 1 is something to act on, 2 is "couldn't tell": treat 2 as not fine. Read `references/deploy.md` before you write anything.
 
 ## Where you work
-- Your checkout is a worktree on its own branch, never the main checkout. A run started from the project page already is one. Started anywhere else: check `git worktree list`; in the main checkout, cut a worktree first (the `worktree` tool, `create project-deploy`) and work there.
+- Your checkout is the Setup chat's worktree on its own setup branch, never the main checkout.
 - Read the project at HEAD. The main checkout's uncommitted edits are not the project.
 - The only verbs you call are `project_verbs {verb: "deploy.status"}` and `project_verbs {verb: "deploy.check", ref: "<your branch>"}`: both read. Every other deploy verb is the operator's.
 

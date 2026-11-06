@@ -143,6 +143,30 @@ describe("approval", () => {
     // Many stale drafts committed on the target (a project that tracks .sova/spec/drafts).
     const stale = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`.sova/spec/drafts/old-${i}/spec/claims/a.md`, `stale ${i}\n`]));
 
+    test("the kit's commits start no git background maintenance (its repack under the next reads loses objects)", () => {
+      // `git commit` spawns `git maintenance run --auto --detach` before it exits whenever maintenance.auto is on, so the
+      // commit's trace2 names it every time: no timing involved.
+      const repo = makeRepo();
+      const trace = join(repo.scratch, "trace2.json");
+      const was = process.env.GIT_TRACE2_EVENT;
+      try {
+        process.env.GIT_TRACE2_EVENT = trace;
+        repo.commitOn(repo.root, stale(300), "stale drafts");
+        repo.branch("feat/comment", { "a.txt": "// a comment\n" });
+        const events = readFileSync(trace, "utf8")
+          .split("\n")
+          .filter(Boolean)
+          .map((l) => JSON.parse(l) as { event: string; argv?: string[] });
+        const argv = (kind: string) => events.filter((e) => e.event === kind).map((e) => (e.argv ?? []).join(" "));
+        assert.equal(argv("start").filter((a) => / commit -q\b/.test(a)).length, 2, "both commits were traced");
+        assert.deepEqual([...argv("start"), ...argv("child_start")].filter((a) => /(^|\/)git (maintenance|gc|repack)\b/.test(a)), [], "no background cleanup started");
+      } finally {
+        if (was === undefined) delete process.env.GIT_TRACE2_EVENT;
+        else process.env.GIT_TRACE2_EVENT = was;
+        repo.done();
+      }
+    });
+
     test("a comment-only branch over hundreds of stale tracked drafts names none and lands", async () => {
       const k = makeKit({ deps: { draftsHash: (dir: string) => draftsHash(dir) } });
       try {
@@ -1135,7 +1159,7 @@ describe("setting up the checks", () => {
     }
   });
 
-  test("Try It on Main runs the answer's checks on the target alone, merging nothing, and saves nothing", async () => {
+  test("A dry run (merge.setup dryRun) runs the answer's checks on the target alone, merging nothing, and saves nothing", async () => {
     const k = makeKit({ checks: "unset" });
     try {
       k.repo.commitOn(k.repo.root, { ".sova/project.json": DEF_TEXT }, "definition");
@@ -1164,7 +1188,7 @@ describe("setting up the checks", () => {
     }
   });
 
-  test("Try It on Main never runs beside a landing run in the same copy", async () => {
+  test("A dry run never runs beside a landing run in the same copy", async () => {
     const k = makeKit();
     try {
       k.repo.commitOn(k.repo.root, { ".sova/project.json": DEF_TEXT }, "definition");

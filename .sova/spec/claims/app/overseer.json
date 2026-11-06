@@ -110,15 +110,16 @@
       "server/outreach-health.test.ts",
       "server/tours/sign-in-notice.ts",
       "server/tours/sign-in-notice.test.ts",
-      "server/project-services/release-wire.ts"
+      "server/project-services/release-wire.ts",
+      "server/projects/setup-chat.ts"
     ],
     "requires": [
       "§app.overseer/seen"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-05T07:46Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
     }
   },
   "§app.overseer/auto-resume": {

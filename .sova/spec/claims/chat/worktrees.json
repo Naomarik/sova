@@ -300,7 +300,8 @@
     "requires": [
       "§chat.worktrees/readiness",
       "§app.decisions/attention-signals",
-      "§chat.composer/worktrees-control"
+      "§chat.composer/worktrees-control",
+      "§app.project-setup/land-gate"
     ],
     "agreed": {
       "by": "user",
@@ -333,7 +334,8 @@
     "kind": "behavior",
     "requires": [
       "§chat.worktrees/entry",
-      "§app.merge-queue/approve"
+      "§app.merge-queue/approve",
+      "§app.project-setup/land-gate"
     ],
     "authority": "accepted",
     "evidence": "verified",
@@ -349,12 +351,13 @@
       "pi-config/extensions/worktrees/landing.test.ts",
       "pi-config/extensions/worktrees/README.md",
       "pi-config/extensions/worktrees/served.ts",
-      "pi-config/extensions/worktrees/served.test.ts"
+      "pi-config/extensions/worktrees/served.test.ts",
+      "pi-config/extensions/worktrees/setup-rule.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:30Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-05T06:57Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
     }
   },
   "§chat.worktrees/workers": {

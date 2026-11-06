@@ -193,7 +193,9 @@
       "playbooks/merge-queue/references/names.md",
       "playbooks/merge-queue/scripts/discover-names.mjs",
       "server/merge-queue/discover-names.integration.test.ts",
-      "server/merge-queue/scenarios-thread-review.integration.test.ts"
+      "server/merge-queue/scenarios-thread-review.integration.test.ts",
+      "server/merge-queue/routes.ts",
+      "server/merge-queue/setup-trial.test.ts"
     ]
   },
   "§chat.merge-queue/thread-life": {

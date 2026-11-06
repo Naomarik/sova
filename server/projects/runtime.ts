@@ -12,8 +12,9 @@ import { deployNotes } from "../project-services/deploy";
 import { projectEngine } from "../project-services/routes";
 import { landThroughQueue, mergeCodingWorktree, startOnboardSession, type StartedCoding } from "../project-overseer";
 import { projectRootOf } from "../project-root";
+import { realGit } from "../project-services/engine";
 import { readWorktree } from "../project-worktrees";
-import { onboardStart } from "./onboard";
+import { onboardRunMode, onboardStart } from "./onboard";
 import { branchReview, DEFAULT_PLAYBOOK_LABEL, memoryIn, playbookReviewOf, proposesOf, runLive } from "./playbook-review";
 import { runtimeFeed, type FeedRow } from "./runtime-feed";
 import { engineOf, engineOrThrow, listProjects, operatorEnvelopeOf, projectArchived, readProject, runtimeSid } from "./spaces";
@@ -59,7 +60,7 @@ export function observedPayload(f: RuntimeFacts): Record<string, unknown> {
 }
 
 export function branchPayload(b: BranchFacts): Record<string, unknown> {
-  return { ref: b.ref, commit: b.commit, def: b.def, proof: proofFact(b.proof), deploy: b.deploy, release: b.release };
+  return { ref: b.ref, commit: b.commit, def: b.def, proof: proofFact(b.proof), deploy: b.deploy, release: b.release, pipeline: b.pipeline ?? null };
 }
 
 /** The payload last sent per project (only a change is sent). */
@@ -194,12 +195,28 @@ onOrgChange((engine, change) => {
     } else if (sid.startsWith("runtime/") || sid.startsWith("build/")) {
       const pid = str(host.data(sid)?.projectId);
       if (!pid) continue;
-      if (sid.startsWith("build/") && obj(host.data(runtimeSid(pid))?.playbook).sid !== sid) continue;
+      // Any other build may be the Setup chat's: its proposal (Needs you, the banner) is read again soon.
+      if (sid.startsWith("build/") && obj(host.data(runtimeSid(pid))?.playbook).sid !== sid) {
+        setupSoon(pid);
+        continue;
+      }
       projects.add(pid);
     }
   }
   for (const pid of projects) observeSoon(pid);
 });
+
+const setupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+/** Read the project's Setup proposal again soon (several moves in a row read once). */
+function setupSoon(projectId: string): void {
+  if (setupTimers.has(projectId)) return;
+  const t = setTimeout(() => {
+    setupTimers.delete(projectId);
+    void import("./setup-chat").then((m) => m.refreshSetupReview(projectId)).catch(() => undefined);
+  }, SETTLE_MS);
+  t.unref?.();
+  setupTimers.set(projectId, t);
+}
 
 let tick: ReturnType<typeof setInterval> | null = null;
 /** Every 5 minutes, every project's facts again (main's HEAD may have moved), and onMerge's HEAD check (§app.project-services/on-merge). */
@@ -207,7 +224,10 @@ export function startRuntimeTick(): void {
   if (tick) return;
   startOnMergeTick();
   tick = setInterval(() => {
-    for (const p of listProjects()) void observe(p.id);
+    for (const p of listProjects()) {
+      void observe(p.id);
+      setupSoon(p.id);
+    }
   }, OBSERVE_EVERY_MS);
   tick.unref?.();
 }
@@ -284,7 +304,7 @@ function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlay
   const path = buildSessionPath(str(pb.sessionId));
   // A deploy-setup run proposes its deploy recipe, a release-setup run its release setup, each with a hash of its own.
   const proposes = proposesOf(pb.proposes);
-  const deploy = proposes === "deploy" ? obj(bf.deploy) : proposes === "release" ? obj(bf.release) : null;
+  const deploy = proposes === "deploy" ? obj(bf.deploy) : proposes === "release" ? obj(bf.release) : proposes === "pipeline" ? obj(bf.pipeline) : null;
   const build = obj(host.data(str(pb.sid)));
   return {
     sessionId: str(pb.sessionId),
@@ -317,7 +337,7 @@ async function withRun(pb: RuntimePlaybook | null, state: string, root: string):
   const live = await runLive(pb.path);
   const review =
     state === "proposed" && pb.branch
-      ? await branchReview(root, pb.branch, pb.branchProof ?? null, pb.proposes === "deploy", undefined, pb.proposes === "release").catch(() => undefined)
+      ? await branchReview(root, pb.branch, pb.branchProof ?? null, pb.proposes === "deploy", undefined, pb.proposes === "release", pb.proposes === "pipeline").catch(() => undefined)
       : undefined;
   return { ...pb, ...(live ? { live } : {}), ...(review ? { review } : {}) };
 }
@@ -417,6 +437,8 @@ export const NO_RUN_PROPOSED = "No playbook run is proposed.";
 const CHANGED_SINCE = "The definition changed since it was shown: look again.";
 const DEPLOY_CHANGED_SINCE = "The deploy recipe changed since it was shown: look again.";
 const RELEASE_CHANGED_SINCE = "The release setup changed since it was shown: look again.";
+const PIPELINE_CHANGED_SINCE = "The proposed setup changed since it was shown: look again.";
+const BRANCH_MOVED = "The branch has a newer commit than the one shown: look again.";
 
 /** What Merge Branch answers: the registry, read again; on a refused merge, `refused` says why. */
 export interface MergeRunOutcome {
@@ -434,9 +456,17 @@ export interface MergeRunOutcome {
 export async function mergeRun(projectId: string, hash: string, commit?: string): Promise<MergeRunOutcome> {
   await readRuntime(projectId);
   const review = playbookReviewOf(projectId);
-  if (!review) throw new RuntimeRefusal(NO_RUN_PROPOSED, 409);
+  // The Setup chat's proposal merges only through its own route (the user's click): never here.
+  if (!review || review.setup) throw new RuntimeRefusal(NO_RUN_PROPOSED, 409);
   // Never main's hash by mistake: only the one the branch proposes now.
-  if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(review.proposes === "deploy" ? DEPLOY_CHANGED_SINCE : review.proposes === "release" ? RELEASE_CHANGED_SINCE : CHANGED_SINCE, 409);
+  if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(review.proposes === "deploy" ? DEPLOY_CHANGED_SINCE : review.proposes === "release" ? RELEASE_CHANGED_SINCE : review.proposes === "pipeline" ? PIPELINE_CHANGED_SINCE : CHANGED_SINCE, 409);
+  // A setup branch merges (or lands) only once a trial of its exact head passed (§app.project-setup/land-gate): the
+  // head the merge takes now, which must be the one shown.
+  const root = readProject(projectId).root;
+  const head = (await realGit(["rev-parse", "--verify", "--quiet", `refs/heads/${review.branch}^{commit}`], root)).stdout.trim();
+  if (head && (commit ?? review.commit) && head !== (commit ?? review.commit)) throw new RuntimeRefusal(BRANCH_MOVED, 409);
+  const untried = await (await import("../merge-queue/wire")).setupUntriedAt(root, head);
+  if (untried) throw new RuntimeRefusal(untried, 409);
   try {
     // Once the project's merge queue is set up, Merge Branch is Land: approved at the branch head in the queue.
     // It pins the tip the proposal was read at (the screen's, else the review's), never a later one.
@@ -472,6 +502,9 @@ export interface OnboardInput {
   thinking?: string;
   /** A verb playbook's id (default project-verbs). */
   playbook?: string;
+  /** The host's context after the playbook's turn (the Setup chat's, server/projects/setup-chat.ts). */
+  context?: string;
+  title?: string;
 }
 
 /**
@@ -481,7 +514,9 @@ export interface OnboardInput {
  */
 export async function startOnboard(projectId: string, input: OnboardInput, envelope?: Envelope): Promise<StartedCoding> {
   const { start, extra } = await onboardStamp(projectId, input);
-  return startOnboardSession(projectId, { prompt: start.prompt, title: start.title, model: start.model, thinking: start.thinking, envelope: envelope ?? operatorEnvelopeOf(projectId), extra });
+  // The Setup chat runs normal + align only, never the host's other minor modes (spec would set it to spec the project).
+  const mode = onboardRunMode(start.playbookId);
+  return startOnboardSession(projectId, { prompt: start.prompt, title: start.title, model: start.model, thinking: start.thinking, envelope: envelope ?? operatorEnvelopeOf(projectId), extra, ...(mode ? { mode } : {}) });
 }
 
 /** The registered project whose root holds `path` (the global Overseer names a project by a path in it), or a 404. */
@@ -513,7 +548,7 @@ export function softwareLines(v: ProjectRuntimeView): string[] {
   if (v.proof) out.push(`Proven: ${v.proof.pass ? "passed" : "failed"} at ${h(v.proof.hash)} (suite v${v.proof.suite}), ${v.proof.at}.`);
   if (v.playbook)
     out.push(
-      `${v.playbook.label} playbook: ${v.playbookState === "idle" ? `last run ${v.playbook.result ?? "ended"}` : v.playbookState === "proposed" ? `proposes ${v.playbook.proposes === "deploy" ? "a deploy recipe" : v.playbook.proposes === "release" ? "a release setup" : "a definition"} on ${v.playbook.branch ?? "its branch"} (the operator merges it)` : v.playbookState === "waiting" ? "waits on the operator's answers to its open questions" : "running"} (session ${v.playbook.sessionId}, started by ${v.playbook.startedBy}).`,
+      `${v.playbook.label} playbook: ${v.playbookState === "idle" ? `last run ${v.playbook.result ?? "ended"}` : v.playbookState === "proposed" ? `proposes ${v.playbook.proposes === "deploy" ? "a deploy recipe" : v.playbook.proposes === "release" ? "a release setup" : v.playbook.proposes === "pipeline" ? "the project's setup" : "a definition"} on ${v.playbook.branch ?? "its branch"} (the operator merges it)` : v.playbookState === "waiting" ? "waits on the operator's answers to its open questions" : "running"} (session ${v.playbook.sessionId}, started by ${v.playbook.startedBy}).`,
     );
   if (["unregistered", "stale", "failed"].includes(v.standing) && v.playbookState === "idle") out.push("At L3 you may start the playbook once: sova_project_verbs onboard {why}. Never merge.");
   return out;
@@ -534,6 +569,8 @@ export function resetRuntimeForTest(): void {
   sent.clear();
   for (const t of timers.values()) clearTimeout(t);
   timers.clear();
+  for (const t of setupTimers.values()) clearTimeout(t);
+  setupTimers.clear();
 }
 
 /**

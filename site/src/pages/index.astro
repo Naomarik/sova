@@ -387,7 +387,7 @@ const beyond = [
           <div class="arch-link"><span>one socket per chat</span></div>
           <div class="arch-node">
             <h3><Icon name="worker" size={18} />Chat processes</h3>
-            <p>One per chat, on Bun, running pi through its SDK.</p>
+            <p>One per chat, on Bun, running pi through its SDK. Restarting Sova stops none of them, and each moves to new code between replies.</p>
             <ul class="arch-list"><li>each chat and worker</li><li>the Overseer</li><li>pi extensions</li></ul>
           </div>
           <div class="arch-link arch-link-down"><span>reads and writes</span></div>
@@ -398,7 +398,6 @@ const beyond = [
           </div>
           <div class="arch-provider"><Icon name="external" size={16} /><span>Model requests go from each chat's process to your configured provider. Tools and extensions may use the network too.</span></div>
         </div>
-        <p class="arch-note">Restarting the server stops no chat: workers and replies in flight keep going, and your browser reconnects. A chat moves to new code at its next quiet moment. A chat's process closes after 30 idle minutes and starts again when you need it.</p>
 
         <!-- WHAT IT TOUCHES -->
         <div class="split touches-block" id="touches">

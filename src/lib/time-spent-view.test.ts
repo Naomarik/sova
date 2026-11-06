@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TimeSpentAlignment, TimeSpentRecord } from "../../shared/time-spent";
+import { parseOpen } from "./time-spent-section";
 import { alignmentWords, formatSpent, type SpentLive, spentView, wholeSeconds } from "./time-spent-view";
 
 const record = (over: Partial<TimeSpentRecord> = {}): TimeSpentRecord => ({ you: 0, rows: {}, agent: 0, agentRunning: null, alignments: [], older: false, ...over });
@@ -72,4 +73,11 @@ test("Agent takes in a running turn, and a finished one stops growing", () => {
 test("an alignment line leaves out first shown to decided when it has none", () => {
   assert.equal(alignmentWords(252, 130, null), "4m 12s on screen · 2m 10s to read");
   assert.equal(alignmentWords(252, 130, 3700), "4m 12s on screen · 2m 10s to read · 1h 01m 40s from first shown to decided");
+});
+
+test("the section is closed until this browser opens it: nothing stored, or anything odd, is closed", () => {
+  assert.equal(parseOpen(null), false);
+  assert.equal(parseOpen("false"), false);
+  assert.equal(parseOpen("garbage"), false);
+  assert.equal(parseOpen("true"), true);
 });

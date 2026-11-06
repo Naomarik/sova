@@ -1,9 +1,11 @@
 // Time Spent on the session pane's Session tab in a real Chrome (§app.subagents-pane/time-spent): the
 // app's own build, every request answered here. The section sits right under Path and above Repository,
 // with no Context section left; a 403 or 404 reads Not Recording and a brief failure doesn't; the rows
-// add up to You and an empty row is hidden; closing it is remembered for all sessions; it holds a
-// placeholder, never a zero, before the first read; the tick is no live region; and at 375px nothing
-// scrolls sideways and each expander is a 44px target. Chrome or Chromium must be installed.
+// add up to You and an empty row is hidden; a fresh browser shows it closed, with no placeholder and no
+// read, and opening or closing it is remembered for all sessions; open, it holds a placeholder, never a
+// zero, before the first read; the tick is no live region; and at 375px nothing scrolls sideways and each
+// expander is a 44px target. Every test but the closed ones opens it first, through the heading, and
+// asserts it did. Chrome or Chromium must be installed.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -58,8 +60,23 @@ const CONTENT: Record<string, string> = { ".html": "text/html", ".js": "text/jav
 type Read = (route: Route) => Promise<void> | void;
 const json = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
 
-/** The chat open at `width`, its pane on the Session tab; `read` answers the record's route. */
-async function open(width: number, read: Read, path = PATH): Promise<Page> {
+/** A press of the heading, and the section says it took. */
+async function pressHeading(page: Page, expanded: "true" | "false") {
+  const toggle = page.getByRole("button", { name: "Time Spent" });
+  await toggle.click();
+  assert.equal(await toggle.getAttribute("aria-expanded"), expanded);
+}
+/** The Session tab of the session the page shows, once the pane is up. */
+async function showSessionTab(page: Page) {
+  await page.locator('.entry[data-entry="u0"]').waitFor({ timeout: 20_000 });
+  await page.locator(".session-details-open").first().click();
+  await page.locator("#session-tab-session").click();
+  await page.locator(".time-spent").waitFor({ timeout: 20_000 });
+}
+
+/** The chat open at `width`, its pane on the Session tab, in a fresh browser; `read` answers the record's
+    route. The section starts closed, so it is opened here unless the test is about the closed one. */
+async function open(width: number, read: Read, opts: { closed?: boolean } = {}): Promise<Page> {
   const phone = width < 768;
   const ctx = await browser.newContext({ viewport: { width, height: phone ? 844 : 960 }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce" });
   const page = await ctx.newPage();
@@ -90,11 +107,9 @@ async function open(width: number, read: Read, path = PATH): Promise<Page> {
     }
     return route.fulfill({ status: 200, contentType: "text/html", body: readFileSync(join(dist, "index.html")) });
   });
-  await page.goto(`${ORIGIN}/#/s/${encodeURIComponent(path)}`);
-  await page.locator('.entry[data-entry="u0"]').waitFor({ timeout: 20_000 });
-  await page.locator(".session-details-open").first().click();
-  await page.locator("#session-tab-session").click();
-  await page.locator(".time-spent").waitFor({ timeout: 20_000 });
+  await page.goto(`${ORIGIN}/#/s/${encodeURIComponent(PATH)}`);
+  await showSessionTab(page);
+  if (!opts.closed) await pressHeading(page, "true");
   return page;
 }
 const word = (page: Page) => page.locator("[data-time-word]");
@@ -229,23 +244,78 @@ test("the rows add up to You, an empty row doesn't show, and Reading opens to it
   }
 });
 
-test("closing leaves the heading, is remembered for this browser, and holds for another session", async () => {
+test("a fresh browser shows only the heading: closed, with no figures, no placeholder and no read", async () => {
+  let reads = 0;
+  const page = await open(1440, (r) => {
+    reads++;
+    return r.fulfill(json(RECORD));
+  }, { closed: true });
+  try {
+    const toggle = page.getByRole("button", { name: "Time Spent" });
+    assert.equal(await toggle.getAttribute("aria-expanded"), "false", "closed with nothing remembered");
+    assert.equal(await page.evaluate(() => localStorage.getItem("sova:time-spent-open")), null, "nothing remembered: the state is the default's");
+    assert.equal(await page.locator(".time-spent .skeleton").count(), 0, "no placeholder while closed");
+    assert.equal(await page.locator("[data-time-you], [data-time-word], [data-time-row]").count(), 0);
+    assert.equal(await page.locator(".time-spent").innerText().then((t) => t.trim().toLowerCase()), "time spent", "only the heading");
+    assert.equal(await toggle.locator(".icon").evaluate((el) => getComputedStyle(el).transform), "none", "the chevron says closed");
+    assert.equal(reads, 0, "nothing read for a section nobody opened");
+    // The same page opens it: the closed state above wasn't a section that couldn't draw.
+    await pressHeading(page, "true");
+    await word(page).waitFor();
+    assert.ok((await page.locator("[data-time-you]").count()) === 1);
+  } finally {
+    await page.context().close();
+  }
+});
+
+test("closing while the first read is out takes the placeholder with it", async () => {
+  let answer!: () => void;
+  const answered = new Promise<void>((resolve) => (answer = resolve));
+  const page = await open(1440, async (r) => {
+    await answered;
+    await r.fulfill(json(RECORD)).catch(() => {});
+  });
+  try {
+    assert.ok((await page.locator(".time-spent .skeleton").count()) > 0, "open: the placeholder");
+    await pressHeading(page, "false");
+    assert.equal(await page.locator(".time-spent .skeleton").count(), 0, "closed: none");
+  } finally {
+    answer();
+    await page.context().close();
+  }
+});
+
+/** A reload onto another session, its pane open on the Session tab. */
+async function otherSessionAfterReload(page: Page) {
+  await page.goto(`${ORIGIN}/#/s/${encodeURIComponent(OTHER)}`);
+  await page.reload();
+  await showSessionTab(page);
+}
+
+test("opening is remembered for this browser, in another session and after a reload", async () => {
   const page = await open(1440, (r) => r.fulfill(json(RECORD)));
   try {
     await word(page).waitFor();
-    const toggle = page.getByRole("button", { name: "Time Spent" });
-    assert.equal(await toggle.getAttribute("aria-expanded"), "true", "starts open");
-    await toggle.click();
-    assert.equal(await toggle.getAttribute("aria-expanded"), "false");
+    await otherSessionAfterReload(page);
+    assert.equal(await page.getByRole("button", { name: "Time Spent" }).getAttribute("aria-expanded"), "true");
+    await word(page).waitFor();
+  } finally {
+    await page.context().close();
+  }
+});
+
+test("closing leaves the heading, and is remembered for this browser, in another session and after a reload", async () => {
+  const page = await open(1440, (r) => r.fulfill(json(RECORD)));
+  try {
+    await word(page).waitFor();
+    await pressHeading(page, "false");
+    assert.equal(await page.locator("[data-time-you]").count(), 0);
+    assert.equal(await page.getByRole("button", { name: "Time Spent" }).count(), 1, "the heading stays");
     // The chevron says closed, once its short turn has run.
+    const toggle = page.getByRole("button", { name: "Time Spent" });
     await toggle.locator(".icon").evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
     assert.equal(await toggle.locator(".icon").evaluate((el) => getComputedStyle(el).transform), "none", "the chevron says closed");
-    assert.equal(await page.locator("[data-time-you]").count(), 0);
-    await page.goto(`${ORIGIN}/#/s/${encodeURIComponent(OTHER)}`);
-    await page.reload();
-    await page.locator('.entry[data-entry="u0"]').waitFor({ timeout: 20_000 });
-    await page.locator(".session-details-open").first().click();
-    await page.locator("#session-tab-session").click();
+    await otherSessionAfterReload(page);
     assert.equal(await page.getByRole("button", { name: "Time Spent" }).getAttribute("aria-expanded"), "false", "another session, after a reload");
     assert.equal(await page.locator("[data-time-you]").count(), 0);
   } finally {

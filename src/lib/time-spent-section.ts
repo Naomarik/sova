@@ -10,14 +10,14 @@ export const TIME_SPENT_READ_MS = 15_000;
 
 export const TIME_SPENT_OPEN_KEY = "sova:time-spent-open";
 
-/** Open unless this browser closed it. Only an explicit "false" is closed. */
-export const parseOpen = (stored: string | null): boolean => stored !== "false";
+/** Closed until this browser opens it. Only an explicit "true" is open. */
+export const parseOpen = (stored: string | null): boolean => stored === "true";
 
 function storedOpen(): boolean {
   try {
     return parseOpen(readKey(localStorage, TIME_SPENT_OPEN_KEY));
   } catch {
-    return true; // no storage at all: it starts open, and the signal holds the choice for the page
+    return false; // no storage at all: it starts closed, and the signal holds the choice for the page
   }
 }
 

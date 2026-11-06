@@ -6,7 +6,7 @@
 // saved after the reply), so every device, a reconnect and a server restart show it. A chat that closes
 // stops its run and saves it as stopped by the close. Harness-neutral: the harness runs it (HarnessShell).
 import { randomUUID } from "node:crypto";
-import type { EntryId, HarnessSession, HEntry, ShellResult } from "../shared/harness";
+import type { EntryId, HarnessShell, HEntry, ShellResult } from "../shared/harness";
 import { SHELL_LIVE_MAX, type ChatServerMessage, type ShellOutcome, type ShellRefusal, type ShellRun, type TranscriptItem } from "../shared/protocol";
 import { killGuardRefusal } from "./shell-guard";
 
@@ -23,8 +23,15 @@ export interface ShellClient {
   send(msg: ChatServerMessage): void;
 }
 
+/** What the shell needs of the chat's agent: its shell, whether it replies, and stopping that reply. */
+export interface ShellAgent {
+  readonly shell: HarnessShell;
+  isRunning(): boolean;
+  abort(): Promise<void>;
+}
+
 export interface ChatShellDeps {
-  harness(): HarnessSession;
+  harness(): ShellAgent;
   broadcast(msg: ChatServerMessage): void;
   /** Sova's refusal before anything runs (no shell mode in this chat, a terminal owns it, a foreign
       writer, closing), or null. */

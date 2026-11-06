@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 554 |
-| Routes a catalogue entry points at | 171 |
-| Catalogue entries | 233 |
+| Routes registered | 556 |
+| Routes a catalogue entry points at | 173 |
+| Catalogue entries | 235 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -209,6 +209,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `overseer.notes.set` | Set Standing Notes | changes | `PUT /api/overseer/notes` | admin |
 | `overseer.get` | Show Overseer | looks | `GET /api/overseer` | sessions |
 | `overseer.memory.get` | Show Overseer Memory | looks | `GET /api/overseer/memory` | sessions |
+| `attention.dismiss` | Dismiss from Needs You | changes | `POST /api/attention/dismiss` | full |
+| `attention.undismiss` | Undo Dismiss from Needs You | changes | `DELETE /api/attention/dismiss` | full |
 | `models.list` | List Models | looks | `GET /api/models` | sessions |
 | `extensions.list` | List Extensions | looks | `GET /api/extensions` | sessions |
 | `targets.list` | List Remote Targets | looks | `GET /api/targets` | sessions |
@@ -782,6 +784,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 
 | Route | Mesh need | Entries |
 | --- | --- | --- |
+| `DELETE /api/attention/dismiss` | full | `attention.undismiss` |
+| `POST /api/attention/dismiss` | full | `attention.dismiss` |
 | `GET /api/audit` | full | `audit.list` |
 | `POST /api/chat/action` | sessions | `chat.compact`, `chat.queue.remove`, `chat.regenerate`, `chat.reload-code`, `chat.rewind`, `chat.stop` |
 | `GET /api/cwds` | sessions | `cwds.list` |

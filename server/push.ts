@@ -47,6 +47,8 @@ export interface PushDecisionInput {
   lastSentAt: number;
   quiet: boolean;
   viewing: (id: string) => boolean;
+  /** Keys that count as told whatever `announced` says: an Undo's row, back as if it never left (§app.notifications/delivery). */
+  told?: readonly string[];
 }
 
 /**
@@ -60,7 +62,7 @@ export function pushDecision(input: PushDecisionInput): { announced: Set<string>
   const keys = input.current.map(blockerKey);
   if (input.announced === null) return { announced: new Set(keys), send: [] };
   const current = new Set(keys);
-  const announced = new Set([...input.announced].filter((k) => current.has(k)));
+  const announced = new Set([...input.announced, ...(input.told ?? [])].filter((k) => current.has(k)));
   const fresh = input.current.filter((b) => !announced.has(blockerKey(b)));
   const s = input.settings;
   const off = !s.enabled || !s.contact || input.devices === 0 || input.quiet;
@@ -139,7 +141,7 @@ export function pushWanted(): boolean {
  * One tick's notifications. `act` is the digest's act tier; `count` the sessions that need you now
  * (the app badge). Never throws: a failure is logged and the next tick goes on.
  */
-export async function notifyBlockers(act: Blocker[], count: number, now = Date.now()): Promise<void> {
+export async function notifyBlockers(act: Blocker[], count: number, now = Date.now(), told: readonly string[] = []): Promise<void> {
   try {
     const settings = readPushSettings();
     const devices = readDevices();
@@ -152,6 +154,7 @@ export async function notifyBlockers(act: Blocker[], count: number, now = Date.n
       lastSentAt,
       quiet: inQuietHours(settings.quietHours, new Date(now)),
       viewing: isViewing,
+      told,
     });
     announced = d.announced;
     if (!d.send.length || !settings.contact) return;

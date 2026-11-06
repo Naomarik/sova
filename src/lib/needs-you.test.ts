@@ -1,8 +1,8 @@
 // Run: npx tsx --test src/lib/needs-you.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AttentionItem, SessionSummary } from "../../shared/protocol";
-import { isReleaseItem, needsYouCut, needsYouItems, needsYouOpen, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "./needs-you";
+import type { AttentionDigest, AttentionItem, SessionSummary } from "../../shared/protocol";
+import { isReleaseItem, needsYouCut, needsYouItems, needsYouOpen, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen, withPressedDismissals } from "./needs-you";
 
 const session = (id: string): SessionSummary =>
   ({
@@ -189,4 +189,16 @@ test("a project's own Setup chat joins only for its proposal: its other items st
   assert.deepEqual(rows[0]!.playbook, playbook);
   assert.deepEqual(rows[0]!.details, ["Project setup: merge sova/setup-1 into main"], "the failed turn stays with its project");
   assert.equal(rows[0]!.kind, "playbook-review");
+});
+
+test("a press hides a chat's listed items ahead of the server; a newer item, or no press, shows them; project items never go", () => {
+  const d: AttentionDigest = { ...digest([item("a", "act", "error", 10, "boom"), item("b", "act", "error", 20, "boom"), { ...item("p", "act", "deploy-failed", 5, "x"), path: "" }, { ...item("a", "decide", "finished", 11, "done") }]) };
+  assert.equal(withPressedDismissals(d, new Map()), d, "no press: the same digest");
+  const hidden = withPressedDismissals(d, new Map([["/s/a.jsonl", 10]]))!;
+  assert.deepEqual(hidden.items.map((i) => `${i.id}:${i.kind}`), ["b:error", "p:deploy-failed", "a:finished"]);
+  assert.deepEqual(hidden.dismissed, { "/s/a.jsonl": 10 });
+  assert.deepEqual(needsYouRows(hidden, ["a", "b"].map(session)).map((r) => r.session.id), ["b"]);
+  const newer = withPressedDismissals(d, new Map([["/s/a.jsonl", 9]]))!;
+  assert.ok(newer.items.some((i) => i.id === "a" && i.kind === "error"), "newer than the press: it stays");
+  assert.equal(newer.dismissed?.["/s/a.jsonl"], undefined);
 });

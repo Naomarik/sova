@@ -521,6 +521,16 @@ const FIXTURES: Record<string, Fixture> = {
     status: 200,
     oracle: async (_b, v) => assert.notEqual((await read("GET", `/api/sessions/summary?id=${pathToId(v.session)}`)).archived, true),
   },
+  "attention.dismiss": {
+    values: () => ({ session: session()[0], since: 1 }),
+    status: 200,
+    oracle: async (b) => assert.equal((b as { since: number }).since, 1),
+  },
+  "attention.undismiss": {
+    values: () => { const s = session(); mkdirSync(join(agentDir, "sova"), { recursive: true }); writeFileSync(join(agentDir, "sova", "needs-you-dismissed.json"), JSON.stringify({ [s[0]]: { since: 1, at: 1 } })); return { session: s[0] }; },
+    status: 200,
+    oracle: async (b) => assert.equal((b as { undone: boolean }).undone, true),
+  },
   "overseer.todo.add": {
     values: () => ({ text: "Fuzz to-do" }),
     status: 201,

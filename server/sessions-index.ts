@@ -28,10 +28,10 @@ import { type AlignScan, readAlignScan } from "./align-state";
 import { type WorkerParents, WorkerSessions } from "./worker-sessions";
 import { isOverseerId, overseerDir, readOverseerState } from "./overseer-store";
 import { readDecisionSettings } from "./decide-settings";
-import { readSignals, type SignalsFile, signalsOverlay, withoutRestartAsk } from "./signals-store";
+import { noteAskSettled, readSignals, type SignalsFile, signalsOverlay, withoutRestartAsk } from "./signals-store";
 import { withOpenOffer } from "./session-offers";
 import { dropSessionTags, tagsFor, tagsReader } from "./session-tags";
-import { branchesOverlay, pruneReadiness, readinessOverlay } from "./merge-readiness";
+import { askTreesOf, branchesOverlay, pruneReadiness, readinessOverlay } from "./merge-readiness";
 import { listGeneration } from "./list-generation";
 import { projectOf, projectOverseerOfPath, readPoState } from "./project-overseer-store";
 import { memoSovaChatNames, readSovaChatNames, setSovaChatName, type SovaChatName } from "./sova-chat-names";
@@ -1506,6 +1506,8 @@ async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<st
     // The branches its chat's status row counts, each queue entry as the queue has it now (no Git here either).
     const branches = branchesOverlay(row);
     const withMerge = readiness || branches ? { ...row, ...(readiness ? { readiness } : {}), ...(branches ? { branches } : {}) } : row;
+    // A go-ahead ask whose version is queued or landed is noted when first seen, and the note decides from then on.
+    stores.signals = noteAskSettled(withMerge, askTreesOf(withMerge), stores.signals);
     out.push(redactPreviewLinksDeep(withoutRestartAsk(withMerge, stores.signals), previewLabels));
   }
   pruneReadiness(out);
@@ -1592,7 +1594,8 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
   };
   const readiness = readinessOverlay(row);
   const branches = branchesOverlay(row);
-  return withUnreadReplies(redactPreviewLinksDeep(withoutRestartAsk(readiness || branches ? { ...row, ...(readiness ? { readiness } : {}), ...(branches ? { branches } : {}) } : row)));
+  const withMerge = readiness || branches ? { ...row, ...(readiness ? { readiness } : {}), ...(branches ? { branches } : {}) } : row;
+  return withUnreadReplies(redactPreviewLinksDeep(withoutRestartAsk(withMerge, noteAskSettled(withMerge, askTreesOf(withMerge)))));
 }
 
 const archivedListeners = new Set<(sessionId: string) => void>();

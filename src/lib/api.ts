@@ -466,6 +466,9 @@ export const clearDoneOverseerTodos = () => request<OverseerTodosInfo>("/api/ove
 
 /** The attention digest: what needs the user, what finished, what is running (≤30 items, tier first). */
 export const getAttention = () => request<AttentionDigest>("/api/overseer/attention");
+/** Dismiss a chat's Needs you row, covering what waits up to `since` (§app.session-list/needs-you-dismiss). */
+export const dismissNeedsYou = (path: string, since: number) => request<{ path: string; since: number }>("/api/attention/dismiss", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, since }) });
+export const undoDismissNeedsYou = (path: string) => request<{ path: string; undone: boolean }>(`/api/attention/dismiss?path=${encodeURIComponent(path)}`, { method: "DELETE" });
 
 /** Settings → Overseer. */
 export const getOverseerSettings = () => request<OverseerSettingsInfo>("/api/settings/overseer");

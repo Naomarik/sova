@@ -233,7 +233,9 @@
     "project.verb.merge.try",
     "project.setup.get",
     "project.setup.open",
-    "project.setup.merge"
+    "project.setup.merge",
+    "attention.dismiss",
+    "attention.undismiss"
   ],
   "retired": [
     "settings.agents.get",

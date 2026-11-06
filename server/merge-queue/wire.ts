@@ -154,6 +154,8 @@ export async function branchQueueFields(path: string, branch: string): Promise<{
 interface KeptView {
   at: string;
   byBranch: Map<string, SessionBranchQueue>;
+  /** When each branch's newest entry was approved (ms epoch): never on the wire. */
+  began: Map<string, number>;
   project: BranchProject;
   digest: string;
   /** What a change no `save()` tells of would move (checkQueueViews): the target and the sent-back branches. */
@@ -210,16 +212,22 @@ export function noteQueueView(view: Pick<MergeQueueView, "root" | "at" | "projec
   const prev = latestViews.get(key);
   if (prev && prev.at > view.at) return;
   const branches = new Set([...view.checking, ...view.waiting, ...view.needsYou, ...view.needsFix, ...(view.waitingOnHost ?? []), ...view.recent.map((r) => r.entry)].map((e) => e.branch));
+  const entries = [...view.checking, ...view.waiting, ...view.needsYou, ...view.needsFix, ...(view.waitingOnHost ?? []), ...view.recent.map((r) => r.entry)];
   const byBranch = new Map<string, SessionBranchQueue>();
+  const began = new Map<string, number>();
   for (const b of branches) {
     const q = worktreeQueueInfo(view, b);
-    if (q) byBranch.set(b, branchQueueOf(q));
+    if (!q) continue;
+    byBranch.set(b, branchQueueOf(q));
+    const at = Date.parse(entries.find((e) => e.id === q.id)?.approval?.at ?? "");
+    if (Number.isFinite(at)) began.set(b, at);
   }
   const project = projectCut(view);
   const digest = JSON.stringify([project, ...[...byBranch].sort(([a], [b]) => a.localeCompare(b))]);
   latestViews.set(key, {
     at: view.at,
     byBranch,
+    began,
     project,
     digest,
     refs: [...targetRefs(view.target), ...view.needsFix.map((e) => `refs/heads/${e.branch}`)],
@@ -285,6 +293,11 @@ export function queueGlanceState(root: string): { state: "served"; cut: ProjectG
 export function branchQueueNow(root: string, branch: string): SessionBranchQueue | undefined | null {
   const v = latestViews.get(servedKey(root));
   return v ? v.byBranch.get(branch) : null;
+}
+
+/** When a branch's newest entry in its queue's newest view was approved (ms epoch). Synchronous, no Git. */
+export function branchQueueBegan(root: string, branch: string): number | undefined {
+  return latestViews.get(servedKey(root))?.began.get(branch);
 }
 
 /** A queue's project facts in its newest view; null when none has been seen yet. Synchronous, no Git. */

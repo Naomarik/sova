@@ -624,3 +624,52 @@ test("joinBranches: a served branch's project facts come from its queue's newest
   assert.equal(out[0]!.mergeProject?.target, "trunk");
   assert.equal(out[1]!.mergeProject?.target, "master");
 });
+
+test("the go-ahead check reads each tracked tree: its head at the reply, git's merged answer, and the queue's newest entry with when it began", async () => {
+  r.resetReadiness();
+  const OLD = "a".repeat(40);
+  const HEAD = "b".repeat(40);
+  const REPLY = 1_800_000_000_000;
+  const before: string[] = [];
+  let now: SessionBranchQueue | undefined = { state: "landed", commit: OLD };
+  r.configureReadiness({
+    served: async () => true,
+    asksUser: () => undefined,
+    insights: { treeStatus: async (p: string) => status(p) },
+    mergedInto: async () => undefined,
+    branchFields: async () => ({ root, fields: { mergeServed: true } }),
+    queueNow: () => now,
+    queueBegan: () => REPLY - 1000,
+    goAsk: () => ({ turnId: "t1", replyAt: REPLY }),
+    git: async (args: readonly string[]) => {
+      if (args[0] === "rev-list") before.push(String(args[2]));
+      return { code: args[0] === "rev-list" ? 0 : 1, stdout: args[0] === "rev-list" ? `${HEAD}\n` : "", stderr: "" };
+    },
+  });
+  const path = sessionFile([tree(own, "feat/own"), tree(dropped, "feat/dropped", { status: "dropped" })]);
+  const row = { ...summary(path), signals: { at: REPLY, turnId: "t1", provider: "jev", kinds: ["asks-you"] } } as SessionSummary;
+  assert.equal(r.askTreesOf(row), undefined, "not read yet: nothing to go on");
+  r.readinessOverlay(row);
+  await r.readinessIdle();
+  assert.deepEqual(before, [`--before=${Math.floor(REPLY / 1000)}`], "asked once, for the tree it tracks, as of the reply");
+  const { versionCovered } = await import("./signals-store");
+  const read = { ...row, readiness: r.readinessOverlay(row) };
+  const [t] = r.askTreesOf(read)!;
+  assert.deepEqual(t, { merged: false, headAtReply: HEAD, entry: { state: "landed", commit: OLD, began: REPLY - 1000 } });
+  assert.equal(versionCovered(t!, REPLY), false, "an entry for an older commit: a newer commit needs a new Land");
+  now = { state: "queued", commit: HEAD };
+  assert.equal(versionCovered(r.askTreesOf(read)![0]!, REPLY), true, "the queue's newest view speaks at once");
+  assert.equal(r.askTreesOf({ ...read, signals: { ...read.signals!, turnId: "t2" } })![0]!.headAtReply, undefined, "another reply's head isn't this one's");
+  r.configureReadiness({ goAsk: undefined, queueBegan: undefined, queueNow: undefined });
+});
+
+test("a queue view keeps when each branch's newest entry began, off the wire", () => {
+  wire.resetQueueViewsForTest();
+  const entry = (id: string, at: string) => ({ id, branch: "feat/a", commit: "a".repeat(40), state: "landed", notes: [], createdAt: at, approval: { by: "land-button", at, commit: "a".repeat(40) } }) as unknown as MergeEntry;
+  const view = { root: "/repo", at: "2026-11-01T00:00:00.000Z", project: "p", target: "master", checking: [], waiting: [entry("mq_2", "2026-10-02T00:00:00.000Z")], needsYou: [], needsFix: [], recent: [{ entry: entry("mq_1", "2026-10-01T00:00:00.000Z") }] } as unknown as MergeQueueView;
+  wire.noteQueueView(view);
+  assert.equal(wire.branchQueueBegan("/repo", "feat/a"), Date.parse("2026-10-02T00:00:00.000Z"), "the newest entry's approval");
+  assert.equal(Object.hasOwn(wire.branchQueueNow("/repo", "feat/a")!, "began"), false);
+  assert.equal(wire.branchQueueBegan("/repo", "feat/none"), undefined);
+  wire.resetQueueViewsForTest();
+});

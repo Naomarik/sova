@@ -82,6 +82,20 @@ export function needsYouRows(
     .sort((a, b) => Number(a.soft) - Number(b.soft) || b.since - a.since || a.session.path.localeCompare(b.session.path));
 }
 
+/**
+ * The digest with this tab's own presses applied ahead of the server's next push (§app.session-list/needs-you-dismiss):
+ * `pressed`, session path → the newest item covered. The same rule as the server's: a chat's items that list in Needs
+ * you leave while none is newer. A row whose server-side save fails drops out of `pressed` and is simply back.
+ */
+export function withPressedDismissals<D extends Pick<AttentionDigest, "items" | "dismissed">>(digest: D | undefined, pressed: ReadonlyMap<string, number>): D | undefined {
+  if (!digest || !pressed.size) return digest;
+  const newer = new Set(digest.items.filter((i) => listsInNeedsYou(i) && i.path && i.since > (pressed.get(i.path) ?? Infinity)).map((i) => i.path));
+  const covers = (path: string) => pressed.has(path) && !newer.has(path);
+  const dismissed = { ...digest.dismissed };
+  for (const [path, since] of pressed) if (covers(path)) dismissed[path] = Math.max(since, dismissed[path] ?? since);
+  return { ...digest, dismissed, items: digest.items.filter((i) => !(listsInNeedsYou(i) && covers(i.path))) };
+}
+
 /** A project's release items: each opens its Releases tab. */
 export const RELEASE_KINDS: readonly AttentionItem["kind"][] = ["release-ready", "release-request", "release-held", "release-failed", "release-quiet"];
 export const isReleaseItem = (it: Pick<AttentionItem, "kind">): boolean => RELEASE_KINDS.includes(it.kind);

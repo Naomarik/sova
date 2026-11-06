@@ -1,7 +1,7 @@
 // Run: npx tsx --test server/attention.test.ts (or npm test). Pure: no files, no runtime.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { PUSH_KINDS, type SessionSummary } from "../shared/protocol";
+import { type AttentionItem, PUSH_KINDS, type SessionSummary } from "../shared/protocol";
 import { type AttentionRow, blockerCount, blockerKey, buildDigest, DIGEST_MAX, NEVER_BRIEFED, openQuestionsText, sessionItems, STALE_MS, whereOf, workerErrorTime } from "./attention";
 import { workerErrorTimesOf } from "./live";
 import { listsInNeedsYou } from "../shared/needs-you";
@@ -475,3 +475,91 @@ describe("an open option card (§chat.offers/card, §app.overseer/attention-dige
   });
 });
 
+
+describe("Dismiss (§app.session-list/needs-you-dismiss): left out here and only here", () => {
+  const digest = (rows: AttentionRow[], of: Record<string, { since: number }>, ended?: (p: string[]) => void, extra: AttentionItem[] = []) => buildDigest(rows, NOW, "/home/u", extra, { of, ...(ended ? { ended } : {}) });
+  const failing = (id: string, reply: number) => row(summary(id, { turnError: { message: "boom" } as SessionSummary["turnError"] }), { lastReplyAt: reply });
+
+  test("a dismissed chat's listed items leave the digest, its counts and its badge; dismissing one of two blockers leaves one", () => {
+    const both = [failing("a", NOW - 10), failing("b", NOW - 20)];
+    assert.equal(buildDigest(both, NOW).badge.act, 2, "control");
+    const d = digest(both, { "/s/a.jsonl": { since: NOW - 10 } });
+    assert.equal(d.badge.act, 1);
+    assert.equal(d.badge.needsYou, 1);
+    assert.equal(d.counts.act, 1);
+    assert.deepEqual(d.items.filter((i) => i.tier === "act").map((i) => i.id), ["b"]);
+    assert.deepEqual(d.dismissed, { "/s/a.jsonl": NOW - 10 }, "on the wire for what reads waits elsewhere");
+    assert.deepEqual(d.dismissedKeys, ["a:error"]);
+  });
+
+  test("the chat's other lines stay; only what lists in Needs you goes", () => {
+    const r = row(summary("a", { unread: true, align: { openQuestions: 2, questionDocs: 1 } as SessionSummary["align"] }), { lastReplyAt: NOW - 10 });
+    const d = digest([r], { "/s/a.jsonl": { since: NOW - 10 } });
+    assert.deepEqual(d.items.map((i) => i.kind), ["finished"]);
+  });
+
+  test("something new brings it back and ends the dismissal: a reply, a question, an error, a dialog, a subagent's error, a card, a baton hand-off", () => {
+    const COVERED = NOW - 1000;
+    const NEWER = NOW - 10;
+    const cases: [string, AttentionRow][] = [
+      ["a new reply's ask", row(summary("a", { signals: { at: NEWER, turnId: "t", provider: "jev", kinds: ["asks-you"] } as SessionSummary["signals"] }))],
+      ["more open questions, with their reply", row(summary("a", { align: { openQuestions: 3, questionDocs: 1 } as SessionSummary["align"] }), { lastReplyAt: NEWER })],
+      ["a new error", failing("a", NEWER)],
+      ["a dialog", row(summary("a"), { dialogs: ["Overwrite?"], dialogAt: NEWER, activitySince: COVERED - 500 })],
+      ["a subagent's new error", row(summary("a"), { failedWorkers: 1, workerErrorAt: NEWER })],
+      ["a transcript card", row(summary("a"), { cards: [{ title: "Pick", at: NEWER }] })],
+      ["the baton coming to you", row(summary("a", { baton: { needsYou: { from: "Kim", question: "OK?", since: NEWER } } as SessionSummary["baton"] }))],
+    ];
+    for (const [name, r] of cases) {
+      const ended: string[][] = [];
+      const d = digest([r], { "/s/a.jsonl": { since: COVERED } }, (p) => ended.push(p));
+      assert.ok(d.items.some((i) => i.id === "a" && listsInNeedsYou(i)), `${name}: it lists`);
+      assert.deepEqual(ended, [["/s/a.jsonl"]], `${name}: the dismissal is over`);
+      assert.equal(d.dismissed, undefined, name);
+    }
+  });
+
+  test("a covered item going on waiting keeps it away, a look included, and nothing newer than the press ends it", () => {
+    const r = failing("a", NOW - 1000);
+    const ended: string[][] = [];
+    for (const viewing of [false, true]) {
+      const d = digest([{ ...r, viewing }], { "/s/a.jsonl": { since: NOW - 1000 } }, (p) => ended.push(p));
+      assert.equal(d.items.filter((i) => i.id === "a").length, 0);
+    }
+    assert.deepEqual(ended, []);
+  });
+
+  test("a subagent's failure is dated by the failure, so another subagent's is new and the session's own activity isn't", () => {
+    const at = sessionItems(row(summary("a"), { failedWorkers: 1, workerErrorAt: NOW - 500 }), NOW)[0]!;
+    assert.equal(at.since, NOW - 500);
+  });
+
+  test("a second dialog in the same activity is new", () => {
+    const at = sessionItems(row(summary("a"), { dialogs: ["One", "Two"], dialogAt: NOW - 5, activitySince: NOW - 900 }), NOW)[0]!;
+    assert.equal(at.since, NOW - 5);
+  });
+
+  test("an item of no session can't be dismissed: its count and row stand", () => {
+    const deploy = { id: "deploy:x", path: "", title: "Shop", where: "/w", tier: "act" as const, kind: "deploy-failed" as const, since: NOW - 5, href: "#" };
+    const d = digest([failing("a", NOW - 10)], { "/s/a.jsonl": { since: NOW - 10 }, "": { since: NOW } }, undefined, [deploy]);
+    assert.deepEqual(d.items.map((i) => i.id), ["deploy:x"]);
+    assert.equal(d.badge.act, 1);
+  });
+
+  test("filtered before the cap: dismissed items take no place among the 30", () => {
+    const many = Array.from({ length: 40 }, (_, i) => failing(`m${i}`, NOW - 100 - i));
+    const of = Object.fromEntries(Array.from({ length: 35 }, (_, i) => [`/s/m${i}.jsonl`, { since: NOW }]));
+    const d = digest(many, of);
+    assert.equal(d.items.length, 5);
+    assert.equal(d.counts.act, 5);
+  });
+
+  test("an archived chat keeps its dismissal while a covered blocker stands, and loses it with nothing left that lists", () => {
+    const ended: string[][] = [];
+    const standing = row(summary("a", { archived: true, turnError: { message: "boom" } as SessionSummary["turnError"] }), { lastReplyAt: NOW - 10 });
+    assert.equal(digest([standing], { "/s/a.jsonl": { since: NOW - 10 } }, (p) => void ended.push(p)).items.length, 0, "archiving doesn't bring it back");
+    assert.equal(ended.length, 0);
+    digest([row(summary("a", { archived: true }))], { "/s/a.jsonl": { since: NOW - 10 } }, (p) => void ended.push(p));
+    assert.deepEqual(ended, [["/s/a.jsonl"]]);
+  });
+});

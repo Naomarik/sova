@@ -411,3 +411,10 @@ test("every held act carries its project for Cancel: an org's by its org, a stan
   assert.equal(heldProjectId({ href: "#/projects/prj_c/releases" }), "prj_c");
   assert.equal(heldProjectId({ href: "#/settings" }), null);
 });
+
+test("a dismissed session's baton wait is out of the region's Needs you until a newer one comes (§app.session-list/needs-you-dismiss)", () => {
+  const waiting = { path: "/s/b.jsonl", id: "b", title: "B", org: { orgId: "o", orgName: "Acme", kind: "gathering" }, baton: { needsYou: { from: "Kim", question: "OK?", since: 100 } } } as unknown as SessionSummary;
+  assert.equal(orgNeedsYouRows({ items: [] }, [waiting]).length, 1, "control");
+  assert.equal(orgNeedsYouRows({ items: [], dismissed: { "/s/b.jsonl": 100 } }, [waiting]).length, 0);
+  assert.equal(orgNeedsYouRows({ items: [], dismissed: { "/s/b.jsonl": 99 } }, [waiting]).length, 1, "newer than what it covered");
+});

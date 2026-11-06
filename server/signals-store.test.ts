@@ -45,6 +45,82 @@ describe("asks-you cutoff and the restart go (§app.decisions/asks-user)", () =>
   });
 });
 
+describe("a go-ahead ask whose version is queued or landed (§app.decisions/asks-user)", () => {
+  const choice = (c: string): Answer => ({ type: "choice", choice: c, probabilities: { [c]: 1 }, confidence: 1 });
+  const REPLY = NOW - 60_000;
+  const go = { asks_user: asks(0.95), ask_kind: choice("restart-or-merge-go") };
+  const turn = (over: Partial<import("./signals-store").StoredTurn> = {}): import("./signals-store").StoredTurn => ({ turnId: "t1", replyAt: REPLY, at: REPLY + 1, provider: "jev", model: "m", answers: go, detail: "Press Land when you're ready.", schema: 3, ...over });
+  const sig = (turnId = "t1") => ({ at: REPLY + 1, turnId, provider: "jev" as const, kinds: ["asks-you" as const] });
+  /** A store of one session on disk, its ask noted when `trees` covers it, and the row as a listing would then read. */
+  function listed(trees: import("./signals-store").AskTree[] | undefined, t = turn(), readiness?: never) {
+    const file = join(agentDir, `go-${Math.random().toString(36).slice(2)}.json`);
+    const data = store.updateSignals((d) => void (d.sessions.a = t), file);
+    const after = store.noteAskSettled({ id: "a", signals: sig(t.turnId) }, trees, data, file, NOW);
+    return { file, after, signals: store.withoutRestartAsk({ id: "a", signals: sig(t.turnId), readiness }, after).signals };
+  }
+  const HEAD = "b".repeat(40);
+  const OLD = "a".repeat(40);
+
+  test("a queue entry for an older commit than the reply's head doesn't hide it: a newer commit needs a new Land", () => {
+    const trees = [{ merged: false, headAtReply: HEAD, entry: { state: "landed", commit: OLD, began: REPLY - 3_600_000 } }];
+    const { signals, after } = listed(trees);
+    assert.ok(signals, "the ask stays");
+    assert.equal(after.sessions.a!.settled, undefined, "and nothing is noted");
+  });
+
+  test("merged, or an entry on its way that covers the reply's head or began after the reply, hides it", () => {
+    assert.equal(listed([{ merged: true, headAtReply: HEAD }]).signals, undefined, "merged");
+    for (const state of ["queued", "checking", "landed", "pushed"]) assert.equal(listed([{ merged: false, headAtReply: HEAD, entry: { state, commit: HEAD, began: REPLY - 1 } }]).signals, undefined, `${state}, same commit`);
+    assert.equal(listed([{ merged: false, entry: { state: "queued", commit: "c".repeat(40), began: REPLY + 1 } }]).signals, undefined, "began after the reply");
+  });
+
+  test("an entry that waits on someone or ended covers nothing until noted: cancelled, sent back, a conflict", () => {
+    for (const state of ["cancelled", "needs-fix", "conflict", "closed"]) assert.ok(listed([{ merged: false, headAtReply: HEAD, entry: { state, commit: HEAD, began: REPLY + 1 } }]).signals, state);
+  });
+
+  test("every worktree must be covered: one still open keeps it listed; a session tracking none notes nothing", () => {
+    assert.ok(listed([{ merged: true }, { merged: false, headAtReply: HEAD }]).signals);
+    assert.ok(listed([]).signals);
+    assert.ok(listed(undefined).signals);
+  });
+
+  test("once noted, it stays gone: the tree dropped (no readiness), Sova restarted, restartPending cleared, the entry cancelled", () => {
+    const { file } = listed([{ merged: false, headAtReply: HEAD, entry: { state: "queued", commit: HEAD, began: REPLY + 5 } }]);
+    // A fresh read from disk, as after a restart, with no readiness and no trees left to read.
+    store.updateSignals(() => {}, file);
+    const data = JSON.parse(readFileSync(file, "utf8"));
+    assert.equal(typeof data.sessions.a.settled, "number");
+    assert.equal(store.withoutRestartAsk({ id: "a", signals: sig(), readiness: undefined }, data).signals, undefined);
+    assert.equal(store.noteAskSettled({ id: "a", signals: sig() }, [{ merged: false, entry: { state: "cancelled", commit: HEAD } }], data, file, NOW).sessions.a!.settled, data.sessions.a.settled, "a cancelled entry doesn't undo the note");
+  });
+
+  test("a restart owed hides it; with the restart done and nothing noted, it is back only while unnoted", () => {
+    const data = { version: 1 as const, sessions: { a: turn() }, workers: {}, stalls: {} };
+    assert.equal(store.withoutRestartAsk({ id: "a", signals: sig(), readiness: { restartPending: true } as never }, data).signals, undefined);
+    assert.ok(store.withoutRestartAsk({ id: "a", signals: sig(), readiness: {} as never }, data).signals);
+    const noted = { ...data, sessions: { a: turn({ settled: NOW }) } };
+    assert.equal(store.withoutRestartAsk({ id: "a", signals: sig(), readiness: {} as never }, noted).signals, undefined, "the restart clearing restartPending doesn't bring it back");
+  });
+
+  test("a needs-info ask whose sentence looks like a go stays, on the card's kind; only a record from before the card goes by its sentence", () => {
+    const answers = { asks_user: asks(0.95), ask_kind: choice("needs-info") };
+    const t = turn({ answers, detail: "Landing still needs your answers." });
+    assert.equal(store.isRestartGo(t.detail), true, "the sentence alone would match");
+    const { signals, after } = listed([{ merged: true }], t);
+    assert.ok(signals, "the card's kind decides");
+    assert.equal(after.sessions.a!.settled, undefined);
+    assert.equal(store.withoutRestartAsk({ id: "a", signals: sig(), readiness: { restartPending: true } as never }, { version: 1 as const, sessions: { a: t }, workers: {}, stalls: {} }).signals?.kinds[0], "asks-you");
+    assert.equal(listed([{ merged: true }], turn({ answers: { asks_user: asks(0.95) }, schema: 2 })).signals, undefined, "a pre-card record");
+  });
+
+  test("a newer turn with a new ask replaces the record, and with it the note", () => {
+    const { file } = listed([{ merged: true }]);
+    const next = store.updateSignals((d) => void (d.sessions.a = turn({ turnId: "t2", replyAt: NOW, at: NOW + 1 })), file);
+    assert.ok(store.withoutRestartAsk({ id: "a", signals: sig("t2"), readiness: undefined }, next).signals);
+    assert.equal(store.noteAskSettled({ id: "a", signals: sig("t2") }, [{ merged: false, headAtReply: HEAD, entry: { state: "landed", commit: OLD, began: REPLY } }], next, file, NOW).sessions.a!.settled, undefined, "the last landing was of an older version");
+  });
+});
+
 describe("the turn card's kinds (§app.decisions/attention-signals)", () => {
   const choice = (c: string): Answer => ({ type: "choice", choice: c, probabilities: { [c]: 1 }, confidence: 1 });
   test("asks-you needs a waiting ask kind; an offer or none is no mark, whatever asks_user says", () => {

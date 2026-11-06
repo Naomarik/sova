@@ -148,6 +148,31 @@ const ORG_CLAUDE_LOGIN_ENTRIES: CommandEntry[] = [
 
 export const OTHER_ENTRIES: CommandEntry[] = [
   {
+    id: "attention.dismiss",
+    label: "Dismiss from Needs You",
+    summary: "Take a chat's row out of Needs you and every count until the chat has something new.",
+    effect: "changes",
+    params: {
+      session: { type: "session", description: "The session, by id or by path", in: "body", key: "path", required: true },
+      since: { type: "number", description: "The newest waiting item it covers, in ms since the epoch", in: "body", required: true },
+    },
+    route: { method: "POST", path: "/api/attention/dismiss" },
+    sessionKey: "path",
+    sessionFile: "never",
+    meshNeed: "full",
+  },
+  {
+    id: "attention.undismiss",
+    label: "Undo Dismiss from Needs You",
+    summary: "Put a dismissed chat's row back in Needs you, with no new notification.",
+    effect: "changes",
+    params: { session: { type: "session", description: "The session, by id or by path", in: "query", key: "path", required: true } },
+    route: { method: "DELETE", path: "/api/attention/dismiss" },
+    sessionKey: "path",
+    sessionFile: "never",
+    meshNeed: "full",
+  },
+  {
     id: "models.list",
     label: "List Models",
     summary: "The models this server can run, with favorites and the policy's verdicts.",

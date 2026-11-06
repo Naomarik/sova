@@ -6,8 +6,13 @@
   },
   "§app.subagents-pane/body-list-transcript": {
     "kind": "behavior",
-    "authority": "migrated",
-    "evidence": "unreviewed"
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T14:04Z",
+      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#0056bb79"
+    }
   },
   "§app.subagents-pane/claude-code-workers": {
     "kind": "behavior",
@@ -67,9 +72,9 @@
     ],
     "authority": "accepted",
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-05T04:19Z",
-      "source": "pi-session:01a1a88f-5beb-72d2-b9d3-5a24bf160f0d#73d3abf6"
+      "by": "user",
+      "at": "2026-11-06T13:59Z",
+      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#0056bb79"
     },
     "evidence": "verified",
     "code": [
@@ -264,12 +269,14 @@
       "src/cost-breakdown.css",
       "src/lib/cost-history.ts",
       "src/components/ContextTab.tsx",
-      "src/components/BackgroundJobs.tsx"
+      "src/components/BackgroundJobs.tsx",
+      "src/lib/pane-tabs.ts",
+      "src/lib/pane-tabs.test.ts"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-04T11:00Z",
-      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+      "by": "user",
+      "at": "2026-11-06T13:59Z",
+      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#0056bb79"
     }
   },
   "§app.subagents-pane/tokens": {

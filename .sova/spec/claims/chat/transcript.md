@@ -889,7 +889,7 @@ virtualized.
 - **Jumps build their target first.** Whether an entry can be jumped to is asked of the rows the
   thread renders, not of what is built. Every jump builds the rows down from its target if the
   fill hasn't reached it, then lands on it and tints it (§chat.timeline/jumping): a Timeline
-  input row, the outline's Jump to Message, the Skills tab, Open in Session, and a
+  input row, the outline's Jump to Message, Open in Session, and a
   switch back (below). A jump to a row the list doesn't hold, while the branch has rows above
   the list, fetches every row down to it in one request and then lands; nothing is said while it
   waits, and a slow fetch shows the top edge's bar (above). A newer jump replaces a waiting one. "Isn't in

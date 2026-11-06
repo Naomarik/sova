@@ -436,9 +436,9 @@
       "server/harness/pi/golden/expected/synthetic/workers/transcript-rows.json"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T21:57Z",
-      "source": "pi-session:9fc149bf-e001-4a3b-8e47-eb5d66c0e509#4e42752d"
+      "by": "user",
+      "at": "2026-11-06T13:59Z",
+      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#0056bb79"
     }
   },
   "§chat.transcript/runaway-stream": {

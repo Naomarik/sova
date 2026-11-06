@@ -200,7 +200,7 @@ appends (one line each).
   approval / go-ahead / OK / confirmation". It only picks the sentence the digest quotes; it
   never decides whether a call is made.
 - The excerpt is the title, the head of the last user message (≤600 characters) and the tail of
-  the reply (≤1,500), after the closing spec lines are cut; it is asked as one question of the
+  the reply (≤1,500), after those lines are cut; it is asked as one question of the
   turn card (§app.decisions/attention-signals).
 - At `asks_user ≥ 0.85` the turn's kind is `asks-you` (a courtesy offer scores 0.5–0.8). The
   cutoff is applied when the store is read, so moving it re-classifies nothing. The reply's asking sentence (of its last
@@ -245,12 +245,13 @@ appends (one line each).
   when the user answers (a turn runs, and the next turn replaces or drops it), the session is
   archived, or, for a restart or merge go, while its version is queued and for good once it has landed (above). Dismissing the row
   takes it out of Needs you until the chat has something new (§app.session-list/needs-you-dismiss)
-  and leaves this mark. An open alignment question that appears later takes its place.
+  and leaves this mark. An open alignment question or a raised hand (§app.overseer-pings/raised-hand)
+  takes its place.
 - It is a guess, so it is **never a blocker**: the attention digest carries it as a **soft decide**
   item (§app.overseer/attention-digest), a quiet mark on the session's row (a chat glyph in muted
   ink, never the accent, §app.session-list/anatomy) and a line in the
   Overseer's digest. Needs you lists it in its softer tier and the Overseer's "need you" count
-  counts it, but it never wakes the Overseer with a brief and never sends a phone notification.
+  counts it, but it is never a brief or a phone notification.
   It goes after 7 idle days (no reply since), like every soft item.
 - **An open offer asks too.** While an idle session shows an open offer card (§chat.offers/card),
   its row carries `asks-you` as if its last reply asked, with no model call, while the feature is

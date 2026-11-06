@@ -354,7 +354,7 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   user turn in §app.overseer/caps. **Every run starts unattended**, whatever the run before it was,
   and it becomes the user's only when a message the user sent from the UI (typed, a quick action, a
   confirm-card click, a steer, a regenerate), with or without images and whatever its text became on
-  the way in, enters it. A brief, a fired `wake_nudge`, an extension's message that starts a run (an
+  the way in, enters it. A brief, a ping turn (§app.overseer-pings/wake), a fired `wake_nudge`, an extension's message that starts a run (an
   `/explain` result, a subagent's or team member's report: `sendMessage(…, {triggerTurn: true})`),
   a run with no message at all, a message of unknown origin, or a prompt, steer or regenerate from a
   script's, a chat's or an extension's socket, `POST /api/chat/frames` or `POST /api/chat/action` (§app.access/your-click) is
@@ -379,11 +379,13 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   launching or messaging an explorer), every `sova_todo` operation, ticking included, and every
   organization act (`sova_org`, `sova_org_project`, `sova_roster`, `sova_owner`,
   `sova_project_decisions`, `sova_gather`, `sova_project_overseer`, a message to a project overseer
-  included), `sova_whatsapp` `start`, and running an extension command (`sova_ext` `run`). Still allowed: every read, `sova_note`, `sova_card`, `sova_navigate`
+  included), `sova_whatsapp` `start`, running an extension command (`sova_ext` `run`), and passing a
+  session's ping on (`sova_relay`). Still allowed: every read, `sova_note`, `sova_card`, `sova_navigate`
   (which never moves a tab in such a turn), and `read`/`grep`/`find`/`ls`. The refusal tells the
   model to stop and raise a `sova_card` card instead; the user's click starts a turn in which it
   may act, within the caps. The one exception is an act on sessions that a live approval for later
-  or a standing rule covers (§app.overseer/approvals): it runs, and says what it ran under. The
+  or a standing rule covers (§app.overseer/approvals), or a `sova_relay` that the user's own word in
+  the pinging chat covers (§app.overseer-pings/relay): it runs, and says what it ran under. The
   Overseer's prompt states the rule. Sessions the Overseer creates
   keep their full tools.
 - **Itself:** tools refuse to act on the Overseer's own session.
@@ -947,7 +949,7 @@ jumps to it (§app.overseer/links).
 
 ## §app.overseer/run-note — The run note: the time, and what cleared
 
-Every run of the global Overseer that a message starts (the user's, a brief, a fired wake-up)
+Every run of the global Overseer that a message starts (the user's, a brief, a ping turn, a fired wake-up)
 carries one hidden note, in the same hidden message as the open cards (§app.overseer/confirm):
 never in the thread, never the system prompt, persisted with the conversation, and never changing
 who the run belongs to (§app.overseer/tools).
@@ -975,6 +977,9 @@ who the run belongs to (§app.overseer/tools).
   is listed once per brief: the note records what it listed, and a later note leaves out a blocker
   already listed after the brief that last named it, so it comes back only when a later brief names
   it again and it clears again. At most 12, the most recently briefed first.
+- **Pings that waited.** In a run the user's message starts, each ping that waited for it (under
+  List Only or Off, over a ping-turn limit, or after the stop at 30 in a row;
+  §app.overseer-pings/wake) is listed under `[pings]`, as a ping turn lists it, and only once.
 - **Extension jobs.** Each extension job Sova still watches for it (§app.overseer/extension-commands)
   gets a line: the extension's title, the command's label, the job id and how long ago it started;
   none, no part.
@@ -1137,7 +1142,8 @@ fetched down to, then lands.
   configurable in Settings → Overseer, each a whole number from 0 to 1,000, the same range in the
   form, in what a save accepts and in what a read of the file keeps; a save with one outside it is refused naming the limit by its
   Settings label ("Sessions created must be a whole number from 0 to 1,000."), never by its field
-  name. A settings file without the newer ones reads them as their defaults.
+  name. A settings file without the newer ones reads them as their defaults. Limits also holds the
+  sessions' ping limits, on the same terms (§app.overseer-pings/limits).
 - **The running count shows.** While any Overseer-started session counts as running, the
   Overseer's composer shows "3 of 10 running" in its run-status row, from the same count the cap
   checks, and the refusal and the prompt name Settings → Overseer → Limits. The text is a button
@@ -1160,7 +1166,8 @@ fetched down to, then lands.
   text as something the user sent. Each send counts once: a message queued from inside the run it
   started (a wake-up set during it) is not the user's. A user message the runtime holds back until
   the previous run has fully settled is not recognised and opens a read-only turn (it fails closed).
-  Only a user turn (or `/clear`) resets the eight per-turn counters. A brief, a fired `wake_nudge`,
+  Only a user turn (or `/clear`) resets the eight per-turn counters. A brief, a ping turn
+  (§app.overseer-pings/wake), a fired `wake_nudge`,
   an extension's message that starts a run and any other server-started run are unattended
   (§app.overseer/tools): read-only, on the budget of the user message before them, never a renewed
   one. The
@@ -1198,7 +1205,8 @@ time. Both kinds of approval come only from the user's click on a card option th
 - **A standing rule (`r_N`).** A card option with `rule {text, acts?, any_session?}` proposes a
   standing instruction ("Send continue to a session after its usage limit resets"); its click adopts
   it. A rule lasts until revoked. It covers the acts it names (`sova_send`, `sova_set_session`,
-  `sova_archive`, `sova_answer_dialog`, `sova_group`, `sova_pair`; all of them when it names none) on the
+  `sova_archive`, `sova_answer_dialog`, `sova_group`, `sova_pair`, `sova_relay`; all of them when it names
+  none, except `sova_relay`, which a rule covers only when it names it) on the
   sessions the card lists, or on any session with `any_session: true`. Its button reads "Adopts a
   standing rule: <text>".
 - An option carries `at` or `rule`, never both, and never on a link option. Only the global
@@ -1221,11 +1229,15 @@ time. Both kinds of approval come only from the user's click on a card option th
   no way to write one. In the panel a carried rule's "From c_3 a" links to that earlier
   conversation in the Overseer's history, not to a card in the thread.
 - **Only whole coverage acts.** In a run the user did not start, an acting tool that targets
-  sessions (send, set, archive, answer a dialog, a group's add or remove, a pairing's acts) first
-  looks for one live approval or rule that covers the tool and every session it names: an approval
+  sessions (send, set, archive, answer a dialog, a group's add or remove, a pairing's acts, passing
+  a ping on) first looks for one live approval or rule that covers the tool and every session it names: an approval
   whose deadline has not passed and that lists them all, or a rule whose acts include the tool and whose sessions
   include them all. With one, the act runs within the caps (§app.overseer/caps), and its result
-  ends with "Done under g_2 (<its label>)." Lowering a session's sandbox is never covered: it
+  ends with "Done under g_2 (<its label>)." Passing a ping on (`sova_relay`) has terms of its own
+  (§app.overseer-pings/relay): the user's word in the pinging chat covers passing on their own words
+  ("Done because you asked in {title}."), and news goes only under a rule that names `sova_relay`, to
+  sessions of the pinging session's project, or under an approval for later that lists every
+  recipient, in any project. Lowering a session's sandbox is never covered: it
   needs the user's click in the same turn (§app.overseer/tools). Without one, or for any act that names no session
   (creating a session, ideas, todos, links, organizations), the refusal is the unattended one. A
   run the user started never needs or uses one.
@@ -1446,10 +1458,12 @@ prompt cache, in pi and Claude Code chats alike. The notes travel as queue notes
 - The transcript renders an **Overseer** tag on that user row, on reload and live. The Timeline's
   row for it, and for a brief, carries a "From the Overseer" sender line, and Inputs Only and the
   composer's input count leave it out (§chat/timeline "Who sent it").
-- **One mechanism, three senders.** Baton sessions attribute every user message the same way, with
+- **One mechanism, four senders.** Baton sessions attribute every user message the same way, with
   their own `sova-baton-sent` marker (§app.baton/attribution), and so does a session's
-  `session_send`, with `sova-session-sent` (§chat.profiles/delivery); the pending-mark list, the
-  queue hand-off rule and the settle sweep are shared, and each marker is written only for its own
+  `session_send`, with `sova-session-sent` (§chat.profiles/delivery), and a note the Overseer passed
+  on, with `sova-relay-sent` (§app.overseer-pings/relay), written by the topic batch delivery that
+  carries it (§chat.topics/delivery); the first three share the pending-mark list, the
+  queue hand-off rule and the settle sweep, and each marker is written only for its own
   sender, with the bytes of the Overseer's and the baton's markers unchanged.
 - **A project overseer's conversation too.** The one route that writes into a project overseer's
   conversation, the Overseer's message route (§app.overseer/org-project-overseers), marks every
@@ -1462,7 +1476,8 @@ prompt cache, in pi and Claude Code chats alike. The notes travel as queue notes
 - **Never the user's answer.** A user message this marker names is never the user's prompt that
   ends a session's wait on its alignment answers (§chat.alignment/session-mark): alignment
   questions are the user's (§app.project-overseer/coding-mode).
-- **Never the user's go-ahead to land.** A user message this marker, a baton's or a session's names
+- **Never the user's go-ahead to land.** A user message this marker, a baton's, a session's or a
+  passed-on note's names
   is never the user's word to land a branch: `worktree land` refuses it
   (§chat.worktrees/land-own-word).
 - **Only the Overseer can tag.** `POST /api/sessions/prompt` and that route mark a prompt as the
@@ -1548,9 +1563,14 @@ feed's last list while nothing has changed since it was built, and builds a list
   not archived, that shows an open card waiting on an answer, idle or working, one item per card,
   "Waiting on your answer: {the card's title}", dated by when it was raised. It goes when the card
   is answered or its raiser marks it done. Never a phone notification and never a brief.
+- **Needs you, a raised hand** (§app.overseer-pings/raised-hand): `raised-hand` on a session that
+  pinged `stuck` or `decision`, "Stuck: {summary}" or "Needs your decision: {summary}", dated by the
+  ping, until a turn the user starts there begins, the session pings `done` or a newer hand, or it is
+  archived. It is briefed and a phone notification (Raised hand). A `done` ping is a decide item instead, "Says it's
+  done: {summary}", ending the same way: never Needs you, a brief or a notification.
 - **Only real blockers are act.** The act tier — Needs you, the Overseer's "need you" count, its
   briefs and phone notifications — is exactly: open alignment questions on an unmerged branch, open dialogs, errored
-  turns, subagent errors, proposed playbook runs, open option cards and transcript cards (never briefed), failed deploys and deploy requests, tour recordings waiting for a sign-in, WhatsApp sending down, and the baton and roster hand-offs and held acts below. A team
+  turns, subagent errors, proposed playbook runs, open option cards and transcript cards (never briefed), failed deploys and deploy requests, tour recordings waiting for a sign-in, WhatsApp sending down, raised hands, and the baton and roster hand-offs and held acts below. A team
   that seems stalled and a branch ready to merge are decide items: a line in the digest and a
   quiet mark on the session's row, never a brief.
 - **The softer tier: guesses.** A turn card's guesses (§app.decisions/attention-signals) — a
@@ -1579,7 +1599,7 @@ feed's last list while nothing has changed since it was built, and builds a list
   failure is logged and never stops the start), so no old choice keeps anything hidden.
 - **Finished (decide), from signals** (§app.decisions/attention-signals, only while the list carries them):
   `asks-you` (soft) when the last reply asks the user something (§app.decisions/asks-user) and the
-  session has no `open-questions` item, worded by the ask's kind: "Needs your decision: {the
+  session has no `open-questions` item and no raised hand up (§app.overseer-pings/raised-hand), worded by the ask's kind: "Needs your decision: {the
   asking sentence}" (a choice), "Needs your approval: {…}" (a risky action or a restart or merge
   go), "Needs info from you: {…}" (information), and "Asks you: {…}" when no kind is known (an
   older record); without a sentence, "The last reply asks you something.", dated by the classification; `unverified` (soft) when the last reply says
@@ -2081,14 +2101,17 @@ Three modes, set on the Overseer page and in Settings: **Off**, **List Only** (d
 the next; below 660px it is ⋯ → Proactivity…, three rows with their hints and the current one
 checked (§app.overseer/head-layout). The ⋯ item is there at every width ⋯ shows.
 
-- **Off:** no Needs you region in the sidebar (§app.session-list/needs-you), no briefs. The entry
+- **Off:** no Needs you region in the sidebar (§app.session-list/needs-you), no briefs, and of the
+  sessions' pings only a pass-on the user asked for wakes it (§app.overseer-pings/wake). The entry
   button's unread count is unaffected; the Overseer chat still works. Hint: "No Needs you list. The
   Overseer chat still works."
 - **List Only:** the sidebar's Needs you region only; the Overseer sends no message. It costs no
-  tokens. Hint: "Lists the sessions that need you in the sidebar. No messages from the Overseer."
+  tokens, except a pass-on the user asked a session for, which still wakes it
+  (§app.overseer-pings/wake); the other pings wait for the user's next message. Hint: "Lists the sessions that need you in the sidebar. No messages from the Overseer."
   (The wire value stays `badge`.)
 - **Brief Me:** the Needs you region, plus a brief. Hint: "The list, plus an Overseer message when
-  something new needs you, at most once every 10 minutes." When a **new** needs-you item appears and the Overseer is idle, the server starts
+  something new needs you (at most once every 10 minutes) or a session pings it." Every ping wakes
+  it too, in a ping turn read-only as a brief is (§app.overseer-pings/wake). When a **new** needs-you item appears and the Overseer is idle, the server starts
   one Overseer turn, at most once per 10 minutes. Its prompt (the blockers' titles and details, from
   other sessions) is redacted like any tool output (§app.overseer/tools); it is tagged `[overseer-brief]`, renders
   as a machine row ("Brief · <time>") with its body under it as markdown (the blockers as a list, each
@@ -2099,6 +2122,9 @@ checked (§app.overseer/head-layout). The ⋯ item is there at every width ⋯ s
 - A brief is a snapshot of the moment it was sent. When a blocker it named clears, the next run's
   note says so (§app.overseer/run-note); no brief is sent for a blocker clearing.
 - Which needs-you items count as new is §app.overseer/brief-repeat's rule.
+- **30 in a row, then it waits for you.** Briefs and ping turns together stop after 30 sent in a row
+  with the user not looking at the Overseer (opening it, or having it on screen); the next look
+  starts the count again. Meanwhile new blockers stay new and pings wait for the user's next message.
 - A brief that could not be sent (the Overseer's chat couldn't be opened or reached) is not lost: its
   blockers stay new, and the next check (every 20 s) tries again.
 
@@ -2115,8 +2141,10 @@ A needs-you item is known by its session and kind. Under Brief Me (§app.oversee
   stays cleared for 60 minutes is forgotten, and briefed as new when it returns.
 - **Never briefed** is new: an item that stood when the server started watching, or while
   proactivity was not Brief Me, counts as told, at its count then.
-- A new item that waits (the Overseer busy, or the 10-minute gap) stays new until a brief carries
-  it. What the server has told is kept in memory: a restart starts over, with the items standing
+- **A ping turn tells too.** A blocker a ping turn carried (a raised hand, §app.overseer-pings/wake)
+  counts as told, at its count then, as if a brief had carried it.
+- A new item that waits (the Overseer busy, or the 10-minute gap) stays new until a brief or a ping
+  turn carries it. What the server has told is kept in memory: a restart starts over, with the items standing
   then counted as told.
 
 ## §app.overseer/verify-first — The prompt's rules for saying what is true
@@ -2163,7 +2191,7 @@ A message reaches a session's runtime, and its extensions' `input` handlers, as 
 `interactive` only when a person typed it: a message, steer, quick action or regenerate from a
 Sova composer (the Overseer sending through `sova_send` is not one), a group batch the user sent,
 or a baton participant's message. Every message Sova sends on its own is `rpc`: Overseer briefs,
-auto-resume's prompts and reports, `sova_send`, a schedule's message, a profile start's first
+ping turns, a note the Overseer passed on (§app.overseer-pings/relay), auto-resume's prompts and reports, `sova_send`, a schedule's message, a profile start's first
 message, a project overseer's prompt or look, another session's send, and a baton wrap-up. A
 message queued behind a running turn keeps its source to its hand-off. None of these is `extension`, which the vision-delegate extension skips,
 so an image on such a message is still described for a model that can't see it. A background job's

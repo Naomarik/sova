@@ -75,7 +75,8 @@
       "src/components/OverseerView.tsx",
       "scripts/e2e/overseer-schedules-menu.mjs",
       "server/overseer-pair-tools.ts",
-      "server/overseer-pair-tools.test.ts"
+      "server/overseer-pair-tools.test.ts",
+      "server/overseer-relay-tool.ts"
     ],
     "requires": [
       "§app.overseer/tools",
@@ -84,9 +85,9 @@
       "§app.overseer/org-people-facing"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T10:36Z",
-      "source": "pi-session:01a1ab3a-26bd-72b7-9a70-7646430041e9#56b7c1df"
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
     }
   },
   "§app.overseer/attention-digest": {
@@ -124,9 +125,9 @@
       "§app.overseer/seen"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-06T01:40Z",
-      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
     }
   },
   "§app.overseer/auto-resume": {
@@ -164,12 +165,18 @@
       "server/overseer.ts",
       "server/attention.ts",
       "server/attention.test.ts",
-      "server/overseer-tools.test.ts"
+      "server/overseer-tools.test.ts",
+      "server/overseer-ping-turn.ts"
     ],
     "requires": [
       "§app.overseer/proactivity",
       "§app.overseer/attention-digest"
-    ]
+    ],
+    "agreed": {
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
+    }
   },
   "§app.overseer/caps": {
     "kind": "behavior",
@@ -194,13 +201,15 @@
       "server/overseer-prompt.md",
       "server/overseer-card-apply.test.ts",
       "server/overseer-ext-counts.test.ts",
-      "shared/overseer-limits.ts"
+      "shared/overseer-limits.ts",
+      "server/overseer-relay-tool.ts",
+      "server/overseer-ping-turn.ts"
     ],
     "requires": [],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-04T21:15Z",
-      "source": "pi-session:01a1a855-6f5f-72d2-b9d3-59fb661e925b#0f628483"
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
     }
   },
   "§app.overseer/card-partial-apply": {
@@ -704,9 +713,9 @@
       "§app.overseer/tools"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-04T10:59Z",
-      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
     }
   },
   "§app.overseer/links": {
@@ -1138,15 +1147,17 @@
       "src/components/OverseerView.tsx",
       "server/overseer-redact.ts",
       "src/lib/overseer.ts",
-      "src/components/Sidebar.tsx"
+      "src/components/Sidebar.tsx",
+      "server/overseer-ping-turn.ts"
     ],
     "requires": [
       "§app.overseer/attention-digest",
       "§app.overseer/tools"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-12T18:54Z"
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
     }
   },
   "§app.overseer/project-card-clicks": {
@@ -1255,7 +1266,12 @@
       "server/harness/pi/golden/session/S11-overseer.jsonl",
       "server/harness/pi/golden/state/G7-overseer-cleared.jsonl",
       "server/harness/pi/golden/state/G7-overseer-first.jsonl",
-      "server/attention.ts"
+      "server/attention.ts",
+      "server/overseer-ping-turn.ts",
+      "server/chat-special.ts",
+      "server/user-turns.ts",
+      "server/chat-handle.ts",
+      "server/chat-manager.ts"
     ],
     "requires": [
       "§app.overseer/confirm",
@@ -1265,9 +1281,9 @@
       "§app.overseer/tools"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-06T02:49Z",
-      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
     }
   },
   "§app.overseer/seen": {
@@ -1318,15 +1334,16 @@
       "server/build-loadout.ts",
       "src/lib/overseer.ts",
       "shared/senders.ts",
-      "pi-config/extensions/worktrees/index.ts"
+      "pi-config/extensions/worktrees/index.ts",
+      "server/harness/state-kinds.ts"
     ],
     "requires": [
       "§chat.transcript/message-actions"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-27T09:33Z",
-      "source": "pi-session:01a16fb6-1014-7539-b91a-750b94daff7d#6f6f4e53"
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
     }
   },
   "§app.overseer/session-names": {
@@ -1520,7 +1537,8 @@
       "server/project-previews.ts",
       "server/overseer-pair-tools.ts",
       "server/overseer-pair-tools.test.ts",
-      "server/harness/pi/golden/special-model-view.json"
+      "server/harness/pi/golden/special-model-view.json",
+      "server/overseer-relay-tool.ts"
     ],
     "requires": [
       "§app.overseer/caps",
@@ -1531,9 +1549,9 @@
       "§chat.create-mode/per-chat-only"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T18:37Z",
-      "source": "pi-session:01a1ab3a-26bd-72b7-9a70-7646430041e9#af35e45f"
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
     }
   },
   "§app.overseer/transcript-window": {

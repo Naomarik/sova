@@ -97,9 +97,9 @@
       "§chat.merge-queue/chat-turns"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T11:27Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
     }
   },
   "§chat.worktrees/landing-answers": {

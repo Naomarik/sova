@@ -48,10 +48,11 @@ tier and comes back is new again.
   replaced, `asks-you`, carries over to it, and a client still sending that key is not refused), `error` (the
   last turn stopped with an error), `baton-needs-you` (a baton session waits on you), `worker-error`
   (a subagent ended in an error), `playbook-review` (a verb playbook's run proposes a change to
-  merge, §app.project-runtime/review) and `whatsapp-down` (a WhatsApp sender stopped and needs you,
+  merge, §app.project-runtime/review), `whatsapp-down` (a WhatsApp sender stopped and needs you,
   §app.outreach/sender-health: each sender its own blocker, and a down sender still waiting for its
-  next automatic try none) and `owner-outage` (an organization's owner told its Project Assistant the
-  app is down, §app.project-assistant/requests: each report its own blocker). Each can be switched off; all are on by default
+  next automatic try none), `owner-outage` (an organization's owner told its Project Assistant the
+  app is down, §app.project-assistant/requests: each report its own blocker) and `raised-hand`
+  (§app.overseer-pings/raised-hand). Each can be switched off; all are on by default
   except `worker-error`. `looping` ("Subagent stuck") is retired: a stuck subagent is no longer a blocker
   (§app.overseer/attention-digest), so nothing could send it; a stored choice for it is dropped,
   and a client still sending that key is not refused. A reply that asks you (`asks-you`,
@@ -73,7 +74,8 @@ tier and comes back is new again.
   on the device instead of stacking. Blockers of several sessions: "{n} sessions need you", the
   body one line per session ("{session name} — {Kind}"), tag `sova:several`. A session's name is
   summary-first (§app.overseer/session-names). Kind words:
-  Needs input, Open questions, Error, Baton, Subagent error, Playbook needs you, WhatsApp down, App down. A
+  Needs input, Open questions, Error, Baton, Subagent error, Playbook needs you, WhatsApp down, App down,
+  Raised hand. A
   blocker of no session (WhatsApp down, App down) is titled with its kind word alone. The merge
   queue's own chats (§app.merge-queue/chats) are never a blocker's session. While nothing could be sent
   (sending off, no contact, no device) the loop doesn't read the digest for this at all, and its

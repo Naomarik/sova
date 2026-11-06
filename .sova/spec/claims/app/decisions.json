@@ -54,9 +54,9 @@
       "§chat.worktrees/readiness"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-06T01:40Z",
-      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
     }
   },
   "§app.decisions/attention-signals": {

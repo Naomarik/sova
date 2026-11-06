@@ -951,11 +951,17 @@
       "statecharts/test/sova/statecharts/refit/asks_golden.cljs",
       "statecharts/test/sova/statecharts/refit/asks_rules_test.cljc",
       "statecharts/test/sova/statecharts/refit/asks_test.cljs",
-      "server/app.ts"
+      "server/app.ts",
+      "statecharts/src/sova/statecharts/reasons.cljc"
     ],
     "requires": [
       "§app.project-overseer/autonomy-levels"
-    ]
+    ],
+    "agreed": {
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
+    }
   },
   "§app/project-overseer": {
     "kind": "surface",

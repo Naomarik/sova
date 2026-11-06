@@ -109,9 +109,9 @@ resulting set.
 ## §chat.worktrees/land-own-word — `worktree land` takes only the user's own word
 
 - `worktree land` (§chat.worktrees/tool) never records a go-ahead when the chat's newest user
-  message was sent by the Overseer, a baton or another session: one that a `sova-overseer-sent`,
-  `sova-baton-sent` or `sova-session-sent` marker names (§app.overseer/sent-marker), whatever its
-  words. It refuses, records nothing in `landing.json`, queues nothing, and says the newest
+  message was sent by the Overseer, a baton or another session, or was a note the Overseer passed
+  on: one that a `sova-overseer-sent`, `sova-baton-sent`, `sova-session-sent` or `sova-relay-sent`
+  marker names (§app.overseer/sent-marker, §app.overseer-pings/relay), whatever its words. It refuses, records nothing in `landing.json`, queues nothing, and says the newest
   message wasn't typed by the user, so the go-ahead must be the user's own word in this chat (or
   the Land button, §app.merge-queue/approve).
 - A merge queue message (§chat.merge-queue/chat-turns) is never the user's word either, in any

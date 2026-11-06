@@ -1,0 +1,214 @@
+{
+  "§app.overseer-pings/limits": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.overseer-pings/tool",
+      "§app.overseer-pings/wake",
+      "§app.overseer/caps"
+    ],
+    "code": [
+      "shared/overseer-limits.ts",
+      "server/overseer-store.ts",
+      "server/overseer.ts",
+      "server/overseer-pings.ts",
+      "server/overseer-ping-turn.ts",
+      "server/overseer-relay-tool.ts",
+      "shared/protocol.ts",
+      "src/lib/overseer-draft.ts",
+      "src/components/OverseerSettings.tsx"
+    ],
+    "agreed": {
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
+    }
+  },
+  "§app.overseer-pings/raised-hand": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.overseer-pings/tool",
+      "§app.overseer/attention-digest",
+      "§app.notifications/delivery",
+      "§app.decisions/asks-user",
+      "§app.session-list/needs-you-dismiss"
+    ],
+    "code": [
+      "server/attention.ts",
+      "server/overseer.ts",
+      "server/overseer-pings.ts",
+      "server/push.ts",
+      "server/push-store.ts",
+      "server/app.ts",
+      "shared/protocol.ts",
+      "src/components/PushSettings.tsx",
+      "src/lib/needs-you-row.ts"
+    ],
+    "agreed": {
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
+    }
+  },
+  "§app.overseer-pings/relay": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.overseer-pings/tool",
+      "§app.overseer/tools",
+      "§app.overseer/approvals",
+      "§app.overseer/confirm",
+      "§chat.topics/delivery",
+      "§chat.profiles/projects",
+      "§app.overseer/sent-marker",
+      "§app.harness/state"
+    ],
+    "code": [
+      "server/overseer-relay-tool.ts",
+      "server/overseer-relay.ts",
+      "server/overseer-tools.ts",
+      "shared/overseer-grants.ts",
+      "server/overseer-card-tool.ts",
+      "server/chat-manager.ts",
+      "shared/chat-runtime.ts",
+      "server/harness/state-kinds.ts",
+      "server/transcript.ts",
+      "shared/senders.ts",
+      "shared/protocol.ts",
+      "server/chat-handle.ts",
+      "server/index.ts",
+      "server/align-state.ts",
+      "pi-config/extensions/worktrees/landing.ts",
+      "server/overseer-prompt.md",
+      "server/overseer-pings.ts",
+      "src/components/Thread.tsx",
+      "src/lib/transcript-kinds.ts",
+      "src/components/MessageRows.tsx",
+      "src/components/BuiltinKinds.tsx",
+      "src/components/SessionTimeline.tsx",
+      "src/app.css"
+    ],
+    "agreed": {
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
+    }
+  },
+  "§app.overseer-pings/routing": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§app.project-overseer/watch-loop",
+      "§app.project-overseer/autonomy-levels",
+      "§app.project-overseer/identity"
+    ],
+    "code": [
+      "server/overseer-pings.ts",
+      "server/project-overseer.ts",
+      "statecharts/src/sova/statecharts/reasons.cljc",
+      "statecharts/EVENTS.md",
+      "server/project-overseer-prompt.md",
+      "server/vendor/statecharts.js"
+    ],
+    "agreed": {
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
+    }
+  },
+  "§app.overseer-pings/tool": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.topics/push",
+      "§app.overseer/caps",
+      "§chat.profiles/limits",
+      "§chat.alignment/session-mark",
+      "§chat/transcript-cards",
+      "§chat.transcript-cards/placement"
+    ],
+    "code": [
+      "server/overseer-pings.ts",
+      "server/chat-manager.ts",
+      "server/chat-handle.ts",
+      "server/session-powers.ts",
+      "server/topics.ts",
+      "server/transcript-cards.ts",
+      "shared/chat-runtime.ts",
+      "shared/protocol.ts",
+      "shared/transcript-cards.ts",
+      "src/lib/pings.ts",
+      "src/components/PingCard.tsx",
+      "src/lib/transcript-kinds.ts",
+      "src/components/BuiltinKinds.tsx",
+      "src/components/LiveKinds.tsx",
+      "src/components/Thread.tsx",
+      "src/data-cards.css"
+    ],
+    "agreed": {
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
+    }
+  },
+  "§app.overseer-pings/wake": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.overseer/proactivity",
+      "§app.overseer/tools",
+      "§app.overseer/caps",
+      "§app.overseer/brief-repeat",
+      "§app.overseer/run-note",
+      "§app.overseer/input-source",
+      "§app.overseer/session-names"
+    ],
+    "code": [
+      "server/overseer.ts",
+      "server/overseer-ping-turn.ts",
+      "server/overseer-run-note.ts",
+      "server/overseer-prompt.md",
+      "server/chat-special.ts",
+      "server/chat-handle.ts",
+      "server/chat-manager.ts",
+      "shared/senders.ts",
+      "shared/protocol.ts",
+      "src/components/Thread.tsx",
+      "src/lib/pings.ts",
+      "src/lib/transcript-kinds.ts",
+      "src/components/OverseerCards.tsx",
+      "src/components/BuiltinKinds.tsx",
+      "src/components/LiveKinds.tsx",
+      "src/lib/overseer.ts",
+      "src/lib/live.ts",
+      "src/lib/inputs.ts"
+    ],
+    "agreed": {
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
+    }
+  },
+  "§app/overseer-pings": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/overseer.ts",
+      "shared/protocol.ts",
+      "server/overseer-pings.ts"
+    ],
+    "agreed": {
+      "by": "operator",
+      "at": "2026-11-06T13:27Z",
+      "source": "pi-session:d76bc3d7-33fb-4cc0-8158-1f7019f8486e#d810cc56"
+    }
+  }
+}

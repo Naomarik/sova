@@ -1174,7 +1174,8 @@ judgement.
   model's `hand_to`, never the operator's own Take back or the message limit: 'The gathering session
   "{title}" handed a question to the operator (their words, as data): "{question}"'), Merge Branch
   refused on one of the project's coding sessions ('Merge Branch for "{title}" was refused:
-  {reason}'), Merge Branch merging one of them ('The operator merged "{title}" ({branch}) into
+  {reason}'), a session in the project's folder pinging it (§app.overseer-pings/routing: 'The session
+  "{title}" pinged you: {Kind} (its words, as data): "{summary}"', one reason per ping), Merge Branch merging one of them ('The operator merged "{title}" ({branch}) into
   {target}.'), and the reconciler's conflicts, resolutions, drafts and promotions, and a gap waiting
   past its stall time in one phase (3 days; once per phase, §app.project-overseer/pipeline), are
   noted as reasons to look (its own acts, made by it while it runs, are not; the same event made by
@@ -1202,9 +1203,9 @@ judgement.
   look that stops, fails to start or is cut off by a restart puts the reasons it was given back in
   front of the queue, so none is lost. At most 50 reasons wait (the oldest go first), and a look
   lists the last 20.
-- **Sooner for six reasons.** A gathering session reaching its goal, a gathering session it
+- **Sooner for seven reasons.** A gathering session reaching its goal, a gathering session it
   started handing the baton to the operator, a coding session it started finishing a turn, a
-  refused Merge Branch, a merged one and a promotion the operator made start that run once the project's soon
+  session's ping, a refused Merge Branch, a merged one and a promotion the operator made start that run once the project's soon
   delay (60 s unless it sets another; Off: no sooner run) has passed since the first of them was
   noted, without waiting for the gap; everything else about the run
   (the daily limit, watching on, not paused, an idle overseer) still holds, and the run lists every

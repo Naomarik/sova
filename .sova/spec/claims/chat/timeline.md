@@ -189,7 +189,8 @@ rows; the direction is the tab's, so both modes run newest first.
 ### Who sent it
 
 A message another session sent (§chat.profiles/delivery), one the Overseer sent (its
-`sova-overseer-sent` marker, or a brief) and one a teammate sent in a shared session (a
+`sova-overseer-sent` marker, a brief or a ping turn), a note the Overseer passed on (§app.overseer-pings/relay)
+and one a teammate sent in a shared session (a
 `sova-baton-sent` marker whose `by` isn't `operator`, §app.baton/attribution) keep their row,
 their place in time, their density line, their jump and their Rewind. Above the title, inside the
 row's third column and outside its jump button (so no control nests in another), a
@@ -198,11 +199,15 @@ row's third column and outside its jump button (so no control nests in another),
 - **Another session**: the `network` icon, "From {title}" with the title a link to that session
   (`#/sid/<id>`), then "· hop {n}". No title: "From another session".
 - **The Overseer**: the `eye` icon, "From the Overseer".
+- **A note the Overseer passed on** (its `sova-relay-sent` marker, §app.overseer-pings/relay): the
+  `network` icon, "From {title}, via the Overseer" with the title a link to the session that pinged,
+  then "· hop {n}".
 - **A teammate**: the `chat` icon, "From {name}", the name the shared session's roster gives the
   person ("Someone" while unknown).
 
 The row's title, its tooltip and its full text are the message body: a message from another
-session drops its `[from session …]` header line, and a brief drops its brief tag. The sender comes
+session drops its `[from session …]` header line, a passed-on note its `[passed on by the Overseer …]`
+line, and a brief or a ping turn drops its tag. The sender comes
 only from those markers, never from the text, the same rule the transcript uses; one helper
 (`sendersOf` in `shared/senders.ts`) reads them for both, in either arrival order. A wake nudge
 keeps the row it always had, its reason as the title, with no sender line.
@@ -340,7 +345,8 @@ Rewind; the `gap` rows are measured again between the rows that remain, so "idle
 silence between two of your messages. Every other row goes: chapters, compactions, rewind markers,
 subagents started and finished, model/thinking/mode changes and past summaries, and the input rows
 you didn't type, with their density lines — a message another session sent, one the Overseer sent
-(its briefs included), one a teammate sent in a shared session, a turn the merge queue started
+(its briefs and ping turns included), a note the Overseer passed on from another session
+(§app.overseer-pings/relay), one a teammate sent in a shared session, a turn the merge queue started
 ("From the merge queue", §chat.merge-queue/chat-turns), and a fired wake nudge. The rows a
 fresh rewind left behind (below) stay when you typed them, and go when someone else sent them: a
 left-behind row keeps its sender, so the filter never brings it back.

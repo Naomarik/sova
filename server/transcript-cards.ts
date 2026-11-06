@@ -711,6 +711,13 @@ function viewCardOf(rec: SessionRecord | null, id: unknown): CardInfo {
   const card = rec?.cards.find((c) => c.id === id);
   if (!rec || !card) throw new CardRefusal(`The session has no card ${id}.`, 404);
   if (card.draws !== "view") throw new CardRefusal(`${card.id} isn't a view: only a view keeps state or runs commands.`, 400);
+  const ext = rec.snapshot?.types.find((t) => t.type === card.type)?.ext;
+  if (ext) {
+    // Its view runs no command and keeps no state while it isn't what you approved (§app.extensions/views).
+    const now = findExtension(ext.id);
+    if (!now) throw new CardRefusal(`${ext.title} isn't on, so this card's view can't do that.`, 409);
+    if (now.changed) throw new CardRefusal(`${ext.title} changed and is waiting for your approval.`, 409);
+  }
   return card;
 }
 
@@ -892,6 +899,8 @@ export interface OpenCard {
   at: number;
   /** The extension whose card this is: while it isn't active, nothing can answer, so it isn't waiting. */
   ext?: string;
+  /** Its view draws it: while its extension reads Changed, that view doesn't run, so it isn't waiting either. */
+  view?: boolean;
 }
 
 /** The extension that owns a card's type, from the session's snapshot. */
@@ -901,7 +910,7 @@ const extOfCard = (rec: SessionRecord, c: CardInfo): string | undefined => rec.s
 function openOf(rec: SessionRecord): OpenCard[] {
   return rec.cards.filter((c) => c.state === "open" && c.answerMode !== "none").map((c) => {
     const ext = extOfCard(rec, c);
-    return { id: c.id, title: dataTitle(c) ?? c.title, at: Date.parse(c.at) || 0, ...(ext ? { ext } : {}) };
+    return { id: c.id, title: dataTitle(c) ?? c.title, at: Date.parse(c.at) || 0, ...(ext ? { ext } : {}), ...(ext && c.draws === "view" ? { view: true } : {}) };
   });
 }
 
@@ -933,8 +942,12 @@ export function openCardsOf(sessionId: string): OpenCard[] {
   const open = openIndex.open.get(sessionId) ?? [];
   // Asked only when an extension's card is open: a card with no extension reads no list.
   if (!open.some((c) => c.ext)) return open;
-  const active = new Set(readExtensionsWithOffers().map((e) => e.entry.id));
-  return open.filter((c) => !c.ext || active.has(c.ext));
+  const active = new Map(readExtensionsWithOffers().map((e) => [e.entry.id, e.entry]));
+  return open.filter((c) => {
+    if (!c.ext) return true;
+    const e = active.get(c.ext);
+    return !!e && !(c.view && e.changed);
+  });
 }
 
 /** What is active changed, so what waits on an answer may have (§chat.transcript-cards/answering). */

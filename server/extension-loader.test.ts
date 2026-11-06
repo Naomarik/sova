@@ -108,6 +108,25 @@ describe("a folder names an extension or says why not (§app.extensions/folder)"
   });
 });
 
+describe("code stays where approval can see it (§app.extensions/folder)", () => {
+  test("a page, a program folder or a program file inside a folder approval skips is refused, in plain words", () => {
+    assert.equal(reason(folder(base({ page: "data/dist" }), { "data/dist/index.html": "" })), "Its page is in data, which approval doesn't check, so this can't be added. Move it to another folder.");
+    assert.equal(reason(folder(base({ backend: { run: ["node", "s.mjs"], folder: "logs/b" } }), { "logs/b/s.mjs": "" })), "Its program is in logs, which approval doesn't check, so this can't be added. Move it to another folder.");
+    assert.equal(reason(folder(base({ backend: { run: ["node", "node_modules/x/s.mjs"] } }), { "node_modules/x/s.mjs": "" })), "Its program is in node_modules, which approval doesn't check, so this can't be added. Move it to another folder.");
+    assert.equal(reason(folder(base({ backend: { run: ["data/run"] } }), { "data/run": "" })), "Its program is in data, which approval doesn't check, so this can't be added. Move it to another folder.");
+  });
+  test("once links are followed", async () => {
+    const { symlinkSync } = await import("node:fs");
+    const d = folder(base({ backend: { run: ["node", "s.mjs"] } }), { "data/s.mjs": "" });
+    symlinkSync(join(d, "data/s.mjs"), join(d, "s.mjs"));
+    assert.match(reason(d), /program is in data/);
+  });
+  test("a bare argument that names a folder is only an argument", () => {
+    assert.equal(reason(folder(base({ backend: { run: ["node", "s.mjs", "logs"] } }), { "s.mjs": "", "logs/x": "" })), "ok");
+    assert.equal(reason(folder(base({ backend: { run: ["node", "s.mjs", "--dir=data"] } }), { "s.mjs": "", "data/x": "" })), "ok");
+  });
+});
+
 describe("two readers, and approval by version (§app.extensions/loader)", () => {
   const entry = (d: string, over: object = {}) => ({ id: "notes", title: "Notes", folder: d, dist: join(d, "dist"), ...over });
   const page = () => folder(base({ page: "dist" }), { "dist/index.html": "<p>", "dist/data/x": "1", "dist/logs/x": "1", "dist/a.log": "1" });
@@ -419,6 +438,26 @@ describe("old cards (§app.extensions/views, §chat.transcript-cards/answering)"
     assert.equal((await cards.sessionCardsAt(path)).cards[0]!.state, "done");
     assert.deepEqual(cards.openCardsOf(id), []);
     assert.equal(cards.cardsTrusted("ext:notes"), false);
+  });
+  test("Changed: a data card stays waiting; a view card leaves Needs You, runs nothing and keeps no state, and returns on approval", async () => {
+    const dist = folder(undefined, { "index.html": "", "v.js": "export {};" });
+    const v = { ...e, dist, cards: [{ name: "ok", title: "OK?", draws: "buttons", answer: "at-once", toolkit: 1 }, { name: "see", title: "See", draws: "view", view: "v.js", answer: "at-once", toolkit: 1, data: { type: "object" } }] };
+    writeList([v]);
+    approve(v);
+    const f = fresh();
+    await cards.cardSnapshotFor(f.id, f.path, project);
+    const data = await cards.raiseCard({ path: f.path, type: "notes.ok", data: { title: "Pick", buttons: [{ label: "A", does: { kind: "answer" } }] }, by: { kind: "script" } });
+    const view = await cards.raiseCard({ path: f.path, type: "notes.see", data: {}, by: { kind: "script" } });
+    assert.equal(cards.openCardsOf(f.id).length, 2);
+    await cards.setCardState(f.path, view.id, { a: 1 });
+    const was = gate.codeReadingOf("notes")!;
+    gate.setCodeReading("notes", { sig: "moved", code: "edited" });
+    assert.deepEqual(cards.openCardsOf(f.id).map((c) => c.id), [data.id]);
+    await assert.rejects(cards.setCardState(f.path, view.id, { a: 2 }), /changed and is waiting for your approval/);
+    await assert.rejects(cards.runCardCommand(f.path, view.id, "session.list", {}), /changed and is waiting for your approval/);
+    gate.setCodeReading("notes", was);
+    assert.equal(cards.openCardsOf(f.id).length, 2);
+    await cards.setCardState(f.path, view.id, { a: 3 });
   });
   test("an open card with no extension asks no list", async () => {
     assert.deepEqual(cards.openCardsOf("no-such"), []);

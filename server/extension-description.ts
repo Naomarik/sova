@@ -6,7 +6,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { offersOf } from "../shared/extension-offers";
 import { contractTooNew, parseContract, type ExtensionAsks } from "../shared/extension-loader";
-import { EXTENSION_DESCRIPTION } from "./extension-fingerprint";
+import { EXTENSION_DESCRIPTION, SKIP_DIRS } from "./extension-fingerprint";
 import { viewOffersOf } from "./extension-views";
 import { EXTENSION_CONTRACT } from "../shared/extension-contract";
 import { contractWords, EXTENSION_ID_RE, listedExtensions, plainTitle, TITLE_MAX } from "./extensions";
@@ -40,6 +40,19 @@ const isDir = (p: string): boolean => {
     return false;
   }
 };
+
+/** The folder approval skips that `path` lies in, inside `folder` once links are followed, if any. */
+function skippedFolderOf(folder: string, path: string): string | null {
+  try {
+    const root = realpathSync(folder);
+    const real = realpathSync(path);
+    if (!real.startsWith(root + sep)) return null;
+    return real.slice(root.length + 1).split(sep).find((part) => SKIP_DIRS.has(part)) ?? null;
+  } catch {
+    return null;
+  }
+}
+const outOfSight = (what: string, where: string) => ({ ok: false as const, reason: `Its ${what} is in ${where}, which approval doesn't check, so this can't be added. Move it to another folder.` });
 
 const nonEmpty = (v: unknown): boolean => Array.isArray(v) && v.length > 0;
 
@@ -95,6 +108,8 @@ export function readDescription(folderIn: string, self?: string): { ok: true; de
     const dist = typeof d.page === "string" ? inFolder(folder, d.page) : null;
     if (!dist) return usable("page", "must be a folder inside this one");
     if (!isDir(dist) || !existsSync(join(dist, "index.html"))) return usable("page", "must hold an index.html");
+    const hidden = skippedFolderOf(folder, dist);
+    if (hidden) return outOfSight("page", hidden);
     entry.dist = dist;
   }
   let hasBackend = false;
@@ -103,10 +118,19 @@ export function readDescription(folderIn: string, self?: string): { ok: true; de
     if (typeof b !== "object" || b === null || Array.isArray(b)) return usable("backend", "must be an object with run");
     for (const k of Object.keys(b)) if (!BACKEND_KEYS.has(k)) return bad(`Its description has a key Sova doesn't know: backend.${k}.`);
     if (!Array.isArray(b.run) || !b.run.length || b.run.some((w) => typeof w !== "string" || !w)) return usable("backend", "run must be the program and its arguments, as words");
+    // A word naming a file approval skips; a bare argument that names a folder is only an argument.
+    for (const word of b.run as string[]) {
+      const path = resolve(folder, word);
+      if (!existsSync(path) || !statSync(path).isFile()) continue;
+      const hidden = skippedFolderOf(folder, path);
+      if (hidden) return outOfSight("program", hidden);
+    }
     entry.run = b.run;
     if (b.folder !== undefined) {
       const program = typeof b.folder === "string" ? inFolder(folder, b.folder) : null;
       if (!program || !isDir(program)) return usable("backend", "folder must be a folder inside this one");
+      const hidden = skippedFolderOf(folder, program);
+      if (hidden) return outOfSight("program", hidden);
       entry.programFolder = program;
     }
     hasBackend = true;

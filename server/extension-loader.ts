@@ -11,7 +11,8 @@ import type { ExtensionInspect, ExtensionReview } from "../shared/extension-load
 import { asksOf, readDescription } from "./extension-description";
 import { extensionKeys, realClock, SYNC_MS, wakeExtensionKeys } from "./extension-keys";
 import { clearHealthOf, contractWords, extensionsFile, listedExtension, listedExtensions, tellPeersOfExtensions, type ListedExtension } from "./extensions";
-import { extensionDataDir, freePort, noServiceManager, ProgramNotFound, programStatus, programUnits, startProgram, stopProgram } from "./extension-program";
+import { extensionDataDir, freePort, ProgramNotFound, programStatus, programUnits, startProgram, stopProgram } from "./extension-program";
+import { releaseViewWaiters } from "./card-views";
 import { cardOwnersChanged, closeCardsOfExtension, setCardsTrusted } from "./transcript-cards";
 
 export class LoaderRefusal extends Error {
@@ -87,6 +88,7 @@ function setOff(id: string, off: boolean): void {
 
 /** Whatever changed what is active: the keys follow at once, and peers hear. */
 function activeMoved(): void {
+  releaseViewWaiters();
   wakeExtensionKeys();
   tellPeersOfExtensions();
   cardOwnersChanged();
@@ -158,6 +160,23 @@ async function startNow(raw: Record<string, unknown>, restart: boolean, you: boo
   }
 }
 
+/**
+ * Before a new build of a view is handed over: the code folders read afresh, because a save reaches a page
+ * within a second and the pass may not have come yet (§app.extensions/views). Without holding up other requests.
+ */
+export async function codeStillApproved(id: string): Promise<boolean> {
+  if (named()) return true;
+  const l = listedExtension(id);
+  const a = approvalOf(id);
+  if (!l || !a) return false;
+  const folders = codeFoldersOf(l.raw, skipDir(l.raw));
+  const sig = await codeSig(folders);
+  const was = codeReadingOf(id);
+  const code = a.sig === sig ? a.code : was?.sig === sig && was.code ? was.code : await codeHash(folders);
+  setCodeReading(id, { sig, code });
+  return code === a.code;
+}
+
 /** Your own start, restart or approval: it clears a stop and the count of recent starts. */
 function startIfProgram(raw: Record<string, unknown>, restart: boolean): Promise<void> {
   if (!hasRun(raw) || typeof raw.api !== "string") return Promise.resolve();
@@ -197,7 +216,7 @@ async function reviewOf(raw: Record<string, unknown>, needs: string | undefined,
     ...(needs ? { needs } : {}),
     has: contractWords(),
     leftOut: leftOut ?? stated.leftOut,
-    ...(hasRun(raw) && (await noServiceManager()) ? { noServiceManager: true } : {}),
+    ...(hasRun(raw) ? { noServiceManager: true } : {}),
   };
 }
 
@@ -445,6 +464,7 @@ export async function loaderPass(): Promise<void> {
     const words = activeWords(after);
     if (words !== lastActive) {
       lastActive = words;
+      releaseViewWaiters();
       wakeExtensionKeys();
       tellPeersOfExtensions();
       cardOwnersChanged();

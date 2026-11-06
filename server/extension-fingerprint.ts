@@ -10,7 +10,7 @@ import { join, resolve, sep } from "node:path";
 export const EXTENSION_DESCRIPTION = "sova-extension.json";
 
 /** Never counted, wherever they are: data, logs, libraries and git history never ask again. */
-const SKIP_DIRS = new Set([".git", "node_modules", ".worktrees", ".agent", "data", "logs"]);
+export const SKIP_DIRS = new Set([".git", "node_modules", ".worktrees", ".agent", "data", "logs"]);
 const SKIP_FILE = /\.log$/;
 const FILE_BYTES = 4 * 1024 * 1024;
 const FILES_MAX = 20_000;

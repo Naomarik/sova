@@ -60,6 +60,7 @@ import { DecisionSettingsSection } from "./DecisionSettings";
 import { SubagentProfilesSettings } from "./SubagentProfilesSettings";
 import { MeshSettingsSection } from "./MeshSettings";
 import { AccountsPanel } from "./ProviderKeys";
+import { ExtensionsSettingsSection } from "./ExtensionsSettings";
 import { McpSettingsSection } from "./McpSettings";
 import { OverseerSettingsSection } from "./OverseerSettings";
 import { PublicLinksSettingsSection } from "./PublicLinksSettings";
@@ -78,7 +79,7 @@ import { VoiceSettingsSection } from "./VoiceSetup";
 import { Banner, Icon, trapFocus } from "./ui";
 import { sentence } from "./WorkerSlotRow";
 
-/** The tab rail. Twenty screens; the rail is the structure further settings slot into. General is
+/** The tab rail. Twenty-one screens; the rail is the structure further settings slot into. General is
     first because it is the one screen about this browser's own behaviour rather than a subsystem.
     Same ids, same order as `SETTINGS_TABS` (lib/settings-nav.ts), which is what opens it. */
 export const TABS = [
@@ -86,6 +87,7 @@ export const TABS = [
   { id: "models", label: "Models", icon: "sliders" as const },
   { id: "accounts", label: "Accounts", icon: "refresh" as const },
   { id: "mcp-servers", label: "MCP Servers", icon: "grid" as const },
+  { id: "extensions", label: "Extensions", icon: "sliders" as const },
   { id: "subagents", label: "Subagents", icon: "worker" as const },
   { id: "alignment", label: "Alignment", icon: "check" as const },
   { id: "profiles", label: "Profiles", icon: "wrench" as const },
@@ -241,6 +243,12 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           <Show when={tab() === "mcp-servers"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-mcp-servers" aria-labelledby="settings-tab-mcp-servers">
               <McpSettingsSection />
+            </div>
+          </Show>
+          {/* The same: it reads its list while it shows, and saves on its own. */}
+          <Show when={tab() === "extensions"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-extensions" aria-labelledby="settings-tab-extensions">
+              <ExtensionsSettingsSection />
             </div>
           </Show>
           {/* Mounted only while its tab is: the backend discovery (a Claude Code CLI call) runs

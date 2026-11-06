@@ -26,6 +26,7 @@ import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
 import { registerProjectFileRoutes } from "./project-files-routes";
 import { registerMcpRoutes } from "./mcp/routes";
+import { registerExtensionRoutes } from "./extension-routes";
 import { registerSessionOfferRoutes } from "./session-offers-routes";
 import { registerTranscriptCardRoutes } from "./transcript-cards-routes";
 import { registerPairRoutes } from "./topic-pairs";
@@ -483,6 +484,7 @@ export function buildApp(deps: AppDeps) {
   registerSessionOfferRoutes(app);
   // MCP servers: the Settings tab, the project page's section, Check, approval and sign-in (§app/mcp).
   registerMcpRoutes(app);
+  registerExtensionRoutes(app);
   registerTranscriptCardRoutes(app);
   // The Overseer's pairings (§app.overseer/pairs): each paired chat's line, Unpair and Resume.
   registerPairRoutes(app, {

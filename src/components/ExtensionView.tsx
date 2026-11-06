@@ -1,5 +1,6 @@
 import { createEffect, createResource, createSignal, For, Index, onCleanup, Show, untrack } from "solid-js";
 import { getExtensionCardsTrust, setCardTrust } from "../lib/api";
+import { openSettings } from "../lib/settings-nav";
 import { toast } from "../lib/ui-state";
 import type { ExtensionInfo, SessionSummary } from "../../shared/protocol";
 import { extFrameSrc, extHref, extRouteFromHash, MAXIMIZED, parseExtMessage, subFromExtHash } from "../lib/ext-route";
@@ -187,8 +188,8 @@ export function ExtensionView(props: {
       fallback={
         <div class="center-fill">
           <div class="empty">
-            <p class="empty-title">No extension named “{props.id}” is installed.</p>
-            <p class="empty-body">Extensions come from Sova's extensions manifest, and this one isn't in it.</p>
+            <p class="empty-title">No extension named “{props.id}” is on.</p>
+            <p class="empty-body">Extensions are in Settings → Extensions. This one is off, or isn't on this computer's list.</p>
             <a class="button empty-action" href="#/">
               Back to Sessions
             </a>
@@ -260,15 +261,29 @@ export function ExtensionView(props: {
           <Icon name="external" />
         </a>
       </header>
-      <iframe
-        class="ext-frame"
-        classList={{ "ext-frame-max": maximized() }}
-        ref={frame}
-        src={firstSrc}
-        title={props.info?.title ?? props.id}
-        allow="fullscreen"
-        allowfullscreen
-      />
+      <Show
+        when={props.info?.page !== false && !props.info?.changed}
+        fallback={
+          <div class="center-fill">
+            <div class="empty">
+              <p class="empty-title">{props.info?.changed ? `${props.info.title} changed, so its page is off until you approve it.` : `${props.info?.title ?? props.id} has no page of its own.`}</p>
+              <button type="button" class="button empty-action" onClick={() => openSettings("extensions")}>
+                Open Settings
+              </button>
+            </div>
+          </div>
+        }
+      >
+        <iframe
+          class="ext-frame"
+          classList={{ "ext-frame-max": maximized() }}
+          ref={frame}
+          src={firstSrc}
+          title={props.info?.title ?? props.id}
+          allow="fullscreen"
+          allowfullscreen
+        />
+      </Show>
     </Show>
   );
 }

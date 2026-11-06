@@ -103,6 +103,7 @@ import { SidebarResizer } from "./components/SidebarResizer";
 import { UsageView } from "./components/UsageView";
 import { GlobalRegions, Icon } from "./components/ui";
 import { ExtensionsContext } from "./lib/reply-place";
+import { setExtensionListRefresh } from "./lib/extensions-settings";
 
 /** The session the hash names. A peer's (`#/p/<host>/s/<path>`) records its host first, so every
     request the view makes for it goes there even before the peer's list has loaded. */
@@ -497,6 +498,7 @@ export function App() {
     if (n !== null) setAppBadge(n);
   });
   const extensions = createPoll(fetchExtensions, EXTENSIONS_POLL_MS);
+  setExtensionListRefresh(() => extensions.refetch());
   /** The landing page shows the Extensions section only when something is installed. */
   const installed = createMemo(() => {
     const items = extensions.data();

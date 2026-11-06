@@ -292,7 +292,7 @@ export interface KeySyncClock {
   watch(onChange: () => void): (() => void) | null;
 }
 
-const realClock = (file: () => string = extensionsFile): KeySyncClock => ({
+export const realClock = (file: () => string = extensionsFile): KeySyncClock => ({
   every(fn, ms) {
     const t = setInterval(fn, ms);
     t.unref?.();
@@ -315,6 +315,12 @@ const realClock = (file: () => string = extensionsFile): KeySyncClock => ({
 });
 
 let running: (() => void) | null = null;
+/** What the list's own change does: an approval or a pass changes what is active with no change to the file. */
+let wake: (() => void) | null = null;
+export const wakeExtensionKeys = (): void => {
+  if (wake) wake();
+  else extensionKeys.sync();
+};
 /**
  * At server start: a sync now, then every SYNC_MS while there is anything to follow. With nothing
  * installed and no key held (`idle`), the timer stops and nothing runs until the manifest's folder
@@ -335,18 +341,23 @@ export function startExtensionKeys(keys: ExtensionKeys = extensionKeys, clock: K
   const ensureTimer = () => {
     if (!stopTimer) stopTimer = clock.every(tick, SYNC_MS);
   };
-  const unwatch = clock.watch(() => {
-    if (stopTimer) return; // the timer is following it already
+  const follow = (always: boolean) => {
+    if (stopTimer && !always) return; // the timer is following it already
     keys.sync();
     if (!keys.idle()) ensureTimer();
-  });
+  };
+  const unwatch = clock.watch(() => follow(false));
+  if (keys === extensionKeys) wake = () => follow(true);
   watching = unwatch !== null;
   if (!watching || !keys.idle()) ensureTimer();
   const stop = () => {
     stopTimer?.();
     stopTimer = null;
     unwatch?.();
-    if (running === stop) running = null;
+    if (running === stop) {
+      running = null;
+      wake = null;
+    }
   };
   if (keys === extensionKeys) running = stop;
   return stop;

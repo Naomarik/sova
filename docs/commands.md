@@ -13,7 +13,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 561 |
+| Routes registered | 571 |
 | Routes a catalogue entry points at | 178 |
 | Catalogue entries | 240 |
 | Class: Peer protocol | 39 |
@@ -24,11 +24,11 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: The catalogue itself | 1 |
 | Class: Test only | 0 |
 | Class: Pages and assets | 7 |
-| Class: Trust grants | 17 |
+| Class: Trust grants | 25 |
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
 | Class: Left as is, by choice | 261 |
-| Class: Page plumbing | 11 |
+| Class: Page plumbing | 13 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
 | Class: Approvals and grants | 5 |
@@ -426,12 +426,20 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `ALL /explain/*` | full |
 | `GET /explain/:id` | full |
 
-### Trust grants (17)
+### Trust grants (25)
 
-Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval; a project's transcript cards, §chat.transcript-cards/trust), applying a settings card with its approvals (§app.project-overseer/settings), adding, approving, signing in to and changing an MCP server (§app.mcp/approval) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.
+Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval; a project's transcript cards, §chat.transcript-cards/trust), applying a settings card with its approvals (§app.project-overseer/settings), adding, approving, signing in to and changing an MCP server (§app.mcp/approval), adding, approving and changing an extension (§app.extensions/loader) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.
 
 | Route | Mesh need |
 | --- | --- |
+| `DELETE /api/extensions/:id` | full |
+| `POST /api/extensions/:id/approve` | full |
+| `POST /api/extensions/:id/folder` | full |
+| `POST /api/extensions/:id/off` | full |
+| `POST /api/extensions/:id/on` | full |
+| `POST /api/extensions/:id/program` | full |
+| `POST /api/extensions/inspect` | full |
+| `POST /api/extensions/install` | full |
 | `DELETE /api/mcp/rows/:id` | full |
 | `PATCH /api/mcp/rows/:id` | full |
 | `PUT /api/mcp/rows/:id` | full |
@@ -738,7 +746,7 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/voice/transcribe` | admin |
 | `POST /api/voice/warm` | admin |
 
-### Page plumbing (11)
+### Page plumbing (13)
 
 Requests a view, the composer or a link card makes to draw itself (attachments and uploads, a tool row's contents, a link's thread and seen mark, the remote folder picker's listing, the explanations feed, the empty list's folder name, a project's icon picture). Exactly these routes (`PAGE_PLUMBING`).
 
@@ -747,6 +755,8 @@ Requests a view, the composer or a link card makes to draw itself (attachments a
 | `DELETE /api/attachment` | sessions |
 | `GET /api/attachment` | sessions |
 | `GET /api/explanations` | sessions |
+| `GET /api/extensions/:id/log` | full |
+| `GET /api/extensions/installed` | full |
 | `POST /api/links/:id/seen` | sessions |
 | `GET /api/links/:id/thread` | sessions |
 | `GET /api/projects/:pid/icon` | sessions |

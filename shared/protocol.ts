@@ -4409,6 +4409,10 @@ export interface ExtensionInfo {
   status: "ok" | "down";
   error?: string;
   offers?: ExtensionOffers;
+  /** v1.20: it has no page of its own. */
+  page?: false;
+  /** v1.20: its code changed since you approved it, so its page is off. */
+  changed?: true;
 }
 /** What an extension offers Sova (ext-contract-v1.15): only the keys it declared something valid
     under, each non-empty. */

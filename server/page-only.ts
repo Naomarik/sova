@@ -75,6 +75,7 @@ const DOORS = {
   restart: "Only the user restarts Sova. Ask them to press Restart Sova in Settings → General. Nothing was restarted.",
   update: "Only the user updates Sova. Ask them to do it in Settings → General. Nothing was changed.",
   cardClick: "Only the user answers a card. Ask them to click it in that chat. Nothing was sent.",
+  extensions: "Only the user changes extensions. Ask them to do it in Settings → Extensions. Nothing was changed.",
 } as const;
 export type YourClickDoor = keyof typeof DOORS | { projectTool: string } | { cardsOf: string };
 
@@ -98,4 +99,24 @@ export function yourClickRefusal(c: Context, door: YourClickDoor, opts: { overse
   const who = notPage(c);
   if (who === null || (who === "overseer" && opts.overseerKeeps)) return null;
   return c.json(yourClickBody(door, who), 403);
+}
+
+/**
+ * The extension door's one addition (§app.extensions/loader): a request from a page under `/ext/`, or from
+ * a frame. An extension's page runs on Sova's address with the page's own cookie, so this is an accident guard:
+ * a hostile page can leave the `Referer` off, as the screen says.
+ */
+export function extensionPageRefusal(c: Context): Response | null {
+  const referer = c.req.header("referer");
+  let path = "";
+  try {
+    path = referer ? new URL(referer).pathname : "";
+  } catch {
+    path = "";
+  }
+  const dest = c.req.header("sec-fetch-dest");
+  if (path.startsWith("/ext/") || dest === "iframe" || dest === "frame" || dest === "embed" || dest === "object") {
+    return c.json({ error: "An extension's page can't change extensions. Open Settings → Extensions in Sova itself. Nothing was changed.", yourClick: true }, 403);
+  }
+  return null;
 }

@@ -60,6 +60,10 @@ const titleOf = (c: CardInfo): string => {
   return typeof t === "string" && t.trim() ? t : c.title;
 };
 
+/** Why an extension's card can't draw (§design.copy-deck/settings-extensions). */
+const extensionDownWords = (title: string, down: "off" | "blocked" | null): string =>
+  down === "off" ? `${title} is turned off` : down === "blocked" ? `${title} can't run right now. Settings → Extensions says why.` : `${title} is no longer installed`;
+
 function CardBody(props: { card: CardInfo; ctx: CardControls | undefined }) {
   const from = () => raiserText(props.card.by);
   const answering = () => answeringFor(props.card, props.ctx);
@@ -72,7 +76,7 @@ function CardBody(props: { card: CardInfo; ctx: CardControls | undefined }) {
       <Show when={from()}>
         <p class="transcript-card-from text-muted">{from()}</p>
       </Show>
-      <Show when={!props.ctx?.gone(props.card.type)} fallback={<CardErrorBox why={`${props.ctx?.type(props.card.type)?.ext?.title ?? props.card.title} is no longer installed`} reload={() => props.ctx?.refresh()} />}>
+      <Show when={!props.ctx?.gone(props.card.type) && !props.ctx?.down(props.card.type)} fallback={<CardErrorBox why={extensionDownWords(props.ctx?.type(props.card.type)?.ext?.title ?? props.card.title, props.ctx?.down(props.card.type) ?? null)} reload={() => props.ctx?.refresh()} />}>
       <Show
         when={props.card.draws === "view"}
         fallback={<DataCard draws={props.card.draws as DataCardKind} data={props.card.data} id={props.card.id} answer={answering()} answered={!!props.card.answer} />}

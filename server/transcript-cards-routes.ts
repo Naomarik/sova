@@ -9,7 +9,7 @@ import { resolveSessionPath } from "./paths";
 import { readProject } from "./projects/spaces";
 import { answerCard, CardRefusal, extensionCardsTrust, ownerName, projectCards, sessionDrawingKind, raiseCard, runCardCommand, sessionCardsAt, sessionCardType, setCardState, setCardsTrusted } from "./transcript-cards";
 import { viewCodeAt, type Source } from "./card-views";
-import { EXTENSION_ID_RE, findExtension, isKeyFile } from "./extensions";
+import { EXTENSION_ID_RE, findExtension, isKeyFile, listedExtension } from "./extensions";
 import { DRAWING_VIEW_FILE, DRAWINGS_DIR, PROJECT_OWNER } from "../shared/drawing-kinds";
 import { commandAudit } from "./command-audit";
 import { CARD_NAME_RE, CARDS_DIR, needsUpdatingText, TOOLKIT_VERSION, VIEW_FILE } from "../shared/transcript-cards";
@@ -93,8 +93,13 @@ function viewSource(name: string, ext: { id: string; title: string; view?: strin
   const dot = name.lastIndexOf(".");
   if (ext) {
     const installed = findExtension(ext.id);
-    if (!installed) return { error: `${ext.title} is no longer installed.`, hash: "uninstalled" };
+    if (!installed) {
+      const l = listedExtension(ext.id);
+      if (!l) return { error: `${ext.title} is no longer installed.`, hash: "uninstalled" };
+      return l.state === "off" ? { error: `${ext.title} is turned off.`, hash: "off" } : { error: `${ext.title} can't run right now. Settings → Extensions says why.`, hash: "blocked" };
+    }
     if (!ext.view) throw new CardRefusal(`${name} has no view.`, 400);
+    if (!installed.dist) return { error: `${ext.title} has no page to draw this view from.`, hash: "no-page" };
     return { root: installed.dist, entry: ext.view, limits: { refuse: isKeyFile } };
   }
   const short = name.slice(dot + 1);

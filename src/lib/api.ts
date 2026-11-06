@@ -4,6 +4,7 @@ import type { ModelPick, WorkModels } from "../../shared/powers";
 import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
 import type { CardAnswerValue, CardInfo, ProjectCardsAnswer, SessionCardsAnswer } from "../../shared/transcript-cards";
 import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow, SovaCardsInfo } from "../../shared/project-settings";
+import type { ExtensionInspect, ExtensionsInstalled } from "../../shared/extension-loader";
 import type { McpNewServer, McpProjectServers, McpServerRow, McpServers, McpSignIn } from "../../shared/mcp";
 import type { ProfilesListing } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
@@ -1789,6 +1790,20 @@ export const saveMergeSettings = (projectId: string, changes: import("../../shar
   request<import("../../shared/merge-queue-settings").MergeSettingsSaveResult>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/settings`, jsonInit("POST", { changes, confirm: true }));
 /** Cancels a save waiting for the current branch. */
 export const cancelMergeSettings = (projectId: string) => request<unknown>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/settings/pending`, { method: "DELETE" });
+
+// -- Settings → Extensions (§app.extensions/loader) --
+const extPath = (id: string, tail = "") => `/api/extensions/${encodeURIComponent(id)}${tail}`;
+const extPost = <T = { ok: true },>(path: string, body: unknown = {}) => request<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const getExtensionsInstalled = () => request<ExtensionsInstalled>("/api/extensions/installed", { cache: "no-store" });
+export const getExtensionLog = (id: string) => request<{ lines: { t: string; text: string }[] }>(extPath(id, "/log"), { cache: "no-store" });
+export const inspectExtension = (what: { folder?: string; id?: string }) => extPost<ExtensionInspect>("/api/extensions/inspect", what);
+export const installExtension = (folder: string, version: string) => extPost<{ id: string }>("/api/extensions/install", { folder, version });
+export const approveExtension = (id: string, version: string) => extPost(extPath(id, "/approve"), { version });
+export const chooseExtensionFolder = (id: string, folder: string, version: string) => extPost(extPath(id, "/folder"), { folder, version });
+export const turnExtensionOn = (id: string) => extPost(extPath(id, "/on"));
+export const turnExtensionOff = (id: string) => extPost(extPath(id, "/off"));
+export const extensionProgram = (id: string, action: "start" | "restart" | "stop") => extPost(extPath(id, "/program"), { action });
+export const removeExtension = (id: string, deleteData: boolean) => request<{ ok: true }>(extPath(id), { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deleteData }) });
 
 // -- MCP servers (§app/mcp) --
 const mcpRow = (id: string, tail = "") => `/api/mcp/rows/${encodeURIComponent(id)}${tail}`;

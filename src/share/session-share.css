@@ -38,3 +38,20 @@
 /* The thread's own column, so the Share sheet's Preview (which doesn't load share.css) lays out
    the same as the page. */
 .ss-thread { display: flex; flex-direction: column; gap: var(--space-3); }
+
+/* A message that replies to an earlier one (§app.session-share/content): its quote above its words,
+   quiet and clamped to two lines, with no jump. */
+.ss-reply-quote {
+  display: grid;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-inline-start: var(--stroke-icon) solid var(--color-border-strong);
+  border-radius: var(--r-sm);
+  background: var(--color-sunken);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+}
+.ss-reply-quote-label { font-weight: var(--fw-medium); color: var(--color-ink-muted); }
+.ss-reply-quote-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }

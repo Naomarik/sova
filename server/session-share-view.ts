@@ -19,6 +19,7 @@ import {
   type SessionShareView,
 } from "../shared/session-share";
 import { parseWakeNudge } from "../shared/wake";
+import { withoutReplyId } from "../shared/reply-quote";
 import { parsePi, strictBranchTo, typedText, type PiFile } from "./harness/pi/reader";
 import { serverRedactor } from "./overseer-redact";
 
@@ -278,7 +279,9 @@ function build(file: PiFile, slice: HEntry[], earlier: boolean): Built {
     const at = canonicalTime(e.at);
     const imgs = refs(blocks);
     ids.push(e.id ?? "");
-    items.push({ kind: role === "user" ? "user" : "reply", n: items.length, text: cutAtToken(scrub(text), SESSION_SHARE_TEXT_MAX), ...(at ? { at } : {}), ...(imgs ? { images: imgs } : {}) });
+    // A reply's quote is shown (and scrubbed) with the rest; its message id never leaves (§app.session-share/content).
+    const shown = role === "user" ? withoutReplyId(text) : text;
+    items.push({ kind: role === "user" ? "user" : "reply", n: items.length, text: cutAtToken(scrub(shown), SESSION_SHARE_TEXT_MAX), ...(at ? { at } : {}), ...(imgs ? { images: imgs } : {}) });
   }
   return { items, ids, images, through, earlier };
 }

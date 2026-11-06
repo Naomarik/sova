@@ -1,8 +1,8 @@
 // The kill guard's inline extension: every agent chat that has bash (an ordinary chat, a worker, a
 // team member, a hidden chat) loads it, so on macOS a mis-written kill is refused before it runs and
-// the refusal is the tool's own reply. It hooks tool_call alone, so pi's user_bash event isn't hooked.
-// Sova's composer has no `!`: a message starting with one goes to the agent, whose bash call is checked.
-// The decision itself is server/shell-guard.ts.
+// the refusal is the tool's own reply. It hooks tool_call alone, so pi's user_bash event isn't hooked:
+// a command the user runs from shell mode is checked by its chat before it runs (server/chat-shell.ts),
+// and pi's own terminal `!` isn't checked. The decision itself is server/shell-guard.ts.
 import type { PiExtensionAPI } from "./harness/pi/extension-types";
 import { killGuardRefusal } from "./shell-guard";
 

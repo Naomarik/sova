@@ -281,7 +281,8 @@ export function deliverFrames(path: string, frames: readonly ChatClientMessage[]
   const gone = Object.assign(new EventEmitter(), { readyState: 3, OPEN: 1, close() {}, send() {} });
   const ws = gone as unknown as WebSocket;
   handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2, undefined, { notPage }).catch((err) => console.error("[chat/frames]", err));
-  for (const f of frames) gone.emit("message", JSON.stringify(f));
+  // A command from shell mode is never run from here (§chat.shell-mode/who): only a live chat socket starts one.
+  for (const f of frames) if (!isShellFrame(f)) gone.emit("message", JSON.stringify(f));
   gone.emit("close");
 }
 
@@ -347,12 +348,17 @@ export function recordFrame(path: string, frame: ChatClientMessage, onFrame: (ms
   };
 }
 
-/** The frames of a POST /api/chat/frames body (`{ frames: [...] }`), or null when malformed. */
+/** A shell-mode frame (`shell`, `shell_stop`): the frames path drops it. */
+const isShellFrame = (f: { type?: unknown }) => f.type === "shell" || f.type === "shell_stop";
+
+/** The frames of a POST /api/chat/frames body (`{ frames: [...] }`), or null when malformed. Shell-mode
+    frames are dropped (§chat.shell-mode/who, §chat.transcript/send-while-starting): a command runs only
+    from a live chat socket. */
 export function postedFrames(body: unknown): ChatClientMessage[] | null {
   const frames = (body as { frames?: unknown } | null)?.frames;
   if (!Array.isArray(frames) || frames.length === 0 || frames.length > POSTED_FRAMES_MAX) return null;
   for (const f of frames) if (!f || typeof f !== "object" || Array.isArray(f) || typeof (f as { type?: unknown }).type !== "string") return null;
-  return frames as ChatClientMessage[];
+  return (frames as ChatClientMessage[]).filter((f) => !isShellFrame(f));
 }
 
 /** The texts in posted frames that go back as a draft when the frames are refused unrun. */

@@ -86,7 +86,8 @@ function entryChars(h: HEntry): number {
     case "compaction":
       return (h.summary ?? "").length;
     case "shell":
-      return (h.command ?? "").length + (h.output ?? "").length;
+      // A `!!` command never reaches the model (§chat.shell-mode/model): it holds no context.
+      return h.private ? 0 : (h.command ?? "").length + (h.output ?? "").length;
     case "note":
       return h.inMessage ? (typeof h.content === "string" ? h.content : JSON.stringify(h.content ?? "")).length : 0;
     default:

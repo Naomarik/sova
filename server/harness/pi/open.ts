@@ -22,6 +22,7 @@ import { steerAllAtOnce } from "./queue-modes";
 import { agentRoot } from "../../state-root";
 import type { PiExtensionFactory, PiLoaderOptions, PiToolDefinition } from "./extension-types";
 import { installOwnCode, ownCodeLoader, withModesEntry } from "./own-code";
+import { sandboxBus } from "./shell";
 import { liveRead } from "./reader";
 import { PiHarnessSession } from "./session";
 import { piSessionState } from "./state";
@@ -166,7 +167,9 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
   // A chat process on a code generation loads Sova's extensions from its own copy, discovered and
   // listed alike (§app.chat-processes/code-generations). The server: nothing.
   installOwnCode();
-  const resourceLoaderOptions = ownCodeLoader(loader);
+  // The extensions' bus is Sova's, so the user's own commands see the sandbox's state (shell.ts, P40).
+  const sandbox = sandboxBus();
+  const resourceLoaderOptions = { ...ownCodeLoader(loader), eventBus: sandbox.bus };
   // Who runs this runtime's modes (§chat.mode-menu/sova-runs-modes): Sova's entry takes the discovered
   // mode extension's slot for this build's package manager, for the runtime's whole life (own-code.ts).
   const services = await withModesEntry(modesEntry, () =>
@@ -178,6 +181,7 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
       resourceLoaderOptions,
     }),
   );
+  sandbox.attach(services);
   lowerToolCommands(services.settingsManager);
   // Steers sent while the chat is busy land together, at the agent's next step (P28 steer-all).
   steerAllAtOnce(services.settingsManager);

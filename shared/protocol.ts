@@ -2596,11 +2596,12 @@ export interface ShellRun extends ShellOutcome {
 /** Why a command from shell mode was refused: it never ran, was never saved and never reaches the model
     (§chat.shell-mode/running). The composer shows `message` under the box and keeps the draft.
     `running` = a command already runs in this chat; `kill-guard` = the macOS kill guard refused it
-    (§chat.kill-guard/refusal); `sandbox` = the chat's sandbox is On and couldn't be prepared;
+    (§chat.kill-guard/refusal); `sandbox` = the chat's sandbox is On and couldn't be prepared; `failed` = an
+    extension's command hook failed before it could start;
     `busy` = a terminal owns the session; `recent` = an unknown process wrote it (reconnect with force);
     `unavailable` = this chat has no shell mode (the Overseer, a project overseer or assistant, a gathering
     session), or the chat is closing; `empty` = no command. */
-export type ShellRefusal = "running" | "kill-guard" | "sandbox" | "busy" | "recent" | "unavailable" | "empty";
+export type ShellRefusal = "running" | "kill-guard" | "sandbox" | "failed" | "busy" | "recent" | "unavailable" | "empty";
 
 /** Why a rewind was refused: busy = a TUI owns the session; recent = an unknown process wrote it
     (reconnect with force); not_on_branch = the id is unknown, not a user message, or not on the

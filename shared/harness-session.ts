@@ -240,6 +240,35 @@ export interface OwnedCommand {
   handler(args: string, ctx: unknown): Promise<void>;
 }
 
+/** How a shell run ended (the harness's result, before Sova saves anything of its own). */
+export interface ShellResult {
+  /** The output as the harness keeps it (already cut to `truncated`). */
+  output: string;
+  /** Absent when the command was killed or the harness gave none. */
+  exitCode?: number;
+  cancelled: boolean;
+  truncated?: { by: "lines" | "bytes"; max: number };
+  fullOutputPath?: string;
+  /** The run's entry, once the harness wrote it: at once when no run is in progress, else after that run
+      (a command that ends mid-reply is saved after the reply). Resolves to null when it never was (the
+      session went away first). */
+  saved: Promise<HEntry | null>;
+}
+
+/** The user's own shell commands (shell mode, §chat.shell-mode/running): one at a time, in the session's
+    folder, with the agent's shell, environment, sandbox and remote target. */
+export interface HarnessShell {
+  /** Run `command`. `onStart` is called once, just before it starts; `onOutput` hears each piece of output as
+      it comes. `private`: it never reaches the model. Resolves when the command ends, or with `refused` (and
+      no `onStart`: nothing ran, nothing is saved) when it can't run as the agent's commands would: the
+      session's sandbox is On and can't be prepared (`sandbox`), or an extension's command hook failed (`failed`).
+      Sova's own refusals come before the call. */
+  run(command: string, o: { id: string; private?: boolean; onStart(): void; onOutput(chunk: string): void }): Promise<ShellResult | { refused: string; why: "sandbox" | "failed" }>;
+  /** Stop the running command and everything it started; resolves at once (the run's own promise ends). */
+  stop(): void;
+  isRunning(): boolean;
+}
+
 /** A held session, driven: its reads (SessionRead), its state, its input, its queue and its events. */
 export interface HarnessSession extends SessionRead {
   readonly state: SessionState;
@@ -264,8 +293,10 @@ export interface HarnessSession extends SessionRead {
   /** Queue a steer into the running turn (a `/command` is refused by the harness: send it instead). */
   steer(text: string, images?: ImageInput[], o?: { source?: InputSource }): Promise<void>;
   readonly queue: HarnessQueue;
-  /** Stop the run (and a compaction); leaves the queue alone. */
+  /** Stop the run (and a compaction); leaves the queue alone and never stops a shell run (`shell.stop`). */
   abort(): Promise<void>;
+  /** The user's own shell commands. */
+  readonly shell: HarnessShell;
 
   // ── history surgery (each reports a refusal, never throws one)
   /** Move the leaf to just before the user input `entryId` on the active branch and write a marker that

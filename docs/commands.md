@@ -33,7 +33,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Live capability links | 1 |
 | Class: Approvals and grants | 5 |
 | Pending (not yet a command) | 23 |
-| Chat socket frame types | 12 |
+| Chat socket frame types | 14 |
 | Document/window keydown listeners | 11 |
 | Hand-written tool specs | 132 |
 
@@ -972,7 +972,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 
 The `type` of every `ChatClientMessage` (`shared/protocol.ts`), the frames a page sends on `/ws/chat`:
 
-`prompt`, `steer`, `abort`, `set_model`, `set_thinking`, `set_claude_login`, `ui_response`, `rewind`, `regenerate`, `compact`, `queue_remove`, `reload_code`
+`prompt`, `steer`, `abort`, `set_model`, `set_thinking`, `set_claude_login`, `ui_response`, `rewind`, `regenerate`, `compact`, `queue_remove`, `reload_code`, `shell`, `shell_stop`
 
 ## Keydown listeners on the document or the window
 

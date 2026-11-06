@@ -113,7 +113,11 @@
       "src/lib/playbooks.ts",
       "src/components/PlaybooksDialog.tsx",
       "server/project-root.ts",
-      "server/playbooks.test.ts"
+      "server/playbooks.test.ts",
+      "server/projects/folded-playbooks.test.ts"
+    ],
+    "requires": [
+      "§app/project-setup"
     ]
   },
   "§chat/playbooks": {

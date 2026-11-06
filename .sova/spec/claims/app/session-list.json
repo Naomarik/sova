@@ -429,12 +429,13 @@
       "§app.overseer/proactivity",
       "§app.session-list/recent",
       "§app.session-list/groups",
-      "§app.session-list/spine"
+      "§app.session-list/spine",
+      "§app.project-runtime/review"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T05:47Z",
-      "source": "pi-session:01a1a1b7-c99c-75b6-8a92-b66649ed6742#43572b80"
+      "at": "2026-11-05T07:21Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
     }
   },
   "§app.session-list/ordinary-surfaces": {
@@ -452,12 +453,14 @@
       "src/components/Sidebar.tsx",
       "server/worker-sessions.ts",
       "src/lib/project-region.ts",
-      "src/lib/queue-chats.test.ts"
+      "src/lib/queue-chats.test.ts",
+      "src/lib/needs-you.ts",
+      "src/lib/needs-you.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T18:31Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
+      "at": "2026-11-05T07:21Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
     }
   },
   "§app.session-list/organizations": {

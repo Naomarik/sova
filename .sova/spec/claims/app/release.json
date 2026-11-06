@@ -127,7 +127,9 @@
       "§app.project-runtime/verb-playbooks",
       "§app.project-runtime/deploy-playbook",
       "§app.release/settings",
-      "§app.release/manifest"
+      "§app.release/manifest",
+      "§app.project-setup/investigate",
+      "§app.project-setup/proposal"
     ],
     "code": [
       "playbooks/release-maker/PLAYBOOK.md",
@@ -140,12 +142,13 @@
       "server/projects/onboard.ts",
       "server/release-playbooks.test.ts",
       "server/project-services/release-maker.integration.test.ts",
-      "src/components/ReleasesTab.tsx"
+      "src/components/ReleasesTab.tsx",
+      "playbooks/project-setup/references/questions.md"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-05T04:52Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
     }
   },
   "§app.release/manifest": {
@@ -406,7 +409,9 @@
     "requires": [
       "§app.organizations/project-page",
       "§app.release/verbs",
-      "§app.release/maker"
+      "§app.release/maker",
+      "§app.project-setup/start",
+      "§app.project-setup/proposal"
     ],
     "code": [
       "src/components/ReleasesTab.tsx",
@@ -420,7 +425,8 @@
       "src/lib/projects-route.test.ts",
       "src/projects.css",
       "server/project-releases-ui.integration.test.ts",
-      "shared/protocol.ts"
+      "shared/protocol.ts",
+      "src/components/SetupChat.tsx"
     ],
     "agreed": {
       "by": "user",

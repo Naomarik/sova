@@ -275,7 +275,9 @@
       "server/mesh/details.ts",
       "server/mesh/resync.ts",
       "shared/project-settings.ts",
-      "src/lib/mesh-resync.test.ts"
+      "src/lib/mesh-resync.test.ts",
+      "pi-config/extensions/mode/create/landing.md",
+      "pi-config/extensions/mode/create/shared.md"
     ],
     "agreed": {
       "by": "user",
@@ -313,7 +315,11 @@
       "server/mode-state.ts",
       "server/chat-manager.ts",
       "src/components/ModeMenu.tsx",
-      "pi-config/extensions/mode/create/overview.md"
+      "pi-config/extensions/mode/create/overview.md",
+      "pi-config/extensions/mode/create/shared.md",
+      "pi-config/extensions/mode/create/project.md",
+      "pi-config/extensions/mode/create/landing.md",
+      "pi-config/extensions/mode/create/releases.md"
     ],
     "agreed": {
       "by": "user",

@@ -1,0 +1,302 @@
+{
+  "§app.project-setup/chat": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.project-runtime/onboard",
+      "§app.project-runtime/verb-playbooks",
+      "§app.merge-queue/chats",
+      "§app.project-overseer/coding-worktrees"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T04:36Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+    },
+    "code": [
+      "server/projects/setup-chat.ts",
+      "server/projects/onboard.ts",
+      "server/projects/runtime.ts",
+      "shared/setup-chat.ts",
+      "server/projects/setup-chat.test.ts",
+      "server/projects/setup-chat-open.test.ts",
+      "src/components/SetupChat.tsx",
+      "src/lib/setup-chat.ts",
+      "src/lib/setup-chat.test.ts",
+      "server/project-overseer.ts",
+      "server/projects/runtime-routes.ts",
+      "server/projects/setup-lifecycle.test.ts",
+      "server/attention.ts"
+    ]
+  },
+  "§app.project-setup/context": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.playbooks/bundles",
+      "§app.project-services/contract"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T04:36Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+    },
+    "code": [
+      "playbooks/project-setup/PLAYBOOK.md",
+      "playbooks/project-setup/references/definition.md",
+      "playbooks/project-setup/references/behaviour.md",
+      "playbooks/project-setup/references/investigate.md",
+      "playbooks/project-setup/references/targets.md",
+      "server/projects/setup-chat.ts",
+      "server/projects/setup-playbook.test.ts"
+    ]
+  },
+  "§app.project-setup/drawing": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.markdown/visuals"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T04:36Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+    },
+    "code": [
+      "playbooks/project-setup/PLAYBOOK.md",
+      "playbooks/project-setup/references/drawing.md",
+      "playbooks/project-setup/scripts/project-setup.mjs",
+      "playbooks/project-setup/references/examples/clojure-vps.md"
+    ]
+  },
+  "§app.project-setup/investigate": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.alignment/tool",
+      "§app.release/maker",
+      "§app.project-runtime/deploy-playbook"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T04:36Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+    },
+    "code": [
+      "playbooks/project-setup/PLAYBOOK.md",
+      "playbooks/project-setup/references/investigate.md",
+      "playbooks/project-setup/references/questions.md",
+      "playbooks/project-setup/references/targets.md",
+      "playbooks/project-setup/scripts/project-setup.mjs"
+    ]
+  },
+  "§app.project-setup/land-gate": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.project-setup/trial",
+      "§app.merge-queue/approve",
+      "§app.project-services/conform"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T04:37Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+    },
+    "code": [
+      "server/merge-queue/setup-branch.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/wire.ts",
+      "server/projects/runtime.ts",
+      "server/merge-readiness.ts",
+      "server/ready-to-land.ts",
+      "server/merge-queue/setup-trial.test.ts",
+      "src/lib/setup-chat.ts",
+      "src/lib/api.ts",
+      "src/components/SetupChat.tsx",
+      "src/lib/setup-chat.test.ts",
+      "src/components/PlaybookReview.tsx",
+      "src/lib/project-software.ts",
+      "pi-config/extensions/worktrees/setup-rule.ts",
+      "server/merge-queue/ingest.ts",
+      "server/merge-queue/setup-trust.test.ts",
+      "pi-config/extensions/worktrees/index.test.ts"
+    ]
+  },
+  "§app.project-setup/proposal": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.merge-queue/approve",
+      "§chat.changes/viewer",
+      "§app.session-list/needs-you",
+      "§app.project-setup/land-gate",
+      "§app.project-runtime/review"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T04:37Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+    },
+    "code": [
+      "playbooks/project-setup/PLAYBOOK.md",
+      "playbooks/project-setup/scripts/project-setup.mjs",
+      "playbooks/project-setup/references/definition.md",
+      "server/projects/playbook-review.ts",
+      "server/projects/runtime.ts",
+      "shared/playbook-review.ts",
+      "shared/project-runtime.ts",
+      "shared/setup-chat.ts",
+      "server/project-services/observe.ts",
+      "server/projects/setup-chat.ts",
+      "src/components/SetupChat.tsx",
+      "src/components/ReleasesTab.tsx",
+      "src/components/ProjectDeployPanel.tsx",
+      "src/app.css",
+      "src/lib/setup-chat.ts",
+      "src/lib/setup-chat.test.ts",
+      "server/merge-queue/setup-branch.ts",
+      "server/projects/runtime-routes.ts",
+      "server/projects/setup-lifecycle.test.ts",
+      "src/components/ProjectPage.tsx",
+      "src/lib/api.ts",
+      "src/lib/project-software.ts",
+      "pi-config/extensions/worktrees/index.ts",
+      "server/merge-queue/ingest.ts"
+    ]
+  },
+  "§app.project-setup/sova": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.project-setup/drawing",
+      "§app.merge-queue/settings-save"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T04:37Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+    },
+    "code": [
+      "playbooks/project-setup/references/examples/sova.md",
+      "src/components/SetupChat.tsx"
+    ]
+  },
+  "§app.project-setup/start": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.merge-queue/view",
+      "§app.merge-queue/settings",
+      "§app.release/tab",
+      "§app.project-runtime/deploy-panel",
+      "§app/commands"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T04:35Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+    },
+    "code": [
+      "server/projects/setup-chat.ts",
+      "server/projects/runtime-routes.ts",
+      "shared/setup-chat.ts",
+      "shared/commands/projects.ts",
+      "shared/commands-ids.json",
+      "server/projects/setup-chat.test.ts",
+      "server/projects/setup-chat-open.test.ts",
+      "src/components/SetupChat.tsx",
+      "src/lib/setup-chat.ts",
+      "src/lib/api.ts",
+      "src/components/MergeQueueTab.tsx",
+      "src/components/ReleasesTab.tsx",
+      "src/components/ProjectDeployPanel.tsx",
+      "src/components/settings/MergeQueueSettings.tsx",
+      "src/components/settings/MergeQueueSettings.css",
+      "src/components/ProjectPage.tsx",
+      "src/lib/setup-chat.test.ts"
+    ]
+  },
+  "§app.project-setup/trial": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.merge-queue/run",
+      "§app.merge-queue/checks",
+      "§app.release/settings",
+      "§app.project-services/merge-verbs"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T04:37Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+    },
+    "code": [
+      "playbooks/project-setup/PLAYBOOK.md",
+      "playbooks/project-setup/references/behaviour.md",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/run.ts",
+      "server/merge-queue/routes.ts",
+      "server/merge-queue/setup-branch.ts",
+      "server/merge-queue/store.ts",
+      "server/merge-queue/contract.ts",
+      "server/merge-queue/wire.ts",
+      "shared/merge-queue.ts",
+      "shared/project-contract.ts",
+      "server/merge-queue/setup-trial.test.ts",
+      "server/merge-queue/trial-run.integration.test.ts",
+      "src/lib/setup-chat.ts",
+      "src/lib/merge-queue-client.ts",
+      "src/components/SetupChat.tsx"
+    ]
+  },
+  "§app.project-setup/trust": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.project-services/merge-verbs",
+      "§app.project-services/callers",
+      "§app.release/callers",
+      "§app.project-services/deploy-callers"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T04:37Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+    },
+    "code": [
+      "playbooks/project-setup/PLAYBOOK.md",
+      "playbooks/project-setup/references/behaviour.md",
+      "server/merge-queue/routes.ts",
+      "server/merge-queue/setup-trust.test.ts",
+      "server/merge-queue/review-step.ts",
+      "server/merge-queue/wire.ts"
+    ]
+  },
+  "§app/project-setup": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T04:35Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+    },
+    "code": [
+      "server/projects/setup-chat.ts",
+      "shared/setup-chat.ts",
+      "src/components/SetupChat.tsx",
+      "src/lib/setup-chat.ts"
+    ]
+  }
+}

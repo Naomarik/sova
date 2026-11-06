@@ -2,14 +2,15 @@
   "§app.merge-queue/approve": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.worktrees/tool",
       "§chat.worktrees/land-own-word",
       "§chat.composer/worktrees-control",
       "§chat.worktrees/pane",
       "§chat.worktrees/ready-to-land",
-      "§chat.composer/land-confirm"
+      "§chat.composer/land-confirm",
+      "§app.project-setup/land-gate"
     ],
     "agreed": {
       "by": "user",
@@ -37,6 +38,7 @@
       "src/components/MergeQueueCard.tsx",
       "src/components/MergeQueueTab.tsx",
       "src/components/WorktreesModal.tsx",
+      "server/merge-queue/setup-branch.ts",
       "server/merge-queue/guard.ts",
       "server/merge-queue/guard.test.ts",
       "server/merge-queue/scenarios-blame.integration.test.ts",
@@ -750,7 +752,8 @@
       "§app/folder-viewer",
       "§app.merge-queue/settings-save",
       "§app.merge-queue/models",
-      "§app.merge-queue/strategies"
+      "§app.merge-queue/strategies",
+      "§app.project-setup/start"
     ],
     "code": [
       "shared/merge-queue-settings.ts",
@@ -770,9 +773,7 @@
       "server/merge-queue/wire.ts",
       "shared/commands/projects.ts",
       "shared/commands-ids.json",
-      "server/merge-queue/settings-routes.test.ts",
-      "src/lib/merge-queue-initialize.ts",
-      "src/lib/merge-queue-initialize.test.ts"
+      "server/merge-queue/settings-routes.test.ts"
     ],
     "agreed": {
       "by": "user",
@@ -818,7 +819,10 @@
     "evidence": "reviewed",
     "requires": [
       "§app.merge-queue/checks",
-      "§app.project-services/contract"
+      "§app.project-services/contract",
+      "§app.project-setup/start",
+      "§app.project-setup/trial",
+      "§app.project-setup/land-gate"
     ],
     "agreed": {
       "by": "user",
@@ -826,7 +830,6 @@
       "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
     },
     "code": [
-      "src/components/MergeOnboarding.tsx",
       "server/merge-queue-ui.integration.test.ts",
       "server/merge-queue/queue.ts",
       "server/merge-queue/routes.ts",
@@ -836,7 +839,14 @@
       "server/merge-queue/served-rule.test.ts",
       "server/merge-queue/served.ts",
       "server/merge-queue/wire.integration.test.ts",
-      "server/project-services/release.test.ts"
+      "server/project-services/release.test.ts",
+      "src/lib/merge-queue.ts",
+      "src/lib/merge-queue-client.ts",
+      "src/lib/merge-queue.test.ts",
+      "server/merge-queue/run.ts",
+      "server/merge-queue/contract.ts",
+      "server/merge-queue/run.integration.test.ts",
+      "scripts/merge-queue-projects.mjs"
     ]
   },
   "§app.merge-queue/strategies": {
@@ -882,7 +892,7 @@
   "§app.merge-queue/view": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§app.organizations/project-page",
       "§app.project-services/merge-verbs",
@@ -892,7 +902,9 @@
       "§chat.changes/endpoint",
       "§chat.composer/land-confirm",
       "§app.merge-queue/branch-summary",
-      "§chat.worktrees/readiness"
+      "§chat.worktrees/readiness",
+      "§app.project-setup/start",
+      "§app.project-setup/proposal"
     ],
     "agreed": {
       "by": "user",
@@ -936,6 +948,7 @@
       "src/lib/merge-run.browser.test.ts",
       "src/components/ui.tsx",
       "src/components/BranchSummary.tsx",
+      "src/components/SetupChat.tsx",
       "server/merge-queue/run.ts",
       "server/merge-queue/checks.ts",
       "server/merge-queue/queue-newest-blocked.test.ts",
@@ -953,8 +966,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T22:57Z",
-      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
+      "at": "2026-11-05T09:23Z",
+      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#b4839707"
     },
     "code": [
       "server/merge-queue/queue.ts",

@@ -452,7 +452,9 @@
       "§app/merge-queue",
       "§chat.merge-queue/thread",
       "§chat.worktrees/tool",
-      "§app/commands"
+      "§app/commands",
+      "§app.project-setup/trial",
+      "§app.project-setup/trust"
     ],
     "agreed": {
       "by": "user",
@@ -478,6 +480,7 @@
       "server/merge-queue/queue.ts",
       "server/merge-queue/queue.test.ts",
       "server/merge-queue/scenarios-approval.integration.test.ts",
+      "server/merge-queue/setup-trust.test.ts",
       "server/merge-queue/view.ts"
     ]
   },

@@ -11,17 +11,21 @@ export interface ExtensionSender {
   hop: 0;
 }
 
-/** What an extension's card sends in-process carries, after its click (server/transcript-cards.ts): a secret made at
+/** Who a press on a card sends as: an extension by its id, or a project's card by its own name. */
+export type PressSender = { ext: string } | { sessionId: string; title: string };
+
+/** What a card's press sends in-process carries (server/transcript-cards.ts, server/session-offers.ts): a secret made at
     server start, held in memory, sent to no client. No HTTP caller can name a sender with it. */
 const CARD_SENDER_HEADER = "x-sova-card-sender";
 const CARD_SENDER_SECRET = randomBytes(32).toString("hex");
-export const cardSenderHeaders = (extensionId: string): Record<string, string> => ({ [CARD_SENDER_HEADER]: `${CARD_SENDER_SECRET}:${extensionId}` });
-function cardSender(header: string | undefined): string | null {
+export const cardSenderHeaders = (sender: PressSender): Record<string, string> => ({ [CARD_SENDER_HEADER]: `${CARD_SENDER_SECRET}:${encodeURIComponent(JSON.stringify(sender))}` });
+function cardSender(header: string | undefined): PressSender | null {
   const at = header?.indexOf(":") ?? -1;
   if (!header || at <= 0) return null;
   const got = Buffer.from(header.slice(0, at));
   const want = Buffer.from(CARD_SENDER_SECRET);
-  return got.length === want.length && timingSafeEqual(got, want) ? header.slice(at + 1) : null;
+  if (got.length !== want.length || !timingSafeEqual(got, want)) return null;
+  return JSON.parse(decodeURIComponent(header.slice(at + 1))) as PressSender;
 }
 
 /** The manifest's title as it is now, or the id when it has none usable; null: this server doesn't install it. */
@@ -61,7 +65,13 @@ export function extensionSenderOf(c: Context): ExtensionSender | null {
   const key = token !== undefined && !showsToken(token) ? extensionCaller(token) : null;
   if (key) return senderFor(key, false);
   const card = cardSender(c.req.header(CARD_SENDER_HEADER));
-  if (card) return senderFor(card, false);
+  if (card) return "ext" in card ? senderFor(card.ext, false) : { sessionId: card.sessionId, title: card.title, hop: 0 };
+  return pageExtensionSender(c);
+}
+
+/** The installed extension whose page sent this, by its `Referer` (§app.extensions/page-badge), or null. */
+export function pageExtensionSender(c: Context): ExtensionSender | null {
+  if ((c.env as { meshPeer?: unknown } | undefined)?.meshPeer) return null;
   const page = pageExtensionOf(c.req.header("referer"), c.req.header("host"));
   return page ? senderFor(page, true) : null;
 }

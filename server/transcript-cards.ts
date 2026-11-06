@@ -34,7 +34,8 @@ import { DRAWING_VIEW_FILE, DRAWINGS_DIR, GUIDE_FILE, GUIDE_MAX_BYTES, KIND_FILE
 import { typeOwnerWord } from "../shared/transcript-cards";
 import { queueChatRole } from "../shared/merge-queue";
 import { closedDoor, EXTENSION_CARD_DOORS } from "./extension-doors";
-import { cardSenderHeaders } from "./extension-sender";
+import { cardSenderHeaders, type PressSender } from "./extension-sender";
+import { CARD_SENDER_PREFIX } from "../shared/senders";
 import { checkoutRootOf } from "../pi-config/extensions/mode/project-discovery.ts";
 import { sessionsChanged } from "./list-generation";
 import { projectRootOf } from "./project-root";
@@ -533,21 +534,12 @@ function cardNews(name: CardNews["name"], id: string, path: string, card: CardIn
   }
 }
 
-/** The one rule for cards during an open alignment question: held, whoever asks, but for an update to a card that
-    takes no answer, which asks nothing of the user. To hold those too, drop the second half. */
-const alignmentHoldsCards = (s: SessionSummary, input: RaiseInput): boolean => {
-  if ((s.align?.openQuestions ?? 0) === 0) return false;
-  const updating = input.card !== undefined ? readRecord(input.sessionId ?? s.id)?.cards.find((c) => c.id === input.card) : undefined;
-  return updating?.answerMode !== "none";
-};
-
 /** Raise a card, give an open one a new revision of its data, or mark it done: every rule checked, the card recorded and returned. */
 export async function raiseCard(input: RaiseInput): Promise<CardInfo> {
   const s = await summaryOf(input.path);
   const sessionId = input.sessionId ?? s.id;
   if (s.archived) throw new CardRefusal(`${NOTHING} this session is archived.`);
   if (s.workerSession || s.overseer || s.projectOverseer || s.baton) throw new CardRefusal(`${NOTHING} cards show only in ordinary chats.`);
-  if (alignmentHoldsCards(s, input)) throw new CardRefusal(`${NOTHING} an alignment question is open.`);
   if (input.card !== undefined) return reviseCard(input, sessionId);
   if (typeof input.type !== "string" || !input.type) throw new CardRefusal(`${NOTHING} type names one of the session's card types.`, 400);
   const snapshot = await cardSnapshotFor(sessionId, input.path, s.cwd);
@@ -668,7 +660,8 @@ export async function answerCard(input: AnswerInput): Promise<CardInfo> {
   cardNews("card.answered", s.id, input.path, card);
   if (does && does.kind !== "answer") {
     const ownerExt = ownerExtensionOf(rec, card.type);
-    const outcome = does.kind === "send" ? await sendAs(input.path, does.text, ownerExt) : await runCommand(does.command, does.params ?? {}, input.path, ownerExt);
+    const sender = senderForPress(ownerExt, card, s);
+    const outcome = does.kind === "send" ? await sendAs(input.path, does.text, sender) : await runCommand(does.command, does.params ?? {}, input.path, ownerExt, sender);
     answer.outcome = outcome;
     saveRecord(rec);
   }
@@ -678,9 +671,16 @@ export async function answerCard(input: AnswerInput): Promise<CardInfo> {
 /** The extension a card's type belongs to, or undefined for a project's: what its button or view does goes under its name. */
 const ownerExtensionOf = (rec: SessionRecord, type: string): string | undefined => rec.snapshot?.types.find((t) => t.type === type)?.ext?.id;
 
-async function sendAs(path: string, text: string, ownerExt?: string): Promise<{ state: "done" | "failed"; text: string }> {
+/** Who a press's message goes out as: its extension always; a project's card only while the chat waits on its alignment
+    answers, because a press never answers one or ends that wait (§chat.alignment/session-mark). Else nobody: as it was. */
+function senderForPress(ownerExt: string | undefined, card: CardInfo, s: SessionSummary): PressSender | undefined {
+  if (ownerExt) return { ext: ownerExt };
+  return (s.align?.openQuestions ?? 0) > 0 ? { sessionId: `${CARD_SENDER_PREFIX}${card.type}`, title: dataTitle(card) ?? card.title } : undefined;
+}
+
+async function sendAs(path: string, text: string, sender?: PressSender): Promise<{ state: "done" | "failed"; text: string }> {
   const req = buildRequest(findCommand("session.send")!, { session: path, text, delivery: "followUp" });
-  const res = await deps.request(req.url, { method: req.method, headers: { "content-type": "application/json", ...(ownerExt ? cardSenderHeaders(ownerExt) : {}) }, body: JSON.stringify(req.body) });
+  const res = await deps.request(req.url, { method: req.method, headers: { "content-type": "application/json", ...(sender ? cardSenderHeaders(sender) : {}) }, body: JSON.stringify(req.body) });
   if (res.ok) {
     await res.body?.cancel();
     return { state: "done", text: "Sent." };
@@ -690,7 +690,7 @@ async function sendAs(path: string, text: string, ownerExt?: string): Promise<{ 
 }
 
 /** A button's command, as the web app would run it: the catalogue entry's own request, answered in the route's words. */
-async function runCommand(id: string, params: Record<string, unknown>, path: string, ownerExt?: string): Promise<{ state: "done" | "failed"; text: string }> {
+async function runCommand(id: string, params: Record<string, unknown>, path: string, ownerExt?: string, sender?: PressSender): Promise<{ state: "done" | "failed"; text: string }> {
   const entry = findCommand(id);
   if (!entry) return { state: "failed", text: `${id} is no Sova command.` };
   // A session param the button left out is this card's session.
@@ -704,7 +704,7 @@ async function runCommand(id: string, params: Record<string, unknown>, path: str
   }
   // A click on an extension's card never opens a door its key can't (§app.extensions/not-you).
   if (ownerExt && closedDoor(req.method, new URL(req.url, "http://sova").pathname)) return { state: "failed", text: `An extension's card can't run ${entry.label}. Nothing ran.` };
-  const res = await deps.request(req.url, { method: req.method, headers: { "content-type": "application/json", "x-sova-command": id, ...(ownerExt ? cardSenderHeaders(ownerExt) : {}) }, ...(req.body ? { body: JSON.stringify(req.body) } : {}) });
+  const res = await deps.request(req.url, { method: req.method, headers: { "content-type": "application/json", "x-sova-command": id, ...(sender ? cardSenderHeaders(sender) : {}) }, ...(req.body ? { body: JSON.stringify(req.body) } : {}) });
   const j = (await res.json().catch(() => null)) as { error?: unknown } | null;
   if (res.ok) return { state: "done", text: `${entry.label} done.` };
   return { state: "failed", text: typeof j?.error === "string" ? j.error : `${entry.label} failed (${res.status}).` };
@@ -809,7 +809,7 @@ export async function runCardCommand(path: string, id: unknown, command: unknown
   }
   const ownerExt = ownerExtensionOf(rec!, card.type);
   if (ownerExt && closedDoor(req.method, new URL(req.url, "http://sova").pathname)) throw new CardRefusal(`An extension's card can't run ${entry.label}. Nothing ran.`, 403);
-  const res = await deps.request(req.url, { method: req.method, headers: { "content-type": "application/json", "x-sova-command": entry.id, ...(ownerExt ? cardSenderHeaders(ownerExt) : {}) }, ...(req.body ? { body: JSON.stringify(req.body) } : {}) });
+  const res = await deps.request(req.url, { method: req.method, headers: { "content-type": "application/json", "x-sova-command": entry.id, ...(ownerExt ? cardSenderHeaders({ ext: ownerExt }) : (s.align?.openQuestions ?? 0) > 0 ? cardSenderHeaders({ sessionId: `${CARD_SENDER_PREFIX}${card.type}`, title: dataTitle(card) ?? card.title }) : {}) }, ...(req.body ? { body: JSON.stringify(req.body) } : {}) });
   const text = await res.text();
   let body: unknown = text;
   try {

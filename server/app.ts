@@ -184,7 +184,7 @@ import { setCreateSettingsRun } from "./create-settings-tool";
 import { runCreateSettings } from "./create-settings-run";
 import { isProjectModeId } from "../shared/project-modes";
 import { extensionKeys } from "./extension-keys";
-import { extensionDoorRefusal, extensionFrameRefusal } from "./extension-doors";
+import { actsAsExtension, EXTENSION_FIRST_PROMPT, extensionDoorRefusal, extensionFrameRefusal } from "./extension-doors";
 import { extensionSenderOf } from "./extension-sender";
 import { registerUpdatesRoutes } from "./updates/routes";
 
@@ -369,7 +369,7 @@ export function buildApp(deps: AppDeps) {
     // One that can't be used (turned off, not signed in) leaves it on the new-chat default, and the answer says why.
     const opened = start.opening ? await openingTaken(made.path, start.opening) : null;
     if (start.prompt?.trim()) {
-      const sent = await promptSession(made.path, start.prompt, undefined, undefined, undefined, undefined, extensionSenderOf(c));
+      const sent = await promptSession(made.path, start.prompt);
       if (!sent.ok) return c.json({ error: `Created the session with its profile, but its first message was refused: ${sent.error}`, session: made }, sent.status);
     }
     const summary = (await getSessionSummary(made.path)) ?? made;
@@ -420,6 +420,8 @@ export function buildApp(deps: AppDeps) {
     } catch {
       return c.json({ error: "Expected JSON body { cwd } or { target, remoteCwd }" }, 400);
     }
+    // An extension speaks through session.send, which names it: nothing is created (§app.extensions/not-you).
+    if (typeof body.prompt === "string" && body.prompt.trim() && actsAsExtension(c)) return c.json({ error: EXTENSION_FIRST_PROMPT, extensionRefused: true }, 403);
     let subagentProfile: string | undefined;
     if (body.subagent_profile !== undefined) {
       try { subagentProfile = requireSubagentProfile(body.subagent_profile); }
@@ -1457,9 +1459,10 @@ export function buildApp(deps: AppDeps) {
     const frames = postedFrames(await c.req.json().catch(() => null));
     if (!frames) return c.json({ error: `Expected { frames: [...] }, 1 to ${POSTED_FRAMES_MAX} objects with a type` }, 400);
     // A key's prompt or steer: nothing runs and nothing goes back as a draft (§app.extensions/not-you).
-    if (notPage(c) === "extension") {
+    const asExtension = actsAsExtension(c);
+    if (asExtension) {
       const why = frames.map((f) => extensionFrameRefusal(f as { type?: unknown })).find((w) => w);
-      if (why) return c.json({ error: why }, 403);
+      if (why) return c.json({ error: why, extensionRefused: true }, 403);
     }
     // The page is going, so nobody hears a refusal: what it carried goes back as the draft.
     const refused = writingRefused(c.req.header(COMPOSER_HEADER));
@@ -1468,7 +1471,7 @@ export function buildApp(deps: AppDeps) {
       return refusedAnswer(c, refused);
     }
     sessionsChanged();
-    deliverFrames(path, frames, notPage(c));
+    deliverFrames(path, frames, asExtension ? "extension" : notPage(c));
     return c.json({ accepted: frames.length }, 202);
   });
 

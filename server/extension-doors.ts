@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { queueChatRole } from "../shared/merge-queue";
 import { DEPLOY_READ_VERBS, DEPLOY_VERBS, MERGE_READ_VERBS, MERGE_VERBS, RELEASE_READ_VERBS, RELEASE_VERBS } from "../shared/project-contract";
 import { judgedPath } from "./mesh/paths";
+import { pageExtensionSender } from "./extension-sender";
 import { notPage } from "./page-only";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { getSessionSummary } from "./sessions-index";
@@ -13,12 +14,14 @@ export const EXTENSION_SPEAKS_REFUSAL = "An extension speaks through session.sen
 export type NeverPromise = "user's word" | "approve" | "rules" | "overseer" | "sova's own";
 
 export interface ExtensionDoor {
-  /** One method, or every write (anything but GET and HEAD). */
+  /** One method, or every write: POST, PUT, PATCH, DELETE, anything but GET and HEAD. */
   method: "WRITE" | "PUT";
   /** As registered, `:name` for one segment; `/*` at the end: it and everything below. */
   route: string;
   promise: NeverPromise;
   error: string;
+  /** A page under `/ext/<id>/` is answered as its key would be (§app.extensions/page-badge): an accident guard. */
+  pages?: true;
 }
 
 const NOTHING = "Nothing changed.";
@@ -51,7 +54,7 @@ export const EXTENSION_DOORS: readonly ExtensionDoor[] = [
   // Counting as the user.
   ...verbDoors(MERGE_VERBS, MERGE_READ_VERBS, LAND),
   { method: "WRITE", route: "/api/merge-queue/*", promise: "user's word", error: LAND },
-  { method: "WRITE", route: "/api/session-groups/:id/prompt", promise: "user's word", error: EXTENSION_SPEAKS_REFUSAL },
+  { method: "WRITE", route: "/api/session-groups/:id/prompt", promise: "user's word", error: EXTENSION_SPEAKS_REFUSAL, pages: true },
   { method: "WRITE", route: "/api/mode", promise: "user's word", error: YOURS },
   { method: "WRITE", route: "/api/mode/command", promise: "user's word", error: YOURS },
   // Approving.
@@ -96,6 +99,8 @@ export const EXTENSION_FRAME_DOORS: Readonly<Record<string, string>> = {
 };
 
 /** And the refusals other code reads, by what they hold. A chat closed to keys takes no frame; these sentences are the sites' words. */
+/** `prompt` on `POST /api/sessions` (`session.new`): open the chat, then `session.send`. */
+export const EXTENSION_FIRST_PROMPT = EXTENSION_SPEAKS_REFUSAL;
 export const EXTENSION_CHAT_DOOR = "An extension takes no action in that chat. Nothing changed.";
 export const EXTENSION_CARD_DOORS = {
   raiseOthers: "an extension raises only its own card types.",
@@ -126,8 +131,12 @@ export function closedDoor(method: string, pathname: string): ExtensionDoor | nu
 /** The door a key just knocked at, or null for anyone else and anywhere else. */
 export function extensionDoorRefusal(c: Context): ExtensionDoor | null {
   const door = closedDoor(c.req.method, new URL(c.req.url).pathname);
-  return door && notPage(c) === "extension" ? door : null;
+  if (!door) return null;
+  return notPage(c) === "extension" || (door.pages && pageExtensionSender(c)) ? door : null;
 }
+
+/** Whether a request is an extension's by its key, or by its page's `Referer` (a page only where a door says so). */
+export const actsAsExtension = (c: Context): boolean => notPage(c) === "extension" || pageExtensionSender(c) !== null;
 
 /** Why a key's frame into a chat is refused, whichever road it came by (a socket, /api/chat/frames, /api/chat/action); null: it may run. */
 export function extensionFrameRefusal(msg: { type?: unknown; instructions?: unknown }): string | null {

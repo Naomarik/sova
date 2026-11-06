@@ -1,9 +1,9 @@
 // Run: pnpm test -- src/lib/menu-place-rule.test.ts
 // The rule (AGENTS.md "Commands and extensibility"): Sova's own features use the same places on its
-// screens as extensions. In the session ⋯ menu that place is src/lib/menu-place.ts: Sova's built-ins
-// drawn by MenuBuiltIns, then what extensions add drawn by MenuAdded, both from
-// src/components/MenuPlace.tsx. Read from the source, so extension rows hand-wired beside the
-// place, a built-in drawn around it, or extension markup in the page fails here.
+// screens as extensions. Every Sova menu is one declaration (src/lib/menu-place.ts) drawn by the one
+// body, MenuBody in src/components/MenuPlace.tsx: Sova's rows first, then what extensions add, drawn
+// by MenuAdded. Read from the source, so extension rows hand-wired beside the body, one of Sova's
+// rows drawn around it, or extension markup in the page fails here.
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -18,29 +18,30 @@ const files = tsx(".").map((f) => ({ f, src: readFileSync(join(root, f), "utf8")
 const src = (f: string) => files.find((x) => x.f === f)!.src;
 const using = (tag: string) => files.filter((x) => new RegExp(`<${tag}[\\s>]`).test(x.src)).map((x) => x.f).sort();
 
-test("the session menu's extension rows are drawn only by the place", () => {
-  assert.deepEqual(using("MenuAdded"), ["components/SessionRowMenu.tsx"]);
-  assert.deepEqual(using("MenuBuiltIns"), ["components/SessionRowMenu.tsx"]);
-  assert.equal(src("components/SessionRowMenu.tsx").match(/<MenuAdded[\s>]/g)?.length, 1);
-  // Only the place reads which commands are menu entries.
+test("what extensions add is drawn only by the one body, once, and only it reads the menu entries", () => {
+  assert.deepEqual(using("MenuAdded"), ["components/MenuPlace.tsx"]);
+  assert.equal(src("components/MenuPlace.tsx").match(/<MenuAdded[\s>]/g)?.length, 1);
   const readers = files.filter((x) => /\bmenuGroups\(/.test(x.src)).map((x) => x.f);
-  assert.deepEqual(readers, ["components/SessionRowMenu.tsx"]);
+  assert.deepEqual(readers, ["components/MenuPlace.tsx"]);
+  // Every door draws the one body: the ⋯ (PlaceMenu) and the right-click (openMenu) are its only drawers.
+  assert.deepEqual(using("MenuBody"), ["components/MenuPlace.tsx"]);
+  assert.match(src("components/SessionRowMenu.tsx"), /<PlaceMenu decl=\{SESSION_MENU\}/);
+  assert.match(src("components/SessionRowMenu.tsx"), /openMenu\(e, SESSION_MENU,/);
 });
 
-test("built-ins come first, then extensions, after every one of Sova's items", () => {
-  const menu = src("components/SessionRowMenu.tsx");
-  const builtIns = menu.indexOf("<MenuBuiltIns");
-  const added = menu.indexOf("<MenuAdded");
-  assert.ok(builtIns > 0 && added > builtIns);
+test("Sova's rows come first, then extensions, after every one of Sova's rows", () => {
+  const body = src("components/MenuPlace.tsx");
+  const own = body.indexOf("<Sections menu={menu} sections={table()} />");
+  const added = body.indexOf("<MenuAdded");
+  assert.ok(own > 0 && added > own);
   // Nothing of Sova's is drawn after the extensions: the next row-level element closes the menu list.
-  const tail = menu.slice(added, menu.indexOf("</div>", added));
-  assert.doesNotMatch(tail, /<menu\.Item/);
+  const tail = body.slice(added, body.indexOf("</div>", added));
+  assert.doesNotMatch(tail, /<(menu\.Item|Row|Sections)[\s>]/);
 });
 
-test("Copy Path is the place's built-in, not a row drawn beside it", () => {
-  const menu = src("components/SessionRowMenu.tsx");
-  assert.match(menu, /SESSION_MENU_BUILT_INS: readonly MenuBuiltIn<SessionSummary>\[\] = \[\s*\{\s*id: "sova\.copy-path"/);
-  assert.doesNotMatch(menu, /<menu\.Item label="Copy Path"/);
+test("Copy Path is a row of the session menu's table, not a row drawn beside it", () => {
+  assert.match(readFileSync(join(root, "lib/session-menu.ts"), "utf8"), /label: "Copy Path", aria: `Copy the path of \$\{name\}`/);
+  for (const { f, src: s } of files) assert.doesNotMatch(s, /<menu\.Item label="Copy Path"/, f);
 });
 
 test("extension content is never markup in the page", () => {

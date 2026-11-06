@@ -147,7 +147,7 @@ import type {
 import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../../shared/team-defaults";
 import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../shared/provider-limits";
 import type { TargetInfo } from "./remote-session";
-import type { CommandEntry } from "../../shared/commands-catalog";
+import { buildRequest, type CommandEntry, findCommand } from "../../shared/commands-catalog";
 import type { BackgroundJob } from "../../shared/protocol";
 import type { AlignTriage, WorkerChecks, DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
 import { TIME_SPENT_READ_ROUTE, type TimeSpentRecord } from "../../shared/time-spent";
@@ -1551,9 +1551,12 @@ export async function runDeployVerb(root: string, verb: DeployVerb, body: Record
 }
 /** A merge-queue verb as the operator (merge.status, merge.add, merge.cancel, …): `project` is the project's root or a
     worktree of it. A refusal is a result too, never thrown. */
-export async function runMergeVerb(project: string | null, verb: `merge.${string}`, body: Record<string, unknown> = {}): Promise<VerbResult> {
+export const runMergeVerb = (project: string | null, verb: `merge.${string}`, body: Record<string, unknown> = {}): Promise<VerbResult> =>
+  verbResult(request<VerbResult>(`/api/project-services/${verb}`, jsonInit("POST", project ? { ...body, project } : body)));
+/** A verb's answer: a refusal (an error whose body is a VerbResult) is a result too, never thrown. */
+export async function verbResult(answer: Promise<unknown>): Promise<VerbResult> {
   try {
-    return await request<VerbResult>(`/api/project-services/${verb}`, jsonInit("POST", project ? { ...body, project } : body));
+    return (await answer) as VerbResult;
   } catch (err) {
     const b = err instanceof ApiError ? (err.body as Partial<VerbResult> | undefined) : undefined;
     if (b && b.v === 1 && typeof b.verb === "string") return b as VerbResult;
@@ -1631,8 +1634,6 @@ export const codeProjectItem = (projectId: string, input: ItemCodeInput) =>
 export const startProjectCoding = (projectId: string, input: CodingStartInput = {}) =>
   request<CodingStartResult>(`${overseerBase(projectId)}/coding`, jsonInit("POST", input));
 /** The operator's gestures on a coding session's worktree: merge its branch into the root's, or remove it. */
-export const mergeCodingWorktree = (projectId: string, sessionId: string) =>
-  request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));
 export const removeCodingWorktree = (projectId: string, sessionId: string) =>
   request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId }));
 
@@ -1713,6 +1714,19 @@ export async function runCommandRequest(method: string, url: string, body?: Reco
   if (res.status === 401) onUnauthorized(parsed);
   else if (res.ok) onAuthorized();
   return { status: res.status, body: parsed };
+}
+
+/**
+ * A catalogue command (shared/commands-catalog.ts), run as the page's own request: the request its
+ * entry builds, sent the way `request` sends every other (mesh routing, the gate), so a menu row
+ * that names a command gets its route's answer, or an ApiError in the route's words, exactly as a
+ * hand-written call does.
+ */
+export function sendCommand<T = unknown>(id: string, params: Readonly<Record<string, unknown>>): Promise<T> {
+  const entry = findCommand(id);
+  if (!entry) return Promise.reject(new Error(`${id} isn't a command.`));
+  const r = buildRequest(entry, params);
+  return request<T>(r.url, { method: r.method, ...(r.body ? { body: JSON.stringify(r.body) } : {}) });
 }
 
 // ---- session offers: a session's offer cards and the project page's list (§chat/offers) --------

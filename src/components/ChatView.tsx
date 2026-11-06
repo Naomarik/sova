@@ -126,12 +126,16 @@ import type { CardInfo } from "../../shared/transcript-cards";
 import { COMPACT_IMAGES_REFUSAL, compactCommand } from "../../shared/compact";
 import { COMPACT_STREAMING_REASON, COMPACTING_REASON, compactedAnnouncement } from "../lib/compact";
 import {
-  messageItems,
-  type MessageItemsView,
+  actionReason,
+  actionsFor,
+  COPIED,
+  copyable,
   queueGoneEffect,
   queueRemoveRefusalText,
   type ActionState,
+  SHARE_WAIT_REASON,
 } from "../lib/message-actions";
+import { shareHref } from "../lib/share-slice";
 import type { MessageActionItem } from "./MessageActions";
 import { queueRemoveFrame, queueRowActions } from "../lib/queue-actions";
 import { isInput } from "../lib/turn";
@@ -1657,18 +1661,29 @@ export function ChatView(props: {
   /** What each delivered message offers here: the reply place. Sova's own built-in first: Copy is
       ours alone; the rest are requests with a reason when they can't act, never a button that
       quietly does nothing. What extensions add comes after it. */
-  const chatItems: MessageItemsView = {
-    shareId,
-    host: () => hostOf(props.path),
-    state: actionState,
-    copy: copyText,
-    open: (href) => (location.hash = href),
-    fork: (entryId) => forkFrom(entryId),
-    rewind: (entryId) => rewindFrom(entryId),
-    regenerate: (entryId) => regenerate(entryId),
-  };
   const chatActions: ReplyPlace = {
-    builtIns: [{ id: "sova.message-actions", items: (strip) => messageItems(strip, chatItems) }],
+    builtIns: [{ id: "sova.message-actions", items(strip) {
+      return actionsFor(strip.role, { copyable: copyable(strip) }).map((kind): MessageActionItem => {
+        switch (kind) {
+          case "copy":
+            return { kind, reason: null, run: async () => void (await copyText(strip.text, COPIED)) };
+          case "share": {
+            const id = shareId();
+            return { kind, reason: id ? null : SHARE_WAIT_REASON, run: () => void (id && (location.hash = shareHref(id, { host: hostOf(props.path), from: strip.entryId }))) };
+          }
+          case "fork":
+            return { kind, reason: actionReason("fork", actionState()), run: () => forkFrom(strip.entryId) };
+          case "rewind":
+            return { kind, reason: actionReason("rewind", actionState()), run: () => rewindFrom(strip.entryId) };
+          case "regenerate":
+            return {
+              kind,
+              reason: actionReason("regenerate", actionState(!!strip.fromWake, !!strip.fromLink, !!strip.fromTopic, !!strip.fromTourNotice)),
+              run: () => regenerate(strip.entryId),
+            };
+        }
+      });
+    } }],
     note: (entryId) => (actionNote()?.entryId === entryId ? actionNote()!.text : null),
     added: additions.added,
     runChip: additions.runChip,

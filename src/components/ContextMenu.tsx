@@ -2,9 +2,10 @@
  * The page's one right-click menu (§app/context-menus). One panel for the whole page, mounted once
  * in App (`ContextMenuHost`), filled on demand: never a hidden menu per row. A place — a session
  * row, a group heading, a pane head, a message — opens it from its own `onContextMenu` with
- * `openContextMenu`, handing over the same menu body its ⋯ (or action strip) draws, so the two
- * doors can't drift. Shift+F10 and the Menu key reach the same handlers: the key's owner sends a
- * `contextmenu` to the focused element, and the place under it answers as for a right-click.
+ * `openContextMenu` (src/components/MenuPlace.tsx `openMenu`), handing over the same declaration
+ * its ⋯ draws, so the two doors can't drift. Shift+F10 and the Menu key reach the same handlers:
+ * the key's owner sends a `contextmenu` to the focused element, and the place under it answers as
+ * for a right-click.
  *
  * Solid delegates `contextmenu`, so handlers run innermost first: the innermost place takes the
  * event (prevents its default) and every place around it sees it taken and does nothing.
@@ -15,10 +16,8 @@ import { contextAction, type ContextAction, contextPointerKind, createKeyEcho, c
 import type { MenuAnchor } from "../lib/menu-position";
 import { type ActionMenuApi, MenuPanel, type MenuPanelControls } from "./ActionMenu";
 
-/** What a place's menu is: its name, where focus goes back to, and its body. */
+/** What a place's menu is: where focus goes back to, and its body. */
 export interface ContextMenuSpec {
-  /** The menu's accessible name, the ⋯ trigger's ("Actions for “Fix the build”"). */
-  label: string;
   /** The thing's own focus target (its row link, heading, pane head): Escape and a row's action
       put focus back here. Opened from the keyboard, the focused element is used instead. */
   origin: HTMLElement;

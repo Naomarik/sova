@@ -38,9 +38,9 @@ import type { PaneInsight, TabId } from "./SessionPane";
 import { sessionHref } from "./Sidebar";
 import { SessionView } from "./SessionView";
 import { GroupComposer } from "./GroupComposer";
-import { closeContextMenuOf, openContextMenu } from "./ContextMenu";
-import { PaneMenu, PaneMenuBody } from "./PaneMenu";
-import { paneMenuFor, paneMenuLabel, type PaneMenuWiring } from "../lib/pane-menu";
+import { closeContextMenuOf } from "./ContextMenu";
+import { openMenu, PlaceMenu } from "./MenuPlace";
+import { PANE_MENU, type PaneMenuWiring } from "../lib/pane-menu";
 import { Banner, Icon } from "./ui";
 
 /**
@@ -514,11 +514,11 @@ export function GroupView(props: {
   };
 
   /** Takes the session out of the group — and, for Eliminate, archives it in the same gesture. */
-  const detach = async (path: string, archive: boolean) => {
+  const detach = async (path: string, archive: boolean, send?: () => Promise<unknown>) => {
     const s = summaryOf(path);
     const title = s?.title ?? "this session";
     const next = neighbourOf(panes(), path);
-    if (!(await setSessionGroup(path, null))) return;
+    if (!(await setSessionGroup(path, null, undefined, send))) return;
     let done: string;
     if (!archive) {
       // Remove-only on a session Sova didn't start is the whole story, and says so: there was
@@ -546,10 +546,10 @@ export function GroupView(props: {
 
   /** Promote: the member you picked is the answer, so it leaves the group and opens on its own.
       No undo here: putting it back is the sidebar's gesture, like adding any session. */
-  const promote = async (path: string) => {
+  const promote = async (path: string, send?: () => Promise<unknown>) => {
     const s = summaryOf(path);
     const title = s?.title ?? "this session";
-    if (!(await setSessionGroup(path, null))) return;
+    if (!(await setSessionGroup(path, null, undefined, send))) return;
     props.wiring.onRefresh();
     toast(`Took ${title} out of ${quoted(props.group.name)}.`);
     location.hash = sessionHref(path);
@@ -569,18 +569,12 @@ export function GroupView(props: {
     move: (path, direction) => void move(path, direction),
     focusPane,
     rename: (path, label) => void rename(path, label),
-    detach: (path, archive) => void detach(path, archive),
-    promote: (path) => void promote(path),
+    detach: (path, archive, send) => void detach(path, archive, send),
+    promote: (path, send) => void promote(path, send),
   };
   /** A right-click or Shift+F10 on a pane's head or its tab: that pane's Pane actions, at the pointer or under it. */
   const openPaneMenu = (e: MouseEvent & { currentTarget: HTMLElement }, path: string, summary: () => SessionSummary, origin: HTMLElement) =>
-    openContextMenu(e, {
-      el: e.currentTarget,
-      menu: () => {
-        const p = paneMenuFor(path, summary, paneWiring);
-        return { label: paneMenuLabel(p.name), origin, body: (menu) => <PaneMenuBody {...p} menu={menu} /> };
-      },
-    });
+    openMenu(e, PANE_MENU, () => ({ path, summary: summary(), w: paneWiring }), { el: e.currentTarget, origin: () => origin });
 
   // ---- Completion roll-up ------------------
   /**
@@ -794,49 +788,45 @@ export function GroupView(props: {
       <Show when={mode() === "tabs" && panes().length > 0}>
         <div class="workspace-tabs" role="tablist" aria-label="Members">
           <For each={panes()}>
-            {(path) => {
-              let tab!: HTMLButtonElement;
-              onCleanup(() => closeContextMenuOf(tab));
-              return (
-                <button
-                  ref={tab}
-                  type="button"
-                  class="workspace-tab"
-                  role="tab"
-                  id={`ws-tab-${paneIdFor(path)}`}
-                  aria-selected={active() === path}
-                  aria-controls={`pane-${paneIdFor(path)}`}
-                  tabindex={active() === path ? 0 : -1}
-                  title={nameOf(path)}
-                  /* The pane's own accessible name, byte for byte: the strip and the pane must
-                     agree on what a member is called, and a repeat's #n is the difference between
-                     three names and one. */
-                  aria-label={nameOf(path)}
-                  onClick={() => focusPane(path, true)}
-                  /* The pane's own Pane actions; a member whose file is gone has none, so its tab
-                     keeps the browser's menu. */
-                  onContextMenu={(e) => {
-                    const seen = summaryOf(path);
-                    if (seen && !ghostOf(path)) openPaneMenu(e, path, () => summaryOf(path) ?? seen, e.currentTarget);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-                    const list = panes();
-                    const next = list[list.indexOf(path) + (e.key === "ArrowRight" ? 1 : -1)];
-                    if (!next) return;
-                    e.preventDefault();
-                    focusPane(next, false);
-                    document.getElementById(`ws-tab-${paneIdFor(next)}`)?.focus();
-                  }}
-                >
-                  <span class="workspace-tab-title">{tabText().get(path)}</span>
-                  {/* The one sign of a pane that is mounted but not shown: a member mid-turn. */}
-                  <Show when={running(summaryOf(path))}>
-                    <span class="live-dot" />
-                  </Show>
-                </button>
-              );
-            }}
+            {(path) => (
+              <button
+                ref={(el) => onCleanup(() => closeContextMenuOf(el))}
+                type="button"
+                class="workspace-tab"
+                role="tab"
+                id={`ws-tab-${paneIdFor(path)}`}
+                aria-selected={active() === path}
+                aria-controls={`pane-${paneIdFor(path)}`}
+                tabindex={active() === path ? 0 : -1}
+                title={nameOf(path)}
+                /* The pane's own accessible name, byte for byte: the strip and the pane must
+                   agree on what a member is called, and a repeat's #n is the difference between
+                   three names and one. */
+                aria-label={nameOf(path)}
+                onClick={() => focusPane(path, true)}
+                /* The pane's own Pane actions; a member whose file is gone has none, so its tab
+                   keeps the browser's menu. */
+                onContextMenu={(e) => {
+                  const seen = summaryOf(path);
+                  if (seen && !ghostOf(path)) openPaneMenu(e, path, () => summaryOf(path) ?? seen, e.currentTarget);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+                  const list = panes();
+                  const next = list[list.indexOf(path) + (e.key === "ArrowRight" ? 1 : -1)];
+                  if (!next) return;
+                  e.preventDefault();
+                  focusPane(next, false);
+                  document.getElementById(`ws-tab-${paneIdFor(next)}`)?.focus();
+                }}
+              >
+                <span class="workspace-tab-title">{tabText().get(path)}</span>
+                {/* The one sign of a pane that is mounted but not shown: a member mid-turn. */}
+                <Show when={running(summaryOf(path))}>
+                  <span class="live-dot" />
+                </Show>
+              </button>
+            )}
           </For>
         </div>
       </Show>
@@ -897,11 +887,9 @@ export function GroupView(props: {
               // it had rather than tearing itself down under the user.
               let last = summaryOf(path)!;
               const summary = () => (last = summaryOf(path) ?? last);
-              let pane!: HTMLElement;
-              onCleanup(() => closeContextMenuOf(pane));
               return (
                 <section
-                  ref={pane}
+                  ref={(el) => onCleanup(() => closeContextMenuOf(el))}
                   class="workspace-pane"
                   id={`pane-${paneId}`}
                   data-time-session={path}
@@ -934,7 +922,7 @@ export function GroupView(props: {
                     listVersion={props.wiring.listVersion}
                     now={props.wiring.now}
                     onTurnError={noteTurnError}
-                    actions={<PaneMenu {...paneMenuFor(path, summary, paneWiring)} />}
+                    actions={<PlaceMenu decl={PANE_MENU} subject={{ path, summary: summary(), w: paneWiring }} title="Pane actions" />}
                     onHeadContextMenu={(e) =>
                       openPaneMenu(e, path, summary, e.currentTarget.querySelector<HTMLElement>(".workspace-pane-tools > button[aria-haspopup='menu']") ?? e.currentTarget)
                     }

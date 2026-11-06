@@ -75,7 +75,8 @@ import { monogram, setSpine, spine } from "../lib/spine";
 import { ARCHIVE_TILE, createRowPress, type DragInfo, dropAction, dropTiles, type TileId } from "../lib/drag-overlay";
 import { holdOwns, startsPress } from "../lib/context-menu";
 import { sessionArchiveRow } from "../lib/session-menu";
-import { closeContextMenuOf, openContextMenu } from "./ContextMenu";
+import { closeContextMenuOf } from "./ContextMenu";
+import { openMenu, PlaceMenu } from "./MenuPlace";
 import { openSessionMenu, SidebarSessionMenu } from "./SessionRowMenu";
 import { bindKey } from "../commands/keys";
 import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
@@ -100,14 +101,13 @@ import { createHoldGesture } from "../lib/hold-select";
 import { sentences, workNow, workNowView, type WorkNowView, type WorkPeer } from "../lib/work-now";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
-import { ActionMenu, type ActionMenuApi } from "./ActionMenu";
+import { ActionMenu } from "./ActionMenu";
 import { ArchiveCleanup } from "./ArchiveCleanup";
 import { ContextRing } from "./ContextRing";
 import { CancelHeldButton } from "./HeldAct";
 import { MergeRunButton } from "./PlaybookReview";
 import { waitingWords } from "../lib/working-hours";
-import { groupMenuLabel } from "../lib/group-menu";
-import { GroupMenuBody } from "./Groups";
+import { GROUP_MENU } from "../lib/group-menu";
 import { draggingPath, dragSuppressesClick, DropOverlay, openNewGroupFor, startRowDrag } from "./DropOverlay";
 import { GroupPicker } from "./GroupPicker";
 import { NO_GROUPS_NOTE } from "../lib/group-picker";
@@ -827,10 +827,9 @@ function GroupBlock(props: {
 
   let summary!: HTMLElement;
   onCleanup(() => closeContextMenuOf(summary));
-  const body = (menu: ActionMenuApi) => <GroupMenuBody menu={menu} group={group()} count={count()} onChanged={props.onChanged} />;
-  /** The name row's right-click and Shift+F10: the ⋯'s own body, at the pointer or under the row. */
-  const onContextMenu = (e: MouseEvent & { currentTarget: HTMLElement }) =>
-    openContextMenu(e, { el: e.currentTarget, menu: () => ({ label: groupMenuLabel(group().name), origin: summary, body }) });
+  const menu = () => ({ group: group(), count: count(), onChanged: props.onChanged });
+  /** The name row's right-click and Shift+F10: the ⋯'s own menu, at the pointer or under the row. */
+  const onContextMenu = (e: MouseEvent & { currentTarget: HTMLElement }) => openMenu(e, GROUP_MENU, menu, { el: e.currentTarget, origin: () => summary });
 
   return (
     <details
@@ -851,9 +850,7 @@ function GroupBlock(props: {
             <summary> possible at all: without it every click in here would toggle the section. The
             trigger is quiet until the row is hovered or something in it takes focus (base.css), and
             always visible to the keyboard. */}
-        <ActionMenu label={groupMenuLabel(group().name)} title="Group actions" class="group-actions" contain>
-          {body}
-        </ActionMenu>
+        <PlaceMenu decl={GROUP_MENU} subject={menu()} title="Group actions" class="group-actions" contain />
       </summary>
       <Show when={count() > 0} fallback={<p class="sidebar-region-note">No sessions yet. Drag a session to file it here.</p>}>
         {/* Flat: every member right under the group's name, newest first, as Recent draws them; no folder level

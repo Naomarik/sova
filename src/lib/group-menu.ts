@@ -1,26 +1,72 @@
-// A sidebar group's actions menu (§app.session-list/groups "The actions menu"), as data: the rows
-// its name row's ⋯ and a right-click or Shift+F10 on that row both draw (components/Groups.tsx
-// GroupMenuBody), and the words of its Delete screen.
+// A sidebar group's actions menu (§app.session-list/groups "The actions menu"), as one declaration
+// (lib/menu-place): its name row's ⋯ and a right-click or Shift+F10 on that row both draw it.
 
+import { GROUP_NAME_MAX, type SessionGroup } from "../../shared/protocol";
 import { sessionsWord } from "./archive";
 import { EMPTY_GROUP_REASON } from "./group-picker";
 import { groupHref } from "./group-route";
-import type { MenuRow } from "./menu-row";
-import { quoted } from "./session-groups";
+import type { MenuDecl } from "./menu-place";
+import { quoted, removeGroup, renameGroup } from "./session-groups";
+import { toast } from "./ui-state";
 
-/** The menu's name, the ⋯ trigger's: both doors name it the same. */
-export const groupMenuLabel = (name: string) => `Group actions · ${name}`;
-
-/** Open workspace, Rename…, Delete group…. `show` swaps the rows for a screen ("rename", "delete"). */
-export function groupMenuRows(group: { id: string; name: string }, count: number, show: (screen: "rename" | "delete") => void): MenuRow[] {
-  const name = quoted(group.name);
-  return [
-    // The workspace: every session of this group on screen at once (#/g/<id>).
-    { label: "Open workspace", aria: `Open ${name} as a workspace`, title: `Open ${name} as a workspace`, icon: "external", href: groupHref(group.id), disabled: count === 0 ? EMPTY_GROUP_REASON : "" },
-    { label: "Rename…", aria: `Rename ${name}`, icon: "pencil", stayOpen: true, run: () => show("rename") },
-    { label: "Delete group…", aria: `Delete ${name}`, icon: "close", stayOpen: true, run: () => show("delete") },
-  ];
+/** What the group menu is about: the group, how many sessions it holds, and who refreshes the list after a delete. */
+export interface GroupMenuSubject {
+  group: SessionGroup;
+  count: number;
+  onChanged(): void;
 }
+
+/** Open workspace, Rename…, Delete group…, as bare rows: one question at a time, in the menu the press came from. */
+export const GROUP_MENU: MenuDecl<GroupMenuSubject> = {
+  label: ({ group }) => `Group actions · ${group.name}`,
+  table: ({ group: g, count, onChanged }) => {
+    const name = quoted(g.name);
+    return [
+      {
+        rows: [
+          // The workspace: every session of this group on screen at once (#/g/<id>).
+          { label: "Open workspace", aria: `Open ${name} as a workspace`, title: `Open ${name} as a workspace`, icon: "external", disabled: count === 0 ? EMPTY_GROUP_REASON : "", act: { href: groupHref(g.id) } },
+          // Clicking away after typing a name must not lose it. Empty, or the name it has: nothing to write.
+          {
+            label: "Rename…",
+            aria: `Rename ${name}`,
+            icon: "pencil",
+            act: {
+              screen: {
+                kind: "name", label: `Rename ${name}`, initial: g.name, placeholder: "Group name", max: GROUP_NAME_MAX, leaveSaves: true,
+                save: (typed) => {
+                  const to = typed.trim();
+                  return to && to !== g.name ? { command: "session.group.rename", params: { group: g.id, name: to }, via: (send) => renameGroup(g.id, to, send) } : null;
+                },
+              },
+            },
+          },
+          {
+            label: "Delete group…",
+            aria: `Delete ${name}`,
+            icon: "close",
+            act: {
+              screen: {
+                kind: "confirm",
+                note: groupDeleteQuestion(g.name, count),
+                confirm: "Delete group",
+                act: {
+                  command: "session.group.delete",
+                  params: { group: g.id },
+                  via: async (send) => {
+                    if (!(await removeGroup(g.id, send))) return;
+                    toast(groupDeletedToast(g.name, count));
+                    onChanged(); // the rows it held carry a groupId that is gone
+                  },
+                },
+              },
+            },
+          },
+        ],
+      },
+    ];
+  },
+};
 
 /** The Delete screen's question, one sentence, in both its forms: what goes away, then what doesn't. */
 export const groupDeleteQuestion = (name: string, count: number) =>

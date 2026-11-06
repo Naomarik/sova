@@ -1,15 +1,12 @@
-import { createMemo, createSignal, For, onMount, Show } from "solid-js";
-import { GROUP_NAME_MAX, type SessionGroup, type SessionSummary } from "../../shared/protocol";
-import { groupDeletedToast, groupDeleteQuestion, groupMenuLabel, groupMenuRows } from "../lib/group-menu";
-import { createGroup, groupNameOf, loadSessionGroups, quoted, removeGroup, renameGroup, sessionGroups, setSessionGroup } from "../lib/session-groups";
+import { createSignal, For, onMount, Show } from "solid-js";
+import { GROUP_NAME_MAX, type SessionSummary } from "../../shared/protocol";
+import { createGroup, groupNameOf, loadSessionGroups, quoted, sessionGroups, setSessionGroup } from "../lib/session-groups";
 import { groupRefusal } from "../lib/regions";
 import { announce, toast } from "../lib/ui-state";
-import type { ActionMenuApi } from "./ActionMenu";
-import { MenuRows } from "./MenuRows";
 import { Banner, Icon } from "./ui";
 
 /**
- * One inline name field, used for "New group" in the pane and for renaming a group in place.
+ * One inline name field, used for "New group" in the pane (a group's Rename… is its menu's name box).
  * Enter saves, Escape cancels, and leaving the field saves what's
  * there — clicking away after typing a name must not lose it. An empty field cancels.
  */
@@ -67,64 +64,6 @@ export function GroupNameField(props: {
         Save
       </button>
     </form>
-  );
-}
-
-/**
- * A sidebar group's actions (§app.session-list/groups "The actions menu"), for both its doors: the
- * name row's ⋯ and a right-click or Shift+F10 on the name row (Sidebar GroupBlock). Its rows
- * (lib/group-menu), then its two screens, one question at a time in the menu the press came from,
- * so nothing moves in the list below while it is answered.
- */
-export function GroupMenuBody(props: { menu: ActionMenuApi; group: SessionGroup; count: number; onChanged(): void }) {
-  const menu = props.menu;
-  const group = () => props.group;
-  const rows = createMemo(() => groupMenuRows(group(), props.count, (screen) => menu.show(screen)));
-  const deleteGroup = async () => {
-    const n = props.count;
-    const name = group().name;
-    if (!(await removeGroup(group().id))) return;
-    toast(groupDeletedToast(name, n));
-    props.onChanged(); // the rows it held carry a groupId that is gone
-  };
-  return (
-    <Show
-      when={menu.screen()}
-      fallback={
-        <div class="model-menu-list" role="menu" aria-label={groupMenuLabel(group().name)}>
-          <MenuRows menu={menu} rows={rows()} />
-        </div>
-      }
-    >
-      <Show
-        when={menu.screen() === "delete"}
-        fallback={
-          <div class="group-menu-screen">
-            <GroupNameField
-              label={`Rename ${quoted(group().name)}`}
-              initial={group().name}
-              onDone={(name) => {
-                menu.dismiss();
-                if (name !== group().name) void renameGroup(group().id, name);
-              }}
-              onCancel={() => menu.dismiss()}
-            />
-          </div>
-        }
-      >
-        <div class="group-menu-screen">
-          <p class="group-tools-question">{groupDeleteQuestion(group().name, props.count)}</p>
-          <div class="cluster">
-            <button type="button" class="button button-sm button-destructive" onClick={() => menu.run(() => void deleteGroup())}>
-              Delete group
-            </button>
-            <button type="button" class="button button-sm button-ghost" onClick={() => menu.dismiss()}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      </Show>
-    </Show>
   );
 }
 

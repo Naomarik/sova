@@ -1,18 +1,9 @@
 import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, Show } from "solid-js";
-import { ACTION_CONFIRM, ACTION_LABEL, type MessageActionKind } from "../lib/message-actions";
+import { ACTION_CONFIRM, ACTION_ICON, ACTION_LABEL, type MessageActionKind } from "../lib/message-actions";
 import { acquireMessageReveal } from "../lib/message-reveal";
 import { confirmActivate } from "../lib/confirm-step";
-import { Icon, type IconName } from "./ui";
+import { Icon } from "./ui";
 
-/** Each action's icon: the strip's buttons, and the message menu's rows (MessageMenu.tsx). */
-export const ACTION_ICON: Record<MessageActionKind, IconName> = {
-  copy: "copy",
-  share: "share",
-  rewind: "undo",
-  regenerate: "refresh",
-  fork: "branch",
-  remove: "close",
-};
 
 /** How long Copy's button shows it worked (the code-block button's own interval). */
 const COPIED_MS = 1500;

@@ -447,7 +447,8 @@ test("S3: three follow-ups mid-turn, the middle one removed while queued", async
   send(chat, trace, a, "A", { type: "prompt", text: "follow one", clientId: "f1" });
   send(chat, trace, a, "A", { type: "prompt", text: "follow two", clientId: "f2" });
   send(chat, trace, b, "B", { type: "prompt", text: "follow three", clientId: "f3" });
-  await until(() => trace.has('sdk prompt ["follow one"'), "the first follow-up's hand-off");
+  // pi's queue_update, not the prompt call: an extension's input hook runs between the two.
+  await until(() => trace.has('"queue_update","steering":[],"followUp":["follow one"]'), "the first follow-up in pi's queue");
   send(chat, trace, b, "B", { type: "queue_remove", id: "rm1", itemId: "f2" });
   await until(() => trace.has('"queue_removed"') || trace.has('"queue_remove_refused"'), "the removal's answer");
   trace.step("release the reply");
@@ -470,7 +471,8 @@ test("S4: Stop with a steer and a follow-up queued: queue_cleared, clearQueue th
   await until(() => model.calls.length === 1, "the first model call");
   send(chat, trace, a, "A", { type: "steer", text: "steer one", clientId: "s1" });
   send(chat, trace, b, "B", { type: "prompt", text: "follow one", clientId: "f1" });
-  await until(() => trace.has('sdk steer ["steer one"'), "the steer's hand-off");
+  // pi's queue_update, not the steer call: an extension's input hook runs between the two.
+  await until(() => trace.has('"queue_update","steering":["steer one"]'), "the steer in pi's queue");
   send(chat, trace, b, "B", { type: "abort" });
   await until(() => !piSession(chat).isStreaming, "the run to stop");
   release();
@@ -566,7 +568,8 @@ test("S8: pi's threshold compaction after a reply near the window, with a follow
   send(chat, trace, a, "A", { type: "prompt", text: "two", clientId: "c2" });
   await until(() => model.calls.length === 2, "the second model call");
   send(chat, trace, b, "B", { type: "prompt", text: "after", clientId: "c3" });
-  await until(() => trace.has('sdk prompt ["after"'), "the follow-up's hand-off");
+  // pi's queue_update, not the prompt call: an extension's input hook runs between the two.
+  await until(() => trace.has('"queue_update","steering":[],"followUp":["after"]'), "the follow-up in pi's queue");
   trace.step("release the reply");
   release();
   await until(() => fixture.seen.length === seen + 1, "the automatic compaction");

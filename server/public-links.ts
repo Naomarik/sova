@@ -3,6 +3,8 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "n
 import { dirname, join } from "node:path";
 import { PREVIEW_URL_RE, SHARE_PORT_DEFAULT, type PublicLinksFile, type ShareFront, type ShareGatewaySetting, type ShareRoute } from "../shared/public-links";
 import { stateRoot } from "./state-root";
+import { problemOf } from "../shared/form-rules";
+import { INGRESS_PORT_RULE, PREVIEW_URL_RULE, PUBLIC_URL_RULE, SHARE_PORT_RULE } from "../shared/public-links-limits";
 
 /**
  * The Public links setting (§mesh.public/setting): `<stateRoot>/public-links.json`, 0600, written
@@ -181,6 +183,14 @@ export function patchPublicLinks(patch: unknown): { file: PublicLinksFile } | { 
     if (!isObj(patch)) fail("Expected a JSON object body");
     const p = patch as Record<string, unknown>;
     onlyKeys(p, PATCH_KEYS, "body");
+    // The form's own rules and words (shared/public-links-limits.ts), ahead of the file's, which name keys.
+    const g = isObj(p.gateway) ? p.gateway : {};
+    const why =
+      (p.ingressPort != null && problemOf(INGRESS_PORT_RULE, p.ingressPort)) ||
+      (g.publicUrl !== undefined && problemOf(PUBLIC_URL_RULE, g.publicUrl)) ||
+      (g.sharePort !== undefined && problemOf(SHARE_PORT_RULE, g.sharePort)) ||
+      (typeof g.previewUrl === "string" && problemOf(PREVIEW_URL_RULE, g.previewUrl));
+    if (why) fail(why);
     const next: Record<string, unknown> = { ...cur };
     if ("route" in p) next.route = p.route;
     if ("gateway" in p) next.gateway = gatewayInput(p.gateway);

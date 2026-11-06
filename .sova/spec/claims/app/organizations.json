@@ -601,7 +601,8 @@
       "statecharts/src/sova/statecharts/baton.cljc",
       "server/statecharts.ts",
       "server/statecharts.test.ts",
-      "statecharts/src/sova/statecharts/api.cljs"
+      "statecharts/src/sova/statecharts/api.cljs",
+      "src/components/form/index.tsx"
     ],
     "requires": [
       "§app.organizations/roster",

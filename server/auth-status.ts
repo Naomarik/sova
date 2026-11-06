@@ -9,9 +9,10 @@ import type { UsageAuth, UsageProvider } from "../shared/protocol";
 // What each usage provider's sign-in says, for the Usage page: expiry times and when it was last
 // renewed. Reads the same credential files the usage-status fetch does
 // (pi-config/extensions/usage-status/fetch.ts), and only reads them: Sova never refreshes a token,
-// and writes a credential file in two named places only, both at the user's request: Settings →
-// Accounts' Claude logins (server/claude-accounts.ts, through Claude Code) and its OpenAI sign-in
-// (server/openai-login.ts, through pi's own login and logout). Each file is re-parsed only when its
+// and writes a credential file in three named places only, each at the user's request: Settings →
+// Accounts' Claude logins (server/claude-accounts.ts, through Claude Code), its OpenAI sign-in
+// (server/openai-login.ts, through pi's own login and logout) and its API keys (server/provider-keys.ts,
+// through pi's api-key login and logout). Each file is re-parsed only when its
 // (mtime, size) changes, and a parse keeps numbers and flags only, so no token string outlives the
 // read and none can reach the wire. The one string kept is the OpenAI sign-in's email, read from its
 // access token's claims for Settings → Accounts (§app.openai-login). On macOS, a Claude login with no file is read from its keychain item

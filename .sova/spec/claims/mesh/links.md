@@ -142,8 +142,13 @@ does, never part of making or keeping a link.
   final too, and never retried. The outbox survives restarts. A delivery (a link copy, an end, a
   message or an offer) to a peer this host's own grant withholds links from (§mesh.peers/grants)
   is refused at once, never held in the outbox, and that peer is not marked down.
-- **Outside the protocol fingerprint.** The link routes' bodies are not part of the protocol hash
-  hosts compare (§mesh.peers/hello), so a later change to them never shows a host as `skewed`.
+- **Hosts on another version.** The link routes' bodies belong to the host-to-host area
+  (§mesh.compatibility/areas), so only that area's number can stop links, never the protocol
+  fingerprint. A host this host reads as Update needed (§mesh.compatibility/host-acts) can't be
+  linked, and a message to a member there is refused at once with a sentence naming the host, never
+  held in the outbox and never ending the link. A member's host refuses a message that states
+  another host-to-host number the same way. A host that is Read only or Display may be wrong takes
+  links and their messages as usual. A host that lists no areas: §mesh.compatibility/legacy.
 
 ## §mesh.links/transcript — A link message is invisible in the main transcript
 

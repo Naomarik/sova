@@ -1,6 +1,6 @@
 import type { SessionTitleSettings, SessionTitleSettingsInfo } from "../../shared/protocol";
 import { putSessionTitleSettings } from "./api";
-import { sameTitleSettings, titleDraftProblem, toTitleDraft, toTitleSettings, type SessionTitleDraft } from "./session-title-settings-form";
+import { sameTitleSettings, titleFields, toTitleDraft, toTitleSettings, type SessionTitleDraft } from "./session-title-settings-form";
 import { createDraftStore } from "./settings-draft";
 
 /**
@@ -13,7 +13,7 @@ const store = createDraftStore<SessionTitleDraft, SessionTitleSettings, SessionT
   label: "Session titles",
   toDraft: toTitleDraft,
   same: sameTitleSettings,
-  problem: titleDraftProblem,
+  fields: titleFields,
   write: async (d) => {
     const result = await putSessionTitleSettings(toTitleSettings(d));
     return { saved: result.settings, result };

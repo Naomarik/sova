@@ -220,6 +220,10 @@ function Verdict(props: { run: MergeRun; target: string; /** Its own banner says
       <Show when={r().verdict === "passed"}>
         <Banner tone="success" title={`Passed. ${props.target} moved to exactly the tested commit.`} />
       </Show>
+      {/* A test check broken on the target: skipped for this branch, flagged until a later run of it runs tests. */}
+      <For each={r().steps.filter((s) => s.broken)}>
+        {(s) => <Banner tone="warn" title={sentence(s.detail)} body={`Skipped for this branch; it doesn't block. Every branch skips it until it's fixed on ${props.target}: start a chat to fix it there.`} />}
+      </For>
       <Show when={rows()}>
         {(list) => (
           <div class="mq-card" role="group" aria-labelledby="mq-whose">

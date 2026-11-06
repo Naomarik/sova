@@ -4,7 +4,7 @@
 import type { MergeCard, MergeCardRevision } from "../../shared/merge-queue";
 import { newerWords, ordinal } from "../../shared/merge-queue";
 import type { CardInfo } from "../../shared/transcript-cards";
-import { mins, notesOf, sentence, short } from "./merge-queue";
+import { landAgainOf, mins, notesOf, sentence, short } from "./merge-queue";
 import { isRequestState, requestChip } from "./merge-queue-requests";
 
 /** The built-in card type the rows carry: drawn by Sova, never a project's or an extension's. */
@@ -78,13 +78,36 @@ export function notPushed(c: Pick<MergeCard, "state" | "landed">): string | null
   return `Not pushed: ${/[.!?…]$/.test(tail) ? tail : `${tail}.`}`;
 }
 
-/** "1 newer commit not included", on a landed card (Land Again beside it). */
-export const cardNewer = (c: Pick<MergeCard, "state" | "newerCommits">): string | null => (c.state === "landed" ? newerWords(c.newerCommits) : null);
+/** "1 newer commit not included", on a landed card (Land Again beside it). Needs a fix: what its re-land brings in
+ *  ("2 newer commits included") and why the newest commit isn't Ready to land, when it isn't (landAgainOf). */
+export function cardNewer(c: Pick<MergeCard, "state" | "newerCommits"> & Partial<Pick<MergeCard, "newerRewritten" | "newerBlocked">>): string | null {
+  if (c.state === "landed") return newerWords(c.newerCommits);
+  if (c.state !== "needs-fix") return null;
+  const again = landAgainOf(c);
+  return [again.included, again.blocked].filter(Boolean).join(" · ") || null;
+}
+
+/** A card action's button word: a sent-back card's re-land reads Land Newest Commit once its branch moved on. */
+export function cardActionLabel(c: Pick<MergeCard, "newerCommits"> & Partial<Pick<MergeCard, "newerRewritten">>, a: CardAction): string {
+  return a === "land-this-again" ? landAgainOf(c).label : CARD_ACTION_LABEL[a];
+}
+
+export const CARD_ACTION_LABEL: Record<CardAction, string> = {
+  cancel: "Cancel",
+  accept: "Accept",
+  "land-anyway": "Land Anyway",
+  "send-back": "Send Back",
+  "land-again": "Land Again",
+  land: "Land",
+  "land-this-again": "Land This Commit Again",
+  remove: "Remove from Queue",
+};
 
 export const cardNotes = (c: Pick<MergeCard, "notes">) => notesOf(c.notes);
 
 /** What the card offers, by state. Every one is a merge verb; none writes into the chat. Needs a fix: Land This Commit
- *  Again (a new approval of the same commit, every check from the start) and Remove from Queue; once its drafts are
+ *  Again (a new approval of the branch's newest commit, every check from the start; Land Newest Commit once the branch
+ *  moved on) and Remove from Queue; once its drafts are
  *  fixed (`redrafted`), Land at the same commit in place of the first. Drafts changed: Land (approves the drafts as
  *  they are now). */
 export type CardAction = "cancel" | "accept" | "land-anyway" | "send-back" | "land-again" | "land" | "land-this-again" | "remove";

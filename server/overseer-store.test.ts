@@ -156,7 +156,7 @@ describe("overseer settings", () => {
 
   test("strict on PUT: the first bad field is the answer", () => {
     assert.deepEqual(store.parseSettings({ proactivity: "loud" }, true), { error: 'proactivity must be "off", "badge" or "brief"' });
-    assert.match((store.parseSettings({ caps: { archivesPerTurn: 1.5 } }, true) as { error: string }).error, /caps.archivesPerTurn/);
+    assert.equal((store.parseSettings({ caps: { archivesPerTurn: 1.5 } }, true) as { error: string }).error, "Sessions archived must be a whole number from 0 to 1,000.");
     assert.match((store.parseSettings({ quickActions: [{ label: "", prompt: "x" }] }, true) as { error: string }).error, /label/);
     const ok = store.parseSettings({ model: "p/m", proactivity: "brief", extraSystemPrompt: "Be terse." }, true);
     assert.ok(!("error" in ok) && ok.model === "p/m" && ok.proactivity === "brief" && ok.extraSystemPrompt === "Be terse.");
@@ -258,5 +258,29 @@ describe("seen store and unread", () => {
     assert.equal(seen.isViewing("v"), true);
     seen.trackViewer("v", -1);
     assert.equal(seen.isViewing("v"), false);
+  });
+});
+
+describe("Settings QA: the server's Overseer limits, as the form checks them (feat/settings-forms-qa)", () => {
+  const err = (raw: unknown) => (store.parseSettings(raw, true) as { error?: string }).error;
+  test("a limit goes up to 1000 on PUT and on read; 1001 is refused naming the limit as the form does", () => {
+    assert.equal(store.CAP_MAX, 1000);
+    const ok = store.parseSettings({ caps: { createPerTurn: 1000, concurrentSessions: 501 } }, true);
+    assert.ok(!("error" in ok) && ok.caps.createPerTurn === 1000 && ok.caps.concurrentSessions === 501);
+    assert.equal(err({ caps: { createPerTurn: 1001 } }), "Sessions created must be a whole number from 0 to 1,000.");
+    assert.equal(err({ caps: { concurrentSessions: -1 } }), "Running at once must be a whole number from 0 to 1,000.");
+    const read = store.parseSettings({ caps: { archivesPerTurn: 800 } }, false);
+    assert.ok(!("error" in read) && read.caps.archivesPerTurn === 800, "a stored 800 reads back as 800, not the default");
+  });
+  test("quick action and extra-instruction refusals name the field in words", () => {
+    const qa = (patch: Record<string, string>) => ({ quickActions: [{ label: "A", prompt: "p" }, { label: "B", prompt: "p", ...patch }] });
+    assert.equal(err(qa({ label: "x".repeat(40 + 1) })), "Quick action 2's label can be at most 40 characters.");
+    assert.equal(err(qa({ prompt: "x".repeat(2000 + 1) })), "Quick action 2's prompt can be at most 2,000 characters.");
+    assert.equal(err(qa({ description: "x".repeat(120 + 1) })), "Quick action 2's description can be at most 120 characters.");
+    assert.equal(err(qa({ label: "x".repeat(40) })), undefined);
+    assert.equal(err({ quickActions: Array.from({ length: store.QUICK_ACTIONS_MAX + 1 }, () => ({ label: "a", prompt: "p" })) }), "There can be at most 12 quick actions.");
+    assert.equal(err({ quickActions: Array.from({ length: store.QUICK_ACTIONS_MAX }, () => ({ label: "a", prompt: "p" })) }), undefined);
+    assert.equal(err({ extraSystemPrompt: "x".repeat(store.EXTRA_PROMPT_MAX + 1) }), "Extra instructions can be at most 8,000 characters.");
+    assert.equal(err({ extraSystemPrompt: "x".repeat(store.EXTRA_PROMPT_MAX) }), undefined);
   });
 });

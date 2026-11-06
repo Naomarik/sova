@@ -1,19 +1,8 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import {
-  FILE_MB,
-  MB,
-  MESSAGES_CAP,
-  MESSAGES_DEFAULT,
-  MESSAGES_MIN,
-  PHOTO_DEFAULTS,
-  PHOTO_MB,
-  PHOTOS_PER_CONVERSATION,
-  PHOTOS_PER_MESSAGE,
-  type BatonFileSettings,
-  type BatonPhotoSettings,
-  type BatonSettings,
-} from "../shared/baton";
+import { FILE_MB, MB, MESSAGES_DEFAULT, PHOTO_DEFAULTS, type BatonFileSettings, type BatonPhotoSettings, type BatonSettings } from "../shared/baton";
+import { BATON_RULES } from "../shared/baton-limits";
+import { problemOf } from "../shared/form-rules";
 import type { ModelPick } from "../shared/powers";
 import { THINKING_LEVELS, type ThinkingLevel } from "../shared/profiles";
 import { stateRoot } from "./state-root";
@@ -29,10 +18,11 @@ import { stateRoot } from "./state-root";
  */
 const file = () => join(stateRoot(), "baton-settings.json");
 
-const whole = (v: unknown, min: number, max: number): v is number => typeof v === "number" && Number.isInteger(v) && v >= min && v <= max;
-const validLimit = (v: unknown): v is number => whole(v, MESSAGES_MIN, MESSAGES_CAP);
-const validMaxBytes = (v: unknown): v is number => typeof v === "number" && v % MB === 0 && whole(v / MB, PHOTO_MB.min, PHOTO_MB.max);
-const validFileBytes = (v: unknown): v is number => typeof v === "number" && v % MB === 0 && whole(v / MB, FILE_MB.min, FILE_MB.max);
+type Box = keyof typeof BATON_RULES;
+/** Why a stored or sent value fails its box's rule (the form's words), or null; sizes are bytes, a whole number of MB. */
+const why = (box: Box, v: unknown): string | null =>
+  problemOf(BATON_RULES[box], typeof v !== "number" ? null : box === "mb" || box === "fileMb" ? (v % MB === 0 ? v / MB : null) : v);
+const ok = (box: Box, v: unknown): v is number => why(box, v) === null;
 export const FILE_DEFAULTS: BatonFileSettings = { maxBytes: FILE_MB.default * MB };
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -57,15 +47,16 @@ function assistantOf(v: unknown): ModelPick | null | { error: string } | undefin
 /** The stored file settings (§app.baton/files): a bad value reads as its default. */
 function readFiles(raw: unknown): BatonFileSettings {
   const f = typeof raw === "object" && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
-  return { maxBytes: validFileBytes(f.maxBytes) ? f.maxBytes : FILE_DEFAULTS.maxBytes };
+  return { maxBytes: ok("fileMb", f.maxBytes) ? f.maxBytes : FILE_DEFAULTS.maxBytes };
 }
 
 /** A PUT's `files`, or an error; absent keeps what is stored. */
 function filesOf(v: unknown): BatonFileSettings | { error: string } | undefined {
   if (v === undefined) return undefined;
   const f = typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
-  if (!f || !validFileBytes(f.maxBytes)) return { error: `files.maxBytes must be a whole number of MB from ${FILE_MB.min} to ${FILE_MB.max}` };
-  return { maxBytes: f.maxBytes };
+  const e = why("fileMb", f?.maxBytes);
+  if (!f || e) return { error: e ?? "files must be an object" };
+  return { maxBytes: f.maxBytes as number };
 }
 
 /** The stored photo settings, each field on its own: a bad one reads as its default. */
@@ -73,9 +64,9 @@ function readPhotos(raw: unknown): BatonPhotoSettings {
   const p = typeof raw === "object" && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   return {
     enabled: typeof p.enabled === "boolean" ? p.enabled : PHOTO_DEFAULTS.enabled,
-    perMessage: whole(p.perMessage, PHOTOS_PER_MESSAGE.min, PHOTOS_PER_MESSAGE.max) ? p.perMessage : PHOTO_DEFAULTS.perMessage,
-    maxBytes: validMaxBytes(p.maxBytes) ? p.maxBytes : PHOTO_DEFAULTS.maxBytes,
-    perConversation: whole(p.perConversation, PHOTOS_PER_CONVERSATION.min, PHOTOS_PER_CONVERSATION.max) ? p.perConversation : PHOTO_DEFAULTS.perConversation,
+    perMessage: ok("perMessage", p.perMessage) ? p.perMessage : PHOTO_DEFAULTS.perMessage,
+    maxBytes: ok("mb", p.maxBytes) ? p.maxBytes : PHOTO_DEFAULTS.maxBytes,
+    perConversation: ok("perConversation", p.perConversation) ? p.perConversation : PHOTO_DEFAULTS.perConversation,
   };
 }
 
@@ -83,7 +74,7 @@ function readPhotos(raw: unknown): BatonPhotoSettings {
 export function readBatonSettings(path = file()): BatonSettings {
   try {
     const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-    return { messagesMax: validLimit(raw?.messagesMax) ? raw.messagesMax : MESSAGES_DEFAULT, photos: readPhotos(raw?.photos), files: readFiles(raw?.files), assistant: assistantPickOf(raw?.assistant) };
+    return { messagesMax: ok("messagesMax", raw?.messagesMax) ? raw.messagesMax : MESSAGES_DEFAULT, photos: readPhotos(raw?.photos), files: readFiles(raw?.files), assistant: assistantPickOf(raw?.assistant) };
   } catch {
     return { messagesMax: MESSAGES_DEFAULT, photos: { ...PHOTO_DEFAULTS }, files: { ...FILE_DEFAULTS }, assistant: null };
   }
@@ -122,18 +113,17 @@ function photosOf(v: unknown): BatonPhotoSettings | { error: string } | undefine
   if (v === undefined) return undefined;
   const p = typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
   if (!p || typeof p.enabled !== "boolean") return { error: "photos.enabled must be true or false" };
-  if (!whole(p.perMessage, PHOTOS_PER_MESSAGE.min, PHOTOS_PER_MESSAGE.max)) return { error: `photos.perMessage must be a whole number from ${PHOTOS_PER_MESSAGE.min} to ${PHOTOS_PER_MESSAGE.max}` };
-  if (!validMaxBytes(p.maxBytes)) return { error: `photos.maxBytes must be a whole number of MB from ${PHOTO_MB.min} to ${PHOTO_MB.max}` };
-  if (!whole(p.perConversation, PHOTOS_PER_CONVERSATION.min, PHOTOS_PER_CONVERSATION.max))
-    return { error: `photos.perConversation must be a whole number from ${PHOTOS_PER_CONVERSATION.min} to ${PHOTOS_PER_CONVERSATION.max}` };
-  return { enabled: p.enabled, perMessage: p.perMessage, maxBytes: p.maxBytes, perConversation: p.perConversation };
+  const e = why("perMessage", p.perMessage) ?? why("mb", p.maxBytes) ?? why("perConversation", p.perConversation);
+  if (e) return { error: e };
+  return { enabled: p.enabled, perMessage: p.perMessage as number, maxBytes: p.maxBytes as number, perConversation: p.perConversation as number };
 }
 
 /** Validate and persist; `{ error }` for a bad body. Keys this version doesn't know survive. */
 export function writeBatonSettings(body: unknown, path = file()): BatonSettings | { error: string } {
   const b = typeof body === "object" && body !== null && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
-  const v = b.messagesMax;
-  if (!validLimit(v)) return { error: `messagesMax must be a whole number from ${MESSAGES_MIN} to ${MESSAGES_CAP}` };
+  const e = why("messagesMax", b.messagesMax);
+  if (e) return { error: e };
+  const v = b.messagesMax as number;
   const photos = photosOf(b.photos);
   if (photos && "error" in photos) return photos;
   const files = filesOf(b.files);

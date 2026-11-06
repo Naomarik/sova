@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { OpenAiAccountInfo, UsageProvider } from "../../shared/protocol";
 import { stampTime } from "./format";
-import { failedText, flowOpen, sectionNote, signedInFacts, signOutText, standingOf } from "./openai-login";
+import { failedText, flowOpen, introText, sectionNote, signedInFacts, signOutText, standingOf } from "./openai-login";
 
 const NOW = Date.UTC(2026, 10, 5, 12, 0, 0);
 const H = 3_600_000;
@@ -63,4 +63,13 @@ test("flowOpen and the failed sentence", () => {
   assert.equal(flowOpen(null), false);
   assert.equal(failedText("OpenAI refused the sign-in"), "OpenAI refused the sign-in. Nothing was saved.");
   assert.equal(failedText("Port 1455 is in use."), "Port 1455 is in use. Nothing was saved.");
+});
+
+test("the intro says where a sign-in goes by the mesh logins setting: shared while every login is, else this device", () => {
+  const lead = "Sova's chats use OpenAI's models through your ChatGPT subscription.";
+  assert.equal(introText(info({ meshSharesLogins: true, apiKeysOnly: false })), `${lead} Sign in once here; it's shared with your mesh computers that get logins, and chats pick it up on their next message.`);
+  for (const over of [{ meshSharesLogins: false, apiKeysOnly: false }, { meshSharesLogins: true, apiKeysOnly: true }, { meshSharesLogins: false, apiKeysOnly: true }]) {
+    assert.equal(introText(info(over)), `${lead} Sign in once on this device; chats pick it up on their next message.`, JSON.stringify(over));
+  }
+  assert.equal(introText(undefined), `${lead} Sign in once on this device; chats pick it up on their next message.`, "before the section loads");
 });

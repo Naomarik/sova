@@ -149,8 +149,12 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
 - **The transcript read reaches peers.** `sova_read_session` takes an optional `host`: with a
   peer's id it reads that peer's session by id (§mesh.links/by-id), with the same bounds and
   untrusted wrapping. The peer renders the slice with its own parser and redacts it with its own
-  secrets before it leaves, and this host redacts it again. A peer that is down or skewed is a
-  refusal naming the host, never an empty transcript.
+  secrets before it leaves, and this host redacts it again. A peer that is down or in Update needed
+  (§mesh.compatibility/host-acts) is a refusal naming the host, never an empty transcript.
+- **A peer on another version.** This host judges each peer by its own numbers
+  (§mesh.compatibility/host-acts) and states its own writing number with every send to one. Creating
+  a session on a peer takes a peer that works fully: one that is Read only or Display may be wrong
+  refuses it, naming the host, and can still be read.
 - **Act:** create a session in any folder, on a remote target, or on a mesh peer (`host`,
   §app.overseer/links-tools), optionally as a link member session (`link`, the only way one is made,
   §app.overseer/links-tools), with an optional first prompt, model,
@@ -1110,8 +1114,10 @@ fetched down to, then lands.
   too, from when a result or any job status names them (a running job's included), but toward the
   Overseer's own next start or send and its running count only: a schedule's fire and an auto-resume
   find their free slots from the sessions it started alone (§app.overseer/extension-commands). All nine are
-  configurable in Settings → Overseer; a settings file without the newer ones reads them as their
-  defaults.
+  configurable in Settings → Overseer, each a whole number from 0 to 1,000, the same range in the
+  form, in what a save accepts and in what a read of the file keeps; a save with one outside it is refused naming the limit by its
+  Settings label ("Sessions created must be a whole number from 0 to 1,000."), never by its field
+  name. A settings file without the newer ones reads them as their defaults.
 - **The running count shows.** While any Overseer-started session counts as running, the
   Overseer's composer shows "3 of 10 running" in its run-status row, from the same count the cap
   checks, and the refusal and the prompt name Settings → Overseer → Limits. The text is a button
@@ -1282,8 +1288,8 @@ Three tools let the Overseer make and end links between sessions on different ho
   its host (a peer id; this host when left out) and session id. A peer's member is resolved on its
   own host by id (§mesh.links/by-id). It refuses, naming the member, a TUI-live session, an archived
   one, a worker's session, the Overseer's own, a baton session, a project overseer's session, any
-  other organization's session (§app.session-list/organizations), a session on a host that is down or skewed,
-  and a second member on the same host as another. Any other session can be linked, running or
+  other organization's session (§app.session-list/organizations), a session on a host that is down or in Update needed
+  (§mesh.compatibility/host-acts), and a second member on the same host as another. Any other session can be linked, running or
   idle, whether or not it was created with `link: true` (§mesh.links/record); one that wasn't gets
   the link tools as it joins (§mesh.links/tools). A member host on the earlier build that linked
   only sessions created with `link: true` refuses any other member there; the call fails naming

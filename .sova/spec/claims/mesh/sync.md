@@ -9,7 +9,9 @@ settings it had whenever another host's copy replaces them (§mesh.sync/kept-cop
 
 ## §mesh.sync/categories — Settings, themes, extensions
 
-A change to a synced category on one host reaches every up peer that has that category on. Each
+A change to a synced category on one host reaches every up peer that has that category on. A peer
+this host reads as Update needed (§mesh.compatibility/host-acts) is neither pushed to, pulled from
+nor merged with until the hosts match. Each
 file is one document (the subagent profile library merges profile by profile instead,
 §mesh.sync/profile-library); the most recently changed version wins, a deletion travels like a change,
 and a received document is written only if the program that reads it accepts it, atomically and

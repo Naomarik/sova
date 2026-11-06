@@ -29,13 +29,26 @@ You may read anything (`git log`, `git diff`, `git show`, files) and run this fo
 ## On your own
 You work by yourself: the user doesn't watch this chat and never has to. Decide what you can from the branch, the logs and this playbook, and act through the verbs. When only the user can decide, ask with `merge.ask` and end your turn: never wait for them here. Their answer arrives as its own message; go on from it then. The user may still open this chat and write to you; answer them when they do.
 
-You keep your memory between events (one chat per project, for as long as it lasts): use it for history (a check that failed before, how you judged a branch like this one), never for the current state. Read the branch, the queue and the logs fresh at every event.
+You keep your memory between events (one chat per project, for as long as it lasts): use it for history only (a check that failed before, how you judged a branch like this one), never for the current state and never for the method. At every event, reread the pages "Read as you go" names for that moment, fresh, never from memory: a remembered page drifts (a pick sent without its `select` ran bare and failed). Read the branch, the queue and the logs fresh too.
+
+## Read as you go
+Each of Sova's messages names its moment and asks you to read its row here first. Read these pages again at that moment, every time, even when you read them a minute ago. A project's own playbook may give its own "Read as you go" table: its row wins where it differs from this one (as its other sections do); without one, this table holds, with the project playbook's section of the same name added.
+
+| Moment (Sova's message starts) | Read now |
+|---|---|
+| **Queued** | this file's "Each event, one short turn" and "What's worth noting"; `references/picks.md`; `references/notes.md`; the project playbook's Picks and What's worth noting |
+| **Conflict** | `references/conflicts.md`; the project playbook's conflict cases |
+| **Failed** | `references/failures.md`; the project playbook's failure causes |
+| **Paused** | `references/failures.md` ("A pause") |
+| **Idle** | the project playbook's "When the queue is idle" (none: end your turn) |
+| **Names** | `references/names.md` |
+| **Answer** | the row of the moment your question was about |
 
 ## Each event, one short turn
 Sova sends you one message per event. Answer it with the verbs and stop: no waiting, no timers, no follow-up questions to Sova. A question for the user goes through `merge.ask`, never in your own reply. When Sova's message starts by saying the playbook changed, read it again first.
 
 **Queued** (an entry joined the queue). Read the branch: `git diff --stat <base>...<commit>` with the base Sova's message names (the target's commit it was queued against; the entry may already have landed, and then `<target>...<commit>` is empty), then the parts that matter. Then:
-1. **Picks** (`references/picks.md`): run `node scripts/blast-radius.mjs --base <base> --tip <commit> --repo <project root>`. It proposes checks from the project's map, each with its reason. Read the diff against it: drop a pick the change can't reach, add one the map missed (only check ids the project declares as optional). Send each with `merge.extend`, its reason in `why`. Nothing fits: send nothing. You only ever add: the required checks always run. A refusal saying the entry is busy or landed means you were too late: that is fine, go on to the note.
+1. **Picks** (`references/picks.md`): run `node scripts/blast-radius.mjs --base <base> --tip <commit> --repo <project root>`. It proposes checks from the project's map, each with its reason. Read the diff against it: drop a pick the change can't reach, add one the map missed (only check ids the project declares as optional). Send each with `merge.extend {entry, checks: [id], why, select}`, its reason in `why` and its `select` whenever the pick has one: a check that takes a group or files (a slow test group, say) runs bare without it and fails at once. Nothing fits: send nothing. You only ever add: the required checks always run. A refusal saying the entry is busy or landed means you were too late: that is fine, go on to the note.
 2. **Note** (`references/notes.md`): write the note with `merge.note`, from "What's worth noting" below (or the project's own list). Nothing worth noting: send an empty note, never filler.
 
 **Conflict** (the branch doesn't merge cleanly onto the target). Judge it: `references/conflicts.md`.

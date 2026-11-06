@@ -83,9 +83,16 @@ export function extensionFlagValues(f: OpenFlags): Map<string, boolean | string>
  * The model-levels extension's levels for models.json providers pi has no catalog for, applied to the
  * shared runtime straight from its cache (pi-config/extensions/model-levels/core.ts), so GET /api/models
  * is right before any chat binds the extension. Re-applied whenever fresh metadata lands; a hosted
- * session's own copy of the extension then finds nothing to change.
+ * session's own copy of the extension then finds nothing to change. The server also re-applies when
+ * another process writes the file (model-sync.ts watchLevelsFile, through reapplyModelLevels).
+ * `ollama-cloud` is never fetched here: only the server's check does (model-sync.ts).
  */
 export function applyModelLevelsAtBoot(runtime: ModelRuntime, agentDir: string, fetch = modelFetchEnabled(process.env)): string[] {
+  return levelsApplier(runtime, agentDir, fetch)();
+}
+
+/** applyModelLevelsAtBoot's apply, kept to run again; listening for fresh metadata and starting the fetch once. */
+function levelsApplier(runtime: ModelRuntime, agentDir: string, fetch: boolean): () => string[] {
   const apply = () => {
     try {
       return applyModelLevels(
@@ -101,7 +108,16 @@ export function applyModelLevelsAtBoot(runtime: ModelRuntime, agentDir: string, 
   };
   onLevelsUpdated(apply);
   if (fetch) void refreshStale({ agentDir });
-  return apply();
+  return apply;
+}
+
+let sharedApply: (() => string[]) | null = null;
+
+/** Apply the metadata file to the shared runtime again (it changed on disk); nothing before the runtime exists. */
+export async function reapplyModelLevels(): Promise<string[]> {
+  if (!modelRuntimePromise) return [];
+  await modelRuntimePromise.catch(() => undefined);
+  return sharedApply?.() ?? [];
 }
 
 /** Whether model metadata may be fetched (model levels, pi's built-in catalogs): the extension's own
@@ -118,7 +134,8 @@ export function getModelRuntime(): Promise<ModelRuntime> {
       // instrumented leaves this host's count partial, never a silent 0.
       if (instrumentModelRuntime(runtime) === "unsupported") markDegraded("server-runtime");
       const fetch = modelFetchEnabled(process.env);
-      applyModelLevelsAtBoot(runtime, agentRoot(), fetch);
+      sharedApply = levelsApplier(runtime, agentRoot(), fetch);
+      sharedApply();
       // pi's own built-in catalogs, from pi.dev in the background, as pi's TUI does at its start
       // (its own 4-hour rule decides whether anything is fetched).
       if (fetch) void runtime.refresh().catch(() => {});

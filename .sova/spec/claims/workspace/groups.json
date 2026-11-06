@@ -8,10 +8,16 @@
       "§chat/transcript"
     ],
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "reviewed",
     "code": [
-      "src/components/SessionView.tsx"
-    ]
+      "src/components/SessionView.tsx",
+      "src/components/HostStateNotices.tsx"
+    ],
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:12Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
   },
   "§workspace.groups/accessibility": {
     "kind": "behavior",

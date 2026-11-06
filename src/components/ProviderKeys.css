@@ -1,0 +1,30 @@
+/* Settings → Accounts' provider tabs and key rows (§app/provider-keys). The tab strip is the skill's
+   .tabs; here it never wraps and scrolls sideways under a swipe on a phone, each tab whole. */
+.accounts-panel { display: flex; flex-direction: column; gap: var(--space-5); }
+.accounts-tabs {
+  flex-wrap: nowrap;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+.accounts-tabs > .tab { flex: none; }
+.accounts-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-full);
+  background: var(--color-border);
+  flex: none;
+}
+.accounts-tab-dot-success { background: var(--status-success); }
+.accounts-tab-dot-warn { background: var(--status-warn); }
+.accounts-tab-dot-error { background: var(--status-error); }
+.accounts-tab-panel { display: flex; flex-direction: column; gap: var(--space-5); }
+.accounts-tab-panel[hidden] { display: none; }
+
+.accounts-key { display: flex; flex-direction: column; gap: var(--space-2); }
+.accounts-key-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.accounts-key-title { margin: 0; font-size: var(--fs-body); font-weight: var(--fw-medium); }
+.accounts-key-field { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.accounts-key-field > .field { flex: 1 1 16rem; min-width: 0; margin: 0; }
+.accounts-key-check { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.accounts-key-check > .field-hint { margin: 0; flex: 1 1 14rem; }

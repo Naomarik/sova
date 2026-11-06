@@ -4,6 +4,7 @@ import { hostname } from "node:os";
 import { PI_VERSION } from "../harness/pi/package";
 import { DENIED, type PeerStateView } from "../../shared/mesh-access";
 import type { MeshBuildHello } from "../../shared/mesh-resync";
+import { type AreasHello, hostState, type HostState, readAreas, WIRE_AREAS } from "../../shared/wire-areas";
 import type { AdvertisedGateway, MeshHelloPublic, ShareGatewayHello } from "../../shared/public-links";
 import { gatewayPublicUrl, isPublicUrl } from "../share/registry";
 import { fetchPeer, peerKey, urlFetch } from "./dial";
@@ -83,7 +84,7 @@ export const advertiseCommit = (commit: string | undefined): void => {
   bootCommit = commit;
 };
 
-export function ownHello(self: { id: string; label: string }, nodeId?: string): MeshHelloPublic & MeshBuildHello {
+export function ownHello(self: { id: string; label: string }, nodeId?: string): MeshHelloPublic & MeshBuildHello & AreasHello {
   const { protocol, version } = ownFingerprint();
   const build = ownBuild();
   return {
@@ -98,6 +99,8 @@ export function ownHello(self: { id: string; label: string }, nodeId?: string): 
     ...(nodeId ? { nodeId } : {}),
     ...ownShareGateway(),
     ...(bootCommit ? { commit: bootCommit } : {}),
+    // Outside the fingerprint too, so a host that lists none still matches (§mesh.compatibility/legacy).
+    areas: WIRE_AREAS,
     now: Date.now(),
   };
 }
@@ -107,8 +110,8 @@ export const ownProtocol = (): string => ownFingerprint().protocol;
 export interface ProbeResult {
   /** `hidden`: the peer identified this host but grants it nothing, hello included (§mesh.peers/grants). */
   state: PeerStateView;
-  /** A gateway's hello also carries `shareGateway`, a newer build's its boot `commit` (both optional). */
-  hello?: MeshHelloPublic & MeshBuildHello;
+  /** A gateway's hello also carries `shareGateway`, a newer build's its boot `commit` and `areas` (all optional). */
+  hello?: MeshHelloPublic & MeshBuildHello & AreasHello;
   error?: string;
   /** Round trip of an answered hello, ms (this host's measure; never on the wire). */
   ms?: number;
@@ -118,6 +121,14 @@ export interface ProbeResult {
     calls do, so it is up to the hooks (reading it as down made each poll a comeback). A hidden one
     answered as well: it is reachable, it just shows this host nothing. */
 export const answered = (probe: ProbeResult): boolean => probe.state === "up" || probe.state === "skewed" || probe.state === "hidden";
+
+/** How this host reads a peer for what it does on its own (§mesh.compatibility/host-acts): the page's
+    rule with this host's running numbers. Null when it doesn't answer, refuses or hides. */
+export const hostReading = (probe: ProbeResult): HostState | null => hostState(WIRE_AREAS, { state: probe.state, ...(probe.hello?.areas ? { areas: probe.hello.areas } : {}) });
+
+/** Both hosts list their areas and this host reads the peer as Update needed: sync and link messages
+    stop. A host that lists none stays as it was, whatever its fingerprint (§mesh.compatibility/legacy). */
+export const areasForbid = (probe: ProbeResult): boolean => !!probe.hello?.areas && hostReading(probe) === "update";
 
 /** GET <base>/api/peer/hello, classified (`base` a URL, or how to fetch a path from the peer). Never throws. */
 export async function probeHello(base: string | ((path: string, init: RequestInit) => Promise<Response>)): Promise<ProbeResult> {
@@ -137,10 +148,14 @@ export async function probeHello(base: string | ((path: string, init: RequestIni
       await res.body?.cancel();
       return { state: "down", error: `hello answered ${res.status}` };
     }
-    const hello = (await res.json()) as MeshHelloPublic & MeshBuildHello;
+    const raw = (await res.json()) as MeshHelloPublic & MeshBuildHello & { areas?: unknown };
+    const { areas: listed, ...rest } = raw ?? {};
+    const areas = readAreas(listed);
+    const hello: MeshHelloPublic & MeshBuildHello & AreasHello = { ...rest, ...(areas ? { areas } : {}) };
     const ms = Math.round(performance.now() - t0);
-    if (hello?.mesh !== 1 || typeof hello.protocol !== "string") return { state: "down", error: "not a Sova hello" };
-    if (hello.protocol !== ownProtocol()) return { state: "skewed", hello, error: `protocol ${hello.protocol}, this host ${ownProtocol()}`, ms };
+    if (hello.mesh !== 1 || typeof hello.protocol !== "string") return { state: "down", error: "not a Sova hello" };
+    // A host that lists its areas is judged by them; the fingerprint decides nothing (§mesh.peers/hello).
+    if (!areas && hello.protocol !== ownProtocol()) return { state: "skewed", hello, error: `protocol ${hello.protocol}, this host ${ownProtocol()}`, ms };
     return { state: "up", hello, ms };
   } catch (err) {
     const e = err as Error & { cause?: { code?: string; message?: string } };
@@ -173,7 +188,7 @@ const peersNow = (): PeerEntry[] => {
 
 /** The peers whose hello advertises a share gateway (§mesh.public/gateway; discovery only, whether
     one accepts this host is its GatewayInfo). Probes through probePeer, so answers are cached.
-    Only peers answering `up`: a down or skewed one is left out, and so is a publicUrl that isn't
+    Only peers answering `up` and not in Update needed: a down or skewed one is left out, and so is a publicUrl that isn't
     exactly an https origin (isPublicUrl). `nodeId` is the peer's StableID
     from peers.json, never the hello's. Never throws. */
 export async function advertisedGateways(peers: () => PeerEntry[] = peersNow): Promise<AdvertisedGateway[]> {
@@ -188,7 +203,7 @@ export async function advertisedGateways(peers: () => PeerEntry[] = peersNow): P
       if (peer.lan) return null; // a dial-out pairing is never a share gateway (§mesh.lan/pairing)
       try {
         const r = await probePeer(peer);
-        const url = r.state === "up" ? r.hello?.shareGateway?.publicUrl : undefined;
+        const url = r.state === "up" && !areasForbid(r) ? r.hello?.shareGateway?.publicUrl : undefined;
         return isPublicUrl(url) ? { nodeId: peer.nodeId, peer: peer.id, publicUrl: url } : null;
       } catch {
         return null;

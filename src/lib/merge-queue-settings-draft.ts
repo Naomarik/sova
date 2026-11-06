@@ -4,7 +4,7 @@
 // confirm (one commit on the target), never by the footer's Save Changes.
 import { createSignal } from "solid-js";
 import type { MergeQueueSettings } from "../../shared/merge-queue-settings";
-import { changesOf, type ProjectDraft } from "./merge-queue-settings";
+import { draftHolds, type ProjectDraft } from "./merge-queue-settings";
 import { registerHeldEdit } from "./settings-draft";
 
 export interface StagedEdit {
@@ -20,10 +20,11 @@ export const stagedEdit = staged;
 export const stageEdit = (e: StagedEdit | null): void => void setStaged(e);
 export const discardStaged = (): void => void setStaged(null);
 
-/** The staged edit changes something (an edit undone by hand is no edit). Tracked. */
+/** The staged edit changes something (an edit undone by hand is no edit), or a time-limit box
+    holds text that isn't one: unsaved either way. Tracked. */
 export function stagedDirty(): boolean {
   const e = staged();
-  return !!e && changesOf(e.draft, e.base, e.hasOrigin) !== null;
+  return !!e && draftHolds(e.draft, e.base, e.hasOrigin);
 }
 
 registerHeldEdit({ tab: "merge-queue", label: "Merge Queue", dirty: stagedDirty, discard: discardStaged });

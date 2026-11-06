@@ -110,6 +110,24 @@
       "§app.resource-monitor/lightness-budget"
     ]
   },
+  "§app.server-runtime/slow-groups": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "scripts/test-groups.mjs",
+      "server/test-groups.test.ts",
+      "server/settings-browser.integration.test.ts",
+      "agents/testing/overview.md",
+      "server/settings-browser-temp.test.helper.ts",
+      "server/settings-browser-temp.test.ts",
+      "server/forms-browser.test.helper.ts",
+      "server/test-helpers.test.ts"
+    ],
+    "requires": [
+      "§app.server-runtime/test-tiers"
+    ]
+  },
   "§app.server-runtime/test-env": {
     "kind": "behavior",
     "authority": "accepted",
@@ -203,16 +221,18 @@
       "scripts/test-env.mjs",
       "server/test-env.test.ts",
       "server/test-env.integration.test.ts",
-      "scripts/test-report.test.ts"
+      "scripts/test-report.test.ts",
+      "scripts/run-tests.integration.test.ts"
     ],
     "requires": [
       "§app.server-runtime/choice",
-      "§app.claude-code-provider/one-program"
+      "§app.claude-code-provider/one-program",
+      "§app.server-runtime/slow-groups"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T03:57Z",
-      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
+      "at": "2026-11-05T20:05Z",
+      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
     }
   },
   "§app.server-runtime/typecheck-reuse": {

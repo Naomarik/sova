@@ -36,6 +36,10 @@ export const sameSizes = (d: MemoryDraft, s: MemorySettings): boolean => {
   return MEMORY_TYPES.every((t) => d.sizes[t] === sizes[t]);
 };
 
+/** The summarizer group's Reset to Defaults: the defaults' summarizer, the sizes as they are. Pure. */
+export const resetMemorySummarizer = (d: MemoryDraft, defaults: MemorySettings): MemoryDraft => ({ ...toMemoryDraft(defaults), sizes: d.sizes });
+/** The sizes group's Reset to Defaults: the defaults' sizes, everything else as it is. Pure. */
+export const resetMemorySizes = (d: MemoryDraft, defaults: MemorySettings): MemoryDraft => ({ ...d, sizes: toMemoryDraft(defaults).sizes });
 export const sameMemorySettings = (d: MemoryDraft, s: MemorySettings): boolean => sameSummarizer(d, s) && sameSizes(d, s);
 
 /** Why the draft can't be saved, one sentence naming the form (the dialog's footer), or null. */

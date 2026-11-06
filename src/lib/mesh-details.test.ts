@@ -46,22 +46,23 @@ test("connected: this host always counts, and each peer that answers (up or on a
 
 test("host menu: each state has its own tone and word, never the colour alone", () => {
   assert.deepEqual(hostTone("self"), { tone: "up", word: null });
-  assert.deepEqual(hostTone("up"), { tone: "up", word: null });
-  assert.deepEqual(hostTone("skewed"), { tone: "skewed", word: "other version" });
+  assert.deepEqual(hostTone("works"), { tone: "up", word: null });
+  assert.deepEqual(hostTone("read-only"), { tone: "skewed", word: "read only" });
+  assert.deepEqual(hostTone("display"), { tone: "skewed", word: "display may be wrong" });
+  assert.deepEqual(hostTone("update"), { tone: "skewed", word: "update needed" });
   assert.deepEqual(hostTone("down"), { tone: "down", word: "down" });
   assert.deepEqual(hostTone("refused"), { tone: "down", word: "refused" });
-  const words = (["up", "skewed", "down", "refused"] as const).map((s) => hostTone(s).word);
+  const words = (["works", "read-only", "display", "update", "hidden", "down", "refused"] as const).map((s) => hostTone(s).word);
   assert.equal(new Set(words).size, words.length, "no two states share a word");
 });
 
 test("session row: the host word names the peer's state in the host menu's words", () => {
-  assert.equal(rowHostState("up", false), null);
-  assert.deepEqual(rowHostState("up", true), { word: "hidden", tone: "warn" });
-  assert.deepEqual(rowHostState("skewed", false), { word: "other version", tone: "warn" });
-  assert.deepEqual(rowHostState("hidden", false), { word: "hidden", tone: "warn" });
-  assert.deepEqual(rowHostState("refused", false), { word: "refused", tone: "error" });
-  assert.deepEqual(rowHostState("down", false), { word: "down", tone: "error" });
-  for (const s of ["skewed", "hidden", "refused", "down"] as const) assert.equal(rowHostState(s, false)!.word, hostTone(s).word);
+  assert.equal(rowHostState("works"), null);
+  assert.deepEqual(rowHostState("read-only"), { word: "read only", tone: "warn" });
+  assert.deepEqual(rowHostState("hidden"), { word: "hidden", tone: "warn" });
+  assert.deepEqual(rowHostState("refused"), { word: "refused", tone: "error" });
+  assert.deepEqual(rowHostState("down"), { word: "down", tone: "error" });
+  for (const s of ["read-only", "display", "update", "hidden", "refused", "down"] as const) assert.equal(rowHostState(s)!.word, hostTone(s).word);
 });
 
 test("figures read as a person says them", () => {
@@ -183,10 +184,10 @@ test("Browser access: always for this host; a peer must answer on a build that r
 });
 
 test("hostMark: dot tone from the mesh state, words only in the title, null while unknown", () => {
-  assert.equal(hostMark("MacBook", undefined, null), null);
-  assert.deepEqual(hostMark("MacBook", "up", null), { tone: "up", title: "This session lives on MacBook · up" });
-  assert.deepEqual(hostMark("MacBook", "skewed", null), { tone: "skewed", title: "This session lives on MacBook · other version" });
-  assert.deepEqual(hostMark("MacBook", "down", "MacBook isn't answering."), { tone: "down", title: "This session lives on MacBook · MacBook isn't answering." });
-  assert.equal(hostMark("MacBook", "refused", null)?.tone, "down");
-  assert.equal(hostMark("MacBook", "hidden", null)?.tone, "skewed");
+  assert.equal(hostMark("Desktop", null, null), null);
+  assert.deepEqual(hostMark("Desktop", "works", null), { tone: "up", title: "This session lives on Desktop · up" });
+  assert.deepEqual(hostMark("Desktop", "update", null), { tone: "skewed", title: "This session lives on Desktop · update needed" });
+  assert.deepEqual(hostMark("Desktop", "down", "Desktop isn't answering."), { tone: "down", title: "This session lives on Desktop · Desktop isn't answering." });
+  assert.equal(hostMark("Desktop", "refused", null)?.tone, "down");
+  assert.equal(hostMark("Desktop", "hidden", null)?.tone, "skewed");
 });

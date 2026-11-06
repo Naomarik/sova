@@ -1,5 +1,5 @@
-import { createEffect, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { ApiError, claimMeshLogin, fetchFrontDoor, fetchMesh, fetchMeshAccess, fetchMeshCandidates, fetchMeshLogins, getClaudeAccounts, getMeshSettings, putMeshPeers, putMeshSettings, reconnectMeshHere } from "../lib/api";
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { ApiError, claimMeshLogin, fetchFrontDoor, fetchMesh, fetchMeshAccess, fetchMeshCandidates, fetchMeshLogins, fetchMeshResync, getClaudeAccounts, getMeshSettings, putMeshPeers, putMeshSettings, reconnectMeshHere } from "../lib/api";
 import { MESH_PRESETS, PRESET_HINT, PRESET_LABEL, type MeshAccessView, type MeshPreset } from "../lib/mesh-access";
 import { PeerAccess } from "./MeshAccess";
 import { MeshPairings } from "./MeshPairings";
@@ -28,9 +28,9 @@ import {
   PLACEHOLDER_HOST,
   serveUrlProblem,
   meshState,
+  peerReading,
   peerUnavailable,
   selfLabel,
-  sessionsHiddenBy,
   setMeshState,
   STALE_BUILD_NOTE,
   type HelloChange,
@@ -38,7 +38,6 @@ import {
   type MeshInfo,
   type MeshLoginEntry,
   type MeshPeerEntry,
-  type PeerState,
   type PeerStatus,
   type SyncCategory,
   type SyncStatus,
@@ -48,26 +47,27 @@ import { openSettings } from "../lib/settings-nav";
 import { announce } from "../lib/ui-state";
 import { iso, InsightsPage } from "./InsightsPage";
 import { Banner, Chip, CopyButton, Icon } from "./ui";
-import { openMeshDetails, SYNC_LABEL } from "../lib/mesh-details";
+import { hostTone, openMeshDetails, SYNC_LABEL } from "../lib/mesh-details";
+import { buildLine, type MeshResync } from "../lib/mesh-resync";
+import type { MeshBuildHello } from "../../shared/mesh-resync";
 import { AddressLink } from "./MeshDetails";
 import "../mesh.css";
 
 /** While #/mesh is open the host list is re-read this often: status is what the page is for. */
 const MESH_PAGE_POLL_MS = 5_000;
 
-const STATE_WORD: Record<PeerState, string> = { up: "Up", down: "Down", skewed: "Other version", refused: "Refused", hidden: "Hidden" };
-const STATE_TONE: Record<PeerState, "success" | "error" | "warn"> = { up: "success", down: "error", skewed: "warn", refused: "error", hidden: "warn" };
+const CHIP_TONE = { up: "success", skewed: "warn", down: "error" } as const;
 
 /** A peer's state in a word as well as a colour; the reason rides the title. */
 /**
  * The Claude login a device holds from the pool (§app.claude-logins/pool), or "No Claude login",
- * on the host's meta line; it opens Settings → Accounts. An email is not a chip word, so it is text.
+ * on the host's meta line; it opens Settings → Accounts → Claude. An email is not a chip word, so it is text.
  */
 function ClaudeLoginChip(props: { pool: ClaudePoolInfo; device: string }) {
   const chip = () => deviceLoginChip(props.pool, props.device);
   return (
     <p class="list-meta">
-      <button type="button" class="mesh-login-link" title={chip().title} onClick={() => openSettings("accounts")}>
+      <button type="button" class="mesh-login-link" title={chip().title} onClick={() => openSettings("accounts", null, { account: "claude" })}>
         {chip().text}
       </button>
     </p>
@@ -75,9 +75,11 @@ function ClaudeLoginChip(props: { pool: ClaudePoolInfo; device: string }) {
 }
 
 export function PeerStateChip(props: { peer: PeerStatus }) {
+  const mark = () => hostTone(peerReading(props.peer));
+  const word = () => mark().word ?? "up";
   return (
-    <Chip tone={STATE_TONE[props.peer.state]} title={peerUnavailable(props.peer) ?? undefined}>
-      {STATE_WORD[props.peer.state]}
+    <Chip tone={CHIP_TONE[mark().tone]} title={peerUnavailable(props.peer) ?? undefined}>
+      {word()[0]!.toUpperCase() + word().slice(1)}
     </Chip>
   );
 }
@@ -87,8 +89,8 @@ function cardSummary(peers: PeerStatus[]): { chip: string; tone?: "success" | "w
   if (peers.length === 0) {
     return { chip: "This host only", line: `Only ${selfLabel()} so far. Add a peer to see and start its sessions from here.`, problem: null };
   }
-  const up = peers.filter((p) => p.state === "up").length;
-  const first = peers.find((p) => p.state !== "up");
+  const up = peers.filter((p) => peerReading(p) === "works").length;
+  const first = peers.find((p) => peerReading(p) !== "works");
   return {
     chip: `${up} of ${peers.length} up`,
     tone: up === peers.length ? "success" : "warn",
@@ -204,6 +206,18 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
     MESH_PAGE_POLL_MS,
   );
   const state = () => poll.data() ?? meshState();
+  // Where each host's build sits against this one's: re-read when a commit or a state changes, not
+  // with every poll, since it walks this checkout's history.
+  const [resync, setResync] = createSignal<MeshResync | null>(null);
+  const builds = createMemo(() => (state()?.peers ?? []).map((p) => `${p.id}:${p.state}:${(p.hello as MeshBuildHello | undefined)?.commit ?? ""}`).join("\n"));
+  createEffect(() => {
+    if (builds()) void fetchMeshResync().then(setResync, () => {});
+  });
+  const buildLineOf = (id: string): string | null => {
+    const r = resync();
+    const h = r?.hosts.find((x) => x.id === id);
+    return r && h ? buildLine(h, r.self) : null;
+  };
   // The pool of Claude logins: a chip per host naming what it holds. Read again with every poll.
   const [pool] = createResource(
     () => (meshOn() ? state() : false),
@@ -311,7 +325,7 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
               Served by <strong>{s().self.label || s().self.hostname}</strong>
               <Show when={s().peers.length > 0} fallback=" · no peers yet">
                 {" · "}
-                {s().peers.filter((p) => p.state === "up").length} of {s().peers.length} peers up
+                {s().peers.filter((p) => peerReading(p) === "works").length} of {s().peers.length} peers up
               </Show>
             </span>
           )}
@@ -388,7 +402,7 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
           </li>
           <For each={state()?.peers ?? []}>
             {(p) => (
-              <li class="list-row mesh-host">
+              <li class="list-row mesh-host" data-testid="mesh-host-row" data-host-id={p.id} data-host-state={peerReading(p)}>
                 <Icon name="terminal" small />
                 <div class="list-main">
                   <p class="list-title">
@@ -406,7 +420,9 @@ export function MeshView(props: { now: number; titleRef(el: HTMLHeadingElement):
                     <Show when={p.state !== "up" && !p.lastSeen}> · hasn't answered yet</Show>
                   </p>
                   {/* A host that hides from this one chose to: said calmly, never as a failure. */}
-                  <Show when={peerUnavailable(p)}>{(why) => <p class={sessionsHiddenBy(p.id) ? "mesh-host-warn" : "mesh-host-error"}>{why()}</p>}</Show>
+                  <Show when={peerUnavailable(p)}>{(why) => <p class={hostTone(peerReading(p)).tone === "skewed" ? "mesh-host-warn" : "mesh-host-error"}>{why()}</p>}</Show>
+                  {/* Where its build sits against this host's, in any state (§mesh.ui/page). */}
+                  <Show when={buildLineOf(p.id)}>{(line) => <p class="list-meta" data-testid="mesh-host-build">{line()}</p>}</Show>
                   <Show when={pool()}>{(pl) => <ClaudeLoginChip pool={pl()} device={p.id} />}</Show>
                 </div>
                 <PeerStateChip peer={p} />

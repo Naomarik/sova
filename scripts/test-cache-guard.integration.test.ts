@@ -97,6 +97,10 @@ function project(): Project {
       // This file runs inside a test run; the inner run is a run of its own project, as from a shell.
       if (!("SOVA_TEST_HOME" in env)) delete e.SOVA_TEST_HOME;
       if (!("SOVA_TEST_RUNNER_PID" in env)) delete e.SOVA_TEST_RUNNER_PID;
+      // The outer run's reuse switches (the merge queue sets one, test-env.mjs passes it on) would change what the
+      // inner run reuses; a test that wants one says so.
+      if (!("SOVA_REUSE_SAMPLE" in env)) delete e.SOVA_REUSE_SAMPLE;
+      if (!("SOVA_FRESH" in env)) delete e.SOVA_FRESH;
       delete e.SOVA_TEST_FILE;
       delete e.SOVA_TEST_GUARD_DIR;
       delete e.SOVA_RUNTIME;

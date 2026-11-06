@@ -4,6 +4,8 @@
 import type { McpErrorLine, McpNewServer, McpNote, McpProjectServers, McpRowState, McpServerRow, McpToolName, SetupMcp } from "../../shared/mcp";
 import type { Tone } from "../components/ui";
 import { tokenFacts } from "./session-setup";
+import { problemOf } from "../../shared/form-rules";
+import { SECRET_NAME_RULE, SERVER_NAME_RULE } from "../../shared/mcp-limits";
 
 export const MCP_TITLE = "MCP Servers";
 export const MCP_INTRO = "Servers on this computer. Each project's own servers are on its project page.";
@@ -15,7 +17,7 @@ export const SECRET_HINT = "Saved on this computer only. Never shown again and n
 export const SECRET_SAVED = "Saved on this computer.";
 export const secretNeeded = (name: string) => `${name} isn't saved yet.`;
 
-export const RESERVED_FIELD = "The name sova is Sova's own. Pick another.";
+export const RESERVED_FIELD = SERVER_NAME_RULE.issue("sova")!;
 export const RESERVED_ROW = "This entry uses the name sova, which is Sova's own, so it won't run.";
 export const WAITING_LEAD = "This server runs nothing until you approve it.";
 export const WAITING_CHANGED = "This server changed, so it needs your approval again.";
@@ -77,7 +79,7 @@ export function errorLineText(e: McpErrorLine): string {
 }
 
 /** Reserved in any case: the field's own check, ahead of the server's. */
-export const isReservedName = (name: string): boolean => name.trim().toLowerCase() === "sova";
+export const isReservedName = (name: string): boolean => !!problemOf(SERVER_NAME_RULE, name);
 
 export type AddWay = "address" | "command" | "paste";
 export const ADD_WAYS: readonly { id: AddWay; label: string }[] = [
@@ -110,9 +112,19 @@ export function editedServer(way: Exclude<AddWay, "paste">, f: AddFields): { add
 
 /** Whether the form can go: a name that isn't reserved (null: Edit, the name is fixed), an entry, and
     a name for a command's secret. */
-export function canSend(way: AddWay, f: AddFields, name: string | null): boolean {
-  if (name !== null && (!name.trim() || isReservedName(name))) return false;
+/** A new server's name another server on this computer has already: the server's 409, said before the press. */
+export function nameTaken(name: string, taken: readonly string[]): string | null {
+  const n = name.trim();
+  return n && taken.includes(n) ? `There's already a server named ${n}.` : null;
+}
+
+/** A secret's name the server refuses (server/mcp/values.ts isSecretName), said before the press; "" is another rule. */
+export const secretNameIssue = (name: string): string | null => problemOf(SECRET_NAME_RULE, name);
+
+export function canSend(way: AddWay, f: AddFields, name: string | null, taken: readonly string[] = []): boolean {
+  if (name !== null && (!name.trim() || isReservedName(name) || nameTaken(name, taken))) return false;
   if (way === "command" && f.secret && !f.secretName.trim()) return false;
+  if (way === "command" && secretNameIssue(f.secretName)) return false;
   return !!(way === "address" ? f.address : way === "command" ? f.command : f.paste).trim();
 }
 

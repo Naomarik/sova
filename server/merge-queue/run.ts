@@ -23,8 +23,8 @@ import { NO_BACKGROUND_CLEANUP } from "../git-no-background";
 import { agentRoot } from "../state-root";
 import { draftSpecHash } from "../spec-drafts-state";
 import { LANDED_DRAFTS_FILE, type LandedDraftsRecord } from "./landed-drafts";
-import { blameCheck, blameFile, blameSetup, type CheckBlame, summarize } from "./attribute";
-import { type CheckRun, checksOf, countsOf, type CopyScope, envOf, freshOf, type PlannedCheck, picksOf, planChecks, reusedWords, runCheck, templateVarsOf } from "./checks";
+import { blameCheck, blameFile, blameSetup, brokenOnTarget, type CheckBlame, type RedRun, summarize } from "./attribute";
+import { type CheckRun, checksOf, countsOf, type CopyScope, envOf, firstOutputLine, freshOf, isTestCheck, type PlannedCheck, picksOf, planChecks, ranNoTest, reusedWords, runCheck, templateVarsOf } from "./checks";
 import type { RunHooks, RunInput, RunMerge, RunOutcome } from "./contract";
 import { assertCopyOutsideState, CopyRefused, gitOut, gitProc, mergeCopyPath, moveCopy, prepareCopy, runProc } from "./copy";
 import { reviewStep, type ReviewDeps } from "./review-step";
@@ -77,6 +77,14 @@ class Step {
     private readonly hooks: RunHooks,
   ) {}
   log = (chunk: string) => writeFileSync(this.file, chunk, { flag: "a" });
+  /** Change an ended step's result (and detail) after the fact, keeping its time: a red check later found broken on
+   *  the target reads skipped. */
+  mark(result: StepResult, extra: Partial<RunStep> = {}): RunStep {
+    Object.assign(this.s, extra, { result });
+    this.log(`\n== now ${result}${this.s.detail ? `: ${this.s.detail}` : ""}\n`);
+    this.hooks.step({ ...this.s });
+    return this.s;
+  }
   end(result: StepResult, extra: Partial<RunStep> = {}): RunStep {
     Object.assign(this.s, extra, { result, ms: Date.now() - this.t0 });
     this.log(`\n== ${result}${this.s.detail ? `: ${this.s.detail}` : ""} · ${Math.round(this.s.ms / 1000)} s\n`);
@@ -396,8 +404,11 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       }
     }
     // tipNamed: a whole check's failures as its rerun on the tip named them (files, else test names; [] = none).
-    const reds: { check: PlannedCheck; files: string[]; names?: string[]; tipNamed?: string[] }[] = [];
+    // `runs`: the merge's and the tip rerun's exit and whether each ran a test; `marks`: their steps, re-marked skipped
+    // when the check turns out broken on the target (brokenOnTarget).
+    const reds: { check: PlannedCheck; files: string[]; names?: string[]; tipNamed?: string[]; runs?: RedRun[]; marks?: Step[] }[] = [];
     const blames: CheckBlame[] = [];
+    const broken: NonNullable<RunOutcome["broken"]> = [];
     for (const check of list) {
       const st = steps.start(`check:${check.id}`, "check", check.label, { source: check.source, ...(check.why ? { why: check.why } : {}) });
       const r = await runCheck({ def, scope, check, stepId: check.id, logFile: st.file, fresh: freshOf(def, { release }), signal });
@@ -462,7 +473,11 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
         blames.push({ id: check.id, label: check.label, files: files.map((file) => ({ file, blame: "flaky" as const })) });
         continue;
       }
-      reds.push({ check, files: still, ...(files.length ? {} : { tipNamed: r2.failingFiles.length ? r2.failingFiles : namesOf(r2) }) });
+      reds.push({
+        check,
+        files: still,
+        ...(files.length ? {} : { tipNamed: r2.failingFiles.length ? r2.failingFiles : namesOf(r2), runs: [{ code: r.proc.code, noTest: ranNoTest(r) }, { code: r2.proc.code, noTest: ranNoTest(r2) }], marks: [st, again] }),
+      });
       if (flaky.length) blames.push({ id: check.id, label: check.label, files: flaky.map((file) => ({ file, blame: "flaky" as const })) });
     }
     // 7. still red: the same on the target alone, in the same copy (after the review has read the tip).
@@ -481,7 +496,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       const sf = await runSetup({ def, scope: baseScope, steps, idPrefix: "rerun-master:setup:", labelPrefix: `Setup on ${target} alone: `, kind: "rerun-master", signal });
       if (signal.aborted) return finish(voided("aborted"));
       if (sf) return finish(out({ verdict: "machine", blame: "machine", why: `setup (${sf.failed.id}) fails on ${target} alone, so whose failure it is can't be told`, copy, mergeSha, tip }));
-      for (const { check, files, names, tipNamed } of reds) {
+      for (const { check, files, names, tipNamed, runs, marks } of reds) {
         const onBase = files.length ? await filesOn(copy, base, files) : [];
         const absent = files.filter((f) => !onBase.includes(f));
         const st = steps.start(`rerun-master:${check.id}`, "rerun-master", `${check.label} on ${target} alone${files.length ? ` (${onBase.length} file${onBase.length === 1 ? "" : "s"})` : ""}`);
@@ -541,7 +556,16 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
           // Red on both: told apart only when both runs name their failures (a failure the target hasn't is the
           // branch's, whatever the counts); else it waits for the user, never landed as the target's.
           const onT = r.failingFiles.length ? r.failingFiles : namesOf(r);
-          if (!tipNamed?.length || !onT.length) {
+          // Never on a release: it must not pass with its test gates unrun; it waits on the user as before.
+          if (!release && runs && brokenOnTarget({ testCheck: isTestCheck(def, check), runs: [...runs, { code: r.proc.code, noTest: ranNoTest(r) }] })) {
+            // A test check that runs no test anywhere, with the same exit each time: its command is broken on the
+            // target (a bad flag, a missing selector). Not the branch's to fix: skipped for it, and flagged.
+            const why = `${check.label} is broken on ${target}: no test ran (${firstOutputLine(r.proc.out) ?? `exit ${r.proc.code}`})`;
+            st.end("skipped", { detail: why, broken: true });
+            for (const m of marks ?? []) m.mark("skipped", { detail: `${check.label} is broken on ${target}: skipped for this branch` });
+            blames.push({ id: check.id, label: check.label, whole: "broken", why });
+            broken.push({ check: check.id, label: check.label, why, step: `rerun-master:${check.id}` });
+          } else if (!tipNamed?.length || !onT.length) {
             st.end("failed", { detail: `fails on ${target} too, naming no tests: can't tell whose failure` });
             blames.push({ id: check.id, label: check.label, whole: "unattributed" });
           } else {
@@ -553,15 +577,16 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       }
     }
     const a = summarize(blames, { resolution: !!input.resolution, target });
+    const flagged = broken.length ? { broken } : {};
     const at = now();
     const attributed = a.notes.map((n) => ({ ...n, at }));
-    if (a.verdict === "failed") return finish(out({ verdict: "failed", blame: a.blame!, why: a.why!, notes: attributed, copy, mergeSha, tip, ...(a.targetRed.length ? { targetRed: a.targetRed } : {}) }));
+    if (a.verdict === "failed") return finish(out({ verdict: "failed", blame: a.blame!, why: a.why!, notes: attributed, copy, mergeSha, tip, ...(a.targetRed.length ? { targetRed: a.targetRed } : {}), ...flagged }));
     const r = review ? await review.result : null;
     if (a.verdict === "unattributed") {
       // Waits for the user (Land Anyway lands `tip`); a blocking review still says so first.
-      return reviewed(r, out({ verdict: "unattributed", why: a.why!, notes: attributed, copy, mergeSha, tip, targetRed: a.targetRed, unclear: a.unclear.map((u) => ({ check: u.id, label: u.label, step: `rerun-master:${u.id}`, why: u.why })) }));
+      return reviewed(r, out({ verdict: "unattributed", why: a.why!, notes: attributed, copy, mergeSha, tip, targetRed: a.targetRed, unclear: a.unclear.map((u) => ({ check: u.id, label: u.label, step: `rerun-master:${u.id}`, why: u.why })), ...flagged }));
     }
-    return reviewed(r, out({ verdict: "passed", notes: attributed, copy, mergeSha, tip, ...(a.targetRed.length ? { targetRed: a.targetRed } : {}) }));
+    return reviewed(r, out({ verdict: "passed", notes: attributed, copy, mergeSha, tip, ...(a.targetRed.length ? { targetRed: a.targetRed } : {}), ...(broken.length ? { why: broken.map((b) => b.why).join("; ") } : {}), ...flagged }));
   } finally {
     await services?.down().catch(() => undefined);
   }

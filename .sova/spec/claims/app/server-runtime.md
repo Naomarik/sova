@@ -140,31 +140,8 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   unit tier's `.cache/test-durations.json`). `pnpm test:all` runs both tiers, unit first, each at
   its own width. Files named on the command line run whatever their tier; a folder named there is refused (exit 2),
   and nothing runs: name its test files, or use `--changed`.
-- **Slow groups.** One builtins-only module, `scripts/test-groups.mjs`, names the integration
-  files that belong to a slow group, and what triggers each group: the paths whose change can
-  break it. **Chat processes** (`trial`) is `server/chat-runtime/trial-*.integration.test.ts`,
-  triggered by chats, workers, teams, the Overseer, batons, Claude Code and the extensions they
-  run (`server/chat-runtime/**`, `scripts/chat-runtime-trial/**`, `server/harness/**`,
-  `server/send-keys.ts`, the chat host, handle, manager and workers, `server/worker-*`,
-  `team-*`, `baton*`, `overseer*`, `project-overseer*`, `session-powers*`, `llm-inflight*`,
-  `playbook-host*`, `server/index.ts`, `server/app.ts`, `scripts/fake-claude.mjs`,
-  `scripts/stop-chats.ts`, and pi-config's `subagents`, `claude-code`, `btw`, `explain`,
-  `compact-handoff`, `llm-inflight`, `sessions` and `wake-nudge.ts`), by any change to
-  `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` or `mise.toml`, by the test setup (the
-  files the testing guide's front-matter `watches`), and by the groups module itself.
-  **Tours** (`tours`) is the tour tests that drive real Chrome, `server/tours/*.integration.test.ts`
-  except the nine that start no browser, triggered by tour code (`server/tours/**`,
-  `shared/tour*`, `server/project-services/tour-target*`, `server/share/tour-*`,
-  `server/tour-routes.ts`, `pi-config/extensions/sandbox/**`), the package files, the test setup
-  and the groups module. **Merge queue** (`merge-queue`) is the merge queue's integration files on throwaway
-  repositories (`server/merge-queue/*.integration.test.ts`, `scripts/merge-checks/*.integration.test.ts`:
-  runs in a merge copy, checks as real processes, landing and recovery, and Sova's own checks in a
-  copy of Sova), run at a landing only when triggered. Its triggers are the queue's code
-  (`server/merge-queue/**`, `server/merge-queue-*`, `shared/merge-queue.ts`), its checks
-  (`scripts/merge-checks/**`), the project contract and slots (`shared/project-contract.ts`,
-  `shared/project-slots.ts`), `.sova/project.json`, the spec core, the worktrees extension, the test
-  setup and the groups module. A changed test file triggers only the group it belongs to. Every other
-  integration file is the **everyday set**.
+- **Slow groups** (§app.server-runtime/slow-groups): the integration files that belong to a slow
+  group run when what can break them changes. Every other integration file is the **everyday set**.
 - **`pnpm test:int --changed`** runs only the integration files a change may break: everyday files
   whose import closure (relative imports, followed file to file) holds a file changed since the
   merge base with `--base <rev>` (default `master`), committed, uncommitted or untracked, or that
@@ -174,8 +151,9 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   exits 0. An agent runs it before asking to land.
 - **`pnpm test:int -- --landing [--base <rev>]`** is what a landing runs (one of Sova's required
   merge checks, §app.merge-queue/checks):
-  the whole everyday set, plus Chat processes only when the change since the merge base touches
-  its triggers; Tours never run at landing. It prints one line per group it skipped, with its file
+  the whole everyday set, plus each group a landing runs when triggered (Chat processes, Merge
+  queue, Forms in a browser) only when the change since the merge base touches its triggers; Tours never run
+  at landing. It prints one line per group it skipped, with its file
   count, its recorded time and why (no change to its triggers, or never at landing). `--groups
   <name,…|all>` runs only those groups' files, `--plan` prints the selection as JSON (the files,
   the groups run and skipped, the lane count and an estimate from the recorded file times: their
@@ -188,6 +166,8 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   file?}]`) and `ranFiles` (every test file it actually ran, repo-relative), the shape the project
   verbs read (§app.project-services/test), so a merge check or a `test` verb run has real counts,
   the failing files to rerun, and the proof of which files a rerun ran (§app.merge-queue/blame).
+  A usage error (exit 2: a flag with no value, an unknown group, a folder named) writes a report
+  counting nothing, so a merge check can tell "no test ran" from a crash, which writes none.
   A file reused from an earlier pass counts as passed and run; `reused` says how many were
   (§app.server-runtime/test-reuse).
 - **The tier guard.** A second test preload (`scripts/test-tier-guard.mjs`) records, for each file
@@ -212,6 +192,53 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   them through `server/testing/agent-dir.ts`, whose topic-outline settings run the outline's check
   at once after each turn and never call a summarizer model on their own: a summary is a model
   call, and the unit tier starts no program.
+
+## §app.server-runtime/slow-groups — Slow test groups
+
+The integration tier's slow groups (§app.server-runtime/test-tiers). One builtins-only module, `scripts/test-groups.mjs`, names the integration
+files that belong to a slow group, and what triggers each group: the paths whose change can
+break it. **Chat processes** (`trial`) is `server/chat-runtime/trial-*.integration.test.ts`,
+triggered by chats, workers, teams, the Overseer, batons, Claude Code and the extensions they
+run (`server/chat-runtime/**`, `scripts/chat-runtime-trial/**`, `server/harness/**`,
+`server/send-keys.ts`, the chat host, handle, manager and workers, `server/worker-*`,
+`team-*`, `baton*`, `overseer*`, `project-overseer*`, `session-powers*`, `llm-inflight*`,
+`playbook-host*`, `server/index.ts`, `server/app.ts`, `scripts/fake-claude.mjs`,
+`scripts/stop-chats.ts`, and pi-config's `subagents`, `claude-code`, `btw`, `explain`,
+`compact-handoff`, `llm-inflight`, `sessions` and `wake-nudge.ts`), by any change to
+`package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` or `mise.toml`, by the test setup (the
+files the testing guide's front-matter `watches`), and by the groups module itself.
+**Tours** (`tours`) is the tour tests that drive real Chrome, `server/tours/*.integration.test.ts`
+except the nine that start no browser, triggered by tour code (`server/tours/**`,
+`shared/tour*`, `server/project-services/tour-target*`, `server/share/tour-*`,
+`server/tour-routes.ts`, `pi-config/extensions/sandbox/**`), the package files, the test setup
+and the groups module. **Merge queue** (`merge-queue`) is the merge queue's integration files on throwaway
+repositories (`server/merge-queue/*.integration.test.ts`, `scripts/merge-checks/*.integration.test.ts`:
+runs in a merge copy, checks as real processes, landing and recovery, and Sova's own checks in a
+copy of Sova), run at a landing only when triggered. Its triggers are the queue's code
+(`server/merge-queue/**`, `server/merge-queue-*`, `shared/merge-queue.ts`), its checks
+(`scripts/merge-checks/**`), the project contract and slots (`shared/project-contract.ts`,
+`shared/project-slots.ts`), `.sova/project.json`, the spec core, the worktrees extension, the test
+setup and the groups module. **Forms in a browser** (`forms`) is
+`server/settings-browser.integration.test.ts` and `server/forms-*browser.integration.test.ts`, one
+file per area sharing one Chrome harness (`server/forms-browser.test.helper.ts`): each
+form's boxes driven in Chrome (valid, half-typed, too long and pasted text, the red state and its
+message, save, reload, Reset to Defaults), run at a landing only when triggered. Its triggers are
+form code alone: the form kit and its limits (`src/components/form/**`, `shared/form-rules*`,
+`shared/*-limits.ts`), the browser helpers (`server/forms-browser.test.helper.ts`,
+`server/settings-browser-temp.test.helper.ts`), the Settings tabs' components (`src/components/*Settings*.tsx`,
+`src/components/settings/**`, and the parts whose names don't say Settings: working hours, worker
+rows, typography, voice setup, the profile grid and picker, MCP's Add Server and server rows), Merge Queue's settings (`src/lib/merge-queue-settings*.ts`,
+`server/merge-queue/settings*.ts`), the
+forms' drafts and checks (`src/lib/*-draft.ts`, `*-form.ts`, `settings-*.ts`, and the public
+links, outreach and provider-limits helpers), the stores and
+routes they save through (`server/*-settings.ts`, the Overseer store, provider limits, push,
+the updates routes), the browser driver `server/tours/browser.ts`, the test setup and the groups
+module; a package change doesn't trigger it. A long `TMPDIR` never fails it: it puts Chrome's
+sockets in a short directory of its own (the OS temp dir when a socket fits there, else `/tmp`,
+else `/dev/shm`) and skips, saying why, only when none is writable. Its helpers are test code named
+`*.test.helper.ts`, which no runner glob matches and the product line count leaves out; a unit check
+(`server/test-helpers.test.ts`) fails when a product file imports one. A changed test file triggers only the group it
+belongs to.
 
 ## §app.server-runtime/test-reuse — A test file that already passed on identical code isn't run again
 

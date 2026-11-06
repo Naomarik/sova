@@ -123,6 +123,7 @@ import {
   passesHostFilter,
   peerInfo,
   peerUnavailable,
+  readingOf,
   SELF_FILTER,
   sessionHrefOn,
   sessionsHiddenBy,
@@ -194,8 +195,8 @@ export const sessionHref = (path: string) => sessionHrefOn(hostOf(path), path);
 
 /** A peer row's host state: the host menu's word and tone, or null for a peer that can be used. */
 const rowHostOf = (host: string) => {
-  const peer = peerInfo(host);
-  return peer ? rowHostState(peer.state, !!peerUnavailable(peer)) : null;
+  const reading = readingOf(host);
+  return reading ? rowHostState(reading) : null;
 };
 
 /**
@@ -211,6 +212,8 @@ function HostMark(props: { host: string }) {
       class="session-host"
       classList={{ "session-host-warn": state()?.tone === "warn", "session-host-error": state()?.tone === "error" }}
       title={why() ?? `On ${hostLabel(props.host)}`}
+      data-testid={readingOf(props.host) ? "session-row-host" : undefined}
+      data-host-state={readingOf(props.host) ?? undefined}
     >
       <Show when={state()}>
         <span class="chip-dot" />

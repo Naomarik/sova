@@ -67,7 +67,7 @@ export function buildView(a: {
     needsYou,
     needsFix,
     recent,
-    heads: { target: a.head, ...pushedOf(a.q.heads.pushed, a.origin), ...(a.q.heads.pushWhy ? { pushWhy: a.q.heads.pushWhy } : {}), ...(a.q.heads.targetRed?.length ? { targetRed: [...a.q.heads.targetRed] } : {}) },
+    heads: { target: a.head, ...pushedOf(a.q.heads.pushed, a.origin), ...(a.q.heads.pushWhy ? { pushWhy: a.q.heads.pushWhy } : {}), ...(a.q.heads.targetRed?.length ? { targetRed: [...a.q.heads.targetRed] } : {}), ...(a.q.heads.targetBroken?.length ? { targetBroken: structuredClone(a.q.heads.targetBroken) } : {}) },
     at: new Date(a.now).toISOString(),
   };
 }
@@ -135,6 +135,8 @@ export function worktreeQueueInfo(view: MergeQueueView, branch: string): Worktre
     commit: e.commit,
     ...(e.reason ? { reason: e.reason } : {}),
     ...(e.newerCommits ? { newerCommits: e.newerCommits } : {}),
+    ...(e.newerRewritten ? { newerRewritten: e.newerRewritten } : {}),
+    ...(e.newerBlocked ? { newerBlocked: e.newerBlocked } : {}),
     ...(e.eta ? { eta: e.eta } : {}),
     notes: e.notes,
     ...(e.landed ? { landed: e.landed } : {}),

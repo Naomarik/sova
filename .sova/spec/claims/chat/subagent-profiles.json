@@ -183,7 +183,9 @@
       "src/lib/subagent-editor.ts",
       "src/lib/subagent-editor.test.ts",
       "src/components/WorkerSlotRow.tsx",
-      "src/lib/team-form.ts"
+      "shared/subagent-limits.ts",
+      "shared/subagent-profile-checks.ts",
+      "src/components/form/index.tsx"
     ],
     "agreed": {
       "by": "naomarik",

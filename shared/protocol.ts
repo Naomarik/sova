@@ -1238,6 +1238,70 @@ export interface OpenAiAccountInfo {
 export interface OpenAiLoginStart { method?: "code" | "browser" }
 /** POST /api/settings/accounts/openai/login/answer: the address the browser route's page ended on. */
 export interface OpenAiLoginAnswer { text: string }
+
+// Settings → Accounts' API keys (§app/provider-keys). Every answer is Cache-Control: no-store.
+// GET    /api/settings/accounts/keys                    -> ProviderKeysInfo (never a key value)
+// PUT    /api/settings/accounts/keys/:provider          { key } -> ProviderKeyWrite (checked first; refused: saved false)
+// DELETE /api/settings/accounts/keys/:provider          -> ProviderKeyWrite (a logout login sync spreads)
+// POST   /api/settings/accounts/keys/:provider/test     -> ProviderKeyRow (the key in use checked again)
+// POST   /api/settings/accounts/keys/:provider/reveal   -> { key } only to the page in a browser on this computer, else 403
+// PUT, DELETE and reveal answer 403 to anything but the page's own request (§app.provider-keys/your-click).
+/** Accounts' provider tabs, in order (`#/settings/accounts/<tab>`). */
+export type ProviderKeyTab = "claude" | "openai" | "ollama-cloud" | "deepseek" | "zai" | "other";
+/** A key row's chip: Connected, No key, Key refused, Not checked yet, or Saved, not checked (no check exists). */
+export type ProviderKeyStatus = "connected" | "nokey" | "refused" | "unchecked" | "saved";
+export interface ProviderKeyCheck {
+  at: number;
+  result: "accepted" | "refused" | "unreachable";
+  /** The provider's reason (refused) or why it couldn't be reached. */
+  reason?: string;
+}
+export interface ProviderKeyRow {
+  /** pi's provider id. */
+  provider: string;
+  name: string;
+  tab: ProviderKeyTab;
+  /** A key is saved here (in pi's auth.json). */
+  saved: boolean;
+  /** The saved key's last 4 characters: the only part of a key on this wire. */
+  last4?: string;
+  /** The saved key is a command pi runs (device config): never read back or checked. */
+  command?: true;
+  /** pi holds a sign-in of another kind under this provider's id: no key can be saved over it. */
+  otherSignIn?: true;
+  /** Where the key in use comes from: saved here wins over the environment's. */
+  source: "saved" | "env" | "none";
+  /** The environment variable that can serve this provider, when there is one. */
+  envName?: string;
+  envSet: boolean;
+  status: ProviderKeyStatus;
+  /** The last check of the key in use (absent when that key was never checked). */
+  lastCheck?: ProviderKeyCheck;
+  /** Sova can check this provider's key (Test; check before save). */
+  checkable: boolean;
+  /** False when Settings → Models switches the provider off. */
+  providerEnabled: boolean;
+}
+export interface ProviderKeysInfo {
+  /** The five tab providers, then each other provider with a saved key. */
+  rows: ProviderKeyRow[];
+  /** The Other provider picker: every provider that takes a key and has no tab. */
+  others: { id: string; name: string }[];
+  /** This request may read a key back (a browser on this computer, the page's own request). */
+  revealAllowed: boolean;
+  /** The mesh is on and shares logins: keys reach the mesh computers that get logins. */
+  meshSharesLogins: boolean;
+  /** The subscription sign-ins' standing, for the Claude and OpenAI tabs' marks. */
+  signIns: { claude: boolean; openai: boolean };
+}
+export interface ProviderKeyPut { key: string }
+export interface ProviderKeyWrite {
+  /** The pasted key was written (PUT), or a key is still saved (DELETE: false once removed). */
+  saved: boolean;
+  /** PUT: the provider refused the paste, in its words; nothing was written. */
+  refused?: string;
+  row: ProviderKeyRow;
+}
 /** PUT /api/claude/pool/keeper */
 export interface ClaudePoolKeeperRequest { device: string }
 /** PATCH /api/claude/pool/:id */
@@ -1307,6 +1371,36 @@ export interface ModelInfo {
       independent of any session, so two models can be compared by it;
       ContextInfo.window cannot, because it describes one session's current model. */
   contextWindow?: number;
+}
+
+// GET  /api/settings/models/check -> ModelCheckStatus (Settings → Models' line under Ollama Cloud)
+// POST /api/settings/models/check -> ModelCheckStatus once the check it runs at once has finished
+//                                    (409 when checks are off on this server)
+/** The server's check of Ollama Cloud's model list (§app.model-levels/server-check, /settings-line). */
+export interface ModelCheckStatus {
+  /** The provider checked: `ollama-cloud`. */
+  provider: string;
+  /** False with PI_OFFLINE or SOVA_MODELS_FETCH=off: nothing is checked. */
+  enabled: boolean;
+  /** A check is running now. */
+  checking: boolean;
+  /** The last check; absent before any. */
+  last?: {
+    at: number;
+    ok: boolean;
+    /** Why it failed (ok false). */
+    error?: string;
+    /** When the server tries again on its own after a failure. */
+    retryAt?: number;
+    /** Model ids new to the list at that check. */
+    added: string[];
+    /** Model ids that check found retired. */
+    retired: string[];
+    /** The API key, checked in the same round: Settings → Accounts' Ollama Cloud tab shows this reading. */
+    key?: { result: "accepted" | "refused" | "unreachable"; reason?: string };
+  };
+  /** Models the check added in the last week (the New mark), as provider/id refs. */
+  newModels: { ref: string; firstSeenAt: number }[];
 }
 
 /** One folder's subfolders (GET /api/folders). Directories only, never files: a symlink is listed

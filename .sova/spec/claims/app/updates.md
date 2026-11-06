@@ -47,7 +47,11 @@ The second fact is the kind of copy, which decides what an upgrade may do:
 - **Latest changes (master)**: the `master` branch.
 - **A branch**: a branch named in a text field. Save Changes asks the repository whether the
   branch exists (`git ls-remote`) and refuses a name it doesn't have ("Updates: Sova's repository
-  has no branch `feat/x`.") or that isn't a valid branch name; nothing is written then.
+  has no branch `feat/x`.") or that isn't a valid branch name; nothing is written then. The form
+  checks the name first, by the server's own rule: while the field is blank ("Name the branch.")
+  or holds a name git wouldn't take as a branch ("{name} isn't a branch name git takes."), it is
+  red with that line under its hint, which stays, and Save waits, the footer saying "Updates: " and
+  the same words. The form and the server's save read one rule (`shared/branch-name.ts`).
 
 The repository is never a setting: no field names another, and a fork is never followed. The
 test-only environment variable `SOVA_UPDATES_REPO_URL` points a server at a stand-in repository;

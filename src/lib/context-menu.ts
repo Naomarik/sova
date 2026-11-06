@@ -165,3 +165,86 @@ export function createKeyEcho(now: () => number = () => Date.now()) {
     },
   };
 }
+
+// ---- a mouse's menu shows on the release ------------------------------------------------------
+
+/**
+ * Whether a `contextmenu` came while a mouse button is still held (`buttons` not 0): Linux and macOS
+ * browsers send it on the press, Windows on the release (`buttons` 0), and a key's has no button.
+ * Shown during the press, the menu sits under the pointer with its corner (or, flipped, its far
+ * edge) at it, so the release lands on the row beneath and the browser's light dismiss closes it.
+ * A held press's menu waits for the release instead (§app.context-menus/placement). Pure.
+ */
+export const pressHeld = (kind: PointerKind, buttons: number | undefined): boolean => kind === "mouse" && !!buttons;
+
+/** The little of a window or document the waiting open listens on; the tests pass stand-ins. */
+export interface ListenerTarget {
+  addEventListener(type: string, fn: (e: Event) => void, capture?: boolean): void;
+  removeEventListener(type: string, fn: (e: Event) => void, capture?: boolean): void;
+}
+
+export interface ReleaseEnv {
+  /** The window: pointerup, pointercancel, keydown and a newer contextmenu (capture), and its own blur. */
+  win: ListenerTarget;
+  /** The document, for visibilitychange. */
+  doc: ListenerTarget & { visibilityState: string };
+  /** Runs `fn` on a later task (the page's: setTimeout 0), past the release's light dismiss, mouseup
+      and click; answers how to cancel it. */
+  later(fn: () => void): () => void;
+}
+
+/**
+ * At most one menu waiting for its press to finish. `request` shows a menu at once when no button
+ * is held, or else once every button is back up (the first `pointerup` with `buttons` 0, then one
+ * task later). It waits with no deadline, and is abandoned, opening nothing, on `pointercancel`, the
+ * window's blur, the page turning hidden, an Escape keydown, a newer `contextmenu`, a newer
+ * request, or `cancelOf` its place (a place going away). Listens only while one waits.
+ */
+export function createOpenOnRelease(env: ReleaseEnv) {
+  let waiting: { key: unknown; run: () => void } | null = null;
+  let cancelLater: (() => void) | null = null;
+  const onUp = (e: Event) => {
+    if (!waiting || cancelLater || (e as Event & { buttons?: number }).buttons) return;
+    const run = waiting.run;
+    cancelLater = env.later(() => {
+      cancelLater = null;
+      stop();
+      run();
+    });
+  };
+  const onKey = (e: Event) => (e as Event & { key?: string }).key === "Escape" && stop();
+  const onVisibility = () => env.doc.visibilityState === "hidden" && stop();
+  const stop = () => {
+    if (!waiting) return;
+    waiting = null;
+    cancelLater?.();
+    cancelLater = null;
+    listen(false);
+  };
+  const listen = (on: boolean) => {
+    const m = on ? "addEventListener" : "removeEventListener";
+    env.win[m]("pointerup", onUp, true);
+    env.win[m]("pointercancel", stop, true);
+    env.win[m]("keydown", onKey, true);
+    // Added while the opening contextmenu bubbles: a window capture listener first hears the next one.
+    env.win[m]("contextmenu", stop, true);
+    // Not capture: the window's own blur only (an element's blur doesn't bubble).
+    env.win[m]("blur", stop);
+    env.doc[m]("visibilitychange", onVisibility);
+  };
+  return {
+    /** Show a place's menu (`run`) now, or on the release when `held`; `key` names the place for `cancelOf`. */
+    request(held: boolean, key: unknown, run: () => void) {
+      stop();
+      if (!held) return run();
+      waiting = { key, run };
+      listen(true);
+    },
+    /** Abandon the waiting menu when `match` says it is this place's. */
+    cancelOf(match: (key: unknown) => boolean) {
+      if (waiting && match(waiting.key)) stop();
+    },
+    /** A menu is waiting for its release. */
+    waiting: () => waiting !== null,
+  };
+}

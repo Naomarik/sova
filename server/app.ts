@@ -1,6 +1,7 @@
 // The server's Hono app and its routes (buildApp), with nothing started: no listener, no
 // usage-helper child, no timers or loops. server/index.ts builds it, listens and boots everything
 // else; tests build it to drive routes through app.request() (no socket).
+import { registerJobRoutes } from "./background-jobs-routes";
 import { chatHostHealth } from "./chat-host";
 import { holderAlive, readLock } from "./chat-runtime/writer-lock";
 import { execFileSync } from "node:child_process";
@@ -27,6 +28,7 @@ import { registerProjectFileRoutes } from "./project-files-routes";
 import { registerMcpRoutes } from "./mcp/routes";
 import { registerSessionOfferRoutes } from "./session-offers-routes";
 import { registerTranscriptCardRoutes } from "./transcript-cards-routes";
+import { registerPairRoutes } from "./topic-pairs";
 import { setFileCopyGuards } from "./project-files-tool";
 import { registerProjectRoutes } from "./projects/routes";
 import { registerProjectServiceRoutes } from "./project-services/routes";
@@ -482,6 +484,14 @@ export function buildApp(deps: AppDeps) {
   // MCP servers: the Settings tab, the project page's section, Check, approval and sign-in (§app/mcp).
   registerMcpRoutes(app);
   registerTranscriptCardRoutes(app);
+  // The Overseer's pairings (§app.overseer/pairs): each paired chat's line, Unpair and Resume.
+  registerPairRoutes(app, {
+    title: async (id) => {
+      const path = await pathOfId(id);
+      return path ? (await getSessionSummary(path))?.title : undefined;
+    },
+    exists: async (id) => (await pathOfId(id)) !== null,
+  });
   // The usage ledger: every figure of spend, answered by the usage helper (§app.insights/usage-ledger).
   registerUsageRoutes(app);
   registerProjectRoutes(app);
@@ -632,6 +642,9 @@ export function buildApp(deps: AppDeps) {
     const r = await archiveSession(path, body.archived);
     return r.ok ? c.json(r.summary) : c.json({ error: r.error }, r.status);
   });
+
+  // A chat's background jobs and Stop (§app.background-jobs/pane).
+  registerJobRoutes(app);
 
   // Renames a session, in Sova ONLY (server/session-titles.ts): the id gets a stored title and
   // the .jsonl is never opened, let alone written — a session open in a TUI can be renamed here
@@ -877,7 +890,13 @@ export function buildApp(deps: AppDeps) {
   // Merged worktrees of the session's repository (server/worktree-cleanup.ts, §chat.worktrees/cleanup):
   // the count for a new session's empty state, the dry run, and a removal of exactly the confirmed
   // paths that are still removable. Only when asked; never --force.
-  configureCleanup({ summary: (path) => getSessionSummary(path), sessionFiles: listSessionFiles, readBranch });
+  configureCleanup({
+    summary: (path) => getSessionSummary(path),
+    sessionFiles: listSessionFiles,
+    readBranch,
+    // A conflict's scratch copy the merge thread made itself: the queue's own, never listed (merge-queue/owners.ts).
+    queueMade: async (path) => (await import("./merge-queue/wire")).worktreeQueueMade(path),
+  });
   app.get("/api/worktrees/summary", async (c) => {
     const path = resolveSessionPath(c.req.query("path"));
     if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);

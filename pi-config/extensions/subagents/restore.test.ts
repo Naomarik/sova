@@ -15,6 +15,7 @@ import { BACKEND_REGISTER_EVENT } from "./contracts.ts";
 import { WORKER_MANIFEST_ENTRY_TYPE } from "./registry.ts";
 import { resolvedModel } from "./worker-transcript.ts";
 import { MODE_WORKER_EVENT } from "../mode/events.ts";
+import { WAKE_DIR_ENV, cancelWakesBefore, readWakeRecords } from "./wake-store.ts";
 
 const SNAPSHOT = "subagents:workers-snapshot";
 const NO_POLICY_FILE = path.join(os.tmpdir(), "subagents-tests-absent-policy.json");
@@ -43,7 +44,7 @@ function sessionFile() {
 	};
 }
 
-interface Options { failResume?: boolean; agentDir?: string; mailboxRoot?: string }
+interface Options { failResume?: boolean; agentDir?: string; mailboxRoot?: string; sessionFile?: string }
 
 function manager(file: ReturnType<typeof sessionFile>, options: Options = {}) {
 	const bus = eventBus();
@@ -57,7 +58,7 @@ function manager(file: ReturnType<typeof sessionFile>, options: Options = {}) {
 	const ctx: any = {
 		cwd: os.tmpdir(), mode: "tui", hasUI: true, thinkingLevel: "high", isIdle: () => true,
 		model: { provider: "test", id: "model" },
-		sessionManager: { getEntries: () => [...file.entries], getBranch: () => file.branch(), getSessionFile: () => undefined, getSessionId: () => "owner" },
+		sessionManager: { getEntries: () => [...file.entries], getBranch: () => file.branch(), getSessionFile: () => options.sessionFile, getSessionId: () => "owner" },
 		modelRegistry: { find: (p: string, m: string) => (p === "test" && m === "model" ? { provider: p, id: m } : undefined) },
 		ui: { setStatus() {}, notify() {} },
 	};
@@ -522,4 +523,116 @@ test("resume: a worker takes the parent's CURRENT worker modes, not its first st
 	assert.deepEqual(recordsOf("ag_02").find((r) => r.resumedAt)?.modes, ["spec"]);
 	await m.shutdown();
 	await first.shutdown();
+});
+
+/** A paused team under `manager`, its parent shut down with `nudge` kept and every member stopped. */
+async function pausedTeamWithKeptNudge(opts: { fireAt: number }) {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-nudge-parent-"));
+	const agentDir = path.join(root, "agent");
+	fs.mkdirSync(agentDir);
+	const tuple = { backend: "pi", model: "test/model", effort: "low" };
+	fs.writeFileSync(path.join(agentDir, "team-defaults.json"), JSON.stringify({
+		version: 1,
+		coordinator: { enabled: true, role: "coordinator", primary: tuple, fallback: null, instructions: "" },
+		monitor: { enabled: true, role: "monitor", primary: tuple, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "" },
+		handover: { retireTimeoutMinutes: 10 },
+	}));
+	const file = sessionFile();
+	const mailboxRoot = path.join(root, "mail");
+	const first = manager(file, { agentDir, mailboxRoot });
+	first.start();
+	await first.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "Write f01-f10." }] });
+	for (const w of first.workers) w.identify(`/nowhere/${w.id}.jsonl`);
+	await new Promise((r) => setTimeout(r, 150)); // the throttled refresh writes the refs
+	const monitor = first.workers.find((w) => w.name === "monitor");
+	assert.equal((await ask(monitor, { type: "message", to: "coordinator", message: "zai 5h at 95%", notice: "pause" })).ok, true);
+	await ask(monitor, { type: "nudge", nudge: { action: "schedule", delay: "1h", reason: "resume check" } });
+	for (const w of first.workers) w.settle();
+	await first.shutdown();
+	const nudgesFile = path.join(mailboxRoot, "nudges.json");
+	const kept = () => JSON.parse(fs.readFileSync(nudgesFile, "utf8"));
+	const saved = kept();
+	saved.ag_03.active[0].fireAt = opts.fireAt;
+	fs.writeFileSync(nudgesFile, JSON.stringify(saved));
+	return { root, agentDir, file, mailboxRoot, kept };
+}
+
+test("a paused team with no member running: the parent's start loads the kept nudge, resumes the stopped monitor first, then delivers it", async () => {
+	const t = await pausedTeamWithKeptNudge({ fireAt: Date.now() - 1000 });
+	const second = manager(t.file, { agentDir: t.agentDir, mailboxRoot: t.mailboxRoot });
+	try {
+		second.start();
+		await until(() => second.workers.some((w) => w.lastSteer?.includes?.("[wake_nudge n1]")), "the monitor got the nudge");
+		const monitor = second.workers.find((w) => w.lastSteer?.includes?.("[wake_nudge n1]"));
+		assert.equal(second.workers.filter((w) => w.id === monitor.id).length, 1, "resumed once");
+		assert.doesNotMatch(monitor.lastSteer, /restored while paused/, "the nudge is the resume check: no second one");
+		await until(() => t.kept().ag_03?.active.length === 0, "delivered, so the mailbox lets go of it");
+	} finally {
+		await second.shutdown();
+		fs.rmSync(t.root, { recursive: true, force: true });
+	}
+});
+
+test("a due monitor nudge whose monitor can't be resumed is kept in the mailbox, never dropped", async () => {
+	const t = await pausedTeamWithKeptNudge({ fireAt: Date.now() - 1000 });
+	// Its session ref gone from the record: resumeWorker refuses ("no backend session was recorded").
+	for (const e of t.file.entries as any[]) if (e.customType === WORKER_MANIFEST_ENTRY_TYPE && e.data?.workerId === "ag_03") delete e.data.ref;
+	const second = manager(t.file, { agentDir: t.agentDir, mailboxRoot: t.mailboxRoot });
+	try {
+		second.start();
+		await until(() => (second.snapshot()?.workers ?? []).length === 3, "restored members");
+		await new Promise((r) => setTimeout(r, 300)); // past the armed nudge's delay of 0 and its failed resume
+		assert.deepEqual(t.kept().ag_03.active.map((n: any) => n.id), ["n1"]);
+		assert.equal(second.workers.some((w) => w.lastSteer?.includes?.("[wake_nudge")), false);
+	} finally {
+		await second.shutdown();
+		fs.rmSync(t.root, { recursive: true, force: true });
+	}
+});
+
+test("a nudge the parent's archive cancelled isn't armed at its next start", async () => {
+	const t = await pausedTeamWithKeptNudge({ fireAt: Date.now() - 1000 });
+	const saved = { dir: process.env[WAKE_DIR_ENV], path: process.env.SOVA_CHAT_PATH };
+	const dir = path.join(t.root, "wake");
+	cancelWakesBefore(dir, "owner", Date.now());
+	process.env[WAKE_DIR_ENV] = dir;
+	process.env.SOVA_CHAT_PATH = "/sessions/restore.jsonl";
+	const second = manager(t.file, { agentDir: t.agentDir, mailboxRoot: t.mailboxRoot, sessionFile: "/sessions/restore.jsonl" });
+	try {
+		second.start();
+		await until(() => t.kept().ag_03?.active.length === 0, "the cancelled nudge is gone from the mailbox");
+		assert.equal(second.workers.some((w) => w.lastSteer?.includes?.("[wake_nudge")), false);
+	} finally {
+		await second.shutdown();
+		if (saved.dir === undefined) delete process.env[WAKE_DIR_ENV];
+		else process.env[WAKE_DIR_ENV] = saved.dir;
+		if (saved.path === undefined) delete process.env.SOVA_CHAT_PATH;
+		else process.env.SOVA_CHAT_PATH = saved.path;
+		fs.rmSync(t.root, { recursive: true, force: true });
+	}
+});
+
+test("a parent with a hosted chat publishes a team's due nudges, and not a held one", async () => {
+	const t = await pausedTeamWithKeptNudge({ fireAt: Date.now() + 3_600_000 });
+	const saved = { dir: process.env[WAKE_DIR_ENV], path: process.env.SOVA_CHAT_PATH };
+	const dir = path.join(t.root, "wake");
+	process.env[WAKE_DIR_ENV] = dir;
+	process.env.SOVA_CHAT_PATH = "/sessions/restore.jsonl";
+	const second = manager(t.file, { agentDir: t.agentDir, mailboxRoot: t.mailboxRoot, sessionFile: "/sessions/restore.jsonl" });
+	try {
+		second.start();
+		await until(() => readWakeRecords(dir).length === 1, "published at the parent's start");
+		const [record] = readWakeRecords(dir);
+		assert.equal(record!.source, "team");
+		assert.deepEqual(record!.items.map((i) => i.id), ["ag_03:n1"]);
+		await second.shutdown();
+		assert.equal(readWakeRecords(dir).length, 1, "a closing parent keeps it: it is what brings the parent back");
+	} finally {
+		await second.shutdown().catch(() => {});
+		if (saved.dir === undefined) delete process.env[WAKE_DIR_ENV];
+		else process.env[WAKE_DIR_ENV] = saved.dir;
+		if (saved.path === undefined) delete process.env.SOVA_CHAT_PATH;
+		else process.env.SOVA_CHAT_PATH = saved.path;
+		fs.rmSync(t.root, { recursive: true, force: true });
+	}
 });

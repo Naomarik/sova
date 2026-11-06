@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 556 |
-| Routes a catalogue entry points at | 173 |
-| Catalogue entries | 235 |
+| Routes registered | 561 |
+| Routes a catalogue entry points at | 178 |
+| Catalogue entries | 240 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -35,7 +35,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Pending (not yet a command) | 23 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 11 |
-| Hand-written tool specs | 129 |
+| Hand-written tool specs | 131 |
 
 ## Catalogue entries
 
@@ -87,6 +87,11 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.worktree.summary` | Count Merged Worktrees | looks | `GET /api/worktrees/summary` | sessions |
 | `session.worktree.cleanup` | Clean Up Worktrees | changes | `POST /api/worktrees/cleanup` | sessions |
 | `session.diff.summary` | Show Changes | looks | `GET /api/diff/summary` | sessions |
+| `session.job.list` | List Background Jobs | looks | `GET /api/sessions/jobs` | sessions |
+| `session.job.stop` | Stop Background Job | changes | `POST /api/sessions/jobs/stop` | sessions |
+| `session.pairs.list` | List Pairings | looks | `GET /api/sessions/pairs` | sessions |
+| `session.pairs.unpair` | Unpair | changes | `POST /api/sessions/pairs/unpair` | sessions |
+| `session.pairs.resume` | Resume Pairing | changes | `POST /api/sessions/pairs/resume` | sessions |
 | `project.verb.create` | Project create | changes | `POST /api/project-services/create` | admin |
 | `project.verb.up` | Project up | changes | `POST /api/project-services/up` | admin |
 | `project.verb.down` | Project down | changes | `POST /api/project-services/down` | admin |
@@ -920,6 +925,11 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/sessions/draft` | sessions | `session.draft.get` |
 | `PUT /api/sessions/draft` | sessions | `session.draft.set` |
 | `POST /api/sessions/fork` | sessions | `session.fork` |
+| `GET /api/sessions/jobs` | sessions | `session.job.list` |
+| `POST /api/sessions/jobs/stop` | sessions | `session.job.stop` |
+| `GET /api/sessions/pairs` | sessions | `session.pairs.list` |
+| `POST /api/sessions/pairs/resume` | sessions | `session.pairs.resume` |
+| `POST /api/sessions/pairs/unpair` | sessions | `session.pairs.unpair` |
 | `POST /api/sessions/prompt` | sessions | `session.send` |
 | `POST /api/sessions/shorten-titles` | sessions | `session.title.shorten` |
 | `GET /api/sessions/summary` | sessions | `session.get` |
@@ -988,6 +998,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | --- | ---: | --- |
 | `server/assistant-news.ts` | 1 | `project_news` |
 | `server/assistant-request-tools.ts` | 3 | `owner_requests`, `close_request`, `reopen_request` |
+| `server/background-jobs-request.ts` | 1 | `background_job` |
 | `server/baton-files.ts` | 2 | `<computed: INSPECT_TOOL>`, `confirm_file` |
 | `server/baton-loadout.ts` | 4 | `record_decision`, `hand_to`, `goal_done`, `propose_roster_edit` |
 | `server/baton-read-link.ts` | 1 | `read_link` |
@@ -1008,6 +1019,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/overseer-link-tools.ts` | 3 | `sova_link`, `sova_unlink`, `sova_links` |
 | `server/overseer-org-part.ts` | 10 | `sova_decisions`, `sova_roster`, `sova_start_gathering`, `sova_offer`, `sova_close_gathering`, `sova_owner_update`, `sova_send_to_person`, `sova_send_status`, `sova_reconcile`, `sova_promote` |
 | `server/overseer-org-tools.ts` | 10 | `sova_orgs`, `sova_org_person`, `sova_projects`, `sova_org_project`, `sova_org`, `sova_roster`, `sova_owner`, `sova_project_decisions`, `sova_gather`, `sova_project_overseer` |
+| `server/overseer-pair-tools.ts` | 1 | `sova_pair` |
 | `server/overseer-todo-tools.ts` | 2 | `sova_todos`, `sova_todo` |
 | `server/overseer-tools.ts` | 23 | `sova_attention`, `sova_list_sessions`, `sova_outstanding`, `sova_search_sessions`, `sova_session`, `sova_public_links`, `sova_alignment`, `sova_read_session`, `sova_list_groups`, `sova_list_targets`, `sova_list_models`, `sova_list_subagent_profiles`, `sova_list_folders`, `sova_create_session`, `sova_send`, `sova_set_session`, `sova_archive`, `sova_group`, `sova_answer_dialog`, `sova_navigate`, `sova_note`, `sova_org_history`, `<computed: SPEC_LOOKUP_TOOL>` |
 | `server/overseer-whatsapp.ts` | 1 | `sova_whatsapp` |

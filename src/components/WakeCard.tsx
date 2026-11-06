@@ -10,7 +10,9 @@ import { Icon } from "./ui";
     the message exactly as sent — never rewritten or hidden. */
 export function WakeCard(props: { nudge: WakeInfo; text: string; time?: string }) {
   const reason = () => props.nudge.reason ?? "";
-  const fired = () => (props.time ? clockTime(props.time) : "");
+  // A job card says when the job ended, not when the card arrived (a busy or shut-down chat gets it later);
+  // an older card, with no end time in it, falls back to its arrival.
+  const fired = () => (props.nudge.endedAt !== undefined ? clockTime(props.nudge.endedAt) : props.time ? clockTime(props.time) : "");
 
   return (
     <details class="toolcard">
@@ -28,7 +30,7 @@ export function WakeCard(props: { nudge: WakeInfo; text: string; time?: string }
         </Show>
         <Show when={fired()}>
           <span class="toolcard-wake-time">
-            fired {fired()}
+            {props.nudge.job ? "ended" : "fired"} {fired()}
             <Show when={props.nudge.late}>{` · ${props.nudge.late} late`}</Show>
           </span>
         </Show>

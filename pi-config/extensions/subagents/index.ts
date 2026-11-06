@@ -72,6 +72,8 @@ import { resolveSubagents, restorePick, type ResolvedSubagents } from "./subagen
 import {
 	NUDGE_MAX_ACTIVE,
 	NUDGE_MAX_IDLE_FIRES,
+	NUDGE_RESUME_RETRIES,
+	NUDGE_RESUME_RETRY_MS,
 	blockingWindows,
 	claudeContextWindow,
 	contextShare,
@@ -88,6 +90,7 @@ import {
 	type UsageProvider,
 	type UsageWindow,
 } from "./coordination.ts";
+import { publishWakes, wakeStoreOf, wakesCancelledBefore } from "./wake-store.ts";
 import { WorkerRegistryRecorder, type WorkerLaunchSpec } from "./registry.ts";
 import { manifestModes, readWorkerManifests, resolvedModel, viewWorker, type FoldedWorkerManifest, type WorkerTranscriptView } from "./worker-transcript.ts";
 import { defaultWorkerTranscriptAdapters } from "./adapters/index.ts";
@@ -2196,7 +2199,7 @@ export function registerSubagents(
 	// refresh that sees a teammate working again (every worker state change and every accepted
 	// steer schedules one). A paused team's nudges always fire: the resume check must run.
 	/** `timer`: none once it came due (held). */
-	interface PendingNudge { id: string; reason: string; fireAt: number; createdAt: number; timer?: ReturnType<typeof setTimeout> }
+	interface PendingNudge { id: string; reason: string; fireAt: number; createdAt: number; timer?: ReturnType<typeof setTimeout>; firing?: boolean; tries?: number }
 	interface NudgeState { seq: number; idleFires: number; active: Map<string, PendingNudge>; held?: PendingNudge }
 	const nudges = new Map<string, NudgeState>();
 	/** Teams whose monitor sent "pause" and not yet "resume". */
@@ -2215,11 +2218,25 @@ export function registerSubagents(
 	// Kept in the mailbox (nudges.json) on every change, and re-armed by the next manager with their
 	// held state: a parent's reload or restart never drops a monitor's scheduled wakes.
 	const nudgesFile = () => (mailboxRoot ? path.join(mailboxRoot, "nudges.json") : undefined);
-	const plainNudge = ({ timer: _t, ...n }: PendingNudge) => n;
+	const plainNudge = ({ timer: _t, firing: _f, tries: _n, ...n }: PendingNudge) => n;
+	/** This parent's wake store: a due nudge brings it back (a held one doesn't). */
+	const parentWakeStore = () => wakeStoreOf(activeCtx?.sessionManager.getSessionId?.(), activeCtx?.sessionManager.getSessionFile?.());
+	const publishTeamWakes = () => {
+		const store = parentWakeStore();
+		if (!store) return;
+		const items: { id: string; at: number }[] = [];
+		for (const [workerId, state] of nudges) for (const n of state.active.values()) items.push({ id: `${workerId}:${n.id}`, at: n.fireAt });
+		try {
+			publishWakes(store, "team", items);
+		} catch {
+			/* nudges.json still holds them; the next change writes again. */
+		}
+	};
 	const saveNudges = () => {
 		const file = nudgesFile();
 		if (!file || shuttingDown) return;
-		const out: Record<string, { seq: number; idleFires: number; active: Omit<PendingNudge, "timer">[]; held?: Omit<PendingNudge, "timer"> }> = {};
+		publishTeamWakes();
+		const out: Record<string, { seq: number; idleFires: number; active: ReturnType<typeof plainNudge>[]; held?: ReturnType<typeof plainNudge> }> = {};
 		for (const [workerId, state] of nudges) {
 			out[workerId] = { seq: state.seq, idleFires: state.idleFires, active: [...state.active.values()].map(plainNudge), ...(state.held ? { held: plainNudge(state.held) } : {}) };
 		}
@@ -2243,32 +2260,86 @@ export function registerSubagents(
 			const n = v as Partial<PendingNudge> | null;
 			return n && typeof n.id === "string" && typeof n.fireAt === "number" ? { id: n.id, reason: typeof n.reason === "string" ? n.reason : "", fireAt: n.fireAt, createdAt: typeof n.createdAt === "number" ? n.createdAt : n.fireAt } : undefined;
 		};
+		const store = parentWakeStore();
+		const cancelled = store ? wakesCancelledBefore(store.dir, store.sessionId) : 0;
+		let dropped = false;
 		for (const [workerId, v] of Object.entries(saved ?? {})) {
 			if (nudges.has(workerId) || !v) continue;
 			const state: NudgeState = { seq: Number(v.seq) || 0, idleFires: Number(v.idleFires) || 0, active: new Map() };
 			for (const raw of Array.isArray(v.active) ? v.active : []) {
 				const n = nudgeOf(raw);
 				if (!n) continue;
+				if (n.createdAt <= cancelled) { dropped = true; continue; } // Archiving the parent cancelled it.
 				// One that came due while no parent was here fires now.
 				n.timer = coordinationTimer(() => fireNudge(workerId, n.id), Math.max(0, n.fireAt - Date.now()));
 				state.active.set(n.id, n);
 			}
 			const held = nudgeOf(v.held);
-			if (held) state.held = held;
+			if (held && held.createdAt > cancelled) state.held = held;
+			else if (held) dropped = true;
 			nudges.set(workerId, state);
 		}
+		if (dropped) saveNudges();
+		else publishTeamWakes();
 	};
 	const describeNudge = (n: PendingNudge) => `${n.id} at ${new Date(n.fireAt).toISOString()} (in ${fmtDur(n.fireAt - Date.now())})${n.reason ? `: ${n.reason}` : ""}`;
+	/** A nudge whose monitor can't be brought back now: kept, tried again, then left for the parent's next start. */
+	const nudgeNotDelivered = (workerId: string, n: PendingNudge) => {
+		n.tries = (n.tries ?? 0) + 1;
+		n.timer = n.tries < NUDGE_RESUME_RETRIES ? coordinationTimer(() => fireNudge(workerId, n.id), NUDGE_RESUME_RETRY_MS * n.tries) : undefined;
+	};
+	/** Stay kept until delivered (§teams.defaults/wake-nudge): a stopped monitor is resumed first. */
 	const fireNudge = (workerId: string, id: string) => {
 		const state = nudges.get(workerId);
 		const n = state?.active.get(id);
-		if (!state || !n) return;
+		if (!state || !n || n.firing || shuttingDown) return;
+		const live = agents.find((a) => a.id === workerId);
+		// A monitor that runs, with no reattach under way: delivered at once, as the timer fires.
+		if (reattaching === undefined && live && !isRestored(live) && !live.isFinished()) return deliverToMonitor(state, live, id, n);
+		n.firing = true;
+		void (async () => {
+			// Monitors still running are picked back up first: never resumed over one.
+			await reattaching;
+			if (shuttingDown || nudges.get(workerId) !== state || !state.active.has(id)) return;
+			let worker = agents.find((a) => a.id === workerId);
+			if (!worker || isRestored(worker) || worker.isFinished()) {
+				const ctx = activeCtx;
+				const manifest = ctx ? readWorkerManifests(ctx.sessionManager.getEntries()).manifests.get(workerId) : undefined;
+				if (!ctx || !manifest?.team || teams.ejectedAt(workerId) !== undefined) {
+					// No such member any more: nobody is left to deliver it to.
+					state.active.delete(id);
+					saveNudges();
+					return;
+				}
+				const teamId = manifest.team.teamId;
+				if (!pausedTeams.has(teamId) && !teamWorking(teamId, workerId)) {
+					// An idle team stays stopped: held, as for a monitor that runs (later ones collapse into it).
+					state.active.delete(id);
+					state.held ??= n;
+					saveNudges();
+					return;
+				}
+				try {
+					worker = await resumeWorker(ctx, workerId);
+				} catch {
+					if (!shuttingDown) nudgeNotDelivered(workerId, n);
+					return;
+				}
+			}
+			deliverToMonitor(state, worker, id, n);
+		})().finally(() => {
+			n.firing = false;
+		});
+	};
+	/** A running monitor's nudge: delivered, or held while no teammate works. */
+	const deliverToMonitor = (state: NudgeState, worker: Worker, id: string, n: PendingNudge) => {
+		const teamId = teams.teamOf(worker.id);
 		state.active.delete(id);
-		saveNudges();
-		const worker = agents.find((a) => a.id === workerId);
-		const teamId = teams.teamOf(workerId);
-		if (shuttingDown || !worker || worker.isFinished() || !teamId) return;
-		const working = teamWorking(teamId, workerId);
+		if (!teamId) {
+			saveNudges();
+			return;
+		}
+		const working = teamWorking(teamId, worker.id);
 		if (!working && !pausedTeams.has(teamId)) {
 			// Nobody to watch: hold one wake until a teammate works again (later ones collapse into it).
 			state.held ??= n;
@@ -2281,7 +2352,6 @@ export function registerSubagents(
 		const workerId = worker.id;
 		if (working) state.idleFires = 0;
 		else state.idleFires++;
-		saveNudges();
 		const now = Date.now();
 		const text = [
 			`[wake_nudge ${n.id}] Scheduled wakeup fired (set ${fmtDur(now - n.createdAt)} ago)${released ? "; held while no teammate was working, delivered now that one is" : ""}.`,
@@ -2293,6 +2363,8 @@ export function registerSubagents(
 		// An urgent notice item: stored first, so a busy or slow-to-wake monitor never loses the fire.
 		const me = teams.memberInfo(workerId)?.member;
 		if (me && teams.teamOf(workerId) === teamId) queueItem(me, { kind: "notice", urgent: true, body: text, subject: `[wake_nudge ${n.id}] ${n.reason || "scheduled wakeup fired"}` });
+		// Only now, with the notice stored, does the mailbox let go of it.
+		saveNudges();
 	};
 	/** A held wake goes out once a teammate of its monitor is working again. */
 	const releaseHeldNudges = () => {
@@ -2302,8 +2374,8 @@ export function registerSubagents(
 			const worker = agents.find((a) => a.id === workerId);
 			const teamId = teams.teamOf(workerId);
 			if (!worker || worker.isFinished() || !teamId) {
-				// Not (yet) picked back up after a reload: kept for when it is.
-				if (worker || reattaching === undefined) { state.held = undefined; saveNudges(); }
+				// Not (yet) picked back up after a reload, or stopped and listed restored: kept for when it is.
+				if (worker ? !isRestored(worker) : reattaching === undefined) { state.held = undefined; saveNudges(); }
 				continue;
 			}
 			const working = teamWorking(teamId, workerId);
@@ -2404,6 +2476,8 @@ export function registerSubagents(
 	const wakeRejoinedMonitor = (worker: Worker) => {
 		const teamId = pausedMonitorTeam(worker.id);
 		if (!teamId || worker.isFinished()) return;
+		// A nudge it kept runs the check when it comes due, a late one at once.
+		if (nudges.get(worker.id)?.active.size) return;
 		const text = [
 			`[Team ${teamId} restored while paused]`,
 			"The parent session restarted while this team was paused by a usage notice; your pending wake_nudges ended with it. Run your standing instruction now: call team_roster; if the paused window is back under the threshold or has reset, send the resume notice; otherwise schedule the resume check with wake_nudge and end your turn.",
@@ -2766,11 +2840,12 @@ export function registerSubagents(
 		if (!open && !byMembers && !c.auto) return [];
 		return [`${indent}Inbox: ${open} open · closed by members ${byMembers} · automatically ${c.auto}`];
 	};
+	const sessionMailbox = () => path.join(agentDir(), "sova", "teams", sessionDirKey(activeCtx?.sessionManager.getSessionId?.(), unsavedSessionKey), "mailbox");
 	const ensureMailbox = (): string => {
 		if (!mailboxRoot) {
 			// Beside the session's handover notes, and kept: a reattached or resumed member keeps its inbox,
 			// and requests written while the parent was away are handled at the next poll.
-			mailboxRoot = path.join(agentDir(), "sova", "teams", sessionDirKey(activeCtx?.sessionManager.getSessionId?.(), unsavedSessionKey), "mailbox");
+			mailboxRoot = sessionMailbox();
 			fs.mkdirSync(mailboxRoot, { recursive: true, mode: 0o700 });
 		}
 		if (!inbox) {
@@ -2804,6 +2879,9 @@ export function registerSubagents(
 	const pollMailbox = () => {
 		if (shuttingDown || !mailboxRoot) return;
 		for (const p of pendingSuccessions.values()) if (fs.existsSync(p.note)) void finishSuccession(p, "note");
+		// A timer can sleep through the machine's sleep: the wall clock says what is due.
+		const clock = Date.now();
+		for (const [workerId, state] of nudges) for (const n of state.active.values()) if (n.timer && n.fireAt + 5000 <= clock) fireNudge(workerId, n.id);
 		for (const item of scanMailboxRoot(mailboxRoot)) {
 			if (!item.request) continue; // Malformed: removed, nothing to answer.
 			void handleMemberRequest(item.teamId, item.workerId, item.dir, item.request);
@@ -4848,7 +4926,12 @@ export function registerSubagents(
 		// still running are picked back up.
 		void restoreWorkers(ctx)
 			.catch(() => { /* Best effort: the records stay for the next start. */ })
-			.then(() => (shuttingDown ? undefined : reattach(ctx)));
+			.then(() => (shuttingDown ? undefined : reattach(ctx)))
+			.then(() => {
+				// Kept monitor nudges are armed whether or not any member was picked back up
+				// (§teams.defaults/wake-nudge): a session with none gets no mailbox from this.
+				if (!shuttingDown && fs.existsSync(path.join(mailboxRoot ?? sessionMailbox(), "nudges.json"))) ensureMailbox();
+			});
 		refresh();
 	});
 	pi.on("session_tree", (_event, ctx) => {

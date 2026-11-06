@@ -19,7 +19,7 @@ mkdirSync(liveDir, { recursive: true });
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
 const { getSessionSummary, cleanupSessions, archiveSession, fullSummaries } = await import("./sessions-index");
-const { getAgentsInsight } = await import("./insights");
+const { getAgentsInsight, getSessionInsight } = await import("./insights");
 const { canonicalPath } = await import("./paths");
 const { sessionItems } = await import("./attention");
 const { exclusionReason, quietTeam } = await import("./attention-signals");
@@ -130,4 +130,19 @@ test("Clean Up never sweeps a queue chat by age or as a husk, and refuses it by 
   const cleared = await cleanupSessions({ mode: "paths", paths: [kept], dryRun: true }, { queueChats: true });
   assert.deepEqual(cleared.refused ?? [], [], JSON.stringify(cleared));
   assert.deepEqual(cleared.deletedIds, ["old-rev"]);
+});
+
+test("a queue chat's Worktrees section leaves out the trees it created itself (its conflicts' scratch copies); an ordinary chat's lists them", async () => {
+  const made = join(agentDir, "wt", "proj-resolve-mq_1");
+  const attached = join(agentDir, "wt", "proj-attached");
+  const withTrees = (name: string, profile: Record<string, unknown> | null): string => {
+    const path = session(name, profile);
+    const tree = (p: string, how: string) => ({ path: p, branch: `feat/${how}`, base: "m", status: "active", session: name, how, at: 1 });
+    const entry = { type: "custom", customType: "worktrees", id: "w1", parentId: "t1", data: { version: 1, trees: [tree(made, "created"), tree(attached, "attached")] } };
+    writeFileSync(path, `${JSON.stringify(entry)}\n`, { flag: "a" });
+    return path;
+  };
+  const rows = async (path: string) => ((await getSessionInsight(path)).worktrees ?? []).map((w) => w.path);
+  assert.deepEqual(await rows(withTrees("plain-trees", null)), [made, attached], "the control lists both");
+  assert.deepEqual(await rows(withTrees("thread-trees", sova("merge-thread"))), [attached], "the thread's own scratch copy is gone; one it only attached stays");
 });

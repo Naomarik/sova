@@ -234,6 +234,11 @@
     "project.setup.get",
     "project.setup.open",
     "project.setup.merge",
+    "session.job.list",
+    "session.job.stop",
+    "session.pairs.list",
+    "session.pairs.unpair",
+    "session.pairs.resume",
     "attention.dismiss",
     "attention.undismiss"
   ],

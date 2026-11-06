@@ -20,13 +20,16 @@
       "docs/commands.md",
       "shared/commands/other.ts",
       "server/commands-inventory/scan.ts",
-      "server/commands-inventory/baseline.json"
+      "server/commands-inventory/baseline.json",
+      "server/topic-pairs.ts",
+      "src/card-toolkit/commands.gen.ts",
+      "server/create-guide-growth.json"
     ],
     "authority": "accepted",
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T03:27Z",
-      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#f0aa11bd"
+      "at": "2026-11-06T01:43Z",
+      "source": "pi-session:01a1ab3a-26bd-72b7-9a70-7646430041e9#4cfa08b1"
     },
     "evidence": "verified"
   },

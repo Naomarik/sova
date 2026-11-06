@@ -79,7 +79,8 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `project.verb.release.abandon`, `project.verb.release.withdraw`, `mcp.servers.list`,
   `mcp.server.status`, `project.verb.release.note`, `project.coding.start`, `project.icon.get`,
   `project.icon.upload`, `project.icon.letters`, `project.icon.remove`,
-  `project.merge-queue.landing-summary`, `project.glance`.
+  `project.merge-queue.landing-summary`, `project.glance`, `session.job.list`,
+  `session.job.stop`, `session.pairs.list`, `session.pairs.unpair`, `session.pairs.resume`.
   The `project.verb.*` ids are made from the verb lists of `shared/project-contract.ts`, so a new
   verb is a new entry. The in-chat actions are the `chat.*` entries (§app.chat-actions/catalogue),
   and `chat.mode-command` runs a project mode's command (§chat.mode-menu/project-mode-commands).
@@ -107,7 +108,9 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   (§app.mcp/reads); approving, adding or editing a server and signing in to one are the page's and
   no entry (§app.mcp/approval). `project.coding.start` starts a chat in a project, a home card's
   New Chat, and the `project.icon.*` entries read and set a project's icon
-  (§app.project-commands/projects-sweep, §app.projects/icon).
+  (§app.project-commands/projects-sweep, §app.projects/icon). The `session.pairs.*` entries list the
+  Overseer's pairings in force, end one and resume a paused one, as a paired chat's line does
+  (§app.overseer/pairs); making a pairing is the Overseer's alone and no entry.
 - **Its mesh reach is its route's.** Each entry's `meshNeed` is the capability the peer listener's
   classifier gives its method and path (§mesh.peers/grants), and a test fails when they differ.
 - **Never a door the operator keeps closed.** No entry targets the peer routes (`/api/peer`,

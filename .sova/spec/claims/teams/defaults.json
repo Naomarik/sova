@@ -197,12 +197,16 @@
       "pi-config/extensions/subagents/team-defaults.ts",
       "pi-config/extensions/subagents/README.md",
       "pi-config/extensions/subagents/inbox.ts",
-      "pi-config/extensions/subagents/delivery.ts"
+      "pi-config/extensions/subagents/delivery.ts",
+      "pi-config/extensions/subagents/wake-store.ts",
+      "pi-config/extensions/subagents/restore.test.ts",
+      "scripts/chat-runtime-trial/run.mjs",
+      "server/chat-runtime/trial-wake-tw6.integration.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T02:25Z",
-      "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#1ad5a0cc"
+      "by": "omar",
+      "at": "2026-11-04T11:00Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
     }
   },
   "§teams/defaults": {

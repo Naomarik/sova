@@ -74,6 +74,7 @@ import type {
   SessionSetupFileText,
   SessionContextView,
   SessionTools,
+  PairView,
   SessionSummary,
   ThemeList,
   TmpAttachment,
@@ -146,6 +147,7 @@ import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../
 import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../shared/provider-limits";
 import type { TargetInfo } from "./remote-session";
 import type { CommandEntry } from "../../shared/commands-catalog";
+import type { BackgroundJob } from "../../shared/protocol";
 import type { AlignTriage, WorkerChecks, DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
 import { upgradeLegacyRows } from "./legacy-rows";
@@ -223,6 +225,16 @@ export const mintAccessCode = () =>
 export const revealAccessToken = () => request<{ token: string }>("/api/auth/token", { cache: "no-store" });
 
 export const listSessions = () => request<SessionSummary[]>("/api/sessions");
+
+/** A chat's pairings in force (§app.overseer/pairs): its Paired with lines. */
+export const listPairs = (sessionId: string) =>
+  request<{ pairs: PairView[] }>(`/api/sessions/pairs?id=${encodeURIComponent(sessionId)}`, { cache: "no-store" });
+/** Unpair: both topics close, their waiting notes drop. */
+export const unpairChats = (pairing: string) =>
+  request<{ pair: PairView }>("/api/sessions/pairs/unpair", { method: "POST", body: JSON.stringify({ pairing }) });
+/** Resume a paused pairing (both directions): their note counts go back to 0. */
+export const resumePairing = (pairing: string) =>
+  request<{ pair: PairView }>("/api/sessions/pairs/resume", { method: "POST", body: JSON.stringify({ pairing }) });
 /** The list and the feed version it is at (`X-Sova-List-Version`; null from a server without it). */
 export const listSessionsVersioned = async () => {
   const { body, headers } = await requestWithHeaders<SessionSummary[]>("/api/sessions");
@@ -1023,6 +1035,17 @@ export const fetchTeamInboxBody = (path: string, teamId: string, workerId: strin
   request<TeamInboxBody>(
     `/api/insights/session/inbox?path=${encodeURIComponent(path)}&team=${encodeURIComponent(teamId)}&worker=${encodeURIComponent(workerId)}&item=${encodeURIComponent(id)}`,
   );
+
+/** A chat's running background jobs and its workers' (§app.background-jobs/pane). Starts no chat. */
+export const fetchSessionJobs = (path: string) => request<{ jobs: BackgroundJob[] }>(`/api/sessions/jobs?path=${encodeURIComponent(path)}`);
+
+/** Stop one background job: 15 s to finish, then the rest ends. Never starts or wakes the chat.
+    `sessionId` names a worker's job (the job's own `sessionId`). */
+export const stopSessionJob = (path: string, id: string, sessionId?: string) =>
+  request<{ ok: true; id: string; ended: boolean }>("/api/sessions/jobs/stop", {
+    method: "POST",
+    body: JSON.stringify({ path, id, ...(sessionId ? { sessionId } : {}) }),
+  });
 
 /** The repository around a session's folder (read-only git). `fresh` skips the server's ~10s cache.
     Use loadGitSummary (lib/git-summary.ts), which shares a request already running. */

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { EntryKind, TranscriptItem } from "../../shared/protocol";
 import { emptyLive } from "./live";
-import { isAlignMarkOnly, isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, visibleCount, type HideKinds } from "./hidden-rows";
+import { isAlignMarkOnly, isHiddenBlock, isPairCardCall, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, visibleCount, type HideKinds } from "./hidden-rows";
 
 const row = (id: string, kind: EntryKind, extra: Partial<TranscriptItem> = {}): TranscriptItem => ({ id, kind, ...extra });
 const call = (id: string, callId?: string) => row(id, "tool-call", { text: "bash", toolCallId: callId });
@@ -172,4 +172,14 @@ test("an align call that is only the change-request mark is working: hide tool c
   assert.equal(isAlignMarkOnly("align", { ops: [] }), false);
   assert.equal(isAlignMarkOnly("bash", mark), false);
   assert.equal(isAlignMarkOnly("align", { ops: [{ op: "change_request" }, { op: "change_request", note: "x" }] }), true);
+});
+
+test("sova_pair: pair and unpair are action cards Hide tool calls never folds; list and resume fold (§app.overseer/pairs)", () => {
+  assert.equal(isPairCardCall("sova_pair", { op: "pair", a: "x", b: "y" }), true);
+  assert.equal(isPairCardCall("sova_pair", { op: "unpair", pairing: "pr_0" }), true);
+  assert.equal(isPairCardCall("sova_pair", { op: "list" }), false);
+  assert.equal(isPairCardCall("sova_pair", { op: "resume" }), false);
+  assert.equal(isPairCardCall("sova_send", { op: "pair" }), false);
+  assert.equal(isHiddenBlock({ type: "toolCall", id: "p", name: "sova_pair", argsText: "", args: { op: "pair" } }, TOOLS), false);
+  assert.equal(isHiddenBlock({ type: "toolCall", id: "l", name: "sova_pair", argsText: "", args: { op: "list" } }, TOOLS), true);
 });

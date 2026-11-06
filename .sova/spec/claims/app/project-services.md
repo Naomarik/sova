@@ -279,7 +279,8 @@ probe's answer).
   whatever they leave behind is killed with them. Which process listens on a port is read from
   `/proc` on Linux, else from `lsof`.
 
-Sova stops, restarts and signals only units with its own prefix and state hash, never a process it
+A requested background job runs through this same driver (§app.background-jobs/request). Sova stops,
+restarts and signals only units with its own prefix and state hash, never a process it
 did not start; an adopted unit (§app.project-services/adopt) is only read, and restarted only by the
 delayed restart an operator's confirmed `apply` schedules. A `static` service is served inside the server's process (as
 §mesh.public/preview-serve serves folders), and it is bound again when the server starts. The

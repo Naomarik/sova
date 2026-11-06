@@ -1888,9 +1888,15 @@ commits each side has that the other hasn't; `added`/`removed` are the lines the
 since it left the base (binary files count 0). `branch` is absent on a detached HEAD. `dirty` says
 whether anything is uncommitted, untracked files included.
 
-**Read-only and bounded.** Reading a tree never writes to it: no index refresh or lock, no
-fsmonitor, no textconv or external diff, and the trial merge behind `content` writes its objects to
-a scratch store that is deleted afterwards. Every git runs without a shell under a 5-second limit,
+**Read-only and bounded.** Reading a tree never writes to it, but for the one exception below: no
+index refresh or lock, no fsmonitor, no textconv or external diff, and the trial merge behind `content`
+writes its objects to a scratch store that is deleted afterwards. The trial merge normally runs
+outside the tree's folder and the project's, so nothing it writes, a merge driver's temporary files
+included, is left in the main checkout or any worktree, even when git is stopped at its limit. The
+exception is a project with a `.gitattributes` file on a git older than 2.43, or one whose version
+can't be read: that git can't read the attributes from outside, so the merge runs in the checkout.
+Its answers stay right, and a merge stopped at its limit can still leave git's temporary files there.
+Every git runs without a shell under a 5-second limit,
 at most four at a time. The comparison is kept until the tree's HEAD or its base moves, or what its
 trial merge rests on changes (the configuration, attribute files and merge drivers' code,
 §app/idle-git-cache); `dirty` is kept for ten seconds, and what hasn't been asked for in an hour is dropped. With git older than 2.38 there

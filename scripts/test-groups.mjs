@@ -65,6 +65,7 @@ export const GROUPS = [
       "pi-config/extensions/llm-inflight/**",
       "pi-config/extensions/sessions/**",
       "pi-config/extensions/wake-nudge.ts",
+      "server/wake-keeper*.ts",
       ...PACKAGES,
       ...TEST_SETUP,
       ...SELF,

@@ -189,6 +189,10 @@ read means no browser, never a refused start.
   gone, and the worker runs in a user namespace, where root-owned files belong to the overflow
   user: ssh refuses a root-owned config file ("Bad owner or permissions"; `ssh -F /dev/null`
   works). A worker that needs Docker or the host's own ssh config needs Off.
+- **Long jobs.** A background process ends with its command here (§chat.sandbox/limits). A write-only
+  worker runs a long job through `background_job`, under this same confinement: the job writes only
+  where the worker can, and it is listed and reported as any job is
+  (§app.background-jobs/request). A worker under On has no such way (§app.background-jobs/where).
 
 Under Off the worker starts unconfined, like one outside a worktree. Under On or Subagents only,
 if the sandbox extension is missing or gives no scope for the worktree, the spawn is refused. A
@@ -671,8 +675,8 @@ and the queue pauses on it (§app.merge-queue/master-moved).
 Sova removes merged worktrees only when asked: by the user from a new session's empty state
 (§chat.transcript/empty-worktrees), or by `sova_archive` with `worktrees: "remove"` for the
 archived session's own worktrees (§app.overseer/tools), both through one service on the server
-(`server/worktree-cleanup.ts`). Nothing removes a worktree on its own, and the `worktree` tool's
-merge stays non-destructive.
+(`server/worktree-cleanup.ts`). Nothing else removes a worktree on its own, but for the merge
+queue's own scratch copies (below), and the `worktree` tool's merge stays non-destructive.
 
 - **Which trees.** Git's own list (`git worktree list`) for the repository the session's folder is
   in: every linked worktree in it, wherever its folder is; the main checkout is never one. A remote
@@ -681,7 +685,16 @@ merge stays non-destructive.
   — a trial merge that leaves the main branch's tree unchanged — after at least one commit of its
   own), **empty** (its branch has no commit of its own: its tip is still the commit git's reflog
   says the branch was created at; with no reflog, a branch in the main branch counts as merged), or
-  **unmerged** (anything else, a tree on no branch included).
+  **unmerged** (anything else, a tree on no branch included). The merge queue's own scratch copies
+  (§app.merge-queue/resolve-copy) are none of these: they are never counted, listed, kept or
+  removed here.
+- **Nothing left in the folders, on a git that can do it.** The trial merge behind "by content"
+  normally runs outside the project, so nothing it writes, a merge driver's temporary files included,
+  is left in the main checkout or any worktree, even when git is stopped at its time limit. The
+  exception is a project with a `.gitattributes` file on a git older than 2.43, or one whose version
+  can't be read: that git can't read the attributes from outside, so the merge runs in the checkout.
+  Its answers stay right, and a merge stopped at its time limit can still leave git's temporary files
+  there.
 - **The count.** `GET /api/worktrees/summary?path=<session>` answers the repository's linked
   total and its merged, empty and unmerged counts, from git alone. It is cached per repository for
   about 30 seconds, and a change to git's list of worktrees or a removal drops it.
@@ -710,8 +723,9 @@ merge stays non-destructive.
   "content" | "empty", branchDeleted, at}` to `<state root>/removed-worktrees.json`, written by
   atomic rename, the newest 2,000 kept. Readiness reads it for a removed tree whose branch was
   deleted (§chat.worktrees/readiness).
-- **The merge queue** never removes a worktree: a landed branch's worktree stays until the user
-  cleans it up here.
+- **The merge queue** never removes a worktree of yours: a landed branch's worktree stays until the
+  user cleans it up here. It removes only its own scratch copies, itself, once their attempt ends
+  (§app.merge-queue/resolve-copy).
 
 ## §chat.worktrees/dirty-freshness — How old a tree's uncommitted-changes reading may be
 

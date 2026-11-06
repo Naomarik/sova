@@ -3,7 +3,8 @@
 // for good (a teardown, a removed install), whose chats would otherwise run until each goes idle.
 // Through the chat supervisor's records and its driver (systemd units of this state root's prefix, or
 // the detached sessions it recorded, checked against their start time), never a process found by name.
-// Each chat closes as an operator stop does; the next server, if any, reads no death.
+// Each chat closes as an operator stop does; the next server, if any, reads no death. Its background
+// jobs are stopped too, through their units (systemd only; elsewhere there are none).
 //
 //   bun scripts/stop-chats.ts [--agent-dir <dir>]     (default: $PI_CODING_AGENT_DIR, else ~/.pi/agent)
 import { resolve } from "node:path";
@@ -37,3 +38,11 @@ for (const driver of drivers) {
   }
 }
 console.log(stopped ? `${stopped} chat process${stopped === 1 ? "" : "es"} stopped` : "no chat process was recorded as running");
+// Their background jobs too (§app.background-jobs/stopping): each job's unit, from the jobs store of this
+// state root; the service manager gives each its grace and ends it. No card.
+if (drivers.length > 1) {
+  const { stopAllJobs } = await import("../server/background-jobs");
+  const jobs = await stopAllJobs();
+  for (const j of jobs) console.log(`stopping job ${j.id} ${j.unit} (${j.path})`);
+  console.log(jobs.length ? `${jobs.length} background job${jobs.length === 1 ? "" : "s"} stopping` : "no background job was recorded as running");
+}

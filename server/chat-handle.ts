@@ -31,6 +31,7 @@ import type {
   ServerToolDecl,
   ServerToolOutcome,
   SpecialSpec,
+  WorkerSpec,
 } from "../shared/chat-runtime";
 import type { ChatAskMethod, ServerToolCtxWire } from "../shared/chat-runtime-wire";
 import type { McpNote } from "../shared/mcp";
@@ -69,7 +70,12 @@ import { stateView } from "./harness/state-view";
 import { playbookHost } from "./playbook-host";
 import { projectEngine } from "./project-services/routes";
 import { sessionInstanceNote, sessionVerbsTool } from "./project-services/tools";
-import { stateRoot } from "./state-root";
+import { agentRoot, stateRoot } from "./state-root";
+import { backgroundJobTool, realRequestDeps, type JobsHere, type ToolOwner } from "./background-jobs-request";
+import { jobsEnv } from "./background-jobs";
+import { JOBS_UNIT_PREFIX_ENV } from "./background-jobs-capture";
+import { JOBS_DIR_ENV } from "../pi-config/extensions/subagents/job-store.ts";
+import { readWorkerNice } from "./process-priority";
 import { queueOpenTool, queuePushTool } from "./topics";
 import type { PowersSend } from "./session-powers";
 import { tourTools } from "./tours/tools";
@@ -99,6 +105,7 @@ export {
   onAgentSettled,
   onAgentStarted,
   onReceiverIdle,
+  onCompacted,
   setLinkOrigin,
   setLinksSource,
   setOpeningChoice,
@@ -471,6 +478,8 @@ export interface ChatRouter {
   /** Resolves once this path's chat, if a previous server left it running, is taken back (bounded),
       so `get` can be trusted for it; at once when none of it was left running. */
   takenBack?(path: string): Promise<void>;
+  /** How its chats run (undefined: still starting). */
+  driver?(): "systemd" | "detached" | undefined;
 }
 let router: ChatRouter | null = null;
 export function setChatRouter(r: ChatRouter | null): void {
@@ -677,7 +686,7 @@ export async function fileSnapshot(path: string, w: Partial<ServerToolCtxWire> &
     declarations go to the chat in its `open`, in loadout order. `known`: the title the chat reports
     (its pi session name, often none), used only when the session's display title can't be read. */
 export function servedToolsFor(chatId: ChatId, sessionId: string, known: () => string | undefined, powers = false, plain = !powers): ServerToolDecl[] {
-  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title: () => senderTitle(chatId, known) }), ...tourTools(sessionId, chatId)];
+  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title: () => senderTitle(chatId, known) }), ...tourTools(sessionId, chatId), jobTool({ path: chatId })];
   // Declared for a plain chat only: a special kind's own tool of this name (a project overseer's) must keep answering.
   // Its extension keeps it active only in Create (§chat.create-mode/settings-cards).
   if (plain) specs.push(createSettingsTool({ sessionId, mode: () => chatHandle(chatId)?.mirror.mode.mode, cwd: () => chatHandle(chatId)?.mirror.cwd ?? "" }));
@@ -693,9 +702,10 @@ export function servedToolsFor(chatId: ChatId, sessionId: string, known: () => s
 }
 
 /** The server-hosted tools of a worker or team member (WorkerKind "worker", never a hidden chat), hosted
-    here: only `project_verbs`, under an ordinary session's rules (§app.project-services/callers). */
-export function servedWorkerTools(chatId: ChatId): ServerToolDecl[] {
-  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine())];
+    here: `project_verbs`, under an ordinary session's rules (§app.project-services/callers), and
+    `background_job` under the worker's own confinement, read from its launch flags (§app.background-jobs/request). */
+export function servedWorkerTools(chatId: ChatId, spec?: Pick<WorkerSpec, "flags" | "parent">): ServerToolDecl[] {
+  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), jobTool({ path: chatId, ...(spec ? { worker: { flags: spec.flags, workerId: spec.parent.workerId } } : {}) })];
   serveTools(chatId, specs);
   return specs.map(declOfTool);
 }
@@ -713,6 +723,15 @@ export async function servedToolsForChat(chatId: ChatId, sessionId: string, know
   if (!extra.length) return decls;
   serveTools(chatId, extra);
   return [...decls, ...extra.map(declOfTool)];
+}
+
+/** `background_job` for one chat: jobs are kept where chats run in systemd units and wakes are on. */
+function jobTool(owner: ToolOwner): ToolSpec {
+  const here: JobsHere = async () => {
+    const env = jobsEnv(router?.driver?.() === "systemd" ? "systemd" : undefined);
+    return env[JOBS_DIR_ENV] && env[JOBS_UNIT_PREFIX_ENV] ? { dir: env[JOBS_DIR_ENV], unitPrefix: env[JOBS_UNIT_PREFIX_ENV] } : null;
+  };
+  return backgroundJobTool(owner, here, (o) => realRequestDeps({ ...o, agentDir: agentRoot(), ...(owner.worker ? { nice: readWorkerNice() } : {}) }));
 }
 
 /** A pusher's title, the one Sova shows for its session (§chat.topics/push): its display title, else

@@ -66,6 +66,15 @@ export class WorktreeOwners {
     const tree = this.deps.canonical(worktree);
     return pickOwner([tree, worktree], sessions, this.trackers(tree));
   }
+
+  /** Whether one of the merge queue's own chats (queueChat) created the worktree: a conflict's scratch copy the merge
+      thread made itself, before Sova made them (merge-queue/scratch.ts). Never anyone's work to land. */
+  async queueMade(worktree: string): Promise<boolean> {
+    const trackers = this.trackers(this.deps.canonical(worktree));
+    if (!trackers.length) return false;
+    const byPath = new Map((await this.deps.sessions()).map((s) => [s.path, s]));
+    return trackers.some((t) => !!byPath.get(t.sessionPath)?.queueChat);
+  }
 }
 
 const active = (s: SessionSummary) => Date.parse(s.lastActiveAt) || 0;

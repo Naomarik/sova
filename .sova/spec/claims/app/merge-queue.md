@@ -26,7 +26,8 @@ A chat working the project's merge playbook, the **merge thread** (§chat.merge-
 helps:
 - it adds a note to each landing (§app.merge-queue/note);
 - it picks tests the change could break;
-- it judges conflicts (§app.merge-queue/conflicts);
+- it judges conflicts (§app.merge-queue/conflicts), in a scratch copy Sova makes for it and removes
+  (§app.merge-queue/resolve-copy);
 - it explains failures, in the entry's note.
 
 It acts only through the merge verbs (§app.project-services/merge-verbs). Sova starts every run by
@@ -122,6 +123,7 @@ The entry joins the end of the line, which runs in the order approvals came, and
 - a branch with uncommitted files;
 - a branch with nothing ahead of the target;
 - a branch with a temporary commit subject;
+- the queue's own scratch copy (§app.merge-queue/resolve-copy);
 - the target branch itself;
 - a repository the queue doesn't serve (not on the Projects list, or its merge setup not done),
   with "not a project the merge queue serves: merge it into main from the chat", making no queue
@@ -675,7 +677,9 @@ The kit can be read, never edited, from Settings → Merge Queue (**Open Folder*
 A merge that conflicts is held in the copy, and the merge thread judges each conflict. A resolution
 git recorded earlier is never applied silently, so the same conflict comes back to the thread every
 time. A merge that fails with no unmerged paths left still counts as a conflict when git finds
-conflicts between the two sides, never as a machine failure.
+conflicts between the two sides, never as a machine failure. The thread works each conflict out in
+a scratch copy Sova makes for that attempt, and Sova removes the copy once the attempt ends
+(§app.merge-queue/resolve-copy).
 
 **No behaviour change.** Neighbouring edits, imports, formatting, both sides extending a list: the
 thread resolves the conflict itself. The approval carries, and the full checks run on the
@@ -703,6 +707,62 @@ branch is not blamed, and no chat is told.
 **No thread.** With no thread the conflict goes back to the branch's chat at once, with the
 conflicting files named; a thread that hasn't answered in 20 minutes hands it back the same way.
 The queue moves on to the next entry meanwhile.
+
+## §app.merge-queue/resolve-copy — A conflict's scratch copy, made and removed by Sova
+
+**Sova makes it.** When a landing attempt's merge conflicts and the merge thread is called in to
+judge it (§app.merge-queue/conflicts), Sova first makes a scratch copy of the project for that
+attempt: beside the project, like the merge copy (§app.merge-queue/run), never inside it, at the
+target's newest commit, and on no branch. The message that calls the thread in says where the copy
+is. The thread works out and commits its resolution there, and never makes a worktree or a branch
+of its own for a conflict (§chat.merge-queue/thread). With no thread to call in, no copy is made.
+
+**When it can't be made** (a folder Sova didn't make is already at its place, which is left as it
+is; a place under Sova's state root; git refusing), the message says why, and the thread judges from
+the diff alone, answering behaviour differs with no resolution commit, so you decide.
+
+**The fix is kept out of sight.** The resolution commit the thread names when it judges the
+conflict is kept by Sova under a hidden reference of the queue's own, never as a branch, so no
+branch list or screen shows it and git's own cleanup can't drop it before the run merges it.
+
+**Never something you can land.** A scratch copy is the queue's own. It never shows, even when a
+branch was switched to in it:
+- on the Merge Queue tab's Ready to land, not approved list (§app.merge-queue/view), so it never
+  counts in the project card's Ready to merge figure, which reads that list
+  (§app.projects/home-glance);
+- among the branches that get bullets: no model is asked to summarize one
+  (§app.merge-queue/branch-summary);
+- in any chat's Worktrees section or worktrees control, the merge thread's own included
+  (§chat.worktrees/pane);
+- on Clean Up Merged, in its counts or its lists, even once its folder is gone
+  (§chat.worktrees/cleanup).
+
+An approval of one, by Land, typed words or `merge.add`, naming its branch or its folder, is
+refused with nothing queued: "{branch} is a scratch copy the merge queue made to resolve a
+conflict, not work of yours to land: land the branch it was made for instead"
+(§app.merge-queue/approve). That refusal comes before the setup branch's trial gate
+(§app.project-setup/land-gate), so a copy that changes the project's setup is never told to run a
+trial; a branch of yours with the same change still is.
+
+**Known by who made it, never by its name.** A worktree counts as a scratch copy when Sova made it
+for an attempt (by a mark Sova keeps in git's own record of the worktree, never by its folder or
+branch name), or when one of the queue's own chats (§app.merge-queue/chats) created it, whatever it
+or its branch is called. One a queue chat only attached is not one. So a copy a merge thread made
+itself, on a branch of its own, before Sova made them, leaves every list above as soon as this
+ships. A worktree of yours is never taken for one because of its name.
+
+**Removed when its attempt ends.** As soon as the attempt the copy was made for ends (it lands, is
+sent back, is cancelled or removed from the queue, or a newer approval of the branch replaces it),
+Sova removes the copy, and the kept fix with it. Nothing is kept for later: a later try of the same
+attempt whose fix is gone is judged afresh, never run on the missing fix, and the branch's next
+attempt starts from the newest target.
+
+**Tidied when Sova starts.** At startup Sova also removes every scratch copy it made and every kept
+fix whose attempt has ended, or that the queue no longer has a record of, so one missed while Sova
+was stopped isn't left behind. It never touches a copy or a fix that an attempt still in line,
+checking or waiting for you needs, and removes those once that attempt ends. Sova removes only
+copies it made itself: a copy a merge thread made on a branch of its own is never removed by Sova
+on its own, only hidden.
 
 ## §app.merge-queue/master-moved — The target moved outside the queue
 
@@ -918,7 +978,8 @@ shows, top to bottom:
   Landed, a **Merged on GitHub** (or **Merged on GitLab**) chip, then "as {sha} · {when}", and never
   says pushed or not pushed; a pushed branch reads "Pushed {branch} at {sha}".
 - **Ready to land, not approved**: the project's worktree branches with commits the target hasn't, a
-  clean tree, a head that isn't a temporary commit, and no entry in line, landed or sent back at
+  clean tree, none of the queue's scratch copies (§app.merge-queue/resolve-copy), a head that
+  isn't a temporary commit, and no entry in line, landed or sent back at
   that commit (a sent-back branch shows here only at a newer commit with nothing saying it isn't
   Ready to land, or, sent back for its drafts, at the same commit once they changed and fit, or once
   removed from the queue,
@@ -1341,7 +1402,9 @@ The mark holds for chats started before this shipped and after a restart.
   board, the Overseer's and the project overseers' session lists, and naming sessions.
 
 Queue chats that already existed leave these lists too. A link still opens one: from the Merge
-Queue tab, a run's page and the branch's own Worktrees row (§chat.worktrees/pane).
+Queue tab, a run's page and the branch's own Worktrees row (§chat.worktrees/pane). The worktrees
+they create are the queue's scratch copies: never a row in any Worktrees section, a queue chat's
+own included, and never on a list you land from (§app.merge-queue/resolve-copy).
 
 **Their settings are Sova's.** A mode switch (the mode menu), a settings change
 (`POST /api/sessions/configure`) or another profile pick for a queue chat is refused (409), so it

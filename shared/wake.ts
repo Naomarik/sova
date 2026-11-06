@@ -20,6 +20,13 @@ const TAG_RE = /^\[wake_nudge (n\d+)\]/;
     `[tour_sign_in t1] A tour recording is waiting for a sign-in.`, then `Reason: …` and an instruction. */
 export const TOUR_SIGN_IN_TAG = "[tour_sign_in";
 const TOUR_TAG_RE = /^\[tour_sign_in (t\d+)\] /;
+/** A background job's end card (§app.background-jobs/end-card, pi-config/extensions/subagents/job-store.ts):
+    `[job j1] Background job ended.`, an optional "Late by … (Sova was not running)." line, then per job
+    `j1: \`<command>\`…, ran 5m.` … `Ended at <ISO time>.`; one card can name several jobs (`[job j1,j2]`, a
+    machine restart). A card from before the `Ended at` line has no end time. */
+const JOB_TAG_RE = /^\[job (j\d+(?:,j\d+)*)\] /;
+const JOB_LINE_RE = /^j\d+: `(.*)`/;
+const JOB_ENDED_RE = /^Ended at (\d{4}-\d\d-\d\dT[\d:.]+Z)\.$/;
 /** An extension job the Overseer started ended (§app.overseer/extension-commands, server/overseer-ext-jobs.ts):
     `[ext_job x1] <Title> · <Label> finished: ok`, then `Reason: …` and the job's report. */
 export const EXT_JOB_TAG = "[ext_job";
@@ -37,6 +44,11 @@ export interface WakeInfo {
   schedule?: true;
   /** A tour recording's sign-in notice (`[tour_sign_in tN]`), not a wake_nudge. */
   tour?: true;
+  /** A background job's end card (`[job jN]`): `reason` is what ran. */
+  job?: true;
+  /** A job card's end time (ms), the latest when it names several: what its `ended HH:MM` shows. Absent
+      on a card from before it was written, which shows the time it arrived instead. */
+  endedAt?: number;
   /** An extension job's end, told to the Overseer (`[ext_job xN]`), not a wake_nudge. */
   extJob?: true;
   /** The playbook its block carried, and how (§chat.schedules/delivery). */
@@ -60,6 +72,20 @@ export function parseWakeNudge(text: string | null | undefined): WakeInfo | null
     }
     const tag = parseBlockTags(text)[0];
     if (tag) info.playbook = { id: tag.id, load: tag.load };
+    return info;
+  }
+  const j = JOB_TAG_RE.exec(first);
+  if (j) {
+    const info: WakeInfo = { id: j[1]!, job: true };
+    for (const line of lines.slice(1)) {
+      const late = LATE_RE.exec(line.trim());
+      if (late) info.late = late[1];
+      const ran = JOB_LINE_RE.exec(line.trim());
+      if (ran && info.reason === undefined) info.reason = ran[1];
+      const ended = JOB_ENDED_RE.exec(line.trim());
+      const at = ended ? Date.parse(ended[1]!) : NaN;
+      if (Number.isFinite(at) && !(info.endedAt !== undefined && info.endedAt >= at)) info.endedAt = at;
+    }
     return info;
   }
   const t = TOUR_TAG_RE.exec(first);
@@ -90,4 +116,12 @@ export function parseWakeNudge(text: string | null | undefined): WakeInfo | null
 
 /** "Wake nudge n1" / "Scheduled run s1": the card's name and the Timeline's fallback label when there's no reason. */
 export const wakeTitle = (nudge: WakeInfo): string =>
-  nudge.tour ? "Tour sign-in" : nudge.extJob ? `Extension job ${nudge.id}` : nudge.schedule ? `Scheduled run ${nudge.id}` : `Wake nudge ${nudge.id}`;
+  nudge.job
+    ? `Background job ${nudge.id}`
+    : nudge.tour
+      ? "Tour sign-in"
+      : nudge.extJob
+        ? `Extension job ${nudge.id}`
+        : nudge.schedule
+          ? `Scheduled run ${nudge.id}`
+          : `Wake nudge ${nudge.id}`;

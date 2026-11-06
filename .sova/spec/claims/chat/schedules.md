@@ -5,8 +5,9 @@ A project's playbook can say when it runs by itself: a `when:` line in its entry
 with the profile it runs as. One keeper in the server (`server/schedules.ts`) fires it, with no
 model in the loop, and a fire reaches a session as a tagged wake-up. Nothing fires until you approve
 the schedule with a click, and an approval covers exactly the `when:`, `tz:` and profile you saw.
-Schedules are not wake_nudge (§teams.defaults/wake-nudge): the keeper survives restarts, can start a
-new session, and needs no model to re-arm it.
+Schedules are not wake nudges (§chat/wake-nudges, §teams.defaults/wake-nudge): a nudge is a chat's own
+one-shot reminder, set by its model with no approval, and it fires in that chat. A schedule is
+approved by you, repeats with no model to re-arm it, and can start a new session.
 
 ## §chat.schedules/header — The `when:` line
 

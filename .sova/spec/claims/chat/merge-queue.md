@@ -57,7 +57,9 @@ approval, when:
   setting governs this, and the queue doesn't handle a pick sent with no selection specially.
 - **a merge conflicted.** It judges the conflict with `merge.resolve`, saying no behaviour change or
   behaviour differs, with the target's side and the branch's side in plain words
-  (§app.merge-queue/conflicts).
+  (§app.merge-queue/conflicts). It works the resolution out in the scratch copy Sova made for that
+  attempt, whose folder the call names, and never makes a worktree or a branch of its own for it
+  (§app.merge-queue/resolve-copy).
 - **a run failed on the branch.** It explains the failure as the entry's note.
 - **the queue paused.**
 - **the queue has nothing left to check** (§app.merge-queue/empty).

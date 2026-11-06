@@ -73,7 +73,9 @@
       "server/app.ts",
       "src/lib/api.ts",
       "src/components/OverseerView.tsx",
-      "scripts/e2e/overseer-schedules-menu.mjs"
+      "scripts/e2e/overseer-schedules-menu.mjs",
+      "server/overseer-pair-tools.ts",
+      "server/overseer-pair-tools.test.ts"
     ],
     "requires": [
       "§app.overseer/tools",
@@ -82,9 +84,9 @@
       "§app.overseer/org-people-facing"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-19T18:27Z",
-      "source": "pi-session:01a15538-3d82-74c0-b458-b5235540d614#203f4764"
+      "by": "user",
+      "at": "2026-11-05T10:36Z",
+      "source": "pi-session:01a1ab3a-26bd-72b7-9a70-7646430041e9#56b7c1df"
     }
   },
   "§app.overseer/attention-digest": {
@@ -367,9 +369,9 @@
       "§app.project-services/instances"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-28T13:39Z",
-      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+      "by": "omar",
+      "at": "2026-11-04T10:59Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
     }
   },
   "§app.overseer/default-quick-actions": {
@@ -688,11 +690,19 @@
       "server/chat-manager.ts",
       "server/queue.ts",
       "server/group-prompt.ts",
-      "server/input-source.test.ts"
+      "server/input-source.test.ts",
+      "pi-config/extensions/wake-nudge.ts",
+      "pi-config/extensions/subagents/job-store.ts",
+      "server/harness/pi/job-card-input-source.test.ts"
     ],
     "requires": [
       "§app.overseer/tools"
-    ]
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-04T10:59Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+    }
   },
   "§app.overseer/links": {
     "kind": "behavior",
@@ -1061,6 +1071,58 @@
       "at": "2026-10-28T13:39Z",
       "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
     }
+  },
+  "§app.overseer/pairs": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.overseer/tools",
+      "§app.overseer/approvals",
+      "§app.overseer/caps",
+      "§app.overseer/sent-marker",
+      "§app.session-list/organizations",
+      "§chat.topics/open",
+      "§chat.topics/push",
+      "§chat.topics/delivery"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T10:36Z",
+      "source": "pi-session:01a1ab3a-26bd-72b7-9a70-7646430041e9#56b7c1df"
+    },
+    "code": [
+      "server/topic-pairs.ts",
+      "server/overseer-pair-tools.ts",
+      "server/topic-store.ts",
+      "server/topics.ts",
+      "server/topic-delivery.ts",
+      "server/overseer-tools.ts",
+      "server/overseer-prompt.md",
+      "server/chat-manager.ts",
+      "server/chat-handle.ts",
+      "shared/chat-runtime.ts",
+      "server/index.ts",
+      "server/app.ts",
+      "shared/protocol.ts",
+      "shared/overseer-grants.ts",
+      "src/components/PairedLines.tsx",
+      "src/lib/pair-lines.ts",
+      "src/lib/pair-lines.browser.test.ts",
+      "src/components/Thread.tsx",
+      "src/lib/rendered.ts",
+      "src/lib/rendered.browser.test.ts",
+      "src/components/ChatView.tsx",
+      "src/components/OverseerCards.tsx",
+      "src/components/BuiltinKinds.tsx",
+      "src/components/LiveKinds.tsx",
+      "src/lib/hidden-rows.ts",
+      "src/lib/transcript-kinds.ts",
+      "src/lib/api.ts",
+      "server/topic-pairs.test.ts",
+      "server/overseer-pair-tools.test.ts",
+      "src/lib/hidden-rows.test.ts"
+    ],
+    "evidence": "verified"
   },
   "§app.overseer/proactivity": {
     "kind": "behavior",
@@ -1450,8 +1512,9 @@
       "server/overseer-code-history.ts",
       "server/overseer-whatsapp.ts",
       "server/project-previews.ts",
-      "shared/wire-areas.ts",
-      "server/overseer-link-tools.test.ts"
+      "server/overseer-pair-tools.ts",
+      "server/overseer-pair-tools.test.ts",
+      "server/harness/pi/golden/special-model-view.json"
     ],
     "requires": [
       "§app.overseer/caps",
@@ -1463,8 +1526,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T16:27Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#e85d747a"
+      "at": "2026-11-05T18:37Z",
+      "source": "pi-session:01a1ab3a-26bd-72b7-9a70-7646430041e9#af35e45f"
     }
   },
   "§app.overseer/transcript-window": {

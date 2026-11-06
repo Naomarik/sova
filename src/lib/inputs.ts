@@ -64,7 +64,9 @@ export function inputRows(items: readonly TranscriptItem[]): InputRow[] {
       const text = messageBody(it.text ?? "", sender, it.kind === "user" && isBriefText(it.text));
       const preview =
         it.kind === "wake" && it.wake
-          ? (it.wake.reason ?? wakeTitle(it.wake))
+          ? it.wake.job
+            ? wakeTitle(it.wake)
+            : (it.wake.reason ?? wakeTitle(it.wake))
           : (text.trim().split("\n", 1)[0] ?? "").replace(/\s+/g, " ").trim();
       const row: InputRow = { id: it.id, preview, text, images: it.images?.length ?? 0, at: it.at };
       if (sender) row.sender = sender;

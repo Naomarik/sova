@@ -200,7 +200,7 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   ask with cards (`sova_card`, §app.overseer/confirm); the ideas backlog (`sova_idea`: file, grow, update, link and rename ideas, launch and
   message an idea's explorer); the user's todos (`sova_todo`: add, tick, untick, edit, remove, clear the
   done ones); link sessions across hosts and end a link (`sova_link`, `sova_unlink`,
-  §app.overseer/links-tools); this host's organizations: orgs, projects, rosters, owners and
+  §app.overseer/links-tools); pair chats (`sova_pair`, §app.overseer/pairs); this host's organizations: orgs, projects, rosters, owners and
   decisions (`sova_org`, `sova_org_project`, `sova_roster`, `sova_owner`, `sova_project_decisions`,
   §app.overseer/org-writes), an owner's page link sent to them on WhatsApp (`sova_owner`
   `send_link`, §app.owner-page/send), gathering sessions (`sova_gather`, §app.overseer/org-people-facing) and
@@ -374,7 +374,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   In an
   unattended turn every acting tool refuses without doing anything: create, send, archive and
   unarchive, rename and set model/thinking/mode (`sova_set_session`), group operations,
-  answering a dialog, linking and unlinking (`sova_link`, `sova_unlink`), every `sova_idea` operation (filing, changing, linking or renaming an idea,
+  answering a dialog, linking and unlinking (`sova_link`, `sova_unlink`), `sova_pair` but `list`,
+  every `sova_idea` operation (filing, changing, linking or renaming an idea,
   launching or messaging an explorer), every `sova_todo` operation, ticking included, and every
   organization act (`sova_org`, `sova_org_project`, `sova_roster`, `sova_owner`,
   `sova_project_decisions`, `sova_gather`, `sova_project_overseer`, a message to a project overseer
@@ -1094,7 +1095,7 @@ or a card click. No helper session is needed.
   whose history can't be read. Never offered, whatever
   its folder: Sova's own server and its child processes, the `sova-runtime.service` unit, a chat
   process and any process a chat started (one with a chat or Sova's server among its ancestors, or
-  inside a chat's unit), any process of a copy's or shared service's unit, slot 0's adopted unit, and a listener
+  inside a chat's unit), any process of a background job's unit (§app/background-jobs), any process of a copy's or shared service's unit, slot 0's adopted unit, and a listener
   this user can't read. `stop-leftover {project, port}` stops one in the click's turn, after checking
   that the port is still held by the same process (same pid and start time) and that it is still safe;
   otherwise "It is no longer the process your card listed: nothing was stopped.", or "It is no longer
@@ -1196,7 +1197,7 @@ time. Both kinds of approval come only from the user's click on a card option th
 - **A standing rule (`r_N`).** A card option with `rule {text, acts?, any_session?}` proposes a
   standing instruction ("Send continue to a session after its usage limit resets"); its click adopts
   it. A rule lasts until revoked. It covers the acts it names (`sova_send`, `sova_set_session`,
-  `sova_archive`, `sova_answer_dialog`, `sova_group`; all of them when it names none) on the
+  `sova_archive`, `sova_answer_dialog`, `sova_group`, `sova_pair`; all of them when it names none) on the
   sessions the card lists, or on any session with `any_session: true`. Its button reads "Adopts a
   standing rule: <text>".
 - An option carries `at` or `rule`, never both, and never on a link option. Only the global
@@ -1219,9 +1220,9 @@ time. Both kinds of approval come only from the user's click on a card option th
   no way to write one. In the panel a carried rule's "From c_3 a" links to that earlier
   conversation in the Overseer's history, not to a card in the thread.
 - **Only whole coverage acts.** In a run the user did not start, an acting tool that targets
-  sessions (send, set, archive, answer a dialog, a group's add or remove) first looks for one live
-  approval or rule that covers the tool and every session it names: an approval whose deadline has
-  not passed and that lists them all, or a rule whose acts include the tool and whose sessions
+  sessions (send, set, archive, answer a dialog, a group's add or remove, a pairing's acts) first
+  looks for one live approval or rule that covers the tool and every session it names: an approval
+  whose deadline has not passed and that lists them all, or a rule whose acts include the tool and whose sessions
   include them all. With one, the act runs within the caps (§app.overseer/caps), and its result
   ends with "Done under g_2 (<its label>)." Lowering a session's sandbox is never covered: it
   needs the user's click in the same turn (§app.overseer/tools). Without one, or for any act that names no session
@@ -1360,6 +1361,75 @@ Three tools let the Overseer make and end links between sessions on different ho
 - Its peer calls never carry this host's sender secret.
 - To say something to a member, the Overseer uses `sova_send` to a local member like any session; it never
   sends into a link.
+
+## §app.overseer/pairs — Pairing two chats
+
+The global Overseer can pair two chats on this host so they work together: each may send the
+other short notes, which arrive between turns. Nothing else about either chat changes: no chat
+gains or loses a tool, and its system prompt stays as it was, so a pairing costs neither chat its
+prompt cache, in pi and Claude Code chats alike. The notes travel as queue notes (§chat/topics).
+
+- **The tool.** `sova_pair {op: "pair" | "unpair" | "resume" | "list", …}`. `pair {a, b, job_a,
+  job_b}` pairs sessions `a` and `b`, `job_a` saying in the Overseer's words what `a` does (it is
+  told to `b`), `job_b` what `b` does. `unpair {pairing}` ends one. `resume {pairing, direction?}`
+  lifts a pause (below), `direction` being `a_to_b` or `b_to_a`, both directions when none is named. `list {session?}` lists the pairings
+  this host holds, each with its two chats, its topics, its notes each way and whether each
+  direction is paused. `list` is a read; the other three are acts: refused in an unattended turn
+  unless a live approval for later or a standing rule covers both of the pairing's chats
+  (§app.overseer/approvals), and written to the action log (§app.overseer/caps); a `pair` that makes
+  a pairing counts as 2 prompts against the per-message prompt limit. There is no
+  confirmation card: in a turn the user started, the user's word is enough. Only the global Overseer
+  has the tool; a project overseer's loadout doesn't.
+- **Pairs only.** A pairing joins exactly two chats. A chat may be in several pairings at once,
+  each with its own two topics. Pairing the same two chats again, in either order, returns the
+  pairing they already have and changes nothing.
+- **Who can't be paired.** `pair` refuses, naming the session and why, before anything changes:
+  the same chat twice, a chat open in the terminal (TUI-live), an archived chat, a worker's session,
+  the Overseer's own, a project overseer's session, a baton session or any other organization
+  session (§app.session-list/organizations), one of the merge queue's own chats, and a chat on
+  another host (a `host` or a peer's session). It also refuses when either chat already holds 10 open topics (§chat.topics/open): room
+  is checked on both sides first, so a refusal leaves no half-made pairing.
+- **What a pairing is.** Pairing opens one new topic on each chat, with that chat as its receiver
+  and the partner as its one invited sender (§chat.topics/open). A note one chat pushes to the
+  partner's topic reaches the partner as a batch between its turns (§chat.topics/delivery), whose
+  header names the topic to answer on. The pairing is kept with the topic store, so it outlives a
+  restart.
+- **The introduction.** On `pair`, each chat gets one message from the Overseer, sent as the
+  Overseer's other messages are and tagged **Overseer** (§app.overseer/sent-marker), added at the end
+  of its conversation: an idle chat starts a turn on it, a busy one reads it once its turn is done,
+  never as a steer. An introduction that can't be sent (the prompt route refuses it) ends the
+  pairing at once, and the refusal says so and whether the other chat was already told. It names the partner in plain words (its title in quotes and its chat id, since the user sees the
+  message as plain text), gives the partner's job in the
+  Overseer's words, names the topic to `queue_push` to, says notes from the partner arrive between
+  turns as a queue batch, states the limits (40 notes each way, then the pairing pauses), and says
+  that the chat's own user comes first.
+- **What each chat may do.** A paired chat may act on its partner's requests, with its own user
+  first: what its user asked wins over what the partner asks. That is what the introduction and
+  every batch from the partner tell it (§chat.topics/delivery). Notes from any other chat stay
+  information, not instructions.
+- **The ceiling and the pause.** Each direction of a pairing takes at most 40 notes. The 41st push
+  that way is refused, `This pairing is paused: note limit reached.`, and takes nothing; that
+  direction stays paused until it is resumed, while the other direction carries on. Both chats'
+  **Paired with** lines and the Overseer's `list` show the pause. The user resumes it with
+  **Resume** on either chat's line, the Overseer with `resume`; resuming sets that direction's count
+  back to 0. The topics' own limits (§chat.topics/push) apply as well.
+- **After a condense.** When a paired chat condenses its history, Sova adds a short reminder after
+  the summary, one per pairing: the partner, its job, the topic to push to, and that its own user
+  comes first. It is a note shown in the chat that starts no turn; a chat that condensed mid-turn
+  gets it once that turn settles.
+- **How it ends.** A pairing ends on **Unpair** from either chat's line, on the Overseer's
+  `unpair`, or when either chat is archived. Both topics close and the notes still waiting on them
+  are dropped. Neither chat is told: a later push to the closed topic is refused,
+  `This pairing has ended.` (§chat.topics/push). Unarchiving a chat doesn't bring a pairing back.
+- **What the user sees.** Each paired chat shows a line **Paired with <partner's title>** (the
+  title a link to the partner) with an **Unpair** button, and **Paused: note limit reached** with
+  **Resume** while a direction toward or from it is paused; one line per pairing. The lines sit
+  above the transcript in their own space, never covering it, and each stays one row: a long title
+  is cut with an ellipsis so the buttons keep their place. A chat with no pairing shows nothing
+  there, not even an empty strip, and a chat never shows another chat's lines, even when reading its
+  own pairings fails. In the Overseer's
+  transcript the `pair` and `unpair` calls show as action cards naming both chats, and "Hide tool
+  calls" never folds them.
 
 ## §app.overseer/sent-marker — Prompts the Overseer sent
 
@@ -2081,9 +2151,12 @@ Sova composer (the Overseer sending through `sova_send` is not one), a group bat
 or a baton participant's message. Every message Sova sends on its own is `rpc`: Overseer briefs,
 auto-resume's prompts and reports, `sova_send`, a schedule's message, a profile start's first
 message, a project overseer's prompt or look, another session's send, and a baton wrap-up. A
-message queued behind a running turn keeps its source to its hand-off. Never `extension`, which the vision-delegate extension skips,
-so an image on such a message is still described for a model that can't see it. So the wake-nudge
-extension's limit of 30 fires without input restarts only on a person's input.
+message queued behind a running turn keeps its source to its hand-off. None of these is `extension`, which the vision-delegate extension skips,
+so an image on such a message is still described for a model that can't see it. A background job's
+end card is not one of Sova's sends: the chat's own wake-nudge extension delivers it, so like a wake
+nudge it arrives as `extension`, never `interactive` or `rpc` (an `rpc` card would restart a worker's
+count of wakes). So the wake-nudge extension's limit of 30 fires without input restarts only on a
+person's input.
 
 ## §app.overseer/standing-notes — Standing notes
 

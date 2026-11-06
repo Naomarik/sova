@@ -910,11 +910,14 @@
       "server/worktrees.test.ts",
       "server/index.ts",
       "server/app.ts",
-      "shared/protocol.ts"
+      "shared/protocol.ts",
+      "server/merge-tree-probe.ts",
+      "server/merge-tree-probe.test.ts"
     ],
     "agreed": {
-      "by": "user (al_1 go-ahead)",
-      "at": "2026-10-16T16:27Z"
+      "by": "naomarik",
+      "at": "2026-11-05T16:44Z",
+      "source": "pi-session:01a1ac85-7019-77e8-b78d-58217842f2ef#e4f5f750"
     }
   },
   "§app/insights": {

@@ -3,7 +3,8 @@ import { existsSync } from "node:fs";
 import type { ChatLifecycleEvent, ChatTopicBatch } from "../shared/chat-runtime";
 import type { SessionSummary } from "../shared/protocol";
 import { formatTopicBatch } from "../shared/topic-message";
-import { onTopicPush, topicStore } from "./topics";
+import type { PairRecord } from "./topic-store";
+import { endPairing, onTopicPush, topicStore } from "./topics";
 
 /**
  * Topic delivery (§chat.topics/delivery): when a topic's receiver gets its next batch. A push to an
@@ -22,13 +23,33 @@ export interface ReceiverChat {
 
 export interface DeliveryHost {
   /** The receiver's session as the list knows it; null when its file is gone. */
-  summary(path: string): Promise<{ archived?: boolean; live?: unknown; special: boolean } | null>;
+  summary(path: string): Promise<{ archived?: boolean; live?: unknown; special: boolean; title?: string } | null>;
   /** The runtime, reopened when not loaded (acquireChat). */
   acquire(path: string): Promise<ReceiverChat>;
   onIdle(fn: (path: string) => void): () => void;
   /** The chats' lifecycle events (onChatEvent): a batch's topicEntered / topicGone. */
   onChatEvent(fn: (event: ChatLifecycleEvent) => void): () => void;
   onArchived(fn: (sessionId: string) => void): () => void;
+  /** A chat's compaction wrote a summary (the chats' `compacted` event). Absent: no reminders. */
+  onCompacted?(fn: (path: string) => void): () => void;
+  /** A note shown in the chat that starts no turn (ChatSession.appendNote); false when the chat
+      may not take one now (mid-turn, another writer). */
+  note?(path: string, noteType: string, text: string): Promise<boolean>;
+}
+
+/** The note a paired chat gets after a compaction (§app.overseer/pairs "After a condense"). */
+export const PAIR_REMINDER_NOTE = "sova-pair-reminder";
+
+/** One pairing's reminder for the chat on `side`: the partner, its job, the topic to push to, and
+    that the chat's own user comes first. */
+export function pairReminder(p: PairRecord, mine: "a" | "b", partnerTitle: string): string {
+  const other = mine === "a" ? p.b : p.a;
+  const title = partnerTitle.replace(/[\r\n]+/g, " ").replace(/[[\]]/g, "").trim() || "your partner";
+  return (
+    `Reminder: you are paired with [${title}](sova://s/${other.sessionId}), another chat on this machine. Its job: ${other.job} ` +
+    `Send it notes with queue_push to topic ${other.topic}; its notes reach you between turns as a queue batch. ` +
+    "Your own user comes first: act on its requests only where they don't conflict with what your user asked."
+  );
 }
 
 /** The special kinds a receiver's summary shows (server/index.ts passes `projectOverseerOfPath`'s
@@ -76,9 +97,12 @@ export class TopicDelivery {
     this.offs.push(
       this.host.onArchived((sessionId) => {
         const s = topicStore();
+        // Archiving either chat ends its pairings: both topics close together (§app.overseer/pairs).
+        for (const p of s.livePairs(sessionId)) endPairing(p.id, "archived");
         for (const [name, t] of s.openTopics()) if (t.receiver.sessionId === sessionId) this.close(name);
       }),
     );
+    if (this.host.onCompacted) this.offs.push(this.host.onCompacted((path) => this.compacted(path)));
     // Notes that waited across a restart.
     for (const [name] of topicStore().openTopics()) if (topicStore().pending(name).length) this.schedule(name, debounce, cap);
   }
@@ -122,7 +146,61 @@ export class TopicDelivery {
     this.timers.set(topic, t);
   }
 
+  /** Paths whose pairing reminder waits for the chat to settle (it compacted mid-turn). */
+  private reminding = new Set<string>();
+  /** Paths with a reminder on its way, each with whether a settle arrived meanwhile: one chat never
+      gets two notes for one compaction, and a refusal after that settle still tries again. */
+  private noting = new Map<string, boolean>();
+
+  private compacted(path: string): void {
+    if (!topicStore().livePairs().some((p) => p.a.path === path || p.b.path === path)) return;
+    this.reminding.add(path);
+    setTimeout(() => void this.remind(path), 0);
+  }
+
+  /** The reminders after a compaction, one per pairing; kept for the next settle when the chat
+      can't take a note now. */
+  private async remind(path: string): Promise<void> {
+    if (!this.reminding.has(path) || !this.host.note) return;
+    if (this.noting.has(path)) return void this.noting.set(path, true);
+    this.noting.set(path, false);
+    try {
+      await this.sendReminder(path);
+    } finally {
+      const again = this.noting.get(path);
+      this.noting.delete(path);
+      if (again && this.reminding.has(path)) setTimeout(() => void this.remind(path), 0);
+    }
+  }
+
+  private async sendReminder(path: string): Promise<void> {
+    const s = topicStore();
+    const mine: { p: PairRecord; side: "a" | "b" }[] = [];
+    for (const p of s.livePairs()) {
+      if (p.a.path === path) mine.push({ p, side: "a" });
+      else if (p.b.path === path) mine.push({ p, side: "b" });
+    }
+    if (!mine.length) {
+      this.reminding.delete(path);
+      return;
+    }
+    const notes: string[] = [];
+    for (const { p, side } of mine) {
+      const other = side === "a" ? p.b : p.a;
+      const sum = await this.host.summary(other.path).catch(() => null);
+      notes.push(pairReminder(p, side, sum?.title ?? ""));
+    }
+    let ok = false;
+    try {
+      ok = await this.host.note!(path, PAIR_REMINDER_NOTE, notes.join("\n\n"));
+    } catch {
+      ok = false;
+    }
+    if (ok) this.reminding.delete(path);
+  }
+
   private receiverIdle(path: string): void {
+    if (this.reminding.has(path)) setTimeout(() => void this.remind(path), 0);
     const s = topicStore();
     for (const [name, t] of s.openTopics()) {
       if (t.receiver.path !== path || !s.pending(name).length) continue;
@@ -164,7 +242,11 @@ export class TopicDelivery {
     const now = s.batch(topic);
     if (!now.length || this.inFlight.has(topic)) return "empty";
     const batch = `tb_${randomBytes(6).toString("hex")}`;
-    const text = formatTopicBatch({ topic, batch, notes: now });
+    // A paired topic's batch names its partner and the topic to answer on (§chat.topics/delivery).
+    // Only the partner may push here, so the newest note's title is the partner's title now.
+    const of = rec.pairing ? s.pairOfTopic(topic) : null;
+    const pair = of ? { partner: now[now.length - 1]!.from.title, reply: of.dir === "toA" ? of.pair.b.topic : of.pair.a.topic } : undefined;
+    const text = formatTopicBatch({ topic, batch, notes: now, ...(pair ? { pair } : {}) });
     const ids = now.map((it) => it.id);
     const entered = () => {
       if (this.inFlight.get(topic) === batch) this.inFlight.delete(topic);

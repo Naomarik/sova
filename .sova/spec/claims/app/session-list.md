@@ -681,6 +681,8 @@ label a person reads says "sessions pane".
   rows without Busy, and a Busy row's count sits still. Alone in the rail, the count centres on
   the title's first line like the TUI chip; under a state it takes `−--space-1` of margin, which
   cancels the rail's gap, so it tucks up against the state.
+- **Job marker.** A session whose chat has shut down with a background job running shows a small
+  `job running` marker (§app.background-jobs/pane). A chat still running shows none here.
 - **320px budget.** The rail costs a **34px** gutter (2px margin + 30px column + 2px margin) and
   gives back the whole right end of the row. Busy's 26px box runs from x=4 to x=30 and the TUI
   chip, centred on the same axis, from about x=6.9 to x=27.1; the title block starts **34px** in

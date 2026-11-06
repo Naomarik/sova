@@ -13,6 +13,8 @@ import { isMergeQueueText, MERGE_QUEUE_SENT_PREFIX } from "./merge-queue";
 /** A user message's sender, by its marker. `baton` with `by: "operator"` is the user's own. */
 export type Sender =
   | { kind: "session"; sessionId: string; title: string; hop: number }
+  /** An installed extension's message (§app.extensions/name-badge): the session marker under the id `ext:<id>`. */
+  | { kind: "extension"; sessionId: string; title: string }
   | { kind: "overseer" }
   /** A turn the merge queue started (Needs a fix, Send Back), by its prefix. */
   | { kind: "merge-queue" }
@@ -23,6 +25,9 @@ export type Sender =
     import both from this module. pi-config's worktree tool spells the prefix again (it imports nothing of Sova). */
 export const MERGE_QUEUE_SESSION = "merge-queue";
 export { isMergeQueueText, MERGE_QUEUE_SENT_PREFIX };
+/** The sender ids of extensions' messages start with this (§app.extensions/name-badge). There is no such session. */
+export const EXTENSION_SENDER_PREFIX = "ext:";
+export const isExtensionSender = (sessionId: string): boolean => sessionId.startsWith(EXTENSION_SENDER_PREFIX);
 /** A merge queue wake's words: without a session header line, if any, and without its prefix. */
 export const mergeQueueBody = (text: string): string => {
   const t = stripSessionHeader(text).trimStart();
@@ -46,7 +51,7 @@ const entryOf = (rowId: string): string => {
 export function sendersOf(items: readonly TranscriptItem[]): Map<string, Sender> {
   // The merge queue's wakes carry the "another session" marker (so no tool reads them as the user's word),
   // named merge-queue: they are the queue's, never a link to a session of that name.
-  const rank: Record<Sender["kind"], number> = { "merge-queue": 4, session: 3, overseer: 2, baton: 1 };
+  const rank: Record<Sender["kind"], number> = { "merge-queue": 4, session: 3, extension: 3, overseer: 2, baton: 1 };
   const out = new Map<string, Sender>();
   const put = (id: string, s: Sender) => {
     const was = out.get(id);
@@ -54,7 +59,14 @@ export function sendersOf(items: readonly TranscriptItem[]): Map<string, Sender>
   };
   for (const it of items) {
     if (it.sessionMark?.kind === "sent")
-      put(it.sessionMark.targetId, it.sessionMark.from.sessionId === MERGE_QUEUE_SESSION ? { kind: "merge-queue" } : { kind: "session", ...it.sessionMark.from, hop: it.sessionMark.hop });
+      put(
+        it.sessionMark.targetId,
+        it.sessionMark.from.sessionId === MERGE_QUEUE_SESSION
+          ? { kind: "merge-queue" }
+          : isExtensionSender(it.sessionMark.from.sessionId)
+            ? { kind: "extension", ...it.sessionMark.from }
+            : { kind: "session", ...it.sessionMark.from, hop: it.sessionMark.hop },
+      );
     if (it.overseerMark?.kind === "sent") put(it.overseerMark.targetId, { kind: "overseer" });
     if (it.batonMark?.kind === "sent") put(it.batonMark.targetId, { kind: "baton", by: it.batonMark.by });
   }
@@ -89,7 +101,7 @@ export function ownInputIds(rows: readonly TranscriptItem[]): string[] {
 
 /** A message's body as the views show it: without another session's header line, or the brief tag. */
 export function messageBody(text: string, sender: Sender | undefined, brief = false): string {
-  if (sender?.kind === "session") return stripSessionHeader(text);
+  if (sender?.kind === "session" || sender?.kind === "extension") return stripSessionHeader(text);
   if (brief) return briefBody(text);
   if (sender?.kind === "merge-queue") return mergeQueueBody(text);
   return text;

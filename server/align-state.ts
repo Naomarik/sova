@@ -18,7 +18,8 @@ import { isTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
 import { BranchScan, lineHead, lineMay, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
-import { MODE, OVERSEER_SENT } from "./harness/state-kinds";
+import { isExtensionSender } from "../shared/senders";
+import { MODE, OVERSEER_SENT, SESSION_SENT } from "./harness/state-kinds";
 
 /**
  * The session list's side of alignments (§chat.alignment/session-mark): the mode extension's
@@ -190,7 +191,7 @@ const blockText = (b: HBlock): string => {
 function compactLine(line: string): ScanEntry | null {
   const head = lineHead(line);
   const wanted =
-    lineMay(line, { tool: "align" }) || lineMay(line, { state: "align-doc" }) || lineMay(line, { state: "mode" }) || lineMay(line, { state: OVERSEER_SENT.type }) || lineMay(line, "user");
+    lineMay(line, { tool: "align" }) || lineMay(line, { state: "align-doc" }) || lineMay(line, { state: "mode" }) || lineMay(line, { state: OVERSEER_SENT.type }) || lineMay(line, { state: SESSION_SENT.type }) || lineMay(line, "user");
   if (head && !wanted) return { type: head.type, id: head.id, parentId: head.parentId };
   let v: unknown;
   try {
@@ -204,6 +205,8 @@ function compactLine(line: string): ScanEntry | null {
   if (typeof v.parentId === "string" || v.parentId === null) e.parentId = v.parentId as string | null;
   const h = toHEntry(v);
   if (h?.kind === "state" && (h.key === "align-doc" || h.key === "mode" || h.key === OVERSEER_SENT.type)) Object.assign(e, { customType: h.key, data: h.data });
+  // Only an extension's: another session's message still counts as a prompt here, so its mark isn't kept.
+  if (h?.kind === "state" && h.key === SESSION_SENT.type && isExtensionSender(String((h.data as { from?: { sessionId?: unknown } } | null)?.from?.sessionId ?? ""))) Object.assign(e, { customType: h.key, data: h.data });
   if (h?.kind === "tool-result" && h.tool === "align") e.message = { role: "toolResult", toolName: "align", isError: h.isError === true, details: h.details };
   if (h?.kind === "user") {
     const text = h.blocks.map(blockText).join("\n");
@@ -219,17 +222,19 @@ function compactLine(line: string): ScanEntry | null {
  * its questions stay on the card and the chip but leave Needs you, the row mark and push. Align off
  * (the newest `mode` entry on the branch says so) takes the tool away, so nothing could answer them.
  * A message an Overseer sent (its `sova-overseer-sent` mark names the entry) is never the user's
- * prompt: alignment questions are the user's to answer (§app.project-overseer/coding-mode).
+ * prompt: alignment questions are the user's to answer (§app.project-overseer/coding-mode). Nor is an extension's
+ * (a `sova-session-sent` mark with a sender id starting `ext:`, §app.extensions/name-badge).
  */
 export function waitingAlignOf(branch: readonly ScanEntry[]): SessionAlign | undefined {
   const view = stateViewOf(branch);
   const active = view.latest(MODE)?.data.active;
   if (active && !active.minorModes.includes("align")) return undefined;
-  const fromOverseer = new Set(view.list(OVERSEER_SENT).map((r) => r.data.targetId));
+  const notTheUsers = new Set(view.list(OVERSEER_SENT).map((r) => r.data.targetId));
+  for (const r of view.list(SESSION_SENT)) if (isExtensionSender(r.data.from.sessionId)) notTheUsers.add(r.data.targetId);
   let lastDoc = -1;
   let lastUser = -1;
   branch.forEach((e, i) => {
-    if (e.userPrompt && !(e.id !== undefined && fromOverseer.has(e.id))) lastUser = i;
+    if (e.userPrompt && !(e.id !== undefined && notTheUsers.has(e.id))) lastUser = i;
     else if (alignResultOf(e)?.doc) lastDoc = i;
   });
   if (lastDoc < lastUser) return undefined;

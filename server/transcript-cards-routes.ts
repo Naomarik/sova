@@ -211,7 +211,7 @@ export function registerTranscriptCardRoutes(app: Hono<any>): void {
       if (b.sent !== undefined && typeof b.sent !== "boolean") throw new CardRefusal("sent is true or false", 400);
       if (typeof b.card !== "string") throw new CardRefusal("card must be a string naming a card of the session (cd_N)", 400);
       const who = await callerOf(c);
-      const card = await answerCard({ path, card: b.card, answer: b.answer, by: who.name, via: b.sent === true ? "send" : "at-once" });
+      const card = await answerCard({ path, card: b.card, answer: b.answer, by: who.name, via: b.sent === true ? "send" : "at-once", ...(who.raiser.kind === "extension" ? { extensionKey: who.name } : {}) });
       return c.json({ card }, 200, NO_STORE);
     }),
   );

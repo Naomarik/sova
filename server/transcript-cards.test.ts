@@ -158,7 +158,8 @@ describe("raising (§chat.transcript-cards/card-tool, /raise-command)", () => {
     const b = await cards.raiseCard({ path: s.path, type: "project.build", data: { title: "Build", tone: "ok", line: "Green." }, by: { kind: "script" } });
     assert.equal(b.id, "cd_2");
     assert.equal(b.after, "e9");
-    assert.equal(b.state, "done", "a card that takes no answer is never waiting");
+    assert.equal(b.state, "open", "a card that takes no answer starts open, so it can change in place");
+    assert.ok(!cards.openCardsOf(s.id).some((c) => c.id === b.id), "and it is never waiting");
   });
 
   test("every refusal says why and raises nothing", async () => {

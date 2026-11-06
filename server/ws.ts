@@ -7,6 +7,7 @@ import { cappedWebSocketServer, streamWebSocketServer } from "./runtime-quirks";
 import type { ChatClientMessage, ChatServerMessage, LlmFeedMessage, SessionFeedMessage, V2EventFrame, WatchServerMessage } from "../shared/protocol";
 import { refuseUpgrade } from "./auth";
 import { type NotPage, notPageSocket, yourClickBody } from "./page-only";
+import { chatClosedToKeys, extensionFrameRefusal } from "./extension-doors";
 import { sandboxAfterRewind, sandboxCommand, sandboxLowers } from "./sandbox-state";
 import { isDirectLocal } from "./compression";
 import { acquireChatHandle, ArchivedError, BusyError, ConfigError, type ChatClient } from "./chat-handle";
@@ -92,6 +93,27 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   /** One frame into the chat. `/sandbox` typed in the page's composer runs; from anything else a lowering is refused
       (§app.access/your-click), the send's refusal reaching this socket like any other. */
   const toChat = (open: NonNullable<typeof chat>, msg: ChatClientMessage) => {
+    // A key sends no frame at all into an overseer's, a baton's or the merge queue's chat (§app.extensions/not-you).
+    if (who === "extension") {
+      checking++;
+      chatClosedToKeys(path)
+        .then(
+          (closed) => {
+            if (!closed) return passOn(open, msg);
+            const clientId = (msg as { clientId?: unknown }).clientId;
+            client.send({ type: "error", code: "refused", message: "An extension takes no action in that chat. Nothing changed.", ...(typeof clientId === "string" && clientId ? { clientId } : {}) });
+          },
+          (err) => client.send({ type: "error", code: "internal", message: err instanceof Error ? err.message : String(err) }),
+        )
+        .finally(() => {
+          checking--;
+          if (gone && held.size === 0 && checking === 0) leave();
+        });
+      return;
+    }
+    passOn(open, msg);
+  };
+  const passOn = (open: NonNullable<typeof chat>, msg: ChatClientMessage) => {
     // A card's click opens a turn that may act on what the card names, so it is the person's, never a script's or a
     // chat's (§app.access/your-click). A click relayed by a peer stays as it was: a page on another computer sends one.
     if (who !== null && who !== "local" && msg.type === "prompt" && msg.confirm) {
@@ -182,6 +204,14 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     if (opts.refused) {
       const clientId = (msg as { clientId?: unknown }).clientId;
       client.send({ type: "error", code: "refused", message: opts.refused, ...(typeof clientId === "string" && clientId ? { clientId } : {}) });
+      return;
+    }
+    // An extension speaks only through session.send, which names it (§app.extensions/not-you). Before it is held: a
+    // refusal the socket can't hear must not come back as the chat's draft.
+    const keyRefused = who === "extension" ? extensionFrameRefusal(msg) : null;
+    if (keyRefused) {
+      const clientId = (msg as { clientId?: unknown }).clientId;
+      client.send({ type: "error", code: "refused", message: keyRefused, ...(typeof clientId === "string" && clientId ? { clientId } : {}) });
       return;
     }
     sessionsChanged(); // a prompt, abort or rename: the next listing is built afresh

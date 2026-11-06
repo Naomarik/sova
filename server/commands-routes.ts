@@ -9,6 +9,7 @@ import type { Hono } from "hono";
 import { buildRequest, type BuiltRequest, COMMANDS, type CommandEntry, isDotSegment } from "../shared/commands-catalog";
 import { DENIED } from "../shared/mesh-access";
 import { COMMAND_HEADER } from "./command-audit";
+import { EXTENSION_CONTRACT } from "../shared/extension-contract";
 import { installedExtensionCommands } from "./extensions";
 import { classifyRequest, type Need } from "./mesh/access";
 import { REFUSED_HEADER } from "./mesh/hello";
@@ -19,7 +20,7 @@ export const COMMANDS_PATH = "/api/commands";
 /** The answer's shape (the command line checks it before trusting it). */
 export interface ServedCommands {
   version: 1;
-  server: { version: string | null; head: string | null };
+  server: { version: string | null; head: string | null; extensionContract: number };
   commands: CommandEntry[];
 }
 
@@ -35,7 +36,7 @@ const PACKAGE_VERSION: string | null = (() => {
 
 /** The answer, as of now: the manifest is re-read on every call (§app.extensions/manifest). */
 export function servedCommands(head: string | null): ServedCommands {
-  return { version: 1, server: { version: PACKAGE_VERSION, head }, commands: [...COMMANDS, ...installedExtensionCommands()] };
+  return { version: 1, server: { version: PACKAGE_VERSION, head, extensionContract: EXTENSION_CONTRACT }, commands: [...COMMANDS, ...installedExtensionCommands()] };
 }
 
 /** Mount the route; `head` is the commit this process's checkout had at startup (GET /api/health's). */

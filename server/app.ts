@@ -184,6 +184,8 @@ import { setCreateSettingsRun } from "./create-settings-tool";
 import { runCreateSettings } from "./create-settings-run";
 import { isProjectModeId } from "../shared/project-modes";
 import { extensionKeys } from "./extension-keys";
+import { extensionDoorRefusal, extensionFrameRefusal } from "./extension-doors";
+import { extensionSenderOf } from "./extension-sender";
 import { registerUpdatesRoutes } from "./updates/routes";
 
 /** The built frontend; SOVA_DIST: another build (a test's scratch one), as SOVA_SHARE_DIST is for the share page. */
@@ -256,6 +258,12 @@ export function buildApp(deps: AppDeps) {
     // Who ran what (server/command-audit.ts, §app.command-audit/record): only a call that shows the
     // token; noted once answered, off the answer's path. Neither step can change the answer.
     const audited = auditStart(c);
+    // A door an extension's key never opens (server/extension-doors.ts, §app.extensions/not-you).
+    const closed = extensionDoorRefusal(c);
+    if (closed) {
+      audited?.(403, closed.route);
+      return c.json({ error: closed.error, extensionRefused: true }, 403, { [SERVER_HEADER]: "sova" });
+    }
     await next();
     try {
       c.res.headers.set(SERVER_HEADER, "sova");
@@ -361,7 +369,7 @@ export function buildApp(deps: AppDeps) {
     // One that can't be used (turned off, not signed in) leaves it on the new-chat default, and the answer says why.
     const opened = start.opening ? await openingTaken(made.path, start.opening) : null;
     if (start.prompt?.trim()) {
-      const sent = await promptSession(made.path, start.prompt);
+      const sent = await promptSession(made.path, start.prompt, undefined, undefined, undefined, undefined, extensionSenderOf(c));
       if (!sent.ok) return c.json({ error: `Created the session with its profile, but its first message was refused: ${sent.error}`, session: made }, sent.status);
     }
     const summary = (await getSessionSummary(made.path)) ?? made;
@@ -1448,6 +1456,11 @@ export function buildApp(deps: AppDeps) {
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
     const frames = postedFrames(await c.req.json().catch(() => null));
     if (!frames) return c.json({ error: `Expected { frames: [...] }, 1 to ${POSTED_FRAMES_MAX} objects with a type` }, 400);
+    // A key's prompt or steer: nothing runs and nothing goes back as a draft (§app.extensions/not-you).
+    if (notPage(c) === "extension") {
+      const why = frames.map((f) => extensionFrameRefusal(f as { type?: unknown })).find((w) => w);
+      if (why) return c.json({ error: why }, 403);
+    }
     // The page is going, so nobody hears a refusal: what it carried goes back as the draft.
     const refused = writingRefused(c.req.header(COMPOSER_HEADER));
     if (refused) {
@@ -1960,7 +1973,7 @@ export function buildApp(deps: AppDeps) {
       if ("error" in got) return c.json({ error: got.error }, got.status);
       if (sandboxLowers((await got.chat.sandboxInfo())?.state, asked)) return c.json(yourClickBody("sandbox", notPage(c) ?? "script"), 403);
     }
-    const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery);
+    const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery, undefined, undefined, extensionSenderOf(c));
     return r.ok ? c.json({ ok: true, queued: r.queued, kind: r.kind, ...(r.compacting ? { compacting: true } : {}) }) : c.json({ error: r.error }, r.status);
   });
   // Installed extensions (server/extensions.ts), with each backend's cached health.

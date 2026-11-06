@@ -46,6 +46,8 @@ export interface EventSources {
   onChatEvent(fn: (e: { chatId: string; type: string }) => void): () => void;
   /** The attention digest's memo drops (attention-memo onAttentionNotified). */
   onAttention(fn: () => void): () => void;
+  /** What happens to transcript cards (§app.events/card-news); left out: no such news. */
+  onCard?(fn: (e: { name: "card.raised" | "card.changed" | "card.answered"; id: string; path: string; card: string; cardType: string }) => void): () => void;
   /** Hold the session feed's loop running as one client does; null when there is no feed. */
   holdFeed(): (() => void) | null;
   /** Does this server hold the session's chat (its turns are hosted events)? */
@@ -254,6 +256,7 @@ export class EventHub {
       ),
     );
     this.offs.push(this.sources.onAttention(guard("an attention note", () => this.attentionSoon())));
+    if (this.sources.onCard) this.offs.push(this.sources.onCard(guard("a card's news", (e) => this.record({ ...e, source: "hosted" }))));
     const release = this.sources.holdFeed();
     if (release) this.offs.push(release);
   }

@@ -1,0 +1,229 @@
+{
+  "§app.provider-keys/check-before-save": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "server/app.ts",
+      "shared/protocol.ts",
+      "server/harness/pi/sign-in.ts",
+      "server/provider-keys.ts",
+      "server/provider-keys.test.ts",
+      "server/provider-keys-shared.test.ts",
+      "server/harness/pi/quirks.ts",
+      "server/harness/pi/QUIRKS.md",
+      "shared/harness-core.ts",
+      "pi-config/extensions/usage-status/fetch.ts",
+      "pi-config/extensions/model-levels/core.ts"
+    ],
+    "requires": [
+      "§mesh.sync/logins"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T17:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    },
+    "evidence": "verified"
+  },
+  "§app.provider-keys/effects": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "server/app.ts",
+      "shared/protocol.ts",
+      "pi-config/extensions/usage-status/fetch.ts",
+      "server/provider-keys.ts",
+      "server/provider-keys.test.ts",
+      "server/auth-status.ts"
+    ],
+    "requires": [
+      "§app.insights/usage-refresh",
+      "§chat/model-menu"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T17:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    },
+    "evidence": "verified"
+  },
+  "§app.provider-keys/key-tab": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "src/components/AccountsSettings.tsx",
+      "src/components/SettingsDialog.tsx",
+      "server/app.ts",
+      "shared/protocol.ts",
+      "server/auth-status.ts",
+      "src/components/ProviderKeys.tsx",
+      "src/components/ProviderKeys.css",
+      "src/lib/provider-keys.ts",
+      "src/lib/provider-keys.test.ts",
+      "server/provider-keys.ts",
+      "server/provider-keys.test.ts",
+      "server/provider-keys-shared.test.ts",
+      "src/lib/api.ts",
+      "pi-config/extensions/model-levels/core.ts",
+      "server/harness/pi/model-sync.ts"
+    ],
+    "requires": [
+      "§app.settings-dialog/models",
+      "§mesh.sync/logins"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T17:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    },
+    "evidence": "verified"
+  },
+  "§app.provider-keys/other": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "src/components/AccountsSettings.tsx",
+      "src/components/ProviderKeys.tsx",
+      "server/harness/pi/sign-in.ts",
+      "server/provider-keys.ts",
+      "server/provider-keys.test.ts"
+    ],
+    "requires": [
+      "§app.provider-keys/key-tab"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T17:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    },
+    "evidence": "reviewed"
+  },
+  "§app.provider-keys/pay-as-you-go": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "src/components/AccountsSettings.tsx",
+      "src/components/OpenAiAccount.tsx",
+      "src/components/ProviderKeys.tsx",
+      "server/provider-keys.ts",
+      "server/provider-keys.test.ts"
+    ],
+    "requires": [
+      "§app.provider-keys/key-tab",
+      "§app.provider-keys/check-before-save"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T17:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    },
+    "evidence": "reviewed"
+  },
+  "§app.provider-keys/remove": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "src/components/AccountsSettings.tsx",
+      "src/components/SettingsDialog.tsx",
+      "server/app.ts",
+      "shared/protocol.ts",
+      "server/harness/pi/sign-in.ts",
+      "server/provider-keys.ts",
+      "server/provider-keys.test.ts",
+      "src/components/ProviderKeys.tsx"
+    ],
+    "requires": [
+      "§mesh.sync/logins"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T17:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    },
+    "evidence": "verified"
+  },
+  "§app.provider-keys/show-copy": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "src/components/AccountsSettings.tsx",
+      "src/components/SettingsDialog.tsx",
+      "server/app.ts",
+      "shared/protocol.ts",
+      "src/components/ProviderKeys.tsx",
+      "src/lib/provider-keys.ts",
+      "src/lib/provider-keys.test.ts",
+      "server/provider-keys.ts",
+      "server/provider-keys.test.ts"
+    ],
+    "requires": [
+      "§app.access/your-click"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T17:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    },
+    "evidence": "verified"
+  },
+  "§app.provider-keys/tabs": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "src/components/AccountsSettings.tsx",
+      "src/components/SettingsDialog.tsx",
+      "src/lib/settings-nav.ts",
+      "src/design/base.css",
+      "src/components/ProviderKeys.tsx",
+      "src/components/ProviderKeys.css",
+      "src/lib/provider-keys.ts",
+      "src/lib/provider-keys.test.ts",
+      "src/lib/settings-nav.test.ts",
+      "src/App.tsx",
+      "src/components/MeshView.tsx"
+    ],
+    "requires": [
+      "§app.settings-dialog/outreach"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T17:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    },
+    "evidence": "reviewed"
+  },
+  "§app.provider-keys/your-click": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "server/app.ts",
+      "server/provider-keys.ts",
+      "server/provider-keys.test.ts"
+    ],
+    "requires": [
+      "§app.access/your-click",
+      "§app.commands/opted-out"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T17:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    },
+    "evidence": "verified"
+  },
+  "§app/provider-keys": {
+    "kind": "surface",
+    "authority": "accepted",
+    "code": [
+      "src/components/AccountsSettings.tsx",
+      "src/components/ProviderKeys.tsx",
+      "server/provider-keys.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T17:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
+    },
+    "evidence": "verified"
+  }
+}

@@ -30,7 +30,7 @@ import { applySandbox, onSandboxAppend, sandboxInfo, sandboxMessage, type Sandbo
 import type { SandboxState } from "../pi-config/extensions/sandbox/state.ts";
 import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick, loginName } from "./claude-login-state";
 import { rowsOf, rowsOfEntry } from "./transcript";
-import { onWire, onWire1, withRows, type ReplyLookup } from "./wire-rows";
+import { onWire, onWire1, rowFor, withRows, type ReplyLookup } from "./wire-rows";
 import { perfRecordOf, ReplyTimer, type ReplyOutcome } from "./reply-timing";
 import { appendPerfRecord, replyTimingOf, type PerfKind } from "./perf-record";
 import { replyTimingsOf } from "./reply-facts";
@@ -553,7 +553,7 @@ export interface CutHello {
 
 /** `history`: false when only `?tail=rest` clients get it, who are never pushed any. */
 export function cutHello(hello: Extract<ChatServerMessage, { type: "hello" }>, history = true): CutHello {
-  const cut = cutTail(hello.items, { history });
+  const cut = cutTail(hello.items, { history, v1: (it) => rowFor(it, 1) });
   return { hello: cut.older > 0 ? { ...hello, items: cut.items, older: cut.older } : hello, history: cut.history, all: hello.items };
 }
 
@@ -580,7 +580,7 @@ function sendHistory(cut: CutHello | null, clients: readonly ChatClient[], still
     const parts = c.wire === 2 ? (cut.history2 ??= cut.history.map((p) => historyOnWire2(p, replies))) : cut.history;
     for (const part of parts) {
       if (c.sendRaw) c.sendRaw(part.raw);
-      else c.send(part.msg);
+      else c.send(c.wire === 2 ? part.msg : withRows(part.msg, 1));
     }
   }
 }

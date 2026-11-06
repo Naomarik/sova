@@ -115,9 +115,11 @@ export interface TailCut {
  */
 export function cutTail(
   items: TranscriptItem[],
-  opts: { minRows?: number; maxChars?: number; chunkChars?: number; history?: boolean } = {},
+  opts: { minRows?: number; maxChars?: number; chunkChars?: number; history?: boolean; v1?: (it: TranscriptItem) => TranscriptItem } = {},
 ): TailCut {
-  const json = items.map((it) => JSON.stringify(it));
+  // Each row as wire 1 has it (`v1`: a command's row is its plain row there, server/wire-rows.ts rowFor).
+  const v1 = opts.v1;
+  const json = items.map((it) => JSON.stringify(v1 ? v1(it) : it));
   const sizes = json.map((s) => s.length);
   const start = tailStart(items, sizes, opts.minRows, opts.maxChars);
   // `history: false`: a `?tail=rest` client, which fetches the older rows itself.

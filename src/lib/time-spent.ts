@@ -18,6 +18,7 @@ import {
   countedSession,
   reduce,
   reportOutcome,
+  sessionsOnScreen,
   tick,
   type ClockEvent,
   type ClockState,
@@ -69,12 +70,15 @@ export function trackSessionView(path: string, front?: () => boolean): void {
   if (getOwner()) onCleanup(() => setMounted((m) => m.filter((x) => x !== me)));
 }
 
+const [panesOpen, setPanesOpen] = createSignal<readonly string[]>([]);
+
 const phoneCover = () => typeof matchMedia === "function" && !matchMedia("(min-width: 768px)").matches;
 
 /** Called by the session pane: on a phone it covers the chat, whose rows are then not on screen. */
 export function trackSessionPane(path: string): void {
-  // Open from the Agents board there is no session view: the pane is this session on screen.
-  trackSessionView(path);
+  // Open from the Agents board there is no session view: the pane is this session on screen (sessionsOnScreen).
+  setPanesOpen((p) => [...p, path]);
+  onCleanup(() => setPanesOpen((p) => p.filter((x) => x !== path)));
   const set = (on: boolean) => dispatch({ type: "covered", session: path, on });
   set(phoneCover());
   if (typeof matchMedia !== "function") return;
@@ -223,7 +227,7 @@ export function trackForeground(kind: Foreground["kind"], doc?: string): void {
   if (!started) return;
   const id = ++foregroundSeq;
   dispatch({ type: "foreground-open", view: { id, kind, ...(doc ? { doc } : {}), session: countedSession(clock) } });
-  onCleanup(() => dispatch({ type: "foreground-close", id, at: Date.now() }));
+  onCleanup(() => dispatch({ type: "foreground-close", id }));
 }
 
 /** A foreground view whose open state lives elsewhere: `open` is called with whether it is on screen. */
@@ -235,7 +239,7 @@ export function foregroundSwitch(kind: Foreground["kind"]): (open: boolean) => v
       id = ++foregroundSeq;
       dispatch({ type: "foreground-open", view: { id, kind, session: countedSession(clock) } });
     } else if (!open && id) {
-      dispatch({ type: "foreground-close", id, at: Date.now() });
+      dispatch({ type: "foreground-close", id });
       id = 0;
     }
   };
@@ -516,7 +520,7 @@ export function startTimeSpent(opts: { focused: Accessor<string | null>; elsewhe
   refreshedAt = now;
   clock = initialClock(now, document.visibilityState === "visible");
   createRoot(() => {
-    createEffect(() => dispatch({ type: "sessions", paths: [...new Set(mounted().filter((m) => !m.front || m.front()).map((m) => m.path))] }));
+    createEffect(() => dispatch({ type: "sessions", paths: sessionsOnScreen(mounted().filter((m) => !m.front || m.front()).map((m) => m.path), panesOpen()) }));
     createEffect(() => dispatch({ type: "focused", path: opts.focused() }));
     createEffect(() => dispatch({ type: "elsewhere", on: opts.elsewhere() }));
   });

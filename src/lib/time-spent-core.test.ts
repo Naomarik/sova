@@ -16,6 +16,7 @@ import {
   MAX_UNSENT_SLICES,
   reduce,
   reportOutcome,
+  sessionsOnScreen,
   tick,
   type ClockEvent,
   type ClockState,
@@ -85,6 +86,9 @@ describe("the idle cutoff", () => {
     const shrunk = run(long, main(A, 100, 0, 0));
     assert.equal(decide(shrunk, T0 + 90_000), null, "the view changing back shortens it");
   });
+  test("a worker's words in view extend it too", () => {
+    assert.notEqual(decide(run(page(), { type: "worker-view", session: A, view: { area: 100, words: 500 } }), T0 + 170_000), null);
+  });
   test("words of the transcript a phone's session pane covers don't extend it", () => {
     const s = run(page(), main(A, 100, 0, 5_000), { type: "covered", session: A, on: true });
     assert.equal(decide(s, T0 + 60_000), null);
@@ -118,7 +122,7 @@ describe("one row per second, in the order the claim gives", () => {
     assert.equal(rowAt(over("tours"), T0 + 1), "tours");
     assert.equal(rowAt(over("alignment"), T0 + 1), "reading-alignments");
   });
-  const noFore = run(noScroll, { type: "foreground-close", id: 1, at });
+  const noFore = run(noScroll, { type: "foreground-close", id: 1 });
   test("5 the largest share of the screen next", () => assert.equal(rowAt(noFore, at), "reading-alignments"));
   test("6 Other last", () => assert.equal(rowAt(run(noFore, main(A, 0)), at), "other"));
 
@@ -230,6 +234,11 @@ describe("only the user's own scrolling", () => {
     const released = run(dragged, { type: "press", on: false, at: T0 + 9600, pane: null }, { type: "scrolled", at: T0 + 20_000 });
     assert.equal(rowAt(released, T0 + 20_001), "reading-transcript");
   });
+  test("the scroll a scroll key starts is the user's; a fling's lift is activity", () => {
+    const keyed = run(page(), main(A, 500), { type: "scroll-key", at: T0 + 1000, pane: null }, { type: "scrolled", at: T0 + 1500 });
+    assert.equal(rowAt(keyed, T0 + 2600), "scrolling");
+    assert.notEqual(decide(run(page(), { type: "fling", at: T0 + 70_000 }), T0 + 70_001), null);
+  });
   test("a scroll key outside an input is Scrolling", () => {
     assert.equal(rowAt(run(page(), { type: "scroll-key", at: T0 + 1, pane: null }), T0 + 2), "scrolling");
   });
@@ -280,6 +289,21 @@ describe("split view: one pane counts", () => {
     const s = run(two(), { type: "wheel", at: T0, pane: B }, { type: "scrolled", at: T0 + 100 });
     assert.equal(s.scrolledPane, B);
   });
+  test("a mouse press names the pane under it", () => {
+    assert.equal(countedSession(run(two(), { type: "pointer", at: T0, pane: A }, { type: "press", on: true, at: T0 + 1, pane: B })), B);
+  });
+  test("a key's pane also holds the keyboard: when the pane the mouse named leaves, the count falls back to it", () => {
+    const s = run(two(), { type: "key", at: T0, pane: A }, { type: "pointer", at: T0 + 1, pane: B }, { type: "sessions", paths: [A] }, { type: "sessions", paths: [A, B] });
+    assert.equal(countedSession(s), A);
+  });
+  test("an input over a pane that isn't on screen names nothing: the last pane stays", () => {
+    assert.equal(countedSession(run(two(), { type: "pointer", at: T0, pane: A }, { type: "pointer", at: T0 + 1, pane: "/s/behind.jsonl" })), A);
+    assert.equal(countedSession(run(two(), { type: "focus", pane: A }, { type: "focus", pane: "/s/behind.jsonl" })), A);
+  });
+  test("a pane that left the screen holds the keyboard no longer when it comes back", () => {
+    const s = run(two(), { type: "focus", pane: A }, { type: "sessions", paths: [B] }, { type: "sessions", paths: [A, B] }, { type: "focused", path: B });
+    assert.equal(countedSession(s), B);
+  });
   test("focus moving is no input: it doesn't take the count from the pane the newest input named", () => {
     assert.equal(countedSession(run(two(), { type: "wheel", at: T0, pane: B }, { type: "focus", pane: A })), B);
   });
@@ -298,6 +322,11 @@ describe("split view: one pane counts", () => {
     assert.equal(countedSession(s), A);
     assert.equal(s.inputPane, null);
     assert.equal(countedSession(run(page([A]), { type: "pointer", at: T0, pane: B })), A);
+  });
+  test("the session pane is on screen only where no view is: the Agents board's", () => {
+    assert.deepEqual(sessionsOnScreen([], [A]), [A], "the board");
+    assert.deepEqual(sessionsOnScreen([B], [A]), [B], "a workspace tab behind B keeps its pane, not the count");
+    assert.deepEqual(sessionsOnScreen([A, A], [A]), [A], "a session listed twice is one");
   });
   test("a dialog counts for the session it opened over, wherever the pointer goes", () => {
     const s = run(two(), { type: "pointer", at: T0, pane: B }, { type: "foreground-open", view: { id: 3, kind: "tours", session: A } }, { type: "pointer", at: T0 + 1, pane: B });
@@ -331,7 +360,14 @@ describe("whole seconds", () => {
   test("a paused second isn't carried into the next count", () => {
     const paused = run(page(), { type: "visible", on: false, at: T0 + 500 });
     assert.equal(tick(paused, T0 + 1500).seconds, 0);
-    assert.equal(tick(paused, T0 + 1500).state.carry, 0);
+  });
+  test("a pause drops the part-second it had, and time hidden is never counted on the way back", () => {
+    const part = tick(page(), T0 + 600).state;
+    assert.equal(part.carry, 600);
+    assert.equal(tick(run(part, { type: "visible", on: false, at: T0 + 700 }), T0 + 800).state.carry, 0);
+    assert.equal(tick({ ...part, lastActiveAt: -Infinity }, T0 + 800).state.carry, 0, "idle drops it too");
+    const back = run(part, { type: "visible", on: false, at: T0 + 700 }, { type: "visible", on: true, at: T0 + 4_000 });
+    assert.equal(tick(back, T0 + 4_100).seconds, 0, "3 hidden seconds aren't in the first tick back");
   });
   test("a page frozen for minutes counts none of the gap", () => {
     const s = run(page(), { type: "dictating", on: true, at: T0, recording: REC });

@@ -300,3 +300,26 @@ test("a report whose answer was lost goes again with the same run ids, and new s
   assert.ok(tries[tries.length - 1]!.slices.some((s) => !first.some((f) => f.id === s.id)), `seconds since came under a new id: ${JSON.stringify(tries)}`);
   await page.context().close();
 });
+
+test("tabs, the session pane open on A: a click on B's tab gives B the count, with A's pane still open", async () => {
+  const { page, reports } = await open();
+  await page.getByRole("button", { name: /tabs/i }).first().click();
+  await page.getByRole("tab", { name: /alpha/ }).click();
+  await page.getByRole("button", { name: /Session details · .*alpha/ }).click();
+  const aside = page.locator(`#session-pane[data-time-session="${A}"]`);
+  await aside.waitFor({ timeout: 20_000 });
+  const box = await aside.boundingBox();
+  assert.ok(box);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.waitForTimeout(1_200);
+  await page.getByRole("tab", { name: /beta/ }).click();
+  await page.waitForTimeout(300);
+  assert.equal(await aside.count(), 1, "A's pane stayed open");
+  const before = (await sums(page, reports, A)).total;
+  await page.waitForTimeout(2_500);
+  const a = await sums(page, reports, A);
+  const b = await sums(page, reports, B);
+  assert.equal(a.total, before, `A stopped at the click: ${JSON.stringify(a)}`);
+  assert.ok(b.total >= 2, `B counted from there, the mouse left on the tab strip: ${JSON.stringify(b)}`);
+  await page.context().close();
+});

@@ -93,7 +93,7 @@ export type ClockEvent =
   | { type: "scrolled"; at: number }
   | { type: "dictating"; on: boolean; at: number; recording: Recording }
   | { type: "foreground-open"; view: Foreground }
-  | { type: "foreground-close"; id: number; at: number }
+  | { type: "foreground-close"; id: number }
   | { type: "main-view"; session: string; view: MainView }
   | { type: "worker-view"; session: string; view: WorkerView }
   | { type: "linked-view"; session: string; view: LinkedView }
@@ -139,6 +139,12 @@ export function initialClock(now: number, visible = true): ClockState {
     lastTickAt: now,
     carry: 0,
   };
+}
+
+/** The sessions on screen: the views in front, and only with no view at all the open session pane (the Agents board's).
+    Beside a view the pane says nothing: a workspace's tab behind the front one stays behind, its pane open or not. */
+export function sessionsOnScreen(views: readonly string[], panes: readonly string[]): string[] {
+  return [...new Set(views.length > 0 ? views : panes)];
 }
 
 /** The idle cutoff for this many words in view: base, plus their reading time, capped. */
@@ -224,7 +230,7 @@ export function reduce(s: ClockState, e: ClockEvent): ClockState {
     case "foreground-open":
       return { ...s, foreground: [...s.foreground, e.view] };
     case "foreground-close":
-      return { ...s, foreground: s.foreground.filter((f) => f.id !== e.id), lastActiveAt: e.at };
+      return { ...s, foreground: s.foreground.filter((f) => f.id !== e.id) };
     case "main-view":
       return { ...s, views: { ...s.views, [e.session]: { ...viewOf(s, e.session), main: e.view } } };
     case "worker-view":

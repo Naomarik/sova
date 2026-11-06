@@ -269,3 +269,17 @@ test("an organization's session: Move to Group… is off with the reason in ever
   assert.match(html, new RegExp(`aria-label="Move “Fix the build” into a group" aria-disabled="true" title="${ORG_GROUP_REASON}"`));
   assert.equal(html, boardMenu(session(ORG)));
 });
+
+test("a chat Sova names itself (fixedName) has no title rows in any door, and no Title group drawn", () => {
+  const fixed = session({ title: "Overseer · Portal", fixedName: "project-overseer" } as Partial<SessionSummary>);
+  for (const [door, ctx] of DOORS) {
+    const r = sessionMenuRows(fixed, ctx([]), sessionArchiveRow(fixed, {}), () => {}, acts([]));
+    assert.deepEqual(r.title, [], door);
+    assert.deepEqual(r.organize.map((x) => x.label), ["Move to Group…", "Archive"], door);
+  }
+  const board = boardMenu(fixed);
+  for (const label of ["Rename…", "Use Gist as Title", "Reset to Original Title", 'aria-label="Title"']) assert.equal(board.includes(label), false, `no ${label}`);
+  assert.ok(board.includes("Move to Group…") && board.includes("Copy Path"));
+  assert.equal(contextMenu(fixed, boardDoor([])), board);
+  assert.equal(contextMenu(fixed, sidebarDoor([])), board);
+});

@@ -1,7 +1,7 @@
 // Run: pnpm test -- src/lib/context-menu.test.ts
 // The right-click menu's rules (§app.context-menus/native, /keyboard, /touch), on plain facts and
-// stand-in elements: what opens Sova's menu, what stays the browser's, what a hold swallows, and
-// one menu per key press.
+// stand-in elements: what opens Sova's menu, what stays the browser's, what a hold swallows, one
+// menu per key press, and a mouse's menu showing on the button's release (§app.context-menus/placement).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createRowPress } from "./drag-overlay";
@@ -11,6 +11,7 @@ import {
   type ContextFacts,
   contextPointerKind,
   createKeyEcho,
+  createOpenOnRelease,
   type ElementLike,
   holdOwns,
   inPopover,
@@ -19,6 +20,7 @@ import {
   KEYBOARD_ECHO_MS,
   onContentLink,
   pointInRects,
+  pressHeld,
   startsPress,
 } from "./context-menu";
 
@@ -243,4 +245,170 @@ test("one press of the key opens one menu: the browser's own keyboard menu after
   // keyUp with nothing pending opens no window.
   echo.keyUp();
   assert.equal(echo.isEcho(), false);
+});
+
+// ---- a mouse's menu shows on the release ----
+
+/** A stand-in window and document that record listeners, and a scheduler run by hand. */
+function releaseRig() {
+  const listeners = new Map<string, Set<(e: Event) => void>>();
+  const target = (prefix: string) => ({
+    addEventListener: (type: string, fn: (e: Event) => void) => void (listeners.get(prefix + type) ?? listeners.set(prefix + type, new Set()).get(prefix + type)!).add(fn),
+    removeEventListener: (type: string, fn: (e: Event) => void) => void listeners.get(prefix + type)?.delete(fn),
+  });
+  const doc = { ...target("doc:"), visibilityState: "visible" };
+  let tasks: (() => void)[] = [];
+  const release = createOpenOnRelease({
+    win: target(""),
+    doc,
+    later: (fn) => {
+      tasks.push(fn);
+      return () => (tasks = tasks.filter((t) => t !== fn));
+    },
+  });
+  const fire = (type: string, props: Record<string, unknown> = {}, prefix = "") => {
+    for (const fn of [...(listeners.get(prefix + type) ?? [])]) fn({ type, ...props } as unknown as Event);
+  };
+  const opened: string[] = [];
+  return {
+    release,
+    opened,
+    /** The browser's input, in order: the window hears each event before any place. */
+    pointerdown: (buttons = 2) => fire("pointerdown", { buttons }),
+    pointerup: (buttons = 0) => fire("pointerup", { buttons }),
+    /** A contextmenu reaching a place that answers `open`, with `buttons` as the event carries them. */
+    contextmenu(place: string, buttons: number, kind: "mouse" | "keyboard" = "mouse") {
+      fire("contextmenu", { buttons });
+      release.request(pressHeld(kind, buttons), place, () => opened.push(place));
+    },
+    fire,
+    hide() {
+      doc.visibilityState = "hidden";
+      fire("visibilitychange", {}, "doc:");
+    },
+    /** The next task: what `later` scheduled runs. */
+    tick() {
+      const run = tasks;
+      tasks = [];
+      for (const t of run) t();
+    },
+    listening: () => [...listeners.values()].reduce((n, s) => n + s.size, 0),
+  };
+}
+
+test("held: only a mouse contextmenu that comes with a button still down", () => {
+  assert.equal(pressHeld("mouse", 2), true, "Linux and macOS: on the right button's press");
+  assert.equal(pressHeld("mouse", 1), true, "a Mac's Ctrl+click: the left button");
+  assert.equal(pressHeld("mouse", 0), false, "Windows: on the release");
+  assert.equal(pressHeld("mouse", undefined), false);
+  assert.equal(pressHeld("keyboard", 0), false);
+  assert.equal(pressHeld("keyboard", 2), false, "a key while a button is down: a key's menu, at once");
+});
+
+test("a contextmenu after the release (Windows) or from a key opens at once, with no further event", () => {
+  const r = releaseRig();
+  r.pointerdown();
+  r.pointerup();
+  r.contextmenu("row A", 0);
+  assert.deepEqual(r.opened, ["row A"]);
+  assert.equal(r.release.waiting(), false);
+  assert.equal(r.listening(), 0, "nothing left listening");
+  r.contextmenu("row B", 0, "keyboard");
+  assert.deepEqual(r.opened, ["row A", "row B"]);
+});
+
+test("a contextmenu during the press (Linux, macOS) opens one task after the release, never before", () => {
+  const r = releaseRig();
+  r.pointerdown();
+  r.contextmenu("row A", 2);
+  assert.deepEqual(r.opened, [], "nothing while the button is held");
+  assert.equal(r.release.waiting(), true);
+  r.tick();
+  assert.deepEqual(r.opened, [], "no deadline: a long hold still waits");
+  r.pointerup(1); // another button still down
+  r.tick();
+  assert.deepEqual(r.opened, []);
+  r.pointerup(0);
+  assert.deepEqual(r.opened, [], "not during the release's own dispatch, where light dismiss runs");
+  r.tick();
+  assert.deepEqual(r.opened, ["row A"]);
+  assert.equal(r.release.waiting(), false);
+  assert.equal(r.listening(), 0, "nothing left listening");
+  r.pointerup(0);
+  r.tick();
+  assert.deepEqual(r.opened, ["row A"], "opens once");
+});
+
+test("the place going away before the release opens nothing", () => {
+  const r = releaseRig();
+  r.pointerdown();
+  r.contextmenu("row A", 2);
+  r.release.cancelOf((k) => k === "row B");
+  assert.equal(r.release.waiting(), true, "another place going away leaves it");
+  r.release.cancelOf((k) => k === "row A");
+  r.pointerup();
+  r.tick();
+  assert.deepEqual(r.opened, []);
+  assert.equal(r.listening(), 0);
+});
+
+test("a press that never finishes opens nothing: pointercancel, blur, hidden, Escape", () => {
+  const cases: [string, (r: ReturnType<typeof releaseRig>) => void][] = [
+    ["pointercancel", (r) => r.fire("pointercancel")],
+    ["the window's blur", (r) => r.fire("blur")],
+    ["the page turning hidden", (r) => r.hide()],
+    ["Escape", (r) => r.fire("keydown", { key: "Escape" })],
+  ];
+  for (const [what, end] of cases) {
+    const r = releaseRig();
+    r.pointerdown();
+    r.contextmenu("row A", 2);
+    end(r);
+    assert.equal(r.release.waiting(), false, what);
+    r.pointerup();
+    r.tick();
+    assert.deepEqual(r.opened, [], what);
+    assert.equal(r.listening(), 0, what);
+  }
+  // Another key doesn't end it.
+  const r = releaseRig();
+  r.contextmenu("row A", 2);
+  r.fire("keydown", { key: "Shift" });
+  r.pointerup();
+  r.tick();
+  assert.deepEqual(r.opened, ["row A"]);
+});
+
+test("abandoned between the release and its task: the release's blur or Escape still wins", () => {
+  for (const end of ["blur", "keydown"]) {
+    const r = releaseRig();
+    r.contextmenu("row A", 2);
+    r.pointerup();
+    r.fire(end, { key: "Escape" });
+    r.tick();
+    assert.deepEqual(r.opened, [], end);
+  }
+});
+
+test("a newer contextmenu abandons the waiting one: only the newer place's menu shows", () => {
+  const r = releaseRig();
+  r.contextmenu("row A", 2);
+  r.contextmenu("row B", 2);
+  r.pointerup();
+  r.tick();
+  assert.deepEqual(r.opened, ["row B"]);
+  // A newer one no place takes (the browser's menu) abandons it too.
+  const n = releaseRig();
+  n.contextmenu("row A", 2);
+  n.fire("contextmenu", { buttons: 2 });
+  n.pointerup();
+  n.tick();
+  assert.deepEqual(n.opened, []);
+  // A newer one after the release opens at once and ends the wait.
+  const w = releaseRig();
+  w.contextmenu("row A", 2);
+  w.contextmenu("row B", 0, "keyboard");
+  w.pointerup();
+  w.tick();
+  assert.deepEqual(w.opened, ["row B"]);
 });

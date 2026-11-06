@@ -378,7 +378,7 @@ test("drain: a pane attached doesn't hold an idle close (§app.chat-processes/id
   assert.equal(readInflight(t.id), null);
 });
 
-test("drain: a reply running or a message queued refuses an idle close, a pane attached or not; quiet again, it closes", async () => {
+test("drain: a reply running, a message queued or a command from shell mode refuses an idle close, a pane attached or not; quiet again, it closes", async () => {
   const t = await setup();
   const states = collect(t.ctl.server, "state");
   const tick = () => (t.host as unknown as { tick(): void }).tick();
@@ -408,12 +408,24 @@ test("drain: a reply running or a message queued refuses an idle close, a pane a
   assert.equal(states.at(-1)?.mirror.quiet.quiet, false, "a queued message is not quiet");
   assert.deepEqual(await drain(), { t: "drained", id: "d2", ok: false, why: "busy" });
   delete (chat.queue as unknown as { size?: number }).size;
+  // A command from shell mode in flight (§chat.shell-mode/lifecycle): no idle close and no reload either.
+  const inFlight = chat.shell.inFlight.bind(chat.shell);
+  chat.shell.inFlight = () => true;
+  tick();
+  await settle();
+  assert.equal(states.at(-1)?.mirror.shell, true);
+  assert.equal(states.at(-1)?.mirror.quiet.quiet, false, "a running command is not quiet");
+  assert.deepEqual(await drain(), { t: "drained", id: "d3", ok: false, why: "busy" });
+  const reload = awaitFrame(t.ctl.server, "drained", 2_000, (f) => f.id === "r1");
+  t.ctl.server.send({ t: "drain", id: "r1", reason: "reload", force: false });
+  assert.deepEqual(await reload, { t: "drained", id: "r1", ok: false, why: "busy" }, "no reload onto new code while it runs");
+  chat.shell.inFlight = inFlight;
   tick();
   await settle();
   assert.equal(states.at(-1)?.mirror.quiet.quiet, true);
   assert.equal(states.at(-1)?.mirror.quiet.clients, 1, "the pane is still attached");
   assert.deepEqual(t.exits, []);
-  assert.deepEqual(await drain(), { t: "drained", id: "d3", ok: true });
+  assert.deepEqual(await drain(), { t: "drained", id: "d4", ok: true });
   t.ctl.server.close();
   await settle();
   assert.deepEqual(t.exits, ["idle"]);

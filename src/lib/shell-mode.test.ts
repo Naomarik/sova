@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ALREADY_RUNNING, canRun, draftOf, enterOnInput, folderName, leaveOnKey, modeAnnouncement, onAnswer, openDraft, SHELL_KEYS, SHELL_MARKER, shellPlaceholder, type ShellMode } from "./shell-mode";
+import { ALREADY_RUNNING, NOT_CONNECTED_YET, codeSpans, runWhileBlocked, canRun, draftOf, enterOnInput, folderName, leaveOnKey, modeAnnouncement, onAnswer, openDraft, SHELL_KEYS, SHELL_MARKER, shellPlaceholder, type ShellMode } from "./shell-mode";
 
 test("a typed ! into the empty box steps the mode one deeper, and a third ! types", () => {
   assert.deepEqual(enterOnInput("off", "", "!", "insertText"), { mode: "shell", text: "" });
@@ -101,4 +101,25 @@ test("the chat's answer: started empties the box back to a message box, refused 
   // Another Run's answer, or none waited on, does nothing.
   assert.deepEqual(onAnswer(pending, { clientId: "c2" }, now), { kind: "none" });
   assert.deepEqual(onAnswer(null, { clientId: "c1" }, now), { kind: "none" });
+});
+
+test("Run while the box waits for its chat says why under the box, once nothing on screen does", () => {
+  // Connecting and Reconnecting are said for the ear only (the transcript's note says them).
+  assert.equal(runWhileBlocked({ quiet: true }), NOT_CONNECTED_YET);
+  assert.equal(NOT_CONNECTED_YET, "Not connected yet. Run it again once the chat connects.");
+  // A reason already on screen ("Switching model…") says why itself; no reason, nothing to add.
+  assert.equal(runWhileBlocked({}), null);
+  assert.equal(runWhileBlocked(null), null);
+});
+
+test("a refusal's backticked quotes are code, and an unmatched backtick is text", () => {
+  assert.deepEqual(codeSpans("Sova refused this command. `pkill -0 node`: too broad. Fix: `kill $(cat app.pid)`."), [
+    { text: "Sova refused this command. ", code: false },
+    { text: "pkill -0 node", code: true },
+    { text: ": too broad. Fix: ", code: false },
+    { text: "kill $(cat app.pid)", code: true },
+    { text: ".", code: false },
+  ]);
+  assert.deepEqual(codeSpans("A command is already running in this chat."), [{ text: "A command is already running in this chat.", code: false }]);
+  assert.deepEqual(codeSpans("odd ` one"), [{ text: "odd ` one", code: false }]);
 });

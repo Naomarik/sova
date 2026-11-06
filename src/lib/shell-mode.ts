@@ -120,6 +120,26 @@ export const ALREADY_RUNNING = "A command is already running in this chat.";
 /** Run with no open connection: the command stays in the box (§chat.shell-mode/who: only the live socket). */
 export const NOT_CONNECTED = "Not connected. Run it again once the chat reconnects.";
 
+/** Run while the box waits for its chat (connecting, reconnecting): nothing is sent, now or later. */
+export const NOT_CONNECTED_YET = "Not connected yet. Run it again once the chat connects.";
+
+/**
+ * What a Run the box can't take now says under the box: a wait said only to the ear (connecting,
+ * reconnecting: the transcript's note says it for the eye) gets its sentence; a reason already on
+ * screen says why itself (null).
+ */
+export function runWhileBlocked(reason: { quiet?: boolean } | null): string | null {
+  return reason?.quiet ? NOT_CONNECTED_YET : null;
+}
+
+/** A refusal's text in pieces: what it quotes in backticks is code, drawn as code (the kill guard's reply). */
+export function codeSpans(text: string): { text: string; code: boolean }[] {
+  const parts = text.split("`");
+  // An odd count of backticks leaves the last one unmatched: it is text, as written.
+  if (parts.length % 2 === 0) return [{ text, code: false }];
+  return parts.map((t, i) => ({ text: t, code: i % 2 === 1 })).filter((p) => p.text !== "");
+}
+
 /** The shortcut sheet's shell-mode rows, after the palette's keys (§app.command-palette/shortcut-sheet). */
 export const SHELL_KEYS: readonly { keys: string; does: string }[] = [
   { keys: "!", does: "In an empty message box: runs a command in this chat's folder." },

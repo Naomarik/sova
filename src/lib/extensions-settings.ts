@@ -11,7 +11,7 @@ export const EXT_PICK_HINT = "Folders on the computer Sova runs on";
 export const EXT_CHANGED_LEAD = "This extension changed, so it needs your approval again.";
 export const EXT_PAGE_LINE = "Runs on Sova's own address and can do what you can, including adding other extensions.";
 export const EXT_KEY_LINE = "Opens nearly all of Sova. Its calls are recorded under its name.";
-export const EXT_NO_MANAGER = "If it stops, it comes back when Sova starts, not by itself at login.";
+export const EXT_NO_MANAGER = "If it stops while Sova isn't running, it comes back when Sova starts, not by itself at login.";
 export const EXT_TRUST = "Install only what you trust.";
 export const EXT_APPROVE_CHANGED = "This extension changed since you looked. Check what it asks for, then approve it again.";
 

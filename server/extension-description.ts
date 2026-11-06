@@ -73,7 +73,9 @@ export function asksOf(raw: Record<string, unknown>, id: string, title: string):
     ...(offers?.screens?.length ? { screens: offers.screens } : {}),
     ...(views.offers.drawings?.length ? { drawings: views.offers.drawings.map((d) => d.kind) } : {}),
   };
-  return { asks, leftOut: [...dropped, ...views.dropped] };
+  // Say why: "1 of its commands" alone is what the log says for itself.
+  const said = dropped.map((d) => (/^\d+ of its commands$/.test(d) ? `${d}: a command needs a name of lower-case letters, digits and dashes, and a label` : d));
+  return { asks, leftOut: [...said, ...views.dropped] };
 }
 
 /** One folder → what it describes, or the one reason it can't be used. `self`: the id the choosing row has already. */

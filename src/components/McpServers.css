@@ -37,7 +37,9 @@
 .mcp-scrim { z-index: 52; }
 .mcp-modal { z-index: 53; }
 /* Settings → Extensions (§app.settings-dialog/extensions) reads as MCP Servers does. */
-.ext-row-title { flex: 1 1 12rem; }
+.ext-row-title { flex: 1 1 12rem; min-width: min(100%, 20rem); }
+.ext-row-title + .chip { flex: none; }
+.ext-row-title ~ .mcp-switch { margin-inline-start: auto; }
 .ext-row-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: 0 var(--space-3) var(--space-3); }
 .ext-row-actions:empty { display: none; }
 .ext-log { margin: 0 var(--space-3) var(--space-3); }

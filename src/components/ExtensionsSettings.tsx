@@ -237,8 +237,17 @@ function ChooseDialog(props: { start?: string; forId?: string; onClose: () => vo
         </div>
         <div class="modal-body stack">
           <p class="field-hint">{EXT_PICK_HINT}</p>
-          <p class="text-mono ext-folder-now">{tildePath(folder(), home())}</p>
-          <Show when={picking()} fallback={<button type="button" class="button button-sm ext-choose-again" onClick={() => setPicking(true)}>Choose Another Folder</button>}>
+          <Show
+            when={picking()}
+            fallback={
+              <>
+                <p class="text-mono ext-folder-now">{tildePath(folder(), home())}</p>
+                <button type="button" class="button button-sm ext-choose-again" onClick={() => setPicking(true)}>
+                  Choose Another Folder
+                </button>
+              </>
+            }
+          >
             <FolderPicker start={folder()} recents={[]} onPick={pick} onClose={() => setPicking(false)} />
           </Show>
           <div aria-live="polite">

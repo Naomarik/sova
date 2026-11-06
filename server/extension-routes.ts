@@ -15,7 +15,7 @@ const STARTING_MS = 30_000;
 
 const LINES: Partial<Record<ListedExtension["state"], string>> = {
   "needs-newer": "This needs a newer Sova. Nothing is running.",
-  waiting: "Added outside this screen. Nothing runs until you approve it.",
+  waiting: "Added or edited outside this screen. Nothing runs until you approve it.",
   changed: "Changed since you approved it. It is still running the old code, and its page is off.",
 };
 

@@ -327,7 +327,7 @@ describe("rows (§app.settings-dialog/extensions)", () => {
     const e = { id: "w", title: "W", folder: d };
     writeList([e, { id: "bad id" }]);
     const [w, bad] = await Promise.all(ext.listedExtensions()!.map(rowOf));
-    assert.deepEqual([w!.state, w!.on, w!.line], ["waiting", undefined, "Added outside this screen. Nothing runs until you approve it."]);
+    assert.deepEqual([w!.state, w!.on, w!.line], ["waiting", undefined, "Added or edited outside this screen. Nothing runs until you approve it."]);
     assert.deepEqual([bad!.state, bad!.key], ["not-usable", "bad id"]);
     writeList([{ ...e, off: true }]);
     approve({ ...e, off: true });

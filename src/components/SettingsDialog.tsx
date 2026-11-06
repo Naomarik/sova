@@ -35,7 +35,7 @@ import {
 } from "../lib/recent";
 import { setShowSummaries, showSummaries } from "../lib/summary-line";
 import { LIMIT_RULE } from "../../shared/provider-limits";
-import { NumberField, SearchField, Toggle } from "./form";
+import { Choice, NumberField, SearchField, Toggle } from "./form";
 import { compressWork, setCompressWork } from "../lib/work-compression";
 import { darkThemeId, droppedTheme, lightThemeId, pickTheme, reconcileTheme, setThemeMode, shownBase, themeMode, type ThemeMode, typography } from "../lib/theme";
 import { settingsProject, type SettingsTab } from "../lib/settings-nav";
@@ -906,32 +906,23 @@ const MODES: { id: ThemeMode; label: string }[] = [
   { id: "auto", label: "Auto" },
 ];
 
-/** Appearance: three native radios in one fieldset, built like Text size, so the legend names the
+/** Appearance: the form kit's radios in one fieldset, built like Text size, so the legend names the
     group and arrow keys move the choice with no ARIA of our own. */
 function AppearanceField() {
   return (
     <fieldset class="field settings-type-size" aria-describedby="theme-mode-hint">
       <legend class="field-label">Appearance</legend>
-      <div class="settings-type-size-options">
-        <For each={MODES}>
-          {(opt) => (
-            <label class="toggle">
-              <input
-                type="radio"
-                name="theme-mode"
-                value={opt.id}
-                checked={themeMode() === opt.id}
-                onChange={() => {
-                  setThemeMode(opt.id);
-                  announce(`Appearance is now ${opt.label}.`);
-                }}
-              />
-              <span class="toggle-box" aria-hidden="true" />
-              {opt.label}
-            </label>
-          )}
-        </For>
-      </div>
+      <Choice
+        label="Appearance"
+        class="settings-type-size-options"
+        value={themeMode()}
+        options={MODES.map((m) => ({ value: m.id, label: m.label }))}
+        onChange={(id) => {
+          const opt = MODES.find((m) => m.id === id)!;
+          setThemeMode(opt.id);
+          announce(`Appearance is now ${opt.label}.`);
+        }}
+      />
       <span class="field-hint" id="theme-mode-hint">
         Auto follows your system's light or dark setting.
       </span>

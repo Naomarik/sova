@@ -27,8 +27,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T02:17Z",
-      "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#31e7455c"
+      "at": "2026-11-05T17:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
     },
     "code": [
       "src/components/OpenAiAccount.tsx",
@@ -101,15 +101,15 @@
   "§app/openai-login": {
     "kind": "surface",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "notOwned": [
       "§app.insights/usage-cards",
       "§mesh.sync/logins"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T02:17Z",
-      "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#31e7455c"
+      "at": "2026-11-05T17:58Z",
+      "source": "pi-session:01a1ac90-4675-77e8-b78d-582f796d19ae#e68fe904"
     },
     "code": [
       "server/openai-login.ts",
@@ -121,7 +121,8 @@
       "server/harness/pi/contract.test.ts",
       "server/app.ts",
       "server/index.ts",
-      "agents/server/harness/overview.md"
+      "agents/server/harness/overview.md",
+      "src/components/OpenAiAccount.tsx"
     ]
   }
 }

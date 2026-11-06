@@ -281,6 +281,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "settings.cards.withdraw": "a valid call needs a Sova-wide card, which only a Create chat's sova_settings propose makes",
   "project.settings.propose.withdraw": "a valid call needs a settings card, which only the project overseer's sova_settings propose makes, in its chat",
   "usage.prices.refresh": "fetches the price list over the network; the in-process ledger here has prices off, so a valid call changes nothing",
+  "settings.models.check": "a valid call checks Ollama Cloud's model list over the network; a test process never checks, so it answers 409 and changes nothing",
   "push.test": "sends a real notification to every registered device",
   // The merge queue's settings act on a started queue of a git project (queue-settings.test.ts, settings-routes.test.ts).
   "project.merge-queue.settings.get": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
@@ -484,6 +485,7 @@ const FIXTURES: Record<string, Fixture> = {
   "overseer.abilities": { values: () => ({}), status: 200 },
   "overseer.todo.list": { values: () => ({}), status: 200 },
   "models.list": { values: () => ({}), status: 200 },
+  "settings.models.check.status": { values: () => ({}), status: 200 },
   "extensions.list": { values: () => ({}), status: 200 },
   "session.create": {
     values: () => { const d = join(root, "work"); mkdirSync(d, { recursive: true }); return { cwd: d }; },

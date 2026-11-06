@@ -200,6 +200,8 @@ export type CommandId =
   | "server.restart"
   | "settings.sova.get"
   | "settings.models.get"
+  | "settings.models.check.status"
+  | "settings.models.check"
   | "settings.provider-limits.get"
   | "settings.align.get"
   | "settings.delegate.get"
@@ -3402,6 +3404,10 @@ export interface CommandParams {
   "settings.sova.get": Record<string, never>;
   /** The model policy: which models are disabled. (only looks; needs the card's owner trusted) */
   "settings.models.get": Record<string, never>;
+  /** How the server's last check of Ollama Cloud's model list went, and the models it added this week. (only looks; needs the card's owner trusted) */
+  "settings.models.check.status": Record<string, never>;
+  /** Check Ollama Cloud's model list now, as Settings → Models' Check now does; answers once it is done. (changes something; needs the card's owner trusted) */
+  "settings.models.check": Record<string, never>;
   /** How many requests each provider may run at once. (only looks; needs the card's owner trusted) */
   "settings.provider-limits.get": Record<string, never>;
   /** The align mode's writing style and Visuals. (only looks; needs the card's owner trusted) */
@@ -3799,6 +3805,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "server.restart": "changes",
   "settings.sova.get": "looks",
   "settings.models.get": "looks",
+  "settings.models.check.status": "looks",
+  "settings.models.check": "changes",
   "settings.provider-limits.get": "looks",
   "settings.align.get": "looks",
   "settings.delegate.get": "looks",

@@ -16,7 +16,9 @@ overlay. Sova imports its fetchers and cache.
 ## What Sova relies on
 
 - `fetch.ts` (fetchers, cache, lock) and `ollama.ts`: imported by `server/insights.ts`, `server/usage-poll.ts`,
-  `server/usage-history.ts` and `server/index.ts`. `fetch.ts` imports `claude-code/accounts.ts` and `keychain.ts`
+  `server/usage-history.ts`, `server/index.ts` and `server/provider-keys.ts`, which checks a pasted key with
+  `fetchOllama`, `fetchDeepSeek` and `fetchZai`'s `key` option (the key given instead of auth.json's) before
+  saving it. `fetch.ts` imports `claude-code/accounts.ts` and `keychain.ts`
   (builtins only) to fetch each login's usage.
 - The usage cache is a contract: `claude` is always Claude Code's own login; each added Claude login's reading is in
   the additive `claudeAccounts`, keyed by login id.

@@ -8,6 +8,13 @@ import { createSignal } from "solid-js";
 export const SETTINGS_TABS = ["general", "models", "accounts", "mcp-servers", "subagents", "alignment", "profiles", "overseer", "notifications", "decisions", "summaries", "memory", "organizations", "merge-queue", "themes", "mesh", "public-links", "outreach", "voice", "experimental"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
+/** Accounts' provider tabs, in order (§app.provider-keys/tabs): `#/settings/accounts/<tab>`. */
+export const ACCOUNT_TABS = ["claude", "openai", "ollama-cloud", "deepseek", "zai", "other"] as const;
+export type AccountTab = (typeof ACCOUNT_TABS)[number];
+const [accountTab, setAccountTab] = createSignal<AccountTab | null>(null);
+/** The provider tab the last openSettings asked Accounts for; null = the one last open in this browser. */
+export const accountTabRequest = accountTab;
+
 const [openTab, setOpenTab] = createSignal<SettingsTab | null>(null);
 /** Settings → Subagents' view of "current": the chat the mode menu opened it for, so that chat's
     profile can be saved as its own. Cleared on close: a reopened dialog is nobody's chat. */
@@ -36,9 +43,10 @@ export const settingsProject = project;
 
 /** Open Settings at `tab` (General by default), optionally at one of its sections, and for a
     project-scoped tab on one project (its id). Opening it changes nothing else — no mode switch. */
-export function openSettings(tab: SettingsTab = "general", at: SettingsSection | null = null, opts: { project?: string } = {}): void {
+export function openSettings(tab: SettingsTab = "general", at: SettingsSection | null = null, opts: { project?: string; account?: AccountTab } = {}): void {
   setSection(at);
   setProject(opts.project ?? null);
+  setAccountTab(opts.account ?? null);
   setOpenTab(tab);
 }
 
@@ -46,6 +54,7 @@ export function openSettings(tab: SettingsTab = "general", at: SettingsSection |
 export function settingsTabFromHash(hash: string): SettingsTab | null {
   const m = /^#\/settings\/([a-z-]+)$/.exec(hash);
   if (!m && settingsProjectFromHash(hash)) return "merge-queue";
+  if (!m && settingsAccountFromHash(hash)) return "accounts";
   return SETTINGS_TABS.find((t) => t === m?.[1]) ?? null;
 }
 
@@ -54,8 +63,15 @@ export function settingsProjectFromHash(hash: string): string | null {
   return /^#\/settings\/merge-queue\/(prj_[A-Za-z0-9_-]+)$/.exec(hash)?.[1] ?? null;
 }
 
+/** `#/settings/accounts/<provider>` (§app.provider-keys/tabs): that provider tab, else null. */
+export function settingsAccountFromHash(hash: string): AccountTab | null {
+  const m = /^#\/settings\/accounts\/([a-z-]+)$/.exec(hash);
+  return ACCOUNT_TABS.find((t) => t === m?.[1]) ?? null;
+}
+
 export function closeSettings(): void {
   setSubagentPath(undefined);
   setProject(null);
+  setAccountTab(null);
   setOpenTab(null);
 }

@@ -73,8 +73,8 @@
     "authority": "accepted",
     "agreed": {
       "by": "user",
-      "at": "2026-11-06T13:59Z",
-      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#0056bb79"
+      "at": "2026-11-06T20:05Z",
+      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
     },
     "evidence": "verified",
     "code": [
@@ -98,7 +98,8 @@
       "server/harness/pi/session.test.ts",
       "shared/harness-session.ts",
       "src/components/ReaderDoc.tsx",
-      "server/context-tab-sheet.integration.test.ts"
+      "server/context-tab-sheet.integration.test.ts",
+      "server/subfolder-skills.ts"
     ]
   },
   "§app.subagents-pane/head": {

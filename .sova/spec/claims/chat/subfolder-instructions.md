@@ -25,8 +25,9 @@ always on: no project, chat or setting turns it off.
 - **Once.** A file attaches only when the chat's current context doesn't hold it already: the
   current branch, from the latest compaction on (that compaction's kept part included). Only the
   blocks after a result's first that start with the block's opening count, so a tool's own output
-  that merely contains that text can't pass for one. Two actions run in one turn never both attach
-  the same file.
+  that merely contains that text can't pass for one. A subfolder's skills block
+  (§chat.subfolder-skills/offering) in the same result doesn't hide them. Two actions run in one turn
+  never both attach the same file.
 - **Reading the file itself.** When the agent reads the whole instruction file (from line 1, with
   no limit or one that covers every line), its text is already in the result, so only a one-line
   block attaches, `<sova-instructions path="api/AGENTS.md">(loaded: this read)</sova-instructions>`,

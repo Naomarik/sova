@@ -346,6 +346,20 @@ sent. Each part is read as the chat's folder and the chat hold it now (`GET
   window: its name and description are what the line counts, so it keeps its `≈{n}` size and its
   share bar, stays in every total, and the heading doesn't say "not counted". A note under the
   heading says so. Any skill, read or not, opens to its text.
+
+  A last section, **Not offered yet · not counted**, lists the skills of folders below the chat's own
+  that the model hasn't been offered (§chat.subfolder-skills/offering), and manual-only skills
+  (§chat.skill-sources/manual-only), walked as the instruction files below the chat's folder are, under
+  the same cap and its "This list may be incomplete." Each row shows the skill's name, its folder and
+  description, what it would add (`+≈{n}`) and no share bar, and opens to its text. It adds nothing to
+  any total. Once a subfolder's skill is offered, it moves to Not read yet with its size counted, then to
+  Read, and the conversation is counted less its listing, so it isn't counted twice. Its folder stays on
+  its row, so two skills of one name can be told apart. A manual-only skill never moves: it stays in this
+  section, chipped **Manual only**, and what it would add is its whole text. A skill run by `/skill:`
+  without being offered counts as Read with a size of `≈0`: its text is under Conversation, and no
+  listing of it is in the window. The line's short line adds `· {k} not offered yet` while there are
+  some, and the sheet's top line does too. The line stays while it has any row, even at `≈0`. A chat that
+  loads no skills, or a worker whose tools can't touch and read a file, lists none here.
 - **Conversation** opens to its parts: **Tool results**, **Replies** and **Your messages**, each
   with its count and ≈ size, then **Other messages** (an extension's messages and branch summaries)
   only while there are some, and, once the chat has compacted, the **Compaction summary** the

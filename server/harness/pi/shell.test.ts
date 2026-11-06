@@ -1,5 +1,5 @@
 // Run: pnpm test -- server/harness/pi/shell.test.ts. The user's own commands on pi (§chat.shell-mode/running,
-// quirk P37): the extensions' user_bash hook goes first, and the operations are picked in a fixed order
+// quirk P40): the extensions' user_bash hook goes first, and the operations are picked in a fixed order
 // whatever the extensions' load order: the hook's (a remote target) over the sandbox's, the sandbox's over
 // pi's local shell, and a sandbox that can't be prepared runs nothing (no start, no record). A hook that ran
 // the command itself is recorded as given. Nothing here spawns a process (the unit tier refuses it): the
@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { loadPi } from "./testing/load-pi.ts";
+import { ScriptedModel } from "./testing/scripted-model.ts";
 import { pickOperations, piShell, sandboxBus, sandboxOf } from "./shell.ts";
 
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-pi-shell-")));
@@ -17,6 +18,7 @@ after(() => rmSync(dir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = dir;
 const pi = await loadPi();
 const { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } = pi.agent;
+const { createFauxCore } = pi.ai;
 
 /** A parent scope the session's folder is outside of: preparing the sandbox fails before any probe. */
 const OUTSIDE = { version: 1, level: "workspace-write", workspaceRoot: "/nonexistent-parent-q7", writable: ["/nonexistent-parent-q7"] };
@@ -29,20 +31,47 @@ const remoteOps = (ran: string[]) => ({
   },
 });
 
-async function session(extensions: ((api: any) => void)[]) {
+/** A faux model the session can reply with (its turns run on a ScriptedModel, never a network). */
+async function fauxRuntime() {
+  const faux = createFauxCore({ provider: "faux", models: [{ id: "faux-1" }] });
+  const runtime = await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: null, refreshOnCreate: false });
+  runtime.registerProvider("faux", {
+    name: "Faux",
+    baseUrl: "http://127.0.0.1:9",
+    apiKey: "stub",
+    api: faux.api,
+    streamSimple: faux.streamSimple,
+    models: [{ id: "faux-1", name: "faux-1", input: ["text"], reasoning: false, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 200_000, maxTokens: 4_000 }],
+  } as never);
+  return runtime;
+}
+
+async function session(extensions: ((api: any) => void)[], o: { model?: boolean } = {}) {
   const cwd = join(dir, `cwd-${Math.random().toString(36).slice(2)}`);
   mkdirSync(cwd, { recursive: true });
-  const settingsManager = SettingsManager.inMemory({ cacheWarming: "off" } as never);
+  const settingsManager = SettingsManager.inMemory({ cacheWarming: "off", retry: { enabled: false } } as never);
   const sb = sandboxBus();
   const resourceLoader = new DefaultResourceLoader({ cwd, agentDir: dir, settingsManager, extensionFactories: extensions as never, eventBus: sb.bus as never });
   await resourceLoader.reload();
-  const modelRuntime = await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: null, refreshOnCreate: false });
-  const { session: s } = await createAgentSession({ cwd, agentDir: dir, modelRuntime, sessionManager: SessionManager.inMemory(cwd), settingsManager, resourceLoader, noTools: "builtin" });
+  const modelRuntime = o.model ? await fauxRuntime() : await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: null, refreshOnCreate: false });
+  const { session: s } = await createAgentSession({
+    cwd, agentDir: dir, modelRuntime, sessionManager: SessionManager.inMemory(cwd), settingsManager, resourceLoader, noTools: "builtin",
+    ...(o.model ? { model: modelRuntime.getModel("faux", "faux-1") } : {}),
+  });
   await s.bindExtensions({});
   sb.attach(s);
+  const model = o.model ? new ScriptedModel().attach(s) : null;
   const shell = piShell(() => s, () => sandboxOf(s));
   const bash = () => (s.sessionManager.getEntries() as any[]).filter((e) => e.type === "message" && e.message.role === "bashExecution");
-  return { s, shell, bash };
+  return { s, shell, bash, model };
+}
+
+/** Poll a condition until it holds. */
+async function until(cond: () => boolean, what: string): Promise<void> {
+  for (const end = Date.now() + 5000; !cond(); ) {
+    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 2));
+  }
 }
 
 function runOf(shell: ReturnType<typeof piShell>, command: string, o: { private?: boolean } = {}) {
@@ -118,6 +147,29 @@ describe("the user's own commands on pi", () => {
     assert.match(r.refused, /no link/);
     assert.equal(seen.started, 0);
     assert.deepEqual(bash(), []);
+    s.dispose();
+  });
+
+  test("two identical commands that end during one reply: each run's saved is its own entry, in their order", async () => {
+    const ran: string[] = [];
+    const { s, shell, bash, model } = await session([(api: any) => api.on("user_bash", () => ({ operations: remoteOps(ran) }))], { model: true });
+    const release = model!.hold();
+    model!.reply({ text: "done" });
+    const turn = s.prompt("go");
+    await until(() => s.isStreaming, "the reply to start");
+    // Same command, same output, same privacy twice; then the same command again as `!!`.
+    const first = await runOf(shell, "ls").done;
+    const second = await runOf(shell, "ls").done;
+    const third = await runOf(shell, "ls", { private: true }).done;
+    for (const r of [first, second, third]) assert.ok(!("refused" in r));
+    assert.equal(bash().length, 0, "all three wait for the reply");
+    release();
+    await turn;
+    const saved = await Promise.all([first, second, third].map((r) => (r as Exclude<typeof r, { refused: string }>).saved));
+    const written = bash();
+    assert.equal(written.length, 3);
+    assert.deepEqual(saved.map((h) => h?.id), written.map((e) => e.id), "each run's saved is the entry written for it, oldest first");
+    assert.deepEqual(saved.map((h) => (h as { private?: boolean } | null)?.private === true), [false, false, true]);
     s.dispose();
   });
 });

@@ -13,10 +13,13 @@ export type PointerKind = "mouse" | "touch" | "pen" | "keyboard";
 const MOZ_SOURCE: Record<number, PointerKind> = { 1: "mouse", 2: "pen", 5: "touch", 6: "keyboard" };
 
 /**
- * The input a `contextmenu` came from. Chromium sends it as a PointerEvent whose `pointerType` says
- * so, the empty string when a key made it; Firefox says it in `mozInputSource`. A browser that says
- * neither (a plain MouseEvent) gets the kind of the last pointer that went down, so a long press
- * there is still a finger's.
+ * The input a `contextmenu` came from. Chromium sends it as a PointerEvent with a `pointerType`, but
+ * for a key that can't be relied on: some builds send the empty string, read here as a key, and
+ * Linux Chromium sends "mouse". So a key is never known by it: Sova's own Shift+F10 and Menu key are
+ * known by their keydown (ContextMenu.tsx `fromKey`), and the browser's menu after them is their
+ * echo. A key-made event read as "mouse" has no button down, so it opens at once, as a key's does.
+ * Firefox says it in `mozInputSource`. A browser that says neither (a plain MouseEvent) gets the kind
+ * of the last pointer that went down, so a long press there is still a finger's.
  */
 export function contextPointerKind(e: { pointerType?: unknown; mozInputSource?: unknown }, lastPointer: string | null): PointerKind {
   if (typeof e.pointerType === "string") {

@@ -566,6 +566,7 @@
   "keydown": {
     "src/commands/keys.ts": ["window","document"],
     "src/components/ChangesViewer.tsx": ["document"],
+    "src/components/Composer.tsx": ["window"],
     "src/components/GroupView.tsx": ["window"],
     "src/components/InsightStrip.tsx": ["document"],
     "src/components/LandingBar.tsx": ["document","document"],

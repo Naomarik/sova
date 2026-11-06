@@ -7,7 +7,7 @@ import { ApiError, fetchTimeSpent } from "../lib/api";
 import { Icon } from "./ui";
 
 /**
- * Time Spent on the Session tab (§app.subagents-pane/time-spent): You and Agent, the word, Your Time,
+ * Time Spent on the Session tab (§app.subagents-pane/time-spent): You and Agent, the word, the rows,
  * Alignments and the two notes. Mounted only while that tab shows, which is when it ticks; counting
  * itself is the tracker's and goes on without it. Nothing here is a live region: the tick is silent.
  */
@@ -106,14 +106,13 @@ function TimeSpentBody(props: { path: string; id: string }) {
           <Show
             when={refused()}
             fallback={
-              /* The usual section's own lines (the figures, Your Time, Reading and two rows, the estimate), so
+              /* The usual section's own lines (the figures, Reading and two rows, the estimate), so
                  Repository doesn't jump when the figures land; never a zero. */
               <div class="time-spent-skeleton" aria-hidden="true">
                 <div>
                   <Line class="text-caption" width="20%" />
                   <Line class="time-spent-figure" width="45%" />
                 </div>
-                <Line class="time-spent-sub text-caption" width="25%" />
                 <div class="time-spent-rows">
                   <Line class="time-spent-skeleton-tall text-caption" width="35%" />
                   <Line class="time-spent-row" width="30%" />
@@ -155,8 +154,8 @@ function TimeSpentBody(props: { path: string; id: string }) {
             </div>
 
             <Show when={v().reading || v().rows.length > 0}>
-              <h4 class="time-spent-sub text-caption">Your Time</h4>
-              <ul class="time-spent-rows">
+              {/* No visible heading: the rows are obvious under You. The name stays for assistive technology. */}
+              <ul class="time-spent-rows" aria-label="Your Time">
                 <Show when={v().reading}>
                   {(reading) => (
                     <>

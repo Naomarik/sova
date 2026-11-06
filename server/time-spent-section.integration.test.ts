@@ -79,7 +79,7 @@ async function showSessionTab(page: Page) {
 
 /** The chat open at `width`, its pane on the Session tab, in a fresh browser; `read` answers the record's
     route. The section starts closed, so it is opened here unless the test is about the closed one. */
-async function open(width: number, read: Read, opts: { closed?: boolean } = {}): Promise<Page> {
+async function open(width: number, read: Read, opts: { closed?: boolean; holdReports?: boolean } = {}): Promise<Page> {
   const phone = width < 768;
   const ctx = await browser.newContext({ viewport: { width, height: phone ? 844 : 960 }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce" });
   const page = await ctx.newPage();
@@ -101,7 +101,8 @@ async function open(width: number, read: Read, opts: { closed?: boolean } = {}):
     if (p === "/api/schedules") return route.fulfill(json({ schedules: [] }));
     if (p === "/api/settings") return route.fulfill(json({ experimental: {}, alignment: { review: false } }));
     if (p === "/api/sessions/git") return route.fulfill(json({ state: "none", cwd: CWD, checkedAt: T0 }));
-    if (p === TIME_SPENT_REPORT_ROUTE) return route.fulfill(json({ ok: true }));
+    // An accepted report clears a refusal, so a test of the read's refusal leaves reports unanswered.
+    if (p === TIME_SPENT_REPORT_ROUTE) return opts.holdReports ? undefined : route.fulfill(json({ ok: true }));
     if (p.startsWith("/api/") || p.startsWith("/ws") || p === "/sw.js") return route.fulfill(json({}, 404));
     const file = normalize(join(dist, p === "/" ? "index.html" : p));
     if (file.startsWith(dist) && existsSync(file) && statSync(file).isFile()) {
@@ -135,7 +136,7 @@ test("the Session tab's order is Path, Time Spent, Repository, and the Context s
 
 for (const status of [403, 404]) {
   test(`a ${status} on the read says Not Recording, and shows no zero`, async () => {
-    const page = await open(1440, (r) => r.fulfill(json({ error: "no" }, status)));
+    const page = await open(1440, (r) => r.fulfill(json({ error: "no" }, status)), { holdReports: true });
     try {
       await page.locator('[data-time-word]:text-is("Not Recording")').waitFor({ timeout: 10_000 });
       assert.equal(await page.locator("[data-time-you]").count(), 0, "no figure to read as current");
@@ -247,6 +248,9 @@ test("the rows add up to You, an empty row doesn't show, and Reading opens to it
     const at = (k: string) => opened.rows.find(([key]) => key === k)![1];
     assert.equal(at("reading-transcript") + at("reading-alignments"), at("reading"), "the parts add up to Reading");
     const text = await page.locator(".time-spent").innerText();
+    assert.doesNotMatch(text, /Your Time/, "the rows need no visible heading"); // the older-session note says "Your time"
+    assert.equal(await page.getByRole("list", { name: "Your Time" }).locator("[data-time-row]").count(), opened.rows.length, "the rows keep their name for assistive technology");
+    assert.match(text, /Alignments/, "that heading stays");
     assert.match(text, /4m 12s on screen · 2m 10s to read · 1h 01m 40s from first shown to decided/);
     assert.match(text, /12s on screen · 40s to read(?! ·)/);
     assert.match(text, /An estimate\. Reading makes no events/);

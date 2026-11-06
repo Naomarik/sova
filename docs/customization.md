@@ -10,7 +10,9 @@ rebuild or restart.
 
 Pick one light theme and one dark theme, then set **Appearance** to Light, Dark, or Auto. Auto
 shows your light theme while your system is set to light and your dark theme while it's dark,
-switching the moment the system does; Sova starts in Dark.
+switching the moment the system does; Sova starts in Dark. A pick in the list that's showing
+applies at once; the other list's pick shows when its mode does. The choice is remembered in this
+browser, and other Sova tabs open in it follow a change at once.
 
 For example, save this as `desk-lamp.json`:
 

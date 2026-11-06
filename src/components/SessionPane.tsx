@@ -5,7 +5,7 @@ import { explainCaption, explainHref, explainInterrupted, explainState, newestFi
 import { relativeTime } from "../lib/format";
 import { sessionIdOfPath } from "../lib/links";
 import { absoluteTime, headChipSpend, headChipWords } from "../lib/spend";
-import { activeTab, sessionContext, setActiveTab, toast } from "../lib/ui-state";
+import { activeTab, setActiveTab, toast } from "../lib/ui-state";
 import { capTitle, workerLabel, workerTeam } from "../lib/workers";
 import type { RewindControl } from "../lib/inputs";
 import { jumpWhenArrived } from "../lib/jump";
@@ -19,6 +19,7 @@ import { SessionTimeline } from "./SessionTimeline";
 import { createSessionSpend, SessionUsageTab } from "./SessionUsage";
 import { type AgentsView, SubagentPane } from "./SubagentPane";
 import { Chip, Icon } from "./ui";
+import { trackSessionPane } from "../lib/time-spent";
 
 /** The open session's insight, loaded once in App.tsx for the head, the strip and this pane. */
 export interface PaneInsight {
@@ -163,8 +164,10 @@ export function SessionPane(props: {
     tabEls[next]?.focus();
   };
 
+  trackSessionPane(props.path);
+
   return (
-    <aside class="app-subagents" id="session-pane" aria-label="Session detail" ref={aside} onKeyDown={onKeyDown}>
+    <aside class="app-subagents" id="session-pane" data-time-session={props.path} aria-label="Session detail" ref={aside} onKeyDown={onKeyDown}>
       <header class="subagents-head">
         <h2 class="subagents-title">Session detail</h2>
         <Show when={working() > 0}>
@@ -301,7 +304,7 @@ export function SessionPane(props: {
 
 /**
  * The Session tab, fed from App's shared insight and the pane's shared transcript read, which the
- * Changes list and the context sentence need — no fetch of its own.
+ * Changes list needs — no fetch of its own.
  */
 function SessionTab(props: {
   path: string;
@@ -314,11 +317,6 @@ function SessionTab(props: {
   /** Closes the pane: a memory line's jump from the drawer band would otherwise land behind it. */
   onClose?: () => void;
 }) {
-  /** The gauge's reading; "compacted" is re-derived from the items. */
-  const context = () => {
-    const c = sessionContext()[props.path];
-    return c && c !== "compacted" ? c : null;
-  };
   /** The poller keeps the last insight through a failure, so only a first-load failure shows;
       it retries on its own, so the banner offers no Retry. */
   const failure = () => (props.insight.data ? null : props.insight.error);
@@ -331,7 +329,6 @@ function SessionTab(props: {
         error={failure()}
         pending={props.insight.pending}
         summary={props.summary}
-        context={context()}
         items={props.items ?? []}
         now={props.now}
         onArchiveChanged={props.onArchiveChanged}

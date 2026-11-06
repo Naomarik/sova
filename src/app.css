@@ -1910,3 +1910,55 @@ html, body { overflow: clip; overscroll-behavior: none; }
    chip and time stay in. */
 .toolcard-summary:has(> .chip-count) > .toolcard-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .toolcard-summary > .chip-count { flex: none; }
+
+/* Time Spent on the Session tab. The heading reads as every section's eyebrow; the row around it is
+   the 44px target, pulled back by its padding so the chevron and the eyebrow keep the section's edge. */
+.time-spent-heading { margin: 0; font: inherit; }
+.time-spent-toggle,
+.time-spent-expander {
+  width: 100%;
+  min-height: var(--tap-min);
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.time-spent-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  border-radius: var(--r-md);
+}
+.time-spent-toggle:hover .text-eyebrow,
+.time-spent-expander:hover { color: var(--color-ink); }
+.time-spent-toggle:focus-visible,
+.time-spent-expander:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.time-spent .icon-twist { transition: transform var(--dur-fast) var(--ease-standard); }
+.time-spent .time-spent-twist-open { transform: rotate(90deg); }
+.time-spent-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-2) var(--space-4); }
+.time-spent-figures { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin: 0; min-width: 0; }
+.time-spent-figure { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-medium); white-space: nowrap; }
+.time-spent-word { margin: 0; color: var(--color-ink-2); white-space: nowrap; }
+.time-spent-sub { margin: var(--space-1) 0 0; font-weight: var(--fw-medium); color: var(--color-ink-2); }
+.time-spent-rows,
+.time-spent-docs { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.time-spent-docs { gap: var(--space-2); }
+.time-spent-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 2px 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+}
+.time-spent-row > .text-num { flex: none; white-space: nowrap; }
+.time-spent-row-label { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.time-spent-part { padding-left: var(--space-5); }
+.time-spent-doc-title { margin: 0; color: var(--color-ink-2); overflow-wrap: anywhere; }
+.time-spent-docs .text-muted { margin: 0; overflow-wrap: anywhere; }
+.time-spent-skeleton { display: flex; flex-direction: column; gap: var(--space-2); }

@@ -220,6 +220,22 @@ function streamingAssistant(s: LiveState): Extract<LiveEntry, { kind: "assistant
   return undefined;
 }
 
+/**
+ * The text of the reply an Esc stops, to hand back to the box: the text blocks of the message the
+ * agent is still writing (not its thinking, not its tool calls), each with its ends trimmed, joined
+ * by a blank line. Empty, so nothing goes back, when no message is being written (a tool runs, or the
+ * turn is between messages: the text before is finished), when it has no text yet, or while a
+ * compaction runs.
+ */
+export function interruptedReplyText(s: LiveState, compacting: boolean): string {
+  if (compacting) return "";
+  const reply = streamingAssistant(s);
+  if (!reply) return "";
+  const texts: string[] = [];
+  for (const b of reply.blocks) if (b?.type === "text" && b.text.trim()) texts.push(b.text.trim());
+  return texts.join("\n\n");
+}
+
 function lastAssistant(s: LiveState): Extract<LiveEntry, { kind: "assistant" }> {
   const current = streamingAssistant(s);
   if (current) return current;

@@ -54,6 +54,7 @@ import {
   BATON_SENT_EVENT,
   applyQueue,
   emptyLive,
+  interruptedReplyText,
   liveEventsOf,
   markDelivered,
   markQueued,
@@ -2170,10 +2171,18 @@ export function ChatView(props: {
     return true;
   };
 
-  const abort = () => {
+  const abort = (via: "button" | "esc") => {
     // Stop before the waking connection opened: what the tab kept never goes, and its text comes back.
     if (outbox.size) return giveUpWake();
-    if (socket.send({ type: "abort" })) setLive("stopping", true);
+    if (!socket.send({ type: "abort" })) return;
+    setLive("stopping", true);
+    // An Esc stop also puts the reply's text so far in the box, ahead of the draft. The queued
+    // messages the server drains come back after it, ahead of both (queue_cleared). The button doesn't.
+    const reply = via === "esc" ? interruptedReplyText(live, compacting()) : "";
+    if (reply) {
+      setRestored({ text: reply });
+      announce("The reply so far is in the message box.");
+    }
   };
 
   // Check-now and reconnect, offered only while this runtime has the remote extension's command.

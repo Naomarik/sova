@@ -1143,8 +1143,8 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .setup-row:has(.setup-toggle) { align-items: center; }
 .setup-toggle { flex: none; min-height: var(--tap-min); }
 .setup-row-off .setup-name,
-.setup-row-off .setup-manual { display: block; font-size: var(--fs-caption); color: var(--color-ink-muted); }
-.setup-facts { opacity: .5; }
+.setup-row-off .setup-facts { opacity: .5; }
+.setup-manual { display: block; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 /* A narrow card folds its rows (base.css), but not a row with a switch: it stays one line, the
    name ellipsised, then ≈tokens, then the switch at the right edge. */
 @container (max-width: 417.98px) {

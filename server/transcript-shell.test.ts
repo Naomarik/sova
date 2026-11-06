@@ -8,7 +8,7 @@ import { describe, test } from "node:test";
 import type { HEntry } from "../shared/harness";
 import type { ChatServerMessage, TranscriptItem } from "../shared/protocol";
 import { isInput, messageCount } from "../shared/row-counts";
-import { conversationTokens } from "./context-tab";
+import { conversationTalk, conversationTokens } from "./context-tab";
 import { normalizeEntries } from "./transcript";
 import { onWire, rowsFor, withRows } from "./wire-rows";
 
@@ -77,5 +77,7 @@ describe("a command's row", () => {
     const h = (o: Partial<Extract<HEntry, { kind: "shell" }>>): HEntry => ({ id: "s", parentId: null, kind: "shell", command: "env", output: "x".repeat(4000), ...o });
     assert.ok(conversationTokens([h({})]) > 900, "a shared command counts");
     assert.equal(conversationTokens([h({ private: true })]), 0, "a `!!` command counts nothing");
+    assert.deepEqual(conversationTalk([h({ private: true })]).user, { count: 0, tokens: 0 }, "nor is it one of your messages in the Context tab");
+    assert.equal(conversationTalk([h({})]).user.count, 1, "a shared one is");
   });
 });

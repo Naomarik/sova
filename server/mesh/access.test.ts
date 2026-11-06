@@ -220,6 +220,11 @@ describe("the route classifier", () => {
     assert.deepEqual(classifyRequest("GET", "/api/brand-new-route"), { need: "full", rule: "default" });
   });
 
+  test("Time Spent asks only for the sessions grant (§app.subagents-pane/time-spent-record)", () => {
+    assert.equal(classifyRequest("POST", "/api/time-spent/report").need, "sessions");
+    assert.equal(classifyRequest("GET", "/api/time-spent").need, "sessions");
+  });
+
   test("tour reader/position, outside-sharing and runtime routes have distinct exact capabilities", () => {
     const base = "/api/tours/chat/tour/editions/edition";
     const cases = [

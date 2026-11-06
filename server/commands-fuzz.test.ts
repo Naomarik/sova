@@ -564,6 +564,7 @@ const FIXTURES: Record<string, Fixture> = {
   "session.context.file": { values: () => ({ session: session()[0], file: "/etc/hostname" }), status: 404 },
   "session.context.view": { values: () => ({ session: session()[0] }), status: 200 },
   "session.align.triage": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.time-spent": { values: () => ({ session: session()[0] }), status: 200 },
   "session.workers.checks": { values: () => ({ session: session()[0] }), status: 200 },
   "session.insights": { values: () => ({ session: session()[0] }), status: 200 },
   "session.group.list": { values: () => ({}), status: 200 },

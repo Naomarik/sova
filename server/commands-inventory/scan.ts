@@ -56,6 +56,8 @@ export const PAGE_PLUMBING: readonly RouteKey[] = [
   "GET /api/attachment", "DELETE /api/attachment", "POST /api/upload", "GET /api/transcript/tool",
   "GET /api/links/:id/thread", "POST /api/links/:id/seen", "GET /api/targets/:name/folders", "GET /api/explanations",
   "GET /api/sessions/dir", "GET /api/projects/:pid/mcp", "GET /api/projects/:pid/icon",
+  // Time Spent's page report (§app.subagents-pane/time-spent-record): the page's own clock, never an action.
+  "POST /api/time-spent/report",
 ];
 /** Steps of starting a chat, on its empty screen before the first message (`session.create` takes a profile itself). */
 export const CHAT_START: readonly RouteKey[] = ["POST /api/sessions/loadout", "POST /api/sessions/profile"];

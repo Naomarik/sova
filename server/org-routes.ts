@@ -9,6 +9,7 @@ import { attentionChanged } from "./attention-memo";
 import { unroutedConflicts } from "./decisions";
 import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, handoffTo, keepLink, keptLinks, linkTimes, liveLinkCount, nameOf, namesOf, offerTo, revokeCurrent, rotateLink, sessionPathOf, setAbilities, setHiddenFromOwner, takeBack, withdrawOffer } from "./baton";
 import { readBatonSettings } from "./baton-settings";
+import { waitDismissed } from "./needs-you-dismissed";
 import { sessionSeesImages } from "./baton-images";
 import { BusyError } from "./chat-handle";
 import { knownLogin, loginOptions, UNKNOWN_LOGIN } from "./claude-login-known";
@@ -210,11 +211,16 @@ function waitingIn(orgId: string, dir: string, rows: readonly BatonSession[]): W
   }
   for (const r of rows) {
     if (r.state !== "open" && r.state !== "needs-you") continue;
-    const field = batonSummaryField(sessionPathOf(dir, r));
+    const path = sessionPathOf(dir, r);
+    const field = batonSummaryField(path);
+    // A session the operator dismissed counts in nothing it covered (§app.session-list/needs-you-dismiss).
+    for (const p of field?.proposals ?? []) if (w.needsYou.proposals > 0 && waitDismissed(path, p.since)) w.needsYou.proposals--;
     if (field?.needsYou) {
+      if (waitDismissed(path, field.needsYou.since)) continue;
       w.needsYou.replies++;
       w.batons.set(r.sessionId, "reply");
     } else if (field?.sendLink) {
+      if (waitDismissed(path, field.sendLink.since)) continue;
       w.needsYou.links++;
       w.batons.set(r.sessionId, "link");
     }

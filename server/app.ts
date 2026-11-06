@@ -169,6 +169,8 @@ import { tagRoutes } from "./tags-backfill";
 import { pushRoutes } from "./push-routes";
 import { chatTrialRoutes } from "./chat-trial-routes";
 import { sessionsChanged } from "./list-generation";
+import { attentionChanged } from "./attention-memo";
+import { dismissChat, undoDismissal } from "./needs-you-dismissed";
 import { resourceMonitor } from "./resource-monitor";
 import { routeOpName } from "./stall-recorder-route";
 import { opEnd, opStart, stallRecording } from "./stall-recorder";
@@ -1708,6 +1710,37 @@ export function buildApp(deps: AppDeps) {
   app.get("/api/overseer", async (c) => c.json(await overseerInfo(), 200, { "Cache-Control": "no-store" }));
   app.post("/api/overseer/clear", async (c) => c.json(await clearOverseer()));
   app.get("/api/overseer/attention", async (c) => c.json(await attentionForWire(), 200, { "Cache-Control": "no-store" }));
+  // Dismiss a chat's Needs you row until it has something new, and Undo (§app.session-list/needs-you-dismiss).
+  // A chat's only: an item of no session has no session file to name. Each write drops the 3 s digest and pushes.
+  app.post("/api/attention/dismiss", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { path?: unknown; since?: unknown } | null;
+    const since = body?.since;
+    if (typeof since !== "number" || !Number.isFinite(since) || since < 0) return c.json({ error: "since must be the newest item's time, in ms" }, 400);
+    const path = resolveSessionPath(typeof body?.path === "string" ? body.path : null);
+    if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    try {
+      const d = dismissChat(path, since);
+      attentionChanged();
+      sessionsChanged();
+      return c.json({ path, since: d.since });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
+  app.delete("/api/attention/dismiss", async (c) => {
+    const path = resolveSessionPath(c.req.query("path") ?? null);
+    if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    try {
+      const undone = undoDismissal(path);
+      attentionChanged();
+      sessionsChanged();
+      return c.json({ path, undone });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
   // What it can do, for its About panel (§app.overseer/about): the same reading of extension commands as sova_ext.
   app.get("/api/overseer/abilities", async (c) => c.json(await overseerAbilities(), 200, { "Cache-Control": "no-store" }));
   // Approvals for later, standing rules and the running count (§app.overseer/approvals, §app.overseer/caps).

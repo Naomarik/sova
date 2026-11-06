@@ -292,7 +292,9 @@ const READ_PREFIXES = [
 // `commands`: the catalogue a script reads (server/commands-routes.ts), this machine's own door only.
 // `mcp`: this computer's servers (§app.mcp/this-computer): a peer's own page is where they're read and changed.
 // `audit`: the record of who ran what (server/command-audit.ts): the operator's, never below `full`.
-const FULL_PREFIXES = ["auth", "h", "i", "s", "t", "updates", "commands", "audit", "draft-specs", "mcp"];
+const FULL_PREFIXES = [
+  // A chat dismissed from Needs you (§app.session-list/needs-you-dismiss): the operator's own list.
+  "attention","auth", "h", "i", "s", "t", "updates", "commands", "audit", "draft-specs", "mcp"];
 // A project mode's command (§chat.mode-menu/project-mode-commands) runs one of the project's own programs: `full`,
 // whatever method, though it sits under `mode`, which stays `sessions`.
 const MODE_COMMAND_PATH = "/api/mode/command";

@@ -238,7 +238,9 @@
     "session.job.stop",
     "session.pairs.list",
     "session.pairs.unpair",
-    "session.pairs.resume"
+    "session.pairs.resume",
+    "attention.dismiss",
+    "attention.undismiss"
   ],
   "retired": [
     "settings.agents.get",

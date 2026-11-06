@@ -62,7 +62,7 @@ interface Opened {
   calls: string[];
 }
 
-async function open(width: number, scheme: "light" | "dark", o: { items?: AttentionItem[]; act?: number } = {}): Promise<Opened> {
+async function open(width: number, scheme: "light" | "dark", o: { items?: AttentionItem[]; act?: number; refuseDismiss?: boolean } = {}): Promise<Opened> {
   const phone = width < 768;
   const ctx = await browser.newContext({ viewport: { width, height: 1000 }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce", colorScheme: scheme });
   // Sova wears dark unless a stored theme stands on light: the operating system's scheme doesn't choose.
@@ -80,6 +80,11 @@ async function open(width: number, scheme: "light" | "dark", o: { items?: Attent
     if (route.request().method() === "POST" && (p.endsWith("/runtime/merge") || p.endsWith("/cancel"))) {
       calls.push(p);
       return route.fulfill(json(p.endsWith("/cancel") ? { ok: true } : { projectId: PID, playbookState: "idle", services: [] }));
+    }
+    if (p === "/api/attention/dismiss") {
+      calls.push(`${route.request().method()} ${p}`);
+      if (o.refuseDismiss) return route.fulfill(json({ error: "Disk full." }, 500));
+      return route.fulfill(json(route.request().method() === "POST" ? { path: "", since: 0 } : { path: "", undone: true }));
     }
     if (p === "/api/project-services/merge.status") return route.fulfill(json({ v: 1, verb: "merge.status", ok: true, merge: { view: { served: false, checks: "unset", target: "master" } } }));
     if (p === "/api/sessions") return route.fulfill(json([CHAT, REVIEW, GUESS]));
@@ -119,7 +124,7 @@ const row = (p: Page, title: string) => p.locator(".ny-row").filter({ has: p.loc
 
 describe("Needs you rows", () => {
   for (const [width, scheme] of [[1280, "light"], [1280, "dark"], [390, "light"], [390, "dark"]] as const) {
-    test(`every kind of row at ${width}px ${scheme}: its name, a state word, title, detail and what it opens, with no folder path`, async () => {
+    test(`every kind of row at ${width}px ${scheme}: its name, a state word and title, its sentence only as hover text, with no folder path`, async () => {
       const o = await open(width, scheme);
       try {
         assert.equal(await o.page.evaluate(() => document.documentElement.dataset.theme ?? "dark"), scheme);
@@ -128,8 +133,7 @@ describe("Needs you rows", () => {
         assert.equal(await o.page.locator(".ny-row").count(), 9);
         for (const r of await o.page.locator(".ny-row").all()) {
           assert.ok(((await r.locator(".chip").textContent()) ?? "").trim(), "a word on every chip");
-          assert.ok(((await r.locator(".ny-action").textContent()) ?? "").trim(), "what it opens");
-          assert.ok((await r.locator(".ny-action .icon").getAttribute("aria-hidden")) === "true", "the arrow is decoration");
+          assert.equal(await r.locator(".ny-detail, .ny-action").count(), 0, "two lines: no sentence, no word for what it opens");
         }
         const text = (await region(o.page).innerText()).toLowerCase();
         assert.doesNotMatch(text, /\/w\/shop|\/w\/docs|\/w\/work|\/w\/play/, "no full folder path in a row");
@@ -137,10 +141,9 @@ describe("Needs you rows", () => {
         assert.equal(await o.page.locator(".ny-link a, .ny-link button").count(), 0);
         const failed = row(o.page, "Publish failed");
         assert.equal((await failed.locator(".chip").textContent())?.trim(), "Failed");
-        assert.equal(await failed.locator(".ny-detail").textContent(), "v0.4.0: origin refused the push");
-        assert.match((await failed.locator(".ny-action").textContent()) ?? "", /^Open Release/);
-        assert.equal((await row(o.page, "Ready to publish").locator(".ny-action").textContent())?.trim(), "Review and Publish");
-        assert.equal(await row(o.page, "Ready to publish").locator(".ny-detail").textContent(), "v0.2.0");
+        assert.equal(await failed.locator(".ny-link").getAttribute("title"), "Publish failed\nv0.4.0: Publish failed: origin refused the push");
+        assert.equal(await row(o.page, "Ready to publish").locator(".ny-link").getAttribute("title"), "Ready to publish\nReady to publish · v0.2.0");
+        assert.doesNotMatch(text, /open chat|read report|open release|review and publish|origin refused/, "what a row opens and why are not on it");
         assert.equal((await row(o.page, "Fix the login page").locator(".chip").textContent())?.trim(), "Question");
         assert.equal(await row(o.page, "Sending is down").locator(".ny-name").textContent(), "WhatsApp sending");
         assert.equal(await row(o.page, "The page is slow").locator(".ny-name").textContent(), "Acme · Shop");
@@ -173,8 +176,8 @@ describe("Needs you rows", () => {
       const failed = row(o.page, "Publish failed");
       assert.equal(await failed.locator("a, button").count(), 1);
       const name = await failed.getByRole("link").evaluate((el) => el.textContent);
-      assert.equal(name, "Notes · work/notesFailedPublish failedv0.4.0: origin refused the pushOpen Release");
-      assert.equal(await failed.getByRole("link").getAttribute("title"), null, "the words aren't said a second time as a description");
+      assert.equal(name, "Notes · work/notesFailedPublish failed");
+      assert.equal(await failed.getByRole("link").getAttribute("title"), "Publish failed\nv0.4.0: Publish failed: origin refused the push", "the sentence is its description, not more of its name");
       // The name line, far from the link's text box edges: the stretch reaches the row's corner.
       const box = (await failed.boundingBox())!;
       await o.page.mouse.click(box.x + box.width - 6, box.y + box.height - 6);
@@ -192,12 +195,13 @@ describe("Needs you rows", () => {
         const merge = review.getByRole("button", { name: "Merge Branch" });
         await merge.waitFor();
         assert.equal(await review.locator(".ny-link button").count(), 0, "a sibling of the link");
-        const a = (await review.locator(".ny-action").boundingBox())!;
+        const a = (await review.locator(".ny-title").boundingBox())!;
         const b = (await merge.boundingBox())!;
-        assert.ok(a.x + a.width <= b.x, `the action's words and the button stand apart: ${JSON.stringify({ a, b })}`);
-        assert.ok(Math.abs(a.y + a.height / 2 - (b.y + b.height / 2)) <= 4, "on one line");
+        assert.ok(a.y + a.height <= b.y, `a line of its own under the title: ${JSON.stringify({ a, b })}`);
         assert.ok(b.y + b.height <= (await review.boundingBox())!.y + (await review.boundingBox())!.height, "inside the row");
         await review.getByRole("link").focus();
+        await o.page.keyboard.press("Tab");
+        assert.equal(await o.page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Dismiss Set up deploy");
         await o.page.keyboard.press("Tab");
         assert.equal(await o.page.evaluate(() => document.activeElement?.textContent?.trim()), "Merge Branch");
         const at = o.page.url();
@@ -208,7 +212,7 @@ describe("Needs you rows", () => {
         assert.equal(o.page.url(), at, "the button acted; the row's link stayed shut");
 
         const held = row(o.page, "Publishing v0.4.0");
-        assert.match((await held.locator(".ny-detail").textContent()) ?? "", /Publishing v0\.4\.0 starts in \d+ min unless you cancel it\./);
+        assert.match((await held.locator(".ny-link").getAttribute("title")) ?? "", /Publishing v0\.4\.0 starts in \d+ min unless you cancel it\./);
         await held.getByRole("button", { name: "Cancel: Publishing v0.4.0" }).click();
         await new Promise<void>((done) => {
           const t = setInterval(() => o.calls.some((c) => c.endsWith("/held/hold_7/cancel")) && (clearInterval(t), done()), 20);
@@ -219,6 +223,74 @@ describe("Needs you rows", () => {
       }
     });
   }
+
+  test("Dismiss on a computer: on a chat's row only, shown on hover or focus without moving anything; pressed, the row leaves, focus moves on, the toast Undoes it", async () => {
+    const o = await open(1280, "light");
+    try {
+      const chat = row(o.page, "Fix the login page");
+      const x = chat.getByRole("button", { name: "Dismiss Fix the login page" });
+      assert.equal(await x.getAttribute("title"), "Dismiss");
+      assert.equal(await o.page.locator(".ny-row:not(.ny-row-dismissable) .ny-dismiss").count(), 0);
+      for (const t of ["Publish failed", "Deploy failed", "Sending is down", "The page is slow", "Publishing v0.4.0"]) assert.equal(await row(o.page, t).locator(".ny-dismiss").count(), 0, `${t}: a row of no session`);
+      assert.equal(await row(o.page, "Tidy the docs").locator(".ny-dismiss").count(), 1, "the softer tier has it");
+      await o.page.mouse.move(1000, 900);
+      const opacity = () => x.evaluate((el) => getComputedStyle(el).opacity);
+      const before = (await chat.locator(".chip").boundingBox())!;
+      assert.equal(await opacity(), "0", "at rest it doesn't show");
+      await chat.hover();
+      await o.page.waitForFunction(() => getComputedStyle(document.querySelector(".ny-dismiss")!).opacity === "1");
+      assert.deepEqual(await chat.locator(".chip").boundingBox(), before, "showing it moves nothing");
+      await o.page.mouse.move(1000, 900);
+      await chat.getByRole("link").focus();
+      await o.page.keyboard.press("Tab");
+      assert.equal(await opacity(), "1", "keyboard focus shows it");
+      const at = o.page.url();
+      await x.press("Enter");
+      await o.page.locator(".toast", { hasText: "Dismissed." }).waitFor();
+      assert.equal(o.page.url(), at, "pressing it doesn't navigate");
+      assert.ok(o.calls.includes("POST /api/attention/dismiss"));
+      assert.equal(await row(o.page, "Fix the login page").count(), 0, "the row left");
+      assert.equal(await o.page.evaluate(() => document.activeElement?.classList.contains("ny-link")), true, "focus went to the next row");
+      await o.page.locator(".toast").getByRole("button", { name: "Undo" }).click();
+      await row(o.page, "Fix the login page").waitFor();
+      assert.ok(o.calls.includes("DELETE /api/attention/dismiss"));
+    } finally {
+      await o.ctx.close();
+    }
+  });
+
+  test("Dismiss on a phone: always shown, at the full tap size; the last row's toast outlives the region", async () => {
+    const only = ITEMS.filter((i) => i.id === "c3");
+    const o = await open(390, "light", { items: only });
+    try {
+      const x = row(o.page, "Tidy the docs").getByRole("button", { name: "Dismiss Tidy the docs" });
+      assert.equal(await x.evaluate((el) => getComputedStyle(el).opacity), "1");
+      const box = (await x.boundingBox())!;
+      assert.ok(box.width >= 44 && box.height >= 44, JSON.stringify(box));
+      await x.click();
+      await o.page.locator(".toast", { hasText: "Dismissed." }).waitFor();
+      assert.equal(await o.page.locator(".sidebar-needs-you").count(), 0, "nothing left: the region is omitted");
+      await o.page.locator(".toast").getByRole("button", { name: "Undo" }).click();
+      await row(o.page, "Tidy the docs").waitFor();
+    } finally {
+      await o.ctx.close();
+    }
+  });
+
+  test("a dismissal Sova can't save: the row comes back and the toast says why, with no Undo", async () => {
+    const o = await open(1280, "light", { refuseDismiss: true });
+    try {
+      await row(o.page, "Tidy the docs").hover();
+      await row(o.page, "Tidy the docs").getByRole("button", { name: "Dismiss Tidy the docs" }).click();
+      const toast = o.page.locator(".toast", { hasText: "Couldn't dismiss it." });
+      await toast.waitFor();
+      assert.match((await toast.textContent()) ?? "", /Disk full/);
+      await row(o.page, "Tidy the docs").waitFor();
+      assert.equal(await toast.getByRole("button", { name: "Undo" }).count(), 0);
+    } finally {
+      await o.ctx.close();
+    }
+  });
 
   test("what the region did stands: the count, the softer tier under its label, the cut note, collapse", async () => {
     const o = await open(1280, "light", { act: 40 });

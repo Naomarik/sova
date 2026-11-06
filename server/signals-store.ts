@@ -52,6 +52,11 @@ export interface StoredTurn {
       finished turn, five questions). An older record's `asks_user` answer (asked of every turn,
       before 28 Sep 2026, schema absent) is dropped on load. */
   schema?: 2 | 3;
+  /** ms epoch Sova first found the version this reply's go-ahead ask was about landed (noteAskSettled,
+      §app.decisions/asks-user). It belongs to this reply: a newer turn replaces the record, and with it
+      this. From then on the ask stays off the row, whatever becomes of the worktree or this process.
+      Queued is never noted: an entry can still be cancelled or stop short of landing. */
+  settled?: number;
 }
 
 /** One "stuck" check of a running subagent worker's current turn (repeated while it runs). */
@@ -210,18 +215,80 @@ export function signalKinds(answers: Record<string, Answer>): SignalKind[] {
 const RESTART_GO_RE = /\b(?:restart|merge|merging|land|landing|push|pushing|go live)\b/i;
 export const isRestartGo = (sentence: string | undefined): boolean => !!sentence && RESTART_GO_RE.test(sentence);
 
+/** Whether a stored turn's ask is for a restart, a Land, a merge or a push: the turn card's kind when
+    it has one, and the sentence only for a record from before the card (the sentence alone also
+    matches a needs-info ask such as "Landing still needs your answers"). */
+export function isGoAsk(t: Pick<StoredTurn, "answers" | "detail">): boolean {
+  const kind = choiceOf(t.answers.ask_kind);
+  return kind !== undefined ? kind === "restart-or-merge-go" : isRestartGo(t.detail);
+}
+
+/** One worktree a session tracks, as the go-ahead check reads it (merge-readiness.ts askTreesOf). */
+export interface AskTree {
+  /** Git finds the branch in its target (WorktreeReadiness.merged), so whatever it held at the reply landed. */
+  merged: boolean;
+  /** The branch's head when the reply ended; absent: not known. */
+  headAtReply?: string;
+  /** The branch's newest queue entry: `began` is when it was approved (ms epoch). */
+  entry?: { state: string; commit: string; began?: number };
+}
+
+const ENTRY_ON_ITS_WAY: ReadonlySet<string> = new Set(["queued", "checking"]);
+const ENTRY_LANDED: ReadonlySet<string> = new Set(["landed", "pushed"]);
+
+/** Whether a queue entry is for the version the reply was about: it holds the reply's head commit or began after the
+    reply. An entry for an older commit isn't: a newer commit needs a new Land. */
+const entryIsFor = (e: NonNullable<AskTree["entry"]>, t: AskTree, replyAt: number): boolean =>
+  (t.headAtReply !== undefined && e.commit === t.headAtReply) || (e.began !== undefined && e.began > replyAt);
+
+/** Whether the version a reply was about has landed on this worktree: merged, or a landed or pushed entry for it. */
+export function versionLanded(t: AskTree, replyAt: number): boolean {
+  return t.merged || (!!t.entry && ENTRY_LANDED.has(t.entry.state) && entryIsFor(t.entry, t, replyAt));
+}
+
+/** Whether the version a reply was about has landed on this worktree or is in the queue on its way right now. */
+export function versionCovered(t: AskTree, replyAt: number): boolean {
+  return versionLanded(t, replyAt) || (!!t.entry && ENTRY_ON_ITS_WAY.has(t.entry.state) && entryIsFor(t.entry, t, replyAt));
+}
+
 /**
- * A row's signals without an `asks-you` that only asks for a restart or merge go while merge
- * readiness already says a restart is owed (§app.decisions/asks-user): the readiness badge says it.
+ * Note on the stored signal that a go-ahead ask's version has landed in every worktree the session
+ * tracks (§app.decisions/asks-user). Noted once, when first observed; a session tracking none notes
+ * nothing. Returns the store to read on with.
  */
-export function withoutRestartAsk<R extends Pick<SessionSummary, "id" | "signals" | "readiness">>(row: R, data = readSignals()): R {
+export function noteAskSettled(row: Pick<SessionSummary, "id" | "signals">, trees: readonly AskTree[] | undefined, data = readSignals(), file = signalsFile(), now = Date.now()): SignalsFile {
+  const t = data.sessions[row.id];
+  if (!t || t.settled || !trees?.length || !row.signals?.kinds.includes("asks-you") || row.signals.turnId !== t.turnId || !isGoAsk(t)) return data;
+  if (!trees.every((x) => versionLanded(x, t.replyAt))) return data;
+  return updateSignals((d) => {
+    const cur = d.sessions[row.id];
+    if (cur?.turnId === t.turnId) cur.settled = now;
+  }, file);
+}
+
+/**
+ * A row's signals without an `asks-you` that only asks for a restart or merge go, while merge
+ * readiness says a restart is owed (the readiness badge says it), once the version it was about is
+ * noted landed, or while `trees`, the queue's current view, has it queued or landed in every worktree
+ * (§app.decisions/asks-user). Reads only what it is given: no Git, no note. Without `trees`, no live cover.
+ */
+export function withoutRestartAsk<R extends Pick<SessionSummary, "id" | "signals" | "readiness">>(row: R, data = readSignals(), trees?: readonly AskTree[]): R {
   const sig = row.signals;
-  if (!sig?.kinds.includes("asks-you") || !row.readiness?.restartPending) return row;
+  if (!sig?.kinds.includes("asks-you")) return row;
   const stored = data.sessions[row.id];
-  if (!stored || !(choiceOf(stored.answers.ask_kind) === "restart-or-merge-go" || isRestartGo(stored.detail))) return row;
+  if (!stored || !isGoAsk(stored)) return row;
+  const live = !!trees?.length && sig.turnId === stored.turnId && trees.every((x) => versionCovered(x, stored.replyAt));
+  if (!(stored.settled || row.readiness?.restartPending || live)) return row;
   const kinds = sig.kinds.filter((k) => k !== "asks-you");
   const { signals: _drop, ...rest } = row;
   return (kinds.length ? { ...rest, signals: { ...sig, kinds } } : rest) as R;
+}
+
+/** One row's go-ahead ask, as every listing path reads it: note what has landed, then leave out what is settled or
+    queued. Returns the row and the store to read on with. */
+export function settleGoAsk<R extends Pick<SessionSummary, "id" | "signals" | "readiness">>(row: R, trees: readonly AskTree[] | undefined, data = readSignals()): { row: R; data: SignalsFile } {
+  const after = noteAskSettled(row, trees, data);
+  return { row: withoutRestartAsk(row, after, trees), data: after };
 }
 
 /** The turn card's answers on the wire, or undefined for a record from before the card. */

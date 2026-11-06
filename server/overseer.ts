@@ -111,6 +111,7 @@ import { openOfferOf } from "./session-offers";
 import { openCardsOf } from "./transcript-cards";
 import { readDecisionSettings } from "./decide-settings";
 import { onAttentionChanged } from "./attention-memo";
+import { endDismissals, prunable, readDismissed, takeUndone } from "./needs-you-dismissed";
 import { sessionFeed } from "./session-feed";
 import { notifyBlockers, pushWanted, resetPushState } from "./push";
 import { MEMORY_TOOLS } from "../shared/memory";
@@ -373,6 +374,7 @@ export function attentionDigest(list?: readonly SessionSummary[]): Promise<Retur
       return {
         summary: s,
         dialogs: chat ? chat.dialogs.map((d) => d.title || d.method) : [],
+        dialogAt: chat ? Math.max(0, ...chat.dialogs.map((d) => d.since ?? 0)) : 0,
         queued: chat ? chat.queue.web : 0,
         failedWorkers: live?.failed ?? 0,
         workerErrorAt: live?.failed ? workerErrorTime(live.failed, live.errorTimes, noteFailedRise(s.path, live.failed, nowMs)) : undefined,
@@ -396,7 +398,9 @@ export function attentionDigest(list?: readonly SessionSummary[]): Promise<Retur
     // A release ready to publish, held for the operator, failed, gone quiet, or asked for (server/project-services/release.ts).
     const releases = await (await import("./project-services/release-wire")).releaseAttentionItems().catch(() => []);
     // WhatsApp sending down (§app.outreach/sender-health): from the sender's last reading, no round trip.
-    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...senderAttention(), ...ownerAttention(), ...conflictAttention(), ...restartItems(sessions), ...deploys, ...releases]);
+    const dismissed = readDismissed();
+    endDismissals(prunable(dismissed, new Set(sessions.map((s) => s.path))));
+    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...senderAttention(), ...ownerAttention(), ...conflictAttention(), ...restartItems(sessions), ...deploys, ...releases], { of: dismissed, ended: endDismissals });
   })();
   digestMemo = { at: now, value, ...(fed ? { list: fed } : {}) };
   value.catch(() => {
@@ -426,7 +430,7 @@ function teamStallField(id: string): { teamStall?: { since: number; names: strin
 
 /** The digest as the wire has it (no badge). */
 export async function attentionForWire(list?: readonly SessionSummary[]): Promise<AttentionDigest> {
-  const { badge: _badge, ...digest } = await attentionDigest(list);
+  const { badge: _badge, dismissedKeys: _keys, ...digest } = await attentionDigest(list);
   return digest;
 }
 
@@ -896,7 +900,8 @@ export async function runNoteMessage(branch: readonly HEntry[], now = new Date()
     note = runNote({
       now,
       branch,
-      act: { keys: new Set(act.map(blockerKey)), complete: act.length >= digest.counts.act },
+      // A blocker the user dismissed still stands: it hasn't cleared.
+      act: { keys: new Set([...act.map(blockerKey), ...digest.dismissedKeys]), complete: act.length >= digest.counts.act },
       session: (id) => states.get(id) ?? null,
       prompted,
       reported,
@@ -1398,10 +1403,13 @@ async function tick(ignoreGap = false): Promise<{ briefed: string[] } | { error:
     feedHold();
     feedHold = null;
   }
+  // Before the digest (needs-you-dismissed.ts takeUndone): what an Undo brought back is no new blocker, up to what it covered.
+  const undone = takeUndone();
   if (!st && !wanted) return { briefed: [] }; // no Overseer yet and no phone to tell: nothing to do
   const digest = await attentionDigest();
   const act = digest.items.filter((i) => i.tier === "act");
-  if (wanted) await notifyBlockers(act, digest.badge.act);
+  const backByUndo = act.filter((i) => (undone.get(i.path) ?? -Infinity) >= i.since);
+  if (wanted) await notifyBlockers(act, digest.badge.act, Date.now(), backByUndo.map(blockerKey));
   if (!st) return { briefed: [] }; // no Overseer yet: nothing to brief
   const path = await pathOfId(st.current);
   if (!path) return { briefed: [] };
@@ -1412,6 +1420,7 @@ async function tick(ignoreGap = false): Promise<{ briefed: string[] } | { error:
   // An option card waiting for the user is Needs you but never a brief (§app.overseer/attention-digest).
   const briefable = act.filter((i) => !NEVER_BRIEFED.has(i.kind));
   const counts = new Map(briefable.map((i) => [blockerKey(i), blockerCount(i)]));
+  if (announced) for (const i of backByUndo) if (counts.has(blockerKey(i))) announced.set(blockerKey(i), { count: counts.get(blockerKey(i))! });
   const d = briefDecision({ current: briefable.map(blockerKey), counts, announced, proactivity: settings.proactivity, now: Date.now(), lastBriefAt: ignoreGap ? 0 : lastBriefAt, unattended: ignoreGap ? 0 : unattended, overseerIdle: idle });
   const before = announced;
   announced = d.announced;

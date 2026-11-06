@@ -176,6 +176,8 @@ export type CommandId =
   | "overseer.notes.set"
   | "overseer.get"
   | "overseer.memory.get"
+  | "attention.dismiss"
+  | "attention.undismiss"
   | "models.list"
   | "extensions.list"
   | "targets.list"
@@ -3384,6 +3386,18 @@ export interface CommandParams {
   "overseer.get": Record<string, never>;
   /** The Overseer's memory switch: on or off, its type and size, and its state. (only looks; needs the card's owner trusted) */
   "overseer.memory.get": Record<string, never>;
+  /** Take a chat's row out of Needs you and every count until the chat has something new. (changes something; needs the card's owner trusted) */
+  "attention.dismiss": {
+    /** The session, by id or by path */
+    "session"?: string;
+    /** The newest waiting item it covers, in ms since the epoch */
+    "since": number;
+  };
+  /** Put a dismissed chat's row back in Needs you, with no new notification. (changes something; needs the card's owner trusted) */
+  "attention.undismiss": {
+    /** The session, by id or by path */
+    "session"?: string;
+  };
   /** The models this server can run, with favorites and the policy's verdicts. (only looks; needs the card's owner trusted) */
   "models.list": Record<string, never>;
   /** The installed extensions and whether each backend answers. (only looks; needs the card's owner trusted) */
@@ -3895,6 +3909,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "overseer.notes.set": "changes",
   "overseer.get": "looks",
   "overseer.memory.get": "looks",
+  "attention.dismiss": "changes",
+  "attention.undismiss": "changes",
   "models.list": "looks",
   "extensions.list": "looks",
   "targets.list": "looks",

@@ -550,12 +550,14 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .org-needs > .list { padding-bottom: var(--space-1); }
 /* One Needs you row: the link stretched over the row is its target; a real action sits above that stretch, in the
    row's last line, beside the words of what the row opens. */
-.ny-row { position: relative; border-bottom: var(--stroke-thin) solid var(--color-border); transition: background-color var(--dur-fast) var(--ease-standard); }
+.ny-row { --ny-dismiss-size: var(--control-sm); position: relative; border-bottom: var(--stroke-thin) solid var(--color-border); transition: background-color var(--dur-fast) var(--ease-standard); }
 .ny-row:last-child { border-bottom: 0; }
 .ny-row:hover { background: var(--color-sunken); }
 .ny-row-current,
 .ny-row-current:hover { background: var(--color-accent-tint); }
 .ny-link { display: flex; flex-direction: column; gap: 2px; padding: var(--space-3) var(--space-4); color: inherit; text-decoration: none; }
+/* The × has its lane whether it shows or not: showing it moves nothing (§app.session-list/needs-you-dismiss). */
+.ny-row-dismissable > .ny-link { padding-inline-end: calc(var(--ny-dismiss-size) + var(--space-3)); }
 .ny-link:hover { color: inherit; }
 .ny-link::after { content: ""; position: absolute; inset: 0; }
 .ny-link:focus-visible { outline: none; }
@@ -565,13 +567,21 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .ny-name { flex: 1; min-width: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ny-title { font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--color-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ny-title-muted { color: var(--color-ink-muted); }
-.ny-detail { font-size: var(--fs-caption); color: var(--color-ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ny-action { display: inline-flex; align-self: flex-start; align-items: center; gap: var(--space-1); margin-top: var(--space-1); font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--color-accent); }
-.ny-acts { position: relative; z-index: 1; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-top: calc(-1 * (var(--tap-min) + var(--space-3))); padding: 0 var(--space-4) var(--space-3); pointer-events: none; }
+.ny-dismiss { position: absolute; z-index: 1; top: var(--space-2); right: var(--space-1); width: var(--ny-dismiss-size); height: var(--ny-dismiss-size); min-width: 0; min-height: 0; padding: 0; opacity: 0; }
+.ny-row:hover > .ny-dismiss,
+.ny-row:has(> .ny-link:focus-visible) > .ny-dismiss,
+.ny-dismiss:focus-visible { opacity: 1; }
+@media (hover: none), (pointer: coarse) {
+  .ny-row { --ny-dismiss-size: var(--tap-min); }
+  .ny-row-dismissable > .ny-link { padding-inline-end: calc(var(--tap-min) + var(--space-2)); }
+  /* Centred by its offset, never a transform: a button's own press and hover transforms would move its target. */
+  .ny-dismiss { top: calc(50% - var(--tap-min) / 2); right: 0; width: var(--tap-min); height: var(--tap-min); opacity: 1; }
+  .ny-row:has(> .ny-acts > *) > .ny-dismiss { top: var(--space-1); }
+}
+.ny-acts { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: var(--space-2); padding: 0 var(--space-4) var(--space-3); pointer-events: none; }
 .ny-acts > * { pointer-events: auto; }
 .ny-acts:not(:has(*)) { display: none; }
 .ny-acts .button { min-height: var(--tap-min); }
-.ny-row:has(.ny-acts > *) .ny-action { min-height: var(--tap-min); margin-top: 0; }
 .playbook-review-act { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .playbook-review-act .button { min-height: var(--tap-min); }
 .org-section + .org-section { border-top: var(--stroke-thin) solid var(--color-border); }

@@ -25,7 +25,7 @@ type ChatHandle = import("./chat-handle").ChatHandle;
 type ChatClient = import("./chat-handle").ChatClient;
 const { runAction, mountChatActions, parseAction, OPEN_CAP_MS } = await import("./chat-actions");
 type ActionDeps = import("./chat-actions").ActionDeps;
-const { recordFrame, deliverFrames } = await import("./ws");
+const { recordFrame, deliverFrames, postedFrames } = await import("./ws");
 const { canonicalPath } = await import("./paths");
 const { readSeen } = await import("./seen");
 
@@ -356,4 +356,19 @@ test("an action stamps no seen mark; /api/chat/frames' path still does", async (
   await flush();
   await flush();
   assert.equal(typeof readSeen()[id], "number", "a page's frames still stamp it seen");
+});
+
+// ---- shell mode (§chat.shell-mode/who) -----------------------------------------------------------------
+
+test("a command from shell mode is no action, and a page's handed-over frames never carry one to its chat", async () => {
+  assert.ok("error" in parseAction({ type: "shell", command: "ls", clientId: "c1" }), "no in-chat action runs a command");
+  assert.ok("error" in parseAction({ type: "shell_stop", id: "sh_1" }));
+  const shell = { type: "shell", command: "rm -rf x", clientId: "c1" } as ChatClientMessage;
+  assert.deepEqual(postedFrames({ frames: [shell, { type: "abort" }, { type: "shell_stop", id: "sh_1" }] }), [{ type: "abort" }]);
+  assert.deepEqual(postedFrames({ frames: [shell] }), [], "only commands: nothing to deliver");
+  const [path] = session();
+  deliverFrames(path, [shell, { type: "abort" }]);
+  await flush();
+  await flush();
+  assert.deepEqual(chat.got.map((m) => m.type), ["abort"], "the chat got the stop, never the command");
 });

@@ -91,20 +91,23 @@ function confinedOperations(prepared: PreparedSessionCommand, expected: string):
   };
 }
 
-/** The newest bashExecution entry for this result not claimed yet, as history; undefined while pi holds it
-    (P40: a result recorded mid-stream waits in pi's pending list until the run ends or the next prompt). */
-function writtenEntry(s: AgentSession, command: string, output: string, since: number, claimed: Set<string>): HEntry | undefined {
+/** The entry pi wrote for this result: the OLDEST bashExecution entry recorded since the run began with its
+    command, output and privacy that no earlier run claimed (two identical commands that end in one reply are
+    flushed in their order, so each run takes its own); undefined while pi holds it (P40: a result recorded
+    mid-stream waits in pi's pending list until the run ends or the next prompt). */
+function writtenEntry(s: AgentSession, command: string, output: string, priv: boolean, since: number, claimed: Set<string>): HEntry | undefined {
   const entries = s.sessionManager.getEntries();
+  let found: { id: string; e: unknown } | undefined;
   for (let i = entries.length - 1; i >= 0; i--) {
-    const e = entries[i] as { id?: string; type?: string; timestamp?: string; message?: { role?: string; command?: unknown; output?: unknown; timestamp?: unknown } };
-    if (e.type !== "message" || e.message?.role !== "bashExecution" || !e.id || claimed.has(e.id)) continue;
+    const e = entries[i] as { id?: string; type?: string; message?: { role?: string; command?: unknown; output?: unknown; timestamp?: unknown; excludeFromContext?: unknown } };
+    if (e.type !== "message" || e.message?.role !== "bashExecution" || !e.id) continue;
     if (typeof e.message.timestamp === "number" && e.message.timestamp < since) break;
-    if (e.message.command === command && e.message.output === output) {
-      claimed.add(e.id);
-      return toHEntry(e) ?? undefined;
-    }
+    if (claimed.has(e.id) || e.message.command !== command || e.message.output !== output || (e.message.excludeFromContext === true) !== priv) continue;
+    found = { id: e.id, e }; // keep going back: an older match wins
   }
-  return undefined;
+  if (!found) return undefined;
+  claimed.add(found.id);
+  return toHEntry(found.e) ?? undefined;
 }
 
 /** The shell of a pi session; `session()` is the runtime's session at the call. */
@@ -122,13 +125,17 @@ export function piShell(session: () => AgentSession, sandbox: () => SandboxSeen)
         return { refused: `An extension's command hook failed, so nothing ran: ${err instanceof Error ? err.message : String(err)}`, why: "failed" };
       }
       const saved = (result: { output: string }): Promise<HEntry | null> => {
-        const now = writtenEntry(s, command, result.output, since, claimed);
+        const now = writtenEntry(s, command, result.output, excludeFromContext, since, claimed);
         if (now) return Promise.resolve(now);
         return new Promise((resolve) => {
+          let done = false;
           const off = s.subscribe(() => {
-            const got = writtenEntry(s, command, result.output, since, claimed);
+            if (done) return;
+            const got = writtenEntry(s, command, result.output, excludeFromContext, since, claimed);
             if (!got) return;
-            off();
+            done = true;
+            // Leave after pi's emit: unsubscribing inside it would skip the next listener, another run's.
+            queueMicrotask(off);
             resolve(got);
           });
         });

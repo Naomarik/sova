@@ -13,9 +13,9 @@
       "§app.project-setup/land-gate"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T19:18Z",
-      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
+      "by": "naomarik",
+      "at": "2026-11-06T00:58Z",
+      "source": "pi-session:01a1ac85-7019-77e8-b78d-58217842f2ef#e4f5f750"
     },
     "code": [
       "server/merge-queue/queue.ts",
@@ -46,7 +46,11 @@
       "server/ready-to-land.ts",
       "src/lib/merge-queue.ts",
       "src/lib/merge-queue-sent-back.test.ts",
-      "src/components/ProjectOverseerPanel.tsx"
+      "src/components/ProjectOverseerPanel.tsx",
+      "server/merge-queue/scratch.ts",
+      "server/merge-queue/scratch.test.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/owners.ts"
     ]
   },
   "§app.merge-queue/blame": {
@@ -179,12 +183,14 @@
       "server/merge-queue-ui.integration.test.ts",
       "src/app.css",
       "server/merge-queue/reviewer.ts",
-      "shared/fixed-names.ts"
+      "shared/fixed-names.ts",
+      "server/merge-queue/owners.ts",
+      "server/merge-queue/owners.test.ts"
     ],
     "agreed": {
-      "by": "Omar",
-      "at": "2026-11-05T02:42Z",
-      "source": "pi-session:ca4bcdc5-a6ff-4dbd-bf8b-509ecc177885#bcd45c06"
+      "by": "naomarik",
+      "at": "2026-11-06T00:24Z",
+      "source": "pi-session:01a1ac85-7019-77e8-b78d-58217842f2ef#e4f5f750"
     }
   },
   "§app.merge-queue/checks": {
@@ -235,16 +241,18 @@
       "§app.merge-queue/run"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-02T15:04Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+      "by": "naomarik",
+      "at": "2026-11-05T16:44Z",
+      "source": "pi-session:01a1ac85-7019-77e8-b78d-58217842f2ef#e4f5f750"
     },
     "code": [
       "server/merge-queue/conflicts.ts",
       "server/merge-queue/conflicts.test.ts",
       "server/merge-queue/queue.ts",
       "server/merge-queue/scenarios-conflicts.integration.test.ts",
-      "server/merge-queue/queue.test.ts"
+      "server/merge-queue/queue.test.ts",
+      "server/merge-queue/scratch.ts",
+      "server/merge-queue/scratch.test.ts"
     ]
   },
   "§app.merge-queue/empty": {
@@ -640,6 +648,45 @@
       "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
     }
   },
+  "§app.merge-queue/resolve-copy": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/conflicts",
+      "§app.merge-queue/run",
+      "§app.merge-queue/chats",
+      "§chat.merge-queue/thread",
+      "§app.project-setup/land-gate"
+    ],
+    "code": [
+      "server/merge-queue/scratch.ts",
+      "server/merge-queue/scratch.test.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/queue.test.ts",
+      "server/merge-queue/contract.ts",
+      "server/merge-queue/thread.ts",
+      "server/merge-queue/thread.test.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/owners.ts",
+      "server/merge-queue/owners.test.ts",
+      "server/insights.ts",
+      "server/queue-chats.test.ts",
+      "server/worktree-cleanup.ts",
+      "server/worktree-cleanup.test.ts",
+      "server/app.ts",
+      "server/merge-queue/scenarios-conflicts.integration.test.ts",
+      "playbooks/merge-queue/PLAYBOOK.md",
+      "playbooks/merge-queue/references/conflicts.md",
+      "playbooks/merge-queue/scripts/conflict-hunks.mjs",
+      "server/worktree-targeted-removal.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-05T16:44Z",
+      "source": "pi-session:01a1ac85-7019-77e8-b78d-58217842f2ef#e4f5f750"
+    }
+  },
   "§app.merge-queue/review": {
     "kind": "behavior",
     "authority": "accepted",
@@ -907,9 +954,9 @@
       "§app.project-setup/proposal"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T19:18Z",
-      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
+      "by": "naomarik",
+      "at": "2026-11-06T00:58Z",
+      "source": "pi-session:01a1ac85-7019-77e8-b78d-58217842f2ef#e4f5f750"
     },
     "code": [
       "server/merge-queue/view.ts",
@@ -952,7 +999,10 @@
       "server/merge-queue/run.ts",
       "server/merge-queue/checks.ts",
       "server/merge-queue/queue-newest-blocked.test.ts",
-      "server/merge-queue/scenarios-blame.integration.test.ts"
+      "server/merge-queue/scenarios-blame.integration.test.ts",
+      "server/merge-queue/scratch.ts",
+      "server/merge-queue/scratch.test.ts",
+      "server/merge-queue/owners.ts"
     ]
   },
   "§app/merge-queue": {
@@ -965,9 +1015,9 @@
       "§app.project-services/merge-verbs"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T09:23Z",
-      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#b4839707"
+      "by": "naomarik",
+      "at": "2026-11-06T00:58Z",
+      "source": "pi-session:01a1ac85-7019-77e8-b78d-58217842f2ef#e4f5f750"
     },
     "code": [
       "server/merge-queue/queue.ts",

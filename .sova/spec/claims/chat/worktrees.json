@@ -12,12 +12,22 @@
       "server/index.ts",
       "shared/protocol.ts",
       "server/app.ts",
-      "server/cleanup-dry-run.test.ts"
+      "server/cleanup-dry-run.test.ts",
+      "server/merge-tree-probe.ts",
+      "server/merge-tree-probe.test.ts",
+      "server/merge-queue/scratch.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/owners.ts"
     ],
     "requires": [
       "§chat.worktrees/merged-state",
       "§chat.worktrees/entry"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-05T16:44Z",
+      "source": "pi-session:01a1ac85-7019-77e8-b78d-58217842f2ef#e4f5f750"
+    }
   },
   "§chat.worktrees/dirty-freshness": {
     "kind": "behavior",

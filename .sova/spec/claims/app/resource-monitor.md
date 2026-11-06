@@ -113,6 +113,11 @@ says that it isn't.
   its own: the process itself by its pid (`worker-pid`), its Claude Code CLI by the chat's provider
   session ids (`session-id`), the rest of its unit or tree through it (`descendant`), and a process
   carrying its session file by that (`env`). The `cwd` heuristic never matches a worker's chat.
+- **A background job** (§app/background-jobs) has left its chat's unit, so it is measured with its
+  job unit's whole cgroup and charged through the job's record (`descendant`) to the chat that left
+  it, as that worker of its parent session when a worker did, whether or not that chat is running.
+  It is never counted as escaped or unattributed, and it falls under Tools and work. The list of
+  running jobs is re-read at most every 10 s; a job's processes, every tick.
 - **Sova's memory, four ways.** Every measured process falls in exactly one part, so the four
   add up to Sova's memory (`memory.total`): **Backend**, the server and its usage helper (the
   server's long-lived child running `server/usage-helper/main.ts`, which is never Not attributed);

@@ -87,7 +87,10 @@
       "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
       "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
       "pi-config/extensions/sandbox/shadow-prune.ts",
-      "pi-config/extensions/sandbox/README.md"
+      "pi-config/extensions/sandbox/README.md",
+      "server/background-jobs-request.ts",
+      "server/background-jobs-request.test.ts",
+      "server/background-jobs-request.integration.test.ts"
     ],
     "about": [
       "§chat.sandbox/what-on-enforces"

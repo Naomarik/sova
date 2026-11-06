@@ -1094,7 +1094,7 @@ or a card click. No helper session is needed.
   whose history can't be read. Never offered, whatever
   its folder: Sova's own server and its child processes, the `sova-runtime.service` unit, a chat
   process and any process a chat started (one with a chat or Sova's server among its ancestors, or
-  inside a chat's unit), any process of a copy's or shared service's unit, slot 0's adopted unit, and a listener
+  inside a chat's unit), any process of a background job's unit (§app/background-jobs), any process of a copy's or shared service's unit, slot 0's adopted unit, and a listener
   this user can't read. `stop-leftover {project, port}` stops one in the click's turn, after checking
   that the port is still held by the same process (same pid and start time) and that it is still safe;
   otherwise "It is no longer the process your card listed: nothing was stopped.", or "It is no longer
@@ -2081,9 +2081,12 @@ Sova composer (the Overseer sending through `sova_send` is not one), a group bat
 or a baton participant's message. Every message Sova sends on its own is `rpc`: Overseer briefs,
 auto-resume's prompts and reports, `sova_send`, a schedule's message, a profile start's first
 message, a project overseer's prompt or look, another session's send, and a baton wrap-up. A
-message queued behind a running turn keeps its source to its hand-off. Never `extension`, which the vision-delegate extension skips,
-so an image on such a message is still described for a model that can't see it. So the wake-nudge
-extension's limit of 30 fires without input restarts only on a person's input.
+message queued behind a running turn keeps its source to its hand-off. None of these is `extension`, which the vision-delegate extension skips,
+so an image on such a message is still described for a model that can't see it. A background job's
+end card is not one of Sova's sends: the chat's own wake-nudge extension delivers it, so like a wake
+nudge it arrives as `extension`, never `interactive` or `rpc` (an `rpc` card would restart a worker's
+count of wakes). So the wake-nudge extension's limit of 30 fires without input restarts only on a
+person's input.
 
 ## §app.overseer/standing-notes — Standing notes
 

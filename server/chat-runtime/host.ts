@@ -814,6 +814,8 @@ export class ChatRuntimeHost {
     this.lastSeq = e.seq;
     this.link?.send({ t: "event", event: e });
     if (e.type === "closed" && !this.reopening && !this.closing) void this.close("closed", { dispose: false });
+    // A turn over before any mirror saw it running still counts: the quiet clock starts again here.
+    if (e.type === "settled") this.quietSince = this.now();
     this.pokeSoon();
   }
 

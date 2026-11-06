@@ -137,7 +137,7 @@ describe("the model", () => {
     for (const t of ["agent_spawn", "team_create", "agent_new_thing"]) assert.ok(ex.includes(t), t);
     assert.ok(!ex.includes("read"));
     assert.ok(!ex.includes("link_send"), "the link tools are no capability: no removal names them");
-    assert.deepEqual(excludedTools(["shell", "edit"], []).sort(), ["bash", "edit", "write"]);
+    assert.deepEqual(excludedTools(["shell", "edit"], []).sort(), ["background_job", "bash", "edit", "write"]);
   });
 
   test("the retired `links` removal: a profile file naming it still parses, read as if it didn't", () => {

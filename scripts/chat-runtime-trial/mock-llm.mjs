@@ -20,6 +20,8 @@
 //   [ask]      first a call to the trial_ask tool (trial-dialog.ts: it opens a confirm dialog), then
 //              a text quoting the tool's answer
 //   [bash N]   first a bash call `sleep N; echo BASH-DONE`, then a text quoting its output
+//   [par-bash ["A","B"]]  bash calls with commands A and B in one message (pi runs them side by
+//              side), then a text quoting their output
 //   [served]   first a call to the test-only server-hosted tool trial_served_sleep (a server test hook
 //              registers it; it sleeps 10 s), then a text quoting its result
 //   [served-late]  10 text parts first, then a call to trial_served_sleep {ms:1000}: a call the chat makes
@@ -71,7 +73,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /** The pid whose TCP socket has local port `port` and talks to this mock (0 if unknown). */
 const callerPid = (port) => socketOwner(port, server.address().port);
 let n = 0;
-const TAGGED = /\[(long|bash|big|call|served|served-late|served-quick|spawn|spawn-claude|ask|explain|handoff|btw)\b/;
+const TAGGED = /\[(long|par-bash|bash|big|call|served|served-late|served-quick|spawn|spawn-claude|ask|explain|handoff|btw)\b/;
 
 
 /** Every [call NAME {json}] in text, in order; a call's arguments may hold further tags (skipped). */
@@ -158,6 +160,7 @@ const server = createServer(async (req, res) => {
   const firstTag = TAGGED.exec(tags)?.[1];
   const long = resume ? [null, "20", "resume"] : /\[long (\d+)(?: #([\w-]+))?\]/.exec(tags);
   const bash = /\[bash (\d+)\]/.exec(tags);
+  const parBash = /\[par-bash (\[.*?\])\]/.exec(tags);
   const big = /\[big (\d+)\]/.exec(tags);
   const calls = /\[call [\w-]+ \{/.test(tags) ? parseCalls(tags) : [];
   // A [call …] sequence still running: the newest user message holding [call …] tags, after which
@@ -175,14 +178,18 @@ const server = createServer(async (req, res) => {
   const explain = /Where the page goes/.test(tags) ? /\[explain(?: (\d+))?\]/.exec(tags) : null;
   const handoff = /\[handoff(?: (\d+))?\]/.exec(tags) ?? (/End your reply with the note inside <handoff>/.test(tags) ? [null, null] : null);
   const btw = /\[btw(?: #([\w-]+))?\]/.exec(tags);
-  const scenario = compact ? "compact" : resume ? "long" : carryOn || firstTag === "call" ? "call" : big ? "big" : long ? "long" : bash ? "bash" : calls.length ? "call" : /\[served-late\]/.test(tags) ? "served-late" : /\[served-quick\]/.test(tags) ? "served-quick" : /\[served\]/.test(tags) ? "served" : spawnClaude ? "spawn-claude" : spawnN ? "spawn" : /\[ask\]/.test(tags) ? "ask" : explain ? "explain" : handoff ? "handoff" : btw ? "btw" : "plain";
+  const scenario = compact ? "compact" : resume ? "long" : carryOn || firstTag === "call" ? "call" : parBash ? "par-bash" : big ? "big" : long ? "long" : bash ? "bash" : calls.length ? "call" : /\[served-late\]/.test(tags) ? "served-late" : /\[served-quick\]/.test(tags) ? "served-quick" : /\[served\]/.test(tags) ? "served" : spawnClaude ? "spawn-claude" : spawnN ? "spawn" : /\[ask\]/.test(tags) ? "ask" : explain ? "explain" : handoff ? "handoff" : btw ? "btw" : "plain";
   let pid = 0;
   try {
     pid = callerPid(req.socket.remotePort);
   } catch {}
   // Code markers in the tools' descriptions (T25 edits one into an extension in its checkout).
   const marks = [...new Set(JSON.stringify(ask.tools ?? []).match(/GEN-MARK-\w+/g) ?? [])];
-  const entry = { n: id, at: new Date().toISOString(), pid, scenario, tag: scenario === "long" ? (long?.[2] ?? null) : null, afterTool, step: stepNo, toolText: toolText.slice(0, 1000), anyResume, userText: userText.slice(0, 300), hashes: [...new Set([...tags.matchAll(/#([\w-]+)\]/g)].map((m) => m[1]))], ...(afterTool ? { turnText: turnText.slice(0, 300) } : {}), messages: msgs.length, tools: (ask.tools ?? []).map((t) => t.function?.name ?? t.name).filter(Boolean).length, ...(marks.length ? { marks } : {}) };
+  // Background jobs: whether this request offers background_job, and whether its system prompt carries the standing output instruction.
+  const sysText = msgs.filter((m) => m.role === "system" || m.role === "developer").map((m) => textOf(m.content)).join("\n");
+  const jobTool = (ask.tools ?? []).some((t) => (t.function?.name ?? t.name) === "background_job");
+  const jobGuide = /Send a background command's output to a file/.test(sysText);
+  const entry = { n: id, at: new Date().toISOString(), pid, scenario, tag: scenario === "long" ? (long?.[2] ?? null) : null, afterTool, step: stepNo, toolText: toolText.slice(0, 1000), anyResume, userText: userText.slice(0, 300), hashes: [...new Set([...tags.matchAll(/#([\w-]+)\]/g)].map((m) => m[1]))], ...(afterTool ? { turnText: turnText.slice(0, 300) } : {}), messages: msgs.length, tools: (ask.tools ?? []).map((t) => t.function?.name ?? t.name).filter(Boolean).length, ...(marks.length ? { marks } : {}), ...(jobTool ? { jobTool } : {}), ...(jobGuide ? { jobGuide } : {}) };
   if (log) appendFileSync(log, JSON.stringify(entry) + "\n");
 
   res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
@@ -255,6 +262,14 @@ const server = createServer(async (req, res) => {
     for (let i = 0; i < words.length; i += 8000) chunk({ content: words.slice(i, i + 8000) });
     chunk({}, { finish_reason: "stop" });
     usage(500, Math.round(words.length / 4));
+  } else if (scenario === "par-bash" && !afterTool) {
+    chunk({ role: "assistant", content: "" });
+    JSON.parse(parBash[1]).forEach((command, i) => {
+      chunk({ tool_calls: [{ index: i, id: `call_${id}_${i}`, type: "function", function: { name: "bash", arguments: "" } }] });
+      chunk({ tool_calls: [{ index: i, function: { arguments: JSON.stringify({ command }) } }] });
+    });
+    chunk({}, { finish_reason: "tool_calls" });
+    usage(500, 20);
   } else if (scenario === "bash" && !afterTool) {
     call("bash", { command: `sleep ${bash[1]}; echo BASH-DONE` });
   } else if (scenario === "served-late" && !afterTool) {

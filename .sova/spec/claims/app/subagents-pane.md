@@ -213,7 +213,8 @@ strip, empty or not: a tab that came and went would move the strip under the rea
   the tab changes, so a tab a door opened is never off-screen at 375px.
 - **Session** is what the session is, in this order: Path (with Copy Session Path and Copy Resume
   Command), Context (its sentence followed by a **See what fills it** link that opens the Context
-  tab), Repository, Worktrees (§chat.worktrees/pane), Identity, Compactions, Changes, and Memory
+  tab), Repository, Worktrees (§chat.worktrees/pane), Background jobs while it has any
+  (§app.background-jobs/pane), Identity, Compactions, Changes, and Memory
   (§app.subagents-pane/memory-outline).
   The session's actions sit at the right end of the Path heading row, so they add no row of their
   own and the path wraps below them at full width: Move into group (a small square folder icon,

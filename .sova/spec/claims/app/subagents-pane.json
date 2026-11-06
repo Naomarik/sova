@@ -263,12 +263,13 @@
       "src/components/CostBreakdown.tsx",
       "src/cost-breakdown.css",
       "src/lib/cost-history.ts",
-      "src/components/ContextTab.tsx"
+      "src/components/ContextTab.tsx",
+      "src/components/BackgroundJobs.tsx"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-03T14:34Z",
-      "source": "pi-session:7a7258e9-bad0-4fcd-9d36-2acd1d3e9527#52bfacda"
+      "by": "omar",
+      "at": "2026-11-04T11:00Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
     }
   },
   "§app.subagents-pane/tokens": {

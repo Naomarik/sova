@@ -446,8 +446,11 @@ These are the gaps the sandbox leaves, each named so that nobody relies on it th
 - **Check, then act.** The in-process file tools check a path and then use it, so a `bash`
   command running at the same time could swap in a symlink between the two steps.
 - **Background processes end with the command.** Anything a `bash` call starts in the background
-  dies when that call returns; long-running servers cannot be started from inside. Exposing a
-  host port inside (`localPorts`) is implemented on macOS only.
+  dies when that call returns, so Sova has nothing to keep as a background job, and long-running
+  servers cannot be started from inside. A write-only worker's one way around that is to ask Sova
+  to start the job, which runs under the worker's own confinement (§app.background-jobs/request); a
+  sandboxed chat has none (§app.background-jobs/where). Exposing a host port inside (`localPorts`) is
+  implemented on macOS only.
 - **Kernel and bubblewrap bugs.** The boundary is as strong as user namespaces and bubblewrap on
   this kernel. On macOS it is as strong as Seatbelt, whose profile language Apple does not
   document and whose `sandbox-exec` it marks deprecated.

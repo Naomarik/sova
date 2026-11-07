@@ -90,6 +90,8 @@ export interface MergeChatRequest {
   at: string;
   delivery?: "queued" | "delivered" | "held" | "fallback-tab" | "fallback-line";
   answer?: MergeChatAnswer;
+  /** fixed: when the merge thread checked the fix (it is the Land's from then on). */
+  checkedAt?: string;
 }
 
 /** A standing approval's phase while it isn't in line (state `with-chat`). */

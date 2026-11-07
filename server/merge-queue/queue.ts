@@ -2144,7 +2144,17 @@ export class ProjectQueue {
       }
       // A fix on top of work the user asked for meanwhile (their commit came first): the card asks them once.
       if (answer?.commit && r) {
-        const unasked = await this.unaskedWork(e.commit, answer.commit, r.at);
+        // Counted from the newest commit the Land already covers: the pinned commit, or an earlier request's fix the
+        // thread checked (its requeue may have been held, so the pin didn't move) that this fix builds on.
+        let from = e.commit;
+        for (const x of [...(e.requests ?? [])].reverse()) {
+          const c = x.id !== r.id && x.checkedAt && x.answer?.kind === "fixed" ? x.answer.commit : undefined;
+          if (c && c !== answer.commit && (await isAncestor(this.git, this.root, c, answer.commit)) && (await isAncestor(this.git, this.root, from, c))) {
+            from = c;
+            break;
+          }
+        }
+        const unasked = await this.unaskedWork(from, answer.commit, r.at);
         if (unasked) {
           this.raiseDecision(e, { kind: "fix-ok", question: `The fix sits on top of ${unasked} the merge queue didn't ask for: Land takes ${e.branch} at ${answer.commit.slice(0, 7)}, that work included`, choices: [], raisedBy: "queue", actions: ["land", "remove"] });
           e.fix = { request: r.id, told: true, at: this.iso() };
@@ -2165,6 +2175,8 @@ export class ProjectQueue {
           return this.withPosition(e);
         }
       }
+      // Checked: covered by the Land from here on, whether or not it goes back in line now.
+      if (r) r.checkedAt = this.iso();
       await this.requeueFix(e, answer?.commit ?? e.commit, r?.id);
       return this.withPosition(e);
     });

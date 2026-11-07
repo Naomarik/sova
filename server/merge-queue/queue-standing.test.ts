@@ -560,3 +560,41 @@ describe("a fix that decides something that is the user's (q3)", () => {
     }
   });
 });
+
+describe("fixes under one Land build on each other", () => {
+  test("two requests in a row, each fixed with a commit (the first held out of line by a failing check): the second fix's checked commit isn't 'work the queue didn't ask for'", async () => {
+    let failing: string | null = null;
+    const kit = makeKit({ deps: { draftsHash: () => undefined, chatCheckFailing: async () => failing, thread: (ev) => ev.kind === "fix" } });
+    try {
+      kit.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit tests failed" }));
+      const q = await kit.q();
+      const b = kit.repo.branch("feat/chain", { "ch.txt": "c\n" });
+      const { entry } = await q.add({ branch: "feat/chain", by: "land-button", session: "s1" });
+      const rq1 = lastRequest(await withChat(kit, entry.id));
+      // Commit times are whole seconds: the first request is dated 2019, fix one 2020 (after it, before the second).
+      lastRequest(q.entry(entry.id) as MergeEntry).at = "2019-01-01T00:00:00.000Z";
+      writeFileSync(join(b.path, "ch.txt"), "c1\n");
+      sh(b.path, "add", "ch.txt");
+      execFileSync("git", ["commit", "-q", "-m", "fix one"], { cwd: b.path, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid", GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z" } });
+      const fix1 = sh(b.path, "rev-parse", "HEAD");
+      await q.respond(rq1.id, "s1", { answer: "fixed", commit: fix1 });
+      failing = "this chat's last test run failed"; // the requeue is held: the pin stays at the Land's commit
+      let e = await q.fixRuling(entry.id, rq1.id, true, "");
+      assert.equal(e.standing?.phase, "waiting-fix");
+      assert.equal(e.commit, b.head, "not re-pinned yet");
+      const rq2 = lastRequest(e);
+      assert.equal(rq2.kind, "blocked");
+      const fix2 = kit.repo.commitOn(b.path, { "ch.txt": "c2\n" }, "fix two");
+      failing = null;
+      kit.run.set(null);
+      await q.respond(rq2.id, "s1", { answer: "fixed", commit: fix2 });
+      e = await q.fixRuling(entry.id, rq2.id, true, "");
+      assert.equal(e.decision, undefined, "fix one is the Land's, not unasked work");
+      assert.equal(e.state, "queued");
+      assert.equal(e.commit, fix2);
+      await landed(kit, entry.id);
+    } finally {
+      await kit.done();
+    }
+  });
+});

@@ -52,6 +52,13 @@ test("a row with no time doesn't show, Reading and its parts included; the rest 
   assert.deepEqual(under.rows, [], "under a second shows no 0s row");
 });
 
+test("Your Time's rows, in order, Reviewing Screenshots after Reviewing Changes; each counts toward You", () => {
+  const rows = { typing: 1, dictating: 1, scrolling: 1, changes: 1, screenshots: 1, tours: 1, other: 1 };
+  const v = spentView(record({ rows }), live(), 0);
+  assert.deepEqual(v.rows.map((r) => r.label), ["Typing", "Dictating", "Scrolling", "Reviewing Changes", "Reviewing Screenshots", "Viewing Tours", "Other"]);
+  assert.equal(v.you, 7, "the new row's second is in You, so the rows still add up");
+});
+
 test("Reading's parts are named without the word Reading, over the record's own keys", () => {
   const v = spentView(record({ rows: { "reading-transcript": 3, "reading-alignments": 2, "reading-workers": 1 } }), live(), 0);
   assert.deepEqual(v.reading!.parts.map((p) => [p.key, p.label]), [["reading-transcript", "Main Thread"], ["reading-alignments", "Alignments"], ["reading-workers", "Workers"]]);

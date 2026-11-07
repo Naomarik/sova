@@ -9,6 +9,7 @@
 import { createEffect, createMemo, createRoot, createSignal, getOwner, onCleanup, onMount, type Accessor } from "solid-js";
 import { TIME_SPENT_MAX_DOCS, TIME_SPENT_MAX_ID_CHARS, TIME_SPENT_REPORT_ROUTE, type TimeSpentReport } from "../../shared/time-spent";
 import { hostOf, hostUrl } from "./mesh";
+import { lightbox } from "./ui-state";
 import {
   addSeconds,
   addSums,
@@ -571,6 +572,10 @@ export function startTimeSpent(opts: { focused: Accessor<string | null>; elsewhe
     createEffect(() => dispatch({ type: "sessions", paths: sessionsOnScreen(mounted().filter((m) => !m.front || m.front()).map((m) => m.path), panesOpen()) }));
     createEffect(() => dispatch({ type: "focused", path: opts.focused() }));
     createEffect(() => dispatch({ type: "elsewhere", on: opts.elsewhere() }));
+    // The one full-size image viewer, whatever opened it. It knows no session: it counts for the pane counted as it
+    // opens, the one whose image was just pressed, as every foreground view does.
+    const viewer = foregroundSwitch("screenshots");
+    createEffect(() => viewer(!!lightbox()));
   });
   listen();
   dispatch({ type: "focus", pane: paneOf(document.activeElement) });

@@ -9,7 +9,7 @@ export type TimeRow = TimeSpentRow;
 /** A foreground view: its kind, the alignment document its report shows, and the session it opened over. */
 export interface Foreground {
   id: number;
-  kind: "changes" | "tours" | "alignment";
+  kind: "changes" | "screenshots" | "tours" | "alignment";
   doc?: string;
   session: string | null;
 }

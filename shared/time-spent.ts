@@ -31,7 +31,8 @@ export const TIME_SPENT_ROWS: readonly TimeSpentRow[] = [
 export const TIME_SPENT_REPORT_ROUTE = "/api/time-spent/report";
 export const TIME_SPENT_READ_ROUTE = "/api/time-spent";
 
-/** The most a report may carry, whatever a page sends; over them the route answers 400. */
+/** The most a report may carry, whatever a page sends; over them the route answers 400. A row this computer doesn't
+    know, within the id limit, counts as `other`. */
 export const TIME_SPENT_MAX_BODY_BYTES = 64 * 1024;
 export const TIME_SPENT_MAX_SLICES = 300;
 export const TIME_SPENT_MAX_DOCS = 32;

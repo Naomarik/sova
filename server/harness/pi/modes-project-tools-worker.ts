@@ -2,7 +2,8 @@
 // mode/project-tools-worker.ts with this file, in the same slot. The same hooks as the extension's file
 // (project-tools-worker.ts): the parent's saved copies, the same definitions, on for the worker's life,
 // refused while its sandbox is on. One addition: a personal mode's programs are told the worker's checkout
-// as their project root (§chat.mode-menu/personal-modes), as the parent chat's are.
+// as their project root (§chat.mode-menu/personal-modes), as the parent chat's are: asked at each call, since these
+// register before session_start and until then `cwd` is the process's own folder, Sova's code.
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT } from "../../../pi-config/extensions/sandbox/state.ts";
 import { projectToolDefinitions, PROJECT_TOOLS_FILE_ENV, readWorkerToolsFile } from "../../../pi-config/extensions/mode/project-tools.ts";
 import { isPersonalDir, projectRootForDir } from "../../modes/personal";
@@ -16,8 +17,8 @@ export default function projectToolsWorker(pi: PiExtensionAPI): void {
   let sandboxOn = false;
   const names: string[] = [];
   for (const copy of copies) {
-    const projectRoot = isPersonalDir(copy.dir) ? projectRootForDir(copy.dir, cwd) : undefined;
-    for (const definition of projectToolDefinitions(copy, { ...(projectRoot !== undefined ? { projectRoot } : {}), cwd: () => cwd, sandboxOn: () => sandboxOn })) {
+    const projectRoot = isPersonalDir(copy.dir) ? { projectRoot: () => projectRootForDir(copy.dir, cwd) } : {};
+    for (const definition of projectToolDefinitions(copy, { ...projectRoot, cwd: () => cwd, sandboxOn: () => sandboxOn })) {
       pi.registerTool(definition as never);
       names.push(definition.name);
     }

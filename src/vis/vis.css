@@ -73,10 +73,46 @@
   line-height: var(--lh-caption);
   color: var(--color-ink-muted);
 }
-/* At phone width the head keeps the title and trades the button words for their icons. */
+/* A chart's reader controls (kinds/chart/ChartControls.tsx): the segmented view switch, then the
+   Log / Sort / % toggles. Short words, never icons, so the share build needs none. */
+.vis-chart-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); flex: none; }
+.vis-chart-controls:empty { display: none; }
+.vis-chart-views {
+  display: inline-flex;
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.vis-chart-view {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: calc(var(--control-sm) - 2 * var(--stroke-thin));
+  padding: 0 var(--space-2);
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-2);
+  cursor: pointer;
+}
+.vis-chart-view + .vis-chart-view { border-left: var(--stroke-thin) solid var(--color-border); }
+.vis-chart-view:hover { background: var(--color-sunken); color: var(--color-ink); }
+.vis-chart-view[aria-checked="true"] { background: color-mix(in srgb, var(--color-accent-tint) 60%, transparent); color: var(--color-accent); }
+.vis-chart-view:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-width) * -1); }
+/* The model's own view: a small accent dot (its name is the hidden "(as drawn)"). */
+.vis-chart-model-dot { flex: none; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--color-accent); }
+.vis-chart-toggle { flex: none; font-variant-numeric: tabular-nums; }
+.vis-chart-toggle[aria-pressed="true"] { background: var(--color-accent-tint); color: var(--color-accent); }
+
+/* At phone width the head keeps the title and trades the button words for their icons; a chart's
+   controls take their own row under it. */
 @container vis (max-width: 420px) {
   .vis-action { font-size: 0; gap: 0; min-width: var(--control-sm); justify-content: center; }
   .vis-body { padding: var(--space-2); }
+  .vis-head:has(> .vis-chart-controls) { flex-wrap: wrap; }
+  .vis-head > .vis-chart-controls { order: 1; flex: 1 0 100%; padding-bottom: var(--space-1); }
+  .vis-chart-view, .vis-chart-toggle { min-height: var(--tap-min); }
 }
 
 /* ---- Placeholder states in markdown ------------------------------------------------------ */

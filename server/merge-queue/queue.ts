@@ -1459,7 +1459,11 @@ export class ProjectQueue {
       e.conflict = { files, verdict: stored, ours: j.ours.trim(), theirs: j.theirs.trim(), proposal: j.proposal.trim(), ...(commit ? { commit } : {}), ...(sanity ? { sanity } : {}), at: this.iso() };
       if (j.note !== undefined) this.setNote(e, j.note, "thread");
       if (e.ruling?.resolutionFailed) delete e.ruling.resolutionFailed;
+      // The thread judged it: no longer waiting for the thread.
+      if (e.fix?.request === CONFLICT_WAIT) delete e.fix;
       if (verdict === "no-behaviour-change") {
+        // Resolved by the thread: the conflict there at the Land never went back to the chat; a later one counts.
+        delete e.approval.conflictAtLand;
         e.notes = e.notes.filter((n) => n.kind !== "resolved");
         e.notes.push({ kind: "resolved", text: `Resolved a conflict in ${files.join(", ") || "the branch"}: ${j.proposal.trim()}`.slice(0, NOTE_MAX), at: this.iso() });
         delete e.reason;
@@ -2004,7 +2008,8 @@ export class ProjectQueue {
       delete e.approval.conflictAtLand;
       if (fingerprint) t.fingerprints = [...t.fingerprints, fingerprint].slice(-t.max);
       e.tries = t;
-      return { tries: t.used + 1, max: t.max };
+      // Counts no try, and shows none: the chat's next send-back that counts reads "try 1 of 3".
+      return { tries: t.used, max: t.max };
     }
     t.used += 1;
     if (fingerprint) t.fingerprints = [...t.fingerprints, fingerprint].slice(-t.max);
@@ -3026,6 +3031,8 @@ export class ProjectQueue {
     const run: MergeRun = { id: runId, entry: e.id, project: this.id, branch: e.branch, base, commit: e.commit, steps: [], checks: [], verdict: "running", startedAt: this.iso() };
     e.state = "checking";
     e.run = runId;
+    // Only the first run meets the conflict that was there at the Land; a later run (another target, a fix) counts.
+    if (e.runs.length > 0) delete e.approval.conflictAtLand;
     e.runs = [...e.runs, runId];
     delete e.reason;
     delete e.unclear;

@@ -77,7 +77,7 @@ export function standingWords(f: StandingFacts): { label: string; tone: Standing
     case "with-chat": {
       const answer = answerWords(s.answer) ?? undefined;
       if (s.checked) return { label: "Back with the chat", tone: "info", detail: "Fix checked · back in line", answer };
-      return { label: "Back with the chat", tone: "info", detail: [`try ${s.try} of ${s.of}`, s.why].filter(Boolean).join(" · "), answer };
+      return { label: "Back with the chat", tone: "info", detail: [s.try > 0 ? `try ${s.try} of ${s.of}` : null, s.why].filter(Boolean).join(" · "), answer };
     }
     case "waiting-thread":
       return { label: "Waiting for the merge thread", tone: "info", answer: answerWords(s.answer) ?? undefined };

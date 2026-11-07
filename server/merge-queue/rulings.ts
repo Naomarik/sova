@@ -139,7 +139,8 @@ export interface SendBackFacts {
  */
 export function sendBackText(e: Pick<MergeEntry, "branch" | "target" | "commit">, f: SendBackFacts): string {
   const lines: string[] = [];
-  const tryWords = f.attempt ? ` (try ${f.attempt.try} of ${f.attempt.of})` : "";
+  // try 0: the conflict already there at the Land, which counts no try (queue.ts countTry): no try is named.
+  const tryWords = f.attempt && f.attempt.try > 0 ? ` (try ${f.attempt.try} of ${f.attempt.of})` : "";
   switch (f.cause) {
     case "conflict": {
       const files = f.files ?? [];

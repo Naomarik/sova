@@ -298,7 +298,8 @@ describe("Approved · waiting for a fix", () => {
       assert.equal(lastRequest(back).kind, "fix");
       assert.match(lastRequest(back).text, /keep master's word/);
       assert.equal(back.tries?.used, 0, "the conflict already there at the Land counts no try");
-      assert.equal(back.standing?.phase === "with-chat" && back.standing.try, 1, "the chat's first fix");
+      assert.equal(back.standing?.phase === "with-chat" && back.standing.try, 0, "and shows none");
+      assert.doesNotMatch(lastRequest(back).text, /\(try \d/, "the request names no try");
       assert.ok(b.head);
 
       // Drafts that don't fit at the same commit, on another branch: blocked; fixed in place with no commit: in line by itself.
@@ -595,6 +596,126 @@ describe("fixes under one Land build on each other", () => {
       await landed(kit, entry.id);
     } finally {
       await kit.done();
+    }
+  });
+});
+
+describe("fixes under one Land: what still counts as unasked work", () => {
+  /** A commit on `path` dated `date` (commit times are whole seconds: tests date them apart). */
+  const datedCommit = (path: string, file: string, text: string, message: string, date: string) => {
+    writeFileSync(join(path, file), text);
+    sh(path, "add", file);
+    execFileSync("git", ["commit", "-q", "-m", message], { cwd: path, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid", GIT_COMMITTER_DATE: date } });
+    return sh(path, "rev-parse", "HEAD");
+  };
+  /** Land, sent back once (request 1 dated 2019), fix one (2020) answered on it. */
+  async function firstFix(failing: { why: string | null }) {
+    const kit = makeKit({ deps: { draftsHash: () => undefined, chatCheckFailing: async () => failing.why, thread: (ev) => ev.kind === "fix" } });
+    kit.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit tests failed" }));
+    const q = await kit.q();
+    const b = kit.repo.branch("feat/chain2", { "ch.txt": "c\n" });
+    const { entry } = await q.add({ branch: "feat/chain2", by: "land-button", session: "s1" });
+    const rq1 = lastRequest(await withChat(kit, entry.id));
+    lastRequest(q.entry(entry.id) as MergeEntry).at = "2019-01-01T00:00:00.000Z";
+    const fix1 = datedCommit(b.path, "ch.txt", "c1\n", "fix one", "2020-01-01T00:00:00Z");
+    await q.respond(rq1.id, "s1", { answer: "fixed", commit: fix1 });
+    return { kit, q, b, entry, rq1, fix1 };
+  }
+
+  test("a user commit between a checked fix and the next fix still counts: one commit, the pin unmoved", async () => {
+    const failing = { why: "this chat's last test run failed" as string | null };
+    const { kit, q, b, entry, rq1 } = await firstFix(failing);
+    try {
+      const held = await q.fixRuling(entry.id, rq1.id, true, ""); // checked, its requeue held by the failing check
+      const rq2 = lastRequest(held);
+      datedCommit(b.path, "u.txt", "the user's\n", "work the user asked for", "2021-01-01T00:00:00Z");
+      const fix2 = kit.repo.commitOn(b.path, { "ch.txt": "c2\n" }, "fix two");
+      failing.why = null;
+      await q.respond(rq2.id, "s1", { answer: "fixed", commit: fix2 });
+      const e = await q.fixRuling(entry.id, rq2.id, true, "");
+      assert.equal(e.decision?.kind, "fix-ok");
+      assert.match(e.decision?.question ?? "", /1 commit the merge queue didn't ask for/, "only the user's commit: fix one is the Land's");
+      assert.equal(e.commit, b.head, "the pin unmoved");
+    } finally {
+      await kit.done();
+    }
+  });
+
+  test("an earlier fix answered but never checked isn't the Land's: it and the user's commit both count", async () => {
+    const { kit, q, b, entry } = await firstFix({ why: null });
+    try {
+      // The thread never rules on fix one; another request follows (its diagnosis, say).
+      const rq2 = q.addRequest(q.entry(entry.id) as Parameters<typeof q.addRequest>[0], { kind: "fix", text: "the thread's diagnosis" });
+      datedCommit(b.path, "u.txt", "the user's\n", "work the user asked for", "2021-01-01T00:00:00Z");
+      const fix2 = kit.repo.commitOn(b.path, { "ch.txt": "c2\n" }, "fix two");
+      await q.respond(rq2.id, "s1", { answer: "fixed", commit: fix2 });
+      const e = await q.fixRuling(entry.id, rq2.id, true, "");
+      assert.equal(e.decision?.kind, "fix-ok");
+      assert.match(e.decision?.question ?? "", /2 commits the merge queue didn't ask for/);
+      assert.equal(e.commit, b.head, "the pin unmoved");
+    } finally {
+      await kit.done();
+    }
+  });
+});
+
+describe("the conflict there at the Land", () => {
+  test("counts no try and shows none; the next send-back that counts reads try 1 of 3", async () => {
+    const { k, events } = standingKit({ thread: (ev) => ev.kind === "conflict" || ev.kind === "fix" });
+    try {
+      const q = await k.q();
+      const b = k.repo.branch("feat/free", { "a.txt": "ONE\ntwo\nthree\n" });
+      k.repo.commitOn(k.repo.root, { "a.txt": "uno\ntwo\nthree\n" }, "master moves");
+      const { entry } = await q.add({ branch: "feat/free", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(entry.id)).state === "conflict", "conflict");
+      await q.resolve(entry.id, { verdict: "chat-fixes", ours: "uno", theirs: "ONE", proposal: "merge master in" });
+      const rq = lastRequest(await withChat(k, entry.id));
+      sh(b.path, "merge", "-q", "--no-edit", "-X", "theirs", "master");
+      const fix = sh(b.path, "rev-parse", "HEAD");
+      k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit tests failed" }));
+      await q.respond(rq.id, "s1", { answer: "fixed", commit: fix });
+      await q.fixRuling(entry.id, rq.id, true, "");
+      const e = await until(async () => {
+        const x = await k.entry(entry.id);
+        return x.state === "with-chat" && x.tries?.used === 1 ? x : null;
+      }, "a counted send-back");
+      assert.deepEqual(e.standing?.phase === "with-chat" ? [e.standing.try, e.standing.of] : null, [1, 3]);
+      assert.match(lastRequest(e).text, /\(try 1 of 3\)/);
+      assert.ok(events.length);
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("resolved by the thread after waiting for it: the wait ends with the ruling, no try is left owed, and it lands", async () => {
+    let up = false;
+    const { k, events } = standingKit({ thread: (ev) => ev.kind === "conflict" && up });
+    try {
+      const q = await k.q();
+      k.repo.branch("feat/resolved", { "a.txt": "ONE\ntwo\nthree\n" });
+      k.repo.commitOn(k.repo.root, { "a.txt": "uno\ntwo\nthree\n" }, "master moves");
+      const { entry } = await q.add({ branch: "feat/resolved", by: "land-button", session: "s1" });
+      assert.equal(q.entry(entry.id)?.approval.conflictAtLand, true);
+      await until(async () => (await k.entry(entry.id)).fix?.told === false, "waits for the thread");
+      up = true;
+      q.threadActed();
+      const ev = await until(() => events.find((x) => x.kind === "conflict" && x.scratch), "handed to the thread with a copy");
+      // The thread resolves it in its scratch copy: no behaviour change.
+      const copy = ev.scratch!;
+      try {
+        sh(copy, "merge", "--no-ff", "--no-commit", entry.commit);
+      } catch {}
+      writeFileSync(join(copy, "a.txt"), "UNO\ntwo\nthree\n");
+      sh(copy, "add", "a.txt");
+      sh(copy, "-c", "user.name=t", "-c", "user.email=t@t.invalid", "commit", "-q", "--no-edit");
+      const res = sh(copy, "rev-parse", "HEAD");
+      const e = await q.resolve(entry.id, { verdict: "no-behaviour-change", ours: "uno", theirs: "ONE", proposal: "both", commit: res });
+      assert.equal(e.fix, undefined, "no longer waiting for the thread");
+      assert.equal(e.approval.conflictAtLand, undefined, "nothing went back to the chat: a later conflict counts");
+      assert.equal(e.state, "queued");
+      await landed(k, entry.id);
+    } finally {
+      await k.done();
     }
   });
 });

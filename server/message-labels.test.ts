@@ -379,6 +379,27 @@ describe("the chain and catching up", () => {
     assert.equal(provider.calls.length, 0);
   });
 
+  test("a session in an excluded folder is never sent; one outside it is", async () => {
+    const provider = createFakeProvider({ id: "jev", model: "jev-1", reply: answer("directing") });
+    const s = sent(T0 + 1000);
+    const store = freshStore();
+    store.noteSwitch(true, T0);
+    const run = (exclusions: string[]) =>
+      new MessageLabeller({
+        settings: () => ({ ...settings(), exclusions }),
+        provider: () => provider,
+        list: async () => [row(s, T0 + 2000)],
+        held: () => true,
+        read: sessionOwnMessages,
+        store: () => store,
+        now: () => T0 + 2000,
+        home: "/nonexistent",
+      }).tick();
+    assert.equal(await run(["/tmp/labels"]), 0);
+    assert.equal(provider.calls.length, 0);
+    assert.equal(await run(["/tmp/labels-other"]), 1, "whole path segments: a sibling folder isn't excluded");
+  });
+
   test("the store: removal with the session, a torn line counts for nothing, nothing in the session's file", () => {
     const store = freshStore();
     const s = sent(T0);
@@ -421,6 +442,19 @@ describe("the read route", () => {
     assert.equal(off.messages, undefined);
     assert.equal(off.screenshots, undefined);
     assert.equal(off.you, on.you, "the record itself stays");
+    write({ messageLabels: true });
+  });
+
+  test("a session in an excluded folder has no Your Messages, though it has a typed message and a stored label", async () => {
+    const { readTimeSpent } = await import("./time-spent-routes");
+    const now = Date.now();
+    const s = sessionFile([user("a", null, "typed", now - 30_000)], now - 3_600_000);
+    live().noteSwitch(true, now - 7_200_000);
+    live().label(s.id, "a", { label: "asking", confidence: 1, provider: "jev", model: "j", at: now });
+    write({ messageLabels: true });
+    assert.ok((await readTimeSpent(s.path, now)).messages, "shows outside the folder");
+    writeFileSync(join(agentDir, "sova", "decisions.json"), JSON.stringify({ ...settings(), exclusions: ["/tmp/labels"] }));
+    assert.equal((await readTimeSpent(s.path, now)).messages, undefined);
     write({ messageLabels: true });
   });
 

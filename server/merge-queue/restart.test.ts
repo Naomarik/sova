@@ -185,6 +185,22 @@ test("restart: a build that failed, then passed at the next Idle, leaves one out
   assert.equal(f.notes.get("mq_1"), "Changes server code; Sova restarts itself once the queue is idle. Restarted Sova after landing feat/x.");
 });
 
+test("restart: a page build that failed, then passed at the next Idle, leaves no stale failure on the note", async () => {
+  const r = repo();
+  r.put({ "src/app.tsx": "app\n" }, "page");
+  const f = fakeQueue(r.dir);
+  assert.equal((await restartSelf(f.q, deps(r.dir, r.first, { failBuild: true }).d)).outcome, "failed");
+  assert.match(f.notes.get("mq_1")!, / The page build failed after landing feat\/x: /);
+  assert.equal((await restartSelf(f.q, deps(r.dir, r.first).d)).outcome, "built");
+  assert.equal(f.notes.get("mq_1"), "Changes server code; Sova restarts itself once the queue is idle.", "the failure goes; the rest stays and no line is added");
+  const quiet = fakeQueue(r.dir);
+  const writes: string[] = [];
+  const note = quiet.q.note;
+  quiet.q.note = async (id, text, by) => (writes.push(text), note(id, text, by));
+  assert.equal((await restartSelf(quiet.q, deps(r.dir, r.first).d)).outcome, "built");
+  assert.deepEqual(writes, [], "a note with no outcome on it is left untouched");
+});
+
 test("withoutRestartOutcome: the note up to its first restart outcome line, whoever wrote it", () => {
   const before = "Changes server code; Sova restarts itself once the queue is idle.";
   for (const outcome of ["Not restarted: build failed after landing feat/x: error TS1005: ';' expected.", "The page build failed after landing feat/x: vite: x.ts not found.", "Restarted Sova after landing feat/x.", "Restart after landing feat/x didn't come back on abc1234: it started on def5678. Check u.service."])

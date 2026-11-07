@@ -160,6 +160,14 @@ async function addToNote(q: RestartQueue, entry: string, line: string): Promise<
   await q.note(entry, text.length > 300 ? line.slice(0, 300) : text, "thread").catch((err) => q.logLine(`the restart note on ${entry} wasn't written: ${err instanceof Error ? err.message : err}`));
 }
 
+/** A page build that passed adds no note line, but an earlier failure on the note is no longer the outcome: it goes. */
+async function dropRestartOutcome(q: RestartQueue, entry: string): Promise<void> {
+  const had = q.entryNote(entry).trim();
+  const kept = withoutRestartOutcome(had);
+  if (kept === had) return;
+  await q.note(entry, kept, "thread").catch((err) => q.logLine(`the restart note on ${entry} wasn't written: ${err instanceof Error ? err.message : err}`));
+}
+
 /** merge.restart (see the file's comment). Never throws for what it finds: its outcome says it. */
 export async function restartSelf(q: RestartQueue, deps: RestartDeps): Promise<MergeRestart> {
   const run = deps.run ?? ((argv, cwd, timeoutMs) => runProc(argv, { cwd, env: process.env as Record<string, string>, timeoutMs }));
@@ -186,6 +194,7 @@ export async function restartSelf(q: RestartQueue, deps: RestartDeps): Promise<M
       if (landed) await addToNote(q, landed.id, `The page build failed after landing ${landed.branch}: ${firstError(b.out).replace(/\.$/, "")}.`);
       return { outcome: "failed", step: "build", why: `the page build failed: ${firstError(b.out)}`, tail: tailOf(b.out), plan };
     }
+    if (landed) await dropRestartOutcome(q, landed.id);
     return { outcome: "built", why: "built the page; nothing restarts (open tabs offer the newer page)", plan };
   }
   const unit = await deps.unitOf(q.root);

@@ -710,7 +710,8 @@ queue's own scratch copies (below), and the `worktree` tool's merge stays non-de
   about 30 seconds, and a change to git's list of worktrees or a removal drops it.
 - **What is kept, and why.** A merged or empty tree is removed only when none of these holds, each
   checked again right before its removal: it is locked; it has any uncommitted change or untracked
-  file (ignored files don't count, as with git's own remove); a session's folder (its header cwd),
+  file; it holds what can't be rebuilt (an ignored file outside the rebuildable folders, or a nested
+  repository or worktree), or its files can't be read (§chat.worktrees/leftovers); a session's folder (its header cwd),
   archived or not, is inside it; a session tracking it as active (§chat.worktrees/entry) is open in
   a TUI, running (a turn in flight or workers working), or has its sandbox on; a live process's
   working directory or an open file is inside it; a live record under its own
@@ -736,6 +737,58 @@ queue's own scratch copies (below), and the `worktree` tool's merge stays non-de
 - **The merge queue** never removes a worktree of yours: a landed branch's worktree stays until the
   user cleans it up here. It removes only its own scratch copies, itself, once their attempt ends
   (§app.merge-queue/resolve-copy).
+
+## §chat.worktrees/leftovers — What can't be rebuilt keeps a worktree, and Remove Anyway
+
+Git's own `worktree remove` deletes, without asking, every file the tree ignores and every
+repository nested in its folder, uncommitted work included. So wherever Sova removes a worktree of
+yours (Clean Up Merged and `sova_archive` with `worktrees: "remove"`, §chat.worktrees/cleanup;
+project services' teardown of a worktree Sova cut, §app.project-services/teardown; a coding
+session's Remove Worktree on the project page or by the build's effect,
+§app.project-overseer/coding-worktrees), it reads what
+the tree holds, at the dry run and again right before the removal, after the use checks (unmerged,
+locked, a session's folder, a tracking session, a live process or record).
+
+- **The read.** Git's status of every uncommitted and untracked file, and its list of ignored
+  files, then a walk of the folder that never follows a symlink.
+- **Rebuildable.** A file git lists by itself is judged by itself (an ignored `build/.env` in a
+  tracked `build/` is work). The folders `node_modules`, `__pycache__`, `.pytest_cache`,
+  `.mypy_cache` and `.ruff_cache` count at any depth, inside your own ignored folders too; `dist`,
+  `dist-*`, `build`, `out`, `target`, `coverage`, `.cache`, `.turbo`, `.vite`, `.next`, `.nuxt`,
+  `.svelte-kit`, `.parcel-cache`, `.cpcache`, `.shadow-cljs` and `.gradle` count only where git
+  lists that folder itself as ignored. The files `.DS_Store`, `*.tsbuildinfo` and `*.pyc` count
+  too. `node_modules` is never walked; the other rebuildable folders are walked only to find nested repositories. A
+  top-level `.agent` is rebuildable only while every regular file in it is one a hermetic agent dir
+  generates (its settings, trust, copied-sessions, models, keybindings and vision-delegate files,
+  `sova/auth-token`, anything under `sandbox-policy/` or `extensions/`); otherwise its files are
+  listed and it is named `.agent (sessions)`, `.agent (auth.json)` (an `auth.json` or
+  `claude-accounts/` in it) or `.agent (server state)`.
+- **What keeps it**: any ignored file that isn't rebuildable, any uncommitted or untracked file, and
+  any nested repository or worktree, a folder below the top holding a `.git`, untracked, ignored or
+  inside a rebuildable folder (never under `node_modules`), and any initialised submodule. Its one reason names them (copy:
+  §design.copy-deck/worktree-cleanup); a tree with only uncommitted files keeps today's reason.
+- **A failed read keeps it**: git's status, ignored list or submodule list fails, a folder can't be
+  read, or the tree holds more than 200,000 entries.
+
+**Remove Anyway.** In the Clean Up Merged dialog (and on the project page's Remove Worktree,
+§app.project-overseer/coding-worktrees), on a Stays row whose only reason is what it
+holds (never after a failed read, and never for a use reason); `sova_archive` and teardown only name
+the reason, and a merged or empty tree they keep shows in Clean Up Merged. It first lists in the
+dialog exactly what goes: the uncommitted files, the ignored files that can't be rebuilt, each
+nested repository (deleted whole) or worktree (its uncommitted work goes, its commits stay in its
+repository), and the rebuildable folders that go with it, each list its first 500 and then the
+count; focus starts on Back.
+- The removal, `POST /api/worktrees/cleanup {path, force: {path, digest}}` (exactly one of
+  `dryRun`, `expect` and `force`; a malformed `force` is a 400), answers only your own page: any
+  other caller gets 403 and nothing is deleted. The dry run gives each such row `removeAnyway:
+  {uncommitted, ignored, nested, rebuildable, counts, digest}`.
+- Sova runs every check again and removes the tree only when the use checks pass and the digest of
+  the full listing now equals the one you confirmed, with `git worktree remove --force -- <path>`
+  (one `--force`) from the main checkout; the branch and the ledger are as for any removal
+  (§chat.worktrees/cleanup). A nested worktree of another repository that went with it is then
+  dropped from that repository's worktree list by name (`git worktree remove -- <path>` there, never
+  a bare prune); its branch and commits stay. Otherwise nothing is deleted and the row shows why; a tree that is clean
+  by then is removed as usual.
 
 ## §chat.worktrees/dirty-freshness — How old a tree's uncommitted-changes reading may be
 

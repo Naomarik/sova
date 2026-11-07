@@ -125,7 +125,7 @@
   "§chat.merge-queue/sova-restart": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.merge-queue/thread",
       "§app.merge-queue/note",
@@ -139,19 +139,23 @@
     "code": [
       ".sova/playbooks/merge-queue/PLAYBOOK.md",
       ".sova/playbooks/merge-queue/references/noting.md",
-      ".sova/playbooks/merge-queue/scripts/restart-sova.mjs",
       "server/restart-paths.ts",
       "server/restart-paths-walk.ts",
       "server/merge-readiness.ts",
       "playbooks/merge-queue/PLAYBOOK.md",
       ".sova/playbooks/release/PLAYBOOK.md",
-      "server/merge-queue/restart-sova.test.ts",
-      "server/restart-paths.test.ts"
+      "server/restart-paths.test.ts",
+      "server/merge-queue/restart.ts",
+      "server/merge-queue/restart.test.ts",
+      "server/merge-queue/routes.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/restart.integration.test.ts",
+      "server/merge-queue/thread-sandbox.integration.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T22:57Z",
-      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
+      "by": "naomarik",
+      "at": "2026-11-07T15:21Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
     }
   },
   "§chat.merge-queue/thread": {
@@ -170,8 +174,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-06T00:58Z",
-      "source": "pi-session:01a1ac85-7019-77e8-b78d-58217842f2ef#e4f5f750"
+      "at": "2026-11-07T15:25Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
     },
     "code": [
       "server/merge-queue/thread.ts",
@@ -198,7 +202,8 @@
       "server/merge-queue/setup-trial.test.ts",
       "server/merge-queue/contract.ts",
       "server/merge-queue/wire.ts",
-      "server/merge-queue/scratch.ts"
+      "server/merge-queue/scratch.ts",
+      "server/merge-queue/names-verb.ts"
     ]
   },
   "§chat.merge-queue/thread-life": {
@@ -230,6 +235,52 @@
       "at": "2026-11-05T19:18Z",
       "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
     }
+  },
+  "§chat.merge-queue/thread-sandbox": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§chat.merge-queue/thread",
+      "§app.project-services/merge-verbs"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-07T15:21Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
+    },
+    "code": [
+      "shared/project-contract.ts",
+      "shared/merge-queue.ts",
+      "shared/commands/projects.ts",
+      "server/project-services/tools.ts",
+      "server/merge-queue/restart.ts",
+      "server/merge-queue/restart.test.ts",
+      "server/merge-queue/resolve-content.ts",
+      "server/merge-queue/names-verb.ts",
+      "server/merge-queue/routes.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/thread.ts",
+      "server/chat-manager.ts",
+      "profiles/system/merge-thread.json",
+      "pi-config/extensions/sandbox/index.ts",
+      "pi-config/extensions/sandbox/policy.ts",
+      "pi-config/extensions/sandbox/session-policy.ts",
+      "playbooks/merge-queue/PLAYBOOK.md",
+      "playbooks/merge-queue/references/conflicts.md",
+      "playbooks/merge-queue/references/names.md",
+      "server/merge-queue/resolve-content.test.ts",
+      "server/merge-queue/thread-sandbox.integration.test.ts",
+      "pi-config/extensions/sandbox/state.ts",
+      "pi-config/extensions/sandbox/tests/policy.unit.test.ts",
+      "server/harness/pi/open.ts",
+      "server/harness/pi/shell.ts",
+      "server/merge-queue/names-verb.integration.test.ts",
+      "server/project-services/tools-answer.test.ts",
+      "server/merge-queue/verbs.test.ts",
+      "server/merge-queue/scenarios-conflicts.integration.test.ts"
+    ],
+    "evidence": "verified"
   },
   "§chat/merge-queue": {
     "kind": "surface",

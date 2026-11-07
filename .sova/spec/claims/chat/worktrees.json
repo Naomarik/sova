@@ -17,7 +17,9 @@
       "server/merge-tree-probe.test.ts",
       "server/merge-queue/scratch.ts",
       "server/merge-queue/wire.ts",
-      "server/merge-queue/owners.ts"
+      "server/merge-queue/owners.ts",
+      "server/worktree-leftovers.ts",
+      "server/archive-worktrees.test.ts"
     ],
     "requires": [
       "§chat.worktrees/merged-state",
@@ -25,8 +27,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-05T16:44Z",
-      "source": "pi-session:01a1ac85-7019-77e8-b78d-58217842f2ef#e4f5f750"
+      "at": "2026-11-07T15:21Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
     }
   },
   "§chat.worktrees/dirty-freshness": {
@@ -154,6 +156,36 @@
       "at": "2026-11-03T11:27Z",
       "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     }
+  },
+  "§chat.worktrees/leftovers": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§chat.worktrees/cleanup"
+    ],
+    "code": [
+      "server/worktree-leftovers.ts",
+      "server/worktree-cleanup.ts",
+      "server/project-services/engine.ts",
+      "server/app.ts",
+      "shared/protocol.ts",
+      "src/lib/api.ts",
+      "src/lib/worktree-cleanup.ts",
+      "src/components/EmptyWorktrees.tsx",
+      "src/app.css",
+      "server/worktree-leftovers.integration.test.ts",
+      "server/project-services/engine.test.ts",
+      "server/cleanup-dry-run.test.ts",
+      "src/lib/worktree-cleanup.test.ts",
+      "server/project-worktrees.ts",
+      "src/components/RemoveAnywayListing.tsx"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-07T15:24Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
+    },
+    "evidence": "verified"
   },
   "§chat.worktrees/merge-card": {
     "kind": "behavior",

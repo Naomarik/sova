@@ -233,6 +233,10 @@ server's add, and its read of a profile file, refuse in the same words, from one
   teams, since a worker would start with every default tool. MCP Servers is no such removal: a
   worker's servers are capped to its chat's, so a chat with none gives a worker none, and removing
   MCP Servers alone leaves Workers & teams as they were, neither taking them nor bringing them back.
+- **Removing the shell adds the search tools.** A general rule, for every profile, not one setting
+  of the merge reviewer's: removing the shell adds pi's read-only read, grep, find and ls to the
+  session and changes nothing else. Bash stays off, and edit and write follow the profile's own
+  edit setting as before. A session without such a profile keeps pi's own default set.
   The board shows that toggle off and disabled while a removal that takes it is on: "Workers would
   get every tool back, so removing anything removes them too."
 - **Grants** are one in-process extension, `sova-session-powers`, added only when the profile grants
@@ -381,7 +385,8 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   session on. A bare id never finds them; only Sova's own explicit pick (`{source: "sova", id}`)
   does, when it starts the merge queue's thread or reviewer. The listed built-ins stay exactly
   Default. The merge thread has no web, workers or timers and grants no session powers. The
-  reviewer also has no edit tools and no worktrees. Both name their modes outright, mode normal
+  reviewer also has no edit tools, no shell and no worktrees, so it reads and searches only (read,
+  grep, find and ls, as every profile without the shell, §chat.profiles/enforcement). Both name their modes outright, mode normal
   with no minor modes, so a chat started on them is pinned to exactly that and the default modes
   saved on this computer never reach it; Sova then turns memory on for the merge thread alone
   (§chat.merge-queue/thread). Chats started on them are the queue's own and are left out of every

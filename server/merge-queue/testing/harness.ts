@@ -216,7 +216,7 @@ export class QueueHarness {
   extend(entry: string, checks: string[], why: string, select?: string[]): Promise<MergeEntry> {
     return this.q.extend(entry, checks, why, select);
   }
-  resolve(entry: string, j: { verdict: "no-behaviour-change" | "behaviour-differs"; files?: string[]; ours: string; theirs: string; proposal: string; commit?: string; note?: string }): Promise<MergeEntry> {
+  resolve(entry: string, j: { verdict: "no-behaviour-change" | "behaviour-differs"; files?: string[]; ours: string; theirs: string; proposal: string; commit?: string; contents?: Record<string, string>; note?: string }): Promise<MergeEntry> {
     return this.q.resolve(entry, j);
   }
 

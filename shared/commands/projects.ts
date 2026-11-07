@@ -11,7 +11,8 @@ function verbParam(flag: string, deploy: boolean): [string, CommandParam] {
   const p = VERB_PARAMS.find((r) => r.cli?.flag === flag);
   if (!p || !p.cli) throw new Error(`no verb param with the flag --${flag}`);
   const def = deploy ? p.cli.deployDefault : undefined;
-  return [flag, { type: p.type, description: p.cli.description, in: "body", ...(p.wire !== flag ? { key: p.wire } : {}), ...(def !== undefined ? { default: def } : {}) }];
+  // A `map` param is the tools' only (no flag), so never reaches here.
+  return [flag, { type: p.type as Exclude<typeof p.type, "map">, description: p.cli.description, in: "body", ...(p.wire !== flag ? { key: p.wire } : {}), ...(def !== undefined ? { default: def } : {}) }];
 }
 
 /** The keys scripts/sova-project.mjs sends for an instance verb, as params. */

@@ -54,6 +54,7 @@ import { suggestLanding } from "./hosts/repo";
 import { changeWords, editSettingsText, isEmptyChange, REVIEW_KIT_DIR, SettingsEditError } from "./settings-edit";
 import { PROJECT_PLAYBOOK } from "./thread";
 import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, scratchCopyPath, scratchMarkOf, sweepScratch } from "./scratch";
+import { commitResolution } from "./resolve-content";
 import { isSetupChange, SETUP_UNREADABLE, setupChangeOf, trialReleaseChecks, untriedWhy } from "./setup-branch";
 
 /** Land's refusal of a worktree the merge queue made for itself (a conflict's scratch copy). */
@@ -271,6 +272,23 @@ export class ProjectQueue {
   }
   private log(line: string): void {
     (this.deps.log ?? ((l) => console.log(l)))(`[merge-queue] ${this.id}: ${line}`);
+  }
+  /** A line in this queue's log (restart.ts). */
+  logLine(line: string): void {
+    this.log(line);
+  }
+
+  /** What merge.restart reads (restart.ts): anything queued or checking (or a run, trial or landing going on), the
+   *  release holding the queue, and the newest landing. */
+  restartFacts(): { busy: boolean; release: boolean; landed: { id: string; branch: string } | null } {
+    const busy = !!this.current || !!this.trying || !!this.landing || this.q.entries.some((e) => e.state === "queued" || e.state === "checking");
+    const l = this.newestLanded();
+    return { busy, release: !!this.q.release, landed: l ? { id: l.id, branch: l.branch } : null };
+  }
+
+  /** The thread's or operator's note on an entry now ("" when none). */
+  entryNote(entryId: string): string {
+    return this.entry(entryId)?.notes.find((n) => n.kind === "thread" || n.kind === "operator")?.text ?? "";
   }
 
   /** Load the records and work out the target. Recovery (recover.ts) runs after. */
@@ -1341,7 +1359,7 @@ export class ProjectQueue {
   }
 
   /** merge.resolve: the merge thread's judgement of a conflict. */
-  resolve(entryId: string, j: { verdict: string; files?: string[]; ours: string; theirs: string; proposal: string; commit?: string; note?: string }): Promise<MergeEntry> {
+  resolve(entryId: string, j: { verdict: string; files?: string[]; ours: string; theirs: string; proposal: string; commit?: string; contents?: Record<string, string>; note?: string }): Promise<MergeEntry> {
     return this.serial(async () => {
       const e = this.mustEntry(entryId);
       if (e.state !== "conflict" && e.state !== "behaviour-differs") throw new MergeFailure("invalid-request", `${e.branch} has no conflict to resolve (it is ${e.state})`);
@@ -1352,6 +1370,17 @@ export class ProjectQueue {
       let verdict = j.verdict as "no-behaviour-change" | "behaviour-differs";
       let sanity: { ok: boolean; why?: string } | undefined;
       let commit: string | undefined;
+      if (j.contents && j.commit) throw new MergeFailure("invalid-request", "give the merged contents or a commit, not both");
+      if (j.contents) {
+        // The thread's merged files, committed by Sova in the entry's scratch copy (no branch moves).
+        const contents = j.contents;
+        const made = await this.scratchStep(() =>
+          commitResolution(this.git, { copy: scratchCopyPath(this.root, e.id), entry: e.id, base: head, commit: e.commit, target: this.q.target, branch: e.branch, contents }),
+        ).catch((err: unknown) => {
+          throw new MergeFailure("invalid-request", err instanceof Error ? err.message : String(err));
+        });
+        j = { ...j, commit: made };
+      }
       if (j.commit) {
         commit = (await revParse(this.git, this.root, j.commit)) ?? undefined;
         if (!commit) throw new MergeFailure("not-found", `no commit ${j.commit} in ${this.root}`);

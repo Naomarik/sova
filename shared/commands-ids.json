@@ -246,7 +246,11 @@
     "chat.shell.stop",
     "session.shell.output",
     "project.merge-queue.run-logs",
-    "project.merge-queue.run-logs.clean"
+    "project.merge-queue.run-logs.clean",
+    "project.verb.merge.restart",
+    "project.verb.merge.live",
+    "project.verb.merge.test",
+    "project.verb.merge.names"
   ],
   "retired": [
     "settings.agents.get",

@@ -918,6 +918,9 @@ export async function startMergeQueue(
     isReviewerChat: review.isReviewerChat,
     deliverReview: review.deliverReview,
     ...(await threadVerbDeps(served)),
+    // merge.live / merge.restart (restart.ts) and merge.names (names-verb.ts): what the sandboxed thread can't reach.
+    restart: await (await import("./restart")).liveRestartDeps(),
+    names: async (pq, action, text) => (await import("./names-verb")).namesStep(pq, action, text, join(threadMod.DEFAULT_PLAYBOOK_DIR, "scripts", "discover-names.mjs")),
   });
   // A setup run changes the answer: the chats' file follows at once.
   projectEngine().merger = async (verb, body, caller) => {
@@ -985,6 +988,8 @@ export async function startMergeQueue(
     void served
       .served(root)
       .then((yes) => (yes ? q.get(root) : null))
+      // A restart this queue asked for: checked against the commit this start runs (restart.ts).
+      .then(async (pq) => (pq ? (await import("./restart")).checkRestartAtStart((await import("./restart")).restartQueueOf(pq), await (await import("./restart")).liveRestartDeps()) : null))
       .catch((err) => console.warn(`[merge-queue] ${root}: ${err instanceof Error ? err.message : err}`));
   ingest = startIngest(
     ingestDepsFor({

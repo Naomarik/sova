@@ -74,6 +74,8 @@ export function entryMessages(h: HEntry): { kind: MemoryMessageKind; text: strin
     case "tool-result":
       return [{ kind: "echo", text: clipTool(`${h.tool ?? "tool"}${h.isError ? " (failed)" : ""}: ${blocksText(h.blocks)}`) }];
     case "shell":
+      // A `!!` command is kept from the model: never a line, a summary or a zoom (§chat.shell-mode/model).
+      if (h.private) return [];
       return [{ kind: "echo", text: clipTool(`user ran: $ ${h.command ?? ""}\n${h.output ?? ""}`) }];
     case "note": {
       // A message an extension shows in the transcript (a worker's report, a topic delivery) is logged;

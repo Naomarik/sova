@@ -147,7 +147,14 @@ type BtwTranscriptState = {
 type BtwSessionRuntime = {
   chat: BtwChat;
   mode: BtwThreadMode;
+  /** The main chat's sandbox state the chat started under (`btwSandboxKey`); absent: unknown (reattached). */
+  sandboxKey?: string;
 };
+
+/** What a side thread's confinement follows: the main chat's sandbox state (On or not, and its enforcement). */
+function btwSandboxKey(state: SandboxStateEvent | undefined): string {
+  return state?.on ? `on:${state.enforcement}` : "off";
+}
 
 type OverlayRuntime = {
   handle?: OverlayHandle;
@@ -1615,8 +1622,15 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
 
     const seed = buildBtwSeedState(ctx, pendingThread, mode, settings.model);
     // Read-only: it reads and answers, never runs a command or changes a file.
+    const sandboxKey = btwSandboxKey(sandboxOf());
     const chat = await startBtwChat(ctx, mode, settings.model, settings.thinkingLevel, seed.messages, btwSystemPrompt(ctx), BTW_TOOLS);
-    return { chat, mode };
+    return { chat, mode, sandboxKey };
+  }
+
+  /** The thread's chat still runs under the main chat's current sandbox state. A reattached one (unknown) counts while the sandbox is not On. */
+  function sandboxUnchanged(runtime: BtwSessionRuntime): boolean {
+    const now = btwSandboxKey(sandboxOf());
+    return runtime.sandboxKey === undefined ? now === "off" : runtime.sandboxKey === now;
   }
 
   async function ensureBtwSession(ctx: ExtensionCommandContext, mode: BtwThreadMode): Promise<BtwSessionRuntime | null> {
@@ -1625,10 +1639,12 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
       return null;
     }
 
-    if (activeBtwSession?.mode === mode) {
+    if (activeBtwSession?.mode === mode && sandboxUnchanged(activeBtwSession)) {
       return activeBtwSession;
     }
 
+    // A mode switch, or the main chat's sandbox changed since the thread started: start it again under
+    // the current state, seeded with the side conversation so far (pendingThread), so nothing is lost.
     await disposeBtwSession();
     activeBtwSession = await createBtwSubSession(ctx, mode);
     return activeBtwSession;

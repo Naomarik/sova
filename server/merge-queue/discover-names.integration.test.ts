@@ -240,3 +240,30 @@ test("an unreadable settings file is left alone", () => {
   assert.match(r.stderr, /isn't valid JSON\. Nothing written/);
   assert.equal(readFileSync(settingsFile, "utf8"), "{ not json");
 });
+
+test("login emails are collected from the login records, except in a hermetic agent dir (its own claude-projects/)", () => {
+  // Its own agent dir, home and Claude Code dir, so the other cases' fixtures stay as they are.
+  const a = join(dir, "agent-logins");
+  const h = join(dir, "home-logins");
+  const cfg = join(dir, "claude-own");
+  const E = { registry: "reg@heron-private.test", login: "login@heron-private.test", home: "home@heron-private.test", own: "own@heron-private.test" };
+  json(join(a, "claude-accounts.json"), { version: 1, logins: [{ id: "l1", addedAt: 1, enabled: true, device: V.device, identity: { email: E.registry } }] });
+  json(join(a, "claude-accounts", "l1", ".claude.json"), { oauthAccount: { emailAddress: E.login } });
+  json(join(h, ".claude.json"), { oauthAccount: { emailAddress: E.home } });
+  json(join(cfg, ".claude.json"), { oauthAccount: { emailAddress: E.own } });
+  const run = () =>
+    spawnSync(process.execPath, [DISCOVER, "--file", join(a, "names.json"), "--target", "master", "--repo", repo, "--show", "--dry-run"], {
+      env: { ...process.env, PI_CODING_AGENT_DIR: a, HOME: h, CLAUDE_CONFIG_DIR: cfg, PATH: `${tsFail}${delimiter}${process.env.PATH}` },
+      encoding: "utf8",
+    });
+  const real = run();
+  assert.equal(real.status, 0, real.stderr);
+  for (const [k, e] of Object.entries(E)) assert.ok(real.stdout.includes(e), `the real setup collects the ${k} email`);
+  assert.doesNotMatch(real.stdout, /login emails: a hermetic agent dir, skipped/);
+  mkdirSync(join(a, "claude-projects"));
+  const copy = run();
+  assert.equal(copy.status, 0, copy.stderr);
+  for (const [k, e] of Object.entries(E)) assert.ok(!copy.stdout.includes(e), `a hermetic agent dir skips the ${k} email`);
+  assert.match(copy.stdout, /^- login emails: a hermetic agent dir, skipped$/m);
+  assert.ok(copy.stdout.includes(V.device), "the rest of claude-accounts.json is still read");
+});

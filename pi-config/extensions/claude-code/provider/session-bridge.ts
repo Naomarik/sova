@@ -50,7 +50,7 @@ import { ResumeStore, type ResumeRecord } from "./resume-record.ts";
 import { claudeCliId } from "../catalog.ts";
 import { claudeExecutable } from "../claude-executable.ts";
 import {
-	parseClaudeFrame, parseToolInput, MCP_SERVER_NAME, MCP_TOOL_PREFIX,
+	cliHasTool, parseClaudeFrame, parseToolInput, MCP_SERVER_NAME, MCP_TOOL_PREFIX,
 	type ClaudeFrame, type ClaudeSessionBridge, type ClaudeTurnRequest,
 } from "./types.ts";
 
@@ -845,6 +845,8 @@ interface TurnState {
 	/** The current CLI message's tool calls whose arguments parsed, and the first one rejected. */
 	accepted: number;
 	rejected?: string;
+	/** The first rejected call named a tool the CLI does not have (see cliHasTool), not invalid arguments. */
+	rejectedUnknown?: boolean;
 	/** CLI messages in a row, in this pi message, whose tool calls were all rejected. */
 	rejectedRun: number;
 }
@@ -921,6 +923,8 @@ class CliSession {
 	 * itself and calls the model again; pi never sees nor runs them.
 	 */
 	private rejected: { id: string; name: string }[] = [];
+	/** tool_use ids under a name the CLI has no tool for, already logged. */
+	private unknownToolIds = new Set<string>();
 	/** Bounds pi results waiting on a `tools/call` the CLI has yet to send. */
 	private dispatchTimer?: ReturnType<typeof setTimeout>;
 	private heldTimer?: ReturnType<typeof setTimeout>;
@@ -1579,7 +1583,9 @@ class CliSession {
 	 */
 	private giveUpRejected(turn: TurnState): void {
 		if (turn.queue.isEnded()) return;
-		const message = `Claude sent invalid JSON arguments for tool "${turn.rejected ?? "unknown"}" ${MAX_REJECTED_RUN} times in a row`;
+		const message = turn.rejectedUnknown
+			? `Claude called tool "${turn.rejected}", which it does not have, ${MAX_REJECTED_RUN} times in a row`
+			: `Claude sent invalid JSON arguments for tool "${turn.rejected ?? "unknown"}" ${MAX_REJECTED_RUN} times in a row`;
 		this.markDesynced(message);
 		turn.queue.push({ type: "result", outcome: "error", message });
 		turn.queue.end();
@@ -1826,10 +1832,11 @@ class CliSession {
 				}
 				// The CLI answered the last message's rejected calls itself; this is
 				// its retry (or whatever the model said instead).
-				this.openInputs.clear(); this.rejected = [];
-				turn.accepted = 0; turn.rejected = undefined;
+				this.openInputs.clear(); this.rejected = []; this.unknownToolIds.clear();
+				turn.accepted = 0; turn.rejected = undefined; turn.rejectedUnknown = undefined;
 				turn.messageComplete = false; turn.wantsTools = false; turn.streaming = true;
 			} else if (event.type === "content_block_start" && event.block.kind === "tool_use") {
+				if (!cliHasTool(event.block.name)) { this.rejectUnknownTool(turn, event.block.id, event.block.name); return; }
 				this.openInputs.set(event.index, { id: event.block.id, name: bareToolName(event.block.name), json: "", input: event.block.input });
 				this.addPending(turn, event.block.id, event.block.name, event.block.input);
 			} else if (event.type === "content_block_delta" && event.delta.kind === "input_json") {
@@ -1859,6 +1866,7 @@ class CliSession {
 				if (block.kind !== "tool_use") continue;
 				// A rejected call stays rejected, whatever a later frame says of it.
 				if (this.rejected.some((r) => r.id === block.id)) continue;
+				if (!cliHasTool(block.name)) { this.rejectUnknownTool(turn, block.id, block.name); continue; }
 				this.addPending(turn, block.id, block.name, block.input);
 				// A streamed tool_use starts with empty input; this frame carries
 				// the final arguments, which the tools/call matching compares.
@@ -1878,6 +1886,22 @@ class CliSession {
 			}
 			this.rematch();
 		}
+	}
+
+	/**
+	 * A tool_use under a name the CLI has no tool for: it answers the call itself
+	 * and asks the model again, never dispatching a `tools/call`. Like a call with
+	 * invalid arguments it is never pi's to answer (stream.ts drops it by the same
+	 * rule), so the retry is not the CLI falling out of step. Not added to
+	 * `rejected`: no `tools/call` can carry it, so it must not narrow how a valid
+	 * call of a pi tool by that name is matched.
+	 */
+	private rejectUnknownTool(turn: TurnState, id: string, name: string): void {
+		if (turn.rejected === undefined) { turn.rejected = name; turn.rejectedUnknown = true; }
+		// Streamed messages repeat each block in an assistant frame: log it once.
+		if (this.unknownToolIds.has(id)) return;
+		this.unknownToolIds.add(id);
+		(this.options.onDebug ?? debugLog)({ event: "tool-name-rejected", session: this.piSessionId, tool: name, id });
 	}
 
 	private addPending(turn: TurnState, id: string, name: string, input: unknown): void {

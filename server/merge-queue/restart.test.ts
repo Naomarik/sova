@@ -9,7 +9,7 @@ import { test } from "node:test";
 import { scratchRoot } from "../test-scratch";
 import { realGit } from "./guard";
 import { HOLD_MS } from "./queue";
-import { checkRestartAtStart, PENDING_STALE_MS, planRestart, RESTART_FILE, type RestartDeps, type RestartQueue, restartSelf } from "./restart";
+import { checkRestartAtStart, PENDING_STALE_MS, planRestart, RESTART_FILE, type RestartDeps, type RestartQueue, restartSelf, withoutRestartOutcome } from "./restart";
 
 type Plan = Awaited<ReturnType<typeof planRestart>>;
 const plan = (o: { repo: string; live: string; target: string }): Promise<Plan & { restart: string[]; build: string[] }> =>
@@ -168,6 +168,45 @@ test("restart: nothing while busy, during a release, for another project, or wit
   assert.match(out.why, /error TS1005/);
   assert.deepEqual(f.held, ["set", "clear"]);
   assert.deepEqual(bad.scheduled, []);
+  assert.equal(f.notes.get("mq_1"), "Changes server code; Sova restarts itself once the queue is idle. Not restarted: build failed after landing feat/x: src/x.ts(1,1): error TS1005: ';' expected.", "Sova notes the failure itself");
+});
+
+test("restart: a build that failed, then passed at the next Idle, leaves one outcome on the note: the latest", async () => {
+  const r = repo();
+  const tip = r.put({ "server/a.ts": "a\n" }, "server");
+  const f = fakeQueue(r.dir);
+  assert.equal((await restartSelf(f.q, deps(r.dir, r.first, { failBuild: true }).d)).outcome, "failed");
+  assert.equal((await restartSelf(f.q, deps(r.dir, r.first, { failBuild: true }).d)).outcome, "failed");
+  assert.equal(f.notes.get("mq_1")!.match(/Not restarted: /g)?.length, 1, "a second failure replaces the first");
+  const good = deps(r.dir, r.first);
+  assert.equal((await restartSelf(f.q, good.d)).outcome, "restarting");
+  good.restartedOn(tip);
+  assert.equal((await checkRestartAtStart(f.q, good.d))?.ok, true);
+  assert.equal(f.notes.get("mq_1"), "Changes server code; Sova restarts itself once the queue is idle. Restarted Sova after landing feat/x.");
+});
+
+test("restart: a page build that failed, then passed at the next Idle, leaves no stale failure on the note", async () => {
+  const r = repo();
+  r.put({ "src/app.tsx": "app\n" }, "page");
+  const f = fakeQueue(r.dir);
+  assert.equal((await restartSelf(f.q, deps(r.dir, r.first, { failBuild: true }).d)).outcome, "failed");
+  assert.match(f.notes.get("mq_1")!, / The page build failed after landing feat\/x: /);
+  assert.equal((await restartSelf(f.q, deps(r.dir, r.first).d)).outcome, "built");
+  assert.equal(f.notes.get("mq_1"), "Changes server code; Sova restarts itself once the queue is idle.", "the failure goes; the rest stays and no line is added");
+  const quiet = fakeQueue(r.dir);
+  const writes: string[] = [];
+  const note = quiet.q.note;
+  quiet.q.note = async (id, text, by) => (writes.push(text), note(id, text, by));
+  assert.equal((await restartSelf(quiet.q, deps(r.dir, r.first).d)).outcome, "built");
+  assert.deepEqual(writes, [], "a note with no outcome on it is left untouched");
+});
+
+test("withoutRestartOutcome: the note up to its first restart outcome line, whoever wrote it", () => {
+  const before = "Changes server code; Sova restarts itself once the queue is idle.";
+  for (const outcome of ["Not restarted: build failed after landing feat/x: error TS1005: ';' expected.", "The page build failed after landing feat/x: vite: x.ts not found.", "Restarted Sova after landing feat/x.", "Restart after landing feat/x didn't come back on abc1234: it started on def5678. Check u.service."])
+    assert.equal(withoutRestartOutcome(`${before} ${outcome}`), before, outcome);
+  assert.equal(withoutRestartOutcome(before), before);
+  assert.equal(withoutRestartOutcome("Restarted Sova after landing feat/x."), "");
 });
 
 test("restart: page files only → the page is built, nothing held or restarted", async () => {

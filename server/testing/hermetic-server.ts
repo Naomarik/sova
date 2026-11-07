@@ -33,8 +33,6 @@ export interface HermeticServerOptions {
   /** pi-config extensions the chats load, by directory name (default none). `sandbox` also gets this tree's
       sandbox policy for the platform, so a chat can turn its sandbox On. */
   extensions?: string[];
-  /** Where the scratch root goes (default the OS temp dir). */
-  scratchIn?: string;
 }
 
 export interface HermeticServer {
@@ -263,7 +261,7 @@ function startWatchdog(agent: string, pids: number[]): ChildProcess {
 }
 
 export async function startHermeticServer(opts: HermeticServerOptions = {}): Promise<HermeticServer> {
-  const scratch = realpathSync(mkdtempSync(join(opts.scratchIn ?? tmpdir(), "sova-scenario-")));
+  const scratch = realpathSync(mkdtempSync(join(tmpdir(), "sova-scenario-")));
   notRealPi(scratch);
   const home = join(scratch, "home");
   const agent = join(scratch, "agent");

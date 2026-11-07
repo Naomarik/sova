@@ -348,7 +348,7 @@ export interface RecordedChat {
  * `onFrame`, parsed. Nothing is sent until `emit()`; the caller emits once it has the hello.
  * Never a viewer (no seen stamp); never forced.
  */
-export function recordFrame(path: string, frame: ChatClientMessage, onFrame: (msg: Record<string, unknown>) => void, onClose: () => void, notPage: NotPage | null = "script"): RecordedChat {
+export function recordFrame(path: string, frame: ChatClientMessage, onFrame: (msg: Record<string, unknown>) => void, onClose: () => void, notPage: NotPage | null = "script", opts: { stopsCommand?: boolean } = {}): RecordedChat {
   let open = true;
   let sent = false;
   const rec = Object.assign(new EventEmitter(), {
@@ -374,7 +374,7 @@ export function recordFrame(path: string, frame: ChatClientMessage, onFrame: (ms
     },
   });
   const ws = rec as unknown as WebSocket;
-  handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2, undefined, { viewer: false, notPage, ...(frame.type === "shell_stop" ? { stopsCommand: true } : {}) }).catch((err) => {
+  handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2, undefined, { viewer: false, notPage, ...(opts.stopsCommand && frame.type === "shell_stop" ? { stopsCommand: true } : {}) }).catch((err) => {
     console.error("[chat/action]", err);
     rec.close();
   });

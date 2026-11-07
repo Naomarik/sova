@@ -309,7 +309,7 @@ export function runAction(path: string, action: ChatAction, waitMs: number, deps
       if (done) return;
       // The chat closed this client. An error before it already answered; anything else is unknown.
       unknown();
-    }, who);
+    }, who, action.type === "shell_stop" ? { stopsCommand: true } : {});
   });
 }
 

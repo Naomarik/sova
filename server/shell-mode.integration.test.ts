@@ -181,7 +181,7 @@ test("a cut command's whole output reads back in pages; archiving deletes its fi
 
 test("a ! command in a chat with its sandbox On runs confined: its folder is writable, the home folder and the network are not (§chat.shell-mode/running)", async () => {
   // Its own server, whose chats load the sandbox extension (this file's other server loads none).
-  const sb = await startHermeticServer({ extensions: ["sandbox"], ...(process.env.SOVA_TEST_SANDBOX_SCRATCH ? { scratchIn: process.env.SOVA_TEST_SANDBOX_SCRATCH } : {}) });
+  const sb = await startHermeticServer({ extensions: ["sandbox"] });
   const prev = s;
   s = sb;
   try {

@@ -22,6 +22,7 @@ import { slotLayoutOf } from "../../shared/project-slots";
 import { NO_BACKGROUND_CLEANUP } from "../git-no-background";
 import { agentRoot } from "../state-root";
 import { draftSpecHash } from "../spec-drafts-state";
+import { readRunLogText } from "./run-logs";
 import { LANDED_DRAFTS_FILE, type LandedDraftsRecord } from "./landed-drafts";
 import { blameCheck, blameFile, blameSetup, brokenOnTarget, type CheckBlame, type RedRun, summarize } from "./attribute";
 import { type CheckRun, checksOf, countsOf, type CopyScope, envOf, firstOutputLine, freshOf, isTestCheck, type PlannedCheck, picksOf, planChecks, ranNoTest, reusedWords, runCheck, templateVarsOf } from "./checks";
@@ -927,7 +928,7 @@ function keepLandedDrafts(runDir: string, copy: string, commit: string, names: r
 /** The run folder's step logs, for merge.logs: the step's lines (newest last), at most `lines`. */
 export function stepLog(runDir: string, step: Pick<RunStep, "log">, lines = 200): string[] {
   try {
-    const all = readFileSync(join(runDir, step.log), "utf8").split("\n");
+    const all = (readRunLogText(runDir, step.log) ?? "").split("\n");
     return all.slice(Math.max(0, all.length - lines));
   } catch {
     return [];

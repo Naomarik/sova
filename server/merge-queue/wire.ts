@@ -39,6 +39,8 @@ let queues: MergeQueues | null = null;
 let summaries: BranchSummaries | null = null;
 /** The summaries' background sweep (summary-sweep.ts): every Ready row's bullets once its chat is idle. */
 let sweep: SummarySweep | null = null;
+/** The run logs' packing (run-logs.ts): finished runs' logs gzipped a day after they ended, hourly. */
+let logSweep: { stop(): void } | null = null;
 type RowFields = { queue?: WorktreeQueueInfo; mergeProject?: WorktreeMergeProject; mergeStats?: WorktreeMergeStats; mergeServed?: true; mergeSummary?: BranchSummary; mergeOwner?: SessionWorktreeInfo["mergeOwner"] };
 let servedWriter: { refresh(): Promise<void>; stop(): void } | null = null;
 /** The served roots as last computed (the writer's pass): the thread wake's synchronous check. */
@@ -973,6 +975,7 @@ export async function startMergeQueue(
     draftsStamp: (worktree) => draftsStamp(worktree),
     now: Date.now,
   };
+  logSweep = (await import("./run-logs")).startRunLogSweep({ queues: async () => (queues ? queues.loaded() : []) });
   // Rows read before this line have no queue fields, and nothing else re-reads an archived one.
   void rereadUnrooted();
   // The chats' file is current before the typed go-ahead door opens.
@@ -1062,6 +1065,8 @@ export const branchSummariesNow = (): BranchSummaries | null => summaries;
 export async function stopMergeQueue(): Promise<void> {
   sweep?.stop();
   sweep = null;
+  logSweep?.stop();
+  logSweep = null;
   summaries = null;
   rowsOf = null;
   listDeps = null;

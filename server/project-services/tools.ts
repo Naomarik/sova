@@ -237,7 +237,7 @@ export function fitMergeAnswer(r: VerbResult, text: string, note?: string | null
     const all = report.lines as unknown[];
     const withNewest = (keep: number) => {
       const cut = `\n<<cut: this answer was ${compact.length} characters; the oldest ${all.length - keep} of its ${all.length} log lines are left out and the newest ${keep} shown; ask for fewer lines: merge.logs {run, step, lines}>>`;
-      return compactOf({ ...rest, merge: { ...report, lines: keep ? all.slice(-keep) : [] } }) + cut;
+      return compactOf({ ...rest, merge: { ...report, lines: keep ? all.slice(-keep) : [] } as VerbResult["merge"] }) + cut;
     };
     // The most newest lines that fit (binary search: the text grows with each line kept).
     let lo = 0;

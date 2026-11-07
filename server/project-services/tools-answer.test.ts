@@ -28,7 +28,8 @@ test("a cut merge.logs answer keeps its newest lines, whole and in order, and sa
   assert.ok(text.length <= MERGE_ANSWER_MAX, `${text.length}`);
   const m = text.match(/\n<<cut: this answer was (\d+) characters; the oldest (\d+) of its 3000 log lines are left out and the newest (\d+) shown; ask for fewer lines: merge\.logs \{run, step, lines\}>>$/);
   assert.ok(m, text.slice(-300));
-  const [, , dropped, kept] = m!.map(Number);
+  const dropped = Number(m![2]);
+  const kept = Number(m![3]);
   assert.equal(dropped + kept, 3000);
   assert.ok(kept > 100, `keeps as many as fit: ${kept}`);
   // The JSON before the cut note is whole: its lines are exactly the newest `kept`.

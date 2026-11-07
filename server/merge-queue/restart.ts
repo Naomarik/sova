@@ -188,6 +188,9 @@ export async function restartSelf(q: RestartQueue, deps: RestartDeps): Promise<M
   const b = await run(BUILD, q.root, 20 * 60_000);
   if (b.code !== 0) return fail("build", `build failed: ${firstError(b.out)}`, b.out);
   // A run that started before the hold: too late, the next Idle plans again.
+  // Renewed: the install and build may outlast one hold (HOLD_MS), and a run started in the gap would be cut off by the
+  // restart a few seconds from now.
+  await q.hold("set");
   if (q.restartFacts().busy) return fail("restart", "a run started before the hold took: the next Idle plans again");
   const expect = live.tip;
   const file = pendingFile(q);

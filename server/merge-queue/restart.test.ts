@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { scratchRoot } from "../test-scratch";
 import { realGit } from "./guard";
+import { HOLD_MS } from "./queue";
 import { checkRestartAtStart, PENDING_STALE_MS, planRestart, RESTART_FILE, type RestartDeps, type RestartQueue, restartSelf } from "./restart";
 
 type Plan = Awaited<ReturnType<typeof planRestart>>;
@@ -126,7 +127,7 @@ test("restart: server files landed → hold, install when owed, build, the unit 
   assert.equal(out.expect, tip);
   assert.deepEqual(ran, [["pnpm", "install", "--frozen-lockfile"], ["pnpm", "run", "build"]]);
   assert.deepEqual(scheduled, ["sova-standin-test.service"], "the definition's adopted unit, never one named here");
-  assert.deepEqual(held, ["set"]);
+  assert.deepEqual(held, ["set", "set"], "held before the install, renewed after the build");
   assert.ok(existsSync(join(dir, RESTART_FILE)));
   // The same start (the restart hasn't happened yet) leaves the record.
   assert.equal(await checkRestartAtStart(q, d), null);
@@ -134,7 +135,7 @@ test("restart: server files landed → hold, install when owed, build, the unit 
   restartedOn(tip);
   const seen = await checkRestartAtStart(q, d);
   assert.deepEqual(seen, { ok: true, expect: tip, head: tip });
-  assert.deepEqual(held, ["set", "clear"]);
+  assert.deepEqual(held, ["set", "set", "clear"]);
   assert.match(notes.get("mq_1")!, /^Changes server code; Sova restarts itself once the queue is idle\. Restarted Sova after landing feat\/x\.$/);
   assert.equal(existsSync(join(dir, RESTART_FILE)), false);
 });
@@ -205,4 +206,25 @@ test("restart: a scheduled restart that never happened goes stale after a while,
   now += PENDING_STALE_MS;
   assert.equal((await restartSelf(f.q, x.d)).outcome, "restarting");
   assert.equal(x.scheduled.length, 2);
+});
+
+test("restart: an install and build longer than the hold renew it, so it is still in force when the restart is scheduled", async () => {
+  const r = repo();
+  r.put({ "server/a.ts": "a\n", "pnpm-lock.yaml": "l\n" }, "server + lock");
+  const f = fakeQueue(r.dir);
+  let now = Date.parse("2026-11-07T10:00:00.000Z");
+  // The queue's hold as queue.ts keeps it: `set` holds until now + HOLD_MS, and lapses after.
+  let until = 0;
+  f.q.hold = async (a) => ((until = a === "set" ? now + HOLD_MS : 0), { changed: true });
+  const x = deps(r.dir, r.first);
+  x.d.now = () => now;
+  const run = x.d.run!;
+  // Install and build take 4 minutes each: together past HOLD_MS.
+  x.d.run = async (argv, cwd, ms) => ((now += 4 * 60_000), run(argv, cwd, ms));
+  let heldAtSchedule: boolean | null = null;
+  const schedule = x.d.schedule;
+  x.d.schedule = async (unit) => ((heldAtSchedule = until > now), schedule(unit));
+  assert.equal((await restartSelf(f.q, x.d)).outcome, "restarting");
+  assert.ok(now - Date.parse("2026-11-07T10:00:00.000Z") > HOLD_MS, "the install and build outlasted one hold");
+  assert.equal(heldAtSchedule, true, "the hold is still in force when the restart is scheduled");
 });

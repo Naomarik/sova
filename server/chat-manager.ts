@@ -44,6 +44,7 @@ import { branchOf, historyOf, lineHeader, readPi, storedAsString } from "./harne
 import { stateView } from "./harness/state-view";
 import { LiveTail } from "./chat-runtime/live-tail";
 import { takeWriterLock, type WriterLock, WriterLockHeld } from "./chat-runtime/writer-lock";
+import { sovaNamedKind } from "../shared/fixed-names";
 import { extensionFlagValues, getModelRuntime, openPiSession, type OpenFlags, type OpenRead, type PiBuild, type PiModelRuntime, warmClaudeCodeProvider as warmPiProvider } from "./harness/pi/open";
 import type { PiExtensionAPI, PiLoaderOptions, PiToolDefinition } from "./harness/pi/extension-types";
 import { PiChatHost } from "./harness/pi/host";
@@ -251,6 +252,9 @@ export const markRunResuming = (path: string): void => runRecorder.markResuming(
  *   what it began with across every later start. Without a record (a caller with no chat), the review
  *   switch as saved now, and no Visuals flag (the extension then reads mode-align.json itself).
  */
+/** The merge thread's sandbox flags: On, read-only level, the cwd never writable. */
+export const MERGE_THREAD_FLAGS = { sandboxOn: true, sandboxReadOnly: true, cwdNotWritable: true } as const satisfies Partial<OpenFlags>;
+
 function sessionFlags(cwd: string, outline = true, linkTools: "member" | "legacy" = "legacy", launch?: AlignLaunchData): OpenFlags {
   const flags: OpenFlags = { outline };
   const target = targetOfCwd(cwd);
@@ -4748,7 +4752,9 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
             ],
             ...overrides,
           },
-      flags: () => sessionFlags(cwd, outline, linkTools, launch.data ?? undefined),
+      // The merge thread (its Sova profile): its sandbox On from its start, at the read-only level (its tools write only
+      // in their tmp) and the main checkout it starts in never a writable root; the rest goes through the merge verbs.
+      flags: () => ({ ...sessionFlags(cwd, outline, linkTools, launch.data ?? undefined), ...(sovaNamedKind(snap) === "merge-thread" ? MERGE_THREAD_FLAGS : {}) }),
       // Sova's engine in the discovered mode extension's slot, when Sova runs this chat's modes.
       modesEntry: modes.sova ? modesEntries().entry : null,
       // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's

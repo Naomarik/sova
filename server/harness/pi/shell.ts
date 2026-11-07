@@ -20,7 +20,7 @@ import { shellTruncation, toHEntry } from "./reader";
     the session starts itself needs to run under its policy. Never said: Off (no sandbox extension). */
 export interface SandboxSeen {
   on: boolean;
-  scope?: { worktreeRoots: string[]; parent?: unknown; cwdWritable?: false; invalid?: string };
+  scope?: { worktreeRoots: string[]; parent?: unknown; cwdWritable?: false; readOnly?: true; invalid?: string };
 }
 
 const sandboxes = new WeakMap<object, SandboxSeen>();
@@ -183,6 +183,7 @@ export function piShell(session: () => AgentSession, sandbox: () => SandboxSeen)
             ...(scope?.parent ? { parent: scope.parent as ParentScope } : {}),
             // A reopened chat whose folder is gone runs in a stand-in, never a writable root (as the agent's tools).
             ...(scope?.cwdWritable === false ? { cwdWritable: false } : {}),
+            ...(scope?.readOnly === true ? { readOnly: true } : {}),
           },
           [shell.shell, ...shell.args, resolved],
         );

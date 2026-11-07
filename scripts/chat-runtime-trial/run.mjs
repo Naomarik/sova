@@ -4083,12 +4083,13 @@ async function jobWakesWorker(name, idleMs) {
   await waitFor(() => lastStatus() === "waiting", 15000);
   R.check(lastStatus() === "waiting", `${name}: status waiting in the parent's record (${JSON.stringify(manifests().slice(-3).map((r) => r.status))})`);
   // The parent's file, not the mock's log: that keeps a request's first 300 characters, and the report's header
-  // (its session path, as long as the scratch dir makes it) can push the reply past them. Read before anything
-  // else prompts the parent, so only that report can have started what follows it.
+  // (its session path, as long as the scratch dir makes it) can push the reply past them. The turn that report
+  // started: the next message after it is the parent's answer, with the scripted reply, no prompt between.
   const turnOnReport = () => {
     const es = entries(a.path);
     const at = es.findLastIndex((e) => e.customType === "subagent-complete" && JSON.stringify(e).includes(reply));
-    return at >= 0 && es.slice(at + 1).some((e) => e.type === "message" && e.message?.role === "assistant");
+    const next = at >= 0 ? es.slice(at + 1).find((e) => e.type === "message") : undefined;
+    return next?.message?.role === "assistant" && fullText(next).includes(reply);
   };
   await waitFor(turnOnReport, 30000);
   R.check(turnOnReport(), `${name}: the reply started a turn in the parent`);

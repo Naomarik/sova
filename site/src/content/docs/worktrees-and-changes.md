@@ -64,6 +64,8 @@ Sova never removes a worktree of yours on its own, only the scratch copies the m
 
 The button checks first and shows you what goes and what stays, each kept folder with its reason: not merged, uncommitted files, a session still running there, and so on. Only the folders you confirmed are removed, and only if they're still safe to remove at that moment. Git removes them without force, so it refuses a folder that changed. A branch that git finds in your main branch is deleted too; the others keep their commits.
 
+Git's own remove would delete every ignored file and every repository nested in the folder without asking, so Sova reads what a worktree holds first, wherever it removes one. A folder stays when it holds something git can't bring back: an uncommitted file, an ignored file that can't be rebuilt (folders such as `node_modules`, `dist` or `build` can be, and go with it), or a nested repository or worktree. It stays too when Sova couldn't read it all. Its row says what it holds and offers **Remove Anyway**, which first lists exactly what goes and starts on Back. Sova runs every check again and removes it only if what it holds is still what you confirmed.
+
 ## Reviewing what changed
 
 The **changes viewer** shows what a session changed on disk. It only reads: it never writes to your working tree and never runs a git command that changes anything. It shows one comparison: the session's uncommitted changes, a worktree's branch, or one commit. It opens from these places:

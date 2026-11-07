@@ -20,6 +20,8 @@ A session is listed when one of these holds:
 - A playbook run proposes a branch to merge. Its row carries a **Merge Branch** button.
 - A card in its chat waits for your answer, such as an option card or a question card.
 
+A session with a waiting card and open alignment questions too still reads as a question: answering the card doesn't answer the alignment.
+
 A project's failed deploy or open deploy request, its release items (a release ready to publish, a step held for you, a failed step or Publish, a release chat that has gone quiet, or a request to release), and a WhatsApp sender that stopped sending, belong to no session: they list under the session rows as rows of their own, each opening the page where you deal with it (the Deploy panel, the Releases tab, Settings → Outreach). So does each open request an organization's owner files through its Project Assistant. A report, question or request opens the organization's **Requests** tab at it, and stays until work on it starts or you **Mark Done** or **Decline** it. A request to try a version opens the project's **Branches** tab, and an ask for a new owner link opens the **People** tab.
 
 Under the blockers, a softer group named **Maybe waiting on you** lists Sova's guesses from a chat's last reply: a reply that seems to wait on you, or one that says it's done without checking. A guess never sends a phone notification. It goes when the next turn replaces it or the chat is archived, or after 7 idle days. A reply asking you to press Land, merge or restart also leaves on its own while that version is in the merge queue, comes back if the entry is cancelled or stops short, and leaves for good once that version has landed. A newer change with a new ask stays listed.

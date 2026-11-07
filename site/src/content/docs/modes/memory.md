@@ -142,10 +142,10 @@ The type new chats start from isn't set here. It comes from the mode menu's Save
 
 ## Where memory can't be on
 
-- **The terminal.** pi's terminal UI can turn memory off, but never on: `/mode memory on` and
-  `pi --minor memory` are refused, and the palette has no memory row. A terminal session that starts
-  from a default with memory on drops it. A Sova chat later opened in a terminal keeps memory in its
-  saved mode, but nothing runs it there.
+- **Typed.** `/mode memory on` typed in a chat is refused: only the mode menu turns memory on.
+  `/mode memory off` works.
+- **The terminal.** A pi terminal session has no modes from Sova, so nothing runs memory there. A
+  Sova chat later opened in a terminal keeps memory in its saved mode for when Sova opens it again.
 - **Workers.** A worker never gets memory: it starts fresh from its brief.
 - **Coding sessions.** Neither Overseer can start or set a coding session with memory, and a coding
   session that names no minor modes starts without it, even when your default has it on.

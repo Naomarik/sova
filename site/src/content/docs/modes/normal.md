@@ -23,7 +23,7 @@ models your [subagent profile](/docs/subagent-profiles/) names.
 ## Switch to it
 
 - Pick **normal** or **delegate** in the chat's mode menu (see [Modes](/docs/modes/)).
-- In a terminal, type `/mode normal`. `alt+m` switches between normal and Delegate.
+- Or type `/mode normal` in the chat.
 
 A switch applies from that chat's next message.
 

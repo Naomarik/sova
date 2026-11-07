@@ -4,6 +4,60 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.12.0 — 2026-11-07
+
+Light, Dark and Auto themes, an Extensions tab in Settings, Time Spent for each chat, shell mode
+in the composer, and Sova running chat modes itself. 329 commits since v0.11.0.
+The highlights:
+
+- **Light, Dark and Auto.** Settings → Themes now has Appearance at the top: Light, Dark or Auto,
+  where Auto follows your system and switches with it, no reload. Pick one dark theme and one light
+  theme from two lists shown as card grids, Dark first. A pick takes effect at once in the list
+  that's showing. Each pick is saved per browser and painted before the first frame, so a reload
+  never flashes the other theme. Open tabs follow a change made in another tab, fonts and text size
+  included.
+- **Settings → Extensions.** A new tab lists this computer's extensions, one state per row
+  (Waiting for You, Changed, Running, Stopped and the rest). **Add Extension** picks a folder.
+  Nothing runs until you approve it after a Review. Sova starts each extension's program itself and
+  offers Start, Restart Program and View Log. When an extension's code changes, its page goes off
+  until you approve the new version. A message an extension sends shows its name badge, and an
+  extension can never act as you.
+- **Time Spent.** The session pane has a Time Spent tab, between Usage and Context. It shows how
+  long you've been with the chat and how long its agent has worked, split into Reading, Typing, Dictating, Reviewing
+  Changes and more, with a line per alignment. With **Label your messages** turned on in Settings →
+  Decisions (off by default), each message you send gets a label (Specifying, Directing, Reworking,
+  Asking), and **Your Messages** shows where your time went.
+- **Type anywhere, shell mode and Esc.** Typing a character while focus isn't in a text field puts
+  it in the composer, at its caret; nothing is sent. Type `!` in an empty composer to switch it to
+  shell mode: the line runs as a command in the chat's folder instead of going to the model, and
+  Send reads Run. A running command shows in a bar with Show Output. A plain **Esc** in the composer
+  now stops the reply, like Stop, and leaves what you've typed alone.
+- **Chat modes.** Sova now runs chat modes and minor modes itself. Settings → Experimental has the
+  switch, **Sova runs chat modes**, on by default; turn it off to go back to the old way. Spec is now
+  an ordinary minor mode you turn on or off in a project chat's mode menu. Mode commands such as
+  `/mode delegate` are typed in a chat's composer and Sova answers them; you can keep personal modes
+  of your own in `~/.pi/agent/sova/minor-modes/`. Sova no longer supports modes in a pi terminal session.
+- **Merge queue.** The merge thread runs read-only in a sandbox. Restarts, live checks, conflict
+  fixes and test runs are done by Sova for it. The merge thread's chat has a Run Logs chip with its
+  size and Clean Logs… (asks first). Removing a worktree now keeps it when it holds something git
+  can't bring back, such as an ignored file or a nested repository, and offers Remove Anyway.
+- **Smaller changes.** Home's project cards show memory as one bar: chats and running copies
+  together. A message typed before a new chat has connected is sent, not lost. Only chats whose
+  project has a running-copy setup are offered the project tools. The Context sheet keeps loaded
+  rows when its list is long. Worker reports after a reload or a gap now arrive once and in full.
+  The Docs explain that each chat runs in a process of its own, and new Docs pages cover Themes and
+  Sova extensions. A contributor guide is in the repo.
+
+**What you may need to do:** Esc in the composer now stops a running reply. Switch modes in a Sova
+chat: Sova no longer supports `/mode`, `alt+m` or the mode launch flags in pi's terminal. Extensions you already
+had are approved once at the first start. After that, an extension added or edited outside Settings
+→ Extensions waits for your Review. Your theme choice carries over as your Dark or Light pick.
+
+Going back to `v0.11.0` (`SOVA_REF=v0.11.0`) keeps your settings and sessions as they are, with
+three costs. Each browser goes back to the built-in Dark theme until you pick one again. Extensions
+that Sova was starting from their folder no longer have their program started. Time Spent figures
+and message labels are kept, but v0.11.0 doesn't show them.
+
 ## v0.11.0 — 2026-11-06
 
 A Setup chat for your project's pipeline, reminders and jobs that don't need a tab open, a new Home,

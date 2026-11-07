@@ -90,6 +90,13 @@ acts only through the queue, never moves the main branch itself, and a missing o
 never delays a landing. When it has a question for you, it shows on its card on the Merge Queue
 tab.
 
+The thread works read-only: its sandbox lets it write only in its own temp folder, never in your
+project's folders, with no network. Everything beyond reading, such as restarting Sova after
+landings, writing a conflict's resolution or running a test, it asks Sova to do. Its chat's head has
+a **Run logs** chip with their size: Sova packs a run's logs a day after it ends and never deletes
+them, unless you press **Clean Logs…**, which says what goes and asks first. The newest 10 runs, the
+run checking now and the runs of entries still open keep theirs.
+
 The thread and every review chat are the queue's own: they stay out of your session lists and are
 opened from the Merge Queue tab, which keeps their history until you clear it. **Start Fresh…**
 replaces the thread.

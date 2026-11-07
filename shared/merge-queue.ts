@@ -405,7 +405,8 @@ export interface MergeEntry {
     diagnosis?: string;
     otherTried?: true;
     /** A send-back waiting for the thread's diagnosis (at most RULING_WAIT_MS), then sent with or without it. */
-    pending?: { cause: SentBackFor; why: string; run?: string; files?: string[]; review?: string; at: string };
+    /** `counted`: the failure's try, counted when it happened (whatever the thread then rules), with its fingerprint. */
+    pending?: { cause: SentBackFor; why: string; run?: string; files?: string[]; review?: string; at: string; counted?: { tries: number; max: number; fingerprint: string } };
     /** The chat answered this request Can't: the thread rules on it (another approach, or the user). */
     cant?: { request: string; why: string; at: string };
     /** The thread's own resolution failed a check: it is ruling again; never the branch's. */

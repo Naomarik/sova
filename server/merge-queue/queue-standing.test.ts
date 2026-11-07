@@ -719,3 +719,36 @@ describe("the conflict there at the Land", () => {
     }
   });
 });
+
+describe("every failing run under the Land counts its try", () => {
+  test("fail → the thread rules needs-user → the user answers → a Fixed commit → the same failure again: stopped (failed the same way twice), the user decides, nothing more to the chat", async () => {
+    const { k } = standingKit({ thread: (ev) => ev.kind === "failed" || ev.kind === "fix" });
+    try {
+      k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit tests failed in positive" }));
+      const q = await k.q();
+      const b = k.repo.branch("feat/positive", { "p.txt": "p\n" });
+      const { entry } = await q.add({ branch: "feat/positive", by: "land-button", session: "s1" });
+      // The thread is asked for its diagnosis; the try counts at the failure, whatever it rules.
+      await until(async () => (await k.entry(entry.id)).ruling?.pending, "waits for the thread's diagnosis");
+      assert.equal((await k.entry(entry.id)).tries?.used, 1);
+      await q.rule(entry.id, { ruling: "needs-user", text: "Keep negatives or reject them?", choices: ["Keep", "Reject"] });
+      const d = (await k.entry(entry.id)).decision!;
+      assert.equal(d.kind, "needs-you");
+      const held = await q.decisionAnswered(entry.id, d.id, "Reject them", { session: "s1" });
+      assert.ok(held, "the held note goes with the user's answer");
+      const fix = k.repo.commitOn(b.path, { "harmless.txt": "x\n" }, "a harmless change");
+      await q.respond(held!.request, "s1", { answer: "fixed", commit: fix });
+      await q.fixRuling(entry.id, held!.request, true, "");
+      // Run 2 fails identically.
+      const out = await until(async () => ((await k.entry(entry.id)).decision?.kind === "out-of-tries" ? k.entry(entry.id) : null), "stopped early");
+      assert.match(out.decision!.question, /Failed the same way twice/);
+      assert.equal(out.tries?.used, 2);
+      assert.equal(out.tries?.fingerprints.length, 2);
+      const requestsAfter = out.requests!.filter((r) => Date.parse(r.at) > Date.parse(d.at)).filter((r) => r.kind === "fix");
+      assert.deepEqual(requestsAfter, [], "no further request to the chat");
+      assert.equal(k.run.inputs.length, 2);
+    } finally {
+      await k.done();
+    }
+  });
+});

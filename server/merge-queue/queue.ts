@@ -1647,7 +1647,9 @@ export class ProjectQueue {
       this.handBack(e, run, f.why, f.cause);
       return;
     }
-    const fingerprint = fingerprintOf({ cause: f.cause, ...(run ? { run, tails: this.failedTails(run) } : {}), ...(f.files ? { files: f.files } : {}), ...(f.review ? { review: f.review } : {}), why: f.why });
+    // A failure that waited for the thread's diagnosis had its try counted when it happened (awaitDiagnosis).
+    const counted = e.ruling?.pending?.counted && e.ruling.pending.run === f.runId ? e.ruling.pending.counted : undefined;
+    const fingerprint = counted?.fingerprint ?? this.failurePrint(f, run);
     const diagnosis = f.diagnosis ?? e.ruling?.diagnosis;
     const ruling = e.ruling ? { ...(e.ruling.otherTried ? { otherTried: true as const } : {}) } : undefined;
     if (ruling && Object.keys(ruling).length) e.ruling = ruling;
@@ -1660,8 +1662,8 @@ export class ProjectQueue {
       delete e.conflictFiles;
     }
     if (f.cause !== "review") delete e.review;
-    const t = this.countTry(e, fingerprint);
-    if (t.out) {
+    const t = counted ? { tries: counted.tries, max: counted.max } : this.countTry(e, fingerprint);
+    if ("out" in t && t.out) {
       this.outOfTries(e, t.out === "same-twice" ? `Failed the same way twice: ${f.why}` : `Tried ${t.tries} times: ${f.why}`);
       return;
     }
@@ -1673,6 +1675,11 @@ export class ProjectQueue {
     const text = sendBackText(e, { cause: f.cause, why: f.why, ...(run ? { run, logDir: this.store.runDir(run.id) } : {}), ...(f.files ? { files: f.files } : {}), ...(f.review ? { review: f.review } : {}), ...(diagnosis ? { diagnosis } : {}), attempt: { try: t.tries, of: t.max } });
     this.save();
     this.request(e, "fix", text, { try: t.tries, fingerprint, ...(run ? { run } : {}) });
+  }
+
+  /** A send-back's same-failure fingerprint (rulings.ts fingerprintOf). */
+  private failurePrint(f: { cause: SentBackFor; why: string; files?: string[]; review?: string }, run: MergeRun | undefined): string {
+    return fingerprintOf({ cause: f.cause, ...(run ? { run, tails: this.failedTails(run) } : {}), ...(f.files ? { files: f.files } : {}), ...(f.review ? { review: f.review } : {}), why: f.why });
   }
 
   /** The last lines of each failed step's log that names no failing test (a typecheck, a build): what tells two such
@@ -1693,10 +1700,23 @@ export class ProjectQueue {
   /** A failure blamed on the branch waits for the thread's diagnosis (at most rulingWaitMs), then goes back as it is:
    *  with the thread's note as its diagnosis when it wrote one, else without. */
   private awaitDiagnosis(e: Entry, p: NonNullable<NonNullable<MergeEntry["ruling"]>["pending"]>): void {
+    // The failure is the branch's: its try counts now, whatever the thread rules (a diagnosis, or a decision for the
+    // user), and the same failure twice, or out of tries, stops here (q2): the user decides, nothing more to the chat.
+    const run = p.run ? (this.store.readRun(p.run) ?? undefined) : undefined;
+    const fingerprint = p.counted?.fingerprint ?? this.failurePrint(p, run);
+    // Re-armed after a restart (recover): counted already, never twice.
+    const t = p.counted ? { tries: p.counted.tries, max: p.counted.max } : this.countTry(e, fingerprint);
+    if ("out" in t && t.out) {
+      this.clearRulingTimer(e.id);
+      if (e.ruling) delete e.ruling.pending;
+      this.outOfTries(e, t.out === "same-twice" ? `Failed the same way twice: ${p.why}` : `Tried ${t.tries} times: ${p.why}`);
+      return;
+    }
+    p = { ...p, counted: { tries: t.tries, max: t.max, fingerprint } };
     e.ruling = { ...(e.ruling ?? {}), pending: p };
     e.state = "with-chat";
     e.reason = p.why;
-    e.standing = { phase: "with-chat", try: Math.min((e.tries?.used ?? 0) + 1, e.tries?.max ?? 3), of: e.tries?.max ?? 3, why: p.why };
+    e.standing = { phase: "with-chat", try: t.tries, of: t.max, why: p.why };
     e.updatedAt = this.iso();
     this.save();
     this.armRulingTimer(e.id, () => {

@@ -229,12 +229,12 @@ function watchSystem(): void {
  * The save re-reads the stored choice and changes only the kinds in `patch`, as the theme's saves
  * do (`saveThemes`): another tab open in this browser shares the key, and a write of this tab's
  * whole memory would erase the other kind's pick that tab made since (its storage event may not
- * have arrived yet).
+ * have arrived yet). This tab then wears exactly what it stored.
  */
 export function setTypography(patch: Partial<Typography>): Typography {
-  const next: Typography = { ...typography(), ...patch };
+  const next: Typography = { ...readStoredTypography(), ...patch };
   setTypographySignal(next);
-  writeStoredTypography({ ...readStoredTypography(), ...patch });
+  writeStoredTypography(next);
   paint();
   return next;
 }

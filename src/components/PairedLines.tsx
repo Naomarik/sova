@@ -45,7 +45,7 @@ export function PairedLines(props: { sessionId: string | undefined }) {
           <Banner
             tone={line().paused ? "warn" : "info"}
             size="compact"
-            icon="network"
+            icon="link"
             title={
               <>
                 Paired with <a href={`#/s/${encodeURIComponent(line().partner.path)}`} title={line().partner.title}>{line().partner.title}</a>

@@ -15,7 +15,7 @@ import type {
 } from "../shared/protocol";
 import type { PeerStateView } from "../shared/mesh-access";
 import { hostState, WIRE_AREAS, type WireAreas } from "../shared/wire-areas";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { fixedNameRefusal } from "../shared/fixed-names";
 import { relativeTime } from "../pi-config/extensions/stamp/format.ts";
@@ -382,10 +382,22 @@ export class TurnLimits {
     if (!this.file) return;
     try {
       mkdirSync(dirname(this.file), { recursive: true });
-      writeFileSync(this.file, `${JSON.stringify({ version: 1, used: this.used })}\n`);
+      writeWhole(this.file, `${JSON.stringify({ version: 1, used: this.used })}\n`);
     } catch (err) {
       console.warn("[overseer] turn counters not saved:", err instanceof Error ? err.message : String(err));
     }
+  }
+}
+
+/** Write `text` to `file` whole or not at all: a temp file beside it, then a rename over it. */
+function writeWhole(file: string, text: string, mode?: number): void {
+  const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    writeFileSync(tmp, text, mode === undefined ? {} : { mode });
+    renameSync(tmp, file);
+  } catch (err) {
+    try { rmSync(tmp, { force: true }); } catch { /* gone */ }
+    throw err;
   }
 }
 

@@ -1,5 +1,5 @@
 import { execFile, execFileSync, spawn } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { setPriority } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { hostProcTable, procfsTable, unitMembers, type ProcTable } from "./proctable";
@@ -654,7 +654,7 @@ export class DetachedDriver implements Driver {
   private async spawnRecorded(spec: UnitSpec): Promise<void> {
     const rec = await this.spawnUnit(spec);
     // The record holds the unit's env: only its owner reads it.
-    writeFileSync(this.recFile(spec.unit), `${JSON.stringify(rec)}\n`, { mode: 0o600 });
+    writeWhole(this.recFile(spec.unit), `${JSON.stringify(rec)}\n`, 0o600);
     const now = Date.now();
     this.starts.set(spec.unit, [...(this.starts.get(spec.unit) ?? []).filter((t) => now - t < RESTART_WINDOW_MS), now]);
     this.down.delete(spec.unit);
@@ -863,5 +863,17 @@ export class DetachedDriver implements Driver {
   /** Tests only: remove a unit's log. */
   clearLog(unit: string) {
     if (existsSync(this.logFile(unit))) rmSync(this.logFile(unit));
+  }
+}
+
+/** Write `text` to `file` whole or not at all: a temp file beside it, then a rename over it. */
+function writeWhole(file: string, text: string, mode?: number): void {
+  const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    writeFileSync(tmp, text, mode === undefined ? {} : { mode });
+    renameSync(tmp, file);
+  } catch (err) {
+    try { rmSync(tmp, { force: true }); } catch { /* gone */ }
+    throw err;
   }
 }

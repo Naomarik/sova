@@ -90,6 +90,7 @@ import {
 	type UsageProvider,
 	type UsageWindow,
 } from "./coordination.ts";
+import { JOBS_DIR_ENV, stillRunningLine } from "./job-store.ts";
 import { publishWakes, wakeStoreOf, wakesCancelledBefore } from "./wake-store.ts";
 import { WorkerRegistryRecorder, type WorkerLaunchSpec } from "./registry.ts";
 import { manifestModes, readWorkerManifests, resolvedModel, viewWorker, type FoldedWorkerManifest, type WorkerTranscriptView } from "./worker-transcript.ts";
@@ -1276,11 +1277,18 @@ export function registerSubagents(
 		// Busy workers show live tool activity instead of a premature "no output";
 		// settled ones keep the final-answer line the completion message quotes.
 		`${summaryHeader(a)}\n${a.finalOutput() || (a.isSettled() ? "(no output for this task)" : recentActivity(a))}`;
-	/** A text with the worker's landed line last: after the answer, so the answer's first line stays the report's preview (server/reports.ts). */
-	const withLanded = (a: Worker, text: string) => {
-		const line = landedOf(a);
-		return line ? `${text}\n\n${line}` : text;
+	/** The worker's own jobs still running or owed, read from its session directory; a finished worker has nothing left to wake. */
+	const stillRunningOf = (a: Worker): string | undefined => {
+		const dir = process.env[JOBS_DIR_ENV];
+		if (!dir || !a.sessionId || a.isFinished()) return undefined;
+		try {
+			return stillRunningLine(dir, a.sessionId);
+		} catch {
+			return undefined; // A record that can't be read never costs the report.
+		}
 	};
+	/** A text with the worker's landed and jobs lines last: after the answer, so the answer's first line stays the report's preview (server/reports.ts). */
+	const withLanded = (a: Worker, text: string) => [text, landedOf(a), stillRunningOf(a)].filter(Boolean).join("\n\n");
 	const summary = (a: Worker) => withLanded(a, answerSummary(a));
 	/**
 	 * A cut completion message: the preview, the worker's landed line if any, one line naming the final answer's size and a
@@ -1379,6 +1387,32 @@ export function registerSubagents(
 			scheduleRefresh();
 		}
 	};
+	/** Teams whose coordinator's finish held back its wake because a teammate was working. */
+	const heldTeamWakes = new Set<string>();
+	/** A run the worker started on its own ended well with nothing written: idle again as at any settle, with no report. */
+	const onQuietSettled = (a: Worker) => {
+		if (shuttingDown || !agents.includes(a)) return;
+		registry.settled(a);
+		successionCheck(a);
+		retireCheck(a);
+		try {
+			sweepSettled(a, (settleSeq.get(a.id) ?? 0) + 1);
+			sendHeldTeamWake(a);
+		} finally {
+			wakes?.settled(a.id);
+			pruneFinished();
+			scheduleRefresh();
+		}
+	};
+	/** No report follows a quiet settle, so nothing else would wake the main chat for a finish that waited on this worker. */
+	const sendHeldTeamWake = (a: Worker) => {
+		const teamId = teams.teamOf(a.id);
+		if (!teamId || !heldTeamWakes.has(teamId) || teamWorking(teamId, a.id)) return;
+		heldTeamWakes.delete(teamId);
+		// A parent mid-run reads the finish at its own release point, so it needs no wake.
+		if (shuttingDown || !activeCtx || parentLoops > 0) return;
+		sendCompletion(`[${teamId}: no teammate is working now. ${teams.memberInfo(a.id)?.member.role ?? a.id} went idle with nothing to report.]`, true);
+	};
 	/** The parent's (or the coordinator's) copy of a settle, read from the worker as it settled. */
 	const announceSettle = (a: Worker, seq: number) => {
 		if (shuttingDown || !activeCtx) return;
@@ -1395,8 +1429,15 @@ export function registerSubagents(
 		const route = completionRoute(a, failed);
 		if (route.kind === "drop") return;
 		if (route.kind === "coordinator") {
+			// The coordinator runs on this report, and its own settle decides the wake.
+			heldTeamWakes.delete(teams.teamOf(a.id) ?? "");
 			void deliverCompletion(route.to, a, verb);
 			return;
+		}
+		const teamId = teams.memberInfo(a.id)?.team.coordination ? teams.teamOf(a.id) : undefined;
+		if (teamId) {
+			if (route.wake || !a.wake || a.status === "killed") heldTeamWakes.delete(teamId);
+			else heldTeamWakes.add(teamId);
 		}
 		if (!["tui", "rpc"].includes(activeCtx.mode)) return;
 		// Independent: a broken UI must not suppress the completion message/wake.
@@ -1724,6 +1765,7 @@ export function registerSubagents(
 						{
 							onChange: () => { if (committed) scheduleRefresh(); },
 							onSettled: (worker) => { if (committed) onSettled(worker); else if (!abandoned) earlySettled.add(worker); },
+							onQuietSettled: (worker) => { if (committed) onQuietSettled(worker); },
 							onExit,
 						},
 					);
@@ -3735,14 +3777,16 @@ export function registerSubagents(
 				usage: { ...a.usage },
 			};
 			if (params.full) {
-				const header = `${a.id} (${a.name}) — ${a.status}\nSession: ${a.sessionFile ?? a.sessionId ?? "unavailable"}${a.transcriptOmitted?.items ? `\n[Retained transcript: ${a.transcriptOmitted.items} earlier item(s) omitted, approximately ${a.transcriptOmitted.approxBytes} bytes.]` : ""}`;
+				const jobs = stillRunningOf(a);
+				const header = `${a.id} (${a.name}) — ${a.status}\nSession: ${a.sessionFile ?? a.sessionId ?? "unavailable"}${a.transcriptOmitted?.items ? `\n[Retained transcript: ${a.transcriptOmitted.items} earlier item(s) omitted, approximately ${a.transcriptOmitted.approxBytes} bytes.]` : ""}${jobs ? `\n${jobs}` : ""}`;
 				const items = a.transcript.map((t) => `[${t.kind}${t.toolName ? `:${t.toolName}` : ""}] ${t.text}`).join("\n");
 				return toolResult(fullTranscriptText(a.id, header, answer, items), { ...details, finalAnswerChars: answer.length, retention: retention() }, true);
 			}
 			// No answer yet: the bounded summary (recent activity or the no-output line).
 			if (!answer) return result(summary(a), details);
 			const { text, page } = finalAnswerPage(a.id, summaryHeader(a), answer, params.offset, params.limit, params.offset !== undefined || params.limit !== undefined);
-			return toolResult(text, { ...details, finalAnswer: page, retention: retention() }, true);
+			const jobs = stillRunningOf(a);
+			return toolResult(jobs ? `${text}\n\n${jobs}` : text, { ...details, finalAnswer: page, retention: retention() }, true);
 		},
 	});
 	pi.registerTool({
@@ -4856,7 +4900,7 @@ export function registerSubagents(
 								...(launch.mcpServers ? { mcpServers: [...launch.mcpServers] } : {}),
 								...(launch.extensions ? { extensions: [...launch.extensions] } : {}),
 							},
-							{ onChange: scheduleRefresh, onSettled, onExit },
+							{ onChange: scheduleRefresh, onSettled, onQuietSettled, onExit },
 							{
 								host,
 								parent,
@@ -4866,6 +4910,7 @@ export function registerSubagents(
 									...(manifest.settleKey ? { settleKey: manifest.settleKey } : {}),
 									...(manifest.settleEntryId ? { settleEntryId: manifest.settleEntryId } : {}),
 									...(manifest.settledAt ?? manifest.resumedAt ? { settledAt: Math.max(manifest.settledAt ?? 0, manifest.resumedAt ?? 0) } : {}),
+									...(manifest.priorSettle ? { priorSettle: manifest.priorSettle } : {}),
 								},
 							},
 						);

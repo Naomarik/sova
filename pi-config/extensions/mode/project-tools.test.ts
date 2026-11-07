@@ -388,6 +388,10 @@ test("projectToolDefinitions: SOVA_PROJECT_ROOT is the mode's checkout unless th
 		};
 		assert.match(await run({}), new RegExp(`${join(base, "repo")}$`));
 		assert.match(await run({ projectRoot: "/the/chats/checkout" }), /\/the\/chats\/checkout$/);
+		let now = "/at/registration";
+		const [late] = projectToolDefinitions(snapshot as never, { cwd: () => base, sandboxOn: () => false, projectRoot: () => now });
+		now = "/at/the/call";
+		assert.match((await late!.execute("c", {})).content[0]!.text, /\/at\/the\/call$/, "a function is asked at the call");
 	} finally {
 		rmSync(base, { recursive: true, force: true });
 	}

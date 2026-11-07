@@ -4,6 +4,7 @@
 // runtime swapped in, or a method a test replaced after open, is the one used. Events pass through pi's own
 // subscribe, one pi listener per Sova listener, mapped inside it: same order, same tick.
 import { mcpToolOf } from "./mcp-tools";
+import { modesEntries, type ModesEntries } from "./own-code";
 import type { AgentSession, AgentSessionRuntime } from "@earendil-works/pi-coding-agent";
 import type {
   CommandOwner,
@@ -276,9 +277,14 @@ function sourceLocation(info: { scope: string } | undefined): string | undefined
 
 /** Where a tool comes from, by its pi source path: `builtin:<name>` is pi's own; an angle-bracket path
     (`<inline:name>`, an extension factory, or `<sdk:name>`, a custom tool) is Sova's runtime's; a file is an
-    extension, named by its folder (`…/mode/index.ts` → `mode`) or its file (`…/btw.ts` → `btw`). */
-export function toolSource(path: string | undefined): Pick<HarnessToolInfo, "source" | "origin"> {
+    extension, named by its folder (`…/mode/index.ts` → `mode`) or its file (`…/btw.ts` → `btw`). Sova's own modules
+    in the mode extension's slots (own-code.ts) go by the name of the file each stands in for: who runs a chat's
+    modes doesn't show. */
+export function toolSource(path: string | undefined, entries: ModesEntries = modesEntries()): Pick<HarnessToolInfo, "source" | "origin"> {
   if (!path) return { source: "extension" };
+  if (path === entries.entry) return { source: "extension", origin: "mode" };
+  if (path === entries.projectToolsWorker) return { source: "extension", origin: "project-tools-worker" };
+  if (path === entries.specWorker) return { source: "extension", origin: "spec-worker" };
   if (path.startsWith("builtin:")) return { source: "builtin" };
   if (path.startsWith("<") && path.endsWith(">")) {
     const [kind, name] = path.slice(1, -1).split(":");

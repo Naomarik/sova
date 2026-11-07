@@ -126,7 +126,13 @@
    "required": [
     "id"
    ],
-   "properties": {},
+   "properties": {
+    "id": {
+     "type": "string",
+     "pattern": "^ag_\\d+$",
+     "description": "Exact worker ID (ag_NN)."
+    }
+   },
    "additionalProperties": false
   }
  },
@@ -177,6 +183,10 @@
     "id"
    ],
    "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
     "full": {
      "type": "boolean"
     },
@@ -204,6 +214,10 @@
     "message"
    ],
    "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
     "message": {
      "type": "string",
      "minLength": 1
@@ -224,6 +238,10 @@
   "parameters": {
    "type": "object",
    "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
     "group": {
      "type": "string",
      "minLength": 1
@@ -456,7 +474,7 @@
   "description": "@92bd36452c3a5ac1",
   "parameters": {
    "type": "object",
-   "properties": "@a9d589e46598fcc2",
+   "properties": "@34d275addc746e7c",
    "required": [
     "verb"
    ],
@@ -481,37 +499,6 @@
    "required": [
     "topic",
     "text"
-   ],
-   "additionalProperties": false
-  }
- },
- {
-  "name": "zoom",
-  "description": "@9fb1f34e406e16f8",
-  "parameters": {
-   "type": "object",
-   "properties": {
-    "n": {
-     "type": "integer",
-     "minimum": 1,
-     "description": "How many messages the line covers (a power of 2)"
-    }
-   },
-   "required": [
-    "id",
-    "n"
-   ],
-   "additionalProperties": false
-  }
- },
- {
-  "name": "date",
-  "description": "The date and time of message id in the memory view.",
-  "parameters": {
-   "type": "object",
-   "properties": {},
-   "required": [
-    "id"
    ],
    "additionalProperties": false
   }

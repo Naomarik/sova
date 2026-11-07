@@ -126,13 +126,7 @@
    "required": [
     "id"
    ],
-   "properties": {
-    "id": {
-     "type": "string",
-     "pattern": "^ag_\\d+$",
-     "description": "Exact worker ID (ag_NN)."
-    }
-   },
+   "properties": {},
    "additionalProperties": false
   }
  },
@@ -183,10 +177,6 @@
     "id"
    ],
    "properties": {
-    "id": {
-     "type": "string",
-     "minLength": 1
-    },
     "full": {
      "type": "boolean"
     },
@@ -214,10 +204,6 @@
     "message"
    ],
    "properties": {
-    "id": {
-     "type": "string",
-     "minLength": 1
-    },
     "message": {
      "type": "string",
      "minLength": 1
@@ -238,10 +224,6 @@
   "parameters": {
    "type": "object",
    "properties": {
-    "id": {
-     "type": "string",
-     "minLength": 1
-    },
     "group": {
      "type": "string",
      "minLength": 1
@@ -474,7 +456,7 @@
   "description": "@92bd36452c3a5ac1",
   "parameters": {
    "type": "object",
-   "properties": "@a9d589e46598fcc2",
+   "properties": "@34d275addc746e7c",
    "required": [
     "verb"
    ],
@@ -504,45 +486,15 @@
   }
  },
  {
-  "name": "zoom",
-  "description": "@9fb1f34e406e16f8",
+  "name": "rel__status",
+  "description": "Print the release status.\n\n(A tool of the project mode rel.)",
   "parameters": {
    "type": "object",
    "properties": {
-    "id": {
-     "type": "integer",
-     "minimum": 0,
-     "description": "The line's first message id"
-    },
-    "n": {
-     "type": "integer",
-     "minimum": 1,
-     "description": "How many messages the line covers (a power of 2)"
+    "verbose": {
+     "type": "boolean"
     }
-   },
-   "required": [
-    "id",
-    "n"
-   ],
-   "additionalProperties": false
-  }
- },
- {
-  "name": "date",
-  "description": "The date and time of message id in the memory view.",
-  "parameters": {
-   "type": "object",
-   "properties": {
-    "id": {
-     "type": "integer",
-     "minimum": 0,
-     "description": "The message id"
-    }
-   },
-   "required": [
-    "id"
-   ],
-   "additionalProperties": false
+   }
   }
  }
 ]

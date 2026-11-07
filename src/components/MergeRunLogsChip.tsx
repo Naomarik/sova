@@ -2,6 +2,7 @@ import { createEffect, createResource, createSignal, on, Show } from "solid-js";
 import { RUN_LOGS_KEEP_NEWEST, sizeLabel, type RunLogsInfo } from "../../shared/merge-run-logs";
 import { ApiError, cleanRunLogs, fetchRunLogsOfThread } from "../lib/api";
 import { mergeChanged } from "../lib/merge-queue-client";
+import { leftPopover } from "../lib/popover-focus";
 import { toast } from "../lib/ui-state";
 import { Icon } from "./ui";
 import "./merge-run-logs.css";
@@ -28,9 +29,22 @@ export function MergeRunLogsChip(props: { session: string }) {
   );
   // A run that ended or a clean elsewhere: read the size again (the queue's feed bumps this).
   createEffect(on(mergeChanged, () => void refetch(), { defer: true }));
-  const close = () => {
+  let chip: HTMLButtonElement | undefined;
+  let ask: HTMLButtonElement | undefined;
+  let cancel: HTMLButtonElement | undefined;
+  const close = (refocus = false) => {
     setOpen(false);
     setConfirming(false);
+    if (refocus) chip?.focus();
+  };
+  // Swapping the steps unmounts the focused button, which drops focus to <body>: hand it on ourselves.
+  const toConfirm = () => {
+    setConfirming(true);
+    cancel?.focus();
+  };
+  const toFirst = () => {
+    setConfirming(false);
+    ask?.focus();
   };
   const clean = async (i: RunLogsInfo) => {
     setBusy(true);
@@ -38,7 +52,8 @@ export function MergeRunLogsChip(props: { session: string }) {
       const r = await cleanRunLogs(i.project);
       mutate(r.info);
       close();
-      toast(r.runs ? `Cleaned the logs of ${runs(r.runs)}: ${sizeLabel(r.freed)} freed.` : "Nothing to clean: every run's logs are still kept.");
+      chip?.focus();
+      toast(r.runs ? `Cleaned the logs of ${runs(r.runs)}: ${sizeLabel(r.freed)} freed.` : "Nothing to clean: every run's logs are still kept.", { key: "run-logs-clean" });
     } catch (err) {
       toast(`Couldn't clean the run logs. ${said(err)}`);
     } finally {
@@ -51,14 +66,31 @@ export function MergeRunLogsChip(props: { session: string }) {
         <span
           class="run-logs-wrap"
           onFocusOut={(e) => {
+            const wrap = e.currentTarget;
+            const from = e.target as Node;
             const to = e.relatedTarget as Node | null;
-            if (!to || !e.currentTarget.contains(to)) close();
+            if (to && wrap.contains(to)) return;
+            if (to) return close();
+            // No next target: a click on nothing, a window switch, or our own step swap removing the focused
+            // button. Decide once focus has settled; a removed button's focus loss is not leaving.
+            setTimeout(() => {
+              const now = document.activeElement;
+              const onBody = !now || now === document.body;
+              if (leftPopover({ inside: !onBody && !!now && wrap.contains(now), onBody, fromConnected: from.isConnected, windowFocused: document.hasFocus() })) close();
+            });
           }}
-          onKeyDown={(e) => e.key === "Escape" && close()}
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && open()) {
+              e.stopPropagation();
+              close(true);
+            }
+          }}
         >
           <button
             type="button"
+            ref={chip}
             class="button button-ghost run-logs-chip"
+            aria-label={`Run logs ${sizeLabel(i().bytes)}`}
             aria-expanded={open()}
             aria-haspopup="dialog"
             title="The merge queue's run logs for this project"
@@ -87,7 +119,8 @@ export function MergeRunLogsChip(props: { session: string }) {
                       class="button button-sm button-destructive"
                       disabled={!i().cleanable.runs}
                       title={i().cleanable.runs ? undefined : `Nothing to clean: the newest ${RUN_LOGS_KEEP_NEWEST} runs and the runs still in use keep their logs.`}
-                      onClick={() => setConfirming(true)}
+                      ref={ask}
+                      onClick={toConfirm}
                     >
                       Clean Logs…
                     </button>
@@ -102,7 +135,7 @@ export function MergeRunLogsChip(props: { session: string }) {
                     <button type="button" class="button button-sm button-destructive" disabled={busy()} onClick={() => void clean(i())}>
                       {busy() ? "Cleaning…" : "Clean Logs"}
                     </button>
-                    <button type="button" class="button button-sm button-ghost" disabled={busy()} onClick={() => setConfirming(false)}>
+                    <button type="button" class="button button-sm button-ghost" ref={cancel} disabled={busy()} onClick={toFirst}>
                       Cancel
                     </button>
                   </div>

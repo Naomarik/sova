@@ -116,13 +116,13 @@
       "content": "",
       "sections": {
        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-       "tools": "@15d31f2a78f55765",
-       "rules": "@4577d5bcb2505d0a",
+       "tools": "@14069dc67c42c871",
+       "rules": "@2c247acceb91fdc3",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
        "mode": "@4227f5a8a6bce075"
       },
-      "toolsAdded": "@be8382b1919b9b26"
+      "toolsAdded": "@4e7de17586d28745"
      },
      {
       "role": "user",
@@ -174,13 +174,13 @@
      "content": "",
      "sections": {
       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-      "tools": "@15d31f2a78f55765",
-      "rules": "@4577d5bcb2505d0a",
+      "tools": "@14069dc67c42c871",
+      "rules": "@2c247acceb91fdc3",
       "docs": "@0f5fabf6c3c47c4c",
       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
       "mode": "@4227f5a8a6bce075"
      },
-     "toolsAdded": "@b655f6b1ed1bcc5f"
+     "toolsAdded": "@e0162240cd3ef894"
     }
    }
   ],
@@ -277,7 +277,7 @@
       "stopReason": "stop",
       "thinkingLevel": "off"
      },
-     "@0235b526995e867d",
+     "@aa3d7eb6fd96b946",
      {
       "role": "user",
       "content": [
@@ -332,7 +332,7 @@
      "role": "system",
      "content": "",
      "sections": {
-      "tools": "@42e3b65af9a48a61"
+      "tools": "@7b61ccc4990a2ee1"
      },
      "toolsAdded": [
       {
@@ -548,8 +548,8 @@
       "role": "system",
       "content": "",
       "sections": {
-       "tools": "@70a7d4190ca739c3",
-       "rules": "@d3703012c4e934f4"
+       "tools": "@de5e8b92a78c1467",
+       "rules": "@83ef20f71e96f13d"
       }
      },
      {
@@ -597,8 +597,8 @@
      "role": "system",
      "content": "",
      "sections": {
-      "tools": "@70a7d4190ca739c3",
-      "rules": "@d3703012c4e934f4"
+      "tools": "@de5e8b92a78c1467",
+      "rules": "@83ef20f71e96f13d"
      }
     }
    }
@@ -715,7 +715,7 @@
       "role": "system",
       "content": "",
       "sections": {
-       "tools": "@0e30185c7d35abf7"
+       "tools": "@e9fc4e46be015fb7"
       },
       "toolsRemoved": [
        {
@@ -782,7 +782,7 @@
      "role": "system",
      "content": "",
      "sections": {
-      "tools": "@0e30185c7d35abf7"
+      "tools": "@e9fc4e46be015fb7"
      },
      "toolsRemoved": [
       {

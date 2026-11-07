@@ -2,7 +2,7 @@
   "§design.copy-deck/composer": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/VoiceInput.tsx",
       "src/lib/voice/format.ts",
@@ -34,7 +34,8 @@
     "evidence": "reviewed",
     "code": [
       "src/components/ConnectionBanner.tsx",
-      "src/components/ChatView.tsx"
+      "src/components/ChatView.tsx",
+      "src/lib/chat-wait.ts"
     ]
   },
   "§design.copy-deck/context-tab": {

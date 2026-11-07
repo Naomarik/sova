@@ -161,7 +161,9 @@ answered by Sova itself and never sent.
   while streaming, pi runs it as it does a steered command.
 - **No optimistic bubble.** When the first token is a known command, don't add the optimistic
   user bubble. The command isn't a message to the model, and a template or skill expands into
-  different text.
+  different text. A `/word` sent before the chat has listed its commands goes at once and shows
+  nothing until the list comes: then its "Ran" row if the chat knows it, else its bubble
+  (§chat.transcript/send-while-starting).
 - **Local row instead.** Append a local `.info-row`:
 
   ```html

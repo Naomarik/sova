@@ -515,7 +515,9 @@ queued (a reminder, a worker's report, an extension's steer). When Sova can't na
 handed steer is, it refuses rather than guess, with "pi queued work of its own alongside this
 message, so it can't be taken back on its own. Press Stop to clear the queue.", and that row's
 Remove stays off from then on. A removed message's text does not come back. Stop
-takes every waiting message back to the composer, in order (after a removal, only the rest). A
+takes every waiting message back to the composer, in order (after a removal, only the rest), a
+`Sending…` row on a chat still starting too, before its `hello`, and the chat never runs one it
+took back (§chat.transcript/send-while-starting). A
 `Sending…` row and a delivered row draw no Remove at all, not even a disabled one. A message the
 server holds behind a turn (a playbook's follow-up, a steer waiting behind one) turns `Queued` and
 gets its Remove when the server says so. All of this holds in every chat: pi, Claude Code, workers,
@@ -1105,9 +1107,9 @@ unchanged.
   of the transcript, between its last row and the composer, taking no height: "Connecting to
   chat…", after about 300 ms (so a chat already running never flashes it), or "Reconnecting. Your
   draft is kept." at once while the connection retries. It goes when the chat is ready. A chat
-  this tab woke by asking something of it is the exception: until its `hello`, Send and the model
-  and thinking controls stay usable while the note floats, and what they ask goes to the server in
-  order behind what woke it (§chat.transcript/send-while-starting).
+  this tab woke, or opens for the first time (a new session too), is the exception, never on a
+  reconnect: until its `hello`, Send and the controls stay usable, and what they ask
+  goes to the server in order (§chat.transcript/send-while-starting).
 - **Nothing typed or sent is lost, nor sent twice.** A message sent on a connection whose chat then
   fails to open comes back to the composer: the server refuses each message it held for the chat
   (`refused`), and the view hands back any sent on that connection it never had acknowledged when
@@ -1184,16 +1186,22 @@ unchanged.
 
 ## §chat.transcript/send-while-starting — A message sent while its chat starts is the server's to deliver
 
-Pressing Send on a chat whose process isn't running (closed for being quiet while its tab is open,
-§chat.transcript/instant-open) hands the message to the server at once; the server holds it while
-the chat starts and delivers it once the chat is ready, whether the person stays on the chat,
-moves to another chat, home or Back, reloads the page or closes the tab.
+Pressing Send on a chat that isn't ready yet hands the message to the server at once: a chat whose
+process isn't running (closed for being quiet while its tab is open, §chat.transcript/instant-open),
+or a chat this tab is opening for the first time, before that connection's `hello` (a new session
+included, so an Enter pressed the moment it opens is sent, not ignored). The message shows in the
+transcript at once as `Sending…` (§chat.transcript/a-queued-message) while "Connecting to chat…"
+floats; the server holds it while the chat starts and delivers it once, when the chat is ready,
+whether the person stays on the chat, moves to another chat, home or Back, reloads the page or
+closes the tab. A reconnect is not this: once the tab's connection to the chat has opened, Send
+waits through a drop (§chat.composer/disabled-states).
 
 - **Straight to the server.** The tab writes the message, and anything asked of that chat before
   it (a change of model, thinking level, Claude login, mode or sandbox, a rewind, regenerate,
-  Remove of a queued message or `/compact`), on the connection that wakes the chat as soon as it
-  opens, oldest first, without waiting for the chat's `hello`; Send and the model and thinking
-  controls stay usable meanwhile, so a model switch then Send goes in that order. A frame never goes on a connection
+  Remove of a queued message or `/compact`), on the connection that wakes or first opens the chat
+  as soon as it opens, oldest first, without waiting for the chat's `hello`; Send and the model,
+  thinking, mode, sandbox and login controls stay usable meanwhile, so a model switch then Send
+  goes in that order. A frame never goes on a connection
   that is still connecting: until it opens, the tab keeps it, also in the browser's storage. When
   the view closes first (another chat, home, Back), the tab opens a connection of its own just to
   deliver it, and stays to hear the answer. When the page goes before its connection opened (a
@@ -1212,7 +1220,28 @@ moves to another chat, home or Back, reloads the page or closes the tab.
   id it has already taken (a view coming back, a second tab, a retry) is answered as taken and
   never runs again. A view that comes back to the chat while such a message is still on its way
   connects at once and shows it as `Sending…` (§chat.transcript/a-queued-message) until the
-  chat's own rows say where it is.
+  chat's own rows say where it is. The `Sending…` row stays from the press until the chat's own
+  rows take its place; the chat's `hello` doesn't clear it.
+- **Stop takes it back.** Once this tab's connection has opened and until the chat is ready (its
+  `hello`), Stop takes back every message that connection carried and the chat hasn't taken, on a
+  chat opening for the first time and on one waking alike: each `Sending…` row leaves the
+  thread, its text goes back into the composer, "Stopped. Your message is back in the composer."
+  is said, and the chat never runs it later, not even from what the server held for it. One the
+  chat took in that instant stays sent, and its turn stops as any Stop stops it. Until the
+  connection opens, Stop is `aria-disabled` (§chat.composer/disabled-states) and what waits goes
+  as the connection opens.
+- **A chat that doesn't start.** When a chat opening for the first time or waking fails to start,
+  the server's one retry included, a tab still on it puts each waiting message's text back into
+  the composer, its row leaves the thread, and "This chat didn't start." shows
+  (§chat.transcript/states). A connection that closes for good before it ever opened hands its
+  waiting messages back to the composer the same way. Nothing sends it again on its own: sending
+  again is the person's.
+- **A slash command shows once the chat has listed its commands.** A message starting with `/`
+  sent before the chat has listed its commands (they come just after its `hello`) goes to the
+  chat at once, as any message does; only how it shows waits for that list: no `Sending…` row
+  meanwhile, and the chat doesn't read as working. Then a command the chat knows shows as its
+  "Ran `/cmd`" row (§chat.slash-commands/in-the-thread), and anything else as an ordinary message. One that
+  came back to the composer meanwhile never shows.
 - **What can't be delivered comes back quietly.** When the chat can't take the message (it fails
   to start, the server's one retry included (§chat.transcript/instant-open), or its model has been turned off in Settings → Models) and no tab is there to hear it,
   the server puts the text back as that chat's saved draft, ahead of any draft already saved, so
@@ -1395,7 +1424,7 @@ card). On a phone it is `#/overview`, under the list's head row, and opening Sov
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
 | Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then, in an ordinary session, the profile cards and what the picked profile changes (§chat.profiles/picker), then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title.", then, for a local folder in a git repository with linked worktrees, the worktrees line and its `Clean Up Merged` button (§chat.transcript/empty-worktrees). The composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows, the profile entry and a Claude login note (§app.claude-logins/switch-login) draw nothing and don't count (the login note is drawn where it sits once a message is on the branch), while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state. It opens at its top (the title, then the profile cards), not at its end, and doesn't follow the end; the first rendered row puts the view back to following. Jump to Latest never shows over it: scrolling the empty state (the cards, the setup card) has no latest to jump to |
 | Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." The same failure reported again (a reconnect loop) keeps the one banner. It goes once a newer turn starts: a failed turn whose error is in its own row keeps it there, so the thread then reads as a fresh load of the chat does. What else sits in that place stays when a turn starts: a transcript reload that failed, a model turned off in Settings → Models, a usage limit's row offering another subagent profile (§chat.subagent-profiles/limit-row) |
-| Chat didn't start (an `error` before this connection's `hello`, after the server's own retry, §chat.transcript/instant-open) | `.banner.banner-error` in the same place. Title: "This chat didn't start." Body: "{message}. Your message is back in the composer. Send again to retry." ("Your messages are back…" for more than one; only "{message}." when nothing came back). One banner, however often the start fails again while the tab keeps reconnecting: the newest reason replaces the old. It goes once a newer turn starts; one that gave nothing back also goes at the chat's next `hello`. Never "The turn stopped with an error.": no turn ran |
+| Chat didn't start (an `error` before this connection's `hello`, after the server's own retry, §chat.transcript/instant-open; a new session's first connect included, whose messages sent meanwhile come back, §chat.transcript/send-while-starting) | `.banner.banner-error` in the same place. Title: "This chat didn't start." Body: "{message}. Your message is back in the composer. Send again to retry." ("Your messages are back…" for more than one; only "{message}." when nothing came back). One banner, however often the start fails again while the tab keeps reconnecting: the newest reason replaces the old. It goes once a newer turn starts; one that gave nothing back also goes at the chat's next `hello`. Never "The turn stopped with an error.": no turn ran |
 
 ## §chat.transcript/setup-card — Setup card
 

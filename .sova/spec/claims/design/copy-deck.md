@@ -158,7 +158,7 @@ words, in the composer, the session pane, the chat's queue cards and the project
 
 | State | Surface | Copy |
 |---|---|---|
-| Connecting (first time), or the chat starting | chat: a note floating over the transcript's end (`clock`), also the composer reason for assistive technology only (§chat.transcript/instant-open) | Connecting to chat… |
+| Connecting (first time), or the chat starting | chat: a note floating over the transcript's end (`clock`); no composer reason, since Send works meanwhile (§chat.transcript/instant-open, §chat.transcript/send-while-starting) | Connecting to chat… |
 | Lost, retrying (a chat's start that failed for now too) | chat: the same floating note (`clock`), and the composer reason for assistive technology only · watch: `.banner-warn` | chat: "Reconnecting. Your draft is kept." · watch: **Stopped watching. The connection dropped.** What's shown is up to `{HH:MM}`. Reconnecting… |
 | Gave up (retries exhausted) | `.banner-error` at the top of the transcript; composer reason "Not connected." | **Lost the connection to the Sova server.** Nothing in the session changed. Check `pnpm run dev:server` is running, then retry. · button: `Reconnect` |
 | Reconnected | nothing. The banner or reason simply disappears; no toast | — |
@@ -189,7 +189,7 @@ words, in the composer, the session pane, the chat's queue cards and the project
 | Dictation errors (strip; `Try Again` where the clip is kept, then Dismiss) | Mic blocked: "The browser blocked the microphone. Allow it for this site, then try again." · no mic: "No microphone found." · didn't start in time (§chat.voice/capture): "The microphone didn't start within 10 seconds. Quit and reopen Sova or your browser, then try again." · other: "Couldn't start the microphone. {message}." · nothing heard: "Didn't catch any speech. Nothing was inserted." · empty transcript: "Heard audio but no words. Nothing was inserted." · failed: "Couldn't transcribe the clip. {reason}. Your recording is kept." · voice removed meanwhile: "Voice isn't set up on this host anymore." |
 | Dictation, backgrounded (toast and announcement) | Recording stopped when the app went to the background. Transcribed {m:ss}. |
 | Dictation announcements | Recording. · Recording cancelled. · Transcribing. · `Inserted {n} words.` (1: `Inserted 1 word.`) · `{s} seconds left.` at 0:30 |
-| SR announcements | Working. · Reply finished. · The turn stopped with an error. (once per error, and it replaces that turn's "Reply finished." — an errored turn still settles, and two endings would read as two turns) · This chat didn't start. Your message is back in the composer. (once; the second sentence only when one came back) |
+| SR announcements | Working. · Reply finished. · The turn stopped with an error. (once per error, and it replaces that turn's "Reply finished." — an errored turn still settles, and two endings would read as two turns) · This chat didn't start. Your message is back in the composer. (once; the second sentence only when one came back) · Stopped. Your message is back in the composer. (a Stop that took a message back before its chat started, §chat.transcript/send-while-starting; never "Removed from the queue.") |
 
 ## §design.copy-deck/composer-flyout — Composer flyout
 

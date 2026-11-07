@@ -29,6 +29,9 @@ export interface StoredDraft {
 export interface ShellBoxDeps {
   /** The chat's shell mode: present while the box offers it (lib/shell-runs shellOffered). */
   shell(): ShellControl | null | undefined;
+  /** Whether the chat offers shell mode isn't known yet (no hello so far). Meanwhile the box treats a
+      "!" as shell mode would (a command, never a message) and runs nothing. */
+  unknown?(): boolean;
   /** This tab's copy of the draft, read now (ui-state's drafts and draftModes). */
   stored(): StoredDraft;
   /** The draft as the server has it, for a box this tab never wrote (a reload, another device). */
@@ -45,7 +48,9 @@ export interface ShellBoxDeps {
 export type RunResult = "message" | "held" | "refused" | "sent";
 
 export function createShellBox(deps: ShellBoxDeps) {
-  const opened = openDraft(deps.stored(), !!untrack(deps.shell));
+  /** The box may be in shell mode: the chat offers it, or hasn't said yet. */
+  const mayShell = () => !!deps.shell() || !!deps.unknown?.();
+  const opened = openDraft(deps.stored(), untrack(mayShell));
   const [text, setText] = createSignal(opened.text);
   const [mode, setMode] = createSignal<ShellMode>(opened.mode);
   const shellMode = () => mode() !== "off";
@@ -80,15 +85,16 @@ export function createShellBox(deps: ShellBoxDeps) {
   // Nothing in memory (a reload, or another device wrote it): seed from the stored draft.
   void deps.load().then((stored) => {
     if (!stored.text || touched || text() || shellMode()) return;
-    const o = openDraft(stored, !!untrack(deps.shell));
+    const o = openDraft(stored, untrack(mayShell));
     setMode(o.mode);
     setText(o.text);
   });
   // Shell mode can arrive after the box opened (the chat's hello says it has one): a draft nobody
-  // has touched opens in its mode then. Shell mode going away turns a command back into its text.
+  // has touched opens in its mode then. Shell mode going away (or the hello saying there is none)
+  // turns a command back into its text.
   createEffect(
     on(
-      () => !!deps.shell(),
+      mayShell,
       (has) => {
         if (has && !touched && mode() === "off") {
           const o = openDraft(deps.stored(), true);
@@ -147,7 +153,7 @@ export function createShellBox(deps: ShellBoxDeps) {
     /** What the textarea's input does: a "!" into the empty box (or a paste starting with one) enters
         shell mode, and the text it leaves is returned for the textarea; else the input is text. */
     input(value: string, inputType: string, composing: boolean): string | null {
-      const entered = deps.shell() && !composing ? enterOnInput(mode(), text(), value, inputType) : null;
+      const entered = mayShell() && !composing ? enterOnInput(mode(), text(), value, inputType) : null;
       if (entered) {
         switchMode(entered.mode);
         setDraft(entered.text);
@@ -159,7 +165,7 @@ export function createShellBox(deps: ShellBoxDeps) {
     },
     /** Backspace or Esc in the empty box leaves shell mode (from "!!", Backspace goes back to "!"). */
     key(key: string, composing: boolean): boolean {
-      const left = deps.shell() && !composing ? leaveOnKey(mode(), key, text()) : null;
+      const left = mayShell() && !composing ? leaveOnKey(mode(), key, text()) : null;
       if (!left) return false;
       switchMode(left);
       return true;
@@ -181,8 +187,10 @@ export function createShellBox(deps: ShellBoxDeps) {
         return "held";
       }
       if (!shell) {
-        setReason(NOT_CONNECTED);
-        deps.announce(NOT_CONNECTED);
+        // Before the hello: nothing runs and nothing is sent; it may run once the chat connects.
+        const why = deps.unknown?.() ? NOT_CONNECTED_YET : NOT_CONNECTED;
+        setReason(why);
+        deps.announce(why);
         return "refused";
       }
       const sent = shell.run(text().trim(), mode() === "private");

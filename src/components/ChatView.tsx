@@ -2743,6 +2743,7 @@ export function ChatView(props: {
         mode={props.overseer || props.summary?.()?.baton || props.summary?.()?.projectOverseer ? null : modeControl}
         sandbox={sandboxControl}
         shell={shellAllowed() ? shellControl : null}
+        shellUnknown={shellMode() === null && !props.overseer && !props.projectOverseer}
         onPlaybooks={() => setShowPlaybooks(true)}
         undo={undoControl}
         onSend={(text, running, attachments) => send(text, running, attachments, undefined, true)}

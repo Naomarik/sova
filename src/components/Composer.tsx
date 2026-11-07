@@ -231,6 +231,9 @@ export function Composer(props: {
   /** Shell mode (§chat.shell-mode/box): only a chat with its own agent and folder gives it. Absent,
       the box has no shell mode and a leading "!" is text, as ever. */
   shell?: ShellControl | null;
+  /** The chat hasn't said yet whether it offers shell mode (no hello so far): a "!" typed meanwhile is
+      a command that waits, never a message (lib/shell-box). */
+  shellUnknown?: boolean;
   /** `text` already names each attachment's path; `running`: a reply runs, as this pane sees it (the
       frame is the chat's choice, sendFrame); `attachments` are for the optimistic row. */
   onSend(text: string, running: boolean, attachments: UploadResult[]): boolean;
@@ -337,6 +340,7 @@ export function Composer(props: {
 
   box = createShellBox({
     shell: () => props.shell,
+    unknown: () => !!props.shellUnknown,
     stored: () => ({ text: drafts.get(props.path) ?? "", mode: draftModes.get(props.path) }),
     load: () => loadDraft(props.path),
     write: (v, m) => setDraftText(props.path, v, m),

@@ -38,6 +38,8 @@ export interface GlanceDeps {
   shared: readonly { id: string; project: string; desired: Record<string, "running" | "stopped"> }[];
   /** A Sova service's unit name (without `.service`). */
   unitOf(scopeId: string, service: string): string;
+  /** Sova's own server's units (whole names): never counted on any card, Sova's own included. */
+  ownUnits?: readonly string[];
   /** A unit's processes (its whole name), [] when it runs none. */
   unitPids(unit: string): number[];
   /** One process's own memory now, null when gone. */
@@ -90,9 +92,10 @@ export function buildGlance(d: GlanceDeps): ProjectGlanceList {
       }
     for (const sh of d.shared.filter((x) => d.sameRoot(x.project, p.root)))
       for (const [svc, want] of Object.entries(sh.desired)) if (want === "running") units.push(`${d.unitOf(sh.id, svc)}.service`);
+    const own = new Set(d.ownUnits ?? []);
     const seen = new Set<number>();
     let copiesBytes = 0;
-    for (const u of new Set(units))
+    for (const u of new Set(units.filter((x) => !own.has(x))))
       for (const pid of d.unitPids(u)) {
         if (seen.has(pid)) continue;
         seen.add(pid);
@@ -146,7 +149,7 @@ export function readGlance(now = Date.now()): Promise<ProjectGlanceList> {
 }
 
 async function gatherGlance(): Promise<ProjectGlanceList> {
-  const [{ listProjects }, { queueGlanceState }, { keptReleases }, { readRegistry, stateHash }, { copyLimitOf }, { machineCopyLimit }, drivers, { resourceMonitor }, { lastListedRows }, { canonicalPath }, os] = await Promise.all([
+  const [{ listProjects }, { queueGlanceState }, { keptReleases }, { readRegistry, stateHash }, { copyLimitOf }, { machineCopyLimit }, drivers, { resourceMonitor }, { lastListedRows }, { canonicalPath }, os, { SOVA_LIVE_UNIT }, { unitOfCgroup }] = await Promise.all([
     import("./spaces"),
     import("../merge-queue/wire"),
     import("../project-services/release-wire"),
@@ -158,7 +161,16 @@ async function gatherGlance(): Promise<ProjectGlanceList> {
     import("../sessions-index"),
     import("../paths"),
     import("node:os"),
+    import("../tours/runner-header"),
+    import("../project-services/leftovers"),
   ]);
+  // Sova's own server is left out: the live unit by name, and whatever unit this server itself runs in.
+  let self: string | null = null;
+  try {
+    self = unitOfCgroup(readFileSync("/proc/self/cgroup", "utf8"));
+  } catch {
+    // Not Linux, or no /proc: only the live unit's name is left out.
+  }
   const reg = readRegistry();
   const snap = resourceMonitor()?.snapshot() ?? null;
   const rows = lastListedRows();
@@ -183,6 +195,7 @@ async function gatherGlance(): Promise<ProjectGlanceList> {
     shared: reg.shared,
     unitOf: (scopeId, service) => `sova-svc-${stateHash()}-${scopeId}-${service}`,
     // Linux with a user manager: the unit's own cgroup.procs. Elsewhere copies' processes aren't read (nothing is spawned).
+    ownUnits: [SOVA_LIVE_UNIT, ...(self?.endsWith(".service") ? [self] : [])],
     unitPids: (unit) => drivers.unitCgroupPids(unit, manager) ?? [],
     ownMemory: (pid) => drivers.ownMemoryOfPid(pid),
     monitorSessions: snap?.sessions ?? [],

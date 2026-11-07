@@ -110,7 +110,7 @@ function repo(name: string): string {
 }
 
 test("ram reads a unit's memory from its cgroup, and a pid tree's from /proc", () => {
-  const cg = join(dir, "cgroup", "user.slice", "user@1000.service", "sova-services.slice", "sova-svc-abc123-proj-1234abcd-web.service");
+  const cg = join(dir, "cgroup", "user.slice", "user-1000.slice", "user@1000.service", "sova.slice", "sova-services.slice", "sova-svc-abc123-proj-1234abcd-web.service");
   mkdirSync(cg, { recursive: true });
   writeFileSync(join(cg, "memory.current"), "104857600\n");
   writeFileSync(join(cg, "memory.peak"), "209715200\n");

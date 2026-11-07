@@ -251,14 +251,26 @@ export function userManagerCgroup(uid = process.getuid?.() ?? -1, root = "/sys/f
 }
 
 /**
+ * A slice's cgroup folder below its manager's, the way systemd nests it: a dash in a slice's name is a level, so
+ * `sova-services.slice` lives at `sova.slice/sova-services.slice` and `a-b-c.slice` at `a.slice/a-b.slice/a-b-c.slice`.
+ * The root slice (`-.slice`) is the manager's own folder: "".
+ */
+export function sliceCgroupPath(slice: string): string {
+  const name = slice.endsWith(".slice") ? slice.slice(0, -".slice".length) : slice;
+  if (!name || name === "-") return "";
+  const parts = name.split("-");
+  return parts.map((_, i) => `${parts.slice(0, i + 1).join("-")}.slice`).join("/");
+}
+
+/**
  * A systemd user unit's processes from its own cgroup's `cgroup.procs` (one file, no process scan, nothing spawned):
- * looked for in Sova's services slice, then `app.slice`, then the manager's top. `unit` is the whole name
- * (`sova-runtime.service`). [] when the unit has no cgroup (it isn't running); null when the host has no user
- * manager cgroup to read.
+ * looked for in Sova's services slice (nested the systemd way, `sova.slice/sova-services.slice`), then `app.slice`,
+ * then the manager's top. `unit` is the whole name (`sova-runtime.service`). [] when the unit has no cgroup (it isn't
+ * running); null when the host has no user manager cgroup to read.
  */
 export function unitCgroupPids(unit: string, manager: string | null = userManagerCgroup()): number[] | null {
   if (!manager) return null;
-  for (const slice of [SLICE, "app.slice", ""]) {
+  for (const slice of [sliceCgroupPath(SLICE), "app.slice", ""]) {
     let text: string;
     try {
       text = readFileSync(join(manager, slice, unit, "cgroup.procs"), "utf8");

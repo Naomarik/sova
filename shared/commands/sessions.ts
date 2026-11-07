@@ -248,7 +248,7 @@ export const SESSION_ENTRIES: CommandEntry[] = [
   {
     id: "session.time-spent",
     label: "Show Time Spent",
-    summary: "How long you have been with a session and how long its agent has worked: your time by activity, and each alignment's time on screen.",
+    summary: "How long you have been with a session and how long its agent has worked: your time by activity, by the message it led to, and each alignment's time on screen.",
     effect: "looks",
     params: { session: session("query", "path") },
     route: { method: "GET", path: "/api/time-spent" },

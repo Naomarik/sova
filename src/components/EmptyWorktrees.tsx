@@ -251,7 +251,7 @@ function CleanupDialog(props: { path: string; plan: WorktreeCleanupPlan; onClose
                         {(r) => (
                           <li>
                             <code class="worktree-cleanup-path">{r.path}</code>
-                            <span class="text-caption text-muted">{nestedLine(r)}</span>
+                            <span class="text-caption text-muted">{nestedLine(r.of ? { ...r, of: tildePath(r.of, homeDir()) } : r)}</span>
                           </li>
                         )}
                       </For>

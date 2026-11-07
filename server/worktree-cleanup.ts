@@ -616,6 +616,11 @@ export async function removeTrees(dir: string, paths: readonly string[], opts: {
         return;
       }
       removed.push({ ...removedRow(t), branchDeleted: false });
+      // A worktree of another repository that went with it: its folder is gone, so the same command in its own
+      // repository only drops it from that list, by name (never a bare prune).
+      if (forced)
+        for (const n of content!.nested)
+          if (n.kind === "worktree" && n.of && existsSync(n.of)) await d.gitWrite(["worktree", "remove", "--", join(t.path, n.path)], { cwd: n.of }).catch(() => null);
     };
     await Promise.all(
       Array.from({ length: Math.min(REMOVE_CONCURRENCY, queue.length) }, async () => {

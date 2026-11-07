@@ -134,6 +134,8 @@ test("Remove Anyway with a listing that no longer matches deletes nothing; with 
   assert.equal(existsSync(wt("lossy")), false, "the folder is gone");
   assert.deepEqual(ledger.map((e) => e.path), [wt("lossy")], "in the ledger like any removal");
   assert.equal(readFileSync(join(be, "canary.txt"), "utf8"), "be\n", "the nested worktree's repository is untouched");
+  assert.equal(git(be, "worktree", "list", "--porcelain").includes(join(wt("lossy"), "backend")), false, "and no longer lists the nested worktree that went");
+  assert.match(git(be, "branch", "--list", "wip-lossy"), /wip-lossy/, "its branch, and so its commits, stay");
 });
 
 test("a tree holding only rebuildable folders and a generated .agent is removed", async () => {

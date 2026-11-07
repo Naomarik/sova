@@ -16,8 +16,8 @@ import type { QueueStore } from "./store";
  *                                                                while it ran: ~97% of a run folder's size)
  *   run.json, changed.txt, docs-landed.json stay as they are (small, and read after the run).
  *
- * A run still checking (the queue's current run, one an entry in `checking` names, or one whose record says
- * `running` or has no end) is never touched. Each pack writes its result beside the original and renames it in
+ * A run in use (the queue's current run, one an entry in `checking` names, one an open or sent-back entry names,
+ * or one whose record says `running` or has no end) is never touched. Each pack writes its result beside the original and renames it in
  * before the original goes, so a stop between the two leaves both, and the next sweep packs it again.
  */
 
@@ -241,7 +241,8 @@ export async function packRun(runDir: string): Promise<boolean> {
 }
 
 /**
- * Pack every finished run of the queue that ended at least `afterMs` ago (default a day). Never a run in use.
+ * Pack every finished run of the queue that ended at least `afterMs` ago (default a day). Never a run in use
+ * (checking, or named by an entry still open or sent back to fix).
  * Answers the runs packed; a run whose pack fails is reported and left for the next sweep.
  */
 export async function sweepRunLogs(q: RunLogsQueue, o: { now?: number; afterMs?: number; log?: (s: string) => void } = {}): Promise<string[]> {
@@ -250,9 +251,10 @@ export async function sweepRunLogs(q: RunLogsQueue, o: { now?: number; afterMs?:
   const done: string[] = [];
   for (const id of q.store.runIds()) {
     if (!run$.test(id)) continue;
-    // Read fresh before each run: one may have started meanwhile.
-    const { checking } = inUse(q);
-    if (checking.has(id)) continue;
+    // Read fresh before each run: one may have started meanwhile. A run an open or sent-back entry names stays as
+    // it is too: its chat was handed the plain log's path (notices.ts).
+    const { checking, open } = inUse(q);
+    if (checking.has(id) || open.has(id)) continue;
     const ended = endedAt(q.store, id);
     if (ended === null || now - ended < after) continue;
     const d = q.store.runDir(id);

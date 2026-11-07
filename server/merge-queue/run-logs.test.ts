@@ -138,18 +138,26 @@ describe("run logs: packing a finished run", () => {
     assert.deepEqual(await sweepRunLogs(q, { now: NOW }), [], "a packed run is left alone");
   });
 
-  test("never a run in use or too young: the one checking now, one an entry is checking, one recorded running, one without an end, one ended an hour ago", async () => {
+  test("never a run in use or too young: the one checking now, one an entry is checking, one an entry sent back to fix or queued again names, one recorded running, one without an end, one ended an hour ago", async () => {
     const { q, store } = kit();
     const current = makeRun(store, { startedAt: NOW - 5 * DAY, endedAt: NOW - 4 * DAY });
     const checking = makeRun(store, { startedAt: NOW - 5 * DAY + 1, endedAt: NOW - 4 * DAY });
     const running = makeRun(store, { startedAt: NOW - 5 * DAY + 2, verdict: "running" });
     const noEnd = makeRun(store, { startedAt: NOW - 5 * DAY + 3 });
     const young = makeRun(store, { startedAt: NOW - 2 * 60 * 60 * 1000, endedAt: NOW - 60 * 60 * 1000 });
+    const sentBack = makeRun(store, { startedAt: NOW - 5 * DAY + 5, endedAt: NOW - 4 * DAY });
+    const queuedAgain = makeRun(store, { startedAt: NOW - 5 * DAY + 6, endedAt: NOW - 4 * DAY });
+    const landed = makeRun(store, { startedAt: NOW - 5 * DAY + 7, endedAt: NOW - 4 * DAY });
     const old = makeRun(store, { startedAt: NOW - 5 * DAY + 4, endedAt: NOW - 4 * DAY });
     q.current = { id: current };
-    q.entriesList = [{ state: "checking", run: checking, runs: [checking] }];
-    assert.deepEqual(await sweepRunLogs(q, { now: NOW }), [old]);
-    for (const id of [current, checking, running, noEnd, young]) {
+    q.entriesList = [
+      { state: "checking", run: checking, runs: [checking] },
+      { state: "needs-fix", run: sentBack, runs: [sentBack] },
+      { state: "queued", runs: [queuedAgain] },
+      { state: "landed", run: landed, runs: [landed] },
+    ] as Pick<MergeEntry, "state" | "run" | "runs">[];
+    assert.deepEqual((await sweepRunLogs(q, { now: NOW })).sort(), [old, landed].sort(), "a landed entry's run is packed");
+    for (const id of [current, checking, running, noEnd, young, sentBack, queuedAgain]) {
       assert.ok(existsSync(join(store.runDir(id), "drafts")), `${id} keeps its snapshot`);
       assert.ok(existsSync(join(store.runDir(id), "logs", "02-check_unit.log")), `${id} keeps its plain log`);
     }

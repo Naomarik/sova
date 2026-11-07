@@ -71,8 +71,9 @@ systemd user unit on Linux (`~/.config/systemd/user/sova.service`, or under
   is kept and updated without asking, unless `--no-service` is given, which leaves it untouched.
 - **Restarts and stops.** Both restart it whenever it exits (systemd `Restart=always`,
   `RestartSec=2`; launchd `KeepAlive`, `ThrottleInterval` 2), and a stop you ask for stays
-  stopped. A stop gives the server time to drain its hosted runtimes and their workers:
-  `TimeoutStopSec=90` on systemd, `ExitTimeOut` 60 on launchd (its cap for an agent). The
+  stopped. A stop gives the server time to finish its own work, and leaves running chats and
+  their workers alone (§app.chat-processes/survives-restart): `TimeoutStopSec=90` on systemd,
+  `ExitTimeOut` 60 on launchd (its cap for an agent). The
   launchd agent also runs as `ProcessType` `Interactive`, with `LANG=en_US.UTF-8`. These match
   the hand-written definitions in docs/running-as-a-service.md, except that neither runs
   `pi-config/install.sh --links` before the start: the installer links the extensions itself on

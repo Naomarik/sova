@@ -2316,7 +2316,7 @@ test("/team <objective> while streaming queues the identical followUp and says s
 		assert.match(message.content, /team_create with a short unique name/);
 		assert.match(message.content, /team_add/);
 		assert.match(message.content, /explicit unique role/);
-		assert.match(message.content, /declared ownedPaths \(advisory/);
+		assert.match(message.content, /declared ownedPaths for files they don't share \(advisory/);
 		assert.match(message.content, /Obey the team tool descriptions, schemas and limits/);
 		assert.match(message.content, /team_msg .* team_ask/);
 		assert.match(message.content, /orchestrator: true/);

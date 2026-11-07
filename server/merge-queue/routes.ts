@@ -233,6 +233,15 @@ export const CLICK_IS_THE_USERS =
 export const REPLY_IS_THE_USERS =
   "no chat answers the merge thread's question, not even by relaying: your user's own next message in this chat is the answer, and Sova sends it with the question. Ask them in your reply and wait; never answer it yourself";
 
+/** The merge queue's acts only the user's own page takes (§app.access/your-click): every verb but the reads and a trial.
+    Routes ask the page check (notPageNorProven) for these, as for `apply`. */
+export const pageOnlyMergeVerb = (verb: string): boolean => isMergeVerb(verb) && !MERGE_READ_VERBS.includes(verb) && verb !== "merge.try";
+
+/** An act on the merge queue from the user's route that isn't their own page: a token in a header (any script, a chat's
+    shell that left its key out), an in-process dispatch. */
+export const PAGE_IS_THE_USERS =
+  "only the user's own click in Sova's page lands, answers, removes from the queue, cancels or pauses: a request that shows the token in a header (a script, a terminal, a chat's shell) never acts as the user here. Nothing was done; ask the user";
+
 /** A card's command (server/transcript-cards.ts) on the merge queue: refused for every act. */
 export const CARD_IS_NOT_THE_USERS =
   "a card's commands never act as the user on the merge queue: landing, answering, removing from the queue and the queue's other acts come only from Sova's own controls in the page or the user's own word in the branch's chat. Nothing was done";
@@ -293,6 +302,9 @@ function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, root: stri
   if (caller.kind === "operator" && caller.fromChat && !MERGE_READ_VERBS.includes(verb) && verb !== "merge.try") throw new MergeFailure("forbidden", CLICK_IS_THE_USERS);
   // A command a card ran (its view's code or its button's): a chat's or an extension's code, never the user's act here.
   if (caller.kind === "operator" && caller.fromCard && !MERGE_READ_VERBS.includes(verb)) throw new MergeFailure("forbidden", CARD_IS_NOT_THE_USERS);
+  // Not the user's own page (nor a proven click from another of their computers): never the user's act, whatever it
+  // says of itself. A chat whose shell leaves its key out is caught here, by what it can't show (the page's cookie).
+  if (caller.kind === "operator" && caller.notPage && pageOnlyMergeVerb(verb)) throw new MergeFailure("forbidden", PAGE_IS_THE_USERS);
   // merge.respond is the branch's chat's own answer to a request: never the user's page, never a script.
   if (caller.kind === "operator" && verb === "merge.respond") throw new MergeFailure("forbidden", RESPOND_IS_THE_CHATS);
   if (caller.kind === "operator") return;

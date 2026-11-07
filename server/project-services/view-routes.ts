@@ -11,6 +11,9 @@ import { canonicalPath } from "../paths";
 import { listProjects, readProject } from "../projects/spaces";
 import { projectEngine } from "./routes";
 import { notPageNorProven } from "../mesh/click-proof";
+import { CALLER_HEADER } from "../caller-keys";
+import { isCardRun } from "../extension-sender";
+import { pageOnlyMergeVerb } from "../merge-queue/routes";
 import { pageOnlyRefusal } from "../page-only";
 import { setCopyLimit } from "../project-settings";
 import { parseMeminfo } from "../resource-monitor-proc";
@@ -256,7 +259,12 @@ export function registerServicesViewRoutes(app: Hono<any>): void {
       }
       const b = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
       // Your page, here or on another of your computers with its proof (server/mesh/click-proof.ts).
-      const r = await projectEngine().run(verb, { ...b, project: root }, { kind: "operator", ...(verb === "apply" && (await notPageNorProven(c, raw)) ? { notPage: true } : {}) });
+      // The same marks as /api/project-services: a chat's key (blank included), a card's command, and the page check for
+      // apply and the merge queue's acts (§app.access/your-click).
+      const fromChat = c.req.header(CALLER_HEADER) !== undefined;
+      const fromCard = isCardRun((n) => c.req.header(n));
+      const notPage = (verb === "apply" || pageOnlyMergeVerb(verb)) && (await notPageNorProven(c, raw));
+      const r = await projectEngine().run(verb, { ...b, project: root }, { kind: "operator", ...(fromChat ? { fromChat: true as const } : {}), ...(fromCard ? { fromCard: true as const } : {}), ...(notPage ? { notPage: true } : {}) });
       return c.json(r, httpStatusOf(r) as 200, NO_STORE);
     }),
   );

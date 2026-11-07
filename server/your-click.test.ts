@@ -445,3 +445,67 @@ describe("a click on this page that approves on another computer", () => {
     assert.equal(await peerClickProven(c(proofed), "{}", async () => { throw new Error("down"); }), false);
   });
 });
+
+describe("landing and answering the merge queue: the user's own page, or a proven click from another of their computers", async () => {
+  const p = await project("merge-acts");
+  const doors = (): [string, string, Record<string, unknown>][] => [
+    ["the Overseer's Merge on a coding worktree", `/api/projects/${p.id}/overseer/worktrees/merge`, { sessionId: "s1" }],
+    ["Merge Branch on a proposed run", `/api/projects/${p.id}/runtime/merge`, { hash: "sha256:x" }],
+  ];
+  test("every caller that isn't the user is refused 403; the page passes the gate (the route's own checks answer)", async () => {
+    for (const [door, url, body] of doors()) {
+      for (const [who, headers, env] of [...notTheUser(), ["a blank chat key", { "x-sova-caller": "" }, undefined] as const]) {
+        const r = await call("POST", url, body, headers as Record<string, string>, env as Record<string, unknown> | undefined);
+        assert.equal(r.status === 403 || (r.status === 200 && (await r.clone().json() as { error?: { code?: string } }).error?.code === "forbidden"), true, `${door}, ${who}: ${r.status} ${await r.clone().text()}`);
+      }
+      const page = await call("POST", url, body, pageHeaders());
+      const t = await page.text();
+      assert.equal(page.status !== 403 && !/"code":"forbidden"/.test(t), true, `${door}, the page: ${page.status} ${t.slice(0, 300)}`);
+    }
+  });
+  test("both services routes tell the queue who calls: the page (or a proven peer click) only is the user; a chat's key, blank too, is a chat", async () => {
+    const engine = projectEngine();
+    const real = engine.run;
+    const seen: { notPage?: boolean; fromChat?: true }[] = [];
+    engine.run = (async (_verb: string, _body: unknown, caller: { notPage?: boolean; fromChat?: true }) => (seen.push({ notPage: caller.notPage, fromChat: caller.fromChat }), { v: 1, ok: true })) as never;
+    const token = pageHeaders().cookie!.split("=")[1]!;
+    try {
+      for (const url of ["/api/project-services/merge.add", "/api/project-services/merge.answer", "/api/project-services/merge.cancel"]) {
+        seen.length = 0;
+        for (const headers of [{ [TOKEN]: token }, { "x-sova-caller": "k" }, { "x-sova-caller": "" }, {}, pageHeaders()]) await call("POST", url, { project: p.dir, branch: "feat/x", entry: "mq_x", answer: "accept" }, headers);
+        assert.deepEqual(seen, [{ notPage: true, fromChat: undefined }, { notPage: true, fromChat: true }, { notPage: true, fromChat: true }, { notPage: true, fromChat: undefined }, { notPage: undefined, fromChat: undefined }], url);
+        seen.length = 0;
+        const relayed = { "X-Sova-Click-Proof": "p", "X-Forwarded-Host": "h" };
+        setClickAskForTest(async () => Response.json({ ok: true }));
+        await call("POST", url, { project: p.dir, branch: "feat/x" }, relayed, { meshPeer: { id: "other" } });
+        setClickAskForTest(async () => Response.json({ ok: false }));
+        await call("POST", url, { project: p.dir, branch: "feat/x" }, relayed, { meshPeer: { id: "other" } });
+        assert.deepEqual(seen.map((x) => x.notPage), [undefined, true], `${url}: a proven peer click is the user; a denied one isn't`);
+      }
+      // The reads ask nothing of the page.
+      seen.length = 0;
+      await call("POST", "/api/project-services/merge.status", { project: p.dir }, { [TOKEN]: token });
+      assert.deepEqual(seen, [{ notPage: undefined, fromChat: undefined }]);
+    } finally {
+      engine.run = real;
+      setClickAskForTest(null);
+    }
+  });
+  test("a click from another of the user's computers: passes when its host confirms the proof, refused when it doesn't or there is none", async () => {
+    const relayed = { "X-Sova-Click-Proof": "p", "X-Forwarded-Host": "h" };
+    const peer = { meshPeer: { id: "other" } };
+    const forbidden = async (r: Response) => r.status === 403 || /"code":"forbidden"/.test(await r.clone().text());
+    try {
+      for (const [door, url, body] of doors()) {
+        setClickAskForTest(async () => Response.json({ ok: true }));
+        assert.equal(await forbidden(await call("POST", url, body, relayed, peer)), false, `${door}: a proven click`);
+        setClickAskForTest(async () => Response.json({ ok: false }));
+        assert.equal(await forbidden(await call("POST", url, body, relayed, peer)), true, `${door}: a proof its host denies`);
+        setClickAskForTest(async () => Response.json({ ok: true }));
+        assert.equal(await forbidden(await call("POST", url, body, { "X-Forwarded-Host": "h" }, peer)), true, `${door}: a relay with no proof`);
+      }
+    } finally {
+      setClickAskForTest(null);
+    }
+  });
+});

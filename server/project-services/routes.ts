@@ -1,6 +1,7 @@
 import { notPageNorProven } from "../mesh/click-proof";
 import { CALLER_HEADER } from "../caller-keys";
 import { isCardRun } from "../extension-sender";
+import { pageOnlyMergeVerb } from "../merge-queue/routes";
 import type { Hono } from "hono";
 import { httpStatusOf } from "../../shared/project-contract";
 import { conformer } from "./conform";
@@ -56,11 +57,12 @@ export function registerProjectServiceRoutes(app: Hono<any>): void {
     const body = jsonOf(raw);
     // A process a chat runs carries its chat's key (`x-sova-caller`, scripts/sova-token.mjs): the route still runs as the
     // operator, but never the operator's acts on a release (t17).
-    const key = c.req.header(CALLER_HEADER)?.trim();
-    const fromChat = !!key;
+    // Any x-sova-caller at all, a blank one included: a page never sends it.
+    const fromChat = c.req.header(CALLER_HEADER) !== undefined;
     const fromCard = isCardRun((n) => c.req.header(n));
     // Your page, here or on another of your computers with its proof (server/mesh/click-proof.ts).
-    const notPage = verb === "apply" && (await notPageNorProven(c, raw));
+    // The merge queue's acts too: only the page takes them (§app.access/your-click), whatever the request says of itself.
+    const notPage = (verb === "apply" || pageOnlyMergeVerb(verb)) && (await notPageNorProven(c, raw));
     const r = await projectEngine().run(verb, body, { kind: "operator", ...(fromChat ? { fromChat: true as const } : {}), ...(fromCard ? { fromCard: true as const } : {}), ...(notPage ? { notPage: true } : {}) });
     return c.json(r, httpStatusOf(r) as 200);
   });

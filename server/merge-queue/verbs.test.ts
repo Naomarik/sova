@@ -237,6 +237,42 @@ describe("the verbs and who may call them", () => {
     }
   });
 
+  test("the user's route acts only for their own page: a request that isn't the page (a chat's shell that left its key out, any script) is refused every act, still reads", async () => {
+    const { k, call } = setup();
+    try {
+      const q = await k.q();
+      await q.pause("hold");
+      const b = k.repo.branch("feat/a", { "b.txt": "b\n" });
+      // What the route makes of a token in a header with no chat key: the operator, but not the page.
+      const script: Caller = { kind: "operator", notPage: true };
+      const land = await call("merge.add", { checkout: b.path, chat: "s1" }, script);
+      assert.equal(land.error?.code, "forbidden", JSON.stringify(land.error));
+      assert.match(land.error!.message, /only the user's own click in Sova's page/);
+      assert.equal(q.entries().length, 0, "nothing was queued");
+      // The same Land from the page: queued (the refusal is the caller's, not the body's).
+      const added = await call("merge.add", { checkout: b.path, chat: "s1" }, op);
+      assert.equal(added.ok, true, JSON.stringify(added.error));
+      const id = added.merge!.entry!.id;
+      for (const [verb, body] of [
+        ["merge.cancel", { entry: id }],
+        ["merge.answer", { entry: id, answer: "accept" }],
+        ["merge.retry", { entry: id }],
+        ["merge.resume", { project: k.repo.root }],
+        ["merge.pause", { project: k.repo.root }],
+        ["merge.reply", { project: k.repo.root, ask: "ak_x", text: "yes" }],
+        ["merge.setup", { project: k.repo.root, command: "true", dryRun: true }],
+      ] as const) {
+        const r = await call(verb, body, script);
+        assert.equal(r.error?.code, "forbidden", `${verb}: ${JSON.stringify(r.error)}`);
+      }
+      assert.equal(q.entries().some((e) => e.id === id), true, "still queued: no cancel went through");
+      assert.equal((await call("merge.status", { project: k.repo.root }, script)).ok, true, "it still reads");
+      assert.equal((await call("merge.cancel", { entry: id }, op)).ok, true, "the page removes it");
+    } finally {
+      await k.done();
+    }
+  });
+
   test("merge.hold is the merge thread's (and the operator's): no other chat holds the queue, and the thread still never pauses it", async () => {
     const { k, call, thread, reviewer, session } = setup();
     try {

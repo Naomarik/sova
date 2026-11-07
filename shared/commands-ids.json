@@ -244,7 +244,9 @@
     "session.time-spent",
     "chat.shell.list",
     "chat.shell.stop",
-    "session.shell.output"
+    "session.shell.output",
+    "project.merge-queue.run-logs",
+    "project.merge-queue.run-logs.clean"
   ],
   "retired": [
     "settings.agents.get",

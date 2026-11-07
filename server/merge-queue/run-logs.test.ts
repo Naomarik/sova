@@ -245,6 +245,7 @@ describe("run logs: the routes", () => {
     const { a } = app();
     assert.equal((await post(a, { project: "demo" })).status, 409);
     assert.equal((await post(a, {})).status, 400);
+    assert.equal((await post(a, { project: "nope", confirm: 1 })).status, 400, "a wrong-typed confirm is refused for itself");
     const ok = await post(a, { project: "demo", confirm: true });
     assert.equal(ok.status, 200);
     assert.deepEqual(Object.keys((await ok.json()) as object).sort(), ["freed", "info", "runs"]);

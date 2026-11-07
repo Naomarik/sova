@@ -7,6 +7,7 @@ import type { RunMerge, WakeThread } from "./contract";
 import { MergeFailure, type MergeQueues, type ProjectQueue } from "./queue";
 import { registerLiveMergeSettingsRoutes } from "./settings-routes";
 import { registerLiveMergeLandingRoutes } from "./routes-landing";
+import { registerLiveRunLogsRoutes } from "./run-logs-routes";
 import { NOT_SERVED } from "./served";
 import { checkReviewText } from "./review-verdict";
 
@@ -477,6 +478,8 @@ export function registerMergeCardRoutes(app: import("hono").Hono): void {
   registerLiveMergeSettingsRoutes(app);
   // How a branch lands (al_3): Update Local Main, a request's Publish, How it lands (routes-landing.ts).
   registerLiveMergeLandingRoutes(app);
+  // The merge thread's Run Logs chip: the run folders' size and Clean Logs (run-logs-routes.ts).
+  registerLiveRunLogsRoutes(app);
   // Try Again on a branch summary that failed (branch-summaries.ts): {branch, commit}; refused for one that worked.
   app.post("/api/merge-queue/projects/:project/branch-summary", async (c) => {
     const b = (await c.req.json().catch(() => null)) as { branch?: unknown; commit?: unknown } | null;

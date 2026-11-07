@@ -73,6 +73,7 @@ export function registerRunLogsRoutes(app: Hono<any>, deps: RunLogsRouteDeps): v
       if (why) throw new Refusal("forbidden", why);
       const b = (await c.req.json().catch(() => null)) as { project?: unknown; confirm?: unknown } | null;
       if (!b || typeof b.project !== "string" || !b.project) throw new Refusal("invalid-request", "the body is {project, confirm: true}");
+      if (b.confirm !== undefined && typeof b.confirm !== "boolean") throw new Refusal("invalid-request", "confirm is true or false");
       const q = await byProject(b.project);
       if (b.confirm !== true) throw new Refusal("needs-confirm", "Clean Logs deletes the logs of old finished runs: confirm it (confirm: true)");
       return cleanRunLogs(q);
@@ -83,9 +84,13 @@ export function registerRunLogsRoutes(app: Hono<any>, deps: RunLogsRouteDeps): v
 /** The live wiring: the server's loaded queues and its merge thread keeper. */
 export function registerLiveRunLogsRoutes(app: Hono<any>): void {
   registerRunLogsRoutes(app, {
+    // Every served project's queue, loaded on the first read as the Merge Queue tab loads it (a queue loads lazily).
     queues: async () => {
       const qs = (await import("./wire")).mergeQueues();
-      return qs ? qs.loaded() : [];
+      if (!qs) return [];
+      const roots = await (await (await import("./served")).servedRule()).servedRoots().catch(() => []);
+      await Promise.all(roots.map((r) => qs.get(r.root).catch(() => null)));
+      return qs.loaded();
     },
     isThreadChat: (root, session) => mergeThread().isThreadChat(root, session),
     notPage: (c) => pageOnlyRefusal(c, CLEAN_WORDS),

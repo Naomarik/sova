@@ -1840,3 +1840,10 @@ export const startMcpSignIn = (id: string) => request<McpSignIn>(mcpRow(id, "/si
 export const readMcpSignIn = (id: string) => request<McpSignIn>(mcpRow(id, "/sign-in"));
 export const finishMcpSignIn = (id: string, address: string) => request<McpSignIn>(mcpRow(id, "/sign-in/address"), jsonInit("POST", { address }));
 export const cancelMcpSignIn = (id: string) => request<unknown>(mcpRow(id, "/sign-in"), { method: "DELETE" });
+
+// ---- the merge thread's Run Logs chip (§app.merge-queue/run-logs, shared/merge-run-logs.ts) ----
+/** The run folders' size of the project whose merge thread is `session` (404: it isn't one). */
+export const fetchRunLogsOfThread = (session: string) =>
+  request<import("../../shared/merge-run-logs").RunLogsInfo>(`/api/merge-queue/run-logs?session=${encodeURIComponent(session)}`, { cache: "no-store" });
+/** Clean Logs: the user's own click, confirmed. */
+export const cleanRunLogs = (project: string) => request<import("../../shared/merge-run-logs").RunLogsCleaned>("/api/merge-queue/run-logs/clean", jsonInit("POST", { project, confirm: true }));

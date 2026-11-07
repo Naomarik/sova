@@ -535,6 +535,8 @@
    "project.merge-queue.land-how.clear": "scripts",
    "project.merge-queue.branch-summary.retry": "scripts",
    "project.merge-queue.landing-summary": "scripts",
+   "project.merge-queue.run-logs": "scripts",
+   "project.merge-queue.run-logs.clean": "scripts",
    "attention.dismiss": "overseers",
    "attention.undismiss": "overseers",
    "overseer.attention": "overseers",

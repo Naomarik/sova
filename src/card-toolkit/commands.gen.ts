@@ -163,6 +163,8 @@ export type CommandId =
   | "project.merge-queue.land-how.clear"
   | "project.merge-queue.branch-summary.retry"
   | "project.merge-queue.landing-summary"
+  | "project.merge-queue.run-logs"
+  | "project.merge-queue.run-logs.clean"
   | "overseer.attention"
   | "overseer.abilities"
   | "overseer.todo.list"
@@ -3323,6 +3325,18 @@ export interface CommandParams {
   };
   /** Every project's merge queue and open release in one quick read: the run checking now, the line, what waits for you, the newest landings and the release's steps. (only looks; needs the card's owner trusted) */
   "project.merge-queue.landing-summary": Record<string, never>;
+  /** How much room a project's merge queue run folders take, how many runs are packed, and what Clean Logs would free. (only looks; needs the card's owner trusted) */
+  "project.merge-queue.run-logs": {
+    /** The project's id */
+    "project": string;
+  };
+  /** Delete the logs of a project's old finished merge runs (past the newest 10; never a run still checking or one an open or sent-back entry names). Each run keeps its record, verdict and steps. Your own page only. (changes something; needs the card's owner trusted) */
+  "project.merge-queue.run-logs.clean": {
+    /** The project's id */
+    "project": string;
+    /** Confirm the deletion (needed) */
+    "confirm": boolean;
+  };
   /** What needs the user now, as the Overseer's digest has it. (only looks; needs the card's owner trusted) */
   "overseer.attention": Record<string, never>;
   /** What the Overseer can do: its built-in abilities, its limits and the commands its extensions offer it. (only looks; needs the card's owner trusted) */
@@ -3930,6 +3944,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.merge-queue.land-how.clear": "changes",
   "project.merge-queue.branch-summary.retry": "changes",
   "project.merge-queue.landing-summary": "looks",
+  "project.merge-queue.run-logs": "looks",
+  "project.merge-queue.run-logs.clean": "changes",
   "overseer.attention": "looks",
   "overseer.abilities": "looks",
   "overseer.todo.list": "looks",

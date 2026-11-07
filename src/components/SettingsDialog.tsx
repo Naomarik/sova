@@ -37,7 +37,7 @@ import { LIMIT_RULE } from "../../shared/provider-limits";
 import { NumberField, SearchField, Toggle } from "./form";
 import { compressWork, setCompressWork } from "../lib/work-compression";
 import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography } from "../lib/theme";
-import { settingsProject, type SettingsTab } from "../lib/settings-nav";
+import { openSettings, settingsProject, type SettingsTab } from "../lib/settings-nav";
 import { experimentalDraft, experimentalSaveError, experimentalSaving, setExperimentalDraft, setExperimentalSaved } from "../lib/experimental-draft";
 import { AlignmentSettings } from "./AlignmentSettings";
 import { policyDraft, policySaveError, policySaving, setPolicyDraft, setPolicySaved } from "../lib/model-policy-draft";
@@ -248,7 +248,10 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           {/* The same: it reads its list while it shows, and saves on its own. */}
           <Show when={tab() === "extensions"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-extensions" aria-labelledby="settings-tab-extensions">
-              <ExtensionsSettingsSection />
+              <ExtensionsSettingsSection onOpenServer={() => {
+                  openSettings("general", "server");
+                  setTab("general");
+                }} />
             </div>
           </Show>
           {/* Mounted only while its tab is: the backend discovery (a Claude Code CLI call) runs

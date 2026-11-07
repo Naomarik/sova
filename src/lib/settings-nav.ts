@@ -23,8 +23,8 @@ export const subagentSettingsPath = subagentPath;
 export const setSubagentSettingsPath = setSubagentPath;
 
 /** A section inside a tab to bring into view once it renders ("spec": Subagents → Spec writer;
-    "overseer-limits": Overseer → Limits); null = the tab's top. */
-export type SettingsSection = "spec" | "overseer-limits";
+    "overseer-limits": Overseer → Limits; "server": General → Server · this machine); null = the tab's top. */
+export type SettingsSection = "spec" | "overseer-limits" | "server";
 const [section, setSection] = createSignal<SettingsSection | null>(null);
 
 /** The section the last openSettings asked for, until that section has scrolled itself into view. */

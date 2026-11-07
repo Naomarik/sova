@@ -187,6 +187,7 @@ function startIfProgram(raw: Record<string, unknown>, restart: boolean): Promise
 export async function reviewFolder(folder: string, self?: string): Promise<ExtensionInspect> {
   const d = readDescription(folder, self);
   if (!d.ok) return d;
+  if (self !== undefined && d.described.entry.id !== self) return { ok: false, reason: `This folder describes ${d.described.entry.id}, not ${self}.` };
   const raw = mergedEntry(d.described.entry, listedExtension(d.described.entry.id)?.raw);
   delete raw.off;
   return { ok: true, review: await reviewOf(raw, d.described.needs, d.described.leftOut) };

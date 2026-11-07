@@ -29,7 +29,6 @@ import {
 } from "../lib/extensions-settings";
 import { tildePath } from "../lib/format";
 import { createPoll } from "../lib/poll";
-import { openSettings } from "../lib/settings-nav";
 import { home, setHome, toast } from "../lib/ui-state";
 import { FolderPicker } from "./FolderPicker";
 import { Toggle } from "./form";
@@ -275,7 +274,7 @@ function ChooseDialog(props: { start?: string; forId?: string; onClose: () => vo
   );
 }
 
-function Row(props: { row: ExtensionRow; through?: string; onChange: () => void; onReview: (r: ExtensionRow) => void; onChoose: (r: ExtensionRow) => void }) {
+function Row(props: { row: ExtensionRow; through?: string; onChange: () => void; onReview: (r: ExtensionRow) => void; onChoose: (r: ExtensionRow) => void; onOpenServer: () => void }) {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [confirm, setConfirm] = createSignal(false);
@@ -371,7 +370,7 @@ function Row(props: { row: ExtensionRow; through?: string; onChange: () => void;
                   </button>
                 </Show>
                 <Show when={a === "updates"}>
-                  <button type="button" class="button button-sm" onClick={() => openSettings("general")}>
+                  <button type="button" class="button button-sm" onClick={() => props.onOpenServer()}>
                     {restartable() ? "Restart Sova" : "Open Updates"}
                   </button>
                 </Show>
@@ -416,7 +415,7 @@ function Row(props: { row: ExtensionRow; through?: string; onChange: () => void;
 }
 
 /** Settings → Extensions: this computer's extensions. Every action on it saves at once. */
-export function ExtensionsSettingsSection() {
+export function ExtensionsSettingsSection(props: { onOpenServer: () => void }) {
   const poll = createPoll<ExtensionsInstalled>(getExtensionsInstalled, EXT_POLL_MS, { cacheKey: "extensions:installed" });
   // Only the folder picker sets this otherwise, so a row drawn before it opens would show the whole path.
   createEffect(() => {
@@ -475,7 +474,7 @@ export function ExtensionsSettingsSection() {
           <>
             <Show when={d().rows.length} fallback={<p class="mcp-line">{EXT_NONE}</p>}>
               <ul class="mcp-rows" data-testid="extensions">
-                <For each={d().rows}>{(r) => <Row row={r} through={d().through} onChange={poll.refetch} onReview={(x) => void reviewRow(x)} onChoose={(x) => setChoosing({ forId: x.id })} />}</For>
+                <For each={d().rows}>{(r) => <Row row={r} through={d().through} onChange={poll.refetch} onReview={(x) => void reviewRow(x)} onChoose={(x) => setChoosing({ forId: x.id })} onOpenServer={props.onOpenServer} />}</For>
               </ul>
             </Show>
             <Show when={d().others.length}>

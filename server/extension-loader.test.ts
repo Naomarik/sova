@@ -21,6 +21,7 @@ const fp = await import("./extension-fingerprint");
 const ext = await import("./extensions");
 const { resolveProgram, extensionDataDir, programEnv } = await import("./extension-program");
 const { rowOf } = await import("./extension-routes");
+const { reviewFolder } = await import("./extension-loader");
 const { ExtensionSync } = await import("./sync/extensions");
 const cards = await import("./transcript-cards");
 
@@ -105,6 +106,17 @@ describe("a folder names an extension or says why not", () => {
     const r = readDescription(folder(base({ cards: [{ name: "ask", title: "Ask", draws: "buttons", answer: "at-once", toolkit: 1 }] })));
     assert.ok(r.ok);
     assert.deepEqual(r.described.asks, { cards: ["Ask"] });
+  });
+});
+
+describe("Choose Folder reads the folder for that one extension", () => {
+  test("a folder describing another id is refused at the pick, by both names; the same id goes to review", async () => {
+    const d = folder(base({ page: "dist" }), { "dist/index.html": "<p>" });
+    const other = await reviewFolder(d, "bookmarks");
+    assert.equal(other.ok, false);
+    assert.ok(!other.ok && other.reason.includes("notes") && other.reason.includes("bookmarks"), JSON.stringify(other));
+    const same = await reviewFolder(d, "notes");
+    assert.ok(same.ok && same.review.id === "notes", JSON.stringify(same));
   });
 });
 

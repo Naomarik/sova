@@ -757,7 +757,7 @@ export function LinkCard(props: { details: MeshLinkView; ended: boolean }) {
   return (
     <section class="card overseer-link" aria-label={`${title()}: ${props.details.link.id}`}>
       <div class="card-head">
-        <Icon name="link" small />
+        <Icon name="network" small />
         <h3 class="card-title">{title()}</h3>
         <span class="overseer-link-id">{props.details.link.id}</span>
       </div>

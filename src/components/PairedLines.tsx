@@ -44,17 +44,14 @@ export function PairedLines(props: { sessionId: string | undefined }) {
         return (
           <Banner
             tone={line().paused ? "warn" : "info"}
-            icon="network"
+            size="compact"
+            icon="link"
             title={
               <>
                 Paired with <a href={`#/s/${encodeURIComponent(line().partner.path)}`} title={line().partner.title}>{line().partner.title}</a>
               </>
             }
-            body={
-              <Show when={error()?.pairing === p.id ? error()!.text : line().paused ? "Paused: note limit reached" : undefined}>
-                {(t) => <>{t()}</>}
-              </Show>
-            }
+            body={error()?.pairing === p.id ? error()!.text : line().paused ? "Paused: note limit reached" : undefined}
             action={
               <span class="cluster">
                 <Show when={line().paused}>

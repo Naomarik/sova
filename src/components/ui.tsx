@@ -10,7 +10,7 @@ export type IconName =
   | "chevron-right" | "bell" | "clock" | "close" | "copy" | "external" | "eye" | "file" | "folder" | "info" | "minus" | "more" | "stop"
   | "panel-collapse" | "panel-expand" | "pencil" | "plus" | "refresh" | "search" | "shield" | "shield-on" | "shield-partial" | "shield-off" | "star" | "trash" | "undo" | "settings" | "sliders" | "terminal" | "gauge" | "worker" | "network" | "grid" | "building" | "activity" | "usage-coin" | "agents-working"
   | "bulb" | "wrench" | "mic" | "share" | "code" | "expand"
-  | "subagents" | "mode-delegate" | "mode-create" | "mode-align" | "mode-spec" | "mode-vis" | "mode-memory";
+  | "subagents" | "link" | "mode-delegate" | "mode-create" | "mode-align" | "mode-spec" | "mode-vis" | "mode-memory";
 
 /** A shipped SVG as a mask over currentColor (base.css `span.icon`). Decorative unless labelled. */
 export function Icon(props: { name: IconName; small?: boolean; class?: string }) {
@@ -38,9 +38,11 @@ export function Banner(props: {
   body?: JSX.Element;
   action?: JSX.Element;
   icon?: IconName;
+  /** "compact": one tight row, for a standing line above a transcript. */
+  size?: "compact";
 }) {
   return (
-    <div class={`banner banner-${props.tone}`} role={props.tone === "error" ? "alert" : "status"}>
+    <div class={`banner banner-${props.tone}${props.size === "compact" ? " banner-compact" : ""}`} role={props.tone === "error" ? "alert" : "status"}>
       <Icon name={props.icon ?? TONE_ICON[props.tone]} class="banner-icon" />
       <div class="banner-main">
         <p class="banner-title">{props.title}</p>

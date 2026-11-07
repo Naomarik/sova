@@ -116,12 +116,14 @@
       "src/design/base.css",
       "src/lib/chat-wait.ts",
       "src/components/WatchView.tsx",
-      "src/components/HostStateNotices.tsx"
+      "src/components/HostStateNotices.tsx",
+      "src/lib/chat-wait.test.ts",
+      "src/lib/first-connect-send.browser.test.ts"
     ],
     "agreed": {
-      "by": "user (omar)",
-      "at": "2026-11-03T22:11Z",
-      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+      "by": "user",
+      "at": "2026-11-07T11:46Z",
+      "source": "pi-session:507564a9-be11-44f3-986c-2fbc90e6725b#24834804"
     }
   },
   "§chat.composer/file-index-deadline": {
@@ -166,7 +168,7 @@
       "§app.claude-logins/active-login"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/lib/composer-known.ts",
       "src/lib/composer-known.test.ts",
@@ -178,8 +180,15 @@
       "server/sessions-index.ts",
       "server/chat-manager.ts",
       "server/session-summary-chat.test.ts",
-      "server/claude-login-state.ts"
-    ]
+      "server/claude-login-state.ts",
+      "src/lib/chat-wait.ts",
+      "src/lib/first-connect-send.browser.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-07T11:46Z",
+      "source": "pi-session:507564a9-be11-44f3-986c-2fbc90e6725b#24834804"
+    }
   },
   "§chat.composer/land-confirm": {
     "kind": "behavior",

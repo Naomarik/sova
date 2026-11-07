@@ -426,7 +426,7 @@ passes its events back. A worker never runs inside the server's process.
   never stops its workers. When the parent's chat opens again it reattaches every worker of its
   that still runs: `agent_list` and the pane show it with its live status, its transcript so far
   comes from its file, and a run that finished while the parent was away is announced to the parent
-  once (waking it under the worker's `wake`), never twice and never lost. A steer sent after the
+  once, never twice and never lost (§app.chat-processes/worker-reports). A steer sent after the
   reattach reaches the worker once. When a worker's run finishes and no parent chat picks it up
   within 10 seconds, the server opens the parent chat once so that it takes the report, unless the
   parent is archived: archiving cancels a report's pending open, and an archived parent is never
@@ -516,6 +516,7 @@ link (§app.chat-processes/workers) carry the same keys, and the task moves once
 - **Several in one step.** Instructions that land together (steers sent while the worker's reply
   runs reach it at its next step together) each name their own key. The worker's current task starts
   at the last of them, and the reply after them is that task's.
+- **A reply no instruction started** is a report of its own (§app.chat-processes/worker-reports).
 - **Accepted but never ran.** An instruction the worker accepted whose turn never started (Stop
   pressed while it was queued, the worker's process died, a message taken off the queue, a turn that
   failed before it began) is reported plainly: one line in the worker's transcript, "This
@@ -526,6 +527,41 @@ link (§app.chat-processes/workers) carry the same keys, and the task moves once
   (§app.chat-processes/code-generations) has a feed that names no keys, and its parent tells which
   instruction started which reply as it did before: best-effort, from pi's queue and the message
   text.
+
+## §app.chat-processes/worker-reports — What a worker reports after finishing
+
+- **A reply of its own is a new report.** Any reply a worker makes on its own after finishing, whatever
+  woke it (a job's end or anything else), is a report: the worker returns to idle and the report is
+  sent. It is routed like any other report: it starts a turn in the main chat unless the worker was
+  spawned with `wake: false`, and a team member's goes to its coordinator, which wakes the parent only
+  once no teammate is working (§teams.defaults/routing). No rule about jobs quiets it. A reply on the
+  way to a queued instruction isn't one: it behaves as §app.chat-processes/worker-instructions says.
+- **Nothing written.** A run of its own that ends well with nothing written returns the worker to
+  idle, sends nothing and leaves the last report readable. A failed run always reports. If such a run
+  leaves a coordinated team with no one working (the monitor aside) and the coordinator's last finish
+  held back its wake, the main chat gets that wake once, with a one-line note. A quiet coordinator run
+  while a teammate works leaves it owed; a normal wake or a report routed to the coordinator clears it.
+  A main chat mid-run gets no such wake, and a reload forgets one owed.
+- **What it carries.** Every final answer since the last report, oldest first; commentary on the way
+  to a tool isn't an answer, unless a report that is owed has nothing else to show. It keeps its newest
+  answer and the 32 before it, those at most 2 MB; older ones drop with no note. Its first line stays
+  the earlier answer's. A long report is a preview with a pointer to the whole text. The preview, the
+  whole text, the coordinator's subject and the read-back (`agent_transcript`) show the same answers.
+  The read-back shows the latest report, even a short one.
+- **After a reload.** A missed report (§app.chat-processes/workers) carries everything written since
+  the last recorded report, with no limit on how many, and is routed the same way, however old; a
+  missed failed run reports as a failure. A reload also restores every idle worker's whole latest
+  report, so the read-back never says "(no output for this task)" when the worker answered its latest
+  instruction; an older record, or a restored worker with no process, gives its newest answer. Past
+  records are not rewritten. A worker mid-run during a reload includes answers written before it in
+  its next report, each exactly once, unless a steer's run comes first. If the file can't place that
+  settle, the report is what the feed showed or, with nothing shown, what the file holds up to its end.
+- **Jobs still running.** A report made while the worker has jobs running gets a line after the answer
+  naming them and their commands, for example "Still running: j2 (npm run serve), 8m. It wakes this
+  worker when it ends." A job that has ended but still owes its wake card reads "Just ended: j3 (npm
+  test). Its end card wakes this worker." Durations read like the end cards: `8m`, `8m12s`. The line
+  doesn't imply the work is unfinished. It appears in the completion, the read-back (with `full`, in
+  its header) and `agent_wait`, and on screen only inside the report's own text.
 
 ## §app.chat-processes/boot-log — A chat's start leaves a trail
 

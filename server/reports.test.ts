@@ -25,6 +25,18 @@ test("model line without a backend; a provider/model id keeps its slash", () => 
   assert.equal(r.body, "Done.");
 });
 
+test("the jobs line after the answer: the preview stays the answer's first line, and a cut report still reads as cut", () => {
+  const line = "Still running: j2 (npm run serve), 8m. It wakes this worker when it ends.";
+  const whole = report(HEAD, SESSION, "Built it.", "Details.", "", line);
+  assert.equal(whole.preview, "Built it.");
+  assert.equal(whole.body, `Built it.\nDetails.\n\n${line}`);
+  assert.equal(whole.truncated, false);
+  const cut = report(HEAD, SESSION, "Built it.", "", line, "[Final answer: 9,000 chars.]", "[Use agent_transcript for more.]");
+  assert.equal(cut.preview, "Built it.");
+  assert.equal(cut.truncated, true);
+  assert.ok(cut.body.includes(line));
+});
+
 test("no session line: the model line is still peeled", () => {
   const r = report(HEAD, "Model: claude-sonnet-4-6 · thinking: low", "", "Done.");
   assert.equal(r.session, undefined);

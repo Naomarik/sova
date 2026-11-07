@@ -1,4 +1,4 @@
-import { createSignal, createUniqueId, For, onCleanup, onMount, Show, type JSX } from "solid-js";
+import { createEffect, createSignal, createUniqueId, For, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { TourPresentation, TourSize } from "../../shared/tour";
 import { tourChapterRows, tourPosition, type TourChapterRow, type TourPosition } from "../lib/tour-state";
@@ -8,6 +8,8 @@ import "./TourViewer.css";
 
 export interface TourReadCardProps {
   title: string; summary?: string; steps: number;
+  /** Told whether the viewer is on screen. */
+  onViewer?(open: boolean): void;
   loadManifest(): Promise<TourPresentation>;
   assetUrl(file: string): string;
   loadProgress?(): Promise<TourPosition | null>;
@@ -37,6 +39,8 @@ export function TourChapterList(props: { manifest: Pick<TourPresentation, "chapt
 /** Shared checked-edition card. All authorization, asset paths and capabilities come from its host. */
 export function TourReadCard(props: TourReadCardProps) {
   const [open, setOpen] = createSignal(false);
+  createEffect(() => props.onViewer?.(open()));
+  onCleanup(() => props.onViewer?.(false));
   const [manifest, setManifest] = createSignal<TourPresentation>();
   const [progress, setProgress] = createSignal<TourPosition>();
   const [error, setError] = createSignal("");

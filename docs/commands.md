@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 571 |
-| Routes a catalogue entry points at | 178 |
-| Catalogue entries | 240 |
+| Routes registered | 573 |
+| Routes a catalogue entry points at | 179 |
+| Catalogue entries | 241 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -28,7 +28,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
 | Class: Left as is, by choice | 261 |
-| Class: Page plumbing | 13 |
+| Class: Page plumbing | 14 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
 | Class: Approvals and grants | 5 |
@@ -59,6 +59,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.draft.set` | Set Draft | changes | `PUT /api/sessions/draft` | sessions |
 | `session.sandbox.set` | Set Sandbox | changes | `POST /api/sandbox` | sessions |
 | `session.tools.get` | Show Session Tools | looks | `GET /api/sessions/tools` | sessions |
+| `session.time-spent` | Show Time Spent | looks | `GET /api/time-spent` | sessions |
 | `session.align.triage` | Show Alignment Triage | looks | `GET /api/sessions/align-triage` | sessions |
 | `session.workers.checks` | Show Worker Report Checks | looks | `GET /api/sessions/worker-checks` | sessions |
 | `session.context` | Show Session Context | looks | `GET /api/sessions/context` | sessions |
@@ -746,7 +747,7 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/voice/transcribe` | admin |
 | `POST /api/voice/warm` | admin |
 
-### Page plumbing (13)
+### Page plumbing (14)
 
 Requests a view, the composer or a link card makes to draw itself (attachments and uploads, a tool row's contents, a link's thread and seen mark, the remote folder picker's listing, the explanations feed, the empty list's folder name, a project's icon picture). Exactly these routes (`PAGE_PLUMBING`).
 
@@ -763,6 +764,7 @@ Requests a view, the composer or a link card makes to draw itself (attachments a
 | `GET /api/projects/:pid/mcp` | sessions |
 | `GET /api/sessions/dir` | sessions |
 | `GET /api/targets/:name/folders` | sessions |
+| `POST /api/time-spent/report` | sessions |
 | `GET /api/transcript/tool` | sessions |
 | `POST /api/upload` | sessions |
 
@@ -965,6 +967,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/settings/summarizer` | sessions | `settings.summarizer.get` |
 | `GET /api/settings/team` | sessions | `settings.team.get` |
 | `GET /api/targets` | sessions | `targets.list` |
+| `GET /api/time-spent` | sessions | `session.time-spent` |
 | `GET /api/transcript` | sessions | `session.read` |
 | `POST /api/updates/restart` | full | `server.restart` |
 | `GET /api/usage/costs` | sessions | `usage.costs` |

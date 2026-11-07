@@ -52,6 +52,12 @@ export class HeldSends {
     return card === undefined ? { id, text } : { id, text, card };
   }
 
+  /** A send taken back before the chat had it: nothing of it is answered any more. */
+  forget(id: string): void {
+    this.texts.delete(id);
+    this.cards.delete(id);
+  }
+
   /** Every send still held, oldest first; none held after. */
   takeAll(): Unsent[] {
     const out = [...this.texts].map(([id, text]) => this.unsent(id, text));

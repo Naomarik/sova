@@ -213,6 +213,21 @@ function howLine(j: JobRecord): string {
 	return "It ended on its own; its output says whether it worked.";
 }
 
+/**
+ * The line a report carries while its worker has jobs: those running, then those that ended with the
+ * wake still owed. Only whether a record has ended, never how: a job can be a server left up after a
+ * final report, so the line says nothing about whether the work is finished.
+ */
+export function stillRunningLine(dir: string, sessionId: string, now = Date.now()): string | undefined {
+	const named = (j: JobRecord) => `${j.id} (${oneLine(j.command)})`;
+	const running = runningJobs(readSessionJobs(dir, sessionId));
+	const owed = pendingCards(dir, sessionId).filter((j) => j.ended?.card === "wake");
+	const parts: string[] = [];
+	if (running.length) parts.push(`Still running: ${running.map((j) => `${named(j)}, ${fmtDur(now - j.startedAt)}`).join("; ")}. ${running.length > 1 ? "Each wakes" : "It wakes"} this worker when it ends.`);
+	if (owed.length) parts.push(`Just ended: ${owed.map(named).join("; ")}. ${owed.length > 1 ? "Their end cards wake" : "Its end card wakes"} this worker.`);
+	return parts.join(" ") || undefined;
+}
+
 /** One job's lines in a card: what ran, how long, where its output is, how it ended. */
 function jobLines(j: JobRecord): string[] {
 	const e = j.ended!;

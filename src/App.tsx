@@ -98,6 +98,7 @@ import { GroupView, paneIdFor, workspaceFocus, type PaneWiring } from "./compone
 import { OverseerView } from "./components/OverseerView";
 import { SessionPane, type PaneInsight, type TabId } from "./components/SessionPane";
 import { SessionView } from "./components/SessionView";
+import { startTimeSpent } from "./lib/time-spent";
 import { BrandLink, sessionHref, Sidebar } from "./components/Sidebar";
 import { SidebarResizer } from "./components/SidebarResizer";
 import { UsageView } from "./components/UsageView";
@@ -788,6 +789,7 @@ export function App() {
   // In a workspace the focused pane is the workspace's own state, not the route's: moving between
   // panes replaces the URL without a hashchange, so `groupRoute()` names the pane you left.
   const focusedPath = () => route() ?? workspaceFocus() ?? groupRoute()?.path ?? null;
+  startTimeSpent({ focused: focusedPath, elsewhere: () => !!settingsOpenAt() });
   const summary = createMemo(() => {
     const p = focusedPath();
     return (p ? summaryOf(p) : undefined) ?? null;

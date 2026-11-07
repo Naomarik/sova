@@ -240,7 +240,8 @@
     "session.pairs.unpair",
     "session.pairs.resume",
     "attention.dismiss",
-    "attention.undismiss"
+    "attention.undismiss",
+    "session.time-spent"
   ],
   "retired": [
     "settings.agents.get",

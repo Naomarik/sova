@@ -252,6 +252,8 @@ const SESSION_PREFIXES = [
   "links",
   "baton",
   "health",
+  // Time Spent (§app.subagents-pane/time-spent-record): a page reports and reads a session's record with the session.
+  "time-spent",
 ];
 // Read with `sessions` (GET/HEAD: the remote session pane and an org page on a peer read them);
 // every write needs `admin`.

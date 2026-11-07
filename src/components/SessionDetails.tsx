@@ -1,6 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
-import type { CompactionInfo, ContextInfo, GitFileChange, GitRepoSummary, GitSummary, SessionInsight, SessionSummary, TranscriptItem } from "../../shared/protocol";
-import { contextSentence, contextStateFor } from "../lib/context";
+import type { CompactionInfo, GitFileChange, GitRepoSummary, GitSummary, SessionInsight, SessionSummary, TranscriptItem } from "../../shared/protocol";
 import { relativeTime, thousands, tildePath } from "../lib/format";
 import { NO_WORKTREES, type WorktreeChip, worktreeChips } from "../lib/worktrees";
 import { queueRow, rowsSummary } from "../lib/merge-queue";
@@ -32,10 +31,11 @@ import {
   upstreamLabel,
   visiblePath,
 } from "../lib/git-summary";
-import { announce, copyText, home, setActiveTab, toast } from "../lib/ui-state";
+import { announce, copyText, home, toast } from "../lib/ui-state";
 import { sessionWorking } from "../lib/workers";
 import { Banner, CopyButton, Icon } from "./ui";
 import { BackgroundJobsSection } from "./BackgroundJobs";
+import { TimeSpentSection } from "./TimeSpent";
 import { sessionHref } from "./Sidebar";
 import { MoveToGroupMenu } from "./Groups";
 import { ChangesDialog } from "./ChangesViewer";
@@ -59,8 +59,7 @@ const wrapMono = { margin: 0, "overflow-wrap": "anywhere" } as const;
  *   error     a failed first insight load to report, or null (the poll retries on its own)
  *   pending   the first insight load is still out: Worktrees shows a placeholder, never its empty line
  *   summary   App-level session list row (undefined before the list loads)
- *   context   the transcript's context fill from the server (ContextGauge's source)
- *   items     transcript rows (the model/thinking/mode timeline, and "compacted" for context)
+ *   items     transcript rows (the model/thinking/mode timeline)
  *   now       the clock relative times are measured against
  *   onArchiveChanged  after Archive/Unarchive succeeds: re-read the session list, with the
  *                     session's path and its new archived state
@@ -74,7 +73,6 @@ export function SessionDetails(props: {
   error: string | null;
   pending: boolean;
   summary: SessionSummary | undefined;
-  context: ContextInfo | null;
   items: TranscriptItem[];
   now: number;
   onArchiveChanged(path: string, archived: boolean): void;
@@ -88,8 +86,6 @@ export function SessionDetails(props: {
   const working = () => (insight()?.workers ?? []).filter((w) => w.working).length;
   const compactions = () => insight()?.compactions ?? [];
   const timeline = () => timelineEntries(props.items);
-  /** The gauge's own state, so the sentence here and the one in the head can't disagree. */
-  const context = () => contextStateFor(props.context, props.items);
   const live = () => summary()?.live ?? null;
   /** What Archive/Unarchive just did, until the list row catches up (or without a refresh). */
   const [archivedNow, setArchivedNow] = createSignal<boolean | null>(null);
@@ -143,22 +139,8 @@ export function SessionDetails(props: {
         </div>
       </section>
 
-      {/* 2 · Context. The gauge's own sentence, so the two never drift. */}
-      <Show when={context()}>
-        {(state) => (
-          <section class="stack-2" aria-labelledby={id("context")}>
-            <h3 class="text-eyebrow" id={id("context")}>
-              Context
-            </h3>
-            <p class="usage-note">
-              {contextSentence(state())}{" "}
-              <button type="button" class="button-link" onClick={() => setActiveTab(props.path, "context")}>
-                See what fills it
-              </button>
-            </p>
-          </section>
-        )}
-      </Show>
+      {/* 2 · Time Spent. Reads on its own; its placeholder keeps Repository from jumping. */}
+      <TimeSpentSection path={props.path} labelId={id("time-spent")} />
 
       {/* 3 · Repository. The git state of the folder the session works in, read on its own
           schedule: never part of the insight poll. */}

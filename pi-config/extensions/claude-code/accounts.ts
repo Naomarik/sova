@@ -446,15 +446,6 @@ export function loginEnabled(accounts: ClaudeAccountsFile, device: string, id: s
 // ---------------------------------------------------------------------------
 
 /**
- * Create (0700) the login's directory and link the shared entries to `default`'s directory. Each
- * link is made only when its target exists, except `projects/`, which is created in `default`'s
- * directory if missing: every login must write its session records there (an agent dir with its own
- * `claude-projects/` links every login's `projects` there instead: `loginProjectsTarget`). An existing link that
- * points elsewhere is replaced (unlinked, never removed recursively); a real file or directory is
- * left alone. A `defaultDir` under `claude-accounts/` is refused before anything is written, and no
- * link is made whose target resolves into the login's own directory.
- */
-/**
  * An agent dir's own folder for its logins' CLI transcripts. When it exists (a hermetic `.agent` makes it:
  * scripts/hermetic-agent-dir.mjs), each login's `projects` links there instead of into default's
  * directory, so a throwaway agent dir on a copied login never writes into the user's own `~/.claude`.
@@ -466,6 +457,15 @@ export function loginProjectsTarget(agentDir: string, defaultDir: string): strin
 	try { if (fs.lstatSync(own).isDirectory()) return own; } catch { /* none: default's */ }
 	return path.join(defaultDir, "projects");
 }
+/**
+ * Create (0700) the login's directory and link the shared entries to `default`'s directory. Each
+ * link is made only when its target exists, except `projects/`, which is created in `default`'s
+ * directory if missing: every login must write its session records there (an agent dir with its own
+ * `claude-projects/` links every login's `projects` there instead: `loginProjectsTarget`). An existing link that
+ * points elsewhere is replaced (unlinked, never removed recursively); a real file or directory is
+ * left alone. A `defaultDir` under `claude-accounts/` is refused before anything is written, and no
+ * link is made whose target resolves into the login's own directory.
+ */
 export function ensureLoginDir(agentDir: string, id: string, defaultDir: string): string {
 	const dir = loginDir(agentDir, id);
 	if (within(defaultDir, path.join(agentDir, ACCOUNTS_DIR_NAME))) {

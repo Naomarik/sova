@@ -736,7 +736,6 @@ accessible name, byte for byte, so what AT says matches what the pane is called.
 | `Tab` | Walks into the pane and through its controls in visual order, then out to the next pane. No focus trap anywhere |
 | `Left` / `Right` in the tab strip | The tablist's own roving tabindex, as the skill's tabs specify |
 | `Esc` | Nothing new. It does not leave the workspace and it does not abort a turn (§chat/composer) |
-| A character, outside a text field | Goes into the focused pane's composer, or the group composer while Send to All is on (§chat.composer/type-anywhere). A read-only focused pane takes nothing: the character never goes to another pane |
 
 `Ctrl+Alt+Arrow` is chosen because `Alt+Arrow` is browser history and `Ctrl+Arrow` is
 word-navigation in every textarea on screen — and there are N textareas on screen. The binding is

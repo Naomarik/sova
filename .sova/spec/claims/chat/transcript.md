@@ -810,10 +810,8 @@ reading view, at every width, desktop included.
   `"true"` for on; anything else is off), for every session at once, never per session: switching
   sessions (from the sidebar, or back to the list and into another) keeps it, and a reload brings
   it back. Blocked or full storage keeps the choice for the page. Nothing turns it off but the
-  button and a character typed outside a text field, which ends Focus and lands in the composer
-  (§chat.composer/type-anywhere); there is no gesture. The shell carries it as `data-focus="on"`
-  on `.app` (§app/shell), and the stylesheet does the hiding, on a `.app-main` that holds a
-  transcript only.
+  button; there is no gesture. The shell carries it as `data-focus="on"` on `.app` (§app/shell),
+  and the stylesheet does the hiding, on a `.app-main` that holds a transcript only.
 
 ## §chat.transcript/rendering — Opening and switching a long transcript
 

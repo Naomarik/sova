@@ -42,7 +42,6 @@ can change the dialog's size by being long or short.
 ## §app.settings-dialog/general — General
 
 - **Compress thinking & tool calls** — a default-on browser-local switch, applied immediately to every open transcript and stored in `localStorage["sova:compress-work"]`. Only `"false"` disables it; missing, unreadable, or corrupt values mean on. On selects the compact work timeline; off restores the original cards (§chat.work-chain-setting/preference).
-- **Type anywhere to write** — a default-on browser-local switch, right after Compress thinking & tool calls, applied at once and stored in `localStorage["sova:type-anywhere"]`. Only `"false"` turns it off; missing, unreadable, or corrupt values mean on, and blocked or full storage keeps the choice for the page. On, a character typed outside a text field starts your message in the chat's box (§chat.composer/type-anywhere); off, keys outside a text field do what they did before. Its hint: "Typing outside a text field starts your message in the chat's box. Shortcuts keep working either way."
 
 The first tab, in two parts. Above: how **this browser** draws Sova. Nothing there is written to
 the machine — no policy file, no server endpoint — which is the line between those settings and

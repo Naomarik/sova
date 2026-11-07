@@ -45,7 +45,7 @@ It configures nothing, so the agent picks every model:
 Each chat has its own pick. In order, a chat uses:
 
 1. **its own pick**, made in its mode menu (or by an Overseer, the usage-limit row, or
-   `/mode subagents` in a terminal);
+   `/mode subagents` typed in the chat);
 2. otherwise **this device's default**, read again each time, so a new default reaches the chat
    too;
 3. and only when the profile library itself can't be read, the older settings files from before

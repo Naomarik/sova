@@ -278,6 +278,40 @@ describe("the code folders", () => {
     appendFileSync(join(d, "s.mjs"), "2");
     assert.notEqual(fp.codeHashNow(code), before[0]);
   });
+  test("data and logs are skipped only at the extension's top level; a library's own data folder is code", () => {
+    const d = folder(base(), { "s.mjs": "1", "lib/data/x.js": "1", "lib/logs/y.js": "1", "data/x.json": "1", "logs/z": "1", "lib/node_modules/m/a": "1", "lib/.git/x": "1" });
+    const code = fp.codeFoldersOf({ id: "x", folder: d, run: ["node"] });
+    let was = fp.codeHashNow(code);
+    for (const f of ["data/x.json", "logs/z", "lib/node_modules/m/a", "lib/.git/x"]) {
+      appendFileSync(join(d, f), "more");
+      assert.equal(fp.codeHashNow(code), was, `${f} doesn't count`);
+    }
+    for (const f of ["lib/data/x.js", "lib/logs/y.js"]) {
+      appendFileSync(join(d, f), "more");
+      const now = fp.codeHashNow(code);
+      assert.notEqual(now, was, `${f} counts`);
+      was = now;
+    }
+  });
+  test("a program folder's or page's own data folder counts: its top isn't the extension's", () => {
+    const d = folder(base(), { "b/data/x.js": "1", "dist/index.html": "", "dist/data/y.json": "1" });
+    const code = fp.codeFoldersOf({ id: "x", folder: d, dist: join(d, "dist"), run: ["n"], programFolder: join(d, "b") });
+    let was = fp.codeHashNow(code);
+    for (const f of ["b/data/x.js", "dist/data/y.json"]) {
+      appendFileSync(join(d, f), "more");
+      const now = fp.codeHashNow(code);
+      assert.notEqual(now, was, `${f} counts`);
+      was = now;
+    }
+  });
+  test("recognition refuses what approval skips and only that: a top-level data folder, a library anywhere", () => {
+    assert.match(reason(folder(base({ page: "data/dist" }), { "data/dist/index.html": "" })), /page is in data/);
+    assert.match(reason(folder(base({ page: "lib/node_modules/p" }), { "lib/node_modules/p/index.html": "" })), /page is in node_modules/);
+    assert.equal(reason(folder(base({ page: "lib/data/dist" }), { "lib/data/dist/index.html": "" })), "ok");
+    assert.equal(reason(folder(base({ backend: { run: ["node", "lib/logs/s.mjs"] } }), { "lib/logs/s.mjs": "" })), "ok");
+    assert.match(reason(folder(base({ backend: { run: ["node", "s.mjs"], folder: "logs" } }), { "logs/s.mjs": "" })), /program is in logs/);
+    assert.equal(reason(folder(base({ backend: { run: ["node", "s.mjs"], folder: "lib/data" } }), { "lib/data/s.mjs": "" })), "ok");
+  });
   test("a program folder named: only it, the page and the description count", () => {
     const d = folder(base(), { "b/s.mjs": "1", "dist/index.html": "", "notes.txt": "1" });
     const code = fp.codeFoldersOf({ id: "x", folder: d, dist: join(d, "dist"), run: ["n"], programFolder: join(d, "b") });

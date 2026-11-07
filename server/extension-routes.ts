@@ -5,8 +5,8 @@ import type { Context, Hono } from "hono";
 import type { ExtensionRow, ExtensionsInstalled } from "../shared/extension-loader";
 import { homedir, hostname } from "node:os";
 import { approveExtension, chooseFolder, installFolder, LoaderRefusal, programAction, programNotFound, programStartedAt, removeExtension, reviewEntry, reviewFolder, turnOff, turnOn } from "./extension-loader";
-import { programLog, programStatus } from "./extension-program";
-import { clearHealthOf, contractWords, extensionHealth, listedExtensions, peerExtensionEntries, type ListedExtension } from "./extensions";
+import { programLog, programStatus, programUnits } from "./extension-program";
+import { clearHealthOf, contractWords, extensionHealth, listedExtension, listedExtensions, peerExtensionEntries, type ListedExtension } from "./extensions";
 import { extensionPageRefusal, notPage, yourClickRefusal } from "./page-only";
 
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -102,7 +102,12 @@ export function registerExtensionRoutes(app: Hono<any>): void {
     };
     return c.json(answer, 200, NO_STORE);
   });
-  app.get("/api/extensions/:id/log", async (c) => c.json({ lines: await programLog(c.req.param("id"), 200) }, 200, NO_STORE));
+  app.get("/api/extensions/:id/log", async (c) => {
+    const id = c.req.param("id");
+    // Only a name the list or the driver gave: the driver makes a path of it.
+    if (!listedExtension(id) && !(await programUnits()).includes(id)) return c.json({ error: "No such extension." }, 404, NO_STORE);
+    return c.json({ lines: await programLog(id, 200) }, 200, NO_STORE);
+  });
 
   app.post(
     "/api/extensions/inspect",

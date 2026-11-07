@@ -164,13 +164,15 @@ moves, changes or deletes it. A folder is an extension when it holds `sova-exten
   entry below, with `dist` read as `page`.
 - `page`: a folder holding its `index.html`. `backend.run`: the program as words, never a shell line.
   `backend.folder`: the program's own code; with none, the whole extension folder. Both stay inside the folder,
-  and neither may lie in `.git`, `node_modules`, `.worktrees`, `.agent`, `data` or `logs`: approval skips those.
+  and neither may lie in `.git`, `node_modules`, `.worktrees` or `.agent`, anywhere, or in `data` or `logs` directly
+  in the extension's folder: approval skips those.
 - **Nothing runs until you press Install and Turn On**, after a review of the exact program, what its page and
   key can do, and what it adds. **It runs as you, with no sandbox.** No restart is needed. Its page, chips and
   commands work everywhere at once; its cards reach new chats, and open chats keep what they started with.
 - **Approval is per version:** the entry, the description file, the page folder and the program folder, every
-  file by its bytes, skipping those same folders and files ending `.log`. So data, logs and libraries never ask
-  again. When its code changes, within about 3 s the row reads **Changed**: its page and its views stop, its
+  file by its bytes, skipping those same folders and files ending `.log`. So libraries, and data and logs kept in
+  `SOVA_EXTENSION_DATA_DIR` or that top-level `data/` and `logs/`, never ask again. A file its program writes
+  anywhere else in what counts, say `./state.json`, is a code change like any other. When its code changes, within about 3 s the row reads **Changed**: its page and its views stop, its
   program goes on with the old code and won't start again until you approve.
 - **Only your own page** adds, approves, turns on, turns off and removes. A chat, a script, an extension's key and
   another computer are refused and told where to click. A request whose `Referer` is under `/ext/` is refused too,

@@ -9,8 +9,13 @@ import { join, resolve, sep } from "node:path";
 
 export const EXTENSION_DESCRIPTION = "sova-extension.json";
 
-/** Never counted, wherever they are: data, logs, libraries and git history never ask again. */
-export const SKIP_DIRS = new Set([".git", "node_modules", ".worktrees", ".agent", "data", "logs"]);
+/** Never counted, wherever they are: libraries and git history never ask again. */
+const SKIP_ANYWHERE = new Set([".git", "node_modules", ".worktrees", ".agent"]);
+/** Never counted directly in the extension's folder, its place for data and logs. A library's own `data` is code. */
+const SKIP_AT_TOP = new Set(["data", "logs"]);
+
+/** The folder approval skips on a path inside an extension's folder, given that path's parts from its top; null when none. */
+export const skippedPart = (parts: string[]): string | null => parts.find((part, i) => SKIP_ANYWHERE.has(part) || (i === 0 && SKIP_AT_TOP.has(part))) ?? null;
 const SKIP_FILE = /\.log$/;
 const FILE_BYTES = 4 * 1024 * 1024;
 const FILES_MAX = 20_000;
@@ -24,6 +29,8 @@ export interface CodeFolders {
   folders: string[];
   /** Another folder that never counts: this Sova's data folder for it, when it lies inside. */
   skip?: string;
+  /** The extension's folder, where `data` and `logs` don't count. An entry with none has no such place. */
+  top?: string;
 }
 
 /** What an entry's approval covers. An entry with no `folder` covers its `dist`. */
@@ -34,7 +41,7 @@ export function codeFoldersOf(raw: Record<string, unknown>, skip?: string): Code
   if (!folder) return { files: [], folders: dist ? [dist] : [], ...(skip ? { skip } : {}) };
   const program = raw.run === undefined ? undefined : (str("programFolder") ?? folder);
   const folders = [...new Set([dist, program].filter((p): p is string => !!p))].sort();
-  return { files: [join(folder, EXTENSION_DESCRIPTION)], folders, ...(skip ? { skip } : {}) };
+  return { files: [join(folder, EXTENSION_DESCRIPTION)], folders, top: folder, ...(skip ? { skip } : {}) };
 }
 
 type Mode = "sig" | "hash";
@@ -47,6 +54,14 @@ function* lines(code: CodeFolders, mode: Mode): Generator<void, string[]> {
   } catch {
     skip = undefined;
   }
+  const real = (p: string): string | undefined => {
+    try {
+      return realpathSync(p);
+    } catch {
+      return undefined;
+    }
+  };
+  const top = code.top === undefined ? undefined : real(code.top);
   const one = (label: string, path: string, st: Stats): void => {
     if (st.isSymbolicLink()) out.push(`${label}\0link:${readlinkSync(path)}`);
     else if (!st.isFile()) out.push(`${label}\0other`);
@@ -63,6 +78,7 @@ function* lines(code: CodeFolders, mode: Mode): Generator<void, string[]> {
   }
   for (const root of [...code.folders].sort()) {
     out.push(`# ${root}`);
+    const realRoot = real(root);
     let count = 0;
     const stack: string[] = [""];
     while (stack.length) {
@@ -80,7 +96,8 @@ function* lines(code: CodeFolders, mode: Mode): Generator<void, string[]> {
         try {
           const st = lstatSync(path);
           if (st.isDirectory()) {
-            if (SKIP_DIRS.has(name)) continue;
+            if (SKIP_ANYWHERE.has(name)) continue;
+            if (SKIP_AT_TOP.has(name) && top !== undefined && realRoot !== undefined && join(realRoot, rel) === top) continue;
             if (skip && (path === skip || path.startsWith(skip + sep) || resolve(path) === skip)) continue;
             stack.push(child);
             continue;

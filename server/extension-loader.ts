@@ -10,7 +10,7 @@ import { codeFoldersOf, codeHash, codeHashNow, codeSig, codeSigNow } from "./ext
 import type { ExtensionInspect, ExtensionReview } from "../shared/extension-loader";
 import { asksOf, readDescription } from "./extension-description";
 import { extensionKeys, realClock, SYNC_MS, wakeExtensionKeys } from "./extension-keys";
-import { clearHealthOf, contractWords, extensionsFile, listedExtension, listedExtensions, tellPeersOfExtensions, type ListedExtension } from "./extensions";
+import { clearHealthOf, contractWords, extensionsFile, listedExtension, listedExtensions, tellPeersOfExtensions, validExtensionId, type ListedExtension } from "./extensions";
 import { extensionDataDir, freePort, ProgramNotFound, programStatus, programUnits, startProgram, stopProgram } from "./extension-program";
 import { releaseViewWaiters } from "./card-views";
 import { cardOwnersChanged, closeCardsOfExtension, setCardsTrusted } from "./transcript-cards";
@@ -177,6 +177,23 @@ export async function codeStillApproved(id: string): Promise<boolean> {
   return code === a.code;
 }
 
+/** An address for a program that has none: its own port, once. Whichever way an entry is approved. */
+async function givePort(raw: Record<string, unknown>): Promise<void> {
+  if (hasRun(raw) && typeof raw.api !== "string") raw.api = `http://127.0.0.1:${await freePort()}`;
+}
+
+/** A unit still running: an approved version with no program leaves nothing behind it. */
+async function stopIfRunning(id: string): Promise<void> {
+  const st = await programStatus(id);
+  if (st.state === "active" || st.state === "activating") await stopOne(id);
+}
+
+/** What an approval does to the program: the version with one starts, unless it's off; one with none stops the old one. */
+function settleProgram(raw: Record<string, unknown>): Promise<void> {
+  if (!hasRun(raw)) return stopIfRunning(raw.id as string);
+  return raw.off === true ? Promise.resolve() : startIfProgram(raw, true);
+}
+
 /** Your own start, restart or approval: it clears a stop and the count of recent starts. */
 function startIfProgram(raw: Record<string, unknown>, restart: boolean): Promise<void> {
   if (!hasRun(raw) || typeof raw.api !== "string") return Promise.resolve();
@@ -230,12 +247,12 @@ export async function installFolder(folder: string, version: unknown): Promise<s
   delete raw.off;
   const v = await versionOfRaw(raw);
   if (version !== v.version) throw new LoaderRefusal(CHANGED, 409, "changed");
-  if (hasRun(raw) && typeof raw.api !== "string") raw.api = `http://127.0.0.1:${await freePort()}`;
+  await givePort(raw);
   // Approved first: the entry is never live under an older approval.
   recordApproval(raw.id as string, { version: v.version, entry: v.entry, code: v.code, sig: v.sig });
   setCodeReading(raw.id as string, { sig: v.sig, code: v.code });
   putEntry(raw);
-  const started = startIfProgram(raw, true);
+  const started = settleProgram(raw);
   activeMoved();
   await started;
   return raw.id as string;
@@ -250,11 +267,11 @@ export async function approveExtension(id: string, version: unknown): Promise<vo
   const v = await versionOfRaw(c.raw);
   if (version !== v.version) throw new LoaderRefusal(CHANGED, 409, "changed");
   const raw = { ...c.raw };
-  if (hasRun(raw) && typeof raw.api !== "string") raw.api = `http://127.0.0.1:${await freePort()}`;
+  await givePort(raw);
   recordApproval(id, { version: v.version, entry: v.entry, code: v.code, sig: v.sig });
   setCodeReading(id, { sig: v.sig, code: v.code });
   putEntry(raw);
-  const started = raw.off !== true ? startIfProgram(raw, true) : Promise.resolve();
+  const started = settleProgram(raw);
   activeMoved();
   await started;
 }
@@ -269,10 +286,11 @@ export async function chooseFolder(id: string, folder: string, version: unknown)
   const raw = mergedEntry(d.described.entry, l.raw);
   const v = await versionOfRaw(raw);
   if (version !== v.version) throw new LoaderRefusal(CHANGED, 409, "changed");
+  await givePort(raw);
   recordApproval(id, { version: v.version, entry: v.entry, code: v.code, sig: v.sig });
   setCodeReading(id, { sig: v.sig, code: v.code });
   putEntry(raw);
-  const started = raw.off !== true ? startIfProgram(raw, true) : Promise.resolve();
+  const started = settleProgram(raw);
   activeMoved();
   await started;
 }
@@ -351,7 +369,8 @@ export async function removeExtension(key: string, deleteData: boolean): Promise
     for (let i = entries.length - 1; i >= 0; i--) if (isEntry(entries[i], id)) entries.splice(i, 1);
   });
   activeMoved();
-  await forget(id, deleteData);
+  // A name no valid entry can have reaches no unit, approval or data folder: it only leaves the list.
+  if (validExtensionId(id)) await forget(id, deleteData);
 }
 
 // ---- the program's watch -------------------------------------------------------------------------
@@ -453,13 +472,17 @@ export async function loaderPass(): Promise<void> {
     known = ids;
     for (const l of list) if (l.valid) await readCode(l);
     const after = listedExtensions() ?? list;
+    let units: Set<string> | null = null;
     for (const l of after) {
       if (!l.valid) continue;
       const id = l.valid.entry.id;
-      // A folder gone stops the program; anything else that isn't active does too.
-      if ((l.state === "folder-not-found" || l.state === "needs-newer" || l.state === "waiting" || l.state === "off") && hasRun(l.raw)) {
-        const st = await programStatus(id);
-        if (st.state === "active" || st.state === "activating") await stopOne(id);
+      if (!hasRun(l.raw)) {
+        // No program on the entry: a unit under its name is what an older version left.
+        units ??= new Set(await programUnits());
+        if (units.has(id)) await stopIfRunning(id);
+      } else if (l.state === "folder-not-found" || l.state === "needs-newer" || l.state === "waiting" || l.state === "off") {
+        // A folder gone stops the program; anything else that isn't active does too.
+        await stopIfRunning(id);
       } else await watchProgram(id);
     }
     const words = activeWords(after);
@@ -554,12 +577,12 @@ export function startExtensionLoader(): () => void {
 }
 
 /** Units back to the list at a server start: an active, approved one not running is started; a Changed one is
-    not; a unit whose id isn't active is stopped. Only a start checks the version. */
+    not; a unit whose id isn't active, or whose entry names no program, is stopped. Only a start checks the version. */
 async function reconcileUnits(): Promise<void> {
   try {
     const list = listedExtensions();
     if (list === null) return;
-    const on = new Set(list.filter((l) => l.active).map((l) => l.valid!.entry.id));
+    const on = new Set(list.filter((l) => l.active && hasRun(l.raw)).map((l) => l.valid!.entry.id));
     for (const id of await programUnits()) if (!on.has(id)) await stopOne(id);
     for (const l of list) if (l.valid && l.state === "on") await watchProgram(l.valid.entry.id);
   } catch (err) {

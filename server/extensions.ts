@@ -42,6 +42,8 @@ export interface ExtensionEntry {
 }
 
 export const EXTENSION_ID_RE = /^[A-Za-z0-9._-]+$/;
+/** An id that can name a unit and a folder: never a path. */
+export const validExtensionId = (id: string): boolean => EXTENSION_ID_RE.test(id) && id !== "." && id !== "..";
 /** An icon name becomes a `url(/icons/<name>.svg)` in a style attribute: nothing but a plain name. */
 const ICON_RE = /^[a-z0-9-]+$/;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost"]);
@@ -94,7 +96,7 @@ export const plainTitle = (t: string): boolean => t.length <= TITLE_MAX && !/[\u
 export function validateExtension(raw: unknown): { entry: ExtensionEntry; offers?: ExtensionOffers } | { error: string } {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { error: "entry is not an object" };
   const r = raw as Record<string, unknown>;
-  if (typeof r.id !== "string" || !EXTENSION_ID_RE.test(r.id) || r.id === "." || r.id === "..") {
+  if (typeof r.id !== "string" || !validExtensionId(r.id)) {
     return { error: `bad id ${JSON.stringify(r.id)}` };
   }
   if (r.dist !== undefined && (typeof r.dist !== "string" || !isAbsolute(r.dist))) return { error: `${r.id}: dist must be an absolute path` };

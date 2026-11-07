@@ -6,7 +6,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { offersOf } from "../shared/extension-offers";
 import { contractTooNew, parseContract, type ExtensionAsks } from "../shared/extension-loader";
-import { EXTENSION_DESCRIPTION, SKIP_DIRS } from "./extension-fingerprint";
+import { EXTENSION_DESCRIPTION, skippedPart } from "./extension-fingerprint";
 import { viewOffersOf } from "./extension-views";
 import { EXTENSION_CONTRACT } from "../shared/extension-contract";
 import { contractWords, EXTENSION_ID_RE, listedExtensions, plainTitle, TITLE_MAX } from "./extensions";
@@ -47,7 +47,7 @@ function skippedFolderOf(folder: string, path: string): string | null {
     const root = realpathSync(folder);
     const real = realpathSync(path);
     if (!real.startsWith(root + sep)) return null;
-    return real.slice(root.length + 1).split(sep).find((part) => SKIP_DIRS.has(part)) ?? null;
+    return skippedPart(real.slice(root.length + 1).split(sep));
   } catch {
     return null;
   }

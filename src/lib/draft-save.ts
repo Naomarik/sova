@@ -1,10 +1,9 @@
 // Debounced composer-draft writer: a burst of keystrokes costs one request per session.
 // Timers are injectable so the tests drive time by hand instead of sleeping.
 
-import type { UploadResult } from "../../shared/protocol";
+import type { ShellDraftMode, UploadResult } from "../../shared/protocol";
 
-/** The mode a draft written in shell mode keeps: `!` or `!!` (lib/shell-mode). */
-export type ShellDraftMode = "shell" | "private";
+export type { ShellDraftMode };
 
 /** One session's whole draft. Each save carries all of it, so the latest payload replaces any
     pending one and a text save can never drop the attachments (or the reverse). */

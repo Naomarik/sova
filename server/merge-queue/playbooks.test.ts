@@ -39,8 +39,9 @@ test("Sova's map: each area picks its check with its reason; docs alone pick not
   assert.match(charts.statecharts!.why, /^statecharts changed.*\(statecharts\/src\/org\.cljs\)$/);
   assert.deepEqual(Object.keys(by(["pi-config/extensions/spec/core/sova-spec.mjs"])), ["spec-replay"]);
   const composer = by(["src/components/Composer.tsx"]);
-  assert.deepEqual(composer.e2e?.select, ["scripts/e2e/focus-view.mjs", "scripts/e2e/instant-open.mjs"]);
+  assert.deepEqual(composer.e2e?.select, ["scripts/e2e/focus-view.mjs", "scripts/e2e/instant-open.mjs", "scripts/e2e/type-anywhere.mjs"]);
   assert.match(composer.e2e!.why, /composer changed/);
+  assert.deepEqual(by(["src/commands/keys.ts"]).e2e?.select, ["scripts/e2e/type-anywhere.mjs"]);
   assert.deepEqual(by(["server/tours/browser.ts"])["integration-group"]?.select, ["tours"]);
   assert.deepEqual(by(["server/chat-runtime/host.ts"])["integration-group"]?.select, ["trial"]);
 });
@@ -49,7 +50,7 @@ test("one id hit by several rules is one pick: reasons joined, selections unione
   const p = picks(["src/components/Composer.tsx", "src/components/TranscriptView.tsx", "src/lib/focus-view.ts"]);
   assert.equal(p.length, 1);
   assert.equal(p[0]!.id, "e2e");
-  assert.deepEqual(p[0]!.select, ["scripts/e2e/focus-view.mjs", "scripts/e2e/instant-open.mjs", "scripts/e2e/transcript-follow.mjs", "scripts/e2e/transcript-drift.mjs", "scripts/e2e/jump-settle.mjs"]);
+  assert.deepEqual(p[0]!.select, ["scripts/e2e/focus-view.mjs", "scripts/e2e/instant-open.mjs", "scripts/e2e/type-anywhere.mjs", "scripts/e2e/transcript-follow.mjs", "scripts/e2e/transcript-drift.mjs", "scripts/e2e/jump-settle.mjs"]);
   assert.match(p[0]!.why, /composer changed.*; the transcript view changed/);
   const many = blastRadius(["statecharts/a", "statecharts/b", "statecharts/c", "statecharts/d"], SOVA_MAP).picks[0];
   assert.match(many.why, /\(statecharts\/a, statecharts\/b, statecharts\/c, \+1 more\)$/);

@@ -570,6 +570,7 @@
     "src/components/GroupView.tsx": ["window"],
     "src/components/InsightStrip.tsx": ["document"],
     "src/components/LandingBar.tsx": ["document","document"],
+    "src/components/ShellOutputWindow.tsx": ["document"],
     "src/components/Sidebar.tsx": ["global"],
     "src/components/VoiceInput.tsx": ["window"],
     "src/components/WorktreesModal.tsx": ["document"],

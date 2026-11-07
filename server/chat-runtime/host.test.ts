@@ -607,6 +607,40 @@ test("5e: with no server linked, a chat with something in flight keeps running",
   assert.deepEqual(t.exits, ["idle"], "once nothing is in flight");
 });
 
+test("5e: with no server linked, a running command from shell mode doesn't hold the chat: it exits after the idle-stop time, the command stopped by the close (§chat.shell-mode/lifecycle)", async () => {
+  const t = await setup({ settings: { idleStopMin: 0.001 } });
+  const tick = () => (t.host as unknown as { tick(): void }).tick();
+  const chat = t.host.heldChat()!;
+  let closed = 0;
+  chat.shell.inFlight = () => true;
+  chat.shell.running = () => true;
+  const close = chat.shell.close.bind(chat.shell);
+  chat.shell.close = () => (closed++, close());
+  // Linked: the command holds the chat, as Sova is up (a dev server runs as long as it runs).
+  tick();
+  await settle(120);
+  tick();
+  await settle(100);
+  assert.deepEqual(t.exits, [], "a server is linked: the command keeps its chat");
+  t.ctl.drop();
+  await settle();
+  tick();
+  await settle(120);
+  tick();
+  await settle(100);
+  assert.deepEqual(t.exits, ["idle"], "Sova gone for the idle time: the chat exits");
+  assert.ok(closed > 0, "its close stops the command");
+});
+
+test("the mirror says whether a command is running (Reload Now: \"Reloads when its command ends\")", async () => {
+  const t = await setup({});
+  const chat = t.host.heldChat()!;
+  const mirror = () => (t.host as unknown as { mirror(): { quiet: { commandRunning?: boolean } } }).mirror();
+  assert.equal(mirror().quiet.commandRunning, false);
+  chat.shell.running = () => true;
+  assert.equal(mirror().quiet.commandRunning, true);
+});
+
 test("code: older than the server's build shows the badge and asks for a reload once quiet and alone", async () => {
   const t = await setup({ build: "a", serverBuild: "b" });
   const reloads = collect(t.ctl.server, "reload.request");

@@ -91,7 +91,13 @@ describe("extensions", () => {
     exec(A, ["sh", "-c", `mkdir -p "$PI_CODING_AGENT_DIR/sova" && cat > "$PI_CODING_AGENT_DIR/${rel}.tmp" && mv "$PI_CODING_AGENT_DIR/${rel}.tmp" "$PI_CODING_AGENT_DIR/${rel}"`], { input: JSON.stringify(doc) });
     const listed = async (h) => (await (await laptopFetch(h, "/api/extensions")).json()).find((e) => e.id === id);
     try {
-      assert.ok(await listed(A), "A lists its own entry");
+      // Written by hand, so it waits on A and reaches no peer until it is approved, as on the Extensions screen.
+      await waitFor(() => listed(A), { timeoutMs: 15000, what: "A lists its own entry" });
+      await new Promise((r) => setTimeout(r, 5000));
+      for (const h of [B, C]) assert.equal(await listed(h), undefined, `${h} sees nothing while A's entry waits`);
+      const post = (path, body) => laptopFetch(A, path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const { review } = await (await post("/api/extensions/inspect", { id })).json();
+      assert.equal((await post(`/api/extensions/${id}/approve`, { version: review.version })).status, 200, "A approves it");
       for (const h of [B, C]) {
         const t0 = Date.now();
         const row = await waitFor(() => listed(h), { timeoutMs: 30000, what: `${h} lists ${id}` });

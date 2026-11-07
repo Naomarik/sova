@@ -262,6 +262,19 @@ that the installed `sova` launcher runs no commands (it starts the server); the 
 stream; sending to a chat and raising a card; who ran what; and what no script can do, the
 approvals only your click passes among them, and how far that holds.
 
+## §site.docs/extensions — Sova extensions (`/docs/extending/extensions/`)
+
+What a Sova extension is, in Extending, and where to learn to build one; adding one from a folder in
+Settings → Extensions, the description file and the plain reasons a folder can't be used; the review
+before anything is on (the exact program running as you with no sandbox, its page on Sova's address,
+its cards, commands and Overseer offers, the rules it needs, what was left out); each row's one state
+and what it offers; approval following the code, Changed within seconds of an edit, and data and logs
+never asking again; an entry added outside the tab waiting for you, and existing ones approved once
+at the first start; only your own click adding, approving or removing; the program Sova starts,
+restarts at most 5 times a minute and logs, which keeps running through a restart or stop of Sova;
+an extension as a guest with a name badge that can never act as you; and other computers'
+extensions shown but not installable from here.
+
 ## §site.docs/add-ons — Add-ons in a Sova chat (`/docs/extending/add-ons/`)
 
 Which features of a pi add-on work in a Sova chat and which don't: tools, commands, events, providers
@@ -276,6 +289,17 @@ the page waits for you, and that any change asks again; saving a secret; a proje
 that each worktree's copy is approved on its own; what a server costs in tokens and the switches that
 trim it; workers and profiles; and what the sandbox and remote chats change. It says a server stays
 on its computer, and that chats don't ask before a tool runs.
+
+## §site.docs/themes — Themes (`/docs/themes/`)
+
+Settings → Themes, in Features: Light, Dark or Auto, and Auto following the system setting at once;
+the two lists, Dark theme first in every mode, each heading saying when it shows; a pick applying at
+once in the list that's showing and waiting in the other; the choice kept per browser, painted before
+the first frame, followed by other open tabs, and a theme picked before two lists carrying over; a
+theme of your own as one JSON file in the themes folder (its base, vars and colors), appearing
+without a restart; a file Sova can't use staying in the list with its reason; a pick that goes away
+falling back with a notice; the Text and Code fonts, Theme default and Use Theme Fonts, and Text size;
+and the `?theme=default` reset.
 
 ## §site.docs/merge-queue — Merge queue (`/docs/merge-queue/`)
 

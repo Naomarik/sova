@@ -247,6 +247,26 @@
       "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#0390f531"
     }
   },
+  "§site.docs/extensions": {
+    "kind": "behavior",
+    "requires": [
+      "§app/extensions",
+      "§app.extensions/folder",
+      "§app.extensions/loader",
+      "§app.extensions/program",
+      "§app.extensions/name-badge",
+      "§app.extensions/not-you",
+      "§app.settings-dialog/extensions",
+      "§app.access/your-click",
+      "§site.docs/frame"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/extending/extensions.md",
+      "site/src/data/docs.ts"
+    ]
+  },
   "§site.docs/frame": {
     "kind": "behavior",
     "requires": [
@@ -822,6 +842,20 @@
     "code": [
       "site/src/content/docs/teams.md",
       "site/src/content/docs/index.md"
+    ]
+  },
+  "§site.docs/themes": {
+    "kind": "behavior",
+    "requires": [
+      "§app.settings-dialog/themes",
+      "§design/ground-rules",
+      "§site.docs/frame"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/themes.md",
+      "site/src/data/docs.ts"
     ]
   },
   "§site.docs/updates": {

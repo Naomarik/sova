@@ -25,7 +25,7 @@ describe("blame", () => {
     const mark = fx.calls().length;
     const e = await h.add({ branch: b.branch });
     const done = await h.waitEntry(e.id, settled);
-    assert.equal(done.state, "needs-fix", `${done.state}: ${done.reason}`);
+    assert.equal(done.state, "with-chat", `${done.state}: ${done.reason}`);
     assert.match(done.reason ?? "", /tests\/b\.txt/);
     assert.equal(fx.head(), base, "master unmoved");
     assert.equal(fx.originHead(), base, "nothing pushed");
@@ -150,7 +150,7 @@ describe("blame", () => {
     const b = fx.branch("swap", { "tests/a.txt": "pass\n", "tests/b.txt": "fail\n" });
     const e = await h.add({ branch: b.branch });
     const s = await h.waitEntry(e.id, settled);
-    assert.equal(s.state, "needs-fix", `${s.state}: ${s.reason}`);
+    assert.equal(s.state, "with-chat", `${s.state}: ${s.reason}`);
     assert.match(s.reason ?? "", /b\.txt/);
     assert.doesNotMatch(s.reason ?? "", /\ba\.txt/);
     assert.equal(fx.head(), before, "master unmoved");
@@ -162,7 +162,7 @@ describe("blame", () => {
     const b = fx.branch("newbreak", { "tests/b.txt": "fail\n" });
     const e = await h.add({ branch: b.branch });
     const s = await h.waitEntry(e.id, settled);
-    assert.equal(s.state, "needs-fix", `b.txt fails only with the branch, a.txt on master too: ${s.state}: ${s.reason} ${JSON.stringify(s.notes)}`);
+    assert.equal(s.state, "with-chat", `b.txt fails only with the branch, a.txt on master too: ${s.state}: ${s.reason} ${JSON.stringify(s.notes)}`);
     assert.match(s.reason ?? "", /b\.txt/);
     assert.equal(fx.head(), before, "master unmoved");
   });
@@ -182,7 +182,7 @@ describe("blame", () => {
     const b = fx.branch("clean", { "doc.txt": "a comment-only change\n" });
     const e = await h.add({ branch: b.branch });
     const s = await h.waitEntry(e.id, settled);
-    assert.notEqual(s.state, "needs-fix", `a clean branch blamed for master's red test: ${s.reason}`);
+    assert.notEqual(s.state, "with-chat", `a clean branch blamed for master's red test: ${s.reason}`);
     if (s.state === "landed") assert.ok(s.notes.some((n) => n.kind === "master-red"), `noted as master's: ${JSON.stringify(s.notes)} ${JSON.stringify(h.run(s.run!).steps.map((x) => [x.id, x.result, x.detail]))}`);
     else assert.equal(fx.head(), before);
   });
@@ -233,7 +233,7 @@ describe("blame", () => {
     const b = fx.branch("setup", { "setup.conf": "broken\n" });
     const e = await h.add({ branch: b.branch });
     const s = await h.waitEntry(e.id, (x) => settled(x) || x.runs.length > 2);
-    assert.equal(s.state, "needs-fix", `${s.state}: ${s.reason}`);
+    assert.equal(s.state, "with-chat", `${s.state}: ${s.reason}`);
     assert.match(s.reason ?? "", /setup/i);
     assert.equal(fx.head(), base);
     assert.equal(h.run(s.run!).blame, "branch");
@@ -257,7 +257,7 @@ describe("blame", () => {
     assert.ok(!fx.callsSince(m2).some((c) => c.script === "install"), "no install without a lockfile change");
     const bad = fx.branch("deps-bad", { "deps.lock": "v3 broken\n" });
     const s = await h.waitEntry((await h.add({ branch: bad.branch })).id, settled);
-    assert.equal(s.state, "needs-fix", `${s.state}: ${s.reason}`);
+    assert.equal(s.state, "with-chat", `${s.state}: ${s.reason}`);
     assert.equal(h.run(s.run!).blame, "branch");
   });
 });
@@ -285,7 +285,7 @@ describe("checks the project declares", () => {
     assert.ok(fx.calls().some((c) => c.script === "runner" && c.result === "pass" && c.cwd === mergeCopyOf(fx)));
     const red = fx.branch("red", { "tests/b.txt": "fail\n" });
     const r = await h.waitEntry((await h.add({ branch: red.branch })).id, settled);
-    assert.equal(r.state, "needs-fix", `${r.state}: ${r.reason}`);
+    assert.equal(r.state, "with-chat", `${r.state}: ${r.reason}`);
     assert.ok(fx.calls().some((c) => c.script === "runner" && c.argv.includes("tests/b.txt")), "rerun by selector");
   });
 });

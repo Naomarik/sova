@@ -11621,7 +11621,7 @@
       ]
     },
     "project-verbs:session": {
-      "bytes": 10158,
+      "bytes": 10137,
       "tools": [
         {
           "name": "project_verbs",
@@ -11890,7 +11890,7 @@
               },
               "ask": {
                 "type": "string",
-                "description": "merge.reply: the merge thread's question you relay the user's answer to, by its id (ak_…, in the merge queue's message)."
+                "description": "merge.reply (the user's page only): the merge thread's question the user answers, by its id (ak_…)."
               }
             },
             "required": [

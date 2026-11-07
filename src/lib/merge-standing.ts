@@ -112,5 +112,13 @@ export const heldComposerLine = (branch: string): string => `Merge queue · ${br
 /** The merge thread's own chat, while its question waits on the user there (§chat.merge-queue/asks). */
 export const heldAskLine = (question: string): string => `Merge thread asks: ${question.trim()} · not sent yet: your answer goes with it`;
 
+/** The decision a typed message answers, among a chat's cards: the one a choice was picked from while it still waits,
+ *  else the newest that holds a note (what the server attaches when a message names none). */
+export function heldDecisionOf(cards: readonly { branch: string; decision?: CardDecision | null }[], picked?: string): { branch: string; id: string } | null {
+  const held = cards.map((c) => ({ branch: c.branch, d: openDecision(c) })).filter((x) => x.d?.heldNote);
+  const chosen = (picked && held.find((x) => x.d!.id === picked)) || [...held].sort((a, b) => Date.parse(b.d!.at) - Date.parse(a.d!.at))[0];
+  return chosen ? { branch: chosen.branch, id: chosen.d!.id } : null;
+}
+
 /** A decision answered in words (it has choices or a held note): answered in the chat's message box. */
 export const answeredInChat = (d: Pick<CardDecision, "choices" | "heldNote" | "kind">): boolean => !!d.heldNote || d.choices.length > 0 || d.kind === "needs-you" || d.kind === "behaviour-differs" || d.kind === "fix-ok";

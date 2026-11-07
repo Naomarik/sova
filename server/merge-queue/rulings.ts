@@ -166,7 +166,24 @@ export function sendBackText(e: Pick<MergeEntry, "branch" | "target" | "commit">
     }
   }
   if (f.diagnosis?.trim()) lines.push(`The merge thread's diagnosis: ${f.diagnosis.trim()}`);
-  // How to answer (merge.respond, fixed / needs-you with choices / cant) is the batch's own line (MERGE_QUEUE_ANSWER_LINE).
-  lines.push("Change only what this asks, then answer this request by its id. The user's Land stands: your checked fix goes back in line by itself.");
+  // Short, since a batch's own line (MERGE_QUEUE_ANSWER_LINE) says it in full; a request reaching the chat any other way
+  // (a chat that takes no notes) still names the verb.
+  lines.push('Change only what this asks, then answer this request by its id with merge.respond: "fixed", "needs-you" (the question, its choices) or "cant". The user\'s Land stands: your checked fix goes back in line by itself.');
   return lines.join("\n");
+}
+
+/**
+ * The one notification a decision sends (§app.notifications/merge-queue): "The merge queue needs you · {branch}", the
+ * question, a tap opening the branch's chat at its card (or the project's Merge Queue tab when no chat shows it). Its tag
+ * is per entry, so a newer decision of the same entry replaces the older one on the device.
+ */
+export function decisionPush(e: Pick<MergeEntry, "id" | "branch" | "session" | "decision">, project: string | null, opts: { onTab?: boolean } = {}): { title: string; body: string; hash: string; tag: string } {
+  const q = e.decision?.question ?? "a decision waits for you";
+  const tab = project ? `#/projects/${encodeURIComponent(project)}/merge-queue` : "#/projects";
+  return {
+    title: `The merge queue needs you · ${e.branch}`,
+    body: q.split("\n")[0]!.slice(0, 280),
+    hash: e.session && !opts.onTab ? `#/sid/${encodeURIComponent(e.session)}` : tab,
+    tag: `sova:merge-decision:${e.id}`,
+  };
 }

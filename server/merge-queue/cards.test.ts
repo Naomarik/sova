@@ -422,7 +422,7 @@ describe("a branch's card in its own chat", () => {
   });
 
 
-  test("drafts changed: a revision and a hidden line, never a turn", async () => {
+  test("drafts changed after the Land with no request: one Drafts changed decision on the card (the user's), one notice, never a turn", async () => {
     let hash = "h1";
     const t = cardKit({ deps: { draftsHash: () => ({ hash, names: ["x"] }) } });
     try {
@@ -432,11 +432,17 @@ describe("a branch's card in its own chat", () => {
       const { entry } = await q.add({ branch: "feat/d", by: "land-button", session: "s1" });
       hash = "h2";
       await q.resume();
-      await until(async () => (await t.k.entry(entry.id)).state === "drafts-changed", "drafts-changed");
+      // q8: no request of the queue's was answered for them, so they are the user's to decide.
+      await until(async () => (await t.k.entry(entry.id)).state === "needs-user", "waits for the user");
+      assert.equal((await t.k.entry(entry.id)).decision?.kind, "drafts-changed");
       await until(async () => (await t.settle(), t.cards.cardsOf("s1")[0]!.revisions.length === 2), "revision");
-      assert.equal(t.cards.cardsOf("s1")[0]!.revisions[1]!.kind, "drafts-changed");
-      assert.deepEqual(t.wakes, []);
-      assert.match(t.cards.noteFor("s1", null)!, /spec drafts changed since the user approved it/);
+      const card = t.cards.cardsOf("s1")[0]!;
+      assert.equal(card.revisions[1]!.kind, "decision", "the card moves down as the decision");
+      assert.equal(card.decision?.kind, "drafts-changed");
+      assert.deepEqual(card.decision?.actions, ["land", "remove"]);
+      assert.equal(t.k.notices.filter((n) => n.kind === "decision").length, 1, "one notice");
+      assert.ok(!t.k.notices.some((n) => n.kind === "drafts-changed"), "no separate drafts-changed line");
+      assert.deepEqual(t.wakes, [], "never a turn for the chat");
     } finally {
       await t.k.done();
     }

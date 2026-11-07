@@ -151,7 +151,7 @@ describe("conflicts", () => {
     assert.notEqual(s.state, "landed");
     assert.equal(fx.head(), before);
     assert.equal(h.run(s.run!).blame, "resolution", `blamed on the resolution (${h.run(s.run!).blame})`);
-    assert.ok((["behaviour-differs", "conflict"] as string[]).includes(s.state) || s.state === "needs-fix", `back to the user: ${s.state}`);
+    assert.ok((["behaviour-differs", "conflict"] as string[]).includes(s.state), `back to the user: ${s.state}`);
     assert.equal(h.notices.filter((n) => n.kind === "needs-fix").length, 0, "the branch's chat isn't told to fix it");
   });
 
@@ -162,8 +162,8 @@ describe("conflicts", () => {
     const ec = await h.add({ branch: c.branch });
     const lc = await h.waitEntry(ec.id, settled);
     assert.equal(lc.state, "landed", "the line moved on past the conflict");
-    const s = await h.waitEntry(eb.id, ["needs-fix", "behaviour-differs"]);
-    assert.equal(s.state, "needs-fix", `${s.state}: ${s.reason}`);
+    const s = await h.waitEntry(eb.id, ["with-chat", "behaviour-differs"]);
+    assert.equal(s.state, "with-chat", `${s.state}: ${s.reason}`);
     assert.match(s.reason ?? "", /conflict/i);
   });
 
@@ -209,7 +209,7 @@ describe("conflicts", () => {
     const v = await h.waitView((v) => v.state === "paused" || [...v.needsYou, ...v.needsFix, ...v.recent.map((r) => r.entry)].some((x) => x.id === eb.id), "the conflict judged, or a pause", 60_000);
     assert.notEqual(v.state, "paused", `the queue paused: ${JSON.stringify(v.paused)}`);
     const s = await h.entry(eb.id);
-    assert.ok(["conflict", "needs-fix"].includes(s.state), `${s.state}: ${s.reason}`);
+    assert.ok(["conflict", "with-chat"].includes(s.state), `${s.state}: ${s.reason}`);
     assert.equal(called, 1, "the thread was asked to judge it");
     assert.equal(fx.head(), before);
     assert.match(`${s.reason ?? ""} ${JSON.stringify(s.conflict ?? {})}`, /src\/list\.txt|conflict/i, `${s.state}: ${s.reason} ${JSON.stringify(s.conflict)}`);

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { decisionPush } from "./rulings";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
@@ -237,14 +238,14 @@ describe("approval", () => {
         assert.deepEqual(entry.approval.drafts?.names, ["old-1"]);
         writeFileSync(join(b.path, ".sova/spec/drafts/old-1/spec/claims/a.md"), "mine, edited\n");
         await q.resume();
-        await until(async () => (await k.entry(entry.id)).state === "drafts-changed", "drafts-changed");
+        await until(async () => (await k.entry(entry.id)).decision?.kind === "drafts-changed", "a Drafts changed decision");
       } finally {
         await k.done();
       }
     });
   });
 
-  test("drafts changed since the approval: the entry waits for a new Land", async () => {
+  test("drafts changed since the approval with no request: the entry waits for the user's decision; its Land takes them as they are now", async () => {
     let hash = "h1";
     const k = makeKit({ deps: { draftsHash: () => ({ hash, names: ["x"] }) } });
     try {
@@ -255,14 +256,15 @@ describe("approval", () => {
       assert.deepEqual(entry.approval.drafts, { hash: "h1", names: ["x"] });
       hash = "h2";
       await q.resume();
-      await until(async () => (await k.entry(entry.id)).state === "drafts-changed", "drafts-changed");
-      assert.equal((await k.entry(entry.id)).reason, "drafts changed since you approved");
+      await until(async () => (await k.entry(entry.id)).state === "needs-user", "waits for the user");
+      const e = await k.entry(entry.id);
+      assert.equal(e.decision?.kind, "drafts-changed");
+      assert.match(e.reason ?? "", /spec drafts changed since your Land/);
       assert.equal(k.run.inputs.length, 0);
-      assert.ok(k.notices.some((n) => n.kind === "drafts-changed"));
-      const again = await q.add({ branch: "feat/a", by: "land-button" });
-      assert.notEqual(again.entry.id, entry.id);
-      assert.equal((await k.entry(entry.id)).state, "cancelled");
-      await landed(k, again.entry.id);
+      assert.equal(k.notices.filter((n) => n.kind === "decision").length, 1, "one notice: the decision");
+      await q.answer(entry.id, "land");
+      assert.deepEqual((await k.entry(entry.id)).approval.drafts, { hash: "h2", names: ["x"] }, "re-pinned as they are now");
+      await landed(k, entry.id);
     } finally {
       await k.done();
     }
@@ -587,6 +589,43 @@ describe("failures and blame", () => {
       } finally {
         await k2.done();
       }
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("a decision's held note, once the user answers, is a request the chat answers by its id; a later raise joins the open decision, never replaces it", async () => {
+    const k = makeKit({ threadAnswers: true });
+    try {
+      const q = await k.q();
+      k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed: src/a.test.ts" }));
+      k.repo.branch("feat/bad", { "x.txt": "x\n" });
+      const bad = await q.add({ branch: "feat/bad", by: "land-button", session: "s-bad" });
+      await until(async () => (await k.entry(bad.entry.id)).ruling?.pending, "waiting for the diagnosis");
+      await q.rule(bad.entry.id, { ruling: "chat-fixes", text: "export it again" });
+      const pq = q as unknown as { chatNeedsYou(e: unknown, rq: string, question: string, options: string[]): void; serial<T>(f: () => Promise<T>): Promise<T>; entry(id: string): unknown };
+      const rq1 = (await k.entry(bad.entry.id)).requests!.at(-1)!.id;
+      await pq.serial(async () => pq.chatNeedsYou(pq.entry(bad.entry.id), rq1, "Keep the old label or the new one?", ["Old", "New"]));
+      const d = (await k.entry(bad.entry.id)).decision!;
+      assert.equal(d.raisedBy, "chat");
+      // The thread's own question never replaces the chat's: refused, the chat's question and held note stay.
+      await assert.rejects(q.rule(bad.entry.id, { ruling: "needs-user", text: "Which order?" }), /already waits for the user's decision/);
+      const still = (await k.entry(bad.entry.id)).decision!;
+      assert.equal(still.id, d.id);
+      assert.equal(still.question, "Keep the old label or the new one?");
+      assert.equal(still.raisedBy, "chat");
+      assert.equal(k.notices.filter((n) => n.kind === "decision").length, 1, "one notification");
+      // The user answers in the chat: the held note becomes a request, and the chat answers it by that id.
+      const held = await q.decisionAnswered(bad.entry.id, d.id, "The new one", { session: "s-bad" });
+      assert.equal(held?.request, d.heldNote!.request);
+      const e = await k.entry(bad.entry.id);
+      assert.equal(e.state, "with-chat");
+      const rq = e.requests!.find((r) => r.id === d.heldNote!.request)!;
+      assert.equal(rq.kind, "decision");
+      assert.equal(rq.session, "s-bad");
+      const r = await q.respond(rq.id, "s-bad", { answer: "cant", text: "the new label breaks the layout" });
+      assert.equal(r.request.answer?.kind, "cant");
+      assert.equal(await q.decisionAnswered(bad.entry.id, d.id, "again"), null, "answered once");
     } finally {
       await k.done();
     }
@@ -1489,6 +1528,63 @@ describe("can't tell whose failure", () => {
       assert.ok(done.approval.overUnattributed);
       assert.ok(done.notes.some((x) => x.kind === "master-red" && /^Landed anyway: /.test(x.text)));
       assert.equal(k.run.inputs.filter((i) => i.entry.id === u.entry.id).length, 2, "rerun on the moved target");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("exactly one notification per decision: none while the thread rules first, one when raised, none for a question joining it", async () => {
+    const sent: { tag: string; title: string }[] = [];
+    const k = makeKit({ threadAnswers: true, deps: { rulingWaitMs: 60, decided: (e) => void sent.push(decisionPush(e, "p1")) } });
+    try {
+      const q = await k.q();
+      k.run.set(() => ({ verdict: "unattributed", why: WHY }));
+      k.repo.branch("feat/a", { "a1.txt": "a\n" });
+      const a = await q.add({ branch: "feat/a", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(a.entry.id)).ruling?.unattributed, "the thread rules first");
+      assert.equal(sent.length, 0, "nothing while the thread rules");
+      await until(async () => (await k.entry(a.entry.id)).decision, "raised");
+      assert.equal(sent.length, 1);
+      assert.equal(sent[0]!.tag, `sova:merge-decision:${a.entry.id}`);
+      assert.equal(sent[0]!.title, "The merge queue needs you · feat/a");
+      const pq = q as unknown as { chatNeedsYou(e: unknown, rq: string, question: string, options: string[]): void; serial<T>(f: () => Promise<T>): Promise<T>; entry(id: string): unknown };
+      await pq.serial(async () => pq.chatNeedsYou(pq.entry(a.entry.id), "rq_x", "Which wording?", []));
+      assert.equal(sent.length, 1, "a question joining the open decision sends none");
+      assert.match((await k.entry(a.entry.id)).decision!.question, /Also, from the branch's chat: Which wording\?/);
+      // A joining decision brings its click-only answers along, so the answer it needs (Land) is never refused.
+      const rq = q as unknown as { raiseDecision(e: unknown, d: unknown): void };
+      await pq.serial(async () => rq.raiseDecision(pq.entry(a.entry.id), { kind: "out-of-tries", question: "Tried 3 times", choices: [], raisedBy: "queue", actions: ["land", "remove"] }));
+      const joined = (await k.entry(a.entry.id)).decision!;
+      assert.deepEqual(joined.actions, ["land-anyway", "try-again", "land", "remove"]);
+      assert.equal(joined.kind, "unattributed", "still the first decision");
+      assert.equal(sent.length, 1, "still one notification");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("the thread rules first: its try-again settles it with no word to the user; no ruling in time raises it, and then only the user settles it", async () => {
+    const k = makeKit({ threadAnswers: true, deps: { rulingWaitMs: 80 } });
+    try {
+      const q = await k.q();
+      let calls = 0;
+      k.run.set(() => (++calls === 1 ? { verdict: "unattributed", why: WHY } : calls === 2 ? {} : { verdict: "unattributed", why: WHY }));
+      k.repo.branch("feat/a", { "a1.txt": "a\n" });
+      const a = await q.add({ branch: "feat/a", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(a.entry.id)).ruling?.unattributed, "the thread rules first");
+      const waiting = await k.entry(a.entry.id);
+      assert.equal(waiting.decision, undefined, "not raised to the user yet");
+      assert.ok(!(await q.view()).needsYou.some((x) => x.id === a.entry.id), "not in Needs you yet");
+      await q.rule(a.entry.id, { ruling: "try-again", text: "the host ran out of temp space" });
+      await landed(k, a.entry.id);
+      assert.equal(k.notices.filter((n) => n.kind === "decision").length, 0, "the user never heard of it");
+      // The next one: no ruling in time, raised to the user; the thread can't settle it after that.
+      k.repo.branch("feat/b", { "b1.txt": "b\n" });
+      const b = await q.add({ branch: "feat/b", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(b.entry.id)).decision?.kind === "unattributed", "raised to the user");
+      await assert.rejects(q.rule(b.entry.id, { ruling: "try-again", text: "flake" }), /already waits for the user's decision/);
+      await assert.rejects(q.rule(b.entry.id, { ruling: "chat-fixes", text: "the branch's" }), /already waits for the user's decision/);
+      assert.equal((await k.entry(b.entry.id)).state, "unattributed");
     } finally {
       await k.done();
     }

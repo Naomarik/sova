@@ -2,13 +2,16 @@
 // Needs you, Can't) and a fix the merge thread checked goes back in line by itself — drafts-only fixes included —
 // with no second Land. Real git underneath (queue-kit.ts); the run is a stand-in whose verdict each test scripts.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, test } from "node:test";
 import { MERGE_REQUEST_ID_RE } from "../../shared/topic-message";
 import type { MergeEntry } from "../../shared/merge-queue";
 import type { ThreadEvent } from "./contract";
 import type { Caller } from "../project-services/engine";
 import { merger } from "./routes";
-import { makeKit, sh, until } from "./testing/queue-kit";
+import { makeKit, sh, until, untilAborted } from "./testing/queue-kit";
 
 const landed = async (k: ReturnType<typeof makeKit>, id: string) => until(async () => (await k.entry(id)).state === "landed", `${id} landed`);
 const withChat = async (k: ReturnType<typeof makeKit>, id: string) => until(async () => ((await k.entry(id)).state === "with-chat" ? k.entry(id) : null), `${id} back with its chat`);
@@ -216,7 +219,7 @@ describe("the chat's answers", () => {
       const { entry } = await q.add({ branch: "feat/ask", by: "land-button", session: "s1" });
       const e = await withChat(k, entry.id);
       const ask = q.addRequest(q.entry(e.id) as Parameters<typeof q.addRequest>[0], { kind: "thread-ask", text: "Which names are private?" });
-      await assert.rejects(q.respond(ask.id, "s1", { answer: "fixed", text: "x" }), /relay their own words with merge.reply/);
+      await assert.rejects(q.respond(ask.id, "s1", { answer: "fixed", text: "x" }), /they answer it with their own next message/);
     } finally {
       await k.done();
     }
@@ -259,6 +262,15 @@ describe("the chat's answers", () => {
       assert.deepEqual((await k.entry(entry.id)).standing, { phase: "paused" });
       await q.chatPaused("s1", false);
       assert.deepEqual((await k.entry(entry.id)).standing, was, "the phase it had comes back");
+      // A worker's branch: its requests reach the chat running the worker, where Stop is pressed.
+      const rq = lastRequest(await k.entry(entry.id));
+      q.requestDelivered(rq.id, "delivered", "parent-1");
+      await q.chatPaused("other-chat", true);
+      assert.deepEqual((await k.entry(entry.id)).standing, was, "another chat's Stop pauses nothing here");
+      await q.chatPaused("parent-1", true);
+      assert.deepEqual((await k.entry(entry.id)).standing, { phase: "paused" }, "Stop in the chat its requests reached");
+      await q.chatPaused("parent-1", false);
+      assert.deepEqual((await k.entry(entry.id)).standing, was);
     } finally {
       await k.done();
     }
@@ -334,6 +346,142 @@ describe("merge.respond: who may answer", () => {
       assert.equal(again.error?.code, "invalid-request");
       const missing = await call("merge.respond", { ...body, request: "rq_ffffffffffff" }, session("s1"));
       assert.equal(missing.error?.code, "not-found");
+    } finally {
+      await k.done();
+    }
+  });
+});
+
+describe("what a fix may carry", () => {
+  test("a conflict fixed by merging the target in: the target's own commits are nobody's unasked work, so the checked fix goes straight back in line and lands", async () => {
+    const { k } = standingKit({ thread: (ev) => ev.kind === "fix" });
+    try {
+      const q = await k.q();
+      const b = k.repo.branch("feat/merge-in", { "a.txt": "ONE\ntwo\nthree\n" });
+      // Master moves twice before the Land: both its commits are older than the request.
+      k.repo.commitOn(k.repo.root, { "a.txt": "uno\ntwo\nthree\n" }, "master side");
+      k.repo.commitOn(k.repo.root, { "list.txt": "alpha\nbeta\ngamma\n" }, "master again");
+      const { entry } = await q.add({ branch: "feat/merge-in", by: "land-button", session: "s1" });
+      assert.equal(entry.state, "with-chat", "blocked: it conflicts");
+      const rq = lastRequest(entry);
+      // The chat merges master in and resolves it.
+      tryMerge(b.path, "master");
+      const fix = k.repo.commitOn(b.path, { "a.txt": "UNO\ntwo\nthree\n" }, "merge master in");
+      await q.respond(rq.id, "s1", { answer: "fixed", commit: fix, text: "merged master in" });
+      const e = await q.fixRuling(entry.id, rq.id, true, "");
+      assert.equal(e.decision, undefined, "no 'on top of work the queue didn't ask for'");
+      assert.equal(e.state, "queued");
+      await landed(k, entry.id);
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("work the user asked for before the request, under the fix: the card asks the user once; Land takes it at the fix's commit, that work included", async () => {
+    const { k } = standingKit({ thread: (ev) => ev.kind === "fix" });
+    try {
+      k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit tests failed" }));
+      const q = await k.q();
+      const b = k.repo.branch("feat/user-work", { "u.txt": "u\n" });
+      // The request is made after the user's own commit: hold the line, commit, then let the run fail.
+      await q.pause("hold");
+      const { entry } = await q.add({ branch: "feat/user-work", by: "land-button", session: "s1" });
+      // Made before the request (commit times are whole seconds: dated well before it).
+      writeFileSync(join(b.path, "w.txt"), "the user's\n");
+      sh(b.path, "add", "w.txt");
+      execFileSync("git", ["commit", "-q", "-m", "work the user asked for"], { cwd: b.path, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid", GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z" } });
+      const userWork = sh(b.path, "rev-parse", "HEAD");
+      await q.resume();
+      const rq = lastRequest(await withChat(k, entry.id));
+      const fix = k.repo.commitOn(b.path, { "u.txt": "u2\n" }, "the fix");
+      await q.respond(rq.id, "s1", { answer: "fixed", commit: fix });
+      const e = await q.fixRuling(entry.id, rq.id, true, "");
+      assert.equal(e.decision?.kind, "fix-ok");
+      assert.match(e.decision?.question ?? "", /1 commit the merge queue didn't ask for/);
+      assert.deepEqual(e.decision?.actions, ["land", "remove"]);
+      k.run.set(null);
+      const after = await q.answer(entry.id, "land");
+      assert.equal(after.commit, fix, "Land takes it at the fix's commit");
+      await landed(k, entry.id);
+      assert.equal(sh(k.repo.root, "merge-base", "--is-ancestor", userWork, "master"), "", "that work included");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("a drafts fix the merge thread finds changes a promise's meaning never goes back in line: it waits for the user", async () => {
+    const { k, d } = standingKit({ thread: (ev) => ev.kind === "fix" });
+    try {
+      k.run.set(() => ({ verdict: "failed", blame: "branch", cause: "drafts", why: "its spec drafts don't fit" }));
+      const q = await k.q();
+      k.repo.branch("feat/meaning", { "n.txt": "n\n" });
+      const { entry } = await q.add({ branch: "feat/meaning", by: "land-button", session: "s1" });
+      const rq = lastRequest(await withChat(k, entry.id));
+      d.hash = "h-meaning";
+      await q.respond(rq.id, "s1", { answer: "fixed", drafts: true });
+      const e = await q.fixRuling(entry.id, rq.id, false, "§b/x now promises a different default");
+      assert.equal(e.state, "needs-user");
+      assert.equal(e.decision?.kind, "fix-ok");
+      assert.match(e.decision?.question ?? "", /different default/);
+      assert.equal(e.approval.drafts?.hash, "h1", "the approval's drafts aren't re-pinned");
+      assert.equal(k.run.inputs.length, 1, "not run again");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("Remove from Queue is one act at every stage: in line and while checking it ends 'removed by you' too, the run voided", async () => {
+    const { k } = standingKit();
+    try {
+      k.run.set(untilAborted);
+      const q = await k.q();
+      k.repo.branch("feat/rm-a", { "ra.txt": "a\n" });
+      k.repo.branch("feat/rm-b", { "rb.txt": "b\n" });
+      const a = await q.add({ branch: "feat/rm-a", by: "land-button", session: "s1" });
+      const b = await q.add({ branch: "feat/rm-b", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(a.entry.id)).state === "checking", "a checking");
+      const rb = await q.cancel(b.entry.id);
+      assert.deepEqual([rb.state, rb.reason], ["cancelled", "removed by you"]);
+      const ra = await q.cancel(a.entry.id);
+      assert.deepEqual([ra.state, ra.reason], ["cancelled", "removed by you"]);
+      await until(() => q.currentRun() === null, "the run voided");
+      assert.equal(k.repo.head(), sh(k.repo.root, "rev-parse", "HEAD"), "master unmoved");
+      assert.ok(k.notices.filter((n) => n.kind === "removed").length >= 2, "each chat card gets its Removed revision");
+    } finally {
+      await k.done();
+    }
+  });
+});
+
+function tryMerge(cwd: string, ref: string): void {
+  try {
+    sh(cwd, "merge", "-q", "--no-edit", ref);
+  } catch {
+    /* a conflict: the test resolves it and commits */
+  }
+}
+
+describe("drafts changed after the Land with no request (q8)", () => {
+  test("they wait for the user: one Drafts changed decision, nothing run, the thread not asked to re-pin them; Land takes them as they are now and it lands", async () => {
+    const { k, d, events } = standingKit({ thread: () => true });
+    try {
+      const q = await k.q();
+      k.repo.branch("feat/edited", { "e.txt": "e\n" });
+      await q.pause("hold");
+      const { entry } = await q.add({ branch: "feat/edited", by: "land-button", session: "s1" });
+      d.hash = "h-edited"; // the user's own edit, or the chat's unasked one: no request was answered
+      await q.resume();
+      const e = await until(async () => ((await k.entry(entry.id)).decision ? k.entry(entry.id) : null), "a decision");
+      assert.equal(e.state, "needs-user");
+      assert.equal(e.decision?.kind, "drafts-changed");
+      assert.deepEqual(e.decision?.actions, ["land", "remove"]);
+      assert.equal(e.approval.drafts?.hash, "h1", "not re-pinned");
+      assert.equal(k.run.inputs.length, 0, "nothing ran");
+      assert.ok(!events.some((ev) => ev.kind === "drafts-changed"), "the thread isn't asked to re-pin them");
+      await assert.rejects(q.fixRuling(entry.id, undefined, true, ""), /no fix waits|name the request/, "no ruling re-pins drafts no request asked for");
+      await q.answer(entry.id, "land");
+      assert.equal((await k.entry(entry.id)).approval.drafts?.hash, "h-edited", "Land re-pins them as they are now");
+      await landed(k, entry.id);
     } finally {
       await k.done();
     }

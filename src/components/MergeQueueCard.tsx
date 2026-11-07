@@ -4,6 +4,7 @@ import { clockTime, tildePath } from "../lib/format";
 import { cardActionLabel, cardActions, cardDecision, cardFacts, cardLabel, cardNewer, cardNotes, cardPill, cardSha, foldedLine, isNewest, notPushed, queueRowOf, type CardAction, type QueueCard, type QueueCardRow } from "../lib/merge-queue-card";
 import { HELD_NOTE_LINE, STANDING_LINE, standingWords } from "../lib/merge-standing";
 import { CardContext } from "../lib/card-controls";
+import { pickDecision } from "../lib/merge-decision-pick";
 import { paneScopedId, usePaneScope } from "../lib/pane-scope";
 import { answerEntry, cancelEntry, landBranch, refusal } from "../lib/merge-queue-client";
 import { mergeRunHref, projectTabHref } from "../lib/projects-route";
@@ -73,6 +74,9 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
   const fill = (text: string) => {
     if (!cards) return;
     cards.stage(text);
+    // The send names this decision, not the newest one in the chat.
+    const dec = decision();
+    if (dec) pickDecision(d().session, dec.id);
     announce(`Put in the message box: ${text}`);
     queueMicrotask(() => document.getElementById(paneScopedId(scope, "composer-input"))?.focus());
   };

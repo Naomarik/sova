@@ -1023,6 +1023,22 @@ for (const width of [1280, 390]) {
       await o.ctx.close();
     });
 
+    test("two decisions in one chat: a choice on the older one is sent as its answer, not the newest's", async () => {
+      const older = mc("me_o", "feat/older", { state: "needs-user", decision: { ...DECISION, id: "dc_old", at: iso(10), question: "Older question?", choices: ["Older choice"] }, revisions: [{ id: "me_o:1", kind: "needs-fix", at: iso(10), after: "a2", state: "needs-user" }] });
+      const newer = mc("me_n", "feat/newer", { state: "needs-user", decision: { ...DECISION, id: "dc_new", at: iso(2), question: "Newer question?", choices: ["Newer choice"] }, revisions: [{ id: "me_n:1", kind: "needs-fix", at: iso(2), after: "a2", state: "needs-user" }] });
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { rows: READY_ROWS, cards: [older, newer], items: CHAT_ITEMS });
+      const { page } = o;
+      const line = page.locator(".mq-held-line");
+      await line.waitFor({ timeout: 20_000 });
+      assert.match(await words(line), /feat\/newer/, "typed alone: the newest");
+      await page.locator('.mq-chat-card[data-branch="feat/older"]').getByRole("button", { name: "Older choice" }).click();
+      await until("the line names the picked one", async () => /feat\/older/.test(await words(line)));
+      await page.locator("textarea[id$='composer-input']").first().press("Enter");
+      await until("sent as the older decision's answer", () => o.frames.some((f) => POSTS.test(f) && f.includes('"decision":"dc_old"') && f.includes("Older choice")));
+      assert.ok(!o.frames.some((f) => POSTS.test(f) && f.includes('"decision":"dc_new"')));
+      await o.ctx.close();
+    });
+
     test("a decision's answer: your words in your bubble, the queue's held note folded under them, never yours", async () => {
       const text = formatHeldNote("Move it under the form, please.", { request: "rq_0123456789ab", branch: "feat/hack", text: "Place the Save button where the user says, then answer Fixed." });
       const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { items: [...CHAT_ITEMS, { id: "u3", kind: "user", text, at: iso(1) }] });

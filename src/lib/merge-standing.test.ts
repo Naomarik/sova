@@ -5,7 +5,7 @@ import { test } from "node:test";
 import type { MergeDecision, MergeEntry } from "../../shared/merge-queue";
 import { sendFrame } from "./send-frame";
 import { needsYouOf, queueRow, rowButtons, withItsChat, type QueueRowInput } from "./merge-queue";
-import { answeredInChat, answerWords, decisionActions, decisionWords, heldComposerLine, HELD_NOTE_LINE, openDecision, STANDING_LINE, standingLine, standingWords } from "./merge-standing";
+import { heldDecisionOf, answeredInChat, answerWords, decisionActions, decisionWords, heldComposerLine, HELD_NOTE_LINE, openDecision, STANDING_LINE, standingLine, standingWords } from "./merge-standing";
 
 const SHA = "c".repeat(40);
 const decision = (x: Partial<MergeDecision> = {}): MergeDecision => ({
@@ -94,4 +94,14 @@ test("a typed message names the decision whose held note goes with it; nothing e
   assert.deepEqual(sendFrame("Move it", "c1", { typed: true, decision: "dc_1" }), { type: "steer", text: "Move it", clientId: "c1", decision: "dc_1" });
   assert.deepEqual(sendFrame("Move it", "c1", { typed: true }), { type: "steer", text: "Move it", clientId: "c1" });
   assert.deepEqual(sendFrame("Run the playbook", "c2", { typed: false, decision: "dc_1" }), { type: "prompt", text: "Run the playbook", clientId: "c2" }, "a playbook or a click is never the answer");
+});
+
+test("the decision a typed message answers: the one a choice was picked from, else the newest holding a note", () => {
+  const a = { branch: "feat/a", decision: decision({ id: "dc_a", at: "2026-11-07T12:00:00Z" }) };
+  const b = { branch: "feat/b", decision: decision({ id: "dc_b", at: "2026-11-07T12:05:00Z" }) };
+  assert.deepEqual(heldDecisionOf([a, b]), { branch: "feat/b", id: "dc_b" }, "typed alone: the newest");
+  assert.deepEqual(heldDecisionOf([a, b], "dc_a"), { branch: "feat/a", id: "dc_a" }, "a choice from the older one names it");
+  assert.deepEqual(heldDecisionOf([a, b], "dc_gone"), { branch: "feat/b", id: "dc_b" }, "a pick no longer waiting: the newest");
+  assert.deepEqual(heldDecisionOf([{ ...a, decision: { ...a.decision, answered: { at: "", how: "message" as const } } }, b], "dc_a"), { branch: "feat/b", id: "dc_b" });
+  assert.equal(heldDecisionOf([{ branch: "feat/c", decision: decision({ heldNote: undefined }) }]), null, "no held note: nothing goes with the message");
 });

@@ -52,6 +52,73 @@
   }
  },
  {
+  "name": "edit",
+  "description": "@b5267b50ea0f1f04",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "path",
+    "edits"
+   ],
+   "properties": {
+    "path": {
+     "type": "string",
+     "description": "Path to the file to edit (relative or absolute)"
+    },
+    "edits": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "required": [
+       "oldText",
+       "newText"
+      ],
+      "properties": {
+       "oldText": {
+        "type": "string",
+        "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+       },
+       "newText": {
+        "type": "string",
+        "description": "Replacement text for this targeted edit."
+       }
+      }
+     },
+     "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+    }
+   }
+  },
+  "constrainedSampling": {
+   "type": "json_schema",
+   "strict": "prefer"
+  }
+ },
+ {
+  "name": "write",
+  "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "path",
+    "content"
+   ],
+   "properties": {
+    "path": {
+     "type": "string",
+     "description": "Path to the file to write (relative or absolute)"
+    },
+    "content": {
+     "type": "string",
+     "description": "Content to write to the file"
+    }
+   }
+  },
+  "constrainedSampling": {
+   "type": "json_schema",
+   "strict": "prefer"
+  }
+ },
+ {
   "name": "agent_resume",
   "description": "@9b561521c66f37e1",
   "parameters": {
@@ -389,7 +456,7 @@
   "description": "@92bd36452c3a5ac1",
   "parameters": {
    "type": "object",
-   "properties": "@95e445aedec3a2a6",
+   "properties": "@9c8ccce2f1e45464",
    "required": [
     "verb"
    ],
@@ -414,6 +481,105 @@
    "required": [
     "topic",
     "text"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "vis_guide",
+  "description": "@4e03995211272eb1",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "kind"
+   ],
+   "properties": {
+    "kind": {
+     "type": "string",
+     "enum": [
+      "flow",
+      "sequence",
+      "state",
+      "layers",
+      "tree",
+      "chart",
+      "timeline",
+      "steps",
+      "wireframe",
+      "matrix",
+      "code",
+      "html",
+      "svg",
+      "tour",
+      "tour-signin",
+      "tour-sites",
+      "tour-sova",
+      "tour-sharing"
+     ],
+     "description": "The drawing kind or tool-backed tour entry, as the vis minor mode lists it, or a part the tour guide names"
+    }
+   },
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "vis_check",
+  "description": "@2327d56265ca0751",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "kind": {
+     "type": "string",
+     "enum": [
+      "html",
+      "svg",
+      "wireframe"
+     ],
+     "description": "The fence's kind: html, svg or wireframe"
+    },
+    "source": {
+     "type": "string",
+     "description": "The fence body, without the ``` lines"
+    }
+   },
+   "required": [
+    "kind",
+    "source"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "record_tour",
+  "description": "@f2a84afb9f865e94",
+  "parameters": {
+   "type": "object",
+   "properties": "@852078159a752148",
+   "required": [
+    "op"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "show_tour",
+  "description": "Present one complete checked tour edition from this chat. Record and visually check it first; never records on display. Read vis_guide with tour for the workflow.",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "tourId": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 100
+    },
+    "editionId": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 100
+    }
+   },
+   "required": [
+    "tourId"
    ],
    "additionalProperties": false
   }

@@ -15,6 +15,8 @@ import type { QueueHarness } from "./testing/harness";
  */
 
 const lastRequest = (e: MergeEntry) => e.requests![e.requests!.length - 1]!;
+/** Out of the chat's hands: landed, or anything that isn't back with it. */
+const done = (e: MergeEntry) => settled(e) && e.state !== "with-chat";
 const callOf = (h: QueueHarness) =>
   merger({
     queues: h.queues,
@@ -42,7 +44,7 @@ describe("one Land carries a drafts-only fix", () => {
     const add = q.add.bind(q);
     q.add = (r) => (adds.push(r), add(r));
     assert.equal(first.approval.standing, true);
-    const back = await h.waitEntry(first.id, (e) => e.state === "with-chat" || settled(e));
+    const back = await h.waitEntry(first.id, settled);
     assert.equal(back.state, "with-chat", `${back.state}: ${back.reason}`);
     assert.equal(back.sentBackFor, "drafts");
     const rq = lastRequest(back);
@@ -55,14 +57,14 @@ describe("one Land carries a drafts-only fix", () => {
     assert.equal(r.ok, true, JSON.stringify(r.error));
     assert.equal(r.merge?.request?.answer?.kind === "fixed" && r.merge.request.answer.changed, "drafts");
 
-    const landed = await h.waitEntry(first.id, settled);
+    const landed = await h.waitEntry(first.id, done);
     assert.equal(landed.state, "landed", `${landed.state}: ${landed.reason}`);
     assert.equal(landed.commit, b.commit, "the same commit: a drafts-only fix makes none");
     assert.match(fx.fileAt(landed.landed!.sha, ".sova/spec/claims/b/doc.md") ?? "", /Second words/, "the fixed drafts landed");
     assert.equal(landed.approval.fixes?.length, 1);
     assert.equal(landed.approval.fixes?.[0]?.commit, undefined);
     assert.equal(adds.length, 0, "no second Land");
-    assert.ok(!h.notices.some((n) => n.kind === "drafts-changed"), "never drafts-changed");
+    assert.ok(!h.notices.some((n) => n.kind === "drafts-changed" || n.kind === "decision"), "never drafts-changed, never a decision for the user");
     assert.equal(landed.runs.length, 2, "every check ran again");
   });
 });
@@ -92,7 +94,7 @@ describe("Approved · waiting for a fix", () => {
     fx.noteDraft(b.checkout, "doc");
     const r = await callOf(h)("merge.respond", { request: rq.id, answer: "fixed", drafts: true, text: "noted" }, chat(h, "chat-doc"));
     assert.equal(r.ok, true, JSON.stringify(r.error));
-    const landed = await h.waitEntry(e.id, settled);
+    const landed = await h.waitEntry(e.id, done);
     assert.equal(landed.state, "landed", `${landed.state}: ${landed.reason}`);
     assert.match(fx.fileAt(landed.landed!.sha, ".sova/spec/claims/b/doc.md") ?? "", /Second words/);
   });

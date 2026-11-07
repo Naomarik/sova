@@ -197,7 +197,7 @@
         "cwd": "<cwd>\n<ws:project>\n</cwd>",
         "mode": "@2f8f600eeb60d291"
        },
-       "toolsAdded": "@6c564085c9b3b15d"
+       "toolsAdded": "@ae71ba361c86b5f3"
       },
       {
        "role": "user",
@@ -315,7 +315,7 @@
        "cwd": "<cwd>\n<ws:project>\n</cwd>",
        "mode": "@2f8f600eeb60d291"
       },
-      "toolsAdded": "@bdb59b6a0f287ecc"
+      "toolsAdded": "@7a1a37227f064fae"
      }
     }
    ],
@@ -387,7 +387,7 @@
         "addendum": "@fb6d1792828f25c1",
         "cwd": "<cwd>\n<ws:project>\n</cwd>"
        },
-       "toolsAdded": "@98dbe60887640bc2"
+       "toolsAdded": "@4540d8aa2b657718"
       },
       {
        "role": "user",
@@ -423,7 +423,7 @@
        "addendum": "@fb6d1792828f25c1",
        "cwd": "<cwd>\n<ws:project>\n</cwd>"
       },
-      "toolsAdded": "@98dbe60887640bc2"
+      "toolsAdded": "@4540d8aa2b657718"
      }
     }
    ],

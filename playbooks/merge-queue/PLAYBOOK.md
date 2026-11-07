@@ -41,7 +41,7 @@ Each of Sova's messages names its moment and asks you to read its row here first
 | **Queued** | this file's "Each event, one short turn" and "What's worth noting"; `references/picks.md`; `references/notes.md`; the project playbook's Picks and What's worth noting |
 | **Conflict** | (also when your resolution failed) `references/conflicts.md`; this file's "What is the user's"; the project playbook's conflict cases |
 | **Failed** | (also Can't tell whose failure, Review flagged) `references/failures.md`; this file's "What is the user's"; the project playbook's failure causes |
-| **Fix** | (also Drafts changed) `references/fixes.md` |
+| **Fix** | (a fix the chat answered with, drafts-only ones included) `references/fixes.md` |
 | **Chat answer** | (Can't, Needs you) `references/fixes.md` ("Can't"); this file's "What is the user's" |
 | **Paused** | `references/failures.md` ("A pause") |
 | **Idle** | the project playbook's "When the queue is idle" (none: end your turn) |
@@ -59,7 +59,7 @@ Sova sends you one message per event. Answer it with the verbs and stop: no wait
 
 **Failed** (a check failed and Sova proved it the branch's): rule `chat-fixes` with your diagnosis, quickly: the request waits a few minutes for it, then goes without. **Can't tell whose failure** (a check failed on the target alone too; the user is asked meanwhile) and **Review flagged** (its findings already went back to the chat): rule only when you can settle it. **Paused** (the queue stopped itself): explain it. All in `references/failures.md`.
 
-**Fix** (the chat answered Fixed) and **Drafts changed** (since the user's Land): check it changes only what was asked: `references/fixes.md`.
+**Fix** (the chat answered Fixed, a drafts-only fix included): check it changes only what was asked: `references/fixes.md`.
 
 **Chat answer**: a chat's **Can't** is yours first: try one other approach, then raise it to the user; a chat's **Needs you** is the user's, and you can't overrule it (`references/fixes.md`).
 

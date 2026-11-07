@@ -404,6 +404,8 @@ export interface MergeEntry {
     cant?: { request: string; why: string; at: string };
     /** The thread's own resolution failed a check: it is ruling again; never the branch's. */
     resolutionFailed?: true;
+    /** Can't tell whose failure, not yet raised to the user: the thread rules first (within RULING_WAIT_MS). */
+    unattributed?: { run: string; at: string };
   };
   /** needs-fix only, derived when the view is read (never stored): sent back for its drafts, its drafts changed since
    *  (since the hand-back; for an entry from before that was kept, since the approval pinned them), and Sova's docs

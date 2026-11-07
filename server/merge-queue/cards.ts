@@ -403,7 +403,9 @@ export class MergeCards {
         if (this.fill(card, e, undefined, progress)) changed = true;
         const kind = OUTCOME_OF_STATE[e.state];
         const run = kind === "decision" && e.decision ? e.decision.id : (e.run ?? "");
-        if (kind && !rec.done[`${e.id}:${kind}:${run}`] && !(kind === "needs-fix" && rec.done[`${e.id}:sent-back:${run}`])) outcomes.push(e);
+        // Can't tell whose failure reaches the card only once it is raised to the user (the thread rules first).
+        const unraised = e.state === "unattributed" && !(e.decision && !e.decision.answered);
+        if (kind && !unraised && !rec.done[`${e.id}:${kind}:${run}`] && !(kind === "needs-fix" && rec.done[`${e.id}:sent-back:${run}`])) outcomes.push(e);
       }
       if (changed) {
         this.write(rec);
@@ -459,7 +461,8 @@ export class MergeCards {
       if (!f.commit) continue;
       // Every commit the fix brought past the commit before it (the user's, or the previous fix's).
       const from = out.length ? out[out.length - 1]!.sha : user;
-      const r = from ? await this.git(["log", "--reverse", "--format=%H%x09%s", `${from}..${f.commit}`], root) : null;
+      // The branch side only: a merge of the target into the branch lists as its merge commit, never the target's.
+      const r = from ? await this.git(["log", "--reverse", "--first-parent", "--format=%H%x09%s", `${from}..${f.commit}`], root) : null;
       const lines = r?.code === 0 ? r.stdout.split("\n").filter(Boolean) : [];
       if (!lines.length) out.push({ sha: f.commit, subject: (await this.git(["log", "-1", "--format=%s", f.commit], root)).stdout.trim() });
       for (const l of lines) {

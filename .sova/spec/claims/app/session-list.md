@@ -454,7 +454,9 @@ label a person reads says "sessions pane".
   and reply error, before it cuts any of them, so no part of one is ever listed.
   `Untitled` renders in `--color-ink-muted`. A session with a profile has its icon just before the
   title, in accent ink, with "Profile: {label}" as its `title` (§chat.profiles/after-first-message).
-- **Draft rows.** An empty husk — a session whose file holds no user message anywhere — is never
+- **Draft rows.** An empty husk — a session whose file holds no user message and no command run
+  from shell mode anywhere (§chat.shell-mode/card: a chat holding only commands is listed, as `Untitled`,
+  and the empty-husk cleanup keeps it) — is never
   listed, with two exceptions: **a husk with a stored draft is** (§chat.composer/behavior, Drafts),
   and so is a husk that carries a profile (§chat.profiles/singleton), as an ordinary `Untitled` row. The server sends it
   with `SessionSummary.draftPreview`, the draft's first non-empty line cut to about 80 characters.
@@ -2377,7 +2379,8 @@ sessions in bulk. It uses `POST /api/sessions/cleanup` (`cleanupSessions` in `sr
 
 - **Actions.** `{ mode: "age", minAgeDays: 7 }`, `{ mode: "age", minAgeDays: 30 }`, and
   `{ mode: "husks" }` (sessions nothing was ever sent in — drafted ones included, and deleting
-  one drops its stored draft too). The server decides what matches and
+  one drops its stored draft too; a chat holding or running a command from shell mode is none, and
+  is kept). The server decides what matches and
   what it protects. The UI shows its numbers and never counts on its own. None of them ever
   matches a session in an attached organization's workspace `sessions/` (baton transcripts,
   project-overseer conversations), however old or empty; those are left out silently and are not
@@ -2473,7 +2476,9 @@ transcript is gone.
 ## §app.session-list/archive-org-guard — Archiving never deletes organization sessions
 
 Archiving an empty husk (a session nothing was ever sent in, with no stored draft) deletes its
-file, since the list never shows a husk and an archive mark on it could never render. A session
+file, since the list never shows a husk and an archive mark on it could never render. A chat that
+holds a command run from shell mode, or is running one, is no husk: it is archived, and the command
+its close stops is kept (§chat.shell-mode/lifecycle). A session
 file inside an attached organization's workspace `sessions/` is the exception: `POST
 /api/sessions/archive` never deletes one. A fresh baton still waiting on its first link is a husk
 by shape, and the organization's statecharts name those files, so deleting one leaves a

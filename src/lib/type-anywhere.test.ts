@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as typeAnywhereModule from "./type-anywhere";
-import { isOpenOverlay, keyBelongsToTarget, startTyping, takeTyping, typesCharacter, type CharKeyLike, type ElementLike } from "./type-anywhere";
+import { isOpenOverlay, keyBelongsToTarget, OVERLAY_CANDIDATES, startTyping, takeTyping, typesCharacter, type CharKeyLike, type ElementLike } from "./type-anywhere";
 
 const key = (over: Partial<CharKeyLike>): CharKeyLike => ({ key: "", altKey: false, ctrlKey: false, metaKey: false, ...over });
 const altGraph = (k: string) => k === "AltGraph";
@@ -109,10 +109,13 @@ test("a button, a link, a tab, a checkbox or the page itself takes no letters, s
   assert.equal(keyBelongsToTarget(el("SECTION", { role: "log" }, main)), false, "the transcript");
 });
 
-test("an open overlay: a modal dialog, a scrim dialog, an open popover; not a tooltip, a closed one or a non-modal dialog", () => {
+test("an open overlay: a modal dialog, any mounted dialog or sheet, an open popover; not a tooltip, a closed one or a dialog shown without showModal", () => {
   const withState = (tag: string, attrs: Record<string, string>, open: Record<string, boolean>) => el(tag, attrs, body, { matches: (s) => open[s] === true });
   assert.equal(isOpenOverlay(el("DIV", { role: "dialog", "aria-modal": "true" }, body)), true, "the palette, Settings, the shortcut sheet");
-  assert.equal(isOpenOverlay(el("DIV", { role: "dialog", "aria-modal": "false" }, body)), false);
+  assert.equal(isOpenOverlay(el("SECTION", { role: "dialog" }, body)), true, "the context sheet: a dialog role, no aria-modal");
+  assert.equal(isOpenOverlay(el("DIV", { role: "dialog", "aria-modal": "false" }, body)), true, "a landing popover without its scrim");
+  assert.equal(isOpenOverlay(el("DIV", { role: "alertdialog" }, body)), true, "a confirm");
+  assert.equal(isOpenOverlay(el("DIV", {}, body)), false, "a plain element");
   assert.equal(isOpenOverlay(withState("DIALOG", {}, { ":modal": true })), true, "the lightbox");
   assert.equal(isOpenOverlay(withState("DIALOG", { open: "" }, { ":modal": false })), false, "a dialog shown without showModal");
   assert.equal(isOpenOverlay(withState("DIALOG", {}, {})), false, "a closed dialog");
@@ -129,6 +132,10 @@ test("an open overlay: a modal dialog, a scrim dialog, an open popover; not a to
 });
 
 // ---- the owner's decision ----
+
+test("the page's overlay query finds every kind isOpenOverlay counts", () => {
+  for (const sel of ["dialog", '[aria-modal="true"]', "[popover]", '[role="dialog"]', '[role="alertdialog"]']) assert.ok(OVERLAY_CANDIDATES.split(", ").includes(sel), sel);
+});
 
 const opened = el("DIV", { popover: "auto" }, body, { matches: (s) => s === ":popover-open" });
 const closed = el("DIV", { popover: "auto" }, body, { matches: () => false });
@@ -160,6 +167,7 @@ test("nothing happens from a select or a list that jumps as you type", () => {
 
 test("nothing happens while a dialog, sheet, menu or popover is open, focus outside it or not", () => {
   assert.deepEqual(run({ overlays: [closed, opened] }), { acted: false, box: 0, take: 0 });
+  assert.deepEqual(run({ overlays: [el("SECTION", { role: "dialog" }, body)] }), { acted: false, box: 0, take: 0 }, "the context sheet, focus dropped off it");
   assert.deepEqual(run({ overlays: [el("DIV", { role: "dialog", "aria-modal": "true" }, body)] }), { acted: false, box: 0, take: 0 });
 });
 

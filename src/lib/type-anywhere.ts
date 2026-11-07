@@ -78,16 +78,21 @@ const matches = (el: ElementLike, selector: string) => {
   }
 };
 
-/** Whether `el` is an open overlay: a modal dialog, a scrim dialog (aria-modal, mounted only while open), or an open popover that isn't a tooltip. */
+/**
+ * Whether `el` is an open overlay: an open popover that isn't a tooltip, a modal `<dialog>`, or any
+ * other element with a dialog role (a sheet, a scrim dialog, a landing popover), which Sova mounts
+ * only while it is open, modal or not. Every open one counts the same: a letter never goes behind it.
+ */
 export function isOpenOverlay(el: ElementLike): boolean {
-  if (el.getAttribute?.("aria-modal") === "true") return true;
-  if ((el.tagName ?? "").toUpperCase() === "DIALOG") return matches(el, ":modal");
   if (el.hasAttribute?.("popover")) return el.getAttribute?.("role") !== "tooltip" && matches(el, ":popover-open");
-  return false;
+  if ((el.tagName ?? "").toUpperCase() === "DIALOG") return matches(el, ":modal");
+  if (el.getAttribute?.("aria-modal") === "true") return true;
+  const role = el.getAttribute?.("role");
+  return role === "dialog" || role === "alertdialog";
 }
 
 /** The candidates `isOpenOverlay` judges. */
-export const OVERLAY_CANDIDATES = 'dialog, [aria-modal="true"], [popover]';
+export const OVERLAY_CANDIDATES = 'dialog, [aria-modal="true"], [popover], [role="dialog"], [role="alertdialog"]';
 
 /** A box that may take the typing: true once focus is in it. */
 export interface TypingBox {

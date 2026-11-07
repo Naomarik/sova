@@ -115,6 +115,10 @@ function hermeticSettings() {
 dir(AGENT);
 dir(join(AGENT, "extensions"));
 dir(join(AGENT, "sessions"));
+// The Claude CLI transcripts of this dir's added logins (claude-accounts/<id>/projects links here, not to
+// ~/.claude/projects: pi-config/extensions/claude-code/accounts.ts ensureLoginDir), so a hermetic chat on a
+// copied login writes nothing into the user's real Claude Code folder.
+dir(join(AGENT, "claude-projects"));
 
 // --- copied sessions (see the header) ---------------------------------------------------------
 

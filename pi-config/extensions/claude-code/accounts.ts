@@ -448,11 +448,24 @@ export function loginEnabled(accounts: ClaudeAccountsFile, device: string, id: s
 /**
  * Create (0700) the login's directory and link the shared entries to `default`'s directory. Each
  * link is made only when its target exists, except `projects/`, which is created in `default`'s
- * directory if missing: every login must write its session records there. An existing link that
+ * directory if missing: every login must write its session records there (an agent dir with its own
+ * `claude-projects/` links every login's `projects` there instead: `loginProjectsTarget`). An existing link that
  * points elsewhere is replaced (unlinked, never removed recursively); a real file or directory is
  * left alone. A `defaultDir` under `claude-accounts/` is refused before anything is written, and no
  * link is made whose target resolves into the login's own directory.
  */
+/**
+ * An agent dir's own folder for its logins' CLI transcripts. When it exists (a hermetic `.agent` makes it:
+ * scripts/hermetic-agent-dir.mjs), each login's `projects` links there instead of into default's
+ * directory, so a throwaway agent dir on a copied login never writes into the user's own `~/.claude`.
+ */
+export const OWN_PROJECTS_DIR_NAME = "claude-projects";
+/** Where a login's `projects` link points: the agent dir's own folder when it has one, else default's `projects/`. */
+export function loginProjectsTarget(agentDir: string, defaultDir: string): string {
+	const own = path.join(agentDir, OWN_PROJECTS_DIR_NAME);
+	try { if (fs.lstatSync(own).isDirectory()) return own; } catch { /* none: default's */ }
+	return path.join(defaultDir, "projects");
+}
 export function ensureLoginDir(agentDir: string, id: string, defaultDir: string): string {
 	const dir = loginDir(agentDir, id);
 	if (within(defaultDir, path.join(agentDir, ACCOUNTS_DIR_NAME))) {
@@ -461,7 +474,7 @@ export function ensureLoginDir(agentDir: string, id: string, defaultDir: string)
 	fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 	try { fs.chmodSync(dir, 0o700); } catch { /* best effort */ }
 	for (const name of SHARED_ENTRIES) {
-		const target = path.join(defaultDir, name);
+		const target = name === "projects" ? loginProjectsTarget(agentDir, defaultDir) : path.join(defaultDir, name);
 		const link = path.join(dir, name);
 		if (name === "projects" && !fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
 		if (!fs.existsSync(target) || within(target, dir)) continue;

@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import {
 	ACCOUNTS_DEV_ENV, ClaudeLogins, LEASES_DIR_NAME, LEASE_STALE_MS, readLoginUse, DEFAULT_LIMIT_COOLDOWN_MS, SHARED_ENTRIES, accountsPath, claudeBaseEnv, claudeJsonPath,
-	defaultClaudeDir, deviceOrder, ensureLoginDir, groupByAccount,
+	defaultClaudeDir, deviceOrder, ensureLoginDir, groupByAccount, OWN_PROJECTS_DIR_NAME,
 	loginDir, loginEntryFor, manualSwitchText, parseAccounts, poolAgentPath, readWants, wantsDir, planLabel, readAccounts, readAccountsState, readIdentityFile, recordedLogin, switchText,
 	thisDeviceId, updateAccounts, writeAccounts, type ClaudeAccountsFile, type ClaudeLoginRecord,
 	claudeConfigDirEnv, credentialsMtime,
@@ -91,6 +91,23 @@ test("a login's directory is 0700 and links the shared entries to default's, pro
 	ensureLoginDir(s.agentDir, A, s.claudeDir);
 	assert.equal(fs.readFileSync(path.join(dir, "settings.json"), "utf8"), "{\"own\":true}");
 	assert.throws(() => loginDir(s.agentDir, "../escape"), /Not a login id/);
+});
+
+test("an agent dir with its own claude-projects/ (a hermetic .agent) links every login's projects there, never into default's", (t) => {
+	const s = sandbox(t);
+	// A login copied in from elsewhere still links projects into default's: the repair re-points it.
+	ensureLoginDir(s.agentDir, A, s.claudeDir);
+	assert.equal(fs.readlinkSync(path.join(loginDir(s.agentDir, A), "projects")), path.join(s.claudeDir, "projects"));
+	const own = path.join(s.agentDir, OWN_PROJECTS_DIR_NAME);
+	fs.mkdirSync(own);
+	for (const id of [A, B]) {
+		const dir = ensureLoginDir(s.agentDir, id, s.claudeDir);
+		assert.equal(fs.readlinkSync(path.join(dir, "projects")), own, id);
+		assert.equal(fs.readlinkSync(path.join(dir, "settings.json")), path.join(s.claudeDir, "settings.json"), "the other shared entries are still default's");
+	}
+	fs.writeFileSync(path.join(loginDir(s.agentDir, A), "projects", "x.jsonl"), "{}\n");
+	assert.ok(fs.existsSync(path.join(own, "x.jsonl")), "a CLI record lands in the agent dir's own folder");
+	assert.deepEqual(fs.readdirSync(path.join(s.claudeDir, "projects")), [], "nothing reaches default's projects/");
 });
 
 test("an inherited CLAUDE_CONFIG_DIR naming a login's directory is not default: ~/.claude is, and the login's links stay", (t) => {

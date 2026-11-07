@@ -13,8 +13,8 @@ agent works: **normal** is pi as usual, **delegate** has the agent route its wor
 Sova for you. Minor modes add one thing each on top of that, such as
 agreeing on a plan before building (**align**) or working from the project's spec (**spec**). You
 switch them per chat from the mode menu in the composer, and a switch applies from that chat's next
-message. [How modes work](/docs/modes/) covers the menu, the default for new chats, and the terminal
-commands.
+message. [How modes work](/docs/modes/) covers the menu, the default for new chats, the mode
+commands you can type in a chat, and your own personal modes.
 
 ## The modes
 

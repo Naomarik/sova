@@ -651,6 +651,70 @@ function fitImages(
  */
 export type FoldMode = "first" | "joined" | "restarted";
 
+// ---------------------------------------------------------------------------
+// A stopped reply sent back (Esc puts the reply's text so far in the box)
+// ---------------------------------------------------------------------------
+
+/**
+ * The text of a reply the user stopped, as the box gets it at an Esc stop (src/lib/live.ts
+ * interruptedReplyText): each text block's ends trimmed, the non-empty ones joined by a blank
+ * line. Undefined for anything but a stopped (aborted) assistant message made of text and
+ * thinking only, or one with no text: a tool call means a tool may have run in that turn.
+ */
+export function stoppedReplyText(message: Message | undefined): string | undefined {
+	if (message?.role !== "assistant" || message.stopReason !== "aborted") return undefined;
+	const texts: string[] = [];
+	for (const block of message.content) {
+		if (block.type === "text") { if (block.text.trim()) texts.push(block.text.trim()); }
+		else if (block.type !== "thinking") return undefined;
+	}
+	return texts.length ? texts.join("\n\n") : undefined;
+}
+
+/**
+ * `text` carries the stopped `reply` unchanged: one part of it, starting at its start or after a
+ * blank line and ending at its end or before one (how the box joins what comes back to what was
+ * typed), is the reply's text or a non-empty prefix of it (the box took the reply as it stood at
+ * the press; pi kept what arrived until the stop). The part must run as far as `text` and the
+ * reply agree, whitespace aside: a reply edited anywhere, even past a blank line of its own, fails,
+ * because its unedited start runs on into the edit.
+ */
+export function resendsReply(reply: string, text: string): boolean {
+	const starts = [0];
+	for (let at = text.indexOf("\n\n"); at >= 0; at = text.indexOf("\n\n", at + 1)) starts.push(at + 2);
+	for (const start of starts) {
+		// How far this part of the text and the reply agree.
+		let same = 0;
+		while (same < reply.length && start + same < text.length && text[start + same] === reply[same]) same++;
+		let end = start + same;
+		while (end > start && /\s/.test(text[end - 1]!)) end--;
+		if (end === start) continue;
+		const rest = text.slice(end);
+		if (rest === "" || rest.startsWith("\n\n")) return true;
+	}
+	return false;
+}
+
+/**
+ * The stopped reply at `index` was sent back unchanged: the message before it is the user's
+ * prompt (no tool ran in that turn), and the user messages right after it (the rest of the
+ * history, or up to the next reply) include one carrying its text (resendsReply).
+ */
+export function stoppedAndResent(messages: readonly Message[], index: number): boolean {
+	const reply = stoppedReplyText(messages[index]);
+	if (reply === undefined) return false;
+	let before = index - 1;
+	while (before >= 0 && messages[before]!.role === "system") before--;
+	if (messages[before]?.role !== "user") return false;
+	for (let i = index + 1; i < messages.length; i++) {
+		const message = messages[i]!;
+		if (message.role === "system") continue;
+		if (message.role !== "user") return false;
+		if (resendsReply(reply, textOf(message.content))) return true;
+	}
+	return false;
+}
+
 const FOLD_HEADERS: Record<Exclude<FoldMode, "first">, string> = {
 	joined: "This conversation started before you joined it, possibly with a different model. What follows is a condensed transcript, not a verbatim record: reasoning is omitted and tool output may be truncated. Treat it as context you are being told about, not as your own memory.",
 	restarted: "Your session was restarted, so this is a condensed, lossy replay of the conversation so far: reasoning is omitted and tool output may be truncated. Treat it as context you are being told about, not as your own verbatim memory.",
@@ -690,8 +754,11 @@ export function foldHistory(
 	/** Each tool call's arguments, so a dropped image can name the file it was read from. */
 	const callArgs = new Map<string, Record<string, unknown>>();
 
-	for (const message of messages) {
+	for (const [index, message] of messages.entries()) {
 		if (message.role === "system") continue; // Re-sent as the system prompt, not as history.
+		// A stopped reply the user sent back: the model reads it once, in the user's message,
+		// as a live child does after its rewind (plan()).
+		if (stoppedAndResent(messages, index)) continue;
 		if (message.role === "user") {
 			const images = imagesOf(message.content).map((image) => ({ image, placeholder: FOLD_IMAGE_OMITTED }));
 			segments.push(foldSegment(`## User\n${textOf(message.content)}`, images, "attached to this message", true));
@@ -976,6 +1043,13 @@ class CliSession {
 	private metaParts?: Record<MetaPart, string>;
 	/** How the live child started, for its first usage record (usage-record.ts `launch`); set once delivered. */
 	private launchSlot?: { value?: UsageLaunch };
+	/**
+	 * The user message that opened the child's current (or last) CLI turn, and the uuid the CLI
+	 * gave it (its replay frame, --replay-user-messages): where a rewind aims when the user sends a
+	 * stopped reply back (plan()). `rewindable` is false for what could not simply be sent again
+	 * (a fold, a memory view), `toolUse` once the turn called a tool or took a steer.
+	 */
+	private prompt?: { text: string; images: readonly ImageContent[]; uuid?: string; rewindable: boolean; toolUse: boolean };
 
 	constructor(
 		piSessionId: string, options: SessionBridgeOptions, cwd: string, forkSeed?: ClaudeForkPoint,
@@ -1037,6 +1111,15 @@ class CliSession {
 			// The fresh child never got the history (or, resumed, the new messages); reusing it would drop them.
 			this.markDesynced("the turn was aborted before the restarted child was sent the history");
 			return;
+		}
+		if (plan.rewind) {
+			// Not rewound: the new messages go alone, as before.
+			if (!(await this.rewindTo(plan.rewind.uuid))) plan = { ...plan, rewind: undefined };
+			else if (signal?.aborted) {
+				// The child forgot the prompt and was never sent it again.
+				this.markDesynced("the turn was aborted between a rewind and its resend");
+				return;
+			}
 		}
 
 		const queue = new FrameQueue();
@@ -1128,7 +1211,45 @@ class CliSession {
 		if (!results.length && !users.length) {
 			return { restart: true, reason: "nothing new to send", why: "nothing-new", results: [], users: [] };
 		}
-		return { restart: false, reason: "", why: "", results, users };
+		const rewind = this.rewindPlan(tail);
+		return { restart: false, reason: "", why: "", results, users, ...(rewind ? { rewind } : {}) };
+	}
+
+	/**
+	 * The user stopped the child's last reply and sent its text back (an Esc stop puts it in the
+	 * box): the tail is that stopped, text-only reply, then user messages only, one of which
+	 * carries its text unchanged (stoppedAndResent), and no tool ran in that CLI turn. The CLI
+	 * still holds the partial reply, so sending the new message alone would show the model its
+	 * text twice. Instead the child rewinds to before the prompt that opened the turn
+	 * (`rewind_conversation`, which also drops the prompt) and is sent the prompt and the new
+	 * messages as one. Undefined otherwise, or when the prompt's uuid is unknown.
+	 */
+	private rewindPlan(tail: readonly Message[]): TurnPlan["rewind"] {
+		const prompt = this.prompt;
+		if (!prompt?.uuid || !prompt.rewindable || prompt.toolUse) return undefined;
+		if (this.calls.length || this.unmatched.length) return undefined;
+		if (tail.length < 2 || tail.slice(1).some((m) => m.role !== "user")) return undefined;
+		// The message before the reply is the prompt, already heard: index 0 of a [prompt, ...tail] view.
+		const view = [{ role: "user", content: prompt.text, timestamp: 0 } as Message, ...tail];
+		if (!stoppedAndResent(view, 1)) return undefined;
+		return { uuid: prompt.uuid, text: prompt.text, images: prompt.images };
+	}
+
+	/**
+	 * Ask the child to forget its last turn, prompt included. True only when the CLI says it
+	 * rewound; anything else (refused, no answer) leaves the conversation as it was.
+	 */
+	private async rewindTo(uuid: string): Promise<boolean> {
+		const transport = this.transport;
+		if (!transport || transport.isClosed()) return false;
+		const t0 = Date.now();
+		const result = await transport.request("rewind_conversation", { target_message_uuid: uuid });
+		const rewound = result.ack === true && result.response?.rewound === true;
+		debugLog({
+			event: "rewind", session: this.piSessionId, rewound, ms: Date.now() - t0,
+			...(rewound ? {} : { ack: result.ack ?? null, error: result.error ?? result.response?.error ?? null }),
+		});
+		return rewound;
 	}
 
 	/**
@@ -1199,7 +1320,7 @@ class CliSession {
 		if (plan.restart && plan.resume) {
 			// The resumed record already holds the history; send only what is new to it.
 			this.launched({ how: "resumed", why: plan.why });
-			this.sendUsers(plan.users);
+			this.sendUsers(plan.users, true);
 			return;
 		}
 		if (plan.restart) {
@@ -1208,6 +1329,7 @@ class CliSession {
 			if (asIs) {
 				debugLog({ event: "memory-view", session: this.piSessionId, chars: asIs.text.length, images: asIs.images.length });
 				this.launched({ how: "view", why: plan.why, ...(plan.fallback ? { fallback: plan.fallback } : {}) });
+				this.opens(asIs.text, asIs.images, false);
 				this.sendUserMessage(asIs.text, asIs.images);
 				return;
 			}
@@ -1239,7 +1361,17 @@ class CliSession {
 				this.failTurn(folded.overflow);
 				return;
 			}
+			// A lone first message goes as written, so it can be sent again after a rewind; a fold cannot.
+			this.opens(folded.text, folded.images, !!plan.first && foldable.length === 1 && foldable[0]!.role === "user");
 			this.sendUserMessage(folded.text, folded.images);
+			return;
+		}
+		if (plan.rewind) {
+			// The child forgot its stopped turn and the prompt that opened it: both go again, as one.
+			const text = [plan.rewind.text, ...plan.users.map((m) => textOf(m.content))].filter((t) => t.length > 0).join("\n\n");
+			const images = [...plan.rewind.images, ...plan.users.flatMap((m) => imagesOf(m.content))];
+			this.opens(text, images, true);
+			this.sendUserMessage(text, images);
 			return;
 		}
 		for (const result of plan.results) {
@@ -1247,7 +1379,14 @@ class CliSession {
 			if (slot) slot.result = toMcpResult(result);
 		}
 		this.settleCalls();
-		this.sendUsers(plan.users);
+		// With results, the CLI turn goes on and the users are a steer into it; else they open a turn.
+		if (plan.results.length && this.prompt) this.prompt.toolUse = true;
+		this.sendUsers(plan.users, !plan.results.length);
+	}
+
+	/** A user message opens a CLI turn: remember it, until its replay names its uuid. */
+	private opens(text: string, images: readonly ImageContent[], rewindable: boolean): void {
+		this.prompt = { text, images, rewindable, toolUse: false };
 	}
 
 	/** Note how the live child started; its first usage record carries it (usage-record.ts `launch`). */
@@ -1258,13 +1397,15 @@ class CliSession {
 		debugLog({ event: "launch", session: this.piSessionId, ...launch });
 	}
 
-	private sendUsers(users: readonly Message[]): void {
+	private sendUsers(users: readonly Message[], opensTurn: boolean): void {
 		if (!users.length) return;
 		// One stream-json message, not one per pi message: a second raw user
 		// message is folded into the CLI's active turn as a steer rather than
 		// read as part of the same prompt.
 		const text = users.map((m) => textOf(m.content)).filter((t) => t.length > 0).join("\n\n");
-		this.sendUserMessage(text, users.flatMap((m) => imagesOf(m.content)));
+		const images = users.flatMap((m) => imagesOf(m.content));
+		if (opensTurn) this.opens(text, images, true);
+		this.sendUserMessage(text, images);
 	}
 
 	/**
@@ -1315,6 +1456,8 @@ class CliSession {
 		this.failure = undefined;
 		this.recorded = [];
 		this.meta = undefined;
+		// The new child never heard the old one's prompt.
+		this.prompt = undefined;
 
 		// Start past every record on disk: the counter is only in memory, so
 		// after a process restart it would otherwise re-probe ids already taken.
@@ -1542,6 +1685,7 @@ class CliSession {
 			return;
 		}
 		if (this.options.logins && this.accountEvent(event)) return;
+		if (event.type === "user" && event.isReplay === true) this.notePromptUuid(event);
 
 		let frame: ClaudeFrame | undefined;
 		try {
@@ -1880,7 +2024,17 @@ class CliSession {
 		}
 	}
 
+	/** The CLI's echo of a user message we sent: the turn's prompt takes its uuid, the first time. */
+	private notePromptUuid(event: Record<string, unknown>): void {
+		const prompt = this.prompt;
+		if (!prompt || prompt.uuid || typeof event.uuid !== "string") return;
+		const message = event.message as { content?: unknown } | undefined;
+		if (textOf(message?.content) === prompt.text) prompt.uuid = event.uuid;
+	}
+
 	private addPending(turn: TurnState, id: string, name: string, input: unknown): void {
+		// A tool call in this CLI turn: rewinding it would also take back what the tool did.
+		if (this.prompt) this.prompt.toolUse = true;
 		if (this.calls.some((p) => p.id === id)) return;
 		this.calls.push({ id, name: bareToolName(name), input });
 		turn.wantsTools = true;
@@ -2066,6 +2220,8 @@ interface TurnPlan {
 	resumeLogin?: string | null;
 	/** The restart already ran (a resume that fell back to folding on a live child). */
 	started?: boolean;
+	/** Rewind the live child to before this prompt, then send it again with `users`, as one (rewindPlan). */
+	rewind?: { uuid: string; text: string; images: readonly ImageContent[] };
 }
 
 /** pi's tool result as an MCP `CallToolResult`. */

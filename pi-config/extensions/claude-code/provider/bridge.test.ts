@@ -16,7 +16,7 @@ import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type Api, type AssistantMessageEvent, type Model, normalizeContext, Type, type Message, type Tool } from "@earendil-works/pi-ai";
 import {
-	claudeSessionId, FOLD_CHARS_PER_TOKEN, FOLD_LINE_HEADROOM, foldBudgetChars, foldHistory, foldSizeEstimate, getSessionBridge, isPrefix, LIMITS, MAX_FOLD_CHARS, memorySystemPrompt, memoryViewFrame, MIN_FOLD_CHARS, SYSTEM_PROMPT_BOUNDARY, withoutMemoryPrefix,
+	claudeSessionId, FOLD_CHARS_PER_TOKEN, resendsReply, stoppedAndResent, FOLD_LINE_HEADROOM, foldBudgetChars, foldHistory, foldSizeEstimate, getSessionBridge, isPrefix, LIMITS, MAX_FOLD_CHARS, memorySystemPrompt, memoryViewFrame, MIN_FOLD_CHARS, SYSTEM_PROMPT_BOUNDARY, withoutMemoryPrefix,
 	resetSessionBridge, SessionBridge, transcriptFingerprint, uuidv5, windowOverflow, type ClaudeLoginSource,
 } from "./session-bridge.ts";
 import { streamClaudeCode } from "./stream.ts";
@@ -2907,5 +2907,185 @@ test("a one-shot request runs with the prompt cache off; a chat's child keeps it
 	assert.equal(children[0]!.env.DISABLE_PROMPT_CACHING, "1");
 	await cleanTurn(bridge, children, 2, request([user("hi")]), "hello");
 	assert.equal(children[1]!.env.DISABLE_PROMPT_CACHING, undefined);
+	await bridge.disposeAll();
+});
+
+// ---------------------------------------------------------------------------
+// A stopped reply sent back: the child rewinds instead of hearing it twice
+// ---------------------------------------------------------------------------
+
+/** A reply the user stopped: pi keeps what arrived until the stop, `stopReason: "aborted"`. */
+function stoppedReply(...blocks: ({ text: string } | { thinking: string } | { call: string })[]): Message {
+	return {
+		role: "assistant",
+		content: blocks.map((b) => "text" in b ? { type: "text", text: b.text } : "thinking" in b ? { type: "thinking", thinking: b.thinking } : { type: "toolCall", id: b.call, name: "bash", arguments: {} }),
+		api: "anthropic-messages", provider: "anthropic", model: "sonnet",
+		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		stopReason: "aborted", timestamp: 2,
+	} as Message;
+}
+
+const PARTIAL = "Here is the plan:\n\n1. Read the file\n2. Run the te";
+
+test("a stopped reply sent back unchanged: whole, or the prefix the box took, between queued text and typed text", () => {
+	assert.equal(resendsReply(PARTIAL, PARTIAL), true, "the reply alone");
+	assert.equal(resendsReply(PARTIAL, `${PARTIAL}\n\nmy words`), true, "reply, then what was typed");
+	// The box took the reply at the press; pi kept a few more characters until the stop.
+	assert.equal(resendsReply(PARTIAL, "queued one\n\nHere is the plan:\n\n1. Read the file\n2. Run\n\nmy words"), true, "queued, a prefix of the reply, typed");
+	assert.equal(stoppedAndResent([user("plan it"), stoppedReply({ thinking: "hm" }, { text: "\nHere is the plan:" }, { text: "\n1. Read the file\n2. Run the te " }), user("queued one\n\nHere is the plan:\n\n1. Read the file\n2. Run the te\n\nmy words")], 1), true,
+		"text blocks trimmed and joined by a blank line, as the box does; thinking left out");
+	assert.equal(stoppedAndResent([user("plan it"), stoppedReply({ text: PARTIAL }), user("queued"), user(`${PARTIAL}\n\nmy words`)], 1), true, "queued messages in their own message");
+});
+
+test("an edited stopped reply, a reply nobody sent back, or a tool turn does not count as sent back", () => {
+	assert.equal(resendsReply(PARTIAL, "Here is the plan:\n\n1. Read a file\n2. Run the te\n\nmy words"), false, "edited mid-way: the part runs on past the edit");
+	assert.equal(resendsReply(PARTIAL, "Here is my plan instead"), false, "a part that only starts like the reply");
+	assert.equal(resendsReply(PARTIAL, "my words"), false);
+	assert.equal(resendsReply(PARTIAL, "Here is the plan: 1. Read the file"), false, "the reply's text, reflowed");
+	assert.equal(stoppedAndResent([user("plan it"), stoppedReply({ text: PARTIAL }, { call: "t1" }), user(PARTIAL)], 1), false, "the stopped reply called a tool");
+	assert.equal(stoppedAndResent([user("plan it"), assistantWithCall("t1", "bash", { command: "ls" }), toolResult("t1", "bash", "a"), stoppedReply({ text: PARTIAL }), user(PARTIAL)], 3), false,
+		"a tool ran earlier in that turn");
+	assert.equal(stoppedAndResent([user("plan it"), { ...stoppedReply({ text: PARTIAL }), stopReason: "stop" } as Message, user(PARTIAL)], 1), false, "a finished reply quoted back is not a stop");
+	assert.equal(stoppedAndResent([user("plan it"), stoppedReply({ text: PARTIAL }), user("go on")], 1), false);
+});
+
+test("a restart's replay of a stopped reply the user sent back has its text once, in the user's message", () => {
+	const history = [user("earlier"), assistantText("done"), user("plan it"), stoppedReply({ text: PARTIAL }), user(`${PARTIAL}\n\nmy words`)];
+	const folded = foldHistory(history, LIMITS, "restarted").text;
+	assert.equal(folded.split("1. Read the file").length - 1, 1, folded);
+	assert.match(folded, /## User\nplan it\n\n## User\nHere is the plan:/);
+	// Not sent back: the replay keeps the stopped reply, as before.
+	const kept = foldHistory([user("plan it"), stoppedReply({ text: PARTIAL }), user("my words")], LIMITS, "restarted").text;
+	assert.match(kept, /## Assistant\nHere is the plan:/);
+});
+
+/**
+ * The fake CLI's side of the rewind: it echoes each user message as the real CLI does under
+ * --replay-user-messages (CLI 2.1.317: `{type:"user", message, uuid, isReplay:true, …}`) and
+ * answers `rewind_conversation` with `answer`.
+ */
+function replaysAndRewinds(cli: FakeClaude, answer: Record<string, unknown> = { rewound: true }): string[] {
+	const uuids: string[] = [];
+	const answerFrame = (frame: Record<string, any>) => {
+		if (frame.type === "user") {
+			const uuid = `00000000-0000-4000-8000-${String(uuids.length + 1).padStart(12, "0")}`;
+			uuids.push(uuid);
+			cli.emitFrame({ type: "user", message: frame.message, session_id: "s", parent_tool_use_id: null, uuid, timestamp: "2026-11-07T00:00:00Z", isReplay: true });
+		}
+		if (frame.type === "control_request" && frame.request?.subtype === "rewind_conversation") {
+			cli.emitFrame({ type: "control_response", response: { subtype: "success", request_id: frame.request_id, response: answer } });
+		}
+	};
+	// What the child already got, then what it gets.
+	for (const frame of cli.sent) answerFrame(frame);
+	cli.on("frame", answerFrame);
+	return uuids;
+}
+
+/** Turn 1: `prompt` on a fresh child, a reply that streams `partial`, then the user's stop. */
+async function stoppedTurn(bridge: SessionBridge, children: FakeClaude[], prompt: string, partial: string, answer?: Record<string, unknown>, before: () => void = () => {}) {
+	const controller = new AbortController();
+	let uuids: string[] = [];
+	await collectAfter(bridge.runTurn(request([user(prompt)]), controller.signal), async () => {
+		const cli = await child(children, 1);
+		uuids = replaysAndRewinds(cli, answer);
+		await cli.handshake();
+		await cli.waitFor((f) => f.type === "user");
+		before();
+		cli.emitFrame({ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 5, output_tokens: 0 } } } });
+		cli.emitFrame({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } } });
+		cli.emitFrame({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: partial } } });
+		controller.abort();
+		await cli.waitFor((f) => f.request?.subtype === "interrupt");
+		cli.emitFrame({ type: "result", subtype: "error_during_execution", is_error: true, terminal_reason: "aborted_streaming" });
+	});
+	return { cli: children[0]!, uuids };
+}
+
+/** Turn 2: pi's history after the stop, with `typed` sent; returns the user frame the child got. */
+async function resend(bridge: SessionBridge, cli: FakeClaude, messages: Message[]): Promise<Record<string, any>> {
+	const before = cli.sent.filter((f) => f.type === "user").length;
+	let sent: Record<string, any> = {};
+	await collectAfter(bridge.runTurn(request(messages)), async () => {
+		sent = await new Promise((resolve) => {
+			const look = () => { const users = cli.sent.filter((f) => f.type === "user"); if (users.length > before) resolve(users[before]!); else setTimeout(look, 2); };
+			look();
+		});
+		for (const frame of finalTextFrames("Counted once.")) cli.emitFrame(frame);
+	});
+	return sent;
+}
+
+test("a stopped text-only reply sent back unchanged: the same child rewinds to the prompt and hears prompt and message once, with no new process and no replay", { timeout: 10000 }, async () => {
+	await withLedger(async (ledger) => {
+		const { bridge, children } = harness();
+		const { cli, uuids } = await stoppedTurn(bridge, children, "plan it", PARTIAL);
+		const sent = await resend(bridge, cli, [user("plan it"), stoppedReply({ text: PARTIAL }), user(`${PARTIAL}\n\nmy words`)]);
+		const rewind = cli.sent.find((f) => f.request?.subtype === "rewind_conversation");
+		assert.deepEqual(rewind?.request, { subtype: "rewind_conversation", target_message_uuid: uuids[0] }, "aimed at the stopped turn's prompt, by its replay uuid");
+		const rewindAt = cli.sent.indexOf(rewind!);
+		assert.ok(rewindAt < cli.sent.indexOf(sent), "the rewind comes before the resend");
+		assert.deepEqual(sent.message.content, [{ type: "text", text: `plan it\n\n${PARTIAL}\n\nmy words` }], "prompt and message, as one, the reply's text once");
+		assert.equal(children.length, 1, "no new process");
+		assert.ok(!cli.sent.some((f) => f.type === "user" && JSON.stringify(f).includes("<conversation-history>")), "no folded replay");
+		assert.deepEqual(ledger().filter((r) => r.launch).map((r) => r.launch), [{ how: "fresh", why: "new" }], "the ledger shows the one launch");
+
+		// The continuity check takes the rewound turn as in step: the next turn is a plain append.
+		const next = await resend(bridge, cli, [user("plan it"), stoppedReply({ text: PARTIAL }), user(`${PARTIAL}\n\nmy words`), assistantText("Counted once."), user("thanks")]);
+		assert.deepEqual(next.message.content, [{ type: "text", text: "thanks" }]);
+		assert.equal(children.length, 1);
+		assert.equal(cli.sent.filter((f) => f.request?.subtype === "rewind_conversation").length, 1);
+		await bridge.disposeAll();
+	});
+});
+
+test("a rewind the CLI refuses, or a message without the reply, sends the new message alone, as before", { timeout: 10000 }, async () => {
+	{
+		const { bridge, children } = harness();
+		const { cli } = await stoppedTurn(bridge, children, "plan it", PARTIAL, { rewound: false, error: "target_not_found" });
+		const sent = await resend(bridge, cli, [user("plan it"), stoppedReply({ text: PARTIAL }), user(`${PARTIAL}\n\nmy words`)]);
+		assert.ok(cli.sent.some((f) => f.request?.subtype === "rewind_conversation"));
+		assert.deepEqual(sent.message.content, [{ type: "text", text: `${PARTIAL}\n\nmy words` }]);
+		assert.equal(children.length, 1);
+		await bridge.disposeAll();
+	}
+	{
+		const { bridge, children } = harness();
+		const { cli } = await stoppedTurn(bridge, children, "plan it", PARTIAL);
+		const sent = await resend(bridge, cli, [user("plan it"), stoppedReply({ text: PARTIAL }), user("Here is the plan:\n\n1. Read a file\n\nmy words")]);
+		assert.ok(!cli.sent.some((f) => f.request?.subtype === "rewind_conversation"), "an edited reply: no rewind");
+		assert.deepEqual(sent.message.content, [{ type: "text", text: "Here is the plan:\n\n1. Read a file\n\nmy words" }]);
+		await bridge.disposeAll();
+	}
+});
+
+test("a stopped turn that called a tool is never rewound: the tool's work would be taken back", { timeout: 10000 }, async () => {
+	const { bridge, children } = harness();
+	const prompt = "plan it";
+	// Turn 1 calls a tool and pi answers it; the reply after the result is the one stopped.
+	await collectAfter(bridge.runTurn(request([user(prompt)])), async () => {
+		const cli = await child(children, 1);
+		replaysAndRewinds(cli);
+		await cli.handshake();
+		await cli.waitFor((f) => f.type === "user");
+		for (const frame of toolUseFrames("toolu_1", "bash", { command: "ls" })) cli.emitFrame(frame);
+	});
+	const cli = children[0]!;
+	const controller = new AbortController();
+	const afterTool = [user(prompt), assistantWithCall("toolu_1", "bash", { command: "ls" }), toolResult("toolu_1", "bash", "a.txt")];
+	await collectAfter(bridge.runTurn(request(afterTool), controller.signal), async () => {
+		cli.toolCall("bash", { command: "ls" }, "req-call");
+		await cli.waitFor((f) => f.type === "control_response" && f.response?.request_id === "req-call");
+		cli.emitFrame({ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 5, output_tokens: 0 } } } });
+		cli.emitFrame({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } } });
+		cli.emitFrame({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: PARTIAL } } });
+		controller.abort();
+		await cli.waitFor((f) => f.request?.subtype === "interrupt");
+		cli.emitFrame({ type: "result", subtype: "error_during_execution", is_error: true, terminal_reason: "aborted_streaming" });
+	});
+	const sent = await resend(bridge, cli, [...afterTool, stoppedReply({ text: PARTIAL }), user(`${PARTIAL}\n\nmy words`)]);
+	assert.ok(!cli.sent.some((f) => f.request?.subtype === "rewind_conversation"));
+	assert.deepEqual(sent.message.content, [{ type: "text", text: `${PARTIAL}\n\nmy words` }]);
+	assert.equal(children.length, 1);
 	await bridge.disposeAll();
 });

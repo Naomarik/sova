@@ -36,6 +36,8 @@ export interface SessionLabels {
   lands: number[];
   /** A button whose words the server sent (an offer's answer): their hash and the press. The words stay in the session's file. */
   acted: { hash: string; at: number }[];
+  /** Messages no person sent, by entry id (a tour's notice, a release step, a script's prompt): neither labelled nor counted. */
+  program: Set<string>;
 }
 
 export const wordsHash = (text: string): string => createHash("sha256").update(text.trim()).digest("hex").slice(0, 32);
@@ -66,7 +68,7 @@ export class MessageLabelStore {
 
   /** A line that can't be read (a torn write) counts for nothing: its message is asked again. */
   read(session: string): SessionLabels {
-    const out: SessionLabels = { labels: new Map(), presses: new Map(), lands: [], acted: [] };
+    const out: SessionLabels = { labels: new Map(), presses: new Map(), lands: [], acted: [], program: new Set() };
     if (!safeId(session)) return out;
     let text: string;
     try {
@@ -85,6 +87,7 @@ export class MessageLabelStore {
       if (typeof l?.id === "string" && isLabel(l.label) && time(l.confidence))
         out.labels.set(l.id, { label: l.label, confidence: l.confidence, provider: String(l.provider ?? ""), model: String(l.model ?? ""), at: time(l.at) ? l.at : 0 });
       else if (typeof l?.id === "string" && time(l.pressedAt)) out.presses.set(l.id, l.pressedAt);
+      else if (typeof l?.id === "string" && l.program === true) out.program.add(l.id);
       else if (time(l?.land)) out.lands.push(l.land);
       else if (typeof l?.acted === "string" && time(l.at)) out.acted.push({ hash: l.acted, at: l.at });
     }
@@ -97,6 +100,10 @@ export class MessageLabelStore {
 
   press(session: string, id: string, pressedAt: number): void {
     this.append(session, { id, pressedAt });
+  }
+
+  program(session: string, id: string): void {
+    this.append(session, { id, program: true });
   }
 
   land(session: string, at: number): void {
@@ -159,6 +166,15 @@ export function recordPress(path: string, entryId: string, pressedAt: number, no
     messageLabelStore().press(idOfPath(path), entryId, pressedAt);
   } catch (err) {
     console.error("[message-labels] could not keep a press time", err);
+  }
+}
+
+/** A message no person sent entered the session. Its row reads as the user's, so this is what tells them apart after a reload. */
+export function recordProgram(path: string, entryId: string): void {
+  try {
+    if (readDecisionSettings().features.messageLabels) messageLabelStore().program(idOfPath(path), entryId);
+  } catch (err) {
+    console.error("[message-labels] could not note a program's message", err);
   }
 }
 

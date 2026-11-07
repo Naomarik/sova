@@ -26,9 +26,9 @@ const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { buildApp } = await import("./app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { idOf } = await import("./sessions-index");
-const { messageLabelStore } = await import("./message-labels");
+const { MessageLabelStore, messageLabelStore } = await import("./message-labels");
 const { sessionOwnMessages } = await import("./message-input");
-const { attributeMessages } = await import("./time-spent-messages");
+const { attributeMessages, withPresses } = await import("./time-spent-messages");
 
 after(async () => {
   await disposeAllChats();
@@ -96,4 +96,27 @@ test("with the switch off nothing is kept beside the session", async () => {
   const s = await session();
   await heldThenEntered(s.path, 120_000);
   assert.equal(messageLabelStore().read(s.id).presses.size, 0);
+});
+
+test("what a program sends is noted beside the session, idle or queued; what you type isn't", async () => {
+  switchTo(true);
+  const s = await session();
+  const chat = await acquireChat(s.path);
+  const model = new ScriptedModel();
+  model.attach(piSession(chat));
+  const heard: ChatServerMessage[] = [];
+  const me = { send: (m: ChatServerMessage) => void heard.push(m) };
+  chat.attach(me);
+  const release = model.hold();
+  chat.acceptPrompt("hello there");
+  await until(() => model.calls.length >= 1, "the program's turn");
+  chat.handle(me, { type: "prompt", text: "typed by me", clientId: "me-1" });
+  chat.acceptPrompt("a release step");
+  release();
+  await until(() => ["hello there", "typed by me", "a release step"].every((t) => readFileSync(s.path, "utf8").includes(t)) && chat.quietForReload, "all three to enter");
+  // A restart: only the file and the store.
+  const labels = new MessageLabelStore(messageLabelStore().dir).read(s.id);
+  const own = await sessionOwnMessages(s.path);
+  assert.deepEqual(withPresses(own, labels).map((m) => m.text), ["typed by me"]);
+  assert.equal(labels.program.size, 2);
 });

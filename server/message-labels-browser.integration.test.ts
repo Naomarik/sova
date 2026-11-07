@@ -73,6 +73,7 @@ describe("message labels in a browser", { timeout: 240_000, skip: h.skip }, () =
     assert.equal(await page.locator("[data-time-labelled-by]").count(), 0, "nobody labelled it");
     const read = await record(path);
     assert.deepEqual(read.messages.rows.map((r: any) => r.key), ["not-labelled"]);
+    assert.deepEqual(read.messages.rows[0].messages.map((m: any) => m.excerpt), [words], "the program's first message is no message of yours");
 
     const settings = (await api("GET", "/api/settings/decisions")).body.settings;
     assert.equal((await api("PUT", "/api/settings/decisions", { ...settings, features: { ...settings.features, messageLabels: false } })).status, 200);

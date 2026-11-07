@@ -26,18 +26,20 @@ export function rowOfMessage(id: string, labels: SessionLabels): TimeSpentMessag
   return stored.confidence < UNSORTED_BELOW ? "unsorted" : stored.label;
 }
 
-/** The notes beside the session applied: an offer's answer is an action, oldest note to oldest message with its words, and its press is when it was sent. */
+/** The notes beside the session applied. An offer's answer is an action, oldest note to oldest message with its words,
+    and its press is when it was sent. A message no person sent is left out altogether: it closes no stretch. */
 export function withPresses(messages: readonly OwnMessage[], labels: SessionLabels): OwnMessage[] {
   const acted = [...labels.acted];
-  return messages.map((m) => {
-    const pressed = labels.presses.get(m.id);
+  return messages.flatMap((m) => {
     const hash = acted.length ? wordsHash(m.fullText ?? m.text) : "";
     const i = acted.findIndex((a) => a.hash === hash && a.at <= m.sentAt);
     if (i >= 0) {
       const [note] = acted.splice(i, 1);
-      return { ...m, action: "pressed" as const, sentAt: note!.at };
+      return [{ ...m, action: "pressed" as const, sentAt: note!.at }];
     }
-    return pressed === undefined ? m : { ...m, sentAt: pressed };
+    if (labels.program.has(m.id)) return [];
+    const pressed = labels.presses.get(m.id);
+    return [pressed === undefined ? m : { ...m, sentAt: pressed }];
   });
 }
 

@@ -123,6 +123,11 @@ export class MessageLabeller {
           const key = `${s.id}:${m.id}`;
           const wait = this.retry.get(key);
           if (wait && wait.at > this.now()) continue;
+          // Noted just after its entry was written: a read in between took it for typed.
+          if (store.read(s.id).program.has(m.id)) {
+            seen.pending.splice(seen.pending.indexOf(m), 1);
+            continue;
+          }
           budget--;
           if (await this.ask(s.id, m, key, provider, store)) {
             seen.pending.splice(seen.pending.indexOf(m), 1);

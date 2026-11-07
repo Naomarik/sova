@@ -61,7 +61,7 @@ function sessionFile(lines: Line[], began = T0 - 3_600_000): { path: string; id:
 }
 let stores = 0;
 const freshStore = () => new MessageLabelStore(join(agentDir, `labels-${++stores}`));
-const NO_LABELS = () => ({ labels: new Map(), presses: new Map(), lands: [] as number[], acted: [] as { hash: string; at: number }[] });
+const NO_LABELS = () => ({ labels: new Map(), presses: new Map(), lands: [] as number[], acted: [] as { hash: string; at: number }[], program: new Set<string>() });
 const ON = [{ from: T0 - 86_400_000, to: null }];
 const rowSeconds = (r: { messages: { rows: { key: string; seconds: number }[] } }) => Object.fromEntries(r.messages.rows.map((x) => [x.key, x.seconds]));
 const answer = (choice: string) => ({ label: { probabilities: { directing: 0, steering: 0, reworking: 0, asking: 0, unsorted: 0, [choice]: 1 } } });
@@ -216,6 +216,27 @@ describe("a reload tells a button from typing", () => {
     ]);
     const own = await sessionOwnMessages(s.path);
     assert.deepEqual(own.map((m) => [m.id, m.action]), [["a", null], ["again", "regenerate"], ["pic", "no-words"]]);
+  });
+
+  test("a message no person sent is no message: not labelled, not an action, and it closes no stretch; an offer's answer stays an action", async () => {
+    const s = sessionFile([user("tour", null, "A tour recording is waiting for a sign-in.", T0 + 30_000), user("a", "tour", "typed after", T0 + 60_000), user("offer", "a", "merge it", T0 + 90_000)]);
+    const store = freshStore();
+    store.program(s.id, "tour");
+    store.acted(s.id, "merge it", T0 + 89_000);
+    store.program(s.id, "offer");
+    const labels = store.read(s.id);
+    const own = await sessionOwnMessages(s.path);
+    assert.deepEqual(pendingMessages(own, labels, ON).map((m) => m.id), ["a"], "never sent");
+    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 89, r: "typing" }], own, labels);
+    assert.deepEqual(r.messages.rows.flatMap((x) => x.messages.map((m) => [m.id, m.seconds])), [["a", 60]], "its time rolls on to the typed one");
+    assert.deepEqual(r.messages.beforeAction, { count: 1, seconds: 29 });
+  });
+
+  test("a session a program spoke in, and you only read, shows nothing", async () => {
+    const s = sessionFile([user("hello", null, "hello there", T0 + 1000)]);
+    const store = freshStore();
+    store.program(s.id, "hello");
+    assert.equal(showsMessages(await sessionOwnMessages(s.path), store.read(s.id), ON), false);
   });
 
   test("an offer's answer is known by the note it left, and credits its press", async () => {

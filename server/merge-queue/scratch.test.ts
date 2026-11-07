@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { sanityCheck } from "./conflicts";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { realGit } from "./guard";
@@ -145,6 +146,32 @@ describe("scratch copies: the queue", () => {
       assert.equal(dirs[1], path);
       assert.notEqual(dirs[1], k.repo.root);
       assert.ok(existsSync(path), "the copy was made again for the probe");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("a merge driver cut off by the probe's time limit leaves no .merge_file_* in the main checkout", async () => {
+    const k = makeKit({ threadAnswers: true, deps: { sanity: (dir, o) => sanityCheck(dir, { ...o, timeoutMs: 1_500 }) } });
+    try {
+      const q = await k.q();
+      conflicting(k);
+      const c = await q.add({ branch: "feat/c", by: "land-button" });
+      await told(k, c.entry.id);
+      const path = scratchCopyPath(k.repo.root, c.entry.id);
+      tryGit(path, "merge", "--no-ff", "--no-commit", c.entry.commit);
+      writeFileSync(join(path, "a.txt"), "one\nTWO-both\nthree\n");
+      sh(path, "add", "a.txt");
+      sh(path, "-c", "user.name=t", "-c", "user.email=t@t.invalid", "commit", "-q", "--no-edit");
+      const res = sh(path, "rev-parse", "HEAD");
+      // A driver that never finishes, for every file: git hands it .merge_file_* temp files in the probe's
+      // folder and is cut off at the limit (info/attributes is shared by every work tree of the repo).
+      sh(k.repo.root, "config", "merge.slow.driver", "sleep 30");
+      writeFileSync(join(k.repo.root, ".git", "info", "attributes"), "* merge=slow\n");
+      const e = await q.resolve(c.entry.id, { verdict: "no-behaviour-change", ours: "o", theirs: "t", proposal: "keep both", commit: res });
+      assert.equal(e.conflict?.verdict, "behaviour-differs", "the probe couldn't finish: the user decides");
+      assert.ok(readdirSync(path).some((f) => f.startsWith(".merge_file_")), "the driver really was cut off mid-run (its temp files stay in the copy)");
+      assert.deepEqual(readdirSync(k.repo.root).filter((f) => f.startsWith(".merge_file_")), [], "nothing in the main checkout");
     } finally {
       await k.done();
     }

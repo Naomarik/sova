@@ -1338,13 +1338,6 @@ class ChatSession {
   /** A pick is landing (a borrow can take up to 30 s): the web queue holds its items meanwhile. */
   private get loginApplying() { return this.loginPick.applying; }
 
-  /**
-   * Sova's own outgoing queue (server/queue.ts). Every message that would have gone straight
-   * into the SDK's queue goes here first: one follow-up of ours inside the SDK at a time, or every
-   * waiting steer at once (they land together, at the agent's next step). What it still holds is
-   * removable one by one (the SDK can only clear the lot). A message sent to an IDLE session never
-   * enters it: there is nothing to queue behind.
-   */
   /** The user's commands from shell mode (server/chat-shell.ts, §chat.shell-mode/running). */
   readonly shell: ChatShell = new ChatShell({
     harness: () => this.harness,
@@ -1369,6 +1362,13 @@ class ChatSession {
     return null;
   }
 
+  /**
+   * Sova's own outgoing queue (server/queue.ts). Every message that would have gone straight
+   * into the SDK's queue goes here first: one follow-up of ours inside the SDK at a time, or every
+   * waiting steer at once (they land together, at the agent's next step). What it still holds is
+   * removable one by one (the SDK can only clear the lot). A message sent to an IDLE session never
+   * enters it: there is nothing to queue behind.
+   */
   readonly queue: WebQueue = new WebQueue({
     sdk: {
       // The REAL queue (`hasQueued`, the agent's own) and the mirror, through the driving session

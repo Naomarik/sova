@@ -252,8 +252,9 @@ export interface ShellResult {
   /** Stopped because its output passed the run's `maxBytes` (`cancelled` too). */
   limited?: true;
   /** The run's entry, once the harness wrote it: at once when no run is in progress, else after that run
-      (a command that ends mid-reply is saved after the reply). Resolves to null when it never was (the
-      session went away first). */
+      (a command that ends mid-reply is saved after the reply). When the session goes away first it
+      may never resolve, so a caller bounds its wait (a closing chat waits SHELL_CLOSE_WAIT_MS); null is a
+      harness's way to say it never will. */
   saved: Promise<HEntry | null>;
 }
 

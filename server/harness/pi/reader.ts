@@ -178,12 +178,6 @@ function messageOf(m: Record<string, any>, base: Record<string, unknown>): HEntr
   }
 }
 
-/**
- * One raw pi entry as an HEntry, or null for the header (`session`) and anything that is not an object.
- * An entry type or message role pi 0.87.1 doesn't write becomes `kind: "unknown"`, keeps its place in the
- * tree, and is counted (`unknownEntries`); a known type with a malformed body keeps its kind, with the
- * fields it lacks left out.
- */
 /** pi's cut of a command's output (P40: its DEFAULT_MAX_LINES and DEFAULT_MAX_BYTES, the tail kept): a cut
     output that kept every line the limit allows was cut by lines, any shorter one by bytes. */
 export const PI_SHELL_MAX_LINES = 2000;
@@ -192,6 +186,12 @@ export function shellTruncation(output: string): { by: "lines" | "bytes"; max: n
   return output.split("\n").length >= PI_SHELL_MAX_LINES ? { by: "lines", max: PI_SHELL_MAX_LINES } : { by: "bytes", max: PI_SHELL_MAX_BYTES };
 }
 
+/**
+ * One raw pi entry as an HEntry, or null for the header (`session`) and anything that is not an object.
+ * An entry type or message role pi 0.87.1 doesn't write becomes `kind: "unknown"`, keeps its place in the
+ * tree, and is counted (`unknownEntries`); a known type with a malformed body keeps its kind, with the
+ * fields it lacks left out.
+ */
 export function toHEntry(raw: unknown): HEntry | null {
   if (!raw || typeof raw !== "object") return null;
   const e = raw as Entry;

@@ -3,7 +3,7 @@ import { releaseControl } from "../lib/release-control";
 import type { ChatClaudeLogin, SlashCommand, UploadResult } from "../../shared/protocol";
 import { avatarLogins, composerLogin } from "../lib/claude-login";
 import { runControls, stopButton } from "../lib/compact";
-import { aheadOfDraft, composerKey, createEscTimes, createTouchMode, enterSends, notePress as pressAt, refocusAfterSend, toEnd, type SendPress } from "../lib/input-mode";
+import { composerKey, createEscTimes, createTouchMode, enterSends, notePress as pressAt, refocusAfterSend, toEnd, type SendPress } from "../lib/input-mode";
 import { watchKeyboard } from "../lib/voice/keyboard";
 import { enterRunsLocal, insertCommand, localCommand, menuCommands, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
@@ -223,10 +223,8 @@ export function Composer(props: {
   /** `text` already names each attachment's path; `running`: a reply runs, as this pane sees it (the
       frame is the chat's choice, sendFrame); `attachments` are for the optimistic row. */
   onSend(text: string, running: boolean, attachments: UploadResult[]): boolean;
-  /** Stop: `via` "esc" when an Esc in the box asked for it (the chat also hands back the reply's text so far). */
-  onAbort(via: "button" | "esc"): void;
-  /** Text handed back (queued messages a Stop took back, the reply's text an Esc stop returned);
-      each new object goes ahead of the draft (TUI Esc order). */
+  onAbort(): void;
+  /** Queued text a Stop handed back; each new object goes ahead of the draft (TUI Esc order). */
   restored?: { text: string } | null;
   /** Text a transcript card's view staged (§chat.transcript-cards/view-api): put at the end of the draft, never sent. */
   staged?: { text: string } | null;
@@ -793,7 +791,7 @@ export function Composer(props: {
   createEffect(
     on(
       () => props.restored,
-      (r) => r?.text && comeBack(aheadOfDraft(r.text, text())),
+      (r) => r?.text && comeBack([r.text, text()].filter((t) => t.trim()).join("\n\n")),
       { defer: true },
     ),
   );
@@ -1298,10 +1296,10 @@ export function Composer(props: {
                     updateMention();
                     return;
                   }
-                  // What Stop does, plus the reply's text so far back in the box. Text and focus stay.
+                  // What Stop does. The box's text and focus stay.
                   case "stop":
                     e.preventDefault();
-                    props.onAbort("esc");
+                    props.onAbort();
                     return;
                   case "send":
                     void send(e);
@@ -1354,7 +1352,7 @@ export function Composer(props: {
                 onPointerDown={notePress}
                 onClick={() => {
                   const p = takePress();
-                  if (stopState() === "usable") props.onAbort("button");
+                  if (stopState() === "usable") props.onAbort();
                   settleFocus(p);
                 }}
               >

@@ -54,10 +54,6 @@ import {
   BATON_SENT_EVENT,
   applyQueue,
   emptyLive,
-  interruptedReplyText,
-  createSettleWords,
-  STOPPED_RETURNED,
-  STOPPED_RETURNED_REST,
   liveEventsOf,
   markDelivered,
   markQueued,
@@ -291,8 +287,6 @@ export function ChatView(props: {
    * member; alone on the page it is the whole sentence and stands on its own.
    */
   const turnWord = (member: string, alone: string) => (scope.id ? member : alone);
-  /** An Esc stop put the reply's text so far in the composer (STOPPED_RETURNED). */
-  const stoppedWords = () => turnWord(`stopped. ${STOPPED_RETURNED_REST}`, STOPPED_RETURNED);
 
   // Switching back paints the rows kept from the last visit at once, where they were scrolled to;
   // the hello then reconciles them (lib/transcript-cache).
@@ -657,8 +651,6 @@ export function ChatView(props: {
     }
   };
 
-  /** Whether the settling turn was an Esc stop that returned the reply's text (createSettleWords). */
-  const settleWords = createSettleWords();
   // Deltas arrive far faster than frames; apply them in one batch per animation frame.
   let queue: LiveEvent[] = [];
   let frame = 0;
@@ -673,10 +665,7 @@ export function ChatView(props: {
         // What the event does besides the live store (lib/live-effects): run in the order given.
         for (const effect of applyEvent(setLive, ev, { overseer: !!props.overseer, mine: owner.mine() })) {
           if (effect === "clearTurnError") setFeed(feedOnTurnStart);
-          else if (effect === "announceWorking") {
-            settleWords.started();
-            announce(turnWord("working.", "Working."));
-          }
+          else if (effect === "announceWorking") announce(turnWord("working.", "Working."));
           else if (effect === "compacting") setCompacting(true);
           else if (effect === "compactingDone") setCompacting(false);
           else if (effect === "compacted") setSessionContext(props.path, "compacted");
@@ -697,9 +686,7 @@ export function ChatView(props: {
     if (settled) {
       // "replied." only for a turn that didn't already say how it ended: the error announcement
       // is the ending (see `turnError` above — an errored turn still settles).
-      // After an Esc stop that put the reply's text in the composer, that again, so nothing cuts it off.
-      const said = settleWords.settled();
-      if (!turnError()) announce(said === "stopped" ? stoppedWords() : turnWord("replied.", "Reply finished."));
+      if (!turnError()) announce(turnWord("replied.", "Reply finished."));
       void resync();
       props.onSettled();
     }
@@ -2187,19 +2174,10 @@ export function ChatView(props: {
     return true;
   };
 
-  const abort = (via: "button" | "esc") => {
+  const abort = () => {
     // Stop before the waking connection opened: what the tab kept never goes, and its text comes back.
     if (outbox.size) return giveUpWake();
-    if (!socket.send({ type: "abort" })) return;
-    setLive("stopping", true);
-    // An Esc stop also puts the reply's text so far in the box, ahead of the draft. The queued
-    // messages the server drains come back after it, ahead of both (queue_cleared). The button doesn't.
-    const reply = via === "esc" ? interruptedReplyText(live, compacting()) : "";
-    if (reply) {
-      setRestored({ text: reply });
-      settleWords.returned();
-      announce(stoppedWords());
-    }
+    if (socket.send({ type: "abort" })) setLive("stopping", true);
   };
 
   // Check-now and reconnect, offered only while this runtime has the remote extension's command.

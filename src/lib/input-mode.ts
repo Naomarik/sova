@@ -135,20 +135,11 @@ function menuKey(e: EscKey, matches: number): "move" | "pick" | "close" | "defau
   return null;
 }
 
-/**
- * The box's text after something comes back to it (queued messages a Stop took back, a rewound
- * message, the reply's text an Esc stop returned): the returned text first, then what was already
- * there, one blank line between, a part with only whitespace left out. Nothing typed is lost.
- */
-export function aheadOfDraft(returned: string, draft: string): string {
-  return [returned, draft].filter((t) => t.trim()).join("\n\n");
-}
-
 /** The parts of a textarea toEnd moves. */
 export type Box = { value: string; scrollTop: number; readonly scrollHeight: number; setSelectionRange(start: number, end: number): void };
 
 /**
- * After text comes back to the box (aheadOfDraft, or a staged text below the draft): the caret at
+ * After text comes back to the box (queued messages a Stop took back, or a staged text): the caret at
  * the end, after what was typed, and the box scrolled down to it, so a long return never leaves the
  * typed words and the caret out of sight. Setting the caret alone doesn't reliably scroll.
  */

@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { stopButton } from "./compact";
 import {
-  aheadOfDraft,
   composerKey,
   createEscTimes,
   createPressTracker,
@@ -281,16 +280,6 @@ test("every key in every state: the one rule, key by key", () => {
     );
 });
 
-test("what comes back goes ahead of the draft, one blank line between, and nothing typed is lost", () => {
-  assert.equal(aheadOfDraft("The reply so far", "my words"), "The reply so far\n\nmy words");
-  assert.equal(aheadOfDraft("The reply so far", ""), "The reply so far");
-  assert.equal(aheadOfDraft("The reply so far", " \n "), "The reply so far");
-  assert.equal(aheadOfDraft("", "my words"), "my words");
-  // Each return goes ahead of what is there, so a later one lands above an earlier one. This pins
-  // only that; which comes back first (the reply's text, then the queued messages) is ChatView's.
-  assert.equal(aheadOfDraft("queued one\n\nqueued two", aheadOfDraft("The reply so far", "my words")), "queued one\n\nqueued two\n\nThe reply so far\n\nmy words");
-});
-
 test("a key send, with no press, returns focus to the textarea", () => {
   assert.equal(refocusAfterSend(null), true);
 });
@@ -355,8 +344,8 @@ test("the tracker listens in the capture phase, so it reads a press before a han
 });
 
 test("text that comes back leaves the caret after what was typed, scrolled into view", () => {
-  // A 2,100-character return above a typed line, in a box 336 px tall: as the browser leaves it.
-  const value = aheadOfDraft("x".repeat(2100), "my words");
+  // A 2,100-character queued message back above a typed line, in a box 336 px tall: as the browser leaves it.
+  const value = `${"x".repeat(2100)}\n\nmy words`;
   const calls: Array<[number, number]> = [];
   const box = { value, scrollTop: 0, scrollHeight: 2109, setSelectionRange: (a: number, b: number) => void calls.push([a, b]) };
   toEnd(box);

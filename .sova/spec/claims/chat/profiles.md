@@ -305,7 +305,9 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
 - **The transcript knows it for sure.** Once the message enters the context, the server writes an
   invisible `custom` entry `customType: "sova-session-sent"`, data `{v: 1, targetId, from: {sessionId,
   title}, hop}` (§app.overseer/sent-marker's mechanism, its third sender). Only the in-process tool
-  can set it. The target's transcript then draws a sender header, "From {title}" linking to the
+  can set it, and, for an extension's message or a card's press, what the server itself knows of the sender
+  (§app.extensions/name-badge, §chat.alignment/session-mark), which has its own sender line: no link and no
+  hop. The target's transcript then draws a sender header, "From {title}" linking to the
   sender and "hop {n}", above a neutral message row whose author reads "From a session", never
   "You", and hides the header line from the row's text. On reload and live alike. The Timeline
   tab's row for it carries the same sender line and shows the text without the header line

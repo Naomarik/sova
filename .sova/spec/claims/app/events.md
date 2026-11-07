@@ -9,8 +9,9 @@ screen changes. Each frame is one JSON object; the socket ignores anything a cli
 
 - A frame of `type: "event"` carries `seq`, `at` (when this server recorded it, ms epoch) and a
   `name`: `session.created`, `session.removed`, `session.renamed`, `session.tagged`,
-  `session.archived`, `turn.started`, `turn.ended` or `attention.changed`. Session and turn
-  events name the session by `id` and `path`.
+  `session.archived`, `turn.started`, `turn.ended`, `attention.changed`, `card.raised`,
+  `card.changed` or `card.answered` (§app.events/card-news). Session and turn events name the session
+  by `id` and `path`.
 - `turn.started` and `turn.ended` with `source: "hosted"` come from the chats Sova runs: one
   `turn.started` when a run begins and one `turn.ended` when it settles, each exactly once per run.
 - Every other session and turn event has `source: "observed"`: it is the difference between two
@@ -26,6 +27,31 @@ screen changes. Each frame is one JSON object; the socket ignores anything a cli
   "command.ran"` for each row of Sova's record of who ran what, as it is recorded
   (§app.command-audit/record). These frames are live only: they carry no `seq`, are never kept
   or replayed, and a socket that didn't ask gets exactly what it got without them.
+
+## §app.events/card-news — Card news
+
+Since `ext-contract-v1.19`, the stream says what happens to a chat's transcript cards
+(§chat/transcript-cards), so a reader hears a click at once and doesn't have to check again and again.
+
+- `card.raised`: a card was raised. A `follow` type's newer revision is raised under its own card id, so
+  it is this event too.
+- `card.changed`: an open card got new data or was marked done.
+- `card.answered`: an answer was recorded, at once or gathered, before any send or command its button
+  then does.
+- **Ids and type, never content.** Each carries the session's `id` and `path`, `card` (`cd_N`),
+  `cardType` and `source: "hosted"`. It never carries the card's data or its answer: a reader that wants
+  them asks `session.card.get`.
+- **Exactly once, whoever acted.** One event per act, whether the agent's `card` tool, a catalogue command
+  or the page did it.
+- **The stream's rules hold.** They take `seq`, are kept and resume like any other event, and with no
+  subscriber none is recorded (§app.events/idle), so a reader that sees a `gap` reads the cards again.
+- **Additive.** `sova watch` prints nothing for them, and its output is what it was
+  (§app.served-commands/watch).
+- **An open pane hears it too.** Apart from this stream, a chat's pane on screen gets a `cards_changed`
+  frame on its own chat socket whenever one of that chat's cards is raised, changed or answered, a project's
+  own card included. The frame holds only its type. The page reads the chat's cards again, so a card shows at
+  once and not at the next poll, up to 20 s later. A chat with no cards never gets it, and a script's action
+  socket doesn't ask. An older page passes over it and keeps polling (§mesh.compatibility/declare-a-change).
 
 ## §app.events/resume — Picking up where a script left off
 

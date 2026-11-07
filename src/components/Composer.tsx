@@ -50,7 +50,9 @@ import {
   openLightbox,
   setDraftAttachments,
   setDraftText,
+  setFocusView,
 } from "../lib/ui-state";
+import { takeTyping } from "../lib/type-anywhere";
 import { paneScopedId, usePaneAnnounce, usePaneScope } from "../lib/pane-scope";
 import { inputsText } from "../lib/input-count";
 import { createWaiting, WaitingBadge, type WaitingSource } from "./WaitingBadge";
@@ -319,7 +321,11 @@ export function Composer(props: {
   };
   // Nothing in memory (a reload, or another device wrote it): seed from the stored draft. The
   // attachments seed themselves through the store, which only takes them if this tab has none.
+  /** Whether the stored draft has arrived: until then a character typed outside the box isn't
+      taken (lib/type-anywhere), so it can't win over a saved draft still on its way. */
+  let draftSettled = false;
   void loadDraft(props.path).then((stored) => {
+    draftSettled = true;
     if (stored.text && !touched && !text()) setText(stored.text);
   });
   let disposed = false;
@@ -664,6 +670,16 @@ export function Composer(props: {
         input.setSelectionRange(next.length, next.length);
         updateSlash();
       },
+      // Focus hides only the single view's composer (the footer's inert, below).
+      take: () =>
+        takeTyping({
+          readOnly: !!props.readOnly,
+          draftLoaded: draftSettled,
+          el: input,
+          active: () => document.activeElement,
+          hiddenByFocus: focusView() && scope.id === null,
+          endFocus: () => setFocusView(false),
+        }),
       attach: () => {
         if (!disabled()) picker?.click(); // no await before it: the picker needs the gesture
       },

@@ -236,6 +236,29 @@ export function interruptedReplyText(s: LiveState, compacting: boolean): string 
   return texts.join("\n\n");
 }
 
+/** Said when an Esc stop puts the reply's text so far in the composer, at the press and as the turn settles. */
+export const STOPPED_RETURNED_REST = "The reply so far is in the composer.";
+export const STOPPED_RETURNED = `Stopped. ${STOPPED_RETURNED_REST}`;
+
+/**
+ * How a settling turn is announced: after a stop that put the reply's text in the composer
+ * (`returned`), STOPPED_RETURNED again, so the line said at the press is the last one heard and
+ * "Reply finished." never follows a stop; otherwise "Reply finished.". A turn that starts forgets
+ * a stop whose turn never settled. Each settle says it once.
+ */
+export function createSettleWords(): { returned(): void; started(): void; settled(): "stopped" | "replied" } {
+  let stopped = false;
+  return {
+    returned: () => void (stopped = true),
+    started: () => void (stopped = false),
+    settled: () => {
+      const said = stopped ? "stopped" : "replied";
+      stopped = false;
+      return said;
+    },
+  };
+}
+
 function lastAssistant(s: LiveState): Extract<LiveEntry, { kind: "assistant" }> {
   const current = streamingAssistant(s);
   if (current) return current;

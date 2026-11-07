@@ -15,6 +15,8 @@ import {
   blockStreams,
   emptyLive,
   interruptedReplyText,
+  createSettleWords,
+  STOPPED_RETURNED,
   liveEventsOf,
   liveInputCount,
   markDelivered,
@@ -977,4 +979,17 @@ test("an Esc stop between messages hands back nothing: the text before is finish
 test("no live reply at all hands back nothing", () => {
   const [s] = store();
   assert.equal(interruptedReplyText(s, false), "");
+});
+
+test("a stop that returned the reply's text settles saying so, never \"Reply finished.\"", () => {
+  assert.equal(STOPPED_RETURNED, "Stopped. The reply so far is in the composer.");
+  const words = createSettleWords();
+  assert.equal(words.settled(), "replied", "a turn that just ends");
+  words.returned();
+  assert.equal(words.settled(), "stopped", "the stop's turn settles");
+  assert.equal(words.settled(), "replied", "said once: the next turn's end is a reply again");
+  // A stop whose turn never settled (the connection dropped) doesn't speak for the next turn.
+  words.returned();
+  words.started();
+  assert.equal(words.settled(), "replied");
 });

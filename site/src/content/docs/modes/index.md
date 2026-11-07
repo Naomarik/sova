@@ -131,7 +131,9 @@ answers with the usage line.
 
 A pi terminal session has no modes from Sova: no Delegate or Create, no align, spec, vis, memory,
 project or personal modes, and no mode palette, shortcuts or launch flags. A session's saved modes
-stay in its file, so a session you opened in a terminal has them again when Sova opens it.
+stay in its file, so a session you opened in a terminal has them again when Sova opens it. While
+Settings → Experimental's switch below is still there, the older mode extension may still load in a
+terminal as it did, with nothing promised.
 
 ## Who runs the modes
 

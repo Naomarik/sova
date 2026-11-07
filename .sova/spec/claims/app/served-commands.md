@@ -8,9 +8,12 @@ the command line stays as it was; what follows only adds to them.
 
 ## §app.served-commands/route — `GET /api/commands`
 
-- On the main listener, `GET /api/commands` answers `{"version": 1, "server": {"version", "head"},
-  "commands": [...]}`: `server.version` is Sova's package version and `server.head` the commit its
-  checkout had when this process started (null when unknown), as `GET /api/health` says it.
+- On the main listener, `GET /api/commands` answers `{"version": 1, "server": {"version", "head",
+  "extensionContract"}, "commands": [...]}`: `server.version` is Sova's package version and `server.head`
+  the commit its checkout had when this process started (null when unknown), as `GET /api/health` says it.
+  `server.extensionContract` is the number of the extension contract this server speaks: `19` for
+  `ext-contract-v1.19` (§app/extensions). A Sova from before v1.19 doesn't send it, so an extension that
+  reads no number, or a lower one than it needs, can say it needs a newer Sova instead of half working.
   `commands` is every core catalogue entry, in the catalogue's order, then each installed
   extension's own `ext.<id>.<name>` entries, in manifest order.
 - An extension's entries are exactly those its manifest entry's `offers` names (the same rule

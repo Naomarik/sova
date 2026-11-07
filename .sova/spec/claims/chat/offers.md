@@ -93,8 +93,7 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   Claude session (§app.claude-code-provider/continuity) instead of replaying its history; an offer
   added later reaches new sessions only.
 - **Each call.** Sova reads the file again and refuses, showing nothing, when: the offer is gone,
-  disabled or broken now; its run buttons are not approved (§chat.offers/approval); the session has
-  an open alignment question; a condition doesn't hold; the repeat guard already showed it for
+  disabled or broken now; its run buttons are not approved (§chat.offers/approval); a condition doesn't hold; the repeat guard already showed it for
   this moment; or the user chose Not Now on it in this session. Each refusal says which, and
   "Nothing was shown." One open offer at a time: while another offer's card is open in the
   session, nothing shows and the refusal names the open offer in one line (a card whose offer left
@@ -109,7 +108,8 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
     (§chat.worktrees/readiness).
   - `waiting-for-ok`: one is waiting for your OK.
   - `tree-clean`: the session's folder has no uncommitted changes.
-  - `no-open-alignment`: no open alignment question (always enforced; naming it is allowed).
+  - `no-open-alignment`: no open alignment question. Enforced only for an offer that names it: any other
+    offer shows beside an open question.
   - `specs-promoted`: the worktree holds no spec draft left unpromoted, counted as the Worktrees row
     counts them (§chat.worktrees/readiness): a draft marked landed is promoted, and `{drafts}`
     leaves it out.
@@ -125,7 +125,8 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
 
 - **Send.** `"send": "<text>"` (at most 500 characters) posts the text as the user, as the
   composer does (`session.send`, queued after the turn when one is running). `{branch}`, `{base}`,
-  `{commit}` (the moment's short commit) and `{project}` are filled in when the card is shown.
+  `{commit}` (the moment's short commit) and `{project}` are filled in when the card is shown. While the
+  chat waits on alignment answers, the text goes out marked (§chat.alignment/session-mark).
 - **Run.** `"run": "<catalogue id>"` runs one of Sova's own catalogue actions
   (§app/commands) on this session's own branch: the same request the web app makes, as the
   operator, with every parameter taken from Sova's facts about the session and none from the file
@@ -196,8 +197,10 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   you item (`offer-waiting`, §app.overseer/attention-digest), listed among the blockers and counted
   in the Overseer's "need you"; it never sends a phone notification and never briefs the Overseer.
   While the session is idle its row also carries the asks-you mark (§app.decisions/asks-user).
-- **Never over an alignment.** An offer never shows while the session has an open alignment
-  question, and it never replaces an alignment card.
+- **Beside an alignment.** An offer can show while the session has an open alignment question. The
+  alignment card stays in the transcript, and an offer never hides or replaces it. Answering the offer
+  answers no alignment question and doesn't end the chat's wait on them
+  (§chat.alignment/session-mark), and neither does a message its button sends.
 - **Rows.** A card of an offer that declares `rows` lists its rows under the title, each with its
   label and the offer's buttons for that item (a button's own conditions apply to the card, so
   every row shows the same buttons). Whoever shows it supplies 1 to `max` rows (never more than 10), each

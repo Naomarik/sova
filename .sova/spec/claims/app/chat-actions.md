@@ -3,7 +3,9 @@
 A script can stop, compact, rewind or regenerate a chat, remove one of its queued messages, or
 reload it on the server's current code, and learn how that went, with one request
 (`POST /api/chat/action?path=<session>&wait=<ms>`) or `sova run chat.<action>`. The chat takes the
-action exactly as it takes the same button pressed in a tab.
+action exactly as it takes the same button pressed in a tab. An extension's key is refused some of
+these, and on Sova's special chats takes none, but for a Stop or reload with no process open, which answers
+as for any chat that isn't open and runs nothing (§app.extensions/not-you).
 
 ## §app.chat-actions/route — The same action as the button, with its answer
 

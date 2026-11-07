@@ -541,7 +541,8 @@ and tap region every other strip has.
 
 The row's head names who queued it: `You`, `Overseer` for a message the Overseer sent into this
 session (§app.overseer/sent-marker), `From a session` under the sender header "From {title}" for one
-another session sent (§chat.profiles/delivery), or `Sent by Sova` for one Sova queued for the
+another session sent (§chat.profiles/delivery), `From an extension` under the same header, with no link,
+for one an extension sent (§app.extensions/name-badge), or `Sent by Sova` for one Sova queued for the
 session itself (a group send, a remote status probe). Every one of them is removable the same way.
 
 The states are the server's to report, and a queue snapshot proves only what it still holds. Every

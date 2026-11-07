@@ -193,7 +193,8 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   const at = s.signals?.at ?? lastActive;
   // An open offer card is its own item above, so the asks-you mark it gives an idle row adds no soft item.
   const asks = sig.includes("asks-you") && !questions && !s.archived && !offer;
-  if (asks) {
+  // An open card is its own item above too, so the guess beside it would list the chat twice (§app.decisions/asks-user).
+  if (asks && !row.cards?.length) {
     const sentence = row.signalText?.sentence;
     add("decide", "asks-you", at, sentence ? `${askLead(row.signalText?.askKind)}: ${sentence}` : "The last reply asks you something.", true);
   }

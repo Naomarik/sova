@@ -319,7 +319,11 @@ export function Composer(props: {
   };
   // Nothing in memory (a reload, or another device wrote it): seed from the stored draft. The
   // attachments seed themselves through the store, which only takes them if this tab has none.
+  /** Whether the stored draft has arrived: until then a character typed outside the box isn't
+      taken (lib/type-anywhere), so it can't win over a saved draft still on its way. */
+  let draftSettled = false;
   void loadDraft(props.path).then((stored) => {
+    draftSettled = true;
     if (stored.text && !touched && !text()) setText(stored.text);
   });
   let disposed = false;
@@ -655,6 +659,7 @@ export function Composer(props: {
       take: () =>
         takeTyping({
           readOnly: !!props.readOnly,
+          draftLoaded: draftSettled,
           el: input,
           active: () => document.activeElement,
           hiddenByFocus: focusView() && scope.id === null,

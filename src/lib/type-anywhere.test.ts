@@ -214,25 +214,31 @@ const textarea = (lands = true) => {
 
 test("a box takes the typing: focus moves in, nothing else changes", () => {
   const t = textarea();
-  assert.equal(takeTyping({ readOnly: false, el: t.node, active: t.active, hiddenByFocus: false, endFocus: () => t.log.push("endFocus") }), true);
+  assert.equal(takeTyping({ readOnly: false, draftLoaded: true, el: t.node, active: t.active, hiddenByFocus: false, endFocus: () => t.log.push("endFocus") }), true);
   assert.deepEqual(t.log, ["focus"]);
 });
 
 test("a read-only box (TUI-live, an earlier conversation, a baton not held) takes nothing and leaves Focus on", () => {
   const t = textarea();
-  assert.equal(takeTyping({ readOnly: true, el: t.node, active: t.active, hiddenByFocus: true, endFocus: () => t.log.push("endFocus") }), false);
+  assert.equal(takeTyping({ readOnly: true, draftLoaded: true, el: t.node, active: t.active, hiddenByFocus: true, endFocus: () => t.log.push("endFocus") }), false);
+  assert.deepEqual(t.log, []);
+});
+
+test("a box whose saved draft is still on its way takes nothing and leaves Focus on, so the letter can't replace the draft", () => {
+  const t = textarea();
+  assert.equal(takeTyping({ readOnly: false, draftLoaded: false, el: t.node, active: t.active, hiddenByFocus: true, endFocus: () => t.log.push("endFocus") }), false);
   assert.deepEqual(t.log, []);
 });
 
 test("a box Focus hides has Focus ended first, so it is visible and no longer inert when focused", () => {
   const t = textarea();
-  assert.equal(takeTyping({ readOnly: false, el: t.node, active: t.active, hiddenByFocus: true, endFocus: () => t.log.push("endFocus") }), true);
+  assert.equal(takeTyping({ readOnly: false, draftLoaded: true, el: t.node, active: t.active, hiddenByFocus: true, endFocus: () => t.log.push("endFocus") }), true);
   assert.deepEqual(t.log, ["endFocus", "focus"]);
 });
 
 test("a box that focus didn't reach took nothing", () => {
   const missed = textarea(false);
-  assert.equal(takeTyping({ readOnly: false, el: missed.node, active: missed.active, hiddenByFocus: false, endFocus: () => {} }), false);
+  assert.equal(takeTyping({ readOnly: false, draftLoaded: true, el: missed.node, active: missed.active, hiddenByFocus: false, endFocus: () => {} }), false);
 });
 
 // ---- always on ----

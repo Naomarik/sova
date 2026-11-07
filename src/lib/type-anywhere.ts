@@ -126,11 +126,12 @@ export function startTyping(e: { target?: unknown; defaultPrevented?: boolean },
 
 /**
  * A chat's textarea taking the typing: a read-only one (a TUI-live session, an earlier
- * conversation, a baton not held) takes nothing; one Focus hides has Focus ended first, so it is
- * visible and no longer inert when it is focused. True when focus landed in it.
+ * conversation, a baton not held) takes nothing, nor one whose saved draft hasn't arrived yet (the
+ * letter would replace it); one Focus hides has Focus ended first, so it is visible and no longer
+ * inert when it is focused. True when focus landed in it.
  */
-export function takeTyping(t: { readOnly: boolean; el: { focus(): void }; active(): unknown; hiddenByFocus: boolean; endFocus(): void }): boolean {
-  if (t.readOnly) return false;
+export function takeTyping(t: { readOnly: boolean; draftLoaded: boolean; el: { focus(): void }; active(): unknown; hiddenByFocus: boolean; endFocus(): void }): boolean {
+  if (t.readOnly || !t.draftLoaded) return false;
   if (t.hiddenByFocus) t.endFocus();
   t.el.focus();
   return t.active() === t.el;

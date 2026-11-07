@@ -148,7 +148,7 @@ import { alignRowFromDetails, foldAlignRows, isOpenDoc, openCount, recommendedOp
 import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
 import { ShellCard } from "./ShellCard";
-import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf, shellOffered } from "../lib/shell-runs";
+import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf, shellOffered, stopOnClose } from "../lib/shell-runs";
 import type { ShellAnswer, ShellControl } from "../lib/shell-mode";
 import type { ShellRun } from "../../shared/protocol";
 import { HostSendNotice } from "./HostStateNotices";
@@ -612,7 +612,7 @@ export function ChatView(props: {
   const [code, setCode] = createSignal<CodeView | null>(null);
   /** Reload Now, and the failed banner's Try Again: the chat reloads at once if quiet, else when it is. */
   const reloadCode = () => void chatSend({ type: "reload_code" });
-  props.onCode?.({ view: () => (hostGate() ? null : code()), quiet: () => ({ running: live.running, workersWorking: workersWorking() }), reload: reloadCode });
+  props.onCode?.({ view: () => (hostGate() ? null : code()), quiet: () => ({ running: live.running, workersWorking: workersWorking(), commandRunning: shellRuns().some((r) => r.state === "running") }), reload: reloadCode });
   onCleanup(() => props.onCode?.(null));
   let modelTimer: ReturnType<typeof setTimeout> | undefined;
   let thinkingTimer: ReturnType<typeof setTimeout> | undefined;
@@ -932,6 +932,10 @@ export function ChatView(props: {
           setWait(waitOnSleep(untrack(wait)));
           sawGone = !props.summary?.()?.chat;
           socket.close();
+          // Its commands stopped with it (archive, restart, a switch): their cards say so now, and the
+          // next hello brings their saved rows (§chat.shell-mode/card).
+          setShellRuns((runs) => stopOnClose(runs));
+          setShellStopping(new Set<string>());
           // Sends it never took can't be refused back on this socket any more: they come back now.
           handBackSends(unacked.takeAll(handedBack), "That message couldn't be sent. It's back in the composer.");
           return;

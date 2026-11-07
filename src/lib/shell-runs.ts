@@ -50,6 +50,12 @@ export function nextShellRuns(runs: readonly ShellRun[], msg: ChatServerMessage)
   }
 }
 
+/** The chat closed (archived, restarted, switched): its running commands were stopped with it, and
+    their cards say so at once, before the saved rows come with the next hello. */
+export function stopOnClose(runs: readonly ShellRun[]): ShellRun[] {
+  return runs.map((r) => (r.state === "running" ? { ...r, state: "ended", cancelled: true, cancelReason: "closed" } : r));
+}
+
 /** The answer a composer waits on: its own Run started (the start carries its id) or was refused. */
 export function shellAnswerOf(msg: ChatServerMessage): ShellAnswer | null {
   if (msg.type === "shell_start" && msg.clientId) return { clientId: msg.clientId };

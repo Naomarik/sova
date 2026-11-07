@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SHELL_LIVE_MAX, type ChatServerMessage, type ShellRun } from "../../shared/protocol";
-import { AFTER_REPLY, answersAtHello, SHELL_DROPPED, cardOfRow, cardOfRun, cutWords, nextShellRuns, runShell, shellAnswerOf, shellFrame, shellNotes, shellOffered, shellStatus } from "./shell-runs";
+import { AFTER_REPLY, answersAtHello, SHELL_DROPPED, cardOfRow, cardOfRun, cutWords, nextShellRuns, runShell, shellAnswerOf, shellFrame, shellNotes, shellOffered, shellStatus, stopOnClose } from "./shell-runs";
 import { ALREADY_RUNNING, NOT_CONNECTED } from "./shell-mode";
 
 const run = (over: Partial<ShellRun> = {}): ShellRun => ({ id: "s1", command: "pnpm test", output: "", state: "running", startedAt: 1, ...over });
@@ -23,6 +23,14 @@ test("a start shows the card at once, output appends to it and its end replaces 
   assert.deepEqual(runs[0], run({ output: "cut", state: "ended", exitCode: 1, underReply: true }));
   // Its row came with an append just before: the live card goes.
   assert.deepEqual(nextShellRuns(runs, msg({ type: "shell_saved", id: "s1", entryId: "e9" })), []);
+});
+
+test("the chat closing stops its running commands' cards at once; an ended one stays as it was", () => {
+  const ended = run({ id: "s2", state: "ended", exitCode: 0 });
+  const [stopped, kept] = stopOnClose([run({ output: "so far" }), ended]);
+  assert.deepEqual(stopped, run({ output: "so far", state: "ended", cancelled: true, cancelReason: "closed" }));
+  assert.equal(shellStatus(cardOfRun(stopped!)).word, "Stopped when the chat closed");
+  assert.deepEqual(kept, ended);
 });
 
 test("live output keeps only the newest SHELL_LIVE_MAX characters", () => {

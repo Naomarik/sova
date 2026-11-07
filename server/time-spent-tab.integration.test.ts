@@ -368,6 +368,51 @@ for (const [why, record] of [
   });
 }
 
+test("an opened row stays open, with focus, through the tick and a new read, and shows what the read brought", async () => {
+  // The second read onward: one more message in Reworking, so a kept row can't be keeping stale lines.
+  const later = structuredClone(RECORD);
+  const rework = later.messages!.rows.find((r) => r.key === "reworking")!;
+  rework.messages.push({ id: "reworking-new", excerpt: "One more thing on the receipt.", seconds: 10 });
+  rework.seconds += 10;
+  later.messages!.sinceLast -= 10;
+  let reads = 0;
+  const { page } = await open(1440, 1240, "time", (r) => r.fulfill(json(++reads > 1 ? later : RECORD)));
+  try {
+    const steps = [
+      { key: "reworking", lines: "[data-time-message]" },
+      { key: "screenshots", lines: '[data-time-row^="screenshots-"]' },
+      { key: "reading", lines: '[data-time-row^="reading-"]' },
+    ];
+    for (const { key } of steps) await page.locator(`button[data-time-row="${key}"]`).click();
+    await page.locator('button[data-time-row="reworking"]').focus();
+    await page.evaluate(() => {
+      (window as any).kept = [...document.querySelectorAll("button[data-time-row], [data-time-message]")];
+      (window as any).focused = document.activeElement;
+    });
+    assert.equal(await page.locator("[data-time-message]").count(), 4);
+    // You really ticks, so the view has recomputed: 2 seconds on from here.
+    const you = await page.locator("[data-time-you]").getAttribute("data-seconds");
+    const moving = setInterval(() => void page.mouse.move(400 + Math.random() * 40, 300).catch(() => {}), 300);
+    try {
+      await page.waitForFunction((y) => Number(document.querySelector("[data-time-you]")?.getAttribute("data-seconds")) >= Number(y) + 2, you, { timeout: 15_000 });
+    } finally {
+      clearInterval(moving);
+    }
+    for (const { key, lines } of steps) {
+      assert.equal(await page.locator(`button[data-time-row="${key}"]`).getAttribute("aria-expanded"), "true", `${key} is still open after the tick`);
+      assert.ok((await page.locator(lines).count()) > 0, `${key} still shows its lines after the tick`);
+    }
+    const same = () => page.evaluate(() => ({ gone: (window as any).kept.filter((e: Element) => !e.isConnected).length, focus: document.activeElement === (window as any).focused && (window as any).focused.isConnected }));
+    assert.deepEqual(await same(), { gone: 0, focus: true }, "the same elements, and the same button holds focus, after the tick");
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await page.locator('[data-time-message="reworking-new"]').waitFor({ timeout: 10_000 });
+    assert.equal(await page.locator("[data-time-message]").count(), 5, "the open row shows what the read brought");
+    assert.deepEqual(await same(), { gone: 0, focus: true }, "and a read keeps them too");
+  } finally {
+    await page.context().close();
+  }
+});
+
 test("a press anywhere on a row opens that row, not its neighbour", async () => {
   for (const width of [1440, 375]) {
     const { page } = await open(width, 1240, "time");

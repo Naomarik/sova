@@ -23,6 +23,25 @@ export function TimeSpentTab(props: { path: string }) {
   );
 }
 
+/**
+ * A list that keeps each entry's elements while its key lasts. Every tick and read draws new objects, and a plain
+ * <For> over them would rebuild every row each second: an opened row would close and lose focus.
+ */
+function ByKey<T>(props: { items: readonly T[]; keyOf: (item: T) => string; children: (item: () => T) => JSX.Element }) {
+  const keys = createMemo(() => props.items.map(props.keyOf));
+  return (
+    <For each={keys()}>
+      {(key) => {
+        // Keeps the last value for the moment between an entry leaving and its elements going.
+        const item = createMemo<T>((last) => props.items.find((i) => props.keyOf(i) === key) ?? last!);
+        return props.children(item);
+      }}
+    </For>
+  );
+}
+
+const byLineKey = (line: { key: string }) => line.key;
+
 /** A row that opens: its label with the chevron after the word, so it lines up with the rows beside it and what it opens to reads as under it. */
 function OpeningRow(props: { rowKey: string; label: string; count?: number | null; seconds: number; children: JSX.Element }) {
   const [open, setOpen] = createSignal(false);
@@ -65,14 +84,14 @@ function Count(props: { value: number | null; noun: "message" | "action" }) {
 function Parts(props: { parts: SpentLine[] }) {
   return (
     <ul class="time-spent-parts">
-      <For each={props.parts}>
+      <ByKey items={props.parts} keyOf={byLineKey}>
         {(part) => (
-          <li class="time-spent-row time-spent-part" data-time-row={part.key} data-seconds={part.seconds}>
-            <span>{part.label}</span>
-            <span class="text-num">{formatSpent(part.seconds)}</span>
+          <li class="time-spent-row time-spent-part" data-time-row={part().key} data-seconds={part().seconds}>
+            <span>{part().label}</span>
+            <span class="text-num">{formatSpent(part().seconds)}</span>
           </li>
         )}
-      </For>
+      </ByKey>
     </ul>
   );
 }
@@ -194,25 +213,25 @@ function TimeSpentBody(props: { path: string }) {
                     </OpeningRow>
                   )}
                 </Show>
-                <For each={v().rows}>
+                <ByKey items={v().rows} keyOf={byLineKey}>
                   {(row) => (
                     <Show
-                      when={row.parts?.length ? row.parts : null}
+                      when={row().parts?.length ? row().parts : null}
                       fallback={
-                        <li class="time-spent-row" data-time-row={row.key} data-seconds={row.seconds}>
-                          <span>{row.label}</span>
-                          <span class="text-num">{formatSpent(row.seconds)}</span>
+                        <li class="time-spent-row" data-time-row={row().key} data-seconds={row().seconds}>
+                          <span>{row().label}</span>
+                          <span class="text-num">{formatSpent(row().seconds)}</span>
                         </li>
                       }
                     >
                       {(parts) => (
-                        <OpeningRow rowKey={row.key} label={row.label} seconds={row.seconds}>
+                        <OpeningRow rowKey={row().key} label={row().label} seconds={row().seconds}>
                           <Parts parts={parts()} />
                         </OpeningRow>
                       )}
                     </Show>
                   )}
-                </For>
+                </ByKey>
               </ul>
             </Show>
 
@@ -221,40 +240,40 @@ function TimeSpentBody(props: { path: string }) {
                 <div class="stack-2">
                   <h4 class="time-spent-sub text-caption">Your Messages</h4>
                   <ul class="time-spent-rows time-spent-message-rows">
-                    <For each={lines()}>
+                    <ByKey items={lines()} keyOf={byLineKey}>
                       {(line) => (
                         <Show
-                          when={line.messages}
+                          when={line().messages}
                           fallback={
-                            <li class="time-spent-row" data-time-row={line.key} data-seconds={line.seconds}>
-                              <span>{line.label}</span>
-                              <Count value={line.count} noun="action" />
-                              <span class="text-num">{formatSpent(line.seconds)}</span>
+                            <li class="time-spent-row" data-time-row={line().key} data-seconds={line().seconds}>
+                              <span>{line().label}</span>
+                              <Count value={line().count} noun="action" />
+                              <span class="text-num">{formatSpent(line().seconds)}</span>
                             </li>
                           }
                         >
                           {(messages) => (
-                            <OpeningRow rowKey={line.key} label={line.label} count={line.count} seconds={line.seconds}>
+                            <OpeningRow rowKey={line().key} label={line().label} count={line().count} seconds={line().seconds}>
                               <ul class="time-spent-parts time-spent-messages">
-                                <For each={messages()}>
+                                <ByKey items={messages()} keyOf={(m) => m.id}>
                                   {(m) => (
-                                    <li class="time-spent-message" data-time-message={m.id} data-seconds={m.seconds}>
-                                      <p class="time-spent-excerpt text-caption">{m.excerpt}</p>
-                                      <span class="time-spent-message-time text-caption text-num">{formatSpent(m.seconds)}</span>
-                                      <Show when={m.labelledBy}>
+                                    <li class="time-spent-message" data-time-message={m().id} data-seconds={m().seconds}>
+                                      <p class="time-spent-excerpt text-caption">{m().excerpt}</p>
+                                      <span class="time-spent-message-time text-caption text-num">{formatSpent(m().seconds)}</span>
+                                      <Show when={m().labelledBy}>
                                         <p class="time-spent-labelled-by text-caption text-muted" data-time-labelled-by>
-                                          Labelled by {m.labelledBy}
+                                          Labelled by {m().labelledBy}
                                         </p>
                                       </Show>
                                     </li>
                                   )}
-                                </For>
+                                </ByKey>
                               </ul>
                             </OpeningRow>
                           )}
                         </Show>
                       )}
-                    </For>
+                    </ByKey>
                   </ul>
                 </div>
               )}
@@ -264,14 +283,14 @@ function TimeSpentBody(props: { path: string }) {
               <div class="stack-2">
                 <h4 class="time-spent-sub text-caption">Alignments</h4>
                 <ul class="time-spent-docs">
-                  <For each={v().alignments}>
+                  <ByKey items={v().alignments} keyOf={(d) => d.docId}>
                     {(doc) => (
-                      <li data-time-doc={doc.docId}>
-                        <p class="time-spent-doc-title text-caption">{doc.title}</p>
-                        <p class="text-caption text-muted text-num">{doc.words}</p>
+                      <li data-time-doc={doc().docId}>
+                        <p class="time-spent-doc-title text-caption">{doc().title}</p>
+                        <p class="text-caption text-muted text-num">{doc().words}</p>
                       </li>
                     )}
-                  </For>
+                  </ByKey>
                 </ul>
               </div>
             </Show>

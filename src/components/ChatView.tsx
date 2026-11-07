@@ -110,6 +110,7 @@ import {
   sentHere,
   sessionContext,
   setDraftText,
+  draftMessage,
   setLocalRunning,
   setLocalWorking,
   setSessionContext,
@@ -747,7 +748,7 @@ export function ChatView(props: {
    */
   const handBackSends = (back: readonly Unsent[], said?: string): string[] => {
     if (!back.length) return [];
-    const r = handBack({ draft: drafts.get(props.path), cardSent: untrack(cardSent) }, back, clicks);
+    const r = handBack({ draft: draftMessage(props.path) || undefined, cardSent: untrack(cardSent) }, back, clicks);
     if (r.texts.length) {
       setDraftText(props.path, r.draft ?? "");
       setRestored({ text: r.texts.join("\n\n") });
@@ -2769,7 +2770,7 @@ export function ChatView(props: {
           // The view is going away under the open dialog (the session turned read-only): what was
           // typed goes to the top of this session's draft, where restoreUnsent puts unsent turns.
           onOrphan={(text) => {
-            const current = drafts.get(props.path);
+            const current = draftMessage(props.path);
             setDraftText(props.path, current ? `${text}\n\n${current}` : text);
           }}
         />

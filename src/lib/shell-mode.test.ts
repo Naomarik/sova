@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ALREADY_RUNNING, NOT_CONNECTED_YET, codeSpans, runWhileBlocked, canRun, draftOf, enterOnInput, folderName, leaveOnKey, modeAnnouncement, onAnswer, openDraft, SHELL_KEYS, SHELL_MARKER, shellPlaceholder, type ShellMode } from "./shell-mode";
+import { ALREADY_RUNNING, NOT_CONNECTED_YET, codeSpans, runWhileBlocked, canRun, asText, savedMode, enterOnInput, folderName, leaveOnKey, modeAnnouncement, onAnswer, openDraft, SHELL_KEYS, SHELL_MARKER, shellPlaceholder, type ShellMode } from "./shell-mode";
 
 test("a typed ! into the empty box steps the mode one deeper, and a third ! types", () => {
   assert.deepEqual(enterOnInput("off", "", "!", "insertText"), { mode: "shell", text: "" });
@@ -43,21 +43,30 @@ test("Backspace in the empty box steps back one, Esc leaves for a message box", 
   assert.equal(leaveOnKey("shell", "Enter", ""), null);
 });
 
-test("a draft keeps its leading ! or !!, so it opens in the same mode", () => {
+test("a draft written in shell mode keeps its mode apart from its text, and opens in it", () => {
   for (const mode of ["shell", "private"] as const) {
-    const stored = draftOf(mode, "pnpm test");
-    assert.equal(stored, `${SHELL_MARKER[mode]}pnpm test`);
-    assert.deepEqual(openDraft(stored, true), { mode, text: "pnpm test" });
+    assert.equal(savedMode(mode, "pnpm test"), mode);
+    assert.deepEqual(openDraft({ text: "pnpm test", mode }, true), { mode, text: "pnpm test" });
   }
-  assert.equal(draftOf("off", "hello"), "hello");
-  assert.deepEqual(openDraft("hello", true), { mode: "off", text: "hello" });
+  assert.equal(savedMode("off", "hello"), undefined);
   // An empty command is no draft: nothing is kept, mode included.
-  assert.equal(draftOf("shell", ""), "");
+  assert.equal(savedMode("shell", ""), undefined);
+  assert.deepEqual(openDraft({ text: "", mode: "shell" }, true), { mode: "off", text: "" });
 });
 
-test("without shell mode a leading ! is text, as it always was", () => {
-  assert.deepEqual(openDraft("!ls", false), { mode: "off", text: "!ls" });
-  assert.deepEqual(openDraft("!!ls", false), { mode: "off", text: "!!ls" });
+test("a leading ! in a draft's text is only ever text, with shell mode or without", () => {
+  // A message that starts with "!" (a Markdown image, a draft set by a script or a card) stays a message.
+  for (const text of ["!ls", "!!ls", "![shot](a.png)"]) {
+    assert.deepEqual(openDraft({ text }, true), { mode: "off", text });
+    assert.deepEqual(openDraft({ text }, false), { mode: "off", text });
+  }
+});
+
+test("a command opened where the box has no shell mode shows as its text, marker in view", () => {
+  assert.deepEqual(openDraft({ text: "ls", mode: "shell" }, false), { mode: "off", text: "!ls" });
+  assert.deepEqual(openDraft({ text: "ls", mode: "private" }, false), { mode: "off", text: "!!ls" });
+  assert.equal(asText("private", "ls"), "!!ls");
+  assert.equal(asText("off", "!ls"), "!ls");
 });
 
 test("the placeholder names the folder's last part, says Run, and carries Enter's hint only when Enter runs", () => {

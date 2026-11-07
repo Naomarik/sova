@@ -3,12 +3,18 @@
 
 import type { UploadResult } from "../../shared/protocol";
 
+/** The mode a draft written in shell mode keeps: `!` or `!!` (lib/shell-mode). */
+export type ShellDraftMode = "shell" | "private";
+
 /** One session's whole draft. Each save carries all of it, so the latest payload replaces any
     pending one and a text save can never drop the attachments (or the reverse). */
 export interface DraftPayload {
   text: string;
   /** Files already uploaded into the session's attachments folder. */
   attachments: UploadResult[];
+  /** A command written in shell mode (§chat.shell-mode/box): its mode, kept apart from the text, so a
+      leading "!" in `text` is only ever text. Absent: a message. */
+  mode?: ShellDraftMode;
 }
 
 export type SaveDraft = (path: string, draft: DraftPayload) => void | Promise<void>;

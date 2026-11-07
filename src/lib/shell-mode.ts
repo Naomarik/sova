@@ -1,6 +1,8 @@
 // Shell mode in the message box (§chat.shell-mode/box): the box's mode, how it is entered and left,
 // what it says, and the draft that keeps it. Pure: Composer.tsx wires it to the textarea.
 
+import type { ShellDraftMode } from "./draft-save";
+
 /** The box's mode: a message, a command (`!`), or a command the model never sees (`!!`). */
 export type ShellMode = "off" | "shell" | "private";
 
@@ -23,7 +25,7 @@ export interface ShellAnswer {
   refused?: string;
 }
 
-/** The marker each mode draws at the box's left, and keeps at the front of its stored draft. */
+/** The marker each mode draws at the box's left (and a command keeps in view once it is a message). */
 export const SHELL_MARKER: Record<Exclude<ShellMode, "off">, string> = { shell: "!", private: "!!" };
 
 /** The mode one more `!` into the empty box makes: `!` → `!!`; `!!` takes no more (it types). */
@@ -59,19 +61,24 @@ export function leaveOnKey(mode: ShellMode, key: string, text: string): ShellMod
   return null;
 }
 
-/** The stored draft of a box: its text, after the mode's `!` or `!!`. An empty command keeps no mode. */
-export function draftOf(mode: ShellMode, text: string): string {
+/** The box as a message holds it: a command keeps its "!" or "!!" in view, as text. */
+export function asText(mode: ShellMode, text: string): string {
   return mode === "off" || text === "" ? text : SHELL_MARKER[mode] + text;
 }
 
+/** The mode the box's draft is saved with, apart from its text: none for a message or an empty command. */
+export function savedMode(mode: ShellMode, text: string): ShellDraftMode | undefined {
+  return mode === "off" || text === "" ? undefined : mode;
+}
+
 /**
- * A stored draft opened in a box: with shell mode, its leading `!` or `!!` is the mode again (a
- * reload, a switch back, another device). Without shell mode a leading `!` is text, as it always was.
+ * A stored draft opened in a box. Its mode is the one it was saved with, never read from its text: a
+ * leading "!" is only ever text. A command saved in shell mode opens as one where the box offers shell
+ * mode; where it doesn't, it shows as its text ("!ls"), a message.
  */
-export function openDraft(stored: string, shell: boolean): { mode: ShellMode; text: string } {
-  if (shell && stored.startsWith("!!")) return { mode: "private", text: stored.slice(2) };
-  if (shell && stored.startsWith("!")) return { mode: "shell", text: stored.slice(1) };
-  return { mode: "off", text: stored };
+export function openDraft(stored: { text: string; mode?: ShellDraftMode }, shell: boolean): { mode: ShellMode; text: string } {
+  if (!stored.mode || !stored.text) return { mode: "off", text: stored.text };
+  return shell ? { mode: stored.mode, text: stored.text } : { mode: "off", text: asText(stored.mode, stored.text) };
 }
 
 /** The last part of a folder's path, for the placeholder; null when the chat's folder isn't known. */

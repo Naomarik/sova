@@ -105,7 +105,8 @@ export function MergeRunLogsChip(props: { session: string }) {
             <span class="run-logs-chip-size">{sizeLabel(i().bytes)}</span>
           </button>
           <Show when={open()}>
-            <div class="run-logs-popover" role="dialog" aria-label="Run logs">
+            {/* tabindex -1: a click on the popover's own text focuses it, not <body>, so it stays open. */}
+            <div class="run-logs-popover" role="dialog" aria-label="Run logs" tabindex="-1">
               <p class="run-logs-sentence">
                 <span class="run-logs-figure">{sizeLabel(i().bytes)}</span> in {runs(i().runs)}, {i().packed} packed.
               </p>

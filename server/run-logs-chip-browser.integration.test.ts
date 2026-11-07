@@ -105,6 +105,16 @@ describe("the Run Logs chip in a browser", { timeout: 240_000, skip: h.skip }, (
     await page.mouse.click(195, 600);
     await until("a click outside closes it", async () => (await page.locator(".run-logs-popover").count()) === 0);
 
+    // A click on the popover's own text (focus leaves Cancel for no button) keeps it and its confirmation open.
+    await chip.click();
+    await page.getByRole("button", { name: "Clean Logs…" }).click();
+    await page.locator(".run-logs-confirm").waitFor();
+    await page.locator(".run-logs-confirm .run-logs-sentence").click();
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator(".run-logs-confirm").isVisible(), true, "a click on the popover's text keeps the confirmation");
+    await page.keyboard.press("Escape");
+    await until("Escape still closes it", async () => (await page.locator(".run-logs-popover").count()) === 0);
+
     // The clean itself: one toast, the chip's size drops, focus back on the chip.
     const before = await chip.getAttribute("aria-label");
     await chip.click();

@@ -490,11 +490,17 @@ describe("the operator's own gap ideas (the project page's Ideas)", async () => 
     assert.match(out.links[0]!.link, /\/h\//);
   });
 
-  test("POST …/worktrees/merge and …/worktrees/remove: a session that isn't the project's coding session is 404", async () => {
+  test("POST …/worktrees/merge and …/worktrees/remove: a session that isn't the project's coding session is 404; Merge Branch from anyone but the page is refused first", async () => {
+    const { pageHeaders } = await import("./testing/page");
     for (const path of ["/worktrees/merge", "/worktrees/remove"]) {
-      const r = await send("POST", path, { sessionId: "not-a-build" });
+      // The user's own page: the route tells it the session isn't the project's.
+      const r = await page.request(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json", ...pageHeaders() }, body: JSON.stringify({ sessionId: "not-a-build" }) });
       assert.equal(r.status, 404, `${path}: ${await r.text()}`);
     }
+    // Merge Branch from a caller that isn't the page (no cookie): refused before anything is looked up, so it
+    // never learns whether the session exists (§app.access/your-click).
+    const r = await send("POST", "/worktrees/merge", { sessionId: "not-a-build" });
+    assert.equal(r.status, 403, await r.text());
   });
 });
 

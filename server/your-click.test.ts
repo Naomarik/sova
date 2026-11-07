@@ -344,6 +344,46 @@ describe("applying Sova's own main copy", async () => {
   });
 });
 
+describe("the merge queue's acts from another computer's page", () => {
+  const seenReq = (r: Request) => ({ req: { method: r.method, raw: r, header: (n: string) => r.headers.get(n) ?? undefined } }) as never;
+  const clicked = (body = "{}") => new Request("http://x/peer/b/api/x", { method: "POST", headers: pageHeaders(), body });
+
+  test("a page click mints a proof for every merge act the page alone takes, and for none of the reads or a trial", async () => {
+    for (const door of ["/api/project-services/merge.add", "/api/project-services/merge.cancel", "/api/project-services/merge.answer", `/api/projects/pid/services/merge.add`, "/api/projects/pid/overseer/worktrees/merge", "/api/projects/pid/runtime/merge"])
+      assert.ok(await clickProofFor(seenReq(clicked()), "b", door), door);
+    for (const door of ["/api/project-services/merge.status", "/api/project-services/merge.logs", "/api/project-services/merge.try", "/api/project-services/merge.nope", "/api/projects/pid/overseer/worktrees/other"])
+      assert.equal(await clickProofFor(seenReq(clicked()), "b", door), undefined, door);
+    assert.equal(await clickProofFor(seenReq(new Request("http://x", { method: "POST", headers: { [TOKEN]: "t" }, body: "{}" })), "b", "/api/project-services/merge.add"), undefined, "a script gets none");
+  });
+
+  test("a peer's merge.add passes with the proof its sender's host minted for that body; without one, replayed, or for another body it is no page", async () => {
+    const engine = projectEngine();
+    const real = engine.run;
+    const seen: unknown[] = [];
+    engine.run = (async (_verb: string, _body: unknown, caller: { notPage?: boolean }) => (seen.push(caller.notPage), { v: 1, ok: true })) as never;
+    // The sender's host answers the peer's question with the real one-time check.
+    setClickAskForTest(async (_peer, _path, init) => {
+      const q = JSON.parse(String(init?.body ?? "{}")) as { proof?: string; digest?: string };
+      return Response.json({ ok: takeClick(q.proof, "other", q.digest) });
+    });
+    try {
+      // The engine is stood in: only who called reaches it, so the project needs no registration.
+      const body = { project: "/stand-in/project", branch: "feat/x" };
+      const proof = (await clickProofFor(seenReq(clicked(JSON.stringify(body))), "other", "/api/project-services/merge.add"))!;
+      const peer = { meshPeer: { id: "other" } };
+      await call("POST", "/api/project-services/merge.add", body, { "X-Sova-Click-Proof": proof, "X-Forwarded-Host": "h" }, peer);
+      await call("POST", "/api/project-services/merge.add", body, { "X-Sova-Click-Proof": proof, "X-Forwarded-Host": "h" }, peer);
+      await call("POST", "/api/project-services/merge.add", body, { "X-Forwarded-Host": "h" }, peer);
+      const other = (await clickProofFor(seenReq(clicked(JSON.stringify(body))), "other", "/api/project-services/merge.add"))!;
+      await call("POST", "/api/project-services/merge.add", { ...body, branch: "feat/y" }, { "X-Sova-Click-Proof": other, "X-Forwarded-Host": "h" }, peer);
+      assert.deepEqual(seen, [undefined, true, true, true], "proven once; then a replay, no proof, another body: no page");
+    } finally {
+      engine.run = real;
+      setClickAskForTest(null);
+    }
+  });
+});
+
 describe("the relay header proves nothing on the main listener", () => {
   const RELAYED = { "X-Sova-Relayed": "1" };
 

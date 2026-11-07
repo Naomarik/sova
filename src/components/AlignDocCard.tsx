@@ -94,7 +94,7 @@ export function AlignRow(props: { row: AlignRowInfo; newest: boolean }) {
 /** An earlier revision: one line built from the call's changes; opening it shows that revision. */
 function AlignRevision(props: { doc: AlignDocInfo; line: string }) {
   return (
-    <details class="disclosure align-rev">
+    <details class="disclosure align-rev" ref={(el) => el.setAttribute("data-align-doc", props.doc.id)}>
       <summary class="disclosure-summary align-rev-summary">
         <Icon name="chevron-right" small class="icon-twist" />
         <span class="text-mono align-rev-id">{props.doc.id}</span>
@@ -145,7 +145,7 @@ export function AlignDocCard(props: { doc: AlignDocInfo; line?: string }) {
     return s === "aligning" ? undefined : ALIGN_STATUS_CHIP[s];
   };
   return (
-    <article class="card align-doc" aria-labelledby={titleId}>
+    <article class="card align-doc" ref={(el) => el.setAttribute("data-align-doc", props.doc.id)} aria-labelledby={titleId}>
       <header class="align-doc-head">
         <p class="align-doc-eyebrow">
           <span class="text-mono">{props.doc.id}</span> · Alignment · <span class="text-num">v{props.doc.rev}</span>

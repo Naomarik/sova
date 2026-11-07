@@ -274,14 +274,17 @@ are kept, and what the foot and its model indicator show.
 
 ## §chat.composer/disabled-states — Disabled states
 
-While the composer can't send (the session is open in a TUI, the chat is connecting or starting,
-the socket dropped, or a model switch is pending), the reason goes in `.composer-reason` and the
+While the composer can't send (the session is open in a TUI, the chat is reconnecting after its
+socket dropped, or a model switch is pending), the reason goes in `.composer-reason` and the
 control is disabled. The reason is one line, per
-the skill's copy ladder. While the chat is connecting, starting or reconnecting, the reason there is
+the skill's copy ladder. While the chat is reconnecting, the reason there is
 for assistive technology only (visually hidden): what the eye reads is the note floating over the
 transcript's end (§chat.transcript/instant-open), so nothing is added to the composer. A chat
 closed for being quiet while its tab is open is none of these: its tab holds no socket, Send and
-the controls work and wake it, and they wait as "Chat connecting or starting" only from then on.
+the controls work and wake it, and from then on they work as the "Chat connecting or starting" row
+says. A new session, or any chat this tab is opening for the first time, is none of these either:
+until its first `hello`, Send and the controls work the same way, and what they ask waits for the
+chat (§chat.transcript/send-while-starting).
 A peer session whose host is Read only or Display may be wrong (§mesh.compatibility/states) is not
 one of the rows below: a notice takes the composer's place, Stop included
 (§mesh.compatibility/read-only).
@@ -289,7 +292,7 @@ one of the rows below: a notice takes the composer's place, Stop included
 | Condition | Textarea | Buttons | Reason (with icon) |
 |---|---|---|---|
 | Session is live in a TUI | `disabled` | Send hidden | `attention` — "Read only while this session is open in the TUI." |
-| Chat connecting or starting (first connect, until this connection's `hello`) | enabled (typing is fine) | Send `aria-disabled` until the `hello`, Stop until the socket is open; the model, mode, sandbox and login controls too | `clock` — "Connecting to chat…" (hidden; shown as the floating note) |
+| Chat connecting or starting (a new session or a chat this tab opens, on its first connect; a chat this tab woke; until this connection's `hello`) | enabled (typing is fine) | Send and the model, thinking, mode, sandbox and login controls work: a message shows at once as `Sending…` and what each asks goes to the chat in the order asked; Stop is `aria-disabled` until the socket is open, then takes a waiting message back (§chat.transcript/send-while-starting) | none in the composer; the "Connecting to chat…" note floats over the transcript (§chat.transcript/instant-open) |
 | Chat socket dropped, or its chat failed to start for now (until the next `hello`) | enabled | Send `aria-disabled` until the `hello`, Stop until the socket is open | `clock` — "Reconnecting. Your draft is kept." (hidden; shown as the floating note) |
 | Model switch pending (§chat/model-menu) | enabled | Send `aria-disabled` until `{type:"model"}` or an error | `clock` — "Switching model…" |
 | Session is archived (§chat.transcript/instant-open, "An archived chat"; no socket is held) | enabled (typing and the draft kept) | `Unarchive` in place of Send; the model, mode, sandbox and login controls wait | `archive` — "This session is archived. Unarchive it to send." |
@@ -303,7 +306,8 @@ with that reason in its `title` rather than in `.composer-reason`.
 The first connect's "Connecting to chat…" note (the socket's first connect, the chat starting, or
 the session's list not here yet) fades in after a short delay, about 300 ms, so a quick switch never
 flashes it; under reduced motion it appears after the same delay without the fade. "Reconnecting"
-and every other reason show at once, and the controls are disabled from the first frame either way.
+and every other reason show at once, and their controls are disabled from the first frame; on a
+first connect the controls work from the first frame.
 
 Send is enabled by typed text, an attachment, **or answers picked on an alignment card or a
 gathering transcript card alone** (§chat.alignment/card, §chat.transcript-cards/answering): with
@@ -618,9 +622,11 @@ indicator's rule for omitting the effort ring applies. A remembered mode
 says nothing about when a switch applies: until the socket's `mode` message the trigger makes no
 "applies after this turn" promise and the menu shows neither the mid-turn nor the can't-switch
 banner. A remembered running turn shows as one (Steer, Stop, the run status, and the sidebar's
-Busy mark stays on), but until the socket is open Send and Stop are both `aria-disabled` (Send until
-the chat's `hello`) with the "Connecting to chat…" reason, so nothing goes into a closed socket or
-a chat still starting, and it counts as no turn starting (no list refresh). Answering an alignment card, "Switching model…" and the other pending states still
+Busy mark stays on), but until the socket is open Stop is `aria-disabled` and can't stop it, and on a reconnect Send is
+`aria-disabled` too, until the chat's `hello`, with the "Reconnecting. Your draft is kept." reason,
+so nothing goes into a closed socket or a chat still starting; on a first connect Send works and
+what it sends waits for the chat as `Sending…` (§chat.transcript/send-while-starting), and once
+the socket is open Stop takes that back. It counts as no turn starting (no list refresh). Answering an alignment card, "Switching model…" and the other pending states still
 wait for the socket's own word.
 
 ## §chat.composer/waiting-badge — What's waiting on you, inside the message box

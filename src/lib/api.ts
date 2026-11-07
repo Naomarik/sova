@@ -151,6 +151,7 @@ import type { TargetInfo } from "./remote-session";
 import type { CommandEntry } from "../../shared/commands-catalog";
 import type { BackgroundJob } from "../../shared/protocol";
 import type { AlignTriage, WorkerChecks, DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
+import { TIME_SPENT_READ_ROUTE, type TimeSpentRecord } from "../../shared/time-spent";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
 import { upgradeLegacyRows } from "./legacy-rows";
 import { COMPOSER_QUERY } from "./wire-stamp";
@@ -1061,6 +1062,9 @@ export const stopSessionJob = (path: string, id: string, sessionId?: string) =>
     Use loadGitSummary (lib/git-summary.ts), which shares a request already running. */
 export const fetchGitSummary = (path: string, fresh = false) =>
   request<GitSummary>(`/api/sessions/git?path=${encodeURIComponent(path)}${fresh ? "&fresh=1" : ""}`);
+
+/** A session's Time Spent record, from the computer hosting it (§app.subagents-pane/time-spent-record). */
+export const fetchTimeSpent = (path: string) => request<TimeSpentRecord>(`${TIME_SPENT_READ_ROUTE}?path=${encodeURIComponent(path)}`);
 
 /** What pi loads for a session (context files, offered skills, system-prompt files), read for its
     folder. `fresh` skips the server's cache. */

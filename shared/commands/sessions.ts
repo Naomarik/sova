@@ -261,6 +261,17 @@ export const SESSION_ENTRIES: CommandEntry[] = [
     meshNeed: "sessions",
   },
   {
+    id: "session.time-spent",
+    label: "Show Time Spent",
+    summary: "How long you have been with a session and how long its agent has worked: your time by activity, and each alignment's time on screen.",
+    effect: "looks",
+    params: { session: session("query", "path") },
+    route: { method: "GET", path: "/api/time-spent" },
+    sessionKey: "path",
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
     id: "session.align.triage",
     label: "Show Alignment Triage",
     summary: "Each open alignment question's stakes as Jev or the configured model guessed them: low risk, or deletes data, costs money or changes architecture.",

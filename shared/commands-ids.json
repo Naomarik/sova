@@ -241,6 +241,7 @@
     "session.pairs.resume",
     "attention.dismiss",
     "attention.undismiss",
+    "session.time-spent",
     "chat.shell.list",
     "chat.shell.stop",
     "session.shell.output"

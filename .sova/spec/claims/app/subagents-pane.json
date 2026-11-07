@@ -79,7 +79,6 @@
       "src/lib/context-parts.ts",
       "src/lib/context-parts.test.ts",
       "src/components/SessionPane.tsx",
-      "src/components/SessionDetails.tsx",
       "src/lib/api.ts",
       "server/context-tab.ts",
       "server/context-tab.test.ts",
@@ -268,8 +267,114 @@
     ],
     "agreed": {
       "by": "omar",
-      "at": "2026-11-04T11:00Z",
-      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+      "at": "2026-11-07T02:42Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#78a5b1e9"
+    }
+  },
+  "§app.subagents-pane/time-spent": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.subagents-pane/tabs",
+      "§app.subagents-pane/time-spent-counting",
+      "§app.subagents-pane/time-spent-record",
+      "§chat.alignment/document",
+      "§chat.alignment/card",
+      "§app.subagents-pane/accessibility"
+    ],
+    "code": [
+      "src/components/TimeSpent.tsx",
+      "src/components/SessionDetails.tsx",
+      "src/components/SessionPane.tsx",
+      "src/lib/api.ts",
+      "src/app.css",
+      "src/lib/time-spent-section.ts",
+      "src/lib/time-spent-view.ts",
+      "src/lib/time-spent-view.test.ts",
+      "server/time-spent-figures.ts",
+      "server/time-spent-section.integration.test.ts",
+      "shared/time-spent.ts"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-07T02:42Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#78a5b1e9"
+    }
+  },
+  "§app.subagents-pane/time-spent-counting": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.voice/mobile-lifecycle",
+      "§chat.changes/viewer",
+      "§app/tours",
+      "§workspace.groups/a-pane",
+      "§app.subagents-pane/transcript-view",
+      "§mesh.links/agents-pane"
+    ],
+    "code": [
+      "src/lib/time-spent.ts",
+      "src/lib/time-spent-core.ts",
+      "src/lib/time-spent-core.test.ts",
+      "src/App.tsx",
+      "src/components/Thread.tsx",
+      "src/components/GroupView.tsx",
+      "src/components/SessionView.tsx",
+      "src/components/SubagentPane.tsx",
+      "src/components/AlignDocCard.tsx",
+      "src/components/AlignView.tsx",
+      "src/components/ChangesViewer.tsx",
+      "src/components/TourCard.tsx",
+      "src/components/TourReadCard.tsx",
+      "src/components/VoiceInput.tsx",
+      "server/time-spent.ts",
+      "server/time-spent.test.ts",
+      "server/time-spent-figures.ts",
+      "server/time-spent-panes.integration.test.ts",
+      "shared/time-spent.ts"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-07T02:42Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#78a5b1e9"
+    }
+  },
+  "§app.subagents-pane/time-spent-record": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.session-list/archive-cleanup",
+      "§app.session-share/page",
+      "§mesh.peers/grants",
+      "§app.commands/catalogue",
+      "§app.subagents-pane/context-tab"
+    ],
+    "code": [
+      "server/time-spent.ts",
+      "server/time-spent.test.ts",
+      "server/time-spent-routes.ts",
+      "server/time-spent-figures.ts",
+      "server/app.ts",
+      "server/sessions-index.ts",
+      "server/mesh/access.ts",
+      "server/mesh/access.test.ts",
+      "server/commands-inventory/scan.ts",
+      "shared/commands/sessions.ts",
+      "shared/commands-ids.json",
+      "shared/time-spent.ts",
+      "src/card-toolkit/commands.gen.ts",
+      "server/commands-inventory/baseline.json",
+      "server/commands-fuzz.test.ts",
+      "server/create-guide-growth.json",
+      "docs/commands.md"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-07T02:42Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#78a5b1e9"
     }
   },
   "§app.subagents-pane/tokens": {

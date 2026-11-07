@@ -158,7 +158,7 @@ words, in the composer, the session pane, the chat's queue cards and the project
 
 | State | Surface | Copy |
 |---|---|---|
-| Connecting (first time), or the chat starting | chat: a note floating over the transcript's end (`clock`), also the composer reason for assistive technology only (§chat.transcript/instant-open) | Connecting to chat… |
+| Connecting (first time), or the chat starting | chat: a note floating over the transcript's end (`clock`); no composer reason, since Send works meanwhile (§chat.transcript/instant-open, §chat.transcript/send-while-starting) | Connecting to chat… |
 | Lost, retrying (a chat's start that failed for now too) | chat: the same floating note (`clock`), and the composer reason for assistive technology only · watch: `.banner-warn` | chat: "Reconnecting. Your draft is kept." · watch: **Stopped watching. The connection dropped.** What's shown is up to `{HH:MM}`. Reconnecting… |
 | Gave up (retries exhausted) | `.banner-error` at the top of the transcript; composer reason "Not connected." | **Lost the connection to the Sova server.** Nothing in the session changed. Check `pnpm run dev:server` is running, then retry. · button: `Reconnect` |
 | Reconnected | nothing. The banner or reason simply disappears; no toast | — |
@@ -189,7 +189,7 @@ words, in the composer, the session pane, the chat's queue cards and the project
 | Dictation errors (strip; `Try Again` where the clip is kept, then Dismiss) | Mic blocked: "The browser blocked the microphone. Allow it for this site, then try again." · no mic: "No microphone found." · didn't start in time (§chat.voice/capture): "The microphone didn't start within 10 seconds. Quit and reopen Sova or your browser, then try again." · other: "Couldn't start the microphone. {message}." · nothing heard: "Didn't catch any speech. Nothing was inserted." · empty transcript: "Heard audio but no words. Nothing was inserted." · failed: "Couldn't transcribe the clip. {reason}. Your recording is kept." · voice removed meanwhile: "Voice isn't set up on this host anymore." |
 | Dictation, backgrounded (toast and announcement) | Recording stopped when the app went to the background. Transcribed {m:ss}. |
 | Dictation announcements | Recording. · Recording cancelled. · Transcribing. · `Inserted {n} words.` (1: `Inserted 1 word.`) · `{s} seconds left.` at 0:30 |
-| SR announcements | Working. · Reply finished. · The turn stopped with an error. (once per error, and it replaces that turn's "Reply finished." — an errored turn still settles, and two endings would read as two turns) · This chat didn't start. Your message is back in the composer. (once; the second sentence only when one came back) |
+| SR announcements | Working. · Reply finished. · The turn stopped with an error. (once per error, and it replaces that turn's "Reply finished." — an errored turn still settles, and two endings would read as two turns) · This chat didn't start. Your message is back in the composer. (once; the second sentence only when one came back) · Stopped. Your message is back in the composer. (a Stop that took a message back before its chat started, §chat.transcript/send-while-starting; never "Removed from the queue.") |
 
 ## §design.copy-deck/composer-flyout — Composer flyout
 
@@ -577,6 +577,15 @@ the person clicks.
 | Pane's session-insight fetch failed (banner-warn) | **Couldn't load this session's subagents.** {message} Your workers keep running. We'll retry on our own. |
 | Transcript socket and load errors | the §app/subagents-pane state table: Live-watch and Connection copy above, and Main pane's transcript load error |
 
+## §design.copy-deck/time-spent — Time Spent section (§app.subagents-pane/time-spent)
+
+| Where | Copy |
+|---|---|
+| Head | heading: Time Spent · figures: You · Agent · word: Counting · Paused · Not Recording |
+| Durations | whole seconds: `1h 12m 08s` · `14m 08s` · `8s` |
+| Breakdown | no heading · rows: Reading (opens to Main Thread · Alignments · Workers) · Typing · Dictating · Scrolling · Reviewing Changes · Reviewing Screenshots · Viewing Tours · Other |
+| Alignments | heading: Alignments · line: {title} · `{t}` on screen · `{t}` to read · `{t}` from first shown to decided (left out when it has none) |
+
 ## §design.copy-deck/context-tab — Context tab (§app.subagents-pane/context-tab)
 
 | Where | Copy |
@@ -594,7 +603,6 @@ the person clicks.
 | Sheet | breadcrumb (accessible name Breadcrumb): Context › `{group}` › `{part}`, the current step not a button · Back (an arrow button, accessible name Back) · title: the row's name · size `≈{n}` · subtitle: the full path (a file, a skill) or the group's name · Source · Copy |
 | Sheet notes | a file not yet loaded: Not counted yet. It loads the first time the agent reads, edits or writes a file in `{folder}`. · a skill: Its size counts only what the model is offered: name and description. The full SKILL.md loads when the agent reads it, then counts under Conversation. · a failed read (toast): Couldn't open that file. `{reason}` |
 | States | Reading this chat's context. · This chat runs on another machine, so its context can't be read here. · Couldn't read this chat's context. `{reason}` |
-| Session tab | after the Context sentence: See what fills it |
 
 ## §design.copy-deck/cost-breakdown — Where a model's cost went (§app.insights/cost-history, §app.subagents-pane/tabs)
 

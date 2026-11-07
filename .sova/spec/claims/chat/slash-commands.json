@@ -143,7 +143,9 @@
       "src/lib/change-rows.ts",
       "src/components/ChatView.tsx",
       "src/lib/slash.test.ts",
-      "server/harness/pi/modes.ts"
+      "server/harness/pi/modes.ts",
+      "src/lib/command-wait.ts",
+      "src/lib/command-wait.test.ts"
     ],
     "agreed": {
       "by": "naomarik",

@@ -236,8 +236,19 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     sessionsChanged(); // a prompt, abort or rename: the next listing is built afresh
     held.sent(msg);
     if (chat) toChat(chat, msg);
-    else early.push(msg);
+    else if (!retractEarly(msg)) early.push(msg);
   });
+  /** A removal of a send still waiting here for the chat to open (a Stop before the chat's hello):
+      the send never reaches the chat, and the removal is answered as the chat's queue would. */
+  const retractEarly = (msg: ChatClientMessage): boolean => {
+    if (msg.type !== "queue_remove") return false;
+    const i = early.findIndex((m) => (m.type === "prompt" || m.type === "steer") && m.clientId === msg.itemId);
+    if (i === -1) return false;
+    const [sent] = early.splice(i, 1);
+    held.forget(msg.itemId);
+    client.send({ type: "queue_removed", id: msg.id, itemId: msg.itemId, text: sent && (sent.type === "prompt" || sent.type === "steer") ? sent.text : "" });
+    return true;
+  };
   // Seen: a pane is on screen while its socket is open (server/seen.ts). Stamped at attach and at
   // detach, whether or not the runtime opens — a refused chat is still a session the user looked at.
   if (viewer) {

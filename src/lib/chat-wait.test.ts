@@ -3,7 +3,7 @@
 // goes back to the composer.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CONNECTING, errorHandsBack, heldWhileAsleep, NOT_CONNECTED, RECONNECTING, WAIT_START, WakeQueue, waitOnHello, waitOnOpen, waitOnSleep, waitOnStatus, waitOnWake, waitReason, type ChatWait } from "./chat-wait";
+import { composerWait, CONNECTING, errorHandsBack, heldWhileAsleep, holdsSends, NOT_CONNECTED, RECONNECTING, WAIT_START, WakeQueue, waitOnHello, waitOnOpen, waitOnSleep, waitOnStatus, waitAtOpen, waitOnWake, waitReason, type ChatWait } from "./chat-wait";
 import { UnackedSends } from "./unacked-sends";
 
 /** The first connection, open and helloed. */
@@ -176,4 +176,69 @@ test("heldWhileAsleep: the closed process still listed never wakes the tab; held
   seen = r.sawGone;
   r = heldWhileAsleep(seen, true);
   assert.deepEqual(r, { sawGone: true, connect: true }, "someone else opened it");
+});
+
+// A view's first connect (a new session, any chat just opened): a wake, so what the tab asks before
+// the chat's hello is held and goes as the connection opens, never dropped.
+
+test("first connect: a view opens waking, not asleep; an archived one asleep", () => {
+  assert.deepEqual(waitAtOpen(false), { ...WAIT_START, waking: true });
+  assert.equal(waitAtOpen(true).asleep, true);
+  assert.equal(waitAtOpen(true).waking, undefined, "an archived view never wakes on its own");
+});
+
+test("first connect: a send before the socket opens is held, the note reads Connecting, the composer stands aside; the hold ends as it opens", () => {
+  let w = waitAtOpen(false);
+  assert.equal(holdsSends(w, 0), true, "held while connecting");
+  assert.equal(waitReason("connecting", w), CONNECTING, "the note: Connecting");
+  assert.equal(composerWait(w, waitReason("connecting", w)), null, "Send works");
+  // A held frame (outbox 1): what follows queues behind it until it went.
+  assert.equal(holdsSends(w, 1), true);
+  w = waitOnOpen(w);
+  assert.equal(w.conn, 1);
+  assert.equal(holdsSends(w, 0), false, "open: the outbox drains onto it, later sends go straight");
+  assert.equal(waitReason("open", w), CONNECTING, "the note stays until the hello");
+  assert.equal(composerWait(w, waitReason("open", w)), null, "Send still works before the hello");
+  w = waitOnHello(w);
+  assert.deepEqual(w, { ready: true, lost: false, conn: 1, open: true }, "no longer waking");
+  assert.equal(composerWait(w, waitReason("open", w)), null);
+});
+
+test("first connect: a connection that fails to open and retries stays a first connect (held, Connecting), never lost", () => {
+  let w = waitAtOpen(false);
+  for (const status of ["connecting", "reconnecting", "connecting"] as const) {
+    const r = waitOnStatus(w, status, false);
+    assert.equal(r.handBack, null);
+    w = r.next;
+    assert.equal(w.waking, true);
+    assert.equal(w.lost, false);
+    assert.equal(holdsSends(w, 0), true);
+  }
+  assert.equal(waitReason("connecting", w), CONNECTING);
+});
+
+test("first connect: one that drops after it opened, before its hello, is a reconnect: its sends come back, the gate is today's", () => {
+  let w = waitOnOpen(waitAtOpen(false));
+  const ended = waitOnStatus(w, "reconnecting", true);
+  assert.equal(ended.handBack, 1, "what it carried goes back to the composer");
+  w = ended.next;
+  assert.equal(w.waking, undefined);
+  assert.equal(w.lost, true);
+  assert.equal(holdsSends(w, 0), false, "a reconnect holds nothing");
+  assert.equal(composerWait(w, waitReason("connecting", w)), RECONNECTING, "Send waits, as on any reconnect");
+});
+
+test("first connect: after its hello, a later reconnect keeps today's gate", () => {
+  let w = waitOnHello(waitOnOpen(waitAtOpen(false)));
+  w = waitOnStatus(w, "reconnecting", true).next;
+  assert.equal(holdsSends(w, 0), false);
+  assert.equal(composerWait(w, waitReason("reconnecting", w)), RECONNECTING);
+  w = waitOnOpen(w);
+  assert.equal(composerWait(w, waitReason("open", w)), RECONNECTING, "until the reconnect's own hello");
+});
+
+test("first connect: the server's start failure before the hello hands back that connection's sends", () => {
+  const w = waitOnOpen(waitAtOpen(false));
+  assert.equal(errorHandsBack(w), 1);
+  assert.equal(errorHandsBack(waitOnHello(w)), null);
 });

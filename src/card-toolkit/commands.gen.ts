@@ -22,6 +22,7 @@ export type CommandId =
   | "session.draft.set"
   | "session.sandbox.set"
   | "session.tools.get"
+  | "session.time-spent"
   | "session.align.triage"
   | "session.workers.checks"
   | "session.context"
@@ -374,6 +375,11 @@ export interface CommandParams {
   };
   /** The tools a held chat declares to its model now. (only looks; needs the card's owner trusted) */
   "session.tools.get": {
+    /** The session, by id or by path */
+    "session"?: string;
+  };
+  /** How long you have been with a session and how long its agent has worked: your time by activity, and each alignment's time on screen. (only looks; needs the card's owner trusted) */
+  "session.time-spent": {
     /** The session, by id or by path */
     "session"?: string;
   };
@@ -3783,6 +3789,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "session.draft.set": "changes",
   "session.sandbox.set": "changes",
   "session.tools.get": "looks",
+  "session.time-spent": "looks",
   "session.align.triage": "looks",
   "session.workers.checks": "looks",
   "session.context": "looks",

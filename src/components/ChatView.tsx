@@ -2,7 +2,7 @@ import { archivedDropToast, archivedProjectOf, unarchivedProjectOf } from "../li
 import { archiveSession } from "../lib/session-actions";
 import { createPressTracker, notePress, refocusAfterSend, type SendPress } from "../lib/input-mode";
 import { batch, createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, untrack, type JSX } from "solid-js";
-import { createStore, produce, reconcile } from "solid-js/store";
+import { createStore, produce, reconcile, unwrap } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type {
   ChatClaudeLogin,
@@ -21,6 +21,7 @@ import { createTurnOwner, goTo } from "../lib/overseer";
 import { batonComposerGate } from "../lib/baton-strip";
 import { tuiOnlyCommand } from "../lib/slash";
 import { UnackedSends } from "../lib/unacked-sends";
+import { commandOf, UnlistedSends } from "../lib/command-wait";
 import { CardClicks, CLICK_NOT_DELIVERED, handBack, reopenCards, type Unsent } from "../lib/hand-back";
 import { courier, Outbox, sendsOf, sendsOnTheWay, takeBackHere, type Frame } from "../lib/chat-outbox";
 import { chatCourier } from "../lib/chat-courier";
@@ -96,7 +97,7 @@ import {
 import { remotePlaceOf } from "../lib/remote-session";
 import { createReconnectingSocket } from "../lib/socket";
 import { backWords, EMPTY_FEED, feedOnFailure, feedOnHello, feedOnNote, feedOnOpen, feedOnRefused, feedOnReset, feedOnTurnStart, feedBanner, type ErrorFeed, type FeedSay } from "../lib/error-feed";
-import { errorHandsBack, FILE_READ_WAIT_MS, heldWhileAsleep, mayWake, WAIT_START, WakeQueue, waitAtOpen, waitOnHello, waitOnOpen, waitOnSleep, waitOnStatus, waitOnWake, waitReason, type ChatWait } from "../lib/chat-wait";
+import { composerWait, errorHandsBack, FILE_READ_WAIT_MS, heldWhileAsleep, holdsSends, mayWake, WAIT_START, WakeQueue, waitAtOpen, waitOnHello, waitOnOpen, waitOnSleep, waitOnStatus, waitOnWake, waitReason, type ChatWait } from "../lib/chat-wait";
 import { workingSplit } from "../lib/workers";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
@@ -735,9 +736,15 @@ export function ChatView(props: {
   const handedBack = new Set<string>();
   /** Sends the server hasn't acknowledged: back in the draft when the chat goes from under the pane. */
   const unacked = new UnackedSends();
+  /** The sends written on the open connection before its chat's hello: their rows stay through that hello. */
+  const beforeHello = new Set<string>();
+  /** "/word" sends made before the chat listed its commands ("commands", after hello): shown once it has (lib/command-wait). */
+  const unlisted = new UnlistedSends<{ text: string; clientId: string; attachments: UploadResult[] }>();
   /** The confirm card clicks this pane sent, by client id: one handed back goes to its card, never the draft. */
   const clicks = new CardClicks();
   const UNSENT_WORDS = "That message couldn't be sent. It's back in the composer.";
+  /** A Stop that took a message back before its chat started (abort). */
+  const STOPPED_WORDS = "Stopped. Your message is back in the composer.";
   /**
    * Every send the pane gets back (a refusal, a reload or close, a connection that ended before its
    * chat's hello, a queued one that left undelivered) goes through here (lib/hand-back): typed texts
@@ -838,6 +845,7 @@ export function ChatView(props: {
       setEverOpened(true);
       setFeed(feedOnOpen);
       setWait(waitOnOpen(untrack(wait)));
+      beforeHello.clear();
       // hello follows and replaces everything; dialogs belonged to the old connection.
       if (isReconnect) setDialogs([]);
       // What the tab asked while no connection was open goes now, oldest first, before the chat's
@@ -889,8 +897,26 @@ export function ChatView(props: {
             setFeed(helloStep.feed);
             sayFeed(helloStep.says);
             setHellos((n) => n + 1);
+            // What this connection carried from before its hello (held while the chat started) is
+            // given to the chat after the hello, so the hello can't list it: its Sending… rows stay.
+            // Acknowledged or not: a chat starting holds its hello (reply timings) while it takes them,
+            // so its acks can come first. One the hello already lists (by its words) is its row now.
+            const listed = (msg.items as TranscriptItem[]).flatMap((it) => (it.kind === "user" && it.text ? [it.text] : []));
+            const kept = beforeHello.size
+              ? live.entries
+                  .filter((e) => e.kind === "user" && !e.started && e.state !== "delivered" && !!e.id && beforeHello.has(e.id))
+                  .filter((e) => {
+                    const i = e.kind === "user" ? listed.indexOf(e.text) : -1;
+                    if (i === -1) return true;
+                    listed.splice(i, 1);
+                    return false;
+                  })
+                  .map((e) => structuredClone(unwrap(e)))
+              : [];
+            beforeHello.clear();
             // A client that connects mid-compaction shows it, as the compaction_start it missed would.
-            setLive(reconcile({ ...emptyLive(), running: msg.isStreaming, activity: msg.isCompacting ? "Compacting context" : null }));
+            setLive(reconcile({ ...emptyLive(), running: msg.isStreaming || kept.length > 0, activity: msg.isCompacting ? "Compacting context" : null }));
+            if (kept.length) setLive(produce((s) => void s.entries.push(...kept)));
             // Joined mid-reply: the reply so far and its running tools, which the deltas after this continue.
             seedLive(setLive, msg.live);
             setCompacting(!!msg.isCompacting);
@@ -1061,7 +1087,8 @@ export function ChatView(props: {
          */
         case "queue_removed":
           markRemoved(setLive, msg.itemId);
-          announce("Removed from the queue.");
+          // A Stop's retraction says its own words (abort).
+          if (!retracting.has(msg.itemId)) announce("Removed from the queue.");
           settleRequest(msg.id, { ok: true });
           break;
         case "queue_remove_refused": {
@@ -1102,6 +1129,7 @@ export function ChatView(props: {
           break;
         case "commands":
           setCommands(msg.commands);
+          showUnlisted();
           // No /sandbox command: no extension, and no "sandbox" message is coming.
           if (!msg.commands.some((c) => c.source === "extension" && c.name === "sandbox")) setSandboxState(null);
           // A runtime that outlived its last socket won't report again until something happens,
@@ -1309,6 +1337,10 @@ export function ChatView(props: {
   if (archivedAtOpen) {
     setWait(waitAtOpen(true));
     socket.close();
+  } else {
+    // Any other chat's first connect is a wake: what the tab asks before its hello is held for the
+    // connection, as it opens, and the composer's controls work meanwhile (lib/chat-wait waitAtOpen).
+    setWait(waitAtOpen(false));
   }
 
   // ---- A chat closed while its tab is open (§chat.transcript/instant-open) ------------------
@@ -1329,10 +1361,7 @@ export function ChatView(props: {
   };
   /** Whether what the tab asks now goes into the outbox: asleep, woken with no connection open yet,
       or behind frames already kept (they go in order). */
-  const holding = () => {
-    const w = untrack(wait);
-    return !!w.asleep || (!!w.waking && !w.open) || outbox.size > 0;
-  };
+  const holding = () => holdsSends(untrack(wait), outbox.size);
   /** Kept for the connection that wakes the chat, which this starts. */
   const hold = (frame: Frame) => {
     outbox.push(frame);
@@ -1344,7 +1373,10 @@ export function ChatView(props: {
     for (const frame of outbox.take()) {
       if (!socket.send(frame)) break;
       const { type, clientId, text } = frame;
-      if ((type === "prompt" || type === "steer") && typeof clientId === "string") unacked.sent(clientId, typeof text === "string" ? text : "", conn);
+      if ((type === "prompt" || type === "steer") && typeof clientId === "string") {
+        unacked.sent(clientId, typeof text === "string" ? text : "", conn);
+        beforeHello.add(clientId);
+      }
     }
     heldRequests.clear();
   };
@@ -1365,14 +1397,21 @@ export function ChatView(props: {
   /** The tab gave up connecting (or Stop before anything went): what the outbox kept never goes;
       its sends' rows go back to the composer, its requests are refused. */
   const giveUpWake = () => {
-    const ids = new Set(sendsOf(outbox.take()).keys());
+    const sends = sendsOf(outbox.take());
+    const ids = new Set(sends.keys());
     readers.drop();
     for (const id of [...heldRequests]) {
       heldRequests.delete(id);
       settleRequest(id, { ok: false, reason: "disconnected", message: "The chat didn't start. Try again." });
     }
     if (!ids.size) return;
-    restoreUnsent();
+    // A "/word" waiting for the command list has no row: its text comes back from its frame.
+    const rowless = [...sends].filter(([id]) => !handedBack.has(id) && !live.entries.some((e) => e.kind === "user" && e.id === id));
+    const rows = unsentRows(live, handedBack);
+    for (const r of rows) if (r.id) handedBack.add(r.id);
+    for (const [id] of rowless) handedBack.add(id);
+    handBackSends([...rows, ...rowless.map(([id, text]) => ({ id, text }))]);
+    unlisted.drop(ids);
     setLive(produce((s) => void (s.entries = s.entries.filter((e) => !(e.kind === "user" && e.id && ids.has(e.id))))));
     if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
   };
@@ -1806,7 +1845,7 @@ export function ChatView(props: {
     const waking = !!wait().waking;
     // Connecting, starting or reconnecting: the words float over the transcript's end (`waitNote`),
     // the composer's reason carries them for assistive technology only (§chat.transcript/instant-open).
-    const waiting = waking ? null : waitingReason();
+    const waiting = composerWait(wait(), waitingReason());
     if (waiting) return waiting;
     if (syncing()) return { icon: "clock", text: "Saving this turn…" };
     if (pendingModel() && !waking) return { icon: "clock", text: "Switching model…" };
@@ -2159,19 +2198,33 @@ export function ChatView(props: {
     else {
       if (!socket.send(frame)) return false;
       unacked.sent(clientId, text, untrack(wait).conn);
+      if (!untrack(wait).ready) beforeHello.add(clientId);
     }
+    // A "/word" sent before the chat has listed its commands (its first connect): the frame went as
+    // any send, and whether it shows as a "Ran" row or a message waits for the list (showUnlisted).
+    if (unlisted.hold({ text, clientId, attachments })) return true;
+    showSend(text, clientId, attachments);
+    return true;
+  };
+
+  /** The list came: each "/word" sent before it shows as what it turned out to be, unless it came back meanwhile. */
+  const showUnlisted = () => {
+    for (const s of unlisted.listedNow((id) => handedBack.has(id) || live.entries.some((e) => e.kind === "user" && e.id === id))) showSend(s.text, s.clientId, s.attachments);
+  };
+
+  /** A send, on screen. */
+  const showSend = (text: string, clientId: string, attachments: UploadResult[]) => {
     // A known slash command isn't a message to the model (templates and skills expand into other
     // text, extensions may never start the agent): no optimistic bubble or running state, just a
     // local "Ran" row, whether sent idle or as a steer mid-turn (pi runs it either way).
     // Unknown "/words" go through as ordinary messages.
-    const command = /^\/(\S+)/.exec(text)?.[1];
-    if (command && commands().some((c) => c.name === command)) {
+    if (commandOf(text, commands())) {
       const label = text.length > 61 ? `${text.slice(0, 60)}…` : text;
       batch(() => {
         setCommandRows((rows) => [...rows, { label, tui: tuiOnlyCommand(text) !== null }]);
         setResume((n) => n + 1);
       });
-      return true;
+      return;
     }
     rememberSend(props.path, clientId);
     batch(() => {
@@ -2179,7 +2232,6 @@ export function ChatView(props: {
       setLive("running", true);
       setResume((n) => n + 1);
     });
-    return true;
   };
 
   /**
@@ -2250,10 +2302,42 @@ export function ChatView(props: {
   const shellAllowed = () =>
     shellOffered({ helloShellMode: shellMode(), overseer: !!props.overseer, projectOverseer: !!props.projectOverseer || !!props.summary?.()?.projectOverseer, baton: !!props.summary?.()?.baton, batonHeld: !!batonGate() });
 
+  /** Sends a Stop is taking back from the server: their removal says the Stop's words, not a Delete's. */
+  const retracting = new Set<string>();
   const abort = () => {
     // Stop before the waking connection opened: what the tab kept never goes, and its text comes back.
     if (outbox.size) return giveUpWake();
+    // Stop after it opened, before its hello: the chat is still starting, and what this connection
+    // carried waits on the server for it. It is taken back, never run later (retract).
+    const w = untrack(wait);
+    if (w.open && !w.ready) {
+      const carried = [...unacked.of(w.conn).keys()].filter((id) => !retracting.has(id));
+      if (carried.length) return void retract(carried);
+    }
     if (socket.send({ type: "abort" })) setLive("stopping", true);
+  };
+  /** Takes sends back from a chat still starting (queue_remove by client id): each taken one's row
+      goes and its text comes back to the composer. One the chat already took (it started meanwhile)
+      stays, and that turn is stopped as any Stop stops it. */
+  const retract = (ids: string[]) => {
+    setLive("stopping", true);
+    for (const id of ids) retracting.add(id);
+    void Promise.all(
+      ids.map(async (id) => {
+        const result = await ask("queue_remove", queueRemoveFrame(id));
+        retracting.delete(id);
+        if (!result.ok) return { id, ran: result.reason === "consumed" };
+        markRemoved(setLive, id);
+        const back = unacked.take(id, handedBack);
+        handBackSends(back ? [back] : [], STOPPED_WORDS);
+        return { id, ran: false };
+      }),
+    ).then((outcomes) => {
+      setLive("stopping", false);
+      if (outcomes.some((o) => o.ran)) {
+        if (socket.send({ type: "abort" })) setLive("stopping", true);
+      } else if (!live.entries.some((e) => e.kind === "assistant" || (e.kind === "user" && e.state === "sending"))) setLive("running", false);
+    });
   };
 
   // Check-now and reconnect, offered only while this runtime has the remote extension's command.

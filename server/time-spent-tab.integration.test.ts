@@ -47,29 +47,29 @@ const said = (key: string, list: readonly (readonly [string, number, string?])[]
   const messages: TimeSpentMessage[] = list.map(([excerpt, seconds, labelledBy], i) => ({ id: `${key}-${i}`, excerpt, seconds, ...(labelledBy ? { labelledBy } : {}) }));
   return { seconds: messages.reduce((n, m) => n + m.seconds, 0), messages };
 };
-const DIRECTING = said("directing", [
+const SPECIFYING = said("specifying", [
   ["The checkout total is a cent off the sum of the lines on orders with a percentage discount. Find out why and fix it.", 164],
+  ["Before you start, keep the old rounding behind a flag so we can compare the 2 for a week.", 214],
   ["Yes, go with the second option.", 72],
-  ["Looks right. Run the whole checkout suite and show me the receipt at phone width.", 118],
-  ["Approved. Do the same on the cart page.", 96],
+  ["Plan it for the invoice PDF as well, it has to use the same totals.", 176],
+  ["Leave the currency formatting out of this, that's another branch.", 118],
   ["Option 1.", 41],
+  ["Approved. Do the same on the cart page.", 96],
+  ["Add a test for a zero-tax region to the plan.", 96],
+  ["Pick the first one.", 34],
+  ["Don't touch the database for this, keep it in the pricing module.", 118],
+]);
+const DIRECTING = said("directing", [
+  ["Looks right. Run the whole checkout suite and show me the receipt at phone width.", 118],
   ["Show me the receipt with 2 discounts on it.", 88],
   ["Good. Commit this.", 53],
+  ["Do the refund path first, then the receipts.", 142],
   ["Now the refund path.", 127],
-  ["Pick the first one.", 34],
   ["Carry on.", 22],
   ["Yes.", 18],
   ["Show me the failing test.", 92],
   ["Go ahead and rerun it.", 61],
   ["Commit that, then start on the invoice PDF.", 136],
-]);
-const STEERING = said("steering", [
-  ["Before you start, keep the old rounding behind a flag so we can compare the 2 for a week.", 214],
-  ["Plan it for the invoice PDF as well, it has to use the same totals.", 176],
-  ["Leave the currency formatting out of this, that's another branch.", 118],
-  ["Add a test for a zero-tax region to the plan.", 96],
-  ["Do the refund path first, then the receipts.", 142],
-  ["Don't touch the database for this, keep it in the pricing module.", 118],
 ]);
 const REWORKING = said("reworking", [
   ["No, the rounding should happen per line, not on the order total. Redo this.", 412],
@@ -84,7 +84,6 @@ const ASKING = said("asking", [
   ["How many orders would this have changed last month?", 148],
   ["Is the refund total computed from the same lines?", 72],
 ]);
-const UNSORTED = said("unsorted", [["Hmm, what about the other one?", 74]]);
 const NOT_LABELLED = said("not-labelled", [
   ["And the same for gift cards.", 58],
   ["That fixes the cent, what's left on the invoice?", 68],
@@ -95,7 +94,7 @@ const LAST_REPLIES: Record<string, string> = {
   "Move the discount above the tax line and use the same row style as the others.": "Moved. The discount now sits above tax on the cart, the checkout summary and the receipt, in the same row as the other figures.",
   "Looks right. Run the whole checkout suite and show me the receipt at phone width.": "The checkout suite passes: 88 tests. The receipt at 375px holds every figure on one line, and nothing scrolls sideways.",
 };
-const SENT = [...DIRECTING.messages, ...STEERING.messages, ...REWORKING.messages, ...ASKING.messages, ...UNSORTED.messages, ...NOT_LABELLED.messages]
+const SENT = [...SPECIFYING.messages, ...DIRECTING.messages, ...REWORKING.messages, ...ASKING.messages, ...NOT_LABELLED.messages]
   .map((m) => m.excerpt)
   .sort((a, b) => Number(a in LAST_REPLIES) - Number(b in LAST_REPLIES));
 const LAST_ORDER = Object.keys(LAST_REPLIES);
@@ -122,17 +121,16 @@ const RECORD: TimeSpentRecord = {
   older: false,
   messages: {
     rows: [
+      { key: "specifying", ...SPECIFYING },
       { key: "directing", ...DIRECTING },
-      { key: "steering", ...STEERING },
       { key: "reworking", ...REWORKING },
       { key: "asking", ...ASKING },
-      { key: "unsorted", ...UNSORTED },
       { key: "not-labelled", ...NOT_LABELLED },
     ],
     beforeAction: { count: 3, seconds: 518 },
     sinceLast: 0,
   },
-  screenshots: { reworking: 248, directing: 108, other: 0 },
+  screenshots: { reworking: 196, specifying: 52, directing: 108, other: 0 },
 };
 {
   const m = RECORD.messages!;
@@ -217,7 +215,8 @@ const rowsOf = (page: Page) =>
     keys: [...root.querySelectorAll(".time-spent-message-rows > li")].map((li) => (li.matches("[data-time-row]") ? li : li.querySelector("[data-time-row]"))!.getAttribute("data-time-row")!),
     seconds: [...root.querySelectorAll(".time-spent-message-rows > li")].reduce((n, li) => n + Number((li.matches("[data-time-row]") ? li : li.querySelector("[data-time-row]"))!.getAttribute("data-seconds")), 0),
   }));
-const ALL_ROWS = ["directing", "steering", "reworking", "asking", "unsorted", "not-labelled", "before-action", "since-last"];
+/** Every message has one of the four labels: the Unsorted row holds nothing, so it doesn't show. */
+const ALL_ROWS = ["specifying", "directing", "reworking", "asking", "not-labelled", "before-action", "since-last"];
 
 /** Reading, Reworking and Reviewing Screenshots open, as the shots show them. */
 async function openTheRows(page: Page) {
@@ -304,7 +303,7 @@ test("Your Messages: every row in order, counts and times, adding up to You, the
     assert.deepEqual(shut.keys, ALL_ROWS);
     assert.equal(shut.seconds, shut.you, "the rows add up to You");
     const counts = await page.locator(".time-spent-message-rows [data-time-count]").evaluateAll((els) => els.map((e) => e.getAttribute("data-time-count")));
-    assert.deepEqual(counts, ["14", "6", "4", "5", "1", "2", "3", ""]);
+    assert.deepEqual(counts, ["10", "10", "4", "5", "2", "3", ""]);
     const colours = await page.locator('[data-time-row="directing"]').evaluate((row) => ({
       count: getComputedStyle(row.querySelector(".time-spent-count")!).color,
       time: getComputedStyle(row.querySelector(".text-num:last-child")!).color,
@@ -344,7 +343,7 @@ test("Reviewing Screenshots opens to what followed, in words that say only that"
   try {
     const row = page.locator('[data-time-row="screenshots"]');
     await row.click();
-    assert.deepEqual(await page.locator('[data-time-row^="screenshots-"] > span:first-child').allInnerTexts(), ["Followed By Reworking", "Followed By Directing"]);
+    assert.deepEqual(await page.locator('[data-time-row^="screenshots-"] > span:first-child').allInnerTexts(), ["Followed By Reworking", "Followed By Specifying", "Followed By Directing"]);
     const sum = await page.locator('[data-time-row^="screenshots-"]').evaluateAll((els) => els.reduce((n, e) => n + Number(e.getAttribute("data-seconds")), 0));
     assert.equal(sum, Number(await row.getAttribute("data-seconds")));
   } finally {
@@ -418,7 +417,7 @@ test("a press anywhere on a row opens that row, not its neighbour", async () => 
   for (const width of [1440, 375]) {
     const { page } = await open(width, 1240, "time");
     try {
-      for (const key of ["directing", "steering", "reworking", "asking", "unsorted", "not-labelled"]) {
+      for (const key of ["specifying", "directing", "reworking", "asking", "not-labelled"]) {
         const missed = await page.locator(`[data-time-row="${key}"]`).evaluate((el) => {
           const b = el.getBoundingClientRect();
           return [b.top + 1, b.top + b.height / 2, b.bottom - 1].filter((y) => document.elementFromPoint(b.left + 40, y)?.closest("[data-time-row]") !== el);

@@ -125,13 +125,27 @@ test("Your Messages: the rows add up to You to the second, while You ticks and w
 test("Your Messages: a label's row with a message shows at 0 seconds; before-action and since-last don't, and no rows at all is null", () => {
   const lines = messageLines({ rows: [{ key: "asking", seconds: 0, messages: [{ id: "m", excerpt: "Why", seconds: 0 }] }], beforeAction: { count: 0, seconds: 0 }, sinceLast: 0 }, 0);
   assert.deepEqual(lines.map((l) => l.key), ["asking"]);
-  const none = record({ you: 5, rows: { screenshots: 5 }, screenshots: { reworking: 5, directing: 0, other: 0 }, messages: { rows: [], beforeAction: { count: 0, seconds: 0 }, sinceLast: 0 } });
+  const none = record({ you: 5, rows: { screenshots: 5 }, screenshots: { reworking: 5, specifying: 0, directing: 0, other: 0 }, messages: { rows: [], beforeAction: { count: 0, seconds: 0 }, sinceLast: 0 } });
   const view = spentView(none, live(), 0);
   assert.equal(view.messages, null);
   assert.equal(view.rows.find((r) => r.key === "screenshots")!.parts, undefined, "with no Your Messages the row doesn't open");
 });
 
 test("Reviewing Screenshots' parts add up to its row, unread seconds going to anything else, and an empty part doesn't show", () => {
-  assert.deepEqual(screenshotParts({ reworking: 10, directing: 0, other: 2 }, 15).map((p) => [p.label, p.seconds]), [["Followed By Reworking", 10], ["Followed By Anything Else", 5]]);
-  assert.deepEqual(screenshotParts({ reworking: 10, directing: 5, other: 0 }, 12).map((p) => p.seconds), [10, 2], "never more than the row");
+  assert.deepEqual(screenshotParts({ reworking: 10, specifying: 0, directing: 0, other: 2 }, 15).map((p) => [p.label, p.seconds]), [["Followed By Reworking", 10], ["Followed By Anything Else", 5]]);
+  assert.deepEqual(screenshotParts({ reworking: 10, specifying: 5, directing: 5, other: 0 }, 12).map((p) => p.seconds), [10, 2], "never more than the row");
+  assert.deepEqual(
+    screenshotParts({ reworking: 3, specifying: 4, directing: 5, other: 1 }, 13).map((p) => [p.label, p.seconds]),
+    [["Followed By Reworking", 3], ["Followed By Specifying", 4], ["Followed By Directing", 5], ["Followed By Anything Else", 1]],
+  );
+});
+
+test("Your Messages: the rows in order, Specifying first and Steering gone, whatever order the read sends them in", () => {
+  const keys = ["not-labelled", "unsorted", "asking", "reworking", "directing", "specifying"] as const;
+  const rows = keys.map((key, i) => ({ key, seconds: 1, messages: [{ id: `m${i}`, excerpt: key, seconds: 1 }] }));
+  const lines = messageLines({ rows, beforeAction: { count: 1, seconds: 1 }, sinceLast: 0 }, 10);
+  assert.deepEqual(
+    lines.map((l) => l.label),
+    ["Specifying", "Directing", "Reworking", "Asking", "Unsorted", "Not Labelled", "Before An Action", "Since Your Last Message"],
+  );
 });

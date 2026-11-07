@@ -66,8 +66,8 @@ export type SpentLive = {
 export type SpentLine = { key: string; label: string; seconds: number; parts?: SpentLine[] };
 
 const MESSAGE_LABELS: readonly { key: TimeSpentMessageRow; label: string }[] = [
+  { key: "specifying", label: "Specifying" },
   { key: "directing", label: "Directing" },
-  { key: "steering", label: "Steering" },
   { key: "reworking", label: "Reworking" },
   { key: "asking", label: "Asking" },
   { key: "unsorted", label: "Unsorted" },
@@ -128,11 +128,13 @@ export function messageLines(messages: TimeSpentMessages, you: number): SpentMes
 /** Reviewing Screenshots by what followed; the row's whole seconds, its parts adding up to them. Seconds not in a read yet have no message after them. */
 export function screenshotParts(split: NonNullable<TimeSpentRecord["screenshots"]>, seconds: number): SpentLine[] {
   const reworking = Math.min(seconds, Math.floor(split.reworking));
-  const directing = Math.min(seconds - reworking, Math.floor(split.directing));
+  const specifying = Math.min(seconds - reworking, Math.floor(split.specifying));
+  const directing = Math.min(seconds - reworking - specifying, Math.floor(split.directing));
   return [
     { key: "screenshots-reworking", label: "Followed By Reworking", seconds: reworking },
+    { key: "screenshots-specifying", label: "Followed By Specifying", seconds: specifying },
     { key: "screenshots-directing", label: "Followed By Directing", seconds: directing },
-    { key: "screenshots-other", label: "Followed By Anything Else", seconds: seconds - reworking - directing },
+    { key: "screenshots-other", label: "Followed By Anything Else", seconds: seconds - reworking - specifying - directing },
   ].filter((p) => p.seconds > 0);
 }
 

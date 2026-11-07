@@ -82,7 +82,7 @@ export interface TimeSpentAlignment {
 }
 
 /** What a counted message was labelled, or that it hasn't been yet. */
-export type TimeSpentMessageRow = "directing" | "steering" | "reworking" | "asking" | "unsorted" | "not-labelled";
+export type TimeSpentMessageRow = "specifying" | "directing" | "reworking" | "asking" | "unsorted" | "not-labelled";
 
 export interface TimeSpentMessage {
   id: string;
@@ -121,5 +121,5 @@ export interface TimeSpentRecord {
   /** Absent with the message labels switch off, and for a session with nothing counted since it went on. */
   messages?: TimeSpentMessages;
   /** The screenshots row's seconds by what the next message was labelled; `other` is any other label, or no message yet. */
-  screenshots?: { reworking: number; directing: number; other: number };
+  screenshots?: { reworking: number; specifying: number; directing: number; other: number };
 }

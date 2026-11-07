@@ -8,24 +8,28 @@ import { withoutFooter, head, tail, exclusionReason } from "./attention-signals"
 import { DecisionError, type Answer, type DecisionProvider, type DecisionRequest, type Question } from "./decide";
 import { MESSAGE_HEAD_CHARS, REPLY_TAIL_CHARS, type OwnMessage } from "./message-input";
 import { pendingMessages } from "./time-spent-messages";
-import { MESSAGE_LABELS, type MessageLabel, type MessageLabelStore } from "./message-labels";
+import { MESSAGE_LABELS, REAL_LABELS, type MessageLabel, type MessageLabelStore } from "./message-labels";
 import type { DecisionSettings, SessionSummary } from "../shared/protocol";
 
-/** The labels as the classifier gets them; the words are the user's own definitions. */
+/** The labels as the classifier gets them: the words of the tuned variant n3a, the user's own meanings. */
 export const LABEL_OPTIONS: Record<MessageLabel, string> = {
-  directing: "Starts new work or moves it forward with no change: approvals, picking offered options, asking to see results.",
-  steering: "Changes or adds to a plan or requirement for work the agent hasn't produced yet.",
-  reworking: "Rejects or changes work the agent has already produced, in any tone, however polite or tentative.",
-  asking: "Wants only an answer or explanation, with no change requested.",
-  unsorted: "It changes something, but you can't tell whether the target is a plan or work already produced. Choose this rather than guess.",
+  specifying:
+    "Says WHAT the deliverable should be: new work of its own however small, a problem in something the agent did not make here, a requirement of work not produced yet, or taking the agent's recommendations or picks (unless purely about process).",
+  directing:
+    "Says HOW the agent works, with no WHAT: process steps (verify, commit, push, merge, test, measure, mock-ups, review), order, who or which model, how to report; or moves work on: go-ahead, approval, next piece, stop, picks on purely process questions.",
+  reworking:
+    "Rejects, changes, removes, redoes or fixes something the agent made, showed or reported in this conversation, or says it is wrong, missing or broken, in any tone, also worded as a wish or handed to another agent.",
+  asking:
+    "Nothing requested, chosen or approved: wants only an answer, explanation (in any form), status, opinion, or a finding from a check.",
+  unsorted:
+    "The message has none of the person's own words to judge. Never choose this when any of the four fits.",
 };
 
 export const LABEL_QUESTIONS: Record<string, Question> = {
   label: {
     type: "choice",
     instructions:
-      "One message a person sent their coding agent. Label what the message does. `message` is its start. `previous_reply_tail` is the end of the agent's reply before it. `last_turn_delivered_results` says the agent's last turn changed files, showed an image or handed in a worker's report: work exists to be judged. `attaches_image` says the message carries an image, usually of that work. " +
-      "Rule: if a message adds or changes any requirement beyond picking an offered option, label it by the change's target (a plan: steering; work already produced: reworking); only pure approvals or picks are directing. If the target is unclear, choose unsorted; never guess.",
+      "One message a person sent their coding agent. Label what the message does to the work, never its tone or mood. `message` is its start. `previous_reply_tail` is the end of the agent's reply before it: what the agent made, reported, proposed, offered or asked. `last_turn_delivered_results` says the agent's last turn changed files, showed an image or handed in a report, so there may be produced work to judge. `attaches_image` says the message carries an image, usually of that work. Sova's own pick wording (\"al_1: take your recommendation on q1… My answers: 1b — <text>\") means picking options the agent offered: the text after each pick is the option's own wording, and read the agent's questions in the previous reply to see what each pick is about. Every message gets one of the four labels: take the first that applies. 1. reworking: the message rejects, changes, removes, redoes or fixes anything the agent already made, showed, wrote or ran in this conversation (code, a screen, a page, a report, a link, a command, how it handled a worker), or says that result is wrong, missing, useless or still broken. Any change asked for in what the agent just delivered or showed is reworking, even when worded as a new idea or a wish (\"it might be nice if…\", \"we can also drop…\", \"any chance you could…\"), when it adds to that work, or when another agent is to do it; in any tone. When the last turn delivered results and the message asks to change, move, restyle, remove from, overhaul or redo the thing it points at (\"that chart\", \"it\", \"here\", \"this section\"), take it as made here: reworking, not specifying. A plain question about whether or why a result shows, with no complaint, is not reworking. 2. specifying: the message says WHAT the deliverable itself should be: its content, features, requirements or scope. That covers new work of its own, however small: a feature, a fix, a page, a setting to change, or an action on something outside the agent's own process (send a test message too, close an app). It covers a problem report about something this agent did not make in this conversation, and adding, changing or dropping a requirement of work not produced yet. It also covers taking the agent's recommendations or picking among its options (\"go with your recommendations\", \"fine\", \"2b\"): that is specifying by default, also when you cannot read the questions, and so is a short yes to the agent's recommendation (\"sure\", \"works for me\", \"fine\") even when it also says to proceed, merge or resume; only when every question is purely about how the agent works (who does it, which model, how to test or land), with no feature content, is it directing. Any WHAT in the message makes it specifying, even when it also approves, says how to work, or asks a question: one clause about what the deliverable must contain, cover or leave out is enough, however much of the message is about method or staffing. 3. directing: the message says HOW the agent does its job, with no WHAT. That means steps of the process: verify, check, commit, push, merge, land, release, deploy, restart, measure, test, take screenshots, make mock-ups or a prototype to look at, plan again, review. It means their order and timing, who or which model or tool does them (a team, a subagent, a reviewer), and standing instructions for how to work or report from now on. It also means moving the work on: go-aheads and approvals of what is already decided (go, continue, proceed, fix it, do it all), approving an action the agent offered to take (kill that process, delete those files, land, merge, restart, rerun), moving on to the next planned piece of work (\"now work on the next screen\"), stopping or pausing the agent's own work, recommendations or picks on questions purely about how the agent works, handing over what the work needs (a token, a path), or asking to see the produced work itself (a link, a diff, screenshots). Naming a task only to say how it should be run is directing. 4. asking: nothing is requested, chosen or approved. That covers a question, a request for an explanation, status, opinion or summary (also in a given form: with visuals or diagrams, as tradeoffs, simpler), a remark or view with no request, \"how can we fix X?\" or a check that it understood (\"…, right?\") with no request, and a check, test, investigation or watch whose only output is a finding for him (look into, check, research or watch X and tell me). A question attached to a request, pick or go-ahead takes that one's label instead: a go-ahead with a question is directing. Mixed messages: saying what the deliverable should be and also how to work is specifying; a go-ahead plus only HOW is directing; an investigation that also says who or how is to do it is directing. Choose unsorted only if the message has none of the person's own words to judge.",
     options: LABEL_OPTIONS,
   },
 };
@@ -43,6 +47,24 @@ export function labelRequest(sessionId: string, m: OwnMessage): DecisionRequest 
       attaches_image: m.image,
     },
   };
+}
+
+/**
+ * What is stored for an answer. When the top choice is "unsorted", the most likely of the four real labels is stored
+ * instead (the first in REAL_LABELS' order on a tie), with its own confidence by the same measure; "unsorted" stays
+ * only when the answer gave none of the four any weight.
+ */
+export function storedLabel(answer: Extract<Answer, { type: "choice" }>): { label: MessageLabel; confidence: number } {
+  if (answer.choice !== "unsorted") return { label: answer.choice as MessageLabel, confidence: answer.confidence };
+  let best: MessageLabel | null = null;
+  let peak = 0;
+  for (const l of REAL_LABELS) {
+    const p = answer.probabilities[l] ?? 0;
+    if (Number.isFinite(p) && p > peak) (best = l), (peak = p);
+  }
+  if (!best) return { label: "unsorted", confidence: answer.confidence };
+  const n = MESSAGE_LABELS.length;
+  return { label: best, confidence: Math.max(0, (n * peak - 1) / (n - 1)) };
 }
 
 const TICK_MS = 10_000;
@@ -159,7 +181,7 @@ export class MessageLabeller {
       if (this.barred(s)) return false;
       const answer = r.answers.label as Extract<Answer, { type: "choice" }> | undefined;
       if (answer?.type !== "choice" || !(MESSAGE_LABELS as readonly string[]).includes(answer.choice)) throw new DecisionError("malformed-answer", "no label in the answer");
-      store.label(session, m.id, { label: answer.choice as MessageLabel, confidence: answer.confidence, provider: r.provider, model: r.model, at: this.now() });
+      store.label(session, m.id, { ...storedLabel(answer), provider: r.provider, model: r.model, at: this.now() });
       this.retry.delete(key);
       return true;
     } catch (err) {

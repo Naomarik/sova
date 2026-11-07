@@ -7,11 +7,12 @@ import type { OwnMessage } from "./message-input";
 import { isOnAt, UNSORTED_BELOW, wordsHash, type SessionLabels, type SwitchPeriod } from "./message-labels";
 import type { TimeSpentRun } from "./time-spent";
 
-const ROW_ORDER: readonly TimeSpentMessageRow[] = ["directing", "steering", "reworking", "asking", "unsorted", "not-labelled"];
+const ROW_ORDER: readonly TimeSpentMessageRow[] = ["specifying", "directing", "reworking", "asking", "unsorted", "not-labelled"];
 export const SCREENSHOTS_ROW: TimeSpentRow = "screenshots";
 
 export interface ScreenshotsFollowed {
   reworking: number;
+  specifying: number;
   directing: number;
   other: number;
 }
@@ -62,7 +63,7 @@ export function attributeMessages(
   ].sort((a, b) => a.at - b.at);
 
   const secondsOf = new Map<Stop, number>();
-  const screenshots: ScreenshotsFollowed = { reworking: 0, directing: 0, other: 0 };
+  const screenshots: ScreenshotsFollowed = { reworking: 0, specifying: 0, directing: 0, other: 0 };
   let sinceLast = 0;
   const give = (stop: Stop | undefined, sec: number, row: TimeSpentRow) => {
     if (sec <= 0) return;
@@ -70,7 +71,7 @@ export function attributeMessages(
     else sinceLast += sec;
     if (row !== SCREENSHOTS_ROW) return;
     const followed = stop?.msg && !stop.msg.action ? rowOfMessage(stop.msg.id, labels) : null;
-    if (followed === "reworking" || followed === "directing") screenshots[followed] += sec;
+    if (followed === "reworking" || followed === "specifying" || followed === "directing") screenshots[followed] += sec;
     else screenshots.other += sec;
   };
   for (const run of runs) {

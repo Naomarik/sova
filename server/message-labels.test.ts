@@ -2,6 +2,7 @@
 // the press, the chain's fall-through through a real chain, catching up after a restart, and telling typed text
 // from a button after a reload. A throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi untouched.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -65,7 +66,8 @@ const freshStore = () => new MessageLabelStore(join(agentDir, `labels-${++stores
 const NO_LABELS = () => ({ labels: new Map(), presses: new Map(), lands: [] as number[], acted: [] as { hash: string; at: number }[], program: new Set<string>() });
 const ON = [{ from: T0 - 86_400_000, to: null }];
 const rowSeconds = (r: { messages: { rows: { key: string; seconds: number }[] } }) => Object.fromEntries(r.messages.rows.map((x) => [x.key, x.seconds]));
-const answer = (choice: string) => ({ label: { probabilities: { directing: 0, steering: 0, reworking: 0, asking: 0, unsorted: 0, [choice]: 1 } } });
+const answer = (choice: string) => answerWith({ [choice]: 1 });
+const answerWith = (p: Record<string, number>) => ({ label: { probabilities: { specifying: 0, directing: 0, reworking: 0, asking: 0, unsorted: 0, ...p } } });
 
 const settings = (over: Partial<DecisionSettings["features"]> = { messageLabels: true }): DecisionSettings => ({
   version: 1,
@@ -152,19 +154,33 @@ describe("credit goes by the press", () => {
   });
 
   test("Reviewing Screenshots splits by what the next message was labelled, and adds up to the row", async () => {
-    const s = sessionFile([user("a", null, "redo it", T0 + 30_000), user("b", "a", "ship it", T0 + 60_000), user("c", "b", "why?", T0 + 90_000)]);
-    const label = (l: "reworking" | "directing" | "asking") => ({ label: l, confidence: 1, provider: "jev", model: "j", at: 0 });
-    const labels = { ...NO_LABELS(), labels: new Map([["a", label("reworking")], ["b", label("directing")], ["c", label("asking")]]) };
+    const s = sessionFile([user("a", null, "redo it", T0 + 30_000), user("b", "a", "ship it", T0 + 60_000), user("d", "b", "add a footer", T0 + 80_000), user("c", "d", "why?", T0 + 90_000)]);
+    const label = (l: "reworking" | "specifying" | "directing" | "asking") => ({ label: l, confidence: 1, provider: "jev", model: "j", at: 0 });
+    const labels = { ...NO_LABELS(), labels: new Map([["a", label("reworking")], ["b", label("directing")], ["d", label("specifying")], ["c", label("asking")]]) };
     const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 100, r: "screenshots" }], await sessionOwnMessages(s.path), labels);
-    assert.deepEqual(r.screenshots, { reworking: 30, directing: 30, other: 40 });
+    assert.deepEqual(r.screenshots, { reworking: 30, specifying: 20, directing: 30, other: 20 });
   });
 
-  test("below the threshold a label reads Unsorted, and moving it re-asks nothing", async () => {
-    const s = sessionFile([user("a", null, "hmm", T0 + 30_000)]);
-    const labels = { ...NO_LABELS(), labels: new Map([["a", { label: "reworking" as const, confidence: UNSORTED_BELOW - 0.01, provider: "jev", model: "j", at: 0 }]]) };
+  test("no cutoff: a label at confidence 0 keeps its row; only a stored Unsorted reads Unsorted, and nothing is re-asked", async () => {
+    assert.equal(UNSORTED_BELOW, 0);
+    const s = sessionFile([user("a", null, "hmm", T0 + 30_000), user("b", "a", "(the content itself)", T0 + 60_000)]);
+    const stored = (label: "reworking" | "unsorted", confidence: number) => ({ label, confidence, provider: "jev", model: "j", at: 0 });
+    const labels = { ...NO_LABELS(), labels: new Map([["a", stored("reworking", 0)], ["b", stored("unsorted", 1)]]) };
     const own = await sessionOwnMessages(s.path);
-    assert.deepEqual(rowSeconds(attributeMessages([{ s: sec(T0), e: sec(T0) + 30, r: "typing" }], own, labels)), { unsorted: 30 });
+    assert.deepEqual(rowSeconds(attributeMessages([{ s: sec(T0), e: sec(T0) + 60, r: "typing" }], own, labels)), { reworking: 30, unsorted: 30 });
     assert.equal(pendingMessages(own, labels, ON).length, 0);
+  });
+
+  test("a Steering label stored before the labels changed reads as Directing; an unknown label still counts for nothing", () => {
+    const store = freshStore();
+    mkdirSync(store.dir, { recursive: true });
+    writeFileSync(
+      join(store.dir, "sess.jsonl"),
+      [{ id: "old", label: "steering", confidence: 0.8, provider: "jev", model: "j", at: 1 }, { id: "odd", label: "nudging", confidence: 0.8 }].map((l) => JSON.stringify(l)).join("\n") + "\n",
+    );
+    const labels = store.read("sess").labels;
+    assert.equal(labels.get("old")?.label, "directing");
+    assert.equal(labels.has("odd"), false);
   });
 });
 
@@ -306,6 +322,44 @@ describe("the chain and catching up", () => {
     });
   const sent = (at: number) => sessionFile([user("m", null, "make the header smaller", at)]);
 
+  test("Jev gets the four labels and Unsorted, in the tuned n3a words, verbatim", async () => {
+    const provider = createFakeProvider({ id: "jev", reply: answer("asking") });
+    const s = sent(T0 + 1000);
+    const store = freshStore();
+    store.noteSwitch(true, T0);
+    assert.equal(await labeller({ s, store, provider: () => provider, now: () => T0 + 2000 }).tick(), 1);
+    const q = provider.calls[0]!.questions.label as { type: string; instructions: string; options: Record<string, string> };
+    assert.equal(q.type, "choice");
+    assert.deepEqual(Object.keys(q.options), ["specifying", "directing", "reworking", "asking", "unsorted"]);
+    assert.doesNotMatch(JSON.stringify(q), /steering/i);
+    assert.match(q.options.specifying!, /^Says WHAT the deliverable should be/);
+    assert.match(q.options.directing!, /^Says HOW the agent works, with no WHAT/);
+    assert.match(q.instructions, /take the first that applies\. 1\. reworking: .* 2\. specifying: .* 3\. directing: .* 4\. asking: /);
+    // The study's variant file (.cache/label-tuning/v2/variants/n3a-what-how-rules.json), its instructions and options hashed.
+    const hash = createHash("sha256").update(JSON.stringify({ instructions: q.instructions, options: q.options })).digest("hex");
+    assert.equal(hash, "2c14e63618e11da68ae1dd03292af0592ea17352a2907cc95f4b34e2a4eb924b", "n3a's words, not a paraphrase");
+  });
+
+  test("a top choice of Unsorted is stored as its most likely real label; Unsorted only with no real label at all", async () => {
+    const cases: [Record<string, number>, string, number][] = [
+      [{ unsorted: 0.9, reworking: 0.06, asking: 0.04 }, "reworking", 0],
+      [{ unsorted: 0.4, directing: 0.35, specifying: 0.25 }, "directing", (5 * 0.35 - 1) / 4],
+      [{ unsorted: 0.98, specifying: 0.01, directing: 0.01 }, "specifying", 0],
+      [{ unsorted: 1 }, "unsorted", 1],
+      [{ asking: 0.7, unsorted: 0.3 }, "asking", (5 * 0.7 - 1) / 4],
+    ];
+    for (const [probabilities, want, confidence] of cases) {
+      const provider = createFakeProvider({ id: "jev", model: "jev-1", reply: answerWith(probabilities) });
+      const s = sent(T0 + 1000);
+      const store = freshStore();
+      store.noteSwitch(true, T0);
+      assert.equal(await labeller({ s, store, provider: () => provider, now: () => T0 + 2000 }).tick(), 1);
+      const got = store.read(s.id).labels.get("m");
+      assert.equal(got?.label, want, JSON.stringify(probabilities));
+      assert.ok(Math.abs(got!.confidence - confidence) < 1e-9, `${JSON.stringify(probabilities)}: confidence ${got!.confidence}`);
+    }
+  });
+
   test("a check runs as the session's own one-shot, for the usage ledger", async () => {
     const seen: unknown[] = [];
     const provider = createFakeProvider({
@@ -417,11 +471,11 @@ describe("the chain and catching up", () => {
     assert.ok(down.calls.length < 20, `backing off, not hammering: ${down.calls.length} calls in an hour`);
     assert.equal(store.read(s.id).labels.size, 0);
     // The restart: nothing in memory survives, the store and the file do.
-    const up = createFakeProvider({ id: "jev", model: "jev-1", reply: answer("steering") });
+    const up = createFakeProvider({ id: "jev", model: "jev-1", reply: answer("specifying") });
     const again = createDecisionChain({ providers: () => [up], now: () => now, log: () => {} });
     const second = labeller({ s, store: new MessageLabelStore(store.dir), provider: () => again, now: () => now });
     assert.equal(await second.tick(), 1);
-    assert.equal(store.read(s.id).labels.get("m")?.label, "steering");
+    assert.equal(store.read(s.id).labels.get("m")?.label, "specifying");
     assert.equal(await second.tick(), 0, "asked once");
     assert.equal(up.calls.length, 1);
   });

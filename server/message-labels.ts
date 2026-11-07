@@ -9,15 +9,19 @@ import { basename, join } from "node:path";
 import { readDecisionSettings } from "./decide-settings";
 import { chatStateRoot } from "./state-root";
 
-export const MESSAGE_LABELS = ["directing", "steering", "reworking", "asking", "unsorted"] as const;
+export const MESSAGE_LABELS = ["specifying", "directing", "reworking", "asking", "unsorted"] as const;
 export type MessageLabel = (typeof MESSAGE_LABELS)[number];
+/** The four a message is sorted into; "unsorted" is stored only when the answer gave none of them any weight. */
+export const REAL_LABELS = ["specifying", "directing", "reworking", "asking"] as const satisfies readonly MessageLabel[];
+
+/** A label stored before the labels changed: Steering is read as Directing. Only test copies hold one. */
+const RENAMED: Record<string, MessageLabel> = { steering: "directing" };
 
 /**
- * Below this confidence a label reads as Unsorted. Applied when read, so moving it re-classifies nothing. Confidence
- * is (n·peak − 1)/(n − 1) over the five options, so 0.5 means the top option holds 60%: more than all the others
- * together, which is what "not a guess" needs.
+ * Below this confidence a label reads as Unsorted. Applied when read, so moving it re-classifies nothing. 0: every
+ * message keeps the label stored for it.
  */
-export const UNSORTED_BELOW = 0.5;
+export const UNSORTED_BELOW = 0;
 
 export interface StoredLabel {
   label: MessageLabel;
@@ -84,8 +88,9 @@ export class MessageLabelStore {
       } catch {
         continue;
       }
-      if (typeof l?.id === "string" && isLabel(l.label) && time(l.confidence))
-        out.labels.set(l.id, { label: l.label, confidence: l.confidence, provider: String(l.provider ?? ""), model: String(l.model ?? ""), at: time(l.at) ? l.at : 0 });
+      const label = typeof l?.label === "string" ? (RENAMED[l.label] ?? l.label) : undefined;
+      if (typeof l?.id === "string" && isLabel(label) && time(l.confidence))
+        out.labels.set(l.id, { label, confidence: l.confidence, provider: String(l.provider ?? ""), model: String(l.model ?? ""), at: time(l.at) ? l.at : 0 });
       else if (typeof l?.id === "string" && time(l.pressedAt)) out.presses.set(l.id, l.pressedAt);
       else if (typeof l?.id === "string" && l.program === true) out.program.add(l.id);
       else if (time(l?.land)) out.lands.push(l.land);

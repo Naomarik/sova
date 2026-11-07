@@ -331,6 +331,12 @@ test("a card's and an offer's button click leave the alignment waiting; the user
   };
   const marked = (path: string, sender: string) => until(`the ${sender} mark`, () => branchOf(path).some((e) => (e as { customType?: string; data?: { from?: { sessionId?: string } } }).data?.from?.sessionId === sender));
 
+  // A key's message through a real chat process: the chat writes the mark, and the wait stands.
+  const told = await chatAsked();
+  assert.equal((await call("POST", "/api/sessions/prompt", asKey(), { path: told, text: "land it" })).status, 200);
+  await marked(told, "ext:alpha");
+  assert.equal(await waiting(told), true, "an extension's message leaves it waiting");
+
   const carded = await chatAsked();
   const raised = await call("POST", "/api/session-cards/post", asToken(), { path: carded, type: "project.go", data: { title: "Go?", buttons: [{ label: "Yes", does: { kind: "send", text: "yes do it" } }] } });
   assert.equal(raised.status, 200, JSON.stringify(raised.body));

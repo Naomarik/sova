@@ -17,6 +17,8 @@ const { entryOf, normalizeEntries, normalizeEntry } = await import("./transcript
 const { readAlignScan, sessionAlignOf } = await import("./align-state");
 const { getSessionSummary } = await import("./sessions-index");
 const { canonicalPath } = await import("./paths");
+const { appendToClosedFile } = await import("./harness/pi/state");
+const { SESSION_SENT } = await import("./harness/state-kinds");
 
 type AlignDocument = import("../pi-config/extensions/mode/align.ts").AlignDocument;
 type AlignDetails = import("../pi-config/extensions/mode/align.ts").AlignDetails;
@@ -118,6 +120,14 @@ function session(name: string, lines: unknown[]): string {
 }
 
 describe("readAlignScan: the file's open alignments, cheaply", () => {
+  test("an ext: mark written the way a chat writes it keeps the wait", async () => {
+    const asked = result(created, "u1");
+    const path = session("written", [asked, { type: "message", id: "x1", parentId: asked.id, message: { role: "user", content: "land it" } }]);
+    assert.equal((await readAlignScan(path, readFileSync(path).length, null)).summary, undefined, "unmarked, the message ends it: the check can tell");
+    appendToClosedFile(path, SESSION_SENT, { v: 1, targetId: "x1", from: { sessionId: "ext:alpha", title: "Alpha" }, hop: 0 });
+    assert.ok((await readAlignScan(path, readFileSync(path).length, null)).summary, "marked, the wait stands");
+  });
+
   test("a message an extension sent keeps the wait; the user's own ends it; another session's reads as it did (§chat.alignment/session-mark)", async () => {
     const asked = result(created, "u1");
     const said = (id: string, parentId: string, text: string) => ({ type: "message", id, parentId, message: { role: "user", content: text } });

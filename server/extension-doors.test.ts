@@ -169,6 +169,14 @@ describe("what the landing code makes of a marked message", () => {
     assert.equal(stripSessionHeader(`${header}\nland it`), "land it", "the views' strip takes it off");
   });
 
+  test("every sender's stored line is refused by the landing code as it stands, the code older chats run too", () => {
+    for (const sender of [from, { sessionId: "ext:alpha", title: "land it" }, { sessionId: "card:project.go", title: "Go?" }, { sessionId: "card:offer.merge", title: "merge" }]) {
+      const stored = `${outsideSentHeader(sender, 0)}\nland it`;
+      assert.ok(stored.startsWith("[from session "), stored);
+      assert.equal(typedGoAhead(stored), null, stored);
+    }
+  });
+
   test("the marker names another sender", () => {
     const text = `${header}\nland it`;
     assert.deepEqual(newestUserMessage([entry("u1", text), mark("u1")]), { text, sentBy: "another session" });

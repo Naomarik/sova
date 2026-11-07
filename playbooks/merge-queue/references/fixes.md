@@ -4,7 +4,7 @@ The user pressed Land once. Each request Sova sends the branch's chat (a failure
 
 ## Fix (the chat answered Fixed)
 Sova's message names the request, what it asked, and what the chat changed: a commit, its spec drafts, or both.
-1. Read what the fix changes: `git diff <the entry's commit>..<the fix's commit>` in the project (`git log` between them for its commits), and for drafts the branch's `.sova/spec/drafts/` against the request.
+1. Read what the fix changes: `git range-diff <base> <the entry's commit> <the fix's commit>` in the project, with the base Sova's message names (a rebased branch then shows only what the fix changed), and `git diff <base>...<the fix's commit>` for the whole branch; for drafts, the branch's `.sova/spec/drafts/` against the request.
 2. Judge two things:
    - **Does it change only what was asked?** Fixing the failing test, the compile error, the conflict, the finding, making the drafts fit: yes. A new feature, a refactor beyond the fix, a changed promise: no.
    - **Does it decide something that is the user's?** (`PLAYBOOK.md`, "What is the user's".) A fix that is exactly what was asked can still settle a choice that is theirs: wording a person sees in the product (UI copy, messages, docs they read), layout, controls, defaults, notifications, noticeable timing, data kept or deleted, permissions. A test expecting "Save changes" made to pass by renaming the button "Store" decides the button's wording: that is the user's, even when it was the simplest way to pass. A reworded code comment, a renamed identifier or test is not.

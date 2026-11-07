@@ -746,7 +746,7 @@ function teamEventRow(id: string, h: StateEntry): TranscriptItem[] {
 
 /** A neutral entry's rows (0..n TranscriptItems), as they go over the wire (slimRows); `state` carries the
     running model. An id-less entry's rows are keyed by `fallbackId`. */
-export function rowsOfEntry(h: HEntry, fallbackId = "?", state?: { model?: string; mcpNames?: McpNames; closedShell?: ReadonlySet<string> }): TranscriptItem[] {
+export function rowsOfEntry(h: HEntry, fallbackId = "?", state?: { model?: string; mcpNames?: McpNames; stoppedShell?: ReadonlyMap<string, "closed" | "limit"> }): TranscriptItem[] {
   return slimRows(entryRows(h, fallbackId, state), state?.mcpNames);
 }
 
@@ -757,7 +757,7 @@ export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?:
   return h ? rowsOfEntry(h, fallbackId, state) : [];
 }
 
-function entryRows(h: HEntry, fallbackId: string, state?: { model?: string; closedShell?: ReadonlySet<string> }): TranscriptItem[] {
+function entryRows(h: HEntry, fallbackId: string, state?: { model?: string; stoppedShell?: ReadonlyMap<string, "closed" | "limit"> }): TranscriptItem[] {
   const id = h.id ?? fallbackId;
   switch (h.kind) {
     case "usage-record":
@@ -784,7 +784,7 @@ function entryRows(h: HEntry, fallbackId: string, state?: { model?: string; clos
     case "tool-result":
       return toolResultRow(id, h);
     case "shell":
-      return [shellRow(id, h, state?.closedShell?.has(id) === true)];
+      return [shellRow(id, h, state?.stoppedShell?.get(id))];
     case "note":
       if (!h.display) return [];
       // The worktrees extension's merge card; details it can't read fall back to the plain row.
@@ -860,9 +860,9 @@ function stateRows(id: string, h: StateEntry): TranscriptItem[] {
 }
 
 /** A command the user ran (§chat.shell-mode/card), from shell mode or pi's terminal: its card's row.
-    `closed`: a shell-closed marker names it (its chat closed while it ran). `text` is `$ {command}`; a
-    wire-1 consumer gets the plain row it always got (legacyShellRow). */
-function shellRow(id: string, h: Extract<HEntry, { kind: "shell" }>, closed: boolean): TranscriptItem {
+    `stopped`: a shell-closed marker names it, Sova stopped it (its chat closed while it ran, or its output
+    passed the limit). `text` is `$ {command}`; a wire-1 consumer gets the plain row it always got (legacyShellRow). */
+function shellRow(id: string, h: Extract<HEntry, { kind: "shell" }>, stopped: "closed" | "limit" | undefined): TranscriptItem {
   const command = h.command ?? "";
   const it = item(id, "shell", h, `$ ${command}`);
   const cancelled = h.cancelled === true;
@@ -870,7 +870,7 @@ function shellRow(id: string, h: Extract<HEntry, { kind: "shell" }>, closed: boo
     command,
     output: h.output ?? "",
     ...(typeof h.exitCode === "number" ? { exitCode: h.exitCode } : {}),
-    ...(cancelled ? { cancelled: true as const, cancelReason: closed ? ("closed" as const) : ("user" as const) } : {}),
+    ...(cancelled ? { cancelled: true as const, cancelReason: stopped ?? ("user" as const) } : {}),
     ...(h.truncated ? { truncated: h.truncated } : {}),
     ...(h.fullOutputPath ? { fullOutputPath: h.fullOutputPath } : {}),
     ...(h.private ? { private: true as const } : {}),
@@ -896,12 +896,12 @@ export function legacyShellRow(it: TranscriptItem): TranscriptItem {
 /** The rows of a run of history; `line(i)` is the position an id-less entry's rows are keyed by. */
 function historyRows(history: readonly HEntry[], line: (i: number) => number): TranscriptItem[] {
   const out: TranscriptItem[] = [];
-  const state: { model?: string; mcpNames?: McpNames; closedShell?: Set<string> } = {}; // running model change, for assistant rows without their own
-  // The commands a chat's close stopped (§chat.shell-mode/lifecycle): their markers come after them.
+  const state: { model?: string; mcpNames?: McpNames; stoppedShell?: Map<string, "closed" | "limit"> } = {}; // running model change, for assistant rows without their own
+  // The commands Sova stopped (§chat.shell-mode/lifecycle, /running): their markers come after them.
   for (const h of history) {
     if (h.kind !== "state" || h.key !== SHELL_CLOSED.type) continue;
     const d = SHELL_CLOSED.parse(h.data);
-    if (d) (state.closedShell ??= new Set()).add(d.targetId);
+    if (d) (state.stoppedShell ??= new Map()).set(d.targetId, d.why ?? "closed");
   }
   // A chat's own list says what its tools' names mean, a hashed one too (the newest on this run).
   for (const h of history) if (h.kind === "state" && h.key === MCP_LIST.type) state.mcpNames = mcpNamesOf(MCP_LIST.parse(h.data));

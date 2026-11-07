@@ -2540,14 +2540,19 @@ export type ChatClientMessage =
       `clientId` is the sender's own id: the run's `shell_start` carries it (the composer clears its draft),
       or its `shell_refused` does (the draft stays). */
   | { type: "shell"; command: string; private?: boolean; clientId: string }
-  /** Stop the command running in this chat (the card's Stop Command); `id` names the run, and a stop for a
-      run that already ended does nothing. Never stops the model's reply (that is `abort`). */
+  /** Stop one command running in this chat (its card's Stop Command); `id` names the run, and a stop for a
+      run that already ended does nothing. Never stops another command or the model's reply (that is `abort`). */
   | { type: "shell_stop"; id: string };
 
 /** Why a command from shell mode was cut short (§chat.shell-mode/card): `user` = Stop Command, or
     pi's own Stop in its terminal; `closed` = its chat closed (archived, restarted, reloaded onto new code,
-    switched or anything else that closes it) and the run was stopped as it went. */
-export type ShellCancelReason = "user" | "closed";
+    switched or anything else that closes it) and the run was stopped as it went; `limit` = its output passed
+    SHELL_OUTPUT_MAX_BYTES and Sova stopped it (the card says so). */
+export type ShellCancelReason = "user" | "closed" | "limit";
+
+/** A command whose output passes this many bytes (about 1 GB) is stopped (§chat.shell-mode/running), so a
+    runaway command can't fill the computer's temporary folder with its full-output file. */
+export const SHELL_OUTPUT_MAX_BYTES = 1_000_000_000;
 
 /** What a cut output kept (§chat.shell-mode/card): its last `max` lines, or its last `max` bytes, whichever
     limit cut it (the harness's, pi's: 2,000 lines or 50 KB). The whole output is at `fullOutputPath`. */
@@ -2605,14 +2610,14 @@ export interface ShellRun extends ShellOutcome {
 
 /** Why a command from shell mode was refused: it never ran, was never saved and never reaches the model
     (§chat.shell-mode/running). The composer shows `message` under the box and keeps the draft.
-    `running` = a command already runs in this chat; `kill-guard` = the macOS kill guard refused it
+    `kill-guard` = the macOS kill guard refused it
     (§chat.kill-guard/refusal); `sandbox` = the chat's sandbox is On and couldn't be prepared; `failed` = an
     extension's command hook failed before it could start;
     `busy` = a terminal owns the session; `recent` = an unknown process wrote it (reconnect with force);
     `unavailable` = this chat has no shell mode (the Overseer, a project overseer or assistant, a gathering
     session), the chat is closing, or the socket is neither the page's nor a peer's (a script's, a chat's, an
     extension's, the Overseer's: §chat.shell-mode/who); `empty` = no command. */
-export type ShellRefusal = "running" | "kill-guard" | "sandbox" | "failed" | "busy" | "recent" | "unavailable" | "empty";
+export type ShellRefusal = "kill-guard" | "sandbox" | "failed" | "busy" | "recent" | "unavailable" | "empty";
 
 /** Why a rewind was refused: busy = a TUI owns the session; recent = an unknown process wrote it
     (reconnect with force); not_on_branch = the id is unknown, not a user message, or not on the

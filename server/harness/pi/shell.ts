@@ -1,12 +1,12 @@
 // The user's own shell commands on pi (§chat.shell-mode/running, quirk P40): pi's `!`, run the way pi's RPC
-// mode runs it. The extensions' `user_bash` event goes first (pi's executeBash never emits it; the remote
+// mode runs it, any number at once, each stopped on its own. The extensions' `user_bash` event goes first (pi's executeBash never emits it; the remote
 // extension's hook answers it with the target's operations), then the operations are picked in a fixed
 // order whatever the extensions' load order: the hook's (a remote target, where the sandbox isn't enforced),
 // else the sandbox's whole-command confinement when the chat's sandbox is On (prepared before anything runs;
 // it fails closed), else pi's own local shell. pi records the result itself, deferred while the agent streams
 // (P40); `saved` finds the entry once it is written.
 import { spawn } from "node:child_process";
-import { createEventBus, getShellConfig, type AgentSession, type BashOperations, type EventBus } from "@earendil-works/pi-coding-agent";
+import { createEventBus, createLocalBashOperations, getShellConfig, type AgentSession, type BashOperations, type EventBus } from "@earendil-works/pi-coding-agent";
 import type { HEntry, HarnessShell, ShellResult } from "../../../shared/harness";
 import type { ParentScope } from "../../../pi-config/extensions/sandbox/policy.ts";
 import { prepareSessionCommand, type PreparedSessionCommand } from "../../../pi-config/extensions/sandbox/session-policy.ts";
@@ -18,7 +18,7 @@ import { shellTruncation, toHEntry } from "./reader";
     the session starts itself needs to run under its policy. Never said: Off (no sandbox extension). */
 export interface SandboxSeen {
   on: boolean;
-  scope?: { worktreeRoots: string[]; parent?: unknown };
+  scope?: { worktreeRoots: string[]; parent?: unknown; cwdWritable?: false; invalid?: string };
 }
 
 const sandboxes = new WeakMap<object, SandboxSeen>();
@@ -116,6 +116,8 @@ export function piShell(session: () => AgentSession, sandbox: () => SandboxSeen)
   return {
     async run(command, o) {
       const s = session();
+      const stopped = { refused: "The command was stopped before it started; nothing ran.", why: "stopped" as const };
+      if (o.signal?.aborted) return stopped;
       const excludeFromContext = o.private === true;
       const since = Date.now();
       let hook: Awaited<ReturnType<AgentSession["extensionRunner"]["emitUserBash"]>>;
@@ -140,8 +142,10 @@ export function piShell(session: () => AgentSession, sandbox: () => SandboxSeen)
           });
         });
       };
+      let limited = false;
       const outcome = (r: { output: string; exitCode: number | undefined; cancelled: boolean; truncated: boolean; fullOutputPath?: string }): ShellResult => ({
         output: r.output,
+        ...(limited ? { limited: true as const } : {}),
         ...(r.exitCode !== undefined ? { exitCode: r.exitCode } : {}),
         cancelled: r.cancelled,
         ...(r.truncated ? { truncated: shellTruncation(r.output) } : {}),
@@ -150,6 +154,7 @@ export function piShell(session: () => AgentSession, sandbox: () => SandboxSeen)
       });
       // A hook that ran the command itself: pi's RPC records its result as given.
       if (hook?.result) {
+        if (o.signal?.aborted) return stopped;
         o.onStart();
         if (hook.result.output) o.onOutput(hook.result.output);
         s.recordBashResult(command, hook.result, { excludeFromContext });
@@ -165,6 +170,8 @@ export function piShell(session: () => AgentSession, sandbox: () => SandboxSeen)
         const shell = getShellConfig(s.settingsManager.getShellPath());
         if (shell.commandTransport === "stdin") return { refused: "The sandbox can't run this chat's shell (it takes its command on stdin), so nothing ran.", why: "sandbox" };
         const scope = sandbox().scope;
+        // A malformed worker scope refuses the session's own tools; it never widens a command's.
+        if (scope?.invalid) return { refused: `The sandbox couldn't be prepared, so nothing ran: ${scope.invalid}`, why: "sandbox" };
         const ready = await prepareSessionCommand(
           {
             agentDir: agentRoot(),
@@ -172,6 +179,8 @@ export function piShell(session: () => AgentSession, sandbox: () => SandboxSeen)
             sessionId: s.sessionManager.getSessionId(),
             ...(scope?.worktreeRoots ? { worktreeRoots: scope.worktreeRoots } : {}),
             ...(scope?.parent ? { parent: scope.parent as ParentScope } : {}),
+            // A reopened chat whose folder is gone runs in a stand-in, never a writable root (as the agent's tools).
+            ...(scope?.cwdWritable === false ? { cwdWritable: false } : {}),
           },
           [shell.shell, ...shell.args, resolved],
         );
@@ -179,9 +188,16 @@ export function piShell(session: () => AgentSession, sandbox: () => SandboxSeen)
         prepared = ready.value;
         operations = confinedOperations(prepared, resolved);
       }
+      // Stopped while the hook or the sandbox prepared it (a close, a Stop): it never starts.
+      if (o.signal?.aborted) {
+        await prepared?.dispose().catch(() => {});
+        return stopped;
+      }
+      // pi's own local shell when nothing else runs it, as executeBash would pick it.
+      const base = operations ?? createLocalBashOperations({ shellPath: s.settingsManager.getShellPath() });
       o.onStart();
       try {
-        const r = await s.executeBash(command, o.onOutput, { excludeFromContext, id: o.id, ...(operations ? { operations } : {}) });
+        const r = await s.executeBash(command, o.onOutput, { excludeFromContext, id: o.id, operations: ownStop(s, base, o, () => (limited = true)) });
         return outcome(r);
       } catch (err) {
         // The shell couldn't run it (a spawn or runner failure; pi recorded nothing): saved as its card says it.
@@ -192,11 +208,33 @@ export function piShell(session: () => AgentSession, sandbox: () => SandboxSeen)
         await prepared?.dispose().catch(() => {});
       }
     },
-    stop() {
-      session().abortBash();
-    },
-    isRunning() {
-      return session().isBashRunning;
+  };
+}
+
+/** `base`, run so that this run alone stops: on its own `signal`, or when its output passes `maxBytes`
+    (`limit()` is told first). executeBash keeps one abort controller per run (P40) and records a run that
+    its own controller stopped as cancelled; this aborts that run's controller, found by the signal pi hands
+    the operations. A pi without it: abortBash, which stops every run. */
+function ownStop(s: AgentSession, base: BashOperations, o: { signal?: AbortSignal; maxBytes?: number }, limit: () => void): BashOperations {
+  return {
+    exec: (command, cwd, x) => {
+      const controllers = (s as unknown as { _bashAbortControllers?: Set<AbortController> })._bashAbortControllers;
+      const mine = controllers && [...controllers].find((c) => c.signal === x.signal);
+      const abort = () => (mine ? mine.abort() : s.abortBash());
+      const onAbort = () => abort();
+      o.signal?.addEventListener("abort", onAbort, { once: true });
+      if (o.signal?.aborted) abort();
+      let bytes = 0;
+      const onData = (data: Buffer) => {
+        bytes += data.length;
+        if (o.maxBytes !== undefined && bytes > o.maxBytes && !x.signal?.aborted) {
+          limit();
+          abort();
+          return;
+        }
+        x.onData(data);
+      };
+      return base.exec(command, cwd, { ...x, onData }).finally(() => o.signal?.removeEventListener("abort", onAbort));
     },
   };
 }

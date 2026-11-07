@@ -249,24 +249,28 @@ export interface ShellResult {
   cancelled: boolean;
   truncated?: { by: "lines" | "bytes"; max: number };
   fullOutputPath?: string;
+  /** Stopped because its output passed the run's `maxBytes` (`cancelled` too). */
+  limited?: true;
   /** The run's entry, once the harness wrote it: at once when no run is in progress, else after that run
       (a command that ends mid-reply is saved after the reply). Resolves to null when it never was (the
       session went away first). */
   saved: Promise<HEntry | null>;
 }
 
-/** The user's own shell commands (shell mode, §chat.shell-mode/running): one at a time, in the session's
-    folder, with the agent's shell, environment, sandbox and remote target. */
+/** The user's own shell commands (shell mode, §chat.shell-mode/running): any number at once, each on its
+    own, in the session's folder, with the agent's shell, environment, sandbox and remote target. */
 export interface HarnessShell {
   /** Run `command`. `onStart` is called once, just before it starts; `onOutput` hears each piece of output as
-      it comes. `private`: it never reaches the model. Resolves when the command ends, or with `refused` (and
-      no `onStart`: nothing ran, nothing is saved) when it can't run as the agent's commands would: the
-      session's sandbox is On and can't be prepared (`sandbox`), or an extension's command hook failed (`failed`).
-      Sova's own refusals come before the call. */
-  run(command: string, o: { id: string; private?: boolean; onStart(): void; onOutput(chunk: string): void }): Promise<ShellResult | { refused: string; why: "sandbox" | "failed" }>;
-  /** Stop the running command and everything it started; resolves at once (the run's own promise ends). */
-  stop(): void;
-  isRunning(): boolean;
+      it comes. `private`: it never reaches the model. `signal` stops this run alone and everything it
+      started (aborted before it starts: it never starts, and resolves `refused` with `stopped`). `maxBytes`:
+      a run whose output passes it is stopped, `limited` on its result. Resolves when the command ends, or
+      with `refused` (and no `onStart`: nothing ran, nothing is saved) when it can't run as the agent's
+      commands would: the session's sandbox is On and can't be prepared (`sandbox`), or an extension's
+      command hook failed (`failed`). Sova's own refusals come before the call. */
+  run(
+    command: string,
+    o: { id: string; private?: boolean; signal?: AbortSignal; maxBytes?: number; onStart(): void; onOutput(chunk: string): void },
+  ): Promise<ShellResult | { refused: string; why: "sandbox" | "failed" | "stopped" }>;
 }
 
 /** A held session, driven: its reads (SessionRead), its state, its input, its queue and its events. */

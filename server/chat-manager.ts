@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync } from "node:fs";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type ChatSpecialKind, type RunStartAnswer, type ServerToolCall, type ServerToolDecl, type ServerToolOutcome, type SpecialSpec, unsentRefusal, type WorkerHost, type WorkerSpec } from "../shared/chat-runtime";
+import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type ChatSpecialKind, type RunStartAnswer, type ServerToolCall, type ServerToolDecl, type ServerToolOutcome, type SpecialSpec, SHELL_CLOSING_TEXT, unsentRefusal, type WorkerHost, type WorkerSpec } from "../shared/chat-runtime";
 import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORKER_HOST_EVENT, type WorkerHostAnnouncement } from "../pi-config/extensions/subagents/worker-host.ts";
 import { prepareOwnerArea } from "../shared/decisions";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
@@ -1350,14 +1350,13 @@ class ChatSession {
     broadcast: (msg) => this.broadcast(msg),
     refusal: () => this.shellRefusal(),
     beforeWrite: () => this.flushDeferredAppends(),
-    rowsOf: (entry, closed) => rowsOfEntry(entry, "?", closed && entry.id ? { closedShell: new Set([entry.id]) } : undefined),
-    markClosed: (entryId) => void this.harness.state.append(SHELL_CLOSED, { targetId: entryId }),
-    changed: () => {},
+    rowsOf: (entry, stopped) => rowsOfEntry(entry, "?", stopped && entry.id ? { stoppedShell: new Map([[entry.id, stopped]]) } : undefined),
+    markStopped: (entryId, why) => void this.harness.state.append(SHELL_CLOSED, { targetId: entryId, ...(why === "limit" ? { why } : {}) }),
   });
 
   /** Why this chat runs no command from shell mode now, or null (§chat.shell-mode/box, /who). */
   private shellRefusal(): { reason: ShellRefusal; message: string } | null {
-    if (this.disposed) return { reason: "unavailable", message: "The chat was restarting; your command didn't run." };
+    if (this.disposed) return { reason: "unavailable", message: SHELL_CLOSING_TEXT };
     // The Overseer, project overseers and assistants, gathering sessions: their agents have no shell.
     if (this.special) return { reason: "unavailable", message: "This chat has no shell mode." };
     try {

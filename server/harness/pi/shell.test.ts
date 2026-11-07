@@ -2,7 +2,9 @@
 // quirk P40): the extensions' user_bash hook goes first, and the operations are picked in a fixed order
 // whatever the extensions' load order: the hook's (a remote target) over the sandbox's, the sandbox's over
 // pi's local shell, and a sandbox that can't be prepared runs nothing (no start, no record). A hook that ran
-// the command itself is recorded as given. Nothing here spawns a process (the unit tier refuses it): the
+// the command itself is recorded as given. Several run at once, each stopped alone by its own signal (one
+// stopped before it starts never starts); a run whose output passes its limit is stopped, `limited`; a
+// malformed worker scope refuses rather than widening. Nothing here spawns a process (the unit tier refuses it): the
 // commands run on the hook's operations; real local and sandboxed runs are the integration tests'.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
@@ -74,7 +76,25 @@ async function until(cond: () => boolean, what: string): Promise<void> {
   }
 }
 
-function runOf(shell: ReturnType<typeof piShell>, command: string, o: { private?: boolean } = {}) {
+/** A target's operations that run until released or stopped: `release(i)` ends run i with exit 0. */
+function gatedOps() {
+  const gates: (() => void)[] = [];
+  return {
+    release: (i: number) => gates[i]!(),
+    ops: {
+      exec: (_command: string, _cwd: string, o: { onData(d: Buffer): void; signal?: AbortSignal }) =>
+        new Promise<{ exitCode: number }>((resolve, reject) => {
+          o.onData(Buffer.from("0123456789"));
+          o.onData(Buffer.from("0123456789"));
+          if (o.signal?.aborted) return reject(new Error("aborted"));
+          o.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+          gates.push(() => resolve({ exitCode: 0 }));
+        }),
+    },
+  };
+}
+
+function runOf(shell: ReturnType<typeof piShell>, command: string, o: { private?: boolean; signal?: AbortSignal; maxBytes?: number } = {}) {
   const seen = { started: 0, output: "" };
   const done = shell.run(command, { id: "sh_t", ...o, onStart: () => void seen.started++, onOutput: (c) => void (seen.output += c) });
   return { seen, done };
@@ -135,6 +155,53 @@ describe("the user's own commands on pi", () => {
     const saved = await r.saved;
     assert.deepEqual(saved && { kind: saved.kind, private: (saved as any).private, exitCode: (saved as any).exitCode }, { kind: "shell", private: true, exitCode: 3 });
     assert.equal(bash()[0].message.excludeFromContext, true);
+    s.dispose();
+  });
+
+  test("two commands at once: stopping one by its signal stops it alone, recorded as cancelled; the other ends on its own", async () => {
+    const g = gatedOps();
+    const { s, shell, bash } = await session([(api: any) => api.on("user_bash", () => ({ operations: g.ops }))]);
+    const stopA = new AbortController();
+    const a = runOf(shell, "serve", { signal: stopA.signal });
+    const b = runOf(shell, "build");
+    await until(() => a.seen.started === 1 && b.seen.started === 1, "both to start");
+    stopA.abort();
+    const ra = await a.done;
+    assert.ok(!("refused" in ra));
+    assert.equal(ra.cancelled, true);
+    assert.equal(ra.limited, undefined);
+    g.release(1);
+    const rb = await b.done;
+    assert.ok(!("refused" in rb));
+    assert.deepEqual([rb.cancelled, rb.exitCode], [false, 0], "the other ran to its end");
+    assert.deepEqual(bash().map((e) => [e.message.command, e.message.cancelled]), [["serve", true], ["build", false]]);
+    s.dispose();
+  });
+
+  test("a run whose output passes its limit is stopped and says limited; a run stopped before it starts never starts", async () => {
+    const g = gatedOps();
+    const { s, shell, bash } = await session([(api: any) => api.on("user_bash", () => ({ operations: g.ops }))]);
+    const r = await runOf(shell, "yes", { maxBytes: 15 }).done;
+    assert.ok(!("refused" in r));
+    assert.deepEqual([r.cancelled, r.limited, r.output], [true, true, "0123456789"], "stopped at the chunk that passed it");
+    const gone = new AbortController();
+    gone.abort();
+    const early = runOf(shell, "rm -rf build", { signal: gone.signal });
+    const e = await early.done;
+    assert.ok("refused" in e && e.why === "stopped");
+    assert.equal(early.seen.started, 0);
+    assert.equal(bash().length, 1, "only the limited run was recorded");
+    s.dispose();
+  });
+
+  test("a malformed worker scope refuses the command, as it refuses the session's own tools; it never widens it", async () => {
+    const { s, shell, bash } = await session([(api: any) => api.events.emit("sandbox:state", { version: 1, on: true, scope: { worktreeRoots: [], invalid: "bad --sandbox-parent" } })]);
+    const { seen, done } = runOf(shell, "ls");
+    const r = await done;
+    assert.ok("refused" in r);
+    assert.deepEqual([r.why, r.refused], ["sandbox", "The sandbox couldn't be prepared, so nothing ran: bad --sandbox-parent"]);
+    assert.equal(seen.started, 0);
+    assert.deepEqual(bash(), []);
     s.dispose();
   });
 

@@ -104,24 +104,28 @@ test("a command run mid-reply: a client that attaches after it ended sees its ca
   for (const x of [a, b, c]) x.close();
 });
 
-test("a command still running shows to a client that attaches, with its output so far; one at a time", async () => {
+test("a command still running shows to a client that attaches, with its output so far; a second runs beside it, and Stop stops only its own", async () => {
   const ses = await newSession();
   const gate = join(s.work, `gate-${Date.now()}`);
   const a = await chatSocket(ses);
   a.send({ type: "shell", command: `printf start; while [ ! -f ${gate} ]; do sleep 0.05; done; printf end`, clientId: "s1" });
   const start = await a.find("the command's start", (f) => f.type === "shell_start");
   await a.find("its first output", (f) => f.type === "shell_output" && f.id === start.run.id);
-  a.send({ type: "shell", command: "echo second", clientId: "s2" });
-  const refused = await a.find("the second refused", (f) => f.type === "shell_refused" && f.clientId === "s2");
-  assert.equal(refused.reason, "running");
-  assert.equal(refused.message, "A command is already running in this chat.");
+  a.send({ type: "shell", command: "sleep 60", clientId: "s2" });
+  const second = await a.find("the second's start", (f) => f.type === "shell_start" && f.clientId === "s2");
   const b = await chatSocket(ses);
-  assert.deepEqual({ state: b.hello.shell?.[0]?.state, output: b.hello.shell?.[0]?.output }, { state: "running", output: "start" });
+  assert.deepEqual(b.hello.shell?.map((r: any) => [r.id, r.state]), [[start.run.id, "running"], [second.run.id, "running"]], "both in the hello");
+  assert.equal(b.hello.shell[0].output, "start");
+  a.send({ type: "shell_stop", id: second.run.id });
+  const stopped = await a.find("the second stopped", (f) => f.type === "shell_end" && f.id === second.run.id);
+  assert.deepEqual([stopped.cancelled, stopped.cancelReason], [true, "user"]);
+  assert.ok(!a.frames.some((f) => f.type === "shell_end" && f.id === start.run.id), "the first still runs");
   writeFileSync(gate, "");
   const saved = await b.find("the run saved", (f) => f.type === "shell_saved" && f.id === start.run.id);
   const row = b.frames.find((f) => f.type === "append" && f.items.some((i: any) => i.id === saved.entryId)).items.find((i: any) => i.id === saved.entryId);
   assert.deepEqual(row.shell, { command: start.run.command, output: "startend", exitCode: 0 });
-  assert.equal(bashEntries(ses).length, 1, "the refused one was never saved");
+  await b.find("the second saved", (f) => f.type === "shell_saved" && f.id === second.run.id);
+  assert.deepEqual(bashEntries(ses).map((e) => [e.message.command, e.message.cancelled]), [["sleep 60", true], [start.run.command, false]]);
   a.close();
   b.close();
 });

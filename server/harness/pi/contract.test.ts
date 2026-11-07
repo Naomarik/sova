@@ -1124,7 +1124,7 @@ describe("pi contract", () => {
     session.dispose();
   });
 
-  test("P40 user-bash: executeBash emits no user_bash, runs the operations with the prefixed command, defers its record while streaming until the run settles, and cuts the tail at pi's limits; the loader's event bus is the extensions'", async () => {
+  test("P40 user-bash: executeBash emits no user_bash, runs the operations with the prefixed command, defers its record while streaming until the run settles, and cuts the tail at pi's limits; the loader's event bus is the extensions'; each run has its own abort controller", async () => {
     const { sandboxBus, sandboxOf } = await import("./shell");
     const { PI_SHELL_MAX_BYTES, PI_SHELL_MAX_LINES, shellTruncation } = await import("./reader");
     const hooked: string[] = [];
@@ -1188,6 +1188,31 @@ describe("pi contract", () => {
     const wide = await session.executeBash("wide", undefined, { operations: ops(["x".repeat(30_000), "y".repeat(30_000)]) as never });
     assert.equal(wide.truncated, true);
     assert.deepEqual(shellTruncation(wide.output), { by: "bytes", max: PI_SHELL_MAX_BYTES });
+
+    // Each run has its own abort controller, the one whose signal its operations get, and a run its own
+    // controller stopped is recorded as cancelled while the other goes on (Sova's per-run stop, ownStop).
+    const gate: (() => void)[] = [];
+    const held = (signals: AbortSignal[]) => ({
+      exec: (_c: string, _d: string, o: { signal?: AbortSignal }) =>
+        new Promise<{ exitCode: number }>((resolve, reject) => {
+          signals.push(o.signal!);
+          o.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+          gate.push(() => resolve({ exitCode: 0 }));
+        }),
+    });
+    const signals: AbortSignal[] = [];
+    const one = session.executeBash("one", undefined, { operations: held(signals) as never });
+    const two = session.executeBash("two", undefined, { operations: held(signals) as never });
+    await until(() => signals.length === 2, "both runs to reach their operations");
+    const controllers = (session as any)._bashAbortControllers as Set<AbortController>;
+    assert.ok(controllers instanceof Set && controllers.size === 2, "one abort controller per running command");
+    const mine = [...controllers].find((c) => c.signal === signals[0]);
+    assert.ok(mine, "the operations get their own run's controller's signal");
+    mine.abort();
+    assert.equal((await one).cancelled, true, "a run stopped by its own controller is recorded as cancelled");
+    assert.equal(signals[1]!.aborted, false, "the other run's signal is untouched");
+    gate[1]!();
+    assert.deepEqual([(await two).cancelled, (await two).exitCode], [false, 0]);
 
     // dispose stops a running command (its operations see the abort).
     let aborted = false;

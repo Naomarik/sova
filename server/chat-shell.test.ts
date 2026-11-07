@@ -1,17 +1,21 @@
 // Run: pnpm test -- server/chat-shell.test.ts. A chat's commands from shell mode (§chat.shell-mode/running,
 // /card, /lifecycle): Sova's refusals come first and a refused command never starts, is never shown and never
-// saved; one runs at a time; its output goes out throttled; an unsaved run stays in the hello until its entry
-// is saved (mid-reply: after the reply); Stop Command stops only that run; a closing chat stops its command
-// and saves it as stopped by the close, waiting for a deferred record (it stops the reply in flight). The
+// saved; several run at once; output goes out throttled; an unsaved run stays in the hello until its entry
+// is saved (mid-reply: after the reply); Stop Command stops only that run, one still being prepared included;
+// a run past the output limit is stopped and marked so; a closing chat stops every command (one still being
+// prepared never starts) and saves each as stopped by the close, waiting for a deferred record (it stops the
+// reply in flight), and a second close waits for the same one. The
 // harness is a fake: what pi does is the pi adapter's (shell.ts, its own test and quirk P40's canary).
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { HEntry, ShellResult } from "../shared/harness";
 import type { ChatServerMessage, ShellRefusal, TranscriptItem } from "../shared/protocol";
-import { ChatShell, SHELL_EMPTY_TEXT, SHELL_RUNNING_TEXT } from "./chat-shell";
+import { SHELL_CLOSING_TEXT } from "../shared/chat-runtime";
+import { SHELL_OUTPUT_MAX_BYTES } from "../shared/protocol";
+import { ChatShell, SHELL_EMPTY_TEXT } from "./chat-shell";
 
-type RunOpts = { id: string; private?: boolean; onStart(): void; onOutput(chunk: string): void };
-type Outcome = ShellResult | { refused: string; why: "sandbox" | "failed" };
+type RunOpts = { id: string; private?: boolean; signal?: AbortSignal; maxBytes?: number; onStart(): void; onOutput(chunk: string): void };
+type Outcome = ShellResult | { refused: string; why: "sandbox" | "failed" | "stopped" };
 
 /** A deferred value, settled by the test. */
 function deferred<T>() {
@@ -22,13 +26,15 @@ function deferred<T>() {
 
 const entry = (id: string, cancelled = false): HEntry => ({ id, parentId: null, kind: "shell", command: "c", output: "o", ...(cancelled ? { cancelled } : {}) });
 
-function rig(o: { refusal?: { reason: ShellRefusal; message: string } | null; platform?: string; refuse?: string } = {}) {
+/** `prepare`: each run waits for `begin(i)` before it starts, as a hook or the sandbox makes it wait; a stop
+    meanwhile means it never starts (the adapter's rule). */
+function rig(o: { refusal?: { reason: ShellRefusal; message: string } | null; platform?: string; refuse?: string; prepare?: boolean } = {}) {
   const sent: ChatServerMessage[] = [];
   const toSender: ChatServerMessage[] = [];
   const calls: { command: string; o: RunOpts; done: ReturnType<typeof deferred<Outcome>> }[] = [];
-  const stops: number[] = [];
-  const marked: string[] = [];
-  const rowsAsked: { id: string | null; closed: boolean }[] = [];
+  const stops: string[] = [];
+  const marked: [string, string][] = [];
+  const rowsAsked: { id: string | null; stopped: string | null }[] = [];
   let streaming = false;
   let aborts = 0;
   const waiters: (() => void)[] = [];
@@ -42,12 +48,11 @@ function rig(o: { refusal?: { reason: ShellRefusal; message: string } | null; pl
       run: (command: string, opts: RunOpts) => {
         const done = deferred<Outcome>();
         calls.push({ command, o: opts, done });
+        opts.signal?.addEventListener("abort", () => void stops.push(opts.id), { once: true });
         if (o.refuse) done.resolve({ refused: o.refuse, why: "sandbox" });
-        else opts.onStart();
+        else if (!o.prepare) opts.onStart();
         return done.promise;
       },
-      stop: () => void stops.push(1),
-      isRunning: () => false,
     },
   };
   const shell = new ChatShell({
@@ -58,12 +63,11 @@ function rig(o: { refusal?: { reason: ShellRefusal; message: string } | null; pl
     },
     refusal: () => o.refusal ?? null,
     beforeWrite: () => {},
-    rowsOf: (e, closed) => {
-      rowsAsked.push({ id: e.id, closed });
+    rowsOf: (e, stopped) => {
+      rowsAsked.push({ id: e.id, stopped });
       return [{ id: e.id ?? "?", kind: "shell", text: "$ c" } as TranscriptItem];
     },
-    markClosed: (id) => void marked.push(id),
-    changed: () => {},
+    markStopped: (id, why) => void marked.push([id, why]),
     platform: o.platform ?? "linux",
   });
   const client = { send: (m: ChatServerMessage) => void toSender.push(m) };
@@ -78,8 +82,14 @@ function rig(o: { refusal?: { reason: ShellRefusal; message: string } | null; pl
       check();
     });
   const result = (over: Partial<ShellResult> = {}, saved: Promise<HEntry | null> = Promise.resolve(entry("e1"))): ShellResult => ({ output: "out", exitCode: 0, cancelled: false, saved, ...over });
+  /** A prepared run starts now, unless it was stopped meanwhile: then it never does. */
+  const begin = (i: number) => {
+    const c = calls[i]!;
+    if (c.o.signal?.aborted) c.done.resolve({ refused: "stopped before it started", why: "stopped" });
+    else c.o.onStart();
+  };
   return {
-    shell, sent, toSender, calls, stops, marked, rowsAsked, client, sentWhere, result,
+    shell, sent, toSender, calls, stops, marked, rowsAsked, client, sentWhere, result, begin,
     setStreaming: (v: boolean) => void (streaming = v),
     aborts: () => aborts,
   };
@@ -131,21 +141,23 @@ describe("a chat's commands from shell mode", () => {
     );
   });
 
-  test("one at a time: a second command while one runs is refused, the first unaffected; `!!` asks the harness for a private run", async () => {
+  test("several at once: a second command runs beside the first, each its own run in the hello; `!!` asks the harness for a private run", async () => {
     const r = rig();
     r.shell.start(r.client, { command: "sleep 9", private: true, clientId: "a" });
     assert.equal(r.calls[0]!.o.private, true);
+    assert.equal(r.calls[0]!.o.maxBytes, SHELL_OUTPUT_MAX_BYTES, "every run carries the output limit");
     r.shell.start(r.client, { command: "ls", clientId: "b" });
-    assert.deepEqual(r.toSender, [{ type: "shell_refused", clientId: "b", reason: "running", message: SHELL_RUNNING_TEXT }]);
-    assert.equal(r.calls.length, 1);
-    const start = r.sent[0] as Extract<ChatServerMessage, { type: "shell_start" }>;
-    assert.equal(start.type, "shell_start");
-    assert.equal(start.clientId, "a");
-    assert.deepEqual({ command: start.run.command, private: start.run.private, state: start.run.state }, { command: "sleep 9", private: true, state: "running" });
-    r.calls[0]!.done.resolve(r.result());
+    assert.deepEqual(r.toSender, [], "nothing refused");
+    assert.equal(r.calls.length, 2);
+    const starts = r.sent.filter((m): m is Extract<ChatServerMessage, { type: "shell_start" }> => m.type === "shell_start");
+    assert.deepEqual(starts.map((m) => [m.clientId, m.run.command, m.run.private, m.run.state]), [["a", "sleep 9", true, "running"], ["b", "ls", undefined, "running"]]);
+    assert.notEqual(starts[0]!.run.id, starts[1]!.run.id);
+    assert.equal(r.shell.snapshot()!.length, 2);
+    assert.deepEqual(r.shell.list().map((l) => l.command), ["", "ls"], "the list never shows a !! command's text");
+    r.calls[1]!.done.resolve(r.result());
     await r.sentWhere((m) => m.type === "shell_saved");
-    r.shell.start(r.client, { command: "ls", clientId: "c" });
-    assert.equal(r.calls.length, 2, "once it ended, the next one runs");
+    assert.equal(r.shell.snapshot()!.length, 1, "the first still runs");
+    assert.equal(r.shell.running(), true);
   });
 
   test("output goes out throttled, the hello carries the run so far, and once saved the row comes before the run goes", async () => {
@@ -195,32 +207,73 @@ describe("a chat's commands from shell mode", () => {
     const r = rig();
     r.shell.start(r.client, { command: "sleep 9", clientId: "a" });
     const id = (r.sent[0] as Extract<ChatServerMessage, { type: "shell_start" }>).run.id;
-    r.shell.stop("sh_other");
-    assert.equal(r.stops.length, 0);
-    r.shell.stop(id);
-    assert.equal(r.stops.length, 1);
+    r.shell.start(r.client, { command: "sleep 8", clientId: "b" });
+    assert.equal(r.shell.stop("sh_other"), false);
+    assert.deepEqual(r.stops, []);
+    assert.equal(r.shell.stop(id), true);
+    assert.deepEqual(r.stops, [id], "the other run goes on");
     r.calls[0]!.done.resolve(r.result({ exitCode: undefined, cancelled: true }, Promise.resolve(entry("e2", true))));
     const end = (await r.sentWhere((m) => m.type === "shell_end")) as Extract<ChatServerMessage, { type: "shell_end" }>;
     assert.deepEqual({ cancelled: end.cancelled, cancelReason: end.cancelReason, exitCode: end.exitCode }, { cancelled: true, cancelReason: "user", exitCode: undefined });
     await r.sentWhere((m) => m.type === "shell_saved");
     assert.deepEqual(r.marked, [], "no close marker for a command you stopped");
-    assert.deepEqual(r.rowsAsked, [{ id: "e2", closed: false }]);
+    assert.deepEqual(r.rowsAsked, [{ id: "e2", stopped: null }]);
+  });
+
+  test("Stop on a command still being prepared: it never starts, and its sender's box is told", async () => {
+    const r = rig({ prepare: true });
+    r.shell.start(r.client, { command: "make", clientId: "a" });
+    const id = r.calls[0]!.o.id;
+    assert.equal(r.shell.running(), true, "taken: it counts as running while prepared");
+    assert.equal(r.shell.stop(id), true);
+    r.begin(0);
+    await new Promise((res) => setImmediate(res));
+    assert.deepEqual(r.sent, [], "no card: it never ran");
+    assert.equal((r.toSender[0] as Extract<ChatServerMessage, { type: "shell_refused" }>).reason, "unavailable");
+    assert.equal(r.shell.running(), false);
+  });
+
+  test("a run whose output passes the limit is stopped by the harness and reads stopped at the limit, with its marker", async () => {
+    const r = rig();
+    r.shell.start(r.client, { command: "yes", clientId: "a" });
+    r.calls[0]!.done.resolve(r.result({ exitCode: undefined, cancelled: true, limited: true }, Promise.resolve(entry("e9", true))));
+    const end = (await r.sentWhere((m) => m.type === "shell_end")) as Extract<ChatServerMessage, { type: "shell_end" }>;
+    assert.equal(end.cancelReason, "limit");
+    await r.sentWhere((m) => m.type === "shell_saved");
+    assert.deepEqual(r.marked, [["e9", "limit"]]);
+    assert.deepEqual(r.rowsAsked, [{ id: "e9", stopped: "limit" }]);
   });
 
   test("a closing chat stops its command and saves it as stopped by the close; nothing starts afterwards", async () => {
     const r = rig();
     r.shell.start(r.client, { command: "sleep 60", clientId: "a" });
+    r.shell.start(r.client, { command: "sleep 61", clientId: "a2" });
     const closing = r.shell.close();
-    assert.equal(r.stops.length, 1, "the close stops it");
+    assert.equal(r.stops.length, 2, "the close stops every one");
+    let second = false;
+    void r.shell.close().then(() => (second = true));
     r.calls[0]!.done.resolve(r.result({ exitCode: undefined, cancelled: true }, Promise.resolve(entry("e3", true))));
+    await new Promise((res) => setImmediate(res));
+    assert.equal(second, false, "a second close waits for the same close, not past it");
+    r.calls[1]!.done.resolve(r.result({ exitCode: undefined, cancelled: true }, Promise.resolve(entry("e5", true))));
     await closing;
-    const end = r.sent.find((m) => m.type === "shell_end") as Extract<ChatServerMessage, { type: "shell_end" }>;
-    assert.equal(end.cancelReason, "closed");
-    assert.deepEqual(r.marked, ["e3"], "the marker names the saved entry");
-    assert.deepEqual(r.rowsAsked, [{ id: "e3", closed: true }]);
+    const ends = r.sent.filter((m): m is Extract<ChatServerMessage, { type: "shell_end" }> => m.type === "shell_end");
+    assert.deepEqual(ends.map((e) => e.cancelReason), ["closed", "closed"]);
+    assert.deepEqual(r.marked, [["e3", "closed"], ["e5", "closed"]], "the markers name the saved entries");
+    assert.deepEqual(r.rowsAsked, [{ id: "e3", stopped: "closed" }, { id: "e5", stopped: "closed" }]);
     r.shell.start(r.client, { command: "ls", clientId: "b" });
-    assert.equal((r.toSender.at(-1) as Extract<ChatServerMessage, { type: "shell_refused" }>).reason, "unavailable");
-    assert.equal(r.calls.length, 1);
+    assert.deepEqual(r.toSender.at(-1), { type: "shell_refused", clientId: "b", reason: "unavailable", message: SHELL_CLOSING_TEXT });
+    assert.equal(r.calls.length, 2);
+  });
+
+  test("a chat that closes while a command is still being prepared: it never starts (t7)", async () => {
+    const r = rig({ prepare: true });
+    r.shell.start(r.client, { command: "rm -rf build", clientId: "a" });
+    const closing = r.shell.close();
+    r.begin(0);
+    await closing;
+    assert.deepEqual(r.sent, [], "no card, nothing ran");
+    assert.deepEqual(r.toSender, [{ type: "shell_refused", clientId: "a", reason: "unavailable", message: SHELL_CLOSING_TEXT }]);
   });
 
   test("a closing chat with a run waiting for the reply stops the reply, so its record is written before the chat goes", async () => {

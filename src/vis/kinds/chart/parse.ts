@@ -29,7 +29,8 @@ export interface ChartSpec extends VisBase {
 
 const MAX_ROWS = 40;
 const MAX_SERIES = 6;
-const MAX_PARTS = 12;
+/** At most this many parts (switch.ts offers Parts only up to it). */
+export const MAX_PARTS = 12;
 
 const CHART_TYPES: ChartType[] = ["bar", "stacked", "line", "scatter", "parts"];
 /** Other words for a type (§chat.markdown/vis-lenience-content): pie and donut are a whole and its parts. */

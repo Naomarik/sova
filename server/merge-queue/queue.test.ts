@@ -757,14 +757,24 @@ describe("conflicts", () => {
     return c;
   };
 
-  test("no thread: handed back at once with the files; the line moves on", async () => {
-    const k = makeKit({ threadAnswers: false });
+  test("no thread: the conflict waits for the merge thread, never sent to the chat unjudged; once the thread acts it is handed the conflict", async () => {
+    let up = false;
+    const told: string[] = [];
+    const k = makeKit({ deps: { thread: (ev) => (ev.kind === "conflict" && told.push(ev.entry.id), up) } });
     try {
       const q = await k.q();
       const c = await conflictingAdd(k, q);
-      await until(async () => (await k.entry(c.entry.id)).state === "with-chat", "sent back");
-      assert.match((await k.entry(c.entry.id)).reason!, /conflicts with master in 1 file: a\.txt.*no merge thread/);
-      assert.deepEqual(k.notices.map((n) => n.kind), ["needs-fix"]);
+      await until(async () => /waiting for the merge thread/.test((await k.entry(c.entry.id)).reason ?? ""), "waits for the thread");
+      const e = await k.entry(c.entry.id);
+      assert.equal(e.state, "conflict");
+      assert.match(e.reason!, /conflicts with master in 1 file: a\.txt/);
+      assert.equal(e.requests, undefined, "nothing to the chat");
+      assert.ok(!k.notices.some((n) => n.kind === "needs-fix"), "no send-back");
+      up = true;
+      const before = told.length;
+      q.threadActed();
+      await until(() => told.length > before, "handed to the thread once it runs");
+      await until(async () => (await k.entry(c.entry.id)).fix?.told === true, "told");
     } finally {
       await k.done();
     }
@@ -875,15 +885,16 @@ describe("conflicts", () => {
     }
   });
 
-  test("a thread that never judges: the conflict goes back to the chat after the wait", async () => {
-    const k = makeKit({ threadAnswers: true, deps: { conflictWaitMs: 60 } });
+  test("a thread that never judges: after the wait the conflict is handed to the thread again, never to the chat unjudged", async () => {
+    const told: string[] = [];
+    const k = makeKit({ deps: { conflictWaitMs: 60, thread: (ev) => (ev.kind === "conflict" && told.push(ev.entry.id), true) } });
     try {
       const q = await k.q();
       const c = await conflictingAdd(k, q);
-      await until(async () => (await k.entry(c.entry.id)).state === "with-chat", "sent back");
+      await until(() => told.length >= 2, "handed to the thread again after the wait");
       const e = await k.entry(c.entry.id);
-      assert.match(e.reason!, /didn't judge it in time/);
-      assert.match(e.requests!.at(-1)!.text, /conflicts with master in a\.txt/);
+      assert.equal(e.state, "conflict");
+      assert.equal(e.requests, undefined, "nothing to the chat");
     } finally {
       await k.done();
     }

@@ -181,13 +181,23 @@ describe("scratch copies: the queue", () => {
     }
   });
 
-  test("sent back (the thread never judged in time): the copy goes", async () => {
+  test("sent back (an approval from before the standing Land, the thread never judged in time): the copy goes", async () => {
     const k = makeKit({ threadAnswers: true, deps: { conflictWaitMs: 80 } });
     try {
       const q = await k.q();
-      const c = await conflictingAdd(k, q);
+      // Under the standing Land a conflict nobody judged waits for the thread (queue.test.ts); an older approval's goes back.
+      k.repo.branch("feat/c", { "a.txt": "one\nTWO-branch\nthree\n" });
+      await q.pause("setting up a conflict");
+      const c = await q.add({ branch: "feat/c", by: "land-button" });
+      const legacy = q.entry(c.entry.id)!;
+      delete legacy.approval.standing;
+      delete legacy.approval.userCommit;
+      delete legacy.approval.conflictAtLand;
+      q.save();
+      k.repo.commitOn(k.repo.root, { "a.txt": "one\nTWO-master\nthree\n" }, "master side");
+      await q.resume();
       await until(async () => k.thread.some((t) => t.kind === "conflict"), "the thread told");
-      await until(async () => (await k.entry(c.entry.id)).state === "with-chat", "handed back");
+      await until(async () => (await k.entry(c.entry.id)).state === "needs-fix", "handed back");
       await until(async () => !existsSync(scratchCopyPath(k.repo.root, c.entry.id)), "copy removed");
     } finally {
       await k.done();
@@ -199,7 +209,7 @@ describe("scratch copies: the queue", () => {
     try {
       const q = await k.q();
       const c = await conflictingAdd(k, q);
-      await until(async () => (await k.entry(c.entry.id)).state === "with-chat", "handed back");
+      await until(async () => /waiting for the merge thread/.test((await k.entry(c.entry.id)).reason ?? ""), "waits for the thread");
       await q.scratchIdle();
       assert.ok(!existsSync(scratchCopyPath(k.repo.root, c.entry.id)));
     } finally {

@@ -660,3 +660,14 @@ test("the rulings: each moment names merge.rule's rulings, and what is the user'
   const needs = eventText({ kind: "chat-answer", entry: entry("mq_9"), request: "rq_7", answer: "needs-you", text: "which wording?" });
   assert.match(needs, /you can't overrule it/);
 });
+
+test("the fix check asks whether the fix decides something that is the user's, and says to rule needs-user then", () => {
+  const fix = eventText({ kind: "fix", entry: entry("mq_9"), request: "rq_7", asked: "make the save test pass", commit: "c".repeat(40) });
+  assert.match(fix, /does it decide nothing that is the user's\?/);
+  assert.match(fix, /e\.g\. it picked "Store" where the branch said "Save changes"\): merge\.rule \{entry: "mq_9", ruling: "needs-user"/);
+  assert.match(fix, /never "checked", even when it was the only way to make it pass/);
+  assert.match(fix, /The user's: anything a person sees or does differently/);
+  const page = readFileSync(join(DEFAULT_PLAYBOOK_DIR, "references", "fixes.md"), "utf8");
+  assert.match(page, /Does it decide something that is the user's\?/);
+  assert.match(page, /ruling: "needs-user", text, choices/);
+});

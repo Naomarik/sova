@@ -39,7 +39,7 @@ describe("the thread's idle wake", () => {
     }
   });
 
-  test("after a failure and after a conflict handed back", async () => {
+  test("after a failure and after a conflict left waiting for the merge thread", async () => {
     const k = makeKit({ threadAnswers: false });
     try {
       k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed" }));
@@ -58,7 +58,8 @@ describe("the thread's idle wake", () => {
       const c = await q.add({ branch: "feat/c", by: "land-button" });
       k.repo.commitOn(k.repo.root, { "a.txt": "one\nTWO-master\nthree\n" }, "master side");
       await q.resume();
-      await until(async () => (await k.entry(c.entry.id)).state === "with-chat", "conflict sent back");
+      // No thread to judge it: under the standing Land it waits for the thread, out of the line (never sent to the chat).
+      await until(async () => /waiting for the merge thread/.test((await k.entry(c.entry.id)).reason ?? ""), "conflict waits for the thread");
       await until(() => idles(k).length === 2, "idle after the conflict");
       assert.equal(idles(k)[1]!.entry.id, c.entry.id);
     } finally {

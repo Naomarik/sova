@@ -1,4 +1,5 @@
 import { queueQuietWork } from "./card-port";
+import { hostProblem } from "./host-sendback";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
@@ -92,6 +93,8 @@ const NEWEST_MEMO_MS = 5_000;
 export const HOLD_WORDS = "Waiting: Sova is restarting";
 /** Requests kept per entry (the newest). */
 const REQUESTS_KEPT = 30;
+/** entry.fix.request while a conflict waits for the merge thread (no request of the chat's is involved). */
+const CONFLICT_WAIT = "conflict";
 /** The states Remove from Queue ends as "removed by you" under a standing approval (out of line, waiting on someone). */
 const REMOVABLE: readonly string[] = ["needs-user", "drafts-changed", "behaviour-differs", "unattributed", "review-flagged", "conflict"];
 /** The states a chat's answer is taken in: back with it, its drafts changed, or in line (a fix then waits for the run). */
@@ -1250,6 +1253,9 @@ export class ProjectQueue {
       // Land on a finished branch blocked only for what its chat can fix (conflicts, its failing check, drafts that
       // don't fit): Approved · waiting for a fix. It joins the line by itself once nothing blocks it (al_3 q7).
       const blocked = approval.standing && wt ? await this.fixBlocked(e, commit, approval.drafts) : null;
+      // Already conflicting at the Land: it goes in line for the merge thread to judge, and sending it back for that
+      // conflict counts no try (it is the wait Land on a blocked branch is, not a failed try).
+      if (approval.standing && (await this.git(["merge-tree", "--write-tree", "--name-only", "--no-messages", head, commit], this.root)).code === 1) e.approval.conflictAtLand = true;
       if (blocked) {
         e.state = "with-chat";
         e.approval.blocked = true;
@@ -1457,6 +1463,9 @@ export class ProjectQueue {
         e.notes = e.notes.filter((n) => n.kind !== "resolved");
         e.notes.push({ kind: "resolved", text: `Resolved a conflict in ${files.join(", ") || "the branch"}: ${j.proposal.trim()}`.slice(0, NOTE_MAX), at: this.iso() });
         delete e.reason;
+        // A waiting-for-a-fix mark from the Land, if any, goes: it joins the line by itself.
+        delete e.approval.blocked;
+        delete e.standing;
         this.toFront(e);
         this.kickSoon();
       } else if (verdict === "chat-fixes") {
@@ -1989,6 +1998,14 @@ export class ProjectQueue {
   countTry(e: Entry, fingerprint?: string): { tries: number; max: number; out?: "out-of-tries" | "same-twice" } {
     const t = e.tries ?? { used: 0, max: MERGE_TRIES, fingerprints: [] };
     const same = !!fingerprint && t.fingerprints.length > 0 && t.fingerprints[t.fingerprints.length - 1] === fingerprint;
+    // The conflict that was already there at the Land counts no try, once.
+    const free = !!e.approval.conflictAtLand && !!fingerprint?.startsWith("conflict:");
+    if (free) {
+      delete e.approval.conflictAtLand;
+      if (fingerprint) t.fingerprints = [...t.fingerprints, fingerprint].slice(-t.max);
+      e.tries = t;
+      return { tries: t.used + 1, max: t.max };
+    }
     t.used += 1;
     if (fingerprint) t.fingerprints = [...t.fingerprints, fingerprint].slice(-t.max);
     e.tries = t;
@@ -2209,13 +2226,9 @@ export class ProjectQueue {
     if (/^temp\b/i.test(subject)) return `its commit is a temporary commit ("${subject.slice(0, 60)}"): reword or squash it`;
     const head = await this.targetHead();
     if (head && (await countBetween(this.git, this.root, head, commit)) === 0) return `nothing to land: ${commit.slice(0, 7)} has no commit ${this.q.target} doesn't`;
-    if (head) {
-      const m = await this.git(["merge-tree", "--write-tree", "--name-only", "--no-messages", head, commit], this.root);
-      if (m.code === 1) {
-        const files = m.stdout.split("\n").slice(1).map((l) => l.trim()).filter(Boolean);
-        return `it conflicts with ${this.q.target}${files.length ? ` in ${files.length} file${files.length === 1 ? "" : "s"}: ${files.slice(0, 3).join(", ")}${files.length > 3 ? ", …" : ""}` : ""}: merge ${this.q.target} in and resolve them`;
-      }
-    }
+    // A conflict with the target never blocks here: it goes in line, and its run's merge step hands it to the merge
+    // thread's conflict judgement (resolved by the thread, the chat's to fix with the thread's diagnosis, or the user's
+    // to decide), never straight to the chat unjudged (q3).
     if (e.session) {
       const failing = await this.deps.chatCheckFailing?.(e.session, wt).catch(() => null);
       if (failing) return `${failing}: fix it and run it again`;
@@ -2327,6 +2340,17 @@ export class ProjectQueue {
     this.fixTimer.unref?.();
   }
 
+  /** A conflict no merge thread took (none running, or no ruling in time): it waits for the thread, and recheckWithChat
+   *  hands it over again once the thread runs (threadActed, or every minute). The caller saves after. */
+  private waitForThread(e: Entry): void {
+    this.clearConflictTimer(e.id);
+    e.fix = { request: CONFLICT_WAIT, told: false, at: this.iso() };
+    if (!/waiting for the merge thread/.test(e.reason ?? "")) e.reason = `${e.reason ?? `conflicts with ${this.q.target}`}; waiting for the merge thread`;
+    e.updatedAt = this.iso();
+    this.save();
+    this.armFixTimer();
+  }
+
   /** Look at the entries with their chats again now (tests; a thread that just started). */
   recheckNow(): Promise<void> {
     return this.serial(() => this.recheckWithChat());
@@ -2340,6 +2364,24 @@ export class ProjectQueue {
   private async recheckWithChat(): Promise<void> {
     let more = false;
     for (const e of this.q.entries) {
+      // A conflict's wait for the thread ends once the thread judged it (or it left the conflict state any other way).
+      if (e.fix?.request === CONFLICT_WAIT && e.state !== "conflict") {
+        delete e.fix;
+        this.save();
+      }
+      // A conflict waiting for the merge thread: handed to it (with a fresh scratch copy) once it runs.
+      if (e.state === "conflict" && e.fix?.request === CONFLICT_WAIT && e.approval.standing) {
+        more = true;
+        if (e.fix.told) continue;
+        const scratch = this.deps.thread ? await this.makeScratch(e, (await this.targetHead()) ?? e.commit) : {};
+        const told = this.wake("conflict", e, e.run, { files: e.conflictFiles ?? [], ...scratch });
+        if (told) {
+          e.fix = { ...e.fix, told: true, at: this.iso() };
+          this.save();
+          this.armConflictTimer(e, e.run ? { id: e.run } : undefined);
+        }
+        continue;
+      }
       if (!e.approval.standing || (e.state !== "with-chat" && !((e.state === "queued" || e.state === "checking") && e.fix))) continue;
       more = true;
       // A fix that came while its run was checking waits for that run to end.
@@ -2771,7 +2813,8 @@ export class ProjectQueue {
    *  thread's judgement does. */
   private wakeIdle(): void {
     if (!this.idleOwed || this.stopped || this.current || this.trying || this.landing) return;
-    if (this.q.entries.some((e) => e.state === "queued" || e.state === "checking" || e.state === "conflict")) return;
+    // A conflict the thread is judging holds the idle back; one waiting for a thread that isn't there doesn't.
+    if (this.q.entries.some((e) => e.state === "queued" || e.state === "checking" || (e.state === "conflict" && e.fix?.request !== CONFLICT_WAIT))) return;
     const last = this.entry(this.idleOwed);
     this.idleOwed = null;
     if (!last) return;
@@ -3156,8 +3199,11 @@ export class ProjectQueue {
         this.save();
         if (e.ruling?.resolutionFailed) delete e.ruling.resolutionFailed;
         const asked = this.wake("conflict", e, run.id, { files, ...scratch });
-        // No thread took it: back to the branch's chat at once, with the files as they conflict now (the copy goes with it).
-        if (!asked) this.sendBack(e, { cause: "conflict", why: `${e.reason}; no merge thread is there to judge it`, runId: run.id, files });
+        // No thread took it: under the user's standing Land the conflict waits for the merge thread (q14), never sent to the
+        // chat unjudged (q3); it is handed to the thread again once it runs. An approval from before the standing Land
+        // goes back to its chat at once, as it did.
+        if (!asked && e.approval.standing) this.waitForThread(e);
+        else if (!asked) this.sendBack(e, { cause: "conflict", why: `${e.reason}; no merge thread is there to judge it`, runId: run.id, files });
         else this.armConflictTimer(e, run);
         this.kickSoon();
         return;
@@ -3303,7 +3349,7 @@ export class ProjectQueue {
     this.releaseEvent(e, "failed", why, run?.id);
   }
 
-  private armConflictTimer(e: Entry, run: MergeRun): void {
+  private armConflictTimer(e: Entry, run?: Pick<MergeRun, "id">): void {
     this.clearConflictTimer(e.id);
     const ms = this.deps.conflictWaitMs ?? 20 * 60_000;
     const t = setTimeout(() => {
@@ -3312,8 +3358,12 @@ export class ProjectQueue {
         const x = this.entry(e.id);
         if (x?.state !== "conflict") return;
         // The thread's own resolution failed and it didn't rule again: never the branch's, so the user decides.
-        if (x.ruling?.resolutionFailed) this.raiseResolutionFailed(x, run.id);
-        else this.sendBack(x, { cause: "conflict", why: `${x.reason ?? "a conflict"}; the merge thread didn't judge it in time`, runId: run.id, files: x.conflictFiles ?? [] });
+        if (x.ruling?.resolutionFailed && run) this.raiseResolutionFailed(x, run.id);
+        // No ruling in time: the thread is handed it again (q14); under the standing Land it never goes to the chat unjudged.
+        else if (x.approval.standing) {
+          this.waitForThread(x);
+          this.armFixTimer(0);
+        } else this.sendBack(x, { cause: "conflict", why: `${x.reason ?? "a conflict"}; the merge thread didn't judge it in time`, ...(run ? { runId: run.id } : {}), files: x.conflictFiles ?? [] });
       });
     }, ms);
     t.unref?.();
@@ -3575,7 +3625,8 @@ export class ProjectQueue {
       case "refused":
         drop();
         if (out.blame === "branch") {
-          this.handBack(e, run ?? undefined, out.why, "host");
+          // The branch's to fix: back to its chat by itself, as a request (al_3), through the one send-back.
+          this.sendBack(e, { cause: "host", why: out.why, ...(run ? { runId: run.id } : {}) });
           return;
         }
         e.state = "request-review";
@@ -3641,6 +3692,16 @@ export class ProjectQueue {
         e.request = requestInfo(e.request, r.request, this.iso());
         const run = e.run ? this.store.readRun(e.run) : null;
         if (r.kind === "open") {
+          // What the host says is the branch's (conflicts, its checks failed, changes requested) goes back to the
+          // chat by itself under the standing Land, once per problem and head (§app.merge-queue/send-back).
+          // Only a requested entry is polled (never one checking); one with an open decision waits for the user.
+          const problem = e.approval.standing && !(e.decision && !e.decision.answered) ? hostProblem(e.request.facts, e.request, this.q.target) : null;
+          if (problem && problem.key !== e.request.hostSentBack) {
+            e.request.hostSentBack = problem.key;
+            this.log(`${e.branch}: request #${e.request.number}: ${problem.why}`);
+            this.sendBack(e, { cause: "host", why: problem.why });
+            continue;
+          }
           if (JSON.stringify(e.request.facts) !== before) {
             e.updatedAt = this.iso();
             this.save();
@@ -4201,9 +4262,10 @@ export class ProjectQueue {
       }
     }
     this.armPoll();
-    for (const e of this.q.entries) if (e.state === "conflict" && e.run) {
-      const run = this.store.readRun(e.run);
-      if (run) this.armConflictTimer(e, run);
+    for (const e of this.q.entries) if (e.state === "conflict") {
+      // One whose run is gone is still judged: its timer runs with no run.
+      const run = e.run ? this.store.readRun(e.run) : null;
+      this.armConflictTimer(e, run ?? undefined);
     }
     // A send-back that waited for the thread's diagnosis, or a Can't waiting for its ruling, when Sova stopped: each
     // waits its full time again (the thread may still answer), then goes on as it would have.

@@ -5,9 +5,12 @@ The user pressed Land once. Each request Sova sends the branch's chat (a failure
 ## Fix (the chat answered Fixed)
 Sova's message names the request, what it asked, and what the chat changed: a commit, its spec drafts, or both.
 1. Read what the fix changes: `git diff <the entry's commit>..<the fix's commit>` in the project (`git log` between them for its commits), and for drafts the branch's `.sova/spec/drafts/` against the request.
-2. Judge one thing: **does it change only what was asked?** Fixing the failing test, the compile error, the conflict, the finding, making the drafts fit: yes. A new feature, a refactor beyond the fix, a changed promise, wording the user sees that the request didn't need: no.
+2. Judge two things:
+   - **Does it change only what was asked?** Fixing the failing test, the compile error, the conflict, the finding, making the drafts fit: yes. A new feature, a refactor beyond the fix, a changed promise: no.
+   - **Does it decide something that is the user's?** (`PLAYBOOK.md`, "What is the user's".) A fix that is exactly what was asked can still settle a choice that is theirs: wording a person sees, layout, controls, defaults, notifications, noticeable timing, data kept or deleted, permissions. A test expecting "Save changes" made to pass by renaming the button "Store" decides the button's wording: that is the user's, even when it was the simplest way to pass.
 3. Rule, in one call:
-   - only what was asked: `merge.rule {entry, request, ruling: "checked"}`. Sova puts the entry back in line at the fix's commit (or re-pins its drafts) on the user's same Land;
+   - only what was asked, and nothing of the user's decided: `merge.rule {entry, request, ruling: "checked"}`. Sova puts the entry back in line at the fix's commit (or re-pins its drafts) on the user's same Land;
+   - it decides something that is the user's: `merge.rule {entry, ruling: "needs-user", text, choices}`, the question in plain words and the fix's way and the other way as choices. Never `checked` for it;
    - more than was asked: `merge.rule {entry, request, ruling: "beyond", text}`, `text` saying what more it changes. The user decides.
 
 ## Can't

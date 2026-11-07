@@ -296,6 +296,18 @@ describe("what the branch's chat is told", () => {
     assert.match(t, /expected 2$/m);
     const s = noticeText("sent-back", { ...base, state: "needs-fix", reason: "the two sides want different behaviour", conflict: { files: ["a.ts"], verdict: "behaviour-differs", ours: "returns 2", theirs: "returns 3", proposal: "a flag", at: "t" } });
     assert.match(s, /master's side: returns 2\nThis branch's side: returns 3\nProposed: a flag/);
+    // Under a standing Land (al_3) no text that reaches the chat asks for another Land; only one with none does.
+    const askAgain = /land it|Land This Commit Again|land its newest commit|Land comes back|Land again|Land on feat\/a again/i;
+    const standing = { ...base, approval: { ...base.approval, standing: true as const } };
+    for (const sentBackFor of ["drafts", "checks", "conflict"] as const) {
+      const r = sentBackFor === "conflict" ? { ...run, verdict: "conflict" as const } : run;
+      const st = noticeText("needs-fix", { ...standing, state: "with-chat", reason: "x", sentBackFor }, { run: r });
+      assert.doesNotMatch(st, askAgain, `${sentBackFor}: ${st}`);
+      assert.match(st, /the user's Land stands/i);
+      const old = noticeText("needs-fix", { ...base, state: "needs-fix", reason: "x", sentBackFor }, { run: r });
+      assert.match(old, /needs the user's Land again/, "no standing Land (a release's hand-back): the user lands it again");
+      assert.doesNotMatch(old, /Land This Commit Again|land it again|type "land it"/);
+    }
     const d = noticeText("decision", { ...base, state: "needs-user", decision: { id: "dc_1", kind: "needs-you", question: "Which wording?", choices: [], raisedBy: "chat", actions: [], at: "t" } });
     assert.match(d, /waits for the user's decision: Which wording\?/);
   });

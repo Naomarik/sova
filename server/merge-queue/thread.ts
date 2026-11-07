@@ -272,7 +272,7 @@ function eventBody(ev: ThreadEvent): string {
     case "conflict": {
       const e = ev.entry;
       return [
-        `Conflict: entry ${e.id} · ${e.branch} at ${short(e.commit)} conflicts with ${e.target} in ${ev.files.join(", ") || "(files in the run log)"}. Run ${ev.run}.`,
+        `Conflict: entry ${e.id} · ${e.branch} at ${short(e.commit)} conflicts with ${e.target} in ${ev.files.join(", ") || "(files in the run log)"}.${ev.run ? ` Run ${ev.run}.` : ""}`,
         ev.scratch
           ? `Sova made a scratch copy for it at ${ev.scratch}: a worktree with no branch, at ${e.target}'s head. Resolve there, and never make a worktree of your own; Sova removes the copy when this attempt ends.`
           : `Sova couldn't make a scratch copy for it${ev.scratchError ? ` (${ev.scratchError})` : ""}: judge it from the diff and answer with no commit: verdict "chat-fixes" when it needs no decision of the user's, else "needs-user".`,
@@ -334,9 +334,11 @@ function eventBody(ev: ThreadEvent): string {
       return [
         `Fix: entry ${e.id} · ${e.branch}'s chat answered request ${ev.request} Fixed, changing ${what}${ev.summary ? `: ${ev.summary}` : ""}.`,
         `What was asked: ${ev.asked}`,
-        `Check the fix changes only what was asked (references/fixes.md)${ev.commit ? `: \`git diff ${short(e.commit)}..${short(ev.commit)}\` in the project` : ""}. Then rule, in one call:`,
-        `- only what was asked: merge.rule {entry: "${e.id}", request: "${ev.request}", ruling: "checked"} — it goes back in line on the user's Land;`,
+        `Check the fix (references/fixes.md)${ev.commit ? `: \`git diff ${short(e.commit)}..${short(ev.commit)}\` in the project` : ""}: does it change only what was asked, and does it decide nothing that is the user's? Then rule, in one call:`,
+        `- only what was asked, and nothing of the user's decided: merge.rule {entry: "${e.id}", request: "${ev.request}", ruling: "checked"} — it goes back in line on the user's Land;`,
+        `- it decides something that is the user's (wording a person sees, layout, controls, defaults, notifications, noticeable timing, data kept or deleted, permissions; e.g. it picked "Store" where the branch said "Save changes"): merge.rule {entry: "${e.id}", ruling: "needs-user", text: <the question>, choices: [<the fix's way>, <the other way>]} — never "checked", even when it was the only way to make it pass;`,
         `- more than was asked: merge.rule {entry: "${e.id}", request: "${ev.request}", ruling: "beyond", text: <what more it changes>} — the user decides.`,
+        NEEDS_USER_LINE,
       ].join("\n");
     }
     case "chat-answer": {

@@ -155,16 +155,17 @@ describe("conflicts", () => {
     assert.equal(h.notices.filter((n) => n.kind === "needs-fix").length, 0, "the branch's chat isn't told to fix it");
   });
 
-  test("S2d: no thread (down): a conflict is handed back to its chat after the wait, nothing else held up", async () => {
+  test("S2d: no thread (down): a conflict waits for the merge thread (never sent to the chat unjudged), nothing else held up", async () => {
     const { fx, h, b, addB } = await twoAppenders({ conflictWaitMs: 500 });
     const c = fx.branch("c", { "c.txt": "c\n" });
     const eb = await addB();
     const ec = await h.add({ branch: c.branch });
     const lc = await h.waitEntry(ec.id, settled);
     assert.equal(lc.state, "landed", "the line moved on past the conflict");
-    const s = await h.waitEntry(eb.id, ["with-chat", "behaviour-differs"]);
-    assert.equal(s.state, "with-chat", `${s.state}: ${s.reason}`);
-    assert.match(s.reason ?? "", /conflict/i);
+    const s = await h.waitEntry(eb.id, (e) => /waiting for the merge thread/.test(e.reason ?? "") || e.state === "with-chat");
+    assert.equal(s.state, "conflict", `${s.state}: ${s.reason}`);
+    assert.match(s.reason ?? "", /conflicts with .*waiting for the merge thread/);
+    assert.equal(s.requests, undefined, "nothing went to the chat");
   });
 
   test("S2e: a resolution with its parents reversed ([pinned, target]) is never landed: it waits for the user with a clear why", async () => {

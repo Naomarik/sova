@@ -98,6 +98,9 @@ describe("approval", () => {
     assert.match(back.reason ?? "", /drafts don't fit/);
     assert.equal(back.commit, b.commit);
     assert.equal(back.sentBackFor, "drafts", "the entry records why it was sent back");
+    const asked = back.requests![back.requests!.length - 1]!.text;
+    assert.doesNotMatch(asked, /land it|Land comes back|Land This Commit Again|Land again/i, `the request never asks for another Land: ${asked}`);
+    assert.match(asked, /your user's Land stands/);
     const before = await h.view();
     assert.ok(!(before.ready ?? []).some((r) => r.branch === b.branch), "no second Land is offered: the user's Land stands");
     // The chat fixes its draft (no commit) and answers the request.

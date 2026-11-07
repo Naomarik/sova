@@ -68,3 +68,13 @@ test("a decision's notification: the chat that shows it, else the Merge Queue ta
   assert.equal(decisionPush({ id: "mq_1", branch: "feat/x", session: "s1", decision: d }, "p1", { onTab: true }).hash, "#/projects/p1/merge-queue");
   assert.equal(decisionPush({ id: "mq_1", branch: "feat/x", decision: d }, null, { onTab: true }).hash, "#/projects");
 });
+
+test("no send-back request asks for another Land: the user's Land stands", () => {
+  const askAgain = /land it|Land This Commit Again|land its newest commit|Land comes back|Land again/i;
+  const r = run([step({ id: "check:unit", failures: [{ file: "a.test.ts", name: "x" }] })]);
+  for (const cause of ["checks", "drafts", "conflict", "review", "host"] as const) {
+    const t = sendBackText(e, { cause, why: "your spec drafts don't fit, so nothing was made official: d. Fix them in your drafts (no commit needed) and answer the request: your user's Land stands", run: r, files: ["a.ts"], review: "dead code" });
+    assert.doesNotMatch(t, askAgain, `${cause}: ${t}`);
+    assert.match(t, /The user's Land stands/);
+  }
+});

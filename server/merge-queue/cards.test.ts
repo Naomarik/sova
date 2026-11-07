@@ -223,14 +223,14 @@ describe("a branch's card in its own chat", () => {
     }
   });
 
-  test("the user's Send Back: its wake names what the user will see (Land back after a committed fix, or landing its newest commit)", () => {
+  test("an entry sent back before Send Back was retired (no standing Land): its words say it needs the user's Land again, never a button that is gone", () => {
     const e = { branch: "feat/x", target: "master", commit: "a".repeat(40), notes: [], reason: "the review flagged it" } as never as MergeEntry;
     const plain = noticeText("sent-back", e);
     const review = noticeText("sent-back", { ...e, review: { verdict: "blocking", text: "a TODO" } } as never);
     const conflict = noticeText("sent-back", { ...e, conflict: { ours: "o", theirs: "t", proposal: "p" } } as never);
     for (const t of [plain, review, conflict]) {
-      assert.match(t, /Land comes back on its row once your fix is committed and finished, or the user can land its newest commit from there\./);
-      assert.doesNotMatch(t, /Land This Commit Again/, "after a fix the button reads otherwise");
+      assert.match(t, /it needs the user's Land again once your fix is committed and finished\.$/);
+      assert.doesNotMatch(t, /Land This Commit Again|Land Newest Commit|Send Back|type "land it"/, "no retired control, no typed go-ahead");
       assert.doesNotMatch(t, /ask (the user|them) to land it again/);
     }
   });

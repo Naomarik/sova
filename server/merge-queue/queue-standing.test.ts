@@ -278,22 +278,28 @@ describe("the chat's answers", () => {
 });
 
 describe("Approved · waiting for a fix", () => {
-  test("Land on a finished branch that conflicts: it waits with its chat, told what blocks it; once its drafts fit at the same commit it joins the line by itself", async () => {
-    const { k, d } = standingKit();
+  test("Land on a branch that conflicts: it joins the line and its conflict goes to the merge thread's judgement, never straight to the chat; chat-fixes sends the request with the thread's diagnosis. Drafts that don't fit wait with the chat and join the line by themselves once they fit", async () => {
+    const { k, d, events } = standingKit({ thread: (ev) => ev.kind === "conflict" });
     try {
       const q = await k.q();
-      // A conflict: master and the branch change the same line.
+      // A conflict: master and the branch change the same line (a UX word, say).
       const b = k.repo.branch("feat/blocked", { "a.txt": "ONE\ntwo\nthree\n" });
       k.repo.commitOn(k.repo.root, { "a.txt": "uno\ntwo\nthree\n" }, "master moves");
       const { entry } = await q.add({ branch: "feat/blocked", by: "land-button", session: "s1" });
-      assert.equal(entry.state, "with-chat");
-      assert.equal(entry.approval.blocked, true);
-      assert.equal(entry.standing?.phase, "waiting-fix");
-      assert.match(entry.standing?.phase === "waiting-fix" ? entry.standing.why : "", /conflicts with master in 1 file: a\.txt/);
-      const rq = lastRequest(entry);
-      assert.equal(rq.kind, "blocked");
-      assert.ok(k.notices.some((n) => n.kind === "request"), "the chat is told what blocks it");
-      assert.equal(k.run.inputs.length, 0, "not in line");
+      assert.notEqual(entry.state, "with-chat", "a conflict doesn't block at Land");
+      assert.equal(entry.requests, undefined, "nothing goes to the chat unjudged");
+      await until(async () => (await k.entry(entry.id)).state === "conflict", "the run finds the conflict");
+      const ev = await until(() => events.find((x) => x.kind === "conflict" && x.entry.id === entry.id), "the thread is told");
+      assert.deepEqual(ev.files, ["a.txt"]);
+      assert.equal((await k.entry(entry.id)).requests, undefined, "still nothing to the chat while the thread judges");
+      // The thread rules it the chat's to fix (no decision of the user's): the request carries its diagnosis.
+      await q.resolve(entry.id, { verdict: "chat-fixes", ours: "master says uno", theirs: "the branch says ONE", proposal: "keep master's word and the branch's casing" });
+      const back = await withChat(k, entry.id);
+      assert.equal(lastRequest(back).kind, "fix");
+      assert.match(lastRequest(back).text, /keep master's word/);
+      assert.equal(back.tries?.used, 0, "the conflict already there at the Land counts no try");
+      assert.equal(back.standing?.phase === "with-chat" && back.standing.try, 1, "the chat's first fix");
+      assert.ok(b.head);
 
       // Drafts that don't fit at the same commit, on another branch: blocked; fixed in place with no commit: in line by itself.
       const c = k.repo.branch("feat/blocked-drafts", { "z.txt": "z\n" });
@@ -305,8 +311,6 @@ describe("Approved · waiting for a fix", () => {
       await q.recheckNow();
       await landed(k, second.entry.id);
       assert.equal((await k.entry(second.entry.id)).commit, c.head);
-      assert.equal((await k.entry(entry.id)).state, "with-chat", "the conflict still blocks the first");
-      assert.ok(b.head);
     } finally {
       await k.done();
     }
@@ -354,7 +358,7 @@ describe("merge.respond: who may answer", () => {
 
 describe("what a fix may carry", () => {
   test("a conflict fixed by merging the target in: the target's own commits are nobody's unasked work, so the checked fix goes straight back in line and lands", async () => {
-    const { k } = standingKit({ thread: (ev) => ev.kind === "fix" });
+    const { k } = standingKit({ thread: (ev) => ev.kind === "fix" || ev.kind === "conflict" });
     try {
       const q = await k.q();
       const b = k.repo.branch("feat/merge-in", { "a.txt": "ONE\ntwo\nthree\n" });
@@ -362,8 +366,9 @@ describe("what a fix may carry", () => {
       k.repo.commitOn(k.repo.root, { "a.txt": "uno\ntwo\nthree\n" }, "master side");
       k.repo.commitOn(k.repo.root, { "list.txt": "alpha\nbeta\ngamma\n" }, "master again");
       const { entry } = await q.add({ branch: "feat/merge-in", by: "land-button", session: "s1" });
-      assert.equal(entry.state, "with-chat", "blocked: it conflicts");
-      const rq = lastRequest(entry);
+      await until(async () => (await k.entry(entry.id)).state === "conflict", "conflict");
+      await q.resolve(entry.id, { verdict: "chat-fixes", ours: "uno", theirs: "ONE", proposal: "merge master in, keep uno" });
+      const rq = lastRequest(await withChat(k, entry.id));
       // The chat merges master in and resolves it.
       tryMerge(b.path, "master");
       const fix = k.repo.commitOn(b.path, { "a.txt": "UNO\ntwo\nthree\n" }, "merge master in");
@@ -524,6 +529,32 @@ describe("only what the merge thread checked is pinned", () => {
       const e = await q.fixRuling(entry.id, rq.id, true, "");
       assert.equal(e.decision?.kind, "drafts-changed");
       assert.equal(e.commit, b.head, "the approval didn't move");
+    } finally {
+      await k.done();
+    }
+  });
+});
+
+describe("a fix that decides something that is the user's (q3)", () => {
+  test("the thread rules needs-user on the fix: a decision for the user, never landed as checked; checked is refused after", async () => {
+    const { k, events } = standingKit({ thread: (ev) => ev.kind === "fix" });
+    try {
+      let runs = 0;
+      k.run.set(() => (++runs === 1 ? { verdict: "failed", blame: "branch", why: "Unit tests failed: expects \"Save changes\"" } : {}));
+      const q = await k.q();
+      const b = k.repo.branch("feat/label", { "c.txt": "c\n" });
+      const { entry } = await q.add({ branch: "feat/label", by: "land-button", session: "s1" });
+      const rq = lastRequest(await withChat(k, entry.id));
+      const fixSha = k.repo.commitOn(b.path, { "c.txt": "button: Store\n" }, "rename the button to Store");
+      await q.respond(rq.id, "s1", { answer: "fixed", commit: fixSha, text: "renamed the button" });
+      await until(() => events.some((ev) => ev.kind === "fix" && ev.request === rq.id), "the fix handed to the thread");
+      const d = await q.rule(entry.id, { ruling: "needs-user", text: "The fix renamed the button to \"Store\"; the branch said \"Save changes\". Which should it say?", choices: ["Store", "Save changes"] });
+      assert.equal(d.state, "needs-user");
+      assert.equal(d.decision?.raisedBy, "merge-thread");
+      assert.deepEqual(d.decision?.choices, ["Store", "Save changes"]);
+      await assert.rejects(q.rule(entry.id, { ruling: "checked", request: rq.id }), /already waits for the user's decision/, "the thread can't take it back as checked");
+      assert.equal((await k.entry(entry.id)).state, "needs-user");
+      assert.equal(runs, 1, "nothing ran on the fix: it never went into line unchecked");
     } finally {
       await k.done();
     }

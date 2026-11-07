@@ -98,9 +98,9 @@ also update Y" list live in its guide: read the guide of every area your task to
   conflicts with master, the newest checks not failing, no open alignment questions, the session
   idle, and its latest turn outcome says the work is finished (with Decisions off: the code checks
   alone). It holds for that commit until the branch changes or lands. Land is offered on it, and
-  also on a finished branch blocked only for something its chat can fix (conflicts, its own failing
-  check, drafts that don't fit): it waits as Approved · waiting for a fix and goes in line by itself
-  once nothing blocks it.
+  also on a finished branch blocked only for something its chat can fix (its own failing check,
+  drafts that don't fit): it waits as Approved · waiting for a fix and goes in line by itself once
+  nothing blocks it; one that only conflicts with master goes in line and the merge thread takes it.
 - **The user's typed word.** When the user types "land it" or "merge it" in the chat that owns the
   branch, commit what is left and record it with `worktree land` (it refuses anything but their own
   newest message; one the Overseer, a baton or another session sent is refused, whatever it says,

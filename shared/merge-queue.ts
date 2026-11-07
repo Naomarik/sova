@@ -202,6 +202,8 @@ export interface MergeApproval {
   fixes?: MergeFix[];
   /** Approved · waiting for a fix: taken on a finished but blocked branch; not yet in line. */
   blocked?: true;
+  /** It already conflicted with the target at the Land: that conflict's send-back to the chat counts no try. */
+  conflictAtLand?: true;
 }
 
 /** A branch published by the queue (a request, or the branch pushed alone), on its entry. */
@@ -229,6 +231,8 @@ export interface MergeRequestInfo {
    *  branch's chat is idle with a clean folder (`reason` says what it waits for). Absent: the text is the user's to
    *  review and Publish. */
   publishRequested?: true;
+  /** The host problem (and the request head it was at) last sent back to the branch's chat: the same one goes once. */
+  hostSentBack?: string;
 }
 
 /** A note on an entry, shown on its row (queue view, composer popup, pane). Sova attaches no meaning to the text. */

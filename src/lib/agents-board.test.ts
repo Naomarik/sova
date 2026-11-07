@@ -1,7 +1,7 @@
 // Run: npx tsx --test src/lib/agents-board.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AgentsInsight, LiveAgentSession, SessionSummary, TeamInfo, WorktreeStatus } from "../../shared/protocol";
+import type { AgentsInsight, LiveAgentSession, PeerStatus, SessionSummary, TeamInfo, WorktreeStatus } from "../../shared/protocol";
 import {
   boardGroups,
   boardRows,
@@ -32,8 +32,12 @@ import {
   visibleRows,
   workersLine,
   worktreePathsKey,
+  hereRows,
+  spendIdsKey,
+  type BoardRow,
 } from "./agents-board";
 import { teamKey } from "./insights";
+import { activeHostFilter, chooseHostFilter, hostOf, hostScope, joinHostLists, meshPeers, notePeerSessions, resetHosts, setMeshState } from "./mesh";
 import { encodeSessionTokens } from "../../shared/session-tokens-wire";
 
 const NOW = Date.parse("2026-09-27T15:00:00.000Z");
@@ -320,7 +324,109 @@ test("worktrees: merged either way, unmerged in words when not, and plain words 
   assert.deepEqual(treeMerge(tree("/t", { error: "fatal" })), { kind: "unknown", text: "unreadable" });
   assert.equal(treeName(tree("/t", { branch: undefined })), "detached");
   assert.equal(treeName({ path: "/w/.worktrees/sova-x/", source: "session", exists: false }), "sova-x");
-  assert.equal(worktreePathsKey(boardRows([sess("a"), sess("b")], undefined, noBusy)), "/s/a.jsonl,/s/b.jsonl");
+  assert.equal(worktreePathsKey(boardRows([sess("a"), sess("b")], undefined, noBusy), () => false), "/s/a.jsonl,/s/b.jsonl");
+});
+
+// ---- rows from other computers: the list's host rules, the host filter --------------------------
+
+const peerStatus = (id: string, state: PeerStatus["state"]): PeerStatus => ({ id, label: id, nodeId: `n${id}`, name: `${id}.ts.net`, url: `http://${id}.ts.net:4801`, state, lastSeen: null });
+const mesh = (laptop: PeerStatus["state"]) =>
+  setMeshState({ enabled: true, self: { id: "desk", label: "", hostname: "desk" }, peers: [peerStatus("laptop", laptop), peerStatus("vps", "up")], sync: [], frontDoor: null });
+/** This host's two sessions, the laptop's two and the vps's one, joined as the sidebar joins them. */
+function meshSessions() {
+  resetHosts();
+  const here = [sess("a", { origin: "web" }), sess("b", { activity: { state: "working" } })];
+  const lap = [
+    sess("lap1", { path: "/lap/1.jsonl", activity: { state: "working" }, workers: { working: 1, total: 3 } }),
+    sess("lap2", { path: "/lap/2.jsonl", origin: "web", activity: { state: "needs-input" } }),
+  ];
+  const vps = [sess("vps1", { path: "/vps/1.jsonl", live: { pid: 1 } as SessionSummary["live"] })];
+  notePeerSessions("laptop", lap.map((s) => s.path));
+  notePeerSessions("vps", vps.map((s) => s.path));
+  return joinHostLists(here, new Map([["laptop", lap], ["vps", vps]]));
+}
+const cleanUp = () => {
+  chooseHostFilter(null);
+  setMeshState(null);
+  resetHosts();
+};
+
+test("a peer row: its state, workers and live from its own list, with no agent record, team or spend", () => {
+  const all = meshSessions();
+  mesh("up");
+  try {
+    // This host's agents poll knows none of the peer's paths; a stray record for one is never joined by host.
+    const rows = boardRows(hostScope(all, activeHostFilter(), meshPeers()), insight([agent("/s/a.jsonl")]), noBusy);
+    const lap1 = rows.find((r) => r.session.path === "/lap/1.jsonl")!;
+    assert.equal(lap1.agent, null);
+    assert.equal(lap1.state, "working");
+    assert.equal(lap1.working, 1);
+    assert.equal(lap1.total, 3);
+    assert.equal(lap1.live, true, "its runtime reports on it, on its own host");
+    assert.deepEqual(lap1.teams, [], "no team chips: teams are this host's agents poll");
+    assert.equal(rows.find((r) => r.session.path === "/lap/2.jsonl")!.state, "needs-you");
+    assert.equal(rows.find((r) => r.session.path === "/vps/1.jsonl")!.live, true);
+    assert.equal(rateCell(lap1.session, undefined, { reported: true, remote: hostOf(lap1.session.path) !== null }).title, "On another host: its tokens aren't counted here.");
+  } finally {
+    cleanUp();
+  }
+});
+
+test("totals and chip counts count every row the board shows, another computer's included", () => {
+  const all = meshSessions();
+  mesh("up");
+  try {
+    const rows = boardRows(hostScope(all, activeHostFilter(), meshPeers()), undefined, noBusy);
+    const t = boardTotals(rows.filter(inDefaultScope), [], { usd: 2 });
+    assert.equal(t.working, 2, "this host's b and the laptop's lap1");
+    assert.equal(t.live, 4, "b, the laptop's two (their runtime reports) and the vps's TUI row");
+    assert.equal(t.spendToday, 2, "this host's ledger, whatever the rows");
+    const c = filterCounts(rows, none);
+    assert.equal(c.live, 4);
+    assert.equal(c["needs-you"], 1, "the laptop's waiting row");
+    assert.equal(c["has-workers"], 1);
+    assert.equal(c.unmerged, 0, "another computer's row has no worktree reading");
+  } finally {
+    cleanUp();
+  }
+});
+
+test("a down computer is left out of the rows, chip counts, totals and search unless the host filter names it", () => {
+  const all = meshSessions();
+  mesh("down");
+  try {
+    const board = () => boardRows(hostScope(all, activeHostFilter(), meshPeers()), undefined, noBusy);
+    const paths = (rows: BoardRow[]) => rows.map((r) => r.session.path).sort();
+    assert.deepEqual(paths(board()), ["/s/a.jsonl", "/s/b.jsonl", "/vps/1.jsonl"]);
+    assert.equal(boardTotals(board().filter(inDefaultScope), [], undefined).working, 1, "only this host's b works");
+    assert.equal(filterCounts(board(), none)["needs-you"], 0, "the laptop's waiting row isn't counted");
+    assert.deepEqual(visibleRows(board(), { filter: null, query: "lap", treesOf: none }), [], "nor found by a search");
+    chooseHostFilter("laptop");
+    assert.deepEqual(paths(board()), ["/lap/1.jsonl", "/lap/2.jsonl"], "named: its last known rows, and only them");
+    chooseHostFilter("vps");
+    assert.deepEqual(paths(board()), ["/vps/1.jsonl"], "the host filter narrows the board");
+  } finally {
+    cleanUp();
+  }
+});
+
+test("the worktrees and spend requests name only this computer's rows", () => {
+  const all = meshSessions();
+  mesh("up");
+  try {
+    const rows = boardRows(hostScope(all, activeHostFilter(), meshPeers()), undefined, noBusy);
+    const remote = (p: string) => hostOf(p) !== null;
+    assert.equal(worktreePathsKey(rows, remote), "/s/a.jsonl,/s/b.jsonl");
+    assert.equal(spendIdsKey(rows, remote), "a,b");
+    const one = [rows.find((r) => r.session.path === "/s/a.jsonl")!, rows.find((r) => r.session.path === "/lap/1.jsonl")!];
+    assert.equal(worktreePathsKey(one, remote), "/s/a.jsonl", "one local and one peer row: only the local path");
+    assert.equal(spendIdsKey(one, remote), "a");
+    assert.deepEqual(hereRows(one, remote).map((r) => r.session.id), ["a"]);
+    // A peer row never turns the unmerged figure from unread to 0: its path is never asked about.
+    assert.equal(worktreePathsKey(rows.filter((r) => remote(r.session.path)), remote), "");
+  } finally {
+    cleanUp();
+  }
 });
 
 test("gist as title: one line within the limit, and nothing when it already is the title", () => {

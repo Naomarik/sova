@@ -33,7 +33,8 @@ While the mesh is on, the session list shows every host's sessions together. Whi
 belongs to is stamped by the serving host from where it fetched it, never taken from the peer's
 answer. A host that is down (not answering; a host on another version answers and is not down)
 keeps its last known rows, but the list leaves them out everywhere, in every region, count and
-search hit, unless the host filter names that host (§mesh.remote-sessions/host-filter): there they
+search hit (the Agents board's rows, chip counts and totals too, §app.insights/team-cards, which
+lists the same rows under these same rules), unless the host filter names that host (§mesh.remote-sessions/host-filter): there they
 show, marked down, and can't be opened until it returns. Once it answers again its rows are back
 everywhere with the next list. A host on another version keeps its rows everywhere, whatever its
 state (§mesh.compatibility/states): each carries that state (§mesh.remote-sessions/row-host-state),
@@ -49,7 +50,9 @@ from here, a dot and a word after the name name its state in the host menu's wor
 "hidden" in amber, "down" and "refused" in red. An up host that keeps its sessions from this host
 says "hidden" in amber. A host that works fully, on whatever build, shows no dot and no word. The name gives way (ellipsis) before the word. The hover title is the
 sentence saying what that state costs. The row's accessible name says the same word after
-the host (", on {host}, read only"); only a down host says ", which can't be reached".
+the host (", on {host}, read only"); only a down host says ", which can't be reached". A
+peer row on the Agents board carries the same mark and words after its last active time
+(§app.insights/team-cards).
 
 ## §mesh.remote-sessions/host-picker — New session: Host
 
@@ -97,7 +100,9 @@ that works fully included, also says, under its name, where its build sits again
 one that is behind has `Resync` beside it (§mesh.peers/resync). Exactly one is chosen.
 `All hosts` is the default and shows every host's sessions but a down host's; a host shows only
 that host's sessions, and a down host its last known ones (§mesh.remote-sessions/list).
-It narrows together with the text filter, and the choice is remembered across reloads; a remembered
+It narrows together with the text filter, and narrows the Agents board too
+(§app.insights/team-cards): one choice for both lists, which reaches the board at once, with no
+reload. The choice is remembered across reloads; a remembered
 host that is no longer known reads as `All hosts`. The menu ends with `Mesh details…`. With the
 mesh off, or only one host known, nothing is shown.
 

@@ -38,9 +38,11 @@ export function Banner(props: {
   body?: JSX.Element;
   action?: JSX.Element;
   icon?: IconName;
+  /** "compact": one tight row, for a standing line above a transcript. */
+  size?: "compact";
 }) {
   return (
-    <div class={`banner banner-${props.tone}`} role={props.tone === "error" ? "alert" : "status"}>
+    <div class={`banner banner-${props.tone}${props.size === "compact" ? " banner-compact" : ""}`} role={props.tone === "error" ? "alert" : "status"}>
       <Icon name={props.icon ?? TONE_ICON[props.tone]} class="banner-icon" />
       <div class="banner-main">
         <p class="banner-title">{props.title}</p>

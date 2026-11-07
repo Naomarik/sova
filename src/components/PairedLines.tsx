@@ -44,6 +44,7 @@ export function PairedLines(props: { sessionId: string | undefined }) {
         return (
           <Banner
             tone={line().paused ? "warn" : "info"}
+            size="compact"
             icon="network"
             title={
               <>

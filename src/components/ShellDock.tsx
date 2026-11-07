@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import type { ShellRun } from "../../shared/protocol";
 import { cardOfRun, clock, lastLine, NOT_SHARED } from "../lib/shell-runs";
 import type { ShellBar } from "../lib/shell-bar";
@@ -23,7 +23,7 @@ export function ShellDock(props: {
   const listId = `shell-list-${++lists}`;
   /** The run whose window is open, by id: it stays open as the run's output arrives. */
   const [openId, setOpenId] = createSignal<string | null>(null);
-  const { running, runOf, newest, listOpen, action, stopping, allStopping } = bar;
+  const { running, runOf, newest, listOpen, buttons, stopping, allStopping } = bar;
   /** Now, each second while the list shows how long each command has run. */
   const [now, setNow] = createSignal(Date.now());
   createEffect(() => {
@@ -35,8 +35,9 @@ export function ShellDock(props: {
 
   /** The bar, and the pane around it (its message box). */
   let anchor: HTMLSpanElement | undefined;
-  /** Focus lost with a row that left (its command ended, or its window closed after): the bar's own
-      button, else the pane's message box, so a keyboard user is never left on the page. */
+  /** Focus lost with a row that left (its command ended, the list closed as the count fell to 1, or its
+      window closed after): the list's first button or the bar's (with 1 running, its Show Output),
+      else the pane's message box, so a keyboard user is never left on the page. */
   const refocus = () =>
     queueMicrotask(() => {
       const active = document.activeElement;
@@ -44,7 +45,7 @@ export function ShellDock(props: {
       const pane = anchor?.parentElement;
       // Not the message box on a touch-only screen: focusing it there raises the keyboard.
       const touchOnly = matchMedia("(hover: none) and (pointer: coarse)").matches;
-      const next = pane?.querySelector<HTMLElement>(".shell-list button, .shell-bar-toggle") ?? (touchOnly ? null : pane?.querySelector<HTMLElement>(".composer-input:not([disabled])"));
+      const next = pane?.querySelector<HTMLElement>(".shell-list button, .shell-bar button") ?? (touchOnly ? null : pane?.querySelector<HTMLElement>(".composer-input:not([disabled])"));
       next?.focus();
     });
   createEffect(on(running, refocus, { defer: true }));
@@ -56,6 +57,16 @@ export function ShellDock(props: {
     return (seen = runOf(id) ?? (seen?.id === id ? seen : null));
   });
 
+  const BarSummary = () => (
+    <>
+      <Chip tone="accent" live>
+        {running().length} running
+      </Chip>
+      <code class="shell-bar-line">
+        {newest()?.command}: {lastLine(newest()?.output ?? "") || "No output yet."}
+      </code>
+    </>
+  );
   const StopButton = (p: { id: string }) => (
     <button
       type="button"
@@ -104,28 +115,42 @@ export function ShellDock(props: {
             </ul>
           </Show>
           <div class="shell-bar">
-            <button type="button" class="shell-bar-toggle" aria-expanded={listOpen()} aria-controls={listId} onClick={() => bar.toggle()}>
-              <Chip tone="accent" live>
-                {running().length} running
-              </Chip>
-              <code class="shell-bar-line">
-                {newest()?.command}: {lastLine(newest()?.output ?? "") || "No output yet."}
-              </code>
-              <span class="shell-bar-show">{listOpen() ? "Hide" : "Show All"}</span>
-            </button>
-            <Switch>
-              <Match when={action() === "stop" && newest()}>{(run) => <StopButton id={run().id} />}</Match>
-              <Match when={action() === "stop-all"}>
-                <button
-                  type="button"
-                  class="button button-sm button-destructive"
-                  aria-disabled={allStopping() ? "true" : undefined}
-                  onClick={() => !allStopping() && bar.stopAll()}
-                >
-                  {allStopping() ? "Stopping…" : `Stop All ${running().length}`}
-                </button>
-              </Match>
-            </Switch>
+            {/* The chip and the newest command's latest line: Show All / Hide for 2 or more, plain text for 1. */}
+            <Show
+              when={buttons().showAll}
+              fallback={
+                <div class="shell-bar-summary">
+                  <BarSummary />
+                </div>
+              }
+            >
+              <button type="button" class="shell-bar-toggle" aria-expanded={listOpen()} aria-controls={listId} onClick={() => bar.toggle()}>
+                <BarSummary />
+                <span class="shell-bar-show">{listOpen() ? "Hide" : "Show All"}</span>
+              </button>
+            </Show>
+            <div class="shell-bar-actions">
+            <Show when={buttons().showOutput && newest()}>
+              {(run) => (
+                <>
+                  <button type="button" class="button button-sm" aria-haspopup="dialog" onClick={() => setOpenId(run().id)}>
+                    Show Output
+                  </button>
+                  <StopButton id={run().id} />
+                </>
+              )}
+            </Show>
+            <Show when={buttons().stopAll}>
+              <button
+                type="button"
+                class="button button-sm button-destructive"
+                aria-disabled={allStopping() ? "true" : undefined}
+                onClick={() => !allStopping() && bar.stopAll()}
+              >
+                {allStopping() ? "Stopping…" : `Stop All ${running().length}`}
+              </button>
+            </Show>
+            </div>
           </div>
         </section>
       </Show>

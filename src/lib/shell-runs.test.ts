@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SHELL_LIVE_MAX, type ChatServerMessage, type ShellRun } from "../../shared/protocol";
-import { AFTER_REPLY, answersAtHello, SHELL_DROPPED, cardOfRow, cardOfRun, nextShellRuns, runShell, shellAnswerOf, shellFrame, shellNotes, shellOffered, shellStatus, stillStopping, stopOnClose, stopRun, stopAll, barAction, clock, lastLines } from "./shell-runs";
+import { AFTER_REPLY, answersAtHello, SHELL_DROPPED, cardOfRow, cardOfRun, nextShellRuns, runShell, shellAnswerOf, shellFrame, shellNotes, shellOffered, shellStatus, stillStopping, stopOnClose, stopRun, stopAll, barButtons, clock, lastLines } from "./shell-runs";
 import { NOT_CONNECTED } from "./shell-mode";
 
 const run = (over: Partial<ShellRun> = {}): ShellRun => ({ id: "s1", command: "pnpm test", output: "", state: "running", startedAt: 1, ...over });
@@ -72,12 +72,14 @@ test("Stop All stops each running command with its own stop, once, and none that
   assert.equal(frames.length, 1, "a second Stop All while they wait sends nothing");
 });
 
-test("the bar's own button: Stop Command for 1 running with the list shut, Stop All for more with it open", () => {
-  assert.equal(barAction(1, false), "stop");
-  assert.equal(barAction(1, true), null, "its row has Stop Command");
-  assert.equal(barAction(2, false), null);
-  assert.equal(barAction(3, true), "stop-all");
-  assert.equal(barAction(0, false), null);
+test("the bar: Show Output and Stop Command for 1 running, no Show All; Show All for more, Stop All with the list open", () => {
+  // 1 running: Show Output and Stop Command on the bar, no Show All (open or not, there is no list).
+  assert.deepEqual(barButtons(1, false), { showOutput: true, stop: true, showAll: false, stopAll: false });
+  assert.deepEqual(barButtons(1, true), barButtons(1, false));
+  // 2 or more: Show All, never Show Output; Stop All only with the list open.
+  assert.deepEqual(barButtons(2, false), { showOutput: false, stop: false, showAll: true, stopAll: false });
+  assert.deepEqual(barButtons(3, true), { showOutput: false, stop: false, showAll: true, stopAll: true });
+  assert.deepEqual(barButtons(0, false), { showOutput: false, stop: false, showAll: false, stopAll: false });
 });
 
 test("durations read as a clock, and a finished card shows the last 3 lines", () => {

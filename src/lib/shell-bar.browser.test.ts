@@ -28,9 +28,11 @@ function chat(start: ShellRun[]) {
   return { bar, frames, hear, dispose };
 }
 
-test("1 running: Stop Command sits on the bar, sends that command's stop once, and waits for its end", () => {
+test("1 running: Show Output and Stop Command sit on the bar, no Show All; Stop sends that command's stop once", () => {
   const c = chat([run("a")]);
-  assert.equal(c.bar.action(), "stop", "the bar's own button");
+  assert.deepEqual(c.bar.buttons(), { showOutput: true, stop: true, showAll: false, stopAll: false });
+  c.bar.toggle();
+  assert.equal(c.bar.listOpen(), false, "1 command has no list to open");
   assert.equal(c.bar.newest()?.id, "a");
   c.bar.stop(c.bar.newest()!.id);
   assert.deepEqual(c.frames, [{ type: "shell_stop", id: "a" }]);
@@ -41,16 +43,16 @@ test("1 running: Stop Command sits on the bar, sends that command's stop once, a
   c.hear({ type: "shell_end", id: "a", output: "", cancelled: true, cancelReason: "user" });
   assert.equal(c.bar.stopping().size, 0);
   assert.deepEqual(c.bar.running(), []);
-  assert.equal(c.bar.action(), null);
+  assert.deepEqual(c.bar.buttons(), { showOutput: false, stop: false, showAll: false, stopAll: false });
   c.dispose();
 });
 
 test("3 running: no button until the list opens, then Stop All stops each with its own stop; one that ended isn't stopped", () => {
   const c = chat([run("a"), run("b"), run("c")]);
-  assert.equal(c.bar.action(), null, "the shut bar has no Stop for several");
+  assert.deepEqual(c.bar.buttons(), { showOutput: false, stop: false, showAll: true, stopAll: false }, "Show All, no Show Output");
   c.bar.toggle();
   assert.equal(c.bar.listOpen(), true);
-  assert.equal(c.bar.action(), "stop-all");
+  assert.deepEqual(c.bar.buttons(), { showOutput: false, stop: false, showAll: true, stopAll: true });
   // b ends on its own before the press.
   c.hear({ type: "shell_end", id: "b", output: "done", exitCode: 0 });
   assert.deepEqual(c.bar.running(), ["a", "c"]);
@@ -62,9 +64,11 @@ test("3 running: no button until the list opens, then Stop All stops each with i
   assert.equal(c.bar.allStopping(), true, "Stop All reads Stopping… and is held");
   c.bar.stopAll();
   assert.equal(c.frames.length, 2, "a second Stop All while they wait sends nothing");
-  // a ends; c still waits. Then c ends too, and the list shuts with nothing running.
+  // a ends; c still waits, alone now: the list shuts and the bar is c's (Show Output, Stop).
   c.hear({ type: "shell_end", id: "a", output: "", cancelled: true, cancelReason: "user" });
   assert.deepEqual([...c.bar.stopping()], ["c"]);
+  assert.equal(c.bar.listOpen(), false);
+  assert.deepEqual(c.bar.buttons(), { showOutput: true, stop: true, showAll: false, stopAll: false });
   c.hear({ type: "shell_end", id: "c", output: "", cancelled: true, cancelReason: "user" });
   assert.equal(c.bar.listOpen(), false);
   assert.equal(c.bar.stopping().size, 0);
@@ -93,4 +97,19 @@ test("a stop the socket didn't take holds nothing, so the button can be pressed 
   open = true;
   bar.stop("a");
   assert.deepEqual(frames, [{ type: "shell_stop", id: "a" }]);
+});
+
+test("an open list collapses to the single command's bar when the count falls to 1, and stays shut", () => {
+  const c = chat([run("a"), run("b")]);
+  c.bar.toggle();
+  assert.equal(c.bar.listOpen(), true);
+  c.hear({ type: "shell_end", id: "a", output: "", exitCode: 0 });
+  assert.equal(c.bar.listOpen(), false);
+  assert.equal(c.bar.newest()?.id, "b", "Show Output on the bar opens b's window");
+  assert.deepEqual(c.bar.buttons(), { showOutput: true, stop: true, showAll: false, stopAll: false });
+  // A second command starting brings Show All back, shut.
+  c.hear({ type: "shell_start", run: run("c") });
+  assert.equal(c.bar.listOpen(), false);
+  assert.deepEqual(c.bar.buttons(), { showOutput: false, stop: false, showAll: true, stopAll: false });
+  c.dispose();
 });

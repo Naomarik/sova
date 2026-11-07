@@ -145,6 +145,15 @@ test("chart views: % and Log exclude each other; Sort and % switch off where hid
   assert.equal(shownToggles(chart(BODIES.neg!), choice({ view: "bar" })).pct, false);
   assert.equal(shownToggles(chart(BODIES.zero!), choice({ view: "bar" })).pct, false);
   assert.equal(shownToggles(chart(BODIES.multiGap!), choice({ view: "stacked" })).pct, true);
+  // No % where the values already are percents: `unit: %`, or rows written `12%`.
+  for (const body of ["unit: %\na 12\nb 30", "a 12%\nb 30%", "unit: percent\na 12\nb 30", "series: x, y\na 12% 4%\nb 30% 9%"]) {
+    const c = chart(body);
+    assert.equal(chartViews(c).pctOk, false, body);
+    for (const view of chartViews(c).views) assert.equal(shownToggles(c, choice({ view })).pct, false, `${body} as ${view}`);
+    assert.equal(settle(c, choice({ view: "bar", pct: true })).pct, false, "a stored % switches off");
+  }
+  // Any other unit keeps it.
+  assert.equal(shownToggles(chart("unit: ms\na 12\nb 30"), choice({ view: "bar" })).pct, true);
   // An unfit stored view falls back to the model's.
   assert.equal(settle(chart(BODIES.neg!), choice({ view: "parts" })).view, "bar");
   assert.ok(isModel(s, choice({ view: "bar" })));

@@ -27,7 +27,7 @@ export interface ChartViews {
   model: ChartType;
   /** Every value above 0, gaps aside (scatter: every x and y). */
   logOk: boolean;
-  /** No value below 0 and something to share (a single series' sum above 0). */
+  /** Not already in percent, no value below 0 and something to share (a single series' sum above 0). */
   pctOk: boolean;
 }
 
@@ -35,6 +35,8 @@ const values = (spec: ChartSpec) => spec.rows.flatMap((r) => r.values.filter((v)
 const seriesCount = (spec: ChartSpec) => Math.max(1, spec.series.length);
 /** A parts chart drawn against its `of:` capacity: only Parts answers that. */
 const capacity = (spec: ChartSpec) => spec.type === "parts" && spec.of !== undefined;
+/** Values already in percent (`unit: %`, or rows written `12%`): % would only rescale them. */
+const percent = (spec: ChartSpec) => !!spec.percent || /^(%|percent|pct)$/i.test(spec.unit?.trim() ?? "");
 
 function fits(spec: ChartSpec, view: ChartView): boolean {
   const vs = values(spec);
@@ -59,7 +61,7 @@ export function chartViews(spec: ChartSpec): ChartViews {
   const logOk = vs.length > 0 && vs.every((v) => v > 0);
   if (spec.type === "scatter" || capacity(spec)) return { views: [], model: spec.type, logOk: spec.type === "scatter" && logOk, pctOk: false };
   const single = seriesCount(spec) === 1;
-  const pctOk = !vs.some((v) => v < 0) && (single ? vs.reduce((a, v) => a + v, 0) > 0 : vs.some((v) => v > 0));
+  const pctOk = !percent(spec) && !vs.some((v) => v < 0) && (single ? vs.reduce((a, v) => a + v, 0) > 0 : vs.some((v) => v > 0));
   // The model's own view is always offered: it is what the fence draws.
   const views = VIEW_ORDER.filter((v) => v === spec.type || fits(spec, v));
   return { views, model: spec.type, logOk, pctOk };

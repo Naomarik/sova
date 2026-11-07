@@ -23,6 +23,8 @@ export interface ChartSpec extends VisBase {
   scale: "linear" | "log";
   series: string[];
   rows: ChartRow[];
+  /** Some value was written as a percent (`12%`); it sets no unit. */
+  percent?: true;
   /** parts only: the capacity the parts fill; the rest is drawn as free. */
   of?: number;
 }
@@ -269,6 +271,8 @@ export function parseChart(body: string, defaultType: ChartType = "bar"): ChartS
   const toned: { key: string; tone: Tone }[] = [];
   // Each row's values' units, by row index.
   const valueUnits: (string | undefined)[][] = [];
+  // Values written as percents (`12%`; their unit stays unset).
+  let percentWritten = false;
   for (const line of rest) {
     const all = tokenize(line);
     let row: RowRead;
@@ -281,6 +285,7 @@ export function parseChart(body: string, defaultType: ChartType = "bar"): ChartS
       row = lenient;
     }
     const { label, vals } = row;
+    if (all.slice(1).some((t) => t.t === "word" && /\d%$/.test(t.v))) percentWritten = true;
     let tone = row.tone;
     for (const unit of row.units) if (unit) rowUnits.push({ unit, n: line.n });
     if (spec.type === "scatter" && vals.includes(null)) fail(line.n, "a scatter point needs both x and y");
@@ -316,6 +321,7 @@ export function parseChart(body: string, defaultType: ChartType = "bar"): ChartS
     if (spec.unit === undefined) spec.unit = u;
     else if (!/^[$€£¥]$/.test(u) && !unitWords(spec.unit.toLowerCase()).includes(u.toLowerCase())) mixed(spec.unit, u, rowUnits[0]!.n);
   }
+  if (percentWritten) spec.percent = true;
   if (spec.rows.length === 0) fail(0, spec.type === "parts" ? 'nothing to draw: add parts like "System prompt" 9000' : 'nothing to draw: add rows like "Quicksort" 120');
   if (spec.type === "parts") {
     if (spec.rows.length > MAX_PARTS) fail(0, `${spec.rows.length} parts; at most ${MAX_PARTS}: fold the small ones into one`);

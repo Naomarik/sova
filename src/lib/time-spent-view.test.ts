@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TimeSpentAlignment, TimeSpentRecord } from "../../shared/time-spent";
+import { modelLabel } from "./format";
 import { alignmentWords, messageLines, screenshotParts, formatSpent, type SpentLive, spentView, wholeSeconds } from "./time-spent-view";
 
 const record = (over: Partial<TimeSpentRecord> = {}): TimeSpentRecord => ({ you: 0, rows: {}, agent: 0, agentRunning: null, alignments: [], older: false, ...over });
@@ -87,7 +88,7 @@ test("an alignment line leaves out first shown to decided when it has none", () 
 });
 
 const labelled = (over: Partial<Parameters<typeof messageLines>[0]> = {}) => ({
-  rows: [{ key: "reworking" as const, seconds: 10.6, messages: [{ id: "m1", excerpt: "No", seconds: 7.3 }, { id: "m2", excerpt: "Redo", seconds: 3.3, labelledBy: "GLM 5.3" }] }],
+  rows: [{ key: "reworking" as const, seconds: 10.6, messages: [{ id: "m1", excerpt: "No", seconds: 7.3 }, { id: "m2", excerpt: "Redo", seconds: 3.3, labelledBy: "zai/glm-5.3" }] }],
   beforeAction: { count: 1, seconds: 4 },
   sinceLast: 5.4,
   ...over,
@@ -104,7 +105,8 @@ test("Your Messages: seconds not yet read are Since Your Last Message's, and the
   assert.equal(lines[1]!.count, 1);
   assert.equal(lines[1]!.messages, null, "Before An Action opens to nothing");
   assert.equal(lines[2]!.count, null, "Since Your Last Message has no count");
-  assert.equal(row.messages![1]!.labelledBy, "GLM 5.3");
+  assert.equal(row.messages![1]!.labelledBy, modelLabel("zai/glm-5.3"), "the model's name, not its raw id");
+  assert.notEqual(row.messages![1]!.labelledBy, "zai/glm-5.3");
   assert.equal(row.messages![0]!.labelledBy, null);
 });
 

@@ -72,7 +72,7 @@ const STEERING = said("steering", [
 ]);
 const REWORKING = said("reworking", [
   ["No, the rounding should happen per line, not on the order total. Redo this.", 412],
-  ["The receipt still shows the old tax label, that's not what I asked for.", 286, "GLM 5.3"],
+  ["The receipt still shows the old tax label, that's not what I asked for.", 286, "zai/glm-5.3"],
   ["Move the discount above the tax line and use the same row style as the others.", 198],
   ["The phone totals wrap onto 2 lines now. Put them back on 1.", 142],
 ]);
@@ -328,8 +328,8 @@ test("a row opens to its messages, which add up to it; only a fallback model's l
     assert.equal(await lines.count(), 4);
     const sum = await lines.evaluateAll((els) => els.reduce((n, e) => n + Number(e.getAttribute("data-seconds")), 0));
     assert.equal(sum, Number(await row.getAttribute("data-seconds")));
-    assert.deepEqual(await page.locator("[data-time-labelled-by]").allInnerTexts(), ["Labelled by GLM 5.3"]);
-    assert.match(await lines.nth(1).innerText(), /Labelled by GLM 5\.3/, "on the line the model labelled");
+    assert.deepEqual(await page.locator("[data-time-labelled-by]").allInnerTexts(), ["Labelled by glm-5.3"]);
+    assert.match(await lines.nth(1).innerText(), /Labelled by glm-5\.3/, "on the line the model labelled");
     assert.doesNotMatch(await lines.nth(0).innerText(), /Labelled by/, "a line Jev labelled says nothing");
     await row.click();
     assert.equal(await lines.count(), 0);

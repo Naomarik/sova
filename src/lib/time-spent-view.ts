@@ -1,5 +1,6 @@
 // What the Time Spent section draws (§app.subagents-pane/time-spent), pure: durations in the copy
 // deck's form, and the Your Time rows in whole seconds that add up to You to the second.
+import { modelLabel } from "./format";
 import { TIME_SPENT_ROWS as SPENT_ROWS, type TimeSpentMessageRow, type TimeSpentMessages, type TimeSpentRecord, type TimeSpentRow } from "../../shared/time-spent";
 
 /** `1h 12m 08s`, `14m 08s`, `8s`: whole seconds, the larger units only once they are reached. */
@@ -113,7 +114,7 @@ export function messageLines(messages: TimeSpentMessages, unreported: number): S
       label,
       count: row.messages.length,
       seconds: whole[key]!,
-      messages: row.messages.map((m) => ({ id: m.id, excerpt: m.excerpt, seconds: each[m.id]!, labelledBy: m.labelledBy ?? null })),
+      messages: row.messages.map((m) => ({ id: m.id, excerpt: m.excerpt, seconds: each[m.id]!, labelledBy: m.labelledBy ? modelLabel(m.labelledBy) : null })),
     });
   }
   if (whole["before-action"]! > 0) lines.push({ key: "before-action", label: "Before An Action", count: messages.beforeAction.count, seconds: whole["before-action"]!, messages: null });

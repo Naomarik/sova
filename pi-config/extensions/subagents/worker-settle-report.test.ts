@@ -700,3 +700,57 @@ test("settle report (guard): a normal wake clears the held one: no second wake w
 		await t.m.shutdown();
 	});
 });
+
+test("settle report: a quiet coordinator run leaves the held wake owed: the last teammate going idle sends exactly one", async () => {
+	await rig(async (r) => {
+		const t = await team(r);
+		const { dev, lead } = await heldFinish(r, t);
+		selfStart(r.host, lead);
+		endQuietly(r.host, lead, "lead#quiet");
+		await until(async () => (await t.m.statusOf(t.id("coordinator"))) === "waiting", "the coordinator idle");
+		assert.equal(wakesOf(t).length, 0, "dev still works");
+		endQuietly(r.host, dev, "dev#quiet");
+		await until(() => wakesOf(t).length === 1, "the held wake");
+		// Anything after it finds nothing owed.
+		selfStart(r.host, lead);
+		endQuietly(r.host, lead, "lead#quiet2");
+		await until(async () => (await t.m.statusOf(t.id("coordinator"))) === "waiting", "the coordinator idle again");
+		assert.equal(wakesOf(t).length, 1);
+		await t.m.shutdown();
+	});
+});
+
+test("settle report: a coordinator run that writes something sends one wake in total, whichever ends first", async () => {
+	const written = (host: FakeWorkerHost, chat: string, text: string) => host.event(chat, { type: "message_end", message: { role: "assistant", content: [{ type: "text", text }], stopReason: "stop" } });
+	// The coordinator ends first: its finish is held again, and dev's quiet end sends the wake.
+	await rig(async (r) => {
+		const t = await team(r);
+		const { dev, lead } = await heldFinish(r, t);
+		const before = t.m.completions().length;
+		selfStart(r.host, lead);
+		written(r.host, lead, "one more note");
+		endQuietly(r.host, lead, "lead#note");
+		await until(() => t.m.completions().length === before + 1, "the coordinator's note");
+		assert.equal(wakesOf(t).length, 0, "dev still works");
+		endQuietly(r.host, dev, "dev#quiet");
+		await until(() => wakesOf(t).length === 1, "the wake");
+		await until(async () => (await t.m.statusOf(t.id("dev"))) === "waiting", "dev idle");
+		assert.equal(wakesOf(t).length, 1);
+		await t.m.shutdown();
+	});
+	// Dev ends first, during the coordinator's run: the coordinator's own settle is the one wake.
+	await rig(async (r) => {
+		const t = await team(r);
+		const { dev, lead } = await heldFinish(r, t);
+		selfStart(r.host, lead);
+		endQuietly(r.host, dev, "dev#quiet");
+		await until(async () => (await t.m.statusOf(t.id("dev"))) === "waiting", "dev idle");
+		assert.equal(wakesOf(t).length, 0, "the coordinator still works");
+		written(r.host, lead, "one more note");
+		endQuietly(r.host, lead, "lead#note");
+		await until(() => wakesOf(t).length === 1, "the wake");
+		await until(async () => (await t.m.statusOf(t.id("coordinator"))) === "waiting", "the coordinator idle");
+		assert.equal(wakesOf(t).length, 1);
+		await t.m.shutdown();
+	});
+});

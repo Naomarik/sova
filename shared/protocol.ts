@@ -721,6 +721,10 @@ export interface OutboundImage {
 /** A web-uploaded image, stored like a TUI clipboard paste (POST /api/upload: raw bytes,
     Content-Type image/png|jpeg|webp|gif -> 201). The prompt text references `path`. Also the
     shape of a composer draft's `attachments` entry (GET/PUT /api/sessions/draft). */
+/** A composer draft written in shell mode (§chat.shell-mode/box): `shell` a `!` command, `private` a `!!` one.
+    GET/PUT /api/sessions/draft carry it beside the text; absent, the draft is a message. */
+export type ShellDraftMode = "shell" | "private";
+
 export interface UploadResult {
   path: string; // /tmp/sova-<uuid>.<ext>, or <agent dir>/sova/attachments/<session id>/sova-<uuid>.<ext> with ?draft=
   name: string; // basename
@@ -811,10 +815,14 @@ export interface SessionsDirInfo {
 //     session files, only ones carrying the archive mark — an unarchived session is refused with a
 //     reason to archive it first, as is anything outside the sessions dir, gone, or unreadable; each
 //     refusal is returned in refused with its reason. refused is paths-mode-only, additive)
-// GET  /api/sessions/draft?path=… -> { text: string | null, attachments: UploadResult[], updatedAt: string | null }
+// GET  /api/sessions/draft?path=… -> { text: string | null, mode?: ShellDraftMode, attachments: UploadResult[], updatedAt: string | null }
 //                                  (the stored composer draft, ~/.pi/agent/sova/drafts.json; nulls and [] when
 //                                  none; attachments whose file is gone are left out. 400 bad path, 404 missing)
-// PUT  /api/sessions/draft { path, text, attachments?: UploadResult[] } -> { ok: true }   (stores it; blank text
+// PUT  /api/sessions/draft { path, text, mode?: ShellDraftMode, attachments?: UploadResult[] } -> { ok: true }
+//                                  (`mode`: a draft written in shell mode, kept apart from the text, which holds no
+//                                  marker; absent, a message. Kept only from the person's own page: any other
+//                                  writer's draft is stored as a message, mode dropped; 400 for any other value.
+//                                  A draft handed back by Sova (a send it couldn't take) is a message too. Stores it; blank text
 //                                  with no attachments deletes it. At most 8 attachments; an entry that isn't
 //                                  an existing image in /tmp or the attachments folder is dropped, not an error;
 //                                  name/mimeType/size are re-derived from the file. Never writes the session file.

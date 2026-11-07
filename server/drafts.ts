@@ -1,3 +1,4 @@
+import type { ShellDraftMode } from "../shared/protocol";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
@@ -26,7 +27,7 @@ export interface DraftAttachment {
 
 /** A draft written in shell mode (§chat.shell-mode/box): `shell` a `!` command, `private` a `!!` one. Kept
     apart from the text, which never holds the marker: a leading `!` in the text is only ever text. */
-export type DraftMode = "shell" | "private";
+export type DraftMode = ShellDraftMode;
 /** The marker a command's mode is typed with, shown when it turns into text. */
 export const markerOf = (mode: DraftMode): string => (mode === "private" ? "!!" : "!");
 export const isDraftMode = (v: unknown): v is DraftMode => v === "shell" || v === "private";

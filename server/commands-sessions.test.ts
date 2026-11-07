@@ -106,7 +106,7 @@ describe("answers: the route's own, on the same fixture", () => {
     const read = async () => (await send("GET", `/api/sessions/draft?path=${q(path)}`))[1] as { text: string; mode?: string };
     assert.equal(await put(pageHeaders(), { path, text: "ls", mode: "shell" }), 200);
     assert.deepEqual([(await read()).text, (await read()).mode], ["ls", "shell"], "the page's command is kept as one");
-    for (const who of [{ "x-sova-token": "t" }, { "x-sova-token": "t", "x-sova-caller": "a-chat-key" }, {}]) {
+    for (const who of [{ "x-sova-token": "t" }, { "x-sova-token": "t", "x-sova-caller": "a-chat-key" }, {}] as Record<string, string>[]) {
       assert.equal(await put(who, { path, text: "rm -rf ~", mode: "private" }), 200);
       assert.deepEqual([(await read()).text, (await read()).mode], ["rm -rf ~", undefined], `${JSON.stringify(who)}: saved as a message`);
     }

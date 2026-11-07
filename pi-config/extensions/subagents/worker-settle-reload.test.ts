@@ -452,6 +452,29 @@ for (const [feedName, feed] of FEEDS) {
 		});
 	});
 
+	test(`quiet: a nudge's run that wrote nothing sends nothing and its last report stays [${feedName}]`, async () => {
+		await rig(async ({ file, host, ref }) => {
+			write(file, [...REPORTED_A, { id: "u1", role: "user", text: "[wake_nudge n1] Scheduled wakeup fired (set 5m ago)." }, SILENT]);
+			host.state(ref.chatId, { ...feed, status: "idle", lastSettled: SETTLED_E });
+			const { worker, settles, quiet } = await attached(host, ref, RECORD);
+			assert.deepEqual(settles, [], "no report");
+			assert.equal(quiet.count, 1);
+			assert.equal(worker.finalOutput(), "The real report");
+			await worker.dispose();
+		});
+	});
+
+	test(`quiet: a run with no user message in the file can't be vouched for as a wake's: it reports [${feedName}]`, async () => {
+		await rig(async ({ file, host, ref }) => {
+			write(file, [...REPORTED_A, SILENT]);
+			host.state(ref.chatId, { ...feed, status: "idle", lastSettled: SETTLED_E });
+			const { worker, settles, quiet } = await attached(host, ref, RECORD);
+			assert.equal(quiet.count, 0, "never quiet");
+			assert.equal(settles.length, 1);
+			await worker.dispose();
+		});
+	});
+
 	test(`quiet: a job's run that did write reports what it wrote [${feedName}]`, async () => {
 		await rig(async ({ file, host, ref }) => {
 			write(file, [...REPORTED_A, CARD, { id: "E", role: "assistant", text: "the card's answer" }]);

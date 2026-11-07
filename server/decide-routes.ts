@@ -5,6 +5,7 @@ import { decisionRuntime, type DecisionRuntime } from "./decide-runtime";
 import { cleanKey, deleteJevKey, readJevKey, writeJevKey } from "./decide-secret";
 import { decisionDefaults, decisionsFile, DECISION_SUGGESTIONS, parseDecisionSettings, readDecisionSettings, writeDecisionSettings } from "./decide-settings";
 import { delegateOptions, verifySlots, type DelegateSources } from "./delegate";
+import { noteLabelSwitch } from "./message-labels";
 
 // Route handlers for Settings → Decisions (shared/protocol.ts DECISIONS block). Framework-free:
 // each returns { status, body } so server/index.ts wires them in a line each.
@@ -40,8 +41,9 @@ export async function saveDecisions(body: unknown, sources: DelegateSources, rt:
     warnings = verdict.warnings;
   }
   writeDecisionSettings(parsed);
+  noteLabelSwitch(parsed.features.messageLabels === true);
   const info = decisionsInfo(rt);
-  if ((parsed.features.attention || parsed.features.tags) && !info.chain.ready)
+  if ((parsed.features.attention || parsed.features.tags || parsed.features.messageLabels) && !info.chain.ready)
     warnings.push(`${info.chain.reason ?? "No decision provider is available."} The features stay unavailable and send nothing until one is.`);
   return { status: 200, body: { ...info, warnings } };
 }

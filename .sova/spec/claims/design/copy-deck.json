@@ -216,6 +216,18 @@
       "§chat.transcript/message-actions"
     ]
   },
+  "§design.copy-deck/message-labels": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "about": [
+      "§app.message-labels/time-spent-tab",
+      "§app.message-labels/labelling",
+      "§app.message-labels/crediting",
+      "§app.message-labels/what-counts",
+      "§app.message-labels/the-labels"
+    ]
+  },
   "§design.copy-deck/mode-menu": {
     "kind": "note",
     "authority": "accepted",
@@ -542,7 +554,7 @@
   "§design.copy-deck/time-spent": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "unreviewed",
     "code": [
       "src/components/TimeSpent.tsx",
       "src/lib/time-spent-view.ts"

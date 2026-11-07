@@ -1,3 +1,4 @@
+import { recordLand } from "../message-labels";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -822,6 +823,8 @@ export async function startMergeQueue(
       // An approved branch was Ready to land at its commit: its summary is written if it has none yet.
       // An approval's goes to the front of the line.
       if (kind === "approved") summaryFor(extra.root, e.branch, e.commit, true);
+      // A Land press closes the stretch before it (§app.message-labels/labelling); a typed "land it" is a message of its own.
+      if (kind === "approved" && e.approval.by === "land-button" && e.session) recordLand(e.session, Date.parse(e.approval.at));
       cardsDo(kind === "approved" ? mc.approved(e, extra.root) : mc.outcome(kind, e, { ...(extra.run ? { run: extra.run } : {}), root: extra.root }));
     },
     summaryOf: (root, branch, commit): BranchSummary | undefined => bs.summaryOf(root, branch, commit),

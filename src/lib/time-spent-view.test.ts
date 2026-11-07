@@ -4,8 +4,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TimeSpentAlignment, TimeSpentRecord } from "../../shared/time-spent";
-import { parseOpen } from "./time-spent-section";
-import { alignmentWords, formatSpent, type SpentLive, spentView, wholeSeconds } from "./time-spent-view";
+import { modelLabel } from "./format";
+import { alignmentWords, messageLines, screenshotParts, formatSpent, type SpentLive, spentView, wholeSeconds } from "./time-spent-view";
 
 const record = (over: Partial<TimeSpentRecord> = {}): TimeSpentRecord => ({ you: 0, rows: {}, agent: 0, agentRunning: null, alignments: [], older: false, ...over });
 const live = (over: Partial<SpentLive> = {}): SpentLive => ({ you: 0, rows: {}, cards: {}, word: "Paused", ...over });
@@ -87,9 +87,65 @@ test("an alignment line leaves out first shown to decided when it has none", () 
   assert.equal(alignmentWords(252, 130, 3700), "4m 12s on screen · 2m 10s to read · 1h 01m 40s from first shown to decided");
 });
 
-test("the section is closed until this browser opens it: nothing stored, or anything odd, is closed", () => {
-  assert.equal(parseOpen(null), false);
-  assert.equal(parseOpen("false"), false);
-  assert.equal(parseOpen("garbage"), false);
-  assert.equal(parseOpen("true"), true);
+const labelled = (over: Partial<Parameters<typeof messageLines>[0]> = {}) => ({
+  rows: [{ key: "reworking" as const, seconds: 10.6, messages: [{ id: "m1", excerpt: "No", seconds: 7.3 }, { id: "m2", excerpt: "Redo", seconds: 3.3, labelledBy: "zai/glm-5.3" }] }],
+  beforeAction: { count: 1, seconds: 4 },
+  sinceLast: 5.4,
+  ...over,
+});
+
+test("Your Messages: seconds not yet read are Since Your Last Message's, and the rows stay whole", () => {
+  const lines = messageLines(labelled(), 23);
+  assert.deepEqual(lines.map((l) => l.key), ["reworking", "before-action", "since-last"]);
+  assert.equal(lines.reduce((n, l) => n + l.seconds, 0), 23, "You, to the second");
+  assert.equal(lines.find((l) => l.key === "since-last")!.seconds, 9, "what the other rows leave, 10 and 4");
+  const row = lines[0]!;
+  assert.equal(row.count, 2);
+  assert.equal(row.messages!.reduce((n, m) => n + m.seconds, 0), row.seconds, "a row's messages add up to it");
+  assert.equal(lines[1]!.count, 1);
+  assert.equal(lines[1]!.messages, null, "Before An Action opens to nothing");
+  assert.equal(lines[2]!.count, null, "Since Your Last Message has no count");
+  assert.equal(row.messages![1]!.labelledBy, modelLabel("zai/glm-5.3"), "the model's name, not its raw id");
+  assert.notEqual(row.messages![1]!.labelledBy, "zai/glm-5.3");
+  assert.equal(row.messages![0]!.labelledBy, null);
+});
+
+test("Your Messages: the rows add up to You to the second, while You ticks and whatever the read's fractions", () => {
+  for (const unreported of [0, 1, 37]) {
+    const you = 20 + unreported;
+    const view = spentView(record({ rows: { typing: 20 }, you: 20, messages: labelled() }), live({ you: unreported, rows: { typing: unreported }, word: "Counting" }), 0);
+    assert.equal(view.you, you);
+    assert.equal(view.messages!.reduce((n, l) => n + l.seconds, 0), you, `${unreported}s not yet read`);
+    assert.equal(view.messages!.find((l) => l.key === "since-last")!.seconds, 6 + unreported, "those seconds are Since Your Last Message's and no other row's");
+  }
+  const late = spentView(record({ rows: { typing: 1000 }, you: 1000, messages: labelled() }), live(), 0);
+  assert.equal(late.messages!.reduce((n, l) => n + l.seconds, 0), 1000, "a read whose rows fall short of You still adds up");
+});
+
+test("Your Messages: a label's row with a message shows at 0 seconds; before-action and since-last don't, and no rows at all is null", () => {
+  const lines = messageLines({ rows: [{ key: "asking", seconds: 0, messages: [{ id: "m", excerpt: "Why", seconds: 0 }] }], beforeAction: { count: 0, seconds: 0 }, sinceLast: 0 }, 0);
+  assert.deepEqual(lines.map((l) => l.key), ["asking"]);
+  const none = record({ you: 5, rows: { screenshots: 5 }, screenshots: { reworking: 5, specifying: 0, directing: 0, other: 0 }, messages: { rows: [], beforeAction: { count: 0, seconds: 0 }, sinceLast: 0 } });
+  const view = spentView(none, live(), 0);
+  assert.equal(view.messages, null);
+  assert.equal(view.rows.find((r) => r.key === "screenshots")!.parts, undefined, "with no Your Messages the row doesn't open");
+});
+
+test("Reviewing Screenshots' parts add up to its row, unread seconds going to anything else, and an empty part doesn't show", () => {
+  assert.deepEqual(screenshotParts({ reworking: 10, specifying: 0, directing: 0, other: 2 }, 15).map((p) => [p.label, p.seconds]), [["Followed By Reworking", 10], ["Followed By Anything Else", 5]]);
+  assert.deepEqual(screenshotParts({ reworking: 10, specifying: 5, directing: 5, other: 0 }, 12).map((p) => p.seconds), [10, 2], "never more than the row");
+  assert.deepEqual(
+    screenshotParts({ reworking: 3, specifying: 4, directing: 5, other: 1 }, 13).map((p) => [p.label, p.seconds]),
+    [["Followed By Reworking", 3], ["Followed By Specifying", 4], ["Followed By Directing", 5], ["Followed By Anything Else", 1]],
+  );
+});
+
+test("Your Messages: the rows in order, Specifying first and Steering gone, whatever order the read sends them in", () => {
+  const keys = ["not-labelled", "unsorted", "asking", "reworking", "directing", "specifying"] as const;
+  const rows = keys.map((key, i) => ({ key, seconds: 1, messages: [{ id: `m${i}`, excerpt: key, seconds: 1 }] }));
+  const lines = messageLines({ rows, beforeAction: { count: 1, seconds: 1 }, sinceLast: 0 }, 10);
+  assert.deepEqual(
+    lines.map((l) => l.label),
+    ["Specifying", "Directing", "Reworking", "Asking", "Unsorted", "Not Labelled", "Before An Action", "Since Your Last Message"],
+  );
 });

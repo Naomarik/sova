@@ -107,6 +107,7 @@ One file per document, in reading order.
 | [§design/copy-deck · Copy deck](copy-deck.md) | All user-facing strings. |
 | [§app/insights · Insights](../app/insights.md) | Sidebar foot, Usage and Agents pages, team and subagent cards, insight strip. |
 | [§app/subagents-pane · Session detail pane](../app/subagents-pane.md) | The session side pane. |
+| [§app/message-labels · Message labels](../app/message-labels.md) | The Time Spent tab and Your Messages: how each message is labelled and its time credited. |
 | [§app/settings-dialog · Settings dialog](../app/settings-dialog.md) | The gear in the sidebar foot, the tabbed modal it opens, the model policy screen (what may be used, and what subagents may be given), and Subagents (named bundles of Delegate routing, team defaults and the spec writer). |
 | [§chat/timeline · Timeline tab](../chat/timeline.md) | The session on one time axis: chapters, inputs, density lines, markers, idle gaps — and the Inputs Only filter, whose rows rewind the chat. |
 | [§workspace/groups · Group workspaces](../workspace/groups.md) | A group opened as a place: split or tabbed panes, one composer that writes to every member, and what promoting, eliminating and dissolving do. |

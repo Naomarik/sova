@@ -378,7 +378,7 @@ export interface CommandParams {
     /** The session, by id or by path */
     "session"?: string;
   };
-  /** How long you have been with a session and how long its agent has worked: your time by activity, and each alignment's time on screen. (only looks; needs the card's owner trusted) */
+  /** How long you have been with a session and how long its agent has worked: your time by activity, by the message it led to, and each alignment's time on screen. (only looks; needs the card's owner trusted) */
   "session.time-spent": {
     /** The session, by id or by path */
     "session"?: string;

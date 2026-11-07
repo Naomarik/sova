@@ -1,6 +1,7 @@
 // What the Time Spent section draws (§app.subagents-pane/time-spent), pure: durations in the copy
 // deck's form, and the Your Time rows in whole seconds that add up to You to the second.
-import { TIME_SPENT_ROWS as SPENT_ROWS, type TimeSpentRecord, type TimeSpentRow } from "../../shared/time-spent";
+import { modelLabel } from "./format";
+import { TIME_SPENT_ROWS as SPENT_ROWS, type TimeSpentMessageRow, type TimeSpentMessages, type TimeSpentRecord, type TimeSpentRow } from "../../shared/time-spent";
 
 /** `1h 12m 08s`, `14m 08s`, `8s`: whole seconds, the larger units only once they are reached. */
 export function formatSpent(seconds: number): string {
@@ -62,7 +63,20 @@ export type SpentLive = {
   word: SpentWord;
 };
 
-export type SpentLine = { key: string; label: string; seconds: number };
+export type SpentLine = { key: string; label: string; seconds: number; parts?: SpentLine[] };
+
+const MESSAGE_LABELS: readonly { key: TimeSpentMessageRow; label: string }[] = [
+  { key: "specifying", label: "Specifying" },
+  { key: "directing", label: "Directing" },
+  { key: "reworking", label: "Reworking" },
+  { key: "asking", label: "Asking" },
+  { key: "unsorted", label: "Unsorted" },
+  { key: "not-labelled", label: "Not Labelled" },
+];
+
+export type SpentMessage = { id: string; excerpt: string; seconds: number; labelledBy: string | null };
+/** One row under Your Messages. `messages` is what it opens to; null on a row that opens to nothing. */
+export type SpentMessageLine = { key: string; label: string; count: number | null; seconds: number; messages: SpentMessage[] | null };
 
 export type SpentView = {
   word: SpentWord;
@@ -71,8 +85,58 @@ export type SpentView = {
   /** Your Time's rows with time, Reading first when it has any; its parts come with it. */
   reading: { seconds: number; parts: SpentLine[] } | null;
   rows: SpentLine[];
+  /** Null with no message figures: the switch is off, or the session has none. */
+  messages: SpentMessageLine[] | null;
   alignments: { docId: string; title: string; words: string }[];
 };
+
+/**
+ * Your Messages in whole seconds, adding up to `you` (the You on screen) to the second: Since Your Last
+ * Message is what the other rows leave, so it takes what the page hasn't reported yet, which has no
+ * message after it, and ticks with You. A row's messages add up to the row.
+ */
+export function messageLines(messages: TimeSpentMessages, you: number): SpentMessageLine[] {
+  // No message to show means no section, whatever You says: Since Your Last Message never stands alone here.
+  if (!messages.rows.some((r) => r.messages.length > 0)) return [];
+  const byKey = new Map(messages.rows.map((r) => [r.key, r]));
+  const order = [...MESSAGE_LABELS.map((l) => l.key as string), "before-action"];
+  const seconds: Record<string, number> = { "before-action": messages.beforeAction.seconds };
+  for (const r of messages.rows) seconds[r.key] = r.seconds;
+  const whole = wholeSeconds<string>(seconds, order);
+  const sinceLast = Math.max(0, you - order.reduce((n, k) => n + whole[k]!, 0));
+  const lines: SpentMessageLine[] = [];
+  for (const { key, label } of MESSAGE_LABELS) {
+    const row = byKey.get(key);
+    if (!row || row.messages.length === 0) continue;
+    const each = wholeSeconds<string>(Object.fromEntries(row.messages.map((m) => [m.id, m.seconds])), row.messages.map((m) => m.id));
+    // A row's own rounding may differ from its messages' by a second: the longest message takes it.
+    const longest = row.messages.reduce((a, b) => (b.seconds > a.seconds ? b : a));
+    each[longest.id] = Math.max(0, each[longest.id]! + whole[key]! - row.messages.reduce((n, m) => n + each[m.id]!, 0));
+    lines.push({
+      key,
+      label,
+      count: row.messages.length,
+      seconds: whole[key]!,
+      messages: row.messages.map((m) => ({ id: m.id, excerpt: m.excerpt, seconds: each[m.id]!, labelledBy: m.labelledBy ? modelLabel(m.labelledBy) : null })),
+    });
+  }
+  if (whole["before-action"]! > 0) lines.push({ key: "before-action", label: "Before An Action", count: messages.beforeAction.count, seconds: whole["before-action"]!, messages: null });
+  if (sinceLast > 0) lines.push({ key: "since-last", label: "Since Your Last Message", count: null, seconds: sinceLast, messages: null });
+  return lines;
+}
+
+/** Reviewing Screenshots by what followed; the row's whole seconds, its parts adding up to them. Seconds not in a read yet have no message after them. */
+export function screenshotParts(split: NonNullable<TimeSpentRecord["screenshots"]>, seconds: number): SpentLine[] {
+  const reworking = Math.min(seconds, Math.floor(split.reworking));
+  const specifying = Math.min(seconds - reworking, Math.floor(split.specifying));
+  const directing = Math.min(seconds - reworking - specifying, Math.floor(split.directing));
+  return [
+    { key: "screenshots-reworking", label: "Followed By Reworking", seconds: reworking },
+    { key: "screenshots-specifying", label: "Followed By Specifying", seconds: specifying },
+    { key: "screenshots-directing", label: "Followed By Directing", seconds: directing },
+    { key: "screenshots-other", label: "Followed By Anything Else", seconds: seconds - reworking - specifying - directing },
+  ].filter((p) => p.seconds > 0);
+}
 
 /** One document's figures, in the copy deck's words; `to decided` is left out when it has none. */
 export function alignmentWords(onScreen: number, toRead: number, toDecided: number | null): string {
@@ -94,12 +158,20 @@ export function spentView(record: TimeSpentRecord, live: SpentLive, agentElapsed
   const whole = wholeSeconds<SpentRow>(sum, SPENT_ROWS);
   const parts = READING_LABELS.map((r) => ({ key: r.key as string, label: r.label, seconds: whole[r.key] })).filter((r) => r.seconds > 0);
   const readingSeconds = parts.reduce((n, p) => n + p.seconds, 0);
+  const you = SPENT_ROWS.reduce((n, k) => n + whole[k], 0);
+  const lines = record.messages ? messageLines(record.messages, you) : [];
+  const messages = lines.length > 0 ? lines : null;
   return {
     word: live.word,
-    you: SPENT_ROWS.reduce((n, k) => n + whole[k], 0),
+    you,
     agent: Math.floor(record.agent + (record.agentRunning === null ? 0 : Math.max(0, agentElapsed))),
     reading: readingSeconds > 0 ? { seconds: readingSeconds, parts } : null,
-    rows: OTHER_LABELS.map((r) => ({ key: r.key as string, label: r.label, seconds: whole[r.key] })).filter((r) => r.seconds > 0),
+    rows: OTHER_LABELS.map((r) => {
+      const line: SpentLine = { key: r.key, label: r.label, seconds: whole[r.key] };
+      if (r.key === "screenshots" && record.screenshots && messages) line.parts = screenshotParts(record.screenshots, whole[r.key]);
+      return line;
+    }).filter((r) => r.seconds > 0),
+    messages,
     alignments: record.alignments.map((d) => ({
       docId: d.docId,
       title: d.title,

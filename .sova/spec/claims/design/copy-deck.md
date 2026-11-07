@@ -577,13 +577,14 @@ the person clicks.
 | Pane's session-insight fetch failed (banner-warn) | **Couldn't load this session's subagents.** {message} Your workers keep running. We'll retry on our own. |
 | Transcript socket and load errors | the §app/subagents-pane state table: Live-watch and Connection copy above, and Main pane's transcript load error |
 
-## §design.copy-deck/time-spent — Time Spent section (§app.subagents-pane/time-spent)
+## §design.copy-deck/time-spent — Time Spent tab (§app.subagents-pane/time-spent)
 
 | Where | Copy |
 |---|---|
-| Head | heading: Time Spent · figures: You · Agent · word: Counting · Paused · Not Recording |
+| Head | tab: Time Spent (no heading in the panel) · figures: You · Agent · word: Counting · Paused · Not Recording |
 | Durations | whole seconds: `1h 12m 08s` · `14m 08s` · `8s` |
-| Breakdown | no heading · rows: Reading (opens to Main Thread · Alignments · Workers) · Typing · Dictating · Scrolling · Reviewing Changes · Reviewing Screenshots · Viewing Tours · Other |
+| Breakdown | no heading · rows: Reading (opens to Main Thread · Alignments · Workers) · Typing · Dictating · Scrolling · Reviewing Changes · Reviewing Screenshots (opens to what followed it, §design.copy-deck/message-labels) · Viewing Tours · Other |
+| Your Messages | §design.copy-deck/message-labels |
 | Alignments | heading: Alignments · line: {title} · `{t}` on screen · `{t}` to read · `{t}` from first shown to decided (left out when it has none) |
 
 ## §design.copy-deck/context-tab — Context tab (§app.subagents-pane/context-tab)
@@ -657,8 +658,8 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Where | Copy |
 |---|---|
 | Tab | Decisions (icon `shield`) |
-| Intro | Sova can ask a small classifier about your sessions — whether a finished turn is waiting on you, and what a session is about. Everything here is off until you turn it on. |
-| What is sent (above the switches) | Each check sends a short, redacted excerpt of one session — its title, the last exchange, and recent tool names — to Jev (TypeSafe) or your fallback model; never whole transcripts, images, or files. The Overseer's own sessions are never checked. |
+| Intro | Sova can ask a small classifier about your sessions, for the features switched on below. Nothing is sent until Jev or a fallback model can answer. |
+| What is sent (above the switches) | Each check sends a short, redacted excerpt of one session — at most its title, the last exchange, and recent tool names — to Jev (TypeSafe) or your fallback model; never whole transcripts, images, or files. The Overseer's own sessions are never checked. |
 | Load failed (banner-error) | **Couldn't load the decision settings.** Nothing was changed. [Try Again] |
 | Jev (legend · hint) | Jev · TypeSafe's classifier. Fast and cheap — about $0.0001 a check. |
 | Jev switch | Use Jev |
@@ -673,7 +674,7 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Refused fallback (under the row, error) | {server reason}. Your saved fallback model is unchanged. |
 | Fallback notes (under the row, warn) | {server note, without its "Fallback model:" label}. · Not verified, because {backend} couldn't list its models ({why}): Fallback model. |
 | Options failed (banner-warn) | **Couldn't check which models are offered.** Your saved choice stays, marked not verified. [Check Again] |
-| Features (legend) | Features · Flag sessions that need you — After a turn, checks whether the reply waits on you (a decision, an approval or information) or says it is done without checking, notices a team gone quiet and whether a merge left work open, and marks the row. The Overseer and Needs you list them too. |
+| Features (legend) | Features · Flag sessions that need you — After a turn, checks whether the reply waits on you (a decision, an approval or information) or says it is done without checking, notices a team gone quiet and whether a merge left work open, and marks the row. The Overseer and Needs you list them too. · Label your messages — Labels each message you type or dictate by what it asks for, and shows the time on each in the session's Time Spent tab. Only messages sent while this is on. The agent never sees a label. |
 | Unavailable (replaces a switched-on feature's hint, warn) | Unavailable: Jev is off and no fallback model is set. Nothing is checked. · Unavailable: Jev can't answer ({reason}) and no fallback model is set. Nothing is checked until one of them can. |
 | Features note (under the switches, warn, when they don't already say it) | {server reason} The features stay unavailable and send nothing until one is. |
 | Never send (legend) | Never send · switch Never send TUI sessions — Sessions started in the pi terminal stay on this machine. · Folders — One per line. Sessions in these folders, and their subfolders, are never checked. · issue: "{line}" isn't a full path. Start it with / or ~/. · That's {n} folders. Use at most 100. |
@@ -683,6 +684,18 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Buttons | none in the form — the dialog footer's Save Changes · Cancel (§design.copy-deck/settings-modes-delegate) |
 | Save failed (banner-error at the end of the form; the unsaved changes stay) | **Couldn't save the decision settings.** {reason}. Your saved settings are unchanged. |
 | Footnote | Stored in `~/.pi/agent/sova/decisions.json`. The key is stored separately, readable by you only. |
+
+## §design.copy-deck/message-labels — Time Spent tab · Your Messages (§app/message-labels)
+
+| Where | Copy |
+|---|---|
+| Tab | Time Spent |
+| Heading | Your Messages |
+| Rows, in order | Specifying · Directing · Reworking · Asking · Unsorted · Not Labelled · Before An Action · Since Your Last Message |
+| A row | {label} · `{n}`, a bare number in its own column before the time (Since Your Last Message: none) · {time}, in the Time Spent durations (`1h 12m 08s` · `14m 08s` · `8s`) |
+| A message line | {the message's first words, at most 120 characters, then …} · {time} · from a fallback model, under them: Labelled by {model id} |
+| Reviewing Screenshots opens to | Followed By Reworking · Followed By Specifying · Followed By Directing · Followed By Anything Else |
+| Never, anywhere on the tab | a word for a mood or feeling (unhappy, frustrated, satisfied and the like), a score, a warning, or a sentence explaining a row |
 
 ## §design.copy-deck/forms — Forms · the shared sentences (§design/forms)
 

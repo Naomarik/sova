@@ -7,7 +7,7 @@
 //   - PI_CODING_AGENT_DIR a fresh agent dir whose models.json names only the stand-in and whose
 //     settings make it the default model, so no turn can reach a real provider;
 //   - HOME a sentinel home whose every file is recorded at the start and compared at the stop;
-//   - a pinned random token (SOVA_TOKEN), a stand-in `claude` first on PATH, and none of the caller's
+//   - a pinned random token (SOVA_TOKEN), a stand-in `claude` and `vulkaninfo` first on PATH, and none of the caller's
 //     SOVA_*, PI_*, CLAUDE* or *_API_KEY / *_AUTH_TOKEN variables;
 //   - the price fetch, usage poll and update check off, chats on the detached driver from this tree.
 // stop() stops the server, every chat process it left (scripts/stop-chats.ts, then any process that
@@ -274,6 +274,9 @@ export async function startHermeticServer(opts: HermeticServerOptions = {}): Pro
   const homeBefore = recordTree(home);
   // A `claude` that is never the installed one: the stand-in CLI, whatever PATH held.
   writeFileSync(join(bin, "claude"), `#!/bin/sh\nexec node ${JSON.stringify(join(ROOT, "scripts", "fake-claude.mjs"))} "$@"\n`, { mode: 0o755 });
+  // And no `vulkaninfo`: Voice's status runs it to name the GPU (server/voice/platform.ts), and on a machine
+  // with one Mesa and RADV write their caches under HOME, the sentinel. A real write to it still fails a test.
+  writeFileSync(join(bin, "vulkaninfo"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
 
   const mock = spawn(process.execPath.includes("bun") ? "node" : process.execPath, [join(ROOT, "scripts", "harness-wire-e2e-mock-llm.mjs"), "0"], { stdio: ["ignore", "pipe", "inherit"] });
   let server: ChildProcess | null = null;

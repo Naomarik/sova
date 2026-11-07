@@ -197,9 +197,9 @@ the Usage tab stays one tap away in the strip.
 
 The pane is Session detail: a head, the remote controls row (§app.shell/remote-session-chips), a
 tab strip, and one tab's panel, which scrolls on its own. The tabs, in this order: **Session ·
-Timeline · Agents · Usage · Context · Sharing · Skills · Explain** (`.tabs.session-tabs`, `role="tablist"`, one
+Timeline · Agents · Usage · Time Spent · Context · Sharing · Skills · Explain** (`.tabs.session-tabs`, `role="tablist"`, one
 `role="tabpanel"`; roving `tabindex`, Left/Right wrapping, Home/End). Every tab is always in the
-strip, empty or not: a tab that came and went would move the strip under the reader.
+strip, empty or not, so the strip never shifts under the reader.
 
 - **Which tab opens.** Every door names its own tab (the head's Session details button, the
   remote chip, and the Agents board's Session details button and ⋯ item: Session; the board's ⋯
@@ -207,13 +207,10 @@ strip, empty or not: a tab that came and went would move the strip under the rea
   §chat.timeline/opening-it; the head's token chip: Usage). The pane keeps the chosen tab per
   session path, in memory only. With none kept, it opens on Agents when a worker is working at
   open, else on Session, settled once at open so the tab never moves when the last worker
-  finishes. Usage, Context and Sharing are never the default.
-- **The strip never wraps.** In a narrow pane the tabs tighten, then the strip scrolls sideways,
-  and the selected tab is scrolled into view (to the nearest edge) when the pane opens and whenever
-  the tab changes, so a tab a door opened is never off-screen at 375px.
+  finishes. Usage, Time Spent, Context and Sharing are never the default.
+- **The strip never wraps** (§app.subagents-pane/tab-strip).
 - **Session** is what the session is, in this order: Path (with Copy Session Path and Copy Resume
-  Command), Time Spent (§app.subagents-pane/time-spent), Repository, Worktrees
-  (§chat.worktrees/pane), Background jobs while it has any
+  Command), Repository, Worktrees (§chat.worktrees/pane), Background jobs while it has any
   (§app.background-jobs/pane), Identity, Compactions, Changes, and Memory
   (§app.subagents-pane/memory-outline).
   The session's actions sit at the right end of the Path heading row, so they add no row of their
@@ -223,7 +220,7 @@ strip, empty or not: a tab that came and went would move the strip under the rea
   the same square, not red, with the undo icon, named "Unarchive Session"). Neither has words; each
   is named by its `aria-label` and `title`, and each keeps a 44px touch target. Nothing that loads
   sits above them, so they don't move under a reader about to press one. Repository and Worktrees
-  load after the rest, so both hold a placeholder while they load, sized to the common case:
+  load after the rest, so each holds a placeholder the common case's size:
   Repository's is a clean repository's layout (its root, three facts, a two-line last commit and
   the Read line), and Worktrees' is as tall as its empty line; uncommitted changes, and each
   tracked worktree, still add their height when they land.
@@ -257,30 +254,41 @@ strip, empty or not: a tab that came and went would move the strip under the rea
   tab, "Open in a tab", never counts), the tab carries a count chip, and its accessible name is
   "Sharing, {n} viewing now"; at zero there is no chip and the name is "Sharing".
 - **Context** is what fills this chat's context window (§app.subagents-pane/context-tab).
-- **Timeline** is §chat/timeline, **Agents** the list and transcript below; **Skills** says which
+- **Time Spent** is §app.message-labels/time-spent-tab, **Timeline** §chat/timeline, **Agents** the list and transcript below; **Skills** says which
   skills loaded and when, and **Explain** lists the session's /explain pages.
 
-## §app.subagents-pane/time-spent — Time Spent: what the section shows
+## §app.subagents-pane/tab-strip — The tab strip never wraps
+
+In a narrow pane the tabs tighten, then the strip scrolls sideways,
+and the selected tab is scrolled into view (to the nearest edge) when the pane opens and whenever
+the tab changes, so a tab a door opened is never off-screen at 375px. An edge with tabs past it
+fades to show there are more: the right while tabs run past it, the left once scrolled from the
+start, and neither when all the tabs fit.
+
+## §app.subagents-pane/time-spent — Time Spent: what the tab shows
 
 Time Spent says how long you have been with this session and how long its agent has worked. It is
-a section of the session pane's Session tab (§app.subagents-pane/tabs) and appears nowhere else: not
+the session pane's Time Spent tab (§app.subagents-pane/tabs) and appears nowhere else: not
 in the chat head, and not beside a message. Every session has it: one chatting here, one watched
 from a TUI, an archived one, and one on another computer. How the seconds are counted is
 §app.subagents-pane/time-spent-counting; where they are kept is §app.subagents-pane/time-spent-record.
 
-- **It starts collapsed.** The section is collapsible under its heading, **Time Spent**, and starts
-  collapsed. Closed, it shows the heading and hides the rest; counting goes on while it is closed. Open
-  or closed is remembered per browser, for all sessions, never per session.
+- **A tab of its own.** The figures fill the Time Spent tab from its top, with no fold and no heading
+  over them, and the Session tab has no Time Spent section. Your Messages sits between the breakdown
+  and Alignments (§app.message-labels/time-spent-tab).
 - **The two figures.** At the top, **You** and **Agent**, each a plain duration in whole seconds, and
   one word: **Counting** while this page is counting this session, else **Paused**. While the pane
-  is open on the Session tab and the section is open, You ticks every second that the word says
-  Counting, and Agent takes in a turn still running. With the pane closed or on another tab, or the
-  section closed, nothing ticks on screen, and the time still counts.
+  is open on the Time Spent tab, You ticks every second that the word says Counting, and Agent takes
+  in a turn still running. With the pane closed or on another tab, nothing ticks on screen, and the
+  time still counts.
 - **The breakdown.** It follows the figures directly, with no heading, its rows in this order: Reading,
   Typing, Dictating, Scrolling, Reviewing Changes, Reviewing Screenshots, Viewing Tours, Other. The rows add up to You, to the second. A row
   with no time doesn't show. Reading expands on click into Main Thread, Alignments and Workers, with no
   "Reading" prefix, which add up to Reading; one of those with no time doesn't show either. Main Thread
-  is the session's main chat, and a folded alignment line counts there.
+  is the session's main chat, and a folded alignment line counts there. While Your Messages shows,
+  Reviewing Screenshots opens to what followed it: Followed By Reworking, Followed By Specifying,
+  Followed By Directing and Followed By Anything Else (§app.message-labels/time-spent-tab). A row
+  opened stays open through every tick and read while the tab shows.
 - **Alignments.** A list under that heading, one line per alignment document (§chat.alignment/document)
   and not one per revision, so a document's revisions share one line. No documents, no list. A line
   gives the document's title and three figures:
@@ -296,7 +304,7 @@ from a TUI, an archived one, and one on another computer. How the seconds are co
     its last open question became decided. It includes time away, so it may be hours. A document with
     a question still open, with no questions, or with no first-shown moment in that record (one only
     seen before Time Spent reached that computer) shows none.
-- **Plain numbers.** A figure's emphasis follows its place in the section, never its size or value:
+- **Plain numbers.** A figure's emphasis follows its place on the tab, never its size or value:
   the main times read brighter, labels and detail quieter. Nothing is flagged or commented on, and You
   and Agent are not compared.
 - **Not Recording.** When the computer hosting the session refuses the recording or is too old to
@@ -306,9 +314,8 @@ from a TUI, an archived one, and one on another computer. How the seconds are co
   changes no word (§app.subagents-pane/time-spent-record).
 - **Older sessions.** A session from before Time Spent reached the computer hosting it starts You and
   its on-screen figures from zero, with no sentence on screen about it. Agent still covers its whole length, and so may be far ahead of You.
-- **Before the first read.** While its first read is out an open section shows its heading over a
-  placeholder of about its usual height, never a zero, so Repository doesn't jump when the figures
-  land.
+- **Before the first read.** While its first read is out the tab shows a placeholder of about its
+  usual height, never a zero.
 - **Stated limits.** You can step back on screen when another device wins a moment; the record is
   right. A session deleted under an open pane can flip its word between Not Recording and Counting.
 - **Quiet.** The ticking announces nothing to assistive technology (§app.subagents-pane/accessibility).
@@ -385,11 +392,12 @@ exactly one row.
 ## §app.subagents-pane/time-spent-record — Time Spent: what is kept, and where
 
 - **A moment-by-moment record.** The computer hosting the session keeps a record of what was counted
-  moment by moment, and the section's figures are its sums. So a session on another computer shows the
+  moment by moment, and the tab's figures are its sums. So a session on another computer shows the
   same You from any device.
 - **Until the session is deleted.** Archiving keeps it. Deleting the session removes it, however the
   session is deleted, Clean Up included (§app.session-list/archive-cleanup). Nothing else clears it.
-- **Always on.** Settings has no switch for it.
+- **Always on.** Settings has no switch for it. Message labels have a switch of their own
+  (§app.message-labels/labelling), which never stops this record.
 - **Beside the session, never in it.** The record is never written to the session's file, so a session
   open in a TUI is recorded too and its file stays untouched. The agent never sees it and it adds
   nothing to the context window (§app.subagents-pane/context-tab).

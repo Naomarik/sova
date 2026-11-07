@@ -27,6 +27,7 @@ test("in place: the card's words for each phase of a standing approval", () => {
   assert.equal(standingLine({ state: "with-chat", standing: { phase: "paused" } }), "Paused: you stopped the chat");
   assert.equal(standingLine({ state: "with-chat", standing: { phase: "waiting-fix", why: "Conflicts with master" } }), "Approved · waiting for a fix · Conflicts with master");
   assert.equal(standingLine({ state: "queued" }), null, "in line: its plain state");
+  assert.equal(standingLine({ state: "with-chat", standing: { phase: "with-chat", try: 0, of: 3, why: "Conflicts with master" } }), "Back with the chat · Conflicts with master", "a conflict already there at the Land uses no try and shows none");
   assert.equal(standingWords({ state: "with-chat" })?.label, "Back with the chat", "no phase yet: never blank");
 });
 

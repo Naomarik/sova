@@ -106,8 +106,8 @@ import { PROJECT_MODE_PREFIX, type ProjectModeRef } from "../shared/project-mode
 import { overseerMemoryOf, type OverseerMemoryInForce, parseOverseerMemory, saveDefaultMemoryType } from "./memory/settings";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { projectEngine } from "./project-services/routes";
-import { projectVerbsExtension, sessionInstanceNote } from "./project-services/tools";
-import { servedToolsExtension, servedVisToolsExtension } from "./served-tools";
+import { projectVerbsExtension, projectVerbsOffered, sessionInstanceNote } from "./project-services/tools";
+import { offeredToolExtension, servedToolsExtension, servedVisToolsExtension } from "./served-tools";
 import { specCodingTool } from "./spec-coding-tool";
 import { BACKGROUND_JOB_TOOL } from "./background-jobs-request";
 import { JOB_CARDS_ENV } from "./background-jobs";
@@ -824,6 +824,16 @@ export function modesStamped(host: WorkerHost, sovaModes: boolean): WorkerHost {
 /** The coding agent's `spec` tool, run in the chat's own process: it reads only. */
 const specToolExtension = () => servedToolsExtension("sova-spec", [specCodingTool()]);
 
+/** project_verbs and its instance note, in a chat that is offered it (§app.project-services/tool-offered): served when the server declared it, else in this process. */
+const projectVerbsLoad = (path: string) =>
+  offeredToolExtension(
+    servedDecls
+      ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
+      : projectVerbsExtension(projectEngine),
+    "project_verbs",
+    projectVerbsOffered,
+  );
+
 /**
  * A worker chat's own inline extensions: every one, hidden chats included, gets the macOS kill guard
  * (server/shell-guard.ts); a worker or team member (never a hidden chat) also gets project_verbs and its
@@ -844,9 +854,7 @@ export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtin
     ...(mcp?.servers.length
       ? [mcpExtension({ list: async () => mcp, label: () => w.parent?.workerId ?? "A worker", tellParent: (note) => (chatHosts.mcpTell ?? mcpTellHere)(w.parent?.path ?? "", note) })]
       : []),
-    servedDecls
-      ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
-      : projectVerbsExtension(projectEngine),
+    projectVerbsLoad(path),
     // background_job: a job under the worker's own confinement, run by the server (§app.background-jobs/request).
     ...(servedDecls && (!w.builtins || w.builtins.includes("bash")) ? [servedToolsExtension("sova-background-job", servedSpecs(path, (n) => n === BACKGROUND_JOB_TOOL))] : []),
     // spec: the read-only spec look-up, last of all so nothing else moves. By its duty, never by its built-ins:
@@ -4731,9 +4739,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
               // playbook_read, once a schedule's fire delivered a playbook here (§chat.schedules/playbook-read).
               playbookExtension(chatHosts.playbook ?? playbookHost),
               // project_verbs: its own worktrees' running instances (server/project-services/tools.ts).
-              servedDecls
-                ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
-                : projectVerbsExtension(projectEngine),
+              projectVerbsLoad(path),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
               servedDecls
                 ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && n !== CARD_TOOL && n !== CREATE_SETTINGS_TOOL && !TOUR_TOOLS.has(n)))

@@ -662,6 +662,6 @@ export function killGuardRefusal(command: string, platform: string = process.pla
   if (who === "user") return `Sova refused this command before it ran; nothing ran. \`${p.what}\`: ${p.why}. Fix: ${p.fix}.`;
   return [
     `Sova refused this bash command before it ran; nothing ran. \`${p.what}\`: ${p.why}.`,
-    `Fix: ${p.fix}. For a project's services, use project_verbs down.`,
+    `Fix: ${p.fix}. If you have the project_verbs tool, use project_verbs down for a project's services.`,
   ].join("\n");
 }

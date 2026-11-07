@@ -10,8 +10,8 @@ import { stateRoot } from "../state-root";
  * Node builtins only.
  */
 
-export const servicesRoot = () => join(stateRoot(), "project-services");
-export const registryFile = () => join(servicesRoot(), "registry.json");
+export const servicesRoot = (root: string = stateRoot()) => join(root, "project-services");
+export const registryFile = (root?: string) => join(servicesRoot(root), "registry.json");
 export const dataRootOf = (id: string) => join(servicesRoot(), "data", id);
 export const logsDir = () => join(servicesRoot(), "logs");
 export const procsDir = () => join(servicesRoot(), "procs");

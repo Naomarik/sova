@@ -801,9 +801,13 @@ describe("pi contract", () => {
     let turnStarts = 0;
     const late = (api: any) => {
       api.registerTool(tool("echo"));
+      api.registerTool(tool("activated"));
+      api.on("session_start", () => api.setActiveTools(api.getActiveTools().filter((n: string) => n !== "activated")));
       // The first step's end and the second step's start, both inside the one run.
       api.on("turn_end", () => {
-        if (++turnEnds === 1) api.registerTool(tool("at_turn_end"));
+        if (++turnEnds !== 1) return;
+        api.registerTool(tool("at_turn_end"));
+        api.setActiveTools([...api.getActiveTools(), "activated"]);
       });
       api.on("turn_start", () => {
         if (++turnStarts === 2) api.registerTool(tool("at_turn_start"));
@@ -823,10 +827,75 @@ describe("pi contract", () => {
     const [first, second, third] = model.calls.map(declaredIn);
     assert.ok(first!.has("echo") && !first!.has("at_turn_end"), "the first request: the tools from the start");
     assert.ok(second!.has("at_turn_end"), "registered at turn_end: declared in the next request of the same run");
+    assert.ok(!first!.has("activated") && second!.has("activated"), "activated at turn_end: the same (offeredToolExtension)");
     assert.ok(JSON.stringify((model.calls[1]!.context as { messages: unknown[] }).messages).includes("steered while the tool ran"), "the request that carries the steered message");
     assert.ok(!second!.has("at_turn_start"), "registered at turn_start: too late for that request (fixed: pi builds the loadout after turn_start)");
     assert.ok(third!.has("at_turn_start"), "the control: it is declared in the request after");
     session.dispose();
+  });
+
+  test("project_verbs arriving at turn_end, on P23 (§app.project-services/tool-offered): the chat's tools in a fresh chat's order, the first request unchanged where it was offered, and the run's prompt sections kept", async () => {
+    const { offeredToolExtension } = await import("../../served-tools");
+    const tool = (name: string) => ({ name, label: name, description: `The ${name} tool.`, parameters: Type.Object({}), execute: async () => ({ content: [{ type: "text", text: name }], details: {} }) });
+    /** Tools before and after the gated one, and a section written as the mode engine writes it, at every run's start. */
+    const chat = (offered: () => boolean) => [
+      { name: "before", factory: (api: any) => {
+        api.registerTool(tool("earlier"));
+        api.on("before_agent_start", (e: any) => void (e.systemPromptOptions.sections.mode = "CONTRACT-MODE-SECTION"));
+      } },
+      offeredToolExtension({ name: "gated", factory: (api: any) => void api.registerTool(tool("gated")) }, "gated", async () => offered()),
+      { name: "after", factory: (api: any) => void api.registerTool(tool("later")) },
+    ];
+    const toolsOf = (call: { context: unknown }) => {
+      const out: string[] = [];
+      for (const m of (call.context as { messages: any[] }).messages) {
+        if (m.role !== "system") continue;
+        for (const r of m.toolsRemoved ?? []) out.splice(out.indexOf(typeof r === "string" ? r : r.name), 1);
+        for (const t of m.toolsAdded ?? []) out.push(t.name);
+      }
+      return out;
+    };
+
+    const fresh = await quirkSession({ extensions: chat(() => true) as never });
+    const order = fresh.session.getActiveToolNames();
+    assert.ok(order.indexOf("earlier") < order.indexOf("gated") && order.indexOf("gated") < order.indexOf("later"), `the control: ${order}`);
+    fresh.model.reply({ text: "done" });
+    await fresh.session.prompt("go");
+    assert.deepEqual(toolsOf(fresh.model.calls[0]!), order, "offered from the start: the first request has it, in its place");
+    fresh.session.dispose();
+
+    let yes = false;
+    const file = headerFile("offered-arrival");
+    const { session, model } = await quirkSession({ file, extensions: chat(() => yes) as never });
+    assert.deepEqual(session.getActiveToolNames(), order.filter((n: string) => n !== "gated"), "not offered: gone as the chat opens");
+    model.reply(
+      async () => {
+        yes = true;
+        return { toolCall: { name: "earlier", arguments: {} } };
+      },
+      { text: "done" },
+    );
+    await session.prompt("go");
+    assert.equal(model.calls.length, 2, "one run, two requests");
+    assert.ok(!toolsOf(model.calls[0]!).includes("gated"), "the first request doesn't have it");
+    assert.ok(toolsOf(model.calls[1]!).includes("gated"), "the step after setup arrived does");
+    assert.deepEqual(session.getActiveToolNames(), order, "the order a fresh chat has, so a reopen changes nothing");
+    assert.deepEqual([...toolsOf(model.calls[1]!)].sort(), [...order].sort());
+    assert.match(systemPromptOf(model.calls[1]!), /CONTRACT-MODE-SECTION/, "the tool change keeps the run's sections for the rest of the run (P39)");
+    model.reply({ text: "again" });
+    await session.prompt("next");
+    assert.match(systemPromptOf(model.calls[2]!), /CONTRACT-MODE-SECTION/, "and the next run's start writes them again");
+    session.dispose();
+
+    const reopened = await quirkSession({ file, extensions: chat(() => yes) as never });
+    assert.deepEqual(reopened.session.getActiveToolNames(), order, "reopened: the same order");
+    reopened.model.reply({ text: "back" });
+    await reopened.session.prompt("back again");
+    const updates = (reopened.model.calls[0]!.context as { messages: any[] }).messages.filter((m) => m.role === "system");
+    assert.ok(updates.length >= 2, "the control: the transcript's system messages are in the request");
+    assert.equal(updates.at(-1).sections?.tools, undefined, "the tool list in the prompt doesn't change at a reopen (appending the tool would: fixed order)");
+    assert.equal((updates.at(-1).toolsAdded ?? []).length, 0, "nor does the declared set");
+    reopened.session.dispose();
   });
 
   test("P24 own-code-discovery: resolve() is the loader's only source of discovered extension paths: patched, the same extensions load, Sova's from the copy", async () => {

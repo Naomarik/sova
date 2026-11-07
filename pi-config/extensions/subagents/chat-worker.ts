@@ -314,12 +314,15 @@ export class ChatWorker extends WorkerFold {
 		if (answers) this.restoreReport(answers);
 	}
 
-	/** A run seen only in part just settled: the file has it all. Only once the file holds its end, else what the feed showed stands. */
+	/** A run seen only in part just settled: the file has it all. A settle the file can't place (no entry named, or not
+	    written yet) leaves what the feed showed; with nothing shown, the report is what the file holds so far. */
 	private restoreUnseenRun(): void {
 		const pending = this.reportInFile;
 		this.reportInFile = undefined;
-		if (!pending || pending.steers !== this.steers || !this.sessionFile || !this.settleEntryId) return;
-		const answers = answersInFile(this.sessionFile, { after: this.recorded?.entryId, afterAt: this.recorded?.at, upTo: this.settleEntryId });
+		if (!pending || pending.steers !== this.steers || !this.sessionFile) return;
+		const since = { after: this.recorded?.entryId, afterAt: this.recorded?.at };
+		const placed = this.settleEntryId ? answersInFile(this.sessionFile, { ...since, upTo: this.settleEntryId }) : null;
+		const answers = placed ?? (this.finalOutput() ? null : answersInFile(this.sessionFile, since));
 		if (answers?.length) this.restoreReport(answers);
 	}
 

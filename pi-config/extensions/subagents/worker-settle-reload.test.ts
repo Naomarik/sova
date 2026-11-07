@@ -223,6 +223,23 @@ test("reload mid-run: a file that doesn't hold the settle's entry yet leaves wha
 	});
 });
 
+test("reload mid-run: a settle the file can't place reports what the file holds when the feed showed nothing, and what the feed showed otherwise", async () => {
+	const lines: Line[] = [{ id: "A", role: "assistant", text: "already reported" }, { id: "B", role: "assistant", text: "from the file" }];
+	for (const settleEntryId of [undefined, "not-written-yet"]) {
+		for (const fed of [false, true]) {
+			await rig(async ({ file, host, ref }) => {
+				write(file, lines);
+				host.state(ref.chatId, { status: "running", lastSettled: null });
+				const { worker, settles } = await attached(host, ref, { settleEntryId: "A", settledAt: T0 + 500 });
+				if (fed) host.event(ref.chatId, { type: "message_end", message: assistant("from the feed"), entryId: "C" });
+				host.event(ref.chatId, { type: "agent_settled", settleKey: "k#2", ...(settleEntryId ? { settleEntryId } : {}) });
+				assert.deepEqual(settles, [fed ? "from the feed" : "from the file"]);
+				await worker.dispose();
+			});
+		}
+	}
+});
+
 test("reload mid-run: only the run under way at the attach reads the file; the next one reports what it wrote", async () => {
 	await rig(async ({ file, host, ref }) => {
 		const lines: Line[] = [{ id: "A", role: "assistant", text: "already reported" }, { id: "B", role: "assistant", text: "first run" }];

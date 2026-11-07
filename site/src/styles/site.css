@@ -524,20 +524,19 @@ p code, li code, td code, dd code {
 .section-alt .arch-link span { background: var(--color-sunken); }
 .arch-provider { margin-top: var(--space-4); display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-radius: var(--r-md); border: 1px dashed var(--color-border-strong); font-size: var(--fs-caption); color: var(--color-ink-2); }
 .arch-provider .icon { color: var(--color-ink-muted); }
-.arch-node-tui { border-style: dashed; background: transparent; }
 @media (min-width: 900px) {
   .arch {
     grid-template-columns: 1fr clamp(112px, 12vw, 164px) 1.2fr clamp(112px, 12vw, 164px) 1fr;
-    grid-template-areas: "browser l1 core l2 dir" ". . . . down" "prov prov prov . tui";
+    grid-template-areas: "browser l1 core l2 chats" ". . . . down" "prov prov prov . dir";
   }
   /* The browser node holds 1 sentence: centred on its link, not stretched into an empty box. */
   .arch > :nth-child(1) { grid-area: browser; align-self: center; }
   .arch > :nth-child(2) { grid-area: l1; }
   .arch > :nth-child(3) { grid-area: core; }
   .arch > :nth-child(4) { grid-area: l2; }
-  .arch > :nth-child(5) { grid-area: dir; }
+  .arch > :nth-child(5) { grid-area: chats; }
   .arch > :nth-child(6) { grid-area: down; }
-  .arch > :nth-child(7) { grid-area: tui; }
+  .arch > :nth-child(7) { grid-area: dir; }
   .arch > :nth-child(8) { grid-area: prov; align-self: center; margin-top: 0; }
   .arch-link:not(.arch-link-down) { min-height: 0; }
   .arch-link:not(.arch-link-down)::before { left: 0; right: 0; top: 50%; bottom: auto; width: auto; height: 1px; }

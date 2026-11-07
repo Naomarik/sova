@@ -554,6 +554,39 @@ test("with the main chat's sandbox Off (or Subagents only), the side thread star
 	assert.deepEqual(h.sessions[0]!.spec.extensions, [WORKER_MARK, BTW_CHILD]);
 });
 
+test("the side thread follows the main chat's sandbox: turned On after it started (Subagents only or Off), the next question restarts it inside the sandbox, keeping its side conversation", async () => {
+	for (const before of [{ on: false }, { on: false, workers: "off" }]) {
+		const sb = sandboxOn(() => ({ kind: "pi", extensionPath: SANDBOX_EXT, flags: { sandbox: "on", "sandbox-parent": "scope-json" } }));
+		let state: any = { ...sb.state(), ...before, enforcement: "none" };
+		const h = harness({ sandbox: () => state });
+		await h.run("btw", "read the canary");
+		assert.equal(h.sessions.length, 1);
+		assert.deepEqual(h.sessions[0]!.spec.extensions, [WORKER_MARK, BTW_CHILD], "started unconfined");
+		await h.run("btw", "still here?");
+		assert.equal(h.sessions.length, 1, "no restart while the sandbox stays as it was");
+
+		state = sb.state();
+		await h.run("btw", "read the canary again");
+		assert.equal(h.sessions.length, 2, "restarted before its next answer");
+		assert.deepEqual(h.host.stops.map((s) => s.chatId), chatIds(h.host).slice(0, 1), "the unconfined chat is stopped");
+		const { spec, seed } = h.sessions[1]!;
+		assert.deepEqual(spec.extensions, [WORKER_MARK, SANDBOX_EXT, BTW_CHILD], "the new chat runs inside the sandbox");
+		assert.deepEqual(spec.flags, { sandbox: "on", "sandbox-parent": "scope-json" });
+		assert.equal(sb.asked.length, 1);
+		const seedTexts = JSON.stringify(seed);
+		for (const said of ["read the canary", "still here?"]) assert.ok(seedTexts.includes(said), `the side conversation is kept: ${said}`);
+		assert.equal(h.prompts.at(-1), "read the canary again", "the question goes to the confined chat");
+		assert.equal(h.host.sends.at(-1)!.chatId, chatIds(h.host)[1]);
+
+		// Lowered again: it follows that way too, and still keeps the conversation.
+		state = { ...state, on: false, enforcement: "none" };
+		await h.run("btw", "and now?");
+		assert.equal(h.sessions.length, 3);
+		assert.deepEqual(h.sessions[2]!.spec.extensions, [WORKER_MARK, BTW_CHILD]);
+		assert.ok(JSON.stringify(h.sessions[2]!.seed).includes("read the canary again"));
+	}
+});
+
 test("a thread switch, /btw:new, /btw:clear and a model change stop the chat and remove its run dir", async () => {
 	const h = harness();
 	await h.run("btw", "one");

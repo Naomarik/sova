@@ -7,8 +7,8 @@
  */
 import * as path from "node:path";
 import type { SteerMode, Worker } from "./contracts.ts";
-import { type Delivery, type FoldHandlers, WorkerFold } from "./fold.ts";
-import { fileMessages } from "./run-watch.ts";
+import { type Delivery, type FoldHandlers, textOf, WorkerFold } from "./fold.ts";
+import { fileMessages, type MessageEntry } from "./run-watch.ts";
 import type { SpawnOptions } from "./runner.ts";
 import { WORKER_TOOLS_ENV } from "./worker-mark.ts";
 import { isNoAnswer, type WorkerCursor, type WorkerFeedFrame, type WorkerHost, type WorkerKind, type WorkerRef, type WorkerSession, type WorkerStart, type WorkerState } from "./worker-host.ts";
@@ -77,6 +77,8 @@ export interface ChatWorkerOptions {
 		settleKey?: string;
 		settleEntryId?: string;
 		settledAt?: number;
+		/** Where that last report began (worker-transcript.ts priorSettle); absent when the records can't say. */
+		priorSettle?: { entryId?: string };
 	};
 }
 
@@ -93,6 +95,11 @@ export class ChatWorker extends WorkerFold {
 	settleEntryId?: string;
 	/** Picked back up: what the parent last recorded, for a reopened process that no longer knows its settle. */
 	private recorded?: { entryId?: string; at?: number };
+	/** Where the report the parent last recorded began. */
+	private priorSettle?: { entryId?: string };
+	/** Mid-run when picked back up (or after a gap): part of the run went unseen, so its settle's report
+	    is read from the file. Holds the steer count then: a later steer's run reports its own answers. */
+	private reportInFile?: { steers: number };
 	/** When this worker last learned of a settle (its event or its state), for a resync's file check. */
 	private settleSeenAt?: number;
 	/** A gap was fed: the next state is read as a first one. */
@@ -168,6 +175,7 @@ export class ChatWorker extends WorkerFold {
 		this.settleKey = a.settleKey;
 		this.settleEntryId = a.settleEntryId;
 		this.recorded = { entryId: a.settleEntryId, at: a.settledAt };
+		this.priorSettle = a.priorSettle;
 		if (a.seed) {
 			this.transcript = [...a.seed.transcript];
 			this.usage = { ...a.seed.usage };
@@ -206,6 +214,7 @@ export class ChatWorker extends WorkerFold {
 				this.settleSeenAt = Date.now();
 				this.settleKey = e.settleKey;
 				this.settleEntryId = typeof e.settleEntryId === "string" ? e.settleEntryId : undefined;
+				this.restoreUnseenRun();
 			}
 			return this.handleEvent(f.event);
 		}
@@ -262,6 +271,7 @@ export class ChatWorker extends WorkerFold {
 				this.status = "running";
 				this.runActive = true;
 				this.settleAnnounced = false;
+				this.reportInFile = { steers: this.steers };
 			} else if (s.lastSettled && s.lastSettled.key !== this.settleKey) {
 				// It settled while no parent watched: announced now, once.
 				this.status = "running";
@@ -269,7 +279,8 @@ export class ChatWorker extends WorkerFold {
 				this.settleKey = s.lastSettled.key;
 				this.settleEntryId = s.lastSettled.entryId;
 				this.settleSeenAt = Date.now();
-				if (s.lastSettled.outcome === "error" && s.lastSettled.error) this.error = s.lastSettled.error;
+				this.restoreOutcome(s.lastSettled.outcome, s.lastSettled.error);
+				this.restoreMissed(s.sessionFile, s.lastSettled.entryId);
 				this.processSettled();
 			} else if (!s.lastSettled) {
 				// Its process was reopened since (an idle stop, a crash): the file says whether a run
@@ -279,10 +290,11 @@ export class ChatWorker extends WorkerFold {
 					this.status = "running";
 					this.settleAnnounced = false;
 					this.settleEntryId = last.entryId;
-					if (last.error) this.error = last.error;
+					this.restoreOutcome(last.outcome, last.error);
+					this.restoreMissed(s.sessionFile, last.entryId);
 					this.processSettled();
-				}
-			}
+				} else if (first) this.restoreLatest(s.sessionFile, last?.entryId);
+			} else if (first) this.restoreLatest(s.sessionFile, s.lastSettled.entryId);
 		}
 		if (s.lastSettled) {
 			if (s.lastSettled.key !== this.settleKey) this.settleSeenAt = Date.now();
@@ -290,6 +302,35 @@ export class ChatWorker extends WorkerFold {
 			if (s.lastSettled.entryId) this.settleEntryId = s.lastSettled.entryId;
 		}
 		this.touch();
+	}
+
+	// ── the report, from the file ────────────────────────────────────────────
+
+	/** A run no parent saw settle: its report is everything written since the recorded settle. */
+	private restoreMissed(file: string, upTo: string | undefined): void {
+		const after = this.recorded?.entryId;
+		const answers = answersInFile(file, { after, afterAt: this.recorded?.at, upTo }) ?? answersInFile(file, { after, afterAt: this.recorded?.at });
+		if (answers) this.restoreReport(answers);
+	}
+
+	/** A run seen only in part just settled: the file has it all. Only once the file holds its end, else what the feed showed stands. */
+	private restoreUnseenRun(): void {
+		const pending = this.reportInFile;
+		this.reportInFile = undefined;
+		if (!pending || pending.steers !== this.steers || !this.sessionFile || !this.settleEntryId) return;
+		const answers = answersInFile(this.sessionFile, { after: this.recorded?.entryId, afterAt: this.recorded?.at, upTo: this.settleEntryId });
+		if (answers?.length) this.restoreReport(answers);
+	}
+
+	/**
+	 * Picked back up idle with nothing owed: reading it back gives its latest report. The whole report
+	 * when the records say where it began; otherwise its newest answer, after the last instruction.
+	 */
+	private restoreLatest(file: string, end: string | undefined): void {
+		if (this.steers > 0) return;
+		const whole = end && end === this.recorded?.entryId && this.priorSettle ? answersInFile(file, { after: this.priorSettle.entryId, upTo: end }) : null;
+		const answers = whole?.length ? whole : newestAnswer(file);
+		if (answers.length) this.restoreReport(answers);
 	}
 
 	// ── control ──────────────────────────────────────────────────────────────
@@ -362,15 +403,53 @@ const TAIL_BYTES = 512 * 1024;
  * The run that last settled in a worker's session file: its final assistant message (any that did not
  * stop to call a tool), its entry id and time. Undefined when none is in the file's tail or it can't be read.
  */
-export function lastSettledRun(file: string): { entryId: string; at: number; error?: string } | undefined {
+export function lastSettledRun(file: string): { entryId: string; at: number; outcome: "success" | "error" | "aborted"; error?: string } | undefined {
 	const entries = fileMessages(file, TAIL_BYTES);
 	for (let i = entries.length - 1; i >= 0; i--) {
 		const { id, timestamp, message: m } = entries[i]!;
 		if (m.role !== "assistant" || m.stopReason === "toolUse" || !id) continue;
 		const at = timestamp ? Date.parse(timestamp) : NaN;
-		return { entryId: id, at: Number.isFinite(at) ? at : 0, ...(m.stopReason === "error" && typeof m.errorMessage === "string" ? { error: m.errorMessage } : {}) };
+		const outcome = m.stopReason === "aborted" ? "aborted" : m.stopReason === "error" || m.errorMessage ? "error" : "success";
+		return { entryId: id, at: Number.isFinite(at) ? at : 0, outcome, ...(outcome === "error" && typeof m.errorMessage === "string" ? { error: m.errorMessage } : {}) };
 	}
 	return undefined;
+}
+
+/** A message's report text: an answer that did not stop to call a tool and says something, as the fold keeps them. */
+function answerOf(m: MessageEntry["message"]): string {
+	return m.role === "assistant" && m.stopReason !== "toolUse" ? textOf(m.content).trim() : "";
+}
+
+/**
+ * A worker's answers in its session file, oldest first, after one entry (else after a time, else from
+ * the start of what's read) and up to another. Null when `upTo` is not in the file. The tail is read
+ * first, the whole file when `after` is not in it.
+ */
+export function answersInFile(file: string, range: { after?: string; afterAt?: number; upTo?: string }): string[] | null {
+	const { after, afterAt, upTo } = range;
+	let entries = fileMessages(file, TAIL_BYTES);
+	if (after && !entries.some((e) => e.id === after)) entries = fileMessages(file);
+	const start = after ? entries.findIndex((e) => e.id === after) : -1;
+	if (start >= 0) entries = entries.slice(start + 1);
+	else if (afterAt) entries = entries.filter((e) => e.timestamp && Date.parse(e.timestamp) > afterAt);
+	if (upTo) {
+		const end = entries.findIndex((e) => e.id === upTo);
+		if (end < 0) return null;
+		entries = entries.slice(0, end + 1);
+	}
+	return entries.map((e) => answerOf(e.message)).filter(Boolean);
+}
+
+/** The newest answer after the last instruction in a worker's file: none when it hasn't answered that one. */
+function newestAnswer(file: string): string[] {
+	const entries = fileMessages(file, TAIL_BYTES);
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const m = entries[i]!.message;
+		if (m.role === "user") return [];
+		const text = answerOf(m);
+		if (text) return [text];
+	}
+	return [];
 }
 
 function firstLine(text: string | undefined): string {

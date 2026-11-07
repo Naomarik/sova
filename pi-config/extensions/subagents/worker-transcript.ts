@@ -373,6 +373,9 @@ export interface FoldedWorkerManifest extends WorkerManifest {
 	/** ms: the earliest record's time — its first spawn (`at` is the newest record's). Absent when
 	    no record carries a time (legacy records without one). */
 	firstAt?: number;
+	/** Where the last recorded report began, for reading it back from the worker's file: the settle before
+	    it (`entryId`), or `{}` when it was the first. Absent: older records don't say. Folded only, never written. */
+	priorSettle?: { entryId?: string };
 }
 
 export interface WorkerManifestFold {
@@ -449,6 +452,11 @@ export function readWorkerManifests(entries: readonly unknown[], options: { acti
 		const next: FoldedWorkerManifest = mergeManifest(previous, record);
 		const first = Math.min(previous?.firstAt ?? Infinity, record.at > 0 ? record.at : Infinity);
 		if (first !== Infinity) next.firstAt = first;
+		if (record.settleEntryId && record.settleEntryId !== previous?.settleEntryId) {
+			if (previous?.settleEntryId) next.priorSettle = { entryId: previous.settleEntryId };
+			else if (previous?.settledAt === undefined) next.priorSettle = {};
+			else delete next.priorSettle;
+		}
 		if (options.activeEntryIds) {
 			const here = typeof e.id === "string" && options.activeEntryIds.has(e.id);
 			next.onActiveBranch = (previous?.onActiveBranch ?? false) || here;

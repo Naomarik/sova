@@ -49,6 +49,22 @@ export function nextShellRuns(runs: readonly ShellRun[], msg: ChatServerMessage)
   }
 }
 
+/**
+ * Stop Command on a running command's card or window (§chat.shell-mode/card): its `shell_stop` goes
+ * over the chat socket, once; the card then waits for the end, Stop Command held, and a press while
+ * it waits sends nothing. The stopping set after the press.
+ */
+export function stopRun(stopping: ReadonlySet<string>, id: string, send: (frame: Extract<ChatClientMessage, { type: "shell_stop" }>) => boolean): ReadonlySet<string> {
+  if (stopping.has(id)) return stopping;
+  return send({ type: "shell_stop", id }) ? new Set([...stopping, id]) : stopping;
+}
+
+/** The runs still stopping after the live runs changed: only those still running wait. */
+export function stillStopping(stopping: ReadonlySet<string>, runs: readonly ShellRun[]): ReadonlySet<string> {
+  const running = new Set(runs.filter((r) => r.state === "running").map((r) => r.id));
+  return [...stopping].every((id) => running.has(id)) ? stopping : new Set([...stopping].filter((id) => running.has(id)));
+}
+
 /** The chat closed (archived, restarted, switched): its running commands were stopped with it, and
     their cards say so at once, before the saved rows come with the next hello. */
 export function stopOnClose(runs: readonly ShellRun[]): ShellRun[] {

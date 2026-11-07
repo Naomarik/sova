@@ -149,7 +149,7 @@ import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
 import { ShellCard } from "./ShellCard";
 import { ShellDock } from "./ShellDock";
-import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf, shellOffered, stopOnClose } from "../lib/shell-runs";
+import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf, shellOffered, stillStopping, stopOnClose, stopRun } from "../lib/shell-runs";
 import type { ShellAnswer, ShellControl } from "../lib/shell-mode";
 import type { ShellRun } from "../../shared/protocol";
 import { HostSendNotice } from "./HostStateNotices";
@@ -860,8 +860,7 @@ export function ChatView(props: {
       const runs = nextShellRuns(untrack(shellRuns), msg);
       if (runs) {
         setShellRuns(runs);
-        const ids = new Set(runs.filter((r) => r.state === "running").map((r) => r.id));
-        setShellStopping((s) => new Set([...s].filter((id) => ids.has(id))));
+        setShellStopping((s) => stillStopping(s, runs));
       }
       const answer = shellAnswerOf(msg);
       if (answer && shellWaiting.delete(answer.clientId)) setShellAnswer(answer);
@@ -2246,7 +2245,7 @@ export function ChatView(props: {
   );
   /** The card's Stop Command: that command and everything it started, never the model's reply. */
   const stopShell = (id: string) => {
-    if (socket.send({ type: "shell_stop", id })) setShellStopping((s) => new Set([...s, id]));
+    setShellStopping((s) => stopRun(s, id, (frame) => socket.send(frame)));
   };
   /** Shell mode is in every chat with its own agent and folder (§chat.shell-mode/box); not in the
       Overseer, a project overseer or assistant, a gathering session, or a read-only box. The hello

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SHELL_LIVE_MAX, type ChatServerMessage, type ShellRun } from "../../shared/protocol";
-import { AFTER_REPLY, answersAtHello, SHELL_DROPPED, cardOfRow, cardOfRun, cutWords, nextShellRuns, runShell, shellAnswerOf, shellFrame, shellNotes, shellOffered, shellStatus, stopOnClose } from "./shell-runs";
+import { AFTER_REPLY, answersAtHello, SHELL_DROPPED, cardOfRow, cardOfRun, cutWords, nextShellRuns, runShell, shellAnswerOf, shellFrame, shellNotes, shellOffered, shellStatus, stillStopping, stopOnClose, stopRun } from "./shell-runs";
 import { NOT_CONNECTED } from "./shell-mode";
 
 const run = (over: Partial<ShellRun> = {}): ShellRun => ({ id: "s1", command: "pnpm test", output: "", state: "running", startedAt: 1, ...over });
@@ -31,6 +31,26 @@ test("the chat closing stops its running commands' cards at once; an ended one s
   assert.deepEqual(stopped, run({ output: "so far", state: "ended", cancelled: true, cancelReason: "closed" }));
   assert.equal(shellStatus(cardOfRun(stopped!)).word, "Stopped when the chat closed");
   assert.deepEqual(kept, ended);
+});
+
+test("Stop from the floating card sends one shell_stop and waits for that command's end", () => {
+  const frames: unknown[] = [];
+  const send = (f: unknown) => (frames.push(f), true);
+  let stopping: ReadonlySet<string> = new Set();
+  stopping = stopRun(stopping, "s1", send);
+  assert.deepEqual(frames, [{ type: "shell_stop", id: "s1" }]);
+  assert.ok(stopping.has("s1"));
+  // A second press (the card's or its window's) while it waits sends nothing.
+  assert.equal(stopRun(stopping, "s1", send), stopping);
+  assert.equal(frames.length, 1);
+  // Another command's Stop is its own.
+  stopping = stopRun(stopping, "s2", send);
+  assert.deepEqual([...stopping], ["s1", "s2"]);
+  // s1 ended: it stops waiting; s2 still runs and still waits.
+  const runs = [run({ id: "s1", state: "ended", cancelled: true, cancelReason: "user" }), run({ id: "s2" })];
+  assert.deepEqual([...stillStopping(stopping, runs)], ["s2"]);
+  // No open socket: nothing is held, so the button can be pressed again.
+  assert.equal(stopRun(new Set(), "s3", () => false).size, 0);
 });
 
 test("live output keeps only the newest SHELL_LIVE_MAX characters", () => {

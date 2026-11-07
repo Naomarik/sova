@@ -28,9 +28,9 @@
     ],
     "authority": "accepted",
     "agreed": {
-      "by": "operator",
-      "at": "2026-11-06T04:44Z",
-      "source": "pi-session:f129828b-8ab7-44b5-a8d0-28839491c2d3#41e62645"
+      "by": "user",
+      "at": "2026-11-06T03:12Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#30549fa4"
     },
     "evidence": "verified"
   },

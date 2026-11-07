@@ -67,9 +67,9 @@
     ],
     "authority": "accepted",
     "agreed": {
-      "by": "operator",
-      "at": "2026-11-06T04:44Z",
-      "source": "pi-session:f129828b-8ab7-44b5-a8d0-28839491c2d3#41e62645"
+      "by": "naomarik",
+      "at": "2026-11-05T04:19Z",
+      "source": "pi-session:01a1a88f-5beb-72d2-b9d3-5a24bf160f0d#73d3abf6"
     },
     "evidence": "verified",
     "code": [
@@ -93,8 +93,7 @@
       "server/harness/pi/session.test.ts",
       "shared/harness-session.ts",
       "src/components/ReaderDoc.tsx",
-      "server/context-tab-sheet.integration.test.ts",
-      "server/transcript-shell.test.ts"
+      "server/context-tab-sheet.integration.test.ts"
     ]
   },
   "§app.subagents-pane/head": {

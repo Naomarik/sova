@@ -11,10 +11,7 @@
       "src/components/SessionView.tsx",
       "src/lib/placeholder-fit.ts",
       "src/components/Thread.tsx",
-      "src/lib/error-feed.ts",
-      "src/lib/shell-mode.ts",
-      "src/lib/shell-runs.ts",
-      "src/components/ShellCard.tsx"
+      "src/lib/error-feed.ts"
     ],
     "about": [
       "§chat/composer"

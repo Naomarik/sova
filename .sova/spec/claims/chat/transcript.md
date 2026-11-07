@@ -277,11 +277,6 @@ It renders as a compact collapsed card, never "You" (§chat.topics/row). Like a 
 a turn start but never an input, regenerating a reply to it is refused, and the session list never
 titles a session from one.
 
-**shell.** A command you ran, with `!` or `!!` (pi's `bashExecution` entry), from Sova's message box
-or from pi's own terminal: its card at its position (§chat.shell-mode/card), never the plain
-`$ command` info row (which a consumer that didn't ask for wire 2 still gets). A command run while a
-reply streams shows under that reply.
-
 **info.** Compaction, labels, branch summaries and other short machine notes. Model changes,
 thinking-level changes and the mode extension's markers are the exception: they render
 **nothing** in the thread — they are settings history, not conversation. That history stays where
@@ -1204,8 +1199,7 @@ moves to another chat, home or Back, reloads the page or closes the tab.
   deliver it, and stays to hear the answer. When the page goes before its connection opened (a
   reload, a closed tab), it hands what it kept to the server as it goes, with a request that
   outlives the page (`POST /api/chat/frames`), and the server runs it as it runs that
-  connection's own frames: in order, each message once, a refusal back as the draft. That request
-  never runs a command from shell mode (§chat.shell-mode/who). Sova need
+  connection's own frames: in order, each message once, a refusal back as the draft. Sova need
   not be opened again. Only what that request can't carry (more than about 60 KB, a chat on a
   peer) stays in the browser for the next page load of Sova, which delivers it within a day; a
   message kept longer goes back to its chat's draft instead. A page never takes what another

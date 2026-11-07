@@ -162,10 +162,7 @@ a form made from its params, and one button.
 - **`?`** opens it from anywhere outside a text field (on a US keyboard, `Shift+/`). In a text
   field `?` types as before. The palette's Keyboard Shortcuts row opens it too.
 - It's a modal titled **Keyboard Shortcuts**: one row for each app-wide key in the key table, its
-  key in mono and what it does, then the palette's own keys (`↑` `↓`, `Enter`, `Esc`), then the
-  message box's two shell-mode keys (§chat.shell-mode/box): `!`, "In an empty message box: runs a
-  command in this chat's folder.", and `!!`, "In an empty message box: runs a command the model
-  never sees.". The other
+  key in mono and what it does, then the palette's own keys (`↑` `↓`, `Enter`, `Esc`). The
   keys inside one panel (a workspace's `Ctrl+Alt+←/→`, a dialog's `Esc`) keep their own claims and
   aren't listed.
 - `Esc`, the scrim, or **Close** closes it, and focus returns to what had it.

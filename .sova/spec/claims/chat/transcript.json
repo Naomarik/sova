@@ -487,15 +487,14 @@
       "scripts/chat-runtime-trial/lib.mjs",
       "server/app.ts",
       "server/mesh/access.ts",
-      "server/ws-open-retry.test.ts",
-      "server/chat-actions.test.ts"
+      "server/ws-open-retry.test.ts"
     ],
     "agreed": {
-      "by": "operator",
-      "at": "2026-11-06T04:44Z",
-      "source": "pi-session:f129828b-8ab7-44b5-a8d0-28839491c2d3#41e62645"
+      "by": "naomarik",
+      "at": "2026-10-19T21:14Z",
+      "source": "pi-session:398db362-660a-4f63-967c-d28758e5179f#fb5aff13"
     },
-    "evidence": "verified"
+    "evidence": "reviewed"
   },
   "§chat.transcript/setup-card": {
     "kind": "behavior",
@@ -745,22 +744,12 @@
       "src/components/WakeCard.tsx",
       "src/lib/wake.test.ts",
       "src/lib/wake-card.test.ts",
-      "pi-config/extensions/subagents/job-store.ts",
-      "server/transcript.ts",
-      "src/components/ShellCard.tsx",
-      "src/lib/transcript-kinds.ts",
-      "src/components/TranscriptKind.tsx",
-      "server/wire-rows.ts",
-      "server/transcript-rows.ts",
-      "server/tail-hello.ts",
-      "server/watch.ts",
-      "server/harness/pi/reader.ts",
-      "server/transcript-shell.test.ts"
+      "pi-config/extensions/subagents/job-store.ts"
     ],
     "agreed": {
-      "by": "operator",
-      "at": "2026-11-06T04:44Z",
-      "source": "pi-session:f129828b-8ab7-44b5-a8d0-28839491c2d3#41e62645"
+      "by": "omar",
+      "at": "2026-11-04T11:00Z",
+      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
     }
   },
   "§chat.transcript/turn-end-keeps-reader": {

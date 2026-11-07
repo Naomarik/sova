@@ -3,9 +3,7 @@
 
 pi's sandbox extension (`pi-config/extensions/sandbox`) confines what an agent's **tools** do to
 the machine: the `bash` tool runs inside an OS sandbox, and the file tools (`read`, `write`,
-`edit`, `ls`, `find`, `grep`) check every path against the same policy. In a Sova chat, a command
-you run from the message box in shell mode is confined as its `bash` is (§chat.shell-mode/running).
-The agent process itself
+`edit`, `ls`, `find`, `grep`) check every path against the same policy. The agent process itself
 is not confined; the server and every worker keep their own state writable. Each
 session's sandbox is in one of three states, **Off**, **Subagents only** or **On**
 (§chat.sandbox/states), per session. The user sets it; the Overseer may set it on a session it
@@ -458,9 +456,7 @@ These are the gaps the sandbox leaves, each named so that nobody relies on it th
   document and whose `sandbox-exec` it marks deprecated.
 - **macOS tools that ignore the environment.** A tool that writes a fixed temp or cache path
   instead of honouring `TMPDIR` or the cache variables fails under the sandbox there.
-- **The user's own `!` commands** are confined only in a Sova chat whose sandbox is On, run from its
-  message box (§chat.shell-mode/running): never on a remote target, and never in pi's own terminal,
-  outside Sova.
+- **The user's own `!` commands** are not confined.
 - **With `browser` on, Chrome's own sandbox is off** (§chat.sandbox/what-on-enforces): its
   renderer and GPU processes run with the worker's own rights, so an exploit in web content it
   loads can read what the worker reads and write where it writes. Any confined process may also

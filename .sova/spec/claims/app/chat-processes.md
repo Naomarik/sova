@@ -209,8 +209,7 @@ starts a chat again.
 ## §app.chat-processes/idle-stop — An idle chat process stops
 
 A chat's process with nothing in flight (no reply, compaction, queued message, open dialog,
-working worker, server action or command run from its message box, §chat.shell-mode/lifecycle)
-is asked to close after 30 minutes like that
+working worker or server action) is asked to close after 30 minutes like that
 (`SOVA_CHAT_IDLE_MIN`, in minutes, fractions allowed; 0 is never), whether or not a browser tab
 has it open: an open tab doesn't keep it running, and neither does a pending wake nudge or a
 running background job. The chat checks again that it is still quiet,
@@ -240,8 +239,7 @@ by itself as an idle stop, so the next server reads its end as orderly: no death
 does a process started for a chat that never opened it (a server that stopped mid-start, or a
 reload's replacement it never moved the chat into); such a process never touches the chat's record
 of a run in flight, which belongs to the process that has the chat open.
-A reply in flight, a running command or an open dialog keeps it running until that ends; a pane
-left attached when
+A reply in flight or an open dialog keeps it running until that ends; a pane left attached when
 the server went does not. To stop them at once instead, `bun scripts/stop-chats.ts [--agent-dir <dir>]` stops every chat
 process the install's state root records, through its records and driver (never a process found by
 name), each as an operator stop, and every background job of that state root
@@ -254,9 +252,7 @@ generation (§app.chat-processes/code-generations), and carries that generation'
 plus a digest of uncommitted changes and untracked files when the tree is dirty (`SOVA_BUILD`
 overrides it for tests; an unknown build means no badge). A chat whose build differs from the server's, both known, is on older code. It asks
 to reload at a quiet moment: when nobody is attached, or after 5 minutes quiet. "Reload Now" asks at
-once when the chat is quiet, else when its reply ends. A command run from its message box keeps the
-chat from being quiet, for both, until it ends (§chat.shell-mode/lifecycle).
-Its workers don't hold a reload: they run in
+once when the chat is quiet, else when its reply ends. Its workers don't hold a reload: they run in
 processes of their own, keep working through it and are reattached (§app.chat-processes/workers);
 only a working worker of another backend, which runs inside the chat's process, still holds it. Nor
 do its background jobs, which keep running through it (§app.background-jobs/keeping). Reloads run one

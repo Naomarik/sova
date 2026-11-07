@@ -12,9 +12,8 @@ flyout that holds the model, login and sandbox panels, the sandbox shield, the w
 and what the foot shows from a switch's first frame. Not here: the mode menu (§chat/mode-menu), the
 model picker (§chat/model-menu), the slash menu (§chat/slash-commands), attaching images
 (§chat.images/composer-attachments), dictation (§chat/voice), staged alignment answers
-(§chat.alignment/card), shell mode, where a line runs as a command (§chat/shell-mode), the
-Overseer's Quick Actions (§app.overseer/quick-actions), and a workspace's group composer
-(§workspace/groups).
+(§chat.alignment/card), the Overseer's Quick Actions (§app.overseer/quick-actions), and a
+workspace's group composer (§workspace/groups).
 
 ## §chat.composer/anatomy — Anatomy
 
@@ -72,20 +71,16 @@ pending attachments, then the input row (mic, `plus` trigger, textarea, Send, St
       <div class="model-menu composer-flyout" id="composer-flyout" popover="auto">…see "Composer flyout"…</div>
       <input class="visually-hidden" type="file" multiple tabindex="-1" aria-hidden="true"
              accept="image/png,image/jpeg,image/gif,image/webp">
-      <label class="visually-hidden" for="composer-input">Message</label>   <!-- shell mode: "Shell command" -->
+      <label class="visually-hidden" for="composer-input">Message</label>
       <div class="composer-field">
         <!-- with an open alignment or option card: the waiting badge, at the box's left edge on its
              last line (§chat.composer/waiting-badge) -->
         <button class="waiting-badge" type="button" aria-haspopup="dialog" aria-label="…">…</button>
-        <!-- in shell mode only (§chat.shell-mode/box): the marker, "!" or "!!", at the box's left;
-             the box's edge in the caution tone, the placeholder "Run a command in {folder}…" -->
-        <span class="composer-shell-marker" aria-hidden="true">!</span>
         <textarea class="input textarea composer-input" id="composer-input" rows="1"
                   placeholder="Enter sends" enterkeyhint="send"
                   aria-describedby="composer-reason"></textarea>   <!-- touch mode: no placeholder, enterkeyhint="enter" -->
       </div>
       <div class="composer-actions">
-        <!-- Send; in shell mode it reads Run (§chat.shell-mode/box) -->
         <button class="button button-primary" type="submit">
           <span class="icon" style="--icon: url(/icons/arrow-right.svg)" aria-hidden="true"></span><span class="button-label">Send</span>
         </button>
@@ -112,9 +107,6 @@ pending attachments, then the input row (mic, `plus` trigger, textarea, Send, St
         <span class="composer-login-avatar" aria-hidden="true">o</span>   <!-- round letter avatar -->
         <span class="composer-login-full" aria-hidden="true">own@example.com</span>  <!-- only at a composer 620px or wider -->
       </button>
-      <!-- in shell mode only (§chat.shell-mode/box): the Shell mode chip, the terminal icon and its
-           words in the caution tone -->
-      <span class="chip chip-warn composer-shell-chip"><span class="icon icon-sm" style="--icon: url(/icons/terminal.svg)" aria-hidden="true"></span>Shell mode</span>
       <span class="composer-reason" id="composer-reason"><!-- reason when disabled; else empty --></span>
       <!-- chat sessions only: the mode switch, pushed to the right edge; see §chat/mode-menu -->
       <button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu" …>…</button>
@@ -172,8 +164,7 @@ are kept, and what the foot and its model indicator show.
   - **The key hint is in the placeholder** exactly when `Enter` sends (touch mode off): "Enter
     sends", and while streaming "Steer the current turn… Enter sends". In touch mode it's the
     short string alone (none / "Steer the current turn…"), swapped in place when the mode
-    changes. A read-only composer keeps the short string. In shell mode the verb is Run: "Run a
-    command in {folder}… Enter runs" (§chat.shell-mode/box).
+    changes. A read-only composer keeps the short string.
   - **The placeholder fits its box.** One line, never wrapped, never scrolled sideways and never
     cut mid-glyph: the string and the textarea's own text width are measured whenever either
     changes, and the first of these that fits is the one shown, in this order — the whole string
@@ -186,8 +177,6 @@ are kept, and what the foot and its model indicator show.
     body line height, so it stays centred in the box.
   - Empty or whitespace-only text doesn't send, and Send is `aria-disabled` with no reason text,
     because the reason is obvious.
-  - **`!` in the empty box** switches it to shell mode, where what you write runs as a command
-    instead of going to the model (§chat.shell-mode/box).
 - **Send.** Sends `{type:"steer"}`, as every message typed here does, whether or not a reply runs:
   idle, the server starts a turn with it exactly as with a prompt (the same checks, the same holds
   while a turn is starting or a compaction runs, the message marked as yours); busy, it is a steer,
@@ -195,8 +184,7 @@ are kept, and what the foot and its model indicator show.
   not typed here stay `{type:"prompt"}`, a follow-up mid-turn: a playbook (§chat/playbooks), a quick
   action, a review button and a card's confirm click. `/compact` is still Sova's own request, never a
   message. Clear the textarea only after the socket accepts the message.
-  Show the user bubble optimistically and resume auto-follow. A command run from shell mode is no
-  message: it never sends a steer or a prompt (§chat/shell-mode).
+  Show the user bubble optimistically and resume auto-follow.
 - **While streaming.** Send stays available and its label changes to `Steer`. Steers sent while
   the turn runs land together: each reaches the agent at its next step, in the order sent, each its
   own message, and the one reply after them answers them all (§chat.transcript/a-queued-message).
@@ -224,11 +212,9 @@ are kept, and what the foot and its model indicator show.
   The stored draft is `{ text, attachments }`: pending images persist with the words, as
   `attachments: [{ path, name, mimeType, size }]`, at most 8 per session. Each is a file already
   uploaded into the session's attachments folder (§chat/images), so a reload restores the words and the
-  images. A draft written in shell mode keeps its leading `!` or `!!`, so it opens in shell mode
-  again (§chat.shell-mode/box). A draft is deleted only when it has neither text nor attachments. A send clears the
+  images. A draft is deleted only when it has neither text nor attachments. A send clears the
   draft in both places. A draft on a session nothing was ever sent in — images alone included — also keeps that session in the list (§app/session-list).
-- **The foot** reads left to right: the model indicator, the Claude login, in shell mode the
-  `Shell mode` chip (§chat.shell-mode/box), the disabled reason, then the mode switch
+- **The foot** reads left to right: the model indicator, the disabled reason, then the mode switch
   (§chat/mode-menu) pushed to the right edge. It is a row of icons at every width: the effort ring,
   the login's avatar (§app.claude-logins/active-login), the sandbox shield and the mode icons
   (§chat.mode-menu/trigger). Where the composer is at least 620px wide, words come back beside the
@@ -323,14 +309,6 @@ Send is enabled by typed text, an attachment, **or answers picked on an alignmen
 gathering transcript card alone** (§chat.alignment/card, §chat.transcript-cards/answering): with
 picks and no text it sends just their lines. With picks staged, a
 typed local command (`/new`, `/tree`, `/agents`…) is sent as text after them, not run.
-
-In shell mode (§chat.shell-mode/box) Send reads Run and follows the rows above. Only a typed command
-enables it: an attachment or staged picks alone don't, because a command never carries them. While
-a command already runs in this chat, Run is refused, with the reason in `.composer-reason` and the
-draft kept (§chat.shell-mode/running). So is any Run the chat refuses, a Run with no open
-connection, and a Run pressed while the chat connects ("Not connected yet. Run it again once the
-chat connects.", over the connecting reason said only to the ear); a refusal takes a line of its own
-under the foot's controls (`.composer-foot[data-reason-wide]`). While a Run waits for the chat's answer, Run is `aria-disabled` (§chat.shell-mode/box).
 
 Use `aria-disabled="true"` rather than `disabled` on buttons whose reason matters. That keeps them
 focusable, so the reason (tied to them with `aria-describedby="composer-reason"`) gets read. The
@@ -572,8 +550,8 @@ menu keeps its own 360px cap.
 The composer has a real label, measured contrast, a named mic button and a Stop that reads as the
 smaller, secondary action.
 
-- **Label.** The textarea has a real (visually hidden) `<label>`, `Shell command` in shell mode.
-  The placeholder is never the label.
+- **Label.** The textarea has a real (visually hidden) `<label>`. The placeholder is never the
+  label.
 - **Contrast.** On-accent on accent (Send) is 5.61 (dark) and 6.81 (light). The control border
   (border-strong on surface) is 3.47 and 3.61, clearing 3:1. Error on surface (Stop) is 5.42
   and 6.01.

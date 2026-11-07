@@ -90,10 +90,7 @@
       "pi-config/extensions/sandbox/README.md",
       "server/background-jobs-request.ts",
       "server/background-jobs-request.test.ts",
-      "server/background-jobs-request.integration.test.ts",
-      "server/harness/pi/session.ts",
-      "server/harness/pi/shell.ts",
-      "server/harness/pi/shell.test.ts"
+      "server/background-jobs-request.integration.test.ts"
     ],
     "about": [
       "§chat.sandbox/what-on-enforces"
@@ -275,20 +272,12 @@
       "pi-config/extensions/sandbox/tools.ts",
       "pi-config/extensions/sandbox/policy.ts",
       "pi-config/extensions/sandbox/backend.ts",
-      "pi-config/extensions/sandbox/README.md",
-      "server/harness/pi/session.ts",
-      "server/harness/pi/shell.ts",
-      "server/harness/pi/open.ts"
+      "pi-config/extensions/sandbox/README.md"
     ],
     "notOwned": [
       "§chat.composer/sandbox-shield",
       "§chat.worktrees/sandbox",
       "§app.claude-logins/registry"
-    ],
-    "agreed": {
-      "by": "operator",
-      "at": "2026-11-06T04:44Z",
-      "source": "pi-session:f129828b-8ab7-44b5-a8d0-28839491c2d3#41e62645"
-    }
+    ]
   }
 }

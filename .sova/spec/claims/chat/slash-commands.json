@@ -212,12 +212,7 @@
     "code": [
       "src/lib/slash.ts",
       "src/components/Composer.tsx"
-    ],
-    "agreed": {
-      "by": "operator",
-      "at": "2026-11-06T04:44Z",
-      "source": "pi-session:f129828b-8ab7-44b5-a8d0-28839491c2d3#41e62645"
-    }
+    ]
   },
   "§chat/slash-commands": {
     "kind": "surface",

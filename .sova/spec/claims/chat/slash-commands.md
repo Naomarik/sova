@@ -30,7 +30,6 @@ without a command list or while the composer is disabled.
   - No `commands` message has arrived yet, or the list is empty.
   - The composer is disabled (read-only, connecting, reconnecting, or a model switch is pending).
     If it becomes disabled while the menu is open, close it.
-  - The box is in shell mode (§chat.shell-mode/box).
 - **While streaming it works as usual.** Sending `/name args` with **Steer** is fine. pi runs
   extension commands immediately, even mid-turn, and queues `skill:` and prompt templates as a
   steer with expansion. A turn starting or ending doesn't close the menu. The "Ran" row (below)

@@ -551,8 +551,6 @@ member at once.
   conversation (§chat/images) and a slash command is a per-runtime thing, half of them local (§chat/slash-commands). Both
   stay in the pane composers, where their target is one session. The `plus` trigger is absent
   here rather than present-and-disabled.
-- **Nor is shell mode** (§chat.shell-mode/box). A leading `!` here is text, sent to every member as
-  written; each pane's own composer has shell mode while Send to All is off.
 - **Sent text appears in every included pane at once**, optimistically, as that pane's user
   bubble — the same optimistic rule §chat/composer gives.
 - **The composer clears on a clean send, and keeps the text on a partial one.** "Clears once the

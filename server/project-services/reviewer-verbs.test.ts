@@ -54,3 +54,14 @@ test("only Sova's merge-reviewer profile is held to that: the merge thread, a us
     assert.equal(ran.length, before + 1, JSON.stringify(profile));
   }
 });
+
+test("a merge reviewer's queue_push is refused before anything is pushed; the refusal names merge.review", async () => {
+  const { queuePushTool, REVIEWER_PUSH_REFUSAL } = await import("../topics");
+  let asked = 0;
+  const tool = queuePushTool({ sessionId: "s", title: async () => (asked++, "Review · feat/x") } as never);
+  const ctx = { sessionId: "s", cwd: "/nowhere", leafId: () => null, branch: () => [], state: () => ({ latest: (k: unknown) => (k === PROFILE ? { data: { v: 1, profile: REVIEWER } } : null) }) } as never;
+  const r = (await tool.execute("t", { topic: "anything", text: "hi" }, undefined, undefined, ctx)) as { content: { text: string }[]; details: { refused?: boolean } };
+  assert.equal(r.content[0]!.text, REVIEWER_PUSH_REFUSAL);
+  assert.equal(r.details.refused, true);
+  assert.equal(asked, 0, "returned before the push: not even its title was read");
+});

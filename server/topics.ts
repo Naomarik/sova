@@ -1,5 +1,7 @@
 import type { PiExtensionAPI } from "./harness/pi/extension-types";
-import type { ToolSpec } from "../shared/harness";
+import type { ToolCtx, ToolSpec } from "../shared/harness";
+import { queueChatRole } from "../shared/merge-queue";
+import { PROFILE } from "./harness/state-kinds";
 import { toPiTool } from "./harness/pi/tools";
 import { existsSync } from "node:fs";
 import { isArchived } from "./archived-sessions";
@@ -180,13 +182,18 @@ export function pushNote(ctx: PusherContext, params: { topic?: unknown; text?: u
 
 type Tool = ToolSpec;
 
+/** What queue_push answers a merge reviewer (§app.merge-queue/review). */
+export const REVIEWER_PUSH_REFUSAL = "Refused: a merge reviewer only reads and answers its run with merge.review; it pushes nothing to a topic.";
+
 export function queuePushTool(ctx: PushingSession): Tool {
   return {
     name: QUEUE_PUSH_TOOL,
     label: "Queue push",
     description: QUEUE_PUSH_DESCRIPTION,
     parameters: obj({ topic: str("The topic you were told to use."), text: str("The note. One line is best.") }, ["topic", "text"]),
-    execute: async (_id: string, p: any) => {
+    execute: async (_id: string, p: any, _signal?: AbortSignal, _onUpdate?: unknown, tctx?: ToolCtx) => {
+      // A merge reviewer only reads and answers its run: it never posts into another chat's queue.
+      if (queueChatRole(tctx?.state().latest(PROFILE)?.data?.profile) === "reviewer") return { content: text(REVIEWER_PUSH_REFUSAL), details: { v: 1, topic: String(p?.topic ?? "").trim(), refused: true } };
       const title = await ctx.title();
       const said = pushNote({ sessionId: ctx.sessionId, title: () => title, ...(ctx.now ? { now: ctx.now } : {}) }, p ?? {});
       return { content: text(said), details: { v: 1, topic: String(p?.topic ?? "").trim() } };

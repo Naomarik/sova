@@ -1,7 +1,7 @@
-import { createEffect, createSignal, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, on, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { ApiError, fetchShellOutput } from "../lib/api";
-import { addPage, OUTPUT_GONE, outputFailed, readWords, type OutputRead } from "../lib/shell-output";
+import { createOutputReader, OUTPUT_GONE, readWords } from "../lib/shell-output";
 import { shellStatus, type ShellCardData } from "../lib/shell-runs";
 import { NOT_SHARED } from "../lib/shell-runs";
 import { Chip, trapFocus } from "./ui";
@@ -28,30 +28,19 @@ export function ShellOutputWindow(props: {
 }) {
   const status = () => shellStatus(props.card);
   const titleId = `shell-window-${Math.random().toString(36).slice(2, 8)}`;
-  const [read, setRead] = createSignal<OutputRead | null>(null);
-  const [error, setError] = createSignal<string | null>(null);
-  const [loading, setLoading] = createSignal(false);
+  const saved = () => ("entry" in props.source ? props.source : null);
+  const reader = createOutputReader({
+    fetch: (from) => {
+      const s = saved()!;
+      return fetchShellOutput(s.path, s.entry, from);
+    },
+    gone: (e) => e instanceof ApiError && e.status === 404,
+  });
+  const { read, error, loading } = reader;
+  const load = () => (saved() ? reader.load() : Promise.resolve());
+  onCleanup(() => reader.close());
   let out: HTMLPreElement | undefined;
   let atEnd = true;
-  let closed = false;
-  onCleanup(() => (closed = true));
-
-  const saved = () => ("entry" in props.source ? props.source : null);
-  const load = async () => {
-    const s = saved();
-    if (!s || loading()) return;
-    const from = read()?.next ?? 0;
-    setLoading(true);
-    setError(null);
-    try {
-      const page = await fetchShellOutput(s.path, s.entry, from);
-      if (!closed) setRead((r) => addPage(r, page));
-    } catch (e) {
-      if (!closed) setError(e instanceof ApiError && e.status === 404 ? OUTPUT_GONE : outputFailed(e instanceof Error ? e.message : String(e)));
-    } finally {
-      if (!closed) setLoading(false);
-    }
-  };
   onMount(() => void load());
 
   /** What the window shows: the live output, or the whole output read so far. */

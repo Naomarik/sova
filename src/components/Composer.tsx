@@ -6,7 +6,7 @@ import { runControls } from "../lib/compact";
 import { createTouchMode, enterSends, notePress as pressAt, refocusAfterSend, type SendPress } from "../lib/input-mode";
 import { watchKeyboard } from "../lib/voice/keyboard";
 import { enterRunsLocal, insertCommand, localCommand, menuCommands, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
-import { asText, canRun, codeSpans, enterOnInput, folderName, leaveOnKey, modeAnnouncement, NOT_CONNECTED_YET, onAnswer, NOT_CONNECTED, openDraft, runWhileBlocked, savedMode, SHELL_MARKER, shellPlaceholder, type ShellControl, type ShellMode } from "../lib/shell-mode";
+import { canRun, codeSpans, folderName, SHELL_MARKER, shellPlaceholder, type ShellControl, type ShellMode } from "../lib/shell-mode";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
 import { registerComposer } from "../commands/composers";
 import { openPaletteFrom } from "../commands/palette-open";
@@ -71,6 +71,7 @@ import { createVoiceInput, VoiceButton, VoiceStrip } from "./VoiceInput";
 import { WorktreesControl } from "./WorktreesControl";
 import type { QueueWorktree } from "./WorktreesModal";
 import "../shell-mode.css";
+import { createShellBox, type ShellBox } from "../lib/shell-box";
 
 /** The session pane's element id: ONE pane, five tabs, so every trigger controls the same id. */
 const PANE_ID = "session-pane";
@@ -250,17 +251,16 @@ export function Composer(props: {
   /** Whether the draft holds anything to send (text or an attachment), as it changes. */
   onDraft?(has: boolean): void;
 }) {
-  // A draft written in shell mode was saved with its mode, apart from its text: a leading "!" is
-  // only ever text (§chat.shell-mode/box).
-  const storedHere = () => ({ text: drafts.get(props.path) ?? "", mode: draftModes.get(props.path) });
-  const opened = openDraft(storedHere(), !!untrack(() => props.shell));
-  const [text, setText] = createSignal(opened.text);
-  const [mode, setMode] = createSignal<ShellMode>(opened.mode);
-  const shellMode = () => mode() !== "off";
-  /** The Run this tab is waiting on: the box keeps the command until the chat answers (a refusal keeps it there). */
-  const [pendingRun, setPendingRun] = createSignal<{ clientId: string; text: string; mode: ShellMode } | null>(null);
-  /** Why the last Run didn't run, under the box until the command or the mode changes. */
-  const [shellReason, setShellReason] = createSignal<string | null>(null);
+  // The box's text and shell mode (lib/shell-box): a draft written in shell mode was saved with its
+  // mode, apart from its text, so a leading "!" is only ever text (§chat.shell-mode/box). Made below,
+  // once the pane's announcer is known.
+  let box!: ShellBox;
+  const text = () => box.text();
+  const mode = () => box.mode();
+  const shellMode = () => box.shellMode();
+  const pendingRun = () => box.pending();
+  const shellReason = () => box.reason();
+  const setShellReason = (r: string | null) => box.setReason(r);
   const localOpts = () => ({ clear: !!props.onClear, mode: !!props.onMode });
   /** One row object per stored file, so the strip keeps its rows (and focus) as the list changes. */
   const rows = new Map<string, PendingImage>();
@@ -335,52 +335,18 @@ export function Composer(props: {
     announce,
   });
 
-  /** Any local write (typing, send's clear, a restore) makes this tab's text the authority, so a
-      stored draft still on its way from the server must not replace it. */
-  let touched = false;
-  const setDraft = (v: string) => {
-    touched = true;
-    setText(v);
-    setDraftText(props.path, v, savedMode(mode(), v));
-  };
-  /** Into or out of shell mode: the stored draft follows, the reason line clears and it is said. */
-  const switchMode = (next: ShellMode, say = modeAnnouncement(next)) => {
-    if (next === mode()) return;
-    setMode(next);
-    setShellReason(null);
-    setDraftText(props.path, text(), savedMode(next, text()));
-    if (say) announce(say);
-  };
-  // Nothing in memory (a reload, or another device wrote it): seed from the stored draft. The
-  // attachments seed themselves through the store, which only takes them if this tab has none.
-  void loadDraft(props.path).then((stored) => {
-    if (!stored.text || touched || text() || shellMode()) return;
-    const o = openDraft(stored, !!props.shell);
-    setMode(o.mode);
-    setText(o.text);
+  box = createShellBox({
+    shell: () => props.shell,
+    stored: () => ({ text: drafts.get(props.path) ?? "", mode: draftModes.get(props.path) }),
+    load: () => loadDraft(props.path),
+    write: (v, m) => setDraftText(props.path, v, m),
+    announce,
+    cleared: () => {
+      input.value = "";
+    },
   });
-  // Shell mode can arrive after the box opened (the chat's hello says it has one): a draft nobody
-  // has touched opens in its mode then. Shell mode going away turns a command back into its text.
-  createEffect(
-    on(
-      () => !!props.shell,
-      (has) => {
-        if (has && !touched && mode() === "off") {
-          const o = openDraft(storedHere(), true);
-          setMode(o.mode);
-          setText(o.text);
-        } else if (!has && mode() !== "off") {
-          // On screen only: the stored draft keeps its mode until the box is written to.
-          const shown = asText(mode(), text());
-          setMode("off");
-          setText(shown);
-          setPendingRun(null);
-          setShellReason(null);
-        }
-      },
-      { defer: true },
-    ),
-  );
+  const setDraft = (v: string) => box.setDraft(v);
+  const switchMode = (next: ShellMode, say?: string) => box.switchMode(next, say);
   let disposed = false;
   /** Listeners Solid can't delegate (paste), added by hand so closing can take them off. */
   const listening = new AbortController();
@@ -409,7 +375,7 @@ export function Composer(props: {
   // "Not connected yet" answers a Run pressed while the chat connects: once it has, it is moot.
   createEffect(
     on(disabled, (off) => {
-      if (!off && untrack(shellReason) === NOT_CONNECTED_YET) setShellReason(null);
+      if (!off) box.connected();
     }),
   );
   // Tapped, Enter adds a line and Send sends; the placeholder's key hint shows exactly when
@@ -850,12 +816,7 @@ export function Composer(props: {
     input.style.height = `${input.scrollHeight}px`;
   };
   createEffect(on(text, () => queueMicrotask(grow)));
-  /** The box's text as a message holds it: a command keeps its "!" or "!!" in view, as text. */
-  const asMessage = () => {
-    const t = asText(mode(), text());
-    switchMode("off");
-    return t;
-  };
+  const asMessage = () => box.asMessage();
   // A message handed back or staged is a message: the box leaves shell mode for it, and a command
   // already typed stays in it as its text ("!ls"), so nothing typed is lost.
   createEffect(
@@ -869,28 +830,6 @@ export function Composer(props: {
     on(
       () => props.staged,
       (r) => r?.text && setDraft([asMessage(), r.text].filter((t) => t.trim()).join("\n\n")),
-      { defer: true },
-    ),
-  );
-  // The chat's answer to this tab's Run: started, and the box is a message box again (unless it
-  // was changed meanwhile); refused, and the command stays with the reason under it (§chat.shell-mode/running).
-  createEffect(
-    on(
-      () => props.shell?.answer() ?? null,
-      (a) => {
-        const next = onAnswer(pendingRun(), a, { text: text(), mode: mode() });
-        if (next.kind === "none") return;
-        setPendingRun(null);
-        if (next.kind === "refused") {
-          setShellReason(next.reason);
-          announce(next.reason);
-          return;
-        }
-        if (!next.clear) return;
-        setDraft("");
-        input.value = "";
-        switchMode("off", `Command started. ${modeAnnouncement("off")}`);
-      },
       { defer: true },
     ),
   );
@@ -920,36 +859,13 @@ export function Composer(props: {
     // Only a click on Send itself carries its press; Enter and Ctrl/⌘+Enter have none.
     const sendPress = takePress();
     const p = e instanceof SubmitEvent && e.submitter === sendButton ? sendPress : null;
-    if (!canSend()) {
-      // Shell mode: a Run the box can't take now keeps the command and says why when nothing on
-      // screen does (the chat still connecting). Nothing is sent, now or later.
-      const why = shellMode() && props.shell && !props.readOnly && !pendingRun() && text().trim() ? runWhileBlocked(reason()) : null;
-      if (why) {
-        setShellReason(why);
-        announce(why);
-      }
+    // Shell mode: the line is a command, never a message (lib/shell-box). Images and picks stay.
+    const ran = box.run({ canSend: canSend(), blocked: reason(), readOnly: !!props.readOnly });
+    if (ran !== "message") {
+      if (ran === "sent" || ran === "refused") settleFocus(p);
       return;
     }
-    // Shell mode: the line is a command, never a message (no steer, no prompt), even in a box whose
-    // chat can't run one now. Images and picks stay.
-    if (shellMode()) {
-      if (!props.shell) {
-        setShellReason(NOT_CONNECTED);
-        announce(NOT_CONNECTED);
-        return;
-      }
-      const command = text().trim();
-      const sent = props.shell.run(command, mode() === "private");
-      if ("refused" in sent) {
-        setShellReason(sent.refused);
-        announce(sent.refused);
-      } else {
-        setShellReason(null);
-        setPendingRun({ clientId: sent.clientId, text: text(), mode: mode() });
-      }
-      settleFocus(p);
-      return;
-    }
+    if (!canSend()) return;
     // "/agents" is ours: it opens the subagents pane instead of reaching a runtime whose own
     // monitor is TUI-only. With images attached it's a message like any other.
     if (!props.picks && localCommand(text()) === "subagents" && props.onShowWorkers && images().length === 0) {
@@ -1022,10 +938,9 @@ export function Composer(props: {
     const attachments = pending.map((a) => ({ ...a, name: a.path.slice(a.path.lastIndexOf("/") + 1) }));
     const picks = props.picks;
     if (props.onSend(withImagePaths(picks ? picks.compose(text().trim()) : text().trim(), pending), props.running, attachments)) {
-      touched = true;
+      box.sent();
       picks?.sent?.();
       picks?.clear();
-      setText("");
       clearDraft(props.path);
       rows.clear();
       setRejected([]);
@@ -1353,15 +1268,10 @@ export function Composer(props: {
                 const value = e.currentTarget.value;
                 // A "!" typed into the empty box, or pasted text starting with one: shell mode.
                 const ev = e as InputEvent;
-                const entered = props.shell && !ev.isComposing ? enterOnInput(mode(), text(), value, ev.inputType ?? "") : null;
-                if (entered) {
-                  e.currentTarget.value = entered.text;
-                  e.currentTarget.setSelectionRange(entered.text.length, entered.text.length);
-                  switchMode(entered.mode);
-                  setDraft(entered.text);
-                } else {
-                  if (value !== text()) setShellReason(null);
-                  setDraft(value);
+                const entered = box.input(value, ev.inputType ?? "", !!ev.isComposing);
+                if (entered !== null) {
+                  e.currentTarget.value = entered;
+                  e.currentTarget.setSelectionRange(entered.length, entered.length);
                 }
                 updateSlash();
                 updateMention();
@@ -1386,11 +1296,9 @@ export function Composer(props: {
               onKeyDown={(e) => {
                 press = null;
                 // Backspace or Esc in the empty box leaves shell mode (from "!!", Backspace goes back to "!").
-                const left = props.shell && !e.isComposing ? leaveOnKey(mode(), e.key, text()) : null;
-                if (left) {
+                if (box.key(e.key, e.isComposing)) {
                   e.preventDefault();
                   e.stopPropagation();
-                  switchMode(left);
                   return;
                 }
                 // A bare local command runs on the Enter that would send; in touch mode it's a newline.

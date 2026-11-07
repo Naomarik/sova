@@ -1,6 +1,7 @@
 // The window a command's output opens in (§chat.shell-mode/card): a running command's live output, or
-// a saved one's whole output, read page by page. Pure: ShellOutputWindow.tsx draws it.
+// a saved one's whole output, read page by page. No DOM: ShellOutputWindow.tsx draws it.
 
+import { createSignal } from "solid-js";
 import { thousands } from "./format";
 
 /** The whole output as read so far: its pages joined, where the next one starts, and its full size. */
@@ -36,3 +37,49 @@ export const OUTPUT_GONE = "The whole output is gone: it's deleted when its chat
 
 /** A page that didn't load: what happened, and that trying again is safe. */
 export const outputFailed = (why: string) => `Couldn't load the output. ${why.replace(/\.?$/, ".")} Nothing else changed; try again.`;
+
+/** One page as the server gives it (src/lib/api fetchShellOutput). */
+export interface OutputPage {
+  text: string;
+  from: number;
+  next: number | null;
+  total: number;
+}
+
+/**
+ * A saved command's whole output, read a page at a time for its window: the first page at once, each
+ * Load More the next from where the read stopped. A press while a page is out does nothing; a failed
+ * page keeps what was read and Try Again asks for the same page. `gone` tells a deleted file (a 404:
+ * its chat was archived) from any other failure. Solid signals; no DOM.
+ */
+export function createOutputReader(o: { fetch(from: number): Promise<OutputPage>; gone(err: unknown): boolean }) {
+  const [read, setRead] = createSignal<OutputRead | null>(null);
+  const [error, setError] = createSignal<string | null>(null);
+  const [loading, setLoading] = createSignal(false);
+  let closed = false;
+  const load = async () => {
+    if (closed || loading()) return;
+    const r = read();
+    if (r && r.next === null) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const page = await o.fetch(r?.next ?? 0);
+      if (!closed) setRead((now) => addPage(now, page));
+    } catch (e) {
+      if (!closed) setError(o.gone(e) ? OUTPUT_GONE : outputFailed(e instanceof Error ? e.message : String(e)));
+    } finally {
+      if (!closed) setLoading(false);
+    }
+  };
+  return {
+    read,
+    error,
+    loading,
+    load,
+    /** The window closed: an answer still out changes nothing. */
+    close() {
+      closed = true;
+    },
+  };
+}

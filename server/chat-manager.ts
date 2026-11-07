@@ -23,6 +23,7 @@ import { appliesAfter, type BranchEntries, chatModeOf, CREATE_NOT_TAKEN, default
 import { loadDefaults, saveDefaults } from "./web-defaults";
 import { subagentProfilesInfo, requireSubagentProfile, saveSubagentProfileDefault } from "./subagent-profiles";
 import { restorePick, pickEntryFor } from "../pi-config/extensions/subagents/subagent-profiles.ts";
+import { decodeMemberContext, MEMBER_ENV } from "../pi-config/extensions/subagents/mailbox.ts";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
 import { toContextInfo, workerWindowResolver } from "./models";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
@@ -302,9 +303,11 @@ const mcpTellHere: NonNullable<ChatHosts["mcpTell"]> = (parent, note) => void im
 
 /** Register the Claude Code provider without waiting for the user to open a session: a throwaway
     session with the default extensions and the provider flag alone (server/harness/pi/open.ts).
-    Best-effort; never throws. `onStep` hears each step as it begins (§app.chat-processes/boot-log). */
+    Best-effort; never throws. `onStep` hears each step as it begins (§app.chat-processes/boot-log). Its modes
+    owner is the saved switch as this warm-up finds it, as a chat's open reads it (§chat.mode-menu/sova-runs-modes);
+    nothing of that owner outlives the throwaway session, so a later flip has nothing here to follow. */
 export function warmClaudeCodeProvider(modelRuntime: PiModelRuntime, cwd: string, onStep?: (step: string) => void): Promise<void> {
-  return warmPiProvider(modelRuntime, cwd, DEFAULT_EXTENSION_FACTORIES, onStep);
+  return warmPiProvider(modelRuntime, cwd, DEFAULT_EXTENSION_FACTORIES, onStep, sovaRunsModesSaved() ? modesEntries().entry : null);
 }
 
 let runtimeWarm: Promise<void> | null = null;
@@ -819,9 +822,9 @@ const specToolExtension = () => servedToolsExtension("sova-spec", [specCodingToo
  * A worker chat's own inline extensions: every one, hidden chats included, gets the macOS kill guard
  * (server/shell-guard.ts); a worker or team member (never a hidden chat) also gets project_verbs and its
  * instance note, as an ordinary chat does (§app.project-services/callers), served when the server declared it, else
- * in this process.
+ * in this process; and the spec look-up, a team's monitor excepted (§app.spec-lookup/spec-tool): it does no project work.
  */
-export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtins?: string[] | null } & Partial<Pick<WorkerSpec, "mcp" | "parent">>, path: string) {
+export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtins?: string[] | null } & Partial<Pick<WorkerSpec, "mcp" | "parent" | "env">>, path: string) {
   // Subfolder instruction files load for every kind whose loadout has a file tool (server/deeper-context.ts).
   const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension()] : [];
   // A hidden chat keeps no job: nothing would deliver its card or stop it.
@@ -840,8 +843,9 @@ export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtin
       : projectVerbsExtension(projectEngine),
     // background_job: a job under the worker's own confinement, run by the server (§app.background-jobs/request).
     ...(servedDecls && (!w.builtins || w.builtins.includes("bash")) ? [servedToolsExtension("sova-background-job", servedSpecs(path, (n) => n === BACKGROUND_JOB_TOOL))] : []),
-    // spec: the read-only spec look-up, last of all so nothing else moves.
-    specToolExtension(),
+    // spec: the read-only spec look-up, last of all so nothing else moves. By its duty, never by its built-ins:
+    // any other worker with no file tools keeps it.
+    ...(decodeMemberContext(w.env?.[MEMBER_ENV])?.duty === "monitor" ? [] : [specToolExtension()]),
   ];
 }
 

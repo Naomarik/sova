@@ -212,8 +212,8 @@ strip, empty or not: a tab that came and went would move the strip under the rea
   and the selected tab is scrolled into view (to the nearest edge) when the pane opens and whenever
   the tab changes, so a tab a door opened is never off-screen at 375px.
 - **Session** is what the session is, in this order: Path (with Copy Session Path and Copy Resume
-  Command), Context (its sentence followed by a **See what fills it** link that opens the Context
-  tab), Repository, Worktrees (§chat.worktrees/pane), Background jobs while it has any
+  Command), Time Spent (§app.subagents-pane/time-spent), Repository, Worktrees
+  (§chat.worktrees/pane), Background jobs while it has any
   (§app.background-jobs/pane), Identity, Compactions, Changes, and Memory
   (§app.subagents-pane/memory-outline).
   The session's actions sit at the right end of the Path heading row, so they add no row of their
@@ -259,6 +259,160 @@ strip, empty or not: a tab that came and went would move the strip under the rea
 - **Context** is what fills this chat's context window (§app.subagents-pane/context-tab).
 - **Timeline** is §chat/timeline, **Agents** the list and transcript below; **Skills** says which
   skills loaded and when, and **Explain** lists the session's /explain pages.
+
+## §app.subagents-pane/time-spent — Time Spent: what the section shows
+
+Time Spent says how long you have been with this session and how long its agent has worked. It is
+a section of the session pane's Session tab (§app.subagents-pane/tabs) and appears nowhere else: not
+in the chat head, and not beside a message. Every session has it: one chatting here, one watched
+from a TUI, an archived one, and one on another computer. How the seconds are counted is
+§app.subagents-pane/time-spent-counting; where they are kept is §app.subagents-pane/time-spent-record.
+
+- **It starts collapsed.** The section is collapsible under its heading, **Time Spent**, and starts
+  collapsed. Closed, it shows the heading and hides the rest; counting goes on while it is closed. Open
+  or closed is remembered per browser, for all sessions, never per session.
+- **The two figures.** At the top, **You** and **Agent**, each a plain duration in whole seconds, and
+  one word: **Counting** while this page is counting this session, else **Paused**. While the pane
+  is open on the Session tab and the section is open, You ticks every second that the word says
+  Counting, and Agent takes in a turn still running. With the pane closed or on another tab, or the
+  section closed, nothing ticks on screen, and the time still counts.
+- **The breakdown.** It follows the figures directly, with no heading, its rows in this order: Reading,
+  Typing, Dictating, Scrolling, Reviewing Changes, Reviewing Screenshots, Viewing Tours, Other. The rows add up to You, to the second. A row
+  with no time doesn't show. Reading expands on click into Main Thread, Alignments and Workers, with no
+  "Reading" prefix, which add up to Reading; one of those with no time doesn't show either. Main Thread
+  is the session's main chat, and a folded alignment line counts there.
+- **Alignments.** A list under that heading, one line per alignment document (§chat.alignment/document)
+  and not one per revision, so a document's revisions share one line. No documents, no list. A line
+  gives the document's title and three figures:
+  - **On screen:** the counted seconds any card of that document, of any revision, or its full report
+    view had its content visible. An alignment collapsed to its one-line row doesn't count. A
+    viewer open over the chat, an image open full size included, pauses this figure. It overlaps the
+    breakdown: a card on screen while you type grows this figure and the second counts as
+    Typing, so these figures don't add up to You. It says on screen, never read.
+  - **To read:** the estimated reading time of the newest revision's text, at the idle cutoff's pace
+    of about 250 words a minute (§app.subagents-pane/time-spent-counting).
+  - **First shown to decided:** from when a card of that document was first on screen, by the record
+    of the computer hosting the session (§app.subagents-pane/time-spent-record), to the revision where
+    its last open question became decided. It includes time away, so it may be hours. A document with
+    a question still open, with no questions, or with no first-shown moment in that record (one only
+    seen before Time Spent reached that computer) shows none.
+- **Plain numbers.** A figure's emphasis follows its place in the section, never its size or value:
+  the main times read brighter, labels and detail quieter. Nothing is flagged or commented on, and You
+  and Agent are not compared.
+- **Not Recording.** When the computer hosting the session refuses the recording or is too old to
+  accept it, the word reads **Not Recording** in place of Counting or Paused and You doesn't tick. A
+  figure from before stays only under that word, never under Counting or Paused. The word goes back
+  once that computer accepts the recording. Nothing else says Not Recording: a brief network failure
+  changes no word (§app.subagents-pane/time-spent-record).
+- **Older sessions.** A session from before Time Spent reached the computer hosting it starts You and
+  its on-screen figures from zero, with no sentence on screen about it. Agent still covers its whole length, and so may be far ahead of You.
+- **Before the first read.** While its first read is out an open section shows its heading over a
+  placeholder of about its usual height, never a zero, so Repository doesn't jump when the figures
+  land.
+- **Stated limits.** You can step back on screen when another device wins a moment; the record is
+  right. A session deleted under an open pane can flip its word between Not Recording and Counting.
+- **Quiet.** The ticking announces nothing to assistive technology (§app.subagents-pane/accessibility).
+- **Not in this version.** Totals by day or by project, an attention track on the Timeline tab, times
+  per question, warnings, and a clear action. Nothing here asks "are you still there?" and nothing
+  here tells the agent.
+
+## §app.subagents-pane/time-spent-counting — Time Spent: when a second counts, and for what
+
+You counts a second only when you are really at this session, and every counted second goes to
+exactly one row.
+
+- **When it counts.** While the page is visible and you have been active within the idle cutoff,
+  **even when another window has focus**: a visible page keeps counting until the cutoff. Hiding the
+  tab stops it at once. A screen going off stops it at once wherever the browser then reports the
+  page hidden; where it doesn't, the idle cutoff stops it. Any touch, click, scroll or key, or the
+  mouse moving over the page, resumes it at once, with no prompt, and puts off the cutoff.
+- **The idle cutoff.** 60 seconds, plus the time the words in view take at about 250 words a minute,
+  never above 3 minutes, and worked out again as the view changes. So a screenful of 500 words or
+  more gets the whole 3 minutes. Text inside a closed disclosure isn't words in view.
+- **Dictating holds it.** While voice input records, the idle cutoff doesn't stop the count, though
+  no key is pressed. Hiding the page ends the recording (§chat.voice/mobile-lifecycle) and the count
+  with it. The recording holds the count, and your newest real input still names the pane (Split view,
+  below): the recording's pane gets Dictating while it is the named pane; once a wheel names another
+  pane, that pane gets its own row (Scrolling, then Reading and so on) and never Dictating.
+- **One row per second.** The first of these that is true names the second, so the rows always add up
+  to You:
+  1. Voice input is recording in the pane that counts: **Dictating**.
+  2. You are typing in any input in the pane that counts: **Typing**.
+  3. You scrolled in the pane that counts in about the last 1.5 seconds: **Scrolling**.
+  4. A foreground view is open: the changes viewer (§chat.changes/viewer), **Reviewing Changes**; an
+     image open full size in the viewer, any image and not only a screenshot, **Reviewing Screenshots**;
+     a tour (§app/tours), **Viewing Tours**; an alignment's full report view, **Alignments** under
+     Reading. The image viewer's time goes to the pane that was counting when it opened, normally the
+     one whose image was pressed. A small image preview in the chat isn't the viewer: it stays Main
+     Thread.
+  5. Transcript rows are on screen: what fills the largest share of the screen names it. Alignment
+     cards with their content visible, **Alignments** under Reading; a worker's transcript in the
+     Agents tab or in a pane opened from the Agents board, **Workers** under Reading; any other row, an
+     alignment collapsed to its one-line row and a revision folded to its one line included, **Main
+     Thread** under Reading. A linked session in the Agents tab (§mesh.links/agents-pane) counts with
+     the chat's rows, not as Workers. A tie goes to the alignment; a tie between a worker's transcript
+     and the chat goes to the worker.
+  6. **Other**.
+- **A pane over the chat.** Where the pane is drawn over the chat (§app.subagents-pane/shell-a-third-column),
+  the rows it covers are left out of the area, the words in view and on-screen time. With no worker open the
+  pane's own content has no share, so the sliver of chat left showing counts as Main Thread, whatever
+  you are reading in the pane. That is a stated limit.
+- **It keeps up.** The row changes within about 2 seconds of the activity changing, so type, read,
+  type shows as Typing, Reading, Typing.
+- **Only your own scrolling.** The chat following new text is neither Scrolling nor activity: it
+  doesn't resume a stopped count or put off the cutoff.
+- **Split view.** Only one pane counts at a time (§workspace.groups/a-pane), named by your newest real
+  input of any kind: a key names the pane holding the keyboard; a pointer move, wheel or touch names
+  the pane under it. So wheeling over one pane while the keyboard sits in another's composer counts
+  Scrolling for the pane under the wheel and nothing for the other, and typing in one pane's composer
+  with the mouse resting over another counts Typing for the pane being typed in. A menu or dialog
+  counts for the session it opened over.
+- **Workers.** Reading a worker in the parent's Agents tab (§app.subagents-pane/transcript-view), or in
+  a pane opened from the Agents board, is Workers under Reading on the parent. A worker opened as its own
+  page has its own clock, not added to the parent's. With a session's pane open beside the Agents
+  board, the board's own activity counts on that session. The project page, Settings and the overview
+  count for nothing.
+- **One clock per computer.** Devices reporting the same moment to one computer count it once, for the
+  session and row of whichever had the newest real input: a phone on one session and a desktop on
+  another add one second between them, not two, and the rows still add up to You. That computer's
+  own time decides what is the same moment, so a device with a wrong clock changes nothing.
+- **Computers count apart.** Each computer counts only its own sessions, and time at two computers at
+  once counts on both. No total across computers exists for that to come out wrong in.
+- **Agent.** The time the main thread's turns took, over the session's whole active branch. A worker's
+  own time isn't added. It is the same however little of a long chat the page has loaded. A forked
+  session's Agent covers its own active branch.
+
+## §app.subagents-pane/time-spent-record — Time Spent: what is kept, and where
+
+- **A moment-by-moment record.** The computer hosting the session keeps a record of what was counted
+  moment by moment, and the section's figures are its sums. So a session on another computer shows the
+  same You from any device.
+- **Until the session is deleted.** Archiving keeps it. Deleting the session removes it, however the
+  session is deleted, Clean Up included (§app.session-list/archive-cleanup). Nothing else clears it.
+- **Always on.** Settings has no switch for it.
+- **Beside the session, never in it.** The record is never written to the session's file, so a session
+  open in a TUI is recorded too and its file stays untouched. The agent never sees it and it adds
+  nothing to the context window (§app.subagents-pane/context-tab).
+- **What a crash costs.** A page reports about every 15 seconds and whenever it is hidden or left, so
+  with the network up a crash loses at most about 15 seconds.
+- **A brief network failure.** It changes no word and doesn't read as Not Recording. The page keeps what
+  it has not reported and sends it when it can. What it keeps is bounded, so a long outage drops the
+  oldest first.
+- **A resend counts once.** A resend with the same slice id counts once, and a late new report keeps
+  its seconds. The one exception: the computer forgets its slice ids when its server restarts, so a
+  report whose answer a restart lost can count again, its whole run.
+- **A page can't inflate You.** A page's runs can sit at most 300 seconds ahead of the computer's own
+  time, and seconds past that are dropped. So a report delayed by more than that can lose seconds.
+- **A fork.** A forked session starts its record from zero; nothing carries over from the session it
+  came from.
+- **Share pages.** A public share page (§app.session-share/page) counts no time and shows none.
+- **Another computer's access.** Recording and reading ask only for the `sessions` grant
+  (§mesh.peers/grants): a computer that gives you that much records your time; one that gives less
+  refuses it, which reads Not Recording (§app.subagents-pane/time-spent).
+- **A row it doesn't know.** A computer that has this code reads a row it doesn't know as Other and
+  counts the rest of the report.
+- **Scripts.** Reading a session's record is in the catalogue (§app.commands/catalogue) as a look;
+  recording isn't. Being listed doesn't open it to agents.
 
 ## §app.subagents-pane/memory-outline — Memory in the Session tab
 

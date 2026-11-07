@@ -453,14 +453,50 @@
     "requires": [
       "§app.chat-processes/workers",
       "§app.chat-processes/code-generations",
-      "§app.chat-processes/worker-crash"
+      "§app.chat-processes/worker-crash",
+      "§app.chat-processes/worker-reports"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-25T15:55Z",
-      "source": "pi-session:4805896b-dd1c-464a-a653-c071229c3d1c#1f1f2b81"
+      "by": "user",
+      "at": "2026-11-07T03:59Z",
+      "source": "pi-session:01a1b2d6-bea7-73d4-9fe9-b82dc23ae834#98dba469"
     },
     "evidence": "verified"
+  },
+  "§app.chat-processes/worker-reports": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "pi-config/extensions/subagents/chat-worker.ts",
+      "pi-config/extensions/subagents/contracts.ts",
+      "pi-config/extensions/subagents/fold.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/job-store.ts",
+      "pi-config/extensions/subagents/worker-transcript.ts",
+      "pi-config/extensions/subagents/README.md",
+      "pi-config/extensions/subagents/chat-worker.test.ts",
+      "pi-config/extensions/subagents/index.test.ts",
+      "pi-config/extensions/subagents/still-running.test.ts",
+      "pi-config/extensions/subagents/worker-settle.test.ts",
+      "pi-config/extensions/subagents/worker-settle-order.test.ts",
+      "pi-config/extensions/subagents/worker-settle-reload.test.ts",
+      "pi-config/extensions/subagents/worker-settle-report.test.ts",
+      "scripts/chat-runtime-trial/run.mjs",
+      "server/chat-runtime/trial-jobs-tj6.integration.test.ts",
+      "server/reports.test.ts"
+    ],
+    "requires": [
+      "§app.chat-processes/workers",
+      "§app.chat-processes/worker-instructions",
+      "§teams.defaults/routing",
+      "§app.background-jobs/end-card"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-07T03:59Z",
+      "source": "pi-session:01a1b2d6-bea7-73d4-9fe9-b82dc23ae834#98dba469"
+    },
+    "evidence": "reviewed"
   },
   "§app.chat-processes/workers": {
     "kind": "behavior",
@@ -517,12 +553,13 @@
       "§app.load-priority/workers",
       "§app/worker-restore",
       "§app.mcp/who-gets",
-      "§chat/kill-guard"
+      "§chat/kill-guard",
+      "§app.chat-processes/worker-reports"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-04T11:02Z",
-      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#a22a19ea"
+      "by": "user",
+      "at": "2026-11-07T03:59Z",
+      "source": "pi-session:01a1b2d6-bea7-73d4-9fe9-b82dc23ae834#98dba469"
     },
     "evidence": "verified"
   },

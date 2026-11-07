@@ -6,12 +6,13 @@
       "§app.background-jobs/keeping",
       "§chat.wake-nudges/wake-limit",
       "§chat.wake-nudges/tries",
-      "§chat.wake-nudges/kinds"
+      "§chat.wake-nudges/kinds",
+      "§app.chat-processes/worker-reports"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-04T11:02Z",
-      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#a22a19ea"
+      "by": "user",
+      "at": "2026-11-07T03:59Z",
+      "source": "pi-session:01a1b2d6-bea7-73d4-9fe9-b82dc23ae834#98dba469"
     },
     "code": [
       "pi-config/extensions/subagents/job-store.ts",
@@ -24,7 +25,8 @@
       "server/chat-runtime/trial-jobs-tj3.integration.test.ts",
       "scripts/chat-runtime-trial/run.mjs",
       "pi-config/extensions/subagents/wake-nudge-jobs.test.ts",
-      "server/background-jobs-ends.test.ts"
+      "server/background-jobs-ends.test.ts",
+      "server/chat-runtime/trial-jobs-tj6.integration.test.ts"
     ],
     "evidence": "verified"
   },

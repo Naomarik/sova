@@ -35,9 +35,10 @@ The short part has the agent:
    procedure.
 
 In Sova the agent does these look-ups with its `spec` tool, which every chat you code in and every
-worker has, whether or not spec is on. The tool only reads: the project's spec or one of its drafts,
-in the chat's own folder or a worktree it tracks. In a project with no spec it answers "This project
-has no spec here."
+worker but a team's monitor has, whether or not spec is on. The tool only reads: the project's spec or
+one of its drafts, in the chat's own folder or a worktree it tracks. In a project with no spec it
+answers "This project has no spec here." For a folder that doesn't exist it answers with an error
+saying so.
 
 ## Before coding
 

@@ -3483,6 +3483,33 @@ test("team defaults: the caller's orchestrator is the coordinator; conflicts are
 	} finally { await h.cleanup(); }
 });
 
+test("routing: a member's report to the coordinator names the jobs it still runs", async () => {
+	const { JOBS_DIR_ENV, writeJob } = await import("./job-store.ts");
+	const jobs = fs.mkdtempSync(path.join(os.tmpdir(), "subagents-routed-jobs-"));
+	const saved = process.env[JOBS_DIR_ENV];
+	process.env[JOBS_DIR_ENV] = jobs;
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const coordinator = h.worker("ag_01"), dev = h.worker("ag_02");
+		coordinator.status = "waiting";
+		dev.sessionId = "dev-session";
+		writeJob(jobs, { v: 1, id: "j2", sessionId: "dev-session", path: "/s.jsonl", kind: "kept", command: "npm run serve", cwd: "/", unit: "j2.scope", driver: "systemd", startedAt: Date.now() - 480_000, bootId: "b" });
+		dev.output = "built it";
+		dev.settle();
+		await h.tick();
+		await waitFor(() => readMemberItems(h.memberOf("ag_01")!.dir).some((i) => i.kind === "report"), "the report item");
+		const report = readMemberItems(h.memberOf("ag_01")!.dir).find((i) => i.kind === "report")!;
+		assert.match(report.body, /built it\n\nStill running: j2 \(npm run serve\), 8m\. It wakes this worker when it ends\./);
+		assert.equal(report.subject, "finished: built it", "the subject stays the answer's first line");
+	} finally {
+		if (saved === undefined) delete process.env[JOBS_DIR_ENV];
+		else process.env[JOBS_DIR_ENV] = saved;
+		fs.rmSync(jobs, { recursive: true, force: true });
+		await h.cleanup();
+	}
+});
+
 test("routing: members report to the coordinator, the monitor stays silent, and only the coordinator reaches the parent", async () => {
 	const h = coordinatedHarness(DEFAULTS_FILE);
 	try {

@@ -46,8 +46,7 @@
     "evidence": "reviewed",
     "code": [
       "src/components/ContextTab.tsx",
-      "src/lib/context-parts.ts",
-      "src/components/SessionDetails.tsx"
+      "src/lib/context-parts.ts"
     ]
   },
   "§design.copy-deck/context-window": {
@@ -537,6 +536,15 @@
       "src/lib/background-jobs.ts",
       "src/lib/background-jobs.test.ts",
       "src/lib/background-jobs.browser.test.ts"
+    ]
+  },
+  "§design.copy-deck/time-spent": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/TimeSpent.tsx",
+      "src/lib/time-spent-view.ts"
     ]
   },
   "§design.copy-deck/timeline-tab": {

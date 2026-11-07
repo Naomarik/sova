@@ -183,7 +183,7 @@ export function OverviewProjects(props: {
                   const t = c().lastActivity;
                   return t === null ? null : new Date(t).toISOString();
                 };
-                const rt = () => cardRuntime(glanceOf(c().project.id), glance.data()?.hostTotalBytes ?? null, props.now);
+                const rt = () => cardRuntime(glanceOf(c().project.id), props.now);
                 const name = () => c().project.name;
                 const tab = (t: ProjectTab) => projectTabHref(c().project.id, t);
                 return (

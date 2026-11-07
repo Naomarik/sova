@@ -36,10 +36,9 @@ export interface SlotsRow {
 export interface MemoryRow {
   /** "640 MB", "2.4 GB", "0 MB idle", or "—". */
   text: string;
-  /** The bar's fill, 0–1: the project's share of this machine's memory. null: no bar ("—"). */
-  share: number | null;
-  /** The bar's two parts, each 0–1 of the bar's width: its chats' and its running slots' share of this machine's
-   *  memory, a nonzero part never thinner than MIN_BAR_PART. null: no bar. */
+  /** The bar's two parts, each 0–1 of the bar's width: the mix of chats and running slots in the total, filling the
+   *  whole bar whenever anything is used, a nonzero part never thinner than MIN_BAR_PART. Idle: both 0 (an empty bar);
+   *  null: no bar (not read). */
   bar: { chats: number; slots: number } | null;
   /** The exact parts, for hover and the row's accessible name: "Chats 1.5 GB · Running slots 2.7 GB"; null when nothing is used or not read. */
   parts: string | null;
@@ -51,20 +50,15 @@ export const MIN_BAR_PART = 0.12;
 
 const partWord = (n: number): string => (n > 0 ? bytesWord(n) : "0 MB");
 
-/** The memory bar's two parts from each one's bytes and this machine's memory: each part its share, the whole at most
- *  the bar, a nonzero part at least MIN_BAR_PART (taken from the larger part when the bar is full). */
-export function memoryBar(chatsBytes: number, copiesBytes: number, hostTotalBytes: number): { chats: number; slots: number } {
+/** The memory bar's two parts from each one's bytes: the mix, chats/total and slots/total, so the bar is full whenever
+ *  the total is above 0; a nonzero part at least MIN_BAR_PART wide, taken from the larger part. Total 0: both 0. */
+export function memoryBar(chatsBytes: number, copiesBytes: number): { chats: number; slots: number } {
   const total = chatsBytes + copiesBytes;
-  const scale = total > hostTotalBytes ? 1 / total : 1 / hostTotalBytes;
-  const grow = (b: number, w: number) => (b > 0 ? Math.max(w, MIN_BAR_PART) : 0);
-  let chats = grow(chatsBytes, chatsBytes * scale);
-  let slots = grow(copiesBytes, copiesBytes * scale);
-  if (chats + slots > 1) {
-    if (chats >= slots) chats = 1 - slots;
-    else slots = 1 - chats;
-  }
+  if (total <= 0) return { chats: 0, slots: 0 };
+  let chats = chatsBytes / total;
+  if (chatsBytes > 0 && copiesBytes > 0) chats = Math.min(1 - MIN_BAR_PART, Math.max(MIN_BAR_PART, chats));
   const round = (w: number) => Math.round(w * 1000) / 1000;
-  return { chats: round(chats), slots: round(slots) };
+  return { chats: round(chats), slots: round(1 - chats) };
 }
 
 export interface ProgressRow {
@@ -101,7 +95,7 @@ const UNREAD: CardRuntime = {
   caption: "",
   ready: { count: DASH, link: false, inLine: null, dot: false, muted: true },
   slots: null,
-  memory: { text: DASH, share: null, bar: null, parts: null, muted: true },
+  memory: { text: DASH, bar: null, parts: null, muted: true },
   hasSetup: false,
   progress: [],
 };
@@ -184,7 +178,7 @@ export function releaseRow(r: ProjectGlanceRelease): ProgressRow {
 }
 
 /** A card's Runtime rows and progress zone from its glance; `undefined` (not read yet, or the read failed) reads "—". */
-export function cardRuntime(g: ProjectGlance | undefined, hostTotalBytes: number | null, now: number): CardRuntime {
+export function cardRuntime(g: ProjectGlance | undefined, now: number): CardRuntime {
   if (!g) return UNREAD;
   const q = g.queue;
   const ready: ReadyRow =
@@ -196,11 +190,9 @@ export function cardRuntime(g: ProjectGlance | undefined, hostTotalBytes: number
     : null;
   const { chatsBytes, copiesBytes } = g.memory;
   const total = chatsBytes + copiesBytes;
-  const host = hostTotalBytes && hostTotalBytes > 0 ? hostTotalBytes : null;
   const memory: MemoryRow = {
     text: total > 0 ? bytesWord(total) : "0 MB idle",
-    share: host ? Math.min(1, total / host) : total > 0 ? null : 0,
-    bar: host ? memoryBar(chatsBytes, copiesBytes, host) : total > 0 ? null : { chats: 0, slots: 0 },
+    bar: memoryBar(chatsBytes, copiesBytes),
     parts: total > 0 ? `Chats ${partWord(chatsBytes)} · Running slots ${partWord(copiesBytes)}` : null,
     muted: total === 0,
   };

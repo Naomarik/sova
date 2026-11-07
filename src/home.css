@@ -369,8 +369,9 @@ div.overview-project-card-row::after { content: ""; flex: none; width: 16px; }
 .overview-project-card-pips { display: inline-flex; gap: 2px; }
 .overview-project-card-pips > i { width: 5px; height: 9px; border-radius: 1px; background: var(--color-sunken); outline: var(--stroke-thin) solid var(--color-border-strong); }
 .overview-project-card-pips > i.overview-project-card-pip-on { background: var(--status-info); }
-/* Memory in use: chats in --status-info, running slots in --color-border-strong (a neutral, not the accent), each its
-   share of the machine; a 1px surface gap between them, and the row's title and hidden text carry the exact parts. */
+/* Memory in use: the mix of the total, filling the whole bar whenever anything is used: chats in --status-info, running
+   slots in --color-border-strong (a neutral, not the accent), a 1px surface gap between them; the row's title and hidden
+   text carry the exact parts. */
 .overview-project-card-bar {
   display: inline-flex;
   gap: 1px;

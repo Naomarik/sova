@@ -9,20 +9,19 @@ const queue = (x: Partial<ProjectGlanceQueue> = {}): ProjectGlanceQueue => ({ re
 const NOW = Date.parse("2026-11-05T12:10:00.000Z");
 
 test("before the first glance (or while it fails) the runtime rows read — and no progress shows", () => {
-  const r = cardRuntime(undefined, 16 * GB, NOW);
+  const r = cardRuntime(undefined, NOW);
   assert.equal(r.ready.count, DASH);
   assert.equal(r.slots, null);
   assert.equal(r.memory.text, DASH);
-  assert.equal(r.memory.share, null);
   assert.deepEqual([r.memory.bar, r.memory.parts], [null, null], "no bar, no hover text");
   assert.deepEqual(r.progress, []);
 });
 
 test("zero wording: Ready 0, slots 0 of 4 with 4 dark pips, memory 0 MB idle, caption idle", () => {
-  const r = cardRuntime(glance({ merge: "served", queue: queue() }), 16 * GB, NOW);
+  const r = cardRuntime(glance({ merge: "served", queue: queue() }), NOW);
   assert.deepEqual(r.ready, { count: "0", link: true, inLine: null, dot: false, muted: true });
   assert.deepEqual(r.slots, { pips: [false, false, false, false], text: "0 of 4", muted: true });
-  assert.deepEqual({ text: r.memory.text, share: r.memory.share, muted: r.memory.muted }, { text: "0 MB idle", share: 0, muted: true });
+  assert.deepEqual({ text: r.memory.text, muted: r.memory.muted }, { text: "0 MB idle", muted: true });
   assert.equal(r.caption, "idle");
   assert.equal(r.hasSetup, true);
   assert.deepEqual(r.memory.bar, { chats: 0, slots: 0 }, "idle: an empty bar, neither part drawn");
@@ -30,29 +29,26 @@ test("zero wording: Ready 0, slots 0 of 4 with 4 dark pips, memory 0 MB idle, ca
 });
 
 test("an unserved project's Ready reads — and links nowhere; a served one being read reads …; a served one counts", () => {
-  assert.deepEqual(cardRuntime(glance({ queue: null }), null, NOW).ready, { count: DASH, link: false, inLine: null, dot: false, muted: true });
-  assert.deepEqual(cardRuntime(glance({ merge: "reading" }), null, NOW).ready, { count: READING, link: true, inLine: null, dot: false, muted: true });
+  assert.deepEqual(cardRuntime(glance({ queue: null }), NOW).ready, { count: DASH, link: false, inLine: null, dot: false, muted: true });
+  assert.deepEqual(cardRuntime(glance({ merge: "reading" }), NOW).ready, { count: READING, link: true, inLine: null, dot: false, muted: true });
   assert.notEqual(READING, DASH);
-  const r = cardRuntime(glance({ merge: "served", queue: queue({ ready: 2, inLine: 3, waiting: 2 }) }), null, NOW);
+  const r = cardRuntime(glance({ merge: "served", queue: queue({ ready: 2, inLine: 3, waiting: 2 }) }), NOW);
   assert.deepEqual(r.ready, { count: "2", link: true, inLine: "· 3 in line", dot: true, muted: false });
 });
 
 test("a project with no project file: slots —, caption no project setup, memory still its chats', not a link", () => {
-  const r = cardRuntime(glance({ slots: null, memory: { chatsBytes: 640e6, copiesBytes: 0 } }), 16 * GB, NOW);
+  const r = cardRuntime(glance({ slots: null, memory: { chatsBytes: 640e6, copiesBytes: 0 } }), NOW);
   assert.equal(r.slots, null);
   assert.equal(r.caption, "no project setup");
   assert.equal(r.memory.text, "640 MB");
   assert.equal(r.hasSetup, false);
 });
 
-test("memory: chats plus copies, the bar its share of the machine", () => {
-  const r = cardRuntime(glance({ slots: { running: 3, cap: 12 }, memory: { chatsBytes: 1.6 * GB, copiesBytes: 0.8 * GB } }), 16 * GB, NOW);
+test("memory: chats plus copies in one figure, the bar the full-width mix of the two", () => {
+  const r = cardRuntime(glance({ slots: { running: 3, cap: 12 }, memory: { chatsBytes: 1.6 * GB, copiesBytes: 0.8 * GB } }), NOW);
   assert.equal(r.memory.text, "2.4 GB");
   assert.equal(r.caption, "2.4 GB");
-  assert.equal(r.memory.share, 0.15);
-  assert.deepEqual(r.memory.bar, { chats: MIN_BAR_PART, slots: MIN_BAR_PART }, "two parts, each its share of the machine (0.1, 0.05), each drawn at least at the minimum");
-  const big = cardRuntime(glance({ memory: { chatsBytes: 4 * GB, copiesBytes: 2.4 * GB } }), 16 * GB, NOW);
-  assert.deepEqual(big.memory.bar, { chats: 0.25, slots: 0.15 }, "parts above the minimum: each exactly its share");
+  assert.deepEqual(r.memory.bar, { chats: 0.667, slots: 0.333 }, "two thirds chats, one third slots, the whole bar");
   assert.equal(r.memory.parts, "Chats 1.6 GB · Running slots 800 MB");
   assert.equal(r.slots!.text, "3 of 12");
   assert.equal(r.slots!.pips.filter(Boolean).length, 3);
@@ -79,7 +75,7 @@ test("landing: step n of m (the meter's segments), time left, the meter, and who
       ],
     },
   });
-  const [row] = cardRuntime(glance({ queue: q }), null, NOW).progress;
+  const [row] = cardRuntime(glance({ queue: q }), NOW).progress;
   assert.equal(row!.kind, "landing");
   assert.equal(row!.text, "feat/plan-cards · step 7 of 11"); // every segment the meter draws, as the landing bar counts
   assert.equal(row!.segments.length, 11);
@@ -90,13 +86,13 @@ test("landing: step n of m (the meter's segments), time left, the meter, and who
 });
 
 test("frozen for a release: its own row while landings wait and nothing runs; the release's own check says who waits", () => {
-  const frozen = cardRuntime(glance({ merge: "served", queue: queue({ waiting: 2, inLine: 2, frozen: { tag: "v0.42", version: "0.42", waiting: 2 } }) }), null, NOW).progress;
+  const frozen = cardRuntime(glance({ merge: "served", queue: queue({ waiting: 2, inLine: 2, frozen: { tag: "v0.42", version: "0.42", waiting: 2 } }) }), NOW).progress;
   assert.deepEqual(
     frozen.map((r) => [r.lead, r.text, r.meta, r.detail]),
     [["Merge queue", "Frozen for a release", "2 waiting", "master is frozen for release v0.42"]],
   );
   const own = cardRuntime(
-    glance({ merge: "served", queue: queue({ waiting: 2, inLine: 3, frozen: { tag: "v0.42", version: "0.42", waiting: 2 }, landing: { branch: "sova/release-v0.42", startedAt: "2026-11-05T12:09:00.000Z", takesMs: null, steps: [], checks: [], release: true } }) }), null, NOW).progress;
+    glance({ merge: "served", queue: queue({ waiting: 2, inLine: 3, frozen: { tag: "v0.42", version: "0.42", waiting: 2 }, landing: { branch: "sova/release-v0.42", startedAt: "2026-11-05T12:09:00.000Z", takesMs: null, steps: [], checks: [], release: true } }) }), NOW).progress;
   assert.equal(own.length, 1);
   assert.equal(own[0]!.detail, "started 1 min ago · 2 waiting for v0.42");
   assert.equal(own[0]!.meta, null);
@@ -125,25 +121,23 @@ test("release: New release until tagged, the Releases tab's state words, Held fo
   assert.equal(releaseRow(rel("withdrawn", ["done", "done", "done", "done", "done", "done"])).chip!.word, "Withdrawn, finishing");
 });
 
-test("memory bar: a small nonzero part keeps MIN_BAR_PART, a zero part none; a full bar stays within its width", () => {
-  // 100 MB of chats beside 2.7 GB of slots on 16 GB: the chats' true share (0.6 %) would be invisible.
-  assert.deepEqual(memoryBar(0.1 * GB, 2.7 * GB, 16 * GB), { chats: MIN_BAR_PART, slots: 0.169 });
-  assert.deepEqual(memoryBar(3 * GB, 1e6, 16 * GB), { chats: 0.188, slots: MIN_BAR_PART }, "a tiny slots part still shows");
-  assert.deepEqual(memoryBar(3 * GB, 0, 16 * GB), { chats: 0.188, slots: 0 }, "no running slot: no slots part");
-  assert.deepEqual(memoryBar(0, 0, 16 * GB), { chats: 0, slots: 0 });
-  // More than the machine (counted twice by a shared page, say): the parts keep their proportion and fill the bar.
-  assert.deepEqual(memoryBar(12 * GB, 12 * GB, 16 * GB), { chats: 0.5, slots: 0.5 });
-  // Full with a small part: the small one keeps its minimum, taken from the larger.
-  const full = memoryBar(16 * GB, 0.01 * GB, 16 * GB);
-  assert.equal(full.slots, MIN_BAR_PART);
-  assert.ok(full.chats + full.slots <= 1);
+test("memory bar: the mix fills the whole bar; a small nonzero part keeps MIN_BAR_PART, taken from the larger; idle empty", () => {
+  const mix = memoryBar(1.5 * GB, 2.7 * GB);
+  assert.deepEqual(mix, { chats: 0.357, slots: 0.643 }, "1.5 of 4.2 GB chats, 2.7 of 4.2 GB slots");
+  assert.equal(mix.chats + mix.slots, 1, "full width whatever the machine's memory");
+  // 100 MB of chats beside 2.7 GB of slots: the chats' 3.6 % is drawn at the minimum, the slots give it up.
+  assert.deepEqual(memoryBar(0.1 * GB, 2.7 * GB), { chats: MIN_BAR_PART, slots: 1 - MIN_BAR_PART });
+  assert.deepEqual(memoryBar(3 * GB, 1e6), { chats: 1 - MIN_BAR_PART, slots: MIN_BAR_PART }, "a tiny slots part still shows");
+  assert.deepEqual(memoryBar(3 * GB, 0), { chats: 1, slots: 0 }, "chats only: the whole bar chats, no slots part");
+  assert.deepEqual(memoryBar(0, 2.7 * GB), { chats: 0, slots: 1 }, "slots only: the whole bar slots");
+  assert.deepEqual(memoryBar(0, 0), { chats: 0, slots: 0 }, "idle: nothing drawn");
 });
 
-test("memory row: the hover text names both parts, a zero part as 0 MB; no machine total → no bar but still the parts", () => {
-  const only = cardRuntime(glance({ memory: { chatsBytes: 0, copiesBytes: 2.7 * GB } }), 16 * GB, NOW);
+test("memory row: the hover text names both parts, a zero part as 0 MB; one figure, the total", () => {
+  const only = cardRuntime(glance({ memory: { chatsBytes: 0, copiesBytes: 2.7 * GB } }), NOW);
   assert.equal(only.memory.parts, "Chats 0 MB · Running slots 2.7 GB");
   assert.equal(only.memory.text, "2.7 GB", "one figure, the total");
-  assert.equal(only.memory.bar!.chats, 0);
-  const noHost = cardRuntime(glance({ memory: { chatsBytes: 1.5 * GB, copiesBytes: 2.7 * GB } }), null, NOW);
-  assert.deepEqual([noHost.memory.share, noHost.memory.bar, noHost.memory.parts, noHost.memory.text], [null, null, "Chats 1.5 GB · Running slots 2.7 GB", "4.2 GB"]);
+  assert.deepEqual(only.memory.bar, { chats: 0, slots: 1 });
+  const both = cardRuntime(glance({ memory: { chatsBytes: 1.5 * GB, copiesBytes: 2.7 * GB } }), NOW);
+  assert.deepEqual([both.memory.bar, both.memory.parts, both.memory.text], [{ chats: 0.357, slots: 0.643 }, "Chats 1.5 GB · Running slots 2.7 GB", "4.2 GB"]);
 });

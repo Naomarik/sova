@@ -86,7 +86,7 @@ test("a message held two minutes keeps its press, and the time after the press i
   assert.equal(own.length, 1);
   assert.equal(own[0]!.text, TYPED, "the press is on the message that waited");
   const start = Math.floor(pressed / 1000) - 10;
-  const r = attributeMessages([{ s: start, e: start + 100, r: "typing" }], own, labels, [{ from: pressed - 60_000, to: null }]);
+  const r = attributeMessages([{ s: start, e: start + 100, r: "typing" }], own, labels);
   assert.equal(r.messages.rows[0]!.seconds, Math.floor(held / 1000) - start, "credited up to the press");
   assert.equal(r.messages.sinceLast, 100 - (Math.floor(held / 1000) - start));
 });

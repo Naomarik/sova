@@ -83,7 +83,7 @@ describe("credit goes by the press", () => {
     const s = sessionFile([user("a", null, "first steer", T0, taken), user("b", "a", "second steer", T0 + 120_000, taken)]);
     const own = await sessionOwnMessages(s.path);
     assert.deepEqual(own.map((m) => m.id), ["a", "b"]);
-    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 120, r: "typing" }], own, NO_LABELS(), ON);
+    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 120, r: "typing" }], own, NO_LABELS());
     const lines = r.messages.rows.flatMap((x) => x.messages);
     assert.equal(lines.find((m) => m.id === "b")?.seconds, 120, "by `at` both would split nothing and b would have 0");
     assert.equal(lines.find((m) => m.id === "a")?.seconds, 0);
@@ -93,7 +93,7 @@ describe("credit goes by the press", () => {
   test("a press kept beside the session beats the entry's own time", async () => {
     const s = sessionFile([user("a", null, "first", T0 + 10_000), user("b", "a", "held a while", T0 + 200_000)]);
     const labels = { ...NO_LABELS(), presses: new Map([["b", T0 + 50_000]]) };
-    const r = attributeMessages([{ s: sec(T0 + 10_000), e: sec(T0 + 110_000), r: "typing" }], await sessionOwnMessages(s.path), labels, ON);
+    const r = attributeMessages([{ s: sec(T0 + 10_000), e: sec(T0 + 110_000), r: "typing" }], await sessionOwnMessages(s.path), labels);
     const b = r.messages.rows.flatMap((x) => x.messages).find((m) => m.id === "b");
     assert.equal(b?.seconds, 40);
     assert.equal(r.messages.sinceLast, 60, "after the press the time is the next message's");
@@ -101,7 +101,7 @@ describe("credit goes by the press", () => {
 
   test("the rows add up to the record's seconds; time with no message yet is Since Your Last Message", async () => {
     const s = sessionFile([user("a", null, "one", T0 + 30_000)]);
-    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 100, r: "typing" }], await sessionOwnMessages(s.path), NO_LABELS(), ON);
+    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 100, r: "typing" }], await sessionOwnMessages(s.path), NO_LABELS());
     assert.deepEqual(rowSeconds(r), { "not-labelled": 30 });
     assert.equal(r.messages.sinceLast, 70);
   });
@@ -112,26 +112,28 @@ describe("credit goes by the press", () => {
       user("a", "w", "typed after", T0 + 90_000),
     ]);
     const labels = { ...NO_LABELS(), lands: [T0 + 40_000] };
-    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 90, r: "typing" }], await sessionOwnMessages(s.path), labels, ON);
+    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 90, r: "typing" }], await sessionOwnMessages(s.path), labels);
     assert.deepEqual(r.messages.beforeAction, { count: 1, seconds: 40 });
     assert.deepEqual(rowSeconds(r), { "not-labelled": 50 });
   });
 
   test("a message rewound away from keeps its time", async () => {
     const s = sessionFile([user("a", null, "old road", T0 + 20_000), reply("r", "a", "ok", T0 + 21_000), user("b", null, "new road", T0 + 60_000)]);
-    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 60, r: "typing" }], await sessionOwnMessages(s.path), NO_LABELS(), ON);
+    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 60, r: "typing" }], await sessionOwnMessages(s.path), NO_LABELS());
     const lines = r.messages.rows.flatMap((x) => x.messages);
     assert.equal(lines.find((m) => m.id === "a")?.seconds, 20);
     assert.equal(lines.find((m) => m.id === "b")?.seconds, 40);
   });
 
-  test("seconds counted with the switch off, or whose next message came with it off, are in no row", async () => {
+  test("the rows add up to You across the switch: earlier time goes to the next message, and a message from then stays Not Labelled and is never sent", async () => {
     const s = sessionFile([user("off", null, "while off", T0 + 20_000), user("on", "off", "while on", T0 + 80_000)]);
     const periods = [{ from: T0 + 40_000, to: null }];
-    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 100, r: "typing" }], await sessionOwnMessages(s.path), NO_LABELS(), periods);
-    assert.deepEqual(rowSeconds(r), { "not-labelled": 40 }, "only 40..80 s");
-    assert.deepEqual(r.messages.rows[0]!.messages.map((m) => m.id), ["on"]);
+    const own = await sessionOwnMessages(s.path);
+    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 100, r: "typing" }], own, NO_LABELS());
+    assert.deepEqual(rowSeconds(r), { "not-labelled": 80 });
+    assert.deepEqual(r.messages.rows[0]!.messages.map((m) => [m.id, m.seconds]), [["off", 20], ["on", 60]]);
     assert.equal(r.messages.sinceLast, 20);
+    assert.deepEqual(pendingMessages(own, NO_LABELS(), periods).map((m) => m.id), ["on"], "only since the switch went on");
   });
 
   test("a session you only read shows nothing, however long you read it", async () => {
@@ -152,7 +154,7 @@ describe("credit goes by the press", () => {
     const s = sessionFile([user("a", null, "redo it", T0 + 30_000), user("b", "a", "ship it", T0 + 60_000), user("c", "b", "why?", T0 + 90_000)]);
     const label = (l: "reworking" | "directing" | "asking") => ({ label: l, confidence: 1, provider: "jev", model: "j", at: 0 });
     const labels = { ...NO_LABELS(), labels: new Map([["a", label("reworking")], ["b", label("directing")], ["c", label("asking")]]) };
-    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 100, r: "screenshots" }], await sessionOwnMessages(s.path), labels, ON);
+    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 100, r: "screenshots" }], await sessionOwnMessages(s.path), labels);
     assert.deepEqual(r.screenshots, { reworking: 30, directing: 30, other: 40 });
   });
 
@@ -160,7 +162,7 @@ describe("credit goes by the press", () => {
     const s = sessionFile([user("a", null, "hmm", T0 + 30_000)]);
     const labels = { ...NO_LABELS(), labels: new Map([["a", { label: "reworking" as const, confidence: UNSORTED_BELOW - 0.01, provider: "jev", model: "j", at: 0 }]]) };
     const own = await sessionOwnMessages(s.path);
-    assert.deepEqual(rowSeconds(attributeMessages([{ s: sec(T0), e: sec(T0) + 30, r: "typing" }], own, labels, ON)), { unsorted: 30 });
+    assert.deepEqual(rowSeconds(attributeMessages([{ s: sec(T0), e: sec(T0) + 30, r: "typing" }], own, labels)), { unsorted: 30 });
     assert.equal(pendingMessages(own, labels, ON).length, 0);
   });
 });
@@ -197,7 +199,7 @@ describe("a reload tells a button from typing", () => {
     const own = await sessionOwnMessages(s.path);
     assert.deepEqual(own.map((m) => [m.id, m.action]), [["typed", null], ["step", "playbook"], ["click", "picks"]]);
     assert.deepEqual(pendingMessages(own, NO_LABELS(), ON).map((m) => m.id), ["typed"], "only typed text is ever sent");
-    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 30, r: "typing" }], own, NO_LABELS(), ON);
+    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 30, r: "typing" }], own, NO_LABELS());
     assert.deepEqual(rowSeconds(r), { "not-labelled": 10 });
     assert.deepEqual(r.messages.beforeAction, { count: 2, seconds: 20 });
   });
@@ -224,7 +226,7 @@ describe("a reload tells a button from typing", () => {
     const labels = store.read(s.id);
     const own = await sessionOwnMessages(s.path);
     assert.deepEqual(pendingMessages(own, labels, ON).map((m) => m.id), ["b"], "one note, one message: the typed one stays typed");
-    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 60, r: "typing" }], own, labels, ON);
+    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 60, r: "typing" }], own, labels);
     assert.deepEqual(r.messages.beforeAction, { count: 1, seconds: 60 });
   });
 });
@@ -298,7 +300,7 @@ describe("the chain and catching up", () => {
     assert.equal(got?.model, "fake/flash");
     assert.equal(jev.calls.length, 1, "Jev was tried first");
     const own = await sessionOwnMessages(s.path);
-    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 1, r: "typing" }], own, store.read(s.id), store.periods());
+    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 1, r: "typing" }], own, store.read(s.id));
     assert.equal(r.messages.rows[0]?.messages[0]?.labelledBy, "fake/flash", "the line says which model");
   });
 
@@ -309,7 +311,7 @@ describe("the chain and catching up", () => {
     const store = freshStore();
     store.noteSwitch(true, T0);
     await labeller({ s, store, provider: () => chain, now: () => T0 + 2000 }).tick();
-    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 1, r: "typing" }], await sessionOwnMessages(s.path), store.read(s.id), store.periods());
+    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 1, r: "typing" }], await sessionOwnMessages(s.path), store.read(s.id));
     assert.equal(r.messages.rows[0]?.key, "asking");
     assert.equal(r.messages.rows[0]?.messages[0]?.labelledBy, undefined);
   });
@@ -322,7 +324,7 @@ describe("the chain and catching up", () => {
     store.noteSwitch(true, T0);
     assert.equal(await labeller({ s, store, provider: () => chain, now: () => T0 + 2000 }).tick(), 0);
     assert.equal(store.read(s.id).labels.size, 0);
-    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 1, r: "typing" }], await sessionOwnMessages(s.path), store.read(s.id), store.periods());
+    const r = attributeMessages([{ s: sec(T0), e: sec(T0) + 1, r: "typing" }], await sessionOwnMessages(s.path), store.read(s.id));
     assert.equal(r.messages.rows[0]?.key, "not-labelled");
   });
 

@@ -115,7 +115,7 @@ async function messageFigures(path: string, session: string, own: readonly OwnMe
   const periods = store.periods();
   const labels = store.read(session);
   if (!showsMessages(own, labels, periods)) return {};
-  const { messages, screenshots } = attributeMessages(timeSpentStore().runs(session), own, labels, periods, excerptOf);
+  const { messages, screenshots } = attributeMessages(timeSpentStore().runs(session), own, labels, excerptOf);
   return { messages, ...(screenshots.reworking + screenshots.directing + screenshots.other > 0 ? { screenshots } : {}) };
 }
 

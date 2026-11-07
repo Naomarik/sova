@@ -79,4 +79,17 @@ describe("POST /api/worktrees/cleanup", () => {
     // A real dryRun reaches the plan: this session's folder is no repository here.
     assert.equal((await post("/api/worktrees/cleanup", { path, dryRun: true }))[0], 409);
   });
+
+  test("Remove Anyway: a malformed force is a 400, and a request that isn't the user's page is refused with where to click", async () => {
+    const path = sessionFile();
+    const bad = [400, { error: "force must be {path: absolute path, digest}, sent alone" }];
+    assert.deepEqual(await post("/api/worktrees/cleanup", { path, force: { path: "rel", digest: "abcdef0123" } }), bad);
+    assert.deepEqual(await post("/api/worktrees/cleanup", { path, force: { path: "/w", digest: "not hex!" } }), bad);
+    assert.deepEqual(await post("/api/worktrees/cleanup", { path, force: { path: "/w", digest: "abcdef0123" }, expect: ["/w"] }), bad);
+    // No socket and no page cookie: a script, refused before anything is read or deleted.
+    const [status, body] = await post("/api/worktrees/cleanup", { path, force: { path: "/w", digest: "abcdef0123" } });
+    assert.equal(status, 403);
+    assert.equal(body.yourClick, true);
+    assert.match(body.error!, /Ask them to press Remove Anyway in Clean Up Merged\. Nothing was deleted\./);
+  });
 });

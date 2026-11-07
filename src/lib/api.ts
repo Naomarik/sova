@@ -1090,6 +1090,9 @@ export const previewWorktreeCleanup = (path: string) =>
 /** Remove exactly `expect` (the dry run's paths), each only if still removable. */
 export const removeWorktrees = (path: string, expect: string[]) =>
   request<WorktreeCleanupResult>("/api/worktrees/cleanup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, expect }) });
+/** Remove Anyway: one kept tree, only while what it holds is still the listing confirmed (its digest). */
+export const removeWorktreeAnyway = (path: string, tree: string, digest: string) =>
+  request<WorktreeCleanupResult>("/api/worktrees/cleanup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, force: { path: tree, digest } }) });
 
 /**
  * `force` (chat only) lets the server open a session whose file was written recently by

@@ -54,6 +54,7 @@ import type { NoteFacts } from "./note";
 import { RESTART_DELAY_SEC, scheduleRestart, SELF_APPLY_REFUSAL, serverCheckout, serverStart } from "./self-host";
 import { checkShare, instanceOfLink, linksOf, revokeLinks, ShareFailure, shareInstance, shareRefusal } from "./share";
 import { publishedPorts, publisherOf, type ContainerQuery } from "./container-ports";
+import { leftovers, leftoversReason, type Leftovers } from "../worktree-leftovers";
 import {
   dataRootOf,
   hostVars,
@@ -1804,6 +1805,11 @@ export class ProjectEngine {
     } else if (Object.keys(rec.data).length) run.steps.push({ id: "data", kind: "data", result: "skipped", ms: 0, detail: `kept: ${Object.values(rec.data).join(", ")}` });
     if (rec.cutWorktree && existsSync(rec.checkout)) {
       await this.step(run, "worktree", "worktree", async () => {
+        // What git's own remove would delete silently: ignored files that can't be rebuilt and nested
+        // repositories keep it, as with Clean Up Merged (server/worktree-leftovers.ts). A failed read keeps it.
+        const held = await leftovers(rec.checkout).catch((err: Error): Leftovers => ({ dirty: [], ignored: [], nested: [], rebuildable: [], unreadable: `Its files couldn't be read: ${err.message}` }));
+        const why = leftoversReason(held);
+        if (why) return { result: "skipped", detail: `kept ${rec.checkout}: ${why}` };
         const r = await this.git(["worktree", "remove", "--", rec.checkout], rec.project);
         if (r.code !== 0) return { result: "skipped", detail: `kept ${rec.checkout}: ${firstLine(r.stderr || r.stdout)}` };
         return { result: "done", detail: `removed ${rec.checkout} (branch ${rec.branch} kept)` };

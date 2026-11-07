@@ -18,6 +18,7 @@ import { MemoryOutlineSection } from "./MemoryOutline";
 import { SessionTimeline } from "./SessionTimeline";
 import { createSessionSpend, SessionUsageTab } from "./SessionUsage";
 import { type AgentsView, SubagentPane } from "./SubagentPane";
+import { TimeSpentTab } from "./TimeSpent";
 import { Chip, Icon } from "./ui";
 import { trackSessionPane } from "../lib/time-spent";
 
@@ -33,12 +34,13 @@ export interface PaneInsight {
   changed: number;
 }
 
-export type TabId = "session" | "timeline" | "agents" | "usage" | "context" | "sharing" | "skills" | "explain";
+export type TabId = "session" | "timeline" | "agents" | "usage" | "time" | "context" | "sharing" | "skills" | "explain";
 const TABS: readonly { id: TabId; label: string }[] = [
   { id: "session", label: "Session" },
   { id: "timeline", label: "Timeline" },
   { id: "agents", label: "Agents" },
   { id: "usage", label: "Usage" },
+  { id: "time", label: "Time Spent" },
   { id: "context", label: "Context" },
   { id: "sharing", label: "Sharing" },
   { id: "skills", label: "Skills" },
@@ -49,10 +51,10 @@ const isTab = (id: string | null): id is TabId => TABS.some((t) => t.id === id);
 /**
  * The session detail pane: a head, a tab strip, and one tab's panel. Session is what the session
  * is (SessionDetails); Timeline is the session's one time axis; Agents is the subagents pane it grew
- * out of; Usage is what the session has spent (SessionUsage); Context is what fills its window now (ContextTab); Sharing is its share links, with a
+ * out of; Usage is what the session has spent (SessionUsage); Time Spent is where your time and the agent's went (TimeSpent); Context is what fills its window now (ContextTab); Sharing is its share links, with a
  * viewing-now badge on the tab; Skills says which skills loaded and when, here and in each worker; Explain lists this session's /explain pages. The tab is kept per
  * session path; with none kept, it opens on Agents while a worker is working, else on Session —
- * never on Usage, which its tab and the head's token chip open. Read-only throughout, except the
+ * never on Usage, which its tab and the head's token chip open, or on Time Spent. Read-only throughout, except the
  * Timeline's rewind, which goes through the chat.
  */
 export function SessionPane(props: {
@@ -252,6 +254,11 @@ export function SessionPane(props: {
               onReload={loadItems}
               onClose={props.onClose}
             />
+          </Match>
+          <Match when={tab() === "time"}>
+            <div class="session-panel-scroll" tabindex="0">
+              <TimeSpentTab path={props.path} />
+            </div>
           </Match>
           <Match when={tab() === "agents"}>
             <SubagentPane

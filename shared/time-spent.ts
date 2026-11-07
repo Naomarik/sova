@@ -11,6 +11,7 @@ export type TimeSpentRow =
   | "dictating"
   | "scrolling"
   | "changes"
+  | "screenshots"
   | "tours"
   | "other";
 
@@ -22,6 +23,7 @@ export const TIME_SPENT_ROWS: readonly TimeSpentRow[] = [
   "dictating",
   "scrolling",
   "changes",
+  "screenshots",
   "tours",
   "other",
 ];
@@ -78,6 +80,29 @@ export interface TimeSpentAlignment {
   toDecided: number | null;
 }
 
+/** What a counted message was labelled, or that it hasn't been yet. */
+export type TimeSpentMessageRow = "directing" | "steering" | "reworking" | "asking" | "unsorted" | "not-labelled";
+
+export interface TimeSpentMessage {
+  id: string;
+  /** The message's head: short, one line, redacted. */
+  excerpt: string;
+  /** Seconds counted to this message. */
+  seconds: number;
+  /** Only when a fallback model labelled it: that model's display name. */
+  labelledBy?: string;
+}
+
+/** Every counted second, by the next message the user sent. These add up to the record's `you`. */
+export interface TimeSpentMessages {
+  /** Only rows with messages. A row's seconds are the sum of its messages'. */
+  rows: { key: TimeSpentMessageRow; seconds: number; messages: TimeSpentMessage[] }[];
+  /** Time that an action (a Land press, a playbook step, a card click) closed, and how many. */
+  beforeAction: { count: number; seconds: number };
+  /** Time with no message after it yet. */
+  sinceLast: number;
+}
+
 /** GET /api/time-spent?path=<session path>. */
 export interface TimeSpentRecord {
   /** The sum of `rows`, always. */
@@ -92,4 +117,8 @@ export interface TimeSpentRecord {
   alignments: TimeSpentAlignment[];
   /** The session began before this computer kept Time Spent: its earlier time wasn't recorded. */
   older: boolean;
+  /** Absent with the message labels switch off, and for a session with nothing counted since it went on. */
+  messages?: TimeSpentMessages;
+  /** The screenshots row's seconds by what the next message was labelled; `other` is any other label, or no message yet. */
+  screenshots?: { reworking: number; directing: number; other: number };
 }

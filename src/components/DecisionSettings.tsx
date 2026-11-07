@@ -406,6 +406,14 @@ export function DecisionSettingsSection() {
             (on) => edit((c) => (c.features.reconcile = on)),
             unanswered,
           )}
+          {switchRow(
+            "decisions-message-labels",
+            "Label your messages",
+            "Labels each message you type or dictate by what it asks for, and shows the time on each in the session's Time Spent tab. Only messages sent while this is on. The agent never sees a label.",
+            () => draft()!.features.messageLabels === true,
+            (on) => edit((c) => (c.features.messageLabels = on)),
+            unanswered,
+          )}
           {/* The switches already say it when nobody can answer; the server's note covers the other reasons. */}
           <Show when={!unanswered()}>
             <For each={notes().features}>{(w) => <p class="settings-delegate-issue settings-delegate-issue-warn">{sentence(w)}</p>}</For>

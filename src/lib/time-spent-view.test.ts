@@ -4,8 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TimeSpentAlignment, TimeSpentRecord } from "../../shared/time-spent";
-import { parseOpen } from "./time-spent-section";
-import { alignmentWords, formatSpent, type SpentLive, spentView, wholeSeconds } from "./time-spent-view";
+import { alignmentWords, messageLines, screenshotParts, formatSpent, type SpentLive, spentView, wholeSeconds } from "./time-spent-view";
 
 const record = (over: Partial<TimeSpentRecord> = {}): TimeSpentRecord => ({ you: 0, rows: {}, agent: 0, agentRunning: null, alignments: [], older: false, ...over });
 const live = (over: Partial<SpentLive> = {}): SpentLive => ({ you: 0, rows: {}, cards: {}, word: "Paused", ...over });
@@ -80,9 +79,44 @@ test("an alignment line leaves out first shown to decided when it has none", () 
   assert.equal(alignmentWords(252, 130, 3700), "4m 12s on screen · 2m 10s to read · 1h 01m 40s from first shown to decided");
 });
 
-test("the section is closed until this browser opens it: nothing stored, or anything odd, is closed", () => {
-  assert.equal(parseOpen(null), false);
-  assert.equal(parseOpen("false"), false);
-  assert.equal(parseOpen("garbage"), false);
-  assert.equal(parseOpen("true"), true);
+const labelled = (over: Partial<Parameters<typeof messageLines>[0]> = {}) => ({
+  rows: [{ key: "reworking" as const, seconds: 10.6, messages: [{ id: "m1", excerpt: "No", seconds: 7.3 }, { id: "m2", excerpt: "Redo", seconds: 3.3, labelledBy: "GLM 5.3" }] }],
+  beforeAction: { count: 1, seconds: 4 },
+  sinceLast: 5.4,
+  ...over,
+});
+
+test("Your Messages: seconds not yet read are Since Your Last Message's, and the rows stay whole", () => {
+  const lines = messageLines(labelled(), 3);
+  assert.deepEqual(lines.map((l) => l.key), ["reworking", "before-action", "since-last"]);
+  assert.equal(lines.reduce((n, l) => n + l.seconds, 0), 23, "10.6 + 4 + 5.4 + 3, to the second");
+  assert.equal(lines.find((l) => l.key === "since-last")!.seconds, 8, "5.4 + 3 rounds down with the rest");
+  const row = lines[0]!;
+  assert.equal(row.count, 2);
+  assert.equal(row.messages!.reduce((n, m) => n + m.seconds, 0), row.seconds, "a row's messages add up to it");
+  assert.equal(lines[1]!.count, 1);
+  assert.equal(lines[1]!.messages, null, "Before An Action opens to nothing");
+  assert.equal(lines[2]!.count, null, "Since Your Last Message has no count");
+  assert.equal(row.messages![1]!.labelledBy, "GLM 5.3");
+  assert.equal(row.messages![0]!.labelledBy, null);
+});
+
+test("Your Messages: seconds counted with the switch off are in no row, so the rows may add up to less than You", () => {
+  const view = spentView(record({ rows: { typing: 1000 }, you: 1000, messages: labelled() }), live(), 0);
+  assert.equal(view.you, 1000);
+  assert.equal(view.messages!.reduce((n, l) => n + l.seconds, 0), 20, "Since Your Last Message doesn't take the off seconds");
+});
+
+test("Your Messages: a label's row with a message shows at 0 seconds; before-action and since-last don't, and no rows at all is null", () => {
+  const lines = messageLines({ rows: [{ key: "asking", seconds: 0, messages: [{ id: "m", excerpt: "Why", seconds: 0 }] }], beforeAction: { count: 0, seconds: 0 }, sinceLast: 0 }, 0);
+  assert.deepEqual(lines.map((l) => l.key), ["asking"]);
+  const none = record({ you: 5, rows: { screenshots: 5 }, screenshots: { reworking: 5, directing: 0, other: 0 }, messages: { rows: [], beforeAction: { count: 0, seconds: 0 }, sinceLast: 0 } });
+  const view = spentView(none, live(), 0);
+  assert.equal(view.messages, null);
+  assert.equal(view.rows.find((r) => r.key === "screenshots")!.parts, undefined, "with no Your Messages the row doesn't open");
+});
+
+test("Reviewing Screenshots' parts add up to its row, unread seconds going to anything else, and an empty part doesn't show", () => {
+  assert.deepEqual(screenshotParts({ reworking: 10, directing: 0, other: 2 }, 15).map((p) => [p.label, p.seconds]), [["Followed By Reworking", 10], ["Followed By Anything Else", 5]]);
+  assert.deepEqual(screenshotParts({ reworking: 10, directing: 5, other: 0 }, 12).map((p) => p.seconds), [10, 2], "never more than the row");
 });

@@ -90,6 +90,7 @@ import {
 	type UsageProvider,
 	type UsageWindow,
 } from "./coordination.ts";
+import { JOBS_DIR_ENV, stillRunningLine } from "./job-store.ts";
 import { publishWakes, wakeStoreOf, wakesCancelledBefore } from "./wake-store.ts";
 import { WorkerRegistryRecorder, type WorkerLaunchSpec } from "./registry.ts";
 import { manifestModes, readWorkerManifests, resolvedModel, viewWorker, type FoldedWorkerManifest, type WorkerTranscriptView } from "./worker-transcript.ts";
@@ -1276,11 +1277,18 @@ export function registerSubagents(
 		// Busy workers show live tool activity instead of a premature "no output";
 		// settled ones keep the final-answer line the completion message quotes.
 		`${summaryHeader(a)}\n${a.finalOutput() || (a.isSettled() ? "(no output for this task)" : recentActivity(a))}`;
-	/** A text with the worker's landed line last: after the answer, so the answer's first line stays the report's preview (server/reports.ts). */
-	const withLanded = (a: Worker, text: string) => {
-		const line = landedOf(a);
-		return line ? `${text}\n\n${line}` : text;
+	/** The worker's own jobs still running or owed, read from its session directory; a finished worker has nothing left to wake. */
+	const stillRunningOf = (a: Worker): string | undefined => {
+		const dir = process.env[JOBS_DIR_ENV];
+		if (!dir || !a.sessionId || a.isFinished()) return undefined;
+		try {
+			return stillRunningLine(dir, a.sessionId);
+		} catch {
+			return undefined; // A record that can't be read never costs the report.
+		}
 	};
+	/** A text with the worker's landed and jobs lines last: after the answer, so the answer's first line stays the report's preview (server/reports.ts). */
+	const withLanded = (a: Worker, text: string) => [text, landedOf(a), stillRunningOf(a)].filter(Boolean).join("\n\n");
 	const summary = (a: Worker) => withLanded(a, answerSummary(a));
 	/**
 	 * A cut completion message: the preview, the worker's landed line if any, one line naming the final answer's size and a
@@ -3735,14 +3743,16 @@ export function registerSubagents(
 				usage: { ...a.usage },
 			};
 			if (params.full) {
-				const header = `${a.id} (${a.name}) — ${a.status}\nSession: ${a.sessionFile ?? a.sessionId ?? "unavailable"}${a.transcriptOmitted?.items ? `\n[Retained transcript: ${a.transcriptOmitted.items} earlier item(s) omitted, approximately ${a.transcriptOmitted.approxBytes} bytes.]` : ""}`;
+				const jobs = stillRunningOf(a);
+				const header = `${a.id} (${a.name}) — ${a.status}\nSession: ${a.sessionFile ?? a.sessionId ?? "unavailable"}${a.transcriptOmitted?.items ? `\n[Retained transcript: ${a.transcriptOmitted.items} earlier item(s) omitted, approximately ${a.transcriptOmitted.approxBytes} bytes.]` : ""}${jobs ? `\n${jobs}` : ""}`;
 				const items = a.transcript.map((t) => `[${t.kind}${t.toolName ? `:${t.toolName}` : ""}] ${t.text}`).join("\n");
 				return toolResult(fullTranscriptText(a.id, header, answer, items), { ...details, finalAnswerChars: answer.length, retention: retention() }, true);
 			}
 			// No answer yet: the bounded summary (recent activity or the no-output line).
 			if (!answer) return result(summary(a), details);
 			const { text, page } = finalAnswerPage(a.id, summaryHeader(a), answer, params.offset, params.limit, params.offset !== undefined || params.limit !== undefined);
-			return toolResult(text, { ...details, finalAnswer: page, retention: retention() }, true);
+			const jobs = stillRunningOf(a);
+			return toolResult(jobs ? `${text}\n\n${jobs}` : text, { ...details, finalAnswer: page, retention: retention() }, true);
 		},
 	});
 	pi.registerTool({

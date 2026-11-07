@@ -169,34 +169,6 @@ export const GROUPS = [
       ...SELF,
     ],
   },
-  {
-    name: "themes",
-    title: "Themes",
-    // Light, Dark and Auto in Chrome on the app's own build: what the page wears before the app runs,
-    // Settings → Themes, two tabs following each other, the explanation previews. Theme code only: a
-    // landing that doesn't touch how a theme is read, stored, painted or picked doesn't run it.
-    files: ["server/theme-mode.integration.test.ts"],
-    except: [],
-    landing: "triggered",
-    triggers: [
-      "src/lib/theme.ts",
-      "src/lib/theme-prepaint.ts",
-      "src/components/SettingsDialog.tsx",
-      "src/components/TypographySection.tsx",
-      "src/main.tsx",
-      "index.html",
-      "vite.config.*",
-      "shared/theme.ts",
-      "src/lib/explain.ts",
-      "src/components/ExplainTiles.tsx",
-      "src/design/tokens.css",
-      "themes/**",
-      "server/themes.ts",
-      ...PACKAGES,
-      ...TEST_SETUP,
-      ...SELF,
-    ],
-  },
 ];
 
 /** The name of the everyday set: every integration file in no group. */

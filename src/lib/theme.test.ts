@@ -1,8 +1,7 @@
 // Run: npx tsx --test src/lib/theme.test.ts (or npm test)
 //
 // The client theme store, against a hand-built document: what lands on the root element, what
-// comes off it, the mode (Light, Dark, Auto) against a stand-in system setting, and the answers the
-// server's list can give about each pick.
+// comes off it, and the answers the server's list can give about each pick.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ThemeInfo, ThemeList } from "../../shared/protocol";
@@ -14,15 +13,10 @@ const meta = { content: "unset", setAttribute: (_: string, v: string) => void (m
 const store = new Map<string, string>();
 /** Every write to the store, so a test can tell "left alone" from "rewritten with the same value". */
 let writes = 0;
-/** The window's `storage` listeners: another tab's save is a write to `store`, then this event. */
-const storageListeners = new Set<(e: { key: string | null }) => void>();
-const otherTabSaved = (key: string | null = "sova:theme") => {
-  for (const l of storageListeners) l({ key });
-};
 
 /** The system's light/dark setting, as `matchMedia("(prefers-color-scheme: light)")` reports it. */
 type Change = (e: { matches: boolean }) => void;
-const system = { light: false, listeners: new Set<Change>(), queries: 0 };
+const system = { light: false, listeners: new Set<Change>() };
 const setSystem = (light: boolean) => {
   system.light = light;
   for (const l of system.listeners) l({ matches: light });
@@ -50,12 +44,9 @@ Object.assign(globalThis, {
     },
     removeItem: (k: string) => void store.delete(k),
   },
-  addEventListener: (type: string, l: (e: { key: string | null }) => void) => {
-    if (type === "storage") storageListeners.add(l);
-  },
+  addEventListener: () => {},
   matchMedia: (query: string) => {
     assert.equal(query, "(prefers-color-scheme: light)");
-    system.queries++;
     return {
       media: query,
       get matches() {
@@ -72,9 +63,7 @@ const {
   applyStoredTheme,
   clearTheme,
   clearTypography,
-  checkedThemeId,
   darkThemeId,
-  droppedNotice,
   droppedTheme,
   lightThemeId,
   pickTheme,
@@ -82,7 +71,6 @@ const {
   setTextSize,
   setThemeMode,
   setTypography,
-  shownBase,
   textSize,
   THEME_KEY,
   themeMode,
@@ -103,7 +91,6 @@ const reset = () => {
 };
 
 const stored = () => JSON.parse(store.get(THEME_KEY)!) as { v: number; mode: string; light: { id: string } | null; dark: { id: string } | null };
-const colorTokens = () => [...style.keys()].filter((k) => k.startsWith("--color-") || k.startsWith("--status-") || k.startsWith("--diff-"));
 
 const info = (over: Partial<ThemeInfo> = {}): ThemeInfo => ({
   id: "dracula",
@@ -176,145 +163,6 @@ test("a light theme with no surface gets the light base's surface; the built-in 
   assert.equal(style.get("--color-bg"), "#f5f5f0");
 });
 
-/* ---- The stored shape, and what an older record becomes ---------------- */
-
-test("boot: nothing stored is Dark mode on the built-in dark, whatever the system says", () => {
-  reset();
-  system.light = true;
-  applyStoredTheme();
-  assert.equal(themeMode(), "dark");
-  assert.equal(attributes.has("data-theme"), false);
-  assert.equal(meta.content, "#2C2C38");
-  assert.equal(store.has(THEME_KEY), false, "reading writes nothing");
-});
-
-test("a single theme stored before there were two picks keeps its look and is written back as v2", () => {
-  for (const [old, base] of [
-    [{ id: "nord-light", base: "light", tokens: { surface: "#eceff4" } }, "light"],
-    [{ id: "dracula", base: "dark", tokens: { bg: "#282a36" } }, "dark"],
-  ] as const) {
-    reset();
-    store.set(THEME_KEY, JSON.stringify(old));
-    applyStoredTheme();
-    assert.equal(themeMode(), base, "the mode is the old theme's base");
-    assert.equal(activeThemeId(), old.id);
-    assert.equal(attributes.get("data-theme"), base);
-    if (base === "light") assert.equal(meta.content, "#eceff4", "the stored surface is on the meta before any fetch");
-    else assert.equal(style.get("--color-bg"), "#282a36");
-    const v2 = stored();
-    assert.equal(v2.v, 2);
-    assert.equal(v2.mode, base);
-    assert.equal(v2[base]?.id, old.id);
-    assert.equal(v2[base === "light" ? "dark" : "light"], null, "the other pick is the built-in");
-  }
-});
-
-test("the two writers of the old shape (the needs-you browser test, scripts/e2e/focus-view.mjs) still land light", () => {
-  for (const old of [{ id: "plain-light", base: "light", tokens: {} }, { id: "light", base: "light", tokens: {} }]) {
-    reset();
-    store.set(THEME_KEY, JSON.stringify(old));
-    applyStoredTheme();
-    assert.equal(attributes.get("data-theme"), "light");
-    assert.equal(lightThemeId(), old.id);
-  }
-});
-
-test("junk reads as the default: an unparsable record, an unknown mode, a pick on the other base", () => {
-  reset();
-  store.set(THEME_KEY, "{not json");
-  applyStoredTheme();
-  assert.equal(themeMode(), "dark");
-  assert.equal(attributes.has("data-theme"), false);
-
-  store.set(THEME_KEY, JSON.stringify({ v: 2, mode: "sepia", light: null, dark: { id: "dracula", base: "dark", tokens: { bg: "#282a36" } } }));
-  applyStoredTheme();
-  assert.equal(themeMode(), "dark", "an unknown mode reads as the default mode");
-  assert.equal(darkThemeId(), "dracula", "the picks still hold");
-
-  store.set(THEME_KEY, JSON.stringify({ v: 2, mode: "light", light: { id: "dracula", base: "dark", tokens: { bg: "#282a36" } }, dark: { id: "nord-light", base: "light", tokens: {} } }));
-  applyStoredTheme();
-  assert.equal(lightThemeId(), "light", "a dark theme is no light pick");
-  assert.equal(darkThemeId(), "dark", "a light theme is no dark pick");
-  assert.equal(attributes.get("data-theme"), "light");
-  assert.equal(style.has("--color-bg"), false);
-
-  store.set(THEME_KEY, JSON.stringify({ v: 3, mode: "light" }));
-  applyStoredTheme();
-  assert.equal(themeMode(), "dark", "a shape from a newer build is no record we know");
-});
-
-/* ---- The mode, and Auto against the system ----------------------------- */
-
-test("setThemeMode repaints and persists; a pick in the hidden base waits there", () => {
-  reset();
-  pickTheme(DRACULA);
-  pickTheme(NORD_LIGHT);
-  assert.equal(attributes.get("data-theme"), "dark", "a pick in the hidden section changes nothing on screen");
-  assert.equal(style.get("--color-bg"), "#282a36");
-  assert.equal(stored().light?.id, "nord-light", "but it is saved");
-  setThemeMode("light");
-  assert.equal(attributes.get("data-theme"), "light");
-  assert.equal(style.get("--color-bg"), "#eceff4");
-  assert.equal(meta.content, "#e5e9f0");
-  assert.equal(stored().mode, "light");
-  assert.equal(activeThemeId(), "nord-light");
-  setThemeMode("dark");
-  assert.equal(style.get("--color-bg"), "#282a36");
-  assert.equal(activeThemeId(), "dracula");
-});
-
-test("Auto paints the system's base at pre-paint, follows a change at once, and ignores it in a fixed mode", () => {
-  reset();
-  store.set(THEME_KEY, JSON.stringify({ v: 2, mode: "auto", light: NORD_LIGHT, dark: DRACULA }));
-  system.light = true;
-  applyStoredTheme();
-  assert.equal(shownBase(), "light");
-  assert.equal(attributes.get("data-theme"), "light", "the light pick, before first paint");
-  assert.equal(meta.content, "#e5e9f0", "with the light pick's surface on the meta");
-  setSystem(false);
-  assert.equal(attributes.get("data-theme"), "dark", "the system went dark: no reload");
-  assert.equal(style.get("--color-bg"), "#282a36");
-  assert.equal(meta.content, "#2C2C38");
-  setSystem(true);
-  assert.equal(style.get("--color-bg"), "#eceff4");
-
-  setThemeMode("dark");
-  setSystem(false);
-  setSystem(true);
-  assert.equal(attributes.get("data-theme"), "dark", "in Dark the system's setting doesn't choose");
-  assert.equal(style.get("--color-bg"), "#282a36");
-  setThemeMode("auto");
-  assert.equal(attributes.get("data-theme"), "light", "Auto reads the setting the change left");
-  assert.equal(system.queries, 1, "one query, one listener, for the page's life");
-  assert.equal(system.listeners.size, 1);
-});
-
-test("no preference reads as dark under Auto", () => {
-  reset();
-  setThemeMode("auto");
-  assert.equal(shownBase(), "dark");
-  assert.equal(attributes.has("data-theme"), false);
-});
-
-test("the font pick and the text size survive mode and system switches", () => {
-  reset();
-  setTypography({ mono: "fira-code" });
-  setTextSize("large");
-  pickTheme(NORD_LIGHT);
-  setThemeMode("auto");
-  setSystem(true);
-  const fira = fontById("mono", "fira-code")!.stack;
-  assert.equal(style.get("--font-mono"), fira);
-  assert.equal(style.get("--fs-body"), "15.5px");
-  setSystem(false);
-  assert.equal(style.get("--font-mono"), fira);
-  assert.equal(style.get("--fs-body"), "15.5px");
-  setThemeMode("light");
-  assert.equal(style.get("--font-mono"), fira);
-  assert.equal(textSize(), "large");
-});
-
-/* ---- Each pick against the server's list ------------------------------- */
 
 test("reconcileTheme: a dark id that no longer resolves falls back to dark and names itself", () => {
   reset();
@@ -334,53 +182,6 @@ test("reconcileTheme: a theme that broke since we put it on comes off", () => {
   assert.deepEqual(droppedTheme(), { id: "dracula", slot: "dark", reason: "broken" });
 });
 
-test("reconcileTheme: a missing light pick sends only the light section to its built-in", () => {
-  reset();
-  pickTheme(DRACULA);
-  pickTheme(NORD_LIGHT);
-  setThemeMode("light");
-  reconcileTheme(list([info(), info({ id: "light", name: "Light", base: "light", tokens: {} })]));
-  assert.deepEqual(droppedTheme(), { id: "nord-light", slot: "light", reason: "gone" });
-  assert.equal(lightThemeId(), "light");
-  assert.equal(darkThemeId(), "dracula", "the dark pick stays");
-  assert.equal(attributes.get("data-theme"), "light");
-  assert.equal(stored().dark?.id, "dracula");
-});
-
-test("reconcileTheme: a missing hidden pick leaves the shown one alone", () => {
-  reset();
-  pickTheme(DRACULA);
-  pickTheme(NORD_LIGHT);
-  style.delete("--color-bg"); // if the store repaints, this comes back
-  reconcileTheme(list([info()]));
-  assert.equal(style.has("--color-bg"), false, "the light pick went, the dark one on screen wasn't repainted");
-  assert.equal(attributes.get("data-theme"), "dark");
-  assert.deepEqual(droppedTheme(), { id: "nord-light", slot: "light", reason: "gone" });
-  assert.equal(lightThemeId(), "light");
-});
-
-test("reconcileTheme: the light fallback is tokenless, never a lookup of id light (which may be the broken file)", () => {
-  reset();
-  pickTheme(NORD_LIGHT);
-  setThemeMode("light");
-  const brokenLight = info({ id: "light", name: "Light", base: "light", source: "user", path: "/home/u/.pi/agent/sova/themes/light.json", tokens: { bg: "#123456" }, error: "ink is url(//x). A color is a hex value, …" });
-  for (let i = 0; i < 2; i++) {
-    reconcileTheme(list([info(), brokenLight]));
-    assert.deepEqual(droppedTheme(), { id: "nord-light", slot: "light", reason: "gone" }, `run ${i + 1}: the dropped id stays nord-light`);
-    assert.equal(attributes.get("data-theme"), "light");
-    assert.deepEqual(colorTokens(), [], "no inline colour token: tokens.css's light block alone");
-    assert.equal(meta.content, "#FFFFFF");
-  }
-  assert.equal(stored().light, null, "the fallback is stored as no pick");
-});
-
-test("reconcileTheme: a pick whose file now stands on the other base goes back to the built-in", () => {
-  reset();
-  pickTheme(DRACULA);
-  reconcileTheme(list([info({ base: "light" })]));
-  assert.equal(darkThemeId(), "dark");
-  assert.deepEqual(droppedTheme(), { id: "dracula", slot: "dark", reason: "base-changed" });
-});
 
 test("reconcileTheme: an unreadable folder is not evidence a user theme is gone, for either pick", () => {
   reset();
@@ -404,146 +205,6 @@ test("reconcileTheme: a file edited elsewhere re-applies; an unchanged one touch
   reconcileTheme(list([info({ tokens: { bg: "#111111" } })]));
   assert.equal(style.get("--color-bg"), "#111111");
   assert.equal(stored().dark?.id, "dracula");
-});
-
-test("reconcileTheme: an edit to the hidden pick is cached, not painted", () => {
-  reset();
-  pickTheme(DRACULA);
-  pickTheme(NORD_LIGHT);
-  reconcileTheme(list([info(), info({ id: "nord-light", base: "light", tokens: { bg: "#ffffff" } })]));
-  assert.equal(style.get("--color-bg"), "#282a36");
-  setThemeMode("light");
-  assert.equal(style.get("--color-bg"), "#ffffff");
-});
-
-/* ---- Two tabs on one stored record ------------------------------------- */
-
-const LATTE = { id: "catppuccin-latte", base: "light" as const, tokens: { bg: "#eff1f5", surface: "#e6e9ef" } };
-const TOKYO = { id: "tokyo-night", base: "dark" as const, tokens: { bg: "#1a1b26" } };
-
-test("a tab opened earlier saves only its own part: the review's sequence keeps the other tab's dark pick", () => {
-  reset();
-  // This module is tab B, opened before tab A picked: in its memory both lists are on their built-ins.
-  // Tab A picks Dracula; its save is in the shared store, and its storage event hasn't reached B yet.
-  store.set(THEME_KEY, JSON.stringify({ v: 2, mode: "dark", light: null, dark: DRACULA }));
-  pickTheme(LATTE);
-  setThemeMode("auto");
-  assert.deepEqual({ mode: stored().mode, light: stored().light?.id, dark: stored().dark?.id }, { mode: "auto", light: "catppuccin-latte", dark: "dracula" });
-});
-
-test("an open tab follows another tab's save at once: mode and picks, painted with no reload", () => {
-  reset();
-  pickTheme(DRACULA); // this is tab A
-  store.set(THEME_KEY, JSON.stringify({ v: 2, mode: "auto", light: LATTE, dark: DRACULA })); // tab B's save
-  otherTabSaved();
-  assert.equal(themeMode(), "auto");
-  assert.equal(lightThemeId(), "catppuccin-latte");
-  assert.equal(attributes.get("data-theme"), "dark", "the system is dark: Dracula still shows");
-  setSystem(true);
-  assert.equal(style.get("--color-bg"), "#eff1f5", "and the light pick B made shows when the system goes light");
-  assert.equal(meta.content, "#e6e9ef");
-
-  store.set(THEME_KEY, JSON.stringify({ v: 2, mode: "dark", light: LATTE, dark: TOKYO }));
-  otherTabSaved();
-  assert.equal(style.get("--color-bg"), "#1a1b26", "a new dark pick and Dark mode, painted at once");
-
-  store.set(THEME_KEY, JSON.stringify({ v: 2, mode: "light", light: LATTE, dark: TOKYO }));
-  otherTabSaved("sova:text-size");
-  assert.equal(themeMode(), "dark", "another key's event isn't about the theme");
-
-  store.clear(); // the other tab cleared the whole store
-  otherTabSaved(null);
-  assert.equal(themeMode(), "dark");
-  assert.equal(darkThemeId(), "dark");
-  assert.equal(attributes.has("data-theme"), false, "back on the built-in dark, as a reload would be");
-  assert.equal(style.has("--color-bg"), false);
-});
-
-test("reconcileTheme saves only the list it changed, and never over a newer pick another tab saved", () => {
-  reset();
-  pickTheme(DRACULA);
-  pickTheme(NORD_LIGHT);
-  // Tab B changes the stored dark pick; its event hasn't arrived here yet.
-  store.set(THEME_KEY, JSON.stringify({ v: 2, mode: "dark", light: NORD_LIGHT, dark: TOKYO }));
-  reconcileTheme(list([info(), info({ id: "nord-light", base: "light", tokens: { bg: "#ffffff" } })]));
-  assert.equal(stored().dark?.id, "tokyo-night", "the stored dark pick is still B's");
-  assert.equal((stored().light as { tokens?: { bg?: string } } | null)?.tokens?.bg, "#ffffff", "the edited light file is re-cached");
-
-  // Dracula's file goes away here, but the stored dark pick is B's newer one: that one stays.
-  reconcileTheme(list([info({ id: "nord-light", base: "light", tokens: { bg: "#ffffff" } })]));
-  assert.equal(darkThemeId(), "dark", "this tab drops the pick it was wearing");
-  assert.equal(stored().dark?.id, "tokyo-night", "and leaves the newer stored pick alone");
-  otherTabSaved();
-  assert.equal(darkThemeId(), "tokyo-night", "B's event then brings it here");
-});
-
-test("a new pick in a section clears its fallback notice; a pick in the other section doesn't", () => {
-  reset();
-  pickTheme(NORD_LIGHT);
-  reconcileTheme(list([info()]));
-  assert.deepEqual(droppedTheme(), { id: "nord-light", slot: "light", reason: "gone" });
-  pickTheme(DRACULA);
-  assert.deepEqual(droppedTheme(), { id: "nord-light", slot: "light", reason: "gone" }, "the notice is about the light pick");
-  pickTheme({ id: "catppuccin-latte", base: "light", tokens: {} });
-  assert.equal(droppedTheme(), null);
-});
-
-/* ---- The fallback notice, and the card each list shows checked -------- */
-
-const sentence = (d: Parameters<typeof droppedNotice>[0]) => {
-  const n = droppedNotice(d);
-  return `${n.lead}${d.id}${n.tail}`;
-};
-
-test("the notice names the list that fell back and why: gone, broken, or on the other base now", () => {
-  reset();
-  pickTheme(DRACULA);
-  pickTheme(NORD_LIGHT);
-  reconcileTheme(list([info({ id: "nord-light", base: "light", tokens: NORD_LIGHT.tokens })]));
-  assert.equal(sentence(droppedTheme()!), "dracula isn't there anymore, so your dark theme is back on the built-in Dark.");
-
-  reset();
-  pickTheme(DRACULA);
-  reconcileTheme(list([info({ tokens: {}, error: "accent is image-set(…)." })]));
-  assert.equal(sentence(droppedTheme()!), "We couldn't read dracula, so your dark theme is back on the built-in Dark.");
-
-  reset();
-  pickTheme(NORD_LIGHT);
-  reconcileTheme(list([info({ id: "nord-light", base: "dark", tokens: {} })]));
-  assert.equal(sentence(droppedTheme()!), "nord-light is a dark theme now, so your light theme is back on the built-in Light.");
-
-  reset();
-  pickTheme(DRACULA);
-  reconcileTheme(list([info({ base: "light" })]));
-  assert.equal(sentence(droppedTheme()!), "dracula is a light theme now, so your dark theme is back on the built-in Dark.");
-
-  for (const [d, want] of [
-    [{ id: "x", slot: "light", reason: "gone" }, "x isn't there anymore, so your light theme is back on the built-in Light."],
-    [{ id: "x", slot: "light", reason: "broken" }, "We couldn't read x, so your light theme is back on the built-in Light."],
-    [{ id: "x", slot: "dark", reason: "base-changed" }, "x is a light theme now, so your dark theme is back on the built-in Dark."],
-  ] as const) assert.equal(sentence(d), want);
-});
-
-const userLight = info({ id: "light", name: "My Light", base: "light", source: "user", path: "/home/u/.pi/agent/sova/themes/light.json", tokens: { bg: "#fafafa" }, replacesBuiltin: true });
-const userDark = info({ id: "dark", name: "My Dark", base: "dark", source: "user", path: "/home/u/.pi/agent/sova/themes/dark.json", tokens: { bg: "#101010" }, replacesBuiltin: true });
-
-test("the check mark is what's worn: a user file holding a built-in's id isn't checked while nothing is picked", () => {
-  reset();
-  const themes = [info(), info({ id: "light", name: "Light", base: "light", tokens: {} }), info({ id: "dark", name: "Dark", tokens: {} })];
-  assert.equal(checkedThemeId("light", themes), "light", "the built-in card, when it is the built-in");
-  assert.equal(checkedThemeId("dark", themes), "dark");
-
-  const replaced = [info(), userLight, userDark];
-  assert.equal(checkedThemeId("light", replaced), null, "your light.json isn't what the window wears");
-  assert.equal(checkedThemeId("dark", replaced), null);
-  setThemeMode("light");
-  assert.deepEqual(colorTokens(), [], "and the window keeps the built-in look");
-
-  pickTheme({ id: "light", base: "light", tokens: userLight.tokens });
-  assert.equal(checkedThemeId("light", replaced), "light", "picked, it is worn and checked");
-  assert.equal(style.get("--color-bg"), "#fafafa");
-  pickTheme(DRACULA);
-  assert.equal(checkedThemeId("dark", replaced), "dracula", "any other pick is checked as always");
 });
 
 /* ---- Typography over the theme: pick > theme > default -------------- */

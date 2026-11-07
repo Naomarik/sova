@@ -12,6 +12,8 @@ import type { ParentScope } from "../../../pi-config/extensions/sandbox/policy.t
 import { prepareSessionCommand, type PreparedSessionCommand } from "../../../pi-config/extensions/sandbox/session-policy.ts";
 import { SANDBOX_STATE_EVENT } from "../../../pi-config/extensions/sandbox/state.ts";
 import { agentRoot } from "../../state-root";
+import { fullOutputFor, modelOutput } from "../../shell-model";
+import type { PiExtensionAPI } from "./extension-types";
 import { shellTruncation, toHEntry } from "./reader";
 
 /** What the sandbox extension last said of a runtime (its `sandbox:state` event): On, and what a command
@@ -235,6 +237,33 @@ function ownStop(s: AgentSession, base: BashOperations, o: { signal?: AbortSigna
         x.onData(data);
       };
       return base.exec(command, cwd, { ...x, onData }).finally(() => o.signal?.removeEventListener("abort", onAbort));
+    },
+  };
+}
+
+/** What the model is sent of a finished `!` command (§chat.shell-mode/model): the chat's context, before any
+    provider (Claude Code's included) converts it, carries each one's output cut to its tail with the path of
+    its whole output (server/shell-model.ts), in pi's own "Ran `command`" form; a `!!` command stays out, as
+    pi leaves it (excludeFromContext). */
+export function shellModelExtension() {
+  return {
+    name: "sova-shell-model",
+    hidden: true,
+    factory: (pi: PiExtensionAPI) => {
+      pi.on("context", async (event) => {
+        let changed = false;
+        const messages = (event.messages as { role?: string }[]).map((m) => {
+          if (m.role !== "bashExecution") return m;
+          const b = m as { command: string; output: string; timestamp?: number; excludeFromContext?: boolean; truncated?: boolean; fullOutputPath?: string };
+          if (b.excludeFromContext) return m;
+          const cut = modelOutput(b.output ?? "");
+          if (!cut.cut) return m;
+          const full = fullOutputFor({ sentAt: b.timestamp, command: b.command, output: b.output, ...(b.fullOutputPath ? { fullOutputPath: b.fullOutputPath } : {}) });
+          changed = true;
+          return { ...b, output: cut.output, truncated: full !== null, ...(full ? { fullOutputPath: full } : {}) };
+        });
+        return changed ? { messages: messages as never } : undefined;
+      });
     },
   };
 }

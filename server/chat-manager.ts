@@ -67,6 +67,7 @@ import { SHELL_GUARD_FACTORY } from "./shell-guard-extension";
 import { forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache.ts";
 import { VIS_CHECK_TOOL, visCheckExtension, type VisCheckHost } from "./vis-check";
 import { MEMORY_COMPACTION_REFUSAL, memoryExtension, type MemoryHost } from "./harness/pi/memory";
+import { shellModelExtension } from "./harness/pi/shell";
 import { deeperContextExtension } from "./harness/pi/deeper-context";
 import { backgroundJobsExtension } from "./harness/pi/background-jobs";
 import { mcpExtension } from "./harness/pi/mcp";
@@ -4675,6 +4676,8 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
               // Sova's mode engine's handle, for this chat (only a runtime whose modes Sova runs has one to announce).
               ...(modes.sova ? [modesBridgeExtension((handle) => (modes.handle = handle))] : []),
               visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null)),
+              // What the model is sent of a `!` command (§chat.shell-mode/model): before memory, which sees it so too.
+              shellModelExtension(),
               // The memory minor mode's engine (§chat/memory): idle until memory is turned on.
               memory(),
               // playbook_read, once a schedule's fire delivered a playbook here (§chat.schedules/playbook-read).

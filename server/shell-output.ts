@@ -9,6 +9,7 @@ import { basename } from "node:path";
 import type { HEntry } from "../shared/harness";
 import type { ShellOutputPage } from "../shared/protocol";
 import { parsePi } from "./harness/pi/reader";
+import { ownOutputPath } from "./shell-model";
 
 /** At most this many bytes of output a page (a page that isn't the last ends on a whole character). */
 export const SHELL_OUTPUT_PAGE_BYTES = 1_000_000;
@@ -82,7 +83,8 @@ export async function shellOutputPage(sessionPath: string, entryId: string, from
 export function outputFilesOf(entries: readonly HEntry[]): string[] {
   const out = new Set<string>();
   for (const e of entries) if (e.kind === "shell") {
-    const f = ownOutputFile(e.fullOutputPath);
+    // The harness's file, and the one Sova writes for the model when the harness wrote none (server/shell-model.ts).
+    const f = ownOutputFile(e.fullOutputPath ?? ownOutputPath(e.sentAt, e.command ?? "", e.output ?? ""));
     if (f) out.add(f);
   }
   return [...out];

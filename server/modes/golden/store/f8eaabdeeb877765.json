@@ -126,7 +126,13 @@
    "required": [
     "id"
    ],
-   "properties": {},
+   "properties": {
+    "id": {
+     "type": "string",
+     "pattern": "^ag_\\d+$",
+     "description": "Exact worker ID (ag_NN)."
+    }
+   },
    "additionalProperties": false
   }
  },
@@ -156,7 +162,7 @@
   "description": "@0d908603ee9b8814",
   "parameters": {
    "type": "object",
-   "properties": "@f4056e757b20236c",
+   "properties": "@3b05de0022c5afc1",
    "additionalProperties": false
   }
  },
@@ -177,6 +183,10 @@
     "id"
    ],
    "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
     "full": {
      "type": "boolean"
     },
@@ -204,6 +214,10 @@
     "message"
    ],
    "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
     "message": {
      "type": "string",
      "minLength": 1
@@ -224,6 +238,10 @@
   "parameters": {
    "type": "object",
    "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
     "group": {
      "type": "string",
      "minLength": 1
@@ -503,7 +521,7 @@
     "ops": {
      "type": "array",
      "items": {
-      "anyOf": "@efddf5ee21db1c1d"
+      "anyOf": "@8f0d66a627303464"
      },
      "description": "Operations, applied in order. change_request, when given, comes before every other op; create or import comes next (else first) and appears once.",
      "minItems": 1
@@ -607,37 +625,6 @@
    },
    "required": [
     "tourId"
-   ],
-   "additionalProperties": false
-  }
- },
- {
-  "name": "zoom",
-  "description": "@9fb1f34e406e16f8",
-  "parameters": {
-   "type": "object",
-   "properties": {
-    "n": {
-     "type": "integer",
-     "minimum": 1,
-     "description": "How many messages the line covers (a power of 2)"
-    }
-   },
-   "required": [
-    "id",
-    "n"
-   ],
-   "additionalProperties": false
-  }
- },
- {
-  "name": "date",
-  "description": "The date and time of message id in the memory view.",
-  "parameters": {
-   "type": "object",
-   "properties": {},
-   "required": [
-    "id"
    ],
    "additionalProperties": false
   }

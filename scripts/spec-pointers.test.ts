@@ -19,7 +19,8 @@ test("the writing procedure exists where every pointer says, beside PROMOTE.md",
 
 test("AGENTS.md sends an agent to the writing procedure before its first behavior-changing edit", () => {
   const agents = flat(read("AGENTS.md"));
-  assert.match(agents, /read `pi-config\/extensions\/mode\/spec-mode\.md`/);
+  assert.match(agents, /When your system prompt has the `# Minor mode: spec` block, follow the spec discipline/);
+  assert.match(agents, /Without that block the mode is off: the chat writes no drafts and no notes/);
   assert.match(agents, /Before your first edit that changes behavior, read `pi-config\/extensions\/spec\/WRITING\.md`, the writing procedure/);
 });
 

@@ -52,73 +52,6 @@
   }
  },
  {
-  "name": "edit",
-  "description": "@b5267b50ea0f1f04",
-  "parameters": {
-   "type": "object",
-   "required": [
-    "path",
-    "edits"
-   ],
-   "properties": {
-    "path": {
-     "type": "string",
-     "description": "Path to the file to edit (relative or absolute)"
-    },
-    "edits": {
-     "type": "array",
-     "items": {
-      "type": "object",
-      "required": [
-       "oldText",
-       "newText"
-      ],
-      "properties": {
-       "oldText": {
-        "type": "string",
-        "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
-       },
-       "newText": {
-        "type": "string",
-        "description": "Replacement text for this targeted edit."
-       }
-      }
-     },
-     "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
-    }
-   }
-  },
-  "constrainedSampling": {
-   "type": "json_schema",
-   "strict": "prefer"
-  }
- },
- {
-  "name": "write",
-  "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
-  "parameters": {
-   "type": "object",
-   "required": [
-    "path",
-    "content"
-   ],
-   "properties": {
-    "path": {
-     "type": "string",
-     "description": "Path to the file to write (relative or absolute)"
-    },
-    "content": {
-     "type": "string",
-     "description": "Content to write to the file"
-    }
-   }
-  },
-  "constrainedSampling": {
-   "type": "json_schema",
-   "strict": "prefer"
-  }
- },
- {
   "name": "agent_resume",
   "description": "@9b561521c66f37e1",
   "parameters": {
@@ -126,13 +59,7 @@
    "required": [
     "id"
    ],
-   "properties": {
-    "id": {
-     "type": "string",
-     "pattern": "^ag_\\d+$",
-     "description": "Exact worker ID (ag_NN)."
-    }
-   },
+   "properties": {},
    "additionalProperties": false
   }
  },
@@ -162,7 +89,7 @@
   "description": "@0d908603ee9b8814",
   "parameters": {
    "type": "object",
-   "properties": "@f4056e757b20236c",
+   "properties": "@3b05de0022c5afc1",
    "additionalProperties": false
   }
  },
@@ -183,10 +110,6 @@
     "id"
    ],
    "properties": {
-    "id": {
-     "type": "string",
-     "minLength": 1
-    },
     "full": {
      "type": "boolean"
     },
@@ -214,10 +137,6 @@
     "message"
    ],
    "properties": {
-    "id": {
-     "type": "string",
-     "minLength": 1
-    },
     "message": {
      "type": "string",
      "minLength": 1
@@ -238,10 +157,6 @@
   "parameters": {
    "type": "object",
    "properties": {
-    "id": {
-     "type": "string",
-     "minLength": 1
-    },
     "group": {
      "type": "string",
      "minLength": 1
@@ -499,84 +414,6 @@
    "required": [
     "topic",
     "text"
-   ],
-   "additionalProperties": false
-  }
- },
- {
-  "name": "align",
-  "description": "@10b18c09da2ac44c",
-  "parameters": {
-   "type": "object",
-   "required": [
-    "ops"
-   ],
-   "properties": {
-    "doc": {
-     "type": "string",
-     "minLength": 1,
-     "description": "The alignment to change, e.g. \"al_2\". Required while more than one alignment is open; omit for create, import, exempt and change_request.",
-     "pattern": "^al_[1-9][0-9]*$"
-    },
-    "ops": {
-     "type": "array",
-     "items": {
-      "anyOf": "@8f0d66a627303464"
-     },
-     "description": "Operations, applied in order. change_request, when given, comes before every other op; create or import comes next (else first) and appears once.",
-     "minItems": 1
-    }
-   },
-   "additionalProperties": false
-  }
- },
- {
-  "name": "create_guide",
-  "description": "@d8d27a6f2379e44a",
-  "parameters": {
-   "type": "object",
-   "required": [
-    "topic"
-   ],
-   "properties": {
-    "topic": {
-     "type": "string",
-     "enum": [
-      "appearance",
-      "models",
-      "workers",
-      "instructions",
-      "skills",
-      "modes",
-      "profiles",
-      "tools",
-      "extensions",
-      "pi-extensions",
-      "scripts",
-      "safety",
-      "project",
-      "landing",
-      "releases",
-      "automation",
-      "cards",
-      "overseers",
-      "attention",
-      "computers"
-     ],
-     "description": "The topic, as Create's table of contents lists it"
-    }
-   },
-   "additionalProperties": false
-  }
- },
- {
-  "name": "sova_settings",
-  "description": "@33a84d06d908f213",
-  "parameters": {
-   "type": "object",
-   "properties": "@d2075d1e687bf90b",
-   "required": [
-    "op"
    ],
    "additionalProperties": false
   }

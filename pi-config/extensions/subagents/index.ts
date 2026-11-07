@@ -182,7 +182,7 @@ const AgentSpec = Type.Object(
 		useWorktreeConfig: Type.Optional(
 			Type.Boolean({
 				description:
-					"Pi only: run the worker on its worktree's own agent dir (<worktree>/.agent: its settings, auth and mode extension, normal mode + spec). Valid only when cwd is inside an active worktree this session tracks that has a .agent.",
+					"Pi only: run the worker on its worktree's own agent dir (<worktree>/.agent: its settings, auth and mode extension, normal mode, spec only while this session has it on). Valid only when cwd is inside an active worktree this session tracks that has a .agent.",
 			}),
 		),
 	},
@@ -1555,7 +1555,7 @@ export function registerSubagents(
 		const prepared = specs.map((spec, index) => {
 			if (!spec.prompt.trim()) throw new Error("Task must not be blank.");
 			// A team's monitor has no tools to follow them with; a worker on its worktree's own agent dir
-			// gets them from that tree's mode extension (below), never twice.
+			// gets spec from its mode slot (below), never twice.
 			// Its agent dir is its worktree's, where the chat's servers, approvals and secrets aren't.
 			if (spec.useWorktreeConfig && spec.mcpServers?.length) throw new Error(`${spec.name ?? spec.agentType ?? "This worker"} uses its worktree's own config, so it can't have MCP servers.`);
 			const mcp = workerMcp(spec.mcpServers);
@@ -1662,7 +1662,7 @@ export function registerSubagents(
 			// (`--sandbox on`, which a worker cannot turn off, and the parent's scope); a spec that
 			// names the extension itself does not load it twice.
 			// Its worktree's own agent dir (§chat.worktrees/worktree-config): that tree's mode extension,
-			// loaded by path (discovery stays off), in normal mode with the spec minor mode.
+			// loaded by path (discovery stays off), in normal mode, with the spec minor mode while this session has it on.
 			// With the session's modes on Sova (its host says so), the slot is Sova's engine, never the tree's copy.
 			const treeConfig = spec.useWorktreeConfig && tree ? worktreeConfig(tree.path, cwd, workerHost?.modes() === "sova") : undefined;
 			// Spec on: a code-writing worker gets the brief (below) and the census hook; a worktree-config worker
@@ -1671,7 +1671,7 @@ export function registerSubagents(
 			// Its project modes' tools (PROJECT_TOOLS_WORKER_EXTENSION): the parent's copies, for a worker that has bash.
 			const projectToolsFile = modes?.projectModes?.length && !remote && !treeConfig && tools.includes("bash") ? writeWorkerToolsFile(agentDir(), modes.projectModes) : undefined;
 			const sources = [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(specWorker ? [SPEC_WORKER_EXTENSION] : []), ...(projectToolsFile ? [PROJECT_TOOLS_WORKER_EXTENSION] : []), ...(own ?? [])];
-			const modeFlags = treeConfig ? { major: "normal", minor: "spec" } : undefined;
+			const modeFlags = treeConfig ? { major: "normal", ...(specOn ? { minor: "spec" } : {}) } : undefined;
 			// The sandbox's answer for a pi worker: its extension and flags (the parent's scope while on; in a
 			// tracked worktree, narrowed to it, or write-only while off).
 			const sandboxFlags = launch.kind === "pi" ? launch.flags : undefined;
@@ -1698,8 +1698,8 @@ export function registerSubagents(
 				systemPrompt: [definition?.systemPrompt, spec.systemPrompt, specWorker && !specInPrompt ? workerSpecBrief(SPEC_CORE_DIR) : undefined, modePrompt].filter(Boolean).join("\n\n") || undefined,
 				flags: piFlags,
 				treeConfig,
-				// A tree-config worker is started with spec on (modeFlags); older records say nothing.
-				givenModes: treeConfig ? [modeFlags!.minor] : modePrompt ? givenModesOf(modes!) : [],
+				// A tree-config worker is started with spec as this session has it (modeFlags); older records say nothing.
+				givenModes: treeConfig ? (specOn ? ["spec"] : []) : modePrompt ? givenModesOf(modes!) : [],
 				// Its census (spec-worker.ts, or a tree-config worker's whole mode extension) writes what landed.
 				landed: specOn && !remote && writesCode(tools),
 				projectToolsFile,

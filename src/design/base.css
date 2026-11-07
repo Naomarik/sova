@@ -406,6 +406,7 @@ input.input { text-overflow: ellipsis; }
 .banner-title:last-child { margin-bottom: 0; }
 .banner-compact { padding: var(--space-2) var(--space-3); align-items: center; gap: var(--space-2); }
 .banner-compact .banner-icon { margin-top: 0; }
+@media (pointer: fine) { .banner-compact .banner-action .button-sm { min-height: 28px; } } /* touch keeps the full 36px target */
 .banner-icon  { flex: none; margin-top: 1px; }
 .banner-action{ flex: none; align-self: center; }
 

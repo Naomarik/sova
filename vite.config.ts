@@ -1,7 +1,8 @@
 import { resolve } from "node:path";
-import { defineConfig, type ProxyOptions } from "vite";
+import { defineConfig, type Plugin, type ProxyOptions } from "vite";
 import solid from "vite-plugin-solid";
 import { FRAME_HOST_HTML, FRAME_HOST_NAME } from "./shared/vis-frame-host";
+import { prepaintScript } from "./src/lib/theme-prepaint";
 
 // The API server this dev server proxies to. `pnpm run dev:server` defaults to 4800; a second
 // checkout (git worktree) or a hermetic/experimental server runs elsewhere (PORT=4810 with
@@ -73,8 +74,24 @@ const toApi = (ws = false): ProxyOptions => ({
   },
 });
 
+/** The stored theme on the page before its first frame (src/lib/theme-prepaint.ts): a classic script
+    right after the theme-color meta it sets, in the app's index.html only, in `vite dev` and
+    `vite build` alike. A page without that meta fails the build rather than lose the script. */
+const THEME_COLOR_META = /<meta name="theme-color"[^>]*>/;
+const themePrepaint: Plugin = {
+  name: "sova-theme-prepaint",
+  transformIndexHtml: {
+    order: "pre",
+    handler(html, ctx) {
+      if (ctx.path !== "/index.html") return html;
+      if (!THEME_COLOR_META.test(html)) throw new Error("index.html has no theme-color meta for the theme pre-paint script to follow");
+      return html.replace(THEME_COLOR_META, (meta) => `${meta}\n    <script>${prepaintScript()}</script>`);
+    },
+  },
+};
+
 const app = defineConfig({
-  plugins: [solid()],
+  plugins: [solid(), themePrepaint],
   server: {
     proxy: {
       "/api": toApi(),

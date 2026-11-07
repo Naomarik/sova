@@ -1,7 +1,7 @@
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { ExplanationInfo } from "../../shared/protocol";
 import { stampTime } from "../lib/format";
-import { appTheme, explainCaption, explainHref, explainModel, THUMB_WIDTH } from "../lib/explain";
+import { explainCaption, explainHref, explainModel, liveAppTheme, THUMB_WIDTH } from "../lib/explain";
 import type { ExplainSessionRef } from "../lib/explanations";
 import { requestExplainJump } from "../lib/jump";
 import { Chip } from "./ui";
@@ -29,6 +29,9 @@ function createMediaQuery(query: string) {
  * it), which matches the app's theme without relaxing the sandbox. Needs confirming in the
  * browser QA pass; if it doesn't hold, thumbnails follow the OS and only their colour is off.
  *
+ * Both follow a theme switch while the tile is mounted (an Auto switch): `src` and `color-scheme`
+ * read the theme live, so the frame reloads in the theme on screen.
+ *
  * `src` already carries `?theme=`, and it is inert here by construction, not by bug: the param
  * only does anything where the page's script runs — the standalone tab and phones. Don't "fix" a
  * mistimed thumbnail by adding a param that is already on the URL. The only honest levers are
@@ -55,7 +58,7 @@ function Thumb(props: { id: string }) {
         loading="lazy"
         tabindex="-1"
         aria-hidden="true"
-        style={{ "color-scheme": appTheme() }}
+        style={{ "color-scheme": liveAppTheme() }}
       />
     </div>
   );

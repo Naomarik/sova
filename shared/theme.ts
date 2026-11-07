@@ -152,6 +152,10 @@ export type ThemeBase = "dark" | "light";
 export const THEME_BASES: readonly ThemeBase[] = ["dark", "light"];
 /** The id the picker falls back to when the stored one no longer resolves. */
 export const DEFAULT_THEME_ID = "dark";
+/** Each base's `--color-surface` as tokens.css defines it: the browser bar's color for a theme that
+    doesn't set `surface`. `dark`'s is also what index.html ships. The app's painter and the
+    pre-paint script both read it (src/lib/theme.ts, src/lib/theme-prepaint.ts). */
+export const BASE_SURFACE: Readonly<Record<ThemeBase, string>> = Object.freeze({ dark: "#2C2C38", light: "#FFFFFF" });
 
 const asRecord = (v: unknown): Record<string, unknown> | null =>
   typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null;

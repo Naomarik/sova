@@ -2543,12 +2543,14 @@ export type ChatClientMessage =
   /** Stop one command running in this chat (its card's Stop Command); `id` names the run, and a stop for a
       run that already ended does nothing. Never stops another command or the model's reply (that is `abort`). */
   | { type: "shell_stop"; id: string };
+  // (A page's `shell_stop` carries nothing else: who stopped it is the server's to say, never the frame's.)
 
 /** Why a command from shell mode was cut short (§chat.shell-mode/card): `user` = Stop Command, or
     pi's own Stop in its terminal; `closed` = its chat closed (archived, restarted, reloaded onto new code,
     switched or anything else that closes it) and the run was stopped as it went; `limit` = its output passed
-    SHELL_OUTPUT_MAX_BYTES and Sova stopped it (the card says so). */
-export type ShellCancelReason = "user" | "closed" | "limit";
+    SHELL_OUTPUT_MAX_BYTES and Sova stopped it (the card says so); `other` = stopped from outside this chat's
+    pages, by the Stop Command entry (a script, a chat, the Overseer: chat.shell.stop), read as plain "Stopped". */
+export type ShellCancelReason = "user" | "closed" | "limit" | "other";
 
 /** A command whose output passes this many bytes (about 1 GB) is stopped (§chat.shell-mode/running), so a
     runaway command can't fill the computer's temporary folder with its full-output file. */
@@ -2569,6 +2571,8 @@ export interface ShellOutcome {
   truncated?: ShellTruncation;
   /** Where the whole output was saved, on the chat's machine (when it was cut). */
   fullOutputPath?: string;
+  /** How long it ran, ms, from its start to its end (a row saved before this existed has none). */
+  durationMs?: number;
 }
 
 /** A saved command's row (TranscriptItem `shell`): its command, the output as saved (already cut to

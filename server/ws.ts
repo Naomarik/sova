@@ -105,6 +105,11 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
       if (msg.type === "shell") client.send({ type: "shell_refused", clientId: String(msg.clientId ?? ""), reason: "unavailable", message: SHELL_NOT_PAGE_TEXT });
       return;
     }
+    // Who stopped a command is the socket's to say, never the frame's: the entry's stop reads "Stopped", a page's "Stopped by you".
+    if (msg.type === "shell_stop") {
+      const { by: _by, ...stop } = msg as typeof msg & { by?: unknown };
+      return passOn(open, (opts.stopsCommand && who !== null ? { ...stop, by: "other" } : stop) as ChatClientMessage);
+    }
     // A key sends no frame at all into an overseer's, a baton's or the merge queue's chat (§app.extensions/not-you).
     if (who === "extension") {
       checking++;

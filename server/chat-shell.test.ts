@@ -35,6 +35,7 @@ function rig(o: { refusal?: { reason: ShellRefusal; message: string } | null; pl
   const stops: string[] = [];
   const marked: [string, string][] = [];
   const rowsAsked: { id: string | null; stopped: string | null }[] = [];
+  const durations: [string, number][] = [];
   let streaming = false;
   let aborts = 0;
   const waiters: (() => void)[] = [];
@@ -63,11 +64,14 @@ function rig(o: { refusal?: { reason: ShellRefusal; message: string } | null; pl
     },
     refusal: () => o.refusal ?? null,
     beforeWrite: () => {},
-    rowsOf: (e, stopped) => {
+    rowsOf: (e, stopped, _durationMs) => {
       rowsAsked.push({ id: e.id, stopped });
       return [{ id: e.id ?? "?", kind: "shell", text: "$ c" } as TranscriptItem];
     },
-    markStopped: (id, why) => void marked.push([id, why]),
+    markRun: (id, facts) => {
+      if (facts.stopped) marked.push([id, facts.stopped]);
+      if (facts.durationMs !== undefined) durations.push([id, facts.durationMs]);
+    },
     platform: o.platform ?? "linux",
   });
   const client = { send: (m: ChatServerMessage) => void toSender.push(m) };
@@ -89,7 +93,7 @@ function rig(o: { refusal?: { reason: ShellRefusal; message: string } | null; pl
     else c.o.onStart();
   };
   return {
-    shell, sent, toSender, calls, stops, marked, rowsAsked, client, sentWhere, result, begin,
+    shell, sent, toSender, calls, stops, marked, durations, rowsAsked, client, sentWhere, result, begin,
     setStreaming: (v: boolean) => void (streaming = v),
     aborts: () => aborts,
   };
@@ -218,6 +222,21 @@ describe("a chat's commands from shell mode", () => {
     await r.sentWhere((m) => m.type === "shell_saved");
     assert.deepEqual(r.marked, [], "no close marker for a command you stopped");
     assert.deepEqual(r.rowsAsked, [{ id: "e2", stopped: null }]);
+  });
+
+  test("every finished run says how long it ran, on its end and in its marker; a stop from the entry reads stopped by other", async () => {
+    const r = rig();
+    r.shell.start(r.client, { command: "sleep 9", clientId: "a" });
+    const id = r.calls[0]!.o.id;
+    assert.equal(r.shell.stop(id, true), true);
+    r.calls[0]!.done.resolve(r.result({ exitCode: undefined, cancelled: true }, Promise.resolve(entry("e8", true))));
+    const end = (await r.sentWhere((m) => m.type === "shell_end")) as Extract<ChatServerMessage, { type: "shell_end" }>;
+    assert.equal(end.cancelReason, "other", "not stopped by you");
+    assert.equal(typeof end.durationMs, "number");
+    assert.ok(end.durationMs! >= 0);
+    await r.sentWhere((m) => m.type === "shell_saved");
+    assert.deepEqual(r.marked, [["e8", "other"]]);
+    assert.deepEqual(r.durations, [["e8", end.durationMs!]], "the saved row's duration is the end's");
   });
 
   test("Stop on a command still being prepared: it never starts, and its sender's box is told", async () => {

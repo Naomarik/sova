@@ -7,7 +7,7 @@
 // (t19); a page's handed-over frames never run one; and a script's or a chat's socket is refused one while the
 // page's runs it. Every wait is on a frame or the file, never a sleep.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { authCookieName } from "./auth";
@@ -96,7 +96,9 @@ test("a command run mid-reply: a client that attaches after it ended sees its ca
   const at = file.findIndex((e) => e.id === saved.entryId);
   assert.ok(at > 0 && file.slice(0, at).some((e) => e.message.role === "assistant"), "the record is below the reply");
   const rows = (await api("GET", `/api/transcript?path=${encodeURIComponent(ses.path)}&wire=2`)).body.items as any[];
-  assert.deepEqual(rows.find((r) => r.id === saved.entryId)?.shell, { command: "echo hi", output: "hi\n", exitCode: 0 });
+  const { durationMs, ...shellRow } = rows.find((r) => r.id === saved.entryId)?.shell ?? {};
+  assert.deepEqual(shellRow, { command: "echo hi", output: "hi\n", exitCode: 0 });
+  assert.equal(durationMs, end.durationMs, "the saved row says how long it ran, as its end did");
   const legacy = (await api("GET", `/api/transcript?path=${encodeURIComponent(ses.path)}`)).body.items as any[];
   assert.equal(legacy.find((r) => r.id === saved.entryId)?.kind, "info", "wire 1 keeps the plain row");
   const c = await chatSocket(ses);
@@ -123,7 +125,9 @@ test("a command still running shows to a client that attaches, with its output s
   writeFileSync(gate, "");
   const saved = await b.find("the run saved", (f) => f.type === "shell_saved" && f.id === start.run.id);
   const row = b.frames.find((f) => f.type === "append" && f.items.some((i: any) => i.id === saved.entryId)).items.find((i: any) => i.id === saved.entryId);
-  assert.deepEqual(row.shell, { command: start.run.command, output: "startend", exitCode: 0 });
+  const { durationMs: took, ...rest } = row.shell;
+  assert.deepEqual(rest, { command: start.run.command, output: "startend", exitCode: 0 });
+  assert.equal(typeof took, "number");
   await b.find("the second saved", (f) => f.type === "shell_saved" && f.id === second.run.id);
   assert.deepEqual(bashEntries(ses).map((e) => [e.message.command, e.message.cancelled]), [["sleep 60", true], [start.run.command, false]]);
   a.close();
@@ -144,7 +148,8 @@ test("archiving a chat stops its running command and saves it as stopped when th
   assert.equal(marker.data.targetId, entry.id);
   await api("POST", "/api/sessions/archive", { path: ses.path, archived: false });
   const rows = (await api("GET", `/api/transcript?path=${encodeURIComponent(ses.path)}&wire=2`)).body.items as any[];
-  assert.deepEqual(rows.find((x) => x.id === entry.id)?.shell, { command: "sleep 60", output: "", cancelled: true, cancelReason: "closed" });
+  const { durationMs: _d, ...closedRow } = rows.find((x) => x.id === entry.id)?.shell ?? {};
+  assert.deepEqual(closedRow, { command: "sleep 60", output: "", cancelled: true, cancelReason: "closed" });
   a.close();
 });
 
@@ -168,7 +173,7 @@ test("a cut command's whole output reads back in pages; archiving deletes its fi
   const listed = await api("POST", `/api/chat/action?path=${encodeURIComponent(ses.path)}`, { type: "shell_list" });
   assert.deepEqual(listed.body.commands.map((c: any) => [c.id, c.command]), [[held.run.id, "sleep 60"]]);
   const stopped = await api("POST", `/api/chat/action?path=${encodeURIComponent(ses.path)}`, { type: "shell_stop", id: held.run.id });
-  assert.deepEqual([stopped.status, stopped.body.outcome, stopped.body.cancelReason], [200, "stopped", "user"]);
+  assert.deepEqual([stopped.status, stopped.body.outcome, stopped.body.cancelReason], [200, "stopped", "other"], "a script's stop is no one's at the page");
   await a.find("the stopped one saved", (f) => f.type === "shell_saved" && f.id === held.run.id);
   const r = await api("POST", "/api/sessions/archive", { path: ses.path, archived: true });
   assert.equal(r.status, 200, JSON.stringify(r.body));
@@ -179,47 +184,79 @@ test("a cut command's whole output reads back in pages; archiving deletes its fi
   a.close();
 });
 
-test("a ! command in a chat with its sandbox On runs confined: its folder is writable, the home folder and the network are not (§chat.shell-mode/running)", async () => {
+test("a ! command in a chat with its sandbox On runs confined: its folder is writable, the home folder and the network are not (§chat.shell-mode/running)", async (t) => {
   // Its own server, whose chats load the sandbox extension (this file's other server loads none).
   const sb = await startHermeticServer({ extensions: ["sandbox"] });
   const prev = s;
   s = sb;
   try {
-    await sandboxed();
+    const skipped = await sandboxed();
+    // A computer whose sandbox can't be proven (its probe fails, as inside another sandbox): the command is refused,
+    // fail-closed, and this check can't run. Reported as skipped, never as passed.
+    if (skipped) t.skip(`the sandbox's probe can't run here: ${skipped}`);
   } finally {
     s = prev;
     await sb.stop();
   }
 });
-async function sandboxed() {
+/** The sandboxed run, after the same checks with the sandbox Off show they can tell the two apart. Returns why
+    it couldn't run, when the sandbox's own probe refused, else nothing. */
+async function sandboxed(): Promise<string | undefined> {
   const ses = await newSession();
   const a = await chatSocket(ses);
-  const on = await api("POST", `/api/sandbox?path=${encodeURIComponent(ses.path)}`, { state: "on" });
-  assert.equal(on.status, 200, JSON.stringify(on.body));
-  assert.notEqual(on.body.outcome, "unsupported", JSON.stringify(on.body));
   const run = async (command: string, clientId: string) => {
     a.send({ type: "shell", command, clientId });
     const got = await a.find(`${clientId}'s end or refusal`, (f) => (f.type === "shell_refused" && f.clientId === clientId) || (f.type === "shell_start" && f.clientId === clientId));
     if (got.type === "shell_refused") return { refused: got.message as string };
     return a.find(`${clientId}'s end`, (f) => f.type === "shell_end" && f.id === got.run.id);
   };
-  const outside = join(s.home, `shell-sandbox-${Date.now()}`);
+  // Dial this server's own port: reachable whatever the machine's network, unless the sandbox cuts it off.
+  const dial = `(exec 3<>/dev/tcp/127.0.0.1/${new URL(s.base).port}) 2>/dev/null && echo reached || echo blocked`;
+  const homeOff = join(s.home, `shell-off-${Date.now()}`);
+  const homeOn = join(s.home, `shell-on-${Date.now()}`);
+  // Off: the same lines write the home folder and reach the port.
+  assert.equal(((await run(`touch ${homeOff} && echo wrote`, "off-home")) as any).output?.trim(), "wrote");
+  assert.ok(existsSync(homeOff), "with the sandbox Off the home folder is writable: the check below can fail");
+  rmSync(homeOff, { force: true });
+  assert.equal(((await run(dial, "off-net")) as any).output?.trim(), "reached", "with the sandbox Off the port is reached");
+  const on = await api("POST", `/api/sandbox?path=${encodeURIComponent(ses.path)}`, { state: "on" });
+  assert.equal(on.status, 200, JSON.stringify(on.body));
+  assert.notEqual(on.body.outcome, "unsupported", JSON.stringify(on.body));
   const inside = await run("touch ./inside-ok && echo wrote", "in");
-  // A computer whose sandbox can't be proven here (the probe itself fails, as inside another sandbox): the
-  // command is refused, fail-closed, and this check can't run. Any other refusal is a failure.
   if ("refused" in inside && /sandbox probe failed/.test(inside.refused)) {
-    console.warn(`shell-mode.integration: SKIPPED the sandboxed command: ${inside.refused}`);
     a.close();
-    return;
+    return inside.refused;
   }
   assert.equal((inside as any).output?.trim(), "wrote", JSON.stringify(inside));
   assert.ok(existsSync(join(s.work, "inside-ok")), "the chat's folder is writable");
-  const home = await run(`touch ${outside}; echo rc=$?`, "home");
-  assert.ok(!existsSync(outside), `the home folder is not: ${JSON.stringify(home)}`);
-  const net = await run("(exec 3<>/dev/tcp/1.1.1.1/80) 2>/dev/null && echo reached || echo blocked", "net");
-  assert.equal((net as any).output.trim(), "blocked", JSON.stringify(net));
+  const home = await run(`touch ${homeOn}; echo rc=$?`, "home");
+  assert.ok(!existsSync(homeOn), `the home folder is not: ${JSON.stringify(home)}`);
+  const net = await run(dial, "net");
+  assert.equal((net as any).output?.trim(), "blocked", JSON.stringify(net));
   a.close();
+  return undefined;
 }
+
+test("a command whose output passes the limit is stopped and saved as stopped at the limit (SOVA_SHELL_OUTPUT_MAX_BYTES, a test's small one)", async () => {
+  const small = await startHermeticServer({ env: { SOVA_SHELL_OUTPUT_MAX_BYTES: "20000" } });
+  const prev = s;
+  s = small;
+  try {
+    const ses = await newSession();
+    const a = await chatSocket(ses);
+    a.send({ type: "shell", command: "yes limit-line", clientId: "y" });
+    const start = await a.find("the command's start", (f) => f.type === "shell_start");
+    const end = await a.find("its end", (f) => f.type === "shell_end" && f.id === start.run.id);
+    assert.deepEqual([end.cancelled, end.cancelReason], [true, "limit"]);
+    const saved = await a.find("the run saved", (f) => f.type === "shell_saved" && f.id === start.run.id);
+    const rows = (await api("GET", `/api/transcript?path=${encodeURIComponent(ses.path)}&wire=2`)).body.items as any[];
+    assert.equal(rows.find((r) => r.id === saved.entryId)?.shell?.cancelReason, "limit", "the saved row says so after a reload");
+    a.close();
+  } finally {
+    s = prev;
+    await small.stop();
+  }
+});
 
 test("the hello says which chats have shell mode: an ordinary chat does, the Overseer doesn't and refuses a command (§chat.shell-mode/box)", async () => {
   const ses = await newSession();

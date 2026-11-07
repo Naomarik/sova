@@ -256,7 +256,7 @@ export function shellModelExtension() {
           if (m.role !== "bashExecution") return m;
           const b = m as { command: string; output: string; timestamp?: number; excludeFromContext?: boolean; truncated?: boolean; fullOutputPath?: string };
           if (b.excludeFromContext) return m;
-          const cut = modelOutput(b.output ?? "");
+          const cut = modelOutput(b.output ?? "", b.truncated === true);
           if (!cut.cut) return m;
           const full = fullOutputFor({ sentAt: b.timestamp, command: b.command, output: b.output, ...(b.fullOutputPath ? { fullOutputPath: b.fullOutputPath } : {}) });
           changed = true;

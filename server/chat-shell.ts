@@ -20,6 +20,12 @@ export const SHELL_EMPTY_TEXT = "Type a command to run.";
 /** A `shell` frame from a socket that is neither the page nor a peer (server/ws.ts, §chat.shell-mode/who). */
 export const SHELL_NOT_PAGE_TEXT = "Only the message box can run a command. Ask the user to type it in shell mode in this chat's message box. Nothing ran.";
 
+/** The output limit: SHELL_OUTPUT_MAX_BYTES, or SOVA_SHELL_OUTPUT_MAX_BYTES (a test's smaller one) when set. */
+export function shellOutputMaxBytes(): number {
+  const n = Number(process.env.SOVA_SHELL_OUTPUT_MAX_BYTES);
+  return Number.isSafeInteger(n) && n > 0 ? n : SHELL_OUTPUT_MAX_BYTES;
+}
+
 /** Who may hear a refusal: the sender alone. */
 export interface ShellClient {
   send(msg: ChatServerMessage): void;
@@ -40,14 +46,19 @@ export interface ChatShellDeps {
   refusal(): { reason: ShellRefusal; message: string } | null;
   /** Just before the command can write its entry: the open-time appends go first. */
   beforeWrite(): void;
-  /** A saved entry's rows, as an `append` carries them; `stopped`: why Sova stopped it, if it did. */
-  rowsOf(entry: HEntry, stopped: "closed" | "limit" | null): TranscriptItem[];
-  /** Record why Sova stopped the command saved as `entryId`: the chat's close, or the output limit. */
-  markStopped(entryId: EntryId, why: "closed" | "limit"): void;
+  /** A saved entry's rows, as an `append` carries them; `stopped`: why it was stopped, when not by its page's
+      Stop; `durationMs`: how long it ran. */
+  rowsOf(entry: HEntry, stopped: StopReason | null, durationMs: number | undefined): TranscriptItem[];
+  /** Record what pi's record doesn't say of the command saved as `entryId`: how long it ran, and why it was
+      stopped when not by its page's Stop (the chat's close, the output limit, the Stop Command entry). */
+  markRun(entryId: EntryId, facts: { durationMs?: number; stopped?: StopReason }): void;
   platform?: string;
   /** The output limit (SHELL_OUTPUT_MAX_BYTES); a test's is smaller. */
   maxBytes?: number;
 }
+
+/** Why a command was stopped when its own page's Stop Command didn't stop it. */
+export type StopReason = "closed" | "limit" | "other";
 
 interface Live {
   run: ShellRun;
@@ -60,17 +71,22 @@ interface Live {
   closing: boolean;
   /** Its output passed the limit and Sova stopped it. */
   limited: boolean;
+  /** The Stop Command entry stopped it, from outside the chat's pages. */
+  byOther: boolean;
   /** Settles once the run's entry is saved (or never will be). */
   saved: Promise<void> | null;
   /** Settles when the command ended. */
   ended: Promise<void>;
 }
 
+const stopReasonOf = (live: Live): StopReason | null => (live.closing ? "closed" : live.limited ? "limit" : live.byOther ? "other" : null);
+
 const outcomeOf = (r: ShellResult, live: Live): ShellOutcome => ({
   ...(r.exitCode !== undefined ? { exitCode: r.exitCode } : {}),
-  ...(r.cancelled ? { cancelled: true as const, cancelReason: live.closing ? ("closed" as const) : live.limited ? ("limit" as const) : ("user" as const) } : {}),
+  ...(r.cancelled ? { cancelled: true as const, cancelReason: stopReasonOf(live) ?? ("user" as const) } : {}),
   ...(r.truncated ? { truncated: r.truncated } : {}),
   ...(r.fullOutputPath ? { fullOutputPath: r.fullOutputPath } : {}),
+  durationMs: Math.max(0, Date.now() - live.run.startedAt),
 });
 
 export class ChatShell {
@@ -113,7 +129,7 @@ export class ChatShell {
     const harness = this.deps.harness();
     const run: ShellRun = { id: `sh_${randomUUID()}`, command, output: "", state: "running", startedAt: Date.now(), ...(msg.private === true ? { private: true as const } : {}), ...(clientId ? { clientId } : {}) };
     let endedNow!: () => void;
-    const live: Live = { run, pending: "", timer: null, stop: new AbortController(), closing: false, limited: false, saved: null, ended: new Promise((r) => (endedNow = r)) };
+    const live: Live = { run, pending: "", timer: null, stop: new AbortController(), closing: false, limited: false, byOther: false, saved: null, ended: new Promise((r) => (endedNow = r)) };
     try {
       this.deps.beforeWrite();
     } catch (err) {
@@ -129,7 +145,7 @@ export class ChatShell {
         id: run.id,
         ...(run.private ? { private: true } : {}),
         signal: live.stop.signal,
-        maxBytes: this.deps.maxBytes ?? SHELL_OUTPUT_MAX_BYTES,
+        maxBytes: this.deps.maxBytes ?? shellOutputMaxBytes(),
         onStart: () => {
           if (harness.isRunning()) run.underReply = true;
           this.runs.push(live);
@@ -164,10 +180,12 @@ export class ChatShell {
   }
 
   /** The card's Stop Command: stops the command `id` alone, if it still runs (one still being prepared never
-      starts). Returns whether there was one to stop. */
-  stop(id: string): boolean {
+      starts). `byOther`: the Stop Command entry asked, not one of the chat's pages. Returns whether there was
+      one to stop. */
+  stop(id: string, byOther = false): boolean {
     const live = this.active.get(id);
     if (!live) return false;
+    if (byOther && !live.stop.signal.aborted) live.byOther = true;
     live.stop.abort();
     return true;
   }
@@ -247,16 +265,15 @@ export class ChatShell {
     const i = this.runs.indexOf(live);
     if (i >= 0) this.runs.splice(i, 1);
     if (!entry || !entry.id) return;
-    const why = entry.kind === "shell" && entry.cancelled === true ? (live.closing ? "closed" : live.limited ? "limit" : null) : null;
-    if (why) {
-      try {
-        this.deps.markStopped(entry.id, why);
-      } catch (err) {
-        console.error("[chat] shell stop marker not written", err);
-      }
+    const why = entry.kind === "shell" && entry.cancelled === true ? stopReasonOf(live) : null;
+    const durationMs = live.run.durationMs;
+    try {
+      this.deps.markRun(entry.id, { ...(durationMs !== undefined ? { durationMs } : {}), ...(why ? { stopped: why } : {}) });
+    } catch (err) {
+      console.error("[chat] shell run marker not written", err);
     }
     // The row comes first, then the run goes: a client never shows neither.
-    const items = this.deps.rowsOf(entry, why);
+    const items = this.deps.rowsOf(entry, why, durationMs);
     if (items.length) this.deps.broadcast({ type: "append", items });
     this.deps.broadcast({ type: "shell_saved", id: live.run.id, entryId: entry.id });
   }

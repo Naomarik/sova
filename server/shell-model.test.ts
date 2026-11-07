@@ -81,6 +81,8 @@ test("a long ! output is sent as its tail with the whole output's path; a short 
 
   const piCut = ran("seq")!;
   assert.ok(piCut.endsWith(`[Output truncated. Full output: ${piFile}]`), "the harness's own file when it cut it");
+  assert.match(piCut, /\[earlier output cut; the whole output is in the file named below\]/, "no count: the harness had cut it already");
+  assert.doesNotMatch(piCut, /\d+ earlier characters cut/, "never a count from the harness's tail");
   assert.ok(piCut.length < SHELL_MODEL_CHARS + 400, "cut to about 500 tokens");
 
   assert.equal(ran("echo hi"), "Ran `echo hi`\n```\nhi\n\n```", "a short output as it is");

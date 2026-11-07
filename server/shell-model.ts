@@ -13,11 +13,14 @@ import { join } from "node:path";
 /** About 500 tokens of output, the newest. */
 export const SHELL_MODEL_CHARS = 2_000;
 
-/** What a command's output becomes for the model: as it is when short; else its tail, with what was cut said. */
-export function modelOutput(output: string): { output: string; cut: boolean } {
-  if (output.length <= SHELL_MODEL_CHARS) return { output, cut: false };
+/** What a command's output becomes for the model: as it is when short; else its tail, with what was cut said.
+    `harnessCut`: the saved output is already the harness's tail of a longer one, so how much came before is
+    not known from it and no count is given (a count from the tail alone would understate it). */
+export function modelOutput(output: string, harnessCut = false): { output: string; cut: boolean } {
+  if (output.length <= SHELL_MODEL_CHARS && !harnessCut) return { output, cut: false };
   const tail = output.slice(-SHELL_MODEL_CHARS);
-  return { output: `[${output.length - SHELL_MODEL_CHARS} earlier characters cut; the whole output is in the file named below]\n${tail}`, cut: true };
+  const said = harnessCut ? "earlier output cut" : `${output.length - SHELL_MODEL_CHARS} earlier characters cut`;
+  return { output: `[${said}; the whole output is in the file named below]\n${tail}`, cut: true };
 }
 
 /** The file Sova writes a command's whole output to when the harness wrote none: one name per command (its time,

@@ -51,7 +51,7 @@ import { modesEntries, workerModePaths } from "./harness/pi/own-code";
 import { modesBridgeExtension, type ModesHandle } from "./harness/pi/modes";
 import { isAlreadyProcessing } from "./harness/pi/session";
 import { isCompactionInProgress } from "./harness/pi/history-ops";
-import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MCP_NOTE, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SHELL_CLOSED, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
+import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MCP_NOTE, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SHELL_CLOSED, SHELL_RUN, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
 import { ChatShell } from "./chat-shell";
 import { piPrepare, toolCtx, toPiTool } from "./harness/pi/tools";
 import { forgetSpecial, specialLoadout, specialWriter } from "./chat-special";
@@ -1344,8 +1344,12 @@ class ChatSession {
     broadcast: (msg) => this.broadcast(msg),
     refusal: () => this.shellRefusal(),
     beforeWrite: () => this.flushDeferredAppends(),
-    rowsOf: (entry, stopped) => rowsOfEntry(entry, "?", stopped && entry.id ? { stoppedShell: new Map([[entry.id, stopped]]) } : undefined),
-    markStopped: (entryId, why) => void this.harness.state.append(SHELL_CLOSED, { targetId: entryId, ...(why === "limit" ? { why } : {}) }),
+    rowsOf: (entry, stopped, durationMs) =>
+      rowsOfEntry(entry, "?", entry.id ? { ...(stopped ? { stoppedShell: new Map([[entry.id, stopped]]) } : {}), ...(durationMs !== undefined ? { shellDurations: new Map([[entry.id, durationMs]]) } : {}) } : undefined),
+    markRun: (entryId, facts) => {
+      if (facts.durationMs !== undefined) this.harness.state.append(SHELL_RUN, { targetId: entryId, durationMs: facts.durationMs });
+      if (facts.stopped) this.harness.state.append(SHELL_CLOSED, { targetId: entryId, ...(facts.stopped !== "closed" ? { why: facts.stopped } : {}) });
+    },
   });
 
   /** Why this chat runs no command from shell mode now, or null (§chat.shell-mode/box, /who). */
@@ -3698,7 +3702,7 @@ class ChatSession {
           this.shell.start(client, msg);
           return;
         case "shell_stop":
-          this.shell.stop(String(msg.id ?? ""));
+          this.shell.stop(String(msg.id ?? ""), (msg as { by?: unknown }).by === "other");
           return;
         case "ui_response": {
           const pending = this.pendingUi.get(msg.id);

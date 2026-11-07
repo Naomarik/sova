@@ -170,7 +170,10 @@ words, in the composer, the session pane, the chat's queue cards and the project
 | Label (visually hidden) | Message |
 | Placeholder, idle | Enter sends: Enter sends · touch mode (§chat.composer/behavior) and read only: none |
 | Placeholder, streaming | Enter sends: Steer the current turn… Enter sends · touch mode: Steer the current turn… · a box too narrow for either (§chat.composer/behavior): the key hint goes, then the caption size, then the string cut back to its last whole word with an ellipsis |
-| Buttons | `Send` · streaming: `Steer` + `Stop` · after Stop is pressed: "Stopping…" in run status · an archived chat: `Unarchive` (undo icon) in place of Send (§chat.transcript/instant-open) |
+| Placeholder, shell mode (§chat.shell-mode/box) | Run a command in {folder}… Enter runs (the hint only when Enter runs; {folder} the folder's last part, else "this chat's folder") · `!!`: Run a command in {folder}, not shared with the model… |
+| Buttons | `Send` · streaming: `Steer` + `Stop` (`title` "Stop · Esc in the composer", §chat.composer/esc-stop) · after Stop or `Esc` is pressed: "Stopping…" in run status · an archived chat: `Unarchive` (undo icon) in place of Send (§chat.transcript/instant-open) · shell mode: `Run`, while streaming too, beside the `Stop` that stops only the reply |
+| Shell mode (§chat.shell-mode/box) | marker `!`, or `!!` for a command kept from the model · foot chip `Shell mode` (terminal icon) · label `Shell command` · said: "Shell mode on." · "Shell mode on, not shared with the model." · "Shell mode off." · "Command started. Shell mode off." · reason line: "Not connected. Run it again once the chat reconnects." · "Not connected yet. Run it again once the chat connects." · "The connection dropped before the chat answered. Check the chat before you run it again." · "The chat was closing, so your command didn't run." · the chat's own refusal, as it words it |
+| Command card (§chat.shell-mode/card) | running bar: `aria-label` "Running command" · "{n} running commands" · chip `{n} running` · "{command}: {latest line}" or "{command}: No output yet." · 1 running: `Show Output` + `Stop Command` · 2 or more: `Show All` · `Hide` · `Stop All {n}` (list open) · "Stopping…" · list row: `aria-label` "Running: {command}" · `$ {command}` · elapsed `0:09` · `12:30` · `1:02:05` · latest line or "No output yet." · `Not shared with the model` · `Show Output` · `Stop Command` · transcript card: `aria-label` "Command you ran" · `$ {command}` · ended: `Exit {code}` · `Stopped by you` · `Stopped` (the Stop Command entry) · `Stopped when the chat closed` · `Stopped at the 1 GB output limit` (error tone) · `Ended` (no exit code given) · `took {m:ss}` · `!!`: `Not shared with the model` · run beside a reply, until it ends: "The model gets this after its reply." · `Show Full Output` · window: title `Command Output` · `Close` · `Stop Command` · "No output yet." · "Loading the output…" · "Showing {shown} of {total}" + `Load More` ("Loading…") · "No output." · archived (info): "The whole output is gone." "It's deleted when its chat is archived. The card still shows its last lines." · failed (error): "Couldn't load the output." "{reason}. What's shown so far stays. Try again." + `Try Again` ("Loading…") · size limit (caution): "Stopped at the 1 GB output limit." "It printed more than 1 GB, so Sova stopped it. The output up to the limit is here." |
 | Run status | Wide composer (≥ 620px): `Working` + detail: `· thinking` / `· writing` / `· running {tool}`, and beside it the subagents trigger: `2 of 5 subagents working` (team members among them: `2 of 5 team members working` · `3 of 5 workers working`, the split `1 subagent · 2 team members` in the tooltip), `5 subagents` while none works (the figure counts live workers only, never the ended), `18 subagents, all ended` when none is live. Narrow: no visible words, the dot and the step's icon, and the trigger as its ring and a count (`2/5`, none working `5`, all ended `18`); the same words are the tooltip and accessible name, plus the ended note `· 18 ended: 16 stopped, 2 failed` (§app.subagents-pane/trigger) · in both: `Stopping…` · `Compacting context` · `Retrying after a provider error` · `Updating memory…` (§chat.composer/memory-status) · `Waiting for zai · 5 of 5 in use` (+ ` (lowered after a rate limit)`, §app.provider-limits/waiting-shown) · trigger name: `2 of 5 subagents working — show subagents` · none working: `5 subagents — show subagents` · with ended ones: `2 of 5 subagents working · 18 ended: 16 stopped, 2 failed — show subagents` · all ended: `18 subagents, all ended: 16 stopped, 2 failed — show subagents` |
 | Waiting badge (§chat.composer/waiting-badge) | numeral: `I` `II` `III` `IV` `V+` · `aria-label` "{q} questions open in {n} alignments, {c} cards waiting — show what's waiting" (1: question, alignment, card; empty parts left out: "1 card waiting — show what's waiting"; nothing undecided: "All questions decided in {n} alignments — show what's waiting") |
 | Waiting on you dialog (§chat.composer/waiting-dialog) | title `Waiting on you · {n}` · close `aria-label` "Close" · groups `Option cards`, `Alignments` · alignment: `{decided}/{total}` meter, `Next: {topic}` (none open: `All decided`) · `Show in Chat` · empty: "Nothing is waiting on you in this chat." · off-screen toasts: "That alignment isn't in the transcript on screen." / "That card isn't in the transcript on screen." |
@@ -577,13 +580,14 @@ the person clicks.
 | Pane's session-insight fetch failed (banner-warn) | **Couldn't load this session's subagents.** {message} Your workers keep running. We'll retry on our own. |
 | Transcript socket and load errors | the §app/subagents-pane state table: Live-watch and Connection copy above, and Main pane's transcript load error |
 
-## §design.copy-deck/time-spent — Time Spent section (§app.subagents-pane/time-spent)
+## §design.copy-deck/time-spent — Time Spent tab (§app.subagents-pane/time-spent)
 
 | Where | Copy |
 |---|---|
-| Head | heading: Time Spent · figures: You · Agent · word: Counting · Paused · Not Recording |
+| Head | tab: Time Spent (no heading in the panel) · figures: You · Agent · word: Counting · Paused · Not Recording |
 | Durations | whole seconds: `1h 12m 08s` · `14m 08s` · `8s` |
-| Breakdown | no heading · rows: Reading (opens to Main Thread · Alignments · Workers) · Typing · Dictating · Scrolling · Reviewing Changes · Reviewing Screenshots · Viewing Tours · Other |
+| Breakdown | no heading · rows: Reading (opens to Main Thread · Alignments · Workers) · Typing · Dictating · Scrolling · Reviewing Changes · Reviewing Screenshots (opens to what followed it, §design.copy-deck/message-labels) · Viewing Tours · Other |
+| Your Messages | §design.copy-deck/message-labels |
 | Alignments | heading: Alignments · line: {title} · `{t}` on screen · `{t}` to read · `{t}` from first shown to decided (left out when it has none) |
 
 ## §design.copy-deck/context-tab — Context tab (§app.subagents-pane/context-tab)
@@ -657,8 +661,8 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Where | Copy |
 |---|---|
 | Tab | Decisions (icon `shield`) |
-| Intro | Sova can ask a small classifier about your sessions — whether a finished turn is waiting on you, and what a session is about. Everything here is off until you turn it on. |
-| What is sent (above the switches) | Each check sends a short, redacted excerpt of one session — its title, the last exchange, and recent tool names — to Jev (TypeSafe) or your fallback model; never whole transcripts, images, or files. The Overseer's own sessions are never checked. |
+| Intro | Sova can ask a small classifier about your sessions, for the features switched on below. Nothing is sent until Jev or a fallback model can answer. |
+| What is sent (above the switches) | Each check sends a short, redacted excerpt of one session — at most its title, the last exchange, and recent tool names — to Jev (TypeSafe) or your fallback model; never whole transcripts, images, or files. The Overseer's own sessions are never checked. |
 | Load failed (banner-error) | **Couldn't load the decision settings.** Nothing was changed. [Try Again] |
 | Jev (legend · hint) | Jev · TypeSafe's classifier. Fast and cheap — about $0.0001 a check. |
 | Jev switch | Use Jev |
@@ -673,7 +677,7 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Refused fallback (under the row, error) | {server reason}. Your saved fallback model is unchanged. |
 | Fallback notes (under the row, warn) | {server note, without its "Fallback model:" label}. · Not verified, because {backend} couldn't list its models ({why}): Fallback model. |
 | Options failed (banner-warn) | **Couldn't check which models are offered.** Your saved choice stays, marked not verified. [Check Again] |
-| Features (legend) | Features · Flag sessions that need you — After a turn, checks whether the reply waits on you (a decision, an approval or information) or says it is done without checking, notices a team gone quiet and whether a merge left work open, and marks the row. The Overseer and Needs you list them too. |
+| Features (legend) | Features · Flag sessions that need you — After a turn, checks whether the reply waits on you (a decision, an approval or information) or says it is done without checking, notices a team gone quiet and whether a merge left work open, and marks the row. The Overseer and Needs you list them too. · Label your messages — Labels each message you type or dictate by what it asks for, and shows the time on each in the session's Time Spent tab. Only messages sent while this is on. The agent never sees a label. |
 | Unavailable (replaces a switched-on feature's hint, warn) | Unavailable: Jev is off and no fallback model is set. Nothing is checked. · Unavailable: Jev can't answer ({reason}) and no fallback model is set. Nothing is checked until one of them can. |
 | Features note (under the switches, warn, when they don't already say it) | {server reason} The features stay unavailable and send nothing until one is. |
 | Never send (legend) | Never send · switch Never send TUI sessions — Sessions started in the pi terminal stay on this machine. · Folders — One per line. Sessions in these folders, and their subfolders, are never checked. · issue: "{line}" isn't a full path. Start it with / or ~/. · That's {n} folders. Use at most 100. |
@@ -683,6 +687,18 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Buttons | none in the form — the dialog footer's Save Changes · Cancel (§design.copy-deck/settings-modes-delegate) |
 | Save failed (banner-error at the end of the form; the unsaved changes stay) | **Couldn't save the decision settings.** {reason}. Your saved settings are unchanged. |
 | Footnote | Stored in `~/.pi/agent/sova/decisions.json`. The key is stored separately, readable by you only. |
+
+## §design.copy-deck/message-labels — Time Spent tab · Your Messages (§app/message-labels)
+
+| Where | Copy |
+|---|---|
+| Tab | Time Spent |
+| Heading | Your Messages |
+| Rows, in order | Specifying · Directing · Reworking · Asking · Unsorted · Not Labelled · Before An Action · Since Your Last Message |
+| A row | {label} · `{n}`, a bare number in its own column before the time (Since Your Last Message: none) · {time}, in the Time Spent durations (`1h 12m 08s` · `14m 08s` · `8s`) |
+| A message line | {the message's first words, at most 120 characters, then …} · {time} · from a fallback model, under them: Labelled by {model id} |
+| Reviewing Screenshots opens to | Followed By Reworking · Followed By Specifying · Followed By Directing · Followed By Anything Else |
+| Never, anywhere on the tab | a word for a mood or feeling (unhappy, frustrated, satisfied and the like), a score, a warning, or a sentence explaining a row |
 
 ## §design.copy-deck/forms — Forms · the shared sentences (§design/forms)
 
@@ -834,8 +850,14 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | Where | Copy |
 |---|---|
 | Tab | Themes |
-| List `aria-label` | Theme |
-| Panel intro | Applies as you pick. The choice is remembered in this browser. |
+| Panel intro | A pick in the list that's showing applies at once; the other list's pick shows when its mode does. The choice is remembered in this browser. |
+| Appearance legend | Appearance |
+| Appearance options | `Light` · `Dark` · `Auto` |
+| Appearance hint | Auto follows your system's light or dark setting. |
+| Appearance announcement (polite region) | `Appearance is now {Light\|Dark\|Auto}.` |
+| List headings, in this order | `Dark theme` · `Light theme` |
+| List `aria-label`, one per list | `Dark theme` / `Light theme` |
+| List note, beside its heading | `Showing now` on the list the window wears; on the other `Shows in Light mode` · `Shows in Dark mode`, or under Auto `Shows while your system is light` · `Shows while your system is dark` |
 | Row accessible name | `{name}, {base} base, {source}` — e.g. "Catppuccin Mocha, dark base, built-in". Field names are `shared/protocol.ts`'s: `base`, `source` (`builtin`\|`user`), `path`, `replacesBuiltin` |
 | Row meta | `{Dark\|Light} base · {Built-in\|User}` · a user file holding a built-in's id adds a third clause: `Dark base · User · replaces the built-in` |
 | Row `title`, user themes | the file's full path — e.g. `~/.pi/agent/sova/themes/dracula.json` |
@@ -858,7 +880,8 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | Footer | Drop a `.json` file in `~/.pi/agent/sova/themes/` and it shows up here. |
 | Footer action | `Refresh` (icon `refresh.svg`; `aria-busy` while a refresh it started is in flight) |
 | Folder unreadable (banner) | We couldn't read `~/.pi/agent/sova/themes/`. Your own themes aren't listed; the built-in ones still work. Retry or check the folder's permissions. |
-| Missing theme fell back (banner) | `{id}` isn't there anymore, so you're back on Dark. |
+| A pick fell back (banner) | It names the list that fell back and why. Its file is gone: `{id}` isn't there anymore, so your dark theme is back on the built-in Dark. · It can't be read: We couldn't read `{id}`, so your dark theme is back on the built-in Dark. · It now stands on the other base: `{id}` is a light theme now, so your dark theme is back on the built-in Dark. The same for a light pick: `…, so your light theme is back on the built-in Light.`, and `{id}` is a dark theme now for the third |
+| Theme list didn't load (banner) | title `Couldn't load the theme list` · body `The theme you're wearing is unchanged. {message}` · action `Retry` |
 | Loading | skeleton rows — no copy |
 
 
@@ -1013,7 +1036,6 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | Where | Copy |
 |---|---|
 | Mode line (read-only, beside the coding sessions' model and thinking) | label `Coding sessions' mode` · no picker · hint (`.field-hint`): "Coding sessions start in {mode}, with the {profile} subagent profile: this computer's defaults. Save as default in any chat's mode menu changes them." · with no default profile: "Coding sessions start in {mode}: this computer's default mode. Save as default in any chat's mode menu changes it." — `{mode}` in mono, the mode ids in lower case joined by " · " (`vis` said as "visuals") |
-| Mode menu of a project coding session, a switch leaving spec out (409) | "Spec is always on for coding sessions; it can't be turned off." |
 | …a PATCH naming `codingMode` (400) | "Projects have no coding mode: coding sessions start in this computer's default mode. Save as default in a chat's mode menu changes it." |
 | List heading | `Coding sessions` — replaces "Sessions it started" for coding rows; gathering sessions and offers keep their own list |
 | Row | the title (a link on this host) · meta: "Started by the overseer", "Started by you" or "Started by you, via the Overseer" · `working` / `idle` · {relative time} · then the branch in mono: `sova/{name}` · not on this host: `sova/{name}` · "on another host" |
@@ -1033,7 +1055,7 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | New Coding Session | `New Coding Session` (secondary, terminal icon) on the `Coding sessions` heading · toast as Start Coding Session's, then the session opens · mode not set (`.field-error` under the heading): "Started, but its mode could not be set. Set it from the chat's mode menu before you send." · refused (`.field-error`): "{reason} No session was started." |
 | Start Coding Session (toast) | "Coding session started on sova/{name}." · in the root: "Coding session started in the project root." · mode not set (`.field-error`): "Started, but not prompted: its mode could not be set. Open it and send the message yourself." · no worktree (`.field-error`): "No session was started: its worktree could not be made ({git's first line})." |
 | Promote (Decisions tab, after a promotion) | "Promoted {n}. Committed {short sha} on {branch}." · skipped: the reason as §app.requirements/promotion-commit words it ("Not committed: …") · no Git: no second sentence |
-| Overseer tool refusals (the model reads them; the activity list shows them) | "Unknown mode {x}: use normal or delegate." · "Unknown minor mode {x}: use align, spec or vis." · "Spec is always on for coding sessions; it can't be turned off. Name spec among minor_modes." · "Unknown subagent profile: {x}. sova_list_subagent_profiles lists them." · "It waits on the operator's alignment answers; align stays on until they answer." · "{run title} is waiting on the operator's answers to its alignment questions. Tell the operator; never answer them. Nothing was sent." · "Its worktree was removed, so it has no folder to work in." |
+| Overseer tool refusals (the model reads them; the activity list shows them) | "Unknown mode {x}: use normal or delegate." · "Unknown minor mode {x}: use align, spec or vis." · "Unknown subagent profile: {x}. sova_list_subagent_profiles lists them." · "It waits on the operator's alignment answers; align stays on until they answer." · "{run title} is waiting on the operator's answers to its alignment questions. Tell the operator; never answer them. Nothing was sent." · "Its worktree was removed, so it has no folder to work in." |
 
 ## §design.copy-deck/gathering-abilities — What a gathering session can do (§app.baton/abilities, §app.baton/read-link)
 

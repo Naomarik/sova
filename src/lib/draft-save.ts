@@ -1,7 +1,9 @@
 // Debounced composer-draft writer: a burst of keystrokes costs one request per session.
 // Timers are injectable so the tests drive time by hand instead of sleeping.
 
-import type { UploadResult } from "../../shared/protocol";
+import type { ShellDraftMode, UploadResult } from "../../shared/protocol";
+
+export type { ShellDraftMode };
 
 /** One session's whole draft. Each save carries all of it, so the latest payload replaces any
     pending one and a text save can never drop the attachments (or the reverse). */
@@ -9,6 +11,9 @@ export interface DraftPayload {
   text: string;
   /** Files already uploaded into the session's attachments folder. */
   attachments: UploadResult[];
+  /** A command written in shell mode (§chat.shell-mode/box): its mode, kept apart from the text, so a
+      leading "!" in `text` is only ever text. Absent: a message. */
+  mode?: ShellDraftMode;
 }
 
 export type SaveDraft = (path: string, draft: DraftPayload) => void | Promise<void>;

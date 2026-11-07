@@ -2,7 +2,7 @@
   "§design.copy-deck/composer": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "src/components/VoiceInput.tsx",
       "src/lib/voice/format.ts",
@@ -11,7 +11,10 @@
       "src/components/SessionView.tsx",
       "src/lib/placeholder-fit.ts",
       "src/components/Thread.tsx",
-      "src/lib/error-feed.ts"
+      "src/lib/error-feed.ts",
+      "src/lib/shell-mode.ts",
+      "src/lib/shell-runs.ts",
+      "src/components/ShellCard.tsx"
     ],
     "about": [
       "§chat/composer"
@@ -214,6 +217,18 @@
     "evidence": "reviewed",
     "about": [
       "§chat.transcript/message-actions"
+    ]
+  },
+  "§design.copy-deck/message-labels": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "about": [
+      "§app.message-labels/time-spent-tab",
+      "§app.message-labels/labelling",
+      "§app.message-labels/crediting",
+      "§app.message-labels/what-counts",
+      "§app.message-labels/the-labels"
     ]
   },
   "§design.copy-deck/mode-menu": {
@@ -471,7 +486,7 @@
   "§design.copy-deck/settings-themes": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "reviewed",
     "about": [
       "§app.settings-dialog/themes"
     ]
@@ -542,7 +557,7 @@
   "§design.copy-deck/time-spent": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "unreviewed",
     "code": [
       "src/components/TimeSpent.tsx",
       "src/lib/time-spent-view.ts"

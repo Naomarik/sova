@@ -3,7 +3,7 @@
 // memory choice kept on the branch. Messages are short, so every line is built without the summarizer: no
 // model, no process. One throwaway PI_CODING_AGENT_DIR; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -54,7 +54,7 @@ async function until(cond: () => boolean, what: string, ms = 10_000): Promise<vo
 const USAGE = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 let n = 0;
 /** A web session file with `pairs` short question/answer pairs. */
-function sessionFile(pairs = 6): string {
+function sessionFile(pairs = 6, after: (parent: string | null) => unknown[] = () => []): string {
   const id = `0199dddd-0000-7000-8000-${String(++n).padStart(12, "0")}`;
   const path = canonicalPath(join(sessionsDir, `2026-10-10T00-00-${String(n).padStart(2, "0")}-000Z_${id}.jsonl`));
   const lines: unknown[] = [{ type: "session", version: 3, id, timestamp: "2026-10-10T00:00:00.000Z", cwd }];
@@ -65,6 +65,7 @@ function sessionFile(pairs = 6): string {
     lines.push({ type: "message", id: `a${k}`, parentId: `u${k}`, timestamp: ts(2), message: { role: "assistant", content: [{ type: "text", text: `answer ${k}: the parser keeps token ${k * 7}` }], provider: "scripted", model: "scripted", usage: USAGE, stopReason: "stop" } });
     parent = `a${k}`;
   }
+  lines.push(...after(parent));
   writeFileSync(path, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
   markOwned(path);
   addWebSession(id);
@@ -154,6 +155,30 @@ describe("UniiChat in a held chat", () => {
     await idle(chat);
     await new Promise((r) => setTimeout(r, 50));
     assert.ok(!entries().some((e) => e.type === "compaction"), "nothing compacted");
+  });
+});
+
+describe("a !! command is kept from the model with memory on (§chat.shell-mode/model)", () => {
+  test("the request's view, the tail and the memory files hold the plain ! command and nothing of the !! one", async () => {
+    // pi's records of a `!` (sent) and a `!!` (excludeFromContext) after the history, then a turn.
+    const bash = (id: string, parentId: string | null, command: string, output: string, excludeFromContext?: true) =>
+      ({ type: "message", id, parentId, timestamp: "2026-10-10T00:09:00.000Z", message: { role: "bashExecution", command, output, exitCode: 0, cancelled: false, truncated: false, timestamp: 0, ...(excludeFromContext ? { excludeFromContext } : {}) } });
+    const path = sessionFile(6, (parent) => [bash("b1", parent, "echo PLAIN_CMD", "PLAIN_OUT\n"), bash("b2", "b1", "echo HUSH_CMD", "HUSH_OUT\n", true)]);
+    const { chat, model } = await openChat(path);
+    await chat.switchMode({ minorModes: ["memory"] });
+    model.reply({ text: "ok" });
+    await chat.harness.send("what ran?");
+    await idle(chat);
+    model.reply({ toolCall: { name: "zoom", arguments: { id: 12, n: 1 } } }, { text: "done" });
+    await chat.harness.send("and the last one?");
+    await idle(chat);
+    const sent = JSON.stringify(model.calls.map((c) => c.context));
+    assert.match(sent, /PLAIN_CMD/, "the plain command is in the view");
+    assert.doesNotMatch(sent, /HUSH_/, "nothing of the !! command in any request, zoom's result included");
+    const files = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? files(join(dir, d.name)) : [readFileSync(join(dir, d.name), "utf8")]));
+    const stored = files(join(agentDir, "sova", "memory")).join("\n");
+    assert.match(stored, /PLAIN_CMD/, "the memory files are the ones written");
+    assert.doesNotMatch(stored, /HUSH_/, "nor in the memory files");
   });
 });
 

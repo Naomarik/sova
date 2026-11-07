@@ -220,7 +220,8 @@ that card only. Its types ship with the toolkit (`import { card, mount } from "s
   Trust runs the command, Not Now refuses it. It runs only from this machine's own page: a script's
   token and the peer listener are refused.
 - **Stage text into the draft**: put text at the end of the chat's draft in the composer, where
-  the user sees and edits it before sending. It never sends. Refused in a view that can't act on
+  the user sees and edits it before sending, with the cursor after it and scrolled into view.
+  It never sends. Refused in a view that can't act on
   the session.
 - **Record an answer on its own card** (§chat.transcript-cards/answering), never on another card:
   one line of 1 to 200 characters, with an optional JSON value of at most 16 KB. An at-once card

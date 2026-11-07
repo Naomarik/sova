@@ -66,7 +66,11 @@
     "code": [
       "src/lib/theme.ts",
       "index.html",
-      "src/lib/theme.test.ts"
+      "src/lib/theme.test.ts",
+      "src/lib/theme-prepaint.ts",
+      "vite.config.ts",
+      "src/main.tsx",
+      "shared/theme.ts"
     ]
   },
   "§design.ground-rules/voice": {

@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 573 |
-| Routes a catalogue entry points at | 179 |
-| Catalogue entries | 241 |
+| Routes registered | 574 |
+| Routes a catalogue entry points at | 180 |
+| Catalogue entries | 244 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -33,7 +33,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Live capability links | 1 |
 | Class: Approvals and grants | 5 |
 | Pending (not yet a command) | 23 |
-| Chat socket frame types | 12 |
+| Chat socket frame types | 14 |
 | Document/window keydown listeners | 11 |
 | Hand-written tool specs | 132 |
 
@@ -56,6 +56,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.send` | Send Message | changes | `POST /api/sessions/prompt` | sessions |
 | `session.fork` | Fork Session | changes | `POST /api/sessions/fork` | sessions |
 | `session.draft.get` | Show Draft | looks | `GET /api/sessions/draft` | sessions |
+| `session.shell.output` | Show Command Output | looks | `GET /api/sessions/shell-output` | sessions |
 | `session.draft.set` | Set Draft | changes | `PUT /api/sessions/draft` | sessions |
 | `session.sandbox.set` | Set Sandbox | changes | `POST /api/sandbox` | sessions |
 | `session.tools.get` | Show Session Tools | looks | `GET /api/sessions/tools` | sessions |
@@ -281,6 +282,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `chat.regenerate` | Regenerate | changes | `POST /api/chat/action` | sessions |
 | `chat.queue.remove` | Remove Queued Message | changes | `POST /api/chat/action` | sessions |
 | `chat.reload-code` | Reload Now | changes | `POST /api/chat/action` | sessions |
+| `chat.shell.list` | List Commands | looks | `POST /api/chat/action` | sessions |
+| `chat.shell.stop` | Stop Command | changes | `POST /api/chat/action` | sessions |
 | `chat.mode-command` | Run Mode Command | changes | `POST /api/mode/command` | full |
 
 ## Pending routes
@@ -804,7 +807,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `DELETE /api/attention/dismiss` | full | `attention.undismiss` |
 | `POST /api/attention/dismiss` | full | `attention.dismiss` |
 | `GET /api/audit` | full | `audit.list` |
-| `POST /api/chat/action` | sessions | `chat.compact`, `chat.queue.remove`, `chat.regenerate`, `chat.reload-code`, `chat.rewind`, `chat.stop` |
+| `POST /api/chat/action` | sessions | `chat.compact`, `chat.queue.remove`, `chat.regenerate`, `chat.reload-code`, `chat.rewind`, `chat.shell.list`, `chat.shell.stop`, `chat.stop` |
 | `GET /api/cwds` | sessions | `cwds.list` |
 | `GET /api/diff/summary` | sessions | `session.diff.summary` |
 | `GET /api/draft-specs` | full | `draft-spec.list` |
@@ -943,6 +946,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/sessions/pairs/resume` | sessions | `session.pairs.resume` |
 | `POST /api/sessions/pairs/unpair` | sessions | `session.pairs.unpair` |
 | `POST /api/sessions/prompt` | sessions | `session.send` |
+| `GET /api/sessions/shell-output` | sessions | `session.shell.output` |
 | `POST /api/sessions/shorten-titles` | sessions | `session.title.shorten` |
 | `GET /api/sessions/summary` | sessions | `session.get` |
 | `POST /api/sessions/tags` | sessions | `session.tags.set` |
@@ -985,7 +989,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 
 The `type` of every `ChatClientMessage` (`shared/protocol.ts`), the frames a page sends on `/ws/chat`:
 
-`prompt`, `steer`, `abort`, `set_model`, `set_thinking`, `set_claude_login`, `ui_response`, `rewind`, `regenerate`, `compact`, `queue_remove`, `reload_code`
+`prompt`, `steer`, `abort`, `set_model`, `set_thinking`, `set_claude_login`, `ui_response`, `rewind`, `regenerate`, `compact`, `queue_remove`, `reload_code`, `shell`, `shell_stop`
 
 ## Keydown listeners on the document or the window
 

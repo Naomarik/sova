@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import type { ThemeInfo } from "../../shared/protocol";
+import type { ThemeBase } from "../../shared/theme";
 import { getClaudeCliStatus, getModelCheck, getProviderLimits, getThemes, getWebSettings, runModelCheck } from "../lib/api";
 import { clockTime, tildePath } from "../lib/format";
 import {
@@ -34,9 +35,9 @@ import {
 } from "../lib/recent";
 import { setShowSummaries, showSummaries } from "../lib/summary-line";
 import { LIMIT_RULE } from "../../shared/provider-limits";
-import { NumberField, SearchField, Toggle } from "./form";
+import { Choice, NumberField, SearchField, Toggle } from "./form";
 import { compressWork, setCompressWork } from "../lib/work-compression";
-import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography } from "../lib/theme";
+import { checkedThemeId, droppedNotice, droppedTheme, pickTheme, reconcileTheme, setThemeMode, shownBase, themeMode, type ThemeMode, typography } from "../lib/theme";
 import { openSettings, settingsProject, type SettingsTab } from "../lib/settings-nav";
 import { experimentalDraft, experimentalSaveError, experimentalSaving, setExperimentalDraft, setExperimentalSaved } from "../lib/experimental-draft";
 import { AlignmentSettings } from "./AlignmentSettings";
@@ -910,14 +911,49 @@ const metaLine = (t: ThemeInfo) => {
   return t.replacesBuiltin ? `${base} · ${source} · replaces the built-in` : `${base} · ${source}`;
 };
 
+const MODES: { id: ThemeMode; label: string }[] = [
+  { id: "light", label: "Light" },
+  { id: "dark", label: "Dark" },
+  { id: "auto", label: "Auto" },
+];
+
+/** Appearance: the form kit's radios in one fieldset, built like Text size, so the legend names the
+    group and arrow keys move the choice with no ARIA of our own. */
+function AppearanceField() {
+  return (
+    <fieldset class="field settings-type-size" aria-describedby="theme-mode-hint">
+      <legend class="field-label">Appearance</legend>
+      <Choice
+        label="Appearance"
+        class="settings-type-size-options"
+        value={themeMode()}
+        options={MODES.map((m) => ({ value: m.id, label: m.label }))}
+        onChange={(id) => {
+          const opt = MODES.find((m) => m.id === id)!;
+          setThemeMode(opt.id);
+          announce(`Appearance is now ${opt.label}.`);
+        }}
+      />
+      <span class="field-hint" id="theme-mode-hint">
+        Auto follows your system's light or dark setting.
+      </span>
+    </fieldset>
+  );
+}
+
+const baseWord = (base: ThemeBase) => (base === "light" ? "Light" : "Dark");
+
 /**
- * Settings → Themes. Every theme the app can find, as a radiogroup where the row IS the
- * preview: swatches and a font sample painted out of the theme's own values. Those values came
- * off disk, which is why the server checks them at read time rather than at apply time — by the
- * time a row draws there is nothing left to sanitize.
+ * Settings → Themes. Appearance on top, then every theme the app can find, split by base into
+ * a Dark theme section and then a Light theme section (Dark first, at every width), each a
+ * radiogroup where the row IS the preview:
+ * swatches and a font sample painted out of the theme's own values. Those values came off disk,
+ * which is why the server checks them at read time rather than at apply time — by the time a row
+ * draws there is nothing left to sanitize.
  *
- * Choosing applies immediately and writes localStorage. There is no Save, no preview mode, and
- * no server round-trip: the theme is this browser's.
+ * Choosing writes localStorage, and in the section that's showing applies immediately; in the
+ * other it waits there until that base shows. There is no Save, no preview mode, and no server
+ * round-trip: the theme is this browser's.
  */
 function ThemesPanel() {
   const themes = createPoll(getThemes, THEMES_POLL_MS);
@@ -932,17 +968,26 @@ function ThemesPanel() {
     return d ? tildePath(d, home()) : null;
   };
 
-  /** Roving tabindex: the checked row is the group's one tab stop, or the first usable row when
-      the choice isn't in the list (it was just deleted, and the next poll will say so). */
-  const usable = createMemo(() => rows().filter((t) => !t.error));
-  const tabStopId = createMemo(() => {
-    const list = usable();
-    return list.find((t) => t.id === activeThemeId())?.id ?? list[0]?.id;
-  });
+  /** One section's usable cards: its own base only (a broken file sits in the base it names,
+      dark when it doesn't parse), never the broken ones, which can't be checked. */
+  const usableOf = (slot: ThemeBase) => rows().filter((t) => t.base === slot && !t.error);
+  const usable = { light: createMemo(() => usableOf("light")), dark: createMemo(() => usableOf("dark")) };
+  const checkedId = (slot: ThemeBase) => checkedThemeId(slot, rows());
+  /** Roving tabindex, one per section: the checked row is its group's one tab stop, or the first
+      usable row when no card is checked (the pick was just deleted, and the next poll will say so;
+      or the built-in is worn while a user file holds its id). */
+  const tabStopId = (slot: ThemeBase) => {
+    const list = usable[slot]();
+    return list.find((t) => t.id === checkedId(slot))?.id ?? list[0]?.id;
+  };
+  const rowId = (t: ThemeInfo) => `theme-row-${t.base}-${t.id}`;
+  /** When a section shows: now, in its mode, or under Auto while the system is its base. */
+  const sectionNote = (slot: ThemeBase) =>
+    slot === shownBase() ? "Showing now" : themeMode() === "auto" ? `Shows while your system is ${slot}` : `Shows in ${baseWord(slot)} mode`;
 
-  // Every list the poll brings is also an answer about the theme on screen: a file deleted or
-  // broken while you're wearing it takes you back to dark, and one edited in another window
-  // re-applies. The check is the boot one, so both paths agree on what "gone" means.
+  // Every list the poll brings is also an answer about the picks: a file deleted or broken takes
+  // its section back to its built-in, and one edited in another window re-applies. The check is
+  // the boot one, so both paths agree on what "gone" means.
   createEffect(() => {
     const list = themes.data();
     if (list && list.themes.length > 0) reconcileTheme(list);
@@ -950,7 +995,7 @@ function ThemesPanel() {
 
   const choose = (t: ThemeInfo) => {
     if (t.error) return; // a broken theme is listed, never worn
-    applyTheme({ id: t.id, base: t.base, tokens: t.tokens }); // the store clears the fallback notice
+    pickTheme({ id: t.id, base: t.base, tokens: t.tokens }); // the store clears that section's fallback notice
   };
 
   /**
@@ -959,10 +1004,10 @@ function ThemesPanel() {
    * to the first and last. The column count is read off the rendered cards (how many share the
    * first card's top edge) rather than restated from the CSS, so a panel of any width agrees
    * with itself. Broken cards are skipped: they can't be checked, so landing on one would be a
-   * dead stop.
+   * dead stop. Each section is a grid of its own: an arrow never leaves the section it is in.
    */
   const onRowKeyDown = (e: KeyboardEvent, t: ThemeInfo) => {
-    const list = usable();
+    const list = usable[t.base]();
     if (list.length === 0) return;
     const here = Math.max(0, list.findIndex((x) => x.id === t.id));
     let to: number;
@@ -975,7 +1020,7 @@ function ThemesPanel() {
         break;
       case "ArrowDown":
       case "ArrowUp": {
-        const cols = columnsOf(list.map((x) => document.getElementById(`theme-row-${x.id}`)));
+        const cols = columnsOf(list.map((x) => document.getElementById(rowId(x))));
         to = here + (e.key === "ArrowDown" ? cols : -cols);
         if (to < 0 || to >= list.length) to = here; // the edge: stay, don't wrap to another column
         break;
@@ -993,7 +1038,7 @@ function ThemesPanel() {
     const next = list[to];
     if (!next) return;
     if (next.id !== t.id) choose(next);
-    (document.getElementById(`theme-row-${next.id}`) as HTMLButtonElement | null)?.focus();
+    (document.getElementById(rowId(next)) as HTMLButtonElement | null)?.focus();
   };
 
   /** Refresh, for the moment you don't want to wait 2 seconds — and for the case where the poll
@@ -1011,9 +1056,15 @@ function ThemesPanel() {
 
   return (
     <>
-      <p class="settings-intro">Applies as you pick. The choice is remembered in this browser.</p>
-      <Show when={droppedThemeId()}>
-        {(id) => <Banner tone="info" title={<><code>{id()}</code> isn't there anymore, so you're back on Dark.</>} />}
+      <p class="settings-intro">
+        A pick in the list that's showing applies at once; the other list's pick shows when its mode does. The choice is remembered in this browser.
+      </p>
+      <AppearanceField />
+      <Show when={droppedTheme()}>
+        {(d) => {
+          const notice = () => droppedNotice(d());
+          return <Banner tone="info" title={<>{notice().lead}<code>{d().id}</code>{notice().tail}</>} />;
+        }}
       </Show>
       <Show when={themes.data()?.error && dir()}>
         {(folder) => (
@@ -1051,61 +1102,71 @@ function ThemesPanel() {
           </div>
         }
       >
-        <div class="settings-theme-list" role="radiogroup" aria-label="Theme">
-          <For each={rows()}>
-            {(t) => (
-              <button
-                type="button"
-                role="radio"
-                id={`theme-row-${t.id}`}
-                class={`settings-theme-row${t.error ? " settings-theme-broken" : ""}`}
-                aria-checked={!t.error && activeThemeId() === t.id}
-                disabled={!!t.error}
-                tabindex={t.error ? -1 : tabStopId() === t.id ? 0 : -1}
-                title={t.source === "user" ? t.path : undefined}
-                aria-label={t.error ? undefined : `${t.name}, ${t.base} base, ${t.source === "user" ? "user" : "built-in"}`}
-                onClick={() => choose(t)}
-                onKeyDown={(e) => onRowKeyDown(e, t)}
-                style={
-                  t.error
-                    ? undefined
-                    : {
-                        // The faces this theme would actually render in: the font pick on top of
-                        // the theme's own tokens. An undefined value leaves the
-                        // property unset, and the sample falls through to the root's face.
-                        "--theme-font-body": effectiveStack("text", t.tokens, typography()),
-                        "--theme-font-mono": effectiveStack("mono", t.tokens, typography()),
+        <For each={["dark", "light"] as const}>
+          {(slot) => (
+            <>
+              <div class="settings-type-head">
+                <h3 class="settings-type-title">{baseWord(slot)} theme</h3>
+                <span class="settings-intro">{sectionNote(slot)}</span>
+              </div>
+              <div class="settings-theme-list" role="radiogroup" aria-label={`${baseWord(slot)} theme`}>
+                <For each={rows().filter((t) => t.base === slot)}>
+                  {(t) => (
+                    <button
+                      type="button"
+                      role="radio"
+                      id={rowId(t)}
+                      class={`settings-theme-row${t.error ? " settings-theme-broken" : ""}`}
+                      aria-checked={!t.error && checkedId(slot) === t.id}
+                      disabled={!!t.error}
+                      tabindex={t.error ? -1 : tabStopId(slot) === t.id ? 0 : -1}
+                      title={t.source === "user" ? t.path : undefined}
+                      aria-label={t.error ? undefined : `${t.name}, ${t.base} base, ${t.source === "user" ? "user" : "built-in"}`}
+                      onClick={() => choose(t)}
+                      onKeyDown={(e) => onRowKeyDown(e, t)}
+                      style={
+                        t.error
+                          ? undefined
+                          : {
+                              // The faces this theme would actually render in: the font pick on top of
+                              // the theme's own tokens. An undefined value leaves the
+                              // property unset, and the sample falls through to the root's face.
+                              "--theme-font-body": effectiveStack("text", t.tokens, typography()),
+                              "--theme-font-mono": effectiveStack("mono", t.tokens, typography()),
+                            }
                       }
-                }
-              >
-                <span class="settings-theme-name">{t.error ? fileName(t.path) : t.name}</span>
-                <Show when={!t.error}>
-                  <span class="settings-theme-check" aria-hidden="true">
-                    <Icon name="check" small />
-                  </span>
-                </Show>
-                <span class="settings-theme-meta">
-                  {t.error ? `We couldn't read this theme. ${t.error}` : metaLine(t)}
-                </span>
-                <Show when={!t.error}>
-                  {/* The one place in the product that paints a color the current theme doesn't
-                      own. The values are the file's own, verbatim — checked when it was read. */}
-                  <span class="settings-theme-swatches" role="img" aria-label="Page, surface, accent, error, and text colors">
-                    <For each={SWATCH_KEYS}>
-                      {(key) => <span class="settings-theme-swatch" style={{ background: t.tokens[key] }} />}
-                    </For>
-                  </span>
-                  <span class="settings-theme-font-sample">
-                    Aa <span class="mono">0x1F</span>
-                  </span>
-                </Show>
-                <Show when={t.error}>
-                  <span class="visually-hidden">, can't be used</span>
-                </Show>
-              </button>
-            )}
-          </For>
-        </div>
+                    >
+                      <span class="settings-theme-name">{t.error ? fileName(t.path) : t.name}</span>
+                      <Show when={!t.error}>
+                        <span class="settings-theme-check" aria-hidden="true">
+                          <Icon name="check" small />
+                        </span>
+                      </Show>
+                      <span class="settings-theme-meta">
+                        {t.error ? `We couldn't read this theme. ${t.error}` : metaLine(t)}
+                      </span>
+                      <Show when={!t.error}>
+                        {/* The one place in the product that paints a color the current theme doesn't
+                            own. The values are the file's own, verbatim — checked when it was read. */}
+                        <span class="settings-theme-swatches" role="img" aria-label="Page, surface, accent, error, and text colors">
+                          <For each={SWATCH_KEYS}>
+                            {(key) => <span class="settings-theme-swatch" style={{ background: t.tokens[key] }} />}
+                          </For>
+                        </span>
+                        <span class="settings-theme-font-sample">
+                          Aa <span class="mono">0x1F</span>
+                        </span>
+                      </Show>
+                      <Show when={t.error}>
+                        <span class="visually-hidden">, can't be used</span>
+                      </Show>
+                    </button>
+                  )}
+                </For>
+              </div>
+            </>
+          )}
+        </For>
       </Show>
       <TypographySection />
       <div class="settings-theme-footer">

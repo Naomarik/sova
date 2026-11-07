@@ -126,7 +126,12 @@
       "server/overseer-org-part.test.ts",
       "server/overseer-runtime.test.ts",
       "server/project-overseer.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T22:14Z",
+      "source": "pi-session:b406e4de-b015-4dbb-b201-14ab20b5da44#2b9be4c7"
+    }
   },
   "§app/spec-lookup": {
     "kind": "surface",

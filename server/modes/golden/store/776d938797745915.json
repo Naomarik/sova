@@ -1,0 +1,91 @@
+{
+ "prompt": {
+  "type": "string",
+  "minLength": 1,
+  "description": "Self-contained task; parent conversation is not copied."
+ },
+ "name": {
+  "type": "string",
+  "minLength": 1
+ },
+ "backend": {
+  "type": "string",
+  "minLength": 1,
+  "description": "Worker backend; default pi. claude-code runs a Claude model (Sova's Claude catalog) on Sova's tools, as a pi worker on the Claude Code provider."
+ },
+ "backendOptions": {
+  "type": "object",
+  "patternProperties": {
+   "^.*$": {}
+  },
+  "description": "Backend-specific options. claude-code: permissionMode bypassPermissions/dontAsk (no change) or plan (read-only tools); nothing else."
+ },
+ "count": {
+  "type": "integer",
+  "minimum": 1,
+  "default": 1
+ },
+ "model": {
+  "type": "string",
+  "description": "Backend model ID. Pi: exact provider/model, defaults to parent. Other backends use their own defaults."
+ },
+ "effort": {
+  "type": "string",
+  "enum": [
+   "off",
+   "minimal",
+   "low",
+   "medium",
+   "high",
+   "xhigh",
+   "max"
+  ]
+ },
+ "tools": {
+  "type": "array",
+  "items": {
+   "type": "string",
+   "minLength": 1
+  },
+  "description": "@6ebdc4c137e9b806"
+ },
+ "systemPrompt": {
+  "type": "string"
+ },
+ "agentType": {
+  "type": "string",
+  "description": "Definition in ~/.pi/agent/agents/<name>.md. Must exist."
+ },
+ "cwd": {
+  "type": "string",
+  "description": "Working directory, resolved relative to the parent cwd."
+ },
+ "wake": {
+  "type": "boolean",
+  "description": "When the worker settles and you are idle, start a turn so you can act on the result. Default true; false only queues the result for your next turn."
+ },
+ "extensions": {
+  "type": "array",
+  "items": {
+   "type": "string",
+   "minLength": 1
+  },
+  "description": "Extension sources the child loads (path, or an installed npm:name or git:host/repo; nothing is installed at spawn), e.g. [\"npm:pi-web-access\"] for web tools. Children load no extensions otherwise; this extension itself is refused."
+ },
+ "fork": {
+  "type": "boolean",
+  "description": "Start the child from a copy of this conversation's full history instead of a fresh context. Requires a persisted parent session."
+ },
+ "mcpServers": {
+  "type": "array",
+  "items": {
+   "type": "string",
+   "minLength": 1
+  },
+  "description": "MCP servers this worker gets, by name: only ones this chat has, with its tools as trimmed here. None named: it has none. Not part of tools."
+ },
+ "useWorktreeConfig": {
+  "type": "boolean",
+  "description": "@7609a53116f77cee"
+ }
+}

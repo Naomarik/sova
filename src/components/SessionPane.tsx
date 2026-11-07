@@ -18,6 +18,7 @@ import { MemoryOutlineSection } from "./MemoryOutline";
 import { SessionTimeline } from "./SessionTimeline";
 import { createSessionSpend, SessionUsageTab } from "./SessionUsage";
 import { type AgentsView, SubagentPane } from "./SubagentPane";
+import { TimeSpentTab } from "./TimeSpent";
 import { Chip, Icon } from "./ui";
 import { trackSessionPane } from "../lib/time-spent";
 
@@ -33,12 +34,13 @@ export interface PaneInsight {
   changed: number;
 }
 
-export type TabId = "session" | "timeline" | "agents" | "usage" | "context" | "sharing" | "skills" | "explain";
+export type TabId = "session" | "timeline" | "agents" | "usage" | "time" | "context" | "sharing" | "skills" | "explain";
 const TABS: readonly { id: TabId; label: string }[] = [
   { id: "session", label: "Session" },
   { id: "timeline", label: "Timeline" },
   { id: "agents", label: "Agents" },
   { id: "usage", label: "Usage" },
+  { id: "time", label: "Time Spent" },
   { id: "context", label: "Context" },
   { id: "sharing", label: "Sharing" },
   { id: "skills", label: "Skills" },
@@ -49,10 +51,10 @@ const isTab = (id: string | null): id is TabId => TABS.some((t) => t.id === id);
 /**
  * The session detail pane: a head, a tab strip, and one tab's panel. Session is what the session
  * is (SessionDetails); Timeline is the session's one time axis; Agents is the subagents pane it grew
- * out of; Usage is what the session has spent (SessionUsage); Context is what fills its window now (ContextTab); Sharing is its share links, with a
+ * out of; Usage is what the session has spent (SessionUsage); Time Spent is where your time and the agent's went (TimeSpent); Context is what fills its window now (ContextTab); Sharing is its share links, with a
  * viewing-now badge on the tab; Skills says which skills loaded and when, here and in each worker; Explain lists this session's /explain pages. The tab is kept per
  * session path; with none kept, it opens on Agents while a worker is working, else on Session —
- * never on Usage, which its tab and the head's token chip open. Read-only throughout, except the
+ * never on Usage, which its tab and the head's token chip open, or on Time Spent. Read-only throughout, except the
  * Timeline's rewind, which goes through the chat.
  */
 export function SessionPane(props: {
@@ -135,6 +137,26 @@ export function SessionPane(props: {
   // The strip scrolls sideways in a narrow pane: keep the tab showing, on open and on every change,
   // so a tab a door opened (Explain, Usage) is never off the end of the strip.
   createEffect(() => tabEls[TABS.findIndex((t) => t.id === tab())]?.scrollIntoView({ inline: "nearest", block: "nearest" }));
+  // Which edge has tabs beyond it: read on scroll and resize only, drawn by a CSS mask.
+  let strip!: HTMLDivElement;
+  const [fade, setFade] = createSignal<"start" | "end" | "both" | undefined>();
+  const measureFade = () => {
+    const max = strip.scrollWidth - strip.clientWidth;
+    const start = strip.scrollLeft > 1;
+    const end = max - strip.scrollLeft > 1;
+    setFade(start && end ? "both" : start ? "start" : end ? "end" : undefined);
+  };
+  onMount(() => {
+    measureFade();
+    strip.addEventListener("scroll", measureFade, { passive: true });
+    const ro = new ResizeObserver(measureFade);
+    ro.observe(strip);
+    for (const el of tabEls) if (el) ro.observe(el);
+    onCleanup(() => {
+      ro.disconnect();
+      strip.removeEventListener("scroll", measureFade);
+    });
+  });
   let aside!: HTMLElement;
   onMount(() =>
     queueMicrotask(() => {
@@ -195,7 +217,7 @@ export function SessionPane(props: {
       <RemotePaneStatus path={props.path} summary={props.summary} />
       {/* Named apart from the landmark: both saying "Session detail" made a reader announce the
           same name twice, nesting into itself. */}
-      <div class="tabs session-tabs" role="tablist" aria-label="Session detail tabs">
+      <div class="tabs session-tabs" role="tablist" aria-label="Session detail tabs" ref={strip} data-fade={fade()}>
         <For each={TABS}>
           {(t, i) => (
             <button
@@ -252,6 +274,11 @@ export function SessionPane(props: {
               onReload={loadItems}
               onClose={props.onClose}
             />
+          </Match>
+          <Match when={tab() === "time"}>
+            <div class="session-panel-scroll" tabindex="0">
+              <TimeSpentTab path={props.path} />
+            </div>
           </Match>
           <Match when={tab() === "agents"}>
             <SubagentPane

@@ -277,6 +277,11 @@ It renders as a compact collapsed card, never "You" (§chat.topics/row). Like a 
 a turn start but never an input, regenerating a reply to it is refused, and the session list never
 titles a session from one.
 
+**shell.** A command you ran, with `!` or `!!` (pi's `bashExecution` entry), from Sova's message box
+or from pi's own terminal: its card at its position (§chat.shell-mode/card), never the plain
+`$ command` info row (which a consumer that didn't ask for wire 2 still gets). A command run while a
+reply streams shows under that reply.
+
 **info.** Compaction, labels, branch summaries and other short machine notes. Model changes,
 thinking-level changes and the mode extension's markers are the exception: they render
 **nothing** in the thread — they are settings history, not conversation. That history stays where
@@ -811,9 +816,12 @@ reading view, at every width, desktop included.
 - **One choice per browser.** On or off is kept in this browser's `localStorage` (`sova:focus`,
   `"true"` for on; anything else is off), for every session at once, never per session: switching
   sessions (from the sidebar, or back to the list and into another) keeps it, and a reload brings
-  it back. Blocked or full storage keeps the choice for the page. Nothing turns it off but the
-  button; there is no gesture. The shell carries it as `data-focus="on"` on `.app` (§app/shell),
-  and the stylesheet does the hiding, on a `.app-main` that holds a transcript only.
+  it back. Blocked or full storage keeps the choice for the page. Two things turn it off: the
+  button, and a character typed outside a text field, which ends Focus and goes into the message
+  box (§chat.composer/type-anywhere). Space, the arrows, the Page keys, Ctrl/⌘+C and Tab leave it
+  on, and there is no gesture. The shell carries it as `data-focus="on"`
+  on `.app` (§app/shell), and the stylesheet does the hiding, on a `.app-main` that holds a
+  transcript only.
 
 ## §chat.transcript/rendering — Opening and switching a long transcript
 
@@ -1207,7 +1215,8 @@ waits through a drop (§chat.composer/disabled-states).
   deliver it, and stays to hear the answer. When the page goes before its connection opened (a
   reload, a closed tab), it hands what it kept to the server as it goes, with a request that
   outlives the page (`POST /api/chat/frames`), and the server runs it as it runs that
-  connection's own frames: in order, each message once, a refusal back as the draft. Sova need
+  connection's own frames: in order, each message once, a refusal back as the draft. That request
+  never runs a command from shell mode (§chat.shell-mode/who). Sova need
   not be opened again. Only what that request can't carry (more than about 60 KB, a chat on a
   peer) stays in the browser for the next page load of Sova, which delivers it within a day; a
   message kept longer goes back to its chat's draft instead. A page never takes what another

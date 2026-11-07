@@ -5,7 +5,7 @@ import { parsePi, parsePiBranch } from "./harness/pi/reader";
 import { cutTail, pullFields } from "./tail-hello";
 import type { ReplyTimings } from "./reply-facts";
 import { rowsOf } from "./transcript";
-import { withRows } from "./wire-rows";
+import { rowFor, withRows } from "./wire-rows";
 import { entryOfRow } from "../shared/row-counts";
 import type { ContextTally } from "./worker-context";
 
@@ -122,7 +122,7 @@ export class SessionTail {
     const context = this.context?.(text, "snapshot");
     if (this.closed) return;
     const items = this.normalize(text, "snapshot");
-    const cut = this.sendRaw || this.pull ? cutTail(items, { history: !this.pull }) : null;
+    const cut = this.sendRaw || this.pull ? cutTail(items, { history: !this.pull, v1: (it) => rowFor(it, 1) }) : null;
     this.send(withRows({
       type: "snapshot",
       items: cut ? cut.items : items,

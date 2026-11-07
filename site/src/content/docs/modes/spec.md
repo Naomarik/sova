@@ -124,16 +124,16 @@ guide gets a brief quoting the rules from both parts. The note says:
 When a worker that wrote code finishes, its summary carries one line naming the claims its changes
 landed in, and the changed files no claim covers.
 
-A worker gets the modes its parent has when it starts, so turning spec on later doesn't reach a
-worker that's already running. A team's monitor gets no guide. A worker that runs on its worktree's
-own agent folder always has spec on.
+A worker gets the modes its parent has when it starts, so turning spec on or off later doesn't reach
+a worker that's already running. A team's monitor gets no guide. A worker that runs on its worktree's
+own agent folder has spec only while its parent has it on, too.
 
 ## Project coding sessions
 
 A project has no coding-mode setting of its own: its coding sessions start in this computer's
 default mode, the one **Save as default** in a chat's mode menu sets, and the project page names
-it. An Overseer can start or switch a coding session with spec on or off, and in a project with a
-spec it's told to keep spec on unless you say otherwise.
+it. A coding session has spec only when that default does, and you or an Overseer can turn it on or off
+in a running session, as in any chat.
 
 ## A spec review
 

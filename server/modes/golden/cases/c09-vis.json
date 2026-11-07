@@ -35,6 +35,7 @@
    "<inline:sova-mcp>",
    "<inline:sova-worker-host>",
    "<inline:sova-vis-check>",
+   "<inline:sova-shell-model>",
    "<inline:sova-memory>",
    "<inline:sova-playbook>",
    "<inline:sova-project-verbs>",
@@ -108,7 +109,7 @@
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
        "mode": "@8b1e58a8fd8371b6"
       },
-      "toolsAdded": "@743ca4a5890ec350"
+      "toolsAdded": "@95b08d06db0b6478"
      },
      {
       "role": "user",
@@ -161,7 +162,7 @@
       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
       "mode": "@8b1e58a8fd8371b6"
      },
-     "toolsAdded": "@25328695e44f7496"
+     "toolsAdded": "@c4ce815acf8dad73"
     }
    }
   ],

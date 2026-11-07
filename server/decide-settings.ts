@@ -52,6 +52,7 @@ export function parseDecisionSettings(value: unknown): DecisionSettings | { erro
   if (!isRecord(value.features) || typeof value.features.attention !== "boolean" || typeof value.features.tags !== "boolean")
     return { error: "features.attention and features.tags must be booleans" };
   if (value.features.reconcile !== undefined && typeof value.features.reconcile !== "boolean") return { error: "features.reconcile must be a boolean" };
+  if (value.features.messageLabels !== undefined && typeof value.features.messageLabels !== "boolean") return { error: "features.messageLabels must be a boolean" };
   if (!Array.isArray(value.exclusions) || value.exclusions.some((e) => typeof e !== "string")) return { error: "exclusions must be a list of folders" };
   const why = problemOf(EXCLUSIONS_RULE, value.exclusions.join("\n"));
   if (why) return { error: why };
@@ -70,6 +71,7 @@ export function parseDecisionSettings(value: unknown): DecisionSettings | { erro
       attention: value.features.attention,
       tags: value.features.tags,
       ...(typeof value.features.reconcile === "boolean" ? { reconcile: value.features.reconcile } : {}),
+      ...(typeof value.features.messageLabels === "boolean" ? { messageLabels: value.features.messageLabels } : {}),
     },
     exclusions,
     neverSendTui: value.neverSendTui,
@@ -89,6 +91,7 @@ export function normalizeDecisionSettings(value: unknown): DecisionSettings {
       attention: isRecord(value.features) && value.features.attention === true,
       tags: isRecord(value.features) && value.features.tags === true,
       ...(isRecord(value.features) && typeof value.features.reconcile === "boolean" ? { reconcile: value.features.reconcile } : {}),
+      ...(isRecord(value.features) && typeof value.features.messageLabels === "boolean" ? { messageLabels: value.features.messageLabels } : {}),
     },
     exclusions: Array.isArray(value.exclusions) ? [...new Set(value.exclusions.map(cleanPrefix).filter((p): p is string => !!p))].slice(0, MAX_EXCLUSIONS) : [],
     neverSendTui: value.neverSendTui === true,
@@ -138,7 +141,7 @@ export function isExcluded(settings: Pick<DecisionSettings, "exclusions">, cwd: 
   });
 }
 
-export type DecisionFeature = "attention" | "tags";
+export type DecisionFeature = "attention" | "tags" | "messageLabels";
 
 /**
  * A terminal session, for `neverSendTui`: open in a TUI right now, OR started outside Sova

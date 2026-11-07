@@ -551,6 +551,8 @@ member at once.
   conversation (§chat/images) and a slash command is a per-runtime thing, half of them local (§chat/slash-commands). Both
   stay in the pane composers, where their target is one session. The `plus` trigger is absent
   here rather than present-and-disabled.
+- **Nor is shell mode** (§chat.shell-mode/box). A leading `!` here is text, sent to every member as
+  written; each pane's own composer has shell mode while Send to All is off.
 - **Sent text appears in every included pane at once**, optimistically, as that pane's user
   bubble — the same optimistic rule §chat/composer gives.
 - **The composer clears on a clean send, and keeps the text on a partial one.** "Clears once the
@@ -735,7 +737,8 @@ accessible name, byte for byte, so what AT says matches what the pane is called.
 | `Ctrl+Alt+Left` / `Ctrl+Alt+Right` | Move focus to the previous / next pane: focus its `.workspace-pane` (`tabindex="-1"`), scroll it into view, and in tabs mode select its tab. Stops at the ends, no wrap |
 | `Tab` | Walks into the pane and through its controls in visual order, then out to the next pane. No focus trap anywhere |
 | `Left` / `Right` in the tab strip | The tablist's own roving tabindex, as the skill's tabs specify |
-| `Esc` | Nothing new. It does not leave the workspace and it does not abort a turn (§chat/composer) |
+| `Esc` | In a pane's composer, stops that pane's reply as the pane's Stop does (§chat.composer/esc-stop), except in shell mode, where it never stops one (§chat.shell-mode/box); nowhere else in the workspace, the group composer included, does it stop one. It never leaves the workspace |
+| A character, outside a text field | Goes into the focused pane's composer, or the group composer while Send to All is on (§chat.composer/type-anywhere). A read-only focused pane takes nothing: the character never goes to another pane |
 
 `Ctrl+Alt+Arrow` is chosen because `Alt+Arrow` is browser history and `Ctrl+Arrow` is
 word-navigation in every textarea on screen — and there are N textareas on screen. The binding is

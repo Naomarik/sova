@@ -127,7 +127,7 @@
   "§chat.voice/states": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/VoiceInput.tsx",
       "src/design/voice.css",
@@ -137,7 +137,10 @@
       "src/lib/voice/capture.ts",
       "src/lib/voice/voice-strip.test.ts",
       "src/lib/voice/voice-strip.browser.test.ts",
-      "src/lib/voice/voice-strip.fixture.ts"
+      "src/lib/voice/voice-strip.fixture.ts",
+      "src/components/Composer.tsx",
+      "src/lib/input-mode.ts",
+      "src/lib/input-mode.test.ts"
     ],
     "requires": [
       "§chat.voice/button",

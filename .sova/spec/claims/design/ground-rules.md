@@ -5,7 +5,7 @@
 
 Dark is the default. `<html>` with no attribute renders dark; `<html data-theme="light">` renders
 the full light set. Those two blocks in `src/design/tokens.css` are the bases every theme stands
-on.
+on. Nothing follows `prefers-color-scheme` unless you choose Auto (§app/settings-dialog).
 
 A theme is one JSON file: `themes/<id>.json` for the ones shipped with the app,
 `~/.pi/agent/sova/themes/<id>.json` for the ones you drop in. It carries
@@ -87,13 +87,29 @@ themes (Dracula, three Tokyo Nights, four Catppuccins, four Monokais, four Nords
 color only and keep Inter and JetBrains Mono. A user file whose id matches a built-in replaces
 it.
 
-The choice is made in Settings → Themes (§app/settings-dialog), persists in `localStorage` under `sova:theme`,
-and is applied — custom properties written, `data-theme` set to the theme's base — before first
-paint. An id that no longer resolves falls back to `dark`.
+The choice is made in Settings → Themes (§app/settings-dialog): a mode — Light, Dark or Auto — and
+one theme per base, persisted together in `localStorage` under `sova:theme`. The theme the mode
+resolves to (under Auto, by `prefers-color-scheme`, read synchronously, no preference reading as
+dark) is applied — custom properties written, `data-theme` set to its base — before first paint,
+by a classic script in `index.html`'s head that runs before the page is drawn: it carries the
+key-to-property table and the base surfaces the app itself paints with, put there when the page is
+built, never a copy kept by hand. The app's startup (`src/main.tsx`) then applies the same choice
+with the font pick and the text size, and applies it again whenever the mode, the shown base's
+pick or, under Auto, the system setting changes, with no reload; another tab's change to the
+stored choice is applied the same way, at once. Each save rewrites only its own part of the
+record, the mode or one pick, read fresh from storage. A pick that no longer resolves falls back
+to its base's built-in, `dark` or `light`, and only that pick does. The built-in light is
+`data-theme="light"` with nothing written, as the built-in dark is no attribute with nothing
+written, so neither needs the theme list. Anything unexpected in storage reads as the starting
+setup. `?theme=default` (and `?theme=dark`, the same reset) puts back the starting setup: Dark
+mode, the built-in Dark and Light picks, both font picks off and Medium text size; the pre-paint
+script paints nothing on such an address, so a theme too dark to read never reaches the page
+first. It is a one-way reset, never a theme chosen by URL, and the parameter comes off the address
+straight after.
 
 **The browser chrome follows the header.** `<meta name="theme-color">` — the Android status bar
 and the installed app's title bar — takes the worn theme's `surface`, the color of the app's top
-bars, on every apply and clear, including the pre-paint one, in the same call that writes the
+bars, on every apply and clear, including the pre-paint one and an Auto switch, in the same call that writes the
 theme's properties, so the bar never shows a different color from the header under it. A theme that omits `surface` gets its base's default
 surface (`#2C2C38` on dark, `#FFFFFF` on light), and no theme at all gets `#2C2C38`. The value is
 passed through verbatim, like every other token.
@@ -104,7 +120,9 @@ one of a closed list of bundled faces on `--font-body` + `--font-display` (Text)
 nothing there is subject to the grammar above; the ids resolve in `src/lib/typography.ts`. The
 precedence is pick, then the theme's own `typography`, then `tokens.css`: the pick is written
 after the theme's tokens on every apply, so it survives a theme switch, and a kind left on Theme
-default shows the theme's face. `?theme=default` clears both. Every face in the catalogue is
+default shows the theme's face. Each save rewrites only the kind it changed, read fresh from
+storage, and another tab's change to the fonts is applied at once, as the theme's is.
+`?theme=default` clears both. Every face in the catalogue is
 bundled under `public/fonts/` with its license and source (`public/fonts/README.md`); nothing is
 fetched from a CDN.
 

@@ -414,7 +414,7 @@ export const CASES: Case[] = [
       assert.deepEqual(
         { major: n.start.spec.flags.major, minor: n.start.spec.flags.minor },
         { major: "normal", minor: "spec" },
-        "in normal mode with spec forced on, as a worktree-config worker is today",
+        "in normal mode with spec on, as its parent has it",
       );
       const ran = n.worker?.find((s) => s.headers);
       assert.deepEqual(ran?.headers, { "# Minor mode: spec": 1 }, "its run's prompt has the spec block exactly once, and no other mode block");
@@ -422,6 +422,23 @@ export const CASES: Case[] = [
     run: () => {
       const t = treeWs(false);
       return withExtensions(WITH_SANDBOX(), () => workerCase(t.w, minor("spec"), { cwd: t.w.cwd, useWorktreeConfig: true }, true, undefined, t.entries));
+    },
+  },
+  {
+    name: "w09-tree-config-parent-spec-off",
+    proc: true,
+    covers: "useWorktreeConfig, the parent has spec off: the worker starts without --minor and its run's prompt has no spec block",
+    unrecorded: (record) => {
+      const r = record as { start: { spec: { flags: Record<string, unknown> } }; worker: { headers?: Record<string, number> }[] };
+      assert.equal(r.start.spec.flags.major, "normal");
+      assert.equal("minor" in r.start.spec.flags, false, "no --minor for a parent with spec off");
+      const ran = r.worker.find((s) => s.headers);
+      assert.ok(ran, "the worker ran");
+      assert.deepEqual(ran.headers, {}, "its run's prompt has no mode block, spec's included");
+    },
+    run: () => {
+      const t = treeWs(true);
+      return withExtensions(WITH_SANDBOX(), () => workerCase(t.w, minor(), { cwd: t.w.cwd, useWorktreeConfig: true }, true, undefined, t.entries));
     },
   },
   {

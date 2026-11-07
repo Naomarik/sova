@@ -72,7 +72,7 @@ process.env.RD_TEST_API_TOKEN = V.envToken;
 process.env.RD_TEST_PLAIN = PLAIN.envPlain;
 process.env.GIT_AUTHOR_EMAIL = PLAIN.author;
 
-const { REDACTED, REDACTING, Redactor, redactingTool, isSecretEnvName, modelsJsonValues, redactPatterns, serverRedactor } = await import("./overseer-redact");
+const { REDACTED, REDACTING, Redactor, redactingTool, isSecretEnvName, modelsJsonValues, redactPatterns, redactPrivate, looksRandom, serverRedactor } = await import("./overseer-redact");
 const { overseerFileTools, setSearchSpawnForTest } = await import("./overseer-file-tools");
 // fd and rg in-process (server/search-tools-fake.ts; overseer-file-tools.integration.test.ts runs the real ones).
 setSearchSpawnForTest((await import("./search-tools-fake")).fakeSearchSpawn());
@@ -377,5 +377,45 @@ describe("secrets recognised by shape (no credential file names them)", () => {
     const r = new Redactor([], {}).refresh();
     const state = { tool_failures: [{ input: "echo $OPENAI_API_KEY", error: `OPENAI_API_KEY=${"sk-" + "proj-FAKEfakeFAKEfake1234567890"}` }], api_key_note: "fine" };
     assert.deepEqual(r.redactDeep(state), { tool_failures: [{ input: "echo $OPENAI_API_KEY", error: `OPENAI_API_KEY=${REDACTED}` }], api_key_note: "fine" });
+  });
+});
+
+describe("the outside tier: private data, for what Sova sends to an outside model (§app.decisions/privacy)", () => {
+  // Fake values, built by concatenation.
+  const hidden: [string, string, string][] = [
+    ["email", `mail ${"jane.doe+work" + "@" + "example.co.uk"}, thanks`, `mail ${REDACTED}, thanks`],
+    ["email at a sentence's end", `ask ${"ops" + "@" + "example.org"}.`, `ask ${REDACTED}.`],
+    ["URL credentials (host kept)", `https://bob:${"hunter2" + "pass"}@git.example.com/r.git`, `https://${REDACTED}@git.example.com/r.git`],
+    ["32-hex key", `key ${"d41d8cd9" + "8f00b204e9800998ecf8427e"} end`, `key ${REDACTED} end`],
+    ["64-hex", `${"9f86d081884c7d659a2feaa0c55ad015" + "a3bf4f1b2b0b822cd15d6c15b0f00a08"}`, REDACTED],
+    ["base64 blob", `blob ${"dGhpcyBpcyBhIHNl" + "Y3JldCBibG9iIDEyMzQ1Njc4OQ=="} end`, `blob ${REDACTED} end`],
+    ["unprefixed mixed-case key", `token ${"Zx8Kq2LmP9vR4tYw" + "7NbC3dFh6JsG1aE5"}`, `token ${REDACTED}`],
+    ["unprefixed lower-case key", `${"a8f3k2m9q7z1x5c4" + "v6b0n3j8h2g7f1d4"}`, REDACTED],
+  ];
+  for (const [name, input, expected] of hidden)
+    test(name, () => {
+      assert.equal(redactPrivate(input), expected);
+      assert.equal(new Redactor([], {}).refresh().redact(input, { outside: true }), expected);
+    });
+
+  test("ordinary text stays: git hashes, UUIDs, session file names, paths, identifiers, package specs, prose", () => {
+    const plain = [
+      "commit 3302ca6 and 04aac515e9d3f1b2c4a5e6f7a8b9c0d1e2f3a4b5 landed",
+      "session 550e8400-e29b-41d4-a716-446655440000 in 2026-11-07T10-00-00-000Z_550e8400-e29b-41d4-a716-446655440000.jsonl",
+      "see src/components/Button2Group, server/harness/pi/QUIRKS.md and server/overseer-redact.test.ts",
+      "utf8ToBase64v2 handleMessageLabelRequest2 MAX_STATE_CHARS_32000 createDecisionRuntime",
+      "npm i @acme/some-package@1.0.3 and git@github",
+      "The quick-brown-fox-jumps-over-the-lazy-dog-2024 phrase",
+      "input_tokens=435 at 2026-11-07T10:00:00.000Z, 1234567890123456789012345",
+    ];
+    for (const t of plain) assert.equal(redactPrivate(t), t, t);
+    assert.equal(looksRandom("a".repeat(44) + "1"), false, "a repeated character is no key");
+  });
+
+  test("the Overseer's own reads keep emails and digests: the tier is only for what goes out", () => {
+    const t = `Author: Jane <${"jane" + "@" + "example.com"}> sha256 ${"9f86d081884c7d659a2feaa0c55ad015" + "a3bf4f1b2b0b822cd15d6c15b0f00a08"}`;
+    const r = new Redactor([], {}).refresh();
+    assert.equal(r.redact(t), t);
+    assert.deepEqual(r.redactDeep({ a: t }, { outside: true }), { a: `Author: Jane <${REDACTED}> sha256 ${REDACTED}` });
   });
 });

@@ -24,8 +24,7 @@ import { agentFigures, agentSpans, alignFacts, type AgentSpans, type AlignFacts 
 import { exclusionReason } from "./attention-signals";
 import { sessionOwnMessages, type OwnMessage } from "./message-input";
 import { messageLabelStore } from "./message-labels";
-import { serverRedactor } from "./overseer-redact";
-import { withholdPasswords } from "./decide-runtime";
+import { redactForOutside } from "./decide-runtime";
 import { readDecisionSettings } from "./decide-settings";
 import { attributeMessages, showsMessages } from "./time-spent-messages";
 import { timeSpentStore } from "./time-spent";
@@ -99,8 +98,7 @@ const agentRunning = (path: string): boolean => isSessionBusy(path) || readLive(
 
 /** A message's line in the list: one line, short, and nothing a decision wouldn't be let to send. */
 function excerptOf(text: string): string {
-  const one = withholdPasswords(text).replace(/\s+/g, " ").trim();
-  const safe = serverRedactor().redactDeep(one);
+  const safe = redactForOutside(text.replace(/\s+/g, " ").trim());
   return safe.length > EXCERPT_CHARS ? `${safe.slice(0, EXCERPT_CHARS - 1)}…` : safe;
 }
 

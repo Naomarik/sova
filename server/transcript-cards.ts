@@ -545,7 +545,7 @@ export async function raiseCard(input: RaiseInput): Promise<CardInfo> {
   const snapshot = await cardSnapshotFor(sessionId, input.path, s.cwd);
   const decl = snapshot?.types.find((t) => t.type === input.type);
   if (!decl) throw new CardRefusal(`${NOTHING} "${input.type}" is not a card type this session may raise.`, 400);
-  if (input.by.kind === "extension" && decl.ext?.id !== input.by.title) throw new CardRefusal(`${NOTHING} ${EXTENSION_CARD_DOORS.raiseOthers}`, 403);
+  if (input.by.kind === "extension" && decl.ext?.id !== (input.by.id ?? input.by.title)) throw new CardRefusal(`${NOTHING} ${EXTENSION_CARD_DOORS.raiseOthers}`, 403);
   if (decl.ext && queueChatRole(s.profile)) throw new CardRefusal(`${NOTHING} the merge queue's own chats take no extension's cards.`);
   if (input.by.kind === "agent" && !decl.when) throw new CardRefusal(`${NOTHING} "${input.type}" is raised only from outside the chat.`, 400);
   let key: string | undefined;
@@ -598,7 +598,7 @@ function reviseCard(input: RaiseInput, sessionId: string): CardInfo {
   if (!rec || !card) throw new CardRefusal(`${NOTHING} the session has no card ${input.card}.`, 404);
   if (card.state === "superseded" || card.state === "done") throw new CardRefusal(`${NOTHING} ${card.id} is ${card.state === "done" ? "done" : "replaced by a newer revision"}.`);
   if (input.type !== undefined && input.type !== card.type) throw new CardRefusal(`${NOTHING} ${card.id} is a ${card.type} card.`, 400);
-  if (input.by.kind === "extension" && ownerOfType(rec, card.type)?.owner !== extensionOwner(input.by.title)) throw new CardRefusal(`${NOTHING} ${EXTENSION_CARD_DOORS.changeOthers}`, 403);
+  if (input.by.kind === "extension" && ownerOfType(rec, card.type)?.owner !== extensionOwner(input.by.id ?? input.by.title)) throw new CardRefusal(`${NOTHING} ${EXTENSION_CARD_DOORS.changeOthers}`, 403);
   if (input.data !== undefined) {
     const decl = rec.snapshot?.types.find((t) => t.type === card.type);
     if (!decl && card.draws === "view") throw new CardRefusal(`${NOTHING} ${card.type} is no longer one of the session's card types.`, 409);

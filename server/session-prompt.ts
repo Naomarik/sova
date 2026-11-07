@@ -9,7 +9,7 @@ import { ARCHIVED_REFUSAL } from "./archived-sessions";
 import { EXTENSION_CARD_DOORS } from "./extension-doors";
 import type { ExtensionSender } from "./extension-sender";
 import { queueChatRole } from "../shared/merge-queue";
-import { sessionSentHeader } from "../shared/profiles";
+import { outsideSentHeader } from "../shared/profiles";
 
 /**
  * Prompting one session and finding sessions by id, as every caller does it (the Overseer, a project
@@ -104,7 +104,7 @@ export async function promptSession(
   let queued: boolean;
   const compacting = !chat.mirror.running && chat.mirror.compacting;
   try {
-    const stamped = fromExtension ? `${sessionSentHeader(fromExtension, fromExtension.hop)}\n${text}` : text;
+    const stamped = fromExtension ? `${outsideSentHeader(fromExtension, fromExtension.hop)}\n${text}` : text;
     const r = await chat.send({ text: stamped, origin: "server", checkModel: true, delivery, ...(key ? { key } : {}), ...(fromExtension ? { sentBySession: fromExtension } : {}), ...(overseerId ? { sentByOverseer: { overseerId } } : opts ? { sentByOverseer: opts.projectOverseer ? { overseerId: opts.projectOverseer } : {} } : {}) });
     queued = r.queued;
   } catch (err) {

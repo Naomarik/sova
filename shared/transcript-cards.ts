@@ -204,7 +204,7 @@ export const agentTypes = (s: CardSnapshot | null): CardDecl[] => (s?.types ?? [
 // ---- the card on the wire -----------------------------------------------------------------------
 
 /** Who raised a card (§chat.transcript-cards/raise-command, "The card says who raised it"). */
-export type CardRaiser = { kind: "agent" } | { kind: "script" } | { kind: "chat"; title: string } | { kind: "extension"; title: string };
+export type CardRaiser = { kind: "agent" } | { kind: "script" } | { kind: "chat"; title: string } | { kind: "extension"; title: string; id?: string };
 
 /** An answer's value: a question's option, a button, or a checklist's ticks. */
 export type CardAnswerValue = { option: number } | { button: number } | { items: boolean[] } | { view: unknown };

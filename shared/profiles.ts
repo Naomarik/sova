@@ -250,6 +250,13 @@ export function sessionSentHeader(from: { sessionId: string; title: string }, ho
   const title = from.title.replace(/["\n\r]/g, "'").slice(0, 80);
   return `[from session "${title}" (${from.sessionId}), hop ${hop}]`;
 }
+/** The same line for a sender that is no session (§app.extensions/name-badge): the same form, so older landing code refuses it and
+    older pages strip it, its quoted name saying plainly that this is someone else and not this chat's name. */
+export function outsideSentHeader(from: { sessionId: string; title: string }, hop: number): string {
+  const title = from.title.replace(/["\n\r]/g, "'").slice(0, 80);
+  const who = from.sessionId.startsWith("card:") ? `a card's button, ${title},` : `the extension ${title},`;
+  return sessionSentHeader({ sessionId: from.sessionId, title: "" }, hop).replace('""', () => `"${who} not this chat or its name"`);
+}
 const HEADER_RE = /^\[from session "[^"\n]*" \([^)\s]+\), hop \d+\]\n?/;
 /** The text without its header line, when it has one. */
 export function stripSessionHeader(text: string): string {

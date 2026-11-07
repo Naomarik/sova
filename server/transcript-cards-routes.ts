@@ -71,7 +71,7 @@ async function callerOf(c: Context): Promise<{ raiser: CardRaiser; name: string;
   const token = c.req.header(TOKEN_HEADER);
   if (token === undefined) return { raiser: { kind: "script" }, name: "you", page: true };
   const ext = showsToken(token) ? null : extensionCaller(token);
-  if (ext) return { raiser: { kind: "extension", title: ext }, name: ext, page: false };
+  if (ext) return { raiser: { kind: "extension", id: ext, title: findExtension(ext)?.title?.trim() || ext }, name: ext, page: false };
   const caller = callerKeys.callerOf(c.req.header(CALLER_HEADER));
   if (caller.startsWith("chat:")) {
     const chat = caller.slice("chat:".length);

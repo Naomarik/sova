@@ -8,6 +8,7 @@ import { MergeFailure, type MergeQueues, type ProjectQueue } from "./queue";
 import { registerLiveMergeSettingsRoutes } from "./settings-routes";
 import { registerLiveMergeLandingRoutes } from "./routes-landing";
 import { NOT_SERVED } from "./served";
+import { checkReviewText } from "./review-verdict";
 
 /**
  * The merge verbs (POST /api/project-services/merge.<x>, through the engine's `merger` hook; the merge thread's tool
@@ -367,7 +368,10 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
       const v = need(req.verdict, "verdict");
       if (!["ok", "notes", "blocking"].includes(v)) throw new MergeFailure("invalid-request", 'verdict is "ok", "notes" or "blocking"');
       if ((v === "notes" || v === "blocking") && !req.text?.trim()) throw new MergeFailure("invalid-request", "say what the review found (text)");
-      const verdict = { verdict: v as "ok" | "notes" | "blocking", ...(req.text?.trim() ? { text: req.text.trim() } : {}) };
+      // The verdict's shape is checked here (the reviewer has no shell to run a kit script): a malformed one is refused.
+      const checked = checkReviewText(v as "ok" | "notes" | "blocking", req.text);
+      if ("why" in checked) throw new MergeFailure("invalid-request", `review refused: ${checked.why}; fix it and answer again`);
+      const verdict = { verdict: v as "ok" | "notes" | "blocking", ...(checked.text ? { text: checked.text } : {}) };
       if (deps.deliverReview?.(runId, verdict)) return { changed: true, report: {} };
       const run = await q.review(runId, verdict);
       return { changed: true, report: { run } };

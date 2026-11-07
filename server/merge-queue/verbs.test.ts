@@ -149,6 +149,12 @@ describe("the verbs and who may call them", () => {
       assert.equal((await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "ok" }, session(reviewer))).ok, true);
       assert.equal((await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "ok" }, t)).error!.code, "forbidden");
       assert.equal((await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "blocking" }, session(reviewer))).error!.code, "invalid-request");
+      // The verdict's shape is Sova's check now (the reviewer has no shell): a malformed one is refused, saying what is wrong.
+      const bare = await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "notes", text: "Looks a bit off." }, session(reviewer));
+      assert.equal(bare.error!.code, "invalid-request");
+      assert.match(bare.error!.message, /needs at least one finding/);
+      const kind = await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "blocking", text: "Bad.\n- [style] a.ts:3: tabs" }, session(reviewer));
+      assert.match(kind.error!.message, /kind must be one of/);
       const e = q.entry(id)!;
       assert.equal(e.notes[0]!.text, "changes server code");
       assert.equal(e.picks[0]!.id, "statecharts");

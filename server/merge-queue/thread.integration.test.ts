@@ -1,14 +1,15 @@
 // Run: pnpm test:int server/merge-queue/thread.integration.test.ts
 // The merge thread's scripts as the thread runs them, as programs on a real repo: blast-radius.mjs
 // finds the project's own map from --repo and picks statecharts for a branch touching them;
-// conflict-hunks.mjs prints a stopped merge's hunks; the review kit's verdict.mjs writes a valid
-// verdict.mjs prints what merge.review takes and refuses a malformed verdict.
+// conflict-hunks.mjs prints a stopped merge's hunks; the reviewer (no shell) gets the change written
+// for it on a real repo (review-change.ts).
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { scratchRoot } from "../test-scratch";
+import { removeReviewChange, reviewChangeDir, writeReviewChange } from "./review-change";
 
 const REPO = join(import.meta.dirname, "..", "..");
 const SCRIPTS = join(REPO, "playbooks", "merge-queue", "scripts");
@@ -70,17 +71,32 @@ test("conflict-hunks.mjs lists a stopped merge's hunks, with the base under diff
   assert.equal(readFileSync(join(r, "list.txt"), "utf8"), before);
 });
 
-test("verdict.mjs prints what to send with merge.review and refuses a malformed verdict with exit 1", () => {
-  const script = join(REPO, ".sova", "playbooks", "review", "scripts", "verdict.mjs");
-  const ok = spawnSync("node", [script, "--verdict", "blocking", "--summary", "A hack is left in.", "--finding", JSON.stringify({ file: "a.ts", line: 4, kind: "hack", text: "fixed sleep hides a race" })], { encoding: "utf8" });
-  assert.equal(ok.status, 0, ok.stderr);
-  assert.deepEqual(JSON.parse(ok.stdout), { verdict: "blocking", text: "A hack is left in.\n- [hack] a.ts:4: fixed sleep hides a race" });
-  const refused = spawnSync("node", [script, "--verdict", "notes", "--summary", "x"], { encoding: "utf8" });
-  assert.equal(refused.status, 1);
-  assert.match(refused.stderr, /needs at least one finding/);
-  assert.equal(refused.stdout, "");
-  const junk = spawnSync("node", [script, "--verdict", "ok", "--summary", "x", "--finding", "{nope"], { encoding: "utf8" });
-  assert.equal(junk.status, 1);
-  assert.match(junk.stderr, /not JSON/);
+test("the reviewer's change: the commits, the changed paths with their status and the whole diff, written to its run folder, then removed", async () => {
+  const r = project();
+  commit(r, "keep.txt", "one\n");
+  commit(r, "gone.txt", "bye\n");
+  const base = git(r, "rev-parse", "HEAD");
+  git(r, "rm", "-q", "gone.txt");
+  writeFileSync(join(r, "keep.txt"), "one\ntwo\n");
+  writeFileSync(join(r, "new.txt"), "fresh\n");
+  git(r, "add", "-A");
+  git(r, "commit", "-q", "-m", "Change three files", "-m", "With a body line.");
+  const tip = git(r, "rev-parse", "HEAD");
+  const runDir = join(scratchRoot("mq-review-change-"), "run");
+  const dir = reviewChangeDir(runDir);
+  const change = await writeReviewChange(r, base, tip, dir);
+  assert.equal(change.summary, join(dir, "change.txt"));
+  const summary = readFileSync(change.summary, "utf8");
+  assert.ok(summary.includes(`git diff ${base}...${tip}`));
+  assert.match(summary, /Change three files\n\nWith a body line\./);
+  assert.match(summary, /^D\tgone\.txt$/m);
+  assert.match(summary, /^M\tkeep\.txt$/m);
+  assert.match(summary, /^A\tnew\.txt$/m);
+  assert.ok(summary.includes(change.diff), "the summary names the diff");
+  // Exactly what git diff base...tip prints, byte for byte.
+  assert.equal(readFileSync(change.diff, "utf8"), execFileSync("git", ["-C", r, "diff", "--no-color", "--no-ext-diff", `${base}...${tip}`], { encoding: "utf8" }));
+  await assert.rejects(writeReviewChange(r, "0".repeat(40), tip, dir), /git log failed/);
+  removeReviewChange(dir);
+  assert.equal(existsSync(dir), false);
 });
 

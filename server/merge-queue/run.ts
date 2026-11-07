@@ -28,6 +28,7 @@ import { type CheckRun, checksOf, countsOf, type CopyScope, envOf, firstOutputLi
 import type { RunHooks, RunInput, RunMerge, RunOutcome } from "./contract";
 import { assertCopyOutsideState, CopyRefused, gitOut, gitProc, mergeCopyPath, moveCopy, prepareCopy, runProc } from "./copy";
 import { reviewStep, type ReviewDeps } from "./review-step";
+import { removeReviewChange, reviewChangeDir, writeReviewChange } from "./review-change";
 import { conflictsBetween } from "./conflicts";
 
 export interface RunDeps extends ReviewDeps {
@@ -715,7 +716,17 @@ function startReview(o: { input: RunInput; copy: string; tip: string; steps: Ste
       st.end("skipped", { detail: kit ? `no review kit at ${kit} on ${o.input.project.target}` : "no review kit declared" });
       return { ok: true as const, verdict: { verdict: "ok" as const, commit: o.tip, at: now(), text: "no review kit" } };
     }
-    const r = await reviewStep({ awaitReview: o.input.awaitReview, runId: o.input.runId, projectId: o.input.project.id, root: o.input.project.root, copy: o.copy, base: o.input.base, commit: o.tip, branch: o.input.entry.branch, kit, target: o.input.project.target, log: st.log, signal: ctl.signal }, o.deps);
+    // The reviewer has no shell: Sova writes the change it reads, and removes it when the review ends.
+    const changeDir = reviewChangeDir(o.input.runDir);
+    let r: ReviewResult;
+    try {
+      const change = await writeReviewChange(o.copy, o.input.base, o.tip, changeDir, ctl.signal);
+      r = await reviewStep({ awaitReview: o.input.awaitReview, runId: o.input.runId, projectId: o.input.project.id, root: o.input.project.root, copy: o.copy, base: o.input.base, commit: o.tip, branch: o.input.entry.branch, kit, target: o.input.project.target, change, log: st.log, signal: ctl.signal }, o.deps);
+    } catch (err) {
+      r = { ok: false, why: `couldn't write the change for the reviewer: ${err instanceof Error ? err.message : String(err)}` };
+    } finally {
+      removeReviewChange(changeDir);
+    }
     if (r.ok) st.end(r.verdict.verdict === "blocking" ? "failed" : "passed", { detail: `${r.verdict.verdict}${r.verdict.text ? `: ${clip(r.verdict.text, 200)}` : ""}` });
     else st.end("failed", { detail: r.why });
     return r;

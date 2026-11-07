@@ -7,6 +7,8 @@
  * branch is never blamed).
  */
 import type { ReviewVerdict } from "../../shared/merge-queue";
+import type { ReviewChange } from "./review-change";
+import { REVIEW_KINDS } from "./review-verdict";
 
 export interface ReviewerStart {
   runId: string;
@@ -20,6 +22,8 @@ export interface ReviewerStart {
   branch: string;
   /** The review kit's folder, relative to the copy. */
   kit: string;
+  /** The change, written for it (review-change.ts): it has no shell to run git. */
+  change?: ReviewChange;
   /** The reviewer's first message. */
   text: string;
   attempt: number;
@@ -94,10 +98,12 @@ export function reviewerText(o: Omit<ReviewerStart, "text" | "attempt">, target 
     `Review one change before it lands, with the review kit at ${o.kit}/ (read its PLAYBOOK.md first and follow it).`,
     "",
     `- Commit under review: ${o.commit} (branch ${o.branch} merged onto ${target} at ${o.base}).`,
-    `- The change: git diff ${o.base}...${o.commit} (and git log ${o.base}..${o.commit}). Read files at that commit (git show ${o.commit}:<path>); the working folder may move while you read.`,
-    "- You only read: change nothing, commit nothing, start nothing.",
-    `- Answer once, with the merge.review verb: {run: "${o.runId}", verdict: "ok" | "notes" | "blocking", text: "<short; for notes or blocking, what and where>"}.`,
-    "  ok: nothing to say. notes: worth knowing, never stops the landing. blocking: it should not land as is (the user decides).",
+    o.change
+      ? `- The change, written for you: ${o.change.summary} (the commits and the changed paths) and ${o.change.diff} (the whole diff, git diff ${o.base}...${o.commit}). Your working folder is the merge copy at that commit: read the files around each hunk there.`
+      : `- The change: git diff ${o.base}...${o.commit}. Your working folder is the merge copy at that commit: read the files there.`,
+    "- You only read files (by path; the changed paths are listed for you): you have no shell. Change nothing, run nothing.",
+    `- Answer once, with the merge.review verb: {run: "${o.runId}", verdict: "ok" | "notes" | "blocking", text}. text: a one-sentence summary, then one line per finding, "- [kind] file:line: text" (kinds: ${REVIEW_KINDS.join(", ")}; at most 10). Sova checks it and refuses a malformed one, saying what to fix: fix it and answer again.`,
+    "  ok: nothing to say, no findings. notes: worth knowing, never stops the landing. blocking: it should not land as is (the user decides).",
   ].join("\n");
 }
 

@@ -81,7 +81,9 @@
       "pi-config/extensions/subagents/spec-brief.test.ts",
       "pi-config/extensions/spec/docs/MODE.md",
       "pi-config/extensions/spec/docs/CHANGELOG.md",
-      "site/src/content/docs/modes/spec.md"
+      "site/src/content/docs/modes/spec.md",
+      "server/harness/pi/spec-tool-result.integration.test.ts",
+      "server/team-member-tools.test.ts"
     ],
     "evidence": "verified"
   },

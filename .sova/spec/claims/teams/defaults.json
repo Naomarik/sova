@@ -89,7 +89,9 @@
       "pi-config/extensions/subagents/team-defaults.ts",
       "pi-config/extensions/subagents/README.md",
       "pi-config/extensions/subagents/inbox.ts",
-      "pi-config/extensions/subagents/delivery.ts"
+      "pi-config/extensions/subagents/delivery.ts",
+      "server/chat-manager.ts",
+      "server/team-member-tools.test.ts"
     ],
     "agreed": {
       "by": "naomarik",

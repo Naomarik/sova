@@ -428,6 +428,14 @@
       "§app.settings-dialog/save-bar"
     ]
   },
+  "§design.copy-deck/settings-extensions": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "about": [
+      "§app.settings-dialog/extensions"
+    ]
+  },
   "§design.copy-deck/settings-mesh": {
     "kind": "note",
     "authority": "accepted",

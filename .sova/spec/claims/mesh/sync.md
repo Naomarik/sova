@@ -25,12 +25,16 @@ only make sense on one machine. The library contains `{version, profiles}` only 
 with its own strict parser. `subagent-profiles-default.json` never syncs: each device chooses its
 own default; a chat's hidden ID pick stays with its own session (§chat.subagent-profiles/file).
 **Themes** are the user theme files; which theme is chosen stays with
-the browser. **Extensions**: each host shares the entries of its own installed-extensions list, and never
-writes another host's list into it. A host lists its own extensions plus peers' extensions it
-lacks. Its own entry always wins, and removing an extension on the host that shared it removes it
+the browser. **Extensions**: each host shares its own active entries (§app.extensions/loader), and never
+writes another host's list into it. An entry that is off or waiting on this host isn't shared, so
+turning one off takes it off other computers as removing does. A shared entry carries its id, title, description,
+icon and, when it has them, `dist` and `api`, never its folder or program. A host lists its own extensions plus peers' extensions it
+lacks. Its own entry always wins, in any state, and removing an extension on the host that shared it removes it
 everywhere. A peer's extension is only listed here ("not installed on this host"): nothing is
 ever served, probed or forwarded for it, even if the same files exist on this host. To use it here,
-the user adds it to this host's own list, and that entry wins.
+the user adds it to this host's own list, and that entry wins. A peer on an older Sova requires `dist`
+and `api`, so it quietly leaves out an entry with no page or no program: it isn't listed there at
+all, nothing else on that peer changes, and it lists once that peer updates.
 
 A document's version is dated by when its host first saw that content: a change by the moment the
 host noticed it, and a file that first appears there — at the host's first sync run, or later

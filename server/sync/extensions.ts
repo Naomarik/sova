@@ -41,6 +41,8 @@ export interface ExtensionSyncOptions {
   file: string;
   /** This host's own valid entries (server/extensions.ts readExtensions). */
   local: () => ExtensionEntry[];
+  /** Every id on this host's list in any state: a peer's entry never takes one. Default: `local`'s. */
+  listedIds?: () => readonly string[];
   /** server/extensions.ts validateExtension: a peer's entry is re-checked with the same rules. */
   validate: (raw: unknown) => { entry: ExtensionEntry } | { error: string };
   peers?: () => readonly ExtensionPeer[];
@@ -52,7 +54,8 @@ export interface ExtensionSyncOptions {
 
 type Stored = Record<string, { at: number; entries: ExtensionEntry[] }>;
 
-const isDir = (p: string) => {
+const isDir = (p: string | undefined) => {
+  if (!p) return false;
   try {
     return statSync(p).isDirectory();
   } catch {
@@ -192,7 +195,7 @@ export class ExtensionSync {
     if (!this.enabled) return [];
     const lists = this.load();
     const current = this.opts.peerIds ? new Set(this.opts.peerIds()) : null;
-    const taken = new Set(this.opts.local().map((e) => e.id));
+    const taken = new Set(this.opts.listedIds?.() ?? this.opts.local().map((e) => e.id));
     const out: PeerExtension[] = [];
     for (const id of Object.keys(lists).sort()) {
       if (current && !current.has(id)) continue;

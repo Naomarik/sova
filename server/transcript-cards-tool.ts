@@ -1,6 +1,6 @@
 import type { ToolSpec } from "../shared/harness";
 import { agentTypes, CARD_DETAILS_VERSION, CARD_TOOL, cardToolDescription, cardToolParameters, type CardDetails, type CardSnapshot } from "../shared/transcript-cards";
-import { CardRefusal, cardSnapshotFor, raiseCard } from "./transcript-cards";
+import { CardRefusal, offeredCardSnapshot, raiseCard } from "./transcript-cards";
 
 /**
  * The `card` tool (§chat.transcript-cards/card-tool): built only from the session's snapshot, so its
@@ -34,7 +34,7 @@ export function cardToolSpec(sessionId: string, path: string, snapshot: CardSnap
 
 /** The session's `card` tool, or none: from its snapshot, taken at its first build; only types with a `when` make one. */
 export async function sessionCardTools(sessionId: string, path: string, cwd?: string): Promise<ToolSpec[]> {
-  const snapshot = await cardSnapshotFor(sessionId, path, cwd).catch((err) => {
+  const snapshot = await offeredCardSnapshot(sessionId, path, cwd).catch((err) => {
     console.warn(`[cards] ${sessionId}: no snapshot (${err instanceof Error ? err.message : String(err)})`);
     return null;
   });

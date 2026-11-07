@@ -361,6 +361,14 @@ function SenderLine(props: { sender: Sender; names: Record<string, string> }) {
           </>
         )}
       </Show>
+      <Show when={s().kind === "extension" && (s() as Extract<Sender, { kind: "extension" }>)}>
+        {(from) => (
+          <>
+            <Icon name="sliders" small />
+            <span>From {from().title || "an extension"}</span>
+          </>
+        )}
+      </Show>
       <Show when={s().kind === "overseer"}>
         <Icon name="eye" small />
         <span>From the Overseer</span>

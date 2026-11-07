@@ -4,12 +4,13 @@
     "authority": "accepted",
     "requires": [
       "§chat.composer/anatomy",
-      "§app.overseer/attention-digest"
+      "§app.overseer/attention-digest",
+      "§chat.alignment/session-mark"
     ],
     "agreed": {
       "by": "Omar (user)",
-      "at": "2026-10-28T13:24Z",
-      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+      "at": "2026-11-06T21:56Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
     },
     "evidence": "verified",
     "code": [
@@ -21,7 +22,9 @@
       "src/lib/card-controls.ts",
       "src/components/TranscriptCard.tsx",
       "src/components/ChatView.tsx",
-      "server/attention.ts"
+      "server/attention.ts",
+      "server/extension-views-changed.integration.test.ts",
+      "server/align-state.ts"
     ]
   },
   "§chat.transcript-cards/building": {
@@ -75,8 +78,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T15:12Z",
-      "source": "pi-session:2795e843-1adb-4247-bc12-31f6489eb179#7bab1946"
+      "at": "2026-11-06T22:00Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
     },
     "evidence": "verified",
     "code": [
@@ -95,9 +98,9 @@
       "§chat.offers/buttons"
     ],
     "agreed": {
-      "by": "Omar (user)",
-      "at": "2026-10-28T13:25Z",
-      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+      "by": "user",
+      "at": "2026-11-06T21:52Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
     },
     "evidence": "verified",
     "code": [
@@ -148,8 +151,8 @@
     ],
     "agreed": {
       "by": "Omar (user)",
-      "at": "2026-10-28T13:25Z",
-      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+      "at": "2026-11-06T21:56Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
     },
     "evidence": "verified",
     "code": [
@@ -185,6 +188,27 @@
       "server/transcript-cards.ts"
     ]
   },
+  "§chat.transcript-cards/queue-chats": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.transcript-cards/files",
+      "§chat.transcript-cards/card-tool",
+      "§chat.transcript-cards/raise-command",
+      "§app.extensions/views"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/transcript-cards.ts",
+      "server/transcript-cards-tool.ts",
+      "server/extension-cards.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T21:52Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
+    }
+  },
   "§chat.transcript-cards/raise-command": {
     "kind": "behavior",
     "authority": "accepted",
@@ -193,9 +217,9 @@
       "§app.chat-actions/terminal-open"
     ],
     "agreed": {
-      "by": "Omar (user)",
-      "at": "2026-10-28T13:25Z",
-      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+      "by": "user",
+      "at": "2026-11-06T21:52Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
     },
     "evidence": "verified",
     "code": [
@@ -203,7 +227,9 @@
       "server/transcript-cards.ts",
       "server/transcript-cards.test.ts",
       "shared/commands/sessions.ts",
-      "shared/commands-ids.json"
+      "shared/commands-ids.json",
+      "shared/transcript-cards.ts",
+      "server/extension-cards.test.ts"
     ]
   },
   "§chat.transcript-cards/redraw": {
@@ -214,8 +240,8 @@
     ],
     "agreed": {
       "by": "Omar (user)",
-      "at": "2026-10-28T13:25Z",
-      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+      "at": "2026-11-06T21:59Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
     },
     "evidence": "verified",
     "code": [
@@ -223,7 +249,9 @@
       "server/card-views.integration.test.ts",
       "server/transcript-cards-routes.ts",
       "src/components/CardView.tsx",
-      "src/components/DrawingView.tsx"
+      "src/components/DrawingView.tsx",
+      "src/lib/card-controls.ts",
+      "server/extension-views-changed.integration.test.ts"
     ]
   },
   "§chat.transcript-cards/sealed-box": {
@@ -286,12 +314,13 @@
     "authority": "accepted",
     "requires": [
       "§app.commands/catalogue",
-      "§app.access/your-click"
+      "§app.access/your-click",
+      "§app.extensions/not-you"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T06:59Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+      "by": "Omar (user)",
+      "at": "2026-11-06T21:56Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
     },
     "evidence": "verified",
     "code": [
@@ -303,8 +332,32 @@
       "src/components/ProjectCardsCard.tsx",
       "src/components/ExtensionView.tsx",
       "src/lib/card-controls.ts",
-      "src/lib/api.ts"
+      "src/lib/api.ts",
+      "server/extension-loader.ts",
+      "shared/transcript-cards.ts",
+      "server/extension-doors.test.ts"
     ]
+  },
+  "§chat.transcript-cards/updating-cards": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.transcript-cards/raise-command",
+      "§chat.transcript-cards/answering",
+      "§app.overseer/attention-digest"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/transcript-cards.ts",
+      "docs/customization.md",
+      "server/extension-cards.test.ts",
+      "server/extension-openings.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T21:52Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
+    }
   },
   "§chat.transcript-cards/versions": {
     "kind": "behavior",
@@ -333,11 +386,11 @@
       "§app.command-audit/list"
     ],
     "agreed": {
-      "by": "Omar (user)",
-      "at": "2026-10-28T13:25Z",
-      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+      "by": "user",
+      "at": "2026-11-06T21:56Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
     },
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/lib/card-view-host.ts",
       "src/lib/card-view-host.test.ts",

@@ -840,6 +840,9 @@ new.
   session rows, held acts first and soonest on top, each with **Cancel** (§app.project-overseer/holds),
   a standalone project's held act (one with no organization, such as the release power's waiting
   period, §app.release/power) included.
+- **A question stays a question.** When a session's newest item is a waiting card or offer and it also has
+  open alignment questions, its row is still that question: the chip reads Question and that sentence comes
+  first. On its own, or beside anything else, a card or offer row reads as it did.
 - **Every row reads the same**, here and in the Organizations region's Needs you
   (§app.session-list/organizations), whatever it is about (words: §design.copy-deck/sidebar):
   - the **name**, muted: the project, "{org} · {project}" for an organization's, else the folder's last

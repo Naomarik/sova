@@ -468,7 +468,7 @@ spec's block, from the parent's saved copy of it, with its tools when the worker
   (§tools.spec/writing-on-demand). Nothing else of the parent's mode reaches it: no
   Delegate block, no align block, no Delegate+align bridge, and never the spec-writer paragraph
   (a worker can't spawn one). With spec off the worker's prompt carries nothing from the mode.
-- **Not everyone.** A team's monitor (it has no tools) gets no spec block. A worker on its
+- **Not everyone.** A team's monitor (no `spec` tool and no file tools) gets no spec block. A worker on its
   worktree's own agent dir (§chat.worktrees/worktree-config) gets none from the parent either: it
   has spec always on, in its worker form (the same block and note, no writer paragraph), from Sova
   while Sova runs chat modes, never from a copy of the mode extension in its tree, which it never
@@ -528,8 +528,8 @@ files configure it: Sova's settings, `mode.json`, profiles and automations never
   broken folder never hides the others.
 - **Never on by themselves.** A project mode is on only when someone turned it on in that chat:
   the user, from the chat's mode menu or a typed `/mode` (§chat.mode-menu/typed-commands), the Overseer
-  (§app.overseer/tools), or a script, a chat's agent or an extension through the mode request. Those
-  last three turn on only a version already approved; approving one is the user's own click, or the
+  (§app.overseer/tools), or a script or a chat's agent through the mode request; an extension's key is
+  refused there (§app.extensions/not-you). Those last two turn on only a version already approved; approving one is the user's own click, or the
   Overseer's turn-on (§app.access/your-click). A mode file has no way to say "on by default". `Save as default` never
   stores one and `mode.json` never holds one. A profile, an automation, a project's coding session
   (§app.project-overseer/coding-mode) can't name one. Settings shows none.
@@ -709,7 +709,9 @@ every chat that offers project modes offers them too, in every project.
   fence and body, tools, commands (§chat.mode-menu/project-mode-commands) and hooks
   (§chat.mode-menu/project-mode-hooks), broken folders, the saved copy a chat works from, and how
   its block reaches the model and its workers. Its `Folder:` line and `SOVA_MODE_DIR` name its own
-  folder; `SOVA_PROJECT_ROOT` is still the chat's checkout, where its programs run.
+  folder; `SOVA_PROJECT_ROOT` is still the chat's checkout, where its programs run, and for its tool in
+  a worker the worker's checkout, worked out at each call, never Sova's own code. The switch being off
+  is the one exception, under "Only while Sova runs chat modes" below.
 - **Where it is offered.** In every chat that offers project modes, whatever its checkout, in the
   menu's "Your modes" group (§chat.mode-menu/menu); a chat that offers none (a remote chat, the
   Overseer, Sova's special sessions, a chat whose folder is no checkout) offers no personal mode either.
@@ -730,6 +732,9 @@ every chat that offers project modes offers them too, in every project.
   offers personal modes and none can be turned on. One already on in a chat stays on from the copy the chat
   keeps, listed under "Your modes" as on, and can be turned off like any mode; nothing is lost either way.
   Its row says it was removed only when its folder is gone.
+  **Known exception, not fixed:** in a chat the pi mode extension runs, and in its workers, that mode's
+  tool is told the agent dir (by default) as `SOVA_PROJECT_ROOT`, not the checkout: the extension works
+  the root out from the mode's own folder, which is right only for a project mode.
 
 ## §chat.mode-menu/memory-panel — The memory row and its Memory type panel
 
@@ -895,10 +900,22 @@ the chat's workers.
   chat on older code does. A worker takes its
   parent's owner at its spawn or resume, so a worker already running keeps its owner, and one started
   after its parent reloaded follows the new one.
+- **The warm-up follows the switch too.** A chat process and the server each open one throwaway session
+  at their start to make Claude Code's models available. It takes the owner the switch names as saved
+  when that start runs: on, Sova's own, so no copy of the pi mode extension loads there either; off, the
+  extension, as before. Under either owner it seeds an absent subagent library
+  (`subagent-profiles.json` and `subagent-profiles-default.json`) and writes nothing else of the owner's.
+  A flip while a process runs changes nothing for it: that session is already gone, and the chat opened
+  next takes the owner its own open reads. So a server started with the switch off keeps the extension's
+  module in memory, running no session, until its next restart, and a worker started just after a flip
+  warms up under the new setting while its own session keeps its parent's owner.
 - **What the model sees is the same.** For the same modes, either owner gives the model the same
   mode section, the same tools with the same names, descriptions and schemas, activated at the same
   moments, and the same hidden notes, so a flip never adds a prompt or tool change of its own beyond
   the restart a reload already is.
+- **What the tools list says is the same.** In a chat's tools list (the setup card's Tools group), each
+  of those tools names the same source with either owner: `mode` for `align`, `vis_guide`,
+  `create_guide` and a project or personal mode's tool, never the name of Sova's own module.
 - **Flipping loses nothing.** Both read and write the same saved state: each chat's `mode` entries,
   its project modes' saved copies, its alignments, `mode.json` and the mode settings files. A chat
   reopened after a flip, either way, has the same modes on, the same alignments and the same

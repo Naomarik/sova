@@ -184,7 +184,8 @@
    "outreach": "attention",
    "voice": "computers",
    "experimental": "computers",
-   "mcp-servers": "tools"
+   "mcp-servers": "tools",
+   "extensions": "extensions"
   },
   "definition": {
    "top.release": "releases",

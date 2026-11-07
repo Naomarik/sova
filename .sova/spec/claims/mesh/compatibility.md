@@ -155,6 +155,10 @@ until the developer declares the change one of two ways: compatible, with a note
 or breaking, with the number raised and the old format's code removed in the same change. Nothing
 classifies a change on its own.
 
+The `transcript` area's list of declared changes holds the `cards_changed` frame (§app.events/card-news) and
+the optional `id` on an extension's card raiser, declared compatible with the number kept: an older page has
+no case for the frame and passes over it, and it reads no such `id`.
+
 Saved samples of the current version of each area run through the page's own readers, and must keep
 displaying correctly, so a breaking change declared compatible is caught. Raising a number replaces
 its samples.

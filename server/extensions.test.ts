@@ -64,7 +64,6 @@ describe("manifest", () => {
       { id: ".." },
       { id: 7 },
       { dist: "relative/dist" },
-      { dist: undefined },
       { api: "http://example.com:80" },
       { api: "http://10.0.0.1:4840" },
       { api: "http://127.0.0.1.nip.io:4840" },

@@ -9,7 +9,8 @@ import { resolveSessionPath } from "./paths";
 import { readProject } from "./projects/spaces";
 import { answerCard, CardRefusal, extensionCardsTrust, ownerName, projectCards, sessionDrawingKind, raiseCard, runCardCommand, sessionCardsAt, sessionCardType, setCardState, setCardsTrusted } from "./transcript-cards";
 import { viewCodeAt, type Source } from "./card-views";
-import { EXTENSION_ID_RE, findExtension, isKeyFile } from "./extensions";
+import { codeStillApproved } from "./extension-loader";
+import { EXTENSION_ID_RE, findExtension, isKeyFile, listedExtension } from "./extensions";
 import { DRAWING_VIEW_FILE, DRAWINGS_DIR, PROJECT_OWNER } from "../shared/drawing-kinds";
 import { commandAudit } from "./command-audit";
 import { CARD_NAME_RE, CARDS_DIR, needsUpdatingText, TOOLKIT_VERSION, VIEW_FILE } from "../shared/transcript-cards";
@@ -71,7 +72,7 @@ async function callerOf(c: Context): Promise<{ raiser: CardRaiser; name: string;
   const token = c.req.header(TOKEN_HEADER);
   if (token === undefined) return { raiser: { kind: "script" }, name: "you", page: true };
   const ext = showsToken(token) ? null : extensionCaller(token);
-  if (ext) return { raiser: { kind: "extension", title: ext }, name: ext, page: false };
+  if (ext) return { raiser: { kind: "extension", id: ext, title: findExtension(ext)?.title?.trim() || ext }, name: ext, page: false };
   const caller = callerKeys.callerOf(c.req.header(CALLER_HEADER));
   if (caller.startsWith("chat:")) {
     const chat = caller.slice("chat:".length);
@@ -93,14 +94,51 @@ function viewSource(name: string, ext: { id: string; title: string; view?: strin
   const dot = name.lastIndexOf(".");
   if (ext) {
     const installed = findExtension(ext.id);
-    if (!installed) return { error: `${ext.title} is no longer installed.`, hash: "uninstalled" };
+    if (!installed) {
+      const l = listedExtension(ext.id);
+      if (!l) return { error: `${ext.title} is no longer installed.`, hash: "uninstalled" };
+      // A folder gone, waiting and the rest are its row's to explain.
+      return l.state === "off" ? { error: `${ext.title} is turned off.`, hash: "off" } : { error: `${ext.title} can't run right now. Settings → Extensions says why.`, hash: "blocked" };
+    }
     if (!ext.view) throw new CardRefusal(`${name} has no view.`, 400);
+    if (installed.changed) return changedView(ext.title);
+    if (!installed.dist) return { error: `${ext.title} has no page to draw this view from.`, hash: "no-page" };
     return { root: installed.dist, entry: ext.view, limits: { refuse: isKeyFile } };
   }
   const short = name.slice(dot + 1);
   if (name.slice(0, dot) !== PROJECT_OWNER || !CARD_NAME_RE.test(short)) throw new CardRefusal(`${name} isn't a project's view.`, 400);
   if (!checkout) return { error: "This chat has no checkout to build its view from.", hash: "no-checkout" };
   return { root: checkout, entry: entry(short) };
+}
+
+const changedView = (title: string) => ({ ok: false as const, error: `${title} changed and is waiting for your approval.`, hash: "changed" });
+
+/** The source now, or once it has one again: a page already told why it can't draw waits here, not in a tight loop. */
+async function sourceOrHold(make: () => Source | { error: string; hash: string }, have: string | undefined, wait: boolean, signal: AbortSignal): Promise<Source | { error: string; hash: string }> {
+  const end = Date.now() + VIEW_WAIT_MS;
+  let src = make();
+  while ("error" in src && wait && src.hash === have && !signal.aborted && Date.now() < end) {
+    await new Promise((r) => setTimeout(r, 1000));
+    src = make();
+  }
+  return src;
+}
+
+/** The builds of an extension's views already checked against what you approved. */
+const checkedBuilds = new Map<string, string>();
+
+/**
+ * An extension's build, only as long as it is what you approved. A save reaches this within a second, before
+ * the pass, so a build not yet seen reads the code folders afresh; one already checked walks nothing.
+ */
+async function approvedBuild<B extends { ok: boolean; hash: string }>(name: string, ext: { id: string; title: string } | undefined, build: B): Promise<B | ReturnType<typeof changedView>> {
+  if (!ext) return build;
+  if (findExtension(ext.id)?.changed) return changedView(ext.title);
+  const key = `${ext.id}\n${name}`;
+  if (!build.ok || checkedBuilds.get(key) === build.hash) return build;
+  if (!(await codeStillApproved(ext.id))) return changedView(ext.title);
+  checkedBuilds.set(key, build.hash);
+  return build;
 }
 
 export function registerTranscriptCardRoutes(app: Hono<any>): void {
@@ -116,10 +154,10 @@ export function registerTranscriptCardRoutes(app: Hono<any>): void {
       const { decl, checkout } = await sessionCardType(path, c.req.query("type"));
       if (decl.draws !== "view") throw new CardRefusal(`${decl.type} isn't a view.`, 400);
       if (decl.toolkit !== TOOLKIT_VERSION) return c.json({ ok: false, hash: `toolkit-${decl.toolkit}`, error: needsUpdatingText(decl.toolkit ?? 0), outdated: true }, 200, NO_STORE);
-      const src = viewSource(decl.type, decl.ext, checkout, (name) => `${CARDS_DIR}/${name}/${VIEW_FILE}`);
+      const src = await sourceOrHold(() => viewSource(decl.type, decl.ext, checkout, (name) => `${CARDS_DIR}/${name}/${VIEW_FILE}`), c.req.query("have"), c.req.query("wait") === "1", c.req.raw.signal);
       if ("error" in src) return c.json({ ok: false, hash: src.hash, error: src.error }, 200, NO_STORE);
       const build = await viewCodeAt(src, c.req.query("have") || null, c.req.query("wait") === "1" ? VIEW_WAIT_MS : 0, c.req.raw.signal);
-      return c.json(build, 200, NO_STORE);
+      return c.json(await approvedBuild(decl.type, decl.ext, build), 200, NO_STORE);
     }),
   );
   // A drawing kind's built view (§chat.transcript-cards/drawing-kinds), the way a card's view is
@@ -131,10 +169,10 @@ export function registerTranscriptCardRoutes(app: Hono<any>): void {
       const path = sessionPath(c.req.query("path"));
       const { decl, checkout } = await sessionDrawingKind(path, c.req.query("kind"));
       if (decl.toolkit !== TOOLKIT_VERSION) return c.json({ ok: false, hash: `toolkit-${decl.toolkit}`, error: needsUpdatingText(decl.toolkit), outdated: true }, 200, NO_STORE);
-      const src = viewSource(decl.kind, decl.ext, checkout, (name) => `${DRAWINGS_DIR}/${name}/${DRAWING_VIEW_FILE}`);
+      const src = await sourceOrHold(() => viewSource(decl.kind, decl.ext, checkout, (name) => `${DRAWINGS_DIR}/${name}/${DRAWING_VIEW_FILE}`), c.req.query("have"), c.req.query("wait") === "1", c.req.raw.signal);
       if ("error" in src) return c.json({ ok: false, hash: src.hash, error: src.error }, 200, NO_STORE);
       const build = await viewCodeAt(src, c.req.query("have") || null, c.req.query("wait") === "1" ? VIEW_WAIT_MS : 0, c.req.raw.signal);
-      return c.json(build, 200, NO_STORE);
+      return c.json(await approvedBuild(decl.kind, decl.ext, build), 200, NO_STORE);
     }),
   );
   // An extension's cards' trust, as its page shows it with Stop Trusting Cards (§chat.transcript-cards/trust).
@@ -211,7 +249,7 @@ export function registerTranscriptCardRoutes(app: Hono<any>): void {
       if (b.sent !== undefined && typeof b.sent !== "boolean") throw new CardRefusal("sent is true or false", 400);
       if (typeof b.card !== "string") throw new CardRefusal("card must be a string naming a card of the session (cd_N)", 400);
       const who = await callerOf(c);
-      const card = await answerCard({ path, card: b.card, answer: b.answer, by: who.name, via: b.sent === true ? "send" : "at-once" });
+      const card = await answerCard({ path, card: b.card, answer: b.answer, by: who.name, via: b.sent === true ? "send" : "at-once", ...(who.raiser.kind === "extension" ? { extensionKey: who.name } : {}) });
       return c.json({ card }, 200, NO_STORE);
     }),
   );

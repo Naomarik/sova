@@ -174,7 +174,9 @@
       "shared/protocol.ts",
       "src/components/ModeMenu.tsx",
       "src/lib/mode-menu.ts",
-      "src/lib/mode-menu-actions.test.ts"
+      "src/lib/mode-menu-actions.test.ts",
+      "server/harness/pi/modes-project-tools-worker.ts",
+      "server/modes/personal-worker-root.integration.test.ts"
     ],
     "evidence": "verified"
   },
@@ -275,9 +277,9 @@
     ],
     "authority": "accepted",
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-05T03:06Z",
-      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
+      "by": "user",
+      "at": "2026-11-06T21:56Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
     },
     "code": [
       "pi-config/extensions/mode/project-tools.ts",
@@ -447,7 +449,11 @@
       "server/modes/golden/cases/w05-delegate-align-worker.json",
       "server/modes/golden/cases/w06-claude-worker.json",
       "server/modes/golden/cases/w07-tree-config-bare.json",
-      "server/modes/golden/cases/w08-tree-config-mode.json"
+      "server/modes/golden/cases/w08-tree-config-mode.json",
+      "server/chat-runtime/warm-modes.test.ts",
+      "server/harness/pi/session.ts",
+      "server/harness/pi/session.test.ts",
+      "server/modes/tool-source-word.test.ts"
     ],
     "evidence": "verified"
   },
@@ -607,7 +613,8 @@
       "pi-config/extensions/sessions/test.mjs",
       "server/insights-workers.test.ts",
       "server/insights-restored.test.ts",
-      "pi-config/extensions/mode/project-tools-worker.ts"
+      "pi-config/extensions/mode/project-tools-worker.ts",
+      "server/team-member-tools.test.ts"
     ],
     "agreed": {
       "by": "naomarik",

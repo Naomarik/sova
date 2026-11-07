@@ -374,6 +374,8 @@ export function classifyRequest(method: string, pathname: string): Classified {
     return { need: "full", rule: "default" };
   }
   if (path === MODE_COMMAND_PATH) return { need: "full", rule: "full:mode-command" };
+  // Settings → Extensions: every entry names its folder and commands, and a change is your own page's. GET /api/extensions itself stays a read.
+  if (path.startsWith("/api/extensions/")) return { need: "full", rule: "full:extensions-loader" };
   if (path === "/api/tours" || path.startsWith("/api/tours/")) return tourRequest(method, path);
   const read = method === "GET" || method === "HEAD";
   if (PROJECT_DRAFT_SPECS_RE.test(path)) return { need: "full", rule: "full:project-draft-specs" };

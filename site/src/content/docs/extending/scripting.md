@@ -88,8 +88,8 @@ refuses, since Sova never writes to a session a terminal holds.
 ## Raise a card
 
 `session.card.post` puts a [card](/docs/extending/card-types/) in a chat, so your script can ask a question
-and read the answer with `session.card.get`. It takes a type in that chat's set, and it's refused
-while an alignment question is open. The card says who raised it: "From a script".
+and read the answer with `session.card.get`. It takes a type in that chat's set, and an open alignment
+question doesn't stop it. The card says who raised it: "From a script".
 
 ## Who ran what
 

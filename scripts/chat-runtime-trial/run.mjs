@@ -4088,7 +4088,7 @@ async function jobWakesWorker(name, idleMs) {
   // cleared. With short idle times its process then stops: a prompt sent as it stops reaches nobody, so wait
   // for the stop and open the chat again, as tj3 does.
   const parentReplied = () => entries(a.path).some((e) => e.type === "message" && e.message?.role === "assistant" && fullText(e).includes(reply));
-  await wakeWait(parentReplied, 60000);
+  if (asksWith(reply).length > 0) await wakeWait(parentReplied, 60000);
   await mock.plain("");
   if (idleMs < 30000) {
     await wakeWait(() => !chatPid(a.path), 30000);

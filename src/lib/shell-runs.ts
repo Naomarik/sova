@@ -133,8 +133,6 @@ export function lastLine(output: string): string {
 /** What a card draws, from a live run or a saved row. */
 export interface ShellCardData extends ShellRowInfo {
   running: boolean;
-  /** How long it ran, start to end, when the run says. */
-  durationMs?: number;
 }
 
 export const cardOfRun = (r: ShellRun): ShellCardData => ({ ...r, running: r.state === "running" });
@@ -144,7 +142,10 @@ export const cardOfRow = (row: ShellRowInfo): ShellCardData => ({ ...row, runnin
 export function shellStatus(c: ShellCardData): { word: string; tone: "live" | "error" | "plain" } {
   if (c.running) return { word: "Running", tone: "live" };
   if (c.cancelled && c.cancelReason === "limit") return { word: LIMIT_WORD, tone: "error" };
-  if (c.cancelled) return { word: c.cancelReason === "closed" ? "Stopped when the chat closed" : "Stopped by you", tone: "plain" };
+  if (c.cancelled && c.cancelReason === "closed") return { word: "Stopped when the chat closed", tone: "plain" };
+  // Stopped from outside this page (a script, a chat, the Overseer through Stop Command): no "by you".
+  if (c.cancelled && c.cancelReason === "other") return { word: "Stopped", tone: "plain" };
+  if (c.cancelled) return { word: "Stopped by you", tone: "plain" };
   if (c.exitCode !== undefined) return { word: `Exit ${c.exitCode}`, tone: c.exitCode === 0 ? "plain" : "error" };
   return { word: "Ended", tone: "plain" };
 }

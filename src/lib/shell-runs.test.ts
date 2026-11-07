@@ -53,6 +53,10 @@ test("Stop from the floating card sends one shell_stop and waits for that comman
   assert.equal(stopRun(new Set(), "s3", () => false).size, 0);
 });
 
+test("a command stopped from outside the page reads plain Stopped, never by you", () => {
+  assert.deepEqual(shellStatus(cardOfRow({ command: "x", output: "", cancelled: true, cancelReason: "other" })), { word: "Stopped", tone: "plain" });
+});
+
 test("a command Sova stopped at the output limit says so, in the error tone", () => {
   assert.deepEqual(shellStatus(cardOfRow({ command: "yes", output: "y", cancelled: true, cancelReason: "limit" })), { word: "Stopped at the 1 GB output limit", tone: "error" });
 });

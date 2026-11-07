@@ -1647,6 +1647,12 @@ export const mergeCodingWorktree = (projectId: string, sessionId: string) =>
   request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));
 export const removeCodingWorktree = (projectId: string, sessionId: string) =>
   request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId }));
+/** Why Remove Worktree would keep the folder, and what Remove Anyway would delete (§chat.worktrees/leftovers). */
+export const codingWorktreeHold = (projectId: string, sessionId: string) =>
+  request<import("../../shared/protocol").CodingWorktreeHold>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId, dryRun: true }));
+/** Remove Anyway: removed only while the folder holds exactly the listing confirmed (its digest). */
+export const removeCodingWorktreeAnyway = (projectId: string, sessionId: string, digest: string) =>
+  request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId, digest }));
 
 // ---- voice input (§chat/voice, §app.settings-dialog/voice) ---------------------------------------
 

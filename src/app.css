@@ -1162,6 +1162,9 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .worktree-cleanup-path { font-family: var(--font-mono); font-size: var(--fs-mono); overflow-wrap: anywhere; color: var(--color-ink); }
 /* Remove Anyway (§chat.worktrees/cleanup): the kept row's action, and the listing's file lists (scroll past ~12 rows). */
 .worktree-cleanup-anyway { align-self: flex-start; margin-top: var(--space-1); }
+.remove-anyway-listing { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.remove-anyway-listing section { display: flex; flex-direction: column; gap: var(--space-2); }
+.remove-anyway-listing h3 { margin: 0; }
 .worktree-cleanup-files { list-style: none; margin: 0; padding: 0; max-height: 16rem; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
 .worktree-cleanup-files code { font-family: var(--font-mono); font-size: var(--fs-mono); overflow-wrap: anywhere; color: var(--color-ink); }
 /* After the first message: the thread's muted profile row, the head chip and its popover. */

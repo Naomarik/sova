@@ -3233,6 +3233,12 @@ export interface WorktreeCleanupRemoved {
   kind: "ancestor" | "content" | "empty";
   branchDeleted: boolean;
 }
+/** POST /api/projects/:pid/overseer/worktrees/remove {dryRun: true}: why Remove Worktree keeps a coding
+    session's folder (null: it may go), and, when what it holds is the reason, what Remove Anyway would delete. */
+export interface CodingWorktreeHold {
+  reason: string | null;
+  removeAnyway?: WorktreeRemoveAnyway;
+}
 /** A worktree that stays, and the one reason why. */
 export interface WorktreeCleanupKept {
   path: string;

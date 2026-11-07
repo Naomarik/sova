@@ -92,4 +92,14 @@ describe("POST /api/worktrees/cleanup", () => {
     assert.equal(body.yourClick, true);
     assert.match(body.error!, /Ask them to press Remove Anyway in Clean Up Merged\. Nothing was deleted\./);
   });
+
+  test("the project page's Remove Anyway: a digest from anything but the user's page is refused, and dryRun with a digest is a 400", async () => {
+    const url = "/api/projects/p-none/overseer/worktrees/remove";
+    const [s400, b400] = await post(url, { sessionId: "s", dryRun: true, digest: "abcdef0123" });
+    assert.equal(s400, 400, JSON.stringify(b400));
+    const [status, body] = await post(url, { sessionId: "s", digest: "abcdef0123" });
+    assert.equal(status, 403, JSON.stringify(body));
+    assert.equal(body.yourClick, true);
+    assert.match(body.error!, /Ask them to press Remove Anyway on the project page\. Nothing was deleted\./);
+  });
 });

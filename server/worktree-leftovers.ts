@@ -11,6 +11,7 @@
 import { createHash } from "node:crypto";
 import { lstat, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { WorktreeRemoveAnyway } from "../shared/protocol";
 import { execGit, type GitRunner } from "./worktrees";
 
 /** Dependency and build-output folders and caches: deleted with the tree, rebuilt on demand. */
@@ -300,3 +301,20 @@ export function leftoversReason(l: Leftovers): string | null {
   if (!ig.length && !l.nested.length) return `${parts[0]}.`;
   return `Holds what can't be rebuilt: ${parts.join("; ")}.`;
 }
+
+/** Remove Anyway's listing of a tree kept only for what it holds: each list's first entries, the exact counts, the digest. */
+export const REMOVE_ANYWAY_LIST = 500;
+export function removeAnywayOf(l: Leftovers): WorktreeRemoveAnyway {
+  const cap = <T,>(xs: T[]): T[] => xs.slice(0, REMOVE_ANYWAY_LIST);
+  return {
+    uncommitted: cap(l.dirty),
+    ignored: cap(l.ignored),
+    nested: cap(l.nested).map((n) => ({ path: n.path, kind: n.kind, ...(n.of ? { of: n.of } : {}) })),
+    rebuildable: cap(l.rebuildable),
+    counts: { uncommitted: l.dirty.length, ignored: l.ignored.length, nested: l.nested.length, rebuildable: l.rebuildable.length },
+    digest: leftoversDigest(l),
+  };
+}
+
+/** A read that threw, as a Leftovers that keeps the tree. */
+export const unreadableLeftovers = (err: Error): Leftovers => ({ dirty: [], ignored: [], nested: [], rebuildable: [], unreadable: `Its files couldn't be read: ${err.message}` });

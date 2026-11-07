@@ -19,7 +19,7 @@ import { readdir, readFile, readlink, stat } from "node:fs/promises";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import type { SessionSummary, WorktreeCleanupKept, WorktreeCleanupPlan, WorktreeCleanupRemoved, WorktreeCleanupResult, WorktreeRemoveAnyway, WorktreesSummary } from "../shared/protocol";
+import type { SessionSummary, WorktreeCleanupKept, WorktreeCleanupPlan, WorktreeCleanupRemoved, WorktreeCleanupResult, WorktreesSummary } from "../shared/protocol";
 import { runGit } from "../pi-config/extensions/worktrees/git.ts";
 import { canonical, isWithin, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
 import { readStoredCwd } from "./git-summary";
@@ -30,7 +30,8 @@ import { appendLedger, mergedByContent, resetContentMerges, type RemovedWorktree
 import { sandboxInfo } from "./sandbox-state";
 import { parseTargetCwd } from "./targets";
 import { worktreesOf } from "./worktrees-state";
-import { leftovers, leftoversDigest, leftoversReason, type Leftovers } from "./worktree-leftovers";
+import { leftovers, leftoversDigest, leftoversReason, removeAnywayOf, type Leftovers } from "./worktree-leftovers";
+export { REMOVE_ANYWAY_LIST, removeAnywayOf } from "./worktree-leftovers";
 import { execGit, type GitResult, type GitRunner } from "./worktrees";
 
 /** How long a count stands while git's list of worktrees doesn't change. */
@@ -506,20 +507,6 @@ export async function assess(t: ClassifiedTree, use: UseFacts, procs: readonly P
 /** Why a merged or empty tree must stay, or null when it may go. */
 export async function refusal(t: ClassifiedTree, use: UseFacts, procs: readonly ProcFacts[]): Promise<string | null> {
   return (await assess(t, use, procs)).why;
-}
-
-/** Remove Anyway's listing of a tree kept only for what it holds: each list's first entries, the exact counts, the digest. */
-export const REMOVE_ANYWAY_LIST = 500;
-export function removeAnywayOf(l: Leftovers): WorktreeRemoveAnyway {
-  const cap = <T,>(xs: T[]): T[] => xs.slice(0, REMOVE_ANYWAY_LIST);
-  return {
-    uncommitted: cap(l.dirty),
-    ignored: cap(l.ignored),
-    nested: cap(l.nested).map((n) => ({ path: n.path, kind: n.kind, ...(n.of ? { of: n.of } : {}) })),
-    rebuildable: cap(l.rebuildable),
-    counts: { uncommitted: l.dirty.length, ignored: l.ignored.length, nested: l.nested.length, rebuildable: l.rebuildable.length },
-    digest: leftoversDigest(l),
-  };
 }
 
 // --- dry run and removal -----------------------------------------------------------------------

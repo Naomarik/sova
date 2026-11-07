@@ -5,23 +5,20 @@ import { fetchWorktreesSummary, previewWorktreeCleanup, removeWorktreeAnyway, re
 import { tildePath } from "../lib/format";
 import { announce, home, toast } from "../lib/ui-state";
 import {
-  anywayBody,
   anywayDone,
-  anywayHeading,
   anywayLabel,
-  anywayMore,
   anywayTitle,
   branchFate,
   confirmBody,
   confirmTitle,
   doneText,
   doneTitle,
-  nestedLine,
   offersCleanup,
   removeLabel,
   showsLine,
   summaryLine,
 } from "../lib/worktree-cleanup";
+import { RemoveAnywayListing } from "./RemoveAnywayListing";
 import { trapFocus } from "./ui";
 
 /**
@@ -126,21 +123,6 @@ function KeptRows(props: { rows: WorktreeCleanupKept[]; home: string | null; onA
   );
 }
 
-/** One of Remove Anyway's lists: its heading with the exact total, its rows, and how many more weren't sent. */
-function AnywayList(props: { label: string; rows: string[]; total: number }) {
-  return (
-    <Show when={props.total > 0}>
-      <section aria-label={anywayHeading(props.label, props.total)}>
-        <h3 class="text-eyebrow">{anywayHeading(props.label, props.total)}</h3>
-        <ul class="worktree-cleanup-files">
-          <For each={props.rows}>{(f) => <li><code>{f}</code></li>}</For>
-        </ul>
-        <Show when={anywayMore(props.rows.length, props.total)}>{(m) => <p class="text-caption text-muted">{m()}</p>}</Show>
-      </section>
-    </Show>
-  );
-}
-
 /** The dry run's confirm; after it, the result in the same place until closed. */
 function CleanupDialog(props: { path: string; plan: WorktreeCleanupPlan; onClose(attempted: boolean): void }) {
   const [pending, setPending] = createSignal(false);
@@ -240,26 +222,7 @@ function CleanupDialog(props: { path: string; plan: WorktreeCleanupPlan; onClose
           <Show when={anyway()?.removeAnyway}>
             {(a) => (
               <>
-                <p class="message-text">{anywayBody(a())}</p>
-                <AnywayList label="Uncommitted" rows={a().uncommitted} total={a().counts.uncommitted} />
-                <AnywayList label="Ignored, not rebuildable" rows={a().ignored} total={a().counts.ignored} />
-                <Show when={a().counts.nested > 0}>
-                  <section aria-label={anywayHeading("Nested repositories", a().counts.nested)}>
-                    <h3 class="text-eyebrow">{anywayHeading("Nested repositories", a().counts.nested)}</h3>
-                    <ul class="worktree-cleanup-list">
-                      <For each={a().nested}>
-                        {(r) => (
-                          <li>
-                            <code class="worktree-cleanup-path">{r.path}</code>
-                            <span class="text-caption text-muted">{nestedLine(r.of ? { ...r, of: tildePath(r.of, homeDir()) } : r)}</span>
-                          </li>
-                        )}
-                      </For>
-                    </ul>
-                    <Show when={anywayMore(a().nested.length, a().counts.nested)}>{(m) => <p class="text-caption text-muted">{m()}</p>}</Show>
-                  </section>
-                </Show>
-                <AnywayList label="Rebuildable, also goes" rows={a().rebuildable} total={a().counts.rebuildable} />
+                <RemoveAnywayListing listing={a()} home={homeDir()} />
               </>
             )}
           </Show>

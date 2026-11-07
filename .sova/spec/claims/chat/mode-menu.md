@@ -274,9 +274,7 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
 not written. A chat this server doesn't hold open (one closed for being quiet,
 §app.chat-processes/idle-stop) is opened for it, as a send opens it; a session that can't open (a
 TUI holds it, its remote placeholder folder is gone) is refused with why (409), and a file that isn't there is a 404.
-A switch of a project's coding session whose minor modes leave `spec` out is refused before
-anything switches (409, "Spec is always on for coding sessions; it can't be turned off.",
-§app.project-overseer/coding-mode). The chat then:
+The chat then:
 
 - **Typed is the same switch.** `/mode normal`, `/mode delegate` or `/mode create` as a client's
   composer send, without images, is the menu's switch, with its refusals, and nothing reaches the model.
@@ -468,11 +466,12 @@ spec's block, from the parent's saved copy of it, with its tools when the worker
   (§tools.spec/writing-on-demand). Nothing else of the parent's mode reaches it: no
   Delegate block, no align block, no Delegate+align bridge, and never the spec-writer paragraph
   (a worker can't spawn one). With spec off the worker's prompt carries nothing from the mode.
-- **Not everyone.** A team's monitor (no `spec` tool and no file tools) gets no spec block. A worker on its
-  worktree's own agent dir (§chat.worktrees/worktree-config) gets none from the parent either: it
-  has spec always on, in its worker form (the same block and note, no writer paragraph), from Sova
-  while Sova runs chat modes, never from a copy of the mode extension in its tree, which it never
-  needs to start; with the switch off, from its tree's own mode extension, as before
+- **Not everyone.** A team's monitor (no `spec` tool and no file tools) gets no spec block.
+- **On its worktree's own agent dir.** A worker there (§chat.worktrees/worktree-config) follows the
+  chat that started it too: while that chat has spec on, it has spec in its worker form (the same
+  block and note, no writer paragraph); with spec off in that chat, its prompt carries nothing from
+  spec. The block comes from Sova while Sova runs chat modes, never from a copy of the mode extension
+  in its tree, which it never needs to start; with the switch off, from its tree's own mode extension
   (§chat.mode-menu/sova-runs-modes).
 - **A snapshot, taken at spawn.** The worker gets the modes the parent has when it starts; a
   later switch in the chat doesn't reach a running worker (§chat.mode-menu/how-a-switch-reaches-the-chat:

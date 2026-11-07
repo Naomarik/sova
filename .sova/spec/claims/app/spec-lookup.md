@@ -144,7 +144,7 @@ The cleaning happens in the look-up itself, so the chat never sees what it must 
 | Project Assistant | outsider view, per org project | yes | yes, each org project |
 | Project overseer | full view, its own project | no (reads files) | yes |
 | Global Overseer | full view, the project it names | no (reads files) | — |
-| Coding session | spec mode always on (§app.project-overseer/coding-mode) | — | — |
+| Coding session | no: the `spec` tool (below) | — | — |
 
 Every chat you code in, a coding session included, and every worker but a team's monitor has the
 coding agent's `spec` tool instead of `spec_lookup` (§app.spec-lookup/spec-tool), whatever its modes.

@@ -47,9 +47,9 @@
       "server/sova-modes-owner.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-05T05:46Z",
-      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
+      "by": "user",
+      "at": "2026-11-06T22:14Z",
+      "source": "pi-session:b406e4de-b015-4dbb-b201-14ab20b5da44#2b9be4c7"
     },
     "requires": [
       "§app.access/your-click",
@@ -617,9 +617,9 @@
       "server/team-member-tools.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-05T05:46Z",
-      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
+      "by": "user",
+      "at": "2026-11-06T22:14Z",
+      "source": "pi-session:b406e4de-b015-4dbb-b201-14ab20b5da44#2b9be4c7"
     }
   },
   "§chat/mode-menu": {

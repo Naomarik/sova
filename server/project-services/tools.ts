@@ -4,10 +4,11 @@ import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import type { HookCtx, ToolCtx, ToolSpec } from "../../shared/harness";
 import type { ClickChoice } from "../../shared/overseer-card";
-import { DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, MERGE_VERBS, RELEASE_VERBS, VERB_PARAMS, VERBS, type VerbParam, type VerbResult } from "../../shared/project-contract";
+import { DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, MERGE_READ_VERBS, MERGE_VERBS, READ_VERBS, RELEASE_READ_VERBS, RELEASE_VERBS, VERB_PARAMS, VERBS, type VerbParam, type VerbResult } from "../../shared/project-contract";
 import { redactingTool, serverRedactor, type Redactor } from "../overseer-redact";
 import { toPiTool } from "../harness/pi/tools";
-import { WORKTREES } from "../harness/state-kinds";
+import { PROFILE, WORKTREES } from "../harness/state-kinds";
+import { queueChatRole } from "../../shared/merge-queue";
 import { stateView } from "../harness/state-view";
 import { projectRootOf } from "../project-root";
 import type { Caller, CopyApproval, CreatorWorking, ProjectEngine, VerbAct } from "./engine";
@@ -346,9 +347,17 @@ export function projectVerbsExtension(engine: () => ProjectEngine) {
 /** The session's own instance note now: what the server renders for a chat in its own process. */
 export const sessionInstanceNote = (engine: () => ProjectEngine, ctx: HookCtx): Promise<string | null> => sessionNote(engine, ownCheckouts, ctx);
 
-/** An ordinary session's `project_verbs`: its own worktrees' running instances. */
+/** What a merge reviewer may call: the reads, and its verdict. It runs nothing (a project's `test` would run the
+    branch's code), so every other verb is refused. */
+export const REVIEWER_TOOL_VERBS: readonly string[] = [...READ_VERBS, ...DEPLOY_READ_VERBS, ...MERGE_READ_VERBS, ...RELEASE_READ_VERBS, "merge.review"];
+export const REVIEWER_VERB_REFUSAL = "A merge reviewer only reads: it may call status, logs, doctor, the merge, release and deploy reads, and merge.review.";
+
+/** The session is a merge reviewer: its profile record names Sova's `merge-reviewer` (never its title). */
+export const isReviewerSession = (ctx: ToolCtx | undefined): boolean => queueChatRole(ctx?.state().latest(PROFILE)?.data?.profile) === "reviewer";
+
+/** An ordinary session's `project_verbs`: its own worktrees' running instances; a merge reviewer's reads and verdict only. */
 export function sessionVerbsTool(engine: () => ProjectEngine): Tool {
-  return projectVerbsTool({
+  const t = projectVerbsTool({
     name: "project_verbs",
     label: "Project verbs",
     description:
@@ -372,6 +381,14 @@ export function sessionVerbsTool(engine: () => ProjectEngine): Tool {
       return { kind: "session", id: ctx?.sessionId ?? "unknown", root: cwd ? await projectRootOf(cwd) : null, own: await ownCheckouts(ctx) };
     },
   });
+  const exec = t.execute as unknown as LooseExec;
+  const execute: LooseExec = async (id, params, signal, onUpdate, ctx) => {
+    if (isReviewerSession(ctx as ToolCtx | undefined) && !REVIEWER_TOOL_VERBS.includes(String(params?.verb))) {
+      return { content: [{ type: "text" as const, text: `forbidden: ${REVIEWER_VERB_REFUSAL}` }], details: { v: 1, result: { ok: false, changed: false, error: { code: "forbidden", message: REVIEWER_VERB_REFUSAL } } } };
+    }
+    return exec(id, params, signal, onUpdate, ctx);
+  };
+  return { ...t, execute: execute as unknown as Tool["execute"] };
 }
 
 // ---- the Overseers' tool ---------------------------------------------------------------------------

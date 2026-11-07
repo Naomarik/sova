@@ -869,6 +869,14 @@ export function workerBuild(w: WorkerSpec, path: string): PiBuild {
     },
     flags: () => ({ extra: w.flags }),
     exclude: () => (w.builtins === null ? [] : WORKER_BUILTIN_TOOLS.filter((t) => !w.builtins!.includes(t))),
+    // Its listed built-ins on: excluding the rest only filters pi's default set (read, bash, edit, write), so a
+    // listed grep, find or ls would otherwise never be active.
+    built: (session) => {
+      if (w.builtins === null) return;
+      const active = session.activeTools();
+      const missing = w.builtins.filter((t) => WORKER_BUILTIN_TOOLS.includes(t) && !active.includes(t));
+      if (missing.length) session.setActiveTools([...active, ...missing]);
+    },
     // A worker trusts its project's local files as every Sova chat does.
     opening: () => ({
       ...(w.model ? { model: w.model } : {}),
@@ -4613,7 +4621,10 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
   const build = async ({ cwd, read }: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
     // A worker chat (§app.chat-processes/workers) is its loadout and nothing else, its messages labelled
     // with the keys of the sends they came from (§app.chat-processes/worker-instructions).
-    if (worker) return { ...workerBuild(worker, path), built: (session) => sendKeys.watch(session) };
+    if (worker) {
+      const b = workerBuild(worker, path);
+      return { ...b, built: (session) => (sendKeys.watch(session), b.built?.(session)) };
+    }
     if (!launch.recorded) {
       const now = alignLaunchOf(read.state);
       if (now.recorded || launch.data === null) Object.assign(launch, now);

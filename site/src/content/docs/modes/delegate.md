@@ -124,7 +124,7 @@ with its transcript and its spend, but not running.
 ## Strict
 
 With the chat's **strict** flag on, Delegate also takes the agent's `edit` and `write` tools away;
-`bash` and every other tool stay. Set it in a terminal with `/mode strict on`; the mode menu shows
+`bash` and every other tool stay. Set it by typing `/mode strict on` in the chat; the mode menu shows
 it read-only. See [strict](/docs/modes/#strict).
 
 ## Where Delegate isn't available

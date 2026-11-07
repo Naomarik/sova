@@ -752,3 +752,28 @@ describe("every failing run under the Land counts its try", () => {
     }
   });
 });
+
+describe("a failure counts its try once", () => {
+  for (const how of ["the thread's try-again", "merge.retry"] as const) {
+    test(`${how} over a failure waiting for the thread's diagnosis doesn't count it again`, async () => {
+      const { k } = standingKit({ thread: (ev) => ev.kind === "failed" });
+      try {
+        let runs = 0;
+        k.run.set((inp) => (++runs === 1 ? { verdict: "failed", blame: "branch", why: "unit tests failed" } : untilAborted(inp)));
+        const q = await k.q();
+        k.repo.branch(`feat/once-${how.length}`, { "o.txt": "o\n" });
+        const { entry } = await q.add({ branch: `feat/once-${how.length}`, by: "land-button", session: "s1" });
+        await until(async () => (await k.entry(entry.id)).ruling?.pending, "waits for the diagnosis");
+        assert.equal((await k.entry(entry.id)).tries?.used, 1, "counted at the failure");
+        if (how === "merge.retry") await q.retry(entry.id);
+        else await q.rule(entry.id, { ruling: "try-again", text: "flaky: rerun" });
+        const e = await k.entry(entry.id);
+        assert.equal(e.tries?.used, 1, "not counted a second time");
+        assert.equal(e.tries?.fingerprints.length, 1, "no retry fingerprint to stop on");
+        assert.ok(e.state === "queued" || e.state === "checking", e.state);
+      } finally {
+        await k.done();
+      }
+    });
+  }
+});

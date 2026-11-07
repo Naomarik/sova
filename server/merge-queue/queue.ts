@@ -1564,8 +1564,9 @@ export class ProjectQueue {
             this.toFront(e);
             this.kickSoon();
           } else if (e.state === "with-chat") {
-            const t = this.countTry(e, `retry:${this.now()}`);
-            if (t.out) {
+            // A failure waiting for the thread's diagnosis counted its try already (awaitDiagnosis): never twice.
+            const t = e.ruling?.pending?.counted ? { tries: e.ruling.pending.counted.tries, max: e.ruling.pending.counted.max } : this.countTry(e, `retry:${this.now()}`);
+            if ("out" in t && t.out) {
               this.outOfTries(e, `tried ${t.tries} times`);
               break;
             }
@@ -2494,7 +2495,8 @@ export class ProjectQueue {
           const whose = WAITING_FOR_USER.includes(e.state) ? "it waits for the user's decision" : e.state === "needs-fix" ? "it is out of tries or its Land no longer stands: only the user's Land puts it back" : e.state === "cancelled" ? "the user removed it" : `it is ${e.state}`;
           throw new MergeFailure("invalid-request", `${e.branch} can't be retried: ${whose}`);
         }
-        if (e.state === "with-chat") {
+        // A failure waiting for the thread's diagnosis counted its try already (awaitDiagnosis): never twice.
+        if (e.state === "with-chat" && !e.ruling?.pending?.counted) {
           const t = this.countTry(e, `retry:${this.now()}`);
           if (t.out) {
             this.outOfTries(e, `Tried ${t.tries} times: ${e.reason ?? "it failed each time"}`);

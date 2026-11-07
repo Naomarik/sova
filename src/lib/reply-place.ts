@@ -33,6 +33,9 @@ export interface ReplyPlace {
   added?(entryId: string): SlotState | undefined;
   /** Run a chip's declared action for that entry; resolves to null, or what went wrong. */
   runChip?(chip: ReplyChip, entryId: string): Promise<string | null>;
+  /** The chat's session id, for what extensions add to a message's menu (lib/message-menu): null
+      for another host's chat, or before the id is known. Absent: none add to it. */
+  menuSession?(): string | null;
 }
 
 /** The strip's buttons: every built-in's, in order. */
@@ -141,6 +144,8 @@ export function createReplyAdditions(opts: {
 
   return {
     added: (entryId: string): SlotState | undefined => byEntry()?.get(entryId),
+    /** The session an extension may be told about: this host's chat only, once its id is known. */
+    session: (): string | null => (opts.local() && opts.session()) || null,
     /** POST /ext/<id>/api/commands/<action> with {session, entry}, then ask again. */
     async runChip(chip: ReplyChip, entryId: string): Promise<string | null> {
       const session = opts.session();

@@ -10,6 +10,7 @@ import type { MessageActionItem } from "../components/MessageActions";
 import type { CodingRow } from "./coding-worktrees";
 import { GROUP_MENU } from "./group-menu";
 import { MESSAGE_MENU } from "./message-menu";
+import type { MenuPlace } from "../../shared/extension-offers";
 import type { MenuDecl } from "./menu-place";
 import { PANE_MENU, type PaneMenuWiring } from "./pane-menu";
 import { SESSION_MENU, sessionArchiveRow } from "./session-menu";
@@ -60,7 +61,7 @@ const sessionMenu = (s = session()) => ({ session: s, ctx, archive: sessionArchi
 const groupMenu = (count = 2) => ({ group: { id: "g-1", name: "Work" } as SessionGroup, count, onChanged() {} });
 const w = { nameOf: () => "Tests", groupName: () => "Work", split: () => true, panes: () => [P], labelOf: () => null, running: () => false, href: () => "#", resize() {}, move() {}, focusPane() {}, rename() {}, detach() {}, promote() {} } as PaneMenuWiring;
 const item = (kind: MessageActionItem["kind"], reason: string | null = null): MessageActionItem => ({ kind, reason, run() {} });
-const reply = (reason: string | null = null) => ({ strip: { index: 3, entryId: "e1", role: "assistant" as const, text: "hi" }, items: [item("copy"), item("share"), item("regenerate", reason), item("fork")], copyPlain() {} });
+const reply = (reason: string | null = null) => ({ strip: { index: 3, entryId: "e1", role: "assistant" as const, text: "hi" }, items: [item("copy"), item("share"), item("regenerate", reason), item("fork")], copyPlain() {}, session: "s-1" });
 const worktree = { facts: { project: "p-1", row: { sessionId: "c-1", branch: "sova/x", target: "master", worktree: "/wt/x", head: "abc" } as CodingRow, title: "Fix it", gestures: { merge: "" as const, remove: "" as const }, queued: false, queue: undefined, working: false }, acts: { merge() {}, land() {}, remove() {} } };
 
 const PLACES: [string, MenuDecl<never>, unknown][] = [
@@ -76,6 +77,9 @@ test("every place's ⋯ and its right-click draw the same menu, named as its ⋯
     const menu = door(decl, subject as never);
     assert.equal(dots(decl, subject as never), menu, place);
     assert.ok(menu.startsWith(`<div class="model-menu-list" role="menu" aria-label="${decl.label(subject as never)}">`), `${place}: ${menu.slice(0, 90)}`);
+    // The ⋯ trigger carries the same name (the worktree row's "Actions · {title}" included).
+    const trigger = draw(() => solid.createComponent(PlaceMenu, { decl, subject, title: "Actions" } as never)).match(/<button [^>]*aria-haspopup="menu"[^>]*>/)![0];
+    assert.match(trigger, new RegExp(`aria-label="${esc(decl.label(subject as never))}"`), place);
   }
   // Named sections are groups; bare rows aren't; an empty section isn't drawn at all.
   assert.deepEqual([...door(SESSION_MENU, sessionMenu(session({ fixedName: "project-overseer" } as Partial<SessionSummary>))).matchAll(/role="group" aria-label="([^"]*)"/g)].map((m) => m[1]), ["Open", "Organize"]);
@@ -119,10 +123,20 @@ test("a list of rows in place of the menu's own: Move to Group…", () => {
   assert.match(html, /^<div class="model-menu-list" role="menu" aria-label="Move to group"><div class="model-menu-group" role="group" aria-label="Groups"><div class="list-group-label">Groups<\/div><div class="popover-item " role="menuitem" tabindex="0" aria-label="Take “Fix the build” out of its group" >/);
 });
 
-test("extension entries come after Sova's rows, only in a menu place and only for this host's thing", () => {
-  const ext: ExtensionInfo = { id: "t", title: "Tickets", status: "ok", offers: { commands: [{ name: "f", label: "File Issue", menu: "session" }] } };
-  const html = door(SESSION_MENU, sessionMenu(), null, [ext]);
-  assert.ok(html.indexOf("File Issue") > html.indexOf("Copy Path"));
-  assert.match(html, /aria-label="File Issue for “Fix the build” · From Tickets"/);
-  for (const [place, decl, subject] of PLACES.slice(1)) assert.equal(door(decl, subject as never, null, [ext]), door(decl, subject as never), `${place} is no menu place yet`);
+test("every menu draws its extension entries after all of Sova's rows, named for what it is about; another menu's, never", () => {
+  const ext = (menu: MenuPlace): ExtensionInfo => ({ id: "t", title: "Tickets", status: "ok", offers: { commands: [{ name: "f", label: "File Issue", menu }] } });
+  const about: Record<string, string> = { session: "“Fix the build”", group: "“Work”", pane: "“Tests”", message: "this reply", worktree: "“Fix it”" };
+  const added = '<div class="model-menu-group" role="group" aria-labelledby="…">';
+  for (const [place, decl, subject] of PLACES) {
+    const plain = door(decl, subject as never);
+    const html = door(decl, subject as never, null, [ext(place as MenuPlace)]);
+    // Sova's rows exactly as without extensions, then the extension's group, then the menu closes as before.
+    const at = html.indexOf(added);
+    assert.ok(at > 0, `${place} draws the extension's group`);
+    const head = html.slice(0, at);
+    assert.ok(plain.startsWith(head), place);
+    assert.ok(html.endsWith(plain.slice(head.length)), place);
+    assert.match(html.slice(head.length), new RegExp(`^${esc(added)}<div class="list-group-label" id="…">Tickets</div>[^]*aria-label="File Issue for ${esc(about[place]!)} · From Tickets"`), place);
+    for (const other of Object.keys(about).filter((p) => p !== place)) assert.equal(door(decl, subject as never, null, [ext(other as MenuPlace)]), plain, `${place} shows no ${other} entry`);
+  }
 });

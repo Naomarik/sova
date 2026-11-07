@@ -7,10 +7,10 @@
  *
  * A menu place is a menu that Sova's own rows and extensions both add to, the reply place's pattern
  * (src/lib/reply-place.ts) for a menu: Sova's rows first (trusted, interactive), then what
- * extensions add (data Sova draws: a label, a summary and a declared command, never markup). The one
- * menu place today is "session". An extension adds to it by declaring `"menu": "<place>"` on one
- * of its manifest `commands` (shared/extension-offers.ts MENU_PLACES); GET /api/extensions carries
- * it in `offers.commands`. The extension lane costs nothing beyond the list the page already polls:
+ * extensions add (data Sova draws: a label, a summary and a declared command, never markup). All
+ * five menus are menu places: "session", "group", "pane", "message" and "worktree". An extension
+ * adds to one by declaring `"menu": "<place>"` on one of its manifest `commands`
+ * (shared/extension-offers.ts MENU_PLACES); GET /api/extensions carries it in `offers.commands`. The extension lane costs nothing beyond the list the page already polls:
  * no request until a row runs, and none of its rows when no running extension declares one.
  */
 import type { ExtensionInfo } from "../../shared/protocol";
@@ -105,10 +105,12 @@ export const MENU_ROWS_MAX = 8;
 /** A running entry with no answer in this long tells the user its extension isn't answering. */
 export const MENU_RUN_TIMEOUT_MS = 10_000;
 
-/** Every label Sova's own items in the session menu can show: an extension entry may not take one,
-    so no row of an extension's reads as Sova's (the reply chips' rule). The session row menu's test
-    fails when a label it draws is missing here. */
-export const SESSION_MENU_NAMES: readonly string[] = [
+/** Every label Sova's own rows can show in any of the five menus, one list for all of them: an
+    extension entry may not take one in any menu, so no row of an extension's reads as Sova's (the
+    reply chips' rule). The tables' test fails when a label a table draws is missing here, or when one
+    here is no table's. Open Session stays reserved though the session menu no longer has it. */
+export const MENU_NAMES: readonly string[] = [
+  // a session's
   "Open Session",
   "Session Details",
   "Close Session Details",
@@ -120,21 +122,47 @@ export const SESSION_MENU_NAMES: readonly string[] = [
   "Archive",
   "Unarchive",
   "Copy Path",
+  // a group's (and Rename…)
+  "Open workspace",
+  "Delete group…",
+  // a pane's (and Rename…)
+  "Open",
+  "Wider",
+  "Narrower",
+  "Move Left",
+  "Move Right",
+  "Focus",
+  "Promote",
+  "Remove From Group",
+  "Eliminate",
+  // a message's
+  "Copy",
+  "Copy as Plain Text",
+  "Share From Here",
+  "Rewind…",
+  "Regenerate…",
+  "Fork From Here",
+  // a worktree row's
+  "Merge Branch",
+  "Land",
+  "Land This Commit Again",
+  "Land Newest Commit",
+  "Remove Worktree…",
 ];
 
 /** A label as the name check compares it: case, inner whitespace and a trailing ellipsis ignored. */
 export const menuName = (label: string): string => label.trim().replace(/\s+/g, " ").replace(/(…|\.\.\.)$/, "").trimEnd().toLowerCase();
 
-const SOVA_NAMES = new Set(SESSION_MENU_NAMES.map(menuName));
+const SOVA_NAMES = new Set(MENU_NAMES.map(menuName));
 
-/** Whether a label is one of Sova's own in the session menu. */
+/** Whether a label is one of Sova's own in any menu. */
 export const isSovaName = (label: string): boolean => SOVA_NAMES.has(menuName(label));
 
 /**
  * The groups extensions add to this menu: running extensions only (one whose backend is down adds
  * nothing until a later poll finds it up), in manifest order, each with its entries for `place` in
  * declared order, at most MENU_ROWS_MAX rows in all. An entry whose label is one of Sova's own
- * (SESSION_MENU_NAMES) is left out of the menu; the command itself stays. An extension with none
+ * (MENU_NAMES) is left out of the menu; the command itself stays. An extension with none
  * adds no group.
  */
 export function menuGroups(list: readonly ExtensionInfo[] | undefined, place: MenuPlace): MenuGroup[] {
@@ -177,8 +205,10 @@ export const entryTitle = (e: MenuEntry): string => `${e.label} · From ${e.exte
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
 /**
- * Run one extension entry: POST /ext/<id>/api/commands/<name> with its menu's payload ({session}),
- * through Sova's extension proxy (which takes Sova's token off), the path a reply chip's action
+ * Run one extension entry: POST /ext/<id>/api/commands/<name> with its menu's payload, as the
+ * place's declaration builds it (`MenuDecl.extensions.payload`: a session's `{session}`, a group's
+ * `{group}`, a pane's `{session}`, a message's `{session, entry}`, a worktree row's
+ * `{project, branch, session}`), sent as it is, through Sova's extension proxy (which takes Sova's token off), the path a reply chip's action
  * takes. Resolves to the sentence to tell the user; never throws. No answer within `timeoutMs`
  * (headers and body) is the same as no answer at all.
  */

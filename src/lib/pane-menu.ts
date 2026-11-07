@@ -5,6 +5,7 @@
 
 import { GROUP_LABEL_MAX, type SessionSummary } from "../../shared/protocol";
 import type { MenuAct, MenuDecl, MenuItem } from "./menu-place";
+import { hostOf } from "./mesh";
 import { quoted } from "./session-groups";
 
 /**
@@ -50,10 +51,12 @@ export interface PaneMenuSubject {
 /**
  * The rows, in their three groups: this member (its name), this pane (width, place, focus, open on
  * its own) and its membership — three separate words on purpose: Promote takes it out and opens
- * it, Eliminate takes it out and archives it, Remove From Group only takes it out.
+ * it, Eliminate takes it out and archives it, Remove From Group only takes it out. A menu place,
+ * for a pane whose session is on this host.
  */
 export const PANE_MENU: MenuDecl<PaneMenuSubject> = {
   label: ({ path, w }) => `Pane actions · ${w.nameOf(path)}`,
+  extensions: { place: "pane", payload: ({ path, summary }) => (hostOf(path) === null ? { session: summary.id } : null), name: ({ path, w }) => quoted(w.nameOf(path)) },
   table: ({ path, summary, w }) => {
     const name = w.nameOf(path);
     const group = quoted(w.groupName());

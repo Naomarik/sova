@@ -15,7 +15,7 @@ const solid = await import("solid-js");
 const { renderToString } = await import("solid-js/web");
 const { RowMenu } = await importSsr(new URL("../components/SessionRowMenu.tsx", import.meta.url), (s: string) => import.meta.resolve(s));
 const { ExtensionsContext } = await import("./reply-place");
-const { isSovaName, SESSION_MENU_NAMES } = await import("./menu-place");
+const { isSovaName, MENU_NAMES } = await import("./menu-place");
 const mesh = await import("./mesh");
 type ExtensionInfo = import("../../shared/protocol").ExtensionInfo;
 type BoardRow = import("./agents-board").BoardRow;
@@ -149,8 +149,8 @@ test("every label Sova's own items draw is one an extension entry may not take",
   const want = JSON.parse(readFileSync(SNAPSHOT, "utf8")) as Record<string, string>;
   const drawn = new Set(Object.values(want).flatMap(labels));
   assert.ok(drawn.has("Close Session Details") && drawn.has("Unarchive"), "the snapshot cases draw both forms of the switching items");
-  for (const label of drawn) assert.ok(isSovaName(label!), `${label} is in SESSION_MENU_NAMES`);
-  assert.equal(new Set(SESSION_MENU_NAMES).size, SESSION_MENU_NAMES.length);
+  for (const label of drawn) assert.ok(isSovaName(label!), `${label} is in MENU_NAMES`);
+  assert.equal(new Set(MENU_NAMES).size, MENU_NAMES.length);
 });
 
 test("an extension entry named like one of Sova's items is left out of the menu", () => {
@@ -158,7 +158,7 @@ test("an extension entry named like one of Sova's items is left out of the menu"
     id: "imit",
     title: "Imit",
     status: "ok",
-    offers: { commands: [...SESSION_MENU_NAMES.map((label, i) => ({ name: `c${i}`, label, menu: "session" as const })), { name: "ok", label: "Real One", menu: "session" }] },
+    offers: { commands: [...MENU_NAMES.map((label: string, i: number) => ({ name: `c${i}`, label, menu: "session" as const })), { name: "ok", label: "Real One", menu: "session" }] },
   };
   const html = drawMenu(CASES.plain!, [imitators]);
   assert.deepEqual(labels(html).slice(-2), ["Copy Path", "Real One"]);

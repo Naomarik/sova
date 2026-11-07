@@ -8,6 +8,8 @@ import type { WorktreeQueueInfo } from "../../shared/merge-queue";
 import type { CodingRow, Gate } from "./coding-worktrees";
 import { entryLandBlock, landAgainItem, landThisAgainOf } from "./merge-queue";
 import type { MenuDecl, MenuItem } from "./menu-place";
+import { projectHostOf } from "./mesh";
+import { quoted } from "./session-groups";
 
 /** What the row's menu reads: the row, its gestures (lib/coding-worktrees `rowGestures`), the queue. */
 export interface WorktreeMenuFacts {
@@ -37,8 +39,14 @@ export interface WorktreeMenuActs {
 /** The row has a menu at all: neither gesture offered, no ⋯ and no right-click menu. */
 export const worktreeMenuOffered = (g: WorktreeMenuFacts["gestures"]) => g.merge !== false || g.remove !== false;
 
+/** A menu place, for a row of this host's project that has a branch. */
 export const WORKTREE_MENU: MenuDecl<{ facts: WorktreeMenuFacts; acts: WorktreeMenuActs }> = {
   label: ({ facts }) => `Actions · ${facts.title}`,
+  extensions: {
+    place: "worktree",
+    payload: ({ facts: f }) => (projectHostOf(f.project) === null && f.row.branch ? { project: f.project, branch: f.row.branch, session: f.row.sessionId } : null),
+    name: ({ facts }) => quoted(facts.title),
+  },
   table: ({ facts: f, acts }) => {
     const { row, gestures: g, working } = f;
     const rows: MenuItem[] = [];

@@ -16,9 +16,11 @@ export interface GroupMenuSubject {
   onChanged(): void;
 }
 
-/** Open workspace, Rename…, Delete group…, as bare rows: one question at a time, in the menu the press came from. */
+/** Open workspace, Rename…, Delete group…, as bare rows: one question at a time, in the menu the press came from.
+    A menu place, for every group: a group is this computer's own, even one holding another computer's sessions. */
 export const GROUP_MENU: MenuDecl<GroupMenuSubject> = {
   label: ({ group }) => `Group actions · ${group.name}`,
+  extensions: { place: "group", payload: ({ group }) => ({ group: group.id }), name: ({ group }) => quoted(group.name) },
   table: ({ group: g, count, onChanged }) => {
     const name = quoted(g.name);
     return [

@@ -12,16 +12,24 @@ import { ACTION_CONFIRM, ACTION_ICON, ACTION_LABEL, COPY_PLAIN, MENU_LABEL, type
 import { builtInItems, type ReplyPlace } from "./reply-place";
 import { copyText } from "./ui-state";
 
-/** What a message's menu is about: its strip, the strip's items as they are now, and Copy as Plain Text. */
+/** What a message's menu is about: its strip, the strip's items as they are now, Copy as Plain Text,
+    and its chat's session id for extensions (null: another host's chat, or not known yet). */
 export interface MessageMenuSubject {
   strip: MessageStrip;
   items: readonly MessageActionItem[];
   copyPlain(): unknown;
+  session: string | null;
 }
 
-/** The copy and share rows, then, past a divider, the ones that change the branch or fork it. */
+/** The copy and share rows, then, past a divider, the ones that change the branch or fork it. A
+    menu place, yours and a reply alike, for a chat on this host once its session id is known. */
 export const MESSAGE_MENU: MenuDecl<MessageMenuSubject> = {
   label: ({ strip }) => stripLabel(strip.role),
+  extensions: {
+    place: "message",
+    payload: ({ session, strip }) => (session ? { session, entry: strip.entryId } : null),
+    name: ({ strip }) => (strip.role === "user" ? "your message" : "this reply"),
+  },
   table: ({ items, copyPlain }) => {
     const safe: MenuItem[] = [];
     const branch: MenuItem[] = [];
@@ -51,6 +59,7 @@ export const messageMenuOf = (place: ReplyPlace, strip: MessageStrip, blocks: ()
   strip,
   items: builtInItems(place, strip),
   copyPlain: () => copyText(plainText(blocks(), scope), COPY_PLAIN.done),
+  session: place.menuSession?.() ?? null,
 });
 
 /** Each reply's strip by its entry: where an earlier text block of a reply drawn as several finds the strip hung off its last. */
@@ -157,13 +166,35 @@ export function plainText(blocks: readonly MessageBlock[], scope: ParentNode): s
   copy.style.cssText = "position:fixed;left:-10000px;top:0;width:40rem;pointer-events:none";
   document.body.append(copy);
   try {
-    // A body's own blocks one by one: innerText gives a list and the code block after it one line break, not a blank line.
-    const reads = Array.from(copy.children).flatMap((part) => (part.classList.contains("message-body") && part.children.length ? Array.from(part.children) : [part]));
-    return reads
-      .map((el) => (el as HTMLElement).innerText.trim())
-      .filter(Boolean)
-      .join("\n\n");
+    return joinPlain(Array.from(copy.children).flatMap(plainReads).map((el) => (el as HTMLElement).innerText));
   } finally {
     copy.remove();
   }
 }
+
+/** The few element facts `plainReads` uses, so the rule runs on a stand-in too. */
+export interface PlainNode {
+  classList: { contains(name: string): boolean };
+  children: ArrayLike<PlainNode>;
+}
+const isBody = (n: PlainNode) => n.classList.contains("message-body");
+const holdsBody = (n: PlainNode): boolean => isBody(n) || Array.from(n.children).some(holdsBody);
+
+/**
+ * What Copy as Plain Text reads one at a time, in order: each block of a message body on its own,
+ * folded working notes' included (innerText gives a list and the code block after it one line
+ * break, not a blank line); anything else whole.
+ */
+export function plainReads<T extends PlainNode>(part: T): T[] {
+  if (!holdsBody(part)) return [part];
+  const kids = Array.from(part.children) as T[];
+  if (isBody(part)) return kids.length ? kids : [part];
+  return kids.flatMap(plainReads);
+}
+
+/** The reads as one text: each trimmed, the empty ones left out, apart by a blank line. */
+export const joinPlain = (texts: readonly string[]): string =>
+  texts
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .join("\n\n");

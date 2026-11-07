@@ -179,8 +179,9 @@ has the tool; the parent refuses it from anyone else. Each report is a team acti
 - **Tools.** `team_msg` (with an optional `notice`: `wrap-up`, `pause` or `resume`), `team_inbox`,
   `team_roster` (read-only) and **`wake_nudge`**, through the member extension (a claude-code monitor is a pi worker on
   the Claude Code provider, so the same). No other member has `wake_nudge`; the
-  monitor has no `team_ask`, `team_steer`, `team_report` or built-in tools, and it can never reach
-  the parent.
+  monitor has no `team_ask`, `team_steer`, `team_report`, `spec` or built-in tools, and it can never
+  reach the parent. It also has `project_verbs`, as every worker does; a successor adds `team_ready`
+  while it takes over. `spec` is the one worker tool it lacks (§app.spec-lookup/spec-tool).
 - **Standing instruction** (its header, with the effective thresholds at spawn; subsequent
   roster answers and pause/resume checks resolve the chat's current profile): at each wake, read
   `team_roster`; a member whose context is at or above `contextPct` % of its window is told

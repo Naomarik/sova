@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal, type Accessor } from "solid-js";
+import { For, Show, createMemo, createSignal, createUniqueId, type Accessor } from "solid-js";
 import type { ChartSpec, ChartType } from "./parse";
 import { chartViews, drawAs, isModel, modelChoice, pickView, settle, toggle, toggleStates, type ChartChoice, type ChartView, type Toggle } from "./switch";
 import { recallChoice, rememberChoice } from "./memory";
@@ -39,8 +39,9 @@ const TOGGLE: Record<Toggle, { label: string; title: string }> = {
  * The figure head's chart controls: a segmented view switch (a radio group: one Tab stop, the
  * arrow keys move and pick; a dot marks the model's view, no Reset) when more than one view fits,
  * then every Log, Sort and % toggle the chart can use in any of its views, always, in that order: one
- * this view can't use stays in its place, greyed, its title saying why, so no control ever moves.
- * The caller leaves them out while Source shows.
+ * this view can't use stays in its place, greyed (still pressed when set), so no control ever moves.
+ * A greyed toggle is `aria-disabled`, not `disabled`: it keeps its Tab stop, a press does nothing,
+ * and its hint is both its title and its description. The caller leaves them out while Source shows.
  */
 export function ChartControls(props: { state: ChartState }) {
   const st = props.state;
@@ -55,7 +56,8 @@ export function ChartControls(props: { state: ChartState }) {
     st.set(pickView(st.spec, st.choice(), st.views[to]!));
     refs[to]?.focus();
   };
-  const flip = (t: "log" | "sort" | "pct") => st.set(toggle(st.spec, st.choice(), t));
+  const flip = (t: Toggle) => st.set(toggle(st.spec, st.choice(), t));
+  const uid = createUniqueId();
   return (
     <div class="vis-chart-controls">
       <Show when={st.views.length > 1}>
@@ -90,18 +92,26 @@ export function ChartControls(props: { state: ChartState }) {
           <For each={toggles().map((t) => t.toggle)}>
             {(t) => {
               const s = () => toggles().find((x) => x.toggle === t)!;
+              const hintId = `vis-chart-hint-${uid}-${t}`;
               return (
                 <button
                   class="button button-sm button-ghost vis-chart-toggle"
                   type="button"
                   data-toggle={t}
                   aria-pressed={s().on}
-                  disabled={!s().enabled}
-                  aria-disabled={!s().enabled}
+                  aria-disabled={s().enabled ? undefined : "true"}
+                  aria-describedby={s().hint ? hintId : undefined}
                   title={s().hint ?? TOGGLE[t].title}
-                  onClick={() => flip(t)}
+                  onClick={() => s().enabled && flip(t)}
                 >
                   {TOGGLE[t].label}
+                  <Show when={s().hint}>
+                    {(h) => (
+                      <span id={hintId} class="visually-hidden">
+                        {h()}
+                      </span>
+                    )}
+                  </Show>
                 </button>
               );
             }}

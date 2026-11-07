@@ -42,10 +42,16 @@ test("survives a reload of the tab through sessionStorage; a corrupt store costs
     assert.ok(st.data.get("sova.vis.chart-views"));
     resetChoiceMemory(); // the reload: memory gone, the tab's storage kept
     assert.deepEqual(recallChoice("k"), pick("stacked", { pct: true }));
-    st.data.set("sova.vis.chart-views", JSON.stringify({ k: { view: 3 }, j: pick("bar", { sort: true }) }));
+    // Toggles kept while a view ignores them, and which of Log and % came last, survive too.
+    const both = { ...pick("stacked", { log: true, pct: true, sort: true }), recent: "pct" as const };
+    rememberChoice("both", both);
+    resetChoiceMemory();
+    assert.deepEqual(recallChoice("both"), both);
+    st.data.set("sova.vis.chart-views", JSON.stringify({ k: { view: 3 }, j: pick("bar", { sort: true }), r: { ...pick("bar"), recent: "sort" } }));
     resetChoiceMemory();
     assert.equal(recallChoice("k"), undefined);
     assert.deepEqual(recallChoice("j"), pick("bar", { sort: true }));
+    assert.equal(recallChoice("r"), undefined, "an unknown recent is corrupt");
     st.data.set("sova.vis.chart-views", "{not json");
     resetChoiceMemory();
     assert.equal(recallChoice("j"), undefined);

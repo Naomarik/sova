@@ -4,7 +4,7 @@ import { emphasisMap, emphasisNotes } from "../../core/emphasis";
 import { parseVis } from "../../parse";
 import { MAX_PARTS, type ChartSpec } from "./parse";
 import { partsOf } from "./parts";
-import { chartViews, drawAs, isModel, modelChoice, offeredToggles, pickView, settle, shownToggles, sortOrder, toggle, toggleStates, VIEW_ORDER, type ChartChoice, type ChartView, type Toggle } from "./switch";
+import { appliesIn, chartViews, drawAs, inEffect, isModel, modelChoice, offeredToggles, pickView, settle, shownToggles, sortOrder, toggle, toggleStates, VIEW_ORDER, type ChartChoice, type ChartView, type Toggle } from "./switch";
 
 const parse = (body: string) => parseVis("chart", body);
 const chart = (body: string) => {
@@ -14,6 +14,7 @@ const chart = (body: string) => {
 };
 const views = (body: string) => chartViews(chart(body)).views;
 const choice = (c: Partial<ChartChoice> & { view: ChartChoice["view"] }): ChartChoice => ({ log: false, sort: false, pct: false, ...c });
+const TOGGLES = ["log", "sort", "pct"] as const;
 const rows = (n: number, v: (i: number) => string = (i) => String(i + 1)) => Array.from({ length: n }, (_, i) => `r${i} ${v(i)}`).join("\n");
 
 /** Bodies without `type:`: each test sets the type it reads them as. */
@@ -94,7 +95,7 @@ test("chart views: Log shows on Bar and Line when every value is above 0, starts
   const stacked = pickView(log, c, "stacked");
   assert.equal(stacked.log, true, "kept while visiting Stacked");
   assert.equal(drawAs(log, stacked).scale, "linear");
-  assert.deepEqual(shownToggles(log, stacked), { log: false, sort: true, pct: false }, "a kept Log still hides %");
+  assert.deepEqual(shownToggles(log, stacked), { log: false, sort: true, pct: true }, "a kept Log not in effect leaves % free");
   const back = pickView(log, stacked, "line");
   assert.equal(drawAs(log, back).scale, "log", "applies again on return");
   // Not with a zero, a negative; gaps are fine.
@@ -126,19 +127,28 @@ test("chart views: a capacity parts chart offers nothing and draws as written", 
   assert.equal(drawAs(p, settle(p, { view: "bar", sort: true })), p);
 });
 
-test("chart views: % and Log exclude each other; Sort and % switch off where hidden", () => {
+test("chart views: % and Log exclude each other while in effect; Sort and % stay set where a view can't use them", () => {
   const s = chart(BODIES.one!);
   let c = modelChoice(s);
   assert.deepEqual(shownToggles(s, c), { log: true, sort: true, pct: true });
   c = toggle(s, c, "pct");
   assert.deepEqual(shownToggles(s, c), { log: false, sort: true, pct: true });
-  assert.equal(toggle(s, c, "log"), c, "a hidden toggle can't flip");
+  assert.equal(toggle(s, c, "log"), c, "a greyed toggle can't flip");
   c = toggle(s, c, "sort");
+  const sortedBar = drawAs(s, c).rows.map((r) => r.label);
   const line = pickView(s, c, "line");
-  assert.deepEqual(line, choice({ view: "line", pct: true }), "Line hides Sort");
+  assert.deepEqual(line, choice({ view: "line", sort: true, pct: true, recent: "pct" }), "Sort kept on Line");
+  assert.deepEqual(inEffect(s, line), { log: false, sort: false, pct: true });
+  assert.deepEqual(drawAs(s, line).rows.map((r) => r.label), ["a", "b", "c"], "Line draws in source order");
+  assert.equal(toggle(s, line, "sort"), line, "a kept Sort can't flip where greyed");
   const parts = pickView(s, c, "parts");
-  assert.deepEqual(parts, choice({ view: "parts", sort: true }), "Parts hides %");
-  assert.equal(pickView(s, parts, "bar").pct, false, "% stays off after Parts");
+  assert.deepEqual(parts, choice({ view: "parts", sort: true, pct: true, recent: "pct" }), "% kept on Parts");
+  assert.equal(drawAs(s, parts).unit, undefined, "Parts draws values, not shares");
+  assert.deepEqual(shownToggles(s, parts), { log: false, sort: true, pct: false }, "Log stays greyed on Parts");
+  const back = pickView(s, pickView(s, parts, "line"), "bar");
+  assert.deepEqual(back, c, "both apply again back on Bar");
+  assert.equal(drawAs(s, back).unit, "%");
+  assert.deepEqual(drawAs(s, back).rows.map((r) => r.label), sortedBar);
   // Both on (a stored choice): Log wins.
   assert.deepEqual(settle(s, choice({ view: "bar", log: true, pct: true })), choice({ view: "bar", log: true }));
   // No % with a negative value, nor for an all-zero chart.
@@ -224,7 +234,25 @@ test("chart toggles: the head's set is fixed per chart, greyed where this choice
     const offered = offeredToggles(spec);
     const views: ChartChoice["view"][] = chartViews(spec).views.length ? chartViews(spec).views : [spec.type];
     // Every reachable choice: each view with each toggle combination, settled as the head would.
-    const choices = views.flatMap((view) => [false, true].flatMap((log) => [false, true].flatMap((sort) => [false, true].map((pct) => settle(spec, { view, log, sort, pct })))));
+    const raw = views.flatMap((view) => [false, true].flatMap((log) => [false, true].flatMap((sort) => [false, true].map((pct) => ({ view, log, sort, pct })))));
+    const choices = raw.map((c) => settle(spec, c));
+    // Settling keeps every toggle set that the chart can use somewhere, except the losing one of
+    // Log and % where both apply.
+    raw.forEach((r, i) => {
+      const c = choices[i]!;
+      const a = appliesIn(spec, c.view);
+      for (const t of TOGGLES) {
+        const lost = t === "pct" && r.log && r.pct && a.log && a.pct && offered.includes("log");
+        assert.equal(c[t], r[t] && offered.includes(t) && !lost, `${name} ${JSON.stringify(r)} keeps ${t}`);
+      }
+      // What draws is exactly what is in effect.
+      const d = drawAs(spec, c);
+      if (spec.type !== "scatter" && !(spec.type === "parts" && spec.of !== undefined)) {
+        const on = inEffect(spec, c);
+        assert.equal(d.scale === "log", on.log, `${name} ${JSON.stringify(c)} log`);
+        assert.equal(d.unit === "%" && !spec.percent && spec.unit !== "%", on.pct, `${name} ${JSON.stringify(c)} pct`);
+      }
+    });
     const union = new Set<Toggle>();
     for (const c of choices) {
       const states = toggleStates(spec, c);
@@ -233,8 +261,14 @@ test("chart toggles: the head's set is fixed per chart, greyed where this choice
       const shown = shownToggles(spec, c);
       for (const s of states) {
         assert.equal(s.enabled, shown[s.toggle], `${name} ${s.toggle}`);
-        assert.equal(s.on, s.enabled && c[s.toggle]);
+        // Pressed whenever set, greyed or not.
+        assert.equal(s.on, c[s.toggle]);
         assert.equal(!!s.hint, !s.enabled);
+        // Only a toggle in effect blocks another: a usable one greyed means the other is in effect.
+        const applies = appliesIn(spec, c.view);
+        const other = s.toggle === "log" ? "pct" : s.toggle === "pct" ? "log" : null;
+        if (!s.enabled && applies[s.toggle]) assert.ok(other && inEffect(spec, c)[other], `${name} ${s.toggle} blocked by nothing in effect`);
+        if (other && inEffect(spec, c)[other]) assert.equal(s.enabled, false, `${name} ${s.toggle} beside ${other} in effect`);
         if (s.enabled) union.add(s.toggle);
       }
     }
@@ -256,9 +290,38 @@ test("chart toggles: what each chart offers, and the greyed hints", () => {
   assert.deepEqual(hint(choice({ view: "parts" })), { log: "Log doesn't apply to Parts", sort: null, pct: "% doesn't apply to Parts" });
   assert.deepEqual(hint(choice({ view: "bar", pct: true })), { log: "Turn % off to use Log", sort: null, pct: null });
   assert.deepEqual(hint(choice({ view: "line", log: true })), { log: null, sort: "Sort doesn't apply to Line", pct: "Turn Log off to use %" });
-  // Log kept while Parts ignores it: greyed, not pressed; back on Bar it is pressed again.
+  // Log kept while Parts ignores it: greyed and still pressed; back on Bar it is usable again.
   const kept = pickView(one, toggle(one, choice({ view: "bar" }), "log"), "parts");
   assert.equal(kept.log, true);
-  assert.deepEqual(toggleStates(one, kept).find((s) => s.toggle === "log"), { toggle: "log", enabled: false, on: false, hint: "Log doesn't apply to Parts" });
-  assert.equal(toggleStates(one, pickView(one, kept, "bar")).find((s) => s.toggle === "log")!.on, true);
+  assert.deepEqual(toggleStates(one, kept).find((s) => s.toggle === "log"), { toggle: "log", enabled: false, on: true, hint: "Log doesn't apply to Parts" });
+  assert.deepEqual(toggleStates(one, pickView(one, kept, "bar")).find((s) => s.toggle === "log"), { toggle: "log", enabled: true, on: true });
+  // Sort and % likewise: greyed, pressed, with the reason.
+  const both = toggle(one, toggle(one, choice({ view: "bar" }), "sort"), "pct");
+  const states = (c: ChartChoice) => Object.fromEntries(toggleStates(one, c).map((s) => [s.toggle, [s.enabled, s.on]]));
+  assert.deepEqual(states(pickView(one, both, "line")), { log: [false, false], sort: [false, true], pct: [true, true] });
+  assert.deepEqual(states(pickView(one, both, "parts")), { log: [false, false], sort: [true, true], pct: [false, true] });
+});
+
+test("chart toggles: Log kept through Stacked leaves % free; turned on there, the newer of the two wins back on Bar", () => {
+  const m = chart("series: x, y\na 1 2\nb 3 4");
+  let c = toggle(m, choice({ view: "bar" }), "log");
+  c = pickView(m, c, "stacked");
+  const st = (x: ChartChoice) => Object.fromEntries(toggleStates(m, x).map((s) => [s.toggle, [s.enabled, s.on, s.hint ?? null]]));
+  assert.deepEqual(st(c), { log: [false, true, "Log doesn't apply to Stacked"], sort: [true, false, null], pct: [true, false, null] });
+  c = toggle(m, c, "pct");
+  assert.deepEqual(c, choice({ view: "stacked", log: true, pct: true, recent: "pct" }), "both set on Stacked");
+  assert.deepEqual(st(c), { log: [false, true, "Log doesn't apply to Stacked"], sort: [true, false, null], pct: [true, true, null] });
+  assert.equal(drawAs(m, c).unit, "%");
+  // Bar can use both: % was turned on last, so Log switches off.
+  const bar = pickView(m, c, "bar");
+  assert.deepEqual(bar, choice({ view: "bar", pct: true, recent: "pct" }));
+  assert.equal(drawAs(m, bar).scale, "linear");
+  assert.equal(pickView(m, pickView(m, bar, "stacked"), "line").log, false, "Log stays off after");
+  // The other order (a stored choice says Log was last): Log wins. No record of which: Log wins.
+  assert.deepEqual(settle(m, choice({ view: "line", log: true, pct: true, recent: "log" })), choice({ view: "line", log: true, recent: "log" }));
+  assert.deepEqual(settle(m, choice({ view: "bar", log: true, pct: true })), choice({ view: "bar", log: true }));
+  // Turning % off again on Stacked leaves Log, which applies on Line again.
+  const off = toggle(m, c, "pct");
+  assert.deepEqual(off, choice({ view: "stacked", log: true }));
+  assert.equal(drawAs(m, pickView(m, off, "line")).scale, "log");
 });

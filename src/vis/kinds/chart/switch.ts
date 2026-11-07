@@ -11,12 +11,17 @@ import { partsOf } from "./parts";
 export type ChartView = "bar" | "stacked" | "line" | "parts";
 export const VIEW_ORDER: readonly ChartView[] = ["bar", "stacked", "line", "parts"];
 
-/** A reader's choice. `view` is "scatter" only on a scatter chart. `log` is kept while a view ignores it. */
+/**
+ * A reader's choice. `view` is "scatter" only on a scatter chart. Each toggle stays set while a
+ * view can't use it and applies again in a view that can. `recent` is the one of Log and % turned
+ * on last: it settles a choice holding both (see `settle`).
+ */
 export interface ChartChoice {
   view: ChartType;
   log: boolean;
   sort: boolean;
   pct: boolean;
+  recent?: "log" | "pct";
 }
 export type Toggle = "log" | "sort" | "pct";
 
@@ -71,17 +76,33 @@ export function modelChoice(spec: ChartSpec): ChartChoice {
   return { view: spec.type, log: spec.scale === "log", sort: false, pct: false };
 }
 
-/** Which toggles the head shows for this choice. % and Log hide each other while one is on. */
-export function shownToggles(spec: ChartSpec, choice: ChartChoice): Record<Toggle, boolean> {
+/** Which toggles this view can use at all, whatever else is set. */
+export function appliesIn(spec: ChartSpec, view: ChartType): Record<Toggle, boolean> {
   const v = chartViews(spec);
   if (spec.type === "scatter") return { log: v.logOk, sort: false, pct: false };
   if (capacity(spec)) return { log: false, sort: false, pct: false };
-  const view = choice.view;
   return {
-    log: (view === "bar" || view === "line") && v.logOk && !choice.pct,
+    log: (view === "bar" || view === "line") && v.logOk,
     sort: view === "bar" || view === "stacked" || view === "parts",
-    pct: (view === "bar" || view === "stacked" || view === "line") && v.pctOk && !choice.log,
+    pct: (view === "bar" || view === "stacked" || view === "line") && v.pctOk,
   };
+}
+
+/** The toggles in effect for this choice: set, and usable in its view. */
+export function inEffect(spec: ChartSpec, choice: ChartChoice): Record<Toggle, boolean> {
+  const a = appliesIn(spec, choice.view);
+  return { log: choice.log && a.log, sort: choice.sort && a.sort, pct: choice.pct && a.pct };
+}
+
+/**
+ * Which toggles the head lets the reader flip for this choice: those this view can use, except
+ * that % and Log block each other, and only while the one set is in effect here (a Log kept
+ * through Stacked, which ignores it, leaves % free).
+ */
+export function shownToggles(spec: ChartSpec, choice: ChartChoice): Record<Toggle, boolean> {
+  const a = appliesIn(spec, choice.view);
+  const on = inEffect(spec, choice);
+  return { log: a.log && !on.pct, sort: a.sort, pct: a.pct && !on.log };
 }
 
 export const TOGGLE_ORDER: readonly Toggle[] = ["log", "sort", "pct"];
@@ -108,7 +129,7 @@ export interface ToggleState {
   toggle: Toggle;
   /** Usable in this choice; otherwise drawn greyed in its place. */
   enabled: boolean;
-  /** Pressed: on and usable. */
+  /** Pressed: set, whether or not this view can use it (greyed and pressed while kept). */
   on: boolean;
   /** Why it is greyed ("Sort doesn't apply to Line", "Turn % off to use Log"), else undefined. */
   hint?: string;
@@ -117,28 +138,40 @@ export interface ToggleState {
 /** Every offered toggle for this choice, in order: usable or greyed, with the reason. */
 export function toggleStates(spec: ChartSpec, choice: ChartChoice): ToggleState[] {
   const shown = shownToggles(spec, choice);
+  const applies = appliesIn(spec, choice.view);
   return offeredToggles(spec).map((t) => {
     if (shown[t]) return { toggle: t, enabled: true, on: choice[t] };
     const other: Toggle | null = t === "log" ? "pct" : t === "pct" ? "log" : null;
-    const blocker = other && choice[other] && shownToggles(spec, { ...choice, [other]: false })[t];
-    const hint = blocker ? `Turn ${TOGGLE_NAME[other!]} off to use ${TOGGLE_NAME[t]}` : `${TOGGLE_NAME[t]} doesn't apply to ${VIEW_NAME[choice.view]}`;
-    return { toggle: t, enabled: false, on: false, hint };
+    // Usable in this view but not shown: the other one is in effect.
+    const hint = applies[t] && other ? `Turn ${TOGGLE_NAME[other]} off to use ${TOGGLE_NAME[t]}` : `${TOGGLE_NAME[t]} doesn't apply to ${VIEW_NAME[choice.view]}`;
+    return { toggle: t, enabled: false, on: choice[t], hint };
   });
 }
 
 /**
  * Any choice made valid for this chart (one restored from the tab, say): a view that doesn't fit
- * falls back to the model's; Sort and % switch off where hidden; Log is kept while allowed at all,
- * and wins when both it and % are on.
+ * falls back to the model's; a toggle the chart can use in none of its views switches off; every
+ * other stays set, in effect or not.
+ *
+ * Log and % can both be set: one turned on while the other was kept through a view that ignores
+ * it (Log kept on Stacked, then %). In a view that can use both, the one turned on most recently
+ * (`recent`) wins and the other switches off for good; with no `recent` (an older stored choice)
+ * Log wins. In a view that can use at most one, both stay set.
  */
 export function settle(spec: ChartSpec, choice: Partial<ChartChoice>): ChartChoice {
   const v = chartViews(spec);
   const view = spec.type === "scatter" || capacity(spec) ? spec.type : (v.views as ChartType[]).includes(choice.view as ChartType) ? choice.view! : spec.type;
-  const log = !!choice.log && v.logOk;
-  const out: ChartChoice = { view, log, sort: !!choice.sort, pct: !!choice.pct && !log };
-  const shown = shownToggles(spec, out);
-  if (!shown.sort) out.sort = false;
-  if (!shown.pct) out.pct = false;
+  const usable = new Set<Toggle>(offeredToggles(spec));
+  const out: ChartChoice = { view, log: !!choice.log && usable.has("log"), sort: !!choice.sort && usable.has("sort"), pct: !!choice.pct && usable.has("pct") };
+  if (out.log && out.pct) {
+    const a = appliesIn(spec, view);
+    if (a.log && a.pct) {
+      if (choice.recent === "pct") out.log = false;
+      else out.pct = false;
+    }
+  }
+  const recent = choice.recent === "log" || choice.recent === "pct" ? choice.recent : undefined;
+  if (recent && out[recent]) out.recent = recent;
   return out;
 }
 
@@ -147,7 +180,9 @@ export const pickView = (spec: ChartSpec, choice: ChartChoice, view: ChartView):
 /** Flips one toggle, if the head shows it for this choice. */
 export function toggle(spec: ChartSpec, choice: ChartChoice, which: Toggle): ChartChoice {
   if (!shownToggles(spec, choice)[which]) return choice;
-  return settle(spec, { ...choice, [which]: !choice[which] });
+  const next: ChartChoice = { ...choice, [which]: !choice[which] };
+  if (next[which] && (which === "log" || which === "pct")) next.recent = which;
+  return settle(spec, next);
 }
 
 export const isModel = (spec: ChartSpec, choice: ChartChoice): boolean => {
@@ -171,11 +206,12 @@ export function drawAs(spec: ChartSpec, choice: ChartChoice): ChartSpec {
   if (spec.type === "scatter") return c.log === (spec.scale === "log") ? spec : { ...spec, scale: c.log ? "log" : "linear" };
   if (capacity(spec)) return spec;
   const view = c.view as ChartView;
-  const out: ChartSpec = { ...spec, type: view, scale: c.log && (view === "bar" || view === "line") ? "log" : "linear", rows: spec.rows.map((r) => ({ ...r, values: [...r.values] })) };
+  const on = inEffect(spec, c);
+  const out: ChartSpec = { ...spec, type: view, scale: on.log ? "log" : "linear", rows: spec.rows.map((r) => ({ ...r, values: [...r.values] })) };
   if (view === "parts") {
     out.series = [];
     // Parts colour untoned rows in turn: under Sort each keeps the colour it has in source order.
-    if (c.sort) {
+    if (on.sort) {
       const colors = partsOf({ ...spec, type: "parts", series: [] }).parts;
       out.rows.forEach((r, i) => {
         const m = /^vis-chart-s(\d)$/.exec(colors[i]!.color);
@@ -183,7 +219,7 @@ export function drawAs(spec: ChartSpec, choice: ChartChoice): ChartSpec {
       });
     }
   }
-  if (c.pct) {
+  if (on.pct) {
     const single = seriesCount(spec) === 1;
     const whole = single ? out.rows.reduce((a, r) => a + (r.values[0] ?? 0), 0) : 0;
     for (const r of out.rows) {
@@ -192,7 +228,7 @@ export function drawAs(spec: ChartSpec, choice: ChartChoice): ChartSpec {
     }
     out.unit = "%";
   }
-  if (c.sort) {
+  if (on.sort) {
     const order = sortOrder(spec);
     out.rows = order.map((i) => out.rows[i]!);
     const at = new Map(order.map((from, to) => [String(from), String(to)]));

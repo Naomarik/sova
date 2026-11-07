@@ -15,7 +15,15 @@ export interface StoredChoice {
   log: boolean;
   sort: boolean;
   pct: boolean;
+  /** The one of Log and % turned on last, while both are set. */
+  recent?: "log" | "pct";
 }
+
+const copy = (c: StoredChoice): StoredChoice => {
+  const out: StoredChoice = { view: c.view, log: c.log, sort: c.sort, pct: c.pct };
+  if (c.recent === "log" || c.recent === "pct") out.recent = c.recent;
+  return out;
+};
 
 /** FNV-1a, hex: the same identity markdown.ts gives a drawing's placeholder (`data-vis-key`). */
 export function fenceKey(fence: string): string {
@@ -37,7 +45,7 @@ function storage(): Storage | null {
 
 const valid = (c: unknown): c is StoredChoice => {
   const o = c as StoredChoice | null;
-  return !!o && typeof o === "object" && typeof o.view === "string" && typeof o.log === "boolean" && typeof o.sort === "boolean" && typeof o.pct === "boolean";
+  return !!o && typeof o === "object" && typeof o.view === "string" && typeof o.log === "boolean" && typeof o.sort === "boolean" && typeof o.pct === "boolean" && (o.recent === undefined || o.recent === "log" || o.recent === "pct");
 };
 
 function load() {
@@ -46,7 +54,7 @@ function load() {
   try {
     const raw = storage()?.getItem(STORE_KEY);
     const data = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-    for (const [key, c] of Object.entries(data)) if (valid(c)) mem.set(key, { view: c.view, log: c.log, sort: c.sort, pct: c.pct });
+    for (const [key, c] of Object.entries(data)) if (valid(c)) mem.set(key, copy(c));
   } catch {
     // A corrupt entry costs only the reader's choice.
   }
@@ -66,7 +74,7 @@ function save() {
 export function recallChoice(key: string): StoredChoice | undefined {
   load();
   const c = mem.get(key);
-  return c ? { ...c } : undefined;
+  return c ? copy(c) : undefined;
 }
 
 /** Keep a drawing's choice; `undefined` (back to the model's default) forgets it. */
@@ -78,9 +86,9 @@ export function rememberChoice(key: string, choice: StoredChoice | undefined): v
     return;
   }
   const prev = mem.get(key);
-  if (prev && prev.view === choice.view && prev.log === choice.log && prev.sort === choice.sort && prev.pct === choice.pct) return;
+  if (prev && prev.view === choice.view && prev.log === choice.log && prev.sort === choice.sort && prev.pct === choice.pct && prev.recent === copy(choice).recent) return;
   mem.delete(key);
-  mem.set(key, { view: choice.view, log: choice.log, sort: choice.sort, pct: choice.pct }); // newest last, so the oldest go first
+  mem.set(key, copy(choice)); // newest last, so the oldest go first
   while (mem.size > MAX_ENTRIES) mem.delete(mem.keys().next().value!);
   save();
 }

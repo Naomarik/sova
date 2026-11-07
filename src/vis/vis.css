@@ -108,6 +108,11 @@
 .vis-chart-model-dot { flex: none; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--color-accent); }
 .vis-chart-toggle { flex: none; font-variant-numeric: tabular-nums; }
 .vis-chart-toggle[aria-pressed="true"] { background: var(--color-accent-tint); color: var(--color-accent); }
+/* Greyed: this view can't use it. It keeps its pressed tint when set (kept for a view that can), and
+   hovering it changes nothing. */
+.vis-chart-toggle[aria-disabled="true"]:is(:hover, :active) { background: transparent; color: var(--color-ink-muted); }
+.vis-chart-toggle[aria-disabled="true"][aria-pressed="true"],
+.vis-chart-toggle[aria-disabled="true"][aria-pressed="true"]:is(:hover, :active) { background: var(--color-accent-tint); color: var(--color-accent); }
 
 /* At phone width the head keeps the title and trades the button words for their icons; a chart's
    controls take their own row under it. */

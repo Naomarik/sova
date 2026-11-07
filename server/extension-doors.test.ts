@@ -37,6 +37,8 @@ describe("the table against the real app", () => {
 
   // A door that answers a key in its own words already (server/page-only.ts): §app.access/your-click. Or no key reaches it.
   const KEPT = new Set([
+    // Only your own page, at its own door in server/page-only.ts, which already refuses a key.
+    "POST /api/extensions/:id/approve",
     "POST /api/session-cards/trust",
     "POST /api/profiles/approve",
     "POST /api/schedules/approve",

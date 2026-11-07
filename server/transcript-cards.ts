@@ -40,7 +40,7 @@ import { checkoutRootOf } from "../pi-config/extensions/mode/project-discovery.t
 import { sessionsChanged } from "./list-generation";
 import { projectRootOf } from "./project-root";
 import { stateRoot } from "./state-root";
-import { findExtension, readExtensionsWithOffers } from "./extensions";
+import { findExtension, listedExtensions, readExtensionsWithOffers } from "./extensions";
 import { extDrawingDecl } from "./extension-views";
 
 /**
@@ -454,7 +454,8 @@ export function setCardsTrusted(owner: string, on: boolean, file = cardTrustFile
 /** The trust key of an extension's cards: its id, whatever its manifest entry says later. */
 export const extensionOwner = (id: string): string => `ext:${id}`;
 
-export const ownerName = (owner: string): string => (owner.startsWith("ext:") ? (findExtension(owner.slice(4))?.title ?? owner.slice(4)) : basename(owner.replace(/^project:/, "")) || owner);
+const listedTitle = (id: string): string | undefined => (listedExtensions() ?? []).find((l) => l.valid?.entry.id === id)?.valid?.entry.title;
+export const ownerName = (owner: string): string => (owner.startsWith("ext:") ? (listedTitle(owner.slice(4)) ?? owner.slice(4)) : basename(owner.replace(/^project:/, "")) || owner);
 
 /** An extension's cards' trust, as its page shows it with Stop Trusting Cards. */
 export const extensionCardsTrust = (id: string): { owner: string; name: string; trusted: boolean } => {
@@ -718,6 +719,13 @@ function viewCardOf(rec: SessionRecord | null, id: unknown): CardInfo {
   const card = rec?.cards.find((c) => c.id === id);
   if (!rec || !card) throw new CardRefusal(`The session has no card ${id}.`, 404);
   if (card.draws !== "view") throw new CardRefusal(`${card.id} isn't a view: only a view keeps state or runs commands.`, 400);
+  const ext = rec.snapshot?.types.find((t) => t.type === card.type)?.ext;
+  if (ext) {
+    // Its view runs no command and keeps no state while it isn't what you approved.
+    const now = findExtension(ext.id);
+    if (!now) throw new CardRefusal(`${ext.title} isn't on, so this card's view can't do that.`, 409);
+    if (now.changed) throw new CardRefusal(`${ext.title} changed and is waiting for your approval.`, 409);
+  }
   return card;
 }
 
@@ -846,13 +854,22 @@ export async function sessionCardsAt(path: string): Promise<SessionCardsAnswer> 
   const s = await summaryOf(path);
   const rec = readRecord(s.id);
   const owner = rec?.root ? projectOwner(rec.root) : null;
-  // An extension no longer installed: its cards show their error box (§app.extensions/views).
-  const installed = new Set(readExtensionsWithOffers().map((e) => e.entry.id));
-  const gone = [...new Set((rec?.snapshot?.types ?? []).flatMap((t) => (t.ext && !installed.has(t.ext.id) ? [t.ext.id] : [])))];
+  // An extension no longer on the list, or on it but not active: its cards show their error box.
+  const owners = [...new Set((rec?.snapshot?.types ?? []).flatMap((t) => (t.ext ? [t.ext.id] : [])))];
+  const listed = owners.length ? (listedExtensions() ?? []) : [];
+  const standing = (id: string) => listed.find((l) => l.valid?.entry.id === id);
+  const gone = owners.filter((id) => !standing(id));
+  const off = owners.filter((id) => standing(id)?.state === "off");
+  const blocked = owners.filter((id) => {
+    const l = standing(id);
+    return !!l && !l.active && l.state !== "off";
+  });
   return {
     cards: rec?.cards ?? [],
     ...(rec?.snapshot?.drawings?.length ? { drawings: rec.snapshot.drawings.map(({ guide: _g, ...d }) => d) } : {}),
     ...(gone.length ? { gone } : {}),
+    ...(off.length ? { off } : {}),
+    ...(blocked.length ? { blocked } : {}),
     types: rec?.snapshot?.types ?? [],
     ...(rec?.states && Object.keys(rec.states).length ? { states: rec.states } : {}),
     ...(owner ? { trust: { owner, name: ownerName(owner), trusted: cardsTrusted(owner) } } : {}),
@@ -888,11 +905,21 @@ export interface OpenCard {
   id: string;
   title: string;
   at: number;
+  /** The extension whose card this is: while it isn't active, nothing can answer, so it isn't waiting. */
+  ext?: string;
+  /** Its view draws it: while its extension reads Changed, that view doesn't run, so it isn't waiting either. */
+  view?: boolean;
 }
+
+/** The extension that owns a card's type, from the session's snapshot. */
+const extOfCard = (rec: SessionRecord, c: CardInfo): string | undefined => rec.snapshot?.types.find((t) => t.type === c.type)?.ext?.id;
 
 /** Every open card waiting on an answer: answerable, open, the newest revision of its key. */
 function openOf(rec: SessionRecord): OpenCard[] {
-  return rec.cards.filter((c) => c.state === "open" && c.answerMode !== "none").map((c) => ({ id: c.id, title: dataTitle(c) ?? c.title, at: Date.parse(c.at) || 0 }));
+  return rec.cards.filter((c) => c.state === "open" && c.answerMode !== "none").map((c) => {
+    const ext = extOfCard(rec, c);
+    return { id: c.id, title: dataTitle(c) ?? c.title, at: Date.parse(c.at) || 0, ...(ext ? { ext } : {}), ...(ext && c.draws === "view" ? { view: true } : {}) };
+  });
 }
 
 const dataTitle = (c: CardInfo): string | undefined => {
@@ -920,7 +947,44 @@ export function openCardsOf(sessionId: string): OpenCard[] {
       if (rec && open.length) openIndex.open.set(rec.sessionId, open);
     }
   }
-  return openIndex.open.get(sessionId) ?? [];
+  const open = openIndex.open.get(sessionId) ?? [];
+  // Asked only when an extension's card is open: a card with no extension reads no list.
+  if (!open.some((c) => c.ext)) return open;
+  const active = new Map(readExtensionsWithOffers().map((e) => [e.entry.id, e.entry]));
+  return open.filter((c) => {
+    if (!c.ext) return true;
+    const e = active.get(c.ext);
+    return !!e && !(c.view && e.changed);
+  });
+}
+
+/** What is active changed, so what waits on an answer may have. */
+export const cardOwnersChanged = (): void => sessionsChanged();
+
+/**
+ * Remove: its open cards close, so none stays in Needs You with nothing left to
+ * answer it. Scans every record: it happens only when an extension leaves.
+ */
+export function closeCardsOfExtension(id: string): void {
+  let names: string[] = [];
+  try {
+    names = readdirSync(cardsDir());
+  } catch {
+    return;
+  }
+  for (const n of names) {
+    if (!n.endsWith(".json")) continue;
+    const rec = readRecord(n.slice(0, -5));
+    if (!rec) continue;
+    let changed = false;
+    for (const c of rec.cards) {
+      if (c.state === "open" && extOfCard(rec, c) === id) {
+        c.state = "done";
+        changed = true;
+      }
+    }
+    if (changed) saveRecord(rec);
+  }
 }
 
 // ---- the agent's guides for own drawing kinds (§chat.transcript-cards/drawing-kinds) -----------

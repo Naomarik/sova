@@ -132,6 +132,10 @@ When a rule changes, change its test in the same change; a rule without a test i
   and the Overseer's `sova_answer_dialog` records who chose; `POST /api/chat/action` refuses
   `ui_response` with a 400. (Stop, Compact, Rewind, Regenerate, Remove and Reload Now are `chat.*`
   entries now, above.)
+- Adding, approving, turning on or off and removing an extension (`POST /api/extensions/inspect|install`,
+  `/api/extensions/:id/approve|folder|on|off|program`, `DELETE /api/extensions/:id`, §app.extensions/loader): Trust
+  grants, each at the `extensions` door of `server/page-only.ts`. `GET /api/extensions/installed` and `:id/log` are
+  page plumbing, `full` from another computer. `extensions.list` stays the only command here.
 - Anything at a door the operator keeps closed: the peer listener's routes, `/api/auth/*`, the
   share pages, `/ext/*` (an extension's own actions are `ext.*`, reached through the proxy).
 - Settings writes that grant power, trust or reach, or that show a secret: autonomy and permits,

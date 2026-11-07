@@ -11,12 +11,19 @@ import { cappedWebSocket, cappedWebSocketServer, connectionRefused, errorCode } 
 import type { ExtensionInfo, ExtensionOffers } from "../shared/protocol";
 import { declaredCommands, offersOf } from "../shared/extension-offers";
 import { extCommandsFrom, extOverseerKeys, type ExtCommandEntry } from "../shared/commands-ext";
+import { EXTENSION_CONTRACT } from "../shared/extension-contract";
 import { stateRoot } from "./state-root";
+import { contractTooNew, parseContract } from "../shared/extension-loader";
+import { approvalOf, codeReadingOf, entryHash, trustDecided } from "./extension-gate";
 import { viewOffersOf } from "./extension-views";
 import { isExtensionKey, sovaToken } from "./auth";
 
-// The generic extension host (ext-contract-v1.19: v1.15 plus each backend's own key, server/extension-keys.ts, and a command's optional `menu` key, src/lib/menu-place.ts, v1.16; card types and drawing kinds in chat transcripts, server/extension-views.ts, v1.17; a command's `overseer`, `description` and `job` keys, §app.overseer/extension-commands, v1.18). An extension is a static UI (`dist`) plus a
-// loopback HTTP backend (`api`), both named in a manifest the user installs; Sova never writes it.
+export const contractWords = (): string => `1.${EXTENSION_CONTRACT}`;
+
+// The generic extension host (ext-contract-v1.20: the folder, the list Sova writes and the program it runs,
+// server/extension-loader.ts, v1.20; v1.15 plus each backend's own key, server/extension-keys.ts, and a command's optional `menu` key, src/lib/menu-place.ts, v1.16; card types and drawing kinds in chat transcripts, server/extension-views.ts, v1.17; a command's `overseer`, `description` and `job` keys, §app.overseer/extension-commands, v1.18). An extension is a static UI (`dist`) plus a
+// loopback HTTP backend (`api`), each optional, named in a manifest Settings → Extensions writes (a hand
+// edit waits for approval). Everything that acts reads the active entries; only that screen reads every entry.
 // Sova serves the UI at /ext/<id>/, proxies /ext/<id>/api/* and /ext/<id>/ws/* to the backend,
 // and lists the extensions (with a cached health probe, and what each declares it offers) at
 // GET /api/extensions. Sova knows nothing about what any extension does.
@@ -26,13 +33,17 @@ export interface ExtensionEntry {
   title: string;
   description?: string;
   icon?: string;
-  /** Absolute directory holding index.html. */
-  dist: string;
-  /** http(s)://127.0.0.1|localhost:<port>[/prefix], no trailing slash. */
-  api: string;
+  /** Absolute directory holding index.html; none, no page. */
+  dist?: string;
+  /** http(s)://127.0.0.1|localhost:<port>[/prefix], no trailing slash; none, no program. */
+  api?: string;
+  /** Its code changed since you approved it: active, with its page off (never published). */
+  changed?: true;
 }
 
 export const EXTENSION_ID_RE = /^[A-Za-z0-9._-]+$/;
+/** An id that can name a unit and a folder: never a path. */
+export const validExtensionId = (id: string): boolean => EXTENSION_ID_RE.test(id) && id !== "." && id !== "..";
 /** An icon name becomes a `url(/icons/<name>.svg)` in a style attribute: nothing but a plain name. */
 const ICON_RE = /^[a-z0-9-]+$/;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost"]);
@@ -76,7 +87,7 @@ function checkApi(api: unknown): string | null {
 export const TITLE_MAX = 80;
 /** One line, no control character (U+2028/U+2029 and NEL among them), at most TITLE_MAX: it is written
     into the Overseer's prompt and into lines Sova writes around an extension's text. */
-const plainTitle = (t: string): boolean => t.length <= TITLE_MAX && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(t);
+export const plainTitle = (t: string): boolean => t.length <= TITLE_MAX && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(t);
 
 /** One manifest record → an entry, or the reason it is dropped. Unknown keys are ignored. `offers`
     is what its `commands` and `screens` validly declare (shared/extension-offers.ts), absent when
@@ -85,11 +96,11 @@ const plainTitle = (t: string): boolean => t.length <= TITLE_MAX && !/[\u0000-\u
 export function validateExtension(raw: unknown): { entry: ExtensionEntry; offers?: ExtensionOffers } | { error: string } {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { error: "entry is not an object" };
   const r = raw as Record<string, unknown>;
-  if (typeof r.id !== "string" || !EXTENSION_ID_RE.test(r.id) || r.id === "." || r.id === "..") {
+  if (typeof r.id !== "string" || !validExtensionId(r.id)) {
     return { error: `bad id ${JSON.stringify(r.id)}` };
   }
-  if (typeof r.dist !== "string" || !isAbsolute(r.dist)) return { error: `${r.id}: dist must be an absolute path` };
-  const apiError = checkApi(r.api);
+  if (r.dist !== undefined && (typeof r.dist !== "string" || !isAbsolute(r.dist))) return { error: `${r.id}: dist must be an absolute path` };
+  const apiError = r.api === undefined ? null : checkApi(r.api);
   if (apiError) return { error: `${r.id}: ${apiError}` };
   // A title is one plain line (like a command's label): a bad one is left out alone, the id stands in.
   const title = typeof r.title === "string" ? r.title.trim() : "";
@@ -97,8 +108,8 @@ export function validateExtension(raw: unknown): { entry: ExtensionEntry; offers
   const entry: ExtensionEntry = {
     id: r.id,
     title: title && plainTitle(title) ? title : r.id,
-    dist: resolve(r.dist),
-    api: r.api as string,
+    ...(typeof r.dist === "string" ? { dist: resolve(r.dist) } : {}),
+    ...(typeof r.api === "string" ? { api: r.api } : {}),
   };
   if (typeof r.description === "string" && r.description.trim()) entry.description = r.description.trim();
   if (typeof r.icon === "string" && ICON_RE.test(r.icon)) entry.icon = r.icon;
@@ -111,8 +122,8 @@ export function validateExtension(raw: unknown): { entry: ExtensionEntry; offers
   return offers ? { entry, offers } : { entry };
 }
 
-/** The valid entries, in manifest order. A missing file is no extensions; a malformed one is too,
-    logged. A later duplicate of an id is dropped. */
+/** The active entries, in manifest order. A missing file is no extensions; a malformed
+    one is too, logged. A later duplicate of an id is dropped. */
 export const readExtensions = (): ExtensionEntry[] => readManifest().map((m) => m.entry);
 
 /**
@@ -175,12 +186,12 @@ export async function extensionHealth(id: string): Promise<Pick<ExtensionInfo, "
 }
 
 /** readExtensions, each entry with what it offers (and its raw `commands`, for the full entries). */
-function readManifest(): Array<{ entry: ExtensionEntry; offers?: ExtensionOffers; commands?: unknown }> {
+function readManifest(): Valid[] {
   return manifestEntries() ?? [];
 }
 
 /**
- * The ids the keys follow (server/extension-keys.ts): the installed ids, `[]` when there is no
+ * The ids the keys follow (server/extension-keys.ts): the active ids, `[]` when there is no
  * manifest, and null when there is one that can't be read whole (unreadable, not JSON, not
  * `{version: 1, extensions: [...]}`, a write caught half-done), so a bad save never revokes a key.
  */
@@ -188,8 +199,25 @@ export function installedIdsForKeys(): string[] | null {
   return manifestEntries()?.map((m) => m.entry.id) ?? null;
 }
 
-/** The manifest's valid entries; [] when it is missing, null when it is there but unreadable. */
-function manifestEntries(): Array<{ entry: ExtensionEntry; offers?: ExtensionOffers; commands?: unknown }> | null {
+type Valid = { entry: ExtensionEntry; offers?: ExtensionOffers; commands?: unknown };
+
+/** Where one entry on the list stands. `active`: everything that acts reads it. */
+export type ListedState = "not-usable" | "folder-not-found" | "needs-newer" | "waiting" | "changed" | "off" | "on";
+export interface ListedExtension {
+  /** The record as written, and its place on the list. */
+  raw: Record<string, unknown>;
+  index: number;
+  /** A dropped entry has none of these but `error`. */
+  valid?: Valid;
+  error?: string;
+  state: ListedState;
+  active: boolean;
+  /** It reads Changed or Waiting because its version moved after an approval. */
+  approvedBefore?: boolean;
+}
+
+/** The manifest's text whole, [] when missing, null when it is there but unreadable. */
+function manifestRaw(): unknown[] | null {
   const file = extensionsFile();
   let text: string;
   try {
@@ -211,23 +239,71 @@ function manifestEntries(): Array<{ entry: ExtensionEntry; offers?: ExtensionOff
     warnOnce(`${file}: expected {"version": 1, "extensions": [...]}`);
     return null;
   }
-  const out: Array<{ entry: ExtensionEntry; offers?: ExtensionOffers; commands?: unknown }> = [];
+  return d.extensions;
+}
+
+/** One valid entry's state: the first that applies, read from the trust file and the pass's last reading. */
+function stateOf(raw: Record<string, unknown>, id: string): Pick<ListedExtension, "state" | "active" | "approvedBefore"> {
+  const off = raw.off === true;
+  const reading = codeReadingOf(id);
+  if (typeof raw.folder === "string" && reading?.missing) return { state: "folder-not-found", active: false };
+  const needs = raw.needsContract === undefined ? null : parseContract(raw.needsContract);
+  if (needs && contractTooNew(needs, [1, EXTENSION_CONTRACT])) return { state: "needs-newer", active: false };
+  // A named list counts as approved as it appears, and never reads Changed: the server's environment named it.
+  if (!process.env.SOVA_EXTENSIONS_FILE && trustDecided()) {
+    const approval = approvalOf(id);
+    if (!approval) return { state: "waiting", active: false };
+    // An edited record is no longer what you approved: its new declarations and address never go live.
+    if (approval.entry !== entryHash(raw)) return { state: "waiting", active: false, approvedBefore: true };
+    if (reading?.code !== undefined && reading.code !== approval.code) return { state: "changed", active: !off };
+  }
+  return off ? { state: "off", active: false } : { state: "on", active: true };
+}
+
+/**
+ * Every entry with its state, in list order: the one reader Settings → Extensions uses
+ *. null when the list can't be read whole.
+ */
+export function listedExtensions(): ListedExtension[] | null {
+  const raws = manifestRaw();
+  if (raws === null) return null;
+  const file = extensionsFile();
+  const out: ListedExtension[] = [];
   const seen = new Set<string>();
-  for (const raw of d.extensions) {
-    const v = validateExtension(raw);
-    if ("error" in v) {
-      warnOnce(`${file}: dropped an entry: ${v.error}`);
-      continue;
-    }
-    if (seen.has(v.entry.id)) {
-      warnOnce(`${file}: dropped a second entry with id ${v.entry.id}`);
-      continue;
-    }
+  raws.forEach((rawAny, index) => {
+    const raw = (typeof rawAny === "object" && rawAny !== null && !Array.isArray(rawAny) ? rawAny : {}) as Record<string, unknown>;
+    const notUsable = (error: string) => {
+      warnOnce(`${file}: dropped an entry: ${error}`);
+      out.push({ raw, index, error, state: "not-usable", active: false });
+    };
+    const v = validateExtension(rawAny);
+    if ("error" in v) return notUsable(v.error);
+    if (seen.has(v.entry.id)) return notUsable(`a second entry with id ${v.entry.id}`);
     seen.add(v.entry.id);
-    out.push({ ...v, commands: (raw as { commands?: unknown }).commands });
+    if (raw.needsContract !== undefined && !parseContract(raw.needsContract)) return notUsable(`${v.entry.id}: needsContract must read like "1.20"`);
+    out.push({ raw, index, valid: { ...v, commands: raw.commands }, ...stateOf(raw, v.entry.id) });
+  });
+  return out;
+}
+
+/** The list's active entries; [] when it is missing, null when it is there but unreadable. A Changed one
+    carries `changed`, so its page is off while the rest of it works. */
+function manifestEntries(): Valid[] | null {
+  const listed = listedExtensions();
+  if (listed === null) return null;
+  const out: Valid[] = [];
+  for (const l of listed) {
+    if (!l.active || !l.valid) continue;
+    out.push(l.state === "changed" ? { ...l.valid, entry: { ...l.valid.entry, changed: true } } : l.valid);
   }
   return out;
 }
+
+/** Every id on the list, active or not: a peer's entry never takes one. */
+export const listedIds = (): string[] => (listedExtensions() ?? []).flatMap((l) => (l.valid ? [l.valid.entry.id] : []));
+
+/** One entry on the list whatever its state: a title, an old card's words. */
+export const listedExtension = (id: string): ListedExtension | undefined => listedExtensions()?.find((l) => l.valid?.entry.id === id);
 
 /**
  * A peer host's extension (server/sync/extensions.ts), listed here only while the mesh syncs
@@ -240,12 +316,27 @@ export interface PeerExtensionEntry {
   entry: ExtensionEntry;
   /** Its dist is a directory on this host too (shown in the reason, never acted on). */
   installed: boolean;
+  /** The peer that published it. */
+  from?: string;
 }
 let peerExtensions: (() => PeerExtensionEntry[]) | null = null;
 /** Set by server/sync while extensions sync is on; null (the default) = this host's manifest alone. */
 export const setPeerExtensions = (fn: (() => PeerExtensionEntry[]) | null): void => {
   peerExtensions = fn;
 };
+
+let tellPeers: (() => void) | null = null;
+/** Set by server/sync: tell peers now. An approval changes what is active without touching the list file. */
+export const setPeersOfExtensions = (fn: (() => void) | null): void => {
+  tellPeers = fn;
+};
+export const tellPeersOfExtensions = (): void => tellPeers?.();
+
+/** What this host publishes: its active entries, in the fields a peer has always read, never a folder or a program. */
+export const publishedExtensions = (): ExtensionEntry[] => readExtensions().map(({ changed: _c, ...e }) => e);
+
+/** Peers' entries, for Settings → Extensions' own group. */
+export const peerExtensionEntries = (): PeerExtensionEntry[] => peerExtensions?.() ?? [];
 
 export const findExtension = (id: string): ExtensionEntry | undefined => readExtensions().find((e) => e.id === id);
 
@@ -266,6 +357,8 @@ function whyDown(err: unknown): string {
 }
 
 async function probe(entry: ExtensionEntry): Promise<Health> {
+  // No program: nothing to ask.
+  if (!entry.api) return { status: "ok" };
   try {
     const res = await fetch(`${entry.api}/api/health`, { signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) });
     await res.body?.cancel();
@@ -286,6 +379,10 @@ function health(entry: ExtensionEntry): Promise<Health> {
 
 /** For tests: forget every cached health answer. */
 export const clearHealthCache = (): void => healthCache.clear();
+/** A program was just started: its next reading is a fresh one. */
+export const clearHealthOf = (id: string): void => {
+  for (const key of healthCache.keys()) if (key.startsWith(`${id}\n`)) healthCache.delete(key);
+};
 
 export async function listExtensions(): Promise<ExtensionInfo[]> {
   const local = await Promise.all(
@@ -294,6 +391,8 @@ export async function listExtensions(): Promise<ExtensionInfo[]> {
       if (e.description) info.description = e.description;
       if (e.icon) info.icon = e.icon;
       if (offers) info.offers = offers;
+      if (!e.dist) info.page = false;
+      if (e.changed) info.changed = true;
       return info;
     }),
   );
@@ -320,6 +419,8 @@ export async function listExtensions(): Promise<ExtensionInfo[]> {
  * else missing, or reaching outside `dist`, is a 404.
  */
 export function serveExtensionFile(entry: ExtensionEntry, rest: string): Response {
+  if (entry.changed) return new Response("This extension changed and is waiting for your approval.", { status: 404 });
+  if (!entry.dist) return new Response("This extension has no page.", { status: 404 });
   let segments: string[];
   try {
     segments = rest.split("/").filter(Boolean).map(decodeURIComponent);
@@ -430,6 +531,7 @@ export function stripSovaCredentials(headers: Headers): void {
  * timeout of ours, so a streamed body runs as long as the backend keeps it open.
  */
 export async function proxyExtension(c: Context, entry: ExtensionEntry, tail: string): Promise<Response> {
+  if (!entry.api) return c.json({ error: "This extension has no program" }, 404);
   const incoming = new URL(c.req.url);
   const headers = new Headers(c.req.raw.headers);
   const host = headers.get("host");
@@ -457,7 +559,7 @@ export function extensionSocketRoute(pathname: string): [string, string] | null 
 }
 
 /** The backend's WS URL: the api URL (prefix kept) with ws/wss for http/https, plus the tail. */
-export const extensionSocketUrl = (entry: ExtensionEntry, tail: string, search: string): string =>
+export const extensionSocketUrl = (entry: ExtensionEntry & { api: string }, tail: string, search: string): string =>
   `${entry.api.replace(/^http/, "ws")}${tail}${search}`;
 
 /** Answer a not-yet-upgraded socket with a plain HTTP error and close it. */
@@ -497,9 +599,13 @@ export function upgradeExtensionSocket(req: IncomingMessage, socket: Duplex, hea
     refuse(socket, 404, { error: "Unknown extension" });
     return;
   }
+  if (!entry.api) {
+    refuse(socket, 404, { error: "This extension has no program" });
+    return;
+  }
   const headers: Record<string, string> = { "X-Sova-Origin": sovaOrigin() };
   if (req.headers.host) headers["X-Forwarded-Host"] = req.headers.host;
-  proxySocket(req, socket, head, extensionSocketUrl(entry, tail, search), headers, {
+  proxySocket(req, socket, head, extensionSocketUrl({ ...entry, api: entry.api }, tail, search), headers, {
     onError: (err) => {
       console.warn(`[extensions] ${id}: ws ${tail} failed: ${whyDown(err)}`);
       return [502, { error: "extension down", id }];

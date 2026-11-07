@@ -71,7 +71,7 @@ describe("GET /api/commands", () => {
       ["ext.notes.snap", "ext.notes.tidy", "ext.board.pin", "ext.clock.lap", "ext.mail.send", "ext.radio.tune"],
     );
     assert.ok(isServedList(body), "the command line takes it as a served list");
-    assert.equal((body.server as { extensionContract?: unknown }).extensionContract, 19, "the extension contract's number (§app.served-commands/route)");
+    assert.equal((body.server as { extensionContract?: unknown }).extensionContract, 20, "the extension contract's number (§app.served-commands/route)");
   });
 
   test("an entry the server drops lists nothing, though the command line's own copy would list it", async () => {

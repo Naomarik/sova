@@ -325,6 +325,10 @@ export interface SessionCardsAnswer {
   drawings?: Omit<DrawingDecl, "guide">[];
   /** The ids of extensions whose card types the session holds but that are no longer installed. */
   gone?: string[];
+  /** The ids of those that are on the list, turned off. */
+  off?: string[];
+  /** The ids of those on the list that can't run right now: waiting, folder gone, needing a newer Sova. */
+  blocked?: string[];
   /** Whether the session's project's cards are trusted to act (§chat.transcript-cards/trust), and its name. */
   trust?: { owner: string; name: string; trusted: boolean };
 }

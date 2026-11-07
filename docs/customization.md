@@ -141,13 +141,62 @@ configuration before opting in. For the default Sova installation, the script is
 
 ## Sova extensions
 
-A Sova extension is a small web app of your own that runs inside Sova: a card on the landing page,
-and a page at `#/ext/<id>` that shows the extension's UI beside the sessions list. Unlike the pi
-extensions above, it adds nothing to the agent. It is a built UI (a folder with an `index.html`)
-plus a backend you run yourself, on this machine.
+A Sova extension is something of your own that you add to Sova from a folder on this computer: a card on
+the landing page, a page at `#/ext/<id>` beside the sessions list, a program that runs on this machine, and
+what it adds to Sova's screens and chats. All but the card are optional. Unlike the pi extensions above, it
+adds nothing to the agent.
 
-Install one by listing it in `~/.pi/agent/sova/extensions.json` (set `SOVA_EXTENSIONS_FILE` to use
-another file). Sova reads the file on every request and never writes it:
+### Adding one from a folder (extension contract v1.20)
+
+Choose the folder in **Settings → Extensions → Add Extension**. Sova points at the folder and never copies,
+moves, changes or deletes it. A folder is an extension when it holds `sova-extension.json` at its root:
+
+```json
+{ "version": 1, "id": "notes", "title": "Notes", "description": "Scratch notes per project", "icon": "file",
+  "needsContract": "1.20",
+  "page": "dist",
+  "backend": { "run": ["node", "backend/server.mjs"], "folder": "backend" },
+  "commands": [], "screens": [], "cards": [], "drawings": [] }
+```
+
+- Required: `version: 1`, `id`, `title` and `needsContract`, the rules it needs, a string `"<major>.<minor>"`.
+  A key Sova doesn't know is refused. `commands`, `screens`, `cards` and `drawings` mean what they mean in a list
+  entry below, with `dist` read as `page`.
+- `page`: a folder holding its `index.html`. `backend.run`: the program as words, never a shell line.
+  `backend.folder`: the program's own code; with none, the whole extension folder. Both stay inside the folder,
+  and neither may lie in `.git`, `node_modules`, `.worktrees` or `.agent`, anywhere, or in `data` or `logs` directly
+  in the extension's folder: approval skips those.
+- **Nothing runs until you press Install and Turn On**, after a review of the exact program, what its page and
+  key can do, and what it adds. **It runs as you, with no sandbox.** No restart is needed. Its page, chips and
+  commands work everywhere at once; its cards reach new chats, and open chats keep what they started with.
+- **Approval is per version:** the entry, the description file, the page folder and the program folder, every
+  file by its bytes, skipping those same folders and files ending `.log`. So libraries, and data and logs kept in
+  `SOVA_EXTENSION_DATA_DIR` or that top-level `data/` and `logs/`, never ask again. A file its program writes
+  anywhere else in what counts, say `./state.json`, is a code change like any other. When its code changes, within about 3 s the row reads **Changed**: its page and its views stop, its
+  program goes on with the old code and won't start again until you approve.
+- **Only your own page** adds, approves, turns on, turns off and removes. A chat, a script, an extension's key and
+  another computer are refused and told where to click. A request whose `Referer` is under `/ext/` is refused too,
+  but that stops accidents, not a hostile page: a page you installed can do what you can.
+- **Its program** starts from its folder with a small environment and no Sova token, plus `PORT` (listen on
+  `127.0.0.1` there), `SOVA_URL`, `SOVA_EXTENSION_ID`, `SOVA_EXTENSION_KEY_FILE` and `SOVA_EXTENSION_DATA_DIR`,
+  its folder for what it keeps. It must answer `GET /api/health`. Bare `node` runs under Sova's own runtime if
+  this computer has no other. Sova restarts it after a crash, at most 5 starts in 60 s. If it stops while Sova
+  isn't running, it comes back when Sova starts.
+- **Stopping Sova for good leaves an extension's program running; it stops when you stop it or Turn It Off.**
+- **Turn Off** stops its program and refuses its key at once, and keeps its place, data and approval. **Remove**
+  does that too, forgets its approval and card trust, and closes its open cards. Your folder stays, and so does its
+  data, `<state root>/extension-data/<id>`, unless you tick **Also delete its data**.
+- **An older Sova ignores `off`: after a downgrade it serves an off entry that has a `dist` and an `api`.** It also
+  drops an entry with no `dist` or no `api`, on that computer's list and from what a peer shares.
+
+### The list
+
+Everything above writes one entry in `~/.pi/agent/sova/extensions.json` (set `SOVA_EXTENSIONS_FILE` to use another
+file). Sova reads it on every request. You can still edit it by hand, but what is added or edited outside the
+screen reads **Waiting for You** and runs nothing until you approve it. Entries already there when you first start
+this version are approved once as they stand. A server started with `SOVA_EXTENSIONS_FILE` counts its entries as
+approved, and they never read Changed: its own environment named that file, and test copies use it. An entry with a
+`dist` and an `api` is the shape a hand-written one has, where you run the backend yourself:
 
 ```json
 {
@@ -288,7 +337,7 @@ transcript row's `id` up to its first `:`:
 
 An extension is a guest with a name badge. It hears what happens, shows things, asks with a card and
 says things to a chat, always under its own name. Your backend can read the contract's number from
-`GET /api/commands`: `server.extensionContract` is `19`. If it's missing or lower, that Sova is too
+`GET /api/commands`: `server.extensionContract` is `19` or higher. If it's missing or lower, that Sova is too
 old: say so instead of half working.
 
 - **`session.send` (`POST /api/sessions/prompt`) is the one way to speak.** Sova marks the message with

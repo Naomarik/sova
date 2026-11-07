@@ -150,6 +150,7 @@ export function protectedWhy(pid: number, h: Pick<LeftoverHost, "selfPid" | "ppi
   const own = h.cgroup(h.selfPid);
   const ownUnit = unitOfCgroup(own);
   if (ownUnit && unitOfCgroup(cg) === ownUnit && ownUnit.endsWith(".service")) return "Sova's own server's unit";
+  if (/\/sova-ext-[^/\n]*\.service/.test(cg)) return "an extension's program";
   if (/\/sova-(svc|hook)-/.test(cg) || h.ownedByCopy(pid)) return "a copy's own process";
   for (const u of adoptedUnits) if (cg.includes(`/${u.endsWith(".service") ? u : `${u}.service`}`)) return `slot 0's adopted unit ${u}`;
   return null;

@@ -2,8 +2,8 @@ import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMo
 import { releaseControl } from "../lib/release-control";
 import type { ChatClaudeLogin, SlashCommand, UploadResult } from "../../shared/protocol";
 import { avatarLogins, composerLogin } from "../lib/claude-login";
-import { runControls } from "../lib/compact";
-import { createTouchMode, enterSends, notePress as pressAt, refocusAfterSend, type SendPress } from "../lib/input-mode";
+import { runControls, stopButton } from "../lib/compact";
+import { aheadOfDraft, composerKey, createEscTimes, createTouchMode, enterSends, notePress as pressAt, refocusAfterSend, toEnd, type SendPress } from "../lib/input-mode";
 import { watchKeyboard } from "../lib/voice/keyboard";
 import { enterRunsLocal, insertCommand, localCommand, menuCommands, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
@@ -223,8 +223,10 @@ export function Composer(props: {
   /** `text` already names each attachment's path; `running`: a reply runs, as this pane sees it (the
       frame is the chat's choice, sendFrame); `attachments` are for the optimistic row. */
   onSend(text: string, running: boolean, attachments: UploadResult[]): boolean;
-  onAbort(): void;
-  /** Queued text a Stop handed back; each new object goes ahead of the draft (TUI Esc order). */
+  /** Stop: `via` "esc" when an Esc in the box asked for it (the chat also hands back the reply's text so far). */
+  onAbort(via: "button" | "esc"): void;
+  /** Text handed back (queued messages a Stop took back, the reply's text an Esc stop returned);
+      each new object goes ahead of the draft (TUI Esc order). */
   restored?: { text: string } | null;
   /** Text a transcript card's view staged (§chat.transcript-cards/view-api): put at the end of the draft, never sent. */
   staged?: { text: string } | null;
@@ -323,8 +325,12 @@ export function Composer(props: {
   let disposed = false;
   /** Listeners Solid can't delegate (paste), added by hand so closing can take them off. */
   const listening = new AbortController();
+  /** The page's Esc times: an Esc right after another never stops the reply, so the press that
+      closes a menu, a pane or a dictation can't (createEscTimes, escTooSoon). */
+  const escs = createEscTimes();
   onCleanup(() => {
     disposed = true;
+    escs.dispose();
     flushDrafts();
     // A delegated event can keep this textarea alive after the view closes (lib/release-control):
     // make it a dead end, so what is kept is the textarea, not the closed session's transcript.
@@ -334,6 +340,15 @@ export function Composer(props: {
 
   const reason = () => props.readOnly ?? props.blocked ?? null;
   const controls = () => runControls(props.running, !!props.compacting);
+  /** Stop: hidden, aria-disabled or usable. Esc in the box asks the same question. */
+  const stopState = () =>
+    stopButton({
+      running: props.running,
+      compacting: !!props.compacting,
+      readOnly: !!props.readOnly,
+      stopping: props.stopping,
+      stopBlocked: !!props.stopBlocked,
+    });
   /** TUI-live, connecting, reconnecting: nothing attaches and nothing sends. */
   const disabled = () => !!reason();
   /** What the foot says: the state's reason, else that an attachment is still uploading. */
@@ -769,17 +784,23 @@ export function Composer(props: {
     input.style.height = `${input.scrollHeight}px`;
   };
   createEffect(on(text, () => queueMicrotask(grow)));
+  /** Text came back to the box: set it, then, once the box has grown (grow is a microtask) and
+      before the frame paints, show the caret at its end. */
+  const comeBack = (v: string) => {
+    setDraft(v);
+    requestAnimationFrame(() => !disposed && toEnd(input));
+  };
   createEffect(
     on(
       () => props.restored,
-      (r) => r?.text && setDraft([r.text, text()].filter((t) => t.trim()).join("\n\n")),
+      (r) => r?.text && comeBack(aheadOfDraft(r.text, text())),
       { defer: true },
     ),
   );
   createEffect(
     on(
       () => props.staged,
-      (r) => r?.text && setDraft([text(), r.text].filter((t) => t.trim()).join("\n\n")),
+      (r) => r?.text && comeBack([text(), r.text].filter((t) => t.trim()).join("\n\n")),
       { defer: true },
     ),
   );
@@ -1227,34 +1248,38 @@ export function Composer(props: {
                 press = null;
                 // A bare local command runs on the Enter that would send; in touch mode it's a newline.
                 const runsLocal = enterSends(e, touch()) && enterRunsLocal(text(), e.key, e.shiftKey, localOpts());
-                if (slashOpen() && !e.isComposing && !runsLocal) {
-                  const hasMatches = slashMatches().length > 0;
-                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                    if (!hasMatches) return;
+                const slash = slashOpen();
+                const mention = mentionOpen();
+                // One rule says what the key does (lib/input-mode composerKey): the / menu, then the @
+                // menu, then Esc stops (after a dictation, its window capture listener, and any popover
+                // Esc closes have had their turn, and never right after another Esc), then Enter sends.
+                switch (
+                  composerKey(e, {
+                    slash: { open: slash, matches: slash ? slashMatches().length : 0 },
+                    mention: { open: mention, matches: mention ? mentionMatches().length : 0 },
+                    runsLocal,
+                    touch: touch(),
+                    stop: stopState(),
+                    popoverOpen: () => !!document.querySelector(":popover-open:not([popover=manual])"),
+                    escs,
+                  })
+                ) {
+                  case "slash-move":
                     e.preventDefault();
                     moveSlash(e.key === "ArrowDown" ? 1 : -1);
                     return;
-                  }
-                  if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
-                    if (hasMatches) {
-                      e.preventDefault();
-                      pickSlash(slashActive());
-                      return;
-                    }
-                    if (e.key === "Tab") return; // nothing to insert: Tab moves focus as usual
-                  }
-                  if (e.key === "Escape") {
+                  case "slash-pick":
+                    e.preventDefault();
+                    pickSlash(slashActive());
+                    return;
+                  case "slash-close": {
                     e.preventDefault();
                     const token = slashToken();
                     setSlashDismissed(token ? tokenKey(token) : null);
                     updateSlash();
                     return;
                   }
-                }
-                if (mentionOpen() && !e.isComposing) {
-                  const hasMatches = mentionMatches().length > 0;
-                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                    if (!hasMatches) return;
+                  case "mention-move": {
                     e.preventDefault();
                     const n = mentionMatches().length;
                     setMentionActive((i) => (i + (e.key === "ArrowDown" ? 1 : -1) + n) % n);
@@ -1262,23 +1287,28 @@ export function Composer(props: {
                   }
                   // Enter and Tab both complete: the next Enter, menu closed, does what Enter does.
                   // With no match, Enter falls through to that rule with the typed text as-is.
-                  if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
-                    if (hasMatches) {
-                      e.preventDefault();
-                      pickMention(mentionActive());
-                      return;
-                    }
-                    if (e.key === "Tab") return; // nothing to complete: Tab moves focus as usual
-                  }
-                  if (e.key === "Escape") {
+                  case "mention-pick":
+                    e.preventDefault();
+                    pickMention(mentionActive());
+                    return;
+                  case "mention-close": {
                     e.preventDefault();
                     const token = mentionToken();
                     setMentionDismissed(token ? mentionKey(token) : null);
                     updateMention();
                     return;
                   }
+                  // What Stop does, plus the reply's text so far back in the box. Text and focus stay.
+                  case "stop":
+                    e.preventDefault();
+                    props.onAbort("esc");
+                    return;
+                  case "send":
+                    void send(e);
+                    return;
+                  case "default":
+                    return;
                 }
-                if (enterSends(e, touch())) void send(e);
               }}
             />
           </div>
@@ -1310,7 +1340,7 @@ export function Composer(props: {
                 <span class="button-label">{controls().steer ? "Steer" : "Send"}</span>
               </button>
             </Show>
-            <Show when={controls().stop && !props.readOnly}>
+            <Show when={stopState() !== "hidden"}>
               {/* Icon only, at every width: the 44px square is the form the actions row already
                   collapses to under 480px, and the run-status row above says "Stopping…" — so the
                   word was repeating what the status row and the glyph already say. */}
@@ -1318,13 +1348,13 @@ export function Composer(props: {
                 type="button"
                 class="button button-destructive button-icon"
                 aria-label="Stop"
-                title="Stop"
-                aria-disabled={props.stopping || props.stopBlocked ? "true" : undefined}
+                title="Stop · Esc in the composer"
+                aria-disabled={stopState() === "disabled" ? "true" : undefined}
                 aria-describedby={props.stopBlocked ? paneId("composer-reason") : undefined}
                 onPointerDown={notePress}
                 onClick={() => {
                   const p = takePress();
-                  if (!props.stopping && !props.stopBlocked) props.onAbort();
+                  if (stopState() === "usable") props.onAbort("button");
                   settleFocus(p);
                 }}
               >

@@ -298,6 +298,20 @@ divergence is stated, and are confirmed by `docs/protocol-probes.md`.
   probes cover 2.1.276–2.1.278 only. A CLI update can change frame shapes or
   the permission handling that `--allowedTools mcp__sova` relies on; the bridge
   fails loud rather than guessing.
+- **A stopped reply sent back rewinds the child (undocumented CLI request).** After an
+  interrupt the CLI keeps the partial reply and a `[Request interrupted by user]` row. When
+  the next message is that stopped, text-only reply sent back unchanged (an Esc stop puts it
+  in Sova's message box) and no tool ran in that turn, the bridge sends
+  `rewind_conversation` with `target_message_uuid` set to the turn's prompt (its uuid comes from
+  the `isReplay` echo `--replay-user-messages` gives), then the prompt and the new message as
+  one. The rewind drops the prompt too, and keeps the earlier chat and its prompt cache.
+  Aimed at the partial reply itself it answers `target_not_found`. Any other answer than
+  `{ rewound: true }`, or an unknown uuid, sends the new message alone, as before. No answer at
+  all restarts the child (it may rewind late), and the restart's fold leaves such a reply out the
+  same way. The box's copy may be short of the reply by up to 200 characters (what streams
+  after the press), or half the reply if that is less; a shorter copy counts as an edit. Measured on CLI 2.1.317: about 3 ms, and the next
+  turn read the cache (51,149 read, 158 written). `--resume-session-at` does the same in
+  about 2 s, so it is not used. Canary: `node tests/spike/rewind-stopped-turn.mjs --live`.
 - Two retry layers (CLI-internal and pi) exist; rate limits surface as errors.
 - **Process lifetime.** One CLI process per pi session lives until the session
   is archived / shut down (`session_shutdown`), the host exits (children are

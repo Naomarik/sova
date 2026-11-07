@@ -49,7 +49,9 @@ While a turn runs, the composer's **Send** becomes **Steer**, and its placeholde
 
 Until the agent takes it at its next step, your message shows as **Queued**, with a button to remove it, even after it has been handed into the running turn. Remove takes out only that message, never another one with the same text or something else waiting (a reminder, a worker's report). A removed message is discarded, and if the agent took it in the same instant, Sova says "Already sent. It can't be removed now." This works the same in every chat: pi, Claude Code, workers and team members.
 
-**Stop** ends the turn. Anything still queued comes back to the composer for you to edit or send again, and the transcript notes "Stopped by you at 1:43 PM." `Esc` doesn't stop a turn, so a stray key can't.
+**Stop** ends the turn, and so does `Esc` while you're in the composer. Anything still queued comes back to the composer for you to edit or send again, and the transcript notes "Stopped by you at 1:43 PM." An `Esc` that closes something (a menu, the command palette, the model picker, the session pane or a dictation) does only that, and an `Esc` within half a second of another never stops a turn, so a quick second press is safe.
+
+`Esc` also puts the reply's text so far in the composer, ahead of anything you had typed, which stays as it was. Queued messages come back above it. Edit it and send it as a new message, or delete it. The stopped reply stays in the transcript too. Nothing comes back if the reply had no text yet, if a tool was running, or during a compaction. The **Stop** button doesn't do this; it only stops the turn.
 
 ## Switch models mid-session
 

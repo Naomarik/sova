@@ -4,6 +4,11 @@ import { KEYS } from "../commands/keys";
 import { trapFocus } from "./ui";
 import "../command-palette.css";
 
+/** The one panel key the sheet lists: Esc in a chat's composer, which stops a running reply. */
+const MESSAGE_BOX_KEYS: readonly { keys: string; does: string }[] = [
+  { keys: "Esc", does: "In the composer while a reply runs: stops it and puts its text so far in the composer." },
+];
+
 /** The palette's own keys, after the app-wide ones (§app.command-palette/shortcut-sheet). */
 const PALETTE_KEYS: readonly { keys: string; does: string }[] = [
   { keys: "↑ ↓", does: "In the command palette: chooses a row." },
@@ -13,7 +18,8 @@ const PALETTE_KEYS: readonly { keys: string; does: string }[] = [
 
 /**
  * The shortcut sheet (§app.command-palette/shortcut-sheet): every app-wide key in the one table
- * (commands/keys), then the palette's own. Loaded on the first "?" (App's `lazy`).
+ * (commands/keys), then the composer's Esc, then the palette's own. Loaded on the first "?"
+ * (App's `lazy`).
  */
 export default function ShortcutSheet(props: { onClose(): void }) {
   const uid = createUniqueId();
@@ -41,7 +47,7 @@ export default function ShortcutSheet(props: { onClose(): void }) {
         </div>
         <div class="modal-body">
           <dl class="shortcut-list">
-            <For each={[...KEYS.map((k) => ({ keys: k.label, does: k.does })), ...PALETTE_KEYS]}>
+            <For each={[...KEYS.map((k) => ({ keys: k.label, does: k.does })), ...MESSAGE_BOX_KEYS, ...PALETTE_KEYS]}>
               {(k) => (
                 <div class="shortcut-row">
                   <dt>

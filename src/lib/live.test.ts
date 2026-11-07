@@ -14,6 +14,9 @@ import {
   BATON_SENT_EVENT,
   blockStreams,
   emptyLive,
+  interruptedReplyText,
+  createSettleWords,
+  STOPPED_RETURNED,
   liveEventsOf,
   liveInputCount,
   markDelivered,
@@ -933,4 +936,60 @@ nodeTest("a server's tool keeps its server and tool from the part's start to its
   seedLive(setJ, { message: { role: "assistant", parts: [{ kind: "toolCall", id: "c2", name: "mcp__slow__wait", mcp }] }, tools: [{ callId: "c2", name: "mcp__slow__wait", mcp, output: "", images: [] }] } as never);
   assert.deepEqual(j.tools.c2?.mcp, mcp);
   assert.deepEqual(runDetail(j), { step: "tool", text: "running slow · wait" });
+});
+
+test("an Esc stop hands back the text of the message still being written: its text only, ends trimmed", () => {
+  const [s, set] = store();
+  const update = (ev: Record<string, unknown>) => feed(set, { type: "message_update", assistantMessageEvent: ev });
+  feed(set, messageStart("zai", "glm-5.3"));
+  assert.equal(interruptedReplyText(s, false), "", "no text yet: nothing comes back");
+  update({ type: "thinking_start", contentIndex: 0 });
+  update({ type: "thinking_delta", contentIndex: 0, delta: "Let me plan" });
+  assert.equal(interruptedReplyText(s, false), "", "thinking is not the reply's text");
+  update({ type: "text_start", contentIndex: 1 });
+  update({ type: "text_delta", contentIndex: 1, delta: "\nHere is the plan:\n1. Read the " });
+  assert.equal(interruptedReplyText(s, false), "Here is the plan:\n1. Read the");
+  // A message sent meanwhile waits below the reply; the reply is still the one being written.
+  addPendingPrompt(set, "also check the tests", [], [], "c1");
+  update({ type: "toolcall_start", contentIndex: 2, id: "t1", toolName: "bash" });
+  update({ type: "text_start", contentIndex: 3 });
+  update({ type: "text_delta", contentIndex: 3, delta: "Then" });
+  assert.equal(interruptedReplyText(s, false), "Here is the plan:\n1. Read the\n\nThen", "text blocks joined by a blank line, no tool call");
+  assert.equal(interruptedReplyText(s, true), "", "a compaction running: nothing comes back");
+});
+
+test("an Esc stop between messages hands back nothing: the text before is finished", () => {
+  const [s, set] = store();
+  feed(set, messageStart("zai", "glm-5.3"));
+  feed(set, { type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 0 } });
+  feed(set, { type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "Running the tests." } });
+  feed(set, {
+    type: "message_end",
+    message: { role: "assistant", content: [{ type: "text", text: "Running the tests." }, { type: "toolCall", id: "t1", name: "bash", arguments: {} }], stopReason: "toolUse" },
+  });
+  feed(set, { type: "tool_execution_start", toolCallId: "t1", toolName: "bash", args: {} });
+  assert.equal(interruptedReplyText(s, false), "", "a tool runs");
+  // The next message starts with whitespace only: still nothing worth a draft.
+  feed(set, messageStart("zai", "glm-5.3"));
+  feed(set, { type: "message_update", assistantMessageEvent: { type: "text_start", contentIndex: 0 } });
+  feed(set, { type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: " \n " } });
+  assert.equal(interruptedReplyText(s, false), "");
+});
+
+test("no live reply at all hands back nothing", () => {
+  const [s] = store();
+  assert.equal(interruptedReplyText(s, false), "");
+});
+
+test("a stop that returned the reply's text settles saying so, never \"Reply finished.\"", () => {
+  assert.equal(STOPPED_RETURNED, "Stopped. The reply so far is in the composer.");
+  const words = createSettleWords();
+  assert.equal(words.settled(), "replied", "a turn that just ends");
+  words.returned();
+  assert.equal(words.settled(), "stopped", "the stop's turn settles");
+  assert.equal(words.settled(), "replied", "said once: the next turn's end is a reply again");
+  // A stop whose turn never settled (the connection dropped) doesn't speak for the next turn.
+  words.returned();
+  words.started();
+  assert.equal(words.settled(), "replied");
 });

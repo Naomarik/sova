@@ -25,11 +25,11 @@ mode: Sova's settings, `mode.json`, profiles and automations never name one, and
 none.
 
 A project mode **never turns itself on**. It is on only when someone turned it on in that chat: you,
-from its mode menu or `/mode`, or [the Overseer](/docs/overseer/), whose approval covers its tools and
-commands but not its hooks, or a script, a chat's agent or an extension, which turn on only a version already
-approved. A mode file has no way to say
+from its mode menu or a typed `/mode`, or [the Overseer](/docs/overseer/), whose approval covers its tools and
+commands but not its hooks, or a script or a chat's agent, which turn on only a version already
+approved. An extension can't turn one on. A mode file has no way to say
 "on by default". Save as default never saves a project mode, and neither a profile, an automation,
-a project's coding session nor `pi --minor` can turn one on.
+nor a project's coding session can turn one on.
 
 ## Where Sova looks
 
@@ -155,7 +155,7 @@ gets no Sova credential in its environment. It is not walled off, though: like a
 outside a sandbox, a hook can still read Sova's operator token file from disk under `HOME`.
 
 Hooks run only on replies in a chat Sova hosts, never when a chat opens, reloads or resumes, and
-never in a worker or in the plain pi terminal. A hook never runs twice at once: an event while it
+never in a worker or in a pi terminal. A hook never runs twice at once: an event while it
 runs leaves at most one more run waiting. Each hook runs at most 10 times in any 10 minutes, per
 hook, in each chat (a mode's 8 hooks may each run 10 times); past that its runs are skipped, the row says **Hooks paused: a hook ran 10 times in 10 minutes.**,
 and it runs again once the 10 minutes allow. A hook that fails or runs past its limit writes one
@@ -232,17 +232,22 @@ on. A worker never reads the mode's folder, and never turns a project mode on it
 at most 8 modes, built-in and project together. A later switch in the chat doesn't reach a running
 worker; a resumed worker takes the chat's modes as they are then. Its view in the Subagents pane lists the mode's id on its modes chip.
 
-## From the terminal
+## Typed in a chat
 
-`/mode project:release-check on` and `/mode project:release-check off` turn a mode on and off, and
-`/mode project:release-check` toggles it. The bare id works too when no built-in mode has that
-name. The `/mode` palette lists the project's modes after the built-in ones, and `/mode status`
-lists each with its state. `/mode default` never saves one, and `pi --minor` names only built-in
-modes. The terminal's status line shows the project modes that are on after the built-in ones.
+`/mode project:release-check on` and `/mode project:release-check off` typed in a chat's composer
+turn a mode on and off, and `/mode project:release-check` toggles it. The bare id works too when no
+built-in mode has that name. A mode with tools, commands or hooks turns on this way only if you've
+already approved that exact version in the chat's mode menu: typing never approves, and otherwise it
+says to approve the mode from the mode menu first. A pi terminal session has no project modes.
 
-A mode with tools turns on from the terminal only if you've already approved that exact version of
-its tools, in a Sova chat's mode menu. The terminal never asks: otherwise it says to approve the mode
-from a Sova chat's mode menu first.
+## Your personal modes
+
+You can keep modes of your own in `~/.pi/agent/sova/minor-modes/<id>/MODE.md`, in exactly a project
+mode's format. Every chat that offers project modes lists them in its own **Your modes** group, in
+every project, with the same states and approval; one approval holds in every project. A personal mode
+with the same id as a project's mode replaces it in that chat, and its row says "Replaces this
+project's {id}." Its programs still run in the chat's checkout. Personal modes are offered only while
+Settings → Experimental's **Sova runs chat modes** is on.
 
 ## When a mode is broken
 

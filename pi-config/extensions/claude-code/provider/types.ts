@@ -331,12 +331,15 @@ export function cliHasTool(name: string): boolean {
 }
 
 /**
- * Where a complete JSON object or array ends with more after it (arguments closed
- * early, closers left over): the first non-whitespace character left over, as V8
- * reports it. Undefined for any other fault.
+ * Where the two faults seen live begin, from the input alone, as V8 reports them:
+ * a complete JSON object or array with more after it (arguments closed early,
+ * closers left over) gives the first non-whitespace character left over;
+ * arguments cut off (the input completes to valid JSON with at most one value or
+ * key and its missing closers) give the end of the input. Undefined for any other fault.
  */
 function leftoverAt(json: string): number | undefined {
-	let depth = 0, inString = false, escaped = false;
+	const open: string[] = [];
+	let inString = false, escaped = false;
 	for (let i = 0; i < json.length; i++) {
 		const c = json[i];
 		if (inString) {
@@ -344,13 +347,21 @@ function leftoverAt(json: string): number | undefined {
 			else if (c === "\\") escaped = true;
 			else if (c === "\"") inString = false;
 		} else if (c === "\"") inString = true;
-		else if (c === "{" || c === "[") depth++;
-		else if ((c === "}" || c === "]") && --depth <= 0) {
-			if (depth < 0) return undefined;
+		else if (c === "{") open.push("}");
+		else if (c === "[") open.push("]");
+		else if (c === "}" || c === "]") {
+			if (open.pop() !== c) return undefined;
+			if (open.length) continue;
 			try { JSON.parse(json.slice(0, i + 1)); } catch { return undefined; }
 			const rest = json.slice(i + 1).search(/\S/);
 			return rest < 0 ? undefined : i + 1 + rest;
 		}
+	}
+	if (!open.length || escaped) return undefined;
+	// Cut after a comma, a colon, a key or a number's point needs one value or key first.
+	const closers = (inString ? "\"" : "") + open.reverse().join("");
+	for (const value of ["", "0", "\"\":0", ":0"]) {
+		try { JSON.parse(json + (inString ? "" : value) + closers); return json.length; } catch { /* try the next */ }
 	}
 	return undefined;
 }

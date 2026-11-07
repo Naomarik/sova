@@ -332,6 +332,12 @@ test("parseToolInput: the block-start input for no deltas, a plain object only, 
 	const spaced = parseToolInput("{\"a\":1}  ]");
 	assert.ok(!spaced.ok);
 	assert.equal(spaced.position, 9);
+	// Cut off right after a complete value or inside a string: Bun says "Expected '}'", not EOF; the end of the input either way.
+	for (const cutOff of ["{\"a\":1", "{\"a\":[1,{\"b\":\"x\"}", "{\"a\":\"ab", "{\"a\":1,", "{\"a\":[1,", "{\"a\"", "{\"a\":1."]) {
+		const verdict = parseToolInput(cutOff);
+		assert.ok(!verdict.ok, cutOff);
+		assert.equal(verdict.position, cutOff.length, cutOff);
+	}
 	const cut = parseToolInput("{\"a\":");
 	assert.ok(!cut.ok);
 	assert.equal(cut.position, 5);

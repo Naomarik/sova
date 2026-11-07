@@ -2,6 +2,17 @@
 
 [← Sova](README.md)
 
+## Before you open a pull request
+
+- Bug reports are preferred over PRs: [open an issue](https://github.com/Naomarik/sova/issues).
+- Behaviour or UI/UX changes start as an issue.
+- Small, easily validated bug fixes are welcome as PRs.
+- For behaviour or UI/UX, a PR that makes Sova extensible enough to cover your need is the kind most
+  likely to be accepted.
+
+A PR description is one short sentence, a few bullets and at most two short paragraphs. It names
+every LLM model used, and includes screenshots for UI changes if you're willing to upload them.
+
 ## Run a checkout
 
 Requires Git, Node.js ≥22.19, pnpm (the version `packageManager` in `package.json` pins) and

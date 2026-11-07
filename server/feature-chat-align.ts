@@ -56,7 +56,7 @@ const question = strict(
 const rejected = strict({ option: S("The alternative you considered."), why: S("Why not.") }, ["option", "why"]);
 const items = {
   findings: arr(S(), "What you found about how the project works today that shapes the plan; each becomes fN."),
-  approach: arr(S(), "The plan's steps, in order, in words the person uses; each becomes aN."),
+  approach: arr(S(), "The plan's steps, in words the person uses; each becomes aN. Say which can run at the same time."),
   rejected: arr(rejected, "Alternatives you ruled out; each becomes xN."),
   questions: arr(question, "Decisions the person must make; each becomes qN."),
 };

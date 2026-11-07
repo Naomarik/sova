@@ -7,19 +7,26 @@
       "§app.teams/running-limit",
       "§app.teams/seats",
       "§chat.alignment/model",
-      "§chat.alignment-review/route"
+      "§chat.alignment-review/route",
+      "§chat.alignment/document",
+      "§app.project-assistant/feature-chats"
     ],
     "authority": "accepted",
     "evidence": "unreviewed",
     "code": [
       "pi-config/extensions/mode/prompt.ts",
+      "pi-config/extensions/mode/minor.ts",
+      "pi-config/extensions/mode/align-tool.ts",
+      "pi-config/extensions/mode/align.ts",
       "pi-config/extensions/subagents/index.ts",
-      "pi-config/extensions/mode/tests/fixtures/flag-off-master.json"
+      "server/feature-chat-align.ts",
+      "site/src/content/docs/modes/delegate.md",
+      "site/src/content/docs/teams.md"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T06:59Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+      "at": "2026-11-07T01:25Z",
+      "source": "pi-session:01a1b2d6-bea7-73d4-9fe9-b82dc23ae834#541da9cc"
     }
   },
   "§chat.mode-menu/how-a-switch-reaches-the-chat": {

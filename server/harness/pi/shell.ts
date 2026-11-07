@@ -226,15 +226,19 @@ function ownStop(s: AgentSession, base: BashOperations, o: { signal?: AbortSigna
       const onAbort = () => abort();
       o.signal?.addEventListener("abort", onAbort, { once: true });
       if (o.signal?.aborted) abort();
+      // Output up to the limit, exactly, then none: the chunk that passes it is cut there, and whatever the command
+      // still prints before it dies is dropped, so the saved output and its file are the output's first maxBytes.
       let bytes = 0;
+      let over = false;
       const onData = (data: Buffer) => {
+        if (over) return;
+        const room = o.maxBytes === undefined ? Infinity : o.maxBytes - bytes;
         bytes += data.length;
-        if (o.maxBytes !== undefined && bytes > o.maxBytes && !x.signal?.aborted) {
-          limit();
-          abort();
-          return;
-        }
-        x.onData(data);
+        if (data.length <= room) return x.onData(data);
+        over = true;
+        if (room > 0) x.onData(data.subarray(0, room));
+        limit();
+        abort();
       };
       return base.exec(command, cwd, { ...x, onData }).finally(() => o.signal?.removeEventListener("abort", onAbort));
     },

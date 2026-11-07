@@ -183,7 +183,7 @@ describe("the user's own commands on pi", () => {
     const { s, shell, bash } = await session([(api: any) => api.on("user_bash", () => ({ operations: g.ops }))]);
     const r = await runOf(shell, "yes", { maxBytes: 15 }).done;
     assert.ok(!("refused" in r));
-    assert.deepEqual([r.cancelled, r.limited, r.output], [true, true, "0123456789"], "stopped at the chunk that passed it");
+    assert.deepEqual([r.cancelled, r.limited, r.output], [true, true, "012345678901234"], "cut at the limit exactly, nothing after");
     const gone = new AbortController();
     gone.abort();
     const early = runOf(shell, "rm -rf build", { signal: gone.signal });

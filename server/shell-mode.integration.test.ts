@@ -251,6 +251,10 @@ test("a command whose output passes the limit is stopped and saved as stopped at
     const saved = await a.find("the run saved", (f) => f.type === "shell_saved" && f.id === start.run.id);
     const rows = (await api("GET", `/api/transcript?path=${encodeURIComponent(ses.path)}&wire=2`)).body.items as any[];
     assert.equal(rows.find((r) => r.id === saved.entryId)?.shell?.cancelReason, "limit", "the saved row says so after a reload");
+    const whole = (await api("GET", `/api/sessions/shell-output?path=${encodeURIComponent(ses.path)}&entry=${saved.entryId}`)).body;
+    // The whole output is the command's first 20,000 bytes: no gap, nothing past the limit.
+    assert.equal(whole.bytes, 20000, "nothing past the limit");
+    assert.equal(whole.output, "limit-line\n".repeat(2000).slice(0, 20000), "the output's head, whole");
     a.close();
   } finally {
     s = prev;

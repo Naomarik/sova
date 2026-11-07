@@ -294,8 +294,8 @@ export class ChatWorker extends WorkerFold {
 					this.restoreOutcome(last.outcome, last.error);
 					this.restoreMissed(s.sessionFile, last.entryId);
 					this.processSettled();
-				} else if (first) this.restoreLatest(s.sessionFile, last?.entryId);
-			} else if (first) this.restoreLatest(s.sessionFile, s.lastSettled.entryId);
+				} else if (first && !this.steers) this.restoreLatest(s.sessionFile, last?.entryId);
+			} else if (first && !this.steers) this.restoreLatest(s.sessionFile, s.lastSettled.entryId);
 		}
 		if (s.lastSettled) {
 			if (s.lastSettled.key !== this.settleKey) this.settleSeenAt = Date.now();
@@ -311,7 +311,15 @@ export class ChatWorker extends WorkerFold {
 	private restoreMissed(file: string, upTo: string | undefined): void {
 		const after = this.recorded?.entryId;
 		const answers = answersInFile(file, { after, afterAt: this.recorded?.at, upTo }) ?? answersInFile(file, { after, afterAt: this.recorded?.at });
-		if (answers) this.restoreReport(answers);
+		if (answers?.length) this.restoreReport(answers);
+		else this.settleSilentRun(file, upTo);
+	}
+
+	/** The file vouches that this run was a wake's and wrote nothing: the last report stands, as after any self-started run. */
+	private settleSilentRun(file: string, upTo: string | undefined): void {
+		if (!silentWakeRun(file, this.recorded?.entryId, upTo)) return;
+		if (!this.finalOutput()) this.restoreLatest(file, this.recorded?.entryId);
+		this.foundSelfRun();
 	}
 
 	/** A run seen only in part just settled: the file has it all. A settle the file can't place (no entry named, or not
@@ -320,10 +328,14 @@ export class ChatWorker extends WorkerFold {
 		const pending = this.reportInFile;
 		this.reportInFile = undefined;
 		if (!pending || pending.steers !== this.steers || !this.sessionFile) return;
+		// The feed may not have shown how it ended.
+		const last = lastSettledRun(this.sessionFile);
+		if (last && last.entryId === this.settleEntryId && last.outcome !== "success") this.restoreOutcome(last.outcome, last.error);
 		const since = { after: this.recorded?.entryId, afterAt: this.recorded?.at };
 		const placed = this.settleEntryId ? answersInFile(this.sessionFile, { ...since, upTo: this.settleEntryId }) : null;
 		const answers = placed ?? (this.finalOutput() ? null : answersInFile(this.sessionFile, since));
 		if (answers?.length) this.restoreReport(answers);
+		else if (!this.finalOutput() || placed) this.settleSilentRun(this.sessionFile, this.settleEntryId);
 	}
 
 	/**
@@ -331,7 +343,6 @@ export class ChatWorker extends WorkerFold {
 	 * when the records say where it began; otherwise its newest answer, after the last instruction.
 	 */
 	private restoreLatest(file: string, end: string | undefined): void {
-		if (this.steers > 0) return;
 		const whole = end && end === this.recorded?.entryId && this.priorSettle ? answersInFile(file, { after: this.priorSettle.entryId, upTo: end }) : null;
 		const answers = whole?.length ? whole : newestAnswer(file);
 		if (answers.length) this.restoreReport(answers);
@@ -444,12 +455,31 @@ export function answersInFile(file: string, range: { after?: string; afterAt?: n
 	return entries.map((e) => answerOf(e.message)).filter(Boolean);
 }
 
-/** The newest answer after the last instruction in a worker's file: none when it hasn't answered that one. */
+/** What wakes a worker with no instruction: its job's end, its own nudge. The tag is the only signal a session file has. */
+const WAKE_TAG_RE = /^\[(?:job j\d+|wake_nudge n\d+)/;
+const isInstruction = (m: MessageEntry["message"]) => m.role === "user" && !WAKE_TAG_RE.test(textOf(m.content));
+
+/**
+ * The run between a recorded settle and `upTo` was a wake's and wrote nothing, as far as the file can vouch: it
+ * holds the record, and the run's end when one is named; a wake, and no answer or instruction, lie between them.
+ */
+function silentWakeRun(file: string, after: string | undefined, upTo: string | undefined): boolean {
+	if (!after) return false;
+	const entries = fileMessages(file);
+	const start = entries.findIndex((e) => e.id === after);
+	if (start < 0) return false;
+	const end = upTo ? entries.findIndex((e) => e.id === upTo) : entries.length - 1;
+	if (end < start) return false;
+	const run = entries.slice(start + 1, end + 1).map((e) => e.message);
+	return run.some((m) => m.role === "user") && run.every((m) => !isInstruction(m) && !answerOf(m));
+}
+
+/** The newest answer after the last instruction in a worker's file: none when it hasn't answered that one. A wake is no instruction. */
 function newestAnswer(file: string): string[] {
 	const entries = fileMessages(file, TAIL_BYTES);
 	for (let i = entries.length - 1; i >= 0; i--) {
 		const m = entries[i]!.message;
-		if (m.role === "user") return [];
+		if (isInstruction(m)) return [];
 		const text = answerOf(m);
 		if (text) return [text];
 	}

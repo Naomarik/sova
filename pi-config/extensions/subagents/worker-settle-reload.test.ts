@@ -56,14 +56,15 @@ async function rig(fn: (r: { file: string; host: FakeWorkerHost; ref: WorkerRef 
 /** Attach, past the first state's answer to the watch, and keep what it announces. */
 async function attached(host: FakeWorkerHost, ref: WorkerRef, attach: Record<string, unknown> = {}) {
 	const settles: string[] = [];
+	const quiet = { count: 0 };
 	const worker = new ChatWorker(
 		{ id: ref.workerId, groupId: "g", name: "n", task: "t", cwd: "/w" },
-		{ onChange() {}, onSettled: (w) => void settles.push(w.finalOutput()), onExit() {} },
+		{ onChange() {}, onSettled: (w) => void settles.push(w.finalOutput()), onQuietSettled: () => void quiet.count++, onExit() {} },
 		{ host, parent: PARENT, attach: { ref, ...attach } },
 	);
 	// The watch starts in a microtask and a host answers it at once.
 	await new Promise((resolve) => setImmediate(resolve));
-	return { worker, settles };
+	return { worker, settles, quiet };
 }
 
 const assertBC = (report: string | undefined) => {
@@ -352,6 +353,157 @@ test("reopened on a job's end: a worker whose process stopped idle reports its r
 		});
 	}
 });
+
+// ── a run that wrote nothing, found by a reload or a gap ────────────────────
+
+const CARD: Line = { id: "u1", role: "user", text: "[job j1] Background job ended." };
+const REPORTED_A: Line[] = [{ id: "u0", role: "user", text: "do the work" }, { id: "A", role: "assistant", text: "The real report" }];
+const SILENT: Line = { id: "E", role: "assistant", text: "" };
+const SETTLED_E = { key: "job#2", entryId: "E", outcome: "success" as const };
+const RECORD = { settleKey: "job#1", settleEntryId: "A", settledAt: T0 + 1500 };
+const FEEDS = [["legacy", {}], ["keyed", { keys: true as const }]] as const;
+
+/** Every way a parent finds a run: `arrive` brings it to the settle, from an attach with the record. */
+const FINDINGS: [string, (r: { host: FakeWorkerHost; ref: WorkerRef; feed: object }, lines: Line[], file: string, settled: typeof SETTLED_E | { key: string; outcome: "error"; entryId: string; error: string }) => Promise<Awaited<ReturnType<typeof attached>>>][] = [
+	["a reload after the settle, its process knowing it", async ({ host, ref, feed }, lines, file, settled) => {
+		write(file, lines);
+		host.state(ref.chatId, { ...feed, status: "idle", lastSettled: settled });
+		return attached(host, ref, RECORD);
+	}],
+	["a reload after the settle, its process reopened", async ({ host, ref, feed }, lines, file) => {
+		write(file, lines);
+		host.state(ref.chatId, { ...feed, status: "idle", lastSettled: null });
+		return attached(host, ref, RECORD);
+	}],
+	["a reload during the run", async ({ host, ref, feed }, lines, file, settled) => {
+		write(file, lines);
+		host.state(ref.chatId, { ...feed, status: "running", lastSettled: null });
+		const a = await attached(host, ref, RECORD);
+		host.event(ref.chatId, { type: "agent_settled", settleKey: settled.key, settleEntryId: settled.entryId });
+		host.state(ref.chatId, { status: "idle", lastSettled: settled });
+		return a;
+	}],
+	["a gap over the settle", async ({ host, ref, feed }, lines, file, settled) => {
+		write(file, REPORTED_A);
+		host.state(ref.chatId, { ...feed, status: "idle", lastSettled: { key: "job#1", entryId: "A", outcome: "success" } });
+		const a = await attached(host, ref, RECORD);
+		write(file, lines);
+		for (const fn of [...host.get(ref.chatId).watchers]) fn({ t: "gap" });
+		host.state(ref.chatId, { status: "idle", lastSettled: settled });
+		return a;
+	}],
+	["a gap into the run", async ({ host, ref, feed }, lines, file, settled) => {
+		write(file, REPORTED_A);
+		host.state(ref.chatId, { ...feed, status: "idle", lastSettled: { key: "job#1", entryId: "A", outcome: "success" } });
+		const a = await attached(host, ref, RECORD);
+		write(file, lines);
+		for (const fn of [...host.get(ref.chatId).watchers]) fn({ t: "gap" });
+		host.state(ref.chatId, { status: "running", lastSettled: { key: "job#1", entryId: "A", outcome: "success" } });
+		host.event(ref.chatId, { type: "agent_settled", settleKey: settled.key, settleEntryId: settled.entryId });
+		host.state(ref.chatId, { status: "idle", lastSettled: settled });
+		return a;
+	}],
+];
+
+for (const [feedName, feed] of FEEDS) {
+	for (const [how, find] of FINDINGS) {
+		test(`quiet: a job's run that wrote nothing sends nothing and its last report stays, found by ${how} [${feedName}]`, async () => {
+			await rig(async ({ file, host, ref }) => {
+				const { worker, settles, quiet } = await find({ host, ref, feed }, [...REPORTED_A, CARD, SILENT], file, SETTLED_E);
+				assert.deepEqual(settles, [], "no report");
+				assert.equal(quiet.count, 1, "the settle is recorded, and a held team wake goes on");
+				assert.equal(worker.finalOutput(), "The real report");
+				assert.equal(worker.status, "waiting");
+				assert.equal(worker.settleEntryId, "E");
+				await worker.dispose();
+			});
+		});
+
+		test(`quiet: a job's run that failed with nothing written still reports its failure, never the old answer, found by ${how} [${feedName}]`, async () => {
+			await rig(async ({ file, host, ref }) => {
+				const failed = (id: string) => ({ id, role: "assistant" as const, text: "", stopReason: "error" });
+				const { worker, settles, quiet } = await find({ host, ref, feed }, [...REPORTED_A, CARD, failed("E")], file, { key: "job#2", entryId: "E", outcome: "error", error: "provider 500" });
+				assert.equal(quiet.count, 0);
+				assert.equal(settles.length, 1, "reported");
+				assert.ok(!settles[0]!.includes("The real report"), settles[0]);
+				assert.equal(worker.taskOutcome, "error");
+				await worker.dispose();
+			});
+		});
+
+		test(`quiet: a run an instruction started that wrote nothing still reports, found by ${how} [${feedName}]`, async () => {
+			await rig(async ({ file, host, ref }) => {
+				const { worker, settles, quiet } = await find({ host, ref, feed }, [...REPORTED_A, { id: "u1", role: "user", text: "look again" }, SILENT], file, SETTLED_E);
+				assert.equal(quiet.count, 0, "never quiet");
+				assert.equal(settles.length, 1);
+				await worker.dispose();
+			});
+		});
+	}
+
+	test(`quiet: a card and an instruction in one run: the instruction decides, it reports [${feedName}]`, async () => {
+		await rig(async ({ file, host, ref }) => {
+			write(file, [...REPORTED_A, CARD, { id: "u2", role: "user", text: "look again" }, SILENT]);
+			host.state(ref.chatId, { ...feed, status: "idle", lastSettled: SETTLED_E });
+			const { worker, settles, quiet } = await attached(host, ref, RECORD);
+			assert.equal(quiet.count, 0);
+			assert.equal(settles.length, 1);
+			await worker.dispose();
+		});
+	});
+
+	test(`quiet: a job's run that did write reports what it wrote [${feedName}]`, async () => {
+		await rig(async ({ file, host, ref }) => {
+			write(file, [...REPORTED_A, CARD, { id: "E", role: "assistant", text: "the card's answer" }]);
+			host.state(ref.chatId, { ...feed, status: "idle", lastSettled: SETTLED_E });
+			const { worker, settles, quiet } = await attached(host, ref, RECORD);
+			assert.equal(quiet.count, 0);
+			assert.deepEqual(settles, ["the card's answer"]);
+			await worker.dispose();
+		});
+	});
+
+	test(`quiet against the fallback: a settle the file can't place reports text it finds; an entry it can't read is never quiet; no entry and no text is [${feedName}]`, async () => {
+		const mid = async (lines: Line[], settleEntryId?: string) => {
+			let out: { settles: string[]; quiet: number } | undefined;
+			await rig(async ({ file, host, ref }) => {
+				write(file, lines);
+				host.state(ref.chatId, { ...feed, status: "running", lastSettled: null });
+				const a = await attached(host, ref, RECORD);
+				host.event(ref.chatId, { type: "agent_settled", settleKey: "job#2", ...(settleEntryId ? { settleEntryId } : {}) });
+				out = { settles: a.settles, quiet: a.quiet.count };
+				await a.worker.dispose();
+			});
+			return out!;
+		};
+		assert.deepEqual(await mid([...REPORTED_A, CARD, { id: "B", role: "assistant", text: "in the file" }]), { settles: ["in the file"], quiet: 0 }, "no entry named, text found: the fallback reports it");
+		assert.deepEqual(await mid([...REPORTED_A, CARD, { id: "B", role: "assistant", text: "in the file" }], "unwritten"), { settles: ["in the file"], quiet: 0 }, "entry unwritten, text found: the fallback reports it");
+		assert.equal((await mid([...REPORTED_A, CARD], "unwritten")).quiet, 0, "an answer may be on its way: it reports");
+		assert.deepEqual(await mid([...REPORTED_A, CARD]), { settles: [], quiet: 1 }, "no entry named, nothing written: quiet");
+	});
+
+	test(`quiet needs the record found: a file that doesn't hold it can't vouch for a run, which reports [${feedName}]`, async () => {
+		await rig(async ({ file, host, ref }) => {
+			write(file, [CARD, SILENT]);
+			host.state(ref.chatId, { ...feed, status: "idle", lastSettled: SETTLED_E });
+			const { worker, settles, quiet } = await attached(host, ref, { settleKey: "job#1", settleEntryId: "gone" });
+			assert.equal(quiet.count, 0);
+			assert.equal(settles.length, 1);
+			await worker.dispose();
+		});
+	});
+
+	test(`quiet: after a quiet settle, the next reload still reads the last report back [${feedName}]`, async () => {
+		await rig(async ({ file, host, ref }) => {
+			write(file, [...REPORTED_A, CARD, SILENT]);
+			host.state(ref.chatId, { ...feed, status: "idle", lastSettled: SETTLED_E });
+			const { worker, settles, quiet } = await attached(host, ref, { settleKey: "job#2", settleEntryId: "E", settledAt: T0 + 60_000, priorSettle: { entryId: "A" } });
+			assert.deepEqual([settles.length, quiet.count], [0, 0]);
+			assert.equal(worker.finalOutput(), "The real report");
+			await worker.dispose();
+		});
+	});
+}
 
 const settleRecord = (fields: Record<string, unknown>, at: number) => ({
 	type: "custom",

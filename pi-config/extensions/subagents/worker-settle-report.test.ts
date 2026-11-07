@@ -572,6 +572,40 @@ test("settle report: a reload restores an idle worker's latest report: read-back
 	});
 });
 
+test("settle report: a job's run that wrote nothing found by a reload sends nothing: the record moves on and the last report reads back, through another reload too", async () => {
+	await rig(async (r) => {
+		const first = manager(r.file, r.host, r.agentDir);
+		first.start();
+		const chat = await spawned(first, r.host, "the real report");
+		await until(() => r.file.entries.some((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE && e.data.settleEntryId), "the record");
+		const record = r.file.entries.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE && e.data.settleEntryId).at(-1).data;
+		await first.shutdown();
+		const at = Date.now() + 60_000;
+		sessionLines(r.host.get(chat).ref.sessionFile!, [
+			{ id: "u0", at: at - 9000, role: "user", text: "do the work" },
+			{ id: record.settleEntryId, at: at - 8000, role: "assistant", text: "the real report" },
+			{ id: "u1", at: at - 7000, role: "user", text: "[job j1] Background job ended." },
+			{ id: "e1", at: at - 5000, role: "assistant", text: "" },
+		]);
+		r.host.state(chat, { status: "idle", lastSettled: { key: "job#9", entryId: "e1", outcome: "success" } });
+		const second = manager(r.file, r.host, r.agentDir);
+		second.start();
+		await until(() => r.file.entries.some((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE && e.data.settleEntryId === "e1"), "the settle recorded");
+		assert.equal(second.completions().length, 0, "nothing sent");
+		assert.equal(await second.statusOf("ag_01"), "waiting");
+		const back = await second.readBack("ag_01");
+		assert.ok(!back.includes(NO_OUTPUT), back);
+		assert.match(back, /the real report/);
+		await second.shutdown();
+		const third = manager(r.file, r.host, r.agentDir);
+		third.start();
+		await until(async () => (await third.statusOf("ag_01")) === "waiting", "picked back up");
+		assert.equal(third.completions().length, 0, "still nothing");
+		assert.match(await third.readBack("ag_01"), /the real report/);
+		await third.shutdown();
+	});
+});
+
 // ── a4: the jobs still running ─────────────────────────────────────────────
 
 function job(r: { jobs: string }, sessionId: string, id: string, over: Partial<JobRecord> = {}): void {

@@ -592,6 +592,12 @@ export abstract class WorkerFold implements Worker {
 		this.lastAssistant = { seq: ++this.pushSeq, text: answers[answers.length - 1]!, final: true };
 	}
 
+	/** A run found from outside the feed (a reload or a gap) that no instruction started and that wrote nothing: it ends
+	    as a self-started one does. Ended well, nothing is sent and the last report stands; failed, it reports. */
+	protected foundSelfRun(): void {
+		this.selfRun = { seq: ++this.pushSeq, taskOutcome: this.taskOutcome, error: this.error };
+	}
+
 	/** A settled run read from outside the feed (a reload or a gap): how it ended, for the settle that announces it. */
 	protected restoreOutcome(outcome: "success" | "error" | "aborted", error?: string): void {
 		this.taskAborted = outcome === "aborted";

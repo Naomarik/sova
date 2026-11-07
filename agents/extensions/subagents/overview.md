@@ -5,7 +5,9 @@ alsoUpdate: ["pi-config/extensions/subagents/README.md"]
 # subagents
 
 Background workers and native coordinated teams (`agent_spawn`, `team_create`, …). Sova imports its subagent
-profiles, team defaults, the worker-transcript protocol, the fork core's server half and the worker-priority hook.
+profiles, team defaults, the worker-transcript protocol, the fork core's server half, the worker-priority hook and
+the member identity (`mailbox.ts`: `MEMBER_ENV`, `decodeMemberContext`, read by `workerExtensionFactories` to leave
+the `spec` tool out of a monitor).
 
 ## What lives here
 

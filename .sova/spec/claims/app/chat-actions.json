@@ -70,9 +70,9 @@
     ],
     "evidence": "verified",
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T06:59Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+      "by": "naomarik",
+      "at": "2026-11-07T11:52Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
     }
   },
   "§app.chat-actions/terminal-open": {
@@ -96,6 +96,11 @@
       "server/chat-actions.ts",
       "server/app.ts"
     ],
-    "evidence": "reviewed"
+    "evidence": "verified",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-07T11:52Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
+    }
   }
 }

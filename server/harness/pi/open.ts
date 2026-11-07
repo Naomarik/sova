@@ -22,6 +22,7 @@ import { steerAllAtOnce } from "./queue-modes";
 import { agentRoot } from "../../state-root";
 import type { PiExtensionFactory, PiLoaderOptions, PiToolDefinition } from "./extension-types";
 import { installOwnCode, ownCodeLoader, withModesEntry } from "./own-code";
+import { sandboxBus } from "./shell";
 import { liveRead } from "./reader";
 import { PiHarnessSession } from "./session";
 import { piSessionState } from "./state";
@@ -166,7 +167,9 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
   // A chat process on a code generation loads Sova's extensions from its own copy, discovered and
   // listed alike (§app.chat-processes/code-generations). The server: nothing.
   installOwnCode();
-  const resourceLoaderOptions = ownCodeLoader(loader);
+  // The extensions' bus is Sova's, so the user's own commands see the sandbox's state (shell.ts, P40).
+  const sandbox = sandboxBus();
+  const resourceLoaderOptions = { ...ownCodeLoader(loader), eventBus: sandbox.bus };
   // Who runs this runtime's modes (§chat.mode-menu/sova-runs-modes): Sova's entry takes the discovered
   // mode extension's slot for this build's package manager, for the runtime's whole life (own-code.ts).
   const services = await withModesEntry(modesEntry, () =>
@@ -178,6 +181,7 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
       resourceLoaderOptions,
     }),
   );
+  sandbox.attach(services);
   lowerToolCommands(services.settingsManager);
   // Steers sent while the chat is busy land together, at the agent's next step (P28 steer-all).
   steerAllAtOnce(services.settingsManager);
@@ -196,20 +200,31 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
  * fail startup. A failure just means the models are absent until a session opens.
  *
  * `onStep` hears Sova's own name for each step as it begins (a chat process's start-up trail,
- * §app.chat-processes/boot-log); by default nothing does.
+ * §app.chat-processes/boot-log); by default nothing does. `modesEntry` is who runs this throwaway
+ * session's modes, in PiBuild.modesEntry's terms (§chat.mode-menu/sova-runs-modes): the discovered
+ * extensions load here, so the warm-up takes the same owner a chat would or the pi mode extension loads
+ * with the switch on.
  */
-export async function warmClaudeCodeProvider(modelRuntime: ModelRuntime, cwd: string, extensionFactories: PiExtensionFactory[], onStep: (step: string) => void = () => {}): Promise<void> {
+export async function warmClaudeCodeProvider(
+  modelRuntime: ModelRuntime,
+  cwd: string,
+  extensionFactories: PiExtensionFactory[],
+  onStep: (step: string) => void = () => {},
+  modesEntry: string | null = null,
+): Promise<void> {
   try {
     onStep("extensions load");
     installOwnCode();
     // The provider flag alone: the throwaway session needs nothing else, and the link flags would
     // read the access token, which throws (and logs its problem again) when the token file is damaged.
-    const services = await createAgentSessionServices({
-      cwd,
-      modelRuntime,
-      extensionFlagValues: extensionFlagValues({ claudeCode: true }),
-      resourceLoaderOptions: { extensionFactories: [...extensionFactories] },
-    });
+    const services = await withModesEntry(modesEntry, () =>
+      createAgentSessionServices({
+        cwd,
+        modelRuntime,
+        extensionFlagValues: extensionFlagValues({ claudeCode: true }),
+        resourceLoaderOptions: { extensionFactories: [...extensionFactories] },
+      }),
+    );
     for (const d of services.diagnostics) console.warn(`[chat] claude-code warm-up ${d.type}: ${d.message}`);
     // The flag is only visible from session_start, and session_start is emitted by
     // AgentSession.bindExtensions (dist/core/agent-session.js:2029) — NOT by creating the session.

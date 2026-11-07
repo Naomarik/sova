@@ -18,9 +18,11 @@ export type CommandId =
   | "session.send"
   | "session.fork"
   | "session.draft.get"
+  | "session.shell.output"
   | "session.draft.set"
   | "session.sandbox.set"
   | "session.tools.get"
+  | "session.time-spent"
   | "session.align.triage"
   | "session.workers.checks"
   | "session.context"
@@ -242,6 +244,8 @@ export type CommandId =
   | "chat.regenerate"
   | "chat.queue.remove"
   | "chat.reload-code"
+  | "chat.shell.list"
+  | "chat.shell.stop"
   | "chat.mode-command";
 
 /** Each command's params, as its catalogue entry declares them. */
@@ -344,6 +348,15 @@ export interface CommandParams {
     /** The session, by id or by path */
     "session"?: string;
   };
+  /** One page of a finished command's whole output (a command from shell mode), about 1 MB, from a byte offset. (only looks; needs the card's owner trusted) */
+  "session.shell.output": {
+    /** The session, by id or by path */
+    "session"?: string;
+    /** The command's transcript row id */
+    "entry": string;
+    /** The byte to start at (the previous page's `next`; default 0) */
+    "from"?: number;
+  };
   /** Replace a session's composer draft; its file is never written. (changes something; needs the card's owner trusted) */
   "session.draft.set": {
     /** The session, by id or by path */
@@ -362,6 +375,11 @@ export interface CommandParams {
   };
   /** The tools a held chat declares to its model now. (only looks; needs the card's owner trusted) */
   "session.tools.get": {
+    /** The session, by id or by path */
+    "session"?: string;
+  };
+  /** How long you have been with a session and how long its agent has worked: your time by activity, by the message it led to, and each alignment's time on screen. (only looks; needs the card's owner trusted) */
+  "session.time-spent": {
     /** The session, by id or by path */
     "session"?: string;
   };
@@ -3721,6 +3739,22 @@ export interface CommandParams {
     /** How long to wait for the outcome, in ms (0 to 300000; default 30000). Past it the answer is `unknown` (exit 5), never a retry */
     "wait"?: number;
   };
+  /** The commands running in a chat from shell mode: id, command (none for a `!!` one) and when each started. (only looks; needs the card's owner trusted) */
+  "chat.shell.list": {
+    /** The session, by id or by path */
+    "session"?: string;
+    /** How long to wait for the outcome, in ms (0 to 300000; default 30000). Past it the answer is `unknown` (exit 5), never a retry */
+    "wait"?: number;
+  };
+  /** Stop one command running in a chat from shell mode, as its card's Stop Command does, and wait until it has stopped. (changes something; needs the card's owner trusted) */
+  "chat.shell.stop": {
+    /** The session, by id or by path */
+    "session"?: string;
+    /** How long to wait for the outcome, in ms (0 to 300000; default 30000). Past it the answer is `unknown` (exit 5), never a retry */
+    "wait"?: number;
+    /** The command's run id (from List Commands) */
+    "command": string;
+  };
   /** Run a command of a project mode that is on in a chat, from the version the chat approved. (changes something; needs the card's owner trusted) */
   "chat.mode-command": {
     /** The session, by id or by path */
@@ -3751,9 +3785,11 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "session.send": "changes",
   "session.fork": "changes",
   "session.draft.get": "looks",
+  "session.shell.output": "looks",
   "session.draft.set": "changes",
   "session.sandbox.set": "changes",
   "session.tools.get": "looks",
+  "session.time-spent": "looks",
   "session.align.triage": "looks",
   "session.workers.checks": "looks",
   "session.context": "looks",
@@ -3975,5 +4011,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "chat.regenerate": "changes",
   "chat.queue.remove": "changes",
   "chat.reload-code": "changes",
+  "chat.shell.list": "looks",
+  "chat.shell.stop": "changes",
   "chat.mode-command": "changes",
 };

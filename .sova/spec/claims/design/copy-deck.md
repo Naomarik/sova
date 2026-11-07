@@ -158,7 +158,7 @@ words, in the composer, the session pane, the chat's queue cards and the project
 
 | State | Surface | Copy |
 |---|---|---|
-| Connecting (first time), or the chat starting | chat: a note floating over the transcript's end (`clock`), also the composer reason for assistive technology only (§chat.transcript/instant-open) | Connecting to chat… |
+| Connecting (first time), or the chat starting | chat: a note floating over the transcript's end (`clock`); no composer reason, since Send works meanwhile (§chat.transcript/instant-open, §chat.transcript/send-while-starting) | Connecting to chat… |
 | Lost, retrying (a chat's start that failed for now too) | chat: the same floating note (`clock`), and the composer reason for assistive technology only · watch: `.banner-warn` | chat: "Reconnecting. Your draft is kept." · watch: **Stopped watching. The connection dropped.** What's shown is up to `{HH:MM}`. Reconnecting… |
 | Gave up (retries exhausted) | `.banner-error` at the top of the transcript; composer reason "Not connected." | **Lost the connection to the Sova server.** Nothing in the session changed. Check `pnpm run dev:server` is running, then retry. · button: `Reconnect` |
 | Reconnected | nothing. The banner or reason simply disappears; no toast | — |
@@ -170,7 +170,10 @@ words, in the composer, the session pane, the chat's queue cards and the project
 | Label (visually hidden) | Message |
 | Placeholder, idle | Enter sends: Enter sends · touch mode (§chat.composer/behavior) and read only: none |
 | Placeholder, streaming | Enter sends: Steer the current turn… Enter sends · touch mode: Steer the current turn… · a box too narrow for either (§chat.composer/behavior): the key hint goes, then the caption size, then the string cut back to its last whole word with an ellipsis |
-| Buttons | `Send` · streaming: `Steer` + `Stop` · after Stop is pressed: "Stopping…" in run status · an archived chat: `Unarchive` (undo icon) in place of Send (§chat.transcript/instant-open) |
+| Placeholder, shell mode (§chat.shell-mode/box) | Run a command in {folder}… Enter runs (the hint only when Enter runs; {folder} the folder's last part, else "this chat's folder") · `!!`: Run a command in {folder}, not shared with the model… |
+| Buttons | `Send` · streaming: `Steer` + `Stop` (`title` "Stop · Esc in the composer", §chat.composer/esc-stop) · after Stop or `Esc` is pressed: "Stopping…" in run status · an archived chat: `Unarchive` (undo icon) in place of Send (§chat.transcript/instant-open) · shell mode: `Run`, while streaming too, beside the `Stop` that stops only the reply |
+| Shell mode (§chat.shell-mode/box) | marker `!`, or `!!` for a command kept from the model · foot chip `Shell mode` (terminal icon) · label `Shell command` · said: "Shell mode on." · "Shell mode on, not shared with the model." · "Shell mode off." · "Command started. Shell mode off." · reason line: "Not connected. Run it again once the chat reconnects." · "Not connected yet. Run it again once the chat connects." · "The connection dropped before the chat answered. Check the chat before you run it again." · "The chat was closing, so your command didn't run." · the chat's own refusal, as it words it |
+| Command card (§chat.shell-mode/card) | running bar: `aria-label` "Running command" · "{n} running commands" · chip `{n} running` · "{command}: {latest line}" or "{command}: No output yet." · 1 running: `Show Output` + `Stop Command` · 2 or more: `Show All` · `Hide` · `Stop All {n}` (list open) · "Stopping…" · list row: `aria-label` "Running: {command}" · `$ {command}` · elapsed `0:09` · `12:30` · `1:02:05` · latest line or "No output yet." · `Not shared with the model` · `Show Output` · `Stop Command` · transcript card: `aria-label` "Command you ran" · `$ {command}` · ended: `Exit {code}` · `Stopped by you` · `Stopped` (the Stop Command entry) · `Stopped when the chat closed` · `Stopped at the 1 GB output limit` (error tone) · `Ended` (no exit code given) · `took {m:ss}` · `!!`: `Not shared with the model` · run beside a reply, until it ends: "The model gets this after its reply." · `Show Full Output` · window: title `Command Output` · `Close` · `Stop Command` · "No output yet." · "Loading the output…" · "Showing {shown} of {total}" + `Load More` ("Loading…") · "No output." · archived (info): "The whole output is gone." "It's deleted when its chat is archived. The card still shows its last lines." · failed (error): "Couldn't load the output." "{reason}. What's shown so far stays. Try again." + `Try Again` ("Loading…") · size limit (caution): "Stopped at the 1 GB output limit." "It printed more than 1 GB, so Sova stopped it. The output up to the limit is here." |
 | Run status | Wide composer (≥ 620px): `Working` + detail: `· thinking` / `· writing` / `· running {tool}`, and beside it the subagents trigger: `2 of 5 subagents working` (team members among them: `2 of 5 team members working` · `3 of 5 workers working`, the split `1 subagent · 2 team members` in the tooltip), `5 subagents` while none works (the figure counts live workers only, never the ended), `18 subagents, all ended` when none is live. Narrow: no visible words, the dot and the step's icon, and the trigger as its ring and a count (`2/5`, none working `5`, all ended `18`); the same words are the tooltip and accessible name, plus the ended note `· 18 ended: 16 stopped, 2 failed` (§app.subagents-pane/trigger) · in both: `Stopping…` · `Compacting context` · `Retrying after a provider error` · `Updating memory…` (§chat.composer/memory-status) · `Waiting for zai · 5 of 5 in use` (+ ` (lowered after a rate limit)`, §app.provider-limits/waiting-shown) · trigger name: `2 of 5 subagents working — show subagents` · none working: `5 subagents — show subagents` · with ended ones: `2 of 5 subagents working · 18 ended: 16 stopped, 2 failed — show subagents` · all ended: `18 subagents, all ended: 16 stopped, 2 failed — show subagents` |
 | Waiting badge (§chat.composer/waiting-badge) | numeral: `I` `II` `III` `IV` `V+` · `aria-label` "{q} questions open in {n} alignments, {c} cards waiting — show what's waiting" (1: question, alignment, card; empty parts left out: "1 card waiting — show what's waiting"; nothing undecided: "All questions decided in {n} alignments — show what's waiting") |
 | Waiting on you dialog (§chat.composer/waiting-dialog) | title `Waiting on you · {n}` · close `aria-label` "Close" · groups `Option cards`, `Alignments` · alignment: `{decided}/{total}` meter, `Next: {topic}` (none open: `All decided`) · `Show in Chat` · empty: "Nothing is waiting on you in this chat." · off-screen toasts: "That alignment isn't in the transcript on screen." / "That card isn't in the transcript on screen." |
@@ -189,7 +192,7 @@ words, in the composer, the session pane, the chat's queue cards and the project
 | Dictation errors (strip; `Try Again` where the clip is kept, then Dismiss) | Mic blocked: "The browser blocked the microphone. Allow it for this site, then try again." · no mic: "No microphone found." · didn't start in time (§chat.voice/capture): "The microphone didn't start within 10 seconds. Quit and reopen Sova or your browser, then try again." · other: "Couldn't start the microphone. {message}." · nothing heard: "Didn't catch any speech. Nothing was inserted." · empty transcript: "Heard audio but no words. Nothing was inserted." · failed: "Couldn't transcribe the clip. {reason}. Your recording is kept." · voice removed meanwhile: "Voice isn't set up on this host anymore." |
 | Dictation, backgrounded (toast and announcement) | Recording stopped when the app went to the background. Transcribed {m:ss}. |
 | Dictation announcements | Recording. · Recording cancelled. · Transcribing. · `Inserted {n} words.` (1: `Inserted 1 word.`) · `{s} seconds left.` at 0:30 |
-| SR announcements | Working. · Reply finished. · The turn stopped with an error. (once per error, and it replaces that turn's "Reply finished." — an errored turn still settles, and two endings would read as two turns) · This chat didn't start. Your message is back in the composer. (once; the second sentence only when one came back) |
+| SR announcements | Working. · Reply finished. · The turn stopped with an error. (once per error, and it replaces that turn's "Reply finished." — an errored turn still settles, and two endings would read as two turns) · This chat didn't start. Your message is back in the composer. (once; the second sentence only when one came back) · Stopped. Your message is back in the composer. (a Stop that took a message back before its chat started, §chat.transcript/send-while-starting; never "Removed from the queue.") |
 
 ## §design.copy-deck/composer-flyout — Composer flyout
 
@@ -396,6 +399,8 @@ the person clicks.
 | Apply of Sova's own checkout | Only the user restarts Sova. Ask them to press Apply on the Branches tab of Sova's project page. Nothing was restarted. |
 | A card's click, not from the page | Only the user answers a card. Ask them to click it in that chat. Nothing was sent. |
 | A card owner's trust | Only the user trusts a project's or an extension's cards. Ask them to press Trust {name}'s Cards on the card. Nothing was trusted. |
+| Adding or changing an extension | Only the user changes extensions. Ask them to do it in Settings → Extensions. Nothing was changed. |
+| The same, from an extension's page | An extension's page can't change extensions. Open Settings → Extensions in Sova itself. Nothing was changed. |
 | Through a mesh peer, any of the others | Only the user approves this, on the page of the computer it belongs to. Open Sova on that computer. Nothing changed. |
 
 ## §design.copy-deck/create-mode — Create (§chat/create-mode)
@@ -575,6 +580,16 @@ the person clicks.
 | Pane's session-insight fetch failed (banner-warn) | **Couldn't load this session's subagents.** {message} Your workers keep running. We'll retry on our own. |
 | Transcript socket and load errors | the §app/subagents-pane state table: Live-watch and Connection copy above, and Main pane's transcript load error |
 
+## §design.copy-deck/time-spent — Time Spent tab (§app.subagents-pane/time-spent)
+
+| Where | Copy |
+|---|---|
+| Head | tab: Time Spent (no heading in the panel) · figures: You · Agent · word: Counting · Paused · Not Recording |
+| Durations | whole seconds: `1h 12m 08s` · `14m 08s` · `8s` |
+| Breakdown | no heading · rows: Reading (opens to Main Thread · Alignments · Workers) · Typing · Dictating · Scrolling · Reviewing Changes · Reviewing Screenshots (opens to what followed it, §design.copy-deck/message-labels) · Viewing Tours · Other |
+| Your Messages | §design.copy-deck/message-labels |
+| Alignments | heading: Alignments · line: {title} · `{t}` on screen · `{t}` to read · `{t}` from first shown to decided (left out when it has none) |
+
 ## §design.copy-deck/context-tab — Context tab (§app.subagents-pane/context-tab)
 
 | Where | Copy |
@@ -592,7 +607,6 @@ the person clicks.
 | Sheet | breadcrumb (accessible name Breadcrumb): Context › `{group}` › `{part}`, the current step not a button · Back (an arrow button, accessible name Back) · title: the row's name · size `≈{n}` · subtitle: the full path (a file, a skill) or the group's name · Source · Copy |
 | Sheet notes | a file not yet loaded: Not counted yet. It loads the first time the agent reads, edits or writes a file in `{folder}`. · a skill: Its size counts only what the model is offered: name and description. The full SKILL.md loads when the agent reads it, then counts under Conversation. · a failed read (toast): Couldn't open that file. `{reason}` |
 | States | Reading this chat's context. · This chat runs on another machine, so its context can't be read here. · Couldn't read this chat's context. `{reason}` |
-| Session tab | after the Context sentence: See what fills it |
 
 ## §design.copy-deck/cost-breakdown — Where a model's cost went (§app.insights/cost-history, §app.subagents-pane/tabs)
 
@@ -647,8 +661,8 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Where | Copy |
 |---|---|
 | Tab | Decisions (icon `shield`) |
-| Intro | Sova can ask a small classifier about your sessions — whether a finished turn is waiting on you, and what a session is about. Everything here is off until you turn it on. |
-| What is sent (above the switches) | Each check sends a short, redacted excerpt of one session — its title, the last exchange, and recent tool names — to Jev (TypeSafe) or your fallback model; never whole transcripts, images, or files. The Overseer's own sessions are never checked. |
+| Intro | Sova can ask a small classifier about your sessions, for the features switched on below. Nothing is sent until Jev or a fallback model can answer. |
+| What is sent (above the switches) | Each check sends a short, redacted excerpt of one session — at most its title, the last exchange, and recent tool names — to Jev (TypeSafe) or your fallback model; never whole transcripts, images, or files. The Overseer's own sessions are never checked. |
 | Load failed (banner-error) | **Couldn't load the decision settings.** Nothing was changed. [Try Again] |
 | Jev (legend · hint) | Jev · TypeSafe's classifier. Fast and cheap — about $0.0001 a check. |
 | Jev switch | Use Jev |
@@ -663,7 +677,7 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Refused fallback (under the row, error) | {server reason}. Your saved fallback model is unchanged. |
 | Fallback notes (under the row, warn) | {server note, without its "Fallback model:" label}. · Not verified, because {backend} couldn't list its models ({why}): Fallback model. |
 | Options failed (banner-warn) | **Couldn't check which models are offered.** Your saved choice stays, marked not verified. [Check Again] |
-| Features (legend) | Features · Flag sessions that need you — After a turn, checks whether the reply waits on you (a decision, an approval or information) or says it is done without checking, notices a team gone quiet and whether a merge left work open, and marks the row. The Overseer and Needs you list them too. |
+| Features (legend) | Features · Flag sessions that need you — After a turn, checks whether the reply waits on you (a decision, an approval or information) or says it is done without checking, notices a team gone quiet and whether a merge left work open, and marks the row. The Overseer and Needs you list them too. · Label your messages — Labels each message you type or dictate by what it asks for, and shows the time on each in the session's Time Spent tab. Only messages sent while this is on. The agent never sees a label. |
 | Unavailable (replaces a switched-on feature's hint, warn) | Unavailable: Jev is off and no fallback model is set. Nothing is checked. · Unavailable: Jev can't answer ({reason}) and no fallback model is set. Nothing is checked until one of them can. |
 | Features note (under the switches, warn, when they don't already say it) | {server reason} The features stay unavailable and send nothing until one is. |
 | Never send (legend) | Never send · switch Never send TUI sessions — Sessions started in the pi terminal stay on this machine. · Folders — One per line. Sessions in these folders, and their subfolders, are never checked. · issue: "{line}" isn't a full path. Start it with / or ~/. · That's {n} folders. Use at most 100. |
@@ -673,6 +687,18 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Buttons | none in the form — the dialog footer's Save Changes · Cancel (§design.copy-deck/settings-modes-delegate) |
 | Save failed (banner-error at the end of the form; the unsaved changes stay) | **Couldn't save the decision settings.** {reason}. Your saved settings are unchanged. |
 | Footnote | Stored in `~/.pi/agent/sova/decisions.json`. The key is stored separately, readable by you only. |
+
+## §design.copy-deck/message-labels — Time Spent tab · Your Messages (§app/message-labels)
+
+| Where | Copy |
+|---|---|
+| Tab | Time Spent |
+| Heading | Your Messages |
+| Rows, in order | Specifying · Directing · Reworking · Asking · Unsorted · Not Labelled · Before An Action · Since Your Last Message |
+| A row | {label} · `{n}`, a bare number in its own column before the time (Since Your Last Message: none) · {time}, in the Time Spent durations (`1h 12m 08s` · `14m 08s` · `8s`) |
+| A message line | {the message's first words, at most 120 characters, then …} · {time} · from a fallback model, under them: Labelled by {model id} |
+| Reviewing Screenshots opens to | Followed By Reworking · Followed By Specifying · Followed By Directing · Followed By Anything Else |
+| Never, anywhere on the tab | a word for a mood or feeling (unhappy, frustrated, satisfied and the like), a score, a warning, or a sentence explaining a row |
 
 ## §design.copy-deck/forms — Forms · the shared sentences (§design/forms)
 
@@ -754,6 +780,30 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | Row error line from a chat | "In {chat}, inside its sandbox: {line}" (write-only: "In {worker}, under write-only confinement: {line}" · no sandbox: "In {chat}: {line}") |
 | Worker refused | "{chat}'s servers are {names}, so a worker can't have {name}." · on `useWorktreeConfig`: "{worker} uses its worktree's own config, so it can't have MCP servers." |
 | Profile capability | MCP Servers |
+
+## §design.copy-deck/settings-extensions — Settings · Extensions (§app.settings-dialog/extensions)
+
+| Where | Copy |
+|---|---|
+| Tab · intro | Extensions · "On this computer, for every project and chat. Install only what you trust." · Add Extension |
+| Cards note (any extension declares cards) | "New chats can use an extension's cards. Open chats keep the cards they started with. Its page, chips and commands work everywhere right away." |
+| No extensions yet | "No extensions yet. Add one by choosing its folder." |
+| Load failed (banner-error) | **Couldn't read the extension list.** Nothing was changed. {reason} |
+| Row | {title} · {folder}, with `~` for the home folder · then one state: Not Usable · Folder Not Found · Needs a Newer Sova · Waiting for You · Changed · Off · Stopped · Starting · Running · switch: `aria-label` "Turn on {title}" |
+| State lines | Not Usable: "This can't be used: {reason}." · Folder Not Found: "This folder is gone: {folder}. Its program is stopped." · Needs a Newer Sova: "This needs a newer Sova. Nothing is running." · Waiting for You: "Added or edited outside this screen. Nothing runs until you approve it." · Changed: "Changed since you approved it. It is still running the old code, and its page is off." · Stopped: "Its program exited." or "Its program isn't answering." or "Couldn't find {program}." · A program you run yourself: "You run this program yourself, so Sova doesn't start or stop it." |
+| Row buttons | Review · Start · Restart Program · View Log · Choose Folder · Remove · Restart Sova · Open Updates |
+| Choose folder | title "Choose the extension's folder" · hint "Folders on the computer Sova runs on" · found: "Found an extension: {title}" · from Choose Folder, another id (Review disabled): "This folder describes {other id}, not {id}." · a description changed to another id: "This folder now describes {other id}, not {id}." · Cancel · Review |
+| A folder that can't be used (field error, in the order of §app.extensions/folder) | "This folder has no extension description (sova-extension.json), so it can't be added." · "Its description can't be read: {reason}." · "Its description doesn't say which Sova it needs." · "This needs a newer Sova ({needs}; this one has {has})." · "Its description has a key Sova doesn't know: {key}." · "Its description can't be used: {field} {reason}." · "Its {page or program} is in {folder}, which approval doesn't check, so this can't be added. Move it to another folder." · "The name project is Sova's own, so this can't be added." · "There's already an extension named {id}, from {folder}." · "It lists commands or screens but no program to answer them." |
+| Review | title "Add {title}?" (Waiting for You and Changed: "Approve {title}?" · Choose Folder on an installed row: "Use this folder for {title}?", its button still Approve) · changed: "This extension changed, so it needs your approval again." · It runs: "{program and arguments}, on this computer, as you, with no sandbox." · Its page: "Runs on Sova's own address and can do what you can, including adding other extensions." · Its key: "Opens nearly all of Sova. Its calls are recorded under its name." · It adds: its cards · its commands · what it offers the Overseer · Rules: "Needs extension rules {needs}. This Sova has {has}." · Left out: "{what}: {why}", such as "1 of its commands: a command needs a name of lower-case letters, digits and dashes, and a label" · with a program: "If it stops while Sova isn't running, it comes back when Sova starts, not by itself at login." · "Install only what you trust." · Cancel · Install and Turn On (Waiting for You and Changed: Approve) |
+| Approve refused (it changed since you looked) | "This extension changed since you looked. Check what it asks for, then approve it again." |
+| Toast once on | "{title} is on." · with cards: "{title} is on. New chats can use its cards; open chats keep what they started with." |
+| Remove (inline confirm) | "Remove {title}? Its program stops and its key stops working. Old cards say it's no longer installed. Your folder stays." · checkbox Also delete its data · Remove · Keep |
+| Refused: not on | a view's command: "{title} isn't on, so this card's view can't do that." · starting a program: "This extension isn't on, so its program won't start." |
+| Refused: the list can't be written | "Sova can't change the list: it can't be read whole. Nothing was changed." · "Sova can't change the list: it's a link into a git checkout. Edit it there. Nothing was changed." |
+| Other computers | heading On Other Computers · row: {title} · Not Installed Here · "From {computer}" |
+| Through another computer | "These extensions are on {computer}. To change them, open Sova on that computer." |
+| Old cards | "{title} is no longer installed" · "{title} is turned off" · "{title} can't run right now. Settings → Extensions says why." · a view's card or drawing while Changed: "{title} changed and is waiting for your approval." |
+| Its page | no page: "{title} has no page of its own." · Changed: "{title} changed, so its page is off until you approve it." · Open Settings |
 
 ## §design.copy-deck/settings-mesh — Settings · Mesh (§mesh.ui/settings)
 

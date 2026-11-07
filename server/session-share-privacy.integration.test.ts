@@ -58,6 +58,10 @@ const M = {
   toolDetails: "MK-TOOLDETAILS-q7x",
   bashCmd: "MK-BASHCMD-q7x",
   bashOut: "MK-BASHOUT-q7x",
+  // A `!!` command stopped by its chat's close, its output cut (§chat.shell-mode/card): every field its row carries.
+  bashPrivateCmd: "MK-BASHPRIVCMD-q7x",
+  bashPrivateOut: "MK-BASHPRIVOUT-q7x",
+  bashFullPath: "MK-BASHFULLPATH-q7x",
   system: "MK-SYSTEM-q7x",
   // pi 0.86+'s system entry: the prompt in named sections, whole tool declarations (§app.baton/told).
   systemPreamble: "MK-PREAMBLE-q7x",
@@ -154,6 +158,8 @@ add({ type: "message", message: { role: "user", content: [{ type: "text", text: 
 last = fork;
 add({ type: "message", message: { role: "toolResult", toolCallId: "call_1", toolName: M.toolName, content: [{ type: "text", text: M.toolOut }], details: { note: M.toolDetails }, isError: false, timestamp: seq } });
 add({ type: "message", message: { role: "bashExecution", command: `echo ${M.bashCmd}`, output: M.bashOut, exitCode: 0, cancelled: false, truncated: false, timestamp: seq } });
+const closedBash = add({ type: "message", message: { role: "bashExecution", command: `echo ${M.bashPrivateCmd}`, output: M.bashPrivateOut, cancelled: true, truncated: true, fullOutputPath: `/var/pi-bash-${M.bashFullPath}.log`, excludeFromContext: true, timestamp: seq } });
+add({ type: "custom", customType: "sova-shell-closed", data: { targetId: closedBash } });
 add({ type: "message", message: { role: "system", content: [{ type: "text", text: M.system }], timestamp: seq } });
 add({ type: "message", message: { role: "system", content: "", sections: { preamble: M.systemPreamble, cwd: "<cwd>(none)</cwd>" }, toolsAdded: [{ name: M.systemToolName, description: M.systemToolDescription, parameters: { type: "object" } }], toolsRemoved: [{ name: "read_link" }], timestamp: seq } });
 add({ type: "custom_message", customType: "mk-ext", content: M.customMsg, display: true });

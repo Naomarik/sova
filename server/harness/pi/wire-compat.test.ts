@@ -148,7 +148,11 @@ describe("a chat's clients, per wire, on every faux stream", () => {
       const hello2 = parsed(two.got).find((m) => m.type === "hello")!;
       assert.equal(JSON.stringify(hello1.items), JSON.stringify(rowsOf(branchOf(parsePi(text).entries))), "wire 1: the hello's rows are today's");
       assertRows(hello1.items!, hello2.items!, "hello");
-      assert.deepEqual({ ...hello2, items: null }, { ...hello1, items: null }, "the hello is otherwise the same");
+      // Shell mode is wire 2's alone: a wire-1 hello carries neither field, a wire-2 one says the chat offers it.
+      assert.ok(!("shellMode" in hello1) && !("shell" in hello1), "wire 1: no shell mode in the hello");
+      assert.equal((hello2 as { shellMode?: boolean }).shellMode, true, "wire 2: the hello offers shell mode");
+      const { shellMode: _m, shell: _s, ...helloRest } = hello2 as typeof hello2 & { shellMode?: boolean; shell?: unknown };
+      assert.deepEqual({ ...helloRest, items: null }, { ...hello1, items: null }, "the hello is otherwise the same");
       check(name, "rows", hello2.items);
       one.got.length = 0;
       two.got.length = 0;

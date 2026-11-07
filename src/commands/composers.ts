@@ -16,6 +16,10 @@ export interface ComposerHandle {
   hasDraft(): boolean;
   /** Puts `/name ` in the textarea and focuses it; sends nothing. */
   insert(name: string): void;
+  /** Focuses the textarea, its caret where it was, for a character typed outside any text field
+      (lib/type-anywhere), ending Focus if Focus hides it. False when it takes no typing (read-only,
+      not on screen). */
+  take(): boolean;
   /** Opens the composer's file picker, synchronously: call it from the click (or key) itself, as
       a phone's browser opens a picker only from the gesture that asked for it. */
   attach(): void;

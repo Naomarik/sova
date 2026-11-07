@@ -59,9 +59,9 @@
       "§design.copy-deck/settings-decisions"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T14:32Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+      "by": "omar",
+      "at": "2026-11-07T03:53Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#77903386"
     }
   },
   "§app.settings-dialog/decisions-autosave": {
@@ -85,6 +85,36 @@
       "by": "naomarik",
       "at": "2026-10-23T14:32Z",
       "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+    }
+  },
+  "§app.settings-dialog/extensions": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app/settings-dialog",
+      "§app.settings-dialog/save-bar",
+      "§app.extensions/folder",
+      "§app.extensions/loader",
+      "§app.extensions/program",
+      "§app.updates/restart",
+      "§design.copy-deck/settings-extensions"
+    ],
+    "code": [
+      "src/components/ExtensionsSettings.tsx",
+      "src/lib/extensions-settings.ts",
+      "src/components/SettingsDialog.tsx",
+      "src/components/McpServers.css",
+      "src/lib/settings-nav.ts",
+      "src/lib/settings-nav.test.ts",
+      "src/lib/api.ts",
+      "src/components/ServerSettings.tsx",
+      "src/lib/extensions-settings.test.ts"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-11-06T21:55Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
     }
   },
   "§app.settings-dialog/general": {
@@ -399,9 +429,9 @@
       "§design.copy-deck/settings-modes-delegate"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-05T05:46Z",
-      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
+      "by": "Omar (user)",
+      "at": "2026-11-06T21:56Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
     }
   },
   "§app.settings-dialog/summaries": {
@@ -581,9 +611,9 @@
       "src/lib/settings-nav.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T02:27Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+      "by": "Omar (user)",
+      "at": "2026-11-06T21:56Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
     },
     "notOwned": [
       "§chat.voice/runtime",

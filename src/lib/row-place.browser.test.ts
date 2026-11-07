@@ -142,6 +142,35 @@ describe("the row place's requests", () => {
     p.dispose();
   });
 
+  test("an extension removed goes from the page's own poll: its chips go, with no reload", async () => {
+    const { createPoll } = await import("./poll");
+    (globalThis as { document?: unknown }).document ??= { hidden: false, addEventListener() {}, removeEventListener() {} };
+    let list: ExtensionInfo[] = [ci];
+    const [sessions] = solid.createSignal<SessionSummary[] | undefined>(many(3));
+    let chips!: ReturnType<typeof createRowAdditions>;
+    let poll!: ReturnType<typeof createPoll<ExtensionInfo[]>>;
+    const dispose = solid.createRoot((d) => {
+      poll = createPoll(async () => list, null);
+      chips = createRowAdditions({
+        sessions,
+        extensions: poll.data,
+        policy: createSlotPolicy(memory(), ROW_OFF_KEY),
+        clock: clock().c,
+        fetch: async () => new Response(JSON.stringify({ sessions: { "s-1": { chips: [{ label: "CI green", tone: "ok" }] } } }), { headers: { "content-type": "application/json" } }),
+      });
+      return d;
+    });
+    const until = async (ok: () => boolean) => {
+      for (let i = 0; i < 200 && !ok(); i++) await new Promise((r) => setTimeout(r, 5));
+      assert.ok(ok());
+    };
+    await until(() => !!poll.data()?.length && !!chips(row(1))?.length);
+    list = [];
+    poll.refetch();
+    await until(() => chips(row(1)) === undefined);
+    dispose();
+  });
+
   test("a session on another host never shows a chip", async () => {
     const remote = row(0, "/peer/sessions/r.jsonl");
     mesh.noteHost(remote.path, "peer-1");

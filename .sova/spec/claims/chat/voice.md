@@ -81,7 +81,8 @@ textarea. The textarea stays visible and editable throughout.
   and the word "Recording". The live dot is the one thing that moves, and under
   `prefers-reduced-motion` it stands still.
 - **Cancel** (the strip's close button, or `Esc` anywhere while recording) throws the clip away and
-  inserts nothing. `Esc` never aborts a turn.
+  inserts nothing. That `Esc` cancels only the recording, never the reply, and an `Esc` within
+  500 ms after it doesn't stop the reply either (§chat.composer/esc-stop).
 - **Cap.** A recording stops itself at 5:00 and is transcribed.
 - **Starting gives up.** When the mic doesn't start within its time limit (§chat.voice/capture), the
   strip goes from Starting to Error with "The microphone didn't start within 10 seconds. Quit and

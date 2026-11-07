@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 561 |
-| Routes a catalogue entry points at | 178 |
-| Catalogue entries | 240 |
+| Routes registered | 574 |
+| Routes a catalogue entry points at | 180 |
+| Catalogue entries | 244 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -24,16 +24,16 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: The catalogue itself | 1 |
 | Class: Test only | 0 |
 | Class: Pages and assets | 7 |
-| Class: Trust grants | 17 |
+| Class: Trust grants | 25 |
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
 | Class: Left as is, by choice | 261 |
-| Class: Page plumbing | 11 |
+| Class: Page plumbing | 14 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
 | Class: Approvals and grants | 5 |
 | Pending (not yet a command) | 23 |
-| Chat socket frame types | 12 |
+| Chat socket frame types | 14 |
 | Document/window keydown listeners | 11 |
 | Hand-written tool specs | 132 |
 
@@ -56,9 +56,11 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.send` | Send Message | changes | `POST /api/sessions/prompt` | sessions |
 | `session.fork` | Fork Session | changes | `POST /api/sessions/fork` | sessions |
 | `session.draft.get` | Show Draft | looks | `GET /api/sessions/draft` | sessions |
+| `session.shell.output` | Show Command Output | looks | `GET /api/sessions/shell-output` | sessions |
 | `session.draft.set` | Set Draft | changes | `PUT /api/sessions/draft` | sessions |
 | `session.sandbox.set` | Set Sandbox | changes | `POST /api/sandbox` | sessions |
 | `session.tools.get` | Show Session Tools | looks | `GET /api/sessions/tools` | sessions |
+| `session.time-spent` | Show Time Spent | looks | `GET /api/time-spent` | sessions |
 | `session.align.triage` | Show Alignment Triage | looks | `GET /api/sessions/align-triage` | sessions |
 | `session.workers.checks` | Show Worker Report Checks | looks | `GET /api/sessions/worker-checks` | sessions |
 | `session.context` | Show Session Context | looks | `GET /api/sessions/context` | sessions |
@@ -280,6 +282,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `chat.regenerate` | Regenerate | changes | `POST /api/chat/action` | sessions |
 | `chat.queue.remove` | Remove Queued Message | changes | `POST /api/chat/action` | sessions |
 | `chat.reload-code` | Reload Now | changes | `POST /api/chat/action` | sessions |
+| `chat.shell.list` | List Commands | looks | `POST /api/chat/action` | sessions |
+| `chat.shell.stop` | Stop Command | changes | `POST /api/chat/action` | sessions |
 | `chat.mode-command` | Run Mode Command | changes | `POST /api/mode/command` | full |
 
 ## Pending routes
@@ -426,12 +430,20 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `ALL /explain/*` | full |
 | `GET /explain/:id` | full |
 
-### Trust grants (17)
+### Trust grants (25)
 
-Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval; a project's transcript cards, §chat.transcript-cards/trust), applying a settings card with its approvals (§app.project-overseer/settings), adding, approving, signing in to and changing an MCP server (§app.mcp/approval) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.
+Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval; a project's transcript cards, §chat.transcript-cards/trust), applying a settings card with its approvals (§app.project-overseer/settings), adding, approving, signing in to and changing an MCP server (§app.mcp/approval), adding, approving and changing an extension and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.
 
 | Route | Mesh need |
 | --- | --- |
+| `DELETE /api/extensions/:id` | full |
+| `POST /api/extensions/:id/approve` | full |
+| `POST /api/extensions/:id/folder` | full |
+| `POST /api/extensions/:id/off` | full |
+| `POST /api/extensions/:id/on` | full |
+| `POST /api/extensions/:id/program` | full |
+| `POST /api/extensions/inspect` | full |
+| `POST /api/extensions/install` | full |
 | `DELETE /api/mcp/rows/:id` | full |
 | `PATCH /api/mcp/rows/:id` | full |
 | `PUT /api/mcp/rows/:id` | full |
@@ -738,7 +750,7 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/voice/transcribe` | admin |
 | `POST /api/voice/warm` | admin |
 
-### Page plumbing (11)
+### Page plumbing (14)
 
 Requests a view, the composer or a link card makes to draw itself (attachments and uploads, a tool row's contents, a link's thread and seen mark, the remote folder picker's listing, the explanations feed, the empty list's folder name, a project's icon picture). Exactly these routes (`PAGE_PLUMBING`).
 
@@ -747,12 +759,15 @@ Requests a view, the composer or a link card makes to draw itself (attachments a
 | `DELETE /api/attachment` | sessions |
 | `GET /api/attachment` | sessions |
 | `GET /api/explanations` | sessions |
+| `GET /api/extensions/:id/log` | full |
+| `GET /api/extensions/installed` | full |
 | `POST /api/links/:id/seen` | sessions |
 | `GET /api/links/:id/thread` | sessions |
 | `GET /api/projects/:pid/icon` | sessions |
 | `GET /api/projects/:pid/mcp` | sessions |
 | `GET /api/sessions/dir` | sessions |
 | `GET /api/targets/:name/folders` | sessions |
+| `POST /api/time-spent/report` | sessions |
 | `GET /api/transcript/tool` | sessions |
 | `POST /api/upload` | sessions |
 
@@ -792,7 +807,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `DELETE /api/attention/dismiss` | full | `attention.undismiss` |
 | `POST /api/attention/dismiss` | full | `attention.dismiss` |
 | `GET /api/audit` | full | `audit.list` |
-| `POST /api/chat/action` | sessions | `chat.compact`, `chat.queue.remove`, `chat.regenerate`, `chat.reload-code`, `chat.rewind`, `chat.stop` |
+| `POST /api/chat/action` | sessions | `chat.compact`, `chat.queue.remove`, `chat.regenerate`, `chat.reload-code`, `chat.rewind`, `chat.shell.list`, `chat.shell.stop`, `chat.stop` |
 | `GET /api/cwds` | sessions | `cwds.list` |
 | `GET /api/diff/summary` | sessions | `session.diff.summary` |
 | `GET /api/draft-specs` | full | `draft-spec.list` |
@@ -931,6 +946,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/sessions/pairs/resume` | sessions | `session.pairs.resume` |
 | `POST /api/sessions/pairs/unpair` | sessions | `session.pairs.unpair` |
 | `POST /api/sessions/prompt` | sessions | `session.send` |
+| `GET /api/sessions/shell-output` | sessions | `session.shell.output` |
 | `POST /api/sessions/shorten-titles` | sessions | `session.title.shorten` |
 | `GET /api/sessions/summary` | sessions | `session.get` |
 | `POST /api/sessions/tags` | sessions | `session.tags.set` |
@@ -955,6 +971,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/settings/summarizer` | sessions | `settings.summarizer.get` |
 | `GET /api/settings/team` | sessions | `settings.team.get` |
 | `GET /api/targets` | sessions | `targets.list` |
+| `GET /api/time-spent` | sessions | `session.time-spent` |
 | `GET /api/transcript` | sessions | `session.read` |
 | `POST /api/updates/restart` | full | `server.restart` |
 | `GET /api/usage/costs` | sessions | `usage.costs` |
@@ -972,7 +989,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 
 The `type` of every `ChatClientMessage` (`shared/protocol.ts`), the frames a page sends on `/ws/chat`:
 
-`prompt`, `steer`, `abort`, `set_model`, `set_thinking`, `set_claude_login`, `ui_response`, `rewind`, `regenerate`, `compact`, `queue_remove`, `reload_code`
+`prompt`, `steer`, `abort`, `set_model`, `set_thinking`, `set_claude_login`, `ui_response`, `rewind`, `regenerate`, `compact`, `queue_remove`, `reload_code`, `shell`, `shell_stop`
 
 ## Keydown listeners on the document or the window
 

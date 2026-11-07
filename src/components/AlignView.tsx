@@ -5,6 +5,7 @@ import { alignChip, alignMetrics, type AlignInfo } from "../lib/align";
 import { Markdown } from "./Markdown";
 import { Chip, Icon, trapFocus } from "./ui";
 import "../design/align-viewer.css";
+import { trackForeground } from "../lib/time-spent";
 
 let seq = 0;
 
@@ -16,6 +17,7 @@ let seq = 0;
 export function AlignView(props: { report: ReportInfo; align: AlignInfo; attachments?: TmpAttachment[]; onClose(): void }) {
   const titleId = `align-title-${++seq}`;
   const chip = () => alignChip(props.align);
+  trackForeground("alignment");
   let close!: HTMLButtonElement;
   onMount(() => close.focus());
 

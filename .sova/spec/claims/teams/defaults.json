@@ -89,7 +89,9 @@
       "pi-config/extensions/subagents/team-defaults.ts",
       "pi-config/extensions/subagents/README.md",
       "pi-config/extensions/subagents/inbox.ts",
-      "pi-config/extensions/subagents/delivery.ts"
+      "pi-config/extensions/subagents/delivery.ts",
+      "server/chat-manager.ts",
+      "server/team-member-tools.test.ts"
     ],
     "agreed": {
       "by": "naomarik",
@@ -121,7 +123,9 @@
   },
   "§teams.defaults/routing": {
     "kind": "behavior",
-    "requires": [],
+    "requires": [
+      "§app.chat-processes/worker-reports"
+    ],
     "authority": "accepted",
     "evidence": "verified",
     "code": [
@@ -136,9 +140,9 @@
       "pi-config/extensions/subagents/delivery.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-24T10:31Z",
-      "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#22df1e4b"
+      "by": "user",
+      "at": "2026-11-07T03:59Z",
+      "source": "pi-session:01a1b2d6-bea7-73d4-9fe9-b82dc23ae834#98dba469"
     }
   },
   "§teams.defaults/runtime-fallback": {

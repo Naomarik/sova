@@ -1,8 +1,9 @@
-import { createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { restartSova } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import type { UpdatesRunning } from "../../shared/protocol";
 import { healthStartedAt, restartBlockView, restartConfirmText, restartedLine, runsLabel, serviceCheckCommand, waitForRestart, type RestartPhase } from "../lib/restart";
+import { clearSettingsSection, settingsSection } from "../lib/settings-nav";
 import { refreshUpdates, updatesState } from "../lib/updates";
 import { Banner } from "./ui";
 
@@ -23,6 +24,17 @@ export function ServerSettingsSection() {
   const [error, setError] = createSignal<string | null>(null);
   let gone = false;
   onCleanup(() => (gone = true));
+
+  // Sent here by an extension that needs a newer Sova. The panel alone scrolls: scrollIntoView would also scroll the modal.
+  let top: HTMLElement | undefined;
+  createEffect(() => {
+    if (settingsSection() !== "server") return;
+    clearSettingsSection();
+    requestAnimationFrame(() => {
+      const panel = top?.closest<HTMLElement>(".settings-panel");
+      if (top && panel) panel.scrollTop += top.getBoundingClientRect().top - panel.getBoundingClientRect().top;
+    });
+  });
 
   const running = () => updatesState()?.running ?? null;
   const upgrading = () => updatesState()?.job?.state === "running";
@@ -63,7 +75,7 @@ export function ServerSettingsSection() {
   const view = (r: UpdatesRunning) => restartBlockView(r, upgrading(), phase());
 
   return (
-    <section class="settings-updates settings-server" aria-labelledby="settings-server-title">
+    <section ref={top} class="settings-updates settings-server" aria-labelledby="settings-server-title">
       <h3 class="settings-type-title" id="settings-server-title">
         Server · this machine
       </h3>

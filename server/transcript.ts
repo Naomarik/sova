@@ -1,4 +1,4 @@
-import { MCP_LIST, MCP_NOTE } from "./harness/state-kinds";
+import { MCP_LIST, MCP_NOTE, SHELL_CLOSED, SHELL_RUN } from "./harness/state-kinds";
 import { mcpNamesOf, mcpToolOfRow, type McpNames } from "./mcp/tool-names";
 import {
   EAGER_TOOLS,
@@ -746,7 +746,7 @@ function teamEventRow(id: string, h: StateEntry): TranscriptItem[] {
 
 /** A neutral entry's rows (0..n TranscriptItems), as they go over the wire (slimRows); `state` carries the
     running model. An id-less entry's rows are keyed by `fallbackId`. */
-export function rowsOfEntry(h: HEntry, fallbackId = "?", state?: { model?: string; mcpNames?: McpNames }): TranscriptItem[] {
+export function rowsOfEntry(h: HEntry, fallbackId = "?", state?: { model?: string; mcpNames?: McpNames; stoppedShell?: ReadonlyMap<string, StoppedBy>; shellDurations?: ReadonlyMap<string, number> }): TranscriptItem[] {
   return slimRows(entryRows(h, fallbackId, state), state?.mcpNames);
 }
 
@@ -757,7 +757,7 @@ export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?:
   return h ? rowsOfEntry(h, fallbackId, state) : [];
 }
 
-function entryRows(h: HEntry, fallbackId: string, state?: { model?: string }): TranscriptItem[] {
+function entryRows(h: HEntry, fallbackId: string, state?: { model?: string; stoppedShell?: ReadonlyMap<string, StoppedBy>; shellDurations?: ReadonlyMap<string, number> }): TranscriptItem[] {
   const id = h.id ?? fallbackId;
   switch (h.kind) {
     case "usage-record":
@@ -784,7 +784,7 @@ function entryRows(h: HEntry, fallbackId: string, state?: { model?: string }): T
     case "tool-result":
       return toolResultRow(id, h);
     case "shell":
-      return [item(id, "info", h, truncate(`$ ${h.command ?? ""}\n${h.output ?? ""}`, RESULT_TEXT_MAX))];
+      return [shellRow(id, h, state?.stoppedShell?.get(id), state?.shellDurations?.get(id))];
     case "note":
       if (!h.display) return [];
       // The worktrees extension's merge card; details it can't read fall back to the plain row.
@@ -859,10 +859,58 @@ function stateRows(id: string, h: StateEntry): TranscriptItem[] {
   return [];
 }
 
+/** A command the user ran (§chat.shell-mode/card), from shell mode or pi's terminal: its card's row.
+    `stopped`: a shell-closed marker names it, Sova stopped it (its chat closed while it ran, or its output
+    passed the limit). `text` is `$ {command}`; a wire-1 consumer gets the plain row it always got (legacyShellRow). */
+type StoppedBy = "closed" | "limit" | "other";
+function shellRow(id: string, h: Extract<HEntry, { kind: "shell" }>, stopped: StoppedBy | undefined, durationMs: number | undefined): TranscriptItem {
+  const command = h.command ?? "";
+  const it = item(id, "shell", h, `$ ${command}`);
+  const cancelled = h.cancelled === true;
+  it.shell = {
+    command,
+    output: h.output ?? "",
+    ...(typeof h.exitCode === "number" ? { exitCode: h.exitCode } : {}),
+    ...(cancelled ? { cancelled: true as const, cancelReason: stopped ?? ("user" as const) } : {}),
+    ...(h.truncated ? { truncated: h.truncated } : {}),
+    ...(h.fullOutputPath ? { fullOutputPath: h.fullOutputPath } : {}),
+    ...(h.private ? { private: true as const } : {}),
+    ...(durationMs !== undefined ? { durationMs } : {}),
+  };
+  return it;
+}
+
+/** A shell row as a wire-1 consumer has always had it: an info row, `$ command` and its output in its text. */
+export function legacyShellRow(it: TranscriptItem): TranscriptItem {
+  const out: Record<string, unknown> = {};
+  for (const k in it) {
+    if (k === "shell") continue;
+    if (k === "kind") out.kind = "info";
+    else if (k === "text") out.text = truncate(`$ ${it.shell?.command ?? ""}\n${it.shell?.output ?? ""}`, RESULT_TEXT_MAX);
+    else out[k] = it[k as keyof TranscriptItem];
+  }
+  const row = out as unknown as TranscriptItem;
+  const h = sources.get(it);
+  if (h) sources.set(row, h);
+  return row;
+}
+
 /** The rows of a run of history; `line(i)` is the position an id-less entry's rows are keyed by. */
 function historyRows(history: readonly HEntry[], line: (i: number) => number): TranscriptItem[] {
   const out: TranscriptItem[] = [];
-  const state: { model?: string; mcpNames?: McpNames } = {}; // running model change, for assistant rows without their own
+  const state: { model?: string; mcpNames?: McpNames; stoppedShell?: Map<string, StoppedBy>; shellDurations?: Map<string, number> } = {}; // running model change, for assistant rows without their own
+  // The commands Sova stopped (§chat.shell-mode/lifecycle, /running): their markers come after them.
+  for (const h of history) {
+    if (h.kind !== "state") continue;
+    if (h.key === SHELL_RUN.type) {
+      const r = SHELL_RUN.parse(h.data);
+      if (r) (state.shellDurations ??= new Map()).set(r.targetId, r.durationMs);
+      continue;
+    }
+    if (h.key !== SHELL_CLOSED.type) continue;
+    const d = SHELL_CLOSED.parse(h.data);
+    if (d) (state.stoppedShell ??= new Map()).set(d.targetId, d.why ?? "closed");
+  }
   // A chat's own list says what its tools' names mean, a hashed one too (the newest on this run).
   for (const h of history) if (h.kind === "state" && h.key === MCP_LIST.type) state.mcpNames = mcpNamesOf(MCP_LIST.parse(h.data));
   // Align-doc entries are revisions of one document: only the newest renders (none if it's cleared).

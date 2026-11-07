@@ -11,7 +11,10 @@
       "src/components/SessionView.tsx",
       "src/lib/placeholder-fit.ts",
       "src/components/Thread.tsx",
-      "src/lib/error-feed.ts"
+      "src/lib/error-feed.ts",
+      "src/lib/shell-mode.ts",
+      "src/lib/shell-runs.ts",
+      "src/components/ShellCard.tsx"
     ],
     "about": [
       "§chat/composer"
@@ -34,7 +37,8 @@
     "evidence": "reviewed",
     "code": [
       "src/components/ConnectionBanner.tsx",
-      "src/components/ChatView.tsx"
+      "src/components/ChatView.tsx",
+      "src/lib/chat-wait.ts"
     ]
   },
   "§design.copy-deck/context-tab": {
@@ -46,8 +50,7 @@
     "evidence": "reviewed",
     "code": [
       "src/components/ContextTab.tsx",
-      "src/lib/context-parts.ts",
-      "src/components/SessionDetails.tsx"
+      "src/lib/context-parts.ts"
     ]
   },
   "§design.copy-deck/context-window": {
@@ -214,6 +217,18 @@
     "evidence": "reviewed",
     "about": [
       "§chat.transcript/message-actions"
+    ]
+  },
+  "§design.copy-deck/message-labels": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "about": [
+      "§app.message-labels/time-spent-tab",
+      "§app.message-labels/labelling",
+      "§app.message-labels/crediting",
+      "§app.message-labels/what-counts",
+      "§app.message-labels/the-labels"
     ]
   },
   "§design.copy-deck/mode-menu": {
@@ -428,6 +443,14 @@
       "§app.settings-dialog/save-bar"
     ]
   },
+  "§design.copy-deck/settings-extensions": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "about": [
+      "§app.settings-dialog/extensions"
+    ]
+  },
   "§design.copy-deck/settings-mesh": {
     "kind": "note",
     "authority": "accepted",
@@ -529,6 +552,15 @@
       "src/lib/background-jobs.ts",
       "src/lib/background-jobs.test.ts",
       "src/lib/background-jobs.browser.test.ts"
+    ]
+  },
+  "§design.copy-deck/time-spent": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/TimeSpent.tsx",
+      "src/lib/time-spent-view.ts"
     ]
   },
   "§design.copy-deck/timeline-tab": {

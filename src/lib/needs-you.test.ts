@@ -57,6 +57,20 @@ test("one row per session with an act item, newest first; decide and fyi items n
   assert.deepEqual(a.details, ["1 subagent ended in an error.", "The last turn stopped with an error."], "the tooltip has every sentence, newest first");
 });
 
+test("a card or offer raised during an alignment leaves the row a question; on its own, or beside anything else, it is what it was", () => {
+  const rowOf = (...items: ReturnType<typeof item>[]) => needsYouRows(digest(items), [session("a")])[0]!;
+  const question = item("a", "act", "open-questions", 100, "3 open questions in al_1 Ship it");
+  for (const kind of ["card-waiting", "offer-waiting"] as const) {
+    const r = rowOf(question, item("a", "act", kind, 200, "Waiting on your answer: Ship it?"));
+    assert.equal(r.kind, "open-questions", kind);
+    assert.equal(r.detail, "3 open questions in al_1 Ship it");
+    assert.deepEqual(r.details, ["3 open questions in al_1 Ship it", "Waiting on your answer: Ship it?"], "the card's sentence stays in the tooltip");
+    assert.equal(r.since, 200, "its time is still the newest");
+    assert.equal(rowOf(item("a", "act", kind, 200, "Waiting on your answer: Ship it?")).kind, kind, "no question: the card's own word");
+  }
+  assert.equal(rowOf(question, item("a", "act", "error", 200, "It stopped with an error.")).kind, "error", "an error beside it is still the error");
+});
+
 test("a session the hit list doesn't carry is dropped, so the count is the rows on screen", () => {
   const d = digest([item("a", "act", "error", 1), item("b", "act", "needs-input", 2)]);
   assert.deepEqual(

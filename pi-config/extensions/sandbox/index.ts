@@ -233,13 +233,21 @@ export default function sandbox(pi: ExtensionAPI) {
 		registered = "stock";
 	}
 
-	function emitState(): void {
-		const on = active.on && !remote;
+	/** `starting`: the sandbox is being turned on, so a command the session starts itself is confined (or
+	 *  refused) from now on, before the snapshot that confines the tools (§chat.sandbox/states). */
+	function emitState(starting = false): void {
+		const on = (starting || active.on) && !remote;
 		const workersOff = !on && active.workers === "off" && !remote;
 		const event: SandboxStateEvent = { version: 1, on, ...(workersOff ? { workers: "off" as const } : {}), extensionPath: SELF_DIR, enforcement: on ? active.enforcement : "none" };
 		// Every worker start asks this (§chat.sandbox/workers, §chat.worktrees/workers); a remote session has none.
 		if (!remote) event.workerLaunch = (req) => workerLaunch(on, workersOff, req);
-		if (!remote) event.scope = { worktreeRoots: [...worktreeRoots], ...(parentScope && typeof parentScope === "object" ? { parent: parentScope } : {}) };
+		if (!remote)
+			event.scope = {
+				worktreeRoots: [...worktreeRoots],
+				...(parentScope && typeof parentScope === "object" ? { parent: parentScope } : {}),
+				...(typeof parentScope === "string" ? { invalid: parentScope } : {}),
+				...(pi.getFlag(CWD_NOT_WRITABLE_FLAG) === true ? { cwdWritable: false as const } : {}),
+			};
 		pi.events?.emit(SANDBOX_STATE_EVENT, event);
 	}
 
@@ -327,6 +335,7 @@ export default function sandbox(pi: ExtensionAPI) {
 				registerConfined();
 				active = { version: 1, on: true, level: active.level, backend: "none", enforcement: "none", reasons: [NOT_ON_REMOTE] };
 			} else {
+				emitState(true);
 				const provisional = record === true || (record === "if-changed" && !active.on);
 				if (provisional) {
 					active = { version: 1, on: true, level: active.level, backend: backend.id, enforcement: "unavailable", reasons: [SANDBOX_STARTING] };

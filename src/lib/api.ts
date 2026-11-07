@@ -4,6 +4,7 @@ import type { ModelPick, WorkModels } from "../../shared/powers";
 import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
 import type { CardAnswerValue, CardInfo, ProjectCardsAnswer, SessionCardsAnswer } from "../../shared/transcript-cards";
 import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow, SovaCardsInfo } from "../../shared/project-settings";
+import type { ExtensionInspect, ExtensionsInstalled } from "../../shared/extension-loader";
 import type { McpNewServer, McpProjectServers, McpServerRow, McpServers, McpSignIn } from "../../shared/mcp";
 import type { ProfilesListing } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
@@ -101,8 +102,9 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
-import { WIRE_PARAM, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
+import { WIRE_PARAM, type ShellOutputPage, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
 import { LIST_VERSION_HEADER, parseListVersion } from "./summary-diff";
+import type { ShellDraftMode } from "./draft-save";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
 import type {
   MeshAccessPut,
@@ -149,6 +151,7 @@ import type { TargetInfo } from "./remote-session";
 import type { CommandEntry } from "../../shared/commands-catalog";
 import type { BackgroundJob } from "../../shared/protocol";
 import type { AlignTriage, WorkerChecks, DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
+import { TIME_SPENT_READ_ROUTE, type TimeSpentRecord } from "../../shared/time-spent";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
 import { upgradeLegacyRows } from "./legacy-rows";
 import { COMPOSER_QUERY } from "./wire-stamp";
@@ -950,25 +953,33 @@ export async function fetchTranscriptForCache(
 /** The composer draft stored for a session; `text: null` when there is none. The server has
     already dropped attachments whose file is gone. */
 export const fetchDraft = (path: string) =>
-  request<{ text: string | null; attachments?: UploadResult[]; updatedAt: string | null }>(
+  request<{ text: string | null; attachments?: UploadResult[]; mode?: ShellDraftMode; updatedAt: string | null }>(
     `/api/sessions/draft?path=${encodeURIComponent(path)}`,
     { cache: "no-store" },
   ).then((r) => {
     const attachments = r.attachments ?? [];
     const host = hostOf(path);
     if (host) for (const a of attachments) noteHost(a.path, host);
-    return { text: r.text, attachments, updatedAt: r.updatedAt };
+    return { text: r.text, attachments, ...(r.mode === "shell" || r.mode === "private" ? { mode: r.mode } : {}), updatedAt: r.updatedAt };
   });
 
 /** Stores a session's draft; blank text with no attachments deletes it. `keepalive` lets the
-    write outlive a page that is being hidden or closed. */
-export const putDraft = (path: string, text: string, attachments: UploadResult[], opts: { keepalive?: boolean } = {}) =>
+    write outlive a page that is being hidden or closed; `mode` keeps a shell-mode command's mode. */
+export const putDraft = (path: string, text: string, attachments: UploadResult[], opts: { keepalive?: boolean; mode?: ShellDraftMode } = {}) =>
   request<{ ok: true }>("/api/sessions/draft", {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path, text, attachments }),
+    body: JSON.stringify({ path, text, attachments, ...(opts.mode ? { mode: opts.mode } : {}) }),
     keepalive: opts.keepalive,
   });
+
+/** A page of a saved shell row's whole output (ShellOutputPage); a 404 `gone` once its file is deleted
+    (its chat was archived). */
+export const fetchShellOutput = (path: string, entry: string, from = 0) =>
+  request<ShellOutputPage>(
+    `/api/sessions/shell-output?path=${encodeURIComponent(path)}&entry=${encodeURIComponent(entry)}&from=${from}`,
+    { cache: "no-store" },
+  );
 
 /** Stores an image in the session's attachments folder the moment it's attached, so it survives
     a reload as part of the draft; the prompt text then names its path. */
@@ -1051,6 +1062,9 @@ export const stopSessionJob = (path: string, id: string, sessionId?: string) =>
     Use loadGitSummary (lib/git-summary.ts), which shares a request already running. */
 export const fetchGitSummary = (path: string, fresh = false) =>
   request<GitSummary>(`/api/sessions/git?path=${encodeURIComponent(path)}${fresh ? "&fresh=1" : ""}`);
+
+/** A session's Time Spent record, from the computer hosting it (§app.subagents-pane/time-spent-record). */
+export const fetchTimeSpent = (path: string) => request<TimeSpentRecord>(`${TIME_SPENT_READ_ROUTE}?path=${encodeURIComponent(path)}`);
 
 /** What pi loads for a session (context files, offered skills, system-prompt files), read for its
     folder. `fresh` skips the server's cache. */
@@ -1789,6 +1803,20 @@ export const saveMergeSettings = (projectId: string, changes: import("../../shar
   request<import("../../shared/merge-queue-settings").MergeSettingsSaveResult>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/settings`, jsonInit("POST", { changes, confirm: true }));
 /** Cancels a save waiting for the current branch. */
 export const cancelMergeSettings = (projectId: string) => request<unknown>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/settings/pending`, { method: "DELETE" });
+
+// -- Settings → Extensions --
+const extPath = (id: string, tail = "") => `/api/extensions/${encodeURIComponent(id)}${tail}`;
+const extPost = <T = { ok: true },>(path: string, body: unknown = {}) => request<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const getExtensionsInstalled = () => request<ExtensionsInstalled>("/api/extensions/installed", { cache: "no-store" });
+export const getExtensionLog = (id: string) => request<{ lines: { t: string; text: string }[] }>(extPath(id, "/log"), { cache: "no-store" });
+export const inspectExtension = (what: { folder?: string; id?: string }) => extPost<ExtensionInspect>("/api/extensions/inspect", what);
+export const installExtension = (folder: string, version: string) => extPost<{ id: string }>("/api/extensions/install", { folder, version });
+export const approveExtension = (id: string, version: string) => extPost(extPath(id, "/approve"), { version });
+export const chooseExtensionFolder = (id: string, folder: string, version: string) => extPost(extPath(id, "/folder"), { folder, version });
+export const turnExtensionOn = (id: string) => extPost(extPath(id, "/on"));
+export const turnExtensionOff = (id: string) => extPost(extPath(id, "/off"));
+export const extensionProgram = (id: string, action: "start" | "restart" | "stop") => extPost(extPath(id, "/program"), { action });
+export const removeExtension = (id: string, deleteData: boolean) => request<{ ok: true }>(extPath(id), { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deleteData }) });
 
 // -- MCP servers (§app/mcp) --
 const mcpRow = (id: string, tail = "") => `/api/mcp/rows/${encodeURIComponent(id)}${tail}`;

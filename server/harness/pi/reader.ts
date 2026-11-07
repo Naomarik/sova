@@ -147,6 +147,11 @@ function messageOf(m: Record<string, any>, base: Record<string, unknown>): HEntr
       put(h, "command", m.command);
       put(h, "output", m.output);
       put(h, "sentAt", m.timestamp);
+      if (typeof m.exitCode === "number") h.exitCode = m.exitCode;
+      if (typeof m.cancelled === "boolean") h.cancelled = m.cancelled;
+      if (m.truncated === true) h.truncated = shellTruncation(typeof m.output === "string" ? m.output : "");
+      put(h, "fullOutputPath", m.fullOutputPath);
+      if (m.excludeFromContext === true) h.private = true;
       return h as HEntry;
     case "custom":
       h.kind = "note";
@@ -171,6 +176,14 @@ function messageOf(m: Record<string, any>, base: Record<string, unknown>): HEntr
     default:
       return null;
   }
+}
+
+/** pi's cut of a command's output (P40: its DEFAULT_MAX_LINES and DEFAULT_MAX_BYTES, the tail kept): a cut
+    output that kept every line the limit allows was cut by lines, any shorter one by bytes. */
+export const PI_SHELL_MAX_LINES = 2000;
+export const PI_SHELL_MAX_BYTES = 50 * 1024;
+export function shellTruncation(output: string): { by: "lines" | "bytes"; max: number } {
+  return output.split("\n").length >= PI_SHELL_MAX_LINES ? { by: "lines", max: PI_SHELL_MAX_LINES } : { by: "bytes", max: PI_SHELL_MAX_BYTES };
 }
 
 /**

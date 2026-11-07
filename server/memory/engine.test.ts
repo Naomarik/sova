@@ -62,6 +62,20 @@ describe("the log", () => {
   });
 });
 
+describe("a !! command (§chat.shell-mode/model)", () => {
+  const shell = (command: string, output: string, priv: boolean, eid = `s${++id}`): HEntry => ({ id: eid, parentId: null, at, kind: "shell", command, output, exitCode: 0, ...(priv ? { private: true } : {}) });
+  test("is no message of the log, so no line, summary or zoom; a plain ! command is", async () => {
+    assert.deepEqual(messagesOf([shell("echo HUSH", "HUSH", true)]), []);
+    assert.match(messagesOf([shell("echo hi", "hi", false)])[0]!.text, /user ran: \$ echo hi/);
+    const { e, calls, dir } = engine();
+    e.sync([user("hi"), shell("cat HUSH_FILE", long("HUSH_OUT"), true), reply(long("after"))]);
+    await e.idle();
+    assert.ok(calls.length > 0, "the long reply was summarized");
+    assert.ok(calls.every((c) => !/HUSH/.test(c.prompt)), "never in the summary model's input");
+    assert.doesNotMatch(readFileSync(join(dir, "tree.jsonl"), "utf8"), /HUSH/);
+  });
+});
+
 describe("the engine", () => {
   test("short messages are their own lines; long ones and long joins are summarized; merges follow", async () => {
     const { e, calls } = engine();

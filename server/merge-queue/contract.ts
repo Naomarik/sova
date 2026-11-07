@@ -137,7 +137,7 @@ export type EstimateRun = (projectId: string, root: string) => number | null;
  *  cancel); `entry` is the one that changed last, `lastLanded` the newest landing. Answers whether a thread was asked:
  *  false (none, or off) never delays anything. */
 export interface ThreadEvent {
-  kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names" | "idle";
+  kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names" | "idle" | ThreadRulingKind;
   project: string;
   root: string;
   target: string;
@@ -158,5 +158,23 @@ export interface ThreadEvent {
   /** conflict: the scratch copy Sova made for the thread to resolve in (scratch.ts), or why it couldn't. */
   scratch?: string;
   scratchError?: string;
+  /** review: the blocking verdict's findings. */
+  findings?: string;
+  /** fix / chat-answer / drafts-changed: the request (rq_…) it is about; fix: what it asked. */
+  request?: string;
+  asked?: string;
+  /** fix: the fix's commit, and whether it changed the drafts; its one-line summary. */
+  fixCommit?: string;
+  drafts?: boolean;
+  summary?: string;
+  /** drafts-changed: the drafts' names now. */
+  names?: string[];
+  /** chat-answer: which answer, its text, and whether the thread already tried another approach for it. */
+  answer?: "cant" | "needs-you";
+  text?: string;
+  otherTried?: boolean;
 }
+/** The moments the thread rules on (al_3): a failure whose owner can't be told, a blocking review, its own resolution
+ *  that failed a check, drafts changed since the Land, a chat's fix to check, a chat's Can't or Needs you. */
+export type ThreadRulingKind = "unattributed" | "review" | "resolution-failed" | "drafts-changed" | "fix" | "chat-answer";
 export type WakeThread = (ev: ThreadEvent) => boolean;

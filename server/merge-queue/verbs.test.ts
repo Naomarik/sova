@@ -149,6 +149,16 @@ describe("the verbs and who may call them", () => {
       assert.equal((await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "ok" }, session(reviewer))).ok, true);
       assert.equal((await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "ok" }, t)).error!.code, "forbidden");
       assert.equal((await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "blocking" }, session(reviewer))).error!.code, "invalid-request");
+      // merge.rule is the thread's alone; a ruling on an entry in line is refused for what it is, not for who asks.
+      assert.equal((await call("merge.rule", { entry: id, ruling: "needs-user", text: "Which wording?" }, session("someone"))).error!.code, "forbidden");
+      assert.equal((await call("merge.rule", { entry: id, ruling: "chat-fixes", text: "d" }, t)).error!.code, "invalid-request");
+      assert.equal((await call("merge.rule", { entry: id, ruling: "overrule" }, t)).error!.code, "invalid-request");
+      const raised = await call("merge.rule", { entry: id, ruling: "needs-user", text: "Which wording should the button use?", choices: ["Land", "Merge"] }, t);
+      assert.equal(raised.ok, true, JSON.stringify(raised.error));
+      assert.equal(raised.merge!.entry!.decision?.question, "Which wording should the button use?");
+      assert.deepEqual(raised.merge!.entry!.decision?.choices, ["Land", "Merge"]);
+      // Raised, the thread can't take it back: only the user's answer moves it on.
+      assert.equal((await call("merge.retry", { entry: id }, t)).error!.code, "invalid-request");
       const e = q.entry(id)!;
       assert.equal(e.notes[0]!.text, "changes server code");
       assert.equal(e.picks[0]!.id, "statecharts");
@@ -187,6 +197,9 @@ describe("the verbs and who may call them", () => {
         ["merge.fresh", { project: k.repo.root }],
         ["merge.clear", { project: k.repo.root }],
         ["merge.reply", { project: k.repo.root, ask: "ak_x", text: "yes" }],
+        ["merge.respond", { project: k.repo.root, request: "rq_0123456789ab", answer: "fixed", text: "x" }],
+        ["merge.answer", { entry: id, answer: "try-again" }],
+        ["merge.answer", { entry: id, answer: "land" }],
         ["merge.note", { entry: id, note: "x" }],
         ["merge.resolve", { entry: id }],
         ["merge.hold", { project: k.repo.root, action: "set" }],
@@ -283,6 +296,8 @@ describe("what the branch's chat is told", () => {
     assert.match(t, /expected 2$/m);
     const s = noticeText("sent-back", { ...base, state: "needs-fix", reason: "the two sides want different behaviour", conflict: { files: ["a.ts"], verdict: "behaviour-differs", ours: "returns 2", theirs: "returns 3", proposal: "a flag", at: "t" } });
     assert.match(s, /master's side: returns 2\nThis branch's side: returns 3\nProposed: a flag/);
+    const d = noticeText("decision", { ...base, state: "needs-user", decision: { id: "dc_1", kind: "needs-you", question: "Which wording?", choices: [], raisedBy: "chat", actions: [], at: "t" } });
+    assert.match(d, /waits for the user's decision: Which wording\?/);
   });
 });
 

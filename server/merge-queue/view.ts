@@ -94,7 +94,8 @@ export function superseded(entries: readonly Stored[], e: Stored): boolean {
  */
 export function sentBack(entries: readonly Stored[], facts?: ReadonlyMap<string, Exclude<MergeSettled, "superseded">>): MergeEntry[] {
   const all = entries
-    .filter((e) => e.state === "needs-fix")
+    // Back with its chat under the user's standing Land (with-chat) reads here too (al_3): the chat is fixing it.
+    .filter((e) => e.state === "needs-fix" || e.state === "with-chat")
     .sort((x, y) => y.updatedAt.localeCompare(x.updatedAt))
     .map((e): MergeEntry => {
       const settled: MergeSettled | undefined = superseded(entries, e) ? "superseded" : facts?.get(e.id);
@@ -147,6 +148,9 @@ export function worktreeQueueInfo(view: MergeQueueView, branch: string): Worktre
     ...(e.request ? { request: e.request } : {}),
     ...(e.settled ? { settled: e.settled } : {}),
     ...(e.state === "needs-fix" && e.redrafted ? { redrafted: true as const } : {}),
+    ...(e.standing ? { standing: e.standing } : {}),
+    ...(e.decision && !e.decision.answered ? { decision: e.decision } : {}),
+    ...(e.tries ? { tries: e.tries } : {}),
     ...(view.review ? { reviewKit: true } : {}),
   };
 }

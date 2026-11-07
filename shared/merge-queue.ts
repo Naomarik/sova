@@ -33,15 +33,135 @@
  * - `pushed`: Push branch only: the branch is on origin; the user opens the request.
  * - `closed`: the request was closed on the host without merging; Land Again opens or updates it.
  */
-export type MergeEntryState = "queued" | "checking" | "conflict" | "behaviour-differs" | "review-flagged" | "unattributed" | "drafts-changed" | "needs-fix" | "landed" | "cancelled" | "request-review" | "requested" | "pushed" | "closed";
+export type MergeEntryState = "queued" | "checking" | "conflict" | "behaviour-differs" | "review-flagged" | "unattributed" | "drafts-changed" | "needs-fix" | "with-chat" | "needs-user" | "landed" | "cancelled" | "request-review" | "requested" | "pushed" | "closed";
 /** The states that wait for the user's answer (the "needs you" list). */
-export const WAITING_FOR_USER: readonly MergeEntryState[] = ["behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "request-review"];
+export const WAITING_FOR_USER: readonly MergeEntryState[] = ["behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "request-review", "needs-user"];
 /** The states an entry never leaves by itself. */
 export const ENTRY_FINAL: readonly MergeEntryState[] = ["landed", "cancelled", "needs-fix", "pushed", "closed"];
 /** On the host: open there, followed by the queue; neither in line nor final. */
 export const ENTRY_ON_HOST: readonly MergeEntryState[] = ["requested"];
 /** States that hold a place in the line (one live entry per branch at a time). */
-export const ENTRY_OPEN: readonly MergeEntryState[] = ["queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed"];
+export const ENTRY_OPEN: readonly MergeEntryState[] = ["queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "with-chat", "needs-user"];
+
+// ---- al_3: the standing approval, the chat's requests and answers (§app.merge-queue/standing-approval,
+// §chat.merge-queue/requests, §chat.merge-queue/answers) ----------------------------------------------
+
+/** What a request asks of the branch's chat. */
+export type MergeRequestKind =
+  /** Needs a fix: a check failed, drafts don't fit, a conflict, review findings, a resolution that failed. */
+  | "fix"
+  /** Approved, but blocked before it can join the line (Approved · waiting for a fix), or a fix that still is. */
+  | "blocked"
+  /** Spec drafts that wouldn't land with a finished branch (before any Land). */
+  | "drafts"
+  /** A merge thread question (merge.ask): the user answers it in their own message, never the chat itself. */
+  | "thread-ask"
+  /** The held note of a decision, sent with the user's answer. */
+  | "decision"
+  /** The merge thread's other approach after a Can't. */
+  | "other-approach"
+  /** A trial finished. */
+  | "trial";
+
+/** The chat's answer to a request (merge.respond). */
+export type MergeChatAnswer =
+  | { kind: "fixed"; changed: "commit" | "drafts" | "both"; commit?: string; drafts?: { hash: string; names: string[] }; summary: string; at: string }
+  | { kind: "needs-you"; question: string; options: string[]; at: string }
+  | { kind: "cant"; why: string; at: string };
+
+/** One request the merge queue made of a branch's chat, kept on its entry (oldest first). */
+export interface MergeChatRequest {
+  /** "rq_…": the id the chat answers by. */
+  id: string;
+  kind: MergeRequestKind;
+  entry: string;
+  branch: string;
+  /** The branch's chat (the entry's session; a worker's branch: the worker). */
+  session?: string;
+  /** The chat it reached, once delivered (a worker's branch: the chat running the worker). It may answer too. */
+  to?: string;
+  text: string;
+  /** fix: why it went back (the send-back's cause). */
+  cause?: SentBackFor;
+  /** fix: which try this is (1..3). */
+  try?: number;
+  /** fix: the same-failure fingerprint. */
+  fingerprint?: string;
+  at: string;
+  delivery?: "queued" | "delivered" | "held" | "fallback-tab" | "fallback-line";
+  answer?: MergeChatAnswer;
+}
+
+/** A standing approval's phase while it isn't in line (state `with-chat`). */
+export type MergeStanding =
+  /** Approved · waiting for a fix (Land on a finished but blocked branch, or a fix that still doesn't pass Land's checks). */
+  | { phase: "waiting-fix"; why: string }
+  /** Back with the chat: a request waits for its answer. */
+  | { phase: "with-chat"; try: number; of: number; why: string; answer?: MergeChatAnswer; checked?: true }
+  /** A fix waits for the merge thread to check it (it isn't running, or hasn't ruled). */
+  | { phase: "waiting-thread"; answer?: MergeChatAnswer }
+  /** A fix arrived while the entry's run is checking: it waits for that run to end. */
+  | { phase: "waiting-run"; answer?: MergeChatAnswer }
+  /** Stop in the chat: no request goes through until the user's next message. */
+  | { phase: "paused" };
+
+/** A checked fix the standing approval carried: its commit (absent: drafts only) and the drafts it re-pinned. */
+export interface MergeFix {
+  request: string;
+  commit?: string;
+  drafts?: string;
+  checkedAt: string;
+}
+
+export const MERGE_TRIES = 3;
+
+// ---- al_3: decisions, the user's only (§app.merge-queue/needs-user, §chat.merge-queue/decision) -----------------
+
+/** What the decision is about. */
+export type MergeDecisionKind =
+  /** A conflict whose two sides want different behaviour (the thread's merge.resolve "needs-user"). */
+  | "behaviour-differs"
+  /** The merge thread or the branch's chat raised it: only the user can decide. */
+  | "needs-you"
+  /** Can't tell whose failure: a check failed on the merge and on the target alone (Land Anyway / Try Again). */
+  | "unattributed"
+  /** Out of tries, or the same failure twice (Land, a new standing approval). */
+  | "out-of-tries"
+  /** A fix that needs the user's OK: on top of work they asked for, or changing more than was asked (Land). */
+  | "fix-ok"
+  /** Spec drafts changed beyond making them fit (Land). */
+  | "drafts-changed";
+
+/** A click on a decision, acted on the queue directly (merge.answer, the user's own click only). */
+export type MergeDecisionAction = "accept" | "land-anyway" | "try-again" | "land" | "remove";
+
+/** One decision waiting for the user (state `needs-user`): a question, choices that fill the chat's message box, and
+ *  the queue's note held until the user answers there. */
+export interface MergeDecision {
+  /** "dc_…". */
+  id: string;
+  kind: MergeDecisionKind;
+  /** The question, in plain words. */
+  question: string;
+  /** Choices: a button puts its words in the chat's message box (nothing is sent until the user sends). May be []. */
+  choices: string[];
+  /** The queue's note to the chat, held and "not sent yet": it goes with the user's answer, in one turn. */
+  heldNote?: { request: string; text: string };
+  /** It came from a chat's Can't the thread couldn't settle: "can't be settled without you". */
+  cantSettle?: true;
+  /** A merge thread question (merge.ask, ak_…): the user's answer goes to the thread (MergeThreadAsk.answered). */
+  ask?: string;
+  raisedBy: "merge-thread" | "chat" | "queue";
+  /** The click-only answers it offers (Remove from Queue is always there). */
+  actions: MergeDecisionAction[];
+  /** behaviour-differs: both sides and the proposal, in plain words. */
+  sides?: { ours: string; theirs: string; proposal: string };
+  /** The run it came from, when one did. */
+  run?: string;
+  at: string;
+  /** The user answered it (a click, or their message with the held note). */
+  answered?: { at: string; how: MergeDecisionAction | "message" };
+}
 
 /** How a branch lands (al_3): merged locally (today's path), a pull request on GitHub, a merge request on GitLab,
  *  or the branch pushed and nothing more. Effective = this computer's choice ?? the project file's `merge.land` ??
@@ -74,6 +194,14 @@ export interface MergeApproval {
   how?: LandHow;
   /** "open a PR" / "open an MR" typed in the branch's chat: wins over `how` for this approval. */
   via?: "github-pr" | "gitlab-mr";
+  /** The user's one Land stands until the branch lands, they remove it, or it waits for their decision (al_3). */
+  standing?: true;
+  /** The commit the user's own Land (or typed word) pinned, before any fix moved `commit`. */
+  userCommit?: string;
+  /** Checked fixes the standing approval carried, oldest first. */
+  fixes?: MergeFix[];
+  /** Approved · waiting for a fix: taken on a finished but blocked branch; not yet in line. */
+  blocked?: true;
 }
 
 /** A branch published by the queue (a request, or the branch pushed alone), on its entry. */
@@ -143,7 +271,9 @@ export interface CheckPick {
 export interface ConflictJudgement {
   /** The files that conflicted. */
   files: string[];
-  verdict: "no-behaviour-change" | "behaviour-differs";
+  /** "chat-fixes": the branch's chat fixes it (sent back with the diagnosis). "behaviour-differs": the user decides
+   *  (merge.resolve's "needs-user"; its question and choices are the entry's decision). */
+  verdict: "no-behaviour-change" | "chat-fixes" | "behaviour-differs";
   /** The target's side, in plain words. */
   ours: string;
   /** The branch's side, in plain words. */
@@ -250,6 +380,31 @@ export interface MergeEntry {
   /** needs-fix for its drafts, stored at the hand-back: a fingerprint of its worktree's drafts folder then (notes
    *  included), so a fix that only records a note reads as a change. */
   sentBackDrafts?: string;
+  /** The requests the queue made of the branch's chat, oldest first. */
+  requests?: MergeChatRequest[];
+  /** The standing approval's tries: sends back to the chat used, and each run's failure fingerprint. */
+  tries?: { used: number; max: number; fingerprints: string[] };
+  /** with-chat: where the standing approval stands. */
+  standing?: MergeStanding;
+  /** A Fixed answer, Can't or Needs you waiting on the merge thread: the request, and whether the thread was told yet
+   *  (false: it wasn't running; Sova tells it again once it runs). */
+  fix?: { request: string; told: boolean; at: string };
+  /** Paused: you stopped the chat: the phase it goes back to at the user's next message. */
+  pausedFrom?: MergeStanding;
+  /** needs-user: the decision waiting for the user (the newest; an answered one stays until the entry moves on). */
+  decision?: MergeDecision;
+  /** The merge thread's rulings on this entry that the queue still acts on: its diagnosis for the next send-back, and
+   *  that it already tried another approach after a Can't (one only). */
+  ruling?: {
+    diagnosis?: string;
+    otherTried?: true;
+    /** A send-back waiting for the thread's diagnosis (at most RULING_WAIT_MS), then sent with or without it. */
+    pending?: { cause: SentBackFor; why: string; run?: string; files?: string[]; review?: string; at: string };
+    /** The chat answered this request Can't: the thread rules on it (another approach, or the user). */
+    cant?: { request: string; why: string; at: string };
+    /** The thread's own resolution failed a check: it is ruling again; never the branch's. */
+    resolutionFailed?: true;
+  };
   /** needs-fix only, derived when the view is read (never stored): sent back for its drafts, its drafts changed since
    *  (since the hand-back; for an entry from before that was kept, since the approval pinned them), and Sova's docs
    *  check of them finds no problem. Land comes back at the same commit. */
@@ -261,7 +416,7 @@ export type MergeSettled = "superseded" | "merged" | "gone";
 /** Why an entry was sent back: its spec drafts didn't fit (`drafts`), a check failed with it (`checks`), a conflict
  *  nobody judged (`conflict`), the user's Send Back (`user`), or the host refused its publication (`host`). Only
  *  `drafts` can be fixed with no commit. */
-export type SentBackFor = "drafts" | "checks" | "conflict" | "user" | "host";
+export type SentBackFor = "drafts" | "checks" | "conflict" | "user" | "host" | "review";
 
 export type PushState = "pending" | "pushed" | "not-pushed" | "no-remote";
 
@@ -536,7 +691,7 @@ export interface MergeUnclear {
   why?: string;
 }
 
-export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "newerRewritten" | "newerBlocked" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled" | "redrafted"> & {
+export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "newerRewritten" | "newerBlocked" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled" | "redrafted" | "standing" | "decision" | "tries"> & {
   project: string;
   run?: string;
   /** The run's newest reviewer chat (Open Reviewer Chat on the branch's Worktrees row), while it runs and after. */
@@ -548,7 +703,7 @@ export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "
 
 /** A branch's entry as the session list carries it (protocol.ts SessionBranchQueue): its state, never a precomputed
  *  key, so a new state flows through, and the fields a row's words read. */
-export type BranchQueueFacts = Pick<WorktreeQueueInfo, "state" | "commit" | "position" | "reason" | "conflict" | "review" | "request" | "settled" | "redrafted">;
+export type BranchQueueFacts = Pick<WorktreeQueueInfo, "state" | "commit" | "position" | "reason" | "conflict" | "review" | "request" | "settled" | "redrafted" | "standing" | "decision">;
 
 /** The session list's cut of a worktree row's queue entry. Pure. */
 export const branchQueueOf = (q: WorktreeQueueInfo): BranchQueueFacts => ({
@@ -561,6 +716,8 @@ export const branchQueueOf = (q: WorktreeQueueInfo): BranchQueueFacts => ({
   ...(q.request ? { request: q.request } : {}),
   ...(q.settled ? { settled: q.settled } : {}),
   ...(q.redrafted ? { redrafted: true as const } : {}),
+  ...(q.standing ? { standing: q.standing } : {}),
+  ...(q.decision ? { decision: q.decision } : {}),
 });
 
 /**
@@ -637,12 +794,13 @@ export interface WorktreeMergeProject {
  * merge.note    {entry, note}                                 → entry (empty note clears the thread's)
  * merge.extend  {entry, checks, select?, why, note?}          → entry (adds picks; never drops)
  * merge.resolve {entry, verdict, files?, ours, theirs, proposal, commit?, note?}  → entry (the thread's judgement)
- * merge.answer  {entry, answer: accept | send-back | land-anyway, why?}          → entry (the user's)
+ * merge.answer  {entry, answer: accept | land-anyway | try-again | land, why?}     → entry (the user's own click)
+ * merge.rule    {entry, ruling, text?, choices?, request?, note?}                 → entry (the thread's ruling)
  * merge.review  {run, verdict, text?}                         → entry (the review step's verdict)
  * merge.retry   {project | entry, note?}                      → view (rerun after a machine pause)
  * merge.try     {project?, branch? | commit?, checks?}        → trial + run (a setup branch's checks on its head; saves nothing)
  */
-export const MERGE_ANSWERS = ["accept", "send-back", "land-anyway"] as const;
+export const MERGE_ANSWERS = ["accept", "land-anyway", "try-again", "land"] as const;
 export type MergeAnswer = (typeof MERGE_ANSWERS)[number];
 
 /** `VerbResult.merge`: what a merge verb answers. */
@@ -654,6 +812,8 @@ export interface MergeReport {
   lines?: string[];
   /** merge.ask / merge.reply: the question as recorded. */
   ask?: MergeThreadAsk;
+  /** merge.respond: the request as answered. */
+  request?: MergeChatRequest;
   /** merge.fresh: whether a thread was retired; merge.clear: the chats deleted. */
   fresh?: boolean;
   cleared?: number;
@@ -682,8 +842,8 @@ export interface MergeCardsFeed {
 // ---- a branch's card in the chat that built it ---------------------------------------------------
 
 /** An outcome that moves the card to the bottom of the chat as a new revision. */
-export type MergeCardOutcome = "landed" | "needs-fix" | "conflict" | "behaviour-differs" | "review-flagged" | "unattributed" | "drafts-changed" | "sent-back" | "requested" | "pushed" | "closed" | "removed";
-export const MERGE_CARD_OUTCOMES: readonly MergeCardOutcome[] = ["landed", "needs-fix", "conflict", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "sent-back", "requested", "pushed", "closed", "removed"];
+export type MergeCardOutcome = "landed" | "needs-fix" | "conflict" | "behaviour-differs" | "review-flagged" | "unattributed" | "drafts-changed" | "sent-back" | "requested" | "pushed" | "closed" | "removed" | "decision";
+export const MERGE_CARD_OUTCOMES: readonly MergeCardOutcome[] = ["landed", "needs-fix", "conflict", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "sent-back", "requested", "pushed", "closed", "removed", "decision"];
 
 /**
  * One copy of the card at its own point in the chat. The newest revision draws the whole card (the card's live data);
@@ -755,6 +915,14 @@ export interface MergeCard {
   failures?: MergeCardFailure[];
   /** Needs a fix: the merge thread's later diagnosis (its note), added to the same card in place. */
   explanation?: { text: string; at: string };
+  /** A decision waiting for the user (the entry's `decision`, unanswered): the card shows its question, choices and held note. */
+  decision?: MergeDecision;
+  /** Back with its chat under the user's standing Land: where it stands (the entry's `standing`). */
+  standing?: MergeStanding;
+  /** The standing approval's tries (the entry's). */
+  tries?: MergeEntry["tries"];
+  /** Landed: the checked fixes that landed after the user's Land, oldest first (al_3 q6). */
+  fixesLanded?: { sha: string; subject: string }[];
   /** Needs a fix: why it was sent back (the entry's `sentBackFor`). */
   sentBackFor?: SentBackFor;
   /** Needs a fix, sent back for its drafts: they are fixed (the entry's `redrafted`), so Land comes back at the same commit. */
@@ -792,6 +960,10 @@ export function entryStateWords(e: Pick<MergeEntry, "state" | "position">): stri
       return "Drafts changed since you approved";
     case "needs-fix":
       return "Needs a fix";
+    case "with-chat":
+      return "Back with the chat";
+    case "needs-user":
+      return "Waiting for you";
     case "landed":
       return "Landed";
     case "cancelled":
@@ -869,8 +1041,8 @@ export interface MergeQueueChat {
   cleared?: string;
 }
 
-/** A question the merge thread asked through merge.ask (§chat/merge-queue): it never waits in its own chat. Sova
-    wakes the chat that owns the entry's branch with it; that chat's agent relays the user's answer with merge.reply.
+/** A question the merge thread asked through merge.ask (§chat/merge-queue): it never waits in its own chat. It
+    waits as a decision on the card of the entry's branch in its chat; the user's own message there is the answer.
     No chat to ask (none, archived, gone): the Merge Queue tab shows it (`onTab`) and one notification opens the tab. */
 export interface MergeThreadAsk {
   id: string;

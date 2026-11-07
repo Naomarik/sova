@@ -474,7 +474,7 @@
   "description": "@92bd36452c3a5ac1",
   "parameters": {
    "type": "object",
-   "properties": "@a9d589e46598fcc2",
+   "properties": "@95e445aedec3a2a6",
    "required": [
     "verb"
    ],
@@ -499,97 +499,6 @@
    "required": [
     "topic",
     "text"
-   ],
-   "additionalProperties": false
-  }
- },
- {
-  "name": "align",
-  "description": "@10b18c09da2ac44c",
-  "parameters": {
-   "type": "object",
-   "required": [
-    "ops"
-   ],
-   "properties": {
-    "doc": {
-     "type": "string",
-     "minLength": 1,
-     "description": "The alignment to change, e.g. \"al_2\". Required while more than one alignment is open; omit for create, import, exempt and change_request.",
-     "pattern": "^al_[1-9][0-9]*$"
-    },
-    "ops": {
-     "type": "array",
-     "items": {
-      "anyOf": "@e61dd9dd0d7d36cf"
-     },
-     "description": "Operations, applied in order. change_request, when given, comes before every other op; create or import comes next (else first) and appears once.",
-     "minItems": 1
-    }
-   },
-   "additionalProperties": false
-  }
- },
- {
-  "name": "vis_guide",
-  "description": "@4e03995211272eb1",
-  "parameters": {
-   "type": "object",
-   "required": [
-    "kind"
-   ],
-   "properties": {
-    "kind": {
-     "type": "string",
-     "enum": [
-      "flow",
-      "sequence",
-      "state",
-      "layers",
-      "tree",
-      "chart",
-      "timeline",
-      "steps",
-      "wireframe",
-      "matrix",
-      "code",
-      "html",
-      "svg",
-      "tour",
-      "tour-signin",
-      "tour-sites",
-      "tour-sova",
-      "tour-sharing"
-     ],
-     "description": "The drawing kind or tool-backed tour entry, as the vis minor mode lists it, or a part the tour guide names"
-    }
-   },
-   "additionalProperties": false
-  }
- },
- {
-  "name": "vis_check",
-  "description": "@2327d56265ca0751",
-  "parameters": {
-   "type": "object",
-   "properties": {
-    "kind": {
-     "type": "string",
-     "enum": [
-      "html",
-      "svg",
-      "wireframe"
-     ],
-     "description": "The fence's kind: html, svg or wireframe"
-    },
-    "source": {
-     "type": "string",
-     "description": "The fence body, without the ``` lines"
-    }
-   },
-   "required": [
-    "kind",
-    "source"
    ],
    "additionalProperties": false
   }

@@ -3,7 +3,8 @@ import { MergeThreadCard, QueueHistory, ReviewerLinks, ReviewRunningButton } fro
 import type { ChatRef } from "../lib/merge-chat";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
-import { headWhen, mins, notesOf, readyFactsWords, readyRowChip, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, SENT_BACK_LINE, stillSentBack, landAgainOf } from "../lib/merge-queue";
+import { headWhen, mins, notesOf, readyFactsWords, readyRowChip, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, needsYouOf, withItsChat } from "../lib/merge-queue";
+import { DECISION_ACTION_LABEL, DECISION_LABEL, decisionActions, openDecision, STANDING_LINE, standingWords, answeredInChat, type DecisionAction } from "../lib/merge-standing";
 import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
 import { createPoll } from "../lib/poll";
 import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
@@ -320,12 +321,12 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
       </Show>
       <CheckingNow projectId={props.projectId} view={v()} chatOf={props.chatOf} />
       <Waiting projectId={props.projectId} view={v()} chatOf={props.chatOf} onChanged={props.onChanged} />
-      <Show when={v().needsYou.length > 0 || (v().heads.targetBroken?.length ?? 0) > 0}>
+      <Show when={needsYouOf(v()).length > 0 || (v().heads.targetBroken?.length ?? 0) > 0}>
         <div class="stack-2">
           <h3 class="text-heading-s">Needs you</h3>
           <ul class="list mq-list">
             <For each={v().heads.targetBroken ?? []}>{(b) => <BrokenRow projectId={props.projectId} target={v().target} broken={b} />}</For>
-            <For each={v().needsYou}>
+            <For each={needsYouOf(v())}>
               {(e) =>
                 isRequestState(e.state) ? (
                   <RequestRow root={v().root} target={v().target} entry={e as RequestEntry} from={<FromChat projectId={props.projectId} entry={e} chatOf={props.chatOf} />} onChanged={props.onChanged} />
@@ -352,12 +353,12 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
           </ul>
         </div>
       </Show>
-      <Show when={stillSentBack(v()).length > 0}>
+      <Show when={withItsChat(v()).length > 0}>
         <div class="stack-2">
-          <h3 class="text-heading-s">Sent back to its chat</h3>
+          <h3 class="text-heading-s">With its chat</h3>
           <ul class="list mq-list">
-            <For each={stillSentBack(v())}>
-              {(e) => <SentBackRow projectId={props.projectId} root={v().root} entry={e} view={v()} chatOf={props.chatOf} onChanged={props.onChanged} />}
+            <For each={withItsChat(v())}>
+              {(e) => <WithChatRow projectId={props.projectId} entry={e} view={v()} chatOf={props.chatOf} onChanged={props.onChanged} />}
             </For>
           </ul>
         </div>
@@ -537,8 +538,8 @@ function Waiting(props: { projectId: string; view: MergeQueueView; chatOf?: Chat
                   </div>
                   <div class="button-row mq-row-act">
                     <QueueReview projectId={props.projectId} branch={e.branch} scope={{ kind: "queue", project: props.projectId, entry: e.id }} session={e.session} chatOf={props.chatOf} />
-                    <button type="button" class="button button-sm button-ghost" aria-label={`Cancel landing ${e.branch}`} disabled={!!act.busy()} onClick={() => void act.run("cancel", () => cancelEntry(e), `Cancelled landing ${e.branch}.`)}>
-                      Cancel Landing
+                    <button type="button" class="button button-sm button-ghost" aria-label={`Remove ${e.branch} from the merge queue`} title="Takes it off the queue. Its branch, folder, commits and drafts stay." disabled={!!act.busy()} onClick={() => void act.run("cancel", () => cancelEntry(e), `Removed ${e.branch} from the merge queue.`)}>
+                      Remove from Queue
                     </button>
                   </div>
                 </li>
@@ -551,11 +552,69 @@ function Waiting(props: { projectId: string; view: MergeQueueView; chatOf?: Chat
   );
 }
 
-/** An entry that waits for you, with its two actions; or a conflict the merge thread is judging. */
+/** An entry that waits for you: a decision (its question, its choices, its answers on the queue, Answer in Chat when
+ *  it is answered in words), or a state that waits from before decisions; or a conflict the merge thread is judging.
+ *  Remove from Queue on each. No row has a text box, a Send Back or a re-land. */
 function NeedsYouRow(props: { projectId: string; root: string; target: string; entry: MergeEntry; chatOf?: ChatOf; view?: MergeQueueView; onChanged(): void }) {
   const e = () => props.entry;
   const act = useAct(props.onChanged);
   const answer = (a: MergeAnswer, done: string) => void act.run(a, () => answerEntry(e(), a), done);
+  const decision = () => openDecision(e());
+  /** The answers on the queue: the decision's, else the state's own. Remove from Queue always last. */
+  const actions = (): DecisionAction[] => {
+    const d = decision();
+    if (d) return decisionActions(d);
+    switch (e().state) {
+      case "behaviour-differs":
+        return e().conflict?.proposal ? ["accept", "remove"] : ["remove"];
+      case "unattributed":
+        return ["land-anyway", "try-again", "remove"];
+      case "drafts-changed":
+        return ["land", "remove"];
+      default:
+        return ["remove"];
+    }
+  };
+  const inChat = () => {
+    const d = decision();
+    return d ? answeredInChat(d) : e().state === "behaviour-differs" || e().state === "needs-user";
+  };
+  const chip = (): { label: string; tone: "warn" } => {
+    const d = decision();
+    if (d) return { label: d.kind === "needs-you" ? `Needs you · ${e().branch}` : `${DECISION_LABEL[d.kind]} · waiting for you`, tone: "warn" };
+    switch (e().state) {
+      case "behaviour-differs":
+        return { label: "Behaviour differs · waiting for you", tone: "warn" };
+      case "review-flagged":
+        return { label: "Review flagged · waiting for you", tone: "warn" };
+      case "unattributed":
+        return { label: "Can't tell whose failure · waiting for you", tone: "warn" };
+      case "drafts-changed":
+        return { label: "Drafts changed since you approved", tone: "warn" };
+      case "needs-user":
+        return { label: `Needs you · ${e().branch}`, tone: "warn" };
+      default:
+        return { label: "Conflict", tone: "warn" };
+    }
+  };
+  const sides = () => decision()?.sides ?? (e().state === "behaviour-differs" ? e().conflict : undefined);
+  const doAct = (a: DecisionAction) => {
+    const b = e().branch;
+    switch (a) {
+      case "accept":
+        return answer("accept", `Accepted the resolution for ${b}.`);
+      case "land-anyway":
+        return answer("land-anyway", `Landing ${b} anyway.`);
+      case "try-again":
+        return answer("try-again", `Checking ${b} again.`);
+      case "land":
+        // A decision's Land is answered on the queue (out of tries: a new standing approval at the newest commit); a
+        // Drafts changed entry from before decisions re-approves at the commit it waits at.
+        return void act.run("land", () => (decision() ? answerEntry(e(), "land") : landBranch(props.root, b, { commit: e().commit })), `Queued ${b}.`);
+      case "remove":
+        return void act.run("remove", () => cancelEntry(e()), `Removed ${b} from the merge queue.`);
+    }
+  };
   return (
     <li
       class="list-row mq-row mq-row-grid mq-needs"
@@ -567,19 +626,7 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
       <div class="list-main">
         <RowHead projectId={props.projectId} branch={e().branch} session={e().session} chatOf={props.chatOf} />
         <p class="mq-facts">
-          <QueueChip
-            row={
-              e().state === "behaviour-differs"
-                ? { label: "Behaviour differs · waiting for you", tone: "warn" }
-                : e().state === "review-flagged"
-                  ? { label: "Review flagged · waiting for you", tone: "warn" }
-                  : e().state === "unattributed"
-                    ? { label: "Can't tell whose failure · waiting for you", tone: "warn" }
-                  : e().state === "drafts-changed"
-                    ? { label: "Drafts changed since you approved", tone: "warn" }
-                    : { label: "Conflict", tone: "warn" }
-            }
-          />
+          <QueueChip row={chip()} />
           <span class="text-mono text-muted">{short(e().commit)}</span>
           <Show when={e().run}>
             {(r) => (
@@ -590,7 +637,27 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
           </Show>
         </p>
         <BranchSummaryView summary={e().summary} projectId={props.projectId} branch={e().branch} />
-        <Show when={e().state === "behaviour-differs" && e().conflict}>
+        <Show when={decision()}>
+          {(d) => (
+            <>
+              <p class="list-meta mq-question">
+                {d().question}
+                <Show when={d().cantSettle}>
+                  <span class="text-muted"> · can't be settled without you</span>
+                </Show>
+              </p>
+              <Show when={d().choices.length}>
+                <p class="list-meta">
+                  <span class="text-muted">Choices:</span> {d().choices.join(" · ")}
+                </p>
+              </Show>
+              <Show when={d().heldNote}>
+                <p class="list-meta text-muted">The merge queue's note to the chat isn't sent yet: it goes with your answer.</p>
+              </Show>
+            </>
+          )}
+        </Show>
+        <Show when={sides()}>
           {(c) => (
             <dl class="mq-sides">
               <div>
@@ -608,17 +675,17 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
             </dl>
           )}
         </Show>
-        <Show when={e().state === "review-flagged"}>
+        <Show when={!decision() && e().state === "review-flagged"}>
           <p class="list-meta">{e().review?.text ?? e().reason ?? "The review found something that blocks it."}</p>
         </Show>
-        <Show when={e().state === "unattributed"}>
-          <p class="list-meta">{unattributedWhy(e().reason, props.target)} Land Anyway lands the commit it tested; Send Back hands it to its chat.</p>
+        <Show when={e().state === "unattributed" || decision()?.kind === "unattributed"}>
+          <p class="list-meta">{unattributedWhy(e().reason, props.target)} Land Anyway lands the commit it tested; Try Again checks it afresh.</p>
           <UnclearChecks projectId={props.projectId} unclear={e().unclear} target={props.target} class="list-meta" />
         </Show>
-        <Show when={e().state === "drafts-changed"}>
+        <Show when={!decision() && e().state === "drafts-changed"}>
           <p class="list-meta">{e().reason ?? "Its spec drafts changed after you approved. Land again to approve them as they are now."}</p>
         </Show>
-        <Show when={e().state === "conflict"}>
+        <Show when={!decision() && (e().state === "conflict" || e().state === "needs-user")}>
           <p class="list-meta">{e().reason ?? "The merge thread is judging the conflict. The line moves on meanwhile."}</p>
         </Show>
         <Show when={props.view}>{(pv) => <ReviewerLinks projectId={props.projectId} view={pv()} run={e().run} />}</Show>
@@ -626,29 +693,41 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
       </div>
       <div class="button-row mq-row-act">
         <QueueReview projectId={props.projectId} branch={e().branch} scope={{ kind: "queue", project: props.projectId, entry: e().id }} session={e().session} chatOf={props.chatOf} />
-        <Show when={e().state === "behaviour-differs"}>
-          <button type="button" class="button button-sm button-primary" aria-label={`Accept the resolution for ${e().branch}`} disabled={!!act.busy()} onClick={() => answer("accept", `Accepted the resolution for ${e().branch}.`)}>
-            Accept
-          </button>
+        <For each={actions().filter((a) => a !== "remove")}>
+          {(a) => (
+            <button
+              type="button"
+              class={`button button-sm${a === "try-again" ? "" : " button-primary"}`}
+              aria-label={a === "accept" ? `Accept the resolution for ${e().branch}` : a === "land-anyway" ? `Land ${e().branch} anyway` : a === "try-again" ? `Try ${e().branch} again` : `Land ${e().branch}`}
+              disabled={!!act.busy()}
+              aria-busy={act.busy() === a ? "true" : undefined}
+              onClick={(ev) => {
+                ev.stopPropagation();
+                doAct(a);
+              }}
+            >
+              {DECISION_ACTION_LABEL[a]}
+            </button>
+          )}
+        </For>
+        <Show when={inChat() && e().session}>
+          <a class="button button-sm" href={chatHref(props.projectId, e().session!, props.chatOf)} aria-label={`Answer about ${e().branch} in its chat`} title="You answer in the chat's message box." onClick={(ev) => ev.stopPropagation()}>
+            Answer in Chat
+          </a>
         </Show>
-        <Show when={e().state === "review-flagged" || e().state === "unattributed"}>
-          <button type="button" class="button button-sm button-primary" aria-label={`Land ${e().branch} anyway`} disabled={!!act.busy()} onClick={() => answer("land-anyway", `Landing ${e().branch} anyway.`)}>
-            Land Anyway
-          </button>
-        </Show>
-        <Show when={e().state === "drafts-changed"}>
-          <button type="button" class="button button-sm button-primary" aria-label={`Land ${e().branch}`} disabled={!!act.busy()} onClick={() => void act.run("land", () => landBranch(props.root, e().branch), `Queued ${e().branch}.`)}>
-            Land
-          </button>
-          <button type="button" class="button button-sm" aria-label={`Cancel landing ${e().branch}`} disabled={!!act.busy()} onClick={() => void act.run("cancel", () => cancelEntry(e()), `Cancelled landing ${e().branch}.`)}>
-            Cancel
-          </button>
-        </Show>
-        <Show when={e().state === "behaviour-differs" || e().state === "review-flagged" || e().state === "unattributed"}>
-          <button type="button" class="button button-sm button-destructive" aria-label={`Send ${e().branch} back to its chat`} disabled={!!act.busy()} onClick={() => answer("send-back", `Sent ${e().branch} back to its chat.`)}>
-            Send Back
-          </button>
-        </Show>
+        <button
+          type="button"
+          class="button button-sm"
+          aria-label={`Remove ${e().branch} from the merge queue`}
+          title="Takes it off the queue. Its branch, folder, commits and drafts stay."
+          disabled={!!act.busy()}
+          onClick={(ev) => {
+            ev.stopPropagation();
+            doAct("remove");
+          }}
+        >
+          Remove from Queue
+        </button>
       </div>
     </li>
   );
@@ -677,32 +756,33 @@ function BrokenRow(props: { projectId: string; target: string; broken: TargetBro
   );
 }
 
-/** A branch sent back to its chat (Needs a fix): its reason, Land This Commit Again (a new approval of the branch's
- *  newest commit, every check from the start; Land Newest Commit once the branch has commits past the one sent back) and Remove from Queue (it leaves the queue; nothing is deleted). Once its chat
- *  fixes it (a newer finished commit, or its drafts fixed at the same commit) the Ready to land row stands for it. */
-function SentBackRow(props: { projectId: string; root: string; entry: MergeEntry; view: MergeQueueView; chatOf?: ChatOf; onChanged(): void }) {
+/** A branch with its chat: the user's Land stands while its chat fixes something ("Back with the chat · try 2 of 3 ·
+ *  Unit tests failed", "Waiting for the merge thread", "Paused: you stopped the chat", "Approved · waiting for a
+ *  fix"), or one still sent back from before. See Why and Remove from Queue; never Land, a re-land or a send-back. */
+function WithChatRow(props: { projectId: string; entry: MergeEntry; view: MergeQueueView; chatOf?: ChatOf; onChanged(): void }) {
   const e = () => props.entry;
   const act = useAct(props.onChanged);
-  /** It lands the branch's newest commit: the label and lines say what that brings in. */
-  const again = () => landAgainOf(e());
+  const words = (): { label: string; tone: "info" | "warn" | "neutral" | "error"; detail?: string; answer?: string } => standingWords(e()) ?? { label: "Needs a fix", tone: "error" };
   return (
-    <li class="list-row mq-row" classList={{ "mq-tap": !!e().session }} data-branch={e().branch} data-state="needs-fix" onClick={rowOpens(() => e().session && chatHref(props.projectId, e().session!, props.chatOf))}>
+    <li class="list-row mq-row" classList={{ "mq-tap": !!e().session }} data-branch={e().branch} data-state={e().state} onClick={rowOpens(() => e().session && chatHref(props.projectId, e().session!, props.chatOf))}>
       <div class="list-main">
         <RowHead projectId={props.projectId} branch={e().branch} session={e().session} chatOf={props.chatOf} />
         <p class="mq-facts">
-          <QueueChip row={{ label: "Needs a fix", tone: "error" }} />
-          {/* Once the branch moved, this is the commit sent back, not the one the button lands. */}
-          <span class="text-muted">
-            <Show when={again().included}>sent back at </Show>
-            <span class="text-mono">{short(e().commit)}</span>
-          </span>
+          <QueueChip row={{ label: words().label, tone: words().tone }} />
+          <Show when={words().detail}>{(x) => <span class="text-muted">{x()}</span>}</Show>
+          <span class="text-mono text-muted">{short(e().commit)}</span>
           <span class="text-muted">{relativeTime(e().updatedAt)}</span>
         </p>
         <BranchSummaryView summary={e().summary} projectId={props.projectId} branch={e().branch} />
-        <p class="list-meta">{e().reason ?? "It failed a check that passes on the target."}</p>
-        <Show when={again().included}>{(n) => <p class="list-meta">{n()}</p>}</Show>
-        <Show when={again().blocked}>{(why) => <p class="list-meta mq-error">{why()}</p>}</Show>
-        <p class="list-meta text-muted">{SENT_BACK_LINE}</p>
+        <Show when={e().reason}>{(r) => <p class="list-meta">{r()}</p>}</Show>
+        <Show when={words().answer}>
+          {(x) => (
+            <p class="list-meta">
+              <span class="text-muted">Chat:</span> {x()}
+            </p>
+          )}
+        </Show>
+        <p class="list-meta text-muted">{STANDING_LINE}</p>
         <ReviewerLinks projectId={props.projectId} view={props.view} run={e().run} />
         <Show when={act.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
       </div>
@@ -710,7 +790,7 @@ function SentBackRow(props: { projectId: string; root: string; entry: MergeEntry
         <QueueReview projectId={props.projectId} branch={e().branch} scope={{ kind: "queue", project: props.projectId, entry: e().id }} session={e().session} chatOf={props.chatOf} />
         <Show when={e().run}>
           {(r) => (
-            <a class="button button-sm button-ghost" href={mergeRunHref(props.projectId, r())}>
+            <a class="button button-sm button-ghost" href={mergeRunHref(props.projectId, r())} onClick={(ev) => ev.stopPropagation()}>
               See Why
             </a>
           )}
@@ -718,20 +798,13 @@ function SentBackRow(props: { projectId: string; root: string; entry: MergeEntry
         <button
           type="button"
           class="button button-sm"
-          aria-label={`Land ${e().branch} at its newest commit`}
-          title={again().included ? "Approve the branch's newest commit: every check runs from the start." : "Approve the same commit again: every check runs from the start."}
-          disabled={!!act.busy()}
-          onClick={() => void act.run("land", () => landBranch(props.root, e().branch, {}), `Queued ${e().branch} at its newest commit.`)}
-        >
-          {again().label}
-        </button>
-        <button
-          type="button"
-          class="button button-sm"
           aria-label={`Remove ${e().branch} from the merge queue`}
           title="Takes it off the queue. Its branch, folder, commits and drafts stay."
           disabled={!!act.busy()}
-          onClick={() => void act.run("cancel", () => cancelEntry(e()), `Removed ${e().branch} from the merge queue.`)}
+          onClick={(ev) => {
+            ev.stopPropagation();
+            void act.run("cancel", () => cancelEntry(e()), `Removed ${e().branch} from the merge queue.`);
+          }}
         >
           Remove from Queue
         </button>

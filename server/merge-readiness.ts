@@ -7,7 +7,7 @@ import type { HBlock } from "../shared/harness";
 import type { AttentionItem, AttentionKind, AttentionTier, BranchStatus, ReadinessState, SessionBranchQueue, SessionBranchRow, SessionReadiness, SessionSummary, WorktreeReadiness } from "../shared/protocol";
 import { parseWakeNudge } from "../shared/wake";
 import { isLinkMessage } from "../shared/link-message";
-import { isTopicBatch } from "../shared/topic-message";
+import { isMergeQueueBatch, isTopicBatch } from "../shared/topic-message";
 import { canonical, normalizeMergeDetails, sharedWith, type TrackedWorktree, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
 import { stateRoot } from "./state-root";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
@@ -15,7 +15,7 @@ import { type AskTree, asksUserOf, isGoAsk, readSignals } from "./signals-store"
 import { type AncestorCheck, type DraftsHash, draftsHash, draftsLeft } from "./spec-drafts-state";
 import { previewDocs, previewOf } from "./docs-preview";
 export { previewOf };
-import { blockedNoteText, checkFailureOf, type DocsPreview, docsNudgeText, type Finished, type LastCheck, lastCheckWords, fileLandingStore, finishedOf, type LandingBlocker, landingBlockers, type LandingDocs, landingLive, landingOf, landingReason, type LandingStore, specsWhyOf } from "./ready-to-land";
+import { blockedNoteText, checkFailureOf, type DocsPreview, docsNudgeText, type Finished, type LastCheck, lastCheckWords, fileLandingStore, finishedOf, type LandingBlocker, landingBlockers, type LandingDocs, landingLive, landingOf, landingReason, type LandingStore } from "./ready-to-land";
 import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
 import { WORKTREES } from "./harness/state-kinds";
@@ -417,7 +417,8 @@ export function scanLine(line: string, checkIds: Set<string>): ScanEntry | null 
     e.check = { toolCallId: h.callId, ok, ...(ok ? {} : (JSON.parse(JSON.stringify(checkFailureOf(tail))) as ReturnType<typeof checkFailureOf>)) };
   } else if (h?.kind === "user") {
     const text = textOf(h.blocks);
-    if (parseWakeNudge(text) === null && !isLinkMessage(text) && !isTopicBatch(text)) e.userPrompt = true;
+    // A merge queue batch's turn reads as a prompt (§chat.merge-queue/requests): its reply is the latest.
+    if (parseWakeNudge(text) === null && !isLinkMessage(text) && (!isTopicBatch(text) || isMergeQueueBatch(text))) e.userPrompt = true;
   }
   return e;
 }
@@ -587,7 +588,7 @@ export interface ReadinessDeps {
       looks at its project again (server/merge-queue/summary-sweep.ts). Absent: nothing is told. */
   treeIdle?: (t: { path: string; branch: string }) => void;
   /** Sova's message to a session (the specs nudge); absent: never sent. */
-  nudge?: (sessionPath: string, text: string) => Promise<void>;
+  nudge?: (sessionPath: string, text: string, info?: { kind?: string; branch?: string }) => Promise<unknown>;
   /** The branches the merge queue landed for a chat (its Landed cards), by session id. */
   queueLandings?: (sessionId: string) => QueueLandingFacts[];
   /** Whether the merge queue serves a tree's repo (server/merge-queue/served.ts: on the Projects list and its merge
@@ -656,7 +657,8 @@ const defaultDeps = (): ReadinessDeps => ({
   docsPreview: previewDocs,
   landing: fileLandingStore(),
   // A marked wake, as the merge queue's own (server/merge-queue/wake.ts): never read as the user's word.
-  nudge: async (path, text) => (await import("./merge-queue/wake")).sendQueueWake(path, text),
+  // A request on the merge queue's chat queue in the chat (§chat.merge-queue/requests).
+  nudge: async (path, text, info) => (await import("./merge-queue/wake")).sendQueueWake(path, text, undefined, info),
   queueLandings: (sessionId) => queueLandingsHere(sessionId),
   served: servedReader(
     async (dir) => {
@@ -827,7 +829,6 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
   // Ready to land (§chat.worktrees/ready-to-land): never for the merge thread's own trees (a conflict's side worktree).
   const landingOn = !isMergeThread(s);
   const finished = landingOn ? deps.finished(s.id, s.cwd, reply?.id) : "no";
-  const specsWhy = specsWhyOf(reply?.text);
   const writes = publishChecks();
   const trees: WorktreeReadiness[] = [];
   const heads: Record<string, number> = {};
@@ -852,6 +853,8 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
         const preview = deps.docsPreview ? deps.docsPreview(t.path, tf.head, hashed?.hash ?? "", () => requeue(s.path)) : ({ drafts, added: [], changed: [], problems: [] } as DocsPreview);
         docs = { drafts, preview };
       }
+      // The chat's own reason it can't land its drafts: its Can't answer to Sova's drafts request at this head.
+      const specsWhy = tf.head ? deps.landing.cantWhy(s.id, t.path, tf.head) : undefined;
       landing = landingOf(tf, r.state, finished, heldHere, docs, specsWhy);
       // A setup branch is offered Land only once a trial of its exact head passed (§app.project-setup/land-gate).
       const untried = tf.head && landingLive(tf, r.state) && deps.setupUntried ? await deps.setupUntried(t.path, tf.head).catch(() => null) : null;
@@ -1326,7 +1329,9 @@ function nudgeSpecs(s: SessionSummary, value: SessionReadiness): void {
     const l = t.landing;
     if (l?.state !== "specs" || l.specsWhy || !l.docs?.problems?.length) continue;
     if (!deps.landing.nudge(s.id, t.path, l.commit)) continue;
-    void send(s.path, docsNudgeText(t.branch, l.commit, l.docs.problems)).catch((err) => console.warn(`[readiness] docs nudge to ${s.path}: ${(err as Error).message}`));
+    void send(s.path, docsNudgeText(t.branch, l.commit, l.docs.problems), { kind: "drafts", branch: t.branch })
+      .then((id) => (typeof id === "string" ? deps.landing.asked(s.id, t.path, l.commit, id, "drafts") : undefined))
+      .catch((err) => console.warn(`[readiness] docs nudge to ${s.path}: ${(err as Error).message}`));
   }
   // A finished branch that can't be approved yet: what blocks it, once per head commit, only in a repo the merge
   // queue serves (§chat.worktrees/ready-to-land).
@@ -1336,7 +1341,8 @@ function nudgeSpecs(s: SessionSummary, value: SessionReadiness): void {
     void (async () => {
       if (!(await served(b.path).catch(() => false))) return;
       if (!deps.landing.tell(s.id, b.path, b.commit)) return;
-      await send(s.path, blockedNoteText(b.branch, b.commit, b.blockers));
+      const id = await send(s.path, blockedNoteText(b.branch, b.commit, b.blockers), { kind: "blocked", branch: b.branch });
+      if (typeof id === "string") deps.landing.asked(s.id, b.path, b.commit, id, "blocked");
     })().catch((err) => console.warn(`[readiness] landing note to ${s.path}: ${(err as Error).message}`));
   }
 }

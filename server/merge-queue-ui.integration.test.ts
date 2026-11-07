@@ -16,6 +16,7 @@ import type { ProjectSummary } from "../shared/projects";
 import type { SetupProposal, SetupStatus } from "../shared/setup-chat";
 import { launchTourBrowser } from "./tours/browser";
 import { scratchRoot } from "./test-scratch";
+import { formatHeldNote } from "../shared/topic-message";
 
 const ROOT = join(import.meta.dirname, "..");
 const ORIGIN = "http://sova.test";
@@ -90,6 +91,18 @@ const wt = (branch: string, x: Partial<SessionWorktreeInfo> = {}): SessionWorktr
   ...x,
 });
 
+/** A decision only the user can make (§chat.merge-queue/decision): its question, choices that fill the message box,
+ *  and the queue's note held until the user's answer goes with it. */
+const DECISION = {
+  id: "dc_1",
+  kind: "needs-you" as const,
+  question: "Keep the Save button at the top, or move it under the form?",
+  choices: ["Keep it at the top", "Move it under the form"],
+  heldNote: { request: "rq_0123456789ab", text: "Place the Save button where the user says, then answer Fixed." },
+  raisedBy: "merge-thread" as const,
+  actions: [],
+  at: iso(2),
+};
 /** Every state a row can be in. */
 const ALL_ROWS = [
   wt("feat/composer-drafts", {
@@ -110,7 +123,7 @@ const ALL_ROWS = [
   wt("fix/conflict-chip", {
     queue: qi({ id: "me_b", state: "behaviour-differs", conflict: { files: ["src/a.ts"], verdict: "behaviour-differs", ours: "Master retries the save twice.", theirs: "The branch never retries.", proposal: "Keep master's retry.", at: iso(3) } }),
   }),
-  wt("feat/hack", { queue: qi({ id: "me_r", state: "review-flagged", review: { verdict: "blocking", text: "Leaves a workaround in land.ts with no test.", commit: sha("e"), at: iso(2) } }) }),
+  wt("feat/hack", { queue: qi({ id: "me_r", state: "needs-user", decision: DECISION } as Partial<WorktreeQueueInfo>) }),
   wt("feat/composer-hints", { queue: qi({ id: "me_l", state: "landed", landed: { sha: sha("b"), from: sha("a"), at: iso(30), pushed: "pushed" }, notes: [{ kind: "thread", text: NOTE, at: iso(29) }] }) }),
 ];
 const READY_ROWS = [ALL_ROWS[0]!, ALL_ROWS[1]!, ALL_ROWS[2]!, ALL_ROWS[7]!];
@@ -189,7 +202,7 @@ function viewOf(x: Partial<MergeQueueView> = {}): MergeQueueView {
     ],
     needsYou: [
       entry({ id: "me_b", branch: "fix/conflict-chip", state: "behaviour-differs", conflict: { files: ["src/a.ts"], verdict: "behaviour-differs", ours: "Master retries the save twice.", theirs: "The branch never retries.", proposal: "Keep master's retry.", at: iso(3) } }),
-      entry({ id: "me_r", branch: "feat/hack", state: "review-flagged", review: { verdict: "blocking", text: "Leaves a workaround in land.ts with no test.", commit: sha("e"), at: iso(2) } }),
+      entry({ id: "me_r", branch: "feat/hack", state: "needs-user", decision: DECISION }),
     ],
     needsFix: [entry({ id: "me_f", branch: "fix/draft-autosave-race", state: "needs-fix", reason: "unit failed: src/lib/drafts.test.ts", run: "mr_fail" })],
     recent: [
@@ -452,7 +465,7 @@ const mc = (id: string, branch: string, x: Partial<MergeCard>): MergeCard => ({
   ...x,
 });
 const LANDED_AT = iso(5);
-/** Six branches, six cards: one landed (its approval folded above), one of every other kind. */
+/** Seven branches, seven cards: one landed (its approval folded above), one of every other kind. */
 const CARDS: MergeCard[] = [
   mc("me_a", "feat/settle-cpu", {
     state: "landed",
@@ -478,10 +491,16 @@ const CARDS: MergeCard[] = [
     ],
   }),
   mc("me_c", "feat/hack", {
-    state: "review-flagged",
-    review: { verdict: "blocking", text: "Leaves a workaround in land.ts with no test.", commit: sha("e"), at: iso(3) },
-    revisions: [{ id: "me_c:1", kind: "review-flagged", at: iso(3), after: "a2", state: "review-flagged" }],
+    state: "needs-user",
+    decision: DECISION,
+    revisions: [{ id: "me_c:1", kind: "needs-fix", at: iso(3), after: "a2", state: "needs-user" }],
   }),
+  // Back with the chat: one card in place, the try and the reason, the chat's answer, and only Remove from Queue.
+  mc("me_g", "feat/save-hint", {
+    state: "with-chat",
+    standing: { phase: "with-chat", try: 2, of: 3, why: "Unit tests failed", answer: { kind: "cant", why: "the test needs a network", at: iso(1) } },
+    revisions: [{ id: "me_g:1", kind: "approved", at: iso(39), after: "a1", state: "queued", position: 3 }],
+  } as Partial<MergeCard>),
   mc("me_d", "fix/worker-restore", { state: "checking", progress: { done: 4, total: 7 }, revisions: [{ id: "me_d:1", kind: "approved", at: iso(39), after: "a1", state: "queued", position: 1 }] }),
   mc("me_e", "feat/pending-chip", { state: "queued", position: 2, eta: { startsInMs: 6 * 60_000, takesMs: 9 * 60_000 }, revisions: [{ id: "me_e:1", kind: "approved", at: iso(39), after: "a1", state: "queued", position: 2 }] }),
   mc("me_f", "fix/draft-autosave-race", {
@@ -595,9 +614,9 @@ for (const width of [1280, 390]) {
       const modal = page.getByRole("dialog", { name: "Worktrees" });
       await modal.waitFor();
       const text = await words(modal);
-      for (const word of ["Ready", "Queued · 2nd", "Uncommitted", "Needs a fix", "Behaviour differs", "Review flagged", "Landed"]) assert.match(text, new RegExp(word), word);
+      for (const word of ["Ready", "Queued · 2nd", "Uncommitted", "Needs a fix", "Behaviour differs", "Needs you", "Landed"]) assert.match(text, new RegExp(word), word);
       assert.match(text, /Master retries the save twice\./);
-      assert.match(text, /Leaves a workaround in land\.ts/);
+      assert.match(text, /Keep the Save button at the top, or move it under the form\?/);
       // A live row's size, then when the branch last changed; in full on hover. A landed row has neither.
       const sized = modal.locator('[data-branch="feat/composer-drafts"] .wt-queue-size');
       assert.equal((await words(sized)).trim(), "3 commits · +40 −2 · 3h ago");
@@ -656,7 +675,7 @@ for (const width of [1280, 390]) {
       await until("a Land Without Specs", () => o.calls.filter((c) => c.verb === "merge.add").length === 3);
       assert.equal(lastCall(o, "merge.add").body.withoutSpecs, true);
 
-      await modal.getByRole("button", { name: "Cancel landing fix/paste-images" }).click();
+      await modal.getByRole("button", { name: "Remove fix/paste-images from the merge queue" }).click();
       await called(o, "merge.cancel");
       assert.deepEqual(lastCall(o, "merge.cancel").body, { entry: "me_q" });
 
@@ -664,11 +683,17 @@ for (const width of [1280, 390]) {
       await until("an accept", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "accept"));
       assert.equal(lastCall(o, "merge.answer").body.entry, "me_b");
 
-      await modal.getByRole("button", { name: "Land feat/hack anyway" }).click();
-      await until("a land-anyway", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "land-anyway"));
-
-      await modal.getByRole("button", { name: "Send feat/hack back to its chat" }).click();
-      await until("a send-back", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "send-back" && c.body.entry === "me_r"));
+      // A decision: its question and choices, answered in the chat (no text box), and Remove from Queue.
+      const hack = modal.locator('[data-branch="feat/hack"]');
+      assert.match(await words(hack), /Keep the Save button at the top, or move it under the form\?/);
+      assert.match(await words(hack), /Choices: Keep it at the top · Move it under the form/);
+      assert.equal(await hack.getByRole("button", { name: "Answer about feat/hack in the chat" }).count(), 1);
+      assert.equal(await modal.locator("textarea, input[type=text]").count(), 0, "no text box in any row");
+      await hack.getByRole("button", { name: "Remove feat/hack from the merge queue" }).click();
+      await until("a remove", () => o.calls.some((c) => c.verb === "merge.cancel" && c.body.entry === "me_r"));
+      // Sent back: Remove from Queue only. No row anywhere offers Send Back or a re-land (al_3).
+      await modal.locator('[data-branch="fix/draft-autosave-race"]').getByRole("button", { name: "Remove fix/draft-autosave-race from the merge queue" }).waitFor();
+      for (const gone of [/Send Back/, /Send .* back to its chat/, /Land This Commit Again/, /Land Newest Commit/, /at its newest commit/]) assert.equal(await modal.getByRole("button", { name: gone }).count(), 0, String(gone));
 
       // An uncommitted row has no Land.
       assert.equal(await modal.getByRole("button", { name: "Land feat/draft-sync-tabs", exact: true }).count(), 0);
@@ -735,12 +760,12 @@ for (const width of [1280, 390]) {
       const section = page.locator("section", { has: page.getByRole("heading", { name: "Worktrees" }) }).last();
       await section.locator(".wt-queue-row").first().waitFor({ timeout: 10_000 });
       const text = await words(section);
-      for (const word of ["Ready", "Queued · 2nd", "Uncommitted", "Needs a fix", "Behaviour differs", "Review flagged", "Landed"]) assert.match(text, new RegExp(word), word);
-      assert.match(text, /2 ready · 1 queued · 1 behaviour differs · 1 review flagged · 1 needs a fix · 1 uncommitted · 1 landed/);
+      for (const word of ["Ready", "Queued · 2nd", "Uncommitted", "Needs a fix", "Behaviour differs", "Needs you", "Landed"]) assert.match(text, new RegExp(word), word);
+      assert.match(text, /2 ready · 1 queued · 1 behaviour differs · 1 needs you · 1 needs a fix · 1 uncommitted · 1 landed/);
       assert.match(await words(section.locator('[data-branch="feat/composer-drafts"]')), /3 commits · \+40 −2/);
       assert.equal(await section.getByRole("button", { name: "Land fix/draft-autosave-race", exact: true }).count(), 0, "sent back: no Land (al_4)");
       assert.equal(await section.getByRole("button", { name: "More ways to land fix/draft-autosave-race" }).count(), 0, "sent back: no Land menu (al_4)");
-      await section.getByRole("button", { name: "Cancel landing fix/paste-images" }).click();
+      await section.getByRole("button", { name: "Remove fix/paste-images from the merge queue" }).click();
       await called(o, "merge.cancel");
       await confirmLand(o, section, "feat/composer-drafts", "Land 3 Commits");
       await called(o, "merge.add");
@@ -766,22 +791,27 @@ for (const width of [1280, 390]) {
       assert.match(text, /2 newer commits not included/);
       assert.match(text, /typed in its chat/);
       assert.match(text, /Behaviour differs · waiting for you/);
-      assert.match(text, /Review flagged · waiting for you/);
+      assert.match(text, /Needs you · feat\/hack/);
+      assert.match(text, /Keep the Save button at the top, or move it under the form\?/);
+      assert.match(text, /isn't sent yet: it goes with your answer/);
       assert.match(text, /Keep master's retry\./);
-      assert.match(text, /Sent back to its chat/);
+      assert.match(text, /With its chat/);
+      assert.match(text, /Your Land stands: it goes back in line by itself once its chat's fix is checked\./);
       assert.match(text, new RegExp(NOTE.replace(/[.;]/g, "\\$&")));
       await shot(page, `${width}-queue`);
       await rowActionsSized(tab, "the tab");
       await tab.getByRole("button", { name: "Pause Queue" }).click();
       await called(o, "merge.pause");
-      await tab.getByRole("button", { name: "Cancel landing feat/replay-timeouts" }).click();
+      await tab.getByRole("button", { name: "Remove feat/replay-timeouts from the merge queue" }).click();
       await until("a cancel", () => o.calls.some((c) => c.verb === "merge.cancel" && c.body.entry === "me_w2"));
       await tab.getByRole("button", { name: "Accept the resolution for fix/conflict-chip" }).click();
       await until("an accept", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "accept"));
-      await tab.getByRole("button", { name: "Send fix/conflict-chip back to its chat" }).click();
-      await until("a send-back", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "send-back" && c.body.entry === "me_b"));
-      await tab.getByRole("button", { name: "Land feat/hack anyway" }).click();
-      await until("a land-anyway", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "land-anyway"));
+      // A decision answered in words: Answer in Chat opens its chat; no row has a text box, a Send Back or a re-land.
+      assert.equal(await tab.locator('.mq-needs[data-branch="feat/hack"]').getByRole("link", { name: "Answer about feat/hack in its chat" }).count(), 1);
+      assert.equal(await tab.locator(".mq-list textarea, .mq-list input[type=text]").count(), 0, "no text box in any row");
+      for (const gone of [/Send Back/, /back to its chat/, /Land This Commit Again/, /Land Newest Commit/, /at its newest commit/]) assert.equal(await tab.getByRole("button", { name: gone }).count(), 0, String(gone));
+      await tab.locator('.mq-needs[data-branch="feat/hack"]').getByRole("button", { name: "Remove feat/hack from the merge queue" }).click();
+      await until("a remove", () => o.calls.some((c) => c.verb === "merge.cancel" && c.body.entry === "me_r"));
       // Once, in the Merge thread card; the head has Queue Settings and Pause Queue only.
       assert.equal(await tab.getByRole("link", { name: "Open Merge Thread" }).count(), 1);
       assert.equal(await tab.locator(".mq-thread-card").getByRole("link", { name: "Open Merge Thread" }).count(), 1);
@@ -872,8 +902,8 @@ for (const width of [1280, 390]) {
       const { page } = o;
       const landed = page.locator('.mq-chat-card[data-branch="feat/settle-cpu"]').last();
       await landed.waitFor({ timeout: 20_000 });
-      // Six branches, six whole cards; the two approvals that moved on are folded lines.
-      await until("six cards", async () => (await page.locator(".transcript-card > .mq-chat-card").count()) === 6);
+      // Seven branches, seven whole cards; the two approvals that moved on are folded lines.
+      await until("seven cards", async () => (await page.locator(".transcript-card > .mq-chat-card").count()) === 7);
       const folded = page.locator(".mq-card-folded");
       assert.equal(await folded.count(), 2);
       assert.deepEqual(await folded.locator(".disclosure-label").allTextContents(), ["feat/settle-cpu · Queued 1st", "fix/conflict-chip · Queued 2nd"]);
@@ -936,12 +966,23 @@ for (const width of [1280, 390]) {
       assert.match(await words(card("fix/conflict-chip")), /Master retries the save twice\..*The branch never retries\..*Keep master's retry\./);
       await card("fix/conflict-chip").getByRole("button", { name: "Accept fix/conflict-chip" }).click();
       await until("accept", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.entry === "me_b" && c.body.answer === "accept"));
-      await card("fix/conflict-chip").getByRole("button", { name: "Send Back fix/conflict-chip" }).click();
-      await until("send back", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.entry === "me_b" && c.body.answer === "send-back"));
-      assert.match(await words(card("feat/hack")), /Review: Leaves a workaround in land\.ts with no test\./);
-      await card("feat/hack").getByRole("button", { name: "Land Anyway feat/hack" }).click();
-      await until("land anyway", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.entry === "me_c" && c.body.answer === "land-anyway"));
-      await card("feat/pending-chip").getByRole("button", { name: "Cancel feat/pending-chip" }).click();
+      assert.equal(await page.getByRole("button", { name: /^Send Back/ }).count(), 0, "no Send Back on any card");
+      // Back with the chat, in place: the try and its reason, the chat's answer, Remove from Queue only.
+      const bt = await words(card("feat/save-hint"));
+      assert.match(bt, /Back with the chat/);
+      assert.match(bt, /try 2 of 3 · Unit tests failed/);
+      assert.match(bt, /Chat: Can't: the test needs a network/);
+      assert.deepEqual(await card("feat/save-hint").locator(".mq-card-actions button").allInnerTexts(), ["Remove from Queue"]);
+      // A decision: the question, its choices, the queue's note held "not sent yet"; no text box on the card.
+      const dt = await words(card("feat/hack"));
+      assert.match(dt, /Needs you/);
+      assert.match(dt, /Keep the Save button at the top, or move it under the form\?/);
+      assert.match(dt, /Merge queue: Place the Save button where the user says, then answer Fixed\./);
+      assert.match(dt, /Not sent yet your answer goes with it/);
+      assert.equal(await card("feat/hack").locator("textarea, input").count(), 0, "no text box in a card");
+      // The message box says it waits for the user's answer.
+      assert.match(await words(page.locator(".mq-held-line").first()), /Merge queue · feat\/hack · not sent yet: your answer goes with it/);
+      await card("feat/pending-chip").getByRole("button", { name: "Remove from Queue feat/pending-chip" }).click();
       await until("cancel", () => o.calls.some((c) => c.verb === "merge.cancel" && c.body.entry === "me_e"));
       await card("feat/settle-cpu").getByRole("button", { name: "Land Again feat/settle-cpu" }).click();
       await until("land again", () => o.calls.some((c) => c.verb === "merge.add" && c.body.branch === "feat/settle-cpu"));
@@ -950,6 +991,13 @@ for (const width of [1280, 390]) {
       const sent = o.frames.slice(before).filter((f) => POSTS.test(f));
       assert.deepEqual(sent, [], "a queue button posted to the chat");
       assert.equal(await page.locator("textarea[id$='composer-input']").first().inputValue(), "");
+      // A choice fills the message box, and nothing is sent until the user sends.
+      await card("feat/hack").getByRole("button", { name: "Move it under the form" }).click();
+      await until("the choice in the message box", async () => (await page.locator("textarea[id$='composer-input']").first().inputValue()) === "Move it under the form");
+      assert.deepEqual(o.frames.slice(before).filter((f) => POSTS.test(f)), [], "a choice sends nothing");
+      // Sent: the user's own message, naming the decision whose held note goes with it.
+      await page.locator("textarea[id$='composer-input']").first().press("Enter");
+      await until("the answer sent with its decision", () => o.frames.slice(before).some((f) => POSTS.test(f) && f.includes('"decision":"dc_1"') && f.includes("Move it under the form")));
       await shot(page, `${width}-chat-waiting-card`);
       await o.ctx.close();
     });
@@ -972,6 +1020,22 @@ for (const width of [1280, 390]) {
       assert.match(await words(sender), /From Alpha Bot/);
       assert.doesNotMatch(await words(sender), /hop/);
       assert.equal(await sender.locator("a").count(), 0, "no session to link to");
+      await o.ctx.close();
+    });
+
+    test("a decision's answer: your words in your bubble, the queue's held note folded under them, never yours", async () => {
+      const text = formatHeldNote("Move it under the form, please.", { request: "rq_0123456789ab", branch: "feat/hack", text: "Place the Save button where the user says, then answer Fixed." });
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { items: [...CHAT_ITEMS, { id: "u3", kind: "user", text, at: iso(1) }] });
+      const { page } = o;
+      const fold = page.locator(".mq-held-sent");
+      await fold.waitFor({ timeout: 20_000 });
+      const bubble = page.locator(".message-user", { has: fold });
+      assert.equal(await bubble.locator(".message-body").first().innerText(), "Move it under the form, please.");
+      assert.match(await words(fold.locator("summary")), /Merge queue · feat\/hack · sent with your answer/);
+      assert.equal(await fold.evaluate((d) => (d as HTMLDetailsElement).open), false, "folded");
+      await fold.locator("summary").click();
+      assert.match(await words(fold), /Place the Save button where the user says, then answer Fixed\./);
+      assert.doesNotMatch(await words(bubble.locator(".message-body").first()), /held note/);
       await o.ctx.close();
     });
 
@@ -1030,7 +1094,7 @@ for (const width of [1280, 390]) {
       await o.ctx.close();
     });
 
-    test("can't tell whose failure: in the modal, the tab's needs-you, the run page and the chat card, with Land Anyway / Send Back posting nothing", async () => {
+    test("can't tell whose failure: in the modal, the tab's needs-you, the run page and the chat card, with Land Anyway / Try Again posting nothing", async () => {
       const qe = entry({ id: "me_u", branch: "feat/slow-build", state: "unattributed", run: "mr_unclear", reason: UNCLEAR_WHY, unclear: UNCLEAR });
       const view = viewOf({ needsYou: [qe] });
       const row = wt("feat/slow-build", { queue: qi({ id: "me_u", state: "unattributed", run: "mr_unclear", reason: UNCLEAR_WHY, unclear: UNCLEAR }) });
@@ -1068,8 +1132,8 @@ for (const width of [1280, 390]) {
       assert.match(mt, /Can't tell whose failure/);
       assert.match(mt, /1 can't tell whose failure/);
       await expectWhy(mt);
-      await modal.getByRole("button", { name: "Send feat/slow-build back to its chat" }).click();
-      await until("send back from the modal", () => o.calls.some((x) => x.verb === "merge.answer" && x.body.answer === "send-back" && x.body.entry === "me_u"));
+      await modal.getByRole("button", { name: "Try feat/slow-build again" }).click();
+      await until("try again from the modal", () => o.calls.some((x) => x.verb === "merge.answer" && x.body.answer === "try-again" && x.body.entry === "me_u"));
       await noRestartOrLive(page, ".wt-queue-modal");
       await shot(page, `${width}-unclear-modal`);
       await page.keyboard.press("Escape");
@@ -1095,8 +1159,10 @@ for (const width of [1280, 390]) {
       assert.match(await words(page.locator(".mq-run .cluster").first()), /Can't tell whose failure · waiting for you/);
       assert.equal(await page.getByText("Nothing has merged from this run.").count(), 0, "the banner says it, once");
       await expectWhy(bt);
-      await ban.getByRole("button", { name: "Send feat/slow-build back to its chat" }).click();
-      await until("send back from the run page", () => o.calls.filter((x) => x.verb === "merge.answer" && x.body.answer === "send-back").length >= 2);
+      await ban.getByRole("button", { name: "Try feat/slow-build again" }).click();
+      await until("try again from the run page", () => o.calls.filter((x) => x.verb === "merge.answer" && x.body.answer === "try-again").length >= 2);
+      await ban.getByRole("button", { name: "Remove feat/slow-build from the merge queue" }).click();
+      await until("remove from the run page", () => o.calls.some((x) => x.verb === "merge.cancel" && x.body.entry === "me_u"));
       await noRestartOrLive(page, ".mq-run");
       await noSideScroll(page);
       await shot(page, `${width}-unclear-run`);
@@ -1500,18 +1566,34 @@ for (const width of [1280, 390]) {
       await r.ctx.close();
     });
 
-    test("a question with no chat to ask: answered on the tab with merge.reply", async () => {
+    test("a question with no chat to ask: the tab shows it with one button, Answer in Merge Thread, and no text box (q15)", async () => {
       const view = viewOf({ ...ASKED, thread: { ...ASKED.thread, ask: { ...ASKED.thread.ask, askedIn: undefined, onTab: true as const } } });
       const o = await open(width, `#/projects/${PID}/merge-queue`, { view });
       const { page } = o;
-      const box = page.getByLabel("Your answer");
-      await box.waitFor({ timeout: 20_000 });
-      assert.equal(await page.locator(".mq-thread-card").getByRole("link", { name: "Answer in Merge Thread" }).count(), 1);
-      await box.fill("The lab's hostnames and the office IPs.");
-      await page.getByRole("button", { name: "Send Answer" }).click();
-      await called(o, "merge.reply");
-      assert.deepEqual(o.calls.find((c) => c.verb === "merge.reply")!.body, { ask: "ak_1", text: "The lab's hostnames and the office IPs.", project: ROOT_DIR });
+      const ask = page.locator(".mq-thread-ask");
+      await ask.waitFor({ timeout: 20_000 });
+      const answer = ask.getByRole("link", { name: "Answer in Merge Thread" });
+      assert.equal(await answer.count(), 1);
+      assert.equal(await ask.locator("button, a").count(), 1, "one button only");
+      assert.equal(await ask.locator("textarea, input").count(), 0, "no Your answer box");
+      assert.equal(await page.getByRole("button", { name: "Send Answer" }).count(), 0);
+      assert.equal(await answer.getAttribute("href"), await page.locator(".mq-thread-card").getByRole("link", { name: "Open Merge Thread" }).getAttribute("href"), "it opens the merge thread's chat");
+      assert.equal(o.calls.filter((c) => c.verb === "merge.reply").length, 0);
       await shot(page, `${width}-thread-asking-tab`);
+      await o.ctx.close();
+    });
+
+    test("the merge thread's own chat holds its tab question above the message box; the answer names it", async () => {
+      const view = viewOf({ ...ASKED, thread: { ...ASKED.thread, session: SESSION.id, path: PATH, ask: { ...ASKED.thread.ask, askedIn: undefined, onTab: true as const } } });
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { view, sessions: [{ ...SESSION, queueChat: { role: "thread" } } as SessionSummary] });
+      const { page } = o;
+      const line = page.locator(".mq-held-line");
+      await line.waitFor({ timeout: 20_000 });
+      assert.match(await words(line), /Merge thread asks: What else must never reach the public repo\? · not sent yet: your answer goes with it/);
+      const box = page.locator("textarea[id$='composer-input']").first();
+      await box.fill("The lab's hostnames.");
+      await box.press("Enter");
+      await until("the answer names the question", () => o.frames.some((f) => POSTS.test(f) && f.includes('"decision":"ak_1"')));
       await o.ctx.close();
     });
 

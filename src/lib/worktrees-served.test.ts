@@ -61,9 +61,11 @@ test("the modal's head: the queue's intro and paused line only where some row is
 test("the modal draws exactly these: every row button and the head come from rowButtons and modalHead", async () => {
   const { readFile } = await import("node:fs/promises");
   const src = await readFile(new URL("../components/WorktreesModal.tsx", import.meta.url), "utf8");
-  // No button decides on its own: a check on row().action or row().sendBack would bypass rowButtons.
-  assert.doesNotMatch(src, /row\(\)\.(action|sendBack)/);
-  for (const b of ["Land", "Set Up Queue", "Cancel", "Accept", "Land Anyway", "Send Back"]) assert.ok(src.includes(`buttons().includes("${b}")`), b);
+  // No button decides on its own: a check on row().action or row().tryAgain would bypass rowButtons.
+  assert.doesNotMatch(src, /row\(\)\.(action|tryAgain|answerInChat|remove)\b/);
+  for (const b of ["Land", "Set Up Queue", "Accept", "Land Anyway", "Try Again", "Answer in Chat", "Remove from Queue"]) assert.ok(src.includes(`buttons().includes("${b}")`), b);
+  // The retired buttons are drawn nowhere in the modal (al_3).
+  for (const gone of ["Send Back", "Land This Commit Again", "Land Newest Commit"]) assert.ok(!src.includes(gone), gone);
   assert.ok(src.includes("modalHead(props.rows)") && !/Land queues a branch/.test(src), "the intro's words live in modalHead only");
 });
 

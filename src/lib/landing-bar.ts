@@ -6,6 +6,7 @@ import { WAITING_FOR_USER, entryStateWords, type MergeEntry, type MergeQueueView
 import type { ReleaseRecord, ReleaseStep } from "../../shared/release";
 import type { LandingQueueCut, LandingReleaseCut } from "../../shared/merge-queue";
 import { mins, pausedTitle, short } from "./merge-queue";
+import { DECISION_ACTION_LABEL, DECISION_LABEL, decisionActions, openDecision } from "./merge-standing";
 
 // ---- the inputs -----------------------------------------------------------------------------------
 
@@ -258,21 +259,28 @@ function currentStepLine(run: Pick<MergeRun, "steps">, now: number): string | nu
 
 // ---- the merge queue's parts ----------------------------------------------------------------------
 
-const needsYouOf = (q: LandingQueueCut): MergeEntry[] => q.needsYou.filter((e) => WAITING_FOR_USER.includes(e.state));
+// A decision waiting for the user counts wherever the view lists its entry; an entry back with its chat never does.
+const needsYouOf = (q: LandingQueueCut): MergeEntry[] => q.needsYou.filter((e) => (WAITING_FOR_USER.includes(e.state) && e.state !== "review-flagged") || !!openDecision(e));
 const conflictsOf = (q: LandingQueueCut): MergeEntry[] => q.needsYou.filter((e) => e.state === "conflict");
 
 /** One needs-you entry, in the Merge Queue tab's words: branch, then one line of why. */
-const needsLine = (e: MergeEntry, pid: string): LandingLine => ({ text: `${e.branch} · ${stripDot(entryStateWords(e))}${e.reason ? `: ${stripDot(e.reason)}` : ""}`, tone: "warn", href: queueHref(pid, e.run) });
+const needsLine = (e: MergeEntry, pid: string): LandingLine => {
+  const d = openDecision(e);
+  if (d) return { text: `${e.branch} · ${DECISION_LABEL[d.kind]}: ${stripDot(d.question)}`, tone: "warn", href: queueHref(pid, e.run) };
+  return { text: `${e.branch} · ${stripDot(entryStateWords(e))}${e.reason ? `: ${stripDot(e.reason)}` : ""}`, tone: "warn", href: queueHref(pid, e.run) };
+};
 
 /** The buttons an entry that waits for the user offers: each opens the Merge Queue tab at the entry (q3). */
 function needsActions(e: MergeEntry, pid: string): LandingAction[] {
   const href = queueHref(pid, e.run);
+  // A decision's own answers on the queue (Remove from Queue stays on the tab's row); none is a Send Back.
+  const d = openDecision(e);
+  if (d) return decisionActions(d).filter((a) => a !== "remove").map((a, i) => ({ kind: "link", label: DECISION_ACTION_LABEL[a], href, ...(i === 0 ? { primary: true } : {}) }));
   switch (e.state) {
     case "behaviour-differs":
-      return [{ kind: "link", label: "Accept", href, primary: true }, { kind: "link", label: "Send Back", href }];
-    case "review-flagged":
+      return e.conflict?.proposal ? [{ kind: "link", label: "Accept", href, primary: true }] : [];
     case "unattributed":
-      return [{ kind: "link", label: "Land Anyway", href, primary: true }, { kind: "link", label: "Send Back", href }];
+      return [{ kind: "link", label: "Land Anyway", href, primary: true }, { kind: "link", label: "Try Again", href }];
     case "drafts-changed":
       return [{ kind: "link", label: "Land", href, primary: true }];
     default:

@@ -474,7 +474,7 @@
   "description": "@92bd36452c3a5ac1",
   "parameters": {
    "type": "object",
-   "properties": "@a9d589e46598fcc2",
+   "properties": "@95e445aedec3a2a6",
    "required": [
     "verb"
    ],
@@ -504,43 +504,79 @@
   }
  },
  {
-  "name": "zoom",
-  "description": "@9fb1f34e406e16f8",
+  "name": "align",
+  "description": "@10b18c09da2ac44c",
   "parameters": {
    "type": "object",
+   "required": [
+    "ops"
+   ],
    "properties": {
-    "id": {
-     "type": "integer",
-     "minimum": 0,
-     "description": "The line's first message id"
+    "doc": {
+     "type": "string",
+     "minLength": 1,
+     "description": "The alignment to change, e.g. \"al_2\". Required while more than one alignment is open; omit for create, import, exempt and change_request.",
+     "pattern": "^al_[1-9][0-9]*$"
     },
-    "n": {
-     "type": "integer",
-     "minimum": 1,
-     "description": "How many messages the line covers (a power of 2)"
+    "ops": {
+     "type": "array",
+     "items": {
+      "anyOf": "@8f0d66a627303464"
+     },
+     "description": "Operations, applied in order. change_request, when given, comes before every other op; create or import comes next (else first) and appears once.",
+     "minItems": 1
     }
    },
-   "required": [
-    "id",
-    "n"
-   ],
    "additionalProperties": false
   }
  },
  {
-  "name": "date",
-  "description": "The date and time of message id in the memory view.",
+  "name": "create_guide",
+  "description": "@d8d27a6f2379e44a",
   "parameters": {
    "type": "object",
+   "required": [
+    "topic"
+   ],
    "properties": {
-    "id": {
-     "type": "integer",
-     "minimum": 0,
-     "description": "The message id"
+    "topic": {
+     "type": "string",
+     "enum": [
+      "appearance",
+      "models",
+      "workers",
+      "instructions",
+      "skills",
+      "modes",
+      "profiles",
+      "tools",
+      "extensions",
+      "pi-extensions",
+      "scripts",
+      "safety",
+      "project",
+      "landing",
+      "releases",
+      "automation",
+      "cards",
+      "overseers",
+      "attention",
+      "computers"
+     ],
+     "description": "The topic, as Create's table of contents lists it"
     }
    },
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "sova_settings",
+  "description": "@33a84d06d908f213",
+  "parameters": {
+   "type": "object",
+   "properties": "@d2075d1e687bf90b",
    "required": [
-    "id"
+    "op"
    ],
    "additionalProperties": false
   }

@@ -7,11 +7,11 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { describe, test } from "node:test";
-import { isMergeQueueText, type MergeEntry } from "../../shared/merge-queue";
+import type { MergeEntry } from "../../shared/merge-queue";
 import type { SessionSummary } from "../../shared/protocol";
 import type { Caller } from "../project-services/engine";
 import { scratchRoot } from "../test-scratch";
-import { askTarget, askText, askUser, type AskDeps } from "./asks";
+import { askTarget, askUser, type AskDeps } from "./asks";
 import { merger } from "./routes";
 import { makeKit } from "./testing/queue-kit";
 import { MergeThread, type ThreadDeps } from "./thread";
@@ -35,13 +35,15 @@ function keeper(dir: string) {
 }
 
 function deps(sessions: SessionSummary[], refuse = false) {
-  const sent: { path: string; text: string }[] = [];
+  const sent: { path: string; text: string; ask: string; choices: string[] }[] = [];
   const notified: { title: string; body: string; hash: string; tag: string }[] = [];
   const d: AskDeps = {
     sessions: async () => sessions,
-    send: async (path, text) => {
-      if (refuse) throw new Error("It is open in a terminal");
-      sent.push({ path, text });
+    // The decision on the branch's card (queue.ts askDecision); `refuse`: it couldn't be raised.
+    decide: async (a, chat) => {
+      if (refuse) throw new Error("no entry to raise it on");
+      sent.push({ path: chat.path, text: a.question, ask: a.id, choices: a.choices });
+      return true;
     },
     notify: async (n) => void notified.push(n),
     project: () => ({ id: "p1", name: "sova" }),
@@ -60,16 +62,15 @@ describe("asking the user through the branch's chat", () => {
     assert.equal(askTarget(undefined, list), null);
   });
 
-  test("the owning chat gets exactly one marked message naming the question and how to relay; no notification", async () => {
+  test("the owning chat shows it as one decision on the branch's card (its id, the question, its choices); nothing to relay; no notification", async () => {
     const { t } = keeper(scratchRoot("mq-asks-"));
     const { d, sent, notified } = deps([row("P"), row("W", { workerSession: true, workerOf: { id: "P", path: "/s/P.jsonl" } })]);
-    const ask = await askUser(t, "/proj", { question: "Which hostnames must never be public?", entry: entry("W") }, d);
+    const ask = await askUser(t, "/proj", { question: "Which hostnames must never be public?", entry: entry("W"), choices: ["None", "Some"] }, d);
     assert.equal(sent.length, 1);
-    assert.equal(sent[0]!.path, "/s/P.jsonl");
-    assert.ok(isMergeQueueText(sent[0]!.text), "marked as the merge queue's");
-    assert.ok(sent[0]!.text.includes("Which hostnames must never be public?"));
-    assert.ok(sent[0]!.text.includes(`merge.reply {ask: "${ask.id}"`));
-    assert.match(sent[0]!.text, /never answer it yourself/);
+    assert.equal(sent[0]!.path, "/s/P.jsonl", "a worker's: the chat that runs it");
+    assert.equal(sent[0]!.text, "Which hostnames must never be public?");
+    assert.equal(sent[0]!.ask, ask.id);
+    assert.deepEqual(sent[0]!.choices, ["None", "Some"]);
     assert.deepEqual(ask.askedIn, { session: "P", path: "/s/P.jsonl" });
     assert.equal(ask.onTab, undefined);
     assert.equal(ask.branch, "feat/x");
@@ -109,12 +110,11 @@ describe("asking the user through the branch's chat", () => {
     const again = t.answer("/proj", ask.id, "No", { kind: "operator", from: "the user" });
     assert.equal(again.ok, false);
     assert.equal(t.answer("/proj", "ak_nope", "x", { kind: "operator", from: "u" }).ok, false);
-    assert.ok(!askText({ id: "ak_1", question: "q" }).includes("undefined"));
   });
 });
 
 describe("who may ask, relay, start fresh and clear", () => {
-  test("only the thread asks; only the chat asked relays (the operator may); fresh and clear are the operator's", async () => {
+  test("only the thread asks; no chat relays the answer, the asked one included (the operator's page may); fresh and clear are the operator's", async () => {
     const k = makeKit();
     try {
       const asks = new Map<string, { id: string; question: string; at: string; askedIn: { session: string; path: string } }>();
@@ -142,25 +142,24 @@ describe("who may ask, relay, start fresh and clear", () => {
       assert.equal(ask.ok, true, JSON.stringify(ask));
       for (const who of ["owner-1", "someone"]) assert.equal((await call("merge.ask", { project, text: "q" }, as(who))).ok, false, `${who} can't ask`);
       assert.equal((await call("merge.ask", { project }, as("thread-1"))).ok, false, "a question needs its text");
-      const wrong = await call("merge.reply", { project, ask: "ak_1", text: "x" }, as("someone"));
-      assert.equal(wrong.ok, false);
-      assert.equal((await call("merge.reply", { project, ask: "ak_1", text: "x" }, as("thread-1"))).ok, false, "the thread can't answer itself");
-      const right = await call("merge.reply", { project, ask: "ak_1", text: "the home lab's names" }, as("owner-1"));
-      assert.equal(right.ok, true, JSON.stringify(right));
-      assert.equal((await call("merge.reply", { project, ask: "ak_1", text: "typed on the tab" }, op)).ok, true);
-      assert.deepEqual(answered, ["ak_1:the home lab's names", "ak_1:typed on the tab"]);
-      assert.deepEqual(bys, [{ kind: "chat", session: "owner-1" }, { kind: "operator" }]);
-      // The chat asked in relays from its own script too (the operator's route, its key naming it): as that chat,
-      // never as the tab. Another chat's script, an unattributed one, or a card's command never relays.
-      const script = (chat?: string): Caller => ({ kind: "operator", fromChat: true, ...(chat ? { chat } : {}) });
-      for (const [name, who] of [["another chat's script", script("someone")], ["the thread's script", script("thread-1")], ["an unattributed script", script()], ["a card's command", { kind: "operator", fromCard: true } as Caller]] as const) {
+      // No chat relays the answer, not even the chat asked in: its model could answer for the user. The user's own next
+      // message there is the answer (channel.ts takes it server-side). The operator's own page still answers.
+      for (const who of ["owner-1", "someone", "thread-1"]) {
+        const r = await call("merge.reply", { project, ask: "ak_1", text: "go with ours" }, as(who));
+        assert.equal(r.error?.code, "forbidden", `${who}: ${JSON.stringify(r.error)}`);
+        assert.match(r.error!.message, /your user's own next message in this chat is the answer/);
+      }
+      assert.deepEqual(answered, [], "no chat's answer reached the thread");
+      assert.equal((await call("merge.reply", { project, ask: "ak_1", text: "typed on the tab" }, op)).ok, true, "the check can tell: the user's page answers");
+      assert.deepEqual(answered, ["ak_1:typed on the tab"]);
+      assert.deepEqual(bys, [{ kind: "operator" }]);
+      // A chat's script on the operator's route never relays (not even the chat asked in's own), nor does a card's
+      // command: neither reaches the thread.
+      for (const [name, who] of [["a chat's script", { kind: "operator", fromChat: true } as Caller], ["a card's command", { kind: "operator", fromCard: true } as Caller]] as const) {
         const r = await call("merge.reply", { project, ask: "ak_1", text: "x" }, who);
         assert.equal(r.error?.code, "forbidden", `${name}: ${JSON.stringify(r.error)}`);
       }
-      assert.equal(answered.length, 2, "none of them reached the thread");
-      const relayed = await call("merge.reply", { project, ask: "ak_1", text: "from the chat's script" }, script("owner-1"));
-      assert.equal(relayed.ok, true, JSON.stringify(relayed.error));
-      assert.deepEqual(bys.at(-1), { kind: "chat", session: "owner-1" });
+      assert.equal(answered.length, 1, "none of them reached the thread");
       for (const verb of ["merge.fresh", "merge.clear"]) {
         for (const who of ["thread-1", "owner-1"]) assert.equal((await call(verb, { project, chat: "all" }, as(who))).ok, false, `${who} can't ${verb}`);
         assert.equal((await call(verb, { project, chat: "all" }, op)).ok, true, `the operator may ${verb}`);

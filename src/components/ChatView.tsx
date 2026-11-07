@@ -167,6 +167,8 @@ import { failureHasRow } from "../lib/subagent-limit";
 import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
 import type { QueueWorktree } from "./WorktreesModal";
+import { heldAskLine, heldComposerLine, openDecision } from "../lib/merge-standing";
+import { mergeChanged, mergeFeed, readQueue } from "../lib/merge-queue-client";
 
 export type ChatRefusal = "busy" | "recent";
 
@@ -1753,6 +1755,29 @@ export function ChatView(props: {
   // The merge queue's cards for this chat's branches (one per branch, from Land on): Sova's own, placed like outside cards.
   const queueCards = props.overseer || props.projectOverseer ? undefined : createMergeCards(() => props.summary?.()?.id);
   const outsideCards = createMemo(() => [...(raisedCards?.outside() ?? []), ...(queueCards?.rows() ?? [])]);
+  /** The decision whose note waits for the user's next message (§chat.merge-queue/decision): the newest, the one the
+      server attaches when a message names none, so the line the composer shows is the note that goes. */
+  const heldDecision = createMemo(
+    () => {
+      const held = (queueCards?.cards() ?? []).map((c) => ({ branch: c.branch, d: openDecision(c) })).filter((x) => x.d?.heldNote);
+      const newest = held.sort((a, b) => Date.parse(b.d!.at) - Date.parse(a.d!.at))[0];
+      return newest ? { branch: newest.branch, id: newest.d!.id } : null;
+    },
+    undefined,
+    { equals: (a, b) => a?.id === b?.id && a?.branch === b?.branch },
+  );
+  /** The merge thread's own chat: its question no branch chat could carry waits for the user's answer here
+      (§chat.merge-queue/asks), held above the message box; the answer names it (its `ak_…` id). */
+  const threadRoot = () => (props.summary?.()?.queueChat?.role === "thread" ? (props.summary?.()?.cwd ?? null) : null);
+  const [threadView, { refetch: refetchThread }] = createResource(threadRoot, (root) => readQueue(root).catch(() => null));
+  createEffect(on([mergeChanged, mergeFeed], () => threadRoot() && void refetchThread(), { defer: true }));
+  const threadAsk = createMemo(() => {
+    const v = threadView.latest;
+    const id = props.summary?.()?.id;
+    const ask = v?.thread && (!id || v.thread.session === id) ? v.thread.ask : undefined;
+    return ask && ask.onTab && !ask.answered ? ask : null;
+  });
+  const heldNotes = () => [...(heldDecision() ? [heldComposerLine(heldDecision()!.branch)] : []), ...(threadAsk() ? [heldAskLine(threadAsk()!.question)] : [])];
   const outsideById = createMemo(() => new Map(outsideCards().map((c) => [c.id, c] as const)));
   /** Each outside card's row, one object for its life: the thread keys its rows by object, so a fresh
       one per update (a merge card's every step) drew the card anew, at its estimate for a frame, and
@@ -2154,7 +2179,8 @@ export function ChatView(props: {
     const compact = compactCommand(text);
     if (compact) return sendCompact(text, compact.instructions, running, attachments.length > 0);
     const clientId = newClientId();
-    const frame = sendFrame(text, clientId, { typed, ...(confirm ? { confirm } : {}) });
+    const held = typed ? (untrack(heldDecision)?.id ?? untrack(threadAsk)?.id) : undefined;
+    const frame = sendFrame(text, clientId, { typed, ...(confirm ? { confirm } : {}), ...(held ? { decision: held } : {}) });
     // A click is known as one wherever it is handed back (lib/hand-back).
     if (confirm && frame.type === "prompt") clicks.note(clientId, confirm, text);
     if (holding()) hold(frame);
@@ -2746,6 +2772,7 @@ export function ChatView(props: {
         onAbort={abort}
         restored={restored()}
         staged={stagedText()}
+        heldNotes={heldNotes()}
       />
       </Show>
       <Show when={showPlaybooks() && !hostGate()}>

@@ -84,17 +84,21 @@ describe("scratch copies: the helpers", () => {
 const told = (k: ReturnType<typeof makeKit>, id: string) => until(async () => k.thread.some((t) => t.kind === "conflict" && t.entry.id === id), `the thread told of ${id}'s conflict`);
 
 describe("scratch copies: the queue", () => {
-  const conflicting = (k: ReturnType<typeof makeKit>) => {
+  // A branch that conflicts at Land waits for a fix (al_3 q7): the target moves after the Land, while the queue is paused.
+  const conflictingAdd = async (k: ReturnType<typeof makeKit>, q: Awaited<ReturnType<ReturnType<typeof makeKit>["q"]>>, session?: string) => {
     k.repo.branch("feat/c", { "a.txt": "one\nTWO-branch\nthree\n" });
+    await q.pause("setting up a conflict");
+    const c = await q.add({ branch: "feat/c", by: "land-button", ...(session ? { session } : {}) });
     k.repo.commitOn(k.repo.root, { "a.txt": "one\nTWO-master\nthree\n" }, "master side");
+    await q.resume();
+    return c;
   };
 
   test("a conflict: Sova makes the copy and names it to the thread; it is never Ready, even on a branch; Land refuses it; the hand-back removes it", async () => {
     const k = makeKit({ threadAnswers: true, deps: { conflictWaitMs: 60_000 } });
     try {
       const q = await k.q();
-      conflicting(k);
-      const c = await q.add({ branch: "feat/c", by: "land-button", session: "s1" });
+      const c = await conflictingAdd(k, q, "s1");
       await told(k, c.entry.id);
       const ev = k.thread.find((t) => t.kind === "conflict")!;
       const path = scratchCopyPath(k.repo.root, c.entry.id);
@@ -126,8 +130,7 @@ describe("scratch copies: the queue", () => {
     const k = makeKit({ threadAnswers: true, deps: { sanity: async () => ({ ok: true, files: ["a.txt"] }) } });
     try {
       const q = await k.q();
-      conflicting(k);
-      const c = await q.add({ branch: "feat/c", by: "land-button" });
+      const c = await conflictingAdd(k, q);
       await told(k, c.entry.id);
       const path = scratchCopyPath(k.repo.root, c.entry.id);
       const m = tryGit(path, "merge", "--no-ff", "--no-commit", c.entry.commit);
@@ -146,13 +149,12 @@ describe("scratch copies: the queue", () => {
   });
 
   test("a retry after the hand-back, its resolution's pin gone and git no longer having it: judged afresh, never run on the missing commit", async () => {
-    const k = makeKit({ threadAnswers: true, deps: { sanity: async () => ({ ok: true, files: ["a.txt"] }) } });
+    const k = makeKit({ threadAnswers: true, deps: { sanity: async () => ({ ok: true, files: ["a.txt"] }), rulingWaitMs: 50 } });
     try {
       const q = await k.q();
-      conflicting(k);
       // The resolution's run fails on the branch: sent back with its resolution recorded.
       k.run.set((input) => (input.resolution ? { verdict: "failed", blame: "branch", why: "unit failed" } : {}));
-      const c = await q.add({ branch: "feat/c", by: "land-button" });
+      const c = await conflictingAdd(k, q);
       await told(k, c.entry.id);
       const path = scratchCopyPath(k.repo.root, c.entry.id);
       tryGit(path, "merge", "--no-ff", "--no-commit", c.entry.commit);
@@ -161,8 +163,8 @@ describe("scratch copies: the queue", () => {
       sh(path, "-c", "user.name=t", "-c", "user.email=t@t.invalid", "commit", "-q", "--no-edit");
       const res = sh(path, "rev-parse", "HEAD");
       await q.resolve(c.entry.id, { verdict: "no-behaviour-change", ours: "o", theirs: "t", proposal: "keep both", commit: res });
-      await until(async () => (await k.entry(c.entry.id)).state === "needs-fix", "sent back");
-      assert.equal((await k.entry(c.entry.id)).conflict?.commit, res, "the hand-back keeps the recorded resolution");
+      await until(async () => (await k.entry(c.entry.id)).requests?.length, "sent back, after the wait for the thread's diagnosis");
+      assert.equal((await k.entry(c.entry.id)).conflict, undefined, "a failure's send-back carries no earlier conflict's judgement");
       await until(async () => !existsSync(path) && !refAt(k.repo.root, c.entry.id), "copy and pin removed");
       // Nothing holds the resolution any more: git's cleanup drops it.
       sh(k.repo.root, "reflog", "expire", "--expire=now", "--all");
@@ -183,10 +185,9 @@ describe("scratch copies: the queue", () => {
     const k = makeKit({ threadAnswers: true, deps: { conflictWaitMs: 80 } });
     try {
       const q = await k.q();
-      conflicting(k);
-      const c = await q.add({ branch: "feat/c", by: "land-button" });
+      const c = await conflictingAdd(k, q);
       await until(async () => k.thread.some((t) => t.kind === "conflict"), "the thread told");
-      await until(async () => (await k.entry(c.entry.id)).state === "needs-fix", "handed back");
+      await until(async () => (await k.entry(c.entry.id)).state === "with-chat", "handed back");
       await until(async () => !existsSync(scratchCopyPath(k.repo.root, c.entry.id)), "copy removed");
     } finally {
       await k.done();
@@ -197,9 +198,8 @@ describe("scratch copies: the queue", () => {
     const k = makeKit({ deps: { thread: undefined } });
     try {
       const q = await k.q();
-      conflicting(k);
-      const c = await q.add({ branch: "feat/c", by: "land-button" });
-      await until(async () => (await k.entry(c.entry.id)).state === "needs-fix", "handed back");
+      const c = await conflictingAdd(k, q);
+      await until(async () => (await k.entry(c.entry.id)).state === "with-chat", "handed back");
       await q.scratchIdle();
       assert.ok(!existsSync(scratchCopyPath(k.repo.root, c.entry.id)));
     } finally {
@@ -244,8 +244,7 @@ describe("scratch copies: the queue", () => {
     const k = makeKit({ threadAnswers: true });
     try {
       const q = await k.q();
-      conflicting(k);
-      const c = await q.add({ branch: "feat/c", by: "land-button" });
+      const c = await conflictingAdd(k, q);
       await told(k, c.entry.id);
       const open = scratchCopyPath(k.repo.root, c.entry.id);
       assert.ok(existsSync(open));

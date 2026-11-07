@@ -2480,8 +2480,11 @@ export type ChatClientMessage =
           card listed, while the card is open and the text is exactly what the click composes
           (§app.overseer/org-people-facing). A tool call id (a card from before card ids) approves
           nothing. Ignored anywhere else. */
-      confirm?: string }
-  | { type: "steer"; text: string; images?: OutboundImage[]; clientId?: string }
+      confirm?: string;
+      /** The merge queue decision (`dc_…`), or in the merge thread's own chat a question held on its tab (`ak_…`), this message answers (§chat.merge-queue/decision): its held note goes with
+          it. Absent: the newest decision waiting in this chat. Only the operator's own page is heard. */
+      decision?: string }
+  | { type: "steer"; text: string; images?: OutboundImage[]; clientId?: string; decision?: string }
   | { type: "abort" }
   | { type: "set_model"; ref: string }   // calls session.setModel; server replies {type:"model"} or error
   | { type: "set_thinking"; level: string } // calls session.setThinkingLevel (clamped to the model); server replies {type:"thinking"}

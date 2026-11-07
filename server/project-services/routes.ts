@@ -1,5 +1,5 @@
 import { notPageNorProven } from "../mesh/click-proof";
-import { CALLER_HEADER, callerKeys } from "../caller-keys";
+import { CALLER_HEADER } from "../caller-keys";
 import { isCardRun } from "../extension-sender";
 import type { Hono } from "hono";
 import { httpStatusOf } from "../../shared/project-contract";
@@ -58,12 +58,10 @@ export function registerProjectServiceRoutes(app: Hono<any>): void {
     // operator, but never the operator's acts on a release (t17).
     const key = c.req.header(CALLER_HEADER)?.trim();
     const fromChat = !!key;
-    const named = key ? callerKeys.callerOf(key) : "no-key";
-    const chat = named.startsWith("chat:") ? named.slice("chat:".length) : undefined;
     const fromCard = isCardRun((n) => c.req.header(n));
     // Your page, here or on another of your computers with its proof (server/mesh/click-proof.ts).
     const notPage = verb === "apply" && (await notPageNorProven(c, raw));
-    const r = await projectEngine().run(verb, body, { kind: "operator", ...(fromChat ? { fromChat: true as const } : {}), ...(chat ? { chat } : {}), ...(fromCard ? { fromCard: true as const } : {}), ...(notPage ? { notPage: true } : {}) });
+    const r = await projectEngine().run(verb, body, { kind: "operator", ...(fromChat ? { fromChat: true as const } : {}), ...(fromCard ? { fromCard: true as const } : {}), ...(notPage ? { notPage: true } : {}) });
     return c.json(r, httpStatusOf(r) as 200);
   });
 }

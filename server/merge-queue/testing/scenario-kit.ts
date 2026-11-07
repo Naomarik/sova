@@ -36,7 +36,8 @@ export async function setup(fo: ConstructorParameters<typeof Fixture>[0] = {}, h
 export const LIST_PLUS = (extra: string) => `alpha\nbravo\ncharlie\n${extra}\n`;
 export const APP = (three: string) => `line 1\nline 2\n${three}\nline 4\nline 5\nline 6\nline 7\nline 8\n`;
 export const mergeCopyOf = (fx: Fixture) => join(fx.parent, ".worktrees", `${fx.name}-merge`);
-export const FINAL = ["landed", "needs-fix", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "cancelled"] as const;
+/** with-chat: back with its chat (al_3), until the chat answers; needs-user: a decision waits for the user. */
+export const FINAL = ["landed", "needs-fix", "with-chat", "needs-user", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "cancelled"] as const;
 /** Settled: a state the entry won't leave by itself, and a landing's push decided (pushed, held, refused). */
 export const settled = (e: MergeEntry) => (FINAL as readonly string[]).includes(e.state) && (e.state !== "landed" || (!!e.landed && e.landed.pushed !== "pending"));
 /** The newest whole run of `script` (no selectors) since `mark`: the commit the check ran on. */

@@ -12,7 +12,7 @@ export type Verb = (typeof VERBS)[number];
 export const DEPLOY_VERBS = ["deploy.check", "deploy.plan", "deploy.run", "deploy.status", "deploy.logs", "deploy.rollback", "deploy.request"] as const;
 export type DeployVerb = (typeof DEPLOY_VERBS)[number];
 /** The merge queue's verbs (shared/merge-queue.ts): a project's queue, its entries and runs, never an instance. */
-export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup", "merge.ask", "merge.reply", "merge.fresh", "merge.clear", "merge.hold", "merge.try"] as const;
+export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup", "merge.ask", "merge.reply", "merge.fresh", "merge.clear", "merge.hold", "merge.try", "merge.rule", "merge.respond"] as const;
 export type MergeVerb = (typeof MERGE_VERBS)[number];
 /** The merge verbs that change nothing. */
 export const MERGE_READ_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs"];
@@ -106,21 +106,41 @@ export const VERB_PARAMS: readonly VerbParam[] = [
   { wire: "chat", type: "string", mergeOnly: true, cli: { flag: "chat", description: "The chat the approval was given in" } },
   { wire: "via", type: "string", mergeOnly: true, cli: { flag: "via", description: "merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed \"open a PR\")" } },
   { wire: "checks", type: "list", mergeOnly: true, tool: { name: "checks", description: "merge.extend {entry, checks, why, select}: check ids from the project's merge section to add to this entry's run (never removes one); send each pick's select with it; merge.try: release check ids to run although unchanged." }, cli: { flag: "checks", description: "Check ids, comma-separated" } },
-  { wire: "verdict", type: "string", mergeOnly: true, tool: { name: "verdict", description: "merge.resolve: no-behaviour-change | behaviour-differs; merge.review: ok | notes | blocking." }, cli: { flag: "verdict", description: "A verdict" } },
+  { wire: "verdict", type: "string", mergeOnly: true, tool: { name: "verdict", description: "merge.resolve: no-behaviour-change (your resolution commit) | chat-fixes (the branch's chat fixes it; your diagnosis in proposal) | needs-user (the user decides; question in text, choices); merge.review: ok | notes | blocking." }, cli: { flag: "verdict", description: "A verdict" } },
   { wire: "files", type: "list", mergeOnly: true, tool: { name: "files", description: "merge.resolve: the conflicted files the judgement covers." }, cli: { flag: "files", description: "Files, comma-separated" } },
   { wire: "ours", type: "string", mergeOnly: true, tool: { name: "ours", description: "merge.resolve: what the target's side does, in plain words." }, cli: { flag: "ours", description: "The target's side, in plain words" } },
   { wire: "theirs", type: "string", mergeOnly: true, tool: { name: "theirs", description: "merge.resolve: what the branch's side does, in plain words." }, cli: { flag: "theirs", description: "The branch's side, in plain words" } },
   { wire: "proposal", type: "string", mergeOnly: true, tool: { name: "proposal", description: "merge.resolve: what the resolution does, in plain words." }, cli: { flag: "proposal", description: "The proposed resolution, in plain words" } },
-  { wire: "answer", type: "string", mergeOnly: true, cli: { flag: "answer", description: "accept | send-back | land-anyway" } },
+  {
+    wire: "answer",
+    type: "string",
+    mergeOnly: true,
+    tool: { name: "answer", description: "merge.respond (the branch's chat, answering a merge queue request by its id): fixed | needs-you | cant." },
+    cli: { flag: "answer", description: "merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant" },
+  },
+  { wire: "request", type: "string", mergeOnly: true, tool: { name: "request", description: "merge.respond / merge.rule: a merge queue request, by its id (rq_…, in the merge queue's note)." }, cli: { flag: "request", description: "A merge queue request id" } },
+  { wire: "drafts", type: "boolean", mergeOnly: true, tool: { name: "drafts", description: "merge.respond with fixed: you changed the branch's spec drafts (that needs no commit)." }, cli: { flag: "drafts", description: "merge.respond: the fix changed spec drafts" } },
+  {
+    wire: "ruling",
+    type: "string",
+    mergeOnly: true,
+    tool: {
+      name: "ruling",
+      description:
+        "merge.rule (the merge thread's): chat-fixes (text: your diagnosis, sent to the branch's chat) | try-again (back in line; after a chat's Can't, text: the other approach, once) | needs-user (text: the question, choices: its options; only for what is the user's) | checked | beyond (a chat's fix, by its request: only what was asked, or text: what more it changes).",
+    },
+    cli: { flag: "ruling", description: "merge.rule: chat-fixes | try-again | needs-user | checked | beyond" },
+  },
+  { wire: "choices", type: "list", mergeOnly: true, tool: { name: "choices", description: "merge.rule / merge.resolve with needs-user, merge.respond with needs-you: the options for the user, short, at most 4 (each fills the chat's message box when picked)." }, cli: { flag: "choices", description: "Choices, comma-separated" } },
   { wire: "command", type: "string", mergeOnly: true, cli: { flag: "command", description: "merge.setup: the project's one test command" } },
   { wire: "commands", type: "list", mergeOnly: true, cli: { flag: "commands", description: "merge.setup: its checks, each \"Label: command\", comma-separated" } },
   { wire: "none", type: "boolean", mergeOnly: true, cli: { flag: "none", description: "merge.setup: the project has no automated tests" } },
   { wire: "takesMin", type: "integer", mergeOnly: true, cli: { flag: "takes-min", description: "merge.setup: about how many minutes the tests take" } },
   { wire: "requires", type: "list", mergeOnly: true, cli: { flag: "requires", description: "merge.setup: services that must start first, comma-separated" } },
   { wire: "dryRun", type: "boolean", mergeOnly: true, cli: { flag: "dry-run", description: "merge.setup: run the checks on the target in the merge copy, saving nothing" } },
-  { wire: "text", type: "string", mergeOnly: true, tool: { name: "text", description: "merge.review: the reviewer's notes, short; merge.ask: the merge thread's question for the user; merge.reply: the user's answer, in their words; release.notes: the release notes, in full." }, cli: { flag: "text", description: "Text" } },
+  { wire: "text", type: "string", mergeOnly: true, tool: { name: "text", description: "merge.review: the reviewer's notes, short; merge.ask: the merge thread's question for the user; merge.reply: the user's answer, in their words; merge.respond: what you changed (fixed), the question for your user (needs-you) or why you can't (cant); release.notes: the release notes, in full." }, cli: { flag: "text", description: "Text" } },
   { wire: "action", type: "string", mergeOnly: true, tool: { name: "action", description: "merge.hold (the merge thread's): set | clear. set holds every new run for 5 minutes (set again renews it); a run already checking goes on." }, cli: { flag: "action", description: "merge.hold: set | clear" } },
-  { wire: "ask", type: "string", mergeOnly: true, tool: { name: "ask", description: "merge.reply: the merge thread's question you relay the user's answer to, by its id (ak_…, in the merge queue's message)." }, cli: { flag: "ask", description: "A merge thread question id" } },
+  { wire: "ask", type: "string", mergeOnly: true, tool: { name: "ask", description: "merge.reply (the user's page only): the merge thread's question the user answers, by its id (ak_…)." }, cli: { flag: "ask", description: "A merge thread question id" } },
   // The release verbs' own keys (shared/release.ts). On no generic tool: the release chat's tool lists them.
   { wire: "release", type: "string", releaseOnly: true, tool: { name: "release", description: "release.*: a release, by its id (rl_…; default the open one)." }, cli: { flag: "release", description: "A release id" } },
   { wire: "state", type: "string", releaseOnly: true, tool: { name: "state", description: "release.step: running | done | failed | skipped | held." }, cli: { flag: "state", description: "A step's state" } },
@@ -145,7 +165,7 @@ export const VERB_FLAGS: { readonly instance: readonly string[]; readonly deploy
   release: ["project", "release", "tag", "step", "state", "summary", "detail", "facts", "text", "commit", "why", "lines", "confirm", "dismiss"],
   instance: ["project", "instance", "checkout", "branch", "from", "slot", "services", "restart", "lines", "keep-data", "resources", "ref", "select", "endpoint", "days", "link", "confirm"],
   deploy: ["project", "target", "commit", "ref", "plan", "deploy", "why", "lines", "override-tests", "override-dirty", "confirm", "dismiss"],
-  merge: ["project", "branch", "checkout", "commit", "entry", "run", "step", "lines", "note", "without-specs", "without-review", "chat", "via", "checks", "select", "why", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "none", "takes-min", "requires", "dry-run", "ask", "action"],
+  merge: ["project", "branch", "checkout", "commit", "entry", "run", "step", "lines", "note", "without-specs", "without-review", "chat", "via", "checks", "select", "why", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "none", "takes-min", "requires", "dry-run", "ask", "action", "request", "drafts", "ruling", "choices"],
 };
 
 export const ERROR_CODES = [

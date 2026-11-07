@@ -67,9 +67,12 @@ describe("blame", () => {
     const ec = await h.add({ branch: c.branch });
     const sc = await h.waitEntry(ec.id, settled);
     assert.equal(sc.state, "unattributed", "the line moves on past it (the next branch is judged on its own)");
-    const back = await h.answer(e.id, "send-back");
-    assert.equal(back.state, "needs-fix", `${back.state}: ${back.reason}`);
-    assert.ok(h.notices.some((n) => n.kind === "sent-back" && n.branch === b.branch), "its chat is told on Send Back");
+    assert.equal(s.decision?.kind, "unattributed", "one decision for the user");
+    assert.deepEqual(s.decision?.actions, ["land-anyway", "try-again"]);
+    await assert.rejects(h.answer(e.id, "send-back" as never), /answer is/, "no Send Back");
+    const again = await h.answer(e.id, "try-again");
+    assert.equal(again.tries?.used ?? 0, 0, "Try Again uses no try");
+    assert.equal(h.notices.filter((n) => n.branch === b.branch && n.kind !== "approved").length, 0, "nothing went to the chat");
     assert.equal(fx.head(), before);
   });
 
@@ -120,32 +123,6 @@ describe("blame", () => {
     assert.equal((await h.view()).heads.targetBroken, undefined, "lifted once the check runs tests");
   });
 
-  test("S5e3: sent back, then the branch moves on (a merge of master and a fix): the row counts the branch's own 2 commits, says why the newest can't land while its folder is dirty, and the re-land pins the newest commit", async () => {
-    const { fx, h } = await setup({ files: { "build.conf": "broken\n" } });
-    const b = fx.branch("ok", { "b.txt": "b\n" });
-    const e = await h.add({ branch: b.branch });
-    assert.equal((await h.waitEntry(e.id, settled)).state, "unattributed");
-    assert.equal((await h.answer(e.id, "send-back")).state, "needs-fix");
-    // master moves on by three commits, the branch merges them in and commits its fix.
-    for (let i = 0; i < 3; i++) fx.commitIn(fx.project, { [`m${i}.txt`]: `${i}\n`, ...(i === 2 ? { "build.conf": "ok\n" } : {}) }, `master ${i}`);
-    git(b.checkout, ["merge", "-q", "--no-edit", fx.target]);
-    const tip = fx.commitIn(b.checkout, { "b.txt": "b2\n" }, "the fix");
-    writeFileSync(join(b.checkout, "scratch.txt"), "x\n");
-    const sent = (await h.view()).needsFix.find((x) => x.id === e.id)!;
-    assert.equal(sent.newerCommits, 2, "the merge of master and the fix: never master's own three");
-    assert.equal(sent.newerBlocked, "1 uncommitted file in its folder: commit or remove them first");
-    await assert.rejects(h.add({ branch: b.branch }), /uncommitted/, "Land refuses the newest commit for the same reason");
-    git(b.checkout, ["clean", "-fq"]);
-    // The reading is kept a few seconds (view() runs often): the row catches up by itself.
-    await h.waitView((v) => v.needsFix.find((x) => x.id === e.id)?.newerBlocked === undefined, "clean: nothing blocks it");
-    // The re-land posts no commit: the queue pins the branch's newest.
-    const again = await h.add({ branch: b.branch });
-    assert.equal(again.commit, tip);
-    const l = await h.waitEntry(again.id, settled);
-    assert.equal(l.state, "landed", `${l.state}: ${l.reason}`);
-    assert.ok(fx.isAncestor(tip, fx.head()));
-  });
-
   test("S5i: a test check that exits with no report at all on the merge, the tip and master (a crash midway, or a runner that writes none): real failures may be in there, so never skipped: Can't tell whose failure", async () => {
     const { fx, h } = await setup({ unitIsTestCommand: true, files: { "unit.crash": "1\n" } });
     const before = fx.head();
@@ -156,30 +133,6 @@ describe("blame", () => {
     assert.equal(h.flags.length, 0);
     assert.equal(fx.head(), before, "master unmoved");
     assert.ok(!h.run(s.run!).steps.some((x) => x.result === "skipped" && x.broken), "nothing marked broken");
-  });
-
-  test("S5e4: sent back, then the commit is amended (the sent-back commit is no ancestor of the tip): the row says the branch was rewritten, counts nothing, still says why the newest can't land, and the re-land lands the amended commit", async () => {
-    const { fx, h } = await setup({ files: { "build.conf": "broken\n" } });
-    const b = fx.branch("ok", { "b.txt": "b\n" });
-    const e = await h.add({ branch: b.branch });
-    assert.equal((await h.waitEntry(e.id, settled)).state, "unattributed");
-    assert.equal((await h.answer(e.id, "send-back")).state, "needs-fix");
-    fx.commitIn(fx.project, { "build.conf": "ok\n" }, "master fixes its build");
-    git(b.checkout, ["commit", "-q", "--amend", "-m", "ok: amended"]);
-    const tip = git(b.checkout, ["rev-parse", "HEAD"]);
-    assert.notEqual(tip, b.commit);
-    writeFileSync(join(b.checkout, "scratch.txt"), "x\n");
-    const sent = (await h.view()).needsFix.find((x) => x.id === e.id)!;
-    assert.equal(sent.newerRewritten, true);
-    assert.equal(sent.newerCommits, undefined, "no count: nothing to count past a rewrite");
-    assert.equal(sent.newerBlocked, "1 uncommitted file in its folder: commit or remove them first");
-    git(b.checkout, ["clean", "-fq"]);
-    await h.waitView((v) => v.needsFix.find((x) => x.id === e.id)?.newerBlocked === undefined, "clean: nothing blocks it");
-    const again = await h.add({ branch: b.branch });
-    assert.equal(again.commit, tip, "the amended commit, not the one sent back");
-    const l = await h.waitEntry(again.id, settled);
-    assert.equal(l.state, "landed", `${l.state}: ${l.reason}`);
-    assert.ok(fx.isAncestor(tip, fx.head()));
   });
 
   test("S5h2: the same exit-2 failure in a check that isn't the project's test command stays Can't tell whose failure (only a test check is ever broken on the target)", async () => {

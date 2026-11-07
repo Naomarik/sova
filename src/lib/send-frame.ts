@@ -8,7 +8,9 @@ import type { ChatClientMessage } from "../../shared/protocol";
  * `prompt`, a follow-up mid-turn: a playbook (a new job, never steered into a turn), a quick action or
  * review button, and a card's confirm click, which carries its `confirm` field.
  */
-export function sendFrame(text: string, clientId: string, o: { typed: boolean; confirm?: string }): Extract<ChatClientMessage, { type: "prompt" | "steer" }> {
-  if (o.typed && !o.confirm) return { type: "steer", text, clientId };
-  return { type: "prompt", text, clientId, ...(o.confirm ? { confirm: o.confirm } : {}) };
+export function sendFrame(text: string, clientId: string, o: { typed: boolean; confirm?: string; decision?: string }): Extract<ChatClientMessage, { type: "prompt" | "steer" }> {
+  // A typed message while a merge queue decision holds its note (§chat.merge-queue/decision): it answers that one.
+  const decision = o.typed && o.decision ? { decision: o.decision } : {};
+  if (o.typed && !o.confirm) return { type: "steer", text, clientId, ...decision };
+  return { type: "prompt", text, clientId, ...(o.confirm ? { confirm: o.confirm } : {}), ...decision };
 }

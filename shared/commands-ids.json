@@ -241,7 +241,9 @@
     "session.pairs.resume",
     "attention.dismiss",
     "attention.undismiss",
-    "session.time-spent"
+    "session.time-spent",
+    "project.verb.merge.rule",
+    "project.verb.merge.respond"
   ],
   "retired": [
     "settings.agents.get",

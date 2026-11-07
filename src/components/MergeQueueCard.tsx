@@ -1,8 +1,10 @@
-import { createSignal, For, Show } from "solid-js";
-import type { MergeAnswer } from "../../shared/merge-queue";
+import { createSignal, For, Show, useContext } from "solid-js";
 import type { CardInfo } from "../../shared/transcript-cards";
 import { clockTime, tildePath } from "../lib/format";
-import { cardActionLabel, cardActions, cardFacts, cardLabel, cardNewer, cardNotes, cardPill, cardSha, foldedLine, isNewest, notPushed, queueRowOf, type CardAction, type QueueCard, type QueueCardRow } from "../lib/merge-queue-card";
+import { cardActionLabel, cardActions, cardDecision, cardFacts, cardLabel, cardNewer, cardNotes, cardPill, cardSha, foldedLine, isNewest, notPushed, queueRowOf, type CardAction, type QueueCard, type QueueCardRow } from "../lib/merge-queue-card";
+import { HELD_NOTE_LINE, STANDING_LINE, standingWords } from "../lib/merge-standing";
+import { CardContext } from "../lib/card-controls";
+import { paneScopedId, usePaneScope } from "../lib/pane-scope";
 import { answerEntry, cancelEntry, landBranch, refusal } from "../lib/merge-queue-client";
 import { mergeRunHref, projectTabHref } from "../lib/projects-route";
 import { announce, home, toast } from "../lib/ui-state";
@@ -59,10 +61,21 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
   const [error, setError] = createSignal<string | null>(null);
   const facts = () => cardFacts(d());
   const runHref = () => (d().run ? mergeRunHref(d().project, d().run!) : null);
-  /** Past Sova's checks on a request or push project: the host's states, Open on the host, Send Back to Chat. */
+  /** Past Sova's checks on a request or push project: the host's states and Open on the host. */
   const onRequest = () => isRequestState(d().state) || (d().state === "landed" && !!d().request);
   const reqEntry = (): RequestEntry => ({ id: d().entry, branch: d().branch, state: d().state as RequestEntry["state"], reason: d().reason, newerCommits: d().newerCommits, request: d().request });
   const [reviewingRequest, setReviewingRequest] = createSignal(false);
+  const decision = () => cardDecision(d());
+  const standing = () => (decision() || d().state === "landed" || d().state === "cancelled" ? null : standingWords(d()));
+  // A choice fills the chat's message box (the chat's card controls stage it at the draft's end); nothing is sent.
+  const cards = useContext(CardContext);
+  const scope = usePaneScope();
+  const fill = (text: string) => {
+    if (!cards) return;
+    cards.stage(text);
+    announce(`Put in the message box: ${text}`);
+    queueMicrotask(() => document.getElementById(paneScopedId(scope, "composer-input"))?.focus());
+  };
 
   const act = async (a: CardAction) => {
     if (busy()) return;
@@ -70,28 +83,24 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
     setError(null);
     // The entry the card follows now (a re-approval after a hand-back moves the same card on).
     const e = { id: d().entry };
-    const answer = (x: MergeAnswer) => answerEntry(e, x);
     try {
       const r =
         a === "cancel" || a === "remove"
           ? await cancelEntry(e)
-          : a === "accept"
-            ? await answer("accept")
-            : a === "land-anyway"
-              ? await answer("land-anyway")
-              : a === "send-back"
-                ? await answer("send-back")
-                : a === "land-this-again"
-                  ? // Needs a fix: the branch's newest commit (its tip now), never only the one sent back.
-                    await landBranch(d().root, d().branch, {})
-                  : // Land: the commit the card was approved at; Land Again: the branch's head.
-                    await landBranch(d().root, d().branch, { commit: a === "land-again" ? d().head : d().commit });
+          : a === "accept" || a === "land-anyway" || a === "try-again"
+            ? await answerEntry(e, a)
+            : a === "land" && decision()
+              ? // A decision's Land, on the queue itself: out of tries, a new standing approval at the branch's newest
+                // commit with 3 new tries; a fix that needs your OK, back in line; drafts changed, re-pinned as they are.
+                await answerEntry(e, "land")
+              : // Land: the commit the card was approved at; Land Again: the branch's head.
+                await landBranch(d().root, d().branch, { commit: a === "land-again" ? d().head : d().commit });
       const no = refusal(r);
       if (no) {
         setError(no);
         announce(no);
       } else {
-        const done = `${cardActionLabel(d(), a)}: ${d().branch}.`;
+        const done = `${cardActionLabel(a)}: ${d().branch}.`;
         toast(done);
         announce(done);
       }
@@ -159,7 +168,7 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
         </p>
       </Show>
       <Show when={d().state === "unattributed"}>
-        <p class="text-caption mq-card-line">{unattributedWhy(d().reason, d().target)} Nobody is blamed: Land Anyway lands the commit it tested, Send Back hands it to this chat.</p>
+        <p class="text-caption mq-card-line">{unattributedWhy(d().reason, d().target)} Nobody is blamed: Land Anyway lands the commit it tested, Try Again checks it afresh.</p>
         <UnclearChecks projectId={d().project} unclear={d().unclear} target={d().target} />
       </Show>
       <Show when={onRequest()}>
@@ -183,26 +192,95 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
           </Show>
         </p>
       </Show>
-      <Show when={d().conflict && d().state === "behaviour-differs"}>
-        <dl class="mq-sides mq-card-sides">
-          <div>
-            <dt class="text-eyebrow">{d().target}</dt>
-            <dd>{d().conflict!.ours}</dd>
-          </div>
-          <div>
-            <dt class="text-eyebrow">This branch</dt>
-            <dd>{d().conflict!.theirs}</dd>
-          </div>
-          <div>
-            <dt class="text-eyebrow">Merge thread proposes</dt>
-            <dd>{d().conflict!.proposal}</dd>
-          </div>
-        </dl>
+      <Show when={decision()?.sides ?? (d().state === "behaviour-differs" ? d().conflict : undefined)}>
+        {(c) => (
+          <dl class="mq-sides mq-card-sides">
+            <div>
+              <dt class="text-eyebrow">{d().target}</dt>
+              <dd>{c().ours}</dd>
+            </div>
+            <div>
+              <dt class="text-eyebrow">This branch</dt>
+              <dd>{c().theirs}</dd>
+            </div>
+            <div>
+              <dt class="text-eyebrow">Merge thread proposes</dt>
+              <dd>{c().proposal}</dd>
+            </div>
+          </dl>
+        )}
       </Show>
       <Show when={d().review?.text && d().state === "review-flagged"}>
         <p class="text-caption mq-card-line">
           <span class="text-muted">Review:</span> {d().review!.text}
         </p>
+      </Show>
+      <Show when={standing()}>
+        {(w) => (
+          <div class="mq-card-standing">
+            <Show when={w().detail}>{(x) => <p class="text-caption mq-card-line mq-card-standing-detail">{x()}</p>}</Show>
+            <Show when={w().answer}>{(x) => <p class="text-caption mq-card-line mq-card-answer"><span class="text-muted">Chat:</span> {x()}</p>}</Show>
+            <p class="text-caption mq-card-line text-muted">{STANDING_LINE}</p>
+          </div>
+        )}
+      </Show>
+      <Show when={decision()}>
+        {(x) => (
+          <div class="mq-card-decision" role="group" aria-label={`Decision for ${d().branch}`}>
+            <p class="mq-card-question">
+              {x().question}
+              <Show when={x().cantSettle}>
+                <span class="text-muted"> · can't be settled without you</span>
+              </Show>
+            </p>
+            <Show when={x().choices.length && !props.readOnly && cards}>
+              <div class="button-row mq-card-choices" role="group" aria-label="Choices: each fills the message box">
+                <For each={x().choices}>
+                  {(c) => (
+                    <button type="button" class="button button-sm" title="Puts these words in the message box; nothing is sent until you send" onClick={() => fill(c)}>
+                      {c}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
+            <Show when={x().choices.length && (props.readOnly || !cards)}>
+              <ul class="mq-card-choices-list text-caption">
+                <For each={x().choices}>{(c) => <li>{c}</li>}</For>
+              </ul>
+            </Show>
+            <Show when={x().heldNote}>
+              {(n) => (
+                <div class="mq-card-held">
+                  <p class="text-caption mq-card-line">
+                    <span class="text-muted">Merge queue:</span> {n().text}
+                  </p>
+                  <p class="text-caption mq-card-held-mark">
+                    <span class="chip chip-warn">
+                      <span class="chip-dot" aria-hidden="true" />
+                      Not sent yet
+                    </span>{" "}
+                    {HELD_NOTE_LINE.replace(/^Not sent yet: /, "")}
+                  </p>
+                </div>
+              )}
+            </Show>
+          </div>
+        )}
+      </Show>
+      <Show when={d().state === "landed" && d().fixesLanded?.length}>
+        <div class="mq-card-fixes">
+          <p class="text-caption mq-card-line text-muted">Fixes that landed with your Land:</p>
+          <ul class="text-caption">
+            <For each={d().fixesLanded}>
+              {(f) => (
+                <li>
+                  <span class="text-mono">{f.sha.slice(0, 7)}</span> {f.subject}
+                </li>
+              )}
+            </For>
+          </ul>
+        </div>
       </Show>
       <Show when={d().failures?.length}>
         <ul class="mq-card-failures text-caption" aria-label="Failing checks">
@@ -256,13 +334,13 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
             {(a) => (
               <button
                 type="button"
-                class={`button button-sm${a === "accept" || a === "land-anyway" || a === "land" ? " button-primary" : ""}${a === "send-back" ? " button-destructive" : ""}`}
-                aria-label={`${cardActionLabel(d(), a)} ${d().branch}`}
+                class={`button button-sm${a === "accept" || a === "land-anyway" || a === "land" ? " button-primary" : ""}`}
+                aria-label={`${cardActionLabel(a)} ${d().branch}`}
                 disabled={!!busy()}
                 aria-busy={busy() === a ? "true" : undefined}
                 onClick={() => void act(a)}
               >
-                {cardActionLabel(d(), a)}
+                {cardActionLabel(a)}
               </button>
             )}
           </For>

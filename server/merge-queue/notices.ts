@@ -10,7 +10,9 @@ import { type MergeEntry, type MergeRun, newerWords } from "../../shared/merge-q
  */
 
 /** `approved`: Land or a typed "land it" put the branch in line (its chat's card appears). */
-export type MergeNoticeKind = "approved" | "landed" | "needs-fix" | "sent-back" | "drafts-changed" | "explained" | "requested" | "pushed" | "closed" | "removed";
+/** `request`: a request of the branch's chat other than a fix (extra.request: blocked, the thread's other approach or
+ *  its diagnosis), whose text is the request's own. `decision`: a decision waits for the user (entry.decision): its card moves down. */
+export type MergeNoticeKind = "approved" | "landed" | "needs-fix" | "sent-back" | "drafts-changed" | "explained" | "requested" | "pushed" | "closed" | "removed" | "request" | "decision";
 
 const short = (sha: string | undefined) => (sha ?? "").slice(0, 7);
 
@@ -66,6 +68,10 @@ export function noticeText(kind: MergeNoticeKind, e: MergeEntry, extra: { run?: 
       return `${e.branch}'s request was closed on the host without merging; land it again to open or update it.`;
     case "drafts-changed":
       return `${e.branch}'s spec drafts changed since the user approved it at ${short(e.commit)}, so it waits: the user lands it again once the drafts are as they want them.`;
+    case "request":
+      return e.requests?.[e.requests.length - 1]?.text ?? `${e.branch} is approved, but something still keeps it out of line: ${e.reason ?? "see its card"}.`;
+    case "decision":
+      return `${e.branch} waits for the user's decision: ${e.decision?.question ?? e.reason ?? "see its card"}`;
     case "removed":
       return `The user removed ${e.branch} from the merge queue at ${short(e.commit)}; nothing of the branch was deleted.`;
   }

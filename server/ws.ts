@@ -62,6 +62,14 @@ function sendRaw(ws: WebSocket, json: string): void {
   }
 }
 
+/** The user's message as it goes to the chat: with a decision's held note when one waits for their answer there. */
+export async function withHeldNote(sessionId: string, path: string, text: string, decision?: string): Promise<string> {
+  const [{ topicStore }, { chatPaused, takeHeldNote }, { formatHeldNote }] = await Promise.all([import("./topics"), import("./merge-queue/channel"), import("../shared/topic-message")]);
+  if (topicStore().mergeQueueTopic(sessionId)) chatPaused(sessionId, false);
+  const note = await takeHeldNote({ sessionId, path }, text, decision);
+  return note ? formatHeldNote(text, note) : text;
+}
+
 /** What a client asked of the transcript: all of it (legacy), newest rows first with the rest
     pushed (`?tail=1`), or newest rows alone, the rest fetched over REST (`?tail=rest`, with
     `prefetch` for a browser on this machine connecting directly: it may as well fetch it all). */
@@ -114,6 +122,13 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     }
     passOn(open, msg);
   };
+  /** While a page message waits for its held note, later frames wait behind it, so they go on in the order sent. */
+  let lane: Promise<void> = Promise.resolve();
+  let inLane = 0;
+  const later = (fn: () => void) => {
+    inLane++;
+    lane = lane.then(fn).finally(() => void inLane--);
+  };
   const passOn = (open: NonNullable<typeof chat>, msg: ChatClientMessage) => {
     // A card's click opens a turn that may act on what the card names, so it is the person's, never a script's or a
     // chat's (§app.access/your-click). A click relayed by a peer stays as it was: a page on another computer sends one.
@@ -121,6 +136,30 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
       client.send({ type: "error", code: "refused", message: yourClickBody("cardClick", who).error, ...(msg.clientId ? { clientId: msg.clientId } : {}) });
       return;
     }
+    // The user's own message from this machine's page (§chat.merge-queue/decision): it lets the merge queue's requests
+    // through after a Stop, and a decision's held note waiting for their answer here goes with it, in one turn. Never a
+    // card's click, a script's, a chat's or a key's frame.
+    if (who === null && (msg.type === "prompt" || msg.type === "steer") && !(msg.type === "prompt" && msg.confirm) && typeof msg.text === "string" && msg.text.trim()) {
+      checking++;
+      const sent = msg;
+      inLane++;
+      lane = lane
+        .then(() => withHeldNote(id, path, sent.text, typeof sent.decision === "string" && sent.decision ? sent.decision : undefined))
+        .then(
+          (text) => route(open, text === sent.text ? sent : { ...sent, text }),
+          () => route(open, sent),
+        )
+        .finally(() => {
+          inLane--;
+          checking--;
+          if (gone && held.size === 0 && checking === 0) leave();
+        });
+      return;
+    }
+    if (inLane > 0) return later(() => route(open, msg));
+    route(open, msg);
+  };
+  const route = (open: NonNullable<typeof chat>, msg: ChatClientMessage) => {
     // Going back past a raise lowers the sandbox: the extension restores the state of the branch it lands on.
     if (who !== null && (msg.type === "rewind" || msg.type === "regenerate")) {
       // The socket may close meanwhile (`wait=0`): it stays in the chat until the frame went over.

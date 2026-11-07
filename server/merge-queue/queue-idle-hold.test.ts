@@ -46,16 +46,19 @@ describe("the thread's idle wake", () => {
       k.repo.branch("feat/bad", { "bad.txt": "x\n" });
       const q = await k.q();
       const bad = await q.add({ branch: "feat/bad", by: "land-button" });
-      await until(async () => (await k.entry(bad.entry.id)).state === "needs-fix", "sent back");
+      await until(async () => (await k.entry(bad.entry.id)).state === "with-chat", "sent back");
       await until(() => idles(k).length === 1, "idle after the failure");
       assert.equal(idles(k)[0]!.entry.id, bad.entry.id);
       assert.equal(idles(k)[0]!.lastLanded, undefined, "nothing landed yet");
 
       k.run.set(() => ({}));
       k.repo.branch("feat/c", { "a.txt": "one\nTWO-branch\nthree\n" });
-      k.repo.commitOn(k.repo.root, { "a.txt": "one\nTWO-master\nthree\n" }, "master side");
+      // The target moves after the Land (one conflicting at Land waits for a fix, al_3 q7).
+      await q.pause("setting up a conflict");
       const c = await q.add({ branch: "feat/c", by: "land-button" });
-      await until(async () => (await k.entry(c.entry.id)).state === "needs-fix", "conflict handed back");
+      k.repo.commitOn(k.repo.root, { "a.txt": "one\nTWO-master\nthree\n" }, "master side");
+      await q.resume();
+      await until(async () => (await k.entry(c.entry.id)).state === "with-chat", "conflict sent back");
       await until(() => idles(k).length === 2, "idle after the conflict");
       assert.equal(idles(k)[1]!.entry.id, c.entry.id);
     } finally {

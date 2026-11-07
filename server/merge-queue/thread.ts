@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import type { MergeEntry, MergeThreadAsk } from "../../shared/merge-queue";
 import { mergeThreadTitle } from "../../shared/fixed-names";
+import { NEEDS_USER_RULE } from "./rulings";
 
 /** A thread without memory older than this is replaced at its next event (a thread with memory never ages out). */
 export const THREAD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -58,6 +59,18 @@ export type ThreadEvent =
   /** `scratch`: the copy Sova made for the thread to resolve in (scratch.ts); `scratchError`: why none could be made. */
   | { kind: "conflict"; entry: ThreadEntry; run: string; files: string[]; base?: string; scratch?: string; scratchError?: string }
   | { kind: "failed"; entry: ThreadEntry; run: string; summary?: string; base?: string }
+  /** Can't tell whose failure: a check failed on the merge and on the target alone; the user is asked meanwhile. */
+  | { kind: "unattributed"; entry: ThreadEntry; run: string; summary?: string; base?: string }
+  /** The review said blocking: its findings went back to the branch's chat by themselves. */
+  | { kind: "review"; entry: ThreadEntry; run: string; findings: string; base?: string }
+  /** A resolution the thread judged safe failed a check: the branch isn't blamed; it rules again. */
+  | { kind: "resolution-failed"; entry: ThreadEntry; run: string; files: string[]; summary?: string; base?: string; scratch?: string; scratchError?: string }
+  /** The branch's spec drafts changed since the user's Land. */
+  | { kind: "drafts-changed"; entry: ThreadEntry; names?: string[]; request?: string; base?: string }
+  /** The branch's chat answered a request Fixed: check the fix changes only what was asked. */
+  | { kind: "fix"; entry: ThreadEntry; request: string; asked: string; commit?: string; drafts?: boolean; summary?: string; base?: string }
+  /** The branch's chat answered a request "Can't" or "Needs you". `otherTried`: the thread already tried another approach. */
+  | { kind: "chat-answer"; entry: ThreadEntry; request: string; answer: "cant" | "needs-you"; text: string; otherTried?: boolean }
   | { kind: "paused"; why: string }
   /** Nothing left to check and nothing running: `entry` changed last; `lastLanded` is the newest landing; `head` the target's. */
   | { kind: "idle"; entry: ThreadEntry; lastLanded?: { id: string; branch: string; sha: string }; head?: string }
@@ -216,6 +229,12 @@ export const READ_AS_YOU_GO: Readonly<Record<ThreadEvent["kind"], string>> = {
   queued: "Queued",
   conflict: "Conflict",
   failed: "Failed",
+  unattributed: "Failed",
+  review: "Failed",
+  "resolution-failed": "Conflict",
+  "drafts-changed": "Fix",
+  fix: "Fix",
+  "chat-answer": "Chat answer",
   paused: "Paused",
   idle: "Idle",
   names: "Names",
@@ -231,6 +250,12 @@ export function readAsYouGoLine(kind: ThreadEvent["kind"]): string {
 export function eventText(ev: ThreadEvent): string {
   return `${eventBody(ev)}\n${readAsYouGoLine(ev.kind)}`;
 }
+
+/** The rule every ruling message carries: what is the user's to decide (rulings.ts). */
+const NEEDS_USER_LINE = `Rule "needs-user" only for what is the user's. ${NEEDS_USER_RULE} Everything else you and the branch's chat settle yourselves.`;
+
+const resolveLine = (id: string): string =>
+  `Judge it (references/conflicts.md) and answer with merge.resolve {entry: "${id}", verdict, files, ours, theirs, proposal, commit?, text?, choices?, note?}: no behaviour change → verdict "no-behaviour-change" with your resolution commit from the scratch copy; you can't resolve it safely but it needs no decision of the user's → verdict "chat-fixes", with your diagnosis in proposal, and the branch's chat fixes it; the two sides want different behaviour → verdict "needs-user" with your question in text and its choices, and the user decides.`;
 
 function eventBody(ev: ThreadEvent): string {
   switch (ev.kind) {
@@ -250,15 +275,82 @@ function eventBody(ev: ThreadEvent): string {
         `Conflict: entry ${e.id} · ${e.branch} at ${short(e.commit)} conflicts with ${e.target} in ${ev.files.join(", ") || "(files in the run log)"}. Run ${ev.run}.`,
         ev.scratch
           ? `Sova made a scratch copy for it at ${ev.scratch}: a worktree with no branch, at ${e.target}'s head. Resolve there, and never make a worktree of your own; Sova removes the copy when this attempt ends.`
-          : `Sova couldn't make a scratch copy for it${ev.scratchError ? ` (${ev.scratchError})` : ""}: judge it from the diff, and answer verdict "behaviour-differs" with no commit, so the user decides.`,
-        `Judge it (references/conflicts.md) and answer with merge.resolve {entry: "${e.id}", verdict, files, ours, theirs, proposal, commit?, note?}: no behaviour change → verdict "no-behaviour-change" with your resolution commit from the scratch copy; the two sides want different behaviour → verdict "behaviour-differs", and the user decides.`,
+          : `Sova couldn't make a scratch copy for it${ev.scratchError ? ` (${ev.scratchError})` : ""}: judge it from the diff and answer with no commit: verdict "chat-fixes" when it needs no decision of the user's, else "needs-user".`,
+        resolveLine(e.id),
+        NEEDS_USER_LINE,
       ].join("\n");
     }
     case "failed": {
       const e = ev.entry;
       return [
-        `Failed: entry ${e.id} · ${e.branch} at ${short(e.commit)}, run ${ev.run}${ev.summary ? ` (${ev.summary})` : ""}.`,
-        `Explain it in plain words (references/failures.md) with merge.note {entry: "${e.id}", note}. Read the logs with merge.logs {run: "${ev.run}"}.`,
+        `Failed: entry ${e.id} · ${e.branch} at ${short(e.commit)}, run ${ev.run}${ev.summary ? ` (${ev.summary})` : ""}. Sova proved it the branch's: it passes on ${e.target} alone.`,
+        `Read the logs with merge.logs {run: "${ev.run}"} and the branch's diff (references/failures.md), then rule, in one call, within a few minutes (the request waits for you, then goes without your diagnosis):`,
+        `- merge.rule {entry: "${e.id}", ruling: "chat-fixes", text: <your diagnosis: what failed, what in the branch causes it, what to change>} — it goes to the branch's chat with the request; or`,
+        `- merge.rule {entry: "${e.id}", ruling: "needs-user", text: <the question>, choices: [..]} when fixing it needs a decision that is the user's.`,
+        `Then write the entry's note with merge.note {entry: "${e.id}", note} (what failed, in a line).`,
+        NEEDS_USER_LINE,
+      ].join("\n");
+    }
+    case "unattributed": {
+      const e = ev.entry;
+      return [
+        `Can't tell whose failure: entry ${e.id} · ${e.branch} at ${short(e.commit)}, run ${ev.run}${ev.summary ? ` (${ev.summary})` : ""}. A check failed on the merge and on ${e.target} alone, naming no failure. The user is asked meanwhile (Land Anyway, Try Again, Remove from Queue); nothing went to the branch's chat.`,
+        `Read both logs with merge.logs {run: "${ev.run}"}. Rule only when the logs settle it:`,
+        `- the branch's own errors show (different from ${e.target}'s): merge.rule {entry: "${e.id}", ruling: "chat-fixes", text: <diagnosis>};`,
+        `- it was the machine or a flake: merge.rule {entry: "${e.id}", ruling: "try-again", text: <why>} (counts no try);`,
+        `- otherwise leave it to the user and explain it with merge.note {entry: "${e.id}", note}.`,
+      ].join("\n");
+    }
+    case "review": {
+      const e = ev.entry;
+      return [
+        `Review flagged: entry ${e.id} · ${e.branch} at ${short(e.commit)}, run ${ev.run}. Its findings went back to the branch's chat by themselves:`,
+        ev.findings,
+        `If a finding can't be fixed without a decision that is the user's, rule merge.rule {entry: "${e.id}", ruling: "needs-user", text: <the question>, choices: [..]}. Otherwise nothing is needed: end your turn.`,
+        NEEDS_USER_LINE,
+      ].join("\n");
+    }
+    case "resolution-failed": {
+      const e = ev.entry;
+      return [
+        `Your resolution failed: entry ${e.id} · ${e.branch} at ${short(e.commit)}, run ${ev.run}${ev.summary ? ` (${ev.summary})` : ""}. The resolution you judged safe for ${ev.files.join(", ") || "its conflict"} failed a check. The branch isn't blamed and nothing went to its chat.`,
+        ev.scratch
+          ? `Sova made a fresh scratch copy at ${ev.scratch}, at ${e.target}'s head. Read the run's logs with merge.logs {run: "${ev.run}"}, then rule again:`
+          : `Sova couldn't make a scratch copy${ev.scratchError ? ` (${ev.scratchError})` : ""}. Read the run's logs with merge.logs {run: "${ev.run}"}, then rule again (no new resolution of your own):`,
+        resolveLine(e.id),
+        NEEDS_USER_LINE,
+      ].join("\n");
+    }
+    case "drafts-changed": {
+      const e = ev.entry;
+      return [
+        `Drafts changed: entry ${e.id} · ${e.branch}'s spec drafts changed since the user's Land${ev.names?.length ? ` (${ev.names.join(", ")})` : ""}.`,
+        `Compare them with the drafts as approved (the branch's .sova/spec/drafts; references/fixes.md). Only made fit (the same promises, reworded or reordered to fit): merge.rule {entry: "${e.id}", ruling: "checked"${ev.request ? `, request: "${ev.request}"` : ""}}. A new or changed promise: merge.rule {entry: "${e.id}", ruling: "beyond"${ev.request ? `, request: "${ev.request}"` : ""}, text: <what it changes>}; the user decides.`,
+      ].join("\n");
+    }
+    case "fix": {
+      const e = ev.entry;
+      const what = [ev.commit ? `commit ${short(ev.commit)}` : "", ev.drafts ? "its spec drafts" : ""].filter(Boolean).join(" and ") || "its branch";
+      return [
+        `Fix: entry ${e.id} · ${e.branch}'s chat answered request ${ev.request} Fixed, changing ${what}${ev.summary ? `: ${ev.summary}` : ""}.`,
+        `What was asked: ${ev.asked}`,
+        `Check the fix changes only what was asked (references/fixes.md)${ev.commit ? `: \`git diff ${short(e.commit)}..${short(ev.commit)}\` in the project` : ""}. Then rule, in one call:`,
+        `- only what was asked: merge.rule {entry: "${e.id}", request: "${ev.request}", ruling: "checked"} — it goes back in line on the user's Land;`,
+        `- more than was asked: merge.rule {entry: "${e.id}", request: "${ev.request}", ruling: "beyond", text: <what more it changes>} — the user decides.`,
+      ].join("\n");
+    }
+    case "chat-answer": {
+      const e = ev.entry;
+      if (ev.answer === "needs-you")
+        return [
+          `Needs you: entry ${e.id} · ${e.branch}'s chat answered request ${ev.request} that only the user can decide: ${ev.text}`,
+          "It waits for the user as a decision; you can't overrule it. Nothing is needed: end your turn (a note with merge.note if it helps the user).",
+        ].join("\n");
+      return [
+        `Can't: entry ${e.id} · ${e.branch}'s chat answered request ${ev.request} that it can't: ${ev.text}`,
+        ev.otherTried
+          ? `You already tried another approach for it: raise it to the user, merge.rule {entry: "${e.id}", ruling: "needs-user", text: <the question, "can't be settled without you">, choices: [..]}.`
+          : `You may try one other approach: merge.rule {entry: "${e.id}", ruling: "try-again", text: <the other way, for the chat>} (or a resolution of your own with merge.resolve, for a conflict). With no other approach, raise it: merge.rule {entry: "${e.id}", ruling: "needs-user", text: <the question>, choices: [..]}.`,
       ].join("\n");
     }
     case "paused":
@@ -407,12 +499,14 @@ export class MergeThread {
    * The user's answer (merge.reply, or typed on the tab): the question is closed and the answer goes to the
    * thread as its next event. Refused for an unknown or answered question.
    */
-  answer(root: string, id: string, text: string, by: { kind: "chat" | "operator"; session?: string; from: string }): Result<{ ask: MergeThreadAsk }> {
+  answer(root: string, id: string, text: string, by: { kind: "chat" | "operator"; session?: string; from: string; quiet?: true }): Result<{ ask: MergeThreadAsk }> {
     const ask = this.asks(root).find((a) => a.id === id);
     if (!ask) return { ok: false, error: `no question ${id} of this project's merge thread` };
     if (ask.answered) return { ok: false, error: `question ${id} was already answered` };
     const answered: MergeThreadAsk = { ...ask, answered: { at: new Date(this.deps.now()).toISOString(), by: by.kind, ...(by.session ? { session: by.session } : {}) } };
     this.writeAsks(root, (asks) => asks.map((a) => (a.id === id ? answered : a)));
+    // `quiet`: the answer reached the thread already, typed in its own chat with the question beside it (q15).
+    if (by.quiet) return { ok: true, ask: answered };
     this.notify(root, { kind: "answer", ask: { id, question: ask.question, ...(ask.branch ? { branch: ask.branch } : {}) }, text, from: by.from });
     return { ok: true, ask: answered };
   }

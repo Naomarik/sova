@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type Accessor } from "solid-js";
 import { relativeTime } from "../lib/format";
 import { attribution, clock, sentence, short, sourceTag, stepCounts, stepDetail, stepMark, stepTime, unattributedWhy, verdictChip, type MergeEntry, type MergeQueueView, type MergeRun, type RunStep } from "../lib/merge-queue";
-import { answerEntry, mergeChanged, readLog, readRun, refusal } from "../lib/merge-queue-client";
+import { answerEntry, cancelEntry, mergeChanged, readLog, readRun, refusal } from "../lib/merge-queue-client";
 import { createFollowedRead, createRunRead, logFollow } from "../lib/merge-run";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { announce, home, toast } from "../lib/ui-state";
@@ -150,16 +150,18 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
   );
 }
 
-/** Can't tell whose failure: what failed on both sides, and your two answers (merge verbs; nothing goes to the chat). */
+/** Can't tell whose failure: what failed on both sides, and your answers (merge verbs; nothing goes to the chat):
+ *  Land Anyway, Try Again and Remove from Queue. */
 function Unattributed(props: { projectId: string; entry: MergeEntry; target: string }) {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
-  const answer = async (a: MergeAnswer, done: string) => {
+  const remove = () => answer(null, `Removed ${props.entry.branch} from the merge queue.`);
+  const answer = async (a: MergeAnswer | null, done: string) => {
     if (busy()) return;
     setBusy(true);
     setError(null);
     try {
-      const no = refusal(await answerEntry(props.entry, a));
+      const no = refusal(a === null ? await cancelEntry(props.entry) : await answerEntry(props.entry, a));
       if (no) setError(no);
       else {
         toast(done);
@@ -176,15 +178,18 @@ function Unattributed(props: { projectId: string; entry: MergeEntry; target: str
       <Icon name="alert-circle" class="banner-icon" />
       <div class="banner-main">
         <p class="banner-title">Can't tell whose failure. Nothing landed; {props.target} didn't move.</p>
-        <p class="banner-body">{unattributedWhy(props.entry.reason, props.target)} Nobody is blamed. Land Anyway lands the commit it tested; Send Back hands it to its chat.</p>
+        <p class="banner-body">{unattributedWhy(props.entry.reason, props.target)} Nobody is blamed. Land Anyway lands the commit it tested; Try Again checks it afresh.</p>
         <UnclearChecks projectId={props.projectId} unclear={props.entry.unclear} target={props.target} />
         <Show when={error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>
         <div class="button-row mq-card-actions">
           <button type="button" class="button button-sm button-primary" aria-label={`Land ${props.entry.branch} anyway`} disabled={busy()} onClick={() => void answer("land-anyway", `Landing ${props.entry.branch} anyway.`)}>
             Land Anyway
           </button>
-          <button type="button" class="button button-sm button-destructive" aria-label={`Send ${props.entry.branch} back to its chat`} disabled={busy()} onClick={() => void answer("send-back", `Sent ${props.entry.branch} back to its chat.`)}>
-            Send Back
+          <button type="button" class="button button-sm" aria-label={`Try ${props.entry.branch} again`} disabled={busy()} onClick={() => void answer("try-again", `Checking ${props.entry.branch} again.`)}>
+            Try Again
+          </button>
+          <button type="button" class="button button-sm" aria-label={`Remove ${props.entry.branch} from the merge queue`} disabled={busy()} onClick={() => void remove()}>
+            Remove from Queue
           </button>
         </div>
       </div>

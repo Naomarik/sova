@@ -473,6 +473,8 @@
    "project.verb.merge.answer": "scripts",
    "project.verb.merge.review": "scripts",
    "project.verb.merge.retry": "scripts",
+   "project.verb.merge.rule": "scripts",
+   "project.verb.merge.respond": "scripts",
    "project.verb.merge.setup": "scripts",
    "project.verb.merge.ask": "scripts",
    "project.verb.merge.reply": "scripts",

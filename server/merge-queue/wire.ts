@@ -3,8 +3,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LANDING_FILE_NAME } from "../../pi-config/extensions/worktrees/landing.ts";
 import { stateRoot } from "../state-root";
-import { type BranchSummary, branchQueueOf, type LandingSummary, type LandingSummaryProject, type MergeQueueView, type WorktreeMergeProject, type WorktreeMergeStats, type WorktreeQueueInfo } from "../../shared/merge-queue";
+import { type BranchSummary, branchQueueOf, type LandingSummary, type MergeChatRequest, type MergeEntry, type LandingSummaryProject, type MergeQueueView, type WorktreeMergeProject, type WorktreeMergeStats, type WorktreeQueueInfo } from "../../shared/merge-queue";
 import type { RunMerge, ThreadEvent, WakeThread } from "./contract";
+import type { ThreadEntry, ThreadEvent as ThreadMessage } from "./thread";
 import { type IngestDeps, startIngest } from "./ingest";
 import { setLandingNoteSource, setMergeCardNoteSource } from "./card-note";
 import { MergeCards } from "./cards";
@@ -34,6 +35,9 @@ import { gitRefsStamp } from "../worktrees";
  */
 
 let queues: MergeQueues | null = null;
+/** A request's delivery stamped on its entry (ProjectQueue.requestDelivered), once the queues exist. */
+let stampDelivery: (request: string, delivery: "queued" | "delivered" | "fallback-tab" | "fallback-line", session?: string) => Promise<void> = async () => {};
+type ProjectQueueOf<Q> = Q extends { loaded(): Promise<(infer P)[]> } ? P : never;
 /** The branch summaries (branch-summaries.ts), one store for every queue. */
 let summaries: BranchSummaries | null = null;
 /** The summaries' background sweep (summary-sweep.ts): every Ready row's bullets once its chat is idle. */
@@ -467,7 +471,7 @@ async function threadVerbDeps(served: { projectIdOf(root: string): string | null
   };
   return {
     async threadAsk(root, q) {
-      const [{ askUser }, { listSessions }, { sendQueueWake }, { notifyOnce }, { listProjects }] = await Promise.all([import("./asks"), import("../sessions-index"), import("./wake"), import("../push"), import("../projects/spaces")]);
+      const [{ askUser }, { listSessions }, { notifyOnce }, { listProjects }] = await Promise.all([import("./asks"), import("../sessions-index"), import("../push"), import("../projects/spaces")]);
       let projects: { id: string; name: string }[] = [];
       try {
         projects = listProjects();
@@ -475,8 +479,8 @@ async function threadVerbDeps(served: { projectIdOf(root: string): string | null
         projects = [];
       }
       return askUser(keeper(), root, q, {
+        ...(q.decide ? { decide: q.decide } : {}),
         sessions: () => listSessions(),
-        send: (path, text) => sendQueueWake(path, text),
         notify: async (n) => void (await notifyOnce(n)),
         project: (r) => {
           const id = served.projectIdOf(r);
@@ -686,11 +690,33 @@ export async function startMergeQueue(
   // Sova's own project keeps its old private-names file (merge-round.json) until it has its own.
   const self = await projectOf(fileURLToPath(new URL("../..", import.meta.url)));
   const legacyNames = self.state === "ok" ? { root: self.root, file: join(stateRoot(), "merge-round.json") } : undefined;
-  const sendTo = async (session: string, text: string): Promise<void> => {
+  // A request to the branch's chat, on the merge queue's chat queue there (§chat.merge-queue/requests).
+  const sendTo = async (session: string, text: string, info?: { kind?: string; branch?: string; entry?: string }): Promise<void> => {
     const { listSessions } = await import("../sessions-index");
     const s = (await listSessions()).find((x) => x.id === session);
     if (!s) throw new Error(`no session ${session}`);
-    await (await import("./wake")).sendQueueWake(s.path, text);
+    await (await import("./wake")).sendQueueWake(s.path, text, undefined, info);
+  };
+  // The moments the thread rules on (rulings.ts): the queue's event as the thread's message reads it.
+  const rulingEvent = (ev: ThreadEvent, entry: ThreadEntry, base: { base?: string }): ThreadMessage | null => {
+    const run = ev.run ?? "";
+    const why = ev.why ? { summary: ev.why } : {};
+    switch (ev.kind) {
+      case "unattributed":
+        return { kind: "unattributed", entry, run, ...why, ...base };
+      case "review":
+        return { kind: "review", entry, run, findings: ev.findings ?? "", ...base };
+      case "resolution-failed":
+        return { kind: "resolution-failed", entry, run, files: ev.files ?? [], ...why, ...base, ...(ev.scratch ? { scratch: ev.scratch } : {}), ...(ev.scratchError ? { scratchError: ev.scratchError } : {}) };
+      case "drafts-changed":
+        return { kind: "drafts-changed", entry, ...(ev.names ? { names: ev.names } : {}), ...(ev.request ? { request: ev.request } : {}), ...base };
+      case "fix":
+        return { kind: "fix", entry, request: ev.request ?? "", asked: ev.asked ?? "", ...(ev.fixCommit ? { commit: ev.fixCommit } : {}), ...(ev.drafts ? { drafts: true } : {}), ...(ev.summary ? { summary: ev.summary } : {}), ...base };
+      case "chat-answer":
+        return { kind: "chat-answer", entry, request: ev.request ?? "", answer: ev.answer ?? "cant", text: ev.text ?? "", ...(ev.otherTried ? { otherTried: true } : {}) };
+      default:
+        return null;
+    }
   };
   const thread: WakeThread = (ev: ThreadEvent) => {
     const keeper = threadMod.mergeThread();
@@ -709,7 +735,7 @@ export async function startMergeQueue(
                 ? { kind: "names" as const, file: ev.namesFile ?? "", target: ev.target }
                 : ev.kind === "idle"
                   ? { kind: "idle" as const, entry, ...(ev.lastLanded ? { lastLanded: ev.lastLanded } : {}), ...(ev.head ? { head: ev.head } : {}) }
-                  : null;
+                  : rulingEvent(ev, entry, base);
     if (!mapped) return false;
     if (!servedNow.has(servedKey(ev.root))) return false;
     if (!threadMod.hasMergeThread()) return false;
@@ -727,8 +753,10 @@ export async function startMergeQueue(
       if (!path) return null;
       return (await import("../transcript-cards")).lastRowEntry(path);
     },
-    // A hand-back's wake: a normal message (queued after a turn in flight), its text marked as the queue's.
+    // A hand-back: a request on the merge queue's chat queue in the branch's chat (§chat.merge-queue/requests).
     wake: sendTo,
+    dropRequests: (entry) => void import("../topics").then((t) => t.dropMergeRequests(entry)),
+    delivered: (request, delivery) => void stampDelivery(request, delivery),
     publish: (session, list) => publishFeed({ type: "merge_cards", session, cards: list }),
     log: (line) => console.warn(line),
   });
@@ -791,7 +819,7 @@ export async function startMergeQueue(
       publishFeed({ type: "merge_queue", project: view.project, view });
       cardsDo(mc.sync(view));
     },
-    // A trial's end reaches the chat that started it, as a queue wake (it ends its turn and is woken).
+    // A trial's end reaches the chat that started it, as a request on its merge queue chat queue (between turns).
     trialEnded: (t, run) => {
       if (t.by.kind !== "chat" || !t.by.session) return;
       const session = t.by.session;
@@ -799,10 +827,18 @@ export async function startMergeQueue(
         const path = await sessionPath(session);
         if (!path) return;
         (await import("../merge-readiness")).rereadReadiness(path);
-        await (await import("./wake")).sendQueueWake(path, trialEndedText(t, run));
+        await (await import("./wake")).sendQueueWake(path, trialEndedText(t, run), undefined, { kind: "trial", ...(t.branch ? { branch: t.branch } : {}) });
       })().catch((err) => console.warn(`[merge-queue] trial note to ${session}: ${err instanceof Error ? err.message : err}`));
     },
     // Why a sent-back branch's newest commit isn't Ready to land: its chat's last readiness reading, never a fresh read.
+    // The chat's own newest check run, as its last readiness reading saw it (never a fresh read): a failing one keeps a
+    // fix out of line (§app.merge-queue/standing-approval), in the words Ready to land uses.
+    chatCheckFailing: async (session) => {
+      const [{ listSessions }, { readinessChecksOf }, { lastCheckWords }] = await Promise.all([import("../sessions-index"), import("../merge-readiness"), import("../ready-to-land")]);
+      const path = (await listSessions()).find((s) => s.id === session)?.path;
+      const c = path ? readinessChecksOf(path)?.lastCheck : undefined;
+      return c && !c.ok ? lastCheckWords(c) : null;
+    },
     newestReading: async (worktree, tip) => {
       const [{ listSessions }, { readinessReading }, { newestReadingOf }] = await Promise.all([import("../sessions-index"), import("../merge-readiness"), import("../ready-to-land")]);
       return newestReadingOf(worktree, tip, { owner: worktreeOwnerOf, pathOf: async (id) => (await listSessions()).find((s) => s.id === id)?.path, reading: readinessReading, canonical });
@@ -818,11 +854,19 @@ export async function startMergeQueue(
         .catch((err) => console.warn(`[merge-queue] ${root}: notification not sent: ${err instanceof Error ? err.message : String(err)}`));
     },
     // The branch's card in its own chat: raised at the approval, a revision at each outcome (cards.ts).
+    // A merge thread question answered from the branch's chat with its decision: closed, and handed to the thread.
+    answerAsk: (root, ask, text, session) => {
+      const r = threadMod.mergeThreadKeeper()?.answer(root, ask, text, { kind: "chat", ...(session ? { session } : {}), from: "the user, in the branch's chat" });
+      if (r && !r.ok) console.warn(`[merge-queue] ${root}: answer to ${ask} not passed on: ${r.error}`);
+    },
     notify: (kind, e, extra) => {
       // An approved branch was Ready to land at its commit: its summary is written if it has none yet.
       // An approval's goes to the front of the line.
       if (kind === "approved") summaryFor(extra.root, e.branch, e.commit, true);
-      cardsDo(kind === "approved" ? mc.approved(e, extra.root) : mc.outcome(kind, e, { ...(extra.run ? { run: extra.run } : {}), root: extra.root }));
+      const request = (extra as { request?: MergeChatRequest }).request;
+      // A request that is no outcome of its own goes to the chat as itself (§chat.merge-queue/requests).
+      if (request && kind !== "needs-fix" && kind !== "sent-back") return cardsDo(mc.request(e, request, extra.run));
+      cardsDo(kind === "approved" ? mc.approved(e, extra.root) : mc.outcome(kind as never, e, { ...(extra.run ? { run: extra.run } : {}), root: extra.root, ...(request ? { request } : {}) }));
     },
     summaryOf: (root, branch, commit): BranchSummary | undefined => bs.summaryOf(root, branch, commit),
     pruneSummaries: (root, live, shown) => void bs.prune(root, live, shown),
@@ -852,6 +896,53 @@ export async function startMergeQueue(
     releaseEvent: (ev) => releaseWire.releaseEvent(ev),
   });
   const q = queues;
+  // The merge queue's chat queue (§chat.merge-queue/requests, channel.ts): delivery stamps, Stop's pause, and the held
+  // note of a decision going with the user's own message.
+  stampDelivery = async (request, delivery, session) => {
+    for (const pq of await q.loaded()) if (pq.requestOf(request)) return pq.requestDelivered(request, delivery, session);
+    // A before-Land request (readiness's notes, no entry): the chat it reached may answer it (answers.ts).
+    if (delivery === "delivered" && session) (await import("./answers")).looseDelivered(request, session);
+  };
+  const { setChannelHooks } = await import("./channel");
+  setChannelHooks({
+    requestDelivered: (request, delivery, session) => void stampDelivery(request, delivery, session).catch(() => {}),
+    chatPaused: (sessionId, paused) =>
+      void q
+        .loaded()
+        .then((all) => Promise.all(all.map((pq) => pq.chatPaused(sessionId, paused))))
+        .catch((err) => console.warn(`[merge-queue] pause of ${sessionId}: ${err instanceof Error ? err.message : err}`)),
+    takeHeldNote: async (chat, userText, decision) => {
+      const loaded = await q.loaded();
+      // A question held on the tab (q15): the user answers in the merge thread's own chat; their message carries it.
+      const keeper = threadMod.mergeThreadKeeper();
+      for (const pq of loaded) {
+        if (!keeper?.isThreadChat(pq.root, chat.sessionId)) continue;
+        // The question the composer named (`ak_…`), else the newest one held on the tab; a decision id is no question.
+        if (decision && !decision.startsWith("ak_")) break;
+        const ask = decision ? keeper.asks(pq.root).find((x) => x.id === decision && !x.answered) : keeper.openAsk(pq.root);
+        if (!ask?.onTab) continue;
+        const r = keeper.answer(pq.root, ask.id, userText, { kind: "operator", from: "the user, in the merge thread", quiet: true });
+        if (r.ok) return { request: ask.id, ...(ask.branch ? { branch: ask.branch } : {}), text: `The question you asked the user (${ask.id}${ask.branch ? `, about ${ask.branch}` : ""}): ${ask.question}\nTheir message above is their answer.` };
+      }
+      const waiting: { pq: ProjectQueueOf<typeof q>; e: MergeEntry }[] = [];
+      for (const pq of loaded) for (const e of pq.entries()) if (e.decision && !e.decision.answered && e.decision.heldNote) waiting.push({ pq, e });
+      if (!waiting.length) return null;
+      const [{ listSessions }, { askTarget }] = await Promise.all([import("../sessions-index"), import("./asks")]);
+      const sessions = await listSessions();
+      // The decision the user answered: the one their composer named, else the newest waiting here (the card nearest
+      // the message box). Never another chat's, never an older one by queue order.
+      const { pickHeldDecision } = await import("./channel");
+      const pick = pickHeldDecision(waiting, chat.sessionId, decision, (e) => askTarget(e, sessions)?.id);
+      for (const { pq, e } of pick ? [pick] : []) {
+        const d = e.decision!;
+        const held = await pq.decisionAnswered(e.id, d.id, userText, { session: chat.sessionId });
+        if (!held) continue;
+        void stampDelivery(held.request, "delivered", chat.sessionId).catch(() => {});
+        return { request: held.request, branch: e.branch, text: held.text };
+      }
+      return null;
+    },
+  });
   // A served tree that reads Ready to land at a commit (merge-readiness.ts): its branch summary is written.
   const { configureReadiness } = await import("../merge-readiness");
   configureReadiness({

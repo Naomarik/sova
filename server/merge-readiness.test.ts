@@ -1275,7 +1275,7 @@ test("b2: one uncommitted file, a commit ahead, idle, check ok: ready to merge w
 });
 
 test("Ready to land: decisions off falls back to the code-only conditions; a running turn, a failing check or an open question stops it; drafts land with it once Sova's try says they would, and drafts that wouldn't read Landing specs with Sova telling the session once per commit", async () => {
-  const { fileLandingStore, landingOf, landingReason, specsWhyOf } = await import("./ready-to-land");
+  const { fileLandingStore, landingOf, landingReason } = await import("./ready-to-land");
   type DocsPreview = import("./ready-to-land").DocsPreview;
   const t = { readable: true, merged: false, dirty: false, ahead: 2, head: "d".repeat(40) };
   assert.equal(landingOf(t, "ready", "off", false, undefined)?.state, "ready", "decisions off: code-only");
@@ -1292,8 +1292,20 @@ test("Ready to land: decisions off falls back to the code-only conditions; a run
   const noNote = "§x/new (draft a): §x/new has no verification note from its chat";
   assert.deepEqual(landingOf(t, s, "yes", false, docs({ ...fits, problems: [noNote] }), "the tools are missing"), { state: "specs", commit: t.head, drafts: ["a", "b"], specsWhy: "the tools are missing", docs: { drafts: 2, added: 1, changed: 1, names: ["§x/new", "§x/old"], problems: [noNote] } });
   assert.equal(landingReason(landingOf(t, s, "yes", false, docs(fits))!, 3), "Ready to land · 3 commits ahead · docs: 1 new, 1 changed");
-  assert.equal(specsWhyOf("Done.\nCan't land specs: the spec tools aren't installed here."), "the spec tools aren't installed here");
-  assert.equal(specsWhyOf("Nothing to say."), undefined);
+  // The chat's reason is its Can't answer to Sova's drafts request (merge.respond), never a line in its reply.
+  {
+    const dir = mkdtempSync(join(tmpdir(), "rtl-asks-"));
+    const store = fileLandingStore(() => join(dir, "ready-to-land.json"));
+    store.asked("s1", "/wt/a", t.head, "rq_0123456789ab", "drafts");
+    assert.equal(store.cantWhy("s1", "/wt/a", t.head), undefined, "asked, not answered");
+    store.delivered("rq_0123456789ab", "parent");
+    assert.equal(store.ask("rq_0123456789ab")?.to, "parent");
+    store.answer("rq_0123456789ab", { kind: "cant", text: "the spec tools aren't installed here", at: 1 });
+    store.answer("rq_0123456789ab", { kind: "fixed", text: "again", at: 2 });
+    assert.equal(store.cantWhy("s1", "/wt/a", t.head), "the spec tools aren't installed here", "answered once; the first answer stands");
+    assert.equal(store.cantWhy("s1", "/wt/a", "f".repeat(40)), undefined, "only at the head it was asked at");
+    rmSync(dir, { recursive: true, force: true });
+  }
 
   // The nudge, end to end: once per commit, never for a session a TUI holds.
   const lines = chain([worktrees([tracked()], "2026-10-23T10:00:00.000Z"), assistant([{ type: "text", text: "Done." }], "stop", "2026-10-23T10:05:00.000Z")]);
@@ -1309,7 +1321,7 @@ test("Ready to land: decisions off falls back to the code-only conditions; a run
     const tr = r.readinessReading(path);
     assert.ok(tr.known && tr.value?.trees[0]?.landing?.state === "specs");
     assert.equal(sent.length, 1);
-    assert.match(sent[0]!, /^\[merge-queue\] feat\/agents-row-dropdown is finished at eeeeeee, but its spec drafts wouldn't land with it: §x\/a \(draft landing-offer\): §x\/a has no verification note from its chat\. .*--note --write.*Can't land specs: <why>\.$/);
+    assert.match(sent[0]!, /^\[merge-queue\] feat\/agents-row-dropdown is finished at eeeeeee, but its spec drafts wouldn't land with it: §x\/a \(draft landing-offer\): §x\/a has no verification note from its chat\. .*--note --write.*merge\.respond: Fixed \(drafts: true\), or Can't with why\.$/);
     assert.doesNotMatch(sent[0]!, /Land It|promote/);
     now += r.READINESS_TTL_MS + 1;
     r.readinessOverlay(row);

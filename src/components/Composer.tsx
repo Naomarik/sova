@@ -239,6 +239,9 @@ export function Composer(props: {
   } | null;
   /** Whether the draft holds anything to send (text or an attachment), as it changes. */
   onDraft?(has: boolean): void;
+  /** The merge queue's note held "not sent yet" for the user's next message (§chat.merge-queue/decision), or the merge
+      thread's question held in its own chat (§chat.merge-queue/asks): the line above the box, in full. */
+  heldNotes?: string[];
 }) {
   const [text, setText] = createSignal(drafts.get(props.path) ?? "");
   const localOpts = () => ({ clear: !!props.onClear, mode: !!props.onMode });
@@ -1087,6 +1090,16 @@ export function Composer(props: {
         </Show>
         {runStatus()}
 
+        <For each={props.heldNotes ?? []}>
+          {(line) => (
+            <div class="align-picks mq-held-line" role="note" aria-label={line}>
+              <Icon name="branch" small />
+              <span class="align-picks-text" title={line}>
+                {line}
+              </span>
+            </div>
+          )}
+        </For>
         <Show when={props.picks}>
           {(p) => (
             <div class="align-picks" role="group" aria-label="Staged answers">

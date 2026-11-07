@@ -94,6 +94,8 @@ export type CommandId =
   | "project.verb.merge.clear"
   | "project.verb.merge.hold"
   | "project.verb.merge.try"
+  | "project.verb.merge.rule"
+  | "project.verb.merge.respond"
   | "project.verb.release.status"
   | "project.verb.release.logs"
   | "project.verb.release.request"
@@ -1323,7 +1325,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1343,6 +1345,14 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb merge.logs, as the operator (sova-project merge.logs). (only looks; needs the card's owner trusted) */
   "project.verb.merge.logs": {
@@ -1388,7 +1398,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1408,6 +1418,14 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb merge.add, as the operator (sova-project merge.add). (changes something; needs the card's owner trusted) */
   "project.verb.merge.add": {
@@ -1453,7 +1471,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1473,6 +1491,14 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb merge.cancel, as the operator (sova-project merge.cancel). (changes something; needs the card's owner trusted) */
   "project.verb.merge.cancel": {
@@ -1518,7 +1544,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1538,6 +1564,14 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb merge.pause, as the operator (sova-project merge.pause). (changes something; needs the card's owner trusted) */
   "project.verb.merge.pause": {
@@ -1583,7 +1617,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1603,6 +1637,14 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb merge.resume, as the operator (sova-project merge.resume). (changes something; needs the card's owner trusted) */
   "project.verb.merge.resume": {
@@ -1648,7 +1690,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1668,6 +1710,14 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb merge.note, as the operator (sova-project merge.note). (changes something; needs the card's owner trusted) */
   "project.verb.merge.note": {
@@ -1713,7 +1763,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1733,6 +1783,14 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb merge.extend, as the operator (sova-project merge.extend). (changes something; needs the card's owner trusted) */
   "project.verb.merge.extend": {
@@ -1778,7 +1836,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1798,6 +1856,14 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb merge.resolve, as the operator (sova-project merge.resolve). (changes something; needs the card's owner trusted) */
   "project.verb.merge.resolve": {
@@ -1843,7 +1909,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1863,6 +1929,14 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb merge.answer, as the operator (sova-project merge.answer). (changes something; needs the card's owner trusted) */
   "project.verb.merge.answer": {
@@ -1908,7 +1982,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1928,6 +2002,14 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb merge.review, as the operator (sova-project merge.review). (changes something; needs the card's owner trusted) */
   "project.verb.merge.review": {
@@ -1973,7 +2055,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1993,6 +2075,14 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb merge.retry, as the operator (sova-project merge.retry). (changes something; needs the card's owner trusted) */
   "project.verb.merge.retry": {
@@ -2038,7 +2128,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2058,6 +2148,14 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb merge.setup, as the operator (sova-project merge.setup). (changes something; needs the card's owner trusted) */
   "project.verb.merge.setup": {
@@ -2103,7 +2201,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2123,6 +2221,14 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb merge.ask, as the operator (sova-project merge.ask). (changes something; needs the card's owner trusted) */
   "project.verb.merge.ask": {
@@ -2168,7 +2274,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2188,6 +2294,14 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb merge.reply, as the operator (sova-project merge.reply). (changes something; needs the card's owner trusted) */
   "project.verb.merge.reply": {
@@ -2233,7 +2347,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2253,6 +2367,14 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb merge.fresh, as the operator (sova-project merge.fresh). (changes something; needs the card's owner trusted) */
   "project.verb.merge.fresh": {
@@ -2298,7 +2420,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2318,6 +2440,14 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb merge.clear, as the operator (sova-project merge.clear). (changes something; needs the card's owner trusted) */
   "project.verb.merge.clear": {
@@ -2363,7 +2493,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2383,6 +2513,14 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb merge.hold, as the operator (sova-project merge.hold). (changes something; needs the card's owner trusted) */
   "project.verb.merge.hold": {
@@ -2428,7 +2566,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2448,6 +2586,14 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb merge.try, as the operator (sova-project merge.try). (changes something; needs the card's owner trusted) */
   "project.verb.merge.try": {
@@ -2493,7 +2639,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** accept | send-back | land-anyway */
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2513,6 +2659,160 @@ export interface CommandParams {
     "ask"?: string;
     /** merge.hold: set | clear */
     "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
+  };
+  /** The project verb merge.rule, as the operator (sova-project merge.rule). (changes something; needs the card's owner trusted) */
+  "project.verb.merge.rule": {
+    /** The project's root */
+    "project"?: string;
+    /** A branch name */
+    "branch"?: string;
+    /** A checkout's path */
+    "checkout"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** A merge queue entry id */
+    "entry"?: string;
+    /** A merge run id */
+    "run"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** A note on the entry */
+    "note"?: string;
+    /** Land without its spec drafts */
+    "without-specs"?: boolean;
+    /** Land without the review step */
+    "without-review"?: boolean;
+    /** The chat the approval was given in */
+    "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
+    /** Check ids, comma-separated */
+    "checks"?: string[];
+    /** Test selectors, comma-separated */
+    "select"?: string[];
+    /** Why */
+    "why"?: string;
+    /** A verdict */
+    "verdict"?: string;
+    /** Files, comma-separated */
+    "files"?: string[];
+    /** The target's side, in plain words */
+    "ours"?: string;
+    /** The branch's side, in plain words */
+    "theirs"?: string;
+    /** The proposed resolution, in plain words */
+    "proposal"?: string;
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    "answer"?: string;
+    /** Text */
+    "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
+    "dry-run"?: boolean;
+    /** A merge thread question id */
+    "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
+  };
+  /** The project verb merge.respond, as the operator (sova-project merge.respond). (changes something; needs the card's owner trusted) */
+  "project.verb.merge.respond": {
+    /** The project's root */
+    "project"?: string;
+    /** A branch name */
+    "branch"?: string;
+    /** A checkout's path */
+    "checkout"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** A merge queue entry id */
+    "entry"?: string;
+    /** A merge run id */
+    "run"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** A note on the entry */
+    "note"?: string;
+    /** Land without its spec drafts */
+    "without-specs"?: boolean;
+    /** Land without the review step */
+    "without-review"?: boolean;
+    /** The chat the approval was given in */
+    "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
+    /** Check ids, comma-separated */
+    "checks"?: string[];
+    /** Test selectors, comma-separated */
+    "select"?: string[];
+    /** Why */
+    "why"?: string;
+    /** A verdict */
+    "verdict"?: string;
+    /** Files, comma-separated */
+    "files"?: string[];
+    /** The target's side, in plain words */
+    "ours"?: string;
+    /** The branch's side, in plain words */
+    "theirs"?: string;
+    /** The proposed resolution, in plain words */
+    "proposal"?: string;
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    "answer"?: string;
+    /** Text */
+    "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
+    "dry-run"?: boolean;
+    /** A merge thread question id */
+    "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
   };
   /** The project verb release.status, as the operator (sova-project release.status). (only looks; needs the card's owner trusted) */
   "project.verb.release.status": {
@@ -3833,6 +4133,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.verb.merge.clear": "changes",
   "project.verb.merge.hold": "changes",
   "project.verb.merge.try": "changes",
+  "project.verb.merge.rule": "changes",
+  "project.verb.merge.respond": "changes",
   "project.verb.release.status": "looks",
   "project.verb.release.logs": "looks",
   "project.verb.release.request": "changes",

@@ -5,6 +5,7 @@ import type { SessionSummary } from "../shared/protocol";
 import { formatTopicBatch } from "../shared/topic-message";
 import type { PairRecord } from "./topic-store";
 import { endPairing, onTopicPush, topicStore } from "./topics";
+import { chatPaused, requestDelivered } from "./merge-queue/channel";
 
 /**
  * Topic delivery (§chat.topics/delivery): when a topic's receiver gets its next batch. A push to an
@@ -246,11 +247,18 @@ export class TopicDelivery {
     // Only the partner may push here, so the newest note's title is the partner's title now.
     const of = rec.pairing ? s.pairOfTopic(topic) : null;
     const pair = of ? { partner: now[now.length - 1]!.from.title, reply: of.dir === "toA" ? of.pair.b.topic : of.pair.a.topic } : undefined;
-    const text = formatTopicBatch({ topic, batch, notes: now, ...(pair ? { pair } : {}) });
+    // The merge queue's topic: its own framing, each note naming its request (§chat.merge-queue/requests).
+    const notes = now.map((it) => ({ id: it.id, from: it.from, at: it.at, text: it.text, ...(rec.mergeQueue && it.request ? { request: { id: it.request.id, ...(it.request.branch ? { branch: it.request.branch } : {}) } } : {}) }));
+    const text = formatTopicBatch({ topic, batch, notes, ...(pair ? { pair } : {}), ...(rec.mergeQueue ? { mergeQueue: true as const } : {}) });
     const ids = now.map((it) => it.id);
     const entered = () => {
       if (this.inFlight.get(topic) === batch) this.inFlight.delete(topic);
       s.ack(topic, ids, batch, rec.receiver.sessionId);
+      // The merge queue hears each request reached its chat, and that Stop no longer holds them (§chat.merge-queue/requests).
+      if (rec.mergeQueue) {
+        for (const it of now) if (it.request) requestDelivered(it.request.id, "delivered", rec.receiver.sessionId);
+        chatPaused(rec.receiver.sessionId, false);
+      }
       // The rest of a backlog over one batch's size goes at the next settle (receiverIdle).
     };
     const gone = () => {
@@ -275,6 +283,8 @@ export class TopicDelivery {
       off();
       this.inFlight.delete(topic);
     }
+    // Stop holds the merge queue's requests: its card says so (§chat.merge-queue/chat-card).
+    if (r === "paused" && rec.mergeQueue) chatPaused(rec.receiver.sessionId, true);
     return r;
   }
 }

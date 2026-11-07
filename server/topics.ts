@@ -4,7 +4,9 @@ import { toPiTool } from "./harness/pi/tools";
 import { existsSync } from "node:fs";
 import { isArchived } from "./archived-sessions";
 import { Refusal, text } from "./session-guards";
-import { pairPaused, type PairRecord, TOPIC_TEXT_MAX, TopicStore } from "./topic-store";
+import { randomBytes } from "node:crypto";
+import { MERGE_QUEUE_NOTE_SENDER, MERGE_REQUEST_ID_RE } from "../shared/topic-message";
+import { pairPaused, type PairRecord, TOPIC_TEXT_MAX, type TopicItem, TopicStore } from "./topic-store";
 
 /**
  * Topic queues' tools (§chat.topics/open, §chat.topics/push). `queue_push` is in every ordinary
@@ -87,7 +89,7 @@ export interface PushingSession extends Omit<PusherContext, "title"> {
 export function inviteFromSend(senderId: string, targetId: string, sent: string): { accepted(): string[]; refused(): void } {
   const s = topicStore();
   const made: string[] = [];
-  for (const [name, t] of s.openTopics()) if (t.receiver.sessionId === senderId && !t.pairing && namesTopic(sent, name) && s.invite(name, targetId)) made.push(name);
+  for (const [name, t] of s.openTopics()) if (t.receiver.sessionId === senderId && !t.pairing && !t.mergeQueue && namesTopic(sent, name) && s.invite(name, targetId)) made.push(name);
   return {
     accepted: () => {
       for (const name of made) s.audit({ sessionId: senderId, tool: "session_send", topic: name, outcome: "invited", target: targetId });
@@ -118,6 +120,56 @@ const receiverGone = (r: { sessionId: string; path: string }): boolean => !exist
  * receiver found gone get the same sentence as a name that isn't open, so nothing tells them apart
  * but the audit's `reason`.
  */
+function told(topic: string): void {
+  for (const fn of pushListeners) {
+    try {
+      fn(topic);
+    } catch (err) {
+      console.error("[topics] push listener failed", err);
+    }
+  }
+}
+
+/** The longest merge queue request kept; past it the text is cut (never refused). */
+export const MERGE_REQUEST_TEXT_MAX = 16_000;
+
+export interface MergeRequestPush {
+  /** Its id (`rq_` and 12 hex); one is made when absent. */
+  id?: string;
+  branch?: string;
+  entry?: string;
+  kind?: string;
+  text: string;
+}
+
+/**
+ * The merge queue's push (§chat.merge-queue/requests, §chat.topics/push): one request onto the
+ * receiver's merge queue topic, opened when it has none, from the reserved sender "Merge queue".
+ * Never refused for limits; it fires delivery as a session's push does. The caller has decided the
+ * receiver can take notes. Returns the request's id and the topic.
+ */
+export function pushMergeRequest(receiver: { sessionId: string; path: string }, req: MergeRequestPush, project?: string | null): { id: string; topic: string; item: string } {
+  const s = topicStore();
+  const id = req.id && MERGE_REQUEST_ID_RE.test(req.id) ? req.id : `rq_${randomBytes(6).toString("hex")}`;
+  const { name } = s.openMergeQueue(receiver, project);
+  let body = String(req.text ?? "").trim() || "(no text)";
+  if (body.length > MERGE_REQUEST_TEXT_MAX) body = `${body.slice(0, MERGE_REQUEST_TEXT_MAX - 1)}…`;
+  const request: NonNullable<TopicItem["request"]> = { id, ...(req.branch ? { branch: req.branch } : {}), ...(req.entry ? { entry: req.entry } : {}), ...(req.kind ? { kind: req.kind } : {}) };
+  const r = s.push(name, { ...MERGE_QUEUE_NOTE_SENDER }, body, request);
+  if (!r.ok) throw new Error(r.error); // never: the merge queue's topic takes every note
+  s.audit({ sessionId: receiver.sessionId, tool: "merge_queue", topic: name, outcome: "ok", item: r.id });
+  told(name);
+  return { id, topic: name, item: r.id };
+}
+
+/** Drop the undelivered requests of a merge queue entry (Remove from Queue), in every chat. */
+export function dropMergeRequests(entry: string): number {
+  const s = topicStore();
+  let n = 0;
+  for (const [name, t] of s.openTopics()) if (t.mergeQueue) n += s.drop(name, (it) => it.request?.entry === entry, "removed");
+  return n;
+}
+
 export function pushNote(ctx: PusherContext, params: { topic?: unknown; text?: unknown }): string {
   const s = topicStore();
   const sessionId = ctx.sessionId();
@@ -168,13 +220,7 @@ export function pushNote(ctx: PusherContext, params: { topic?: unknown; text?: u
   pushTimes.set(key, recent);
   if (paired) s.countPairNote(paired.pair.id, paired.dir);
   s.audit({ sessionId, tool: "queue_push", topic, outcome: "ok", item: (r as { id: string }).id });
-  for (const fn of pushListeners) {
-    try {
-      fn(topic);
-    } catch (err) {
-      console.error("[topics] push listener failed", err);
-    }
-  }
+  told(topic);
   return `Queued on "${topic}".`;
 }
 

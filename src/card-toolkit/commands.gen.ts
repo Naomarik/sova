@@ -1427,7 +1427,7 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
-  /** The project verb merge.add, as the operator (sova-project merge.add). (changes something; needs the card's owner trusted) */
+  /** The project verb merge.add (sova-project merge.add): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.add": {
     /** The project's root */
     "project"?: string;
@@ -1500,7 +1500,7 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
-  /** The project verb merge.cancel, as the operator (sova-project merge.cancel). (changes something; needs the card's owner trusted) */
+  /** The project verb merge.cancel (sova-project merge.cancel): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.cancel": {
     /** The project's root */
     "project"?: string;
@@ -1573,7 +1573,7 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
-  /** The project verb merge.pause, as the operator (sova-project merge.pause). (changes something; needs the card's owner trusted) */
+  /** The project verb merge.pause (sova-project merge.pause): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.pause": {
     /** The project's root */
     "project"?: string;
@@ -1646,7 +1646,7 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
-  /** The project verb merge.resume, as the operator (sova-project merge.resume). (changes something; needs the card's owner trusted) */
+  /** The project verb merge.resume (sova-project merge.resume): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.resume": {
     /** The project's root */
     "project"?: string;
@@ -1719,7 +1719,7 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
-  /** The project verb merge.note, as the operator (sova-project merge.note). (changes something; needs the card's owner trusted) */
+  /** The project verb merge.note (sova-project merge.note): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.note": {
     /** The project's root */
     "project"?: string;
@@ -1792,7 +1792,7 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
-  /** The project verb merge.extend, as the operator (sova-project merge.extend). (changes something; needs the card's owner trusted) */
+  /** The project verb merge.extend (sova-project merge.extend): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.extend": {
     /** The project's root */
     "project"?: string;
@@ -1865,7 +1865,7 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
-  /** The project verb merge.resolve, as the operator (sova-project merge.resolve). (changes something; needs the card's owner trusted) */
+  /** The project verb merge.resolve (sova-project merge.resolve): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.resolve": {
     /** The project's root */
     "project"?: string;
@@ -1938,7 +1938,7 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
-  /** The project verb merge.answer, as the operator (sova-project merge.answer). (changes something; needs the card's owner trusted) */
+  /** The project verb merge.answer (sova-project merge.answer): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.answer": {
     /** The project's root */
     "project"?: string;
@@ -2011,7 +2011,7 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
-  /** The project verb merge.review, as the operator (sova-project merge.review). (changes something; needs the card's owner trusted) */
+  /** The project verb merge.review (sova-project merge.review): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.review": {
     /** The project's root */
     "project"?: string;
@@ -2084,7 +2084,7 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
-  /** The project verb merge.retry, as the operator (sova-project merge.retry). (changes something; needs the card's owner trusted) */
+  /** The project verb merge.retry (sova-project merge.retry): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.retry": {
     /** The project's root */
     "project"?: string;
@@ -2157,7 +2157,7 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
-  /** The project verb merge.setup, as the operator (sova-project merge.setup). (changes something; needs the card's owner trusted) */
+  /** The project verb merge.setup (sova-project merge.setup): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.setup": {
     /** The project's root */
     "project"?: string;
@@ -2230,7 +2230,7 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
-  /** The project verb merge.ask, as the operator (sova-project merge.ask). (changes something; needs the card's owner trusted) */
+  /** The project verb merge.ask (sova-project merge.ask): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.ask": {
     /** The project's root */
     "project"?: string;
@@ -2303,7 +2303,7 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
-  /** The project verb merge.reply, as the operator (sova-project merge.reply). (changes something; needs the card's owner trusted) */
+  /** The project verb merge.reply (sova-project merge.reply): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.reply": {
     /** The project's root */
     "project"?: string;
@@ -2376,7 +2376,7 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
-  /** The project verb merge.fresh, as the operator (sova-project merge.fresh). (changes something; needs the card's owner trusted) */
+  /** The project verb merge.fresh (sova-project merge.fresh): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.fresh": {
     /** The project's root */
     "project"?: string;
@@ -2449,7 +2449,7 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
-  /** The project verb merge.clear, as the operator (sova-project merge.clear). (changes something; needs the card's owner trusted) */
+  /** The project verb merge.clear (sova-project merge.clear): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.clear": {
     /** The project's root */
     "project"?: string;
@@ -2522,7 +2522,7 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
-  /** The project verb merge.hold, as the operator (sova-project merge.hold). (changes something; needs the card's owner trusted) */
+  /** The project verb merge.hold (sova-project merge.hold): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.hold": {
     /** The project's root */
     "project"?: string;
@@ -2668,7 +2668,7 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
-  /** The project verb merge.rule, as the operator (sova-project merge.rule). (changes something; needs the card's owner trusted) */
+  /** The project verb merge.rule (sova-project merge.rule): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.rule": {
     /** The project's root */
     "project"?: string;
@@ -2741,7 +2741,7 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
-  /** The project verb merge.respond, as the operator (sova-project merge.respond). (changes something; needs the card's owner trusted) */
+  /** The project verb merge.respond (sova-project merge.respond): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.respond": {
     /** The project's root */
     "project"?: string;
@@ -3429,7 +3429,7 @@ export interface CommandParams {
     /** The project's id */
     "pid": string;
   };
-  /** Merge a coding session's worktree branch into its target. (changes something; needs the card's owner trusted) */
+  /** Merge a coding session's worktree branch into its target. The user's own page only: a chat, an Overseer or a script is refused. (changes something; needs the card's owner trusted) */
   "project.worktree.merge": {
     /** The project's id */
     "pid": string;

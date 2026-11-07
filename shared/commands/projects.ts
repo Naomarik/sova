@@ -32,10 +32,14 @@ export const VERB_ENTRIES: CommandEntry[] = [...VERBS, ...DEPLOY_VERBS, ...MERGE
   const merge = (MERGE_VERBS as readonly string[]).includes(verb);
   const release = (RELEASE_VERBS as readonly string[]).includes(verb);
   const reads = (READ_VERBS as readonly string[]).includes(verb) || (DEPLOY_READ_VERBS as readonly string[]).includes(verb) || (MERGE_READ_VERBS as readonly string[]).includes(verb) || (RELEASE_READ_VERBS as readonly string[]).includes(verb);
+  // A merge act (al_3, q12): the user's own page, or the chat the verb is for; never a script holding the token.
+  const pageOnly = merge && !reads && verb !== "merge.try";
   return {
     id: `project.verb.${verb}`,
     label: `Project ${verb}`,
-    summary: `The project verb ${verb}, as the operator (sova-project ${verb}).`,
+    summary: pageOnly
+      ? `The project verb ${verb} (sova-project ${verb}): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused.`
+      : `The project verb ${verb}, as the operator (sova-project ${verb}).`,
     effect: reads ? "looks" : "changes",
     params: deploy ? DEPLOY_PARAMS : merge ? MERGE_PARAMS : release ? RELEASE_PARAMS : INSTANCE_PARAMS,
     route: { method: "POST", path: `/api/project-services/${verb}` },
@@ -319,7 +323,7 @@ const PROJECTS_SWEEP: CommandEntry[] = [
   changes("project.unarchive", "Unarchive Project", "Bring an archived project back.", "POST", "/api/projects/:pid/unarchive", { pid }),
   changes("project.preview.off", "Turn Off Preview Link", "Turn a preview link off at once.", "POST", "/api/previews/:id/off", { id: previewId }),
   looks("project.worktree.list", "List Project Worktrees", "A project's coding sessions' worktrees and their branches.", "/api/projects/:pid/overseer/worktrees"),
-  changes("project.worktree.merge", "Merge Worktree", "Merge a coding session's worktree branch into its target.", "POST", "/api/projects/:pid/overseer/worktrees/merge", { pid, "session-id": codingSession }),
+  changes("project.worktree.merge", "Merge Worktree", "Merge a coding session's worktree branch into its target. The user's own page only: a chat, an Overseer or a script is refused.", "POST", "/api/projects/:pid/overseer/worktrees/merge", { pid, "session-id": codingSession }),
   changes("project.worktree.remove", "Remove Worktree", "Remove a coding session's worktree; its branch goes too only when merged.", "POST", "/api/projects/:pid/overseer/worktrees/remove", { pid, "session-id": codingSession }),
   looks("project.files.list", "List Project Files", "The files a project keeps.", "/api/projects/:pid/files"),
   looks("project.offers.list", "List Project Offers", "A project's offers file, read now: each offer, its buttons, run approval and shown/used counts.", "/api/projects/:pid/offers"),

@@ -204,7 +204,7 @@ export const agentTypes = (s: CardSnapshot | null): CardDecl[] => (s?.types ?? [
 // ---- the card on the wire -----------------------------------------------------------------------
 
 /** Who raised a card (§chat.transcript-cards/raise-command, "The card says who raised it"). */
-export type CardRaiser = { kind: "agent" } | { kind: "script" } | { kind: "chat"; title: string } | { kind: "extension"; title: string };
+export type CardRaiser = { kind: "agent" } | { kind: "script" } | { kind: "chat"; title: string } | { kind: "extension"; title: string; id?: string };
 
 /** An answer's value: a question's option, a button, or a checklist's ticks. */
 export type CardAnswerValue = { option: number } | { button: number } | { items: boolean[] } | { view: unknown };
@@ -446,3 +446,15 @@ export function cardToolParameters(s: CardSnapshot): Record<string, unknown> {
 /** A raise refused: "Nothing was raised: …" with the reason (or the data's first broken field). */
 export const NOTHING_RAISED = "Nothing was raised";
 export { notRaisedText };
+
+/** A message that is only gathered cards' picks, one `cd_N: …` line each, nothing the user typed beside them. */
+export const isCardPicksOnly = (text: string): boolean => {
+  const lines = text.trim().split("\n");
+  return lines.length > 0 && lines.every((l) => /^cd_\d+: \S/.test(l));
+};
+
+/** The trust ask's second line (§chat.transcript-cards/trust). An extension's trust stops at the doors its key is refused, so it doesn't offer merging. */
+export function trustAskBody(owner: string, view: boolean): string {
+  if (owner.startsWith("ext:")) return `They can then run Sova's commands, such as ${view ? "reading your chats or sending messages" : "sending messages"} under their name, without asking again.`;
+  return `They can then run any Sova command, such as ${view ? "reading your chats, sending messages" : "sending messages"} or merging, without asking again.`;
+}

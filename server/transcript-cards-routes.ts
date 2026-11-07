@@ -71,7 +71,7 @@ async function callerOf(c: Context): Promise<{ raiser: CardRaiser; name: string;
   const token = c.req.header(TOKEN_HEADER);
   if (token === undefined) return { raiser: { kind: "script" }, name: "you", page: true };
   const ext = showsToken(token) ? null : extensionCaller(token);
-  if (ext) return { raiser: { kind: "extension", title: ext }, name: ext, page: false };
+  if (ext) return { raiser: { kind: "extension", id: ext, title: findExtension(ext)?.title?.trim() || ext }, name: ext, page: false };
   const caller = callerKeys.callerOf(c.req.header(CALLER_HEADER));
   if (caller.startsWith("chat:")) {
     const chat = caller.slice("chat:".length);
@@ -211,7 +211,7 @@ export function registerTranscriptCardRoutes(app: Hono<any>): void {
       if (b.sent !== undefined && typeof b.sent !== "boolean") throw new CardRefusal("sent is true or false", 400);
       if (typeof b.card !== "string") throw new CardRefusal("card must be a string naming a card of the session (cd_N)", 400);
       const who = await callerOf(c);
-      const card = await answerCard({ path, card: b.card, answer: b.answer, by: who.name, via: b.sent === true ? "send" : "at-once" });
+      const card = await answerCard({ path, card: b.card, answer: b.answer, by: who.name, via: b.sent === true ? "send" : "at-once", ...(who.raiser.kind === "extension" ? { extensionKey: who.name } : {}) });
       return c.json({ card }, 200, NO_STORE);
     }),
   );

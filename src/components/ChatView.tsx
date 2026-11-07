@@ -1114,6 +1114,10 @@ export function ChatView(props: {
         case "code":
           setCode(codeView(msg));
           break;
+        // A card was raised, revised or answered: shown now, not at the next poll.
+        case "cards_changed":
+          raisedCards?.refresh();
+          break;
         case "sandbox":
           setSandboxState({ on: msg.on, ...(msg.state ? { state: msg.state } : {}), enforcement: msg.enforcement, status: msg.status });
           break;

@@ -2,7 +2,8 @@ import { isRequestClosed, OWNER_REQUEST_KIND_WORD, OWNER_REQUEST_NOTE, OWNER_REQ
 import { isArchived } from "./archived-sessions";
 import { acquireChatHandle, onAgentSettled, onAgentStarted } from "./chat-handle";
 import { readBranch } from "./harness/pi/reader";
-import { OVERSEER_SENT } from "./harness/state-kinds";
+import { isExtensionSender } from "../shared/senders";
+import { OVERSEER_SENT, SESSION_SENT } from "./harness/state-kinds";
 import { stateView } from "./harness/state-view";
 import { ownerPageInfo } from "./owner";
 import { OrgError, readIndex, readProjects } from "./orgs";
@@ -146,8 +147,11 @@ function buildIndex(): Map<string, Ref> {
 /** The operator has spoken in the chat: a user message no Overseer sent. */
 export async function operatorSpoke(path: string): Promise<boolean> {
   const branch = await readBranch(path);
-  const fromOverseer = new Set(stateView(branch).list(OVERSEER_SENT).map((r) => r.data.targetId));
-  return branch.some((e) => e.kind === "user" && !(e.id && fromOverseer.has(e.id)));
+  const view = stateView(branch);
+  const notTheirs = new Set(view.list(OVERSEER_SENT).map((r) => r.data.targetId));
+  // An extension's message isn't the operator speaking either (§app.extensions/name-badge).
+  for (const r of view.list(SESSION_SENT)) if (isExtensionSender(r.data.from.sessionId)) notTheirs.add(r.data.targetId);
+  return branch.some((e) => e.kind === "user" && !(e.id && notTheirs.has(e.id)));
 }
 
 /** A turn in a request's chat: `started` once the operator spoke there, while it is still with the team. Safe to run twice. */

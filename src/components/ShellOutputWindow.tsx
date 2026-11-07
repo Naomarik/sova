@@ -1,10 +1,10 @@
 import { createEffect, on, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { ApiError, fetchShellOutput } from "../lib/api";
-import { createOutputReader, OUTPUT_GONE, readWords } from "../lib/shell-output";
+import { createOutputReader, LIMIT_NOTE, readWords } from "../lib/shell-output";
 import { shellStatus, type ShellCardData } from "../lib/shell-runs";
 import { NOT_SHARED } from "../lib/shell-runs";
-import { Chip, trapFocus } from "./ui";
+import { Banner, Chip, trapFocus } from "./ui";
 import "../shell-mode.css";
 
 /** Within this many px of the output's end, new live output keeps the window at its end. */
@@ -68,6 +68,8 @@ export function ShellOutputWindow(props: {
     return r ? readWords(r, new TextEncoder().encode(r.text).length) : null;
   };
   createEffect(on(() => !!more(), (has) => !has && keepFocus(), { defer: true }));
+  // Try Again goes with the problem it answered.
+  createEffect(on(() => !!error(), (has) => !has && keepFocus(), { defer: true }));
   createEffect(
     on(text, () => {
       if (out && atEnd && !saved()) out.scrollTop = out.scrollHeight;
@@ -103,11 +105,23 @@ export function ShellOutputWindow(props: {
           </Show>
         </div>
         <div class="modal-body shell-window-body">
+          <Show when={props.card.cancelReason === "limit"}>
+            <Banner tone="warn" title={LIMIT_NOTE.title} body={LIMIT_NOTE.body} />
+          </Show>
           <Show when={error()}>
-            {(why) => (
-              <p class="shell-card-note" role="alert">
-                {why()}
-              </p>
+            {(problem) => (
+              <Banner
+                tone={problem().kind === "gone" ? "info" : "error"}
+                title={problem().title}
+                body={problem().body}
+                action={
+                  problem().kind === "failed" ? (
+                    <button type="button" class="button button-sm" aria-disabled={loading() ? "true" : undefined} onClick={() => void load()}>
+                      {loading() ? "Loading…" : "Try Again"}
+                    </button>
+                  ) : undefined
+                }
+              />
             )}
           </Show>
           <Show when={saved() && !read() && loading()}>
@@ -158,11 +172,6 @@ export function ShellOutputWindow(props: {
                 </button>
               </>
             )}
-          </Show>
-          <Show when={error() && error() !== OUTPUT_GONE}>
-            <button type="button" class="button" onClick={() => void load()}>
-              Try Again
-            </button>
           </Show>
           <span class="modal-spacer" />
           <button ref={close} type="button" class="button button-ghost" onClick={() => props.onClose()}>

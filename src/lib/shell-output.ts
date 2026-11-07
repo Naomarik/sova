@@ -33,11 +33,32 @@ export function readWords(read: OutputRead, shownBytes: number): string | null {
   return read.next === null ? null : `Showing ${sizeWords(shownBytes)} of ${sizeWords(read.total)}`;
 }
 
-/** The whole output's file is gone: its chat was archived. What the card shows stays. */
-export const OUTPUT_GONE = "The whole output is gone: it's deleted when its chat is archived. The card still shows the part it kept.";
+/** What the window says when the whole output can't be read: a title, then what it means. */
+export interface OutputProblem {
+  kind: "gone" | "failed";
+  title: string;
+  body: string;
+}
 
-/** A page that didn't load: what happened, and that trying again is safe. */
-export const outputFailed = (why: string) => `Couldn't load the output. ${why.replace(/\.?$/, ".")} Nothing else changed; try again.`;
+/** The whole output's file is gone: its chat was archived. What the card shows stays. */
+export const OUTPUT_GONE: OutputProblem = {
+  kind: "gone",
+  title: "The whole output is gone.",
+  body: "It's deleted when its chat is archived. The card still shows its last lines.",
+};
+
+/** A page that didn't load: what happened, what it means, and that trying again is safe. */
+export const outputFailed = (why: string): OutputProblem => ({
+  kind: "failed",
+  title: "Couldn't load the output.",
+  body: `${why.replace(/\.?$/, ".")} What's shown so far stays. Try again.`,
+});
+
+/** A command Sova stopped at the output limit, in its window: what happened and what's there. */
+export const LIMIT_NOTE = {
+  title: "Stopped at the 1 GB output limit.",
+  body: "It printed more than 1 GB, so Sova stopped it. The output up to the limit is here.",
+};
 
 /** One page as the server gives it (shared/protocol ShellOutputPage, src/lib/api fetchShellOutput). */
 export type OutputPage = ShellOutputPage;
@@ -50,7 +71,7 @@ export type OutputPage = ShellOutputPage;
  */
 export function createOutputReader(o: { fetch(from: number): Promise<OutputPage>; gone(err: unknown): boolean }) {
   const [read, setRead] = createSignal<OutputRead | null>(null);
-  const [error, setError] = createSignal<string | null>(null);
+  const [error, setError] = createSignal<OutputProblem | null>(null);
   const [loading, setLoading] = createSignal(false);
   let closed = false;
   const load = async () => {

@@ -24,8 +24,9 @@ test("while more is left the window says how much it holds, in sizes a person re
 });
 
 test("a gone output and a failed page say what happened and what's left", () => {
-  assert.match(OUTPUT_GONE, /archived/);
-  assert.equal(outputFailed("500 Internal Server Error"), "Couldn't load the output. 500 Internal Server Error. Nothing else changed; try again.");
+  assert.equal(OUTPUT_GONE.kind, "gone");
+  assert.match(OUTPUT_GONE.body, /archived/);
+  assert.deepEqual(outputFailed("500 Internal Server Error"), { kind: "failed", title: "Couldn't load the output.", body: "500 Internal Server Error. What's shown so far stays. Try again." });
 });
 
 test("the dock shows a running command's newest drawn line", () => {

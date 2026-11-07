@@ -233,7 +233,8 @@ describe("the whole output's window", () => {
     await r.load();
     fail = true;
     await r.load();
-    assert.match(r.error() ?? "", /^Couldn't load the output\. 500/);
+    assert.equal(r.error()?.kind, "failed");
+    assert.match(r.error()?.body ?? "", /^500/);
     assert.equal(r.read()?.text, "a");
     fail = false;
     await r.load();

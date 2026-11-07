@@ -49,6 +49,30 @@ export function escStops(e: EscKey, stop: StopButton, popoverOpen: () => boolean
   return stop === "usable" && !popoverOpen();
 }
 
+/** When the page's Esc before a given one went down (`event.timeStamp`), or null (createEscTimes). */
+export type EscTimes = { before(e: { timeStamp: number }): number | null };
+
+/**
+ * The page's Esc times for the guard (escTooSoon): every Escape keydown on `target`, repeats and
+ * IME ones included, noted in the capture phase, so a window listener sees each press before the
+ * box's own handler, whatever closed on it. `before(e)` is the Esc ahead of `e`: the one noted
+ * before it when `e` was noted, else the last one.
+ */
+export function createEscTimes(target: EventTarget = window): EscTimes & { dispose(): void } {
+  let last: number | null = null;
+  let previous: number | null = null;
+  const note = (e: Event) => {
+    if ((e as KeyboardEvent).key !== "Escape") return;
+    previous = last;
+    last = e.timeStamp;
+  };
+  target.addEventListener("keydown", note, true);
+  return {
+    before: (e) => (last === e.timeStamp ? previous : last),
+    dispose: () => target.removeEventListener("keydown", note, true),
+  };
+}
+
 /** What one keydown in the message box does (composerKey). "default" leaves the key to the browser. */
 export type ComposerKey =
   | "slash-move"
@@ -73,8 +97,8 @@ export type ComposerKeyState = {
   stop: StopButton;
   /** Whether a popover Esc would close is open; read only for an Esc that would otherwise stop. */
   popoverOpen: () => boolean;
-  /** When the page's Esc before this one went down (`event.timeStamp`), or null. */
-  previousEsc: number | null;
+  /** The page's Esc times (createEscTimes): the Esc before this one never lets it stop too soon. */
+  escs: EscTimes;
 };
 
 /**
@@ -92,7 +116,7 @@ export function composerKey(e: EscKey, s: ComposerKeyState): ComposerKey {
     const k = menuKey(e, s.mention.matches);
     if (k) return k === "default" ? k : `mention-${k}`;
   }
-  if (escStops(e, s.stop, s.popoverOpen, s.previousEsc)) return "stop";
+  if (escStops(e, s.stop, s.popoverOpen, s.escs.before(e))) return "stop";
   if (enterSends(e, s.touch)) return "send";
   return "default";
 }

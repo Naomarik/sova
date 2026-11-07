@@ -3,7 +3,7 @@ import { releaseControl } from "../lib/release-control";
 import type { ChatClaudeLogin, SlashCommand, UploadResult } from "../../shared/protocol";
 import { avatarLogins, composerLogin } from "../lib/claude-login";
 import { runControls, stopButton } from "../lib/compact";
-import { aheadOfDraft, composerKey, createTouchMode, enterSends, notePress as pressAt, refocusAfterSend, type SendPress } from "../lib/input-mode";
+import { aheadOfDraft, composerKey, createEscTimes, createTouchMode, enterSends, notePress as pressAt, refocusAfterSend, type SendPress } from "../lib/input-mode";
 import { watchKeyboard } from "../lib/voice/keyboard";
 import { enterRunsLocal, insertCommand, localCommand, menuCommands, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
@@ -323,15 +323,14 @@ export function Composer(props: {
     if (stored.text && !touched && !text()) setText(stored.text);
   });
   let disposed = false;
-  /** Listeners Solid can't delegate (paste, the page's Esc times), added by hand so closing can take them off. */
+  /** Listeners Solid can't delegate (paste), added by hand so closing can take them off. */
   const listening = new AbortController();
-  /** When the page's last Esc went down, and the one before it (`event.timeStamp`s). Noted in the
-      window's capture phase, before the box's own handler, so there `previousEsc` is the Esc before
-      this press, whatever it closed (escTooSoon). */
-  let lastEsc: number | null = null;
-  let previousEsc: number | null = null;
+  /** The page's Esc times: an Esc right after another never stops the reply, so the press that
+      closes a menu, a pane or a dictation can't (createEscTimes, escTooSoon). */
+  const escs = createEscTimes();
   onCleanup(() => {
     disposed = true;
+    escs.dispose();
     flushDrafts();
     // A delegated event can keep this textarea alive after the view closes (lib/release-control):
     // make it a dead end, so what is kept is the textarea, not the closed session's transcript.
@@ -813,17 +812,6 @@ export function Composer(props: {
       },
       { signal: listening.signal },
     );
-    // Every Escape keydown on the page, repeats and IME ones included: an Esc right after another
-    // never stops the reply, so the press that closes a menu, a pane or a dictation can't.
-    window.addEventListener(
-      "keydown",
-      (e) => {
-        if (e.key !== "Escape") return;
-        previousEsc = lastEsc;
-        lastEsc = e.timeStamp;
-      },
-      { capture: true, signal: listening.signal },
-    );
     // After the frame, so a closing dialog's focus handling has already run. Not on a touch-only
     // device: focusing the textarea there raises the keyboard over the new session.
     const touchOnly = matchMedia("(hover: none) and (pointer: coarse)").matches;
@@ -1267,7 +1255,7 @@ export function Composer(props: {
                     touch: touch(),
                     stop: stopState(),
                     popoverOpen: () => !!document.querySelector(":popover-open:not([popover=manual])"),
-                    previousEsc,
+                    escs,
                   })
                 ) {
                   case "slash-move":

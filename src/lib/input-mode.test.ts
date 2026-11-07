@@ -4,6 +4,7 @@ import { stopButton } from "./compact";
 import {
   aheadOfDraft,
   composerKey,
+  createEscTimes,
   createPressTracker,
   enterSends,
   ESC_SETTLE_MS,
@@ -14,6 +15,7 @@ import {
   type ComposerKey,
   type ComposerKeyState,
   type EscKey,
+  type EscTimes,
 } from "./input-mode";
 
 const key = (k: string, mods: Partial<{ shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; isComposing: boolean }> = {}) =>
@@ -71,6 +73,8 @@ const noPopover = () => false;
 const run = { running: true, compacting: false, readOnly: false, stopping: false, stopBlocked: false };
 /** No Esc went down on the page before this one. */
 const first = null;
+/** Esc times whose Esc before any press is `at` (a stand-in for createEscTimes). */
+const escAfter = (at: number | null): EscTimes => ({ before: () => at });
 
 test("a plain Esc stops while Stop is usable: a reply or a compaction", () => {
   assert.equal(escStops(esc(), stopButton(run), noPopover, first), true);
@@ -147,7 +151,7 @@ const idle: ComposerKeyState = {
   touch: false,
   stop: "usable",
   popoverOpen: noPopover,
-  previousEsc: first,
+  escs: escAfter(first),
 };
 const press = (name: string): EscKey => {
   const [mods, key] = name.includes("+") ? [name.split("+")[0]!, name.split("+")[1]!] : ["", name];
@@ -158,7 +162,7 @@ test("/ menu open: Esc closes it and never stops", () => {
   for (const matches of [0, 3]) {
     const s = { ...idle, slash: { open: true, matches } };
     assert.equal(composerKey(esc(), s), "slash-close", `${matches} rows`);
-    assert.equal(composerKey(esc({ timeStamp: 10_100 }), { ...s, previousEsc: 10_000 }), "slash-close", "the guard leaves the menu its Esc");
+    assert.equal(composerKey(esc({ timeStamp: 10_100 }), { ...s, escs: escAfter(10_000) }), "slash-close", "the guard leaves the menu its Esc");
   }
 });
 
@@ -166,7 +170,7 @@ test("@ menu open: Esc closes it and never stops", () => {
   for (const matches of [0, 3]) {
     const s = { ...idle, mention: { open: true, matches } };
     assert.equal(composerKey(esc(), s), "mention-close", `${matches} rows`);
-    assert.equal(composerKey(esc({ timeStamp: 10_100 }), { ...s, previousEsc: 10_000 }), "mention-close");
+    assert.equal(composerKey(esc({ timeStamp: 10_100 }), { ...s, escs: escAfter(10_000) }), "mention-close");
   }
 });
 
@@ -190,9 +194,55 @@ test("nothing open, Stop usable: Esc stops", () => {
 });
 
 test("Esc right after an Esc: nothing", () => {
-  assert.equal(composerKey(esc({ timeStamp: 10_300 }), { ...idle, previousEsc: 10_000 }), "default");
+  assert.equal(composerKey(esc({ timeStamp: 10_300 }), { ...idle, escs: escAfter(10_000) }), "default");
   // Only Esc is held back: Enter right after an Esc still sends.
-  assert.equal(composerKey(press("Enter"), { ...idle, previousEsc: 9_990 }), "send");
+  assert.equal(composerKey(press("Enter"), { ...idle, escs: escAfter(9_990) }), "send");
+});
+
+/** A keydown as the page's Esc times see it, at `timeStamp`. */
+const keydown = (key: string, timeStamp: number) => {
+  const e = Object.assign(new Event("keydown"), { key });
+  Object.defineProperty(e, "timeStamp", { value: timeStamp });
+  return e;
+};
+/** An Esc press as the box's handler gets it, after the page's listener noted the same event. */
+const escOn = (page: EventTarget, timeStamp: number): EscKey => {
+  page.dispatchEvent(keydown("Escape", timeStamp));
+  return esc({ timeStamp });
+};
+
+test("the page's Esc times hold back the box's Esc right after another, end to end", () => {
+  const page = new EventTarget();
+  const escs = createEscTimes(page);
+  const s = { ...idle, escs };
+  assert.equal(composerKey(escOn(page, 10_000), s), "stop", "a lone Esc stops");
+  assert.equal(composerKey(escOn(page, 10_300), s), "default", "the one right after it doesn't");
+  assert.equal(composerKey(escOn(page, 10_900), s), "stop", "half a second after the last one, it does");
+  // An Esc that only closed something elsewhere (the box never saw it) still holds the next one back.
+  page.dispatchEvent(keydown("Escape", 20_000));
+  assert.equal(composerKey(escOn(page, 20_200), s), "default");
+  // Other keys aren't Escs.
+  page.dispatchEvent(keydown("a", 30_000));
+  assert.equal(composerKey(escOn(page, 30_100), s), "stop");
+  // A press the page never noted is measured against the last one noted.
+  assert.equal(composerKey(esc({ timeStamp: 30_200 }), s), "default");
+  escs.dispose();
+  page.dispatchEvent(keydown("Escape", 40_000));
+  assert.equal(composerKey(esc({ timeStamp: 40_100 }), s), "stop", "disposed: no longer listening");
+});
+
+test("the page's Esc times listen on the window by default, in the capture phase", () => {
+  const added: Array<[string, boolean]> = [];
+  const page = { addEventListener: (t: string, _f: unknown, c: boolean) => added.push([t, c]), removeEventListener() {} } as unknown as EventTarget;
+  const had = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: page });
+  try {
+    createEscTimes();
+  } finally {
+    if (had) Object.defineProperty(globalThis, "window", had);
+    else delete (globalThis as { window?: unknown }).window;
+  }
+  assert.deepEqual(added, [["keydown", true]]);
 });
 
 test("nothing open: Enter sends (touch: newline)", () => {
@@ -214,7 +264,7 @@ test("every key in every state: the one rule, key by key", () => {
     ["nothing open", idle, [d, d, "send", d, "send", d, "stop", d, d]],
     ["nothing open, touch", { ...idle, touch: true }, [d, d, d, d, "send", d, "stop", d, d]],
     ["nothing open, Stop missing", { ...idle, stop: "hidden" }, [d, d, "send", d, "send", d, d, d, d]],
-    ["nothing open, Esc just before", { ...idle, previousEsc: 9_800 }, [d, d, "send", d, "send", d, d, d, d]],
+    ["nothing open, Esc just before", { ...idle, escs: escAfter(9_800) }, [d, d, "send", d, "send", d, d, d, d]],
     ["/ with rows", { ...idle, slash: { open: true, matches: 3 } }, ["slash-move", "slash-move", "slash-pick", d, "slash-pick", "slash-pick", "slash-close", "slash-close", d]],
     ["/ with no rows", { ...idle, slash: { open: true, matches: 0 } }, [d, d, "send", d, "send", d, "slash-close", "slash-close", d]],
     ["@ with rows", { ...idle, mention: { open: true, matches: 3 } }, ["mention-move", "mention-move", "mention-pick", d, "mention-pick", "mention-pick", "mention-close", "mention-close", d]],
@@ -235,8 +285,8 @@ test("what comes back goes ahead of the draft, one blank line between, and nothi
   assert.equal(aheadOfDraft("The reply so far", ""), "The reply so far");
   assert.equal(aheadOfDraft("The reply so far", " \n "), "The reply so far");
   assert.equal(aheadOfDraft("", "my words"), "my words");
-  // An Esc stop's reply text lands first, the queued messages the server drains after it:
-  // queued, then the reply's text, then what was typed.
+  // Each return goes ahead of what is there, so a later one lands above an earlier one. This pins
+  // only that; which comes back first (the reply's text, then the queued messages) is ChatView's.
   assert.equal(aheadOfDraft("queued one\n\nqueued two", aheadOfDraft("The reply so far", "my words")), "queued one\n\nqueued two\n\nThe reply so far\n\nmy words");
 });
 

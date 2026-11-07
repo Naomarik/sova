@@ -193,8 +193,8 @@ export function DecisionSettingsSection() {
         </h3>
       </div>
       <p class="settings-intro">
-        Sova can ask a small classifier about your sessions — whether a finished turn is waiting on you, and what a session
-        is about. Everything here is off until you turn it on.
+        Sova can ask a small classifier about your sessions, for the features switched on below. Nothing is sent until Jev
+        or a fallback model can answer.
       </p>
 
       <Show when={info.error}>
@@ -208,7 +208,7 @@ export function DecisionSettingsSection() {
 
       <Show when={loaded() && draft()}>
         <p class="decisions-privacy" data-testid="decisions-privacy">
-          Each check sends a short, redacted excerpt of one session — its title, the last exchange, and recent tool names —
+          Each check sends a short, redacted excerpt of one session — at most its title, the last exchange, and recent tool names —
           to Jev (TypeSafe) or your fallback model; never whole transcripts, images, or files. The Overseer's own sessions
           are never checked.
         </p>

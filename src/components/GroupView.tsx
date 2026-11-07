@@ -862,6 +862,7 @@ export function GroupView(props: {
                 <section
                   class="workspace-pane"
                   id={`pane-${paneId}`}
+                  data-time-session={path}
                   classList={{ "workspace-pane-focused": active() === path }}
                   role={mode() === "tabs" ? "tabpanel" : "region"}
                   /* Named the same in both modes, never by its tab: the live region's prefix IS

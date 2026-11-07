@@ -26,6 +26,7 @@ import { TeamInbox } from "./TeamInbox";
 import { inboxTabLabel, openChip, openChipTitle } from "../lib/team-inbox";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
+import { trackLinkedTranscript, trackWorkerTranscript } from "../lib/time-spent";
 
 /** Within this distance of the end, the transcript follows new content. */
 const FOLLOW_PX = 80;
@@ -648,6 +649,7 @@ export function SubagentPane(props: {
                   <WorkerTranscript
                     source={sourceOf(key)}
                     host={hostOf(props.path)}
+                    parent={props.path}
                     name={label(w())}
                     author={modelLabel(w().model) ?? label(w())}
                     streaming={w().working}
@@ -690,7 +692,7 @@ export function SubagentPane(props: {
                 reach={threadHost(links().filter((x) => x.linkId === r().linkId), overseerLinks(), meshState(), sessionHost())}
                 overseer={overseerLinks()}
               />
-              <LinkedTranscript row={r()} reach={reachOf(r())} hostLabel={hostLabelOf(r())} />
+              <LinkedTranscript parent={props.path} row={r()} reach={reachOf(r())} hostLabel={hostLabelOf(r())} />
             </>
           )}
         </Show>
@@ -701,7 +703,7 @@ export function SubagentPane(props: {
 
 /** A linked member's own transcript, read-only, from its own host as the page reaches it. A host
     the page's host doesn't know, or one that is down, says so instead; the thread above stays. */
-function LinkedTranscript(props: { row: LinkedAgentInfo; reach: LinkReach; hostLabel: string }) {
+function LinkedTranscript(props: { parent: string; row: LinkedAgentInfo; reach: LinkReach; hostLabel: string }) {
   const target = createMemo(() => (props.reach.ok ? `${props.reach.host ?? ""}\n${props.row.path}` : null));
   const offline = createMemo(() => props.row.state === "offline");
   return (
@@ -733,6 +735,7 @@ function LinkedTranscript(props: { row: LinkedAgentInfo; reach: LinkReach; hostL
           author={modelLabel(props.row.model) ?? props.row.title}
           streaming={props.row.state === "working"}
           what="session"
+          parent={props.parent}
           onContext={() => {}}
         />
       )}
@@ -883,6 +886,8 @@ const watchUrl = (s: TranscriptSource, host: string | null): string =>
  */
 function WorkerTranscript(props: {
   source: TranscriptSource; host: string | null; name: string; author: string; streaming: boolean;
+  /** The session whose Agents tab this is in: reading it counts there. */
+  parent?: string;
   /** What the transcript is, for its not-found copy: a worker's (default) or a linked session's. */
   what?: "worker" | "session";
   /** Each snapshot/append that carries a context fill (the whole message; the caller reads it). */
@@ -1010,7 +1015,12 @@ function WorkerTranscript(props: {
             />
           </Show>
         </div>
-        <div class="thread">
+        <div
+          class="thread"
+          ref={(thread) => {
+            if (props.parent) (props.what === "session" ? trackLinkedTranscript : trackWorkerTranscript)(props.parent, thread);
+          }}
+        >
           <Show when={items()} fallback={<Show when={!error()}><TranscriptSkeleton /></Show>}>
             {(list) => (
               <Show

@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { registerTimeSpentRoutes } from "./time-spent-routes";
 import { compress } from "hono/compress";
 import { isDirectLocal } from "./compression";
 import { replyTimingsOf, sessionIdOfPath } from "./reply-facts";
@@ -333,6 +334,7 @@ export function buildApp(deps: AppDeps) {
     return c.json(body);
   });
   registerProfileRoutes(app);
+  registerTimeSpentRoutes(app);
 
   /** Create a new empty webapp-owned session in `cwd` (an existing absolute directory) → 201 SessionSummary.
       With `start`, it is made with that profile (§chat.profiles/after-first-message) and, given one, its

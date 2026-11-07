@@ -1910,3 +1910,75 @@ html, body { overflow: clip; overscroll-behavior: none; }
    chip and time stay in. */
 .toolcard-summary:has(> .chip-count) > .toolcard-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .toolcard-summary > .chip-count { flex: none; }
+
+/* Time Spent on the Session tab. Three text weights, by place and never by a figure's size or value:
+   ink for what the section is read for (You, Agent, each row's time, each document's title), ink-2 for what
+   names it (You and Agent, row labels, the Alignments heading, the word), muted for detail (Reading's parts, a document's
+   figures). One spacing scale: 16px between blocks, 8px between rows as Identity's, 4px inside
+   Reading's group. Every row is one line tall; the heading and Reading keep a 44px target in a hit area that
+   adds no height, so the rhythm stays even. */
+.time-spent-heading { margin: 0; font: inherit; }
+.time-spent-toggle,
+.time-spent-expander {
+  position: relative;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.time-spent-toggle::after,
+.time-spent-expander::after {
+  content: "";
+  position: absolute;
+  inset: 50% 0 auto;
+  height: var(--tap-min);
+  transform: translateY(-50%);
+}
+.time-spent-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-radius: var(--r-xs);
+}
+.time-spent-toggle:hover .text-eyebrow,
+.time-spent-expander:hover { color: var(--color-ink); }
+.time-spent-toggle:focus-visible,
+.time-spent-expander:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.time-spent .icon-twist { transition: transform var(--dur-fast) var(--ease-standard); }
+.time-spent .time-spent-twist-open { transform: rotate(90deg); }
+.time-spent-body { display: flex; flex-direction: column; gap: var(--space-4); margin-top: var(--space-1); }
+/* The word sits on the figures' line, as their third item. */
+.time-spent-head { display: flex; flex-wrap: wrap; align-items: flex-end; align-items: last baseline; gap: var(--space-2) var(--space-5); }
+.time-spent-figures { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin: 0; min-width: 0; }
+.time-spent-figures dt { color: var(--color-ink-2); }
+.time-spent-figure { margin: 0; color: var(--color-ink); font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-medium); white-space: nowrap; }
+.time-spent-word { margin: 0; color: var(--color-ink-2); white-space: nowrap; }
+.time-spent-sub { margin: 0; font-weight: var(--fw-medium); color: var(--color-ink-2); }
+.time-spent-rows,
+.time-spent-parts,
+.time-spent-docs { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.time-spent-rows { gap: var(--space-2); }
+.time-spent-docs { gap: var(--space-3); }
+.time-spent-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+}
+.time-spent-row > .text-num { flex: none; color: var(--color-ink); white-space: nowrap; }
+.time-spent-row-label { display: inline-flex; align-items: center; gap: var(--space-1); min-width: 0; }
+/* Reading's parts hang from it: one 12px indent on a guide rule, closer to Reading than to the row below. */
+.time-spent-parts { gap: var(--space-1); margin-top: var(--space-1); padding-left: var(--space-3); border-left: var(--stroke-thin) solid var(--color-border); }
+.time-spent-part { color: var(--color-ink-muted); }
+.time-spent-part > .text-num { color: var(--color-ink-2); }
+.time-spent-doc-title { margin: 0; color: var(--color-ink); overflow-wrap: anywhere; }
+.time-spent-docs .text-muted { margin: 0; overflow-wrap: anywhere; }
+.time-spent-skeleton { display: flex; flex-direction: column; gap: var(--space-4); }
+.time-spent-skeleton .time-spent-rows .text-skeleton { flex: none; }

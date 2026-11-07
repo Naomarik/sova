@@ -116,16 +116,6 @@ test("compose.type: /, ? and Alt+O keep their own rows, on a Mac or not", () => 
     });
 });
 
-test("compose.type: a key a widget already used (a diff's n and p) does nothing", () => {
-  const diff = { tagName: "DIV", getAttribute: (n: string) => (n === "data-hunk" ? "" : null) };
-  for (const key of ["n", "p"]) {
-    assert.equal(fires("compose.type", ev({ key, code: `Key${key.toUpperCase()}`, target: diff })), true, "a free n is a character");
-    assert.equal(fires("compose.type", ev({ key, code: `Key${key.toUpperCase()}`, target: diff, defaultPrevented: true })), false);
-  }
-  // The rows before it never looked at defaultPrevented, and still don't.
-  for (const row of KEYS) if (row.id !== "compose.type") assert.equal(fires(row.id, { ...CHORD[row.id][0]!, defaultPrevented: true }), true, row.id);
-});
-
 test("compose.type: Windows AltGr (Ctrl+Alt) types its character; GroupView's Ctrl+Alt+arrows stay the workspace's", () => {
   onPlatform(false, () => {
     assert.equal(fires("compose.type", ev({ key: "@", code: "KeyQ", ctrlKey: true, altKey: true, target: button })), true);
@@ -184,18 +174,30 @@ test("dispatch: an owner that acts prevents the default; one that declines leave
   assert.equal(acted.defaultPrevented, true);
 });
 
-test("dispatch: a typed character's owner keeps the default when it acts, so the browser types it; a used key never reaches it", () => {
+test("dispatch: a typed character reaches its owner on the window, which declines, so the browser types it", () => {
   const { w } = stage();
   let ran = 0;
-  unbinds.push(bindKey("compose.type", () => (ran++, true)));
+  unbinds.push(bindKey("compose.type", () => (ran++, false)));
   const typed = keydown({ key: "n", code: "KeyN" });
   w.dispatchEvent(typed);
   assert.equal(ran, 1);
   assert.equal(typed.defaultPrevented, false);
-  const used = keydown({ key: "n", code: "KeyN" });
-  used.preventDefault(); // a diff's n, handled on the document first
-  w.dispatchEvent(used);
-  assert.equal(ran, 1);
+});
+
+test("the six keys before a typed character have exactly their old scope", () => {
+  const before = KEYS.filter((r) => r.id !== "compose.type").map(({ chord: _c, ...r }) => r);
+  assert.deepEqual(
+    before.map((r) => [r.id, r.target, r.textEntry, r.composing, r.modal]),
+    [
+      ["overseer.open", "window", "fires", "fires", "fires"],
+      ["model.picker", "document", "fires", "fires", "fires"],
+      ["sidebar.toggle", "document", "fires", "fires", "fires"],
+      ["sidebar.search", "document", "ignored", "fires", "fires"],
+      ["palette.open", "document", "fires", "fires", "fires"],
+      ["shortcuts.open", "document", "ignored", "fires", "fires"],
+    ],
+  );
+  for (const r of before) assert.deepEqual(Object.keys(r).sort(), ["composing", "does", "id", "label", "modal", "target", "textEntry"], `${r.id} has no new fields`);
 });
 
 test("dispatch: a key on the wrong target, or not its chord, runs nothing", () => {

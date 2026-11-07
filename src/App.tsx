@@ -37,7 +37,7 @@ import { HostUpdatePage } from "./components/HostStateNotices";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerCantOpen, peerInfo, sameMeshInfo, sessionRouteFromHash, updateNeededFor, setMeshState } from "./lib/mesh";
 import { bindKey, paletteKeyAction } from "./commands/keys";
 import { composerOf } from "./commands/composers";
-import { OVERLAY_CANDIDATES, startTyping, takeTyping } from "./lib/type-anywhere";
+import { keyPlatform, OVERLAY_CANDIDATES, startTyping } from "./lib/type-anywhere";
 import { closePalette, paletteRequest, togglePaletteFromKey } from "./commands/palette-open";
 import { isOverseerHash, OVERSEER_HASH, overseerHistoryId, overseerRedirect } from "./lib/overseer";
 import { followListRows, onFeedPush, requestListRead, sessionFeedOpen } from "./lib/session-feed";
@@ -164,7 +164,6 @@ const folded = () => window.matchMedia("(max-width: 767px)").matches;
 /** The command palette and the shortcut sheet: their own files, fetched on their first opening. */
 const CommandPalette = lazy(() => import("./components/CommandPalette"));
 const ShortcutSheet = lazy(() => import("./components/ShortcutSheet"));
-const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
 /** Live `matchMedia` (the ExplainTiles pattern): the spine is a desktop affordance, so it only
     shows while the viewport is unfolded, and a resize across 768px swaps it in or out. */
@@ -629,7 +628,7 @@ export function App() {
       separate file the browser fetches on its first opening. On a Mac, Ctrl+K in a text field is
       the field's own (delete to the end of the line), so it's left to it there. */
   const offPaletteKey = bindKey("palette.open", (e) => {
-    const act = paletteKeyAction(e, IS_MAC);
+    const act = paletteKeyAction(e, keyPlatform.mac);
     if (act === "field") return false; // the browser's: a Mac text field's delete-to-end
     if (act === "toggle") togglePaletteFromKey();
     return true; // a held key's repeats are swallowed: it toggles once
@@ -866,16 +865,18 @@ export function App() {
   const typingBox = () => {
     if (hasGroupComposer()) {
       const el = document.getElementById("group-composer-input") as HTMLTextAreaElement | null;
-      if (!el) return null;
-      return { take: () => takeTyping({ readOnly: el.disabled, el, active: () => document.activeElement, hiddenByFocus: false, endFocus: () => {} }) };
+      // Never read-only, and Focus never hides it (Focus is the single view's).
+      return el && { take: () => (el.focus(), document.activeElement === el) };
     }
     const o = overseerRoute();
     if (o) return o.historyId ? null : composerOf(overseer.data()?.path ?? null);
     return composerOf(focusedPath());
   };
-  const offTypeKey = bindKey("compose.type", (e) =>
-    startTyping(e, { overlays: () => document.querySelectorAll(OVERLAY_CANDIDATES), box: typingBox }),
-  );
+  // False always: the browser's default then types the key in the box focus moved to.
+  const offTypeKey = bindKey("compose.type", (e) => {
+    startTyping(e, { overlays: () => document.querySelectorAll(OVERLAY_CANDIDATES), box: typingBox });
+    return false;
+  });
   onCleanup(offTypeKey);
 
   // At folded width, opening a session swaps the column: move focus to its title.

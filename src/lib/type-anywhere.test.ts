@@ -55,9 +55,8 @@ test("Ctrl and ⌘ chords stay shortcuts: copy, paste, select all, and Ctrl alon
     }
 });
 
-test("an input method's keys are its own: a composing keydown, keyCode 229, Process, a soft keyboard's Unidentified", () => {
+test("an input method's keys are its own: keyCode 229, Process, a soft keyboard's Unidentified (a composing keydown: keys.test.ts)", () => {
   for (const mac of BOTH) {
-    assert.equal(typesCharacter(key({ key: "a", isComposing: true }), mac), false);
     assert.equal(typesCharacter(key({ key: "a", keyCode: 229 }), mac), false);
     assert.equal(typesCharacter(key({ key: "Process" }), mac), false);
     assert.equal(typesCharacter(key({ key: "Unidentified" }), mac), false);
@@ -65,10 +64,9 @@ test("an input method's keys are its own: a composing keydown, keyCode 229, Proc
   }
 });
 
-test("an accent key counts even as keyCode 229 (a Mac's Option+E), but not once a composition runs", () => {
+test("an accent key counts even as keyCode 229 (a Mac's Option+E)", () => {
   assert.equal(typesCharacter(key({ key: "Dead", altKey: true, keyCode: 229 }), true), true);
   assert.equal(typesCharacter(key({ key: "Dead", keyCode: 229 }), false), true, "´ on a Spanish layout");
-  assert.equal(typesCharacter(key({ key: "Dead", isComposing: true }), true), false);
 });
 
 // ---- where a key belongs ----
@@ -84,11 +82,7 @@ const el = (tagName: string, attrs: Record<string, string> = {}, parent: Element
 const body = el("BODY");
 const main = el("MAIN", {}, body);
 
-test("a key typed in a text field, a contenteditable or a select is the field's", () => {
-  assert.equal(keyBelongsToTarget(el("TEXTAREA", {}, main)), true);
-  assert.equal(keyBelongsToTarget(el("INPUT", { type: "text" }, main)), true);
-  assert.equal(keyBelongsToTarget(el("INPUT", { type: "search" }, main)), true);
-  assert.equal(keyBelongsToTarget(el("DIV", {}, main, { isContentEditable: true })), true);
+test("a key typed in a select is the select's (a caret field is the row's textEntry rule: keys.test.ts)", () => {
   assert.equal(keyBelongsToTarget(el("SELECT", {}, main)), true);
   assert.equal(keyBelongsToTarget(el("OPTION", {}, el("SELECT", {}, main))), true);
 });
@@ -140,11 +134,11 @@ const opened = el("DIV", { popover: "auto" }, body, { matches: (s) => s === ":po
 const closed = el("DIV", { popover: "auto" }, body, { matches: () => false });
 const button = el("BUTTON", {}, main);
 
-const run = (over: { target?: unknown; overlays?: ElementLike[]; box?: { take(): boolean } | null }) => {
+const run = (over: { target?: unknown; defaultPrevented?: boolean; overlays?: ElementLike[]; box?: { take(): boolean } | null }) => {
   const calls = { box: 0, take: 0 };
   const box = over.box === undefined ? { take: () => true } : over.box;
   const acted = startTyping(
-    { target: "target" in over ? over.target : button },
+    { target: "target" in over ? over.target : button, defaultPrevented: over.defaultPrevented },
     {
       overlays: () => over.overlays ?? [],
       box: () => (calls.box++, box && { take: () => (calls.take++, box.take()) }),
@@ -159,14 +153,19 @@ test("a free key moves into the box on screen, which takes it", () => {
   assert.deepEqual(run({ overlays: [closed] }), { acted: true, box: 1, take: 1 }, "a closed menu doesn't stop it");
 });
 
-test("nothing happens from a text field, a contenteditable, a select or a list that jumps as you type", () => {
-  for (const target of [el("TEXTAREA", {}, main), el("DIV", {}, main, { isContentEditable: true }), el("SELECT", {}, main), el("DIV", { role: "option" }, el("DIV", { role: "listbox" }, main))])
+test("nothing happens from a select or a list that jumps as you type", () => {
+  for (const target of [el("SELECT", {}, main), el("DIV", { role: "option" }, el("DIV", { role: "listbox" }, main))])
     assert.deepEqual(run({ target }), { acted: false, box: 0, take: 0 }, String(target.tagName));
 });
 
 test("nothing happens while a dialog, sheet, menu or popover is open, focus outside it or not", () => {
   assert.deepEqual(run({ overlays: [closed, opened] }), { acted: false, box: 0, take: 0 });
   assert.deepEqual(run({ overlays: [el("DIV", { role: "dialog", "aria-modal": "true" }, body)] }), { acted: false, box: 0, take: 0 });
+});
+
+test("nothing happens to a key a widget already used: a diff's n and p prevent theirs", () => {
+  assert.deepEqual(run({ defaultPrevented: true }), { acted: false, box: 0, take: 0 });
+  assert.deepEqual(run({ defaultPrevented: false }), { acted: true, box: 1, take: 1 });
 });
 
 test("nothing happens with no box on screen, or a box that takes no typing (read-only)", () => {
@@ -178,7 +177,7 @@ test("nothing happens with no box on screen, or a box that takes no typing (read
 
 const textarea = (lands = true) => {
   const log: string[] = [];
-  const node = { isConnected: true, focus: () => void log.push("focus") };
+  const node = { focus: () => void log.push("focus") };
   return { log, node, active: () => (lands ? node : null) };
 };
 
@@ -200,11 +199,7 @@ test("a box Focus hides has Focus ended first, so it is visible and no longer in
   assert.deepEqual(t.log, ["endFocus", "focus"]);
 });
 
-test("a box that isn't mounted, or that focus didn't reach, took nothing", () => {
-  const gone = textarea();
-  gone.node.isConnected = false;
-  assert.equal(takeTyping({ readOnly: false, el: gone.node, active: gone.active, hiddenByFocus: false, endFocus: () => {} }), false);
-  assert.deepEqual(gone.log, []);
+test("a box that focus didn't reach took nothing", () => {
   const missed = textarea(false);
   assert.equal(takeTyping({ readOnly: false, el: missed.node, active: missed.active, hiddenByFocus: false, endFocus: () => {} }), false);
 });

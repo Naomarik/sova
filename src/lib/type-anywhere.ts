@@ -2,9 +2,9 @@
 // focus into the chat's message box during that same keydown, and the browser types the character
 // there (no preventDefault), so an accent key's composition, the @ menu and Undo work as typing in
 // the box does. Its key row is commands/keys ("compose.type"); App owns it and picks the box.
-// It is always on: there is no switch. Everything here is pure, so the unit tier covers it.
-
-import { isTextEntry } from "./text-entry";
+// It is always on: there is no switch. The row's own scope (keys.ts) already leaves out a key typed
+// in a caret field and an input method's composing keydown; this file adds the rest. Everything here
+// is pure, so the unit tier covers it.
 
 /** The parts of a keydown the character rule reads. */
 export interface CharKeyLike {
@@ -12,7 +12,6 @@ export interface CharKeyLike {
   altKey: boolean;
   ctrlKey: boolean;
   metaKey: boolean;
-  isComposing?: boolean;
   keyCode?: number;
   getModifierState?(key: string): boolean;
 }
@@ -28,12 +27,12 @@ const isOneCharacter = (key: string) => key !== " " && [...key].length === 1 && 
  * symbol, with Shift, an Option character on a Mac, or an AltGr character (Windows reports AltGr as
  * Ctrl+Alt; Linux as the AltGraph modifier alone). Named keys (Enter, Tab, the arrows…) are words,
  * not one character. Ctrl and ⌘ chords are shortcuts, and plain Alt off a Mac is a menu key. An
- * input method's keys are its own: a composing keydown, keyCode 229, and the words "Process" and a
- * soft keyboard's "Unidentified". An accent key is the exception to 229: Chrome and Safari on a Mac
+ * input method's keys are its own: keyCode 229 and the words "Process" and a soft keyboard's
+ * "Unidentified" (a composing keydown is the row's `composing` rule, keys.ts). An accent key is the exception to 229: Chrome and Safari on a Mac
  * report its first keydown that way, and its key still says "Dead".
  */
 export function typesCharacter(e: CharKeyLike, mac: boolean = keyPlatform.mac): boolean {
-  if (e.isComposing || (e.keyCode === 229 && e.key !== "Dead")) return false;
+  if (e.keyCode === 229 && e.key !== "Dead") return false;
   if (e.key !== "Dead" && !isOneCharacter(e.key)) return false;
   if (e.metaKey) return false;
   const altGraph = e.getModifierState?.("AltGraph") === true;
@@ -57,12 +56,11 @@ export interface ElementLike {
 const KEEPS_KEYS = new Set(["dialog", "alertdialog", "menu", "menubar", "listbox", "tree", "treegrid", "grid", "combobox", "radiogroup", "slider", "spinbutton"]);
 
 /**
- * Whether a key typed on `target` belongs where it was typed: a text field, a select, or anything
- * inside a dialog, a popover, a menu or a list that jumps as you type. A button or a link doesn't
- * take letters, so a key typed on one is free.
+ * Whether a key typed on `target` belongs where it was typed: a select, or anything inside a dialog,
+ * a popover, a menu or a list that jumps as you type (a caret field is the row's `textEntry` rule,
+ * keys.ts). A button or a link doesn't take letters, so a key typed on one is free.
  */
 export function keyBelongsToTarget(target: ElementLike | null | undefined): boolean {
-  if (isTextEntry(target)) return true;
   for (let el = target; el; el = el.parentElement) {
     const tag = (el.tagName ?? "").toUpperCase();
     if (tag === "SELECT" || tag === "DIALOG" || el.hasAttribute?.("popover")) return true;
@@ -97,11 +95,13 @@ export interface TypingBox {
 }
 
 /**
- * The key's owner (App): a key on a free target, no overlay open and a box on
- * screen that takes typing, focus moves into the box and the browser types the key there. False
- * leaves the key as it was.
+ * The key's owner (App): with a key no widget already used (a diff's n and p prevent theirs), on a
+ * free target, no overlay open and a box on screen that takes typing, focus moves into the box.
+ * True when it did. Its bound owner returns false either way, so the browser's default stays and
+ * types the key in the box (keys.ts KeyRun).
  */
-export function startTyping(e: { target?: unknown }, ctx: { overlays(): Iterable<ElementLike>; box(): TypingBox | null }): boolean {
+export function startTyping(e: { target?: unknown; defaultPrevented?: boolean }, ctx: { overlays(): Iterable<ElementLike>; box(): TypingBox | null }): boolean {
+  if (e.defaultPrevented) return false;
   if (keyBelongsToTarget(e.target as ElementLike | null)) return false;
   for (const el of ctx.overlays()) if (isOpenOverlay(el)) return false;
   const box = ctx.box();
@@ -109,18 +109,12 @@ export function startTyping(e: { target?: unknown }, ctx: { overlays(): Iterable
 }
 
 /**
- * A textarea taking the typing: a read-only one (a TUI-live session, an earlier conversation, a
- * baton not held) or one that isn't mounted takes nothing; one Focus hides has Focus ended first,
- * so it is visible and no longer inert when it is focused. True when focus landed in it.
+ * A chat's textarea taking the typing: a read-only one (a TUI-live session, an earlier
+ * conversation, a baton not held) takes nothing; one Focus hides has Focus ended first, so it is
+ * visible and no longer inert when it is focused. True when focus landed in it.
  */
-export function takeTyping(t: {
-  readOnly: boolean;
-  el: { isConnected: boolean; focus(): void };
-  active(): unknown;
-  hiddenByFocus: boolean;
-  endFocus(): void;
-}): boolean {
-  if (t.readOnly || !t.el.isConnected) return false;
+export function takeTyping(t: { readOnly: boolean; el: { focus(): void }; active(): unknown; hiddenByFocus: boolean; endFocus(): void }): boolean {
+  if (t.readOnly) return false;
   if (t.hiddenByFocus) t.endFocus();
   t.el.focus();
   return t.active() === t.el;

@@ -11,14 +11,16 @@ the command line stays as it was; what follows only adds to them.
 - On the main listener, `GET /api/commands` answers `{"version": 1, "server": {"version", "head",
   "extensionContract"}, "commands": [...]}`: `server.version` is Sova's package version and `server.head`
   the commit its checkout had when this process started (null when unknown), as `GET /api/health` says it.
-  `server.extensionContract` is the number of the extension contract this server speaks: `19` for
-  `ext-contract-v1.19` (§app/extensions). A Sova from before v1.19 doesn't send it, so an extension that
+  `server.extensionContract` is the number of the extension contract this server speaks: `20` for
+  `ext-contract-v1.20` (§app/extensions). A Sova from before v1.19 doesn't send it, so an extension that
   reads no number, or a lower one than it needs, can say it needs a newer Sova instead of half working.
   `commands` is every core catalogue entry, in the catalogue's order, then each installed
   extension's own `ext.<id>.<name>` entries, in manifest order.
 - An extension's entries are exactly those its manifest entry's `offers` names (the same rule
-  `GET /api/extensions` uses), built with their params, only for an entry this server installs: an
-  entry it drops (bad `dist` or `api`, a second one with a taken id) lists none. A peer's extension,
+  `GET /api/extensions` uses), built with their params, only for an entry this server has active
+  (§app.extensions/loader): an
+  entry it drops (bad `dist` or `api`, a second one with a taken id) lists none, and nor does one that
+  is off or waiting for approval. A peer's extension,
   listed only while the mesh syncs extensions, lists none either.
 - It reads the manifest and nothing else: it probes no extension backend, so its answer never waits
   on one.

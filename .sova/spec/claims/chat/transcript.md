@@ -1287,7 +1287,7 @@ card). On a phone it is `#/overview`, under the list's head row, and opening Sov
    Pressing it opens the session list: on a phone it goes back to the list (§app.shell/overview);
    at 768px and up it expands the pane if it is collapsed into the spine, and focuses the list's
    search.
-5. **The Extensions section**, shown **only when at least one extension is installed**: one card
+5. **The Extensions section**, shown **only when at least one extension is active** (on and approved): one card
    per extension, under the same section eyebrow (§app.extensions/cards).
 6. **The Explanations card**, always (with no explanations too), under an `Explanations`
    section eyebrow: the Mesh card's shape (§mesh.ui/card) — one full-width `a.card.ext-card` to
@@ -1349,7 +1349,7 @@ card). On a phone it is `#/overview`, under the list's head row, and opening Sov
   <section class="explain-section" aria-labelledby="overview-projects-title">…Projects · All Projects, one .card.overview-project-card per project, the Add Project tile (§app.projects/home-cards)…</section>
   <section class="explain-section" aria-labelledby="overview-start-title">…Start, one .card.action-card per action…</section>
   <section class="explain-section" aria-labelledby="home-sessions-title">…Sessions, the .card.home-sessions…</section>
-  <!-- only when at least one extension is installed (§app.extensions/cards) -->
+  <!-- only when at least one extension is active (§app.extensions/cards) -->
   <section class="explain-section" aria-labelledby="ext-section-title">…Extensions {n}, one .card.ext-card each…</section>
   <section class="explain-section" aria-labelledby="explain-section-title">
     <h2 class="explain-section-head" id="explain-section-title">Explanations</h2>

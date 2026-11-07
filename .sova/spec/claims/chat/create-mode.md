@@ -315,8 +315,11 @@ when they ask for that.
 
 ## §chat.create-mode/sova-extensions — A Sova extension
 
-Before the person agrees to a Sova extension (§app/extensions), its entry says they must keep its
-backend running, because Sova never starts it, and that it has full access inside the page.
+Before the person agrees to a Sova extension (§app/extensions), its entry says that they turn it on
+themselves in Settings → Extensions by choosing its folder, because a chat can't install one
+(§app.extensions/loader), that its program then runs as them with no sandbox, and that it has full
+access inside the page. Create writes the folder and its description file (§app.extensions/folder), and
+never the extension list.
 
 Create offers a theme, a card or a project tool first when one would do.
 

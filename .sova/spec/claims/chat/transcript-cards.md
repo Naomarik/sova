@@ -151,7 +151,7 @@ nothing else in it is markup.
 - **Fixed per chat.** The types a chat may raise, and their shapes, answer modes and placements,
   are snapshotted the first time Sova builds the chat's tools, as offers are (§chat.offers/tool,
   "One set per session"), in Sova's own state keyed by session id, never in the session's file:
-  the project's types from that checkout, then the types the installed extensions declare
+  the project's types from that checkout, then the types the active extensions declare
   (§app.extensions/views), each name once (a queue chat takes none of an extension's,
   §chat.transcript-cards/queue-chats). A reload, a resume, a reconnect after a restart and a
   resumed Claude Code chat read that snapshot; a fork starts with its parent's; a session with no
@@ -258,6 +258,8 @@ that card only. Its types ship with the toolkit (`import { card, mount } from "s
   stays open to any caller, the token included. The project page's Cards section says whether its cards are
   trusted, and the extension's page says so while they are, each with **Stop Trusting Cards**
   while they are, which takes effect on the next command.
+- **Removing an extension forgets it.** Its trust goes with it (§app.extensions/loader), so another
+  extension using the id later asks again. Turning an extension off keeps it.
 - Sova's own card types never ask.
 
 ## §chat.transcript-cards/answering — Answering a card
@@ -277,7 +279,9 @@ A type that takes an answer declares how:
   Picks drops them.
 - **Needs you.** Either way, while an answerable card is open in a session it is a Needs you item
   (`card-waiting`, §app.overseer/attention-digest), idle or working, until it is answered or its
-  raiser marks it done. It never sends a phone notification and never briefs the Overseer. A card that
+  raiser marks it done. An extension's card leaves Needs you while its extension isn't active, or while its
+  view can't draw because the extension reads Changed, and returns when that ends; Removing the extension
+  closes it (§app.extensions/loader). It never sends a phone notification and never briefs the Overseer. A card that
   takes no answer is never one (§chat.transcript-cards/updating-cards).
 - **Never an alignment's answer.** A card can stand open beside an open alignment question. Answering it
   answers no alignment question and doesn't end the chat's wait on them
@@ -366,6 +370,10 @@ extensions add.
   built view module or a file beside it that it imports) redraws every card that uses it, in every
   open browser, within about a second, with no restart and no reload of the page or the chat. Each
   card keeps the data it was raised with, its answer, its picks and its state.
+- **Not over an extension's approval.** Where an extension's approval applies, a saved view makes it read
+  Changed, and its cards wait for your approval rather than redraw (§app.extensions/views). Approving
+  draws them with the new code. On a server started with `SOVA_EXTENSIONS_FILE` it redraws as above
+  (§app.extensions/loader).
 - **A broken save.** A view that no longer builds, fails to load or throws shows the card's error
   box with what is wrong (the file, line and column when known) and **Reload**; the rest of the
   chat is unaffected, and the next good save draws the card again on its own.

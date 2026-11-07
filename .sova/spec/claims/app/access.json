@@ -132,7 +132,7 @@
       "§app.updates/operator"
     ],
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "server/page-only.ts",
       "server/session-offers-routes.ts",
@@ -175,12 +175,15 @@
       "server/chat-actions.ts",
       "server/chat-actions.test.ts",
       "server/chat-runtime/trial-your-click.integration.test.ts",
-      "scripts/chat-runtime-trial/run.mjs"
+      "scripts/chat-runtime-trial/run.mjs",
+      "server/extension-routes.ts",
+      "server/extension-doors.test.ts",
+      "server/mesh/access.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-06T21:52Z",
-      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
+      "by": "Omar (user)",
+      "at": "2026-11-06T21:56Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
     }
   },
   "§app/access": {

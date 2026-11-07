@@ -179,6 +179,48 @@ test("a cut command's whole output reads back in pages; archiving deletes its fi
   a.close();
 });
 
+test("a ! command in a chat with its sandbox On runs confined: its folder is writable, the home folder and the network are not (§chat.shell-mode/running)", async () => {
+  // Its own server, whose chats load the sandbox extension (this file's other server loads none).
+  const sb = await startHermeticServer({ extensions: ["sandbox"], ...(process.env.SOVA_TEST_SANDBOX_SCRATCH ? { scratchIn: process.env.SOVA_TEST_SANDBOX_SCRATCH } : {}) });
+  const prev = s;
+  s = sb;
+  try {
+    await sandboxed();
+  } finally {
+    s = prev;
+    await sb.stop();
+  }
+});
+async function sandboxed() {
+  const ses = await newSession();
+  const a = await chatSocket(ses);
+  const on = await api("POST", `/api/sandbox?path=${encodeURIComponent(ses.path)}`, { state: "on" });
+  assert.equal(on.status, 200, JSON.stringify(on.body));
+  assert.notEqual(on.body.outcome, "unsupported", JSON.stringify(on.body));
+  const run = async (command: string, clientId: string) => {
+    a.send({ type: "shell", command, clientId });
+    const got = await a.find(`${clientId}'s end or refusal`, (f) => (f.type === "shell_refused" && f.clientId === clientId) || (f.type === "shell_start" && f.clientId === clientId));
+    if (got.type === "shell_refused") return { refused: got.message as string };
+    return a.find(`${clientId}'s end`, (f) => f.type === "shell_end" && f.id === got.run.id);
+  };
+  const outside = join(s.home, `shell-sandbox-${Date.now()}`);
+  const inside = await run("touch ./inside-ok && echo wrote", "in");
+  // A computer whose sandbox can't be proven here (the probe itself fails, as inside another sandbox): the
+  // command is refused, fail-closed, and this check can't run. Any other refusal is a failure.
+  if ("refused" in inside && /sandbox probe failed/.test(inside.refused)) {
+    console.warn(`shell-mode.integration: SKIPPED the sandboxed command: ${inside.refused}`);
+    a.close();
+    return;
+  }
+  assert.equal((inside as any).output?.trim(), "wrote", JSON.stringify(inside));
+  assert.ok(existsSync(join(s.work, "inside-ok")), "the chat's folder is writable");
+  const home = await run(`touch ${outside}; echo rc=$?`, "home");
+  assert.ok(!existsSync(outside), `the home folder is not: ${JSON.stringify(home)}`);
+  const net = await run("(exec 3<>/dev/tcp/1.1.1.1/80) 2>/dev/null && echo reached || echo blocked", "net");
+  assert.equal((net as any).output.trim(), "blocked", JSON.stringify(net));
+  a.close();
+}
+
 test("the hello says which chats have shell mode: an ordinary chat does, the Overseer doesn't and refuses a command (§chat.shell-mode/box)", async () => {
   const ses = await newSession();
   const a = await chatSocket(ses);

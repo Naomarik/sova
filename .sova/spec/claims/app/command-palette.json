@@ -116,11 +116,18 @@
       "src/components/ShortcutSheet.tsx",
       "src/App.tsx",
       "src/commands/keys.test.ts",
-      "src/command-palette.css"
+      "src/command-palette.css",
+      "src/lib/shell-mode.ts",
+      "src/lib/shell-mode.test.ts"
     ],
     "requires": [],
     "authority": "accepted",
-    "evidence": "verified"
+    "evidence": "verified",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-07T13:31Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#f856a549"
+    }
   },
   "§app/command-palette": {
     "kind": "surface",

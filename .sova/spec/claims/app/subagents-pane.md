@@ -474,7 +474,8 @@ sent. Each part is read as the chat's folder and the chat hold it now (`GET
 - **The lines**, biggest first, each a group: **Instruction files**, **Mode**, **Rules and docs**
   (the rest of the system prompt), **Skills offered** and **Tools**, each summed, and
   **Conversation** (the messages since the latest compaction, its kept part included, less the
-  loaded subfolder files, which count under Instruction files). A line at 0 is left out, except
+  loaded subfolder files, which count under Instruction files; a command kept from the model with
+  `!!` counts nothing, §chat.shell-mode/model). A line at 0 is left out, except
   Instruction files while it lists a file not yet loaded. Once a reply has given a total, **Other**
   sits apart below them: the total minus every other line, never below 0, what the estimates don't
   explain (Claude Code's own prompt, for example), with that explanation on its row. Free has no

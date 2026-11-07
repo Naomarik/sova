@@ -2,7 +2,7 @@
   "§design.copy-deck/composer": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "src/components/VoiceInput.tsx",
       "src/lib/voice/format.ts",
@@ -11,7 +11,10 @@
       "src/components/SessionView.tsx",
       "src/lib/placeholder-fit.ts",
       "src/components/Thread.tsx",
-      "src/lib/error-feed.ts"
+      "src/lib/error-feed.ts",
+      "src/lib/shell-mode.ts",
+      "src/lib/shell-runs.ts",
+      "src/components/ShellCard.tsx"
     ],
     "about": [
       "§chat/composer"

@@ -21,7 +21,8 @@
     "authority": "accepted",
     "evidence": "reviewed",
     "code": [
-      "server/shell-guard.ts"
+      "server/shell-guard.ts",
+      "server/chat-shell.ts"
     ],
     "requires": [
       "§chat.kill-guard/refusal",
@@ -39,16 +40,18 @@
       "server/chat-manager.ts",
       "server/project-services/worker-verbs.test.ts",
       "server/harness/pi/shell-guard-session.integration.test.ts",
-      "server/chat-manager-defaults.test.ts"
+      "server/chat-manager-defaults.test.ts",
+      "server/chat-shell.ts",
+      "server/chat-shell.test.ts"
     ],
     "requires": [
       "§app/claude-code-provider",
       "§app.chat-processes/workers"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:37Z",
-      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#dfa41b22"
+      "by": "naomarik",
+      "at": "2026-11-07T12:39Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
     }
   },
   "§chat/kill-guard": {
@@ -58,7 +61,8 @@
     "code": [
       "server/shell-guard.ts",
       "server/shell-guard-extension.ts",
-      "server/chat-manager.ts"
+      "server/chat-manager.ts",
+      "server/chat-shell.ts"
     ],
     "requires": [
       "§app/claude-code-provider",
@@ -68,9 +72,9 @@
       "§chat/sandbox"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:37Z",
-      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#dfa41b22"
+      "by": "naomarik",
+      "at": "2026-11-07T12:39Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
     }
   }
 }

@@ -121,12 +121,15 @@
       "src/lib/focus-view.test.ts",
       "src/lib/focus-view.browser.test.ts",
       "scripts/e2e/focus-view.mjs",
-      "package.json"
+      "package.json",
+      "src/lib/type-anywhere.ts",
+      "src/lib/type-anywhere.test.ts",
+      "scripts/e2e/type-anywhere.mjs"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-22T02:40Z",
-      "source": "pi-session:aaa55e42-efea-4624-8d25-f08fbba7fb25#75e80ed8"
+      "at": "2026-11-07T11:14Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
     }
   },
   "§chat.transcript/instant-open": {
@@ -492,6 +495,7 @@
       "server/app.ts",
       "server/mesh/access.ts",
       "server/ws-open-retry.test.ts",
+      "server/chat-actions.test.ts",
       "src/lib/chat-wait.ts",
       "src/lib/command-wait.ts",
       "src/lib/chat-wait.test.ts",
@@ -499,12 +503,12 @@
       "src/lib/first-connect-send.browser.test.ts",
       "server/first-connect-send.integration.test.ts"
     ],
+    "evidence": "verified",
     "agreed": {
-      "by": "user",
-      "at": "2026-11-07T11:46Z",
-      "source": "pi-session:507564a9-be11-44f3-986c-2fbc90e6725b#24834804"
-    },
-    "evidence": "verified"
+      "by": "naomarik",
+      "at": "2026-11-07T13:46Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#f856a549"
+    }
   },
   "§chat.transcript/setup-card": {
     "kind": "behavior",
@@ -755,12 +759,22 @@
       "src/components/WakeCard.tsx",
       "src/lib/wake.test.ts",
       "src/lib/wake-card.test.ts",
-      "pi-config/extensions/subagents/job-store.ts"
+      "pi-config/extensions/subagents/job-store.ts",
+      "server/transcript.ts",
+      "src/components/ShellCard.tsx",
+      "src/lib/transcript-kinds.ts",
+      "src/components/TranscriptKind.tsx",
+      "server/wire-rows.ts",
+      "server/transcript-rows.ts",
+      "server/tail-hello.ts",
+      "server/watch.ts",
+      "server/harness/pi/reader.ts",
+      "server/transcript-shell.test.ts"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-04T11:00Z",
-      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+      "by": "naomarik",
+      "at": "2026-11-07T12:39Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
     }
   },
   "§chat.transcript/turn-end-keeps-reader": {

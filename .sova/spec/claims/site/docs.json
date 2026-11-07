@@ -124,7 +124,8 @@
       "§chat.composer/behavior",
       "§chat.model-menu/favorites",
       "§chat.model-menu/menu",
-      "§chat.model-menu/errors"
+      "§chat.model-menu/errors",
+      "§chat.composer/esc-stop"
     ],
     "authority": "accepted",
     "evidence": "reviewed",

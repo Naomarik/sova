@@ -66,11 +66,6 @@
       "§chat/subfolder-instructions"
     ],
     "authority": "accepted",
-    "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-05T04:19Z",
-      "source": "pi-session:01a1a88f-5beb-72d2-b9d3-5a24bf160f0d#73d3abf6"
-    },
     "evidence": "verified",
     "code": [
       "src/components/ContextTab.tsx",
@@ -79,6 +74,7 @@
       "src/lib/context-parts.ts",
       "src/lib/context-parts.test.ts",
       "src/components/SessionPane.tsx",
+      "src/components/SessionDetails.tsx",
       "src/lib/api.ts",
       "server/context-tab.ts",
       "server/context-tab.test.ts",
@@ -92,8 +88,14 @@
       "server/harness/pi/session.test.ts",
       "shared/harness-session.ts",
       "src/components/ReaderDoc.tsx",
-      "server/context-tab-sheet.integration.test.ts"
-    ]
+      "server/context-tab-sheet.integration.test.ts",
+      "server/transcript-shell.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-07T12:38Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
+    }
   },
   "§app.subagents-pane/head": {
     "kind": "behavior",

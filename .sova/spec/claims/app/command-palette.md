@@ -10,7 +10,8 @@ Owns: the two keys that open them, the `plus` button's opening of the palette, w
 command runs from, the reasons a row is disabled, and the sheet. Not here: the slash menu itself
 (§chat/slash-commands), the dialogs a row opens (§app/new-session-dialog, §app/settings-dialog),
 and the other app-wide keys, which keep their own claims (Alt+O §app.overseer/identity-and-clear,
-Ctrl/⌘+P §chat.model-menu/keyboard, Ctrl/⌘+B and `/` §app.session-list/spine).
+Ctrl/⌘+P §chat.model-menu/keyboard, Ctrl/⌘+B and `/` §app.session-list/spine, a character typed
+outside a text field §chat.composer/type-anywhere).
 
 All app-wide keys are rows of one table (`src/commands/keys.ts`), and no keydown fires two of
 them. The two keys here take over these browser defaults, and nothing else in the app used them:
@@ -162,8 +163,13 @@ a form made from its params, and one button.
 - **`?`** opens it from anywhere outside a text field (on a US keyboard, `Shift+/`). In a text
   field `?` types as before. The palette's Keyboard Shortcuts row opens it too.
 - It's a modal titled **Keyboard Shortcuts**: one row for each app-wide key in the key table, its
-  key in mono and what it does, then the palette's own keys (`↑` `↓`, `Enter`, `Esc`). The
-  keys inside one panel (a workspace's `Ctrl+Alt+←/→`, a dialog's `Esc`) keep their own claims and
+  key in mono and what it does, then the message box's own keys: shell mode's `!`, "In an empty
+  message box: runs a command in this chat's folder.", and `!!`, "In an empty message box: runs a
+  command the model never sees." (§chat.shell-mode/box), then its two `Esc` rows, "In an empty ! or
+  !! box: leaves shell mode for a message box." (§chat.shell-mode/box) and "In the composer while a
+  reply runs: stops it." (§chat.composer/esc-stop), then the palette's own keys (`↑` `↓`, `Enter`,
+  `Esc`). The other keys inside one panel (a workspace's `Ctrl+Alt+←/→`, a dialog's `Esc`) keep
+  their own claims and
   aren't listed.
 - `Esc`, the scrim, or **Close** closes it, and focus returns to what had it.
 - Like the palette, its code loads on its first opening.

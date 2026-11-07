@@ -19,6 +19,7 @@
     "e2e:transcript-drift": "node scripts/e2e/transcript-drift.mjs",
     "e2e:transcript-follow": "node scripts/e2e/transcript-follow.mjs",
     "e2e:instant-open": "node scripts/e2e/instant-open.mjs",
+    "e2e:shell-bar": "node scripts/e2e/shell-bar.mjs",
     "e2e:transcript-jitter": "node scripts/e2e/transcript-jitter.mjs",
     "e2e:focus-view": "node scripts/e2e/focus-view.mjs",
     "scenario": "node scripts/sova-scenario.mjs",

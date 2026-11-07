@@ -343,7 +343,9 @@ old: say so instead of half working.
   `[from session "the extension {title}, not this chat or its name" (ext:{id}), hop 0]`. No field or header can name another sender. It starts a turn in
   an idle chat and is a queued row the user can remove in a busy one.
 - **It is never the user's word.** A message of yours can't land a branch and doesn't end a chat's wait
-  on its alignment answers.
+  on its alignment answers. The limit: your message can ask that chat's agent to use `session_send`, and
+  what the agent then sends arrives under that chat's mark, not yours, so it can end another chat's wait
+  on its alignment answers. Sova doesn't trace an extension through an agent's relay.
 - **What a key is refused**, with a `403` and `extensionRefused: true`, or an `error` frame with code
   `refused`:
   - prompt, steer and dialog-answer frames, and rewind, regenerate and compact-with-instructions, on

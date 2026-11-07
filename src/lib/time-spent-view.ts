@@ -96,6 +96,8 @@ export type SpentView = {
  * message after it, and ticks with You. A row's messages add up to the row.
  */
 export function messageLines(messages: TimeSpentMessages, you: number): SpentMessageLine[] {
+  // No message to show means no section, whatever You says: Since Your Last Message never stands alone here.
+  if (!messages.rows.some((r) => r.messages.length > 0)) return [];
   const byKey = new Map(messages.rows.map((r) => [r.key, r]));
   const order = [...MESSAGE_LABELS.map((l) => l.key as string), "before-action"];
   const seconds: Record<string, number> = { "before-action": messages.beforeAction.seconds };

@@ -16,7 +16,7 @@ import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type Api, type AssistantMessageEvent, type Model, normalizeContext, Type, type Message, type Tool } from "@earendil-works/pi-ai";
 import {
-	claudeSessionId, FOLD_CHARS_PER_TOKEN, resendsReply, stoppedAndResent, FOLD_LINE_HEADROOM, foldBudgetChars, foldHistory, foldSizeEstimate, getSessionBridge, isPrefix, LIMITS, MAX_FOLD_CHARS, memorySystemPrompt, memoryViewFrame, MIN_FOLD_CHARS, SYSTEM_PROMPT_BOUNDARY, withoutMemoryPrefix,
+	claudeSessionId, FOLD_CHARS_PER_TOKEN, resendsReply, stoppedAndResent, STOPPED_TAIL_CHARS, FOLD_LINE_HEADROOM, foldBudgetChars, foldHistory, foldSizeEstimate, getSessionBridge, isPrefix, LIMITS, MAX_FOLD_CHARS, memorySystemPrompt, memoryViewFrame, MIN_FOLD_CHARS, SYSTEM_PROMPT_BOUNDARY, withoutMemoryPrefix,
 	resetSessionBridge, SessionBridge, transcriptFingerprint, uuidv5, windowOverflow, type ClaudeLoginSource,
 } from "./session-bridge.ts";
 import { streamClaudeCode } from "./stream.ts";
@@ -2947,6 +2947,16 @@ test("an edited stopped reply, a reply nobody sent back, or a tool turn does not
 		"a tool ran earlier in that turn");
 	assert.equal(stoppedAndResent([user("plan it"), { ...stoppedReply({ text: PARTIAL }), stopReason: "stop" } as Message, user(PARTIAL)], 1), false, "a finished reply quoted back is not a stop");
 	assert.equal(stoppedAndResent([user("plan it"), stoppedReply({ text: PARTIAL }), user("go on")], 1), false);
+	// A part that ends at a blank line but falls well short of the reply is an edit, not the press-time copy.
+	assert.equal(resendsReply("Para A.\n\nPara B continues here.", "Para A.\n\nmy words"), false, "a paragraph deleted");
+	assert.equal(resendsReply("Sure, here is the plan: first we refactor the parser.", "Sure\n\nbut do the tests first"), false, "a rewritten box that starts like the reply");
+});
+
+test("a long stopped reply counts when the box's copy is short of it by what streams after the press, not more", () => {
+	const reply = `${"word ".repeat(400).trim()}.`;
+	const cut = (missing: number) => reply.slice(0, reply.length - missing).trimEnd();
+	assert.equal(resendsReply(reply, `${cut(STOPPED_TAIL_CHARS - 10)}\n\nmy words`), true, "short by less than the tail");
+	assert.equal(resendsReply(reply, `${cut(STOPPED_TAIL_CHARS + 10)}\n\nmy words`), false, "short by more: an edit");
 });
 
 test("a restart's replay of a stopped reply the user sent back has its text once, in the user's message", () => {
@@ -3057,6 +3067,27 @@ test("a rewind the CLI refuses, or a message without the reply, sends the new me
 		assert.deepEqual(sent.message.content, [{ type: "text", text: "Here is the plan:\n\n1. Read a file\n\nmy words" }]);
 		await bridge.disposeAll();
 	}
+});
+
+test("a rewind the CLI never answers restarts the child: what it holds is unknown, and the fold has the reply's text once", { timeout: 10000 }, async () => {
+	const { bridge, children } = harness();
+	const { cli } = await stoppedTurn(bridge, children, "plan it", PARTIAL);
+	// The fake stops answering rewinds: the request times out (requestTimeoutMs).
+	cli.removeAllListeners("frame");
+	const history = [user("plan it"), stoppedReply({ text: PARTIAL }), user(`${PARTIAL}\n\nmy words`)];
+	let sent: Record<string, any> = {};
+	await collectAfter(bridge.runTurn(request(history)), async () => {
+		const next = await child(children, 2, 4000);
+		await next.handshake();
+		sent = await next.waitFor((f) => f.type === "user");
+		for (const frame of finalTextFrames("ok")) next.emitFrame(frame);
+	});
+	assert.ok(cli.sent.some((f) => f.request?.subtype === "rewind_conversation"));
+	assert.equal(children.length, 2, "a new child");
+	const text = sent.message.content[0].text as string;
+	assert.match(text, /<conversation-history>/);
+	assert.equal(text.split("1. Read the file").length - 1, 1, text);
+	await bridge.disposeAll();
 });
 
 test("a stopped turn that called a tool is never rewound: the tool's work would be taken back", { timeout: 10000 }, async () => {

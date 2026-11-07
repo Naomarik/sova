@@ -671,13 +671,19 @@ export function stoppedReplyText(message: Message | undefined): string | undefin
 	return texts.length ? texts.join("\n\n") : undefined;
 }
 
+/** The most of a stopped reply that may be missing from the box's copy of it (resendsReply). */
+export const STOPPED_TAIL_CHARS = 200;
+
 /**
  * `text` carries the stopped `reply` unchanged: one part of it, starting at its start or after a
  * blank line and ending at its end or before one (how the box joins what comes back to what was
  * typed), is the reply's text or a non-empty prefix of it (the box took the reply as it stood at
  * the press; pi kept what arrived until the stop). The part must run as far as `text` and the
  * reply agree, whitespace aside: a reply edited anywhere, even past a blank line of its own, fails,
- * because its unedited start runs on into the edit.
+ * because its unedited start runs on into the edit. And it may fall short of the reply by no more
+ * than STOPPED_TAIL_CHARS, or half the reply if that is less: what can stream between the press and
+ * the stop. A shorter part (a paragraph deleted, a box rewritten that happens to start like the
+ * reply) is an edit. Missing one costs the model a repeat; a false match would cost it the reply.
  */
 export function resendsReply(reply: string, text: string): boolean {
 	const starts = [0];
@@ -689,6 +695,8 @@ export function resendsReply(reply: string, text: string): boolean {
 		let end = start + same;
 		while (end > start && /\s/.test(text[end - 1]!)) end--;
 		if (end === start) continue;
+		// Short only by what streamed between the press and the stop: a shorter part is an edit.
+		if (end - start < reply.length - Math.min(STOPPED_TAIL_CHARS, Math.floor(reply.length / 2))) continue;
 		const rest = text.slice(end);
 		if (rest === "" || rest.startsWith("\n\n")) return true;
 	}
@@ -1106,20 +1114,25 @@ class CliSession {
 				plan = { restart: true, reason: "no live CLI process", why: plan.why, fallback: "resume-failed", results: [], users: [], first: !this.everStarted };
 			}
 		}
+		if (plan.rewind) {
+			const rewound = await this.rewindTo(plan.rewind.uuid);
+			// Refused: the child still holds the turn, so the new messages go alone, as before.
+			if (rewound === "refused") plan = { ...plan, rewind: undefined };
+			else if (rewound === "unknown") {
+				// No answer: the CLI may still rewind, so what the child holds is unknown. Start over.
+				this.markDesynced("Claude did not answer a rewind");
+				plan = { restart: true, reason: "Claude did not answer a rewind", why: "desynced", results: [], users: [] };
+			} else if (signal?.aborted) {
+				// The child forgot the prompt and was never sent it again.
+				this.markDesynced("the turn was aborted between a rewind and its resend");
+				return;
+			}
+		}
 		if (plan.restart && !plan.resume && !plan.started) await this.restart(request, plan.reason);
 		if (plan.restart && signal?.aborted) {
 			// The fresh child never got the history (or, resumed, the new messages); reusing it would drop them.
 			this.markDesynced("the turn was aborted before the restarted child was sent the history");
 			return;
-		}
-		if (plan.rewind) {
-			// Not rewound: the new messages go alone, as before.
-			if (!(await this.rewindTo(plan.rewind.uuid))) plan = { ...plan, rewind: undefined };
-			else if (signal?.aborted) {
-				// The child forgot the prompt and was never sent it again.
-				this.markDesynced("the turn was aborted between a rewind and its resend");
-				return;
-			}
 		}
 
 		const queue = new FrameQueue();
@@ -1236,20 +1249,20 @@ class CliSession {
 	}
 
 	/**
-	 * Ask the child to forget its last turn, prompt included. True only when the CLI says it
-	 * rewound; anything else (refused, no answer) leaves the conversation as it was.
+	 * Ask the child to forget its last turn, prompt included: "rewound" only when the CLI says so,
+	 * "refused" for any other answer (the conversation is as it was), "unknown" for none.
 	 */
-	private async rewindTo(uuid: string): Promise<boolean> {
+	private async rewindTo(uuid: string): Promise<"rewound" | "refused" | "unknown"> {
 		const transport = this.transport;
-		if (!transport || transport.isClosed()) return false;
+		if (!transport || transport.isClosed()) return "refused";
 		const t0 = Date.now();
 		const result = await transport.request("rewind_conversation", { target_message_uuid: uuid });
-		const rewound = result.ack === true && result.response?.rewound === true;
+		const outcome = result.ack === undefined ? "unknown" : result.ack === true && result.response?.rewound === true ? "rewound" : "refused";
 		debugLog({
-			event: "rewind", session: this.piSessionId, rewound, ms: Date.now() - t0,
-			...(rewound ? {} : { ack: result.ack ?? null, error: result.error ?? result.response?.error ?? null }),
+			event: "rewind", session: this.piSessionId, outcome, ms: Date.now() - t0,
+			...(outcome === "rewound" ? {} : { ack: result.ack ?? null, error: result.error ?? result.response?.error ?? null }),
 		});
-		return rewound;
+		return outcome;
 	}
 
 	/**

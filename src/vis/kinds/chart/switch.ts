@@ -84,6 +84,48 @@ export function shownToggles(spec: ChartSpec, choice: ChartChoice): Record<Toggl
   };
 }
 
+export const TOGGLE_ORDER: readonly Toggle[] = ["log", "sort", "pct"];
+const VIEW_NAME: Record<ChartType, string> = { bar: "Bar", stacked: "Stacked", line: "Line", parts: "Parts", scatter: "Scatter" };
+const TOGGLE_NAME: Record<Toggle, string> = { log: "Log", sort: "Sort", pct: "%" };
+
+/**
+ * The toggles this chart can use in any of its views, in the head's fixed order. The head always
+ * shows exactly these, so switching views or flipping one never moves a control.
+ */
+export function offeredToggles(spec: ChartSpec): Toggle[] {
+  const v = chartViews(spec);
+  const views: ChartType[] = spec.type === "scatter" || capacity(spec) ? [spec.type] : v.views;
+  const any = new Set<Toggle>();
+  for (const view of views) {
+    // Each of Log and % shows while the other is off, so try both off.
+    const shown = shownToggles(spec, { view, log: false, sort: false, pct: false });
+    for (const t of TOGGLE_ORDER) if (shown[t]) any.add(t);
+  }
+  return TOGGLE_ORDER.filter((t) => any.has(t));
+}
+
+export interface ToggleState {
+  toggle: Toggle;
+  /** Usable in this choice; otherwise drawn greyed in its place. */
+  enabled: boolean;
+  /** Pressed: on and usable. */
+  on: boolean;
+  /** Why it is greyed ("Sort doesn't apply to Line", "Turn % off to use Log"), else undefined. */
+  hint?: string;
+}
+
+/** Every offered toggle for this choice, in order: usable or greyed, with the reason. */
+export function toggleStates(spec: ChartSpec, choice: ChartChoice): ToggleState[] {
+  const shown = shownToggles(spec, choice);
+  return offeredToggles(spec).map((t) => {
+    if (shown[t]) return { toggle: t, enabled: true, on: choice[t] };
+    const other: Toggle | null = t === "log" ? "pct" : t === "pct" ? "log" : null;
+    const blocker = other && choice[other] && shownToggles(spec, { ...choice, [other]: false })[t];
+    const hint = blocker ? `Turn ${TOGGLE_NAME[other!]} off to use ${TOGGLE_NAME[t]}` : `${TOGGLE_NAME[t]} doesn't apply to ${VIEW_NAME[choice.view]}`;
+    return { toggle: t, enabled: false, on: false, hint };
+  });
+}
+
 /**
  * Any choice made valid for this chart (one restored from the tab, say): a view that doesn't fit
  * falls back to the model's; Sort and % switch off where hidden; Log is kept while allowed at all,

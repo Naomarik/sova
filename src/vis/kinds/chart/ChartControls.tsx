@@ -1,6 +1,6 @@
 import { For, Show, createMemo, createSignal, type Accessor } from "solid-js";
 import type { ChartSpec, ChartType } from "./parse";
-import { chartViews, drawAs, isModel, modelChoice, pickView, settle, shownToggles, toggle, type ChartChoice, type ChartView } from "./switch";
+import { chartViews, drawAs, isModel, modelChoice, pickView, settle, toggle, toggleStates, type ChartChoice, type ChartView, type Toggle } from "./switch";
 import { recallChoice, rememberChoice } from "./memory";
 
 /**
@@ -29,16 +29,23 @@ export function createChartState(spec: ChartSpec, key: string): ChartState {
 }
 
 const VIEW_LABEL: Record<ChartView, string> = { bar: "Bar", stacked: "Stacked", line: "Line", parts: "Parts" };
+const TOGGLE: Record<Toggle, { label: string; title: string }> = {
+  log: { label: "Log", title: "Log scale" },
+  sort: { label: "Sort", title: "Sort largest first" },
+  pct: { label: "%", title: "Show each value as a share of the total" },
+};
 
 /**
  * The figure head's chart controls: a segmented view switch (a radio group: one Tab stop, the
  * arrow keys move and pick; a dot marks the model's view, no Reset) when more than one view fits,
- * then the Log, Sort and % toggles this view shows. The caller leaves them out while Source shows.
+ * then every Log, Sort and % toggle the chart can use in any of its views, always, in that order: one
+ * this view can't use stays in its place, greyed, its title saying why, so no control ever moves.
+ * The caller leaves them out while Source shows.
  */
 export function ChartControls(props: { state: ChartState }) {
   const st = props.state;
   const model = st.spec.type;
-  const shown = createMemo(() => shownToggles(st.spec, st.choice()));
+  const toggles = createMemo(() => toggleStates(st.spec, st.choice()));
   const refs: HTMLButtonElement[] = [];
   const onKey = (e: KeyboardEvent, i: number) => {
     const n = st.views.length;
@@ -78,20 +85,28 @@ export function ChartControls(props: { state: ChartState }) {
           </For>
         </div>
       </Show>
-      <Show when={shown().log}>
-        <button class="button button-sm button-ghost vis-chart-toggle" type="button" aria-pressed={st.choice().log} title="Log scale" onClick={() => flip("log")}>
-          Log
-        </button>
-      </Show>
-      <Show when={shown().sort}>
-        <button class="button button-sm button-ghost vis-chart-toggle" type="button" aria-pressed={st.choice().sort} title="Sort largest first" onClick={() => flip("sort")}>
-          Sort
-        </button>
-      </Show>
-      <Show when={shown().pct}>
-        <button class="button button-sm button-ghost vis-chart-toggle" type="button" aria-pressed={st.choice().pct} title="Show each value as a share of the total" onClick={() => flip("pct")}>
-          %
-        </button>
+      <Show when={toggles().length}>
+        <div class="vis-chart-toggles">
+          <For each={toggles().map((t) => t.toggle)}>
+            {(t) => {
+              const s = () => toggles().find((x) => x.toggle === t)!;
+              return (
+                <button
+                  class="button button-sm button-ghost vis-chart-toggle"
+                  type="button"
+                  data-toggle={t}
+                  aria-pressed={s().on}
+                  disabled={!s().enabled}
+                  aria-disabled={!s().enabled}
+                  title={s().hint ?? TOGGLE[t].title}
+                  onClick={() => flip(t)}
+                >
+                  {TOGGLE[t].label}
+                </button>
+              );
+            }}
+          </For>
+        </div>
       </Show>
     </div>
   );

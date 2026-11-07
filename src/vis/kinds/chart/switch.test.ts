@@ -4,7 +4,7 @@ import { emphasisMap, emphasisNotes } from "../../core/emphasis";
 import { parseVis } from "../../parse";
 import { MAX_PARTS, type ChartSpec } from "./parse";
 import { partsOf } from "./parts";
-import { chartViews, drawAs, isModel, modelChoice, pickView, settle, shownToggles, sortOrder, toggle, VIEW_ORDER, type ChartChoice, type ChartView } from "./switch";
+import { chartViews, drawAs, isModel, modelChoice, offeredToggles, pickView, settle, shownToggles, sortOrder, toggle, toggleStates, VIEW_ORDER, type ChartChoice, type ChartView, type Toggle } from "./switch";
 
 const parse = (body: string) => parseVis("chart", body);
 const chart = (body: string) => {
@@ -210,4 +210,55 @@ test("chart views: sorted parts keep each part's colour", () => {
     assert.equal(sorted.get(label), m ? SERIES_TONE[Number(m[1])] : c, label);
   }
   assert.deepEqual(drawAs(s, choice({ view: "parts", sort: true })).rows.map((r) => r.label), ["c", "a", "d", "b"]);
+});
+
+test("chart toggles: the head's set is fixed per chart, greyed where this choice can't use one", () => {
+  const types = ["bar", "line", "parts", "stacked"] as const;
+  const specs: [string, ChartSpec][] = [];
+  for (const [name, body] of Object.entries(BODIES)) for (const t of types) {
+    const r = parse(`type: ${t}\n${body}`);
+    if (r.ok) specs.push([`${t}/${name}`, r.spec as ChartSpec]);
+  }
+  specs.push(["scatter", chart("type: scatter\na 1 2\nb 3 4")], ["capacity", chart("type: parts\nof: 100\na 30\nb 20")], ["pct", chart("unit: %\na 30\nb 20")]);
+  for (const [name, spec] of specs) {
+    const offered = offeredToggles(spec);
+    const views: ChartChoice["view"][] = chartViews(spec).views.length ? chartViews(spec).views : [spec.type];
+    // Every reachable choice: each view with each toggle combination, settled as the head would.
+    const choices = views.flatMap((view) => [false, true].flatMap((log) => [false, true].flatMap((sort) => [false, true].map((pct) => settle(spec, { view, log, sort, pct })))));
+    const union = new Set<Toggle>();
+    for (const c of choices) {
+      const states = toggleStates(spec, c);
+      // The same toggles in the same order whatever the choice: nothing in the head moves.
+      assert.deepEqual(states.map((s) => s.toggle), offered, `${name} ${JSON.stringify(c)}`);
+      const shown = shownToggles(spec, c);
+      for (const s of states) {
+        assert.equal(s.enabled, shown[s.toggle], `${name} ${s.toggle}`);
+        assert.equal(s.on, s.enabled && c[s.toggle]);
+        assert.equal(!!s.hint, !s.enabled);
+        if (s.enabled) union.add(s.toggle);
+      }
+    }
+    // Exactly the toggles some choice can use: none it can never use.
+    assert.deepEqual([...union].sort(), [...offered].sort(), name);
+  }
+});
+
+test("chart toggles: what each chart offers, and the greyed hints", () => {
+  const one = chart("a 5\nb 3\nc 9");
+  assert.deepEqual(offeredToggles(one), ["log", "sort", "pct"]);
+  assert.deepEqual(offeredToggles(chart("a 5\nb -3\nc 9")), ["sort"]);
+  assert.deepEqual(offeredToggles(chart("unit: %\na 30\nb 20")), ["log", "sort"]);
+  assert.deepEqual(offeredToggles(chart("type: scatter\na 1 2\nb 3 4")), ["log"]);
+  assert.deepEqual(offeredToggles(chart("type: parts\nof: 100\na 30\nb 20")), []);
+  const hint = (c: ChartChoice) => Object.fromEntries(toggleStates(one, c).map((s) => [s.toggle, s.hint ?? null]));
+  assert.deepEqual(hint(choice({ view: "bar" })), { log: null, sort: null, pct: null });
+  assert.deepEqual(hint(choice({ view: "line" })), { log: null, sort: "Sort doesn't apply to Line", pct: null });
+  assert.deepEqual(hint(choice({ view: "parts" })), { log: "Log doesn't apply to Parts", sort: null, pct: "% doesn't apply to Parts" });
+  assert.deepEqual(hint(choice({ view: "bar", pct: true })), { log: "Turn % off to use Log", sort: null, pct: null });
+  assert.deepEqual(hint(choice({ view: "line", log: true })), { log: null, sort: "Sort doesn't apply to Line", pct: "Turn Log off to use %" });
+  // Log kept while Parts ignores it: greyed, not pressed; back on Bar it is pressed again.
+  const kept = pickView(one, toggle(one, choice({ view: "bar" }), "log"), "parts");
+  assert.equal(kept.log, true);
+  assert.deepEqual(toggleStates(one, kept).find((s) => s.toggle === "log"), { toggle: "log", enabled: false, on: false, hint: "Log doesn't apply to Parts" });
+  assert.equal(toggleStates(one, pickView(one, kept, "bar")).find((s) => s.toggle === "log")!.on, true);
 });

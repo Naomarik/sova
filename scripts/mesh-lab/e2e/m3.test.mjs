@@ -10,7 +10,7 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { LAB_DIR } from "../lab.mjs";
-import { exec, lab, laptopFetch, requireLab, sh, waitFor } from "./lib.mjs";
+import { exec, hostUrl, lab, labPageHeaders, laptopFetch, requireLab, sh, waitFor } from "./lib.mjs";
 
 let cfg;
 let A, B, C;
@@ -92,12 +92,14 @@ describe("extensions", () => {
     const listed = async (h) => (await (await laptopFetch(h, "/api/extensions")).json()).find((e) => e.id === id);
     try {
       // Written by hand, so it waits on A and reaches no peer until it is approved, as on the Extensions screen.
-      await waitFor(() => listed(A), { timeoutMs: 15000, what: "A lists its own entry" });
+      await waitFor(async () => (await (await laptopFetch(A, "/api/extensions/installed")).json()).rows.find((r) => r.id === id)?.state === "waiting", { timeoutMs: 15000, what: "A's screen shows it waiting" });
+      assert.equal(await listed(A), undefined, "A doesn't serve it while it waits");
       await new Promise((r) => setTimeout(r, 5000));
       for (const h of [B, C]) assert.equal(await listed(h), undefined, `${h} sees nothing while A's entry waits`);
-      const post = (path, body) => laptopFetch(A, path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const post = (path, body) => fetch(`${hostUrl(A)}${path}`, { method: "POST", headers: { ...labPageHeaders(), "content-type": "application/json" }, body: JSON.stringify(body) });
       const { review } = await (await post("/api/extensions/inspect", { id })).json();
       assert.equal((await post(`/api/extensions/${id}/approve`, { version: review.version })).status, 200, "A approves it");
+      assert.ok(await listed(A), "A lists its own entry");
       for (const h of [B, C]) {
         const t0 = Date.now();
         const row = await waitFor(() => listed(h), { timeoutMs: 30000, what: `${h} lists ${id}` });

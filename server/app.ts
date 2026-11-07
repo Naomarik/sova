@@ -64,7 +64,7 @@ import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } 
 import { setFavorite } from "./model-favorites";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
-import { draftForClient, isDraftMode, putBackDraft, setDraft } from "./drafts";
+import { draftForClient, isDraftMode, markerOf, putBackDraft, setDraft } from "./drafts";
 import { shellOutputPage } from "./shell-output";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
@@ -862,10 +862,12 @@ export function buildApp(deps: AppDeps) {
     if (body.attachments !== undefined && !Array.isArray(body.attachments)) return c.json({ error: "attachments must be an array" }, 400);
     if (body.mode !== undefined && !isDraftMode(body.mode)) return c.json({ error: 'mode must be "shell" or "private"' }, 400);
     // Only the person's own page saves a command (§chat.shell-mode/box): any other writer's draft is a message,
-    // so a script, a chat or a card can never leave the box one Enter from running something.
-    const mode = body.mode !== undefined && notPage(c) === null ? body.mode : undefined;
+    // so a script, a chat, a card or a page over the peer listener can never leave the box one Enter from
+    // running something. A refused mode stays in view as its marker ("!ls"), as a hand-back's does.
+    const keep = body.mode !== undefined && notPage(c) === null;
+    const text = body.mode !== undefined && !keep ? `${markerOf(body.mode)}${body.text}` : body.text;
     // Invalid entries are dropped by the store rather than failing the whole write.
-    setDraft(idOf(path), body.text, body.attachments, mode);
+    setDraft(idOf(path), text, body.attachments, keep ? body.mode : undefined);
     return c.json({ ok: true });
   });
 

@@ -369,13 +369,21 @@ div.overview-project-card-row::after { content: ""; flex: none; width: 16px; }
 .overview-project-card-pips { display: inline-flex; gap: 2px; }
 .overview-project-card-pips > i { width: 5px; height: 9px; border-radius: 1px; background: var(--color-sunken); outline: var(--stroke-thin) solid var(--color-border-strong); }
 .overview-project-card-pips > i.overview-project-card-pip-on { background: var(--status-info); }
+/* Memory in use: chats in --status-info, running slots in --color-border-strong (a neutral, not the accent), each its
+   share of the machine; a 1px surface gap between them, and the row's title and hidden text carry the exact parts. */
 .overview-project-card-bar {
-  width: 56px;
-  height: 4px;
+  display: inline-flex;
+  gap: 1px;
+  width: 64px;
+  height: 8px;
   border-radius: 2px;
+  overflow: hidden;
   border: var(--stroke-thin) solid var(--color-border);
-  background: linear-gradient(90deg, var(--status-info) var(--fill, 0%), var(--color-sunken) 0);
+  background: var(--color-sunken);
 }
+.overview-project-card-bar > i { flex: none; height: 100%; }
+.overview-project-card-bar-chats { background: var(--status-info); }
+.overview-project-card-bar-slots { background: var(--color-border-strong); }
 
 /* The progress zone: thin rows above the foot bar, only while a landing or a release moves. */
 .overview-project-card-progress { display: flex; flex-direction: column; }

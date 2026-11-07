@@ -38,7 +38,33 @@ export interface MemoryRow {
   text: string;
   /** The bar's fill, 0–1: the project's share of this machine's memory. null: no bar ("—"). */
   share: number | null;
+  /** The bar's two parts, each 0–1 of the bar's width: its chats' and its running slots' share of this machine's
+   *  memory, a nonzero part never thinner than MIN_BAR_PART. null: no bar. */
+  bar: { chats: number; slots: number } | null;
+  /** The exact parts, for hover and the row's accessible name: "Chats 1.5 GB · Running slots 2.7 GB"; null when nothing is used or not read. */
+  parts: string | null;
   muted: boolean;
+}
+
+/** A nonzero part of the memory bar is never drawn thinner than this share of the bar, so a small part stays visible. */
+export const MIN_BAR_PART = 0.12;
+
+const partWord = (n: number): string => (n > 0 ? bytesWord(n) : "0 MB");
+
+/** The memory bar's two parts from each one's bytes and this machine's memory: each part its share, the whole at most
+ *  the bar, a nonzero part at least MIN_BAR_PART (taken from the larger part when the bar is full). */
+export function memoryBar(chatsBytes: number, copiesBytes: number, hostTotalBytes: number): { chats: number; slots: number } {
+  const total = chatsBytes + copiesBytes;
+  const scale = total > hostTotalBytes ? 1 / total : 1 / hostTotalBytes;
+  const grow = (b: number, w: number) => (b > 0 ? Math.max(w, MIN_BAR_PART) : 0);
+  let chats = grow(chatsBytes, chatsBytes * scale);
+  let slots = grow(copiesBytes, copiesBytes * scale);
+  if (chats + slots > 1) {
+    if (chats >= slots) chats = 1 - slots;
+    else slots = 1 - chats;
+  }
+  const round = (w: number) => Math.round(w * 1000) / 1000;
+  return { chats: round(chats), slots: round(slots) };
 }
 
 export interface ProgressRow {
@@ -75,7 +101,7 @@ const UNREAD: CardRuntime = {
   caption: "",
   ready: { count: DASH, link: false, inLine: null, dot: false, muted: true },
   slots: null,
-  memory: { text: DASH, share: null, muted: true },
+  memory: { text: DASH, share: null, bar: null, parts: null, muted: true },
   hasSetup: false,
   progress: [],
 };
@@ -168,10 +194,14 @@ export function cardRuntime(g: ProjectGlance | undefined, hostTotalBytes: number
   const slots: SlotsRow | null = g.slots
     ? { pips: Array.from({ length: g.slots.cap }, (_, i) => i < g.slots!.running), text: `${g.slots.running} of ${g.slots.cap}`, muted: g.slots.running === 0 }
     : null;
-  const total = g.memory.chatsBytes + g.memory.copiesBytes;
+  const { chatsBytes, copiesBytes } = g.memory;
+  const total = chatsBytes + copiesBytes;
+  const host = hostTotalBytes && hostTotalBytes > 0 ? hostTotalBytes : null;
   const memory: MemoryRow = {
     text: total > 0 ? bytesWord(total) : "0 MB idle",
-    share: hostTotalBytes && hostTotalBytes > 0 ? Math.min(1, total / hostTotalBytes) : total > 0 ? null : 0,
+    share: host ? Math.min(1, total / host) : total > 0 ? null : 0,
+    bar: host ? memoryBar(chatsBytes, copiesBytes, host) : total > 0 ? null : { chats: 0, slots: 0 },
+    parts: total > 0 ? `Chats ${partWord(chatsBytes)} · Running slots ${partWord(copiesBytes)}` : null,
     muted: total === 0,
   };
   const progress = [q ? landingRow(q, now) : null, q ? frozenRow(q) : null, g.release ? releaseRow(g.release) : null].filter((r): r is ProgressRow => !!r);

@@ -39,18 +39,18 @@ export function ReadyToMerge(props: { ready: ReadyRow; href: string }) {
 }
 
 /** A Runtime row: a link with a chevron where it has a place to open, else plain (no hover, no chevron). */
-export function RuntimeRow(props: { href: string | undefined; label: string; children: JSX.Element }) {
+export function RuntimeRow(props: { href: string | undefined; label: string; title?: string; children: JSX.Element }) {
   return (
     <Show
       when={props.href}
       fallback={
-        <div class="overview-project-card-row">
+        <div class="overview-project-card-row" title={props.title}>
           <span class="overview-project-card-key">{props.label}</span>
           {props.children}
         </div>
       }
     >
-      <a class="overview-project-card-row overview-project-card-link" href={props.href}>
+      <a class="overview-project-card-row overview-project-card-link" href={props.href} title={props.title}>
         <span class="overview-project-card-key">{props.label}</span>
         {props.children}
         <Icon name="chevron-right" small class="overview-project-card-chev" />
@@ -248,12 +248,22 @@ export function OverviewProjects(props: {
                             )}
                           </Show>
                         </RuntimeRow>
-                        <RuntimeRow href={rt().hasSetup ? tab("branches") : undefined} label="Memory in use">
+                        <RuntimeRow href={rt().hasSetup ? tab("branches") : undefined} label="Memory in use" title={rt().memory.parts ?? undefined}>
                           <span class="overview-project-card-val text-num" classList={{ "overview-project-card-muted": rt().memory.muted }}>
-                            <Show when={rt().memory.share !== null}>
-                              <span class="overview-project-card-bar" aria-hidden="true" style={{ "--fill": `${Math.round((rt().memory.share ?? 0) * 1000) / 10}%` }} />
+                            <Show when={rt().memory.bar}>
+                              {(b) => (
+                                <span class="overview-project-card-bar" aria-hidden="true">
+                                  <Show when={b().chats > 0}>
+                                    <i class="overview-project-card-bar-chats" style={{ width: `${b().chats * 100}%` }} />
+                                  </Show>
+                                  <Show when={b().slots > 0}>
+                                    <i class="overview-project-card-bar-slots" style={{ width: `${b().slots * 100}%` }} />
+                                  </Show>
+                                </span>
+                              )}
                             </Show>
                             <span class="overview-project-card-fig">{rt().memory.text}</span>
+                            <Show when={rt().memory.parts}>{(p) => <span class="visually-hidden">: {p()}</span>}</Show>
                           </span>
                         </RuntimeRow>
                       </div>

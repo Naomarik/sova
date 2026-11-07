@@ -81,6 +81,11 @@ describe("one Land covers the checked fixes", () => {
       assert.equal(k.repo.head(), (await k.entry(entry.id)).landed?.sha);
       assert.ok(!k.notices.some((n) => n.kind === "drafts-changed"), "never drafts-changed");
       assert.equal(q.entries().filter((x) => x.branch === "feat/docs-only").length, 1, "one entry: no second Land");
+      // One press: the automatic re-queue of the checked fix is reported as approved but carries no press, so the
+      // chat's message labels record one Land (wire.ts recordLand), not one per fix.
+      const mine = k.approvals.filter((x) => x.branch === "feat/docs-only");
+      assert.equal(mine.length, 2, "approved at the Land and again at the fix's re-queue");
+      assert.deepEqual(mine.map((x) => x.press ?? null), [entry.approval.at, null]);
     } finally {
       await k.done();
     }

@@ -153,6 +153,8 @@ export interface Kit {
   queues: MergeQueues;
   run: ReturnType<typeof standInRun>;
   notices: { kind: MergeNoticeKind; branch: string; session?: string }[];
+  /** Every "approved" notice, with the user's press time when it reports one (wire.ts labels a Land press only then). */
+  approvals: { branch: string; press?: string }[];
   thread: ThreadEvent[];
   views: MergeQueueView[];
   q(): Promise<ProjectQueue>;
@@ -164,6 +166,7 @@ export function makeKit(o: { repo?: Repo; deps?: Partial<QueueDeps>; threadAnswe
   const repo = o.repo ?? makeRepo();
   const run = standInRun();
   const notices: Kit["notices"] = [];
+  const approvals: Kit["approvals"] = [];
   const thread: ThreadEvent[] = [];
   const views: MergeQueueView[] = [];
   const queues = new MergeQueues({
@@ -172,7 +175,10 @@ export function makeKit(o: { repo?: Repo; deps?: Partial<QueueDeps>; threadAnswe
     checksOf: () => o.checks ?? "declared",
     definitionAt: async () => ({ def: DEF, error: null }),
     // "approved" raises the chat's card (cards.test.ts); the notices here are what reaches the chat after it.
-    notify: (kind, e) => void (kind !== "approved" && notices.push({ kind, branch: e.branch, ...(e.session ? { session: e.session } : {}) })),
+    notify: (kind, e, extra) => {
+      if (kind === "approved") approvals.push({ branch: e.branch, ...(extra.press ? { press: extra.press } : {}) });
+      else notices.push({ kind, branch: e.branch, ...(e.session ? { session: e.session } : {}) });
+    },
     thread: (ev) => {
       thread.push(ev);
       return o.threadAnswers ?? false;
@@ -193,6 +199,7 @@ export function makeKit(o: { repo?: Repo; deps?: Partial<QueueDeps>; threadAnswe
     queues,
     run,
     notices,
+    approvals,
     thread,
     views,
     q: () => queues.get(repo.root),

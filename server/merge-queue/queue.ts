@@ -144,7 +144,8 @@ export interface QueueDeps {
    *  can be started to fix the target. Called once per check until a later run lifts it. */
   flagBroken?: (b: import("../../shared/merge-queue").TargetBroken, root: string) => void;
   /** Tell the branch's chat (server/merge-queue/notices.ts). */
-  notify?: (kind: MergeNoticeKind, entry: MergeEntry, extra: { run?: MergeRun; root: string; logDir?: string; request?: MergeChatRequest }) => void;
+  /** `press`: the time of the user's own Land press this notice reports (add, a decision's Land); never on an automatic re-queue. */
+  notify?: (kind: MergeNoticeKind, entry: MergeEntry, extra: { run?: MergeRun; root: string; logDir?: string; request?: MergeChatRequest; press?: string }) => void;
   /** The user's answer to a merge thread question, sent from the branch's chat with its decision: the question is
    *  closed and the answer goes to the thread (thread.ts MergeThread.answer). */
   answerAsk?: (root: string, ask: string, text: string, session?: string) => void;
@@ -1229,7 +1230,7 @@ export class ProjectQueue {
         if (!this.current && !this.q.entries.some((x) => x.state === "queued" || x.state === "checking")) this.q.knownTarget = head;
         this.save();
         this.wake("queued", onHost);
-        this.deps.notify?.("approved", this.withPosition(onHost), { root: this.root });
+        this.deps.notify?.("approved", this.withPosition(onHost), { root: this.root, press: onHost.approval.at });
         this.kickSoon();
         return { entry: this.withPosition(onHost), changed: true };
       }
@@ -1246,7 +1247,7 @@ export class ProjectQueue {
           delete open.reason;
           this.save();
           this.wake("queued", open);
-          this.deps.notify?.("approved", this.withPosition(open), { root: this.root });
+          this.deps.notify?.("approved", this.withPosition(open), { root: this.root, press: open.approval.at });
           return { entry: this.withPosition(open), changed: true };
         }
         if (open.state === "checking" && this.current?.entry === open.id) {
@@ -1295,13 +1296,13 @@ export class ProjectQueue {
       if (open && this.current?.entry === open.id && !blocked) this.toFront(e);
       this.save();
       if (blocked) {
-        this.deps.notify?.("approved", this.withPosition(e), { root: this.root });
+        this.deps.notify?.("approved", this.withPosition(e), { root: this.root, press: e.approval.at });
         this.tellBlocked(e, blocked);
         this.armFixTimer();
         return { entry: this.withPosition(e), changed: true };
       }
       this.wake("queued", e);
-      this.deps.notify?.("approved", this.withPosition(e), { root: this.root });
+      this.deps.notify?.("approved", this.withPosition(e), { root: this.root, press: e.approval.at });
       this.kickSoon();
       return { entry: this.withPosition(e), changed: true };
     }
@@ -2310,10 +2311,10 @@ export class ProjectQueue {
     // fix the Land carried), so the Landed card lists no rewritten commits as fixes.
     if (a?.commit && !(await isAncestor(this.git, this.root, e.commit, a.commit))) {
       e.approval.userCommit = a.commit;
-      await this.requeueFix(e, a.commit);
+      await this.requeueFix(e, a.commit, undefined, this.iso());
       return this.withPosition(e);
     }
-    await this.requeueFix(e, a?.commit ?? e.commit, r?.id);
+    await this.requeueFix(e, a?.commit ?? e.commit, r?.id, this.iso());
     return this.withPosition(e);
   }
 
@@ -2360,7 +2361,8 @@ export class ProjectQueue {
    * first; then the approval's commit and drafts are re-pinned, its options and tries kept, and it joins the end of
    * the line. Still blocked: it stays with the chat, told what blocks it. The caller is inside serial.
    */
-  private async requeueFix(e: Entry, commit: string, request?: string): Promise<void> {
+  /** `press`: the user's Land on a decision put it back (its time), else an automatic re-queue of a checked fix. */
+  private async requeueFix(e: Entry, commit: string, request?: string, press?: string): Promise<void> {
     const wt = e.worktree && existsSync(e.worktree) ? e.worktree : undefined;
     const drafts = !e.approval.withoutSpecs && wt ? await this.branchDrafts(wt, commit) : undefined;
     const blocked = await this.fixBlocked(e, commit, drafts);
@@ -2401,7 +2403,7 @@ export class ProjectQueue {
     if (!this.current && !this.q.entries.some((x) => x !== e && (x.state === "queued" || x.state === "checking"))) this.q.knownTarget = (await this.targetHead()) ?? this.q.knownTarget;
     this.save();
     this.wake("queued", e);
-    this.deps.notify?.("approved", this.withPosition(e), { root: this.root });
+    this.deps.notify?.("approved", this.withPosition(e), { root: this.root, ...(press ? { press } : {}) });
     this.kickSoon();
   }
 

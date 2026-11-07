@@ -880,8 +880,9 @@ export async function startMergeQueue(
       const request = (extra as { request?: MergeChatRequest }).request;
       // A request that is no outcome of its own goes to the chat as itself (§chat.merge-queue/requests).
       if (request && kind !== "needs-fix" && kind !== "sent-back") return cardsDo(mc.request(e, request, extra.run));
-      // A Land press closes the stretch before it (§app.message-labels/labelling); a typed "land it" is a message of its own.
-      if (kind === "approved" && e.approval.by === "land-button" && e.session) recordLand(e.session, Date.parse(e.approval.at));
+      // A Land press closes the stretch before it (§app.message-labels/labelling), at the press's time; a typed "land it" is a
+      // message of its own, and an automatic re-queue of a checked fix is no press.
+      if (kind === "approved" && extra.press && e.approval.by === "land-button" && e.session) recordLand(e.session, Date.parse(extra.press));
       cardsDo(kind === "approved" ? mc.approved(e, extra.root) : mc.outcome(kind as never, e, { ...(extra.run ? { run: extra.run } : {}), root: extra.root, ...(request ? { request } : {}) }));
     },
     summaryOf: (root, branch, commit): BranchSummary | undefined => bs.summaryOf(root, branch, commit),

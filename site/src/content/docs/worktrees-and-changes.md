@@ -44,7 +44,7 @@ A worktree the session created or attached also gets a readiness chip, worked ou
 |---|---|
 | Ready | At least 1 commit ahead, and nothing below holds it back. In a project with no merge queue it reads Ready to merge. |
 | Waiting for your OK | Ready, and the session's last reply asks you something, like whether to merge. |
-| In progress | A turn or a worker is running, it has 3 or more uncommitted files, it has no commits yet, it conflicts with its base, a commit on it is marked unfinished (`WIP`, `TEMP`, `fixup!` and the like), or the last test, typecheck, or build failed. |
+| In progress | A turn or a worker is running, it has 3 or more uncommitted files, it has no commits yet, it conflicts with its base (not in a project the merge queue serves: there Land queues it and the merge thread settles the conflict), a commit on it is marked unfinished (`WIP`, `TEMP`, `fixup!` and the like), or the last test, typecheck, or build failed. |
 | Blocked | The session waits on your answers to open questions. |
 | Stale | Merged, but the folder has uncommitted changes and nothing is running. |
 

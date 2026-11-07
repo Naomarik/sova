@@ -1904,7 +1904,7 @@ export class ProjectQueue {
         changed = true;
       } else {
         changed = this.liftHold();
-        if (changed) this.log("the merge thread lifted its hold");
+        if (changed) this.log("lifted the merge thread's hold");
       }
       this.kickSoon();
       return { changed, hold: this.holdNow() };

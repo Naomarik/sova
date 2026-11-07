@@ -141,10 +141,22 @@ function firstError(out: string): string {
   return (lines.find((l) => /error|ERR_|failed|cannot|not found/i.test(l)) ?? lines.at(-1) ?? "no output").slice(0, 160);
 }
 
-/** Add `line` to the entry's note, keeping what it said (a note is at most 300 characters). */
+/** How each restart outcome's note line opens: one line per landing, the latest outcome (a build that failed, then passed
+    at the next Idle, leaves only "Restarted Sova…"). Also the thread's own wording (the playbook's) from before Sova noted
+    failures itself. */
+const OUTCOME_OPENINGS = ["The page build failed after landing ", "Not restarted: ", "Restarted Sova after landing ", "Restart after landing "];
+const OUTCOME_RE = new RegExp(`(?:${OUTCOME_OPENINGS.map((o) => o.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`);
+
+/** The note without its earlier restart outcome: from the first outcome line to the end (Sova adds them last). */
+export function withoutRestartOutcome(note: string): string {
+  const at = note.search(OUTCOME_RE);
+  return (at < 0 ? note : note.slice(0, at)).trim();
+}
+
+/** Add `line` to the entry's note, keeping what it said but an earlier restart outcome (a note is at most 300 characters). */
 async function addToNote(q: RestartQueue, entry: string, line: string): Promise<void> {
-  const had = q.entryNote(entry).trim();
-  const text = had && !had.includes(line) ? `${had} ${line}` : had.includes(line) ? had : line;
+  const had = withoutRestartOutcome(q.entryNote(entry).trim());
+  const text = had ? `${had} ${line}` : line;
   await q.note(entry, text.length > 300 ? line.slice(0, 300) : text, "thread").catch((err) => q.logLine(`the restart note on ${entry} wasn't written: ${err instanceof Error ? err.message : err}`));
 }
 
@@ -170,7 +182,10 @@ export async function restartSelf(q: RestartQueue, deps: RestartDeps): Promise<M
   const landed = facts.landed;
   if (plan.action === "build") {
     const b = await run(BUILD, q.root, 20 * 60_000);
-    if (b.code !== 0) return { outcome: "failed", step: "build", why: `the page build failed: ${firstError(b.out)}`, tail: tailOf(b.out), plan };
+    if (b.code !== 0) {
+      if (landed) await addToNote(q, landed.id, `The page build failed after landing ${landed.branch}: ${firstError(b.out).replace(/\.$/, "")}.`);
+      return { outcome: "failed", step: "build", why: `the page build failed: ${firstError(b.out)}`, tail: tailOf(b.out), plan };
+    }
     return { outcome: "built", why: "built the page; nothing restarts (open tabs offer the newer page)", plan };
   }
   const unit = await deps.unitOf(q.root);
@@ -179,6 +194,7 @@ export async function restartSelf(q: RestartQueue, deps: RestartDeps): Promise<M
   await q.hold("set");
   const fail = async (step: "install" | "build" | "restart", why: string, out = ""): Promise<MergeRestart> => {
     await q.hold("clear").catch(() => {});
+    if (landed && step !== "restart") await addToNote(q, landed.id, `Not restarted: ${step} failed after landing ${landed.branch}: ${firstError(out).replace(/\.$/, "")}.`);
     return { outcome: "failed", step, why, ...(out ? { tail: tailOf(out) } : {}), plan, unit };
   };
   if (plan.install) {

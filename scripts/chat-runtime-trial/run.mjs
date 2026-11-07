@@ -4047,7 +4047,8 @@ async function jobWakesWorker(name, idleMs) {
   await waitFor(() => completions(a.path, w.path) >= 1, 60000);
   R.check(completions(a.path, w.path) === 1, `${name}: the task's own report reached the parent (${completions(a.path, w.path)})`);
   R.check(!jobById(w.path, "j1")?.ended && !existsSync(out), `${name}: its job is still held, so the wake comes after the report`);
-  const lastStatus = () => workerRecords(a.path, wid).at(-1)?.status;
+  const manifests = () => entries(a.path).filter((e) => e.customType === "subagents-worker-manifest" && e.data?.workerId === wid && e.data.status).map((e) => e.data);
+  const lastStatus = () => manifests().at(-1)?.status;
   await waitFor(() => lastStatus() === "waiting", 15000);
   R.check(lastStatus() === "waiting", `${name}: the worker is idle after its first report (${lastStatus()})`);
   const pid1 = chatPid(w.path);
@@ -4078,7 +4079,7 @@ async function jobWakesWorker(name, idleMs) {
   R.check(!text.includes("(no output for this task)"), `${name}: never "(no output for this task)" (${text.slice(0, 300)})`);
   R.check(/Still running: j2 \(sleep 300\)/.test(text) && text.indexOf(reply) < text.indexOf("Still running"), `${name}: it names the job still running, after the reply (${text.slice(-300)})`);
   await waitFor(() => lastStatus() === "waiting", 15000);
-  R.check(lastStatus() === "waiting", `${name}: status waiting in the parent's record (${JSON.stringify(workerRecords(a.path, wid).slice(-3).map((r) => r.status))})`);
+  R.check(lastStatus() === "waiting", `${name}: status waiting in the parent's record (${JSON.stringify(manifests().slice(-3).map((r) => r.status))})`);
   await waitFor(() => asksWith(reply).length > 0, 30000);
   R.check(asksWith(reply).length > 0, `${name}: the reply started a turn in the parent`);
 

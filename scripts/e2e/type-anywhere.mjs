@@ -2,9 +2,9 @@
 // E2E: Type anywhere (§chat.composer/type-anywhere), driven in a real browser with real key presses.
 //
 // A letter typed while focus is outside a text field lands in the chat's message box at its caret,
-// the browser typing it there; nothing is sent. Focus view ends. Nothing moves while Session details
-// covers the box (under 1280 wide), while a dialog is open, from a read-only box, or before the saved
-// draft has arrived. "/" and "?" keep their own jobs, and Settings has no switch for it.
+// the browser typing it there; nothing is sent. Focus view ends. With Send to All on it lands in the
+// group box. Nothing moves while Session details covers the box (under 1280 wide), while a dialog or
+// a menu is open, from a read-only box, or before the saved draft has arrived. "/" and "?" keep their own jobs, and Settings has no switch for it.
 //
 //   pnpm run build && pnpm run e2e:type-anywhere
 //
@@ -262,6 +262,27 @@ try {
       assert(s.draft === "kept z" && s.inBox, JSON.stringify(s));
     });
 
+    await check("wide: with the model menu open, focus dropped off it, a letter does nothing", async () => {
+      await page.locator("#composer-input").fill("");
+      await blur(page);
+      await page.keyboard.press("Control+p");
+      const opened = await page
+        .waitForFunction(() => [...document.querySelectorAll("[popover]")].some((p) => p.matches(":popover-open") && p.getAttribute("role") !== "tooltip"), null, { timeout: 5000 })
+        .then(() => true)
+        .catch(() => false);
+      assert(opened, "Ctrl+P opened no menu");
+      await blur(page);
+      await page.keyboard.press("m");
+      await settle();
+      const s = await look(page);
+      assert(s.draft === "" && !s.inBox, JSON.stringify(s));
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Control+p").catch(() => {});
+      await page
+        .waitForFunction(() => ![...document.querySelectorAll("[popover]")].some((p) => p.matches(":popover-open") && p.getAttribute("role") !== "tooltip"), null, { timeout: 5000 })
+        .catch(() => page.keyboard.press("Escape"));
+    });
+
     await check("wide: Settings → General has no Type anywhere switch", async () => {
       await page.locator("#composer-input").fill("");
       await page.evaluate(() => (location.hash = "#/settings/general"));
@@ -298,6 +319,42 @@ try {
       assert(await page.locator("#session-pane").isVisible(), "the panel closed");
     });
     await ctx.close();
+  }
+
+  // ---------------- a workspace with Send to All ----------------
+  {
+    const post = async (path, body) => {
+      const r = await fetch(`${BASE}${path}`, { method: "POST", headers: { ...tokenHeaders(AGENT), "content-type": "application/json" }, body: JSON.stringify(body) });
+      if (!r.ok) throw new Error(`POST ${path}: ${r.status} ${await r.text()}`);
+      return r.json();
+    };
+    let group = null;
+    try {
+      group = await post("/api/session-groups", { name: "Type anywhere e2e" });
+      for (const id of [A, B]) await post("/api/session-groups/assign", { path: paths.get(id), groupId: group.id });
+    } catch (err) {
+      skip("workspace: Send to All takes the letter in the group box", String(err?.message ?? err));
+    }
+    if (group) {
+      const { ctx, page } = await newPage(size(1440));
+      await ctx.addInitScript((key) => sessionStorage.setItem(key, "1"), `sova:group-send-all-${group.id}`); // lib/group-layout readSendAll
+      await check("workspace: with Send to All on, a letter lands in the group box, not a pane's", async () => {
+        await page.goto(`${BASE}/#/g/${encodeURIComponent(group.id)}`);
+        await page.locator("#group-composer-input").waitFor({ timeout: 30000 });
+        await settle();
+        await blur(page);
+        await page.keyboard.type("all");
+        await settle();
+        const s = await page.evaluate(() => ({
+          group: document.getElementById("group-composer-input")?.value,
+          inGroup: document.activeElement?.id === "group-composer-input",
+          panes: [...document.querySelectorAll("textarea")].filter((t) => t.id !== "group-composer-input").map((t) => t.value),
+        }));
+        assert(s.group === "all" && s.inGroup, JSON.stringify(s));
+        assert(s.panes.every((v) => !v.includes("all")), `a pane took it: ${JSON.stringify(s.panes)}`);
+      });
+      await ctx.close();
+    }
   }
 
   // ---------------- a read-only box ----------------

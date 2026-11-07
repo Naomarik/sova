@@ -110,9 +110,9 @@ const MISSING = "/w/AGENTS.md";
 const CONTENT: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".json": "application/json", ".webmanifest": "application/manifest+json" };
 
 /** The chat open at `width` in `scheme`, its pane on the Context tab; every request answered from the data above. */
-async function open(width: number, scheme: "light" | "dark" = "light"): Promise<Page> {
+async function open(width: number, scheme: "light" | "dark" = "light", over: { view?: SessionContextView; height?: number; files?: Record<string, string> } = {}): Promise<Page> {
   const phone = width < 768;
-  const ctx = await browser.newContext({ viewport: { width, height: phone ? 844 : width < 1000 ? 1000 : 960 }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce", colorScheme: scheme });
+  const ctx = await browser.newContext({ viewport: { width, height: over.height ?? (phone ? 844 : width < 1000 ? 1000 : 960) }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce", colorScheme: scheme });
   const page = await ctx.newPage();
   const json = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
   await page.routeWebSocket(/.*/, (ws) => {
@@ -126,10 +126,11 @@ async function open(width: number, scheme: "light" | "dark" = "light"): Promise<
     const q = url.searchParams;
     if (p === "/api/sessions") return route.fulfill(json([SESSION]));
     if (p === "/api/transcript") return route.fulfill(json({ items: ITEMS, context: null }));
-    if (p === "/api/sessions/context-view") return route.fulfill(json(VIEW));
+    if (p === "/api/sessions/context-view") return route.fulfill(json(over.view ?? VIEW));
     if (p === "/api/sessions/context/file") {
       const f = q.get("file") ?? "";
-      return f in FILES && f !== MISSING ? route.fulfill(json({ path: f, text: FILES[f] })) : route.fulfill(json({ error: "That file isn't there any more." }, 404));
+      const files = { ...FILES, ...over.files };
+      return f in files && f !== MISSING ? route.fulfill(json({ path: f, text: files[f] })) : route.fulfill(json({ error: "That file isn't there any more." }, 404));
     }
     if (p === "/api/projects") return route.fulfill(json({ projects: [] }));
     if (p === "/api/overseer/attention") return route.fulfill(json({ generatedAt: T0, counts: { act: 0, decide: 0, fyi: 0 }, items: [] }));
@@ -292,6 +293,79 @@ for (const width of [390, 880, 1440]) {
       await targetsOk(page, "Conversation");
       await shot(page, `${width}-light-6-conversation`);
       assert.equal(await page.locator(".context-sheet").getByRole("button", { name: /transcript/i }).count(), 0);
+    } finally {
+      await page.context().close();
+    }
+  });
+}
+
+// The sheet's body scrolls and its children keep their height. A card clips its rows (overflow: hidden), so as a
+// shrinkable flex item it has no minimum height and collapsed to its borders once the body overflowed.
+const MANY_NOT_LOADED: SessionContextView = {
+  ...VIEW,
+  instructions: VIEW.instructions!.slice(0, 1),
+  nested: [
+    { path: "server/AGENTS.md", abs: `${CWD}/server/AGENTS.md`, folder: "server", tokens: 900, loaded: true },
+    ...Array.from({ length: 11 }, (_, i) => ({ path: `pkg${i}/AGENTS.md`, abs: `${CWD}/pkg${i}/AGENTS.md`, folder: `pkg${i}`, tokens: 500 + i, loaded: false })),
+  ],
+};
+const LONG_DOC = `${CWD}/LONG.md`;
+const LONG_VIEW: SessionContextView = { ...VIEW, instructions: [{ id: `file:${LONG_DOC}`, label: "LONG.md", path: LONG_DOC, tokens: 4_000 }] };
+const LONG_TEXT = `# Long\n\n${Array.from({ length: 200 }, (_, i) => `Paragraph ${i}.`).join("\n\n")}`;
+/** The sheet body's scroll sizes, and the height and laid-out content height of each of its element children. */
+const bodyLayout = (page: Page) =>
+  page.locator(".context-sheet-body").evaluate((body) => ({
+    scrollHeight: body.scrollHeight,
+    clientHeight: body.clientHeight,
+    children: [...body.children].map((el) => ({ tag: el.tagName.toLowerCase(), h: el.getBoundingClientRect().height, content: el.scrollHeight })),
+  }));
+
+for (const width of [390, 1440]) {
+  test(`at ${width}px, a list taller than the sheet: the loaded rows keep their height and the sheet scrolls`, async () => {
+    const page = await open(width, "light", { view: MANY_NOT_LOADED, height: 600 });
+    try {
+      assert.match(await page.locator('[data-ctx-key="line:instructions"]').innerText(), /2 loaded · 11 not yet loaded/);
+      await page.locator('[data-ctx-key="line:instructions"]').click();
+      const loaded = page.locator(".context-sheet .context-list").first();
+      await loaded.locator(".context-row").first().waitFor({ state: "attached" });
+      const m = await loaded.evaluate((ul) => {
+        const rows = [...ul.querySelectorAll<HTMLElement>(":scope > li")];
+        const chip = ul.querySelector<HTMLElement>(".chip-success")!.getBoundingClientRect();
+        return { ul: ul.getBoundingClientRect().height, rows: rows.length, rowsHeight: rows.reduce((sum, li) => sum + li.scrollHeight, 0), chipW: chip.width, chipH: chip.height };
+      });
+      const body = await bodyLayout(page);
+      const say = JSON.stringify({ ...m, scrollHeight: body.scrollHeight, clientHeight: body.clientHeight });
+      assert.ok(body.scrollHeight > body.clientHeight, `the sheet must overflow, or this proves nothing: ${say}`);
+      assert.equal(m.rows, 2, say);
+      assert.ok(m.ul > 40, `the loaded card is laid out: ${say}`);
+      assert.ok(m.ul + 1 >= m.rowsHeight, `the loaded card is as tall as its rows: ${say}`);
+      assert.ok(m.chipW > 0 && m.chipH > 0, `the Loaded chip has a box: ${say}`);
+      await shot(page, `${width}-light-7-many-files`);
+      // Scrolled to its end, the sheet shows the last file not yet loaded.
+      await page.locator(".context-sheet .context-list").last().locator(".context-row").last().scrollIntoViewIfNeeded();
+      assert.ok(await page.locator(".context-sheet-body").evaluate((el) => el.scrollTop > 0), "the body itself scrolled");
+      await noSideways(page, "many files");
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test(`at ${width}px, a long document: it keeps its height and the sheet scrolls to its end`, async () => {
+    const page = await open(width, "light", { view: LONG_VIEW, height: 600, files: { [LONG_DOC]: LONG_TEXT } });
+    try {
+      await page.locator('[data-ctx-key="line:instructions"]').click();
+      await page.locator(`[data-ctx-key="part:instructions:file:${LONG_DOC}"]`).click();
+      await page.locator(".context-sheet .md-viewer-doc .message-body").waitFor();
+      const body = await bodyLayout(page);
+      const say = JSON.stringify(body);
+      assert.ok(body.scrollHeight > body.clientHeight, `the document must overflow, or this proves nothing: ${say}`);
+      for (const c of body.children) assert.ok(c.h + 1 >= c.content, `no child of the sheet is squeezed: ${say}`);
+      const last = page.locator(".context-sheet .md-viewer-doc .message-body p").last();
+      assert.equal(await last.innerText(), "Paragraph 199.");
+      await last.scrollIntoViewIfNeeded();
+      assert.ok(await last.isVisible());
+      assert.ok(await page.locator(".context-sheet-body").evaluate((el) => el.scrollTop > 0), "the body itself scrolled");
+      assert.equal(await page.locator(".context-sheet").getByRole("button", { name: "Copy" }).count(), 1);
     } finally {
       await page.context().close();
     }

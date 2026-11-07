@@ -159,8 +159,8 @@ For example, `PORT=4801 sova` changes the port. The `SOVA_SHARE_*` variables are
 [public links](public-links.md#pin-it-with-environment-variables); leave them unset to use Settings → Public links.
 
 Sova keeps its app state under `~/.pi/agent/sova/`, including groups, archive metadata, drafts,
-attachments, and themes. The embedded pi runtime also reads and writes pi sessions; model policy
-and remote-target configuration live in the shared agent directory. Back up that directory before
+attachments, and themes. Each chat's process also reads and writes pi sessions; model policy and
+remote-target configuration live in the shared agent directory. Back up that directory before
 experimenting with configuration. Never commit credentials, transcripts, or personal targets.
 
 ## Reinstall or remove

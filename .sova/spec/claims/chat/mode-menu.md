@@ -781,22 +781,47 @@ line names the type ("UniiChat — by Victor Taelin", "Zoomable compaction — S
   (§app.overseer/hosting), and a project's coding sessions never set or offer it
   (§app.project-overseer/coding-mode). A worker is never strict.
 
-## §chat.mode-menu/delegate-teams — Delegate: a team, or separate workers
+## §chat.mode-menu/delegate-teams — Delegate: split first, then a team or separate workers
 
-In Delegate and Create, the instructions tell the orchestrator how to choose between a team (`team_create`)
-and separate workers (`agent_spawn`):
+In Delegate and Create, the instructions tell the orchestrator to split the work first, and how to
+choose between a team (`team_create`) and separate workers (`agent_spawn`):
 
+- **Split first.** It breaks builds and multi-part investigations or test runs into parts and starts
+  everything that can run now. Landing order, plan steps and separate alignments don't set build
+  order.
+- **What holds a part back.** A part waits, with no team for it, only if it needs another part's
+  finished output. Stacking on code or an interface still being written isn't that: it is a reason
+  for a team.
 - **Asked for a team.** When the user asks for a team, the orchestrator always starts a real team
-  with `team_create`. It never starts separate workers and calls them the team.
-- **Parts that depend on each other.** Without being asked, it starts a team when parts of the work
-  must run at the same time on shared work (the same files or interfaces), or when an implementer
-  and a checker must go back and forth.
-- **Otherwise, separate workers.** Independent parts and single jobs go to separate workers with
-  `agent_spawn`. The align planning worker (§chat.alignment/model), the align reviewer
+  with `team_create`.
+- **Unasked, a team.** Without being asked, it starts a team when parts change the same files or
+  interfaces, stack on each other, feed each other findings, or have a checker sending findings
+  straight to builders. A build of related parts gets that checker from the start.
+- **Shared files.** It never fences shared files with don't-touch lists or owned paths: teammates
+  coordinate by message. `/team`'s planning text asks for declared `ownedPaths` only for files
+  members don't share, and they stay advisory, not a lock.
+- **Separate workers.** Otherwise, focused jobs where a wrong guess about overlap costs little go to
+  separate workers with `agent_spawn`, in one batch. One focused job, such as a single fix or
+  question, is one worker. The align planning worker (§chat.alignment/model), the align reviewer
   (§chat.alignment-review/route) and the spec writer stay single separate workers, as before.
-- **The tool says the same.** `team_create`'s guideline, which a chat's model has in every major
-  mode, says to use a team when the user asks for one or when the parts of the work depend on each
-  other mid-task, and `agent_spawn` for independent parts and single jobs.
+- **Any doubt.** Anything else, or any doubt, is a team, and an unrelated concern with parts of its
+  own gets its own team.
+- **The tools say the same.** `team_create`'s guideline, which a chat's model has in every major
+  mode, says to use a team when the user asks for one, or when parts change the same files or
+  interfaces, stack on each other, feed each other findings, or have a checker sending findings
+  straight to builders. `agent_spawn`'s says to use it for one focused job, or a batch of focused
+  jobs that don't depend on each other.
+  `team_create`'s own text says members share the filesystem and agree shared files and interfaces
+  by message; a member's `team_ask` goes to its coordinator, or to the chat when there is none;
+  without a coordinator, a settled member starts a parent turn; `ownedPaths` is optional, paths only
+  that member edits, never shared files; and only a coordinator sees teammates' tasks, so a member's
+  prompt says who it works with and on what.
+- **Plan steps.** What asks an agent for a plan's steps never asks for them in order; it asks which
+  can run at the same time. That holds for an alignment's approach steps (§chat.alignment/document),
+  in the `align` tool, its import file and the align block, and for a feature chat's plan
+  (§app.project-assistant/feature-chats).
+- **The docs say the same.** The Delegate and Teams pages (§site.docs/delegate, §site.docs/teams)
+  give these reasons for a team, and the Delegate page says the agent splits work first.
 - **Teams themselves don't change.** A team still gets the standing coordinator and monitor its
   chat's subagent profile configures (§teams/defaults), and the limits of 24 running workers per
   chat and 24 seats per team still hold (§app.teams/running-limit, §app.teams/seats).

@@ -163,6 +163,7 @@ The server runs on Bun; Node only when the user asks (server guide). An agent ne
 
 ## Working rules
 
+- Before opening a pull request to Sova, read [agents/contributing.md](agents/contributing.md).
 - When planning a Sova feature, only Sova matters: ignore the pi TUI and standalone Claude Code
   (sessions run outside Sova). Never widen scope, add questions or add work to cover them. Sova's
   own claude-code backend and its workers are Sova and count.

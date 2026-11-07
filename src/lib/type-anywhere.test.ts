@@ -1,21 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-  isOpenOverlay,
-  keyBelongsToTarget,
-  parseTypeAnywhere,
-  readStoredTypeAnywhere,
-  readTypeAnywhere,
-  setTypeAnywhere,
-  startTyping,
-  takeTyping,
-  typeAnywhere,
-  typesCharacter,
-  TYPE_ANYWHERE_KEY,
-  writeTypeAnywhere,
-  type CharKeyLike,
-  type ElementLike,
-} from "./type-anywhere";
+import * as typeAnywhereModule from "./type-anywhere";
+import { isOpenOverlay, keyBelongsToTarget, startTyping, takeTyping, typesCharacter, type CharKeyLike, type ElementLike } from "./type-anywhere";
 
 const key = (over: Partial<CharKeyLike>): CharKeyLike => ({ key: "", altKey: false, ctrlKey: false, metaKey: false, ...over });
 const altGraph = (k: string) => k === "AltGraph";
@@ -154,13 +140,12 @@ const opened = el("DIV", { popover: "auto" }, body, { matches: (s) => s === ":po
 const closed = el("DIV", { popover: "auto" }, body, { matches: () => false });
 const button = el("BUTTON", {}, main);
 
-const run = (over: { on?: boolean; target?: unknown; overlays?: ElementLike[]; box?: { take(): boolean } | null }) => {
+const run = (over: { target?: unknown; overlays?: ElementLike[]; box?: { take(): boolean } | null }) => {
   const calls = { box: 0, take: 0 };
   const box = over.box === undefined ? { take: () => true } : over.box;
   const acted = startTyping(
     { target: "target" in over ? over.target : button },
     {
-      on: over.on ?? true,
       overlays: () => over.overlays ?? [],
       box: () => (calls.box++, box && { take: () => (calls.take++, box.take()) }),
     },
@@ -172,10 +157,6 @@ test("a free key moves into the box on screen, which takes it", () => {
   assert.deepEqual(run({}), { acted: true, box: 1, take: 1 });
   assert.deepEqual(run({ target: body }), { acted: true, box: 1, take: 1 });
   assert.deepEqual(run({ overlays: [closed] }), { acted: true, box: 1, take: 1 }, "a closed menu doesn't stop it");
-});
-
-test("nothing happens with the switch off: the box isn't even looked for", () => {
-  assert.deepEqual(run({ on: false }), { acted: false, box: 0, take: 0 });
 });
 
 test("nothing happens from a text field, a contenteditable, a select or a list that jumps as you type", () => {
@@ -228,46 +209,17 @@ test("a box that isn't mounted, or that focus didn't reach, took nothing", () =>
   assert.equal(takeTyping({ readOnly: false, el: missed.node, active: missed.active, hiddenByFocus: false, endFocus: () => {} }), false);
 });
 
-// ---- the switch ----
+// ---- always on ----
 
-const values = new Map<string, string>();
-const storage = { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => void values.set(k, v) } as Storage;
-
-test("the switch is on by default; only exactly false turns it off", () => {
-  for (const raw of [null, "", "true", "0", "False", " false ", "garbage"]) assert.equal(parseTypeAnywhere(raw), true, String(raw));
-  assert.equal(parseTypeAnywhere("false"), false);
-  values.clear();
-  assert.equal(readTypeAnywhere(storage), true);
-  writeTypeAnywhere(storage, false);
-  assert.equal(values.get(TYPE_ANYWHERE_KEY), "false");
-  assert.equal(readTypeAnywhere(storage), false);
-  writeTypeAnywhere(storage, true);
-  assert.equal(readTypeAnywhere(storage), true);
-});
-
-test("the switch survives missing, blocked and full storage, its choice held for the page", () => {
+test("there is no switch: no stored choice is read or written, so an old off choice changes nothing", () => {
+  for (const name of ["TYPE_ANYWHERE_KEY", "typeAnywhere", "setTypeAnywhere", "readTypeAnywhere", "writeTypeAnywhere", "parseTypeAnywhere", "readStoredTypeAnywhere"])
+    assert.equal(name in typeAnywhereModule, false, name);
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const reads: string[] = [];
   try {
-    Object.defineProperty(globalThis, "localStorage", {
-      configurable: true,
-      get() {
-        throw new Error("blocked");
-      },
-    });
-    assert.equal(readStoredTypeAnywhere(), true);
-    setTypeAnywhere(false);
-    assert.equal(typeAnywhere(), false);
-    const full = { getItem: () => null, setItem: () => { throw new Error("full"); } } as unknown as Storage;
-    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: full });
-    assert.doesNotThrow(() => setTypeAnywhere(true));
-    assert.equal(typeAnywhere(), true);
-    values.clear();
-    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: storage });
-    setTypeAnywhere(false);
-    assert.equal(values.get(TYPE_ANYWHERE_KEY), "false");
-    assert.equal(readStoredTypeAnywhere(), false);
-    setTypeAnywhere(true);
-    assert.equal(typeAnywhere(), true);
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: (k: string) => (reads.push(k), "false"), setItem: () => {} } });
+    assert.deepEqual(run({}), { acted: true, box: 1, take: 1 });
+    assert.deepEqual(reads, []);
   } finally {
     if (descriptor) Object.defineProperty(globalThis, "localStorage", descriptor);
     else Reflect.deleteProperty(globalThis, "localStorage");

@@ -36,7 +36,6 @@ import { setShowSummaries, showSummaries } from "../lib/summary-line";
 import { LIMIT_RULE } from "../../shared/provider-limits";
 import { NumberField, SearchField, Toggle } from "./form";
 import { compressWork, setCompressWork } from "../lib/work-compression";
-import { setTypeAnywhere, typeAnywhere } from "../lib/type-anywhere";
 import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography } from "../lib/theme";
 import { settingsProject, type SettingsTab } from "../lib/settings-nav";
 import { experimentalDraft, experimentalSaveError, experimentalSaving, setExperimentalDraft, setExperimentalSaved } from "../lib/experimental-draft";
@@ -504,14 +503,6 @@ function GeneralPanel() {
         hint="Show the working as a compact timeline. Off, thinking and tool calls use their original cards."
         checked={compressWork()}
         onChange={setCompressWork}
-      />
-      <Toggle
-        switch
-        class="settings-field"
-        label="Type anywhere to write"
-        hint="Typing outside a text field starts your message in the chat's box. Shortcuts keep working either way."
-        checked={typeAnywhere()}
-        onChange={setTypeAnywhere}
       />
       <Toggle
         switch

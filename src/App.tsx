@@ -37,7 +37,7 @@ import { HostUpdatePage } from "./components/HostStateNotices";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerCantOpen, peerInfo, sameMeshInfo, sessionRouteFromHash, updateNeededFor, setMeshState } from "./lib/mesh";
 import { bindKey, paletteKeyAction } from "./commands/keys";
 import { composerOf } from "./commands/composers";
-import { OVERLAY_CANDIDATES, startTyping, takeTyping, typeAnywhere } from "./lib/type-anywhere";
+import { OVERLAY_CANDIDATES, startTyping, takeTyping } from "./lib/type-anywhere";
 import { closePalette, paletteRequest, togglePaletteFromKey } from "./commands/palette-open";
 import { isOverseerHash, OVERSEER_HASH, overseerHistoryId, overseerRedirect } from "./lib/overseer";
 import { followListRows, onFeedPush, requestListRead, sessionFeedOpen } from "./lib/session-feed";
@@ -874,7 +874,7 @@ export function App() {
     return composerOf(focusedPath());
   };
   const offTypeKey = bindKey("compose.type", (e) =>
-    startTyping(e, { on: typeAnywhere(), overlays: () => document.querySelectorAll(OVERLAY_CANDIDATES), box: typingBox }),
+    startTyping(e, { overlays: () => document.querySelectorAll(OVERLAY_CANDIDATES), box: typingBox }),
   );
   onCleanup(offTypeKey);
 

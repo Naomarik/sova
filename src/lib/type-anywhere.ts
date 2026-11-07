@@ -2,11 +2,9 @@
 // focus into the chat's message box during that same keydown, and the browser types the character
 // there (no preventDefault), so an accent key's composition, the @ menu and Undo work as typing in
 // the box does. Its key row is commands/keys ("compose.type"); App owns it and picks the box.
-// Everything here but the setting's signal is pure, so the unit tier covers it.
+// It is always on: there is no switch. Everything here is pure, so the unit tier covers it.
 
-import { createSignal } from "solid-js";
 import { isTextEntry } from "./text-entry";
-import { readKey, writeKey } from "./storage-keys";
 
 /** The parts of a keydown the character rule reads. */
 export interface CharKeyLike {
@@ -99,12 +97,11 @@ export interface TypingBox {
 }
 
 /**
- * The key's owner (App): with the switch on, a key on a free target, no overlay open and a box on
+ * The key's owner (App): a key on a free target, no overlay open and a box on
  * screen that takes typing, focus moves into the box and the browser types the key there. False
  * leaves the key as it was.
  */
-export function startTyping(e: { target?: unknown }, ctx: { on: boolean; overlays(): Iterable<ElementLike>; box(): TypingBox | null }): boolean {
-  if (!ctx.on) return false;
+export function startTyping(e: { target?: unknown }, ctx: { overlays(): Iterable<ElementLike>; box(): TypingBox | null }): boolean {
   if (keyBelongsToTarget(e.target as ElementLike | null)) return false;
   for (const el of ctx.overlays()) if (isOpenOverlay(el)) return false;
   const box = ctx.box();
@@ -127,40 +124,4 @@ export function takeTyping(t: {
   if (t.hiddenByFocus) t.endFocus();
   t.el.focus();
   return t.active() === t.el;
-}
-
-// ---- The switch (Settings → General): on by default, kept in this browser ----
-
-export const TYPE_ANYWHERE_KEY = "sova:type-anywhere";
-
-/** Only an explicit off choice turns it off. Missing and corrupt values mean on. */
-export const parseTypeAnywhere = (stored: string | null): boolean => stored !== "false";
-
-export function readTypeAnywhere(store: Storage): boolean {
-  return parseTypeAnywhere(readKey(store, TYPE_ANYWHERE_KEY));
-}
-
-export function writeTypeAnywhere(store: Storage, on: boolean): void {
-  writeKey(store, TYPE_ANYWHERE_KEY, String(on));
-}
-
-export function readStoredTypeAnywhere(): boolean {
-  try {
-    return readTypeAnywhere(localStorage);
-  } catch {
-    // Missing or blocked storage never breaks boot.
-    return true;
-  }
-}
-
-const [typeAnywhere, setTypeAnywhereSignal] = createSignal(readStoredTypeAnywhere());
-export { typeAnywhere };
-
-export function setTypeAnywhere(on: boolean): void {
-  setTypeAnywhereSignal(on);
-  try {
-    writeTypeAnywhere(localStorage, on);
-  } catch {
-    // Persistence is a convenience; the choice still holds for this page.
-  }
 }

@@ -17,6 +17,9 @@ export const CLOCK_MEMORY_MS = 6 * 3_600_000;
 /** How far a page's next run may land from the end of its last and still continue it: the time a request takes
     moves where a run lands by a second or two, and those seconds are the page's own, neither lost nor doubled. */
 const SAME_PAGE_DRIFT_S = 2;
+/** How far past this computer's time a page's own runs may be placed. A delayed report pushes the page's next run
+    ahead by the delay; past this, seconds are more than the time that has gone by could hold, and are dropped. */
+const SAME_PAGE_AHEAD_S = 300;
 
 const ROWS = new Set<string>(TIME_SPENT_ROWS);
 
@@ -93,16 +96,23 @@ export class TimeSpentStore {
         start = last;
         end = start + slice.sec;
       }
-      this.claim({
-        start,
-        end,
-        page: report.pageId,
-        // A run can't claim input that came after it: a report sent long after its seconds speaks for its own moment only.
-        inputAt: Math.min(inputAt, end * 1000),
-        session,
-        row: slice.row,
-        docs: slice.docs,
-      });
+      // A new id is seconds this page hasn't reported: where its held moments are in the way (a report that arrived
+      // late sits later than it was counted), they go on the next moments the page doesn't hold. Without an id, an
+      // overlap can't be told from a resend, so it stays with what the page holds.
+      const spans = slice.id !== undefined ? this.unheld(report.pageId, start, slice.sec, received + SAME_PAGE_AHEAD_S) : [[start, end] as [number, number]];
+      for (const [from, to] of spans) {
+        this.claim({
+          start: from,
+          end: to,
+          page: report.pageId,
+          // A run can't claim input that came after it: a report sent long after its seconds speaks for its own moment only.
+          inputAt: Math.min(inputAt, to * 1000),
+          session,
+          row: slice.row,
+          docs: slice.docs,
+        });
+        end = to;
+      }
       // Only now: a report whose write failed is answered as a failure, and its resend must still count.
       const seen = page ?? { end: 0, runs: new Map<number, number>() };
       seen.end = Math.max(seen.end, end);
@@ -177,6 +187,24 @@ export class TimeSpentStore {
       // A resend this old is dropped by its age, so its id needn't be kept.
       for (const [run, end] of page.runs) if (end <= before) page.runs.delete(run);
     }
+  }
+
+  /** `sec` seconds from `start` on, skipping the moments this page holds, none past `limit`. */
+  private unheld(page: string, start: number, sec: number, limit: number): [number, number][] {
+    const out: [number, number][] = [];
+    let at = start;
+    let left = sec;
+    for (const c of this.held) {
+      if (c.page !== page || c.end <= at) continue;
+      if (c.start >= at + left) break;
+      if (c.start > at) {
+        out.push([at, c.start]);
+        left -= c.start - at;
+      }
+      at = c.end;
+    }
+    if (left > 0) out.push([at, at + left]);
+    return out.flatMap(([from, to]): [number, number][] => (from >= limit ? [] : [[from, Math.min(to, limit)]]));
   }
 
   private claim(run: Claim): void {

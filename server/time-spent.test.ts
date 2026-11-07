@@ -100,6 +100,52 @@ describe("one clock per computer", () => {
     assert.equal(s.sums("one").you, 15);
   });
 
+  test("a report that arrived late doesn't cost the page the next one's seconds", () => {
+    const s = freshStore();
+    s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 15), id: 1 }] }, NOW + 5_000);
+    s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 15), id: 2 }] }, NOW + 15_000);
+    assert.equal(s.sums("one").you, 30);
+  });
+
+  test("runs arriving out of order each keep their own moments", () => {
+    const s = freshStore();
+    s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 10), id: 2 }] }, NOW);
+    s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("scrolling", 10, 10_000), id: 1 }] }, NOW);
+    assert.deepEqual(s.sums("one").rows, { typing: 10, scrolling: 10 });
+  });
+
+  test("a same-id resend of a run that was moved along still counts once", () => {
+    const s = freshStore();
+    s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 15), id: 1 }] }, NOW + 5_000);
+    const second = { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 15), id: 2 }] };
+    s.report("one", second, NOW + 15_000);
+    s.report("one", second, NOW + 15_000);
+    assert.equal(s.sums("one").you, 30);
+  });
+
+  test("without an id an overlap can't be told from a resend, so it counts once", () => {
+    const s = freshStore();
+    s.report("one", { pageId: "old", inputAgeMs: 0, slices: [slice("typing", 15)] }, NOW + 5_000);
+    s.report("one", { pageId: "old", inputAgeMs: 0, slices: [slice("typing", 15)] }, NOW + 15_000);
+    assert.equal(s.sums("one").you, 25);
+  });
+
+  test("a page can't report more seconds than the time gone by could hold", () => {
+    const s = freshStore();
+    for (let id = 1; id <= 100; id++) s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 60), id }] }, NOW);
+    assert.equal(s.sums("one").you, 360, "the 60 it could have counted, and no more than 300 ahead");
+  });
+
+  test("a moved run still loses a moment to a page with newer input, and the total grows once", () => {
+    const s = freshStore();
+    s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 15), id: 1 }] }, NOW + 5_000);
+    s.report("one", { pageId: "p", inputAgeMs: 5_000, slices: [{ ...slice("typing", 15), id: 2 }] }, NOW + 15_000);
+    s.report("one", { pageId: "q", inputAgeMs: 0, slices: [{ ...slice("scrolling", 5), id: 1 }] }, NOW + 20_000);
+    const sums = s.sums("one");
+    assert.equal(sums.you, 30);
+    assert.deepEqual(sums.rows, { typing: 25, scrolling: 5 });
+  });
+
   test("a short run sent again after its answer was lost counts once", () => {
     const s = freshStore();
     s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 1), id: 1 }] }, NOW);

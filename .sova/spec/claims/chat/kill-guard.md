@@ -66,8 +66,8 @@ pattern…`; `killall takes its options before the name, and what it does with o
 documented, so Sova refuses it`; `a PID of -1 signals every process you own…`; `` `node` is a name this broad: it would
 also kill the user's own apps… ``), then the fix: put every option before the pattern or name, match
 something specific (a script path, a port, a unique marker), or kill by PID
-(`lsof -ti :PORT | xargs kill`, `kill $(cat app.pid)`), and `project_verbs down` for a project's
-services.
+(`lsof -ti :PORT | xargs kill`, `kill $(cat app.pid)`), and last, true whether or not the chat has the
+tool (§app.project-services/tool-offered): `If you have the project_verbs tool, use project_verbs down for a project's services.`
 
 ## §chat.kill-guard/broad-names — The broad names
 

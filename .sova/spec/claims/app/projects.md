@@ -41,7 +41,8 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
   starts its watch loop.
 - **Nothing registers on its own.** Starting a session in a folder registers nothing; an
   unregistered folder keeps everything root-keyed exactly as before (its playbooks list
-  "This folder", its profiles, schedules and `project_verbs`; §app/project-services).
+  "This folder", its profiles and schedules, and `project_verbs` where it is offered,
+  §app.project-services/tool-offered; §app/project-services).
 
 ## §app.projects/clone — Clone from GitHub
 

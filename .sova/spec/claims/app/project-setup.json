@@ -262,7 +262,7 @@
   "§app.project-setup/trust": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "reviewed",
     "requires": [
       "§app.project-services/merge-verbs",
       "§app.project-services/callers",
@@ -270,9 +270,9 @@
       "§app.project-services/deploy-callers"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T04:37Z",
-      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+      "by": "naomarik",
+      "at": "2026-11-06T23:21Z",
+      "source": "pi-session:4f394f82-707c-4335-a9f0-dfacbbbe4a11#5709e705"
     },
     "code": [
       "playbooks/project-setup/PLAYBOOK.md",
@@ -280,7 +280,9 @@
       "server/merge-queue/routes.ts",
       "server/merge-queue/setup-trust.test.ts",
       "server/merge-queue/review-step.ts",
-      "server/merge-queue/wire.ts"
+      "server/merge-queue/wire.ts",
+      "server/project-services/tool-offered.test.ts",
+      "server/project-services/tool-offered.integration.test.ts"
     ]
   },
   "§app/project-setup": {

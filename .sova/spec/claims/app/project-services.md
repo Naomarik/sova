@@ -431,13 +431,14 @@ these through project_verbs, never by hand."; and, when the session's sandbox is
 sandboxed and cannot reach these ports: use project_verbs." A checkout with a definition but no
 instance gets one line saying it has no running copy yet and that project_verbs up gives it its own
 ports; one whose definition is invalid, one line naming the problem. A project without a definition
-gets no note.
+gets no note, even where something else offers the tool (§app.project-services/tool-offered). Every
+checkout the note covers has a definition, valid or not, so a chat with a note always has the tool.
 
 The note reaches the model as a hidden message (`sova-instance-note`, never shown in the
 transcript) at the start of a turn, only when its text differs from the last such message on the
 branch: the text holds no live state (no pids, no running or stopped), so it changes only when a
 slot, port, data ref, `about`, the test command or the sandbox does. After a
-compaction the current note is sent again. The system prompt never changes. The same text follows
+compaction the current note is sent again. The system prompt never carries the note. The same text follows
 the result of `project_verbs` and `sova_project_verbs` for create, up, apply and status of one
 instance, so a turn that just ran up learns its ports at once, and status is the note on demand.
 
@@ -608,7 +609,7 @@ same engine in-process, never over HTTP:
 
 - **`project_verbs`**, in every ordinary hosted session and in every worker and team member a
   chat starts (an `agent_spawn` worker, a team member, coordinator, monitor or successor; never a
-  hidden chat), each under the same rules: reads (status, logs, doctor) on its own
+  hidden chat) that is offered it (§app.project-services/tool-offered), each under the same rules: reads (status, logs, doctor) on its own
   project; create, up, down, apply and test on instances of checkouts that are its own (its tracked
   worktrees, and its cwd's checkout unless that is the main checkout); reset and teardown only on
   instances it created; conform of its project. Anything else is `forbidden`. A create, up or test
@@ -649,6 +650,41 @@ verbs have callers of their own (§app.project-services/deploy-callers), and so 
 (§app.project-services/merge-verbs) and the release verbs (§app.release/callers): a coding
 session's `project_verbs` reads its project's releases and nothing more, and the release chat's
 reports its own release's steps.
+
+## §app.project-services/tool-offered — Which chats are offered `project_verbs`
+
+An ordinary chat, a worker, a team member and a restored worker, Claude Code's included, follow one
+rule: the tool is offered where the project has something for it to work on. A folder with no Project
+Verbs setup never sees it, and it appears on its own the moment setup exists. A hidden chat never has
+it, and the Overseers' `sova_project_verbs` is outside this rule.
+
+- **What offers it.** A chat is offered the tool when any of these is true:
+  - the folder it works in has a `.sova/project.json`, valid or not;
+  - the project's main folder has one;
+  - a worktree the chat tracks has one;
+  - the merge queue serves the project (§app/merge-queue);
+  - a copy is registered for the project (§app.project-services/instances);
+  - the chat is running a playbook that proposes setup, one whose frontmatter says `proposes:
+    definition`, `deploy`, `release` or `pipeline` (§app.project-runtime/verb-playbooks), however it
+    was started, by hand included.
+
+  A chat whose folder is on another computer is not offered it, whatever that folder holds.
+- **With none of these.** A new chat opens without the tool, at no cost, and the tool count in its
+  profile picker (§chat.profiles/picker) is one lower.
+- **When Sova looks.** As a chat opens, at each message and after each step of a reply. A chat or
+  worker that writes a definition has the tool on its next step. When setup lands on the project's
+  main folder, or a chat merges it in, every open chat of the project has the tool at its next message
+  or step, without reopening.
+- **What arriving costs.** That one change costs one uncached message, and in a Claude Code chat one
+  condensed restart (§app.claude-code-provider/continuity). A project with setup sees no change: the
+  same tools, in the same order, the same prompt and no restart.
+- **Once offered, kept.** A chat keeps the tool as long as it stays open, even when the definition
+  disappears; it is judged again only when the chat reopens. A chat in strict mode when setup arrives
+  keeps the tool after strict mode ends, with no second tool change (§chat.mode-menu/strict).
+- **What Sova says stays true without it.** The macOS kill guard's reply says "If you have the
+  project_verbs tool, use project_verbs down for a project's services." (§chat.kill-guard/refusal),
+  and the Create guide says a chat with every group removed can start its project's copies only where
+  the project has setup.
 
 ## §app.project-services/merge-verbs — The merge verbs
 

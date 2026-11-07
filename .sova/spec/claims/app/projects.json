@@ -275,7 +275,7 @@
   "§app.projects/registration": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/projects/registry.ts",
       "server/projects/registry.test.ts",
@@ -286,11 +286,17 @@
       "src/components/SessionDetails.tsx",
       "src/lib/projects.ts",
       "src/lib/projects.test.ts",
-      "server/overseer-folders.ts"
+      "server/overseer-folders.ts",
+      "server/project-services/tool-offered.test.ts"
     ],
     "requires": [
       "§app.organizations/registry"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-06T23:21Z",
+      "source": "pi-session:4f394f82-707c-4335-a9f0-dfacbbbe4a11#5709e705"
+    }
   },
   "§app.projects/seam": {
     "kind": "behavior",

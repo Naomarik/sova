@@ -768,9 +768,11 @@ line names the type ("UniiChat — by Victor Taelin", "Zoomable compaction — S
 `write` tools away from the orchestrator.
 
 - **Only those two.** `bash` and every other tool stay, and the Delegate instructions read the same
-  with strict on or off: the prompt never mentions it. The tools the chat had before are kept and
-  come back when strict goes off or the chat leaves both. Moving between Delegate and Create keeps
-  them away.
+  with strict on or off: the prompt never mentions it. `edit` and `write`, if the chat had them before,
+  come back where they were when strict goes off or the chat leaves both, and nothing else moves: a
+  tool that arrives while strict is on, such as `project_verbs` (§app.project-services/tool-offered),
+  stays with no second tool change, and a tool removed while strict is on stays removed. Moving
+  between Delegate and Create keeps them away.
 - **In the normal mode** the flag is kept and does nothing; switching to Delegate or Create applies
   it, and a session restored in either with strict on applies it on open.
 - **Setting it.** `/mode strict on|off`, per session like the rest of the mode, with a transcript

@@ -414,8 +414,8 @@ hidden chat: `/explain`'s fork, a compaction's hand-off fork and `/btw`'s side t
 starts each from the loadout its parent computed (model, effort, tools, MCP servers, extensions, flags,
 system prompt, sandbox, remote target, modes, team identity, agent dir), with nothing of an ordinary chat
 added (no profile, mode menu, memory, topics, links or session powers, and of the Sova-served tools
-only `project_verbs` with its instance note, which a worker or team member gets and a hidden chat
-doesn't, §app.project-services/callers; each, hidden or not, gets the kill guard, §chat/kill-guard), and
+only `project_verbs` with its instance note, on the rule of §app.project-services/tool-offered, never
+for a hidden chat; each, hidden or not, gets the kill guard, §chat/kill-guard), and
 opens it the way it opens any chat. A worker chat has exactly the built-in tools its loadout lists:
 the rest are excluded and the listed ones are on (no list keeps pi's default set). The parent never starts a worker's process and never talks to
 it directly: the server passes it the parent's task, steers, follow-ups, aborts and stops, and

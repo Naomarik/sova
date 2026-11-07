@@ -92,12 +92,13 @@
       "server/project-services/slots.test.ts",
       "server/project-services/copy-approvals.test.ts",
       "server/overseer-copies.ts",
-      "server/project-services/release.ts"
+      "server/project-services/release.ts",
+      "server/project-services/tool-offered.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "by": "naomarik",
+      "at": "2026-11-06T23:20Z",
+      "source": "pi-session:4f394f82-707c-4335-a9f0-dfacbbbe4a11#5709e705"
     }
   },
   "§app.project-services/conform": {
@@ -382,7 +383,8 @@
     "requires": [
       "§app.project-services/contract",
       "§app.project-services/instances",
-      "§app.project-services/callers"
+      "§app.project-services/callers",
+      "§app.project-services/tool-offered"
     ],
     "code": [
       "server/project-services/note.ts",
@@ -391,12 +393,13 @@
       "server/project-services/note.test.ts",
       "server/project-services/note.integration.test.ts",
       "server/project-services/worker-verbs.test.ts",
-      "server/chat-manager.ts"
+      "server/chat-manager.ts",
+      "server/served-tools.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-23T20:29Z",
-      "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#ddd8cd7b"
+      "at": "2026-11-06T23:21Z",
+      "source": "pi-session:4f394f82-707c-4335-a9f0-dfacbbbe4a11#5709e705"
     }
   },
   "§app.project-services/instances": {
@@ -798,6 +801,44 @@
       "by": "user",
       "at": "2026-11-05T03:58Z",
       "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
+    }
+  },
+  "§app.project-services/tool-offered": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.project-services/callers",
+      "§app.project-services/contract",
+      "§app.project-services/instances",
+      "§app/merge-queue",
+      "§app.project-runtime/verb-playbooks",
+      "§app.claude-code-provider/continuity",
+      "§chat.mode-menu/strict",
+      "§chat.kill-guard/refusal"
+    ],
+    "code": [
+      "server/project-services/tools.ts",
+      "server/chat-manager.ts",
+      "server/shell-guard.ts",
+      "server/shell-guard.test.ts",
+      "server/project-services/worker-verbs.test.ts",
+      "pi-config/extensions/mode/index.ts",
+      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/create/profiles.md",
+      "server/project-services/tool-offered.test.ts",
+      "server/project-services/tool-offered.integration.test.ts",
+      "server/served-tools.ts",
+      "shared/playbooks.ts",
+      "server/playbooks.ts",
+      "server/project-services/store.ts",
+      "server/modes/engine.ts",
+      "server/harness/pi/contract.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-06T23:20Z",
+      "source": "pi-session:4f394f82-707c-4335-a9f0-dfacbbbe4a11#5709e705"
     }
   },
   "§app.project-services/up": {

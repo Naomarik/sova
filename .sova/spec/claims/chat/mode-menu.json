@@ -478,7 +478,7 @@
       "§app.project-overseer/coding-mode"
     ],
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/prompt.ts",
@@ -487,12 +487,15 @@
       "server/transcript.ts",
       "src/components/ModeMenu.tsx",
       "src/lib/mode-menu.ts",
-      "pi-config/extensions/mode/index.test.ts"
+      "pi-config/extensions/mode/index.test.ts",
+      "server/modes/engine.ts",
+      "server/modes/engine-parity.test.ts",
+      "pi-config/extensions/mode/tests/smoke.mjs"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-05T05:46Z",
-      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
+      "at": "2026-11-06T23:21Z",
+      "source": "pi-session:4f394f82-707c-4335-a9f0-dfacbbbe4a11#5709e705"
     }
   },
   "§chat.mode-menu/terminal": {

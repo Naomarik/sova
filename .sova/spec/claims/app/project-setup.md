@@ -249,8 +249,8 @@ land reading offers no Land meanwhile, and its note names the missing trial
 
 The Setup chat may:
 - read and edit anything in its own worktree, and run the project's commands there;
-- use the project verbs on its own copies, as any project chat does
-  (§app.project-services/callers);
+- use the project verbs on its own copies, as any project chat with the tool does
+  (§app.project-services/callers); it is always offered the tool (§app.project-services/tool-offered);
 - start trials with `merge.try`, for its own project only;
 - read the queue, releases and deploys (`merge.status`, `merge.logs`, `release.status`,
   `deploy.status`, `deploy.logs`) and prove a recipe offline with `deploy.check`;

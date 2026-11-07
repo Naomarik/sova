@@ -12,6 +12,7 @@ import { join, normalize } from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
 import type { SessionGroup, SessionSummary } from "../shared/protocol";
+import { tourPngFixture } from "../shared/tour-fixtures";
 import { launchTourBrowser } from "./tours/browser";
 import { scratchRoot } from "./test-scratch";
 
@@ -497,4 +498,62 @@ test("a worker read in a pane drawn over the chat is Reading Workers: the rows b
 test("with the pane beside the chat nothing is hidden: the wider chat names the second", async () => {
   const rows = await readWorker(1900);
   assert.ok((rows["reading-transcript"] ?? 0) >= 1 && !rows["reading-workers"], JSON.stringify(rows));
+});
+
+// A real image in the chat: its thumb is drawn by the app's own ImageStrip, and pressing it opens the one full-size
+// viewer. The row around it is a transcript row, and a short alignment card sits on screen beside it.
+const PNG = `data:image/png;base64,${Buffer.from(tourPngFixture("phone")).toString("base64")}`;
+const SHORT_CARD = revision(1);
+Object.assign(SHORT_CARD.align.doc, { summary: "Short.", findings: [], approach: [] });
+const WITH_IMAGE = [
+  { id: "img", kind: "user", at: iso(20), text: "Here is the screen.", images: [PNG] },
+  SHORT_CARD,
+  { id: "t2", kind: "assistant-text", at: iso(18), model: "mock/m1", text: `Done. ${WORDS} ${WORDS} ${WORDS} ${WORDS} ${WORDS} ${WORDS}` },
+];
+
+test("an image open full size is Reviewing Screenshots and pauses a card's time on screen; its small preview is Main Thread", async () => {
+  const { page, reports } = await open(`#/s/${encodeURIComponent(A)}`, undefined, WITH_IMAGE);
+  const thumb = page.locator(".thread .entry button:has(img)").first();
+  await thumb.waitFor({ timeout: 20_000 });
+  const card = page.locator(".thread .align-doc");
+  await card.waitFor({ timeout: 20_000 });
+  await page.locator(".transcript").evaluate((el) => (el.scrollTop = 0));
+  await page.waitForTimeout(300);
+  const seen = async (l: typeof thumb) => {
+    const b = await l.boundingBox();
+    assert.ok(b && b.y >= 0 && b.y + 10 < 900, "on screen");
+    return b;
+  };
+  await seen(thumb);
+  await seen(card);
+  const middle = await page.locator(".transcript").boundingBox();
+  assert.ok(middle);
+  await page.mouse.move(middle.x + middle.width / 2, middle.y + middle.height / 2);
+  await page.waitForTimeout(2_500);
+  const preview = await sums(page, reports, A);
+  assert.equal(preview.rows.screenshots ?? 0, 0, `the small preview isn't the viewer: ${JSON.stringify(preview)}`);
+  assert.ok((preview.rows["reading-transcript"] ?? 0) >= 1, `it stays Main Thread: ${JSON.stringify(preview)}`);
+  assert.ok((preview.docs.al_1 ?? 0) >= 1, `and the card on screen counts: ${JSON.stringify(preview)}`);
+
+  await thumb.click();
+  const viewer = page.locator("dialog.lightbox[open]");
+  await viewer.waitFor({ timeout: 5_000 });
+  assert.ok(await viewer.locator("img").isVisible(), "the app's own viewer shows the image");
+  await page.waitForTimeout(1_100);
+  const opening = await sums(page, reports, A);
+  await page.waitForTimeout(2_500);
+  const open_ = await sums(page, reports, A);
+  assert.ok((open_.rows.screenshots ?? 0) >= 2, `full size counts: ${JSON.stringify(open_)}`);
+  assert.equal(open_.docs.al_1 ?? 0, opening.docs.al_1 ?? 0, `the card behind it pauses: ${JSON.stringify(open_)}`);
+  assert.equal(open_.rows["reading-transcript"] ?? 0, opening.rows["reading-transcript"] ?? 0, "and Main Thread with it");
+
+  await page.keyboard.press("Escape");
+  await page.mouse.move(middle.x + middle.width / 2 + 10, middle.y + middle.height / 2);
+  await page.waitForTimeout(2_500);
+  const closed = await sums(page, reports, A);
+  assert.ok((closed.docs.al_1 ?? 0) > (open_.docs.al_1 ?? 0), `closed, the card counts again: ${JSON.stringify(closed)}`);
+  const after = closed.rows.screenshots ?? 0;
+  await page.waitForTimeout(1_200);
+  assert.equal((await sums(page, reports, A)).rows.screenshots ?? 0, after, "and Reviewing Screenshots stopped");
+  await page.context().close();
 });

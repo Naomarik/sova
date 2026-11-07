@@ -47,6 +47,7 @@ const OTHER_LABELS = [
   { key: "dictating", label: "Dictating" },
   { key: "scrolling", label: "Scrolling" },
   { key: "changes", label: "Reviewing Changes" },
+  { key: "screenshots", label: "Reviewing Screenshots" },
   { key: "tours", label: "Viewing Tours" },
   { key: "other", label: "Other" },
 ] as const;

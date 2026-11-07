@@ -115,8 +115,9 @@ describe("one row per second, in the order the claim gives", () => {
   const noScroll = { ...noKeys, scrolledAt: -Infinity };
   test("4 a foreground view next", () => assert.equal(rowAt(noScroll, at), "changes"));
   test("4 each foreground view names its own row", () => {
-    const over = (kind: "changes" | "tours" | "alignment") => run(page(), main(A, 500), { type: "foreground-open", view: { id: 2, kind, session: A } });
+    const over = (kind: "changes" | "screenshots" | "tours" | "alignment") => run(page(), main(A, 500), { type: "foreground-open", view: { id: 2, kind, session: A } });
     assert.equal(rowAt(over("tours"), T0 + 1), "tours");
+    assert.equal(rowAt(over("screenshots"), T0 + 1), "screenshots");
     assert.equal(rowAt(over("alignment"), T0 + 1), "reading-alignments");
   });
   const noFore = run(noScroll, { type: "foreground-close", id: 1 });
@@ -341,6 +342,7 @@ describe("a card's on-screen time is a separate count", () => {
     const base = run(page(), main(A, 100, 300, 0, ["d1"]));
     assert.deepEqual(decide(run(base, { type: "foreground-open", view: { id: 4, kind: "alignment", doc: "d2", session: A } }), T0 + 1)?.docs, ["d2"]);
     assert.deepEqual(decide(run(base, { type: "foreground-open", view: { id: 5, kind: "changes", session: A } }), T0 + 1)?.docs, []);
+    assert.deepEqual(decide(run(base, { type: "foreground-open", view: { id: 6, kind: "screenshots", session: A } }), T0 + 1)?.docs, [], "a full-size image hides them too");
   });
 });
 

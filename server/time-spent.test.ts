@@ -261,7 +261,9 @@ describe("the report's limits", () => {
     assert.deepEqual(parseTimeSpentReport(skewed), good);
   });
   for (const [name, bad] of Object.entries({
-    "an unknown row": { ...good, slices: [slice("playing" as TimeSpentRow, 1)] },
+    "a row that isn't a string": { ...good, slices: [slice(7 as unknown as TimeSpentRow, 1)] },
+    "an empty row": { ...good, slices: [slice("" as TimeSpentRow, 1)] },
+    "a row too long": { ...good, slices: [slice("r".repeat(129) as TimeSpentRow, 1)] },
     "a fractional second": { ...good, slices: [slice("typing", 1.5)] },
     "no seconds": { ...good, slices: [slice("typing", 0)] },
     "a negative age": { ...good, slices: [slice("typing", 1, -1)] },
@@ -327,6 +329,24 @@ describe("the routes", () => {
     const r = await read(path);
     assert.ok(r.you > 0);
     assert.equal(r.you, rowsSum(r.rows));
+  });
+
+  test("Reviewing Screenshots is a row like any other: accepted, kept and summed", async () => {
+    const path = sessionFile("screenshots", []);
+    const res = await postReport({ pageId: "screenshot-page", path, inputAgeMs: 3_000_000, slices: [slice("screenshots", 7, 3_000_000), slice("typing", 3, 2_990_000)] });
+    assert.equal(res.status, 200);
+    const r = await read(path);
+    assert.deepEqual(r.rows, { screenshots: 7, typing: 3 });
+    assert.equal(r.you, 10);
+  });
+
+  test("a row this computer doesn't know reads as Other, and the report's other rows still count", async () => {
+    const path = sessionFile("newer-page", []);
+    const res = await postReport({ pageId: "newer-page", path, inputAgeMs: 3_100_000, slices: [slice("typing", 5, 3_100_000), slice("from-a-newer-page" as TimeSpentRow, 4, 3_090_000)] });
+    assert.equal(res.status, 200);
+    const r = await read(path);
+    assert.deepEqual(r.rows, { typing: 5, other: 4 });
+    assert.equal(r.you, 9);
   });
 
   test("a report sent twice through the route counts once", async () => {

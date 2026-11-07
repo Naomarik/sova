@@ -2135,6 +2135,19 @@ export class ProjectQueue {
           return this.withPosition(e);
         }
       }
+      // Only what the thread checked is pinned: the drafts as the answer recorded them (a commit-only fix: as the approval
+      // pinned them). Drafts edited since the answer are a change nobody checked: the user's to decide (q8), never
+      // landed on the standing Land.
+      if (answer) {
+        const wt = e.worktree && existsSync(e.worktree) ? e.worktree : undefined;
+        const now = !e.approval.withoutSpecs && wt ? await this.branchDrafts(wt, answer.commit ?? e.commit) : undefined;
+        const checked = answer.changed === "commit" ? e.approval.drafts?.hash : answer.drafts?.hash;
+        if ((now?.hash ?? null) !== (checked ?? null)) {
+          this.raiseDecision(e, { kind: "drafts-changed", question: `${e.branch}'s spec drafts changed after its chat answered Fixed, so the merge thread never checked them as they are now: Land takes them as they are now`, choices: [], raisedBy: "queue", actions: ["land", "remove"] });
+          this.save();
+          return this.withPosition(e);
+        }
+      }
       await this.requeueFix(e, answer?.commit ?? e.commit, r?.id);
       return this.withPosition(e);
     });

@@ -487,3 +487,45 @@ describe("drafts changed after the Land with no request (q8)", () => {
     }
   });
 });
+
+describe("only what the merge thread checked is pinned", () => {
+  test("drafts edited between the chat's Fixed and the thread's check never land on the standing Land: they wait for the user", async () => {
+    const { k, d } = standingKit({ thread: (ev) => ev.kind === "fix" });
+    try {
+      k.run.set(() => ({ verdict: "failed", blame: "branch", cause: "drafts", why: "its spec drafts don't fit" }));
+      const q = await k.q();
+      k.repo.branch("feat/race", { "r.txt": "r\n" });
+      const { entry } = await q.add({ branch: "feat/race", by: "land-button", session: "s1" });
+      const rq = lastRequest(await withChat(k, entry.id));
+      d.hash = "h-answered";
+      await q.respond(rq.id, "s1", { answer: "fixed", drafts: true });
+      d.hash = "h-edited-after"; // an edit while the thread reads
+      const e = await q.fixRuling(entry.id, rq.id, true, "");
+      assert.equal(e.state, "needs-user", "not back in line");
+      assert.equal(e.decision?.kind, "drafts-changed");
+      assert.equal(e.approval.drafts?.hash, "h1", "nothing re-pinned");
+      assert.equal(k.run.inputs.length, 1, "not run again");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("a commit-only fix whose drafts moved meanwhile, undeclared, waits for the user too", async () => {
+    const { k, d } = standingKit({ thread: (ev) => ev.kind === "fix" });
+    try {
+      k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit tests failed" }));
+      const q = await k.q();
+      const b = k.repo.branch("feat/race-commit", { "rc.txt": "r\n" });
+      const { entry } = await q.add({ branch: "feat/race-commit", by: "land-button", session: "s1" });
+      const rq = lastRequest(await withChat(k, entry.id));
+      const fix = k.repo.commitOn(b.path, { "rc.txt": "r2\n" }, "fix");
+      await q.respond(rq.id, "s1", { answer: "fixed", commit: fix });
+      d.hash = "h-moved";
+      const e = await q.fixRuling(entry.id, rq.id, true, "");
+      assert.equal(e.decision?.kind, "drafts-changed");
+      assert.equal(e.commit, b.head, "the approval didn't move");
+    } finally {
+      await k.done();
+    }
+  });
+});

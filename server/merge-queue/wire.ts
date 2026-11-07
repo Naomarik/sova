@@ -856,8 +856,13 @@ export async function startMergeQueue(
     // The branch's card in its own chat: raised at the approval, a revision at each outcome (cards.ts).
     // A decision's one notification: a tap opens the branch's chat at its card (the tab when no chat shows it).
     decided: (e, root) => {
-      void Promise.all([import("../push"), import("./rulings")])
-        .then(([{ notifyOnce }, { decisionPush }]) => notifyOnce(decisionPush(e, projectIdOf(root), { onTab: !e.session })))
+      // The chat that shows the decision (a worker's: the chat running it); none that can (archived, open in a terminal,
+      // an Overseer, a baton chat): the decision waits on the tab, and the tap opens the tab.
+      void Promise.all([import("../push"), import("./rulings"), import("./asks"), import("../sessions-index")])
+        .then(async ([{ notifyOnce }, { decisionPush }, { askTarget }, { listSessions }]) => {
+          const chat = askTarget(e, await listSessions().catch(() => []));
+          return notifyOnce(decisionPush(chat ? { ...e, session: chat.id } : e, projectIdOf(root), { onTab: !chat }));
+        })
         .catch((err) => console.warn(`[merge-queue] ${root}: decision notification not sent: ${err instanceof Error ? err.message : String(err)}`));
     },
     // A merge thread question answered from the branch's chat with its decision: closed, and handed to the thread.

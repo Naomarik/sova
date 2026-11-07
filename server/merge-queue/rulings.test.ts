@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { MergeRun, RunStep } from "../../shared/merge-queue";
-import { cleanChoices, fingerprintOf, resolveVerdict, sendBackText } from "./rulings";
+import { cleanChoices, decisionPush, fingerprintOf, resolveVerdict, sendBackText } from "./rulings";
 
 const step = (o: Partial<RunStep> & { id: string }): RunStep => ({ kind: "check", label: o.id, result: "failed", ms: 1, log: `${o.id}.log`, ...o });
 const run = (steps: RunStep[], id = "mr_1"): MergeRun => ({ id, entry: "mq_1", project: "p", branch: "feat/x", base: "a".repeat(40), commit: "b".repeat(40), steps, checks: [], verdict: "failed", startedAt: "t" });
@@ -58,4 +58,13 @@ test("a send-back's request: what failed, its log, the diagnosis, the try; a con
   const rv = sendBackText(e, { cause: "review", why: "flagged", review: "dead code in a.ts" });
   assert.match(rv, /review found problems in feat\/x at bbbbbbb:\ndead code in a\.ts/);
   assert.doesNotMatch(rv, /conflicts/);
+});
+
+test("a decision's notification: the chat that shows it, else the Merge Queue tab where it waits; one tag per entry", () => {
+  const d = { id: "dc_1", kind: "needs-you" as const, question: "Which wording?\nmore", choices: [], raisedBy: "chat" as const, actions: [], at: "t" };
+  const inChat = decisionPush({ id: "mq_1", branch: "feat/x", session: "s1", decision: d }, "p1");
+  assert.deepEqual(inChat, { title: "The merge queue needs you · feat/x", body: "Which wording?", hash: "#/sid/s1", tag: "sova:merge-decision:mq_1" });
+  // Its chat can't show it (archived, open in a terminal, an Overseer, a baton chat): the tab, though it has a session.
+  assert.equal(decisionPush({ id: "mq_1", branch: "feat/x", session: "s1", decision: d }, "p1", { onTab: true }).hash, "#/projects/p1/merge-queue");
+  assert.equal(decisionPush({ id: "mq_1", branch: "feat/x", decision: d }, null, { onTab: true }).hash, "#/projects");
 });

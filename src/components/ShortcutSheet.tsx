@@ -12,7 +12,7 @@ import "../command-palette.css";
 const MESSAGE_BOX_KEYS: readonly { keys: string; does: string }[] = [
   ...SHELL_KEYS,
   { keys: "Esc", does: "In an empty ! or !! box: leaves shell mode for a message box." },
-  { keys: "Esc", does: "In the composer while a reply runs: stops it and puts its text so far in the composer." },
+  { keys: "Esc", does: "In the composer while a reply runs: stops it." },
 ];
 
 /** The palette's own keys, after the app-wide ones (§app.command-palette/shortcut-sheet). */

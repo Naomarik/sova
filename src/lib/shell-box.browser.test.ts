@@ -182,8 +182,8 @@ describe("the chat's answer arriving while you type", () => {
     h.dispose();
   });
 
-  test("a stopped reply's text that starts with ! comes back as a message, never a runnable command", () => {
-    // As Composer's restored effect does: aheadOfDraft(reply, asMessage()), into an empty shell box.
+  test("a handed-back message that starts with ! comes back as a message, never a runnable command", () => {
+    // As Composer's restored effect does for a refused or queued message: [text, asMessage()], into an empty shell box.
     const h = harness();
     h.box.input("!", "insertText", false);
     assert.equal(h.box.mode(), "shell");

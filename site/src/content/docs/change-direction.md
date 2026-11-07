@@ -51,8 +51,6 @@ Until the agent takes it at its next step, your message shows as **Queued**, wit
 
 **Stop** ends the turn, and so does `Esc` while you're in the composer. Anything still queued comes back to the composer for you to edit or send again, and the transcript notes "Stopped by you at 1:43 PM." An `Esc` that closes something (a menu, the command palette, the model picker, the session pane or a dictation) does only that, and an `Esc` within half a second of another never stops a turn, so a quick second press is safe.
 
-`Esc` also puts the reply's text so far in the composer, ahead of anything you had typed, which stays as it was. Queued messages come back above it. Edit it and send it as a new message, or delete it. The stopped reply stays in the transcript too. Nothing comes back if the reply had no text yet, if a tool was running, or during a compaction. The **Stop** button doesn't do this; it only stops the turn.
-
 ## Switch models mid-session
 
 The left of the composer's foot shows the model's short name, such as `Opus 5.5`, after a small ring whose fill and letter show the thinking level (L, M, H, X, a bolt for max; no ring when the model has no levels). Hover it for the full model, provider and level. Press it, then **Model**, or press `Ctrl+P` (`⌘P` on a Mac). Pick a provider, then a model, or type to search across them. The star on a model row (or `Ctrl+F`) adds it to Favorites at the top of the list without choosing it. The same menu holds the **Thinking** levels for the current model, each with its ring, under a line that spells out the choice in full, such as "glm-5.3 · zai · high".

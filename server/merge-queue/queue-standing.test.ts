@@ -813,6 +813,23 @@ describe("a fix that rewrote the branch (rebase)", () => {
     }
   });
 
+  test("(c) the (a) setup with the rewritten commits' committer dates set after the request: still the user's (ancestry decides, not dates)", async () => {
+    const prev = process.env.GIT_COMMITTER_DATE;
+    process.env.GIT_COMMITTER_DATE = "2099-01-01T00:00:00Z";
+    try {
+      const { k, e } = await rebased(true);
+      try {
+        assert.equal(e.decision?.kind, "fix-ok");
+        assert.notEqual(e.state, "queued");
+      } finally {
+        await k.done();
+      }
+    } finally {
+      if (prev === undefined) delete process.env.GIT_COMMITTER_DATE;
+      else process.env.GIT_COMMITTER_DATE = prev;
+    }
+  });
+
   test("(b) a rebase with no unasked work: also the user's once (Sova can't tell the commits apart), Land takes it as it is now", async () => {
     const { k, e, fix } = await rebased(false);
     try {
@@ -820,6 +837,8 @@ describe("a fix that rewrote the branch (rebase)", () => {
       k.run.set(null);
       const after = await k.q().then((q) => q.answer(e.id, "land"));
       assert.equal(after.commit, fix);
+      assert.equal(after.approval.userCommit, fix, "the user's own approval of the rewritten branch");
+      assert.equal(after.approval.fixes, undefined, "no rewritten commits listed as fixes the Land carried");
       await landed(k, e.id);
     } finally {
       await k.done();

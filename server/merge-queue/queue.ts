@@ -2261,6 +2261,13 @@ export class ProjectQueue {
     this.answerDecision(e, "land");
     delete e.fix;
     e.state = "with-chat";
+    // A fix that rewrote the branch: the user's Land takes the branch as it is now, as their own approval of it (not a
+    // fix the Land carried), so the Landed card lists no rewritten commits as fixes.
+    if (a?.commit && !(await isAncestor(this.git, this.root, e.commit, a.commit))) {
+      e.approval.userCommit = a.commit;
+      await this.requeueFix(e, a.commit);
+      return this.withPosition(e);
+    }
     await this.requeueFix(e, a?.commit ?? e.commit, r?.id);
     return this.withPosition(e);
   }

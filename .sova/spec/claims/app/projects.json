@@ -63,7 +63,7 @@
   "§app.projects/home-cards": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/OverviewProjects.tsx",
       "src/lib/home-projects.ts",
@@ -93,12 +93,13 @@
       "§app.projects/home-glance",
       "§app.merge-queue/view",
       "§app.release/tab",
-      "§app.project-services/instances"
+      "§app.project-services/instances",
+      "§app.projects/home-memory-bar"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T13:41Z",
-      "source": "pi-session:01a1ab30-f643-72b7-9a70-76331f9c7523#21128e50"
+      "at": "2026-11-07T14:36Z",
+      "source": "pi-session:01a1afdd-a250-74e2-9bd4-05240ba34ff4#a9d5393f"
     }
   },
   "§app.projects/home-glance": {
@@ -117,7 +118,9 @@
       "server/project-services/release-wire.ts",
       "server/project-services/release.ts",
       "server/sessions-index.ts",
-      "shared/commands/projects.ts"
+      "shared/commands/projects.ts",
+      "server/project-services/drivers.test.ts",
+      "server/projects/glance-copies.integration.test.ts"
     ],
     "requires": [
       "§app.merge-queue/view",
@@ -127,12 +130,32 @@
       "§app.projects/folder-sessions",
       "§app.resource-monitor/sampling-and-history",
       "§app.resource-monitor/attribution",
-      "§app.resource-monitor/lightness-budget"
+      "§app.resource-monitor/lightness-budget",
+      "§app.project-services/adopt"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T13:41Z",
-      "source": "pi-session:01a1ab30-f643-72b7-9a70-76331f9c7523#21128e50"
+      "at": "2026-11-07T14:36Z",
+      "source": "pi-session:01a1afdd-a250-74e2-9bd4-05240ba34ff4#a9d5393f"
+    }
+  },
+  "§app.projects/home-memory-bar": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/lib/home-glance.ts",
+      "src/components/OverviewProjects.tsx",
+      "src/home.css",
+      "src/lib/home-glance.test.ts"
+    ],
+    "requires": [
+      "§app.projects/home-glance"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-07T14:36Z",
+      "source": "pi-session:01a1afdd-a250-74e2-9bd4-05240ba34ff4#a9d5393f"
     }
   },
   "§app.projects/icon": {

@@ -1,21 +1,21 @@
 /**
- * The client half of theming: the
- * theme the window is wearing, and the two calls that put one on and take it off.
+ * The client half of theming: the mode (Light, Dark or Auto), one pick per base, the theme the
+ * window is wearing because of them, and the calls that change any of it.
  *
  * The server did the reading, the `$name` resolution and the validation (`shared/theme.ts`), so
  * everything here is already safe to paint. This module adds nothing to that judgement: a value
  * lands on its custom property VERBATIM — never parsed, normalized, or re-serialized — and the
  * key→property table is imported, never re-derived.
  *
- * The choice is the id and it lives in `localStorage` alone. There is no server write endpoint
- * for it and there must never be one: a theme is this browser's, not the machine's. The cache
- * carries the resolved tokens alongside the id for one reason — the ground rules require the theme to be
- * applied BEFORE first paint, and a fetch can't be.
+ * The choice is the mode and the two ids, and it lives in `localStorage` alone. There is no server
+ * write endpoint for it and there must never be one: a theme is this browser's, not the machine's.
+ * The cache carries each pick's resolved tokens alongside its id for one reason — the ground rules
+ * require the theme to be applied BEFORE first paint, and a fetch can't be.
  */
 
 import { createSignal } from "solid-js";
-import type { ThemeList, ThemeTokens } from "../../shared/protocol";
-import { CSS_PROPERTY, DEFAULT_THEME_ID, type ThemeBase } from "../../shared/theme";
+import type { ThemeInfo, ThemeList, ThemeTokens } from "../../shared/protocol";
+import { BASE_SURFACE, CSS_PROPERTY, DEFAULT_THEME_ID, type ThemeBase } from "../../shared/theme";
 import {
   DEFAULT_TEXT_SIZE,
   NO_TYPOGRAPHY,
@@ -31,28 +31,97 @@ import {
   typographyProperties,
 } from "./typography";
 import { readKey, removeKey, writeKey } from "./storage-keys";
+import { THEME_KEY } from "./theme-prepaint";
 
-/** The ground rules: the choice persists here. */
-export const THEME_KEY = "sova:theme";
+/** The ground rules: the choice persists here (the pre-paint script reads it too). */
+export { THEME_KEY };
 
-/** What we keep so the next load can paint the theme with no network. The id is the choice —
-    the tokens are a cache of what the server said it resolved to, re-checked against the list
-    on every boot (App.tsx) and dropped when the theme is gone or broken. */
+/** One pick, as kept so the next load can paint it with no network. The id is the choice — the
+    tokens are a cache of what the server said it resolved to, re-checked against the list on
+    every boot (App.tsx) and dropped when the theme is gone or broken. */
 export interface StoredTheme {
   id: string;
   base: ThemeBase;
   tokens: ThemeTokens;
 }
 
-/** The id the picker shows checked. `dark` is the default, and what a vanished id falls back to. */
-const [activeThemeId, setActiveThemeId] = createSignal<string>(DEFAULT_THEME_ID);
-export { activeThemeId };
+/** Light and Dark wear that base's pick; Auto wears the one the system's light/dark setting asks for. */
+export type ThemeMode = "light" | "dark" | "auto";
 
-/** The id of a theme we were wearing and had to take off — the file was deleted, renamed, or
-    broke since the cache was written. The copy deck's banner names it in the Themes panel, and putting any
-    theme on clears it: the notice is about the theme you lost, not the one you have. */
-const [droppedThemeId, setDroppedThemeId] = createSignal<string | null>(null);
-export { droppedThemeId };
+/** What a browser with nothing stored starts in: Dark, the dark-by-default rule. */
+export const DEFAULT_THEME_MODE: ThemeMode = "dark";
+
+/** The record under `THEME_KEY`. A null pick is that base's built-in: for dark, no attribute and
+    nothing written; for light, `data-theme="light"` and nothing written — `tokens.css` alone, which
+    `light.json` reproduces value for value, so neither needs the list. A record without `v` is
+    the single theme stored before there were two picks (`readStoredThemes`). */
+interface StoredThemes {
+  v: 2;
+  mode: ThemeMode;
+  light: StoredTheme | null;
+  dark: StoredTheme | null;
+}
+
+const [themeMode, setThemeModeSignal] = createSignal<ThemeMode>(DEFAULT_THEME_MODE);
+export { themeMode };
+
+const [lightPick, setLightPick] = createSignal<StoredTheme | null>(null);
+const [darkPick, setDarkPick] = createSignal<StoredTheme | null>(null);
+const pickOf = (base: ThemeBase) => (base === "light" ? lightPick() : darkPick());
+
+/** The id each list wears: its pick, or its base's built-in when there is none (`checkedThemeId` is
+    the card it shows checked). */
+export const lightThemeId = (): string => lightPick()?.id ?? "light";
+export const darkThemeId = (): string => darkPick()?.id ?? DEFAULT_THEME_ID;
+
+/** The system's light/dark setting, as `prefers-color-scheme: light` answers it: no preference
+    reads as dark, the same rule as the share build (`src/share/theme.ts`). */
+const [systemLight, setSystemLight] = createSignal(false);
+
+/** The base the window is wearing: the mode, or under Auto the system's setting. */
+export const shownBase = (): ThemeBase => {
+  const mode = themeMode();
+  return mode === "auto" ? (systemLight() ? "light" : "dark") : mode;
+};
+
+/** The id of the theme the window is wearing: the shown base's pick. */
+export const activeThemeId = (): string => (shownBase() === "light" ? lightThemeId() : darkThemeId());
+
+/** Why a pick came off: its file is gone (deleted or renamed), it broke, or it now stands on the
+    other base. */
+export type DropReason = "gone" | "broken" | "base-changed";
+
+/** A pick we had to take off since the cache was written, the list whose pick went back to its
+    built-in, and why. The copy deck's banner names it in the Themes panel, and a new pick in that
+    list clears it: the notice is about the theme you lost, not the one you have. */
+export interface DroppedTheme {
+  id: string;
+  slot: ThemeBase;
+  reason: DropReason;
+}
+const [droppedTheme, setDroppedTheme] = createSignal<DroppedTheme | null>(null);
+export { droppedTheme };
+
+const BUILTIN_NAME: Record<ThemeBase, string> = { light: "Light", dark: "Dark" };
+
+/** The banner's sentence around the id (shown in mono between `lead` and `tail`): it names the list
+    that fell back, not the window, and why. */
+export function droppedNotice(d: DroppedTheme): { lead: string; tail: string } {
+  const back = `, so your ${d.slot} theme is back on the built-in ${BUILTIN_NAME[d.slot]}.`;
+  if (d.reason === "broken") return { lead: "We couldn't read ", tail: back };
+  if (d.reason === "base-changed") return { lead: "", tail: ` is a ${d.slot === "light" ? "dark" : "light"} theme now${back}` };
+  return { lead: "", tail: ` isn't there anymore${back}` };
+}
+
+/** The card a list shows checked: its pick, or with no pick the base's built-in card, unless a user
+    file has taken the built-in's id (`replacesBuiltin`). That file isn't what the window wears while
+    nothing is picked, so then no card in the list is checked. */
+export function checkedThemeId(slot: ThemeBase, themes: readonly ThemeInfo[]): string | null {
+  const pick = pickOf(slot);
+  if (pick) return pick.id;
+  const builtin = slot === "light" ? "light" : DEFAULT_THEME_ID;
+  return themes.some((t) => t.id === builtin && t.replacesBuiltin) ? null : builtin;
+}
 
 /** Every property a theme can write — what `clearTheme` removes, so no key of the previous
     theme outlives it. `removeProperty` on one that was never set is a no-op. */
@@ -72,10 +141,6 @@ export { typography };
     after the theme, so a Small or Large scales whatever sizes the theme set. */
 const [textSize, setTextSizeSignal] = createSignal<TextSize>(DEFAULT_TEXT_SIZE);
 export { textSize };
-
-/** The theme currently on the document, so a typography change can repaint it. Null is the
-    built-in dark with nothing written. */
-let worn: StoredTheme | null = null;
 
 /** The stored choice, validated against the catalogue (an id that names nothing is no choice). */
 export function readStoredTypography(): Typography {
@@ -114,59 +179,79 @@ function writeStoredTextSize(size: TextSize): void {
   }
 }
 
-/** The one painter. Theme tokens first, then the pick on top: a kind left on Theme default
-    writes nothing, so the theme's own face (or tokens.css's) is what stays. The text size goes
-    last — Medium writes nothing, and the clear above takes a previous Small or Large off, since
-    every `--fs-*` is a theme property too. */
-function paint(theme: StoredTheme | null): void {
+/** The one painter, always for the shown base and its pick: every switch — a mode, a pick, the
+    system's setting, a reconcile, a font or a size — comes through here. Theme tokens first, then
+    the font pick on top: a kind left on Theme default writes nothing, so the theme's own face (or
+    tokens.css's) is what stays. The text size goes after — Medium writes nothing, and the clear
+    above takes a previous Small or Large off, since every `--fs-*` is a theme property too. The
+    chrome color goes last, so the bar follows every switch the page does. */
+function paint(): void {
+  watchSystem();
+  followOtherTabs();
+  const base = shownBase();
+  const theme = pickOf(base);
+  const tokens = theme?.tokens ?? {};
   const root = document.documentElement;
   // Clear first: the theme being taken off may have set a key this one doesn't, and a leftover
   // would be a value from a theme nobody is wearing.
   for (const property of ALL_PROPERTIES) root.style.removeProperty(property);
-  if (theme) {
-    for (const [key, value] of Object.entries(theme.tokens)) {
-      const property = CSS_PROPERTY[key];
-      if (property) root.style.setProperty(property, value); // verbatim, as authored
-    }
-    root.setAttribute("data-theme", theme.base);
-  } else {
-    root.removeAttribute("data-theme");
+  for (const [key, value] of Object.entries(tokens)) {
+    const property = CSS_PROPERTY[key];
+    if (property) root.style.setProperty(property, value); // verbatim, as authored
   }
+  // No attribute is the built-in dark; a dark pick still says `dark`, as it always has.
+  if (base === "dark" && !theme) root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", base);
   for (const [property, value] of Object.entries(typographyProperties(typography()))) root.style.setProperty(property, value);
-  for (const [property, value] of Object.entries(textSizeProperties(textSize(), theme?.tokens ?? {}))) root.style.setProperty(property, value);
-  setMetaThemeColor(theme ? (theme.tokens.surface ?? BASE_SURFACE[theme.base]) : BASE_SURFACE.dark);
-  worn = theme;
+  for (const [property, value] of Object.entries(textSizeProperties(textSize(), tokens))) root.style.setProperty(property, value);
+  setMetaThemeColor(tokens.surface ?? BASE_SURFACE[base]);
+}
+
+/** The system's setting, watched from the first paint on: under Auto a change repaints at once,
+    with no reload; in Light or Dark it only keeps `systemLight` current for a later switch to
+    Auto. Guarded, because a document without `matchMedia` (the unit tests') has no system. */
+let systemQuery: MediaQueryList | null = null;
+function watchSystem(): void {
+  if (systemQuery || typeof matchMedia !== "function") return;
+  systemQuery = matchMedia("(prefers-color-scheme: light)");
+  setSystemLight(systemQuery.matches);
+  systemQuery.addEventListener("change", (e) => {
+    setSystemLight(e.matches);
+    if (themeMode() === "auto") paint();
+  });
 }
 
 /**
  * Change one or both faces. A kind set to null goes back to the theme's own face — which is a
  * repaint of the theme, not a `removeProperty`, because the theme may have set that key itself.
  * Applies immediately and persists; called from Settings → Themes → Typography.
+ *
+ * The save re-reads the stored choice and changes only the kinds in `patch`, as the theme's saves
+ * do (`saveThemes`): another tab open in this browser shares the key, and a write of this tab's
+ * whole memory would erase the other kind's pick that tab made since (its storage event may not
+ * have arrived yet). This tab then wears exactly what it stored.
  */
 export function setTypography(patch: Partial<Typography>): Typography {
-  const next: Typography = { ...typography(), ...patch };
+  const next: Typography = { ...readStoredTypography(), ...patch };
   setTypographySignal(next);
   writeStoredTypography(next);
-  paint(worn);
+  paint();
   return next;
 }
 
 /** Small, Medium or Large. Applies immediately and persists; Medium removes the key. Called from
-    Settings → Themes → Typography. */
+    Settings → Themes → Typography. The size is one value, so its save is its own part whole; other
+    tabs follow it through their storage event (`followOtherTabs`). */
 export function setTextSize(size: TextSize): void {
   setTextSizeSignal(size);
   writeStoredTextSize(size);
-  paint(worn);
+  paint();
 }
 
 /** Use Theme Fonts, and the `?theme=default` escape hatch: no pick at all, key removed. */
 export function clearTypography(): void {
   setTypography({ text: null, mono: null });
 }
-
-/** Each base's `--color-surface` as tokens.css defines it — the chrome color for a theme that
-    doesn't set `surface`. `dark`'s is also what index.html ships and what no theme goes back to. */
-const BASE_SURFACE: Record<ThemeBase, string> = { dark: "#2C2C38", light: "#FFFFFF" };
 
 /** The browser chrome color (the Android status bar), matched to the header's surface so the
     bar and the head under it read as one band. */
@@ -175,63 +260,142 @@ function setMetaThemeColor(value: string): void {
   if (meta && value) meta.setAttribute("content", value);
 }
 
-/** The stored choice, or null when there is none (or storage is blocked, or it's not ours). */
-export function readStoredTheme(): StoredTheme | null {
+/** One stored pick, validated as the single theme always was: a non-empty id, a base, a token
+    map. A pick standing on the other base is no pick (each section lists its own base only). */
+function readPick(value: unknown, slot: ThemeBase): StoredTheme | null {
+  if (!value || typeof value !== "object") return null;
+  const parsed = value as Partial<StoredTheme>;
+  if (typeof parsed.id !== "string" || !parsed.id) return null;
+  const base: ThemeBase = parsed.base === "light" ? "light" : "dark";
+  if (base !== slot) return null;
+  const tokens = parsed.tokens && typeof parsed.tokens === "object" ? (parsed.tokens as ThemeTokens) : {};
+  return { id: parsed.id, base, tokens };
+}
+
+const EMPTY: StoredThemes = { v: 2, mode: DEFAULT_THEME_MODE, light: null, dark: null };
+
+/**
+ * The stored choice. Nothing stored, a blocked store or a record that isn't ours reads as the
+ * starting setup: Dark, both built-ins. A single theme stored before there were two picks (an
+ * `id`, no `v`) keeps its look: it becomes its base's pick, the other the built-in, and the mode
+ * that base; `migrated` says the record still needs writing back in the new shape.
+ */
+function readStoredThemes(): { record: StoredThemes; migrated: boolean } {
   try {
     const raw = readKey(localStorage, THEME_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<StoredTheme>;
-    if (typeof parsed?.id !== "string" || !parsed.id) return null;
-    const base: ThemeBase = parsed.base === "light" ? "light" : "dark";
-    const tokens = parsed.tokens && typeof parsed.tokens === "object" ? (parsed.tokens as ThemeTokens) : {};
-    return { id: parsed.id, base, tokens };
+    if (!raw) return { record: EMPTY, migrated: false };
+    const parsed = JSON.parse(raw) as Record<string, unknown> | null;
+    if (!parsed || typeof parsed !== "object") return { record: EMPTY, migrated: false };
+    if (parsed.v === undefined && "id" in parsed) {
+      const base: ThemeBase = parsed.base === "light" ? "light" : "dark";
+      const pick = readPick(parsed, base);
+      if (!pick) return { record: EMPTY, migrated: false };
+      return { record: { ...EMPTY, mode: base, [base]: pick }, migrated: true };
+    }
+    if (parsed.v !== 2) return { record: EMPTY, migrated: false };
+    const mode: ThemeMode = parsed.mode === "light" || parsed.mode === "auto" || parsed.mode === "dark" ? parsed.mode : DEFAULT_THEME_MODE;
+    return { record: { v: 2, mode, light: readPick(parsed.light, "light"), dark: readPick(parsed.dark, "dark") }, migrated: false };
   } catch {
     // A blocked, full or hand-edited localStorage means the default theme, never a broken boot.
-    return null;
+    return { record: EMPTY, migrated: false };
   }
 }
 
-function writeStoredTheme(theme: StoredTheme): void {
+/** Every save re-reads the stored record and changes only its own part: another tab open on the same
+    browser shares the record, and a write of this tab's whole memory would erase what that tab chose
+    since (its storage event may not have arrived yet). */
+function saveThemes(change: (record: StoredThemes) => StoredThemes): void {
+  const record = change(readStoredThemes().record);
   try {
-    writeKey(localStorage, THEME_KEY, JSON.stringify(theme));
+    writeKey(localStorage, THEME_KEY, JSON.stringify(record));
   } catch {
-    // Persistence is a convenience; the theme still holds for this page.
+    // Persistence is a convenience; the choice still holds for this page.
   }
+}
+
+const withPick = (record: StoredThemes, slot: ThemeBase, theme: StoredTheme | null): StoredThemes =>
+  slot === "light" ? { ...record, light: theme } : { ...record, dark: theme };
+
+function setPick(slot: ThemeBase, theme: StoredTheme | null): void {
+  if (slot === "light") setLightPick(theme);
+  else setDarkPick(theme);
+}
+
+/** Another tab's save, followed at once: its mode and picks, its font pick or its text size become this
+    tab's, and the window repaints, with no reload. Each key is read only when its own event comes. A
+    cleared store (key null) reads as the starting setup for all three, as a reload would. Installed
+    once, from the first paint on; guarded, because the unit tests' document has no window events. */
+let followingTabs = false;
+function followOtherTabs(): void {
+  if (followingTabs || typeof addEventListener !== "function") return;
+  followingTabs = true;
+  addEventListener("storage", (e: StorageEvent) => {
+    const all = e.key === null;
+    if (!all && e.key !== THEME_KEY && e.key !== TYPOGRAPHY_KEY && e.key !== TEXT_SIZE_KEY) return;
+    if (all || e.key === THEME_KEY) {
+      const { record } = readStoredThemes();
+      setThemeModeSignal(record.mode);
+      setLightPick(record.light);
+      setDarkPick(record.dark);
+      const dropped = droppedTheme();
+      if (dropped && pickOf(dropped.slot)) setDroppedTheme(null); // that list has a pick again
+    }
+    if (all || e.key === TYPOGRAPHY_KEY) setTypographySignal(readStoredTypography());
+    if (all || e.key === TEXT_SIZE_KEY) setTextSizeSignal(readStoredTextSize());
+    paint();
+  });
+}
+
+/** Light, Dark or Auto: persists, and repaints whatever that mode shows. Settings → Themes → Appearance. */
+export function setThemeMode(mode: ThemeMode): void {
+  setThemeModeSignal(mode);
+  saveThemes((record) => ({ ...record, mode }));
+  paint();
 }
 
 /**
- * Wear a theme: its tokens onto `documentElement`, `data-theme` set to the base it stands on
- * (that's what `tokens.css` paints under, and what a theme's omitted keys come from), and the
- * choice cached. Called before first paint from `main.tsx` and again on every pick.
+ * Make `theme` its base's pick and persist it. The window changes only when that base is the one
+ * showing: a pick in the other section waits there until its base shows. Called on every card
+ * a person checks, so it clears that section's fallback notice.
  */
-export function applyTheme(theme: StoredTheme): void {
-  paint(theme);
-  setActiveThemeId(theme.id);
-  setDroppedThemeId(null);
-  writeStoredTheme(theme);
+export function pickTheme(theme: StoredTheme): void {
+  setPick(theme.base, theme);
+  if (droppedTheme()?.slot === theme.base) setDroppedTheme(null);
+  saveThemes((record) => withPick(record, theme.base, theme));
+  if (theme.base === shownBase()) paint();
 }
 
-/** Back to the built-in dark: every written property removed, the cache dropped, and no
-    `data-theme` attribute at all — no attribute is what `tokens.css` renders dark under. */
+/** Back to the starting setup, the `?theme=default` reset: the record removed, so Dark mode with
+    both built-ins, every written property off and no `data-theme` attribute at all. */
 export function clearTheme(): void {
-  paint(null);
-  setActiveThemeId(DEFAULT_THEME_ID);
+  setThemeModeSignal(DEFAULT_THEME_MODE);
+  setLightPick(null);
+  setDarkPick(null);
+  setDroppedTheme(null);
   try {
     removeKey(localStorage, THEME_KEY);
   } catch {
-    // Nothing to undo: the properties are already off.
+    // Nothing stored that we could reach; the page is back on the default either way.
   }
+  paint();
 }
 
-/** The pre-paint call (`main.tsx`): apply the cached theme synchronously, or leave the document
-    on its default dark. Nothing is fetched here — a flash of the default is exactly what the ground rules
-    forbids, and a reconcile against the server happens after boot (App.tsx). */
+/** The startup call (`main.tsx`): apply the cached choice synchronously — under Auto with the
+    system's setting read in the same step — or leave the document on its default dark. index.html's
+    pre-paint script (`theme-prepaint.ts`) has already put the same theme on before the first frame;
+    this takes the store over from it and adds the font pick and the text size. Nothing is fetched
+    here; a reconcile against the server happens after boot (App.tsx). */
 export function applyStoredTheme(): void {
   setTypographySignal(readStoredTypography());
   setTextSizeSignal(readStoredTextSize());
-  const stored = readStoredTheme();
-  if (stored) applyTheme(stored);
-  else paint(null); // no theme, but the font pick and text size still have to be on before first paint
+  const { record, migrated } = readStoredThemes();
+  setThemeModeSignal(record.mode);
+  setLightPick(record.light);
+  setDarkPick(record.dark);
+  setDroppedTheme(null);
+  if (migrated) saveThemes((stored) => stored); // read again, as every save does: written back in the v2 shape
+  if (systemQuery) setSystemLight(systemQuery.matches);
+  paint(); // with no theme too: the font pick and text size still have to be on before first paint
 }
 
 /** Two token maps hold the same values — the poll's answer against what we're wearing. */
@@ -242,32 +406,42 @@ function sameTokens(a: ThemeTokens, b: ThemeTokens): boolean {
 }
 
 /**
- * The cache against the server's list: once at boot (App.tsx), and on every poll while the
- * Themes tab is open. An id that no longer resolves — or that resolves to a theme we can't wear
- * — falls back to `dark`, and the banner says which id went. A theme still there whose file
- * changed is re-applied, so an edit saved in another window shows up where the list does.
+ * Each pick against the server's list: once at boot (App.tsx), and on every poll while the
+ * Themes tab is open. A pick whose id no longer resolves — or resolves to a theme we can't wear,
+ * or to one that now stands on the other base — goes back to its own base's built-in, and the
+ * banner says which id went and where. Only that pick: the other base's stays. The fallback is a
+ * null pick, never a lookup of `light` or `dark` in the list, because a user file may hold that
+ * id and be the broken one. A pick still there whose file changed is re-cached, and repainted
+ * when it is the one showing, so an edit saved in another window shows up where the list does.
+ * A built-in (null) pick isn't checked: like the single theme before it, a user file that takes
+ * the id `light` or `dark` applies only once it is picked.
  *
- * Two lists say nothing about the theme you're wearing and must not take it off. A fetch that
- * FAILS never gets here at all — the cache keeps being worn, which is the point of it. And a
- * list carrying `error` is INCOMPLETE: the user folder couldn't be read, so it holds the
- * built-ins alone, and a user theme missing from it is missing for that reason.
+ * Two lists say nothing about the picks and must not take one off. A fetch that FAILS never gets
+ * here at all — the cache keeps being worn, which is the point of it. And a list carrying `error`
+ * is INCOMPLETE: the user folder couldn't be read, so it holds the built-ins alone, and a user
+ * theme missing from it is missing for that reason.
  */
 export function reconcileTheme(list: ThemeList): void {
-  const stored = readStoredTheme();
-  if (!stored) return;
-  const match = list.themes.find((t) => t.id === stored.id);
-  if (!match) {
-    if (list.error) return; // the folder, not the theme, is what's gone
-    clearTheme();
-    setDroppedThemeId(stored.id);
-    return;
+  let repaint = false;
+  for (const slot of ["light", "dark"] as const) {
+    const pick = pickOf(slot);
+    if (!pick) continue;
+    const match = list.themes.find((t) => t.id === pick.id);
+    if (!match && list.error) continue; // the folder, not the theme, is what's gone
+    let next: StoredTheme | null;
+    if (!match || match.error || match.base !== slot) {
+      next = null;
+      setDroppedTheme({ id: pick.id, slot, reason: !match ? "gone" : match.error ? "broken" : "base-changed" });
+    } else if (sameTokens(match.tokens, pick.tokens)) {
+      continue; // unchanged is the common case, twice a second: don't rewrite 30 properties to say so
+    } else {
+      next = { id: match.id, base: slot, tokens: match.tokens };
+    }
+    setPick(slot, next);
+    // This list's pick only, and only while the stored one is still the pick checked here: a newer pick
+    // another tab saved wins, and its storage event brings it here.
+    saveThemes((record) => (record[slot]?.id === pick.id ? withPick(record, slot, next) : record));
+    if (slot === shownBase()) repaint = true;
   }
-  if (match.error) {
-    clearTheme();
-    setDroppedThemeId(stored.id);
-    return;
-  }
-  // Unchanged is the common case, twice a second: don't rewrite 30 properties to say so.
-  if (match.base === stored.base && sameTokens(match.tokens, stored.tokens)) return;
-  applyTheme({ id: match.id, base: match.base, tokens: match.tokens });
+  if (repaint) paint();
 }

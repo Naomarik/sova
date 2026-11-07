@@ -1965,7 +1965,10 @@ fetched except the lookups below.
   the thumbnail at 768px and up, the topic, `{relative time} · {model}`, the summary clamped to 3
   lines, and the advisory note when there is one. The thumbnail, topic, caption, summary and note
   are one plain link to `/explain/{id}` with no `target` (the same-tab rule of
-  §app.insights/insight-strip). Under it, a foot line says where the page came from:
+  §app.insights/insight-strip). The thumbnail and the link wear the theme the window wears now,
+  and follow it when it changes while the page is open (an Auto switch, §app.settings-dialog/themes),
+  so a page opened after the switch opens in the theme on screen. Under it, a foot line says where
+  the page came from:
   - The session in the session list: `From {title}`, an `Archived` chip when it is archived,
     then `· Open in Session`, a separate link to `#/s/{path}`.
   - A session the list doesn't carry (it has no user message, for one): the page asks this host

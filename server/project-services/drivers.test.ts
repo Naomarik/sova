@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { DetachedDriver, parseShow, SystemdDriver, systemdRunArgv, type Exec } from "./drivers";
+import { DetachedDriver, parseShow, SLICE, sliceCgroupPath, SystemdDriver, systemdRunArgv, unitCgroupPids, userManagerCgroup, type Exec } from "./drivers";
 import type { ProcEntry, ProcTable } from "./proctable";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-drivers-"));
@@ -170,4 +170,45 @@ test("detached, with session ids: a process in the session of a recorded pid now
   assert.equal(d.owns("u", 7001), false, "a later session leader's member");
   start = "S0";
   assert.equal(d.owns("u", 7001), true, "the unit's own");
+});
+
+test("sliceCgroupPath: a dash in a slice's name is a level, as systemd nests it", () => {
+  assert.equal(sliceCgroupPath("sova-services.slice"), "sova.slice/sova-services.slice");
+  assert.equal(sliceCgroupPath(SLICE), "sova.slice/sova-services.slice");
+  assert.equal(sliceCgroupPath("app.slice"), "app.slice");
+  assert.equal(sliceCgroupPath("a-b-c.slice"), "a.slice/a-b.slice/a-b-c.slice");
+  assert.equal(sliceCgroupPath("-.slice"), "");
+  assert.equal(sliceCgroupPath(""), "");
+});
+
+test("unitCgroupPids: a services-slice unit is found where systemd puts it (sova.slice/sova-services.slice), not in a flat sova-services.slice", () => {
+  const root = mkdtempSync(join(tmpdir(), "sova-cgroup-"));
+  try {
+    const manager = join(root, "user.slice", "user-1000.slice", "user@1000.service");
+    mkdirSync(manager, { recursive: true });
+    writeFileSync(join(manager, "cgroup.procs"), "");
+    assert.equal(userManagerCgroup(1000, root), manager);
+    assert.equal(userManagerCgroup(1001, root), null, "no manager for that user");
+    const unit = "sova-svc-abc123-p-1-web.service";
+    const nested = join(manager, "sova.slice", "sova-services.slice", unit);
+    mkdirSync(nested, { recursive: true });
+    writeFileSync(join(nested, "cgroup.procs"), "4242\n4243\n\n");
+    assert.deepEqual(unitCgroupPids(unit, manager), [4242, 4243]);
+    // The old, wrong place alone finds nothing: a flat sova-services.slice is not where systemd puts it.
+    const flat = join(root, "flat", "user@1000.service");
+    mkdirSync(join(flat, "sova-services.slice", unit), { recursive: true });
+    writeFileSync(join(flat, "sova-services.slice", unit, "cgroup.procs"), "77\n");
+    assert.deepEqual(unitCgroupPids(unit, flat), []);
+    // app.slice and the manager's top still answer for adopted units.
+    mkdirSync(join(manager, "app.slice", "shop.service"), { recursive: true });
+    writeFileSync(join(manager, "app.slice", "shop.service", "cgroup.procs"), "9\n");
+    assert.deepEqual(unitCgroupPids("shop.service", manager), [9]);
+    mkdirSync(join(manager, "top.service"), { recursive: true });
+    writeFileSync(join(manager, "top.service", "cgroup.procs"), "8\n");
+    assert.deepEqual(unitCgroupPids("top.service", manager), [8]);
+    assert.deepEqual(unitCgroupPids("gone.service", manager), [], "no cgroup: not running");
+    assert.equal(unitCgroupPids(unit, null), null, "no user manager: nothing to read");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

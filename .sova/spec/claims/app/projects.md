@@ -168,11 +168,11 @@ and a chat in any of them is one press away.
     checkout's and conformance's copies never count, §app.project-services/instances). `0 of 4`
     while none runs. `—` for a project with no project file. It opens the Branches tab,
     `#/projects/<pid>/branches`.
-  - **Memory in use**: a thin bar and the figure (`640 MB`, `2.4 GB`): what the project's chats
-    and running copies use now (§app.projects/home-glance). The bar fills by the project's share of
-    this machine's total memory. `0 MB idle` while nothing of it runs. A
-    project with no project file still shows what its chats use. It opens the Branches tab while
-    the project has a project file; otherwise it is not a link.
+  - **Memory in use**: a thin bar and the figure (`2.4 GB`): what its chats and running copies use
+    now (§app.projects/home-glance). The bar fills its whole width with the mix of the two, in
+    two tones (§app.projects/home-memory-bar). `0 MB idle` while nothing of it runs. A
+    project with no project file still shows what its chats use. With a project file it opens the
+    Branches tab, else is no link.
   - A row that opens something tints on hover and carries a chevron; a row with nothing to open
     has neither.
 - **The progress zone**, thin rows just above the foot bar, shown only while something moves; each
@@ -277,12 +277,40 @@ changes nothing.
     checkout's included (an adopted main is its adopted unit, §app.project-services/adopt), and of
     its shared services, found from each unit's own process list (its cgroup's `cgroup.procs`) and
     measured as the monitor measures a chat's process (§app.resource-monitor/lightness-budget: no
-    `smaps`, no PSS, nothing spawned). On a host without a systemd user manager to read (macOS),
-    this part is not read and counts 0: the read never spawns `ps` for it.
+    `smaps`, no PSS, nothing spawned). A unit is looked for where systemd puts it: a copy's or a
+    shared service's unit in Sova's services slice, which systemd nests in Sova's own slice
+    (`sova.slice/sova-services.slice/<unit>` under the user manager), and an adopted unit in
+    `app.slice` or at the manager's top. So a copy that runs, its process alive, never counts 0.
+  - **Sova's own server is left out.** The unit Sova's own project adopts as its main checkout's
+    copy (`sova-runtime.service`), and whatever unit the server making this read runs in, are never
+    counted on any card, even when a copy's record names one: it is the server the card is read
+    from, not a copy of the project's work. The merge queue's
+    landing checks run inside that server, so they aren't counted either. Another project's
+    adopted main is counted as any other running copy.
+  - **Linux only, for now.** On a host without a systemd user manager to read (macOS), the running
+    copies part is not read and counts 0: the read never spawns `ps` for it.
+  - **Not counted, by choice:** containers and databases that no project's file declares, and
+    copies run by another Sova server, which are not in this server's registry.
 - **Cost.** No command is spawned and no service is probed by the read itself; the one background
   view of a served queue that has none kept is the queue's own view read. Its cost is the copies'
   memory reads, bounded by how many copies run, and a few in-memory lookups; several overviews open
   at once share one answer, reused for up to 10 seconds.
+
+## §app.projects/home-memory-bar — A project card's memory bar shows its two parts
+
+A project card's Memory in use row (§app.projects/home-cards) keeps one figure, the total of the
+project's two parts (§app.projects/home-glance), and splits its thin bar by them:
+
+- **Two tones.** The chats' part keeps the bar's own tone, the info tone it fills with today; the
+  running copies' part, beside it, is in a second tone, a neutral one, clearly distinct from it.
+- **Full width, split by the mix.** Whenever the project uses anything, the bar fills its whole
+  width: the chats' part is chats / total of it and the running copies' part copies / total, not
+  a share of this machine's memory; the figure beside it gives the size. A part above 0 keeps a
+  minimum width, so it never vanishes beside a larger one; a part at 0 draws nothing, and while
+  the project uses nothing the bar is empty.
+- **Tone is never the only signal.** Hovering the row gives the exact parts in words as its
+  title, `Chats {chats} · Running slots {copies}` (`Chats 1.5 GB · Running slots 2.7 GB`), and the
+  row's accessible name carries the same words.
 
 ## §app.projects/icon — A project's icon: a picture, or its letters
 

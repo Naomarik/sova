@@ -59,7 +59,13 @@
    "required": [
     "id"
    ],
-   "properties": {},
+   "properties": {
+    "id": {
+     "type": "string",
+     "pattern": "^ag_\\d+$",
+     "description": "Exact worker ID (ag_NN)."
+    }
+   },
    "additionalProperties": false
   }
  },
@@ -89,7 +95,7 @@
   "description": "@0d908603ee9b8814",
   "parameters": {
    "type": "object",
-   "properties": "@f4056e757b20236c",
+   "properties": "@3b05de0022c5afc1",
    "additionalProperties": false
   }
  },
@@ -110,6 +116,10 @@
     "id"
    ],
    "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
     "full": {
      "type": "boolean"
     },
@@ -137,6 +147,10 @@
     "message"
    ],
    "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
     "message": {
      "type": "string",
      "minLength": 1
@@ -157,6 +171,10 @@
   "parameters": {
    "type": "object",
    "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
     "group": {
      "type": "string",
      "minLength": 1

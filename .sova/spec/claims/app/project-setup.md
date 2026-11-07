@@ -77,7 +77,7 @@ Once its branch lands or merges, or its worktree is removed, its next change sta
 branch from the target's newest commit. It starts in the normal mode with align and vis on (vis to draw
 the plan, §app.project-setup/drawing) and no other minor mode, whatever this computer's default modes
 are, so the spec minor mode is off: setting up the
-pipeline is configuration, not a change to the product. The project's other chats keep spec on.
+pipeline is configuration, not a change to the product.
 A chat Start Fresh starts gets the same modes before its first message.
 
 **One open proposal.** The project has at most one setup branch proposed at a time

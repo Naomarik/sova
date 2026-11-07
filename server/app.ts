@@ -98,8 +98,6 @@ import { AUTO_TITLE_MAX_PATHS, TOOL_CONTENT_MAX_IDS, type SessionsDirInfo, type 
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
-import { codingSpecRefusal } from "./project-coding-mode";
-import { projectCodingIds } from "./project-sessions";
 import { configureSession } from "./sessions-configure";
 import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
 import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
@@ -1471,9 +1469,6 @@ export function buildApp(deps: AppDeps) {
     if (queueChatRole((await getSessionSummary(path).catch(() => null))?.profile)) return c.json({ error: QUEUE_CHAT_MODE_REFUSAL }, 409);
     const got = await chatFor(path);
     if ("error" in got) return c.json({ error: got.error }, got.status);
-    // A project's coding session keeps spec on (§app.project-overseer/coding-mode).
-    const specOff = codingSpecRefusal(request.patch.minorModes);
-    if (specOff && projectCodingIds().has(got.chat.mirror.sessionId)) return c.json({ error: specOff }, 409);
     // The Overseer's own call turns a project mode on as its approval (q7); a body never says so itself.
     // Who approves (§chat.mode-menu/project-mode-hooks): the Overseer's turn-on, the operator's own page (`user`, the
     // only approval hooks run on), or any other caller (`caller`: tools and commands run on it, as today, hooks don't).

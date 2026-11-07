@@ -850,8 +850,14 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | Where | Copy |
 |---|---|
 | Tab | Themes |
-| List `aria-label` | Theme |
-| Panel intro | Applies as you pick. The choice is remembered in this browser. |
+| Panel intro | A pick in the list that's showing applies at once; the other list's pick shows when its mode does. The choice is remembered in this browser. |
+| Appearance legend | Appearance |
+| Appearance options | `Light` · `Dark` · `Auto` |
+| Appearance hint | Auto follows your system's light or dark setting. |
+| Appearance announcement (polite region) | `Appearance is now {Light\|Dark\|Auto}.` |
+| List headings, in this order | `Dark theme` · `Light theme` |
+| List `aria-label`, one per list | `Dark theme` / `Light theme` |
+| List note, beside its heading | `Showing now` on the list the window wears; on the other `Shows in Light mode` · `Shows in Dark mode`, or under Auto `Shows while your system is light` · `Shows while your system is dark` |
 | Row accessible name | `{name}, {base} base, {source}` — e.g. "Catppuccin Mocha, dark base, built-in". Field names are `shared/protocol.ts`'s: `base`, `source` (`builtin`\|`user`), `path`, `replacesBuiltin` |
 | Row meta | `{Dark\|Light} base · {Built-in\|User}` · a user file holding a built-in's id adds a third clause: `Dark base · User · replaces the built-in` |
 | Row `title`, user themes | the file's full path — e.g. `~/.pi/agent/sova/themes/dracula.json` |
@@ -874,7 +880,8 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | Footer | Drop a `.json` file in `~/.pi/agent/sova/themes/` and it shows up here. |
 | Footer action | `Refresh` (icon `refresh.svg`; `aria-busy` while a refresh it started is in flight) |
 | Folder unreadable (banner) | We couldn't read `~/.pi/agent/sova/themes/`. Your own themes aren't listed; the built-in ones still work. Retry or check the folder's permissions. |
-| Missing theme fell back (banner) | `{id}` isn't there anymore, so you're back on Dark. |
+| A pick fell back (banner) | It names the list that fell back and why. Its file is gone: `{id}` isn't there anymore, so your dark theme is back on the built-in Dark. · It can't be read: We couldn't read `{id}`, so your dark theme is back on the built-in Dark. · It now stands on the other base: `{id}` is a light theme now, so your dark theme is back on the built-in Dark. The same for a light pick: `…, so your light theme is back on the built-in Light.`, and `{id}` is a dark theme now for the third |
+| Theme list didn't load (banner) | title `Couldn't load the theme list` · body `The theme you're wearing is unchanged. {message}` · action `Retry` |
 | Loading | skeleton rows — no copy |
 
 
@@ -1029,7 +1036,6 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | Where | Copy |
 |---|---|
 | Mode line (read-only, beside the coding sessions' model and thinking) | label `Coding sessions' mode` · no picker · hint (`.field-hint`): "Coding sessions start in {mode}, with the {profile} subagent profile: this computer's defaults. Save as default in any chat's mode menu changes them." · with no default profile: "Coding sessions start in {mode}: this computer's default mode. Save as default in any chat's mode menu changes it." — `{mode}` in mono, the mode ids in lower case joined by " · " (`vis` said as "visuals") |
-| Mode menu of a project coding session, a switch leaving spec out (409) | "Spec is always on for coding sessions; it can't be turned off." |
 | …a PATCH naming `codingMode` (400) | "Projects have no coding mode: coding sessions start in this computer's default mode. Save as default in a chat's mode menu changes it." |
 | List heading | `Coding sessions` — replaces "Sessions it started" for coding rows; gathering sessions and offers keep their own list |
 | Row | the title (a link on this host) · meta: "Started by the overseer", "Started by you" or "Started by you, via the Overseer" · `working` / `idle` · {relative time} · then the branch in mono: `sova/{name}` · not on this host: `sova/{name}` · "on another host" |
@@ -1049,7 +1055,7 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | New Coding Session | `New Coding Session` (secondary, terminal icon) on the `Coding sessions` heading · toast as Start Coding Session's, then the session opens · mode not set (`.field-error` under the heading): "Started, but its mode could not be set. Set it from the chat's mode menu before you send." · refused (`.field-error`): "{reason} No session was started." |
 | Start Coding Session (toast) | "Coding session started on sova/{name}." · in the root: "Coding session started in the project root." · mode not set (`.field-error`): "Started, but not prompted: its mode could not be set. Open it and send the message yourself." · no worktree (`.field-error`): "No session was started: its worktree could not be made ({git's first line})." |
 | Promote (Decisions tab, after a promotion) | "Promoted {n}. Committed {short sha} on {branch}." · skipped: the reason as §app.requirements/promotion-commit words it ("Not committed: …") · no Git: no second sentence |
-| Overseer tool refusals (the model reads them; the activity list shows them) | "Unknown mode {x}: use normal or delegate." · "Unknown minor mode {x}: use align, spec or vis." · "Spec is always on for coding sessions; it can't be turned off. Name spec among minor_modes." · "Unknown subagent profile: {x}. sova_list_subagent_profiles lists them." · "It waits on the operator's alignment answers; align stays on until they answer." · "{run title} is waiting on the operator's answers to its alignment questions. Tell the operator; never answer them. Nothing was sent." · "Its worktree was removed, so it has no folder to work in." |
+| Overseer tool refusals (the model reads them; the activity list shows them) | "Unknown mode {x}: use normal or delegate." · "Unknown minor mode {x}: use align, spec or vis." · "Unknown subagent profile: {x}. sova_list_subagent_profiles lists them." · "It waits on the operator's alignment answers; align stays on until they answer." · "{run title} is waiting on the operator's answers to its alignment questions. Tell the operator; never answer them. Nothing was sent." · "Its worktree was removed, so it has no folder to work in." |
 
 ## §design.copy-deck/gathering-abilities — What a gathering session can do (§app.baton/abilities, §app.baton/read-link)
 

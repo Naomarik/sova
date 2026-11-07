@@ -62,8 +62,7 @@ import { approvalRefusal } from "./profile-trust";
 import { singletonHolder } from "./session-profile";
 import { keyOf, singletonRunningText, titleCase } from "../shared/profiles";
 import { MEMORY_CODING_REFUSAL } from "../shared/memory";
-import { alignDropRefusal, codingSpecRefusal, SPEC_ALWAYS_ON } from "./project-coding-mode";
-import { projectCodingIds } from "./project-sessions";
+import { alignDropRefusal } from "./project-coding-mode";
 import { listProjects } from "./projects/spaces";
 import { copyApproval, copyItem, leftoverItem, liveLeftoverHost, nameOr, realCopyRowHost, starterWorking } from "./overseer-copies";
 import type { ClickChoice } from "../shared/overseer-card";
@@ -1612,8 +1611,6 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         // A session waiting on the user's alignment answers keeps align on (§app.project-overseer/coding-mode): checked first.
         const drop = alignDropRefusal(!!s.align, p.minor_modes);
         if (drop) throw new Refusal(`${drop} Nothing was changed.`);
-        // A project's coding session keeps spec on (§app.project-overseer/coding-mode).
-        if (Array.isArray(p.minor_modes) && codingSpecRefusal(p.minor_modes) && projectCodingIds().has(s.id)) throw new Refusal(`${SPEC_ALWAYS_ON} Nothing was changed.`);
         if (p.subagent_profile !== undefined) await checkSubagentProfile(p.subagent_profile);
         // The sandbox is checked before anything changes: lowering it needs this turn to be the user's
         // click on a card that lists this session (§app.overseer/tools), never an approval for later.

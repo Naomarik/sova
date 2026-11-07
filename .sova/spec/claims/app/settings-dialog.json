@@ -477,8 +477,15 @@
     "code": [
       "src/lib/theme.ts",
       "src/lib/typography.ts",
-      "shared/theme.ts"
-    ]
+      "shared/theme.ts",
+      "src/lib/theme-prepaint.ts",
+      "src/components/SettingsDialog.tsx"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-07T15:04Z",
+      "source": "pi-session:01a1b66a-16fd-74ac-bf53-6357788d4cf1#ba273ed2"
+    }
   },
   "§app.settings-dialog/toggle-target": {
     "kind": "behavior",

@@ -4495,7 +4495,7 @@ test("sandbox Off (§chat.sandbox/states): a worktree's workers start unconfined
 	}
 });
 
-test("worktrees: with the session's modes on Sova, a useWorktreeConfig worker needs no mode extension in the tree; its slot is this one's own, with spec on", async () => {
+test("worktrees: with the session's modes on Sova, a useWorktreeConfig worker needs no mode extension in the tree; its slot is this one's own, with spec as the parent has it", async () => {
 	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-wtconfig-sova-")));
 	const parentAgent = path.join(root, "parent-agent");
 	const wt = path.join(root, "wt");
@@ -4509,12 +4509,13 @@ test("worktrees: with the session's modes on Sova, a useWorktreeConfig worker ne
 		h.bus.emit(WORKER_HOST_EVENT, { version: 1, host: {} as WorkerHost, modes: "sova" });
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerLaunch: workerLaunchOf() });
 		h.bus.emit(MODE_WORKER_EVENT, SPEC_ON);
+		h.bus.emit(MODE_STATE_EVENT, STATE_SPEC_ON);
 		await h.call("agent_spawn", { prompt: "trial", cwd: wt, useWorktreeConfig: true, systemPrompt: "BRIEF" });
 		const w = h.workers[0];
 		assert.equal(w.systemPrompt, "BRIEF", "no parent block on top: the slot's own spec block is the one");
-		assert.deepEqual(w.env, { PI_CODING_AGENT_DIR: path.join(wt, ".agent") });
+		assert.equal(w.env.PI_CODING_AGENT_DIR, path.join(wt, ".agent"));
 		assert.deepEqual(w.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, OWN_MODE_EXTENSION, SANDBOX_DIR], "the mode slot names this pi-config's own mode extension (Sova loads its engine there)");
-		assert.deepEqual(w.flags, { major: "normal", minor: "spec", sandbox: "on", "sandbox-parent": wt }, "spec forced on, as before");
+		assert.deepEqual(w.flags, { major: "normal", minor: "spec", sandbox: "on", "sandbox-parent": wt }, "the parent has spec on");
 		const record = h.appended.find((e) => e.customType === "subagents-worker-manifest" && e.data.launch);
 		assert.deepEqual(record.data.modes, ["spec"]);
 		// A tree that has its own pi-config mode extension: the slot names it, as with the switch off (the
@@ -4550,10 +4551,11 @@ test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with it
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerLaunch: workerLaunchOf() });
 		// The parent's worker modes are on: the tree's own mode extension gives this worker spec instead.
 		h.bus.emit(MODE_WORKER_EVENT, SPEC_ON);
+		h.bus.emit(MODE_STATE_EVENT, STATE_SPEC_ON);
 		await h.call("agent_spawn", { prompt: "trial", cwd: wt, useWorktreeConfig: true, systemPrompt: "BRIEF" });
 		const w = h.workers[0];
 		assert.equal(w.systemPrompt, "BRIEF", "no parent block on top of the tree's own");
-		assert.deepEqual(w.env, { PI_CODING_AGENT_DIR: path.join(wt, ".agent") });
+		assert.equal(w.env.PI_CODING_AGENT_DIR, path.join(wt, ".agent"));
 		assert.equal(w.sessionDir, path.join(parentAgent, "sessions", `--${wt.slice(1).replace(/\//g, "-")}--`));
 		assert.ok(fs.existsSync(w.sessionDir));
 		assert.equal(w.approve, undefined, "a worker trusts its project's files as every chat does: nothing to pass");
@@ -4562,6 +4564,13 @@ test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with it
 		const record = h.appended.find((e) => e.customType === "subagents-worker-manifest" && e.data.launch);
 		assert.equal(record.data.launch.useWorktreeConfig, true);
 		assert.deepEqual(record.data.modes, ["spec"], "recorded as given spec: its flags start it with spec on");
+		// The parent turns spec off: the next start or resume on the tree's config has no spec, and says so.
+		h.bus.emit(MODE_STATE_EVENT, { ...STATE_SPEC_ON, minorModes: [] });
+		await h.call("agent_spawn", { prompt: "off", name: "off", cwd: wt, useWorktreeConfig: true, wake: false });
+		const off = h.workers.at(-1);
+		assert.equal(off.flags.major, "normal");
+		assert.equal("minor" in off.flags, false, "no --minor: a worker's modes come from its flags alone");
+		assert.deepEqual(h.appended.filter((e) => e.customType === "subagents-worker-manifest" && e.data.launch).at(-1).data.modes, [], "recorded as given none");
 		// Refused: not a pi worker, no tracked worktree, no .agent.
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", useWorktreeConfig: true }), /needs a cwd inside an active worktree/);
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", cwd: path.join(root, "plain"), useWorktreeConfig: true }), /has no \.agent directory/);

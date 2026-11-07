@@ -268,6 +268,7 @@ export class ChatWorker extends WorkerFold {
 		if ((first && this.adopted) || resync) {
 			if (isActive(s.status)) {
 				// Mid-run when picked back up: its settle is owed.
+				if (resync) this.startUnseenRun();
 				this.status = "running";
 				this.runActive = true;
 				this.settleAnnounced = false;

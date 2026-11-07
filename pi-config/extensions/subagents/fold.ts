@@ -558,6 +558,13 @@ export abstract class WorkerFold implements Worker {
 		this.carriedFailures = [];
 	}
 
+	/** A run found going after a gap: what the last report carried is no longer current. Its settle is owed all the same. */
+	protected startUnseenRun(): void {
+		if (!this.settleAnnounced || this.armedAwaitingRun) return;
+		this.keepFinalAnswer();
+		this.taskBoundarySeq = ++this.pushSeq;
+	}
+
 	/** The self-started run owes a report: what the last one carried is no longer current. */
 	private commitSelfRun(): void {
 		if (!this.selfRun) return;

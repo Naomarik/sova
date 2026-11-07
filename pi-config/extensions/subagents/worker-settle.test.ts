@@ -346,6 +346,23 @@ for (const feed of FEEDS) {
 		await h.worker.dispose();
 	});
 
+	test(`settle: a gap with a run going, whose file can't be read: its report is that run's reply, once, not the last report again [${feed}]`, async () => {
+		const h = make(feed);
+		await boot(h);
+		firstReport(h);
+		const w = h.host.get(h.chatId());
+		for (const fn of [...w.watchers]) fn({ t: "gap" });
+		h.host.state(h.chatId(), { status: "running" });
+		assert.equal(h.worker.status, "running");
+		card(h);
+		assistant(h, "reply after the gap");
+		settleRun(h);
+		assert.equal(h.counts.settled, 2, "settled");
+		assert.equal(h.worker.status, "waiting");
+		assert.equal(h.counts.snapshots[1]!.finalOutput, "reply after the gap");
+		await h.worker.dispose();
+	});
+
 	test(`settle (guard): a compaction after a settle starts no report [${feed}]`, async () => {
 		const h = make(feed);
 		await boot(h);

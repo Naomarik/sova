@@ -210,6 +210,8 @@ test("settle report: a run that wrote nothing sends nothing and read-back keeps 
 		host.event(chat, { type: "agent_settled", settleKey: "job#1" });
 		assert.equal(m.completions().length, 1, "nothing sent");
 		assert.equal(await m.statusOf("ag_01"), "waiting");
+		const records = file.entries.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE && e.data.workerId === "ag_01" && e.data.status);
+		assert.equal(records.at(-1).data.status, "waiting", "the record says idle too, not the run's running");
 		const back = await m.readBack("ag_01");
 		assert.match(back, /the report that stands/);
 		assert.ok(!back.includes(NO_OUTPUT), back);
@@ -348,6 +350,28 @@ test("settle report: a member woken by a job's end goes idle again: normal team 
 		assert.match((await awaitResponse(t.dir("qa"), id, 3000, undefined, 5))!.text, /^Queued for dev/);
 		await until(() => r.host.get(t.chat("dev")).sends.length === sent + 1, "the normal item listed to dev");
 		assert.match(r.host.get(t.chat("dev")).sends.at(-1)!.text, /API is ready/);
+		await t.m.shutdown();
+	});
+});
+
+test("settle report: a member whose card's run wrote nothing goes idle: an item that waited for that run is listed to it", async () => {
+	await rig(async (r) => {
+		const t = await team(r);
+		const dev = t.chat("dev");
+		r.host.turn(dev, { user: "build", reply: "built it", key: `${t.startOf("dev").key}:task#1` });
+		await until(() => reportsIn(t.dir("coordinator")).length === 1, "dev's first report");
+		r.host.state(dev, { status: "running" });
+		r.host.event(dev, { type: "agent_start" });
+		const sent = r.host.get(dev).sends.length;
+		const id = requestId();
+		writeRequest(t.dir("qa"), { version: 1, id, at: Date.now(), type: "message", to: "dev", message: "API is ready" } as any);
+		assert.match((await awaitResponse(t.dir("qa"), id, 3000, undefined, 5))!.text, /^Queued for dev/);
+		assert.equal(r.host.get(dev).sends.length, sent, "busy: a normal item waits for the run's end");
+		r.host.event(dev, { type: "agent_end", messages: [] });
+		r.host.event(dev, { type: "agent_settled", settleKey: "job#1" });
+		await until(() => r.host.get(dev).sends.length === sent + 1, "the item listed once the run ended");
+		assert.match(r.host.get(dev).sends.at(-1)!.text, /API is ready/);
+		assert.equal(reportsIn(t.dir("coordinator")).length, 1, "the quiet run reported nothing");
 		await t.m.shutdown();
 	});
 });

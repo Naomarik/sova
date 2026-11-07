@@ -389,6 +389,32 @@ for (const feed of FEEDS) {
 
 // ── a queued instruction: as today ─────────────────────────────────────────
 
+for (const feed of FEEDS) {
+	test(`settle: a run nothing is owed for, once a held steer is refused, ends idle with no second report [${feed}]`, async () => {
+		const h = make(feed);
+		await boot(h);
+		firstReport(h);
+		h.host.gate.open = false;
+		const steer = h.worker.steer("change course");
+		await flush();
+		// A run settles and reports while the steer's answer is still out; another run starts; then the refusal.
+		h.ev({ type: "agent_start" });
+		card(h);
+		assistant(h, "replied to the card");
+		settleRun(h);
+		assert.equal(h.counts.settled, 2);
+		h.ev({ type: "agent_start" });
+		h.host.answer(new Error("message too long"));
+		assert.equal((await steer).ok, false);
+		assert.equal(h.worker.status, "running");
+		settleRun(h);
+		assert.equal(h.counts.settled, 2, "nothing more to say");
+		assert.equal(h.worker.status, "waiting", "status");
+		assert.equal(h.worker.isSettled(), true);
+		await h.worker.dispose();
+	});
+}
+
 test("settle (guard): a superseded instruction's run settles silently while the armed one is due; the status stays running until it ends", async () => {
 	const h = make("keyed");
 	await boot(h);

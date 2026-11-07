@@ -2,10 +2,12 @@
 // Every Sova menu's table, as data (lib/menu-place): each place's rows in their sections and order,
 // each row's reason it can't run, and its act — a catalogue command with its exact id and params, a
 // local act, or a second screen. A command row builds exactly the request the page's own call made
-// before it named the command; around it, the place's `via` keeps its own toasts and refreshes.
+// before it named the command; around it, the place's `via` keeps its own toasts and refreshes. And
+// every menu's extension lane: what an entry is sent, and for whose things it shows.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildRequest, findCommand } from "../../shared/commands-catalog";
+import { MENU_PLACES } from "../../shared/extension-offers";
 import type { WorktreeQueueInfo } from "../../shared/merge-queue";
 import type { SessionGroup, SessionSummary } from "../../shared/protocol";
 import type { MessageActionItem } from "../components/MessageActions";
@@ -13,8 +15,9 @@ import type { CodingRow } from "./coding-worktrees";
 import { GROUP_MENU } from "./group-menu";
 import { ACTION_CONFIRM, COPY_PLAIN, type MessageStrip } from "./message-actions";
 import { SENT_BACK_LINE } from "./merge-queue";
-import { focusOnce, MESSAGE_MENU, menuStripOf, repliesByEntry, stripBlocks } from "./message-menu";
-import type { MenuAct, MenuDecl, MenuScreen } from "./menu-place";
+import { focusOnce, joinPlain, MESSAGE_MENU, menuStripOf, type PlainNode, plainReads, repliesByEntry, stripBlocks } from "./message-menu";
+import { MENU_NAMES, type MenuAct, type MenuDecl, type MenuScreen } from "./menu-place";
+import { notePeerProjects, notePeerSessions } from "./mesh";
 import { PANE_MENU, paneEliminate, type PaneMenuWiring } from "./pane-menu";
 import { renameValue, SESSION_MENU, sessionArchiveRow, type SessionMenuCtx } from "./session-menu";
 import { WORKTREE_MENU, worktreeMenuOffered } from "./worktree-menu";
@@ -240,8 +243,9 @@ const mine: MessageStrip = { index: 1, entryId: "u1", role: "user", text: "q" };
 const reply: MessageStrip = { index: 3, entryId: "e1", role: "assistant", text: "hi" };
 const item = (kind: MessageActionItem["kind"], reason: string | null = null): MessageActionItem => ({ kind, reason, run() {} });
 
+const msg = (strip: MessageStrip, items: MessageActionItem[], session: string | null = null) => ({ strip, items, copyPlain() {}, session });
+
 test("the message menu: the strip's items in order, Copy as Plain Text after Copy, Rewind… and Regenerate… ask, nothing a command", () => {
-  const msg = (strip: MessageStrip, items: MessageActionItem[]) => ({ strip, items, copyPlain() {} });
   assert.deepEqual(table(MESSAGE_MENU, msg(reply, [item("copy"), item("share"), item("regenerate"), item("fork")])), [
     ["Copy and share", "Copy", "", "local"],
     ["Copy and share", COPY_PLAIN.label, "", "local"],
@@ -286,4 +290,79 @@ test("after a pointer-opened menu, focus can land on the message row, never a Ta
   assert.equal(attrs.get("tabindex"), "-1", "into the menu: kept");
   blur!({ relatedTarget: null });
   assert.equal(attrs.has("tabindex"), false);
+});
+
+test("Copy as Plain Text reads a body's blocks one by one, working notes' too, and joins them by a blank line", () => {
+  type Node = PlainNode & { name: string; innerText: string; children: Node[] };
+  const el = (name: string, innerText: string, children: Node[] = [], cls = ""): Node => ({ name, innerText, children, classList: { contains: (c) => cls.split(" ").includes(c) } });
+  const list = el("ul", "• one\n• two");
+  const code = el("div.md-code", "x = 1");
+  const notes = el("details.md-working-notes", "Working notes\nstep\nrun it", [el("summary", "Working notes"), el("div.disclosure-body", "", [el("div.message-body", "", [el("ul", "• step"), el("pre", "run it")], "message-body md")])], "disclosure md-working-notes");
+  const body = el("div.message-body", "• one\n• two\nx = 1", [list, code, el("p", "  ")], "message-body md");
+  const yours = el("div.message-body", "just words", [], "message-body message-text");
+  assert.deepEqual([body, notes, yours].flatMap(plainReads).map((n) => n.name), ["ul", "div.md-code", "p", "summary", "ul", "pre", "div.message-body"]);
+  assert.equal(joinPlain([body, notes].flatMap(plainReads).map((n) => n.innerText)), "• one\n• two\n\nx = 1\n\nWorking notes\n\n• step\n\nrun it");
+});
+
+// ---- what extensions add, in every menu ----
+
+const FAR = "/far/sessions/b.jsonl";
+notePeerSessions("far", [FAR]);
+notePeerProjects("far", ["p-far"]);
+/** A menu's extension lane for one subject: its place, the payload an entry is sent (null: none show), and how its rows name the subject. */
+const lane = <T>(decl: MenuDecl<T>, subject: T) => [decl.extensions!.place, decl.extensions!.payload(subject), decl.extensions!.name(subject)];
+
+test("every menu takes extension entries: each sends what it is about, for this computer's things only, a group's always", () => {
+  const far = session({ id: "s-far", path: FAR });
+  assert.deepEqual(
+    [
+      lane(SESSION_MENU, sub(session())),
+      lane(SESSION_MENU, sub(far)),
+      lane(GROUP_MENU, { group: group(), count: 2, onChanged() {} }),
+      lane(PANE_MENU, { path: P, summary: session(), w: paneWiring([]) }),
+      lane(PANE_MENU, { path: FAR, summary: far, w: paneWiring([]) }),
+      lane(MESSAGE_MENU, msg(reply, [], "s-1")),
+      lane(MESSAGE_MENU, msg(mine, [], "s-1")),
+      lane(MESSAGE_MENU, msg(reply, [], null)),
+      lane(WORKTREE_MENU, wt()),
+      lane(WORKTREE_MENU, wt(facts({ project: "p-far" }))),
+      lane(WORKTREE_MENU, wt(facts({ row: coding({ branch: null }) }))),
+    ],
+    [
+      ["session", { session: "s-1" }, "“Fix the build”"],
+      ["session", null, "“Fix the build”"],
+      // A group is this computer's own: its id only, whatever computers its sessions are on.
+      ["group", { group: "g-1" }, "“Work”"],
+      ["pane", { session: "s-1" }, "“Tests”"],
+      ["pane", null, "“Tests”"],
+      ["message", { session: "s-1", entry: "e1" }, "this reply"],
+      ["message", { session: "s-1", entry: "u1" }, "your message"],
+      // Another host's chat, or one whose session id isn't known yet (the reply place's menuSession).
+      ["message", null, "this reply"],
+      ["worktree", { project: "p-1", branch: "sova/x", session: "c-1" }, "“Fix it”"],
+      ["worktree", null, "“Fix it”"],
+      ["worktree", null, "“Fix it”"],
+    ],
+  );
+  // One declaration per menu place, in the list's order.
+  assert.deepEqual([SESSION_MENU, GROUP_MENU, PANE_MENU, MESSAGE_MENU, WORKTREE_MENU].map((d) => d.extensions!.place), [...MENU_PLACES]);
+});
+
+test("the reserved names are exactly every label Sova's own rows show in the five menus", () => {
+  const labels = <T>(decl: MenuDecl<T>, subject: T) => decl.table(subject).flatMap((s) => s.rows.map((r) => r.label));
+  const sentBack = { state: "needs-fix", commit: "abcdef1234" } as WorktreeQueueInfo;
+  const drawn = new Set([
+    ...labels(SESSION_MENU, sub(session())),
+    ...labels(SESSION_MENU, { ...sub(session({ archived: true })), ctx: ctx([], P) }),
+    ...labels(GROUP_MENU, { group: group(), count: 2, onChanged() {} }),
+    ...labels(PANE_MENU, { path: P, summary: session(), w: paneWiring([]) }),
+    ...labels(MESSAGE_MENU, msg(reply, [item("copy"), item("share"), item("regenerate"), item("fork")])),
+    ...labels(MESSAGE_MENU, msg(mine, [item("share"), item("rewind")])),
+    ...labels(WORKTREE_MENU, wt()),
+    ...labels(WORKTREE_MENU, wt(facts({ queued: true, queue: sentBack }))),
+    ...labels(WORKTREE_MENU, wt(facts({ queued: true, queue: sentBack, row: coding({ head: "fffffff999" }) }))),
+  ]);
+  // Open Session stays reserved, though no menu draws it now (the row's title link opens the session).
+  assert.deepEqual([...drawn].sort(), MENU_NAMES.filter((n) => n !== "Open Session").sort());
+  assert.equal(new Set(MENU_NAMES).size, MENU_NAMES.length);
 });

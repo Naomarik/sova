@@ -1,9 +1,11 @@
 // Run: pnpm test -- src/lib/menu-place.test.ts
-// The session menu place's extension lane (src/lib/menu-place.ts): which entries show, in what order
-// and how many; and running one, through the extension proxy, with the sentence it says.
+// The menu places' extension lane (src/lib/menu-place.ts): which entries show in each of the five
+// menus, in what order and how many; and running one, through the extension proxy, with the
+// payload its menu built and the sentence it says.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { entryTitle, isSovaName, MENU_ROWS_MAX, MENU_RUN_TIMEOUT_MS, menuGroups, menuName, runMenuEntry, sameGroups, SESSION_MENU_NAMES } from "./menu-place";
+import { entryTitle, isSovaName, MENU_ROWS_MAX, MENU_RUN_TIMEOUT_MS, MENU_NAMES, menuGroups, menuName, runMenuEntry, sameGroups } from "./menu-place";
+import { MENU_PLACES } from "../../shared/extension-offers";
 import type { ExtensionInfo } from "../../shared/protocol";
 
 const ext = (id: string, commands: NonNullable<ExtensionInfo["offers"]>["commands"], over: Partial<ExtensionInfo> = {}): ExtensionInfo => ({
@@ -74,7 +76,7 @@ describe("menuGroups", () => {
   });
 
   test("an entry that takes one of Sova's names is left out, whatever its case, spacing or ellipsis", () => {
-    for (const name of SESSION_MENU_NAMES) {
+    for (const name of MENU_NAMES) {
       const variants = [name, name.toUpperCase(), ` ${name.toLowerCase()} `, name.replace(/ /g, "  "), name.endsWith("…") ? name.slice(0, -1) : `${name}…`, name.endsWith("…") ? `${name.slice(0, -1)}...` : `${name}...`];
       for (const label of variants) {
         const got = menuGroups([ext("x", [{ name: "c", label, menu: "session" }, { name: "d", label: "Real One", menu: "session" }])], "session");
@@ -84,6 +86,18 @@ describe("menuGroups", () => {
     assert.equal(menuName("  Move   to Group… "), "move to group");
     assert.equal(isSovaName("Copy Paths"), false, "a longer label is its own");
     assert.equal(isSovaName("Archive Issue"), false);
+  });
+
+  test("one list of Sova's names for every menu: a name of any menu is reserved in all five", () => {
+    for (const place of MENU_PLACES) {
+      const got = menuGroups([ext("x", [{ name: "a", label: "Copy", menu: place }, { name: "b", label: "Open", menu: place }, { name: "c", label: "Copy Path", menu: place }, { name: "d", label: "Real One", menu: place }])], place);
+      assert.deepEqual(got[0]!.entries.map((e) => e.label), ["Real One"], place);
+    }
+  });
+
+  test("each menu shows only its own entries", () => {
+    const list = [ext("x", MENU_PLACES.map((place) => ({ name: place, label: `For ${place}`, menu: place })))];
+    for (const place of MENU_PLACES) assert.deepEqual(menuGroups(list, place)[0]!.entries.map((e) => e.name), [place]);
   });
 
   test("the tooltip names the extension", () => {
@@ -101,6 +115,18 @@ describe("runMenuEntry", () => {
     };
     return { calls, fetch };
   };
+
+  test("POSTs each menu's payload as it is: the session menu's {session} is the same bytes as before", async () => {
+    const payloads: Record<string, string>[] = [{ session: "s-1" }, { group: "g-1" }, { session: "s-2" }, { session: "s-3", entry: "e1" }, { project: "p-1", branch: "sova/x", session: "c-1" }];
+    for (const payload of payloads) {
+      const r = record(async () => new Response("{}", { status: 200 }));
+      await runMenuEntry(entry, payload, r.fetch);
+      assert.equal(r.calls[0]!.init.body, JSON.stringify(payload));
+    }
+    const r = record(async () => new Response("{}", { status: 200 }));
+    await runMenuEntry(entry, { session: "s-1" }, r.fetch);
+    assert.equal(r.calls[0]!.init.body, '{"session":"s-1"}');
+  });
 
   test("POSTs {session} to the extension's command through the proxy, and says it was sent", async () => {
     const r = record(async () => new Response("{}", { status: 200 }));

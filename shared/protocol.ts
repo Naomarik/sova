@@ -4659,9 +4659,9 @@ export interface ExtensionCommandInfo {
   name: string; // [a-z0-9][a-z0-9-]{0,47}
   label: string;
   summary?: string;
-  /** It is an entry of this menu too: "session", the Agents board row's ⋯ menu
-      (src/lib/menu-place.ts). Absent: in no menu. */
-  menu?: "session";
+  /** It is an entry of this menu too (src/lib/menu-place.ts): a session's, a group's, a pane's,
+      a message's or a worktree row's; the last four since ext-contract-v1.21. Absent: in no menu. */
+  menu?: "session" | "group" | "pane" | "message" | "worktree";
   /** ext-contract-v1.18: the extension offers it to the Overseer, which may run it while the
       extension is running; nothing to switch on (§app.overseer/extension-commands). Absent: not offered. */
   overseer?: true;

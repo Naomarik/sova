@@ -15,10 +15,10 @@ import { COMMANDS_MAX, extCommand, extCommandsFrom, extOverseerKeys } from "./co
     (a newer extension on an older Sova). */
 export const SCREEN_PLACES = ["reply", "row", "card"] as const satisfies readonly ScreenPlace[];
 
-/** Every menu a command may declare itself an entry of (`"menu": "session"` on the command: the
-    Agents board row's ⋯ menu, src/lib/menu-place.ts). Any other value leaves the command out of every menu, never out
-    of `commands`: the command line still runs it. */
-export const MENU_PLACES = ["session"] as const satisfies readonly NonNullable<ExtensionCommandInfo["menu"]>[];
+/** Every menu a command may declare itself an entry of (`"menu": "<place>"` on the command): a session's, a
+    group's, a pane's, a message's or a worktree row's menu (src/lib/menu-place.ts; the last four since v1.21).
+    Any other value leaves the command out of every menu, never out of `commands`: the command line still runs it. */
+export const MENU_PLACES = ["session", "group", "pane", "message", "worktree"] as const satisfies readonly NonNullable<ExtensionCommandInfo["menu"]>[];
 export type MenuPlace = (typeof MENU_PLACES)[number];
 
 /** Names past this many in `screens` are never read. */

@@ -1750,6 +1750,7 @@ export function ChatView(props: {
     note: (entryId) => (actionNote()?.entryId === entryId ? actionNote()!.text : null),
     added: additions.added,
     runChip: additions.runChip,
+    menuSession: additions.session,
   };
 
   /** A message of ours that hasn't been delivered: one Remove, by the id the server knows it by.

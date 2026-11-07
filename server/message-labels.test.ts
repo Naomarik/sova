@@ -15,6 +15,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 const sessionsDir = join(agentDir, "sessions", "--tmp-labels--");
 mkdirSync(sessionsDir, { recursive: true });
 
+const { currentUsageContext } = await import("../pi-config/extensions/llm-inflight/attribution.ts");
 const { createDecisionChain } = await import("./decide-chain");
 const { createFakeProvider } = await import("./decide-fake");
 const { inputActionOf, sessionOwnMessages } = await import("./message-input");
@@ -304,6 +305,52 @@ describe("the chain and catching up", () => {
       home: "/nonexistent",
     });
   const sent = (at: number) => sessionFile([user("m", null, "make the header smaller", at)]);
+
+  test("a check runs as the session's own one-shot, for the usage ledger", async () => {
+    const seen: unknown[] = [];
+    const provider = createFakeProvider({
+      id: "jev",
+      reply: () => {
+        seen.push(currentUsageContext());
+        return answer("asking");
+      },
+    });
+    const s = sent(T0 + 1000);
+    const store = freshStore();
+    store.noteSwitch(true, T0);
+    assert.equal(await labeller({ s, store, provider: () => provider, now: () => T0 + 2000 }).tick(), 1);
+    const ctx = seen[0] as { owner?: string; cwd?: string; kind?: string } | undefined;
+    assert.equal(ctx?.owner, s.id);
+    assert.equal(ctx?.cwd, "/tmp/labels");
+    assert.equal(ctx?.kind, "oneshot");
+  });
+
+  test("the switch turned off during a call: its answer is dropped and nothing more is sent", async () => {
+    const features: DecisionSettings["features"] = { attention: false, tags: false, messageLabels: true };
+    const provider = createFakeProvider({
+      id: "jev",
+      reply: () => {
+        features.messageLabels = false;
+        return answer("asking");
+      },
+    });
+    const s = sessionFile([user("m1", null, "first", T0 + 1000), user("m2", "m1", "second", T0 + 2000)]);
+    const store = freshStore();
+    store.noteSwitch(true, T0);
+    const l = new MessageLabeller({
+      settings: () => ({ ...settings(), features }),
+      provider: () => provider,
+      list: async () => [row(s, T0 + 3000)],
+      held: () => true,
+      read: sessionOwnMessages,
+      store: () => store,
+      now: () => T0 + 3000,
+      home: "/nonexistent",
+    });
+    assert.equal(await l.tick(), 0);
+    assert.equal(provider.calls.length, 1, "the second message isn't asked about");
+    assert.equal(store.read(s.id).labels.size, 0, "the answer that came back is dropped");
+  });
 
   test("Jev out of quota, a model set: the model answers and the label names it", async () => {
     let now = T0;

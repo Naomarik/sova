@@ -3,6 +3,7 @@
 // messages since the switch went on, with no stored label), never kept, so a restart or a provider down for an hour
 // costs nothing but the wait. Only the retry pacing lives in memory.
 
+import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { withoutFooter, head, tail, exclusionReason } from "./attention-signals";
 import { DecisionError, type Answer, type DecisionProvider, type DecisionRequest, type Question } from "./decide";
 import { MESSAGE_HEAD_CHARS, REPLY_TAIL_CHARS, type OwnMessage } from "./message-input";
@@ -111,7 +112,7 @@ export class MessageLabeller {
         if (budget <= 0) break;
         const active = Date.parse(s.lastActiveAt);
         if (Number.isFinite(active) && active < since) continue;
-        if (exclusionReason(s, settings, this.d.held(s.path), this.d.home, "messageLabels")) continue;
+        if (this.barred(s)) continue;
         let seen = this.seen.get(s.path);
         if (seen?.stamp !== s.lastActiveAt) {
           if (reads-- <= 0) continue;
@@ -128,8 +129,10 @@ export class MessageLabeller {
             seen.pending.splice(seen.pending.indexOf(m), 1);
             continue;
           }
+          // The switch or the session's eligibility may have changed during the last call: nothing more goes out.
+          if (this.barred(s)) break;
           budget--;
-          if (await this.ask(s.id, m, key, provider, store)) {
+          if (await this.ask(s, m, key, provider, store)) {
             seen.pending.splice(seen.pending.indexOf(m), 1);
             done++;
           }
@@ -141,9 +144,19 @@ export class MessageLabeller {
     }
   }
 
-  private async ask(session: string, m: OwnMessage, key: string, provider: DecisionProvider, store: MessageLabelStore): Promise<boolean> {
+  /** The Decisions gate on the settings as they are now, never as a pass began. */
+  private barred(s: SessionSummary): boolean {
+    return !!exclusionReason(s, this.d.settings(), this.d.held(s.path), this.d.home, "messageLabels");
+  }
+
+  private async ask(s: SessionSummary, m: OwnMessage, key: string, provider: DecisionProvider, store: MessageLabelStore): Promise<boolean> {
+    const session = s.id;
     try {
-      const r = await provider.decide(labelRequest(session, m));
+      // The usage ledger: this decision is the session's one-shot.
+      const r = await withUsageContext({ owner: session, cwd: s.cwd, kind: "oneshot" }, () => provider.decide(labelRequest(session, m)));
+      // The switch or the session's eligibility may have changed while the call ran: then the answer is dropped, and the
+      // message stays owed if it is ever allowed again.
+      if (this.barred(s)) return false;
       const answer = r.answers.label as Extract<Answer, { type: "choice" }> | undefined;
       if (answer?.type !== "choice" || !(MESSAGE_LABELS as readonly string[]).includes(answer.choice)) throw new DecisionError("malformed-answer", "no label in the answer");
       store.label(session, m.id, { label: answer.choice as MessageLabel, confidence: answer.confidence, provider: r.provider, model: r.model, at: this.now() });

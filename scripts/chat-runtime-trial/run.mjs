@@ -165,7 +165,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "tmodes", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "tsend", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "tw1", "tw2", "tw3", "tw4", "tw5", "tw6", "tw7", "tw8", "tj1", "tj2", "tj3", "tj4", "tj5", "hermetic", "tyourclick"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "tmodes", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "tsend", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "tw1", "tw2", "tw3", "tw4", "tw5", "tw6", "tw7", "tw8", "tj1", "tj2", "tj3", "tj4", "tj5", "tj6", "tj6b", "hermetic", "tyourclick"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "serve", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -4023,7 +4023,85 @@ async function tj5() {
   await nextServer();
 }
 
-const table = { tyourclick, t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, tmodes, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), tsend, t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, tw1, tw2, tw3, tw4, tw5, tw6, tw7, tw8, tj1, tj2, tj3, tj4, tj5, hermetic, plumbing, serve, real: () => t1(opt("model")) };
+// tj6 / tj6b: a worker that finished, woken by its own job's end, reports again (§app.background-jobs/end-card).
+// A real worker process, a real job held until the worker's first report is in, and the parent's view of it:
+// its second completion with that reply, the worker idle, a wait that ends at once, the job still running
+// named. tj6: every process stays up, so the wake comes from inside the worker's own process. tj6b: short idle
+// times, so the worker's and the parent's processes have stopped by then: the job's end reopens the worker and
+// the parent hears of it from what the worker's file says.
+async function jobWakesWorker(name, idleMs) {
+  if (!needSystemd(name)) return;
+  await teardown();
+  await boot({ idleMs, extra: JOB_KNOBS });
+  const a = await newChat();
+  const go = join(scratch, `${name}-go`);
+  const out = join(scratch, `${name}.out`);
+  const held = `until [ -f ${go} ]; do sleep 0.2; done; echo DONE > ${out}`;
+  const task = `[call background_job ${JSON.stringify({ command: held })}] [call background_job ${JSON.stringify({ command: "sleep 300" })}] #${name}w`;
+  const sp = await turn(a, `[call agent_spawn ${JSON.stringify({ prompt: task, model: "trial/m1", name: `trial-${name}` })}]`);
+  R.check(sp.length === 1 && !sp[0].message.isError, `${name}: spawned (${resultText(sp[0])})`);
+  const w = await workerWith(a.path, `#${name}w`);
+  if (!R.check(w, `${name}: the server records the worker`)) return;
+  const wid = w.parent?.workerId;
+  await wakeWait(() => jobsOf(w.path).length === 2, 60000);
+  await waitFor(() => completions(a.path, w.path) >= 1, 60000);
+  R.check(completions(a.path, w.path) === 1, `${name}: the task's own report reached the parent (${completions(a.path, w.path)})`);
+  R.check(!jobById(w.path, "j1")?.ended && !existsSync(out), `${name}: its job is still held, so the wake comes after the report`);
+  const lastStatus = () => workerRecords(a.path, wid).at(-1)?.status;
+  await waitFor(() => lastStatus() === "waiting", 15000);
+  R.check(lastStatus() === "waiting", `${name}: the worker is idle after its first report (${lastStatus()})`);
+  const pid1 = chatPid(w.path);
+  if (idleMs < 30000) {
+    await waitFor(() => !chatPid(w.path), 30000);
+    R.check(!chatPid(w.path), `${name}: the worker's process stopped idle (it was ${pid1})`);
+  } else R.check(pid1 && alive(pid1), `${name}: the worker's process stays up, idle (${pid1})`);
+
+  // The worker's reply to the card is scripted by the untagged-message rule: the card names no tag.
+  await mock.plain(`[long 2 #${name}card]`);
+  writeFileSync(go, "");
+  const reply = `REPLY-DONE ${name}card`;
+  await wakeWait(() => jobCards(w.path, "j1").length > 0, 60000);
+  const said = () => entries(w.path).some((e) => e.type === "message" && e.message?.role === "assistant" && fullText(e).includes(reply));
+  await wakeWait(said, 60000);
+  R.check(said(), `${name}: the worker replied to its job's end`);
+  if (idleMs >= 30000) R.check(chatPid(w.path) === pid1, `${name}: in the same process (${pid1} → ${chatPid(w.path)})`);
+  else if (!chatPid(a.path)) {
+    // The parent's process stopped too: opening it picks the worker back up and delivers what it missed.
+    a.s.close();
+    a.s = await chat(c, a.path);
+  }
+
+  await waitFor(() => completions(a.path, w.path, reply) >= 1, 60000);
+  R.check(completions(a.path, w.path, reply) === 1, `${name}: the parent got a second completion with the reply (${completions(a.path, w.path)} completions, ${completions(a.path, w.path, reply)} with it)`);
+  const second = entries(a.path).filter((e) => e.customType === "subagent-complete").at(-1);
+  const text = fullText({ message: { content: second?.content } });
+  R.check(!text.includes("(no output for this task)"), `${name}: never "(no output for this task)" (${text.slice(0, 300)})`);
+  R.check(/Still running: j2 \(sleep 300\)/.test(text) && text.indexOf(reply) < text.indexOf("Still running"), `${name}: it names the job still running, after the reply (${text.slice(-300)})`);
+  await waitFor(() => lastStatus() === "waiting", 15000);
+  R.check(lastStatus() === "waiting", `${name}: status waiting in the parent's record (${JSON.stringify(workerRecords(a.path, wid).slice(-3).map((r) => r.status))})`);
+  await waitFor(() => asksWith(reply).length > 0, 30000);
+  R.check(asksWith(reply).length > 0, `${name}: the reply started a turn in the parent`);
+
+  await waitFor(() => a.s.got.some(isEvent("run.settled")), 30000);
+  await mock.plain("");
+  if (!chatPid(a.path)) {
+    a.s.close();
+    a.s = await chat(c, a.path);
+  }
+  a.s.send({ type: "set_model", ref: "trial/m1" });
+  await a.s.until((m) => m.type === "model" || m.type === "error", 15000, "set_model answer");
+  const waited = await turn(a, `[call agent_wait ${JSON.stringify({ ids: [wid], timeoutSeconds: 5 })}]`);
+  R.check(/All requested tasks settled/.test(fullText(waited[0])), `${name}: a wait on the worker ends at once (${fullText(waited[0]).slice(0, 200)})`);
+  R.check(fullText(waited[0]).includes(reply) && /Still running: j2/.test(fullText(waited[0])), `${name}: and carries the reply and the job's line (${fullText(waited[0]).slice(0, 500)})`);
+  await turn(a, `[call agent_kill ${JSON.stringify({ id: wid })}]`);
+  await wakeWait(() => jobById(w.path, "j2")?.ended, 40000);
+  a.s.close();
+  await nextServer();
+}
+const tj6 = () => jobWakesWorker("tj6", 120000);
+const tj6b = () => jobWakesWorker("tj6b", 4000);
+
+const table = { tyourclick, t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, tmodes, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), tsend, t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, tw1, tw2, tw3, tw4, tw5, tw6, tw7, tw8, tj1, tj2, tj3, tj4, tj5, tj6, tj6b, hermetic, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

@@ -8,11 +8,13 @@ Choose a built-in theme in **Settings → Themes**, or save a JSON file in
 `~/.pi/agent/sova/themes/`. While the Themes tab is open, the picker refreshes every 2 seconds—no
 rebuild or restart.
 
-Pick one light theme and one dark theme, then set **Appearance** to Light, Dark, or Auto. Auto
-shows your light theme while your system is set to light and your dark theme while it's dark,
-switching the moment the system does; Sova starts in Dark. A pick in the list that's showing
-applies at once; the other list's pick shows when its mode does. The choice is remembered in this
-browser, and other Sova tabs open in it follow a change at once.
+Pick one dark theme and one light theme (the Dark list comes first, then the Light list), then set
+**Appearance** to Light, Dark, or Auto. Auto shows your light theme while your system is set to
+light and your dark theme while it's dark, switching the moment the system does; Sova starts in
+Dark. A pick in the list that's showing applies at once; the other list's pick shows when its mode
+does. The choice is remembered in this browser, and other Sova tabs open in it follow a change at
+once. The same holds for the font and text size picks under Typography: each is remembered in this
+browser, a change in one tab never erases a pick made in another, and every open tab follows it.
 
 For example, save this as `desk-lamp.json`:
 
@@ -39,8 +41,13 @@ the app; a theme does not bundle font files. Invalid values appear with an error
 rather than being applied.
 
 A custom theme with the same id as a built-in replaces it. If a theme becomes unreadable, fix or
-remove its file and reopen Settings → Themes. For a browser-side reset, clear `sova:theme` from
-local storage, then reload.
+remove its file and reopen Settings → Themes; only the list that wore it goes back to its built-in
+(Dark or Light), and the other list keeps its pick. If a theme leaves the page unreadable, open Sova
+with `?theme=default` on its address (for example `http://127.0.0.1:4800/?theme=default`): it goes
+back to the starting setup, Dark mode with the built-in Dark and Light themes, the theme's own fonts
+and Medium text size, and Sova removes the parameter from the address. By hand, remove
+`sova:theme` (the mode and both picks), `sova:typography` and `sova:text-size` from this site's local
+storage, then reload.
 
 ## Model choices
 

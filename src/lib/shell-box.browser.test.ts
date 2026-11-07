@@ -205,8 +205,9 @@ describe("the chat's answer arriving while you type", () => {
 });
 
 describe("Type anywhere", () => {
-  test("a ! a key outside the box typed in enters shell mode, and nothing runs until Enter", () => {
-    // Type anywhere hands the key to the box, which takes it as typed there: the same input.
+  test("the box has no Type-anywhere path: a typed ! enters shell mode, and nothing runs until Enter", () => {
+    // Type anywhere only focuses the box; the browser types the key there, so its "!" is this same
+    // input. What tells a key typed outside the box apart is scripts/e2e/type-anywhere.mjs.
     const h = harness();
     assert.equal(h.box.input("!", "insertText", false), "");
     assert.equal(h.box.mode(), "shell");

@@ -134,8 +134,9 @@
       "pi-config/extensions/claude-code/provider/fixtures/invalid-tool-input-turn.ndjson"
     ],
     "agreed": {
-      "by": "Omar (al_1 go-ahead)",
-      "at": "2026-10-13T16:18Z"
+      "by": "naomarik",
+      "at": "2026-11-07T17:05Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#55f8e26b"
     }
   },
   "§app.claude-code-provider/legacy-ids": {

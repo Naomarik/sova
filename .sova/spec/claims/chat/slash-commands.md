@@ -344,14 +344,22 @@ and the /btw model and thinking level. While the main chat's sandbox is On, the 
 inside it: it starts under the main chat's sandbox scope through the same one call a worker's start
 goes through (§chat.sandbox/workers), and when that sandbox refuses or can give it no launch, /btw
 doesn't start the thread and says why. With the main chat's sandbox Off or Subagents only, it starts
-unconfined (it has no tool that writes or runs anything). Its model calls are counted like any chat's,
+unconfined (it has no tool that writes or runs anything). The side thread follows the main chat's
+sandbox, not only the state it started under: when the main chat's sandbox turns On, turns off (to
+Off or Subagents only), or changes its enforcement while a side thread is kept, the thread is
+restarted under the new state before its next answer (a switch between Off and Subagents only
+alone doesn't restart it: it runs unconfined under both), seeded with the same side conversation so far, so nothing said in it
+is lost and a thread started unconfined never answers from outside a sandbox turned On since. A
+thread picked up again after a reload, whose starting state isn't known, is restarted the same way
+when the main chat's sandbox is On. Its model calls are counted like any chat's,
 under the main thread.
 
 The chat is kept between questions, so a follow-up continues it, and it outlives a reload, a
 crash or new code of the main chat: the reopened session picks the thread up again, and a
 question it was answering then is still answered and recorded once. A new thread, a cleared
 one, a switch between contextual and tangent, a model or thinking change, and navigating the
-session tree stop it; the next question starts a new one from the thread as recorded.
+session tree stop it; the next question starts a new one from the thread as recorded. A change of
+the main chat's sandbox restarts it (above).
 `/btw:summarize` writes its summary in a second hidden chat with no tools and only the summary
 instructions, stopped when it answers.
 

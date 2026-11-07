@@ -100,14 +100,15 @@ never reach the public repository:
 
 When their answer comes back, it has Sova add their names to the list (`merge.names`), then asks the same way whether the
 list is complete, giving only its kinds and counts. A question never quotes a name: to see the
-names themselves the user opens the merge thread, which shows the list there only. Once they
+names themselves the user opens the merge thread, which shows the list in its own chat only. Once they
 confirm, it says in the entry's note (with no names) that the push hold lifts with the next
 landing. The names are kept only in the project's names file (`<state root>/merge-queue/<project
 key>/names.json`; Sova's own
 repository falls back to `<state root>/merge-round.json`), which the leak scan reads
 (§app.merge-queue/push); Sova's own project keeps `<state root>/merge-round.json`. The file is
 private to the user (mode 0600), written only by Sova, only ever added to, and never committed.
-Sova shows the names themselves only to the merge thread (`merge.names {action: "show"}`). Sova's method playbook says so, and so does Sova's
+Sova shows the names themselves only to the merge thread and to the operator (`merge.names {action:
+"show"}`, §chat.merge-queue/thread-sandbox); every other chat is refused. Sova's method playbook says so, and so does Sova's
 own project playbook: the names interview and every other question go this way, and otherwise the
 thread acts on its own.
 
@@ -148,15 +149,23 @@ Everything it does beyond reading goes through the merge verbs Sova runs for it
 - **The names interview**: only Sova writes the private-names file (§chat.merge-queue/thread).
   `merge.names {action: "discover"}` has Sova run the name finder itself into the project's names
   file (the one Sova keeps, never a path the thread picks) and answers kinds and counts, never
-  values; `{action: "add", text}` adds the user's names, one `<kind>: <value>` per line, through a
+  values. It collects the login emails of this computer's Claude logins (their identities in
+  `claude-accounts.json`, each added login's `.claude.json` and Claude Code's own), so they stay out
+  of the public repository, except in a hermetic agent dir (a test copy: one with its own
+  `claude-projects/`, §app.claude-logins/registry), where it collects no login email and its answer
+  says "login emails: a hermetic agent dir, skipped"; every other source is read as before; `{action: "add", text}` adds the user's names, one `<kind>: <value>` per line, through a
   private temp file Sova deletes; `{action: "show"}` answers
-  the list, and only to the merge thread.
+  the list. The names are shown to the merge thread and to the operator (the page, and the
+  operator's own scripts with the same sign-in); every other chat, and a chat's script on the
+  operator's route, is refused (`forbidden`).
 
 **Answers it can read whole.** Every merge verb's answer, as a chat's tool returns it, stays under
 24,000 characters, so the Claude Code CLI never saves it to a file under `claude-accounts/`, which
 the sandbox hides. A longer answer is sent again as compact JSON, then cut, and the cut says what was left
 out and how to ask for less: `merge.status {entry}` answers that one entry, `merge.logs {run, step,
-lines}` one step.
+lines}` one step. A cut `merge.logs` keeps the newest log lines (the tail, where a failure shows)
+and drops the oldest, and says how many it left out and to ask for fewer lines; any other cut answer
+keeps its beginning.
 
 ## §chat.merge-queue/thread-life — The merge thread's memory, and when it is replaced
 
@@ -435,8 +444,9 @@ live commit too.
   thread catches up then. A release's own commit is never a reason to restart: trying a release
   live stays the operator's Apply (§app.release/sova).
 - **Page files only:** it runs `pnpm run build` in the main checkout and restarts nothing; on a
-  failure the note says "The page build failed after landing {branch}: {first error line}." Open
-  tabs offer the newer page.
+  failure the note says "The page build failed after landing {branch}: {first error line}." When a
+  page build passes after an earlier one failed, the failure line goes from the landing's note and
+  nothing is added, so the note carries no stale outcome. Open tabs offer the newer page.
 - **A restart, in order:**
   1. It holds the queue's new starts (`merge.hold`, §app.merge-queue/empty).
   2. In the main checkout it runs `pnpm install --frozen-lockfile` when an install file changed,
@@ -452,10 +462,14 @@ live commit too.
      /api/updates/restart`, which still refuses chats (§app.updates/restart). Chats and workers,
      the merge thread included, keep running through it (§app.chat-processes/survives-restart).
   4. At its next start Sova compares the commit it started on with the expected one, lifts the
-     hold, and adds to the newest landing's note (§app.merge-queue/note), keeping what the note
-     said: "Restarted Sova after landing {branch}.", or "Restart after landing {branch} didn't come
+     hold, and writes the outcome on the newest landing's note (§app.merge-queue/note), in place
+     of an earlier restart outcome and keeping the rest of the note: "Restarted Sova after landing {branch}.", or "Restart after landing {branch} didn't come
      back on {sha}: it started on {sha}. Check sova-runtime.service." A restart scheduled but not
      seen at a start within 2 minutes goes stale. The thread never retries a failed restart: the
      next Idle plans again.
+- **One outcome on each landing's note.** Sova writes every outcome above on the newest landing's
+  note itself, failures included; the thread doesn't note a failed restart again. A landing's note
+  keeps one restart outcome, the latest: a new one (a build that failed, then passed) replaces the
+  earlier one, Sova's or the thread's, and the rest of the note stays.
 
 This is the one place a chat restarts Sova (§app.access/your-click), and only through that verb.

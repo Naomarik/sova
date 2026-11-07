@@ -682,7 +682,8 @@ the one result shape with its own `merge` key (§app.project-services/result).
   and the user's answer: §chat.merge-queue/asks), `merge.fresh` (a project: Start Fresh,
   §chat.merge-queue/thread-life) and `merge.clear` (a queue chat's id, or `all`:
   §app.merge-queue/chats).
-- **The merge thread's**: `merge.note` (an entry and at most 300 characters; empty clears it),
+- **The merge thread's**: `merge.note` (an entry and at most 300 characters; an empty note clears it, sent from the
+  thread's tool as from the routes or the CLI),
   `merge.extend` (an entry, the check ids it adds, why, and a selection, `select`, for a check that
   takes one: the slow test group, files or walkthroughs it runs; never removes one; the tool's help
   for `checks` and `select` names the full pick and says a check that takes a selection runs bare

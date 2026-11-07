@@ -154,8 +154,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-07T15:21Z",
-      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
+      "at": "2026-11-07T17:13Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#55f8e26b"
     }
   },
   "§chat.merge-queue/thread": {
@@ -174,8 +174,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-07T15:25Z",
-      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
+      "at": "2026-11-07T17:04Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#55f8e26b"
     },
     "code": [
       "server/merge-queue/thread.ts",
@@ -245,8 +245,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-07T15:21Z",
-      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
+      "at": "2026-11-07T17:04Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#55f8e26b"
     },
     "code": [
       "shared/project-contract.ts",
@@ -278,7 +278,9 @@
       "server/merge-queue/names-verb.integration.test.ts",
       "server/project-services/tools-answer.test.ts",
       "server/merge-queue/verbs.test.ts",
-      "server/merge-queue/scenarios-conflicts.integration.test.ts"
+      "server/merge-queue/scenarios-conflicts.integration.test.ts",
+      "playbooks/merge-queue/scripts/discover-names.mjs",
+      "server/merge-queue/discover-names.integration.test.ts"
     ],
     "evidence": "verified"
   },

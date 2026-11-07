@@ -1172,16 +1172,20 @@ hourly, one at a time.
 - **Run logs, in the current merge thread's chat only.** The chat that is the project's current
   merge thread, and no other (an earlier thread's chat, a peer's session), shows a `Run logs` chip
   with the size in mono in its head, in the full chat head and the workspace pane head alike (the
-  label hides on a narrow pane). It opens a popover: "{size} in {n} runs, {m} packed." and "A
+  label hides on a narrow pane; its accessible name still reads "Run logs {size}" there). It opens a popover: "{size} in {n} runs, {m} packed." and "A
   finished run's logs are packed a day after it ends. Nothing is deleted unless you clean.", with
   `Clean Logs…` (destructive; disabled, with the reason, when nothing is cleanable).
 - **Clean Logs** confirms first: "Deletes the logs of {n} runs ({size}). The newest 10 runs, the run
   checking now, and the runs of entries still open or sent back to fix keep theirs. Every run keeps
-  its record, verdict, and steps." (`Clean Logs`, `Cancel`). It takes from each cleanable run (a
+  its record, verdict, and steps." (`Clean Logs`, `Cancel`). The confirmation replaces the
+  popover's first step in place, by mouse or keyboard, and focus moves to its `Cancel`. `Cancel` goes back to the first step with focus on
+  `Clean Logs…`; Escape closes the popover from either step and gives focus back to the chip; focus
+  moving outside the chip and its popover closes it, and a click on the popover's own text (not a
+  button) keeps it open at the step it shows. It takes from each cleanable run (a
   finished run older than the newest 10, not checking, named by no entry still open or sent back to
   fix) everything in its folder but `run.json`, `changed.txt` and `docs-landed.json`: step logs,
-  the drafts snapshot or its archive, the run's service data. Toast: "Cleaned the logs of {n} runs:
-  {size} freed." Each cleaned run is marked so, and its steps' logs read one line, "(log cleaned)",
+  the drafts snapshot or its archive, the run's service data. Toast, shown once (a second clean
+  replaces it): "Cleaned the logs of {n} runs: {size} freed." Each cleaned run is marked so, and its steps' logs read one line, "(log cleaned)",
   in `merge.logs` and on the run page.
 - **Only your click cleans.** Any other caller is refused (`forbidden`: "A chat can't clean the merge
   queue's run logs: use Clean Logs in the merge thread's chat yourself."); a clean without `confirm`

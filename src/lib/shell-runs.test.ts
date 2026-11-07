@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SHELL_LIVE_MAX, type ChatServerMessage, type ShellRun } from "../../shared/protocol";
 import { AFTER_REPLY, answersAtHello, SHELL_DROPPED, cardOfRow, cardOfRun, cutWords, nextShellRuns, runShell, shellAnswerOf, shellFrame, shellNotes, shellOffered, shellStatus, stopOnClose } from "./shell-runs";
-import { ALREADY_RUNNING, NOT_CONNECTED } from "./shell-mode";
+import { NOT_CONNECTED } from "./shell-mode";
 
 const run = (over: Partial<ShellRun> = {}): ShellRun => ({ id: "s1", command: "pnpm test", output: "", state: "running", startedAt: 1, ...over });
 const msg = (m: unknown) => m as ChatServerMessage;
@@ -87,7 +87,7 @@ test("!! says it isn't shared, and a mid-reply run says when the model gets it, 
 
 test("Run sends the command without its marker, private only for !!, over the open socket", () => {
   const sent: unknown[] = [];
-  const o = { running: false, open: true, send: (f: unknown) => (sent.push(f), true), newId: () => "c7" };
+  const o = { open: true, send: (f: unknown) => (sent.push(f), true), newId: () => "c7" };
   assert.deepEqual(runShell(o, "git status", false), { clientId: "c7" });
   assert.deepEqual(runShell(o, "env", true), { clientId: "c7" });
   assert.deepEqual(sent, [
@@ -97,14 +97,14 @@ test("Run sends the command without its marker, private only for !!, over the op
   assert.deepEqual(shellFrame("ls", false, "c1"), { type: "shell", command: "ls", clientId: "c1" });
 });
 
-test("Run sends nothing while a command runs or with no open connection, and says why", () => {
+test("Run sends nothing with no open connection, and says why; a command already running holds nothing up", () => {
   const sent: unknown[] = [];
   const send = (f: unknown) => (sent.push(f), true);
-  assert.deepEqual(runShell({ running: true, open: true, send, newId: () => "c1" }, "ls", false), { refused: ALREADY_RUNNING });
-  assert.deepEqual(runShell({ running: false, open: false, send, newId: () => "c1" }, "ls", false), { refused: NOT_CONNECTED });
+  assert.deepEqual(runShell({ open: false, send, newId: () => "c1" }, "ls", false), { refused: NOT_CONNECTED });
   assert.deepEqual(sent, []);
+  assert.deepEqual(runShell({ open: true, send, newId: () => "c2" }, "sleep 9", false), { clientId: "c2" }, "a second command goes while the first runs");
   // The socket refusing the frame keeps the command too.
-  assert.deepEqual(runShell({ running: false, open: true, send: () => false, newId: () => "c1" }, "ls", false), { refused: NOT_CONNECTED });
+  assert.deepEqual(runShell({ open: true, send: () => false, newId: () => "c1" }, "ls", false), { refused: NOT_CONNECTED });
 });
 
 test("after a dropped connection, the hello answers a waiting Run: started when a run carries its id, else the dropped answer", () => {

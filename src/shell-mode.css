@@ -77,6 +77,76 @@
   overflow-wrap: anywhere;
 }
 
+/* Show Full Output: under the card's notes, at its left. */
+.shell-card-actions { display: flex; gap: var(--space-2); }
+
+/* ---- THE RUNNING COMMANDS' DOCK (§chat.shell-mode/card). Floating at the bottom of the transcript,
+   above the message box: one raised card per running command, stacked oldest first. Several never
+   take over the pane: past about a third of it the dock scrolls on its own. */
+
+.shell-dock {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 34%;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-3);
+}
+.shell-dock-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+}
+.shell-dock-main {
+  flex: 1 1 16rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.shell-dock-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.shell-dock-head > .chip { flex: none; }
+.shell-dock-command,
+.shell-dock-line {
+  min-width: 0;
+  padding: 0;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shell-dock-command { font-weight: var(--fw-semibold); color: var(--color-ink); }
+.shell-dock-line { color: var(--color-ink-muted); }
+/* Stop Command keeps the 8px gap from Show Output (destructive never adjacent to another action). */
+.shell-dock-actions { flex: none; display: flex; gap: var(--space-2); margin-left: auto; }
+
+/* ---- THE OUTPUT WINDOW (§chat.shell-mode/card): the wide modal (a sheet when folded), the output
+   filling its body, in mono, scrolling on its own. */
+
+.shell-window { height: min(720px, calc(100dvh - var(--space-8))); }
+.shell-window-head { display: flex; flex-direction: column; gap: var(--space-2); }
+.shell-window-body { flex: 1; min-height: 0; }
+.shell-window-output {
+  flex: 1;
+  min-height: 8rem;
+  overflow: auto;
+  background: var(--color-sunken);
+  font-size: var(--fs-mono);
+}
+.shell-window .modal-foot { flex-wrap: wrap; }
+@media (max-width: 767px) {
+  .shell-window { height: 85dvh; }
+}
+
 /* A Run's refusal can be long and quotes code (the kill guard's reply): it takes a line of its own
    under the foot's controls, which keep their size, and wraps there. Its icon sits on its first line. */
 .composer-foot[data-reason-wide] { flex-wrap: wrap; row-gap: var(--space-1); }

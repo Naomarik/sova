@@ -971,6 +971,22 @@ export const putDraft = (path: string, text: string, attachments: UploadResult[]
     keepalive: opts.keepalive,
   });
 
+/** One page of a saved command's whole output (§chat.shell-mode/card): `text` from byte `from`, `next`
+    the following page's offset (null at the end), `total` the whole output's bytes. */
+export interface ShellOutputPage {
+  text: string;
+  from: number;
+  next: number | null;
+  total: number;
+}
+
+/** A page of a saved shell row's whole output; a 404 once its file is gone (its chat was archived). */
+export const fetchShellOutput = (path: string, entry: string, from = 0) =>
+  request<ShellOutputPage>(
+    `/api/sessions/shell-output?path=${encodeURIComponent(path)}&entry=${encodeURIComponent(entry)}&from=${from}`,
+    { cache: "no-store" },
+  );
+
 /** Stores an image in the session's attachments folder the moment it's attached, so it survives
     a reload as part of the draft; the prompt text then names its path. */
 export const uploadImage = (file: File, sessionPath: string) =>

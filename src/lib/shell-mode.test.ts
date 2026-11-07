@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ALREADY_RUNNING, NOT_CONNECTED_YET, codeSpans, runWhileBlocked, canRun, asText, savedMode, enterOnInput, folderName, leaveOnKey, modeAnnouncement, onAnswer, openDraft, SHELL_KEYS, SHELL_MARKER, shellPlaceholder, type ShellMode } from "./shell-mode";
+import { NOT_CONNECTED_YET, codeSpans, runWhileBlocked, canRun, asText, savedMode, enterOnInput, folderName, leaveOnKey, modeAnnouncement, onAnswer, openDraft, SHELL_KEYS, SHELL_MARKER, shellPlaceholder, type ShellMode } from "./shell-mode";
 
 test("a typed ! into the empty box steps the mode one deeper, and a third ! types", () => {
   assert.deepEqual(enterOnInput("off", "", "!", "insertText"), { mode: "shell", text: "" });
@@ -88,7 +88,6 @@ test("Run needs a typed command, an enabled box and no Run still waiting for its
   assert.equal(canRun("   \n", false, false), false);
   assert.equal(canRun("ls", true, false), false);
   assert.equal(canRun("ls", false, true), false);
-  assert.equal(ALREADY_RUNNING, "A command is already running in this chat.");
 });
 
 test("the shortcut sheet lists ! and !!", () => {

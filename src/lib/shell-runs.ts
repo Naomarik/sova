@@ -4,7 +4,7 @@
 
 import { SHELL_LIVE_MAX, type ChatClientMessage, type ChatServerMessage, type ShellRowInfo, type ShellRun, type ShellTruncation } from "../../shared/protocol";
 import { thousands } from "./format";
-import { ALREADY_RUNNING, NOT_CONNECTED, type ShellAnswer } from "./shell-mode";
+import { NOT_CONNECTED, type ShellAnswer } from "./shell-mode";
 
 /** The frame a Run sends: the command without its "!" or "!!", `private` only for "!!". */
 export function shellFrame(command: string, priv: boolean, clientId: string): Extract<ChatClientMessage, { type: "shell" }> {
@@ -13,15 +13,14 @@ export function shellFrame(command: string, priv: boolean, clientId: string): Ex
 
 /**
  * A Run from the box (§chat.shell-mode/who): its frame goes over the live socket and nowhere else
- * (never into the outbox a waking chat takes), one command at a time. The id it went with, or why it
+ * (never into the outbox a waking chat takes); several may run at once. The id it went with, or why it
  * didn't go: the command stays in the box and the reason shows under it.
  */
 export function runShell(
-  o: { running: boolean; open: boolean; send(frame: Extract<ChatClientMessage, { type: "shell" }>): boolean; newId(): string },
+  o: { open: boolean; send(frame: Extract<ChatClientMessage, { type: "shell" }>): boolean; newId(): string },
   command: string,
   priv: boolean,
 ): { clientId: string } | { refused: string } {
-  if (o.running) return { refused: ALREADY_RUNNING };
   if (!o.open) return { refused: NOT_CONNECTED };
   const clientId = o.newId();
   return o.send(shellFrame(command, priv, clientId)) ? { clientId } : { refused: NOT_CONNECTED };
@@ -74,6 +73,17 @@ export const SHELL_DROPPED = "The connection dropped before the chat answered. C
 export function answersAtHello(waiting: Iterable<string>, runs: readonly ShellRun[]): ShellAnswer[] {
   const started = new Set(runs.flatMap((r) => (r.clientId ? [r.clientId] : [])));
   return [...waiting].map((clientId) => (started.has(clientId) ? { clientId } : { clientId, refused: SHELL_DROPPED }));
+}
+
+/** A running command's newest output line, as a terminal shows it: the last line with text, and of a
+    line a progress bar redraws (carriage returns), only what was drawn last. Empty: nothing yet. */
+export function lastLine(output: string): string {
+  const lines = output.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const drawn = lines[i]!.split("\r").filter((p) => p.trim() !== "").pop();
+    if (drawn) return drawn.trimEnd();
+  }
+  return "";
 }
 
 /** What a card draws, from a live run or a saved row. */

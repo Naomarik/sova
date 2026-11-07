@@ -148,6 +148,7 @@ import { alignRowFromDetails, foldAlignRows, isOpenDoc, openCount, recommendedOp
 import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
 import { ShellCard } from "./ShellCard";
+import { ShellDock } from "./ShellDock";
 import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf, shellOffered, stopOnClose } from "../lib/shell-runs";
 import type { ShellAnswer, ShellControl } from "../lib/shell-mode";
 import type { ShellRun } from "../../shared/protocol";
@@ -2221,7 +2222,7 @@ export function ChatView(props: {
   const shellControl: ShellControl = {
     run: (command, priv) => {
       const sent = runShell(
-        { running: shellRuns().some((r) => r.state === "running"), open: !holding() && socket.status() === "open", send: (frame) => socket.send(frame), newId: newClientId },
+        { open: !holding() && socket.status() === "open", send: (frame) => socket.send(frame), newId: newClientId },
         command,
         priv,
       );
@@ -2567,12 +2568,13 @@ export function ChatView(props: {
                 limitPath={props.path}
                 queueActions={queueActions}
               />
-              {/* Commands from shell mode not saved yet: after the streaming reply, where their rows land
-                  (pi saves one that ends mid-reply after that reply), on every device (§chat.shell-mode/card). */}
+              {/* Commands from shell mode that ended and aren't saved yet: after the streaming reply, where
+                  their rows land (pi saves one that ends mid-reply after that reply), on every device. A
+                  running one floats in the dock below the transcript instead (§chat.shell-mode/card). */}
               <For each={shellIds()}>
                 {(id) => (
-                  <Show when={shellRuns().find((r) => r.id === id)}>
-                    {(run) => <ShellCard card={cardOfRun(run())} replying={live.running} onStop={() => stopShell(id)} stopping={shellStopping().has(id)} />}
+                  <Show when={shellRuns().find((r) => r.id === id && r.state === "ended")}>
+                    {(run) => <ShellCard card={cardOfRun(run())} replying={live.running} />}
                   </Show>
                 )}
               </For>
@@ -2659,6 +2661,7 @@ export function ChatView(props: {
         <For each={feed().entries}>{(m) => <><Show when={feedBanner(m) === "turn"}><TurnError message={m.message} /></Show><Show when={feedBanner(m) === "start"}><StartError message={m.message} back={m.back ?? 0} /></Show><Show when={!failureHasRow(live.entries, m.message)}><SubagentLimitRow path={props.path} message={m.message} provider={m.provider} /></Show></>}</For>
       </ThreadScroller>
       </ToolSourceContext.Provider>
+      <ShellDock runs={shellRuns()} onStop={stopShell} stopping={shellStopping()} />
       <Show when={!hostGate()} fallback={<HostSendNotice host={hostOf(props.path)!} reading={hostGate()!} />}>
       <Composer
         path={props.path}

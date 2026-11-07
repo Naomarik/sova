@@ -1,8 +1,9 @@
-import { createEffect, on, onCleanup, Show } from "solid-js";
+import { createSignal, onCleanup, Show } from "solid-js";
 import { tildePath } from "../lib/format";
 import { AFTER_REPLY, NOT_SHARED, shellNotes, shellStatus, type ShellCardData } from "../lib/shell-runs";
 import { home } from "../lib/ui-state";
 import { Chip } from "./ui";
+import { ShellOutputWindow, type OutputSource } from "./ShellOutputWindow";
 import "../shell-mode.css";
 
 /** Within this many px of the output's end, a running command's output keeps following its end; a
@@ -10,33 +11,24 @@ import "../shell-mode.css";
 const FOLLOW_SLACK = 24;
 
 /**
- * A command you ran (§chat.shell-mode/card): the command in mono, its output as it arrives, and
- * while it runs the live chip and Stop Command; once it ends, how it ended. The same card for a live
- * run and a saved row, one run in pi's own terminal included.
+ * A command you ran, once it ended (§chat.shell-mode/card): the command in mono, the output it kept,
+ * how it ended, and Show Full Output, which opens the whole output in a window. The same card for a
+ * saved row and a run that ended and waits to be saved, one run in pi's own terminal included. A
+ * running command is the dock's (ShellDock), not this card.
  */
 export function ShellCard(props: {
   card: ShellCardData & { underReply?: boolean };
   /** The model's reply is still running (the mid-reply note holds only until it ends). */
   replying?: boolean;
-  /** The card's Stop Command (a live run of this chat only). */
-  onStop?: () => void;
-  /** A stop is on its way: Stop Command waits for the end. */
-  stopping?: boolean;
+  /** Where Show Full Output reads from: a saved row's whole output; absent, the output the card holds. */
+  full?: { path: string; entry: string };
 }) {
+  const [open, setOpen] = createSignal(false);
+  const source = (): OutputSource => props.full ?? { live: true };
   const status = () => shellStatus(props.card);
   const notes = () => shellNotes(props.card, !!props.replying);
-  let out: HTMLPreElement | undefined;
-  /** At the output's end when it last changed: a running command's new output then keeps it there. */
+  /** At the output's end until the reader scrolls up: the card opens there, where the latest lines are. */
   let atEnd = true;
-  createEffect(
-    on(
-      () => props.card.output,
-      () => {
-        if (!out || !props.card.running || !atEnd) return;
-        out.scrollTop = out.scrollHeight;
-      },
-    ),
-  );
   return (
     <article class="shell-card" aria-label="Command you ran">
       <div class="shell-card-head">
@@ -44,24 +36,11 @@ export function ShellCard(props: {
         <Chip tone={status().tone === "live" ? "accent" : status().tone === "error" ? "error" : undefined} live={status().tone === "live"}>
           {status().word}
         </Chip>
-        <Show when={props.card.running && props.onStop}>
-          {(stop) => (
-            <button
-              type="button"
-              class="button button-sm button-destructive shell-card-stop"
-              aria-disabled={props.stopping ? "true" : undefined}
-              onClick={() => !props.stopping && stop()()}
-            >
-              Stop Command
-            </button>
-          )}
-        </Show>
       </div>
       <Show when={props.card.output}>
         <pre
           class="shell-card-output"
           ref={(el) => {
-            out = el;
             // It opens at the end of the output, where the latest lines are (a cut one most of all):
             // at its first layout, which may come later than now (a row drawn off screen).
             const sized = new ResizeObserver(() => {
@@ -100,6 +79,16 @@ export function ShellCard(props: {
       </Show>
       <Show when={notes().afterReply}>
         <p class="shell-card-note">{AFTER_REPLY}</p>
+      </Show>
+      <Show when={!props.card.running && (props.card.output || props.full)}>
+        <div class="shell-card-actions">
+          <button type="button" class="button button-sm" aria-haspopup="dialog" onClick={() => setOpen(true)}>
+            Show Full Output
+          </button>
+        </div>
+      </Show>
+      <Show when={open()}>
+        <ShellOutputWindow card={props.card} source={source()} onClose={() => setOpen(false)} />
       </Show>
     </article>
   );

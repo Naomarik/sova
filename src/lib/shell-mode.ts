@@ -121,9 +121,6 @@ export function canRun(command: string, disabled: boolean, pending: boolean): bo
   return !disabled && !pending && command.trim().length > 0;
 }
 
-/** The refusal when a command is already running in this chat (one at a time, §chat.shell-mode/running). */
-export const ALREADY_RUNNING = "A command is already running in this chat.";
-
 /** Run with no open connection: the command stays in the box (§chat.shell-mode/who: only the live socket). */
 export const NOT_CONNECTED = "Not connected. Run it again once the chat reconnects.";
 

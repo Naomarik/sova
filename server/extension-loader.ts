@@ -23,7 +23,7 @@ export class LoaderRefusal extends Error {
 
 const named = (): boolean => !!process.env.SOVA_EXTENSIONS_FILE;
 const CHANGED = "This extension changed since you looked. Check what it asks for, then approve it again.";
-const skipDir = (raw: Record<string, unknown>) => (typeof raw.id === "string" ? extensionDataDir(raw.id) : undefined);
+const skipDir = (raw: Record<string, unknown>) => (typeof raw.id === "string" && validExtensionId(raw.id) ? extensionDataDir(raw.id) : undefined);
 
 // ---- the list ------------------------------------------------------------------------------------
 
@@ -338,7 +338,9 @@ export async function programAction(id: string, action: unknown): Promise<void> 
 
 /** What Remove and an entry leaving the list by hand both do. */
 async function forget(id: string, deleteData = false): Promise<void> {
-  await stopOne(id);
+  // A name no valid entry can have, from a hand-edited file, reaches no unit, cards or data folder: only its approval goes.
+  const real = validExtensionId(id);
+  if (real) await stopOne(id);
   forgetApproval(id);
   forgetCodeReading(id);
   clearHealthOf(id);
@@ -346,6 +348,7 @@ async function forget(id: string, deleteData = false): Promise<void> {
   notFound.delete(id);
   recentStarts.delete(id);
   absent.delete(id);
+  if (!real) return;
   setCardsTrusted(`ext:${id}`, false);
   closeCardsOfExtension(id);
   if (deleteData) rmSync(extensionDataDir(id), { recursive: true, force: true });
@@ -369,8 +372,7 @@ export async function removeExtension(key: string, deleteData: boolean): Promise
     for (let i = entries.length - 1; i >= 0; i--) if (isEntry(entries[i], id)) entries.splice(i, 1);
   });
   activeMoved();
-  // A name no valid entry can have reaches no unit, approval or data folder: it only leaves the list.
-  if (validExtensionId(id)) await forget(id, deleteData);
+  await forget(id, deleteData);
 }
 
 // ---- the program's watch -------------------------------------------------------------------------

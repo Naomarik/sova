@@ -31,6 +31,9 @@ export type ExtTone = "success" | "warn" | "error" | "info" | undefined;
 export const stateTone = (s: ExtensionRowState): ExtTone => (s === "running" ? "success" : s === "starting" ? "info" : s === "waiting" || s === "changed" || s === "needs-newer" ? "warn" : s === "off" ? undefined : "error");
 
 export const found = (title: string): string => `Found an extension: ${title}`;
+/** The review's title: adding one, approving one on the list, or an installed one's new folder. */
+export const reviewTitle = (mode: "install" | "approve" | "folder", title: string): string =>
+  mode === "approve" ? `Approve ${title}?` : mode === "folder" ? `Use this folder for ${title}?` : `Add ${title}?`;
 export const runsLine = (program: string[]): string => `${program.join(" ")}, on this computer, as you, with no sandbox.`;
 export const rulesLine = (needs: string, has: string): string => `Needs extension rules ${needs}. This Sova has ${has}.`;
 export const onToast = (title: string, cards: boolean): string => (cards ? `${title} is on. New chats can use its cards; open chats keep what they started with.` : `${title} is on.`);

@@ -11,18 +11,27 @@ import { DetachedDriver, DriverError, realExec, SystemdDriver, type Driver, type
 import { inheritedEnv } from "./project-services/env-allow";
 import { stateHash } from "./project-services/store";
 import { extensionKeys, keyFileName } from "./extension-keys";
-import { clearHealthOf, sovaOrigin } from "./extensions";
+import { clearHealthOf, sovaOrigin, validExtensionId } from "./extensions";
 import { stateRoot } from "./state-root";
 
 const programsRoot = (): string => join(stateRoot(), "extension-programs");
 
+/** Both a unit's name and a data folder become paths: a name no valid entry can have never does. */
+function refuseBadId(id: string): void {
+  if (!validExtensionId(id)) throw new Error(`Not an extension's id: ${JSON.stringify(id)}`);
+}
+
 /** `<state root>/extension-data/<id>`, kept apart by the key file's name rule when ids differ only in case. */
 export function extensionDataDir(id: string): string {
+  refuseBadId(id);
   return join(stateRoot(), "extension-data", id === id.toLowerCase() ? id : keyFileName(id).replace(/\.key$/, ""));
 }
 
 export const unitPrefix = (): string => `sova-ext-${stateHash()}-`;
-export const unitOf = (id: string): string => `${unitPrefix()}${id}`;
+export const unitOf = (id: string): string => {
+  refuseBadId(id);
+  return `${unitPrefix()}${id}`;
+};
 
 type Chosen = { id: string; driver: Driver | null };
 let chosen: { root: string; pending: Promise<Chosen> } | null = null;

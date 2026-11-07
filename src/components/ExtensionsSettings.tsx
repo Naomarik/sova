@@ -26,6 +26,7 @@ import {
   STATE_WORD,
   stateTone,
   throughWords,
+  reviewTitle,
 } from "../lib/extensions-settings";
 import { tildePath } from "../lib/format";
 import { createPoll } from "../lib/poll";
@@ -85,7 +86,7 @@ function ReviewDialog(props: { at: Reviewing; onClose: () => void; onDone: (r: E
       >
         <div class="modal-head">
           <h2 class="modal-title" id="ext-review-title">
-            {at().mode === "approve" ? `Approve ${r().title}?` : `Add ${r().title}?`}
+            {reviewTitle(at().mode, r().title)}
           </h2>
         </div>
         <div class="modal-body stack">

@@ -21,6 +21,7 @@ const program = await import("./extension-program");
 const ext = await import("./extensions");
 const gate = await import("./extension-gate");
 const { registerExtensionRoutes } = await import("./extension-routes");
+const { ExtensionKeys, keyFileName } = await import("./extension-keys");
 gate.migrateTrust(() => ({}));
 
 const started = new Set<string>();
@@ -187,4 +188,44 @@ test("removing a broken entry named .. deletes no state", async () => {
   await loader.removeExtension("..", true);
   assert.ok(existsSync(listFile), "the state folder is still there");
   assert.ok(!JSON.parse(readFileSync(listFile, "utf8")).extensions.some((e: { id: string }) => e.id === ".."), "the entry left the list");
+});
+
+test("a ../ id in the trust file stops and deletes nothing, and its approval is forgotten", async () => {
+  // A real unit's record, copied where the bad id's unit name would lead: stopping that name would kill this process.
+  const d = folder("bystander", "program");
+  await program.startProgram({ id: "bystander", run: ["node", "s.mjs"], folder: d, api: `http://127.0.0.1:${await program.freePort()}` });
+  assert.ok(up(await state("bystander")));
+  const programs = join(root, "agent", "sova", "extension-programs");
+  const record = join(programs, "procs", `${program.unitPrefix()}bystander.json`);
+  const planted = join(programs, "victim.json");
+  writeFileSync(planted, readFileSync(record));
+  const bad = "../../../victim";
+  gate.recordApproval(bad, { version: "v", entry: "e", code: "c", sig: "s" });
+  for (let i = 0; i < 4; i++) await loader.loaderPass();
+  assert.ok(existsSync(planted), "the file the id leads to is still there");
+  assert.ok(up(await state("bystander")), "the process its record names still runs");
+  assert.equal(gate.approvedIds().includes(bad), false, "the approval is forgotten");
+});
+
+test("a program's unit name and data folder refuse an id that isn't one", () => {
+  for (const bad of ["..", ".", "../x", "a/b", ""]) {
+    assert.throws(() => program.unitOf(bad), /Not an extension.s id/, `unitOf(${bad})`);
+    assert.throws(() => program.extensionDataDir(bad), /Not an extension.s id/, `extensionDataDir(${bad})`);
+  }
+  assert.ok(program.unitOf("a.b_c-D").endsWith("a.b_c-D"));
+  assert.ok(program.extensionDataDir("a.b").endsWith(join("extension-data", "a.b")));
+});
+
+test("a ../ id in the key hashes loses its record and deletes no file", () => {
+  const hashFile = join(root, "agent", "sova", "bad-key-hashes.json");
+  const dir = join(root, "agent", "sova", "bad-keys", "inner");
+  mkdirSync(dir, { recursive: true });
+  const bad = "../outside";
+  const leads = join(dir, keyFileName(bad));
+  writeFileSync(leads, "keep\n");
+  writeFileSync(hashFile, JSON.stringify({ version: 1, keys: { [bad]: { hash: "a".repeat(64), issuedAt: "2026-01-01T00:00:00.000Z" } } }));
+  const keys = new ExtensionKeys({ dir: () => dir, hashFile: () => hashFile, installed: () => [] });
+  for (let i = 0; i < 4; i++) keys.sync();
+  assert.ok(existsSync(leads), "the file the id leads to is still there");
+  assert.ok(!readFileSync(hashFile, "utf8").includes("outside"), "its record is gone");
 });

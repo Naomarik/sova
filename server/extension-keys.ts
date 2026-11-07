@@ -18,7 +18,7 @@ import * as fs from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { Duplex } from "node:stream";
 import type { ExtensionKeyCheck } from "./auth";
-import { extensionKeyDir, extensionKeyHashFile, extensionsFile, findExtension, installedIdsForKeys } from "./extensions";
+import { extensionKeyDir, extensionKeyHashFile, extensionsFile, findExtension, installedIdsForKeys, validExtensionId } from "./extensions";
 
 export const SYNC_MS = 3000;
 /** Syncs in a row an id must be missing from a whole manifest before its key and sockets go. */
@@ -215,6 +215,8 @@ export class ExtensionKeys implements ExtensionKeyCheck {
     } catch (err) {
       this.warn(`${id}: the hashes were not rewritten: ${err instanceof Error ? err.message : String(err)}`);
     }
+    // A record under a name no entry can have, from a hand-edited file: never a path.
+    if (!validExtensionId(id)) return;
     try {
       this.io.rmSync(this.fileOf(id), { force: true });
     } catch (err) {

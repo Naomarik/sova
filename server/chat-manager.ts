@@ -114,7 +114,7 @@ import { JOB_CARDS_ENV } from "./background-jobs";
 const JOB_CARDS_EXTENSION = fileURLToPath(new URL("../pi-config/extensions/wake-nudge.ts", import.meta.url));
 import { TOUR_TOOLS } from "../shared/tour";
 import { tourTools } from "./tours/tools";
-import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
+import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, searchToolsFor, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { QUEUE_OPEN_TOOL, queuePushExtension, topicStore } from "./topics";
@@ -4764,6 +4764,11 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
       forkCacheRouting: !special,
       built: (session) => {
         sendKeys.watch(session);
+        // A profile without the shell can still search: pi's read-only grep, find and ls on, beside read (pi's
+        // built-ins, so never in the extension registry; a name the runtime lacks is ignored by pi).
+        const search = snap ? searchToolsFor(snap.remove) : [];
+        const active = session.activeTools();
+        if (search.some((t) => !active.includes(t))) session.setActiveTools([...active, ...search.filter((t) => !active.includes(t))]);
         if (profile.run) {
           const run = profile.run;
           run.turns.watch(session);

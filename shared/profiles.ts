@@ -431,6 +431,14 @@ export function excludedTools(remove: readonly Removable[], present: readonly st
   return [...new Set([...exact, ...[...KNOWN_REMOVABLE_TOOLS, ...present].filter((n) => toolRemoved(n, remove))])];
 }
 
+/** pi's read-only search tools: a session whose profile removes the shell has them on, so it can still search. */
+export const SEARCH_TOOLS: readonly string[] = ["grep", "find", "ls"];
+
+/** The search tools a runtime with these removals turns on: SEARCH_TOOLS without the shell, else none (pi's own default set). */
+export function searchToolsFor(remove: readonly Removable[]): string[] {
+  return remove.includes("shell") ? SEARCH_TOOLS.filter((t) => !toolRemoved(t, remove)) : [];
+}
+
 /** "Up to 3 hops · 10 sends per message you send · 40 a day on its own · 6 to one session per 10 min". */
 export function limitsLine(l: ProfileLimits): string {
   return `Up to ${l.hops} hops · ${l.perMessage} sends per message you send · ${l.perDay} a day on its own · ${l.perPair} to one session per 10 min`;

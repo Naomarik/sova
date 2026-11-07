@@ -117,6 +117,7 @@ refusal says where to click.
 | Lowering a chat's sandbox | The Sandbox rows in that chat's composer. A `/sandbox` sent as a message is refused too, and so is a rewind or regenerate that goes back past a raise. In the page, that rewind still lowers it |
 | Approving a project tool | **Approve and Turn On** in that chat's mode menu |
 | Trusting a project's or an extension's cards | **Trust {name}'s Cards** on the card |
+| Adding, approving or changing an extension | Settings → Extensions |
 | Restarting or updating Sova | **Restart Sova** and the update controls in Settings → General, or Apply on the Sova project's Branches tab |
 
 Only the widening closes. Turning a power off, raising a sandbox, turning a mode off, turning on a mode at

@@ -1065,10 +1065,14 @@ test("idle unmerged sessions (§app/idle-git-cache): no Git between 5-minute rea
   servedReset();
   r.configureReadiness({ now: () => now, insights: ins, treeStamp: (d) => ins.quietStamp(d), asksUser: () => undefined });
   const reason = () => r.readinessOverlay(row)?.trees[0]?.reason;
+  const conflicts = () => r.readinessOverlay(row)?.trees[0]?.conflicts;
   const tick = async (ms: number) => { now += ms; r.readinessOverlay(row); await r.readinessIdle(); };
   try {
     await tick(0);
-    assert.equal(reason(), "Conflicts with master · 1 file");
+    // A conflict doesn't block the Land (al_3 q7: the merge thread judges it in line): the row is Ready to land, and
+    // still carries the conflict it found.
+    assert.equal(conflicts(), 1);
+    assert.equal(reason(), "Ready to land · 1 commit ahead");
     await tick(r.READINESS_TTL_MS); // the first read found the drivers: from here the stamps hold
     const settledAt = now;
     calls.length = 0;
@@ -1088,12 +1092,14 @@ test("idle unmerged sessions (§app/idle-git-cache): no Git between 5-minute rea
     git(wt, "add", ".");
     git(wt, "commit", "-q", "-m", "commit the edits");
     await tick(1);
-    assert.equal(reason(), "Conflicts with master · 1 file", "a commit shows at the next listing");
+    assert.equal(reason(), "Ready to land · 2 commits ahead", "a commit shows at the next listing");
+    assert.equal(conflicts(), 1);
 
     writeFileSync(driver, "exit 0\n");
     await tick(1);
     // Decisions off: the code-only conditions make it Ready to land, which its reason says (§chat.worktrees/ready-to-land).
-    assert.equal(reason(), "Ready to land · 2 commits ahead", "a change to the merge driver's code alone shows at the next listing");
+    assert.equal(conflicts(), undefined, "a change to the merge driver's code alone shows at the next listing");
+    assert.equal(reason(), "Ready to land · 2 commits ahead");
 
     calls.length = 0;
     commit(main, "b.txt", "master moves");
@@ -1391,12 +1397,16 @@ test("a finished branch that can't be queued to land: Sova names what blocks it 
   const drafts = Array.from({ length: 11 }, (_, i) => `d${i}`);
   const words = landingBlockers({ ...t, dirty: true, dirtyCount: 1, dirtyFiles: ["notes/"] }, live)!.map((b) => b.text);
   assert.deepEqual(words, ["1 uncommitted folder"]);
+  // A conflict with master is never a blocker the chat fixes (al_3 q7): the merge thread judges it once the user lands.
   assert.deepEqual(landingBlockers({ ...t, dirty: true, dirtyCount: 2, dirtyFiles: ["a.ts", "b.ts"], conflicts: 3, tempCommit: "WIP x" }, { ...live, lastCheck: { at: 1, ok: false } })!.map((b) => b.text), [
     "2 uncommitted files",
-    "conflicts with master in 3 files",
     'a temporary commit ("WIP x")',
     "this chat's last check run failed",
   ]);
+  assert.deepEqual(landingBlockers({ ...t, conflicts: 3 }, live), [], "a conflict alone blocks nothing");
+  const withConflict = blockedNoteText("feat/x", t.head, [{ kind: "temp", text: 'a temporary commit ("WIP x")', fix: "reword or squash the temporary commit" }], { base: "master", files: 3 });
+  assert.match(withConflict, /It also conflicts with master in 3 files: don't resolve them yourself; once the user presses Land, the merge thread judges them\./);
+  assert.doesNotMatch(withConflict, /merge master in|resolve them\b(?! yourself)/);
   // Whose run and what failed: the chat's own last test run, with its failing file.
   const own = landingBlockers(t, { ...live, lastCheck: { at: 1, ok: false, what: "test run", failed: "1 failing file, server/a.test.ts" } })!;
   assert.deepEqual(own.map((b) => b.text), ["this chat's last test run failed: 1 failing file, server/a.test.ts"]);

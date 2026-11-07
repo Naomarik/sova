@@ -706,7 +706,7 @@ export function servedReader(rootOf: (dir: string) => Promise<string | null>, se
 }
 
 /** Per session file, what blocks each finished tree's landing, from the last published reading (nudgeSpecs). */
-const blockedBySession = new Map<string, { path: string; branch: string; commit: string; blockers: LandingBlocker[] }[]>();
+const blockedBySession = new Map<string, { path: string; branch: string; commit: string; blockers: LandingBlocker[]; conflicts?: { base: string; files: number } }[]>();
 
 let deps: ReadinessDeps = defaultDeps();
 
@@ -832,11 +832,14 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
   const writes = publishChecks();
   const trees: WorktreeReadiness[] = [];
   const heads: Record<string, number> = {};
-  const blocked: { path: string; branch: string; commit: string; blockers: LandingBlocker[] }[] = [];
+  const blocked: { path: string; branch: string; commit: string; blockers: LandingBlocker[]; conflicts?: { base: string; files: number } }[] = [];
   for (const t of own) {
     const tf = await treeFacts(t, [s.cwd, ...own.map((o) => o.path).filter((p) => p !== t.path)]);
     if (tf.headAt) heads[t.path] = tf.headAt;
     const r = treeReadiness(tf, sf);
+    // Landing reads the tree as if it had no conflict: a conflict doesn't block the Land, the merge thread judges it in
+    // line (al_3 q7). The row's own state still says it conflicts until it has a landing.
+    const rLand = tf.conflicts ? treeReadiness({ ...tf, conflicts: 0 }, sf) : r;
     // Only where the merge queue serves the repo: elsewhere a finished branch is merged by its chat (al_1).
     const servedHere = landingOn && (deps.served ? await deps.served(t.path).catch(() => false) : true);
     let landing: WorktreeReadiness["landing"];
@@ -848,21 +851,21 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
       const drafts = tf.merged ? undefined : unofficial;
       // Drafts land with the branch (§chat.worktrees/ready-to-land): Sova tries them once per head and set of drafts.
       let docs: LandingDocs | undefined;
-      if (drafts?.length && tf.head && landingLive(tf, r.state)) {
+      if (drafts?.length && tf.head && landingLive(tf, rLand.state)) {
         const hashed = deps.draftsHash?.(t.path);
         const preview = deps.docsPreview ? deps.docsPreview(t.path, tf.head, hashed?.hash ?? "", () => requeue(s.path)) : ({ drafts, added: [], changed: [], problems: [] } as DocsPreview);
         docs = { drafts, preview };
       }
       // The chat's own reason it can't land its drafts: its Can't answer to Sova's drafts request at this head.
       const specsWhy = tf.head ? deps.landing.cantWhy(s.id, t.path, tf.head) : undefined;
-      landing = landingOf(tf, r.state, finished, heldHere, docs, specsWhy);
+      landing = landingOf(tf, rLand.state, finished, heldHere, docs, specsWhy);
       // A setup branch is offered Land only once a trial of its exact head passed (§app.project-setup/land-gate).
-      const untried = tf.head && landingLive(tf, r.state) && deps.setupUntried ? await deps.setupUntried(t.path, tf.head).catch(() => null) : null;
+      const untried = tf.head && landingLive(tf, rLand.state) && deps.setupUntried ? await deps.setupUntried(t.path, tf.head).catch(() => null) : null;
       if (untried) landing = undefined;
       // Finished but not Ready to land: what the session can fix, for Sova's once-per-commit note.
       if (!landing && finished === "yes" && tf.head) {
         const blockers = [...(landingBlockers(tf, sf) ?? []), ...(untried ? [{ kind: "trial" as const, text: "no passing trial of its head", fix: "run a trial of its head (merge.try) and land it once that passes" }] : [])];
-        if (blockers.length) blocked.push({ path: t.path, branch: tf.branch, commit: tf.head, blockers });
+        if (blockers.length) blocked.push({ path: t.path, branch: tf.branch, commit: tf.head, blockers, ...(tf.conflicts ? { conflicts: { base: tf.base ?? "its base", files: tf.conflicts } } : {}) });
       }
       if (writes) {
         if (landing?.state === "ready") deps.readyToLand?.({ path: t.path, branch: tf.branch, commit: landing.commit });
@@ -1341,7 +1344,7 @@ function nudgeSpecs(s: SessionSummary, value: SessionReadiness): void {
     void (async () => {
       if (!(await served(b.path).catch(() => false))) return;
       if (!deps.landing.tell(s.id, b.path, b.commit)) return;
-      const id = await send(s.path, blockedNoteText(b.branch, b.commit, b.blockers), { kind: "blocked", branch: b.branch });
+      const id = await send(s.path, blockedNoteText(b.branch, b.commit, b.blockers, b.conflicts), { kind: "blocked", branch: b.branch });
       if (typeof id === "string") deps.landing.asked(s.id, b.path, b.commit, id, "blocked");
     })().catch((err) => console.warn(`[readiness] landing note to ${s.path}: ${(err as Error).message}`));
   }

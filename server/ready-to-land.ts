@@ -91,8 +91,8 @@ export const landingLive = (t: LandingTree, state: ReadinessState): boolean =>
 
 /** One thing that keeps a finished branch from Ready to land, as Sova's note counts it, and what fixes it. */
 export interface LandingBlocker {
-  kind: "uncommitted" | "conflicts" | "temp" | "check" | "trial";
-  /** "1 uncommitted folder", "conflicts with master in 2 files". */
+  kind: "uncommitted" | "temp" | "check" | "trial";
+  /** "1 uncommitted folder", "a temporary commit (…)". */
   text: string;
   /** What the session does about it. */
   fix: string;
@@ -102,8 +102,9 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 
 /**
  * What still blocks a finished branch's landing (§chat.worktrees/ready-to-land), each counted, for the
- * things the session can fix itself: uncommitted files, conflicts with its base, a
- * temporary commit, a failing check. undefined when the rule doesn't ask (nothing to land, merged, a turn
+ * things the session can fix itself: uncommitted files, a temporary commit, a failing check. A conflict with its base
+ * is none of them: it doesn't block the Land, and the merge thread judges it in line (al_3 q7), so the chat never
+ * resolves it on its own (a behaviour the user must decide would be settled without them). undefined when the rule doesn't ask (nothing to land, merged, a turn
  * running, an open question: none of those is the session's to fix now). Pure.
  */
 export function landingBlockers(t: LandingTree, s: LandingSession): LandingBlocker[] | undefined {
@@ -116,7 +117,6 @@ export function landingBlockers(t: LandingTree, s: LandingSession): LandingBlock
     const what = files && folders === dirty ? plural(dirty, "uncommitted folder") : files && folders === 0 ? plural(dirty, "uncommitted file") : `${dirty} uncommitted ${dirty === 1 ? "file or folder" : "files and folders"}`;
     out.push({ kind: "uncommitted", text: what, fix: "commit or remove what is uncommitted" });
   }
-  if (t.conflicts) out.push({ kind: "conflicts", text: `conflicts with ${t.base ?? "its base"} in ${plural(t.conflicts, "file")}`, fix: `merge ${t.base ?? "its base"} in and resolve them` });
   if (t.tempCommit) out.push({ kind: "temp", text: `a temporary commit ("${t.tempCommit.slice(0, 60)}")`, fix: "reword or squash the temporary commit" });
   if (s.lastCheck && !s.lastCheck.ok) out.push({ kind: "check", text: lastCheckWords(s.lastCheck), fix: "fix what the check reports and run it again" });
   return out;
@@ -126,10 +126,12 @@ export function landingBlockers(t: LandingTree, s: LandingSession): LandingBlock
     marked as the merge queue's (MERGE_QUEUE_SENT_PREFIX), never drawn as the user's message.
     It names what blocks the landing. Once nothing blocks it, the user's go-ahead lands it: Land, or "land it" typed in
     the chat, which the session records with `worktree land`. */
-export function blockedNoteText(branch: string, commit: string, blockers: readonly LandingBlocker[]): string {
+export function blockedNoteText(branch: string, commit: string, blockers: readonly LandingBlocker[], conflicts?: { base: string; files: number }): string {
   const list = blockers.map((b) => b.text).join(", ");
   const fixes = blockers.map((b) => b.fix).join("; ");
-  return `${MERGE_QUEUE_SENT_PREFIX} ${branch} is finished at ${commit.slice(0, 7)}, but it can't be queued to land yet: ${list}. On ${branch}, ${fixes}. Fix that; once nothing blocks it, the user presses Land (or types "land it" in this chat, which you record with the worktree tool's land action). Nothing has been landed or approved yet.`;
+  // A conflict is no blocker and never the chat's to resolve before the Land: the merge thread judges it in line.
+  const also = conflicts?.files ? ` It also conflicts with ${conflicts.base} in ${plural(conflicts.files, "file")}: don't resolve them yourself; once the user presses Land, the merge thread judges them.` : "";
+  return `${MERGE_QUEUE_SENT_PREFIX} ${branch} is finished at ${commit.slice(0, 7)}, but it can't be queued to land yet: ${list}. On ${branch}, ${fixes}. Fix that; once nothing blocks it, the user presses Land (or types "land it" in this chat, which you record with the worktree tool's land action).${also} Nothing has been landed or approved yet.`;
 }
 
 /**

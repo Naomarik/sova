@@ -227,6 +227,21 @@
       "src/components/SessionView.tsx"
     ]
   },
+  "§app.subagents-pane/tab-strip": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [],
+    "code": [
+      "src/components/SessionPane.tsx",
+      "src/app.css"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-07T10:33Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#2dc6cf75"
+    }
+  },
   "§app.subagents-pane/tabs": {
     "kind": "behavior",
     "authority": "accepted",
@@ -235,7 +250,9 @@
       "§chat.worktrees/pane",
       "§app.worker-restore/restore",
       "§app.subagents-pane/head",
-      "§app.insights/cost-history"
+      "§app.insights/cost-history",
+      "§app.message-labels/time-spent-tab",
+      "§app.subagents-pane/tab-strip"
     ],
     "code": [
       "src/components/SessionPane.tsx",
@@ -263,25 +280,27 @@
       "src/cost-breakdown.css",
       "src/lib/cost-history.ts",
       "src/components/ContextTab.tsx",
-      "src/components/BackgroundJobs.tsx"
+      "src/components/BackgroundJobs.tsx",
+      "src/components/TimeSpent.tsx"
     ],
     "agreed": {
       "by": "omar",
-      "at": "2026-11-07T02:42Z",
-      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#78a5b1e9"
+      "at": "2026-11-07T13:38Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#4ad7d02d"
     }
   },
   "§app.subagents-pane/time-spent": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "requires": [
       "§app.subagents-pane/tabs",
       "§app.subagents-pane/time-spent-counting",
       "§app.subagents-pane/time-spent-record",
       "§chat.alignment/document",
       "§chat.alignment/card",
-      "§app.subagents-pane/accessibility"
+      "§app.subagents-pane/accessibility",
+      "§app.message-labels/time-spent-tab"
     ],
     "code": [
       "src/components/TimeSpent.tsx",
@@ -298,8 +317,8 @@
     ],
     "agreed": {
       "by": "omar",
-      "at": "2026-11-07T02:42Z",
-      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#78a5b1e9"
+      "at": "2026-11-07T13:38Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#4ad7d02d"
     }
   },
   "§app.subagents-pane/time-spent-counting": {
@@ -344,13 +363,14 @@
   "§app.subagents-pane/time-spent-record": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "requires": [
       "§app.session-list/archive-cleanup",
       "§app.session-share/page",
       "§mesh.peers/grants",
       "§app.commands/catalogue",
-      "§app.subagents-pane/context-tab"
+      "§app.subagents-pane/context-tab",
+      "§app.message-labels/labelling"
     ],
     "code": [
       "server/time-spent.ts",
@@ -373,8 +393,8 @@
     ],
     "agreed": {
       "by": "omar",
-      "at": "2026-11-07T02:42Z",
-      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#78a5b1e9"
+      "at": "2026-11-07T13:38Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#4ad7d02d"
     }
   },
   "§app.subagents-pane/tokens": {

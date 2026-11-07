@@ -643,7 +643,7 @@ never part of it (§app.settings-dialog/decisions-autosave, §app.settings-dialo
 In this order:
 
 - **An intro and what is sent.** The intro says Sova can ask a small classifier about sessions
-  and that everything on the tab is off until turned on. Directly under it, above every switch
+  for the features switched on, and that nothing is sent until Jev or a fallback model can answer. Directly under it, above every switch
   that sends anything, one sentence says what one check sends and to whom, and that the
   Overseer's own sessions are never checked (§app.decisions/privacy).
 - **Jev.** A **Use Jev** switch, independent of the key, then one status line: a chip (dot and
@@ -678,7 +678,8 @@ In this order:
   ("Asks Jev, then Claude Code · Haiku 4.5.", a paused provider with when it retries, or the
   unavailable sentence).
 - **Features.** **Flag sessions that need you**, off by default (there is no Tag sessions switch:
-  automatic tags are retired, §app.decisions/session-tags). With a
+  automatic tags are retired, §app.decisions/session-tags), then **Label your messages**, off by
+  default and independent of the first (§app.message-labels/labelling). With a
   feature on while nothing can answer, the switch stays on and its hint is replaced, in warn, by
   the unavailable sentence ("Unavailable: Jev is off and no fallback model is set. Nothing is
   checked.", or Jev can't answer and why). The server's note that a feature on stays unavailable

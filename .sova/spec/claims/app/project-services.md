@@ -820,8 +820,8 @@ The operator sees and drives every running copy from two places, both on this ho
   `main`, then each branch copy by slot. A row shows the branch, `slot {n}`, each checkout service's
   ports (a port with HTTP readiness is a link to the site at `http://<this page's host>:<port>/`, never the readiness check's path), the copy's
   memory (the sum of its services' memory, each process's own memory as the resource monitor
-  measures it, so it reads what a project card's Memory in use counts for that copy,
-  §app.projects/home-glance; "—" when none reports one), its state as a chip
+  measures it, as a project card counts a copy, §app.projects/home-glance, which leaves out Sova's
+  own server; "—" when none reports one), its state as a chip
   (Running, Starting, Degraded, Stopped, Absent; Starting while the copy is degraded only because a
   service is still starting, none failed or degraded; a service that is not ready is named under the
   row with its state), and who created it ("by you", "by a coding session", "by its overseer", "by the Overseer",

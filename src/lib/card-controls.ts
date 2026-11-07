@@ -52,6 +52,8 @@ export interface CardControls {
   drawings(): readonly OwnKind[];
   /** Whether a card's type belongs to an extension that is no longer installed (§app.extensions/views). */
   gone(type: string): boolean;
+  /** Its extension is on the list but isn't active: "off", "blocked", else null. */
+  down(type: string): "off" | "blocked" | null;
   /** The session's file, id and title, for a view's own reads. */
   session(): { path: string; id: string; title: string };
   /** The state Sova keeps for a view's card, and keeping a new one (saved, then kept here). */
@@ -77,7 +79,7 @@ export const CardContext = createContext<CardControls | undefined>(undefined);
 const POLL_MS = 20_000;
 
 export function createCardControls(path: () => string, canAct: () => boolean, chat: CardChat = {}): CardControls {
-  const [state, setState] = createStore<{ cards: CardInfo[]; types: CardDecl[]; states: Record<string, unknown>; drawings: OwnKind[]; gone: string[] }>({ cards: [], types: [], states: {}, drawings: [], gone: [] });
+  const [state, setState] = createStore<{ cards: CardInfo[]; types: CardDecl[]; states: Record<string, unknown>; drawings: OwnKind[]; gone: string[]; off: string[]; blocked: string[] }>({ cards: [], types: [], states: {}, drawings: [], gone: [], off: [], blocked: [] });
   const [busy, setBusy] = createSignal<string | null>(null);
   const [ask, setAsk] = createSignal<CardTrustAsk | null>(null);
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -96,6 +98,8 @@ export function createCardControls(path: () => string, canAct: () => boolean, ch
     setState("types", reconcile(a.types, { key: "type" }));
     setState("drawings", reconcile(a.drawings ?? [], { key: "kind" }));
     setState("gone", reconcile(a.gone ?? []));
+    setState("off", reconcile(a.off ?? []));
+    setState("blocked", reconcile(a.blocked ?? []));
     if (a.states) for (const [id, v] of Object.entries(a.states)) if (!(id in state.states)) setState("states", id, () => v);
     const any = a.types.length > 0 || a.cards.length > 0;
     if (any && !timer) timer = setInterval(() => document.visibilityState === "visible" && void load(), POLL_MS);
@@ -170,6 +174,11 @@ export function createCardControls(path: () => string, canAct: () => boolean, ch
     gone(type) {
       const ext = state.types.find((t) => t.type === type)?.ext;
       return !!ext && state.gone.includes(ext.id);
+    },
+    down(type) {
+      const ext = state.types.find((t) => t.type === type)?.ext;
+      if (!ext) return null;
+      return state.off.includes(ext.id) ? "off" : state.blocked.includes(ext.id) ? "blocked" : null;
     },
     session: () => ({ path: path(), ...(chat.session?.() ?? { id: "", title: "" }) }),
     viewState: (id) => state.states[id] ?? null,

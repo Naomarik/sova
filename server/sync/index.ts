@@ -11,7 +11,7 @@ import { ClaudeCredentialStore, PiAuthStore, piRefresher, type CredentialStore }
 import { CredentialSync, type CredentialStatusEntry, type CredentialEntryReply, type CredentialManifest, type CredentialPushReply, type SyncPeer } from "./logins";
 import { DocSync, type DocManifest, type DocPeer, type DocPushReply, type DocReply } from "./docs";
 import { ExtensionSync, type ExtensionList, type ExtensionPeer } from "./extensions";
-import { extensionsFile, readExtensions, setPeerExtensions, validateExtension } from "../extensions";
+import { extensionsFile, listedIds, publishedExtensions, setPeerExtensions, setPeersOfExtensions, validateExtension } from "../extensions";
 import { answerDenied, sharesLogin, sharesWith } from "../mesh/access";
 import { peerAreaGate } from "../wire-gate";
 
@@ -181,7 +181,8 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
     const extensions = new ExtensionSync({
       hostId: mesh.self().id,
       file: join(paths.stateDir(), "mesh-extensions.json"),
-      local: readExtensions,
+      local: publishedExtensions,
+      listedIds,
       validate: validateExtension,
       peers: () => extensionPeers().map((p) => httpExtensionPeer(mesh, p.id)),
       // A peer this host doesn't share extensions with has none listed here either.
@@ -191,6 +192,7 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
     rt.extensions = extensions;
     setPeerExtensions(() => extensions.peerEntries());
     extensions.start(extensionsFile());
+    setPeersOfExtensions(() => void extensions.notifyAll());
     void extensions.syncAll().catch((err) => console.error("[sync] extensions start failed:", err));
 
     reconcile = setInterval(syncEverything, RECONCILE_MS);

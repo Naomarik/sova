@@ -16,9 +16,9 @@ with a guide of its own lists its contracts.
 - `~/pi-config` is a compatibility symlink to this directory. `~/.pi/agent` symlinks `keybindings.json`,
   `models.json`, `vision-delegate.json` and every extension into it.
 - Not here: **Sova extensions** (`extensions.json`: a web app with its own backend, shown at
-  `#/ext/<id>`). They add nothing to pi. Their contract (ext-contract-v1.18: the manifest, the proxy,
+  `#/ext/<id>`). They add nothing to pi. Their contract (ext-contract-v1.20: the folder and its `sova-extension.json`, the list Settings → Extensions writes, `server/extension-loader.ts`, the manifest, the proxy,
   the `offers` field, what an extension adds under replies and to the session ⋯ menu, each
-  backend's own key in `server/extension-keys.ts`, and the commands it offers the Overseer) is `docs/customization.md` "Sova
+  backend's own key in `server/extension-keys.ts`, the commands it offers the Overseer, its name badge, what a key is refused, card news and cards that update) is `docs/customization.md` "Sova
   extensions" and `§app/extensions`; the places they add to are in
   [agents/server/commands/overview.md](../server/commands/overview.md).
 

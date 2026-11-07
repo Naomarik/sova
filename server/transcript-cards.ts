@@ -32,11 +32,15 @@ import type { HEntry } from "../shared/harness";
 import { VIS_OWN_KINDS_HOOK } from "../pi-config/extensions/mode/minor.ts";
 import { DRAWING_VIEW_FILE, DRAWINGS_DIR, GUIDE_FILE, GUIDE_MAX_BYTES, KIND_FILE, KIND_FILE_MAX_BYTES, ownKindLine, parseKindFile, PROJECT_DRAWINGS_MAX, PROJECT_OWNER, type DrawingDecl } from "../shared/drawing-kinds";
 import { typeOwnerWord } from "../shared/transcript-cards";
+import { queueChatRole } from "../shared/merge-queue";
+import { closedDoor, EXTENSION_CARD_DOORS } from "./extension-doors";
+import { cardSenderHeaders, type PressSender } from "./extension-sender";
+import { CARD_SENDER_PREFIX } from "../shared/senders";
 import { checkoutRootOf } from "../pi-config/extensions/mode/project-discovery.ts";
 import { sessionsChanged } from "./list-generation";
 import { projectRootOf } from "./project-root";
 import { stateRoot } from "./state-root";
-import { findExtension, readExtensionsWithOffers } from "./extensions";
+import { findExtension, listedExtensions, readExtensionsWithOffers } from "./extensions";
 import { extDrawingDecl } from "./extension-views";
 
 /**
@@ -403,6 +407,14 @@ async function takeSnapshot(sessionId: string, path: string, cwd?: string): Prom
   return snapshot;
 }
 
+/** The types this session is offered: a merge queue chat's leave out every extension's, whenever recorded (§chat.transcript-cards/queue-chats). */
+export async function offeredCardSnapshot(sessionId: string, path: string, cwd?: string): Promise<CardSnapshot | null> {
+  const snapshot = await cardSnapshotFor(sessionId, path, cwd);
+  if (!snapshot?.types.some((t) => t.ext)) return snapshot;
+  if (!queueChatRole((await deps.summary(path).catch(() => null))?.profile)) return snapshot;
+  return { ...snapshot, types: snapshot.types.filter((t) => !t.ext) };
+}
+
 /** The snapshot a session's record holds, read without taking one (undefined: none recorded yet). */
 export function recordedCardSnapshot(sessionId: string): CardSnapshot | null | undefined {
   const rec = readRecord(sessionId);
@@ -442,7 +454,8 @@ export function setCardsTrusted(owner: string, on: boolean, file = cardTrustFile
 /** The trust key of an extension's cards: its id, whatever its manifest entry says later. */
 export const extensionOwner = (id: string): string => `ext:${id}`;
 
-export const ownerName = (owner: string): string => (owner.startsWith("ext:") ? (findExtension(owner.slice(4))?.title ?? owner.slice(4)) : basename(owner.replace(/^project:/, "")) || owner);
+const listedTitle = (id: string): string | undefined => (listedExtensions() ?? []).find((l) => l.valid?.entry.id === id)?.valid?.entry.title;
+export const ownerName = (owner: string): string => (owner.startsWith("ext:") ? (listedTitle(owner.slice(4)) ?? owner.slice(4)) : basename(owner.replace(/^project:/, "")) || owner);
 
 /** An extension's cards' trust, as its page shows it with Stop Trusting Cards. */
 export const extensionCardsTrust = (id: string): { owner: string; name: string; trusted: boolean } => {
@@ -503,18 +516,38 @@ async function summaryOf(path: string): Promise<SessionSummary> {
   return s;
 }
 
+// ---- card news (§app.events/card-news) -------------------------------------------------------------
+
+export type CardNews = { name: "card.raised" | "card.changed" | "card.answered"; id: string; path: string; card: string; cardType: string };
+const cardNewsListeners = new Set<(e: CardNews) => void>();
+/** Told of each raise, revision and answer, at the act itself: never the card's data or its answer. */
+export function onCardNews(fn: (e: CardNews) => void): () => void {
+  cardNewsListeners.add(fn);
+  return () => cardNewsListeners.delete(fn);
+}
+function cardNews(name: CardNews["name"], id: string, path: string, card: CardInfo): void {
+  for (const fn of cardNewsListeners) {
+    try {
+      fn({ name, id, path, card: card.id, cardType: card.type });
+    } catch (err) {
+      console.warn(`[cards] card news failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+}
+
 /** Raise a card, give an open one a new revision of its data, or mark it done: every rule checked, the card recorded and returned. */
 export async function raiseCard(input: RaiseInput): Promise<CardInfo> {
   const s = await summaryOf(input.path);
   const sessionId = input.sessionId ?? s.id;
   if (s.archived) throw new CardRefusal(`${NOTHING} this session is archived.`);
   if (s.workerSession || s.overseer || s.projectOverseer || s.baton) throw new CardRefusal(`${NOTHING} cards show only in ordinary chats.`);
-  if ((s.align?.openQuestions ?? 0) > 0) throw new CardRefusal(`${NOTHING} an alignment question is open.`);
   if (input.card !== undefined) return reviseCard(input, sessionId);
   if (typeof input.type !== "string" || !input.type) throw new CardRefusal(`${NOTHING} type names one of the session's card types.`, 400);
   const snapshot = await cardSnapshotFor(sessionId, input.path, s.cwd);
   const decl = snapshot?.types.find((t) => t.type === input.type);
   if (!decl) throw new CardRefusal(`${NOTHING} "${input.type}" is not a card type this session may raise.`, 400);
+  if (input.by.kind === "extension" && decl.ext?.id !== (input.by.id ?? input.by.title)) throw new CardRefusal(`${NOTHING} ${EXTENSION_CARD_DOORS.raiseOthers}`, 403);
+  if (decl.ext && queueChatRole(s.profile)) throw new CardRefusal(`${NOTHING} the merge queue's own chats take no extension's cards.`);
   if (input.by.kind === "agent" && !decl.when) throw new CardRefusal(`${NOTHING} "${input.type}" is raised only from outside the chat.`, 400);
   let key: string | undefined;
   if (decl.placement === "follow") {
@@ -548,11 +581,13 @@ export async function raiseCard(input: RaiseInput): Promise<CardInfo> {
     at,
     by: input.by,
     ...(input.toolCallId ? { toolCallId: input.toolCallId } : { after: after ?? null }),
-    state: decl.answer === "none" ? "done" : "open",
+    // One that takes no answer starts open too, so it can change in place until it is marked done (§chat.transcript-cards/updating-cards).
+    state: "open",
   };
   rec.cards.push(card);
   rec.path = input.path;
   saveRecord(rec);
+  cardNews("card.raised", sessionId, input.path, card);
   return card;
 }
 
@@ -564,6 +599,7 @@ function reviseCard(input: RaiseInput, sessionId: string): CardInfo {
   if (!rec || !card) throw new CardRefusal(`${NOTHING} the session has no card ${input.card}.`, 404);
   if (card.state === "superseded" || card.state === "done") throw new CardRefusal(`${NOTHING} ${card.id} is ${card.state === "done" ? "done" : "replaced by a newer revision"}.`);
   if (input.type !== undefined && input.type !== card.type) throw new CardRefusal(`${NOTHING} ${card.id} is a ${card.type} card.`, 400);
+  if (input.by.kind === "extension" && ownerOfType(rec, card.type)?.owner !== extensionOwner(input.by.id ?? input.by.title)) throw new CardRefusal(`${NOTHING} ${EXTENSION_CARD_DOORS.changeOthers}`, 403);
   if (input.data !== undefined) {
     const decl = rec.snapshot?.types.find((t) => t.type === card.type);
     if (!decl && card.draws === "view") throw new CardRefusal(`${NOTHING} ${card.type} is no longer one of the session's card types.`, 409);
@@ -574,6 +610,7 @@ function reviseCard(input: RaiseInput, sessionId: string): CardInfo {
   if (input.done === true) card.state = "done";
   else if (input.data === undefined) throw new CardRefusal(`${NOTHING} give data for a new revision, or done: true.`, 400);
   saveRecord(rec);
+  cardNews("card.changed", sessionId, input.path, card);
   return card;
 }
 
@@ -587,6 +624,8 @@ export interface AnswerInput {
   by: string;
   /** A gathered pick recorded once its message went out. */
   via: "at-once" | "send";
+  /** The extension whose key calls (never the page's): it answers only its own cards, and never a button that acts. */
+  extensionKey?: string;
 }
 
 /** Record an answer on an open card; a button that sends or runs does it, once its owner is trusted. */
@@ -604,6 +643,10 @@ export async function answerCard(input: AnswerInput): Promise<CardInfo> {
   // A button that acts runs only for a trusted owner (a command that only looks always runs).
   const button = card.draws === "buttons" && "button" in a.value && input.via === "at-once" ? (card.data as ButtonsCard).buttons[a.value.button] : undefined;
   const does = button?.does;
+  if (input.extensionKey !== undefined) {
+    if (ownerOfType(rec, card.type)?.owner !== extensionOwner(input.extensionKey)) throw new CardRefusal(EXTENSION_CARD_DOORS.answerOthers, 403);
+    if (does && does.kind !== "answer") throw new CardRefusal(EXTENSION_CARD_DOORS.pressActing, 403);
+  }
   if (does && does.kind !== "answer") {
     const acts = does.kind === "send" || findCommand(does.command)?.effect !== "looks";
     const who = ownerOfType(rec, card.type);
@@ -615,17 +658,30 @@ export async function answerCard(input: AnswerInput): Promise<CardInfo> {
   card.answer = answer;
   card.state = "answered";
   saveRecord(rec);
+  cardNews("card.answered", s.id, input.path, card);
   if (does && does.kind !== "answer") {
-    const outcome = does.kind === "send" ? await sendAs(input.path, does.text) : await runCommand(does.command, does.params ?? {}, input.path);
+    const ownerExt = ownerExtensionOf(rec, card.type);
+    const sender = senderForPress(ownerExt, card, s);
+    const outcome = does.kind === "send" ? await sendAs(input.path, does.text, sender) : await runCommand(does.command, does.params ?? {}, input.path, ownerExt, sender);
     answer.outcome = outcome;
     saveRecord(rec);
   }
   return card;
 }
 
-async function sendAs(path: string, text: string): Promise<{ state: "done" | "failed"; text: string }> {
+/** The extension a card's type belongs to, or undefined for a project's: what its button or view does goes under its name. */
+const ownerExtensionOf = (rec: SessionRecord, type: string): string | undefined => rec.snapshot?.types.find((t) => t.type === type)?.ext?.id;
+
+/** Who a press's message goes out as: its extension always; a project's card only while the chat waits on its alignment
+    answers, because a press never answers one or ends that wait (§chat.alignment/session-mark). Else nobody: as it was. */
+function senderForPress(ownerExt: string | undefined, card: CardInfo, s: SessionSummary): PressSender | undefined {
+  if (ownerExt) return { ext: ownerExt };
+  return (s.align?.openQuestions ?? 0) > 0 ? { sessionId: `${CARD_SENDER_PREFIX}${card.type}`, title: dataTitle(card) ?? card.title } : undefined;
+}
+
+async function sendAs(path: string, text: string, sender?: PressSender): Promise<{ state: "done" | "failed"; text: string }> {
   const req = buildRequest(findCommand("session.send")!, { session: path, text, delivery: "followUp" });
-  const res = await deps.request(req.url, { method: req.method, headers: { "content-type": "application/json" }, body: JSON.stringify(req.body) });
+  const res = await deps.request(req.url, { method: req.method, headers: { "content-type": "application/json", ...(sender ? cardSenderHeaders(sender) : {}) }, body: JSON.stringify(req.body) });
   if (res.ok) {
     await res.body?.cancel();
     return { state: "done", text: "Sent." };
@@ -635,7 +691,7 @@ async function sendAs(path: string, text: string): Promise<{ state: "done" | "fa
 }
 
 /** A button's command, as the web app would run it: the catalogue entry's own request, answered in the route's words. */
-async function runCommand(id: string, params: Record<string, unknown>, path: string): Promise<{ state: "done" | "failed"; text: string }> {
+async function runCommand(id: string, params: Record<string, unknown>, path: string, ownerExt?: string, sender?: PressSender): Promise<{ state: "done" | "failed"; text: string }> {
   const entry = findCommand(id);
   if (!entry) return { state: "failed", text: `${id} is no Sova command.` };
   // A session param the button left out is this card's session.
@@ -647,7 +703,9 @@ async function runCommand(id: string, params: Record<string, unknown>, path: str
   } catch (err) {
     return { state: "failed", text: err instanceof Error ? err.message : String(err) };
   }
-  const res = await deps.request(req.url, { method: req.method, headers: { "content-type": "application/json", "x-sova-command": id }, ...(req.body ? { body: JSON.stringify(req.body) } : {}) });
+  // A click on an extension's card never opens a door its key can't (§app.extensions/not-you).
+  if (ownerExt && closedDoor(req.method, new URL(req.url, "http://sova").pathname)) return { state: "failed", text: `An extension's card can't run ${entry.label}. Nothing ran.` };
+  const res = await deps.request(req.url, { method: req.method, headers: { "content-type": "application/json", "x-sova-command": id, ...(sender ? cardSenderHeaders(sender) : {}) }, ...(req.body ? { body: JSON.stringify(req.body) } : {}) });
   const j = (await res.json().catch(() => null)) as { error?: unknown } | null;
   if (res.ok) return { state: "done", text: `${entry.label} done.` };
   return { state: "failed", text: typeof j?.error === "string" ? j.error : `${entry.label} failed (${res.status}).` };
@@ -661,6 +719,13 @@ function viewCardOf(rec: SessionRecord | null, id: unknown): CardInfo {
   const card = rec?.cards.find((c) => c.id === id);
   if (!rec || !card) throw new CardRefusal(`The session has no card ${id}.`, 404);
   if (card.draws !== "view") throw new CardRefusal(`${card.id} isn't a view: only a view keeps state or runs commands.`, 400);
+  const ext = rec.snapshot?.types.find((t) => t.type === card.type)?.ext;
+  if (ext) {
+    // Its view runs no command and keeps no state while it isn't what you approved.
+    const now = findExtension(ext.id);
+    if (!now) throw new CardRefusal(`${ext.title} isn't on, so this card's view can't do that.`, 409);
+    if (now.changed) throw new CardRefusal(`${ext.title} changed and is waiting for your approval.`, 409);
+  }
   return card;
 }
 
@@ -750,7 +815,9 @@ export async function runCardCommand(path: string, id: unknown, command: unknown
   } catch (err) {
     throw new CardRefusal(err instanceof Error ? err.message : String(err), 400);
   }
-  const res = await deps.request(req.url, { method: req.method, headers: { "content-type": "application/json", "x-sova-command": entry.id }, ...(req.body ? { body: JSON.stringify(req.body) } : {}) });
+  const ownerExt = ownerExtensionOf(rec!, card.type);
+  if (ownerExt && closedDoor(req.method, new URL(req.url, "http://sova").pathname)) throw new CardRefusal(`An extension's card can't run ${entry.label}. Nothing ran.`, 403);
+  const res = await deps.request(req.url, { method: req.method, headers: { "content-type": "application/json", "x-sova-command": entry.id, ...(ownerExt ? cardSenderHeaders({ ext: ownerExt }) : (s.align?.openQuestions ?? 0) > 0 ? cardSenderHeaders({ sessionId: `${CARD_SENDER_PREFIX}${card.type}`, title: dataTitle(card) ?? card.title }) : {}) }, ...(req.body ? { body: JSON.stringify(req.body) } : {}) });
   const text = await res.text();
   let body: unknown = text;
   try {
@@ -787,13 +854,22 @@ export async function sessionCardsAt(path: string): Promise<SessionCardsAnswer> 
   const s = await summaryOf(path);
   const rec = readRecord(s.id);
   const owner = rec?.root ? projectOwner(rec.root) : null;
-  // An extension no longer installed: its cards show their error box (§app.extensions/views).
-  const installed = new Set(readExtensionsWithOffers().map((e) => e.entry.id));
-  const gone = [...new Set((rec?.snapshot?.types ?? []).flatMap((t) => (t.ext && !installed.has(t.ext.id) ? [t.ext.id] : [])))];
+  // An extension no longer on the list, or on it but not active: its cards show their error box.
+  const owners = [...new Set((rec?.snapshot?.types ?? []).flatMap((t) => (t.ext ? [t.ext.id] : [])))];
+  const listed = owners.length ? (listedExtensions() ?? []) : [];
+  const standing = (id: string) => listed.find((l) => l.valid?.entry.id === id);
+  const gone = owners.filter((id) => !standing(id));
+  const off = owners.filter((id) => standing(id)?.state === "off");
+  const blocked = owners.filter((id) => {
+    const l = standing(id);
+    return !!l && !l.active && l.state !== "off";
+  });
   return {
     cards: rec?.cards ?? [],
     ...(rec?.snapshot?.drawings?.length ? { drawings: rec.snapshot.drawings.map(({ guide: _g, ...d }) => d) } : {}),
     ...(gone.length ? { gone } : {}),
+    ...(off.length ? { off } : {}),
+    ...(blocked.length ? { blocked } : {}),
     types: rec?.snapshot?.types ?? [],
     ...(rec?.states && Object.keys(rec.states).length ? { states: rec.states } : {}),
     ...(owner ? { trust: { owner, name: ownerName(owner), trusted: cardsTrusted(owner) } } : {}),
@@ -829,11 +905,21 @@ export interface OpenCard {
   id: string;
   title: string;
   at: number;
+  /** The extension whose card this is: while it isn't active, nothing can answer, so it isn't waiting. */
+  ext?: string;
+  /** Its view draws it: while its extension reads Changed, that view doesn't run, so it isn't waiting either. */
+  view?: boolean;
 }
+
+/** The extension that owns a card's type, from the session's snapshot. */
+const extOfCard = (rec: SessionRecord, c: CardInfo): string | undefined => rec.snapshot?.types.find((t) => t.type === c.type)?.ext?.id;
 
 /** Every open card waiting on an answer: answerable, open, the newest revision of its key. */
 function openOf(rec: SessionRecord): OpenCard[] {
-  return rec.cards.filter((c) => c.state === "open" && c.answerMode !== "none").map((c) => ({ id: c.id, title: dataTitle(c) ?? c.title, at: Date.parse(c.at) || 0 }));
+  return rec.cards.filter((c) => c.state === "open" && c.answerMode !== "none").map((c) => {
+    const ext = extOfCard(rec, c);
+    return { id: c.id, title: dataTitle(c) ?? c.title, at: Date.parse(c.at) || 0, ...(ext ? { ext } : {}), ...(ext && c.draws === "view" ? { view: true } : {}) };
+  });
 }
 
 const dataTitle = (c: CardInfo): string | undefined => {
@@ -861,7 +947,44 @@ export function openCardsOf(sessionId: string): OpenCard[] {
       if (rec && open.length) openIndex.open.set(rec.sessionId, open);
     }
   }
-  return openIndex.open.get(sessionId) ?? [];
+  const open = openIndex.open.get(sessionId) ?? [];
+  // Asked only when an extension's card is open: a card with no extension reads no list.
+  if (!open.some((c) => c.ext)) return open;
+  const active = new Map(readExtensionsWithOffers().map((e) => [e.entry.id, e.entry]));
+  return open.filter((c) => {
+    if (!c.ext) return true;
+    const e = active.get(c.ext);
+    return !!e && !(c.view && e.changed);
+  });
+}
+
+/** What is active changed, so what waits on an answer may have. */
+export const cardOwnersChanged = (): void => sessionsChanged();
+
+/**
+ * Remove: its open cards close, so none stays in Needs You with nothing left to
+ * answer it. Scans every record: it happens only when an extension leaves.
+ */
+export function closeCardsOfExtension(id: string): void {
+  let names: string[] = [];
+  try {
+    names = readdirSync(cardsDir());
+  } catch {
+    return;
+  }
+  for (const n of names) {
+    if (!n.endsWith(".json")) continue;
+    const rec = readRecord(n.slice(0, -5));
+    if (!rec) continue;
+    let changed = false;
+    for (const c of rec.cards) {
+      if (c.state === "open" && extOfCard(rec, c) === id) {
+        c.state = "done";
+        changed = true;
+      }
+    }
+    if (changed) saveRecord(rec);
+  }
 }
 
 // ---- the agent's guides for own drawing kinds (§chat.transcript-cards/drawing-kinds) -----------

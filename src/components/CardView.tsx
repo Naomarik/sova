@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show } from "solid-js";
 import { checkViewData } from "../../shared/card-schema";
-import { needsUpdatingText, TOOLKIT_VERSION, type CardInfo } from "../../shared/transcript-cards";
+import { needsUpdatingText, TOOLKIT_VERSION, trustAskBody, type CardInfo } from "../../shared/transcript-cards";
 import { cardDataErrorText } from "../../shared/view-cards";
 import { ApiError, getCardView, runSessionCardCommand, setCardTrust } from "../lib/api";
 import { boxFocusGuard, CARD_BOX_MESSAGE, CARD_BOX_UNSUPPORTED, CARD_SHELL_ATTRS, cardBoxSupported, cardShellDoc, cardViewDoc, fromCardBox } from "../lib/card-box";
@@ -48,7 +48,7 @@ export default function CardView(props: { card: CardInfo; ctx: CardControls }) {
   const [code, setCode] = createSignal<{ hash: string; code: string } | null>(null);
   const [drawn, setDrawn] = createSignal<number | null>(null);
   const [asked, setAsked] = createSignal<number | null>(null);
-  const [trustAsk, setTrustAsk] = createSignal<{ name: string; decide(on: boolean): void } | null>(null);
+  const [trustAsk, setTrustAsk] = createSignal<{ owner: string; name: string; decide(on: boolean): void } | null>(null);
   let shellReady = false;
 
   /** What stops the view before it is loaded: the browser, the toolkit version, the data's shape. */
@@ -131,7 +131,7 @@ export default function CardView(props: { card: CardInfo; ctx: CardControls }) {
       if (!trust || typeof trust.owner !== "string" || typeof trust.name !== "string") throw err;
       const owner = trust.owner;
       // The card asks once (§chat.transcript-cards/trust): Trust runs it, Not Now runs nothing.
-      const yes = await new Promise<boolean>((resolve) => setTrustAsk({ name: trust.name as string, decide: resolve }));
+      const yes = await new Promise<boolean>((resolve) => setTrustAsk({ owner, name: trust.name as string, decide: resolve }));
       setTrustAsk(null);
       if (!yes) throw err;
       await setCardTrust(owner, true);
@@ -219,7 +219,7 @@ export default function CardView(props: { card: CardInfo; ctx: CardControls }) {
             <Icon name="attention" class="banner-icon" />
             <div class="banner-main">
               <p class="banner-title">Let {a().name}'s cards use Sova's commands for you?</p>
-              <p class="banner-body">They can then run any Sova command, such as reading your chats, sending messages or merging, without asking again.</p>
+              <p class="banner-body">{trustAskBody(a().owner, true)}</p>
             </div>
             <div class="banner-action">
               <button type="button" class="button button-sm button-primary" onClick={() => a().decide(true)}>

@@ -396,6 +396,8 @@ the person clicks.
 | Apply of Sova's own checkout | Only the user restarts Sova. Ask them to press Apply on the Branches tab of Sova's project page. Nothing was restarted. |
 | A card's click, not from the page | Only the user answers a card. Ask them to click it in that chat. Nothing was sent. |
 | A card owner's trust | Only the user trusts a project's or an extension's cards. Ask them to press Trust {name}'s Cards on the card. Nothing was trusted. |
+| Adding or changing an extension | Only the user changes extensions. Ask them to do it in Settings → Extensions. Nothing was changed. |
+| The same, from an extension's page | An extension's page can't change extensions. Open Settings → Extensions in Sova itself. Nothing was changed. |
 | Through a mesh peer, any of the others | Only the user approves this, on the page of the computer it belongs to. Open Sova on that computer. Nothing changed. |
 
 ## §design.copy-deck/create-mode — Create (§chat/create-mode)
@@ -754,6 +756,30 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | Row error line from a chat | "In {chat}, inside its sandbox: {line}" (write-only: "In {worker}, under write-only confinement: {line}" · no sandbox: "In {chat}: {line}") |
 | Worker refused | "{chat}'s servers are {names}, so a worker can't have {name}." · on `useWorktreeConfig`: "{worker} uses its worktree's own config, so it can't have MCP servers." |
 | Profile capability | MCP Servers |
+
+## §design.copy-deck/settings-extensions — Settings · Extensions (§app.settings-dialog/extensions)
+
+| Where | Copy |
+|---|---|
+| Tab · intro | Extensions · "On this computer, for every project and chat. Install only what you trust." · Add Extension |
+| Cards note (any extension declares cards) | "New chats can use an extension's cards. Open chats keep the cards they started with. Its page, chips and commands work everywhere right away." |
+| No extensions yet | "No extensions yet. Add one by choosing its folder." |
+| Load failed (banner-error) | **Couldn't read the extension list.** Nothing was changed. {reason} |
+| Row | {title} · {folder}, with `~` for the home folder · then one state: Not Usable · Folder Not Found · Needs a Newer Sova · Waiting for You · Changed · Off · Stopped · Starting · Running · switch: `aria-label` "Turn on {title}" |
+| State lines | Not Usable: "This can't be used: {reason}." · Folder Not Found: "This folder is gone: {folder}. Its program is stopped." · Needs a Newer Sova: "This needs a newer Sova. Nothing is running." · Waiting for You: "Added or edited outside this screen. Nothing runs until you approve it." · Changed: "Changed since you approved it. It is still running the old code, and its page is off." · Stopped: "Its program exited." or "Its program isn't answering." or "Couldn't find {program}." · A program you run yourself: "You run this program yourself, so Sova doesn't start or stop it." |
+| Row buttons | Review · Start · Restart Program · View Log · Choose Folder · Remove · Restart Sova · Open Updates |
+| Choose folder | title "Choose the extension's folder" · hint "Folders on the computer Sova runs on" · found: "Found an extension: {title}" · from Choose Folder, another id (Review disabled): "This folder describes {other id}, not {id}." · a description changed to another id: "This folder now describes {other id}, not {id}." · Cancel · Review |
+| A folder that can't be used (field error, in the order of §app.extensions/folder) | "This folder has no extension description (sova-extension.json), so it can't be added." · "Its description can't be read: {reason}." · "Its description doesn't say which Sova it needs." · "This needs a newer Sova ({needs}; this one has {has})." · "Its description has a key Sova doesn't know: {key}." · "Its description can't be used: {field} {reason}." · "Its {page or program} is in {folder}, which approval doesn't check, so this can't be added. Move it to another folder." · "The name project is Sova's own, so this can't be added." · "There's already an extension named {id}, from {folder}." · "It lists commands or screens but no program to answer them." |
+| Review | title "Add {title}?" (Waiting for You and Changed: "Approve {title}?" · Choose Folder on an installed row: "Use this folder for {title}?", its button still Approve) · changed: "This extension changed, so it needs your approval again." · It runs: "{program and arguments}, on this computer, as you, with no sandbox." · Its page: "Runs on Sova's own address and can do what you can, including adding other extensions." · Its key: "Opens nearly all of Sova. Its calls are recorded under its name." · It adds: its cards · its commands · what it offers the Overseer · Rules: "Needs extension rules {needs}. This Sova has {has}." · Left out: "{what}: {why}", such as "1 of its commands: a command needs a name of lower-case letters, digits and dashes, and a label" · with a program: "If it stops while Sova isn't running, it comes back when Sova starts, not by itself at login." · "Install only what you trust." · Cancel · Install and Turn On (Waiting for You and Changed: Approve) |
+| Approve refused (it changed since you looked) | "This extension changed since you looked. Check what it asks for, then approve it again." |
+| Toast once on | "{title} is on." · with cards: "{title} is on. New chats can use its cards; open chats keep what they started with." |
+| Remove (inline confirm) | "Remove {title}? Its program stops and its key stops working. Old cards say it's no longer installed. Your folder stays." · checkbox Also delete its data · Remove · Keep |
+| Refused: not on | a view's command: "{title} isn't on, so this card's view can't do that." · starting a program: "This extension isn't on, so its program won't start." |
+| Refused: the list can't be written | "Sova can't change the list: it can't be read whole. Nothing was changed." · "Sova can't change the list: it's a link into a git checkout. Edit it there. Nothing was changed." |
+| Other computers | heading On Other Computers · row: {title} · Not Installed Here · "From {computer}" |
+| Through another computer | "These extensions are on {computer}. To change them, open Sova on that computer." |
+| Old cards | "{title} is no longer installed" · "{title} is turned off" · "{title} can't run right now. Settings → Extensions says why." · a view's card or drawing while Changed: "{title} changed and is waiting for your approval." |
+| Its page | no page: "{title} has no page of its own." · Changed: "{title} changed, so its page is off until you approve it." · Open Settings |
 
 ## §design.copy-deck/settings-mesh — Settings · Mesh (§mesh.ui/settings)
 

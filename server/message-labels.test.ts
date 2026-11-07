@@ -322,7 +322,7 @@ describe("the chain and catching up", () => {
     });
   const sent = (at: number) => sessionFile([user("m", null, "make the header smaller", at)]);
 
-  test("Jev gets the four labels and Unsorted, in the tuned n3a words, verbatim", async () => {
+  test("Jev gets the four labels and Unsorted, in the tuned n4-rule words, verbatim", async () => {
     const provider = createFakeProvider({ id: "jev", reply: answer("asking") });
     const s = sent(T0 + 1000);
     const store = freshStore();
@@ -335,9 +335,9 @@ describe("the chain and catching up", () => {
     assert.match(q.options.specifying!, /^Says WHAT the deliverable should be/);
     assert.match(q.options.directing!, /^Says HOW the agent works, with no WHAT/);
     assert.match(q.instructions, /take the first that applies\. 1\. reworking: .* 2\. specifying: .* 3\. directing: .* 4\. asking: /);
-    // The study's variant file (.cache/label-tuning/v2/variants/n3a-what-how-rules.json), its instructions and options hashed.
+    // The study's variant file (.cache/label-tuning/v4/variants/n4-rule.json), its instructions and options hashed.
     const hash = createHash("sha256").update(JSON.stringify({ instructions: q.instructions, options: q.options })).digest("hex");
-    assert.equal(hash, "2c14e63618e11da68ae1dd03292af0592ea17352a2907cc95f4b34e2a4eb924b", "n3a's words, not a paraphrase");
+    assert.equal(hash, "196f24e49ec4b5524e4ccd2a334c5f122c1ef747a71f483e068c1b5cd13cb30d", "n4-rule's words, not a paraphrase");
   });
 
   test("a top choice of Unsorted is stored as its most likely real label; Unsorted only with no real label at all", async () => {

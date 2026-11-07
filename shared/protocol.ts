@@ -4746,8 +4746,9 @@ export interface DecisionSettings {
       nothing is ever picked for the user. */
   fallback: WorkerChoice | null;
   /** `reconcile`: compare a project's recorded decisions (§app.requirements/reconciler); absent =
-      RECONCILE_DEFAULT (shared/decisions.ts). */
-  features: { attention: boolean; tags: boolean; reconcile?: boolean };
+      RECONCILE_DEFAULT (shared/decisions.ts). `messageLabels`: label each message the user types
+      (§app.subagents-pane/time-spent-messages); absent = off. */
+  features: { attention: boolean; tags: boolean; reconcile?: boolean; messageLabels?: boolean };
   /** Absolute cwd prefixes (a leading `~/` is allowed) whose sessions are never sent. */
   exclusions: string[];
   /** Never send terminal sessions: open in a TUI now, or started outside Sova (origin "external")

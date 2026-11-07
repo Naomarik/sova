@@ -14,6 +14,7 @@ import type { LinkedAgentInfo } from "../shared/mesh-links";
 import { isLinkMessage, parseLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
+import { recordPress, recordProgram } from "./message-labels";
 import { inputSourceOf, type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
 import { decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
@@ -1052,7 +1053,15 @@ type Sender = { kind: "overseer"; overseerId?: string } | { kind: "baton"; by: s
     message may still be in the SDK's queue). `sender` null: a queue item with no sender, marked only
     to keep its place, so a later item with the same text (several are in pi at once when steers land
     together) never takes this one's message: marks match in hand-off order, first in, first out. */
-type SenderMark = { text: string; sender: Sender | null; itemId?: string; held?: boolean };
+type SenderMark = {
+  text: string;
+  sender: Sender | null;
+  itemId?: string;
+  held?: boolean;
+  pressedAt?: number;
+  /** No person sent it, whatever its row looks like: Time Spent neither labels nor counts it (§app.message-labels/labelling). */
+  program?: boolean;
+};
 
 /** `customType` of the invisible marker beside a delivered topic batch (§chat.topics/delivery). */
 export const TOPIC_DELIVERED_ENTRY = "sova-topic-delivered";
@@ -1499,7 +1508,7 @@ class ChatSession {
     // until the message ends (markSend) or the item departs undelivered (onGone). An item with no
     // sender gets a place-keeping mark: marks match first in, first out (SenderMark).
     const sender = senderOfItem(item);
-    const mark: SenderMark = { text: item.text, sender, itemId: item.id, held: true };
+    const mark: SenderMark = { text: item.text, sender, itemId: item.id, held: true, ...(item.pressedAt !== undefined ? { pressedAt: item.pressedAt } : {}), ...(source === "queued" || item.notUser ? { program: true } : {}) };
     this.senderMarks.push(mark);
     if (sender?.kind === "session") this.profileState?.run?.expectHop(item.text, sender.hop);
     if (!streaming) {
@@ -1574,6 +1583,7 @@ class ChatSession {
       byPerson?: WebQueueItem["byPerson"];
       notUser?: WebQueueItem["notUser"];
       key?: string;
+      pressedAt?: number;
     },
   ): boolean {
     if (!isCompactionInProgress(err) || this.disposed) return false;
@@ -1592,6 +1602,7 @@ class ChatSession {
       ...(item.byPerson ? { byPerson: true as const } : {}),
       ...(item.notUser ? { notUser: true as const } : {}),
       ...(item.key !== undefined ? { key: item.key } : {}),
+      ...(item.pressedAt !== undefined ? { pressedAt: item.pressedAt } : {}),
     });
     return true;
   }
@@ -3113,10 +3124,11 @@ class ChatSession {
         : opts?.sentBySession
           ? { kind: "session", ...opts.sentBySession }
           : null;
-    const send: SenderMark | null = sender ? { text, sender } : null;
+    const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
+    const program = source === "queued" || !!opts?.notUser;
+    const send: SenderMark | null = sender || program ? { text, sender, ...(program ? { program } : {}) } : null;
     if (send) this.senderMarks.push(send);
     if (opts?.sentBySession) this.profileState?.run?.expectHop(text, opts.sentBySession.hop);
-    const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
     const turn = this.sendKeys.run(key, () => this.toSdk(opts?.notUser ? "server" : origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm, !!opts?.sentByOverseer));
     this.noteStarting(turn);
     // Whoever sent it: a `/mode …` that reaches the extension (strict, a minor mode) is read back, so the menu never lags.
@@ -3173,6 +3185,8 @@ class ChatSession {
     const i = this.senderMarks.findIndex((s) => s.text === text);
     if (i < 0) return;
     const [send] = this.senderMarks.splice(i, 1);
+    const { pressedAt, program } = send!;
+    if (pressedAt !== undefined || program) queueMicrotask(() => this.noteEntered(pressedAt, !!program));
     const sender = send!.sender;
     if (!sender) return; // a place-keeping mark: this message has no sender
     queueMicrotask(() => {
@@ -3188,6 +3202,15 @@ class ChatSession {
         if (items.length) this.broadcast({ type: "append", items });
       }
     });
+  }
+
+  /** What Time Spent needs of the message that just entered, beside the session: when a person's was pressed, or that no person sent it. */
+  private noteEntered(pressedAt: number | undefined, program: boolean): void {
+    const leaf = this.harness.leafId();
+    const entry = leaf ? this.harness.entry(leaf) : undefined;
+    if (entry?.kind !== "user" || !entry.id) return;
+    if (program) recordProgram(this.path, entry.id);
+    else if (pressedAt !== undefined) recordPress(this.path, entry.id, pressedAt);
   }
 
   /**
@@ -3258,6 +3281,8 @@ class ChatSession {
       const marks = this.senderMarks.filter((m) => m.itemId === item.id);
       for (const m of marks) this.dropSenderMark(m);
       const id = this.harness.appendUserMessage(item.text, item.images);
+      if (inputSourceOf(item) === "queued" || item.notUser) recordProgram(this.path, id);
+      else if (item.pressedAt !== undefined) recordPress(this.path, id, item.pressedAt);
       const sender = senderOfItem(item);
       const markerId = sender ? appendSenderMarker(this.harness.state, id, sender) : null;
       const items = [id, markerId].flatMap((eid) => {

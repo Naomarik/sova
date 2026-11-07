@@ -121,6 +121,9 @@ export interface WebQueueItem {
   /** The key it was sent under (a worker's steer or follow-up): kept to its hand-off, where the message the
       SDK builds from it is labelled with it (server/send-keys.ts, §app.chat-processes/worker-instructions). */
   key?: string;
+  /** When it was taken from its sender, this server's clock. What it waits for is not the user's time: Time Spent
+      counts to here, not to the hand-off the message's own timestamp records (§app.message-labels/labelling). */
+  pressedAt?: number;
 }
 
 /**
@@ -359,6 +362,7 @@ export class WebQueue {
     notUser?: true;
     confirm?: WebQueueItem["confirm"];
     key?: string;
+    pressedAt?: number;
   }): string {
     const item: WebQueueItem = {
       id: input.id || randomUUID(),
@@ -375,6 +379,8 @@ export class WebQueue {
       ...(input.confirm ? { confirm: input.confirm } : {}),
       ...(input.key !== undefined ? { key: input.key } : {}),
     };
+    // A person's own: nothing else counts toward Time Spent (§app.message-labels/labelling).
+    if (inputSourceOf(item) === "user") item.pressedAt = input.pressedAt ?? Date.now();
     this.held.push(item);
     this.deps.onChange(this.snapshot());
     void this.pump();

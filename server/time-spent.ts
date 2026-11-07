@@ -36,11 +36,15 @@ interface Claim {
 }
 
 /** One line of a session's file. */
-interface Line {
+interface Line extends TimeSpentRun {
+  d?: readonly string[];
+}
+
+/** Counted seconds [s, e) on this computer's clock, and what they were spent on. */
+export interface TimeSpentRun {
   s: number;
   e: number;
   r: TimeSpentRow;
-  d?: readonly string[];
 }
 
 export interface TimeSpentSums {
@@ -124,15 +128,37 @@ export class TimeSpentStore {
   /** The record's sums. A line that can't be read (a torn write) counts for nothing. */
   sums(session: string): TimeSpentSums {
     const out: TimeSpentSums = { you: 0, rows: {}, docs: new Map() };
-    if (!safeId(session)) return out;
+    const { runs, firstShown } = this.replay(session);
+    for (const r of runs) {
+      const sec = r.e - r.s;
+      out.you += sec;
+      out.rows[r.r] = (out.rows[r.r] ?? 0) + sec;
+      for (const d of r.d ?? []) {
+        const doc = out.docs.get(d) ?? { onScreen: 0, firstShownAt: firstShown.get(d)! };
+        doc.onScreen += sec;
+        out.docs.set(d, doc);
+      }
+    }
+    for (const [d, at] of firstShown) if (!out.docs.has(d)) out.docs.set(d, { onScreen: 0, firstShownAt: at });
+    return out;
+  }
+
+  /** The counted seconds as runs on this computer's clock, what `sums` adds up: they add up to its `you`. */
+  runs(session: string): readonly TimeSpentRun[] {
+    return this.replay(session).runs;
+  }
+
+  /** The file replayed: its runs after every take-back, and each document's first moment on screen. */
+  private replay(session: string): { runs: Line[]; firstShown: Map<string, number> } {
+    const runs: Line[] = [];
+    const firstShown = new Map<string, number>();
+    if (!safeId(session)) return { runs, firstShown };
     let text: string;
     try {
       text = readFileSync(this.file(session), "utf8");
     } catch {
-      return out;
+      return { runs, firstShown };
     }
-    const runs: Line[] = [];
-    const firstShown = new Map<string, number>();
     for (const raw of text.split("\n")) {
       if (!raw) continue;
       let l: any;
@@ -150,18 +176,7 @@ export class TimeSpentStore {
       // A moment later lost to another page was still on screen: first shown stays.
       for (const d of l.d ?? []) if (!firstShown.has(d)) firstShown.set(d, l.s * 1000);
     }
-    for (const r of runs) {
-      const sec = r.e - r.s;
-      out.you += sec;
-      out.rows[r.r] = (out.rows[r.r] ?? 0) + sec;
-      for (const d of r.d ?? []) {
-        const doc = out.docs.get(d) ?? { onScreen: 0, firstShownAt: firstShown.get(d)! };
-        doc.onScreen += sec;
-        out.docs.set(d, doc);
-      }
-    }
-    for (const [d, at] of firstShown) if (!out.docs.has(d)) out.docs.set(d, { onScreen: 0, firstShownAt: at });
-    return out;
+    return { runs, firstShown };
   }
 
   /** The session is gone: its record goes with it, and the clock forgets it held any moment. */

@@ -2581,6 +2581,19 @@ export interface ShellRowInfo extends ShellOutcome {
   private?: true;
 }
 
+/** GET /api/sessions/shell-output?path=<session>&entry=<the command's row id>&from=<byte offset, default 0>
+    (§chat.shell-mode/card): one page of a finished command's WHOLE output, at most about 1 MB, starting at
+    byte `from` of its full-output file (or of its saved output when it was never cut). `next`: where the
+    next page starts, null at the end; `bytes`: the whole output's size. Read as the transcript is (any
+    computer granted Sessions). 404 `{ error, code }`: `no-command` (no such command row in the chat) or
+    `gone` (the file was deleted, which archiving its chat does). 400 a bad path or `from`. */
+export interface ShellOutputPage {
+  output: string;
+  from: number;
+  next: number | null;
+  bytes: number;
+}
+
 /** At most this many characters of a running command's output are kept live, the newest (the hello's
     `shell[].output` and what a client keeps from `shell_output` deltas). The saved output is the harness's. */
 export const SHELL_LIVE_MAX = 100_000;

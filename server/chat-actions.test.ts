@@ -23,7 +23,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const { setChatRouter, BusyError } = await import("./chat-handle");
 type ChatHandle = import("./chat-handle").ChatHandle;
 type ChatClient = import("./chat-handle").ChatClient;
-const { runAction, mountChatActions, parseAction, OPEN_CAP_MS } = await import("./chat-actions");
+const { beforeChat, runAction, mountChatActions, parseAction, OPEN_CAP_MS } = await import("./chat-actions");
 type ActionDeps = import("./chat-actions").ActionDeps;
 const { recordFrame, deliverFrames, postedFrames } = await import("./ws");
 const { canonicalPath } = await import("./paths");
@@ -362,7 +362,7 @@ test("an action stamps no seen mark; /api/chat/frames' path still does", async (
 
 test("a command from shell mode is no action, and a page's handed-over frames never carry one to its chat", async () => {
   assert.ok("error" in parseAction({ type: "shell", command: "ls", clientId: "c1" }), "no in-chat action runs a command");
-  assert.ok("error" in parseAction({ type: "shell_stop", id: "sh_1" }));
+  assert.ok("error" in parseAction({ type: "shell_stop" }), "Stop Command names its run");
   const shell = { type: "shell", command: "rm -rf x", clientId: "c1" } as ChatClientMessage;
   assert.deepEqual(postedFrames({ frames: [shell, { type: "abort" }, { type: "shell_stop", id: "sh_1" }] }), [{ type: "abort" }]);
   assert.deepEqual(postedFrames({ frames: [shell] }), [], "only commands: nothing to deliver");
@@ -371,4 +371,40 @@ test("a command from shell mode is no action, and a page's handed-over frames ne
   await flush();
   await flush();
   assert.deepEqual(chat.got.map((m) => m.type), ["abort"], "the chat got the stop, never the command");
+});
+
+/** A hello whose `shell` holds a running command `sh_1` and a running `!!` one `sh_2`. */
+const withCommands = () =>
+  hello({ shell: [
+    { id: "sh_1", command: "npm run dev", output: "", state: "running", startedAt: 5 },
+    { id: "sh_2", command: "cat .env", private: true, output: "", state: "running", startedAt: 6 },
+    { id: "sh_3", command: "ls", output: "x", state: "ended", startedAt: 1 },
+  ] });
+
+test("List Commands: the running commands, a !! one without its text; a chat that isn't open has none (§chat.shell-mode/running)", async () => {
+  const [path] = session();
+  chat.onAttach = (c) => c.send(withCommands());
+  held.add(path);
+  const r = await runAction(path, { type: "shell_list" }, 1000);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.commands, [{ id: "sh_1", command: "npm run dev", startedAt: 5 }, { id: "sh_2", private: true, startedAt: 6 }]);
+  assert.deepEqual(chat.got, [], "listing sends the chat nothing");
+  const [cold] = session();
+  assert.deepEqual(await beforeChat(cold, { type: "shell_list" }), { status: 200, body: { outcome: "listed", commands: [] } });
+});
+
+test("Stop Command: its one frame reaches the chat from a script's socket, and the answer is that run's end; another run, or none, sends nothing", async () => {
+  const [path] = session();
+  chat.onAttach = (c) => c.send(withCommands());
+  chat.onMessage = (c, m) => {
+    if (m.type === "shell_stop") c.send({ type: "shell_end", id: (m as { id: string }).id, output: "", cancelled: true, cancelReason: "user" } as ChatServerMessage);
+  };
+  held.add(path);
+  const r = await runAction(path, { type: "shell_stop", id: "sh_2" }, 1000);
+  assert.deepEqual([r.status, r.body.outcome, r.body.cancelReason], [200, "stopped", "user"]);
+  assert.deepEqual(chat.got.map((m) => [m.type, (m as { id?: string }).id]), [["shell_stop", "sh_2"]], "the stop went through the script's socket");
+  chat.got = [];
+  const ended = await runAction(path, { type: "shell_stop", id: "sh_3" }, 1000);
+  assert.deepEqual([ended.status, ended.body.outcome], [200, "not-running"], "an ended run isn't stopped");
+  assert.deepEqual(chat.got, []);
 });

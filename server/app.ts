@@ -63,6 +63,7 @@ import { setFavorite } from "./model-favorites";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
 import { draftForClient, isDraftMode, putBackDraft, setDraft } from "./drafts";
+import { shellOutputPage } from "./shell-output";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
 import { getAgentsInsight, getHiddenWorkers, getMemberInbox, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
@@ -862,6 +863,20 @@ export function buildApp(deps: AppDeps) {
     // Invalid entries are dropped by the store rather than failing the whole write.
     setDraft(idOf(path), body.text, body.attachments, mode);
     return c.json({ ok: true });
+  });
+
+  // A finished command's whole output, a page at a time (server/shell-output.ts, §chat.shell-mode/card).
+  app.get("/api/sessions/shell-output", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const entry = c.req.query("entry");
+    if (!entry) return c.json({ error: "Missing ?entry= (the command's row id)" }, 400);
+    const from = Number(c.req.query("from") ?? 0);
+    if (!Number.isSafeInteger(from) || from < 0) return c.json({ error: "from must be a byte offset, 0 or more" }, 400);
+    const r = await shellOutputPage(path, entry, from);
+    if (r.status !== 200) return c.json({ error: r.error, code: r.code }, r.status);
+    return c.json(r.body, 200, { "Cache-Control": "no-store" });
   });
 
   app.get("/api/cwds", async (c) => c.json(await listCwds()));

@@ -84,6 +84,8 @@ interface ChatSocketOpts {
   refused?: string;
   /** Who this socket is when it isn't the operator's page; only a socket the main listener judged leaves it null. */
   notPage?: NotPage | null;
+  /** The Stop Command entry's recording socket: its one `shell_stop` goes through, whoever asked. */
+  stopsCommand?: boolean;
 }
 
 async function handleChat(ws: WebSocket, path: string, force: boolean, ask: TailAsk, wire: WireVersion, have?: string, opts: ChatSocketOpts = {}): Promise<void> {
@@ -98,7 +100,8 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     // A command from shell mode is typed at a message box: the page's here, or a page on another computer through a
     // peer (§chat.shell-mode/who). A script's, a chat's, an extension's or the Overseer's socket runs none and stops
     // none: `shell` hears why, so nothing waits on it; `shell_stop` has no answer of its own and does nothing.
-    if (who !== null && who !== "local" && (msg.type === "shell" || msg.type === "shell_stop")) {
+    // Stop Command's entry (chat.shell.stop, server/chat-actions.ts) is the one exception: it only stops.
+    if (who !== null && who !== "local" && (msg.type === "shell" || (msg.type === "shell_stop" && !opts.stopsCommand))) {
       if (msg.type === "shell") client.send({ type: "shell_refused", clientId: String(msg.clientId ?? ""), reason: "unavailable", message: SHELL_NOT_PAGE_TEXT });
       return;
     }
@@ -371,7 +374,7 @@ export function recordFrame(path: string, frame: ChatClientMessage, onFrame: (ms
     },
   });
   const ws = rec as unknown as WebSocket;
-  handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2, undefined, { viewer: false, notPage }).catch((err) => {
+  handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2, undefined, { viewer: false, notPage, ...(frame.type === "shell_stop" ? { stopsCommand: true } : {}) }).catch((err) => {
     console.error("[chat/action]", err);
     rec.close();
   });

@@ -1,4 +1,5 @@
 import { PROFILE_ENTRY, type ProfileEntryData } from "../shared/profiles";
+import { removeOutputFiles } from "./shell-output";
 import { keptLabels, redactPreviewLinks, redactPreviewLinksDeep } from "./preview-kept";
 import { profileField, profileOnBranch } from "./session-profile";
 import { type Dirent, statSync } from "node:fs";
@@ -1719,6 +1720,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
 export async function markArchived(id: string, path: string): Promise<void> {
   setArchived(id, true);
   await closeChat(path, "Session archived; its runtime was closed.", { quiet: "archived" });
+  await removeOutputFiles(path);
   sessionArchived(id);
 }
 

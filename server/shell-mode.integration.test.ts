@@ -148,6 +148,37 @@ test("archiving a chat stops its running command and saves it as stopped when th
   a.close();
 });
 
+test("a cut command's whole output reads back in pages; archiving deletes its file, and then it's gone (§chat.shell-mode/card, /lifecycle)", async () => {
+  const ses = await newSession();
+  const a = await chatSocket(ses);
+  // 30,000 lines: past pi's 2,000-line cut, so the whole output is in its own file.
+  a.send({ type: "shell", command: "seq 1 30000", clientId: "s1" });
+  const start = await a.find("the command's start", (f) => f.type === "shell_start");
+  const saved = await a.find("the run saved", (f) => f.type === "shell_saved" && f.id === start.run.id);
+  const [entry] = bashEntries(ses);
+  assert.equal(entry.message.truncated, true);
+  const file = entry.message.fullOutputPath as string;
+  assert.ok(existsSync(file));
+  const page = (await api("GET", `/api/sessions/shell-output?path=${encodeURIComponent(ses.path)}&entry=${saved.entryId}`)).body;
+  const whole = Array.from({ length: 30000 }, (_, i) => `${i + 1}\n`).join("");
+  assert.deepEqual([page.output, page.next, page.bytes], [whole, null, whole.length], "every line, from the first");
+  // List Commands and Stop Command from a script: a running one listed and stopped, the chat freed.
+  a.send({ type: "shell", command: "sleep 60", clientId: "s2" });
+  const held = await a.find("the second's start", (f) => f.type === "shell_start" && f.clientId === "s2");
+  const listed = await api("POST", `/api/chat/action?path=${encodeURIComponent(ses.path)}`, { type: "shell_list" });
+  assert.deepEqual(listed.body.commands.map((c: any) => [c.id, c.command]), [[held.run.id, "sleep 60"]]);
+  const stopped = await api("POST", `/api/chat/action?path=${encodeURIComponent(ses.path)}`, { type: "shell_stop", id: held.run.id });
+  assert.deepEqual([stopped.status, stopped.body.outcome, stopped.body.cancelReason], [200, "stopped", "user"]);
+  await a.find("the stopped one saved", (f) => f.type === "shell_saved" && f.id === held.run.id);
+  const r = await api("POST", "/api/sessions/archive", { path: ses.path, archived: true });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(existsSync(file), false, "archiving deleted the full output");
+  await api("POST", "/api/sessions/archive", { path: ses.path, archived: false });
+  const gone = await api("GET", `/api/sessions/shell-output?path=${encodeURIComponent(ses.path)}&entry=${saved.entryId}`);
+  assert.deepEqual([gone.status, gone.body.code], [404, "gone"]);
+  a.close();
+});
+
 test("the hello says which chats have shell mode: an ordinary chat does, the Overseer doesn't and refuses a command (§chat.shell-mode/box)", async () => {
   const ses = await newSession();
   const a = await chatSocket(ses);

@@ -132,11 +132,16 @@ When a rule changes, change its test in the same change; a rule without a test i
   and the Overseer's `sova_answer_dialog` records who chose; `POST /api/chat/action` refuses
   `ui_response` with a 400. (Stop, Compact, Rewind, Regenerate, Remove and Reload Now are `chat.*`
   entries now, above.)
-- Running a command from shell mode (`!`/`!!` in a chat's message box, §chat.shell-mode/who): the `shell` and
-  `shell_stop` frames go only over a live `/ws/chat` socket. `POST /api/chat/action` refuses both with a 400,
-  `POST /api/chat/frames` drops them (`postedFrames`/`deliverFrames`, `server/ws.ts`), and no route, entry or
-  `session.send` text runs one: the server never reads a leading `!` in text. One chat can't make another run
-  a command as the user; a person at the composer does.
+- Running a command from shell mode (`!`/`!!` in a chat's message box, §chat.shell-mode/who): the `shell` frame
+  goes only over a live `/ws/chat` socket. `POST /api/chat/action` refuses it with a 400, `POST /api/chat/frames`
+  drops it and `shell_stop` (`postedFrames`/`deliverFrames`, `server/ws.ts`), and no route, entry or
+  `session.send` text runs one: the server never reads a leading `!` in text, and a draft saved from anywhere
+  but the page is a message. One chat can't make another run a command as the user; a person at the composer
+  does. Seeing and stopping them are entries (the user's decision): `chat.shell.list` and `chat.shell.stop`
+  (`shell_list`/`shell_stop` on `POST /api/chat/action`, the Stop Command entry's own socket the one non-page
+  socket whose `shell_stop` goes through), so the Overseer or a script can free a chat a forgotten command
+  holds; and `session.shell.output` reads a finished command's whole output. A `!!` command's text stays out
+  of the list.
 - Anything at a door the operator keeps closed: the peer listener's routes, `/api/auth/*`, the
   share pages, `/ext/*` (an extension's own actions are `ext.*`, reached through the proxy).
 - Settings writes that grant power, trust or reach, or that show a secret: autonomy and permits,

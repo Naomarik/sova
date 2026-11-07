@@ -70,9 +70,10 @@ routes, all on Claude Code:
 
 ## Teams
 
-Besides single workers, the agent can start a **team**, in any major mode. It starts one when
-you ask for a team, or when parts of the work depend on each other: they change the same files or
-interfaces at the same time, or one worker builds while another checks. Otherwise it uses single
+Besides single workers, the agent can start a **team**, in any major mode. It splits work into
+parts and starts what can run at once. It starts a team when you ask for one, or when parts change
+the same files or interfaces, stack on each other, feed each other findings, or have a checker
+sending findings straight to builders. Focused jobs that don't depend on each other go to single
 workers.
 
 From the chat's subagent profile, a new team can get two standing members:

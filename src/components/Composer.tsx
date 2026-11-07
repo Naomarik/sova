@@ -3,7 +3,7 @@ import { releaseControl } from "../lib/release-control";
 import type { ChatClaudeLogin, SlashCommand, UploadResult } from "../../shared/protocol";
 import { avatarLogins, composerLogin } from "../lib/claude-login";
 import { runControls, stopButton } from "../lib/compact";
-import { aheadOfDraft, composerKey, createEscTimes, createTouchMode, enterSends, notePress as pressAt, refocusAfterSend, type SendPress } from "../lib/input-mode";
+import { aheadOfDraft, composerKey, createEscTimes, createTouchMode, enterSends, notePress as pressAt, refocusAfterSend, toEnd, type SendPress } from "../lib/input-mode";
 import { watchKeyboard } from "../lib/voice/keyboard";
 import { enterRunsLocal, insertCommand, localCommand, menuCommands, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
@@ -784,17 +784,23 @@ export function Composer(props: {
     input.style.height = `${input.scrollHeight}px`;
   };
   createEffect(on(text, () => queueMicrotask(grow)));
+  /** Text came back to the box: set it, then, once the box has grown (grow is a microtask) and
+      before the frame paints, show the caret at its end. */
+  const comeBack = (v: string) => {
+    setDraft(v);
+    requestAnimationFrame(() => !disposed && toEnd(input));
+  };
   createEffect(
     on(
       () => props.restored,
-      (r) => r?.text && setDraft(aheadOfDraft(r.text, text())),
+      (r) => r?.text && comeBack(aheadOfDraft(r.text, text())),
       { defer: true },
     ),
   );
   createEffect(
     on(
       () => props.staged,
-      (r) => r?.text && setDraft([text(), r.text].filter((t) => t.trim()).join("\n\n")),
+      (r) => r?.text && comeBack([text(), r.text].filter((t) => t.trim()).join("\n\n")),
       { defer: true },
     ),
   );

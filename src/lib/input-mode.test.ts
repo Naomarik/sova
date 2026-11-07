@@ -12,6 +12,7 @@ import {
   escTooSoon,
   notePress,
   refocusAfterSend,
+  toEnd,
   type ComposerKey,
   type ComposerKeyState,
   type EscKey,
@@ -351,4 +352,14 @@ test("the tracker listens in the capture phase, so it reads a press before a han
   const page = { addEventListener: (t: string, _f: unknown, c: boolean) => added.push([t, c]), removeEventListener() {} } as unknown as EventTarget;
   createPressTracker(() => ({ touch: false, focused: false, keyboardUp: false }), page);
   assert.deepEqual(added, [["pointerdown", true], ["keydown", true]]);
+});
+
+test("text that comes back leaves the caret after what was typed, scrolled into view", () => {
+  // A 2,100-character return above a typed line, in a box 336 px tall: as the browser leaves it.
+  const value = aheadOfDraft("x".repeat(2100), "my words");
+  const calls: Array<[number, number]> = [];
+  const box = { value, scrollTop: 0, scrollHeight: 2109, setSelectionRange: (a: number, b: number) => void calls.push([a, b]) };
+  toEnd(box);
+  assert.deepEqual(calls, [[value.length, value.length]], "the caret at the end, after the typed words");
+  assert.equal(box.scrollTop, 2109, "scrolled to the bottom, where the caret is");
 });

@@ -144,6 +144,20 @@ export function aheadOfDraft(returned: string, draft: string): string {
   return [returned, draft].filter((t) => t.trim()).join("\n\n");
 }
 
+/** The parts of a textarea toEnd moves. */
+export type Box = { value: string; scrollTop: number; readonly scrollHeight: number; setSelectionRange(start: number, end: number): void };
+
+/**
+ * After text comes back to the box (aheadOfDraft, or a staged text below the draft): the caret at
+ * the end, after what was typed, and the box scrolled down to it, so a long return never leaves the
+ * typed words and the caret out of sight. Setting the caret alone doesn't reliably scroll.
+ */
+export function toEnd(box: Box): void {
+  const end = box.value.length;
+  box.setSelectionRange(end, end);
+  box.scrollTop = box.scrollHeight;
+}
+
 /**
  * Touch mode for one composer: how its textarea was last pressed. A tap turns it on, a mouse or
  * pen press turns it off, and keyboard or programmatic focus leaves it. Starts off.

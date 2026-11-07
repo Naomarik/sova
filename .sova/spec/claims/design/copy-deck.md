@@ -577,6 +577,15 @@ the person clicks.
 | Pane's session-insight fetch failed (banner-warn) | **Couldn't load this session's subagents.** {message} Your workers keep running. We'll retry on our own. |
 | Transcript socket and load errors | the §app/subagents-pane state table: Live-watch and Connection copy above, and Main pane's transcript load error |
 
+## §design.copy-deck/time-spent — Time Spent section (§app.subagents-pane/time-spent)
+
+| Where | Copy |
+|---|---|
+| Head | heading: Time Spent · figures: You · Agent · word: Counting · Paused · Not Recording |
+| Durations | whole seconds: `1h 12m 08s` · `14m 08s` · `8s` |
+| Breakdown | no heading · rows: Reading (opens to Main Thread · Alignments · Workers) · Typing · Dictating · Scrolling · Reviewing Changes · Reviewing Screenshots · Viewing Tours · Other |
+| Alignments | heading: Alignments · line: {title} · `{t}` on screen · `{t}` to read · `{t}` from first shown to decided (left out when it has none) |
+
 ## §design.copy-deck/context-tab — Context tab (§app.subagents-pane/context-tab)
 
 | Where | Copy |
@@ -594,7 +603,6 @@ the person clicks.
 | Sheet | breadcrumb (accessible name Breadcrumb): Context › `{group}` › `{part}`, the current step not a button · Back (an arrow button, accessible name Back) · title: the row's name · size `≈{n}` · subtitle: the full path (a file, a skill) or the group's name · Source · Copy |
 | Sheet notes | a file not yet loaded: Not counted yet. It loads the first time the agent reads, edits or writes a file in `{folder}`. · a skill: Its size counts only what the model is offered: name and description. The full SKILL.md loads when the agent reads it, then counts under Conversation. · a failed read (toast): Couldn't open that file. `{reason}` |
 | States | Reading this chat's context. · This chat runs on another machine, so its context can't be read here. · Couldn't read this chat's context. `{reason}` |
-| Session tab | after the Context sentence: See what fills it |
 
 ## §design.copy-deck/cost-breakdown — Where a model's cost went (§app.insights/cost-history, §app.subagents-pane/tabs)
 

@@ -119,6 +119,7 @@ describe("who may ask, relay, start fresh and clear", () => {
     try {
       const asks = new Map<string, { id: string; question: string; at: string; askedIn: { session: string; path: string } }>();
       const answered: string[] = [];
+      const bys: unknown[] = [];
       const call = merger({
         queues: k.queues,
         served: { isListed: () => true, served: async () => true, bareView: async () => ({}) as never },
@@ -130,7 +131,7 @@ describe("who may ask, relay, start fresh and clear", () => {
           return a;
         },
         askOf: (_root, id) => asks.get(id),
-        threadAnswer: async (_root, id, text) => (answered.push(`${id}:${text}`), { ...asks.get(id)!, answered: { at: "now", by: "chat" as const } }),
+        threadAnswer: async (_root, id, text, by) => (answered.push(`${id}:${text}`), bys.push(by), { ...asks.get(id)!, answered: { at: "now", by: "chat" as const } }),
         threadFresh: async () => true,
         clearChats: async () => 2,
       });
@@ -148,6 +149,18 @@ describe("who may ask, relay, start fresh and clear", () => {
       assert.equal(right.ok, true, JSON.stringify(right));
       assert.equal((await call("merge.reply", { project, ask: "ak_1", text: "typed on the tab" }, op)).ok, true);
       assert.deepEqual(answered, ["ak_1:the home lab's names", "ak_1:typed on the tab"]);
+      assert.deepEqual(bys, [{ kind: "chat", session: "owner-1" }, { kind: "operator" }]);
+      // The chat asked in relays from its own script too (the operator's route, its key naming it): as that chat,
+      // never as the tab. Another chat's script, an unattributed one, or a card's command never relays.
+      const script = (chat?: string): Caller => ({ kind: "operator", fromChat: true, ...(chat ? { chat } : {}) });
+      for (const [name, who] of [["another chat's script", script("someone")], ["the thread's script", script("thread-1")], ["an unattributed script", script()], ["a card's command", { kind: "operator", fromCard: true } as Caller]] as const) {
+        const r = await call("merge.reply", { project, ask: "ak_1", text: "x" }, who);
+        assert.equal(r.error?.code, "forbidden", `${name}: ${JSON.stringify(r.error)}`);
+      }
+      assert.equal(answered.length, 2, "none of them reached the thread");
+      const relayed = await call("merge.reply", { project, ask: "ak_1", text: "from the chat's script" }, script("owner-1"));
+      assert.equal(relayed.ok, true, JSON.stringify(relayed.error));
+      assert.deepEqual(bys.at(-1), { kind: "chat", session: "owner-1" });
       for (const verb of ["merge.fresh", "merge.clear"]) {
         for (const who of ["thread-1", "owner-1"]) assert.equal((await call(verb, { project, chat: "all" }, as(who))).ok, false, `${who} can't ${verb}`);
         assert.equal((await call(verb, { project, chat: "all" }, op)).ok, true, `the operator may ${verb}`);

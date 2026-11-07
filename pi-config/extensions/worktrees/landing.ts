@@ -176,6 +176,8 @@ export const SENT_MARKERS: Readonly<Record<string, string>> = {
 	"sova-overseer-sent": "the Overseer",
 	"sova-baton-sent": "a baton participant",
 	"sova-session-sent": "another session",
+	// Beside every batch of notes a chat queue (topic) delivers, the merge queue's requests included.
+	"sova-topic-delivered": "a chat queue",
 };
 
 /**
@@ -200,8 +202,9 @@ export function newestUserMessage(branch: readonly unknown[]): { text: string; s
 }
 
 /** Sova's own messages and other sessions' arrive as user messages too: none of them is the user's typed word (the
- *  merge queue's wakes start "[merge-queue]", an Overseer's brief "[overseer-brief]"). */
-const NOT_TYPED = /^\s*(?:sova:|\[from session |\[schedule |\[merge-queue\]|\[overseer-brief\]|go ahead: land )/i;
+ *  merge queue's wakes start "[merge-queue]", an Overseer's brief "[overseer-brief]", a chat queue's notes "[topic "
+ *  whatever the queue's name or kind, the merge queue's requests among them). By the tag's start, never its sentence. */
+const NOT_TYPED = /^\s*(?:sova:|\[from session |\[schedule |\[topic\s|\[merge-queue\b|\[overseer-brief\]|go ahead: land )/i;
 /** Before the verb: words that make it a question, a condition or a refusal rather than the word to land now. */
 const NOT_NOW = /\b(?:don'?t|dont|do not|never|not|no|should|shall|why|what|how|whether|when|once|after|before|until|if|wait|hold)\b/;
 

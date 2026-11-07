@@ -212,6 +212,16 @@ function result(verb: AnyVerb, root: string | null, ok: boolean, changed: boolea
 /** merge.setup's refusal to every caller but the user's own page: a chat proposes its setup on a branch instead. */
 export const SETUP_IS_THE_USERS = "only the user saves the checks, from their own page: a chat proposes the setup on its branch and runs a trial with merge.try";
 
+/** The operator's route called by a process a chat runs (its `x-sova-caller` key): never the user's act, whatever it
+    asks (§app.access/your-click). Land, the answers, Remove from Queue and Cancel come only from the user's own click in
+    Sova's page or their own word in the branch's chat (typed "land it", read by the worktree tool, not this route). */
+export const CLICK_IS_THE_USERS =
+  "a chat's own scripts never act as the user: landing, answering, removing from the queue, cancelling, pausing and the queue's other acts come only from the user's own click in Sova's page or their own word in the branch's chat. Nothing was done; ask the user";
+
+/** A card's command (server/transcript-cards.ts) on the merge queue: refused for every act. */
+export const CARD_IS_NOT_THE_USERS =
+  "a card's commands never act as the user on the merge queue: landing, answering, removing from the queue and the queue's other acts come only from Sova's own controls in the page or the user's own word in the branch's chat. Nothing was done";
+
 /** The verbs a project on the Projects list may call before its merge setup is done. */
 const SETUP_VERBS: readonly MergeVerb[] = ["merge.status", "merge.setup", "merge.try"];
 
@@ -257,6 +267,17 @@ async function queueFor(deps: MergerDeps, verb: MergeVerb, req: Req, caller: Cal
 function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, root: string, req: Req): void {
   // merge.setup saves to the target: the user's own page only, never a chat's script on the operator's route (any dryRun).
   if (caller.kind === "operator" && caller.fromChat && verb === "merge.setup") throw new MergeFailure("forbidden", SETUP_IS_THE_USERS);
+  // Any other act from a chat's script on the operator's route: refused (the merge thread and a run's reviewer use their
+  // own tool, a session caller, below). It still reads, and still runs a trial, as any chat on its project may.
+  // One exception: the chat the merge thread asked in relays its user's answer (merge.reply), named by its own key.
+  if (caller.kind === "operator" && caller.fromChat && verb === "merge.reply") {
+    const ask = req.ask ? deps.askOf?.(root, req.ask) : undefined;
+    if (caller.chat && ask?.askedIn?.session === caller.chat) return;
+    throw new MergeFailure("forbidden", "only the chat the merge thread asked in relays the user's answer");
+  }
+  if (caller.kind === "operator" && caller.fromChat && !MERGE_READ_VERBS.includes(verb) && verb !== "merge.try") throw new MergeFailure("forbidden", CLICK_IS_THE_USERS);
+  // A command a card ran (its view's code or its button's): a chat's or an extension's code, never the user's act here.
+  if (caller.kind === "operator" && caller.fromCard && !MERGE_READ_VERBS.includes(verb)) throw new MergeFailure("forbidden", CARD_IS_NOT_THE_USERS);
   if (caller.kind === "operator") return;
   const reads = MERGE_READ_VERBS.includes(verb);
   const sid = sessionId(caller);
@@ -388,7 +409,9 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
       const id = need(req.ask, "question (ask)");
       const text = need(req.text?.trim(), "answer (text)");
       if (!deps.threadAnswer) throw new MergeFailure("unsupported", "no merge thread here to answer");
-      const ask = await deps.threadAnswer(q.root, id, text, caller.kind === "operator" ? { kind: "operator" } : { kind: "chat", ...(sessionId(caller) ? { session: sessionId(caller)! } : {}) });
+      // A chat's script relaying (authorize checked it is the chat asked in) answers as that chat, never as the tab.
+      const relay = caller.kind === "operator" && caller.fromChat && caller.chat ? caller.chat : null;
+      const ask = await deps.threadAnswer(q.root, id, text, relay ? { kind: "chat", session: relay } : caller.kind === "operator" ? { kind: "operator" } : { kind: "chat", ...(sessionId(caller) ? { session: sessionId(caller)! } : {}) });
       return { changed: true, report: { ask } };
     }
     case "merge.fresh": {

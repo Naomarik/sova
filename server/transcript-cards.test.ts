@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { after, beforeEach, describe, test } from "node:test";
 import type { SessionSummary } from "../shared/protocol";
 import { CARD_TOOL } from "../shared/transcript-cards";
+import { isCardRun } from "./extension-sender";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-cards-")));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
@@ -32,7 +33,7 @@ let n = 0;
 const sid = () => `01a00000-0000-7000-8000-${String(++n).padStart(12, "0")}`;
 const pathOf = (id: string) => join(root, "sessions", `x_${id}.jsonl`);
 const summaries = new Map<string, Partial<SessionSummary> & { started?: boolean; parent?: string }>();
-const requests: { url: string; body: unknown }[] = [];
+const requests: { url: string; body: unknown; headers: Record<string, string> }[] = [];
 let answer: { status: number; body: unknown } = { status: 200, body: { ok: true } };
 let last: string | null = "e9";
 
@@ -55,7 +56,7 @@ beforeEach(() => {
       return last;
     },
     async request(url, init) {
-      requests.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      requests.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined, headers: { ...((init?.headers ?? {}) as Record<string, string>) } });
       return new Response(JSON.stringify(answer.body), { status: answer.status, headers: { "content-type": "application/json" } });
     },
   });
@@ -251,6 +252,9 @@ describe("answering (§chat.transcript-cards/answering)", () => {
     const c = await cards.answerCard({ path: s.path, card: "cd_1", answer: { button: 0 }, by: "a script", via: "at-once" });
     assert.equal(c.answer?.outcome?.state, "done");
     assert.match(requests[0]!.url, /^\/api\/session-cards\?path=/);
+    // A press's command carries the card-run mark: the merge queue never takes it as the user's own act.
+    assert.equal(isCardRun((n) => requests[0]!.headers[n]), true);
+    assert.equal(isCardRun((n) => ({ "x-sova-card-run": "forged" })[n as "x-sova-card-run"]), false, "a client can't forge it");
     assert.match(String(cards.cardNoteFor(s.id)), /a script chose Deploy/);
   });
 });
@@ -337,6 +341,7 @@ describe("view cards (§chat.transcript-cards/sealed-box, /view-api)", () => {
     const sent = await cards.runCardCommand(s.path, card.id, "session.send", { text: "hi" }, audit);
     assert.equal(sent.status, 200);
     assert.equal((requests[0]!.body as { text: string }).text, "hi");
+    assert.equal(isCardRun((n) => requests[0]!.headers[n]), true, "a view's command carries the card-run mark");
     cards.setCardsTrusted(owner, false);
     // A card that isn't a view runs nothing this way.
     const other = fresh();

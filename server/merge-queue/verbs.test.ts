@@ -157,6 +157,73 @@ describe("the verbs and who may call them", () => {
     }
   });
 
+  test("a chat's script on the operator's route never lands, answers, removes or cancels: only the user's click does, and the merge thread's own verbs still work", async () => {
+    const { k, call, thread, session } = setup();
+    try {
+      const q = await k.q();
+      await q.pause("hold");
+      const b = k.repo.branch("feat/a", { "b.txt": "b\n" });
+      k.repo.branch("feat/b", { "c.txt": "c\n" });
+      const script: Caller = { kind: "operator", fromChat: true };
+      // Land from a chat's script: refused, nothing queued.
+      for (const body of [{ checkout: b.path, chat: "s1" }, { project: k.repo.root, branch: "feat/b" }]) {
+        const r = await call("merge.add", body, script);
+        assert.equal(r.error?.code, "forbidden", JSON.stringify(r.error));
+        assert.match(r.error!.message, /never act as the user/);
+      }
+      assert.equal(q.entries().length, 0, "nothing was queued");
+      // The same Land from the user's page: queued (the refusal is the caller's, not the body's).
+      const added = await call("merge.add", { checkout: b.path, chat: "s1" }, op);
+      assert.equal(added.ok, true, JSON.stringify(added.error));
+      const id = added.merge!.entry!.id;
+      // Every other act from a chat's script is refused too, and changes nothing.
+      for (const [verb, body] of [
+        ["merge.cancel", { entry: id }],
+        ["merge.answer", { entry: id, answer: "accept" }],
+        ["merge.answer", { entry: id, answer: "land-anyway" }],
+        ["merge.retry", { entry: id }],
+        ["merge.resume", { project: k.repo.root }],
+        ["merge.pause", { project: k.repo.root }],
+        ["merge.fresh", { project: k.repo.root }],
+        ["merge.clear", { project: k.repo.root }],
+        ["merge.reply", { project: k.repo.root, ask: "ak_x", text: "yes" }],
+        ["merge.note", { entry: id, note: "x" }],
+        ["merge.resolve", { entry: id }],
+        ["merge.hold", { project: k.repo.root, action: "set" }],
+      ] as const) {
+        const r = await call(verb, body, script);
+        assert.equal(r.error?.code, "forbidden", `${verb}: ${JSON.stringify(r.error)}`);
+      }
+      assert.equal(q.entry(id)!.notes.length, 0);
+      assert.equal(q.entries().some((e) => e.id === id), true, "still queued: no cancel went through");
+      // It still reads.
+      assert.equal((await call("merge.status", { project: k.repo.root }, script)).ok, true);
+      // The merge thread's own verbs, through its own tool, still work.
+      assert.equal((await call("merge.note", { entry: id, note: "changes server code" }, session(thread))).ok, true);
+      // A card's command (its view's code or its button's) is never the user's act either, reads aside.
+      const card: Caller = { kind: "operator", fromCard: true };
+      for (const [verb, body] of [
+        ["merge.add", { project: k.repo.root, branch: "feat/b" }],
+        ["merge.cancel", { entry: id }],
+        ["merge.answer", { entry: id, answer: "accept" }],
+        ["merge.retry", { entry: id }],
+        ["merge.resume", { project: k.repo.root }],
+        ["merge.try", { project: k.repo.root, branch: "feat/b" }],
+      ] as const) {
+        const r = await call(verb, body, card);
+        assert.equal(r.error?.code, "forbidden", `card ${verb}: ${JSON.stringify(r.error)}`);
+        assert.match(r.error!.message, /a card's commands never act as the user/);
+      }
+      assert.equal(q.entries().length, 1, "the card queued nothing and removed nothing");
+      assert.equal((await call("merge.status", { project: k.repo.root }, card)).ok, true, "a card still reads");
+      // The user's Remove from Queue, from their page, still works.
+      const removed = await call("merge.cancel", { entry: id }, op);
+      assert.equal(removed.ok, true, JSON.stringify(removed.error));
+    } finally {
+      await k.done();
+    }
+  });
+
   test("merge.hold is the merge thread's (and the operator's): no other chat holds the queue, and the thread still never pauses it", async () => {
     const { k, call, thread, reviewer, session } = setup();
     try {

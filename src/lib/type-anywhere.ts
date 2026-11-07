@@ -25,7 +25,8 @@ const isOneCharacter = (key: string) => key !== " " && [...key].length === 1 && 
 /**
  * Whether a keydown types a character (or starts one, an accent key's "Dead"): a letter, digit or
  * symbol, with Shift, an Option character on a Mac, or an AltGr character (Windows reports AltGr as
- * Ctrl+Alt; Linux as the AltGraph modifier alone). Named keys (Enter, Tab, the arrows…) are words,
+ * Ctrl+Alt; Linux as the AltGraph modifier alone). Ctrl+Alt with an ASCII letter or digit and no
+ * AltGraph is a chord, not AltGr. Named keys (Enter, Tab, the arrows…) are words,
  * not one character. Ctrl and ⌘ chords are shortcuts, and plain Alt off a Mac is a menu key. An
  * input method's keys are its own: keyCode 229 and the words "Process" and a soft keyboard's
  * "Unidentified" (a composing keydown is the row's `composing` rule, keys.ts). An accent key is the exception to 229: Chrome and Safari on a Mac
@@ -36,7 +37,9 @@ export function typesCharacter(e: CharKeyLike, mac: boolean = keyPlatform.mac): 
   if (e.key !== "Dead" && !isOneCharacter(e.key)) return false;
   if (e.metaKey) return false;
   const altGraph = e.getModifierState?.("AltGraph") === true;
-  if (e.ctrlKey) return !mac && (e.altKey || altGraph);
+  // Ctrl+Alt is Windows' AltGr, but a plain letter or digit with it is a chord (no layout's AltGr
+  // types a bare ASCII letter or digit), unless the browser reports AltGraph itself.
+  if (e.ctrlKey) return !mac && (altGraph || (e.altKey && !/^[A-Za-z0-9]$/.test(e.key)));
   if (e.altKey) return mac || altGraph;
   return true;
 }

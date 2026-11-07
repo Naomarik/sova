@@ -30,8 +30,16 @@ test("AltGr characters count: Windows reports Ctrl+Alt, Linux the AltGraph modif
   assert.equal(typesCharacter(key({ key: "@", getModifierState: altGraph }), false), true, "Linux AltGr");
   assert.equal(typesCharacter(key({ key: "@", altKey: true, getModifierState: altGraph }), false), true);
   assert.equal(typesCharacter(key({ key: "@", ctrlKey: true, getModifierState: altGraph }), false), true);
+  for (const k of ["€", "ą", "ł", "{", "[", "\\", "~"]) assert.equal(typesCharacter(key({ key: k, ctrlKey: true, altKey: true }), false), true, `Windows AltGr ${k}`);
   // A Mac has no AltGr: Ctrl+Option is a chord there.
   assert.equal(typesCharacter(key({ key: "a", ctrlKey: true, altKey: true }), true), false);
+});
+
+test("off a Mac, Ctrl+Alt with an ASCII letter or digit is a chord, unless the browser reports AltGraph", () => {
+  for (const k of ["a", "e", "q", "Z", "0", "5"]) {
+    assert.equal(typesCharacter(key({ key: k, ctrlKey: true, altKey: true }), false), false, `Ctrl+Alt+${k}`);
+    assert.equal(typesCharacter(key({ key: k, ctrlKey: true, altKey: true, getModifierState: altGraph }), false), true, `AltGraph ${k}`);
+  }
 });
 
 test("keys with their own jobs never count: Space, Enter, Tab, Esc, arrows, paging, editing, function and modifier keys", () => {

@@ -209,3 +209,26 @@ test("a tree kept for its use never gets Remove Anyway, and a forced request can
   assert.deepEqual(r.removed, []);
   assert.ok(existsSync(join(wt("locked"), "local.env")));
 });
+
+test("judged by what git lists: an ignored file in a tracked build/ counts, a dist/ inside the user's own ignored folder isn't build output", async () => {
+  add("named");
+  write(join(wt("named"), "build", "script.sh"), "echo\n");
+  write(join(wt("named"), ".gitignore"), "build/.env\nnotes/\nlocal.env\n.agent/\nbackend/\nnode_modules\ndist/\n");
+  git(wt("named"), "add", "-A");
+  git(wt("named"), "commit", "-q", "-m", "tracked build/");
+  write(join(wt("named"), "build", ".env"), "SECRET\n");
+  write(join(wt("named"), "notes", "dist", "mine.md"), "mine\n");
+  write(join(wt("named"), "notes", "node_modules", "p", "i.js"), "x\n");
+  const l = await leftovers(wt("named"));
+  assert.deepEqual(l.ignored, ["build/.env", "notes/dist/mine.md"]);
+  assert.deepEqual(l.rebuildable, ["notes/node_modules/"]);
+});
+
+test("an initialised submodule, clean or not, is listed as a nested repository", async () => {
+  add("sub");
+  git(wt("sub"), "-c", "protocol.file.allow=always", "submodule", "add", "-q", be, "vendor/be");
+  git(wt("sub"), "commit", "-q", "-m", "submodule");
+  const l = await leftovers(wt("sub"));
+  assert.deepEqual(l.nested, [{ path: "vendor/be", kind: "repository" }]);
+  assert.equal(l.dirty.length, 0);
+});

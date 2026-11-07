@@ -39,6 +39,9 @@ const REBUILDABLE_DIRS = new Set([
 const rebuildableDir = (name: string): boolean => REBUILDABLE_DIRS.has(name) || /^dist-[^/]+$/.test(name);
 /** Rebuildable files wherever they are. */
 const rebuildableFile = (name: string): boolean => name === ".DS_Store" || name.endsWith(".tsbuildinfo") || name.endsWith(".pyc");
+/** Inside a folder of the user's own, only these tools' folders count as rebuildable: a "dist" or "out" in
+    someone's ignored notes isn't build output. The generic names count where git lists the folder itself. */
+const TOOL_DIRS = new Set(["node_modules", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"]);
 /** Folders never walked: a package manager's tree is huge and its own. */
 const UNWALKED = new Set(["node_modules"]);
 
@@ -140,7 +143,7 @@ async function walk(w: Walk, rel: string, mode: "keep" | "rebuild"): Promise<voi
   }
   for (const name of names.sort()) {
     const child = `${rel}/${name}`;
-    if (rebuildableDir(name)) {
+    if (mode === "rebuild" ? rebuildableDir(name) : TOOL_DIRS.has(name)) {
       const cst = await lstat(join(abs, name)).catch(() => null);
       if (cst?.isDirectory()) {
         if (mode === "keep") w.out.rebuildable.push(`${child}/`);
@@ -225,6 +228,13 @@ export async function leftovers(dir: string, git: GitRunner = execGit): Promise<
     }
     const ig = await git(["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"], { cwd: dir });
     if (ig.code !== 0) return { ...out, unreadable: `Git couldn't list its ignored files: ${firstLine(ig.stderr || ig.stdout, ig.code)}` };
+    // Initialised submodules: clean ones show nowhere else, and --force takes their git dirs with the tree.
+    const sub = await git(["submodule", "status", "--recursive"], { cwd: dir });
+    if (sub.code !== 0) return { ...out, unreadable: `Git couldn't read its submodules: ${firstLine(sub.stderr || sub.stdout, sub.code)}` };
+    for (const line of sub.stdout.split("\n")) {
+      const m = /^([ +U])[0-9a-f]+ (.+?)(?: \(.*\))?$/.exec(line);
+      if (m) out.nested.push({ path: m[2]!, kind: "repository" });
+    }
     for (const raw of ig.stdout.split("\0")) {
       if (!raw) continue;
       const isDir = raw.endsWith("/");
@@ -232,7 +242,7 @@ export async function leftovers(dir: string, git: GitRunner = execGit): Promise<
       const segs = rel.split("/");
       const name = segs[segs.length - 1]!;
       if (rel === ".agent" && isDir) await agentDir(w, rel);
-      else if (segs.slice(0, -1).some(rebuildableDir)) continue; // inside a rebuildable folder git listed by its files
+      // A file git lists by itself is judged by itself: its folder isn't wholly ignored, whatever its name.
       else if (isDir && rebuildableDir(name)) {
         out.rebuildable.push(`${rel}/`);
         if (!UNWALKED.has(name)) await walk(w, rel, "rebuild");
@@ -244,7 +254,7 @@ export async function leftovers(dir: string, git: GitRunner = execGit): Promise<
     throw err;
   }
   for (const k of ["dirty", "ignored", "rebuildable"] as const) out[k] = [...new Set(out[k])].sort();
-  out.nested.sort((a, b) => a.path.localeCompare(b.path));
+  out.nested = [...new Map(out.nested.map((n) => [n.path, n])).values()].sort((a, b) => a.path.localeCompare(b.path));
   return out;
 }
 

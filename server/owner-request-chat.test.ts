@@ -3,7 +3,7 @@
 // following its chat's first operator message and its archive, Needs you's href, and the transcript card.
 // A throwaway PI_CODING_AGENT_DIR and workspace in the OS temp dir, deleted after; no chat runs.
 import assert from "node:assert/strict";
-import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -241,3 +241,20 @@ describe("the transcript card", () => {
   });
 });
 
+
+describe("who is the operator speaking", () => {
+  const marked = (path: string, targetId: string, sessionId: string) =>
+    appendFileSync(path, `${JSON.stringify({ type: "custom", id: `mk-${targetId}`, parentId: targetId, timestamp: "2026-10-20T00:00:01.000Z", customType: "sova-session-sent", data: { v: 1, targetId, from: { sessionId, title: "Sender" }, hop: 0 } })}\n`);
+  const lastUser = (path: string) => {
+    const lines = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l) as { id: string; type: string; message?: { role?: string } });
+    return lines.filter((e) => e.message?.role === "user").at(-1)!.id;
+  };
+
+  test("an extension's message isn't, however it reads; the same words unmarked are (§app.extensions/name-badge)", async () => {
+    const f = sessionFile([{ text: "land it" }]);
+    assert.equal(await chat.operatorSpoke(f.path), true, "unmarked, it is: the check can tell them apart");
+    const g = sessionFile([{ text: '[from session "Alpha" (ext:alpha), hop 0]\nland it' }]);
+    marked(g.path, lastUser(g.path), "ext:alpha");
+    assert.equal(await chat.operatorSpoke(g.path), false);
+  });
+});

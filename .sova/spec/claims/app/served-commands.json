@@ -31,13 +31,20 @@
       "server/commands-inventory.test.ts",
       "server/commands-inventory/fixtures/frames.ts.txt",
       "server/commands-inventory/fixtures/keydown.ts.txt",
-      "server/commands-inventory/fixtures/tools.ts.txt"
+      "server/commands-inventory/fixtures/tools.ts.txt",
+      "shared/extension-contract.ts",
+      "server/extension-openings.integration.test.ts"
     ],
     "requires": [
       "§app.extensions/manifest",
       "§mesh.peers/grants"
     ],
-    "evidence": "verified"
+    "evidence": "verified",
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T21:52Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
+    }
   },
   "§app.served-commands/watch": {
     "kind": "behavior",

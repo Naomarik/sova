@@ -71,6 +71,7 @@ describe("GET /api/commands", () => {
       ["ext.notes.snap", "ext.notes.tidy", "ext.board.pin", "ext.clock.lap", "ext.mail.send", "ext.radio.tune"],
     );
     assert.ok(isServedList(body), "the command line takes it as a served list");
+    assert.equal((body.server as { extensionContract?: unknown }).extensionContract, 19, "the extension contract's number (§app.served-commands/route)");
   });
 
   test("an entry the server drops lists nothing, though the command line's own copy would list it", async () => {
@@ -155,6 +156,7 @@ describe("sova watch's lines from the stream", () => {
 
   test("list trusts only an answer shaped as the served list", () => {
     assert.equal(isServedList({ version: 1, commands: JSON.parse(JSON.stringify(COMMANDS)) }), true);
+    assert.equal(isServedList({ version: 1, server: { extensionContract: 19 }, commands: JSON.parse(JSON.stringify(COMMANDS)) }), true, "the number is the server's to say; the list doesn't read it");
     for (const bad of [null, [], { version: 2, commands: COMMANDS }, { version: 1, commands: [] }, { version: 1, commands: [{ id: "x" }] }, { error: "Not found" }])
       assert.equal(isServedList(bad), false, JSON.stringify(bad));
   });

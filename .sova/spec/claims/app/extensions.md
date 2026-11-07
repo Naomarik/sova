@@ -5,7 +5,7 @@ An extension is a small web app the user installs into Sova: a built UI (a folde
 `index.html`) and a backend the user runs on this machine. Sova shows it as a card on the landing
 page and as a page at `#/ext/<id>`, serves its UI and forwards its API and sockets from Sova's own
 origin, and knows nothing about what it does. The host is generic: no extension is named, special
-cased or shipped by Sova. The interface is `ext-contract-v1.18`; any change to it is a version bump
+cased or shipped by Sova. The interface is `ext-contract-v1.19`; any change to it is a version bump
 agreed with the extensions built on it. v1.15 added what an extension offers (§app.extensions/offers)
 and what it adds under replies (§app.commands/reply-slot). v1.16 added each backend's own key
 (§app.extensions/backend-key), a command's `menu` key (§app.extensions/session-menu), and the `row`
@@ -13,6 +13,27 @@ and `card` places (§app.extensions/row-chips, §app.extensions/card-status). v1
 types and drawing kinds it adds to chat transcripts (§app.extensions/views), additions only. v1.18
 added a command's `overseer`, `description` and `job` keys, and the job status route the Overseer
 asks (§app.overseer/extension-commands). An extension that declares none of them sees no change.
+v1.19 added card news (§app.events/card-news), the contract's number in the served list
+(§app.served-commands/route) and cards that update (§chat.transcript-cards/updating-cards), and it
+narrowed what a key does: a message it sends carries its extension's name
+(§app.extensions/name-badge), and it is refused at the doors that would count as the user
+(§app.extensions/not-you). So an extension that sends messages does see a change.
+
+An extension is a guest with a name badge. It can hear what happens, show things, ask the user with a
+card and say things to a chat, always under its own name. It can never be the user.
+
+**With no extension installed, a chat's tools, prompts and recorded goldens don't change.** v1.19 adds no
+catalogue entry, route or place. A chat with a project's cards or offers, or an open alignment, does see
+what was decided for every card:
+
+- a card that takes no answer starts open (§chat.transcript-cards/updating-cards);
+- Needs You lists a waiting card without the guess that the reply asks something
+  (§app.decisions/asks-user), and a row with an open question stays Question
+  (§app.session-list/needs-you);
+- cards and offers can stand beside an open alignment question (§chat.transcript-cards/raise-command,
+  §chat.offers/card);
+- a press on one during that wait goes out marked (§chat.alignment/session-mark);
+- a card shows at once in an open pane (§app.events/card-news).
 
 ## §app.extensions/manifest — The manifest
 
@@ -242,8 +263,13 @@ HTTP 2xx, draws nothing and counts as a miss.
 An extension's UI runs on Sova's origin, unsandboxed. It can read Sova's `localStorage` and call
 every Sova API. For example, it can create a session with `POST /api/sessions`. That is acceptable
 for Sova's one local user. Nothing loads that the user didn't list in the manifest, and the
-manifest holds only loopback backends. Its backend has the same power through its own key
-(§app.extensions/backend-key), and every call it makes with that key is recorded as its own.
+manifest holds only loopback backends. Its page keeps acting with the user's login: Sova doesn't tell it
+apart from the user, but for a badge on the sends it can place (§app.extensions/page-badge). Its backend
+has the same power through its own key (§app.extensions/backend-key), less what a key can't do
+(§app.extensions/not-you), and every call it makes with that key is recorded as its own and speaks under
+its name (§app.extensions/name-badge). None of that stops a hostile extension: its page runs on Sova's
+own address and any program on this computer can read Sova's token, so installing one stays a trust
+decision.
 Its card views and drawing kinds in a chat's transcript are the exception: they never run on Sova's
 origin, only in a sealed box walled off from Sova and the network, and they act through the view
 API only once the user has trusted that extension's cards (§chat.transcript-cards/sealed-box,
@@ -267,9 +293,12 @@ operator's token (since `ext-contract-v1.16`).
   `SOVA_TOKEN=$(cat <key file>) node scripts/sova.mjs …` works as is. Nowhere else: not as a cookie,
   not as `Authorization`, and `POST /api/auth/unlock` never takes it.
 - **What it opens.** On the main listener, everything the token opens, sockets included (it may hold
-  `/ws/events` open and run any command, its own `ext.<id>.*` too), behind the same host and
+  `/ws/events` open and run any command but those §app.extensions/not-you refuses, its own `ext.<id>.*`
+  too), behind the same host and
   cross-site rules, except `/api/auth/*`, which answers `403`: a key never pairs a device, reveals the
-  token or sets a cookie. Full power includes starting a chat, so revoking a key stops the key, not
+  token or sets a cookie. It also stops at the doors that would count as the user
+  (§app.extensions/not-you), and what it sends into a chat carries its extension's name
+  (§app.extensions/name-badge). Full power includes starting a chat, so revoking a key stops the key, not
   what it already did.
 - **Where it opens nothing.** The peer listener never reads it: a peer's request is answered by the
   peer's identity and grant alone, with or without a key. The share listener has no route it could
@@ -293,6 +322,126 @@ operator's token (since `ext-contract-v1.16`).
   or exactly what an extension command's id can be: `ext.<id>.<name>`, with `<id>` in the manifest's
   id alphabet and `<name>` in the command-name alphabet, so the record names every command a valid
   extension id can declare.
+
+## §app.extensions/name-badge — A message from an extension
+
+Since `ext-contract-v1.19`, every message an extension's key sends into a chat says whose it is: in the
+chat, on the Timeline and to the model.
+
+- **Its key names it.** `session.send` (`POST /api/sessions/prompt`) called with a key is marked as that
+  extension's, where the send enters the chat, and other roads are refused (§app.extensions/not-you). The
+  send button of a card that extension owns is marked the same way, whoever presses it. The id comes from the key alone and the title from its manifest entry as it is then (the id when
+  it has no usable title, §app.extensions/manifest). No body field and no header can name a sender: a
+  `Referer` or an `x-sova-caller` sent beside the key changes nothing, so a key can't pass for another
+  extension, a chat or the user. A press's own mark carries a secret made at server start, held in memory
+  and sent to no client, so no caller can send it.
+- **What the model reads.** The stored text starts with the line `[from session "the extension {title},
+  not this chat or its name" (ext:{id}), hop 0]`, then the extension's words. It has the same form as
+  another session's line (§chat.profiles/delivery), on purpose: a chat still on older code already refuses
+  a message starting `[from session ` as the user's word to land, and wouldn't refuse any other spelling.
+  The quoted words say plainly that this is someone else, not the chat's own name.
+- **The marker.** Once the message enters the context, the server writes the same invisible
+  `sova-session-sent` entry a session's message gets, with `from: {sessionId: "ext:<id>", title}` and
+  `hop: 0`. A queued one is marked when it is handed over, and one removed before that leaves no marker
+  (§app.overseer/sent-marker).
+- **What the user sees.** Above the message, a sender header: the `sliders` icon and "From {title}",
+  with no link and no hop, because there is no session to go to. The row's author reads "From an
+  extension", never "You", and its text leaves out the header line. On reload, live and while queued
+  alike. The Timeline's row carries the same sender line (§chat.timeline/rows), and Inputs Only and the
+  composer's input count leave it out: the user didn't type it. A linked computer's older page draws it
+  as a message from a session.
+- **Never the user's word.** `worktree land` refuses it, on older code too
+  (§chat.worktrees/land-own-word), it never ends a chat's wait on its alignment answers
+  (§chat.alignment/session-mark), and it isn't the operator speaking in a chat opened for an owner's
+  request (§app.project-assistant/request-chat).
+- **The limit.** An extension's message can ask that chat's agent to use `session_send`, and what the
+  agent then sends arrives under that chat's mark, so it can end another chat's wait on its alignment
+  answers. Sova doesn't trace an extension through an agent's relay.
+- **The rest is `session.send`'s.** It starts a turn in an idle chat, and in a busy one it is a queued
+  row the user can remove. A chat that refuses `session.send` (open in a terminal, archived, the
+  Overseer's, a project overseer's, a baton's) refuses this too, and so do the merge queue's own chats.
+
+## §app.extensions/not-you — What a key can't do
+
+An extension's key never counts as the user. At each door below it is refused, whatever it carries, and
+nothing changes. Only what is listed here is promised: anything else a key can do is neither closed nor
+promised by this claim. This is about a key: a program holding the operator's token is a script
+(§app.access/callers), and an extension's page rides the user's login (§app.extensions/page-badge). The
+approvals only the user's click passes refuse a key already (§app.access/your-click).
+
+- **The key is asked first.** After the Overseer's sender secret and the peer listener, Sova asks whether
+  a request shows a key before it looks at `x-sova-caller`, so a chat's key sent beside it never turns a
+  key into a chat, at any door here or in §app.access/your-click.
+- **How a refusal reads.** A route below, a new chat's first prompt and `POST /api/chat/frames` answer
+  `403` with `extensionRefused: true` and the sentence named here, so a backend can tell this from any
+  other refusal. A socket's frame gets an `error`, code `refused`, and `POST /api/chat/action` a `409`,
+  `outcome` and `code` both `refused`, each with the frame's sentence. A card's refusal is a `403` with its
+  sentence, and no flag.
+- **Speaking.** `session.send` is the one way a key speaks (§app.extensions/name-badge). Each of these
+  says "An extension speaks through session.send, which names it. Nothing was sent." and leaves no queued
+  row, no turn and nothing in the chat's draft:
+  - `prompt` and `steer` frames, and `compact` with `instructions`;
+  - a group send (`session.group.send`, `POST /api/session-groups/:id/prompt`);
+  - a new chat's first prompt, `prompt` on `POST /api/sessions` (`session.new`): no chat is made.
+
+  `session.send` into the merge thread or a run's reviewer is a `409`, "That is one of the merge queue's own
+  chats: an extension doesn't write in it."
+- **Other frames.** `ui_response`: "Only the user answers a chat's dialog. Nothing was answered."
+  `rewind`: "An extension doesn't move a chat back: its messages are the user's. Nothing changed."
+  `regenerate`: "An extension doesn't send a message over: its messages are the user's. Nothing changed."
+- **Landing, releasing, deploying.** Through `/api/project-services/<verb>` and
+  `/api/projects/:pid/services/<verb>`, every `merge.*`, `release.*` and `deploy.*` verb but those that read
+  (`status`, `logs`, `deploy.check`). Merge verbs and every write under `/api/merge-queue`: "Only the user
+  lands a branch or answers the merge queue. Nothing changed." Release and deploy verbs and
+  `/api/updates/settings`: "That is the operator's to do. Nothing changed."
+- **The user's own.** "That is the user's own to do. Nothing changed.", on any write to: `/api/mode` and
+  `/api/mode/command` (turning align off would end an alignment's wait with no answer);
+  `/api/session-offers/choose`; `/api/attention/dismiss`; a project's `draft-specs/:sid/approve` and
+  `/build`, `setup/merge` and `runtime/merge`; a tour's `jobs/:jobId/approve` and `/approve-all`;
+  `/api/schedules/revoke`; and everything under `/api/baton`, `/api/orgs`, `/api/outreach` and `/api/mesh`.
+- **Settings.** "Sova's settings are the user's. Nothing changed.", on any write under `/api/settings`, and
+  to `/api/push/settings`, a project's `settings/undo` and its `settings/cards/:card/withdraw`.
+  `PUT /api/settings/overseer` says "An extension can't change the Overseer's settings. Nothing was saved."
+- **Overseers.** "An extension doesn't write to an overseer: what it reads is the user's. Nothing changed.",
+  on any write under `/api/overseer` or `/api/projects/:pid/overseer`, a project's `worktrees/merge` among
+  them. `PUT /api/overseer/notes` (and so `overseer.notes.set`) says "An extension can't change the Standing
+  notes: they are the user's own instructions. Nothing was saved."
+- **Sova's special chats.** Every frame and chat action a key sends into an overseer's, a baton's or a merge
+  queue chat: "An extension takes no action in that chat. Nothing changed." With that chat's process not
+  open, `abort` and `reload_code` through `POST /api/chat/action` are no refusal: they answer `200` with
+  `outcome` `stopped` or `not-running`, as for any chat that isn't open, and run nothing.
+- **Cards.**
+  - A key raises and changes only its own extension's types: "Nothing was raised: an extension raises only
+    its own card types." and "Nothing was raised: an extension changes only its own cards."
+  - `session.card.answer` with a key: "An extension answers only its own cards. Nothing was answered." On a
+    button that sends or runs: "Only the user presses a button that acts. Nothing was answered."
+  - A button or view on a card an extension owns, whoever presses it and however trusted it is, can't run a
+    command whose route is closed above: "An extension's card can't run {label}. Nothing ran." Its send
+    button goes out under that extension's name (§app.extensions/name-badge). A project's own cards are
+    unchanged.
+  - A card or offer beside an open alignment question leaves that chat's row a question: it stays Question
+    (§app.session-list/needs-you).
+- **A limit, not a door.** A key's message can ask a chat's agent to use `session_send`. What the agent then
+  sends arrives under that chat's mark, not the extension's, so it can end another chat's wait on its
+  alignment answers (§chat.alignment/session-mark). Sova doesn't trace an extension through an agent's relay,
+  and nothing here refuses it.
+
+## §app.extensions/page-badge — An extension's page
+
+An extension's page keeps acting with the user's login (§app.extensions/trust). Sova doesn't try to stop
+that, and the docs say so plainly.
+
+- **A badge where Sova can tell.** A `session.send` that comes with no key and whose `Referer` is a page
+  under `/ext/<id>/` of an extension this server installs is marked as that extension's, as
+  §app.extensions/name-badge says. `POST /api/chat/frames`, a group send and a new chat's first prompt with
+  such a `Referer` are answered as that extension's key would be (§app.extensions/not-you). The `Referer`
+  must be on the request's own host, and the peer listener doesn't ask. Sova's own page never sends that `Referer`: `#/ext/<id>`
+  is a hash on Sova's page, and only the iframe's document is under `/ext/<id>/`.
+- **It guards against accidents only.** A page chooses its `Referer`: it can leave it out or name another
+  extension, and a socket has none, so a hostile page avoids the badge. No message counts as the user's
+  because it has no badge, and no badge from a page proves which extension sent it.
+- **Authors send through their program.** `docs/customization.md` tells them to send from their backend
+  with its key, where the name can't be left out, and never to hand the key to their page.
 
 ## §app.extensions/maximize — Maximize and restore
 
@@ -428,7 +577,8 @@ change.
   never on Sova's origin (§chat.transcript-cards/sealed-box). A backend's key file is never served
   this way.
 - **Fixed per chat.** A chat's snapshot takes the declarations of the extensions installed when it
-  starts, after the project's own, each name once (§chat.transcript-cards/files). A card or drawing
+  starts, after the project's own, each name once (§chat.transcript-cards/files). The merge queue's own
+  chats take no card types of an extension (§chat.transcript-cards/queue-chats). A card or drawing
   whose extension is no longer installed shows its error box, "{title} is no longer installed."
 - **Its own trust.** Its cards ask to act, and are trusted, by its id, apart from any project's
   (§chat.transcript-cards/trust); its page says so while they are, with **Stop Trusting Cards**.

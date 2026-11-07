@@ -357,7 +357,7 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   the way in, enters it. A brief, a fired `wake_nudge`, an extension's message that starts a run (an
   `/explain` result, a subagent's or team member's report: `sendMessage(…, {triggerTurn: true})`),
   a run with no message at all, a message of unknown origin, or a prompt, steer or regenerate from a
-  script's, a chat's or an extension's socket, `POST /api/chat/frames` or `POST /api/chat/action` (§app.access/your-click) is
+  script's or a chat's socket, `POST /api/chat/frames` or `POST /api/chat/action` (§app.access/your-click) is
   **unattended**, and so is a
   fresh runtime after a restart: it fails closed.
   - **Foreign input ends the user's part of a run.** Once the model has replied to the user's
@@ -1450,7 +1450,8 @@ prompt cache, in pi and Claude Code chats alike. The notes travel as queue notes
   their own `sova-baton-sent` marker (§app.baton/attribution), and so does a session's
   `session_send`, with `sova-session-sent` (§chat.profiles/delivery); the pending-mark list, the
   queue hand-off rule and the settle sweep are shared, and each marker is written only for its own
-  sender, with the bytes of the Overseer's and the baton's markers unchanged.
+  sender, with the bytes of the Overseer's and the baton's markers unchanged. An extension's message
+  uses the session marker under the sender id `ext:<id>` (§app.extensions/name-badge).
 - **A project overseer's conversation too.** The one route that writes into a project overseer's
   conversation, the Overseer's message route (§app.overseer/org-project-overseers), marks every
   message it hands in the same way, with the same `sova-overseer-sent` entry, the same queued-row
@@ -1459,8 +1460,8 @@ prompt cache, in pi and Claude Code chats alike. The notes travel as queue notes
   coding session (Sova's own in-process statechart effect, never a request) is marked the same
   way, with the same entry, naming the project overseer's current conversation as its `overseerId`
   when it can be read (none otherwise).
-- **Never the user's answer.** A user message this marker names is never the user's prompt that
-  ends a session's wait on its alignment answers (§chat.alignment/session-mark): alignment
+- **Never the user's answer.** A user message this marker names, or an extension's, is never the user's
+  prompt that ends a session's wait on its alignment answers (§chat.alignment/session-mark): alignment
   questions are the user's (§app.project-overseer/coding-mode).
 - **Never the user's go-ahead to land.** A user message this marker, a baton's or a session's names
   is never the user's word to land a branch: `worktree land` refuses it
@@ -1579,7 +1580,7 @@ feed's last list while nothing has changed since it was built, and builds a list
   failure is logged and never stops the start), so no old choice keeps anything hidden.
 - **Finished (decide), from signals** (§app.decisions/attention-signals, only while the list carries them):
   `asks-you` (soft) when the last reply asks the user something (§app.decisions/asks-user) and the
-  session has no `open-questions` item, worded by the ask's kind: "Needs your decision: {the
+  session has no `open-questions` or `card-waiting` item, worded by the ask's kind: "Needs your decision: {the
   asking sentence}" (a choice), "Needs your approval: {…}" (a risky action or a restart or merge
   go), "Needs info from you: {…}" (information), and "Asks you: {…}" when no kind is known (an
   older record); without a sentence, "The last reply asks you something.", dated by the classification; `unverified` (soft) when the last reply says

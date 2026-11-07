@@ -184,6 +184,8 @@ import { setCreateSettingsRun } from "./create-settings-tool";
 import { runCreateSettings } from "./create-settings-run";
 import { isProjectModeId } from "../shared/project-modes";
 import { extensionKeys } from "./extension-keys";
+import { actsAsExtension, EXTENSION_FIRST_PROMPT, extensionDoorRefusal, extensionFrameRefusal } from "./extension-doors";
+import { extensionSenderOf } from "./extension-sender";
 import { registerUpdatesRoutes } from "./updates/routes";
 
 /** The built frontend; SOVA_DIST: another build (a test's scratch one), as SOVA_SHARE_DIST is for the share page. */
@@ -256,6 +258,12 @@ export function buildApp(deps: AppDeps) {
     // Who ran what (server/command-audit.ts, §app.command-audit/record): only a call that shows the
     // token; noted once answered, off the answer's path. Neither step can change the answer.
     const audited = auditStart(c);
+    // A door an extension's key never opens (server/extension-doors.ts, §app.extensions/not-you).
+    const closed = extensionDoorRefusal(c);
+    if (closed) {
+      audited?.(403, closed.route);
+      return c.json({ error: closed.error, extensionRefused: true }, 403, { [SERVER_HEADER]: "sova" });
+    }
     await next();
     try {
       c.res.headers.set(SERVER_HEADER, "sova");
@@ -412,6 +420,8 @@ export function buildApp(deps: AppDeps) {
     } catch {
       return c.json({ error: "Expected JSON body { cwd } or { target, remoteCwd }" }, 400);
     }
+    // An extension speaks through session.send, which names it: nothing is created (§app.extensions/not-you).
+    if (typeof body.prompt === "string" && body.prompt.trim() && actsAsExtension(c)) return c.json({ error: EXTENSION_FIRST_PROMPT, extensionRefused: true }, 403);
     let subagentProfile: string | undefined;
     if (body.subagent_profile !== undefined) {
       try { subagentProfile = requireSubagentProfile(body.subagent_profile); }
@@ -1448,6 +1458,12 @@ export function buildApp(deps: AppDeps) {
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
     const frames = postedFrames(await c.req.json().catch(() => null));
     if (!frames) return c.json({ error: `Expected { frames: [...] }, 1 to ${POSTED_FRAMES_MAX} objects with a type` }, 400);
+    // A key's prompt or steer: nothing runs and nothing goes back as a draft (§app.extensions/not-you).
+    const asExtension = actsAsExtension(c);
+    if (asExtension) {
+      const why = frames.map((f) => extensionFrameRefusal(f as { type?: unknown })).find((w) => w);
+      if (why) return c.json({ error: why, extensionRefused: true }, 403);
+    }
     // The page is going, so nobody hears a refusal: what it carried goes back as the draft.
     const refused = writingRefused(c.req.header(COMPOSER_HEADER));
     if (refused) {
@@ -1457,7 +1473,7 @@ export function buildApp(deps: AppDeps) {
     // Only shell-mode frames, all dropped: nothing to deliver, so the chat isn't opened for it.
     if (!frames.length) return c.json({ accepted: 0 }, 202);
     sessionsChanged();
-    deliverFrames(path, frames, notPage(c));
+    deliverFrames(path, frames, asExtension ? "extension" : notPage(c));
     return c.json({ accepted: frames.length }, 202);
   });
 
@@ -1962,7 +1978,7 @@ export function buildApp(deps: AppDeps) {
       if ("error" in got) return c.json({ error: got.error }, got.status);
       if (sandboxLowers((await got.chat.sandboxInfo())?.state, asked)) return c.json(yourClickBody("sandbox", notPage(c) ?? "script"), 403);
     }
-    const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery);
+    const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery, undefined, undefined, extensionSenderOf(c));
     return r.ok ? c.json({ ok: true, queued: r.queued, kind: r.kind, ...(r.compacting ? { compacting: true } : {}) }) : c.json({ error: r.error }, r.status);
   });
   // Installed extensions (server/extensions.ts), with each backend's cached health.

@@ -2907,6 +2907,8 @@ export type ChatServerMessage =
       (raw text) and the SDK's own (expanded) — in delivery order, SDK's first, and is followed by
       a `{ type: "queue", items: [] }`. */
   | { type: "queue_cleared"; steering: string[]; followUp: string[] }
+  /** A transcript card of this chat changed: read them again. No content (§app.events/card-news). */
+  | { type: "cards_changed" }
   /** A rewind landed. Every client of the chat first got a fresh `hello` (the new branch) and a
       `mode` (re-resolved from it); only the requester then gets this, with the input's text for
       its composer (images are not handed back, as in pi's /tree). A rewind to the first input

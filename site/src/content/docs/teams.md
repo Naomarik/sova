@@ -9,9 +9,9 @@ order: 9
 
 Ask for one. In [Delegate](/docs/modes/delegate/), "have a team build it" is enough: when you ask
 for a team, the agent always starts a real one (with its `team_create` tool), never separate
-workers it calls a team. Without being asked, it starts a team when parts of the work depend on each
-other: they change the same files or interfaces at the same time, or one member builds while another
-checks. Independent parts go to separate workers instead.
+workers it calls a team. Without being asked, it starts a team when parts change the same files or
+interfaces, stack on each other, feed each other findings, or have a checker sending findings
+straight to builders. Focused jobs that don't depend on each other go to separate workers instead.
 
 Teams aren't Delegate's alone: the agent can start one in any major mode.
 

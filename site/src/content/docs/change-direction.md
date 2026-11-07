@@ -53,6 +53,14 @@ A message you send while a new chat is still starting shows as **Sending…** an
 
 **Stop** ends the turn, and so does `Esc` while you're in the composer. Anything still queued comes back to the composer for you to edit or send again, and the transcript notes "Stopped by you at 1:43 PM." An `Esc` that closes something (a menu, the command palette, the model picker, the session pane or a dictation) does only that, and an `Esc` within half a second of another never stops a turn, so a quick second press is safe.
 
+## Type anywhere
+
+You don't have to click into the composer first. Typing a character while focus isn't in a text field
+puts it in the composer you can see, at its caret, and typing goes on there. Nothing is sent. Keys
+with a job of their own keep it: Space, Enter, Tab, Esc, the arrows, every Ctrl or ⌘ chord, `/` for
+session search and `?` for keyboard shortcuts, so a slash command still starts in the box. With Focus
+on, a character brings the composer back.
+
 ## Run a shell command
 
 Type `!` into the empty composer to switch it to shell mode: what you write runs as a shell command in the chat's folder, and the command and its output show as a card in the chat instead of going to the model. The box takes a caution edge, its placeholder reads "Run a command in {folder}…", **Send** reads **Run**, and the foot shows a **Shell mode** chip. The model gets the command and a cut of its output with your next message, and doesn't reply to them on its own. Type `!` again for `!!`: that command and its output never reach the model.

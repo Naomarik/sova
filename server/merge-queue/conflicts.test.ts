@@ -2,7 +2,7 @@
 import { describe, test } from "node:test";
 import { expect } from "./testing/expect";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { scratchRoot } from "../test-scratch";
 import { conflictRegions, conflictsBetween, hunksInside, hunksOf, sanityCheck } from "./conflicts";
@@ -124,5 +124,34 @@ describe("sanityCheck", () => {
     expect((await sanityCheck(r.root, { base: r.base, commit: r.commit, resolution: wrong })).ok).toBe(false);
     expect(side).toBeTruthy();
     expect((await sanityCheck(r.root, { base: r.base, commit: r.commit, resolution: "f".repeat(40) })).why).toMatch(/isn't a commit/);
+  });
+});
+
+describe("conflictsBetween", () => {
+  test("git's merge temp files are never made in the checkout: the probe runs in a temp dir of its own", async () => {
+    const root = join(scratchRoot("mq-conf-attr-"), "r");
+    mkdirSync(root);
+    const git = (...a: string[]) => execFileSync("git", ["-c", "commit.gpgsign=false", ...a], { cwd: root, encoding: "utf8", env: ENV }).trim();
+    const seen = join(root, "..", "paths");
+    git("init", "-q", "-b", "master");
+    writeFileSync(join(root, ".gitattributes"), "* merge=record\n");
+    writeFileSync(join(root, "f"), "a\n");
+    git("add", "-A");
+    git("commit", "-qm", "1");
+    git("checkout", "-qb", "x");
+    writeFileSync(join(root, "f"), "b\n");
+    git("commit", "-qam", "2");
+    git("checkout", "-q", "master");
+    writeFileSync(join(root, "f"), "c\n");
+    git("commit", "-qam", "3");
+    // The driver records where git runs it: that is where its .merge_file_* temp files are.
+    git("config", "merge.record.driver", `pwd >> '${seen}'; exit 1`);
+    const out = await conflictsBetween(root, "master", "x");
+    expect(out).toMatchObject({ files: ["f"] });
+    const dirs = readFileSync(seen, "utf8").trim().split("\n");
+    expect(dirs.length).toBe(1);
+    expect(dirs[0]!.startsWith(root)).toBe(false);
+    expect(existsSync(dirs[0]!)).toBe(false);
+    expect(readdirSync(root).filter((f) => f.startsWith(".merge_file_"))).toEqual([]);
   });
 });

@@ -6,6 +6,9 @@
  * markers), it changes only files that conflicted, only lines inside their conflict regions, and makes no mode,
  * rename, copy, type, binary, add or delete change. Anything else is read as "behaviour differs": the user decides.
  */
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { gitProc } from "./copy";
 
 export interface Sanity {
@@ -17,7 +20,19 @@ export interface Sanity {
 
 /** The files two commits conflict in (git merge-tree, nothing written to any work tree), and the remerged tree. */
 export async function conflictsBetween(root: string, a: string, b: string): Promise<{ tree: string; files: string[] } | { error: string }> {
-  const r = await gitProc(root, ["merge-tree", "--write-tree", "--name-only", "--no-messages", a, b]);
+  // git's content merge writes its .merge_file_* temp files into the working directory, and a
+  // probe cut off at its time limit is killed before it removes them: so it never runs in the
+  // checkout (the main checkout is the user's folder) but in an empty temp dir of its own,
+  // pointed at the repository by --git-dir, and that dir goes away afterwards whatever happened.
+  const gitDir = (await gitProc(root, ["rev-parse", "--absolute-git-dir"])).out.trim().split("\n")[0] ?? "";
+  if (!gitDir.startsWith("/")) return { error: `no repository at ${root}` };
+  const scratch = await mkdtemp(join(tmpdir(), "sova-merge-tree-"));
+  // No work tree here, so the attributes (merge drivers, union merges) come from the target's tree
+  // (git 2.40+; an older git reads none, as a bare repository does).
+  const probe = (attr: boolean) => gitProc(scratch, [`--git-dir=${gitDir}`, ...(attr ? [`--attr-source=${a}`] : []), "merge-tree", "--write-tree", "--name-only", "--no-messages", a, b]);
+  const r = await probe(true)
+    .then((p) => (p.code !== 0 && p.code !== 1 && /attr-source/.test(p.out) ? probe(false) : p))
+    .finally(() => rm(scratch, { recursive: true, force: true }).catch(() => {}));
   if (r.code !== 0 && r.code !== 1) return { error: r.out.trim().split("\n")[0] || `git merge-tree exited ${r.code}` };
   const lines = r.out.split("\n").map((l) => l.trim());
   const tree = lines[0] ?? "";

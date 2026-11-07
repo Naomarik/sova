@@ -184,6 +184,18 @@ one transcript line, "This instruction was accepted but never ran: …", and the
 line in the error of the next completion; with nothing else running that completion
 comes at once, as an error, so nothing waits for a delivery that can't come.
 
+A run a worker starts on its own after finishing (a background job's end card, or any
+other message no armed instruction accounts for) is a new report: the worker goes back
+to idle and the report goes out as usual. If that run ends well with nothing written
+(commentary before a tool call doesn't count), the worker goes idle and nothing is sent,
+and the last report and its outcome stay readable. A failed run always reports. If such a
+quiet end leaves a team with nobody working and its coordinator's last finish held back
+its wake, the main chat gets that wake, once.
+
+A report carries every final answer since the last report, oldest first and joined by a
+blank line, so its first line stays the earliest answer's. `finalOutput` is that text:
+the completion, the whole-answer file, the coordinator's subject and read-back all use it.
+
 A worker still running code from before keys (it keeps its code through a parent's
 reload) names none, and gets the older, best-effort correlation below. It and this
 list go in a later follow-up, once no such worker runs.

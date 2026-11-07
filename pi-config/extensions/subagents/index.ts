@@ -1387,6 +1387,32 @@ export function registerSubagents(
 			scheduleRefresh();
 		}
 	};
+	/** Teams whose coordinator's finish held back its wake because a teammate was working. */
+	const heldTeamWakes = new Set<string>();
+	/** A run the worker started on its own ended well with nothing written: idle again as at any settle, with no report. */
+	const onQuietSettled = (a: Worker) => {
+		if (shuttingDown || !agents.includes(a)) return;
+		registry.settled(a);
+		successionCheck(a);
+		retireCheck(a);
+		try {
+			sweepSettled(a, (settleSeq.get(a.id) ?? 0) + 1);
+			sendHeldTeamWake(a);
+		} finally {
+			wakes?.settled(a.id);
+			pruneFinished();
+			scheduleRefresh();
+		}
+	};
+	/** No report follows a quiet settle, so nothing else would wake the main chat for a finish that waited on this worker. */
+	const sendHeldTeamWake = (a: Worker) => {
+		const teamId = teams.teamOf(a.id);
+		if (!teamId || !heldTeamWakes.has(teamId) || teamWorking(teamId, a.id)) return;
+		heldTeamWakes.delete(teamId);
+		// A parent mid-run reads the finish at its own release point, so it needs no wake.
+		if (shuttingDown || !activeCtx || parentLoops > 0) return;
+		sendCompletion(`[${teamId}: no teammate is working now. ${teams.memberInfo(a.id)?.member.role ?? a.id} went idle with nothing to report.]`, true);
+	};
 	/** The parent's (or the coordinator's) copy of a settle, read from the worker as it settled. */
 	const announceSettle = (a: Worker, seq: number) => {
 		if (shuttingDown || !activeCtx) return;
@@ -1403,8 +1429,15 @@ export function registerSubagents(
 		const route = completionRoute(a, failed);
 		if (route.kind === "drop") return;
 		if (route.kind === "coordinator") {
+			// The coordinator runs on this report, and its own settle decides the wake.
+			heldTeamWakes.delete(teams.teamOf(a.id) ?? "");
 			void deliverCompletion(route.to, a, verb);
 			return;
+		}
+		const teamId = teams.memberInfo(a.id)?.team.coordination ? teams.teamOf(a.id) : undefined;
+		if (teamId) {
+			if (route.wake || !a.wake || a.status === "killed") heldTeamWakes.delete(teamId);
+			else heldTeamWakes.add(teamId);
 		}
 		if (!["tui", "rpc"].includes(activeCtx.mode)) return;
 		// Independent: a broken UI must not suppress the completion message/wake.
@@ -1732,6 +1765,7 @@ export function registerSubagents(
 						{
 							onChange: () => { if (committed) scheduleRefresh(); },
 							onSettled: (worker) => { if (committed) onSettled(worker); else if (!abandoned) earlySettled.add(worker); },
+							onQuietSettled: (worker) => { if (committed) onQuietSettled(worker); },
 							onExit,
 						},
 					);
@@ -4866,7 +4900,7 @@ export function registerSubagents(
 								...(launch.mcpServers ? { mcpServers: [...launch.mcpServers] } : {}),
 								...(launch.extensions ? { extensions: [...launch.extensions] } : {}),
 							},
-							{ onChange: scheduleRefresh, onSettled, onExit },
+							{ onChange: scheduleRefresh, onSettled, onQuietSettled, onExit },
 							{
 								host,
 								parent,
@@ -4876,6 +4910,7 @@ export function registerSubagents(
 									...(manifest.settleKey ? { settleKey: manifest.settleKey } : {}),
 									...(manifest.settleEntryId ? { settleEntryId: manifest.settleEntryId } : {}),
 									...(manifest.settledAt ?? manifest.resumedAt ? { settledAt: Math.max(manifest.settledAt ?? 0, manifest.resumedAt ?? 0) } : {}),
+									...(manifest.priorSettle ? { priorSettle: manifest.priorSettle } : {}),
 								},
 							},
 						);

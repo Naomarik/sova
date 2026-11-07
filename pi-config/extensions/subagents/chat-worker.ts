@@ -11,7 +11,7 @@ import { type Delivery, type FoldHandlers, WorkerFold } from "./fold.ts";
 import { fileMessages } from "./run-watch.ts";
 import type { SpawnOptions } from "./runner.ts";
 import { WORKER_TOOLS_ENV } from "./worker-mark.ts";
-import { isNoAnswer, type WorkerFeedFrame, type WorkerHost, type WorkerKind, type WorkerRef, type WorkerSession, type WorkerStart, type WorkerState } from "./worker-host.ts";
+import { isNoAnswer, type WorkerCursor, type WorkerFeedFrame, type WorkerHost, type WorkerKind, type WorkerRef, type WorkerSession, type WorkerStart, type WorkerState } from "./worker-host.ts";
 
 /** The parent a worker belongs to: its session, and the key prefix its starts and sends carry. */
 export interface WorkerParent {
@@ -97,6 +97,8 @@ export class ChatWorker extends WorkerFold {
 	private settleSeenAt?: number;
 	/** A gap was fed: the next state is read as a first one. */
 	private resync = false;
+	/** The newest event frame folded: a dropped link's replay reads frames again, and they count once. */
+	private feedSeen?: WorkerCursor;
 	private readonly host: WorkerHost;
 	private readonly resumed: boolean;
 	private unwatch: (() => void) | null = null;
@@ -197,6 +199,8 @@ export class ChatWorker extends WorkerFold {
 	private onFrame(f: WorkerFeedFrame): void {
 		if (this.closed) return;
 		if (f.t === "event") {
+			if (f.cursor && this.feedSeen?.proc === f.cursor.proc && f.cursor.seq <= this.feedSeen.seq) return;
+			if (f.cursor) this.feedSeen = f.cursor;
 			const e = f.event as { settleKey?: unknown; settleEntryId?: unknown } | null;
 			if (typeof e?.settleKey === "string") {
 				this.settleSeenAt = Date.now();

@@ -258,8 +258,9 @@ test("settle report: a long report is cut to a preview whose whole text, and rea
 		inOrder(fs.readFileSync(snapshot!, "utf8"), long, "No action needed");
 		const size = /Final answer: ([\d,]+) chars/.exec(content)?.[1];
 		assert.ok(Number(size!.replaceAll(",", "")) > long.length, "its size counts every answer");
-		const pages = (await m.call("agent_transcript", { id: "ag_01", offset: long.length - 200 })).details.finalAnswer;
-		assert.match(pages, /No action needed/, "the page past the first answer reaches the second");
+		const paged = await m.call("agent_transcript", { id: "ag_01", offset: long.length - 200 });
+		assert.match(m.textOf(paged), /No action needed/, "the page past the first answer reaches the second");
+		assert.ok(paged.details.finalAnswer.total > long.length, "read-back's total counts every answer");
 		await m.shutdown();
 	});
 });
@@ -304,6 +305,33 @@ async function team(r: { agentDir: string; host: FakeWorkerHost; file: ReturnTyp
 
 const reportsIn = (dir: string) => readMemberItems(dir).filter((i) => i.kind === "report");
 
+/** Both members report, dev's self-started run goes, the coordinator plays its task and its inbox run: its finish holds its wake. */
+async function heldFinish(r: { host: FakeWorkerHost }, t: Awaited<ReturnType<typeof team>>) {
+	const [dev, qa, lead] = [t.chat("dev"), t.chat("qa"), t.chat("coordinator")];
+	r.host.turn(dev, { user: "build", reply: "built it", key: `${t.startOf("dev").key}:task#1` });
+	r.host.turn(qa, { user: "test", reply: "tested it", key: `${t.startOf("qa").key}:task#1` });
+	await until(() => reportsIn(t.dir("coordinator")).length === 2, "both first reports");
+	selfStart(r.host, dev);
+	r.host.turn(lead, { user: "plan", reply: "the objective is done", key: `${t.startOf("coordinator").key}:task#1` });
+	await until(() => t.m.completions().length === 1, "the coordinator's finish");
+	await until(() => r.host.get(lead).sends.length === 1, "the first reports listed to the coordinator");
+	r.host.turn(lead, { user: r.host.get(lead).sends[0]!.text, reply: "still done", key: "lead#2" });
+	await until(() => t.m.completions().length === 2, "the coordinator's finish after its inbox");
+	assert.equal(t.m.completions()[1]![1].triggerTurn, false, "dev still works: the wake is held");
+	return { dev, qa, lead };
+}
+function selfStart(host: FakeWorkerHost, chat: string): void {
+	host.state(chat, { status: "running" });
+	host.event(chat, { type: "agent_start" });
+	host.event(chat, { type: "message_end", message: { role: "user", content: [{ type: "text", text: "[job j1] It passed (exit code 0)." }] } });
+}
+function endQuietly(host: FakeWorkerHost, chat: string, key: string): void {
+	host.event(chat, { type: "agent_end", messages: [] });
+	host.event(chat, { type: "agent_settled", settleKey: key, settleEntryId: key });
+	host.state(chat, { status: "idle", lastSettled: { key, entryId: key, outcome: "success" } });
+}
+const wakesOf = (t: Awaited<ReturnType<typeof team>>) => t.m.completions().filter((c) => c[1].triggerTurn === true);
+
 test("settle report: a member woken by a job's end goes idle again: normal team messages reach it, and its reply reaches the coordinator", async () => {
 	await rig(async (r) => {
 		const t = await team(r);
@@ -337,6 +365,18 @@ test("settle report: a coordinator finishing during a member's card run wakes th
 		r.host.turn(lead, { user: "plan", reply: "the objective is done", key: `${t.startOf("coordinator").key}:task#1` });
 		await until(() => t.m.completions().length === 1, "the coordinator's completion");
 		assert.equal(t.m.completions()[0]![1].triggerTurn, false, "a teammate still works: no wake yet");
+		// The two first reports were listed to the coordinator: that listing's run plays out, still with dev at work.
+		const listed = (text: string, reply: string, key: string) => {
+			r.host.event(lead, { type: "agent_start" });
+			r.host.event(lead, { type: "message_end", message: { role: "user", content: [{ type: "text", text }] } });
+			r.host.event(lead, { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: reply }], stopReason: "stop" } });
+			r.host.event(lead, { type: "agent_end", messages: [] });
+			r.host.event(lead, { type: "agent_settled", settleKey: key, settleEntryId: `${key}-e` });
+		};
+		await until(() => r.host.get(lead).sends.length >= 1, "the first reports listed to the coordinator");
+		listed(r.host.get(lead).sends.at(-1)!.text, "noted both", "lead#2");
+		await until(() => t.m.completions().length === 2, "the coordinator's reply to that listing");
+		assert.equal(t.m.completions()[1]![1].triggerTurn, false, "dev still works: still no wake");
 		// Dev's run ends: its report is recorded and reaches the coordinator, whose next settle wakes the main chat.
 		r.host.event(dev, { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "the job passed too" }], stopReason: "stop" } });
 		r.host.event(dev, { type: "agent_end", messages: [] });
@@ -346,13 +386,9 @@ test("settle report: a coordinator finishing during a member's card run wakes th
 		assert.equal(await t.m.statusOf(t.id("dev")), "waiting");
 		await until(() => r.host.get(lead).sends.some((s) => /the job passed too/.test(s.text)), "the report listed to the coordinator");
 		const send = r.host.get(lead).sends.find((s) => /the job passed too/.test(s.text))!;
-		r.host.event(lead, { type: "agent_start" });
-		r.host.event(lead, { type: "message_end", message: { role: "user", content: [{ type: "text", text: send.text }] } });
-		r.host.event(lead, { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "all done now" }], stopReason: "stop" } });
-		r.host.event(lead, { type: "agent_end", messages: [] });
-		r.host.event(lead, { type: "agent_settled", settleKey: "lead#2", settleEntryId: "y" });
-		await until(() => t.m.completions().length === 2, "the coordinator's second completion");
-		assert.equal(t.m.completions()[1]![1].triggerTurn, true, "no teammate works: the main chat wakes");
+		listed(send.text, "all done now", "lead#3");
+		await until(() => t.m.completions().length === 3, "the coordinator's last completion");
+		assert.equal(t.m.completions()[2]![1].triggerTurn, true, "no teammate works: the main chat wakes");
 		await t.m.shutdown();
 	});
 });
@@ -621,5 +657,46 @@ test("settle report (guard): with no jobs at all, a report has no jobs line", as
 		assert.ok(!m.completions()[0]![0].content.includes("Still running"));
 		assert.ok(!(await m.readBack("ag_01")).includes("Still running"));
 		await m.shutdown();
+	});
+});
+
+// ── a held team wake: a quiet settle sends no report, so nothing else would wake the main chat ───
+
+test("settle report: the last teammate going idle with nothing written sends a coordinator's held wake, once", async () => {
+	await rig(async (r) => {
+		const t = await team(r);
+		const { dev, qa } = await heldFinish(r, t);
+		// Another teammate is still working: it isn't due yet.
+		selfStart(r.host, qa);
+		endQuietly(r.host, dev, "dev#quiet");
+		await until(async () => (await t.m.statusOf(t.id("dev"))) === "waiting", "dev idle");
+		assert.equal(wakesOf(t).length, 0, "qa still works");
+		endQuietly(r.host, qa, "qa#quiet");
+		await until(() => wakesOf(t).length === 1, "the held wake");
+		assert.equal(reportsIn(t.dir("coordinator")).length, 2, "no report came of either run");
+		// At most once per held finish.
+		selfStart(r.host, dev);
+		endQuietly(r.host, dev, "dev#quiet2");
+		await until(async () => (await t.m.statusOf(t.id("dev"))) === "waiting", "dev idle again");
+		assert.equal(wakesOf(t).length, 1);
+		await t.m.shutdown();
+	});
+});
+
+test("settle report (guard): a normal wake clears the held one: no second wake when a teammate later goes idle with nothing written", async () => {
+	await rig(async (r) => {
+		const t = await team(r);
+		const { dev, lead } = await heldFinish(r, t);
+		// Dev reports; the coordinator runs on it and its settle is the normal wake.
+		r.host.event(dev, { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "the job passed too" }], stopReason: "stop" } });
+		endQuietly(r.host, dev, "dev#report");
+		await until(() => r.host.get(lead).sends.some((s) => /the job passed too/.test(s.text)), "dev's report listed to the coordinator");
+		r.host.turn(lead, { user: r.host.get(lead).sends.at(-1)!.text, reply: "all done now", key: "lead#3" });
+		await until(() => wakesOf(t).length === 1, "the normal wake");
+		selfStart(r.host, dev);
+		endQuietly(r.host, dev, "dev#quiet");
+		await until(async () => (await t.m.statusOf(t.id("dev"))) === "waiting", "dev idle");
+		assert.equal(wakesOf(t).length, 1, "no second wake");
+		await t.m.shutdown();
 	});
 });

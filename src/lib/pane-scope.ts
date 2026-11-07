@@ -11,7 +11,7 @@
 // The default scope is the single view: id null, no label, nothing changes.
 
 import { createContext, useContext } from "solid-js";
-import { announce } from "./ui-state";
+import { announce, unannounce } from "./ui-state";
 
 export interface PaneScope {
   /** Suffix for this pane's DOM ids, or null in the single-session view (ids stay bare). */
@@ -53,5 +53,14 @@ export function usePaneAnnounce(): (text: string) => void {
   return (text) => {
     const name = scope.label();
     announce(name ? `${name} — ${text}` : text);
+  };
+}
+
+/** The same pane's sentence taken back out of the region (ui-state `unannounce`). */
+export function usePaneUnannounce(): (text: string) => void {
+  const scope = usePaneScope();
+  return (text) => {
+    const name = scope.label();
+    unannounce(name ? `${name} — ${text}` : text);
   };
 }

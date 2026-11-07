@@ -96,6 +96,13 @@ export const TOPIC_DELIVERED = kind<TopicDeliveredData>("sova-topic-delivered", 
   isRecord(d) && d.v === 1 && filled(d.targetId) ? (d as TopicDeliveredData) : null,
 );
 
+/** A command from shell mode that its chat's close stopped (§chat.shell-mode/lifecycle): written after the
+    command's own entry, `targetId`, which the transcript then reads as "Stopped when the chat closed". */
+export interface ShellClosedData {
+  targetId: string;
+}
+export const SHELL_CLOSED = kind<ShellClosedData>("sova-shell-closed", "branch-list", (d) => (isRecord(d) && filled(d.targetId) ? { targetId: d.targetId } : null));
+
 /** The marker an older build wrote into every member of a group it created; read so they keep opening as before. */
 export const FANOUT_MEMBER = kind<Record<string, unknown>>("sova-fanout-member", "presence", (d) => (isRecord(d) ? d : null));
 
@@ -278,7 +285,7 @@ export const MEMORY = kind<MemoryChoiceData>("sova-memory", "newest-on-branch", 
 /** Every registered kind, by type. */
 export const STATE_KINDS: ReadonlyMap<string, StateKind<unknown>> = new Map(
   [
-    REWIND, TOPIC_DELIVERED, FANOUT_MEMBER, PROFILE, LOADOUT, MCP_LIST, MCP_NOTE, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
+    REWIND, TOPIC_DELIVERED, SHELL_CLOSED, FANOUT_MEMBER, PROFILE, LOADOUT, MCP_LIST, MCP_NOTE, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
     GRANT, RULE, REVOKE, GRANT_USE, PROJECT_OVERSEER, PROJECT_ASSISTANT, LINK_MEMBER, ALIGN_LAUNCH,
     BATON, BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP, TOUR_ATTACHMENT, TOUR_DETACHMENT,
     MODE, SUBAGENT_PROFILE, FORK_CACHE, WORKER_SESSION, SANDBOX, WORKTREES, CLAUDE_LOGIN, ALIGN_DOC, MEMORY,

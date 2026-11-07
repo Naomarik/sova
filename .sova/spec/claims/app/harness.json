@@ -174,7 +174,9 @@
       "server/chat-host.ts",
       "server/chat-runtime/methods.ts",
       "server/chat-runtime/mirror.ts",
-      "server/testing/in-process-chats.ts"
+      "server/testing/in-process-chats.ts",
+      "server/harness/pi/shell.ts",
+      "server/harness/pi/shell.test.ts"
     ],
     "requires": [
       "§app.harness/boundary",
@@ -182,8 +184,9 @@
       "§app.harness/reader"
     ],
     "agreed": {
-      "by": "Omar (al_1 go-ahead)",
-      "at": "2026-10-13T16:18Z"
+      "by": "operator",
+      "at": "2026-11-06T04:44Z",
+      "source": "pi-session:f129828b-8ab7-44b5-a8d0-28839491c2d3#41e62645"
     }
   },
   "§app.harness/session-history": {

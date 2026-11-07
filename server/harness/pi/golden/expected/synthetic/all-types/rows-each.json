@@ -81,7 +81,7 @@
     "{\"id\":\"a0000019\",\"kind\":\"align\",\"text\":\"exempt\",\"toolCallId\":\"call_6\",\"at\":\"2026-09-01T10:00:25.000Z\",\"align\":{\"v\":1,\"changes\":[],\"line\":\"\",\"exempt\":{\"why\":\"a question, no change\"}},\"meta\":{\"type\":\"message\",\"role\":\"toolResult\",\"toolName\":\"align\",\"toolCallId\":\"call_6\",\"isError\":false}}"
   ],
   [
-    "{\"id\":\"a000001a\",\"kind\":\"info\",\"text\":\"$ ls -la\\ntotal 0\",\"at\":\"2026-09-01T10:00:26.000Z\",\"meta\":{\"type\":\"message\",\"role\":\"bashExecution\"}}"
+    "{\"id\":\"a000001a\",\"kind\":\"shell\",\"text\":\"$ ls -la\",\"at\":\"2026-09-01T10:00:26.000Z\",\"shell\":{\"command\":\"ls -la\",\"output\":\"total 0\",\"exitCode\":0},\"meta\":{\"type\":\"message\",\"role\":\"bashExecution\"}}"
   ],
   [
     "{\"id\":\"a000001b\",\"kind\":\"info\",\"text\":\"A short extension note\",\"at\":\"2026-09-01T10:00:27.000Z\",\"meta\":{\"type\":\"message\",\"role\":\"custom\",\"customType\":\"note-ext\"}}"

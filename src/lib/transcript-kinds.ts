@@ -148,7 +148,7 @@ export interface LiveForm {
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "mcp-note" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report" | "align";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "shell" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "mcp-note" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report" | "align";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -245,6 +245,8 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   kind({ id: "baton", match: (it) => it.batonMark && it.batonMark.kind !== "sent" && it.batonMark, host: "page", placement: "anchored", view: { page: "baton" } }),
   kind({ id: "overseer-answer", match: (it) => it.overseerMark?.kind === "dialog-answer" && it.overseerMark, host: "page", placement: "anchored", view: { page: "overseer-answer" } }),
   kind({ id: "worktree-merge", match: (it) => it.kind === "worktree-merge" && it.worktreeMerge, host: "page", placement: "anchored", view: { page: "worktree-merge" } }),
+  // A command you ran, from shell mode or pi's terminal: its card, never the plain "$ command" row (§chat.shell-mode/card).
+  kind({ id: "shell", match: (it) => it.kind === "shell" && it.shell, host: "page", placement: "anchored", view: { page: "shell" } }),
   // Legacy: the retired spec card's row, still sent by older mesh peers.
   kind({ id: "spec-turn", match: (it) => it.kind === "spec-turn", host: "page", placement: "anchored", drawsNothing: true }),
   kind({

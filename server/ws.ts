@@ -30,6 +30,7 @@ import { CHAT_CLOSED_CLOSE_CODE, HAVE_MAX_CHARS, HAVE_PARAM, type WireVersion } 
 import { unsentRefusal } from "../shared/chat-runtime";
 import { draftTexts, HeldSends, type Unsent } from "../shared/held-sends";
 import { putBackDraft } from "./drafts";
+import { SHELL_NOT_PAGE_TEXT } from "./chat-shell";
 import { COMPOSER_PARAM } from "../shared/wire-areas";
 import { writingRefused } from "./wire-gate";
 import { opNote, stallGauge } from "./stall-recorder";
@@ -92,6 +93,13 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   /** One frame into the chat. `/sandbox` typed in the page's composer runs; from anything else a lowering is refused
       (§app.access/your-click), the send's refusal reaching this socket like any other. */
   const toChat = (open: NonNullable<typeof chat>, msg: ChatClientMessage) => {
+    // A command from shell mode is typed at a message box: the page's here, or a page on another computer through a
+    // peer (§chat.shell-mode/who). A script's, a chat's, an extension's or the Overseer's socket runs none and stops
+    // none: `shell` hears why, so nothing waits on it; `shell_stop` has no answer of its own and does nothing.
+    if (who !== null && who !== "local" && (msg.type === "shell" || msg.type === "shell_stop")) {
+      if (msg.type === "shell") client.send({ type: "shell_refused", clientId: String(msg.clientId ?? ""), reason: "unavailable", message: SHELL_NOT_PAGE_TEXT });
+      return;
+    }
     // A card's click opens a turn that may act on what the card names, so it is the person's, never a script's or a
     // chat's (§app.access/your-click). A click relayed by a peer stays as it was: a page on another computer sends one.
     if (who !== null && who !== "local" && msg.type === "prompt" && msg.confirm) {
@@ -181,7 +189,9 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     }
     if (opts.refused) {
       const clientId = (msg as { clientId?: unknown }).clientId;
-      client.send({ type: "error", code: "refused", message: opts.refused, ...(typeof clientId === "string" && clientId ? { clientId } : {}) });
+      // A command from shell mode hears its own refusal, so its box stops waiting and keeps it (§chat.shell-mode/running).
+      if (msg.type === "shell") client.send({ type: "shell_refused", clientId: String(clientId ?? ""), reason: "unavailable", message: opts.refused });
+      else client.send({ type: "error", code: "refused", message: opts.refused, ...(typeof clientId === "string" && clientId ? { clientId } : {}) });
       return;
     }
     sessionsChanged(); // a prompt, abort or rename: the next listing is built afresh
@@ -281,7 +291,8 @@ export function deliverFrames(path: string, frames: readonly ChatClientMessage[]
   const gone = Object.assign(new EventEmitter(), { readyState: 3, OPEN: 1, close() {}, send() {} });
   const ws = gone as unknown as WebSocket;
   handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2, undefined, { notPage }).catch((err) => console.error("[chat/frames]", err));
-  for (const f of frames) gone.emit("message", JSON.stringify(f));
+  // A command from shell mode is never run from here (§chat.shell-mode/who): only a live chat socket starts one.
+  for (const f of frames) if (!isShellFrame(f)) gone.emit("message", JSON.stringify(f));
   gone.emit("close");
 }
 
@@ -347,12 +358,17 @@ export function recordFrame(path: string, frame: ChatClientMessage, onFrame: (ms
   };
 }
 
-/** The frames of a POST /api/chat/frames body (`{ frames: [...] }`), or null when malformed. */
+/** A shell-mode frame (`shell`, `shell_stop`): the frames path drops it. */
+const isShellFrame = (f: { type?: unknown }) => f.type === "shell" || f.type === "shell_stop";
+
+/** The frames of a POST /api/chat/frames body (`{ frames: [...] }`), or null when malformed. Shell-mode
+    frames are dropped (§chat.shell-mode/who, §chat.transcript/send-while-starting): a command runs only
+    from a live chat socket. */
 export function postedFrames(body: unknown): ChatClientMessage[] | null {
   const frames = (body as { frames?: unknown } | null)?.frames;
   if (!Array.isArray(frames) || frames.length === 0 || frames.length > POSTED_FRAMES_MAX) return null;
   for (const f of frames) if (!f || typeof f !== "object" || Array.isArray(f) || typeof (f as { type?: unknown }).type !== "string") return null;
-  return frames as ChatClientMessage[];
+  return (frames as ChatClientMessage[]).filter((f) => !isShellFrame(f));
 }
 
 /** The texts in posted frames that go back as a draft when the frames are refused unrun. */

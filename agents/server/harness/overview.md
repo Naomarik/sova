@@ -42,7 +42,7 @@ found so far (pi 1.0.3).
   (`server/harness/pi/testing/handle.ts`). (§app.harness/session)
 - **Every reach into pi's internals is a quirk** in `server/harness/pi/QUIRKS.md` (typed rows:
   `quirks.ts`): a monkey-patch, private read, error text, ordering or internal API, each with its sites
-  and a canary (`P1`…`P20`, `T1`) in `contract.test.ts`. On a pin bump or a TUI pi upgrade, run the
+  and a canary (`P1`…`P40`, `T1`) in `contract.test.ts`. On a pin bump or a TUI pi upgrade, run the
   canaries against that pi (command below); a failing canary is a triage by its row, never a test edit.
   `quirks-meta.test.ts` fails on a private cast, method-table cast or SDK-member assignment no row
   names. A new reach adds its row, canary and sites in the same change.
@@ -143,6 +143,14 @@ found so far (pi 1.0.3).
   (`piProviderKeys` in `server/harness/pi/sign-in.ts`, the contract's `ProviderKeyStore`, quirk P38); pi
   exports no `AuthStorage`, and `setRuntimeApiKey` stores nothing. `server/provider-keys.ts` checks a key
   before it calls them and refreshes the shared runtime after.
+- The user's own `!` commands (shell mode, §chat.shell-mode/running) are `HarnessSession.shell` (run, stop,
+  isRunning), pi's in `server/harness/pi/shell.ts` (quirk P40): `executeBash` emits no `user_bash`, so the adapter
+  calls `extensionRunner.emitUserBash` first as pi's RPC mode does, then picks the operations in a fixed order (the
+  hook's, else the sandbox's `prepareSessionCommand` confinement when On, failing closed, else pi's local shell).
+  pi records the result as a `bashExecution` message itself, deferred while the agent streams until the run ends
+  (no event: `writtenEntry` finds it), and `dispose()` aborts a running command, so `ChatShell.close`
+  (`server/chat-shell.ts`) stops it and waits for its record first. The runtime's extension bus is Sova's
+  (`sandboxBus`, handed to the loader in `servicesForCwd`), so the adapter hears `sandbox:state`.
 - Extension dialog bridge (ExtensionUIContext) pattern: `<pi>/dist/modes/rpc/rpc-mode.js`
   (`createExtensionUIContext` at line 83, bound via `bindExtensions({uiContext, mode:"rpc", ...})` at
   line 231). Sova's is `createPiUiContext`/`bindPiExtensions` (`server/harness/pi/ui-bridge.ts`), bound

@@ -8,7 +8,7 @@ import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORK
 import { prepareOwnerArea } from "../shared/decisions";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
-import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, ProjectModeApproval, ProjectModeApprovalNeeded, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
+import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, ProjectModeApproval, ProjectModeApprovalNeeded, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, ShellRefusal, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 import { isLinkMessage, parseLinkMessage } from "../shared/link-message";
@@ -30,7 +30,7 @@ import { applySandbox, onSandboxAppend, sandboxInfo, sandboxMessage, type Sandbo
 import type { SandboxState } from "../pi-config/extensions/sandbox/state.ts";
 import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick, loginName } from "./claude-login-state";
 import { rowsOf, rowsOfEntry } from "./transcript";
-import { onWire, onWire1, withRows, type ReplyLookup } from "./wire-rows";
+import { isShellMessage, onWire, onWire1, rowFor, withRows, type ReplyLookup } from "./wire-rows";
 import { perfRecordOf, ReplyTimer, type ReplyOutcome } from "./reply-timing";
 import { appendPerfRecord, replyTimingOf, type PerfKind } from "./perf-record";
 import { replyTimingsOf } from "./reply-facts";
@@ -51,7 +51,8 @@ import { modesEntries, workerModePaths } from "./harness/pi/own-code";
 import { modesBridgeExtension, type ModesHandle } from "./harness/pi/modes";
 import { isAlreadyProcessing } from "./harness/pi/session";
 import { isCompactionInProgress } from "./harness/pi/history-ops";
-import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MCP_NOTE, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
+import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MCP_NOTE, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SHELL_CLOSED, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
+import { ChatShell } from "./chat-shell";
 import { piPrepare, toolCtx, toPiTool } from "./harness/pi/tools";
 import { forgetSpecial, specialLoadout, specialWriter } from "./chat-special";
 import { cutTail, helloAfterHave, type HistoryPart, pullFields } from "./tail-hello";
@@ -552,7 +553,7 @@ export interface CutHello {
 
 /** `history`: false when only `?tail=rest` clients get it, who are never pushed any. */
 export function cutHello(hello: Extract<ChatServerMessage, { type: "hello" }>, history = true): CutHello {
-  const cut = cutTail(hello.items, { history });
+  const cut = cutTail(hello.items, { history, v1: (it) => rowFor(it, 1) });
   return { hello: cut.older > 0 ? { ...hello, items: cut.items, older: cut.older } : hello, history: cut.history, all: hello.items };
 }
 
@@ -579,7 +580,7 @@ function sendHistory(cut: CutHello | null, clients: readonly ChatClient[], still
     const parts = c.wire === 2 ? (cut.history2 ??= cut.history.map((p) => historyOnWire2(p, replies))) : cut.history;
     for (const part of parts) {
       if (c.sendRaw) c.sendRaw(part.raw);
-      else c.send(part.msg);
+      else c.send(c.wire === 2 ? part.msg : withRows(part.msg, 1));
     }
   }
 }
@@ -1343,6 +1344,31 @@ class ChatSession {
    * removable one by one (the SDK can only clear the lot). A message sent to an IDLE session never
    * enters it: there is nothing to queue behind.
    */
+  /** The user's commands from shell mode (server/chat-shell.ts, §chat.shell-mode/running). */
+  readonly shell: ChatShell = new ChatShell({
+    harness: () => this.harness,
+    broadcast: (msg) => this.broadcast(msg),
+    refusal: () => this.shellRefusal(),
+    beforeWrite: () => this.flushDeferredAppends(),
+    rowsOf: (entry, closed) => rowsOfEntry(entry, "?", closed && entry.id ? { closedShell: new Set([entry.id]) } : undefined),
+    markClosed: (entryId) => void this.harness.state.append(SHELL_CLOSED, { targetId: entryId }),
+    changed: () => {},
+  });
+
+  /** Why this chat runs no command from shell mode now, or null (§chat.shell-mode/box, /who). */
+  private shellRefusal(): { reason: ShellRefusal; message: string } | null {
+    if (this.disposed) return { reason: "unavailable", message: "The chat was restarting; your command didn't run." };
+    // The Overseer, project overseers and assistants, gathering sessions: their agents have no shell.
+    if (this.special) return { reason: "unavailable", message: "This chat has no shell mode." };
+    try {
+      assertNotLive(this.path);
+      this.assertNoForeignWrites();
+    } catch (err) {
+      return { reason: err instanceof BusyError && err.code === "recent" ? "recent" : "busy", message: err instanceof Error ? err.message : String(err) };
+    }
+    return null;
+  }
+
   readonly queue: WebQueue = new WebQueue({
     sdk: {
       // The REAL queue (`hasQueued`, the agent's own) and the mirror, through the driving session
@@ -2926,6 +2952,7 @@ class ChatSession {
     const harness = this.harness;
     const branch = harness.branch();
     const tail = live ? this.liveTail.snapshot() : undefined;
+    const shell = this.shell.snapshot();
     return {
       type: "hello",
       items: rowsOf(branch),
@@ -2937,6 +2964,9 @@ class ChatSession {
       ...(this.alignLaunch?.data ? { alignReview: this.alignLaunch.data.review } : {}),
       ...(this.cwdFallback ? { cwdFallback: this.cwdFallback } : {}),
       ...(tail ? { live: tail } : {}),
+      ...(shell ? { shell } : {}),
+      // Its own agent and folder (§chat.shell-mode/box): a special kind's agent has no shell.
+      ...(this.special ? {} : { shellMode: true as const }),
     };
   }
 
@@ -3477,7 +3507,7 @@ class ChatSession {
     // A message after a model switch or a rewind still under way waits for it, so what the person
     // asked first is applied first (§chat.transcript/send-while-starting). A dialog's answer and a
     // Stop never wait.
-    if (this.behind && msg.type !== "ui_response" && msg.type !== "abort") {
+    if (this.behind && msg.type !== "ui_response" && msg.type !== "abort" && msg.type !== "shell_stop") {
       const tail = this.behind.then(() => this.handleNow(client, msg));
       this.behind = tail;
       void tail.then(() => {
@@ -3664,6 +3694,12 @@ class ChatSession {
           else client.send({ type: "code", state: "current" });
           return;
         }
+        case "shell":
+          this.shell.start(client, msg);
+          return;
+        case "shell_stop":
+          this.shell.stop(String(msg.id ?? ""));
+          return;
         case "ui_response": {
           const pending = this.pendingUi.get(msg.id);
           if (pending) {
@@ -3924,8 +3960,9 @@ class ChatSession {
     let on1: ChatServerMessage | undefined;
     for (const c of this.clients) {
       if (c.wire === 2) for (const m of (on2 ??= onWire(msg, 2, this.replyLookup))) c.send(m);
-      // Wire 1 stays byte for byte: a message_end's reply timing rides wire 2 only.
-      else c.send((on1 ??= onWire1(msg)));
+      // Wire 1 stays byte for byte: a message_end's reply timing rides wire 2 only, and so does shell mode
+      // (a command's row and its live messages).
+      else if (!isShellMessage(msg)) c.send((on1 ??= withRows(onWire1(msg), 1)));
     }
   }
 
@@ -4025,6 +4062,10 @@ class ChatSession {
   }
 
   async dispose(): Promise<void> {
+    if (this.disposed) return;
+    // A command running stops and is saved as stopped by the close, before anything goes
+    // (§chat.shell-mode/lifecycle); a run waiting for the reply to end is saved first.
+    await this.shell.close().catch((err) => console.warn(`[chat] shell run not saved at close: ${err instanceof Error ? err.message : String(err)}`));
     if (this.disposed) return;
     // A baton session closing cleanly (archive, shutdown, reload) keeps every message still
     // waiting in its queue, as its sender's: nothing sent is dropped (§app.baton/hand-off). A

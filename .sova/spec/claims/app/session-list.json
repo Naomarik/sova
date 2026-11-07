@@ -73,7 +73,9 @@
       "server/index.ts",
       "server/tours/sweep-startup.integration.test.ts",
       "server/app.ts",
-      "server/cleanup-dry-run.test.ts"
+      "server/cleanup-dry-run.test.ts",
+      "server/chat-handle.ts",
+      "server/sessions-shell-only.test.ts"
     ]
   },
   "§app.session-list/archive-org-guard": {
@@ -95,7 +97,9 @@
       "server/tours/ownership.ts",
       "server/tours/ownership.test.ts",
       "server/tours/sweep.ts",
-      "server/tours/sweep.test.ts"
+      "server/tours/sweep.test.ts",
+      "server/chat-handle.ts",
+      "server/sessions-shell-only.test.ts"
     ]
   },
   "§app.session-list/auto-titles": {
@@ -179,7 +183,9 @@
       "src/lib/session-row.snapshot.json",
       "src/components/NeedsYouRow.tsx",
       "server/sessions-index-jobs.test.ts",
-      "src/lib/session-row.test.ts"
+      "src/lib/session-row.test.ts",
+      "server/sessions-shell-only.test.ts",
+      "server/chat-handle.ts"
     ],
     "agreed": {
       "by": "user",

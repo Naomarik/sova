@@ -113,7 +113,8 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   New Chat, and the `project.icon.*` entries read and set a project's icon
   (§app.project-commands/projects-sweep, §app.projects/icon). The `session.pairs.*` entries list the
   Overseer's pairings in force, end one and resume a paused one, as a paired chat's line does
-  (§app.overseer/pairs); making a pairing is the Overseer's alone and no entry.
+  (§app.overseer/pairs); making a pairing is the Overseer's alone and no entry. Running a command from a chat's message box
+  is no entry either: only a person at that box starts one (§chat.shell-mode/who).
 - **Its mesh reach is its route's.** Each entry's `meshNeed` is the capability the peer listener's
   classifier gives its method and path (§mesh.peers/grants), and a test fails when they differ.
 - **Never a door the operator keeps closed.** No entry targets the peer routes (`/api/peer`,

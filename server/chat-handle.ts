@@ -535,6 +535,12 @@ export function isSessionBusy(path: string): boolean {
   return !!h && h.mirror.running;
 }
 
+/** This server holds the chat and a command from shell mode runs in it, or ran and isn't saved yet
+    (§chat.shell-mode/lifecycle): its file may hold nothing yet, but it is no empty husk. */
+export function shellInFlight(path: string): boolean {
+  return chatHandle(path)?.mirror.shell === true;
+}
+
 /** SessionSummary.pendingDialogs: the waiting extension dialogs of a chat this server holds. */
 export function pendingDialogCount(path: string): number {
   return chatHandle(path)?.mirror.dialogs.length ?? 0;

@@ -30,6 +30,7 @@ import {
 	type ClaudeTurnPayload,
 	type ClaudeUsage,
 	ClaudeProtocolError,
+	cliHasTool,
 	parseToolInput,
 	toPiToolName,
 } from "./types.ts";
@@ -203,6 +204,23 @@ export function streamClaudeCode(
 		let attempt: { rejected: Diagnostic[]; accepted: number; started: boolean } = { rejected: [], accepted: 0, started: false };
 		/** Each streamed tool call's block-start input, untouched (never on the message itself). */
 		const startInputs = new WeakMap<object, unknown>();
+		/** Each streamed tool call's name as the CLI sent it (pi's name is on the block). */
+		const cliNames = new WeakMap<object, string>();
+
+		/**
+		 * A tool call the CLI answers itself and retries: never run, never repaired,
+		 * recorded only as a diagnostic (never its arguments).
+		 */
+		const rejectCall = (error: { name: string; message: string }, details: JsonObject): void => {
+			const diagnostic: Diagnostic = { type: INVALID_TOOL_INPUT_DIAGNOSTIC, timestamp: Date.now(), error, details };
+			output.diagnostics = [...(output.diagnostics ?? []), diagnostic];
+			attempt.rejected.push(diagnostic);
+		};
+		/** A call under a name the CLI has no tool for (see cliHasTool). */
+		const rejectUnknownTool = (name: string, id: string): void => rejectCall(
+			{ name: "ClaudeUnknownTool", message: `Claude called tool "${name}", which it does not have` },
+			{ tool: name, toolCallId: id, reason: "unknown-tool" },
+		);
 
 		const applyUsage = (usage: ClaudeUsage | undefined): void => {
 			if (!usage) return;
@@ -236,6 +254,14 @@ export function streamClaudeCode(
 				// "" (no deltas) is the block-start input, as the CLI sent it.
 				const verdict = parseToolInput(call.partialJson ?? "", startInputs.get(block));
 				delete call.partialJson;
+				const cliName = cliNames.get(block) ?? call.name;
+				if (!cliHasTool(cliName)) {
+					// The CLI answers it ("No such tool available") and asks the model
+					// again, as for invalid arguments: pi must not run it too.
+					blocks.splice(contentIndex, 1);
+					rejectUnknownTool(cliName, call.id);
+					return;
+				}
 				if (!verdict.ok) {
 					// Never run, never repaired: the CLI rejects the same bytes and
 					// asks the model again in this CLI turn (the bridge keeps the pi
@@ -243,15 +269,11 @@ export function streamClaudeCode(
 					// later block takes its content index; message_end replaces the
 					// partial the live view saw.
 					blocks.splice(contentIndex, 1);
-					const diagnostic: Diagnostic = {
-						type: INVALID_TOOL_INPUT_DIAGNOSTIC,
-						timestamp: Date.now(),
-						error: { name: "ClaudeInvalidToolInput", message: `Claude sent invalid JSON arguments for tool "${call.name}": ${verdict.error}` },
+					rejectCall(
+						{ name: "ClaudeInvalidToolInput", message: `Claude sent invalid JSON arguments for tool "${call.name}": ${verdict.error}` },
 						// Never the raw arguments: their length and where parsing failed only.
-						details: { tool: call.name, toolCallId: call.id, bytes: verdict.bytes, ...(verdict.position === undefined ? {} : { position: verdict.position }) },
-					};
-					output.diagnostics = [...(output.diagnostics ?? []), diagnostic];
-					attempt.rejected.push(diagnostic);
+						{ tool: call.name, toolCallId: call.id, bytes: verdict.bytes, ...(verdict.position === undefined ? {} : { position: verdict.position }) },
+					);
 					return;
 				}
 				call.arguments = verdict.args as JsonObject;
@@ -355,7 +377,9 @@ export function streamClaudeCode(
 				// With --include-partial-messages the whole-message frame repeats
 				// what the stream already delivered; only use it as a fallback.
 				if (!sawStreamedContent) replayAssistant(frame);
-				if (frame.stopReason && output.stopReason === "pending") output.stopReason = mapStopReason(frame.stopReason);
+				// A tool_use stop naming only calls the CLI answers itself ends nothing.
+				if (frame.stopReason && output.stopReason === "pending" && !(frame.stopReason === "tool_use" && rejectedOnly()))
+					output.stopReason = mapStopReason(frame.stopReason);
 				return;
 			}
 			handleEvent(frame.event);
@@ -376,8 +400,11 @@ export function streamClaudeCode(
 					(output.content[contentIndex] as ThinkingContent).thinking = block.thinking;
 					stream.push({ type: "thinking_delta", contentIndex, delta: block.thinking, partial: output });
 					stream.push({ type: "thinking_end", contentIndex, content: block.thinking, partial: output });
+				} else if (!cliHasTool(block.name)) {
+					rejectUnknownTool(block.name, block.id);
 				} else {
 					sawToolCall = true;
+					attempt.accepted++;
 					const call: ToolCall = {
 						type: "toolCall",
 						id: block.id,
@@ -437,6 +464,7 @@ export function streamClaudeCode(
 						const block: Block = { type: "toolCall", id: event.block.id, name: toPiToolName(event.block.name, tools), arguments: input, partialJson: "", index: event.index };
 						// Judged untouched at the stop: a null, string or array start input is invalid, not `{}`.
 						startInputs.set(block, event.block.input);
+						cliNames.set(block, event.block.name);
 						blocks.push(block);
 						stream.push({ type: "toolcall_start", contentIndex, partial: output });
 					}

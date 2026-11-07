@@ -198,7 +198,11 @@ into one user message. Prior tool calls and results are flattened to prose in
 that fold: the CLI never pairs a replayed `tool_result` to a `tool_use`
 (investigation invariant 1). Tools are named in the fold as the CLI exposes them
 (`mcp__sova__bash`, not `bash`): a model that copies a bare name from the
-replay gets "No such tool available".
+replay gets "No such tool available". A bare name the model copies from
+anywhere else is handled like invalid tool arguments: the CLI answers that call
+itself and asks the model again, so the provider never runs it and its retry
+continues the same pi message on the same child (`cliHasTool` in
+`provider/types.ts`).
 
 The fold is sized from the model's context window: the window, less pi's
 compaction reserve (16,384), the system prompt, the tool declarations, the

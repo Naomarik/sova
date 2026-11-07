@@ -318,6 +318,16 @@ export function parseToolInput(json: string, startInput?: unknown): ToolInputVer
 	return { ok: true, args: value };
 }
 
+/**
+ * Whether the CLI has a tool of this name. It has no built-ins and no MCP server
+ * but pi's, so every tool it can run is `mcp__sova__<name>`; under any other name
+ * (a bare `bash` the model copied from prose) the CLI answers the call itself
+ * ("No such tool available") and asks the model again, never dispatching it.
+ */
+export function cliHasTool(name: string): boolean {
+	return name.startsWith(MCP_TOOL_PREFIX);
+}
+
 /** Map an MCP facade tool name back to the pi tool name pi will execute. */
 export function toPiToolName(name: string, tools: readonly Tool[]): string {
 	const bare = name.startsWith(MCP_TOOL_PREFIX) ? name.slice(MCP_TOOL_PREFIX.length) : name;

@@ -1981,3 +1981,25 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .time-spent-docs .text-muted { margin: 0; overflow-wrap: anywhere; }
 .time-spent-skeleton { display: flex; flex-direction: column; gap: var(--space-4); }
 .time-spent-skeleton .time-spent-rows .text-skeleton { flex: none; }
+
+/* The session strip scrolls sideways: a soft fade at each edge with tabs beyond it (data-fade, set
+   on scroll and resize). A mask, so it fades into the pane's own ground in either theme; the bottom
+   3px stay whole, so the selected tab's underline and the strip's rule never fade, and the mask
+   takes no clicks. scroll-padding keeps a tab scrolled into view clear of the fade. */
+.session-tabs { scroll-padding-inline: var(--space-7); }
+.session-tabs[data-fade] {
+  --fade-l: #000;
+  --fade-r: #000;
+  -webkit-mask-image: linear-gradient(to right, var(--fade-l), #000 var(--space-7), #000 calc(100% - var(--space-7)), var(--fade-r)), linear-gradient(#000, #000);
+  mask-image: linear-gradient(to right, var(--fade-l), #000 var(--space-7), #000 calc(100% - var(--space-7)), var(--fade-r)), linear-gradient(#000, #000);
+  -webkit-mask-size: 100% 100%, 100% 3px;
+  mask-size: 100% 100%, 100% 3px;
+  -webkit-mask-position: 0 0, 0 100%;
+  mask-position: 0 0, 0 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+.session-tabs[data-fade="start"],
+.session-tabs[data-fade="both"] { --fade-l: transparent; }
+.session-tabs[data-fade="end"],
+.session-tabs[data-fade="both"] { --fade-r: transparent; }

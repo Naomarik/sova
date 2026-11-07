@@ -26,6 +26,7 @@ before(async () => {
     assert.equal(r.status, 0, r.stderr);
   }
   if (SHOTS) mkdirSync(SHOTS, { recursive: true });
+  if (process.env.SPENT_FADE_SHOTS) mkdirSync(process.env.SPENT_FADE_SHOTS, { recursive: true });
   browser = await launchTourBrowser();
 });
 after(async () => {
@@ -462,6 +463,52 @@ test("counts stay in one column when a row reaches an hour, and at 375px long me
     const overflow = await page.locator(".session-panel-scroll").evaluate((el) => el.scrollWidth - el.clientWidth);
     assert.ok(overflow <= 0, `the panel scrolls sideways by ${overflow}px`);
   } finally {
+    await page.context().close();
+  }
+});
+
+/** Which edges of the session strip fade, read from the strip itself (its data-fade) and from its mask. */
+const stripFade = (page: Page) =>
+  page.locator(".session-tabs").evaluate((el) => {
+    const f = el.getAttribute("data-fade");
+    const mask = getComputedStyle(el).maskImage || getComputedStyle(el).getPropertyValue("-webkit-mask-image");
+    return { left: f === "start" || f === "both", right: f === "end" || f === "both", masked: mask !== "none" && mask !== "", overflows: el.scrollWidth > el.clientWidth };
+  });
+const FADE_SHOTS = process.env.SPENT_FADE_SHOTS ?? "";
+
+test("the session strip fades at the edge with tabs beyond it, and nowhere when they all fit", async () => {
+  {
+    const { page } = await open(375, 812, "session", undefined, { pressTab: false });
+    try {
+      await page.locator("[role=tab][aria-selected=true]").waitFor();
+      assert.deepEqual(await stripFade(page), { left: false, right: true, masked: true, overflows: true }, "at 375 at the start: a fade at the right only");
+      if (FADE_SHOTS) await page.screenshot({ path: join(FADE_SHOTS, "375-dark-start.png") });
+      await page.locator(".session-tabs").evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
+      await page.waitForFunction(() => document.querySelector(".session-tabs")?.getAttribute("data-fade") !== "end");
+      assert.deepEqual(await stripFade(page), { left: true, right: false, masked: true, overflows: true }, "at 375 scrolled to the end: a fade at the left only");
+      if (FADE_SHOTS) await page.screenshot({ path: join(FADE_SHOTS, "375-dark-end.png") });
+      if (FADE_SHOTS) {
+        await page.locator(".session-tabs").evaluate((el) => el.scrollTo({ left: 0 }));
+        await page.evaluate(() => (document.documentElement.dataset.theme = "light"));
+        await page.waitForFunction(() => document.querySelector(".session-tabs")?.getAttribute("data-fade") === "end");
+        await page.screenshot({ path: join(FADE_SHOTS, "375-light-start.png") });
+      }
+    } finally {
+      await page.context().close();
+    }
+  }
+  {
+    const { page } = await open(2200, 1000, "time");
+    try {
+      assert.deepEqual(await stripFade(page), { left: false, right: false, masked: false, overflows: false }, "every tab fits: no fade");
+    } finally {
+      await page.context().close();
+    }
+  }
+  if (FADE_SHOTS) {
+    const { page } = await open(1440, 1000, "time");
+    await settled(page);
+    await page.screenshot({ path: join(FADE_SHOTS, "1440-dark-time-spent.png") });
     await page.context().close();
   }
 });

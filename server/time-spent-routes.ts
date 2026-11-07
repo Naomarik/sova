@@ -16,11 +16,18 @@ import {
   type TimeSpentReport,
   type TimeSpentSlice,
 } from "../shared/time-spent";
-import { isSessionBusy } from "./chat-handle";
+import { chatHandle, isSessionBusy } from "./chat-handle";
 import { readLive } from "./live";
 import { resolveSessionPath } from "./paths";
-import { idOf, readHead } from "./sessions-index";
+import { getSessionSummary, idOf, readHead } from "./sessions-index";
 import { agentFigures, agentSpans, alignFacts, type AgentSpans, type AlignFacts } from "./time-spent-figures";
+import { exclusionReason } from "./attention-signals";
+import { sessionOwnMessages, type OwnMessage } from "./message-input";
+import { messageLabelStore } from "./message-labels";
+import { serverRedactor } from "./overseer-redact";
+import { withholdPasswords } from "./decide-runtime";
+import { readDecisionSettings } from "./decide-settings";
+import { attributeMessages, showsMessages } from "./time-spent-messages";
 import { timeSpentStore } from "./time-spent";
 import { rowsOf } from "./transcript-rows";
 
@@ -66,9 +73,11 @@ interface Facts {
   readAt: number;
   spans: AgentSpans;
   aligns: AlignFacts[];
+  own: OwnMessage[];
 }
 const factsMemo = new Map<string, Facts>();
 const FACTS_KEPT = 16;
+const EXCERPT_CHARS = 120;
 
 async function transcriptFacts(path: string, now: number): Promise<Facts> {
   const st = statSync(path);
@@ -77,7 +86,7 @@ async function transcriptFacts(path: string, now: number): Promise<Facts> {
   if (had && (had.stamp === stamp || (st.size > BIG_FILE_BYTES && now - had.readAt < BIG_FILE_REREAD_MS))) return had;
   // The whole active branch, read from the file: never what a page has loaded, and never a write.
   const rows = await rowsOf(path);
-  const facts: Facts = { stamp, readAt: now, spans: agentSpans(rows.branch), aligns: alignFacts(rows.items) };
+  const facts: Facts = { stamp, readAt: now, spans: agentSpans(rows.branch), aligns: alignFacts(rows.items), own: await sessionOwnMessages(path) };
   factsMemo.delete(path);
   factsMemo.set(path, facts);
   if (factsMemo.size > FACTS_KEPT) factsMemo.delete(factsMemo.keys().next().value!);
@@ -86,6 +95,28 @@ async function transcriptFacts(path: string, now: number): Promise<Facts> {
 
 /** Working now: this server's own chat, or a TUI's live record saying so. */
 const agentRunning = (path: string): boolean => isSessionBusy(path) || readLive().get(path)?.activity?.state === "working";
+
+/** A message's line in the list: one line, short, and nothing a decision wouldn't be let to send. */
+function excerptOf(text: string): string {
+  const one = withholdPasswords(text).replace(/\s+/g, " ").trim();
+  const safe = serverRedactor().redactDeep(one);
+  return safe.length > EXCERPT_CHARS ? `${safe.slice(0, EXCERPT_CHARS - 1)}…` : safe;
+}
+
+/** Your Messages, computed from the record and the labels on every read. Absent with the switch off, on a session with
+    no typed message since it went on and no stored label, and on one the Decisions gate stops. An archived session keeps its figures. */
+async function messageFigures(path: string, session: string, own: readonly OwnMessage[]): Promise<Pick<TimeSpentRecord, "messages" | "screenshots">> {
+  const settings = readDecisionSettings();
+  if (!settings.features.messageLabels) return {};
+  const summary = await getSessionSummary(path).catch(() => null);
+  if (!summary || exclusionReason({ ...summary, archived: false }, settings, !!chatHandle(path), undefined, "messageLabels")) return {};
+  const store = messageLabelStore();
+  const periods = store.periods();
+  const labels = store.read(session);
+  if (!showsMessages(own, labels, periods)) return {};
+  const { messages, screenshots } = attributeMessages(timeSpentStore().runs(session), own, labels, periods, excerptOf);
+  return { messages, ...(screenshots.reworking + screenshots.directing + screenshots.other > 0 ? { screenshots } : {}) };
+}
 
 /** The session's record as the section reads it. */
 export async function readTimeSpent(path: string, now = Date.now()): Promise<TimeSpentRecord> {
@@ -106,6 +137,7 @@ export async function readTimeSpent(path: string, now = Date.now()): Promise<Tim
       return { docId: a.docId, title: a.title, toRead: a.toRead, onScreen: doc?.onScreen ?? 0, firstShownAt, toDecided };
     }),
     older: Number.isFinite(began) && began < store.since(now),
+    ...(await messageFigures(path, idOf(path), facts.own)),
   };
 }
 

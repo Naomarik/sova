@@ -61,6 +61,9 @@ import { startExtensionKeys } from "./extension-keys";
 import { startUpdates } from "./updates/routes";
 import { decisions, decisionSettings, decisionsReady } from "./decide-runtime";
 import { AttentionSignals } from "./attention-signals";
+import { sessionOwnMessages } from "./message-input";
+import { MessageLabeller } from "./message-labeller";
+import { messageLabelStore } from "./message-labels";
 import { configureSessionFeed, nudgeMarks, sessionFeed } from "./session-feed";
 import { startEvents } from "./events";
 import { onAttentionNotified } from "./attention-memo";
@@ -319,6 +322,15 @@ const attentionSignals = new AttentionSignals({
   changed: nudgeMarks,
 });
 attentionSignals.start();
+// Labelling each typed message (§app.message-labels/labelling): the same seam and privacy gate, its own switch.
+new MessageLabeller({
+  settings: decisionSettings,
+  provider: () => (decisionsReady() ? decisions() : null),
+  list: listSessions,
+  held: (path) => !!chatHandle(path),
+  read: sessionOwnMessages,
+  store: messageLabelStore,
+}).start();
 onAgentSettled((path) => attentionSignals.turnSettled(path));
 onTagsChanged(() => nudgeMarks());
 // Merge readiness (§chat.worktrees/readiness) is git and the file; its one follow-up check per

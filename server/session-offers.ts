@@ -32,6 +32,7 @@ import {
   TITLE_COMMIT_LEN,
 } from "../shared/session-offers";
 import { sessionsChanged } from "./list-generation";
+import { recordActed } from "./message-labels";
 import { projectRootOf } from "./project-root";
 import { runFingerprint, runsApproved } from "./session-offers-trust";
 import { stateRoot } from "./state-root";
@@ -682,6 +683,7 @@ async function chooseCard(path: string, rec: SessionRecord, card: StoredCard, in
     // Claimed before the send, so a second click at the same time finds it no longer open; reopened if the send fails.
     Object.assign(card, { state: "chosen", choice: { index, label: button.label, at } });
     saveRecord(rec);
+    recordActed(target, text);
     const sent = await send(target, text).catch((err) => ({ ok: false as const, error: err instanceof Error ? err.message : String(err) }));
     if (!sent.ok) {
       card.state = "open";
@@ -753,6 +755,7 @@ async function pressRows(path: string, rec: SessionRecord, card: StoredCard, row
   if (texts.length) {
     const first = picks.find(({ row, i }) => typeof row.sends[i] === "string")!;
     const target = card.to[first.row.defIdx[first.i]!] === "shower" ? card.fromPath : path;
+    if (target) recordActed(target, texts.join("\n"));
     const sent = target ? await send(target, texts.join("\n")).catch((err) => ({ ok: false as const, error: err instanceof Error ? err.message : String(err) })) : { ok: false as const, error: "The chat this button sends to is not known. Nothing was sent." };
     if (!sent.ok) {
       for (const { row } of picks) {

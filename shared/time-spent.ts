@@ -89,7 +89,7 @@ export interface TimeSpentMessage {
   excerpt: string;
   /** Seconds counted to this message. */
   seconds: number;
-  /** Only when a fallback model labelled it: that model's display name. */
+  /** Only when a fallback model labelled it: that model's id, as it answered; the page words it. */
   labelledBy?: string;
 }
 

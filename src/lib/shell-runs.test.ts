@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SHELL_LIVE_MAX, type ChatServerMessage, type ShellRun } from "../../shared/protocol";
-import { AFTER_REPLY, answersAtHello, SHELL_DROPPED, cardOfRow, cardOfRun, cutWords, nextShellRuns, runShell, shellAnswerOf, shellFrame, shellNotes, shellOffered, shellStatus, stillStopping, stopOnClose, stopRun } from "./shell-runs";
+import { AFTER_REPLY, answersAtHello, SHELL_DROPPED, cardOfRow, cardOfRun, nextShellRuns, runShell, shellAnswerOf, shellFrame, shellNotes, shellOffered, shellStatus, stillStopping, stopOnClose, stopRun, stopAll, barAction, clock, lastLines } from "./shell-runs";
 import { NOT_CONNECTED } from "./shell-mode";
 
 const run = (over: Partial<ShellRun> = {}): ShellRun => ({ id: "s1", command: "pnpm test", output: "", state: "running", startedAt: 1, ...over });
@@ -57,6 +57,33 @@ test("a command Sova stopped at the output limit says so, in the error tone", ()
   assert.deepEqual(shellStatus(cardOfRow({ command: "yes", output: "y", cancelled: true, cancelReason: "limit" })), { word: "Stopped at the 1 GB output limit", tone: "error" });
 });
 
+test("Stop All stops each running command with its own stop, once, and none that already ended", () => {
+  const frames: unknown[] = [];
+  const send = (f: unknown) => (frames.push(f), true);
+  const runs = [run({ id: "a" }), run({ id: "b", state: "ended", exitCode: 0 }), run({ id: "c" })];
+  let stopping = stopAll(new Set(["c"]), runs, send);
+  assert.deepEqual(frames, [{ type: "shell_stop", id: "a" }], "c is already stopping, b ended");
+  assert.deepEqual([...stopping].sort(), ["a", "c"]);
+  stopping = stopAll(stopping, runs, send);
+  assert.equal(frames.length, 1, "a second Stop All while they wait sends nothing");
+});
+
+test("the bar's own button: Stop Command for 1 running with the list shut, Stop All for more with it open", () => {
+  assert.equal(barAction(1, false), "stop");
+  assert.equal(barAction(1, true), null, "its row has Stop Command");
+  assert.equal(barAction(2, false), null);
+  assert.equal(barAction(3, true), "stop-all");
+  assert.equal(barAction(0, false), null);
+});
+
+test("durations read as a clock, and a finished card shows the last 3 lines", () => {
+  assert.equal(clock(7_400), "0:07");
+  assert.equal(clock(750_000), "12:30");
+  assert.equal(clock(3_725_000), "1:02:05");
+  assert.equal(lastLines("1\n2\n3\n4\n5\n"), "3\n4\n5");
+  assert.equal(lastLines("only"), "only");
+});
+
 test("live output keeps only the newest SHELL_LIVE_MAX characters", () => {
   const runs = nextShellRuns([run({ output: "a".repeat(SHELL_LIVE_MAX) })], msg({ type: "shell_output", id: "s1", delta: "bc" }))!;
   assert.equal(runs[0]!.output.length, SHELL_LIVE_MAX);
@@ -91,12 +118,8 @@ test("the card's status: Running, then Exit n (the error tone when it isn't 0), 
   assert.equal(shellStatus(cardOfRun(run({ state: "ended", exitCode: 0 }))).word, "Exit 0");
 });
 
-test("a cut output says which limit cut it and where the whole was saved", () => {
-  assert.equal(cutWords({ by: "lines", max: 2000 }), "Showing the last 2,000 lines");
-  assert.equal(cutWords({ by: "bytes", max: 51200 }), "Showing the last 50 KB");
-  const n = shellNotes(cardOfRow({ command: "x", output: "", exitCode: 0, truncated: { by: "lines", max: 2000 }, fullOutputPath: "/tmp/pi-bash-1.log" }), false);
-  assert.deepEqual(n, { cut: "Showing the last 2,000 lines", fullOutputPath: "/tmp/pi-bash-1.log", notShared: false, afterReply: false });
-  assert.deepEqual(shellNotes(cardOfRow({ command: "x", output: "" }), false), { notShared: false, afterReply: false });
+test("a card's notes: none for a plain command", () => {
+  assert.deepEqual(shellNotes(cardOfRow({ command: "x", output: "", exitCode: 0, truncated: { by: "lines", max: 2000 }, fullOutputPath: "/tmp/pi-bash-1.log" }), false), { notShared: false, afterReply: false });
 });
 
 test("!! says it isn't shared, and a mid-reply run says when the model gets it, only while that reply runs", () => {

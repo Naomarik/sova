@@ -80,41 +80,46 @@
 /* Show Full Output: under the card's notes, at its left. */
 .shell-card-actions { display: flex; gap: var(--space-2); }
 
-/* ---- THE RUNNING COMMANDS' DOCK (§chat.shell-mode/card). Floating at the bottom of the transcript,
-   above the message box: one raised card per running command, stacked oldest first. Several never
-   take over the pane: past about a third of it the dock scrolls on its own. */
+/* ---- THE RUNNING COMMANDS' BAR (§chat.shell-mode/card). One quiet bar above the message box, in the
+   sunken tone: "N running", the newest command and its latest line, Show All / Hide, and Stop Command
+   when only 1 runs. Show All opens the list above it; past about half the pane the list scrolls. */
 
 .shell-dock {
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  max-height: 34%;
-  overflow-y: auto;
-  padding: var(--space-2) var(--space-3);
+  max-height: 55%;
+  border-top: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-sunken);
 }
-.shell-dock-card {
+.shell-bar {
+  flex: none;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2) var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border: var(--stroke-thin) solid var(--color-border);
-  border-radius: var(--r-lg);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-2);
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
 }
-.shell-dock-main {
-  flex: 1 1 16rem;
+.shell-bar-toggle {
+  flex: 1;
   min-width: 0;
+  min-height: var(--tap-min);
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--color-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.shell-dock-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.shell-dock-head > .chip { flex: none; }
-.shell-dock-command,
-.shell-dock-line {
+.shell-bar-toggle:hover { background: var(--color-surface); }
+.shell-bar-toggle > .chip { flex: none; }
+.shell-bar-line,
+.shell-list-command,
+.shell-list-line {
   min-width: 0;
   padding: 0;
   background: none;
@@ -124,10 +129,45 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.shell-dock-command { font-weight: var(--fw-semibold); color: var(--color-ink); }
-.shell-dock-line { color: var(--color-ink-muted); }
+.shell-bar-line { flex: 1; color: var(--color-ink-muted); }
+.shell-bar-show { flex: none; font-weight: var(--fw-medium); color: var(--color-accent); }
+.shell-bar > .button { flex: none; }
+
+.shell-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-3);
+  overflow-y: auto;
+}
+.shell-list-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.shell-list-main {
+  flex: 1 1 14rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.shell-list-head { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+.shell-list-command { flex: 1; font-weight: var(--fw-semibold); color: var(--color-ink); }
+.shell-list-time,
+.shell-card-took {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+.shell-list-line { color: var(--color-ink-muted); }
+.shell-list-note { font-size: var(--fs-caption); color: var(--color-ink-muted); }
 /* Stop Command keeps the 8px gap from Show Output (destructive never adjacent to another action). */
-.shell-dock-actions { flex: none; display: flex; gap: var(--space-2); margin-left: auto; }
+.shell-list-actions { flex: none; display: flex; gap: var(--space-2); margin-left: auto; }
 
 /* ---- THE OUTPUT WINDOW (§chat.shell-mode/card): the wide modal (a sheet when folded), the output
    filling its body, in mono, scrolling on its own. */

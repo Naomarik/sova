@@ -2,8 +2,7 @@
 // or ended and waiting to be saved after the reply in flight. Rebuilt from every hello, kept by the
 // shell events, and dropped one by one as each run's row arrives (`shell_saved`). Pure.
 
-import { SHELL_LIVE_MAX, SHELL_OUTPUT_MAX_BYTES, type ChatClientMessage, type ChatServerMessage, type ShellRowInfo, type ShellRun, type ShellTruncation } from "../../shared/protocol";
-import { thousands } from "./format";
+import { SHELL_LIVE_MAX, SHELL_OUTPUT_MAX_BYTES, type ChatClientMessage, type ChatServerMessage, type ShellRowInfo, type ShellRun } from "../../shared/protocol";
 import { NOT_CONNECTED, type ShellAnswer } from "./shell-mode";
 
 /** The frame a Run sends: the command without its "!" or "!!", `private` only for "!!". */
@@ -59,6 +58,35 @@ export function stopRun(stopping: ReadonlySet<string>, id: string, send: (frame:
   return send({ type: "shell_stop", id }) ? new Set([...stopping, id]) : stopping;
 }
 
+/** Stop All on the running list: each running command's own stop, as Stop Command sends it (no route
+    of its own). The stopping set after. */
+export function stopAll(stopping: ReadonlySet<string>, runs: readonly ShellRun[], send: (frame: Extract<ChatClientMessage, { type: "shell_stop" }>) => boolean): ReadonlySet<string> {
+  return runs.filter((r) => r.state === "running").reduce((s, r) => stopRun(s, r.id, send), stopping);
+}
+
+/** The running bar's own button: Stop Command while exactly 1 command runs and the list is shut; Stop
+    All N while the list is open on more than 1; else none (each row has its Stop). */
+export function barAction(running: number, open: boolean): "stop" | "stop-all" | null {
+  if (running === 1 && !open) return "stop";
+  if (running > 1 && open) return "stop-all";
+  return null;
+}
+
+/** A duration as a clock: "0:07", "12:30", "1:02:05". */
+export function clock(ms: number): string {
+  const t = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const s = String(t % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
+}
+
+/** A finished card's output: its last `n` lines (a trailing newline ends the last, it starts none). */
+export function lastLines(output: string, n = 3): string {
+  const lines = output.replace(/\n$/, "").split("\n");
+  return lines.slice(-n).join("\n");
+}
+
 /** The runs still stopping after the live runs changed: only those still running wait. */
 export function stillStopping(stopping: ReadonlySet<string>, runs: readonly ShellRun[]): ReadonlySet<string> {
   const running = new Set(runs.filter((r) => r.state === "running").map((r) => r.id));
@@ -105,6 +133,8 @@ export function lastLine(output: string): string {
 /** What a card draws, from a live run or a saved row. */
 export interface ShellCardData extends ShellRowInfo {
   running: boolean;
+  /** How long it ran, start to end, when the run says. */
+  durationMs?: number;
 }
 
 export const cardOfRun = (r: ShellRun): ShellCardData => ({ ...r, running: r.state === "running" });
@@ -122,20 +152,13 @@ export function shellStatus(c: ShellCardData): { word: string; tone: "live" | "e
 /** A command stopped for printing more than SHELL_OUTPUT_MAX_BYTES: Sova stopped it, not you. */
 export const LIMIT_WORD = `Stopped at the ${Math.round(SHELL_OUTPUT_MAX_BYTES / 1e9)} GB output limit`;
 
-/** What a cut output kept: "Showing the last 2,000 lines", or "Showing the last 50 KB". */
-export function cutWords(t: ShellTruncation): string {
-  return t.by === "lines" ? `Showing the last ${thousands(t.max)} lines` : `Showing the last ${thousands(Math.round(t.max / 1024))} KB`;
-}
-
 /** The note a command run while the model replies carries until that reply ends (not for `!!`). */
 export const AFTER_REPLY = "The model gets this after its reply.";
 export const NOT_SHARED = "Not shared with the model";
 
-/** The card's notes, in order: what a cut kept (and where the whole went), `!!`, and the mid-reply note. */
-export function shellNotes(c: ShellCardData & { underReply?: boolean }, replying: boolean): { cut?: string; fullOutputPath?: string; notShared: boolean; afterReply: boolean } {
+/** The card's notes, in order: `!!`, and the mid-reply note. */
+export function shellNotes(c: ShellCardData & { underReply?: boolean }, replying: boolean): { notShared: boolean; afterReply: boolean } {
   return {
-    ...(c.truncated ? { cut: cutWords(c.truncated) } : {}),
-    ...(c.truncated && c.fullOutputPath ? { fullOutputPath: c.fullOutputPath } : {}),
     notShared: !!c.private,
     afterReply: !!c.underReply && replying && !c.private,
   };

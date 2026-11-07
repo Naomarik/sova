@@ -149,7 +149,7 @@ import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
 import { ShellCard } from "./ShellCard";
 import { ShellDock } from "./ShellDock";
-import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf, shellOffered, stillStopping, stopOnClose, stopRun } from "../lib/shell-runs";
+import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf, shellOffered, stillStopping, stopAll, stopOnClose, stopRun } from "../lib/shell-runs";
 import type { ShellAnswer, ShellControl } from "../lib/shell-mode";
 import type { ShellRun } from "../../shared/protocol";
 import { HostSendNotice } from "./HostStateNotices";
@@ -2660,7 +2660,7 @@ export function ChatView(props: {
         <For each={feed().entries}>{(m) => <><Show when={feedBanner(m) === "turn"}><TurnError message={m.message} /></Show><Show when={feedBanner(m) === "start"}><StartError message={m.message} back={m.back ?? 0} /></Show><Show when={!failureHasRow(live.entries, m.message)}><SubagentLimitRow path={props.path} message={m.message} provider={m.provider} /></Show></>}</For>
       </ThreadScroller>
       </ToolSourceContext.Provider>
-      <ShellDock runs={shellRuns()} onStop={stopShell} stopping={shellStopping()} />
+      <ShellDock runs={shellRuns()} onStop={stopShell} onStopAll={() => setShellStopping((st) => stopAll(st, shellRuns(), (frame) => socket.send(frame)))} stopping={shellStopping()} />
       <Show when={!hostGate()} fallback={<HostSendNotice host={hostOf(props.path)!} reading={hostGate()!} />}>
       <Composer
         path={props.path}

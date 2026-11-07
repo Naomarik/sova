@@ -2,6 +2,7 @@
 // a saved one's whole output, read page by page. No DOM: ShellOutputWindow.tsx draws it.
 
 import { createSignal } from "solid-js";
+import type { ShellOutputPage } from "../../shared/protocol";
 import { thousands } from "./format";
 
 /** The whole output as read so far: its pages joined, where the next one starts, and its full size. */
@@ -13,10 +14,10 @@ export interface OutputRead {
 
 /** A page added to what was read: only the page that starts where the read stopped joins (a stale or
     repeated answer is dropped, so a double press of Load More never doubles the text). */
-export function addPage(read: OutputRead | null, page: { text: string; from: number; next: number | null; total: number }): OutputRead {
-  if (!read) return page.from === 0 ? { text: page.text, next: page.next, total: page.total } : { text: "", next: 0, total: page.total };
+export function addPage(read: OutputRead | null, page: ShellOutputPage): OutputRead {
+  if (!read) return page.from === 0 ? { text: page.output, next: page.next, total: page.bytes } : { text: "", next: 0, total: page.bytes };
   if (read.next === null || page.from !== read.next) return read;
-  return { text: read.text + page.text, next: page.next, total: page.total };
+  return { text: read.text + page.output, next: page.next, total: page.bytes };
 }
 
 /** A size in the window's words: "820 bytes", "48 KB", "3.2 MB". */
@@ -38,13 +39,8 @@ export const OUTPUT_GONE = "The whole output is gone: it's deleted when its chat
 /** A page that didn't load: what happened, and that trying again is safe. */
 export const outputFailed = (why: string) => `Couldn't load the output. ${why.replace(/\.?$/, ".")} Nothing else changed; try again.`;
 
-/** One page as the server gives it (src/lib/api fetchShellOutput). */
-export interface OutputPage {
-  text: string;
-  from: number;
-  next: number | null;
-  total: number;
-}
+/** One page as the server gives it (shared/protocol ShellOutputPage, src/lib/api fetchShellOutput). */
+export type OutputPage = ShellOutputPage;
 
 /**
  * A saved command's whole output, read a page at a time for its window: the first page at once, each

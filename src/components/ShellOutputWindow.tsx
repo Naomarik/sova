@@ -34,13 +34,29 @@ export function ShellOutputWindow(props: {
       const s = saved()!;
       return fetchShellOutput(s.path, s.entry, from);
     },
-    gone: (e) => e instanceof ApiError && e.status === 404,
+    gone: (e) => e instanceof ApiError && e.status === 404 && (e.body as { code?: string } | undefined)?.code === "gone",
   });
   const { read, error, loading } = reader;
   const load = () => (saved() ? reader.load() : Promise.resolve());
   onCleanup(() => reader.close());
   let out: HTMLPreElement | undefined;
   let atEnd = true;
+  let dialog: HTMLDivElement | undefined;
+  let close: HTMLButtonElement | undefined;
+  // Stop Command leaves with the run it stopped: focus it held goes to Close, so it stays in the
+  // window and Esc still closes it.
+  createEffect(
+    on(
+      () => props.card.running,
+      (running) => {
+        if (running || !dialog) return;
+        queueMicrotask(() => {
+          if (dialog?.isConnected && !dialog.contains(document.activeElement)) close?.focus();
+        });
+      },
+      { defer: true },
+    ),
+  );
   onMount(() => void load());
 
   /** What the window shows: the live output, or the whole output read so far. */
@@ -63,7 +79,10 @@ export function ShellOutputWindow(props: {
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        ref={(el) => trapFocus(el)}
+        ref={(el) => {
+          dialog = el;
+          trapFocus(el);
+        }}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
             e.stopPropagation();
@@ -149,7 +168,7 @@ export function ShellOutputWindow(props: {
             </button>
           </Show>
           <span class="modal-spacer" />
-          <button type="button" class="button button-ghost" onClick={() => props.onClose()}>
+          <button ref={close} type="button" class="button button-ghost" onClick={() => props.onClose()}>
             Close
           </button>
         </div>

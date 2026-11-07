@@ -53,6 +53,10 @@ test("Stop from the floating card sends one shell_stop and waits for that comman
   assert.equal(stopRun(new Set(), "s3", () => false).size, 0);
 });
 
+test("a command Sova stopped at the output limit says so, in the error tone", () => {
+  assert.deepEqual(shellStatus(cardOfRow({ command: "yes", output: "y", cancelled: true, cancelReason: "limit" })), { word: "Stopped at the 1 GB output limit", tone: "error" });
+});
+
 test("live output keeps only the newest SHELL_LIVE_MAX characters", () => {
   const runs = nextShellRuns([run({ output: "a".repeat(SHELL_LIVE_MAX) })], msg({ type: "shell_output", id: "s1", delta: "bc" }))!;
   assert.equal(runs[0]!.output.length, SHELL_LIVE_MAX);

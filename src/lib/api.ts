@@ -101,7 +101,7 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
-import { WIRE_PARAM, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
+import { WIRE_PARAM, type ShellOutputPage, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
 import { LIST_VERSION_HEADER, parseListVersion } from "./summary-diff";
 import type { ShellDraftMode } from "./draft-save";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
@@ -971,16 +971,8 @@ export const putDraft = (path: string, text: string, attachments: UploadResult[]
     keepalive: opts.keepalive,
   });
 
-/** One page of a saved command's whole output (§chat.shell-mode/card): `text` from byte `from`, `next`
-    the following page's offset (null at the end), `total` the whole output's bytes. */
-export interface ShellOutputPage {
-  text: string;
-  from: number;
-  next: number | null;
-  total: number;
-}
-
-/** A page of a saved shell row's whole output; a 404 once its file is gone (its chat was archived). */
+/** A page of a saved shell row's whole output (ShellOutputPage); a 404 `gone` once its file is deleted
+    (its chat was archived). */
 export const fetchShellOutput = (path: string, entry: string, from = 0) =>
   request<ShellOutputPage>(
     `/api/sessions/shell-output?path=${encodeURIComponent(path)}&entry=${encodeURIComponent(entry)}&from=${from}`,

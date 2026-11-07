@@ -194,7 +194,7 @@ describe("the whole output's window", () => {
       fetch: (from: number) => {
         asked.push(from);
         const i = offsets.indexOf(from);
-        return Promise.resolve({ text: texts[i]!, from, next: i + 1 < texts.length ? offsets[i + 1]! : null, total });
+        return Promise.resolve({ output: texts[i]!, from, next: i + 1 < texts.length ? offsets[i + 1]! : null, bytes: total });
       },
     };
   };
@@ -245,7 +245,7 @@ describe("the whole output's window", () => {
   test("a window closed while a page is out keeps nothing of it", async () => {
     let release!: () => void;
     const r = solid.createRoot(() =>
-      createOutputReader({ fetch: (from) => new Promise((res) => (release = () => res({ text: "late", from, next: null, total: 4 }))), gone: () => false }),
+      createOutputReader({ fetch: (from) => new Promise((res) => (release = () => res({ output: "late", from, next: null, bytes: 4 }))), gone: () => false }),
     );
     const p = r.load();
     r.close();

@@ -4,14 +4,14 @@ import { addPage, OUTPUT_GONE, outputFailed, readWords, sizeWords } from "./shel
 import { lastLine } from "./shell-runs";
 
 test("the whole output is read page by page; only the page that starts where the read stopped joins", () => {
-  let read = addPage(null, { text: "a\n", from: 0, next: 2, total: 4 });
+  let read = addPage(null, { output: "a\n", from: 0, next: 2, bytes: 4 });
   assert.deepEqual(read, { text: "a\n", next: 2, total: 4 });
   // A repeated answer (a double press of Load More) is dropped, never doubled.
-  assert.equal(addPage(read, { text: "a\n", from: 0, next: 2, total: 4 }), read);
-  read = addPage(read, { text: "b\n", from: 2, next: null, total: 4 });
+  assert.equal(addPage(read, { output: "a\n", from: 0, next: 2, bytes: 4 }), read);
+  read = addPage(read, { output: "b\n", from: 2, next: null, bytes: 4 });
   assert.deepEqual(read, { text: "a\nb\n", next: null, total: 4 });
   // At the end, nothing more joins.
-  assert.equal(addPage(read, { text: "c", from: 4, next: null, total: 5 }), read);
+  assert.equal(addPage(read, { output: "c", from: 4, next: null, bytes: 5 }), read);
 });
 
 test("while more is left the window says how much it holds, in sizes a person reads", () => {

@@ -2,7 +2,7 @@
 // or ended and waiting to be saved after the reply in flight. Rebuilt from every hello, kept by the
 // shell events, and dropped one by one as each run's row arrives (`shell_saved`). Pure.
 
-import { SHELL_LIVE_MAX, type ChatClientMessage, type ChatServerMessage, type ShellRowInfo, type ShellRun, type ShellTruncation } from "../../shared/protocol";
+import { SHELL_LIVE_MAX, SHELL_OUTPUT_MAX_BYTES, type ChatClientMessage, type ChatServerMessage, type ShellRowInfo, type ShellRun, type ShellTruncation } from "../../shared/protocol";
 import { thousands } from "./format";
 import { NOT_CONNECTED, type ShellAnswer } from "./shell-mode";
 
@@ -113,10 +113,14 @@ export const cardOfRow = (row: ShellRowInfo): ShellCardData => ({ ...row, runnin
 /** The card's status: while it runs, `Running` with the live dot; then how it ended (§chat.shell-mode/card). */
 export function shellStatus(c: ShellCardData): { word: string; tone: "live" | "error" | "plain" } {
   if (c.running) return { word: "Running", tone: "live" };
+  if (c.cancelled && c.cancelReason === "limit") return { word: LIMIT_WORD, tone: "error" };
   if (c.cancelled) return { word: c.cancelReason === "closed" ? "Stopped when the chat closed" : "Stopped by you", tone: "plain" };
   if (c.exitCode !== undefined) return { word: `Exit ${c.exitCode}`, tone: c.exitCode === 0 ? "plain" : "error" };
   return { word: "Ended", tone: "plain" };
 }
+
+/** A command stopped for printing more than SHELL_OUTPUT_MAX_BYTES: Sova stopped it, not you. */
+export const LIMIT_WORD = `Stopped at the ${Math.round(SHELL_OUTPUT_MAX_BYTES / 1e9)} GB output limit`;
 
 /** What a cut output kept: "Showing the last 2,000 lines", or "Showing the last 50 KB". */
 export function cutWords(t: ShellTruncation): string {

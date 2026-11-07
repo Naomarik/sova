@@ -420,10 +420,12 @@ extension's title. Each menu sends what it is about:
   project. A group's menu always shows them, since groups are this machine's own. A worktree row
   with no branch shows none.
 - `menu` takes one of the five names. Any other value leaves the command out of every menu (logged
-  once), never out of `commands`. A menu shows at most 8 extension rows in all, first extensions
-  first. A `label` that is one of Sova's own item names in any of the five menus (`Archive`, `Copy
-  Path`, `Rename…`, `Copy`, `Open`, `Land` and the rest; case, spacing and a trailing `…` are
-  ignored) is left out of the menu too.
+  once), never out of `commands`. The last four need `server.extensionContract` `21` or higher: an
+  older Sova leaves them out of its menus. A folder's description that uses them says
+  `"needsContract": "1.21"`, and an older Sova reads it Needs a Newer Sova. A menu shows at most 8
+  extension rows in all, first extensions first. A `label` that is one of Sova's own item names in
+  any of the five menus (`Archive`, `Copy Path`, `Rename…`, `Copy`, `Open`, `Land` and the rest;
+  case, spacing and a trailing `…` are ignored) is left out of the menu too.
 - While your backend's health check fails, your rows are hidden.
 
 **On session rows** (extension contract v1.16). With `"screens": ["row"]`, Sova shows what your

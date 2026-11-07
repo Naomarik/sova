@@ -392,16 +392,28 @@ async function targets44(page: Page) {
   }
 }
 
+/**
+ * The boxes of `selectors`, once all are drawn with real height, measured once and in one task of the page: the
+ * rows are rebuilt each second, so an element found in one call may be gone (0px) by the next. The wait is on being
+ * drawn, never on the figures a test asserts, so a wrong height still fails at its assertion.
+ */
+async function drawnBoxes<T extends readonly string[]>(page: Page, selectors: readonly [...T]) {
+  type Box = { top: number; bottom: number; left: number; right: number; height: number };
+  const qs = [...selectors] as string[];
+  await page.waitForFunction((all) => all.every((q) => (document.querySelector(q)?.getBoundingClientRect().height ?? 0) > 0), qs);
+  const boxes = await page.evaluate((all) => all.map((q) => {
+    const b = document.querySelector(q)!.getBoundingClientRect();
+    return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, height: b.height };
+  }), qs);
+  return boxes as { [K in keyof T]: Box };
+}
+
 test("every row is one line tall on one rhythm, Reading's parts hang from it, and the word sits on the figures' line", async () => {
   const page = await open(1440, (r) => r.fulfill(json(RECORD)));
   try {
     await word(page).waitFor();
-    const top = (q: string) => page.locator(q).evaluate((el) => {
-      const b = el.getBoundingClientRect();
-      return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, height: b.height };
-    });
-    const row = (k: string) => top(`[data-time-row="${k}"]`);
-    const [reading, typing, scrolling] = [await row("reading"), await row("typing"), await row("scrolling")];
+    const row = (key: string) => `[data-time-row="${key}"]`;
+    const [reading, typing, scrolling] = await drawnBoxes(page, [row("reading"), row("typing"), row("scrolling")]);
     assert.ok(Math.abs(reading.height - typing.height) < 1, `Reading is ${reading.height}px tall, Typing ${typing.height}px`);
     assert.ok(Math.abs(typing.top - reading.top - (scrolling.top - typing.top)) < 1, "an even step between rows");
     await targets44(page);
@@ -410,15 +422,15 @@ test("every row is one line tall on one rhythm, Reading's parts hang from it, an
     assert.equal(stolen, false, "the heading's hit area leaves the button above it alone");
 
     await page.getByRole("button", { name: /^Reading/ }).click();
-    const [open2, part, part2, after] = [await row("reading"), await row("reading-transcript"), await row("reading-alignments"), await row("typing")];
+    const [open2, part, part2, after] = await drawnBoxes(page, [row("reading"), row("reading-transcript"), row("reading-alignments"), row("typing")]);
     assert.ok(part.left - open2.left >= 12, `a part hangs one step under Reading, not ${part.left - open2.left}px`);
-    const guide = await page.locator('[data-time-row="reading-transcript"]').evaluate((el) => getComputedStyle(el.parentElement!).borderLeftWidth);
+    const guide = await page.evaluate(() => getComputedStyle(document.querySelector(".time-spent-parts")!).borderLeftWidth);
     assert.notEqual(guide, "0px", "on a guide rule");
     const toParent = part.top - open2.bottom;
     const toNext = after.top - part2.bottom;
     assert.ok(toParent < toNext, `a part sits nearer Reading (${toParent}px) than the row below (${toNext}px)`);
 
-    const [you, agent, said] = [await top("[data-time-you]"), await top("[data-time-agent]"), await top("[data-time-word]")];
+    const [you, agent, said] = await drawnBoxes(page, ["[data-time-you]", "[data-time-agent]", "[data-time-word]"]);
     assert.ok(said.top < you.bottom && said.bottom > you.top, "the word is on the figures' line");
     assert.ok(said.left - agent.right <= 32, `the word follows the figures, ${said.left - agent.right}px on`);
   } finally {

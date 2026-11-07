@@ -4028,8 +4028,9 @@ async function tj5() {
 // its second completion with that reply, the worker idle, a wait that ends at once, the job still running
 // named. tj6: every process stays up, so the wake comes from inside the worker's own process: the lost report.
 // tj6b: short idle times, so the worker's and the parent's processes have stopped by then; the job's end reopens
-// the worker and the parent, reopened, picks it back up. That path already delivered the reply before the fix
-// (a worker picked back up re-arms its report), so tj6b keeps it delivering, once, and adds the jobs line.
+// the worker and the parent, reopened, picks it back up. Before the fix the outcome there depended on timing: a
+// parent attached while the run went got the reply from the feed; one attached after the settle sent "(no output
+// for this task)". worker-settle-order.test.ts forces each ordering; this one runs whichever comes.
 async function jobWakesWorker(name, idleMs) {
   if (!needSystemd(name)) return;
   await teardown();

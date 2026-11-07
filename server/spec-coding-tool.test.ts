@@ -1,7 +1,7 @@
 // The coding chats' `spec` tool: argv it spells, where its root may be, its remote refusal, its plain
 // "no spec here", and the § reads the census counts. The spec tools themselves run in the integration sibling.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
@@ -90,4 +90,36 @@ test("execute: runs the shared runner on the confined root with the call's argv;
   setSpecToolForTest(async () => ({ tool: "sova-spec", command: "read", exit: 2, status: "refused", code: "graph-untrusted", cause: "manifest-not-found" }));
   assert.equal(((await tool.execute("t", { op: "read", id: "§a/b" }, undefined, undefined, ctxOf(cwd))).content[0] as { text: string }).text, NO_SPEC_HERE);
   assert.equal(specAnswer({ findings: [{ code: "manifest-not-found" }], exit: 2 }), NO_SPEC_HERE, "the non-pull commands say it in a finding");
+});
+
+test("a root that doesn't exist is refused, saying so, and never reaches the spec tools; an existing folder with no spec still does", async () => {
+  const cwd = tmp(), wt = tmp();
+  mkdirSync(join(cwd, "bare"));
+  writeFileSync(join(cwd, "a-file"), "");
+  symlinkSync(join(cwd, "nowhere"), join(cwd, "dangling"));
+  rmSync(wt, { recursive: true });
+  const calls: string[] = [];
+  // What the spec tools answer for any root with no manifest, an absent one included: the case to tell apart.
+  setSpecToolForTest(async (root) => (calls.push(root), { exit: 2, status: "refused", code: "graph-untrusted", cause: "manifest-not-found" }));
+  const tool = specCodingTool();
+  const missing = (ctx: ToolCtx, root: string | undefined, path: string) =>
+    assert.rejects(tool.execute("t", { op: "map", ...(root === undefined ? {} : { root }) }, undefined, undefined, ctx), (e: Error) => {
+      assert.ok(e instanceof SpecToolRefusal, String(e));
+      assert.ok(e.message.includes(path), e.message);
+      assert.match(e.message, /does not exist/);
+      assert.ok(!e.message.includes(NO_SPEC_HERE), e.message);
+      return true;
+    });
+  await missing(ctxOf(cwd), ".cache/master", join(cwd, ".cache/master"));
+  await missing(ctxOf(cwd), join(cwd, "gone"), join(cwd, "gone"));
+  await missing(ctxOf(cwd), "dangling", join(cwd, "dangling"));
+  await missing(ctxOf(cwd, [tree(wt)]), wt, wt);
+  await missing(ctxOf(join(cwd, "removed")), undefined, join(cwd, "removed"));
+  await assert.rejects(tool.execute("t", { op: "map", root: "a-file" }, undefined, undefined, ctxOf(cwd)), /not a folder/);
+  assert.deepEqual(calls, [], "none of them ran the spec tools");
+  // Confinement is judged first: a missing path outside the session's folders says what it always said.
+  await assert.rejects(tool.execute("t", { op: "map", root: join(wt, "..", "elsewhere") }, undefined, undefined, ctxOf(cwd)), /outside this session's folder/);
+  const bare = await tool.execute("t", { op: "map", root: "bare" }, undefined, undefined, ctxOf(cwd));
+  assert.equal((bare.content[0] as { text: string }).text, NO_SPEC_HERE, "an existing folder with no spec keeps its answer");
+  assert.deepEqual(calls, [join(cwd, "bare")]);
 });

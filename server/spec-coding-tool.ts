@@ -1,5 +1,5 @@
 // The coding chats' spec look-up: `spec`, a read-only ToolSpec in every ordinary chat and every worker
-// (team members included), whatever its modes. It runs the spec tools Sova ships (`sova-spec.mjs`) on
+// (team members included, a team's monitor not), whatever its modes. It runs the spec tools Sova ships (`sova-spec.mjs`) on
 // the chat's own working tree, drafts included, through the shared runner (spec-runner.ts: argv, no
 // shell, `--json`, a timeout): the same reads the spec mode's shell line gives, without a shell.
 //
@@ -8,8 +8,10 @@
 //
 // The root is confined to the session's working directory or an active worktree the session tracks; a
 // remote session (its cwd a target placeholder) still lists the tool and is refused, since its files are
-// on the target. Node builtins, the harness types and the worktrees state rules only: a chat process
+// on the target. A root that doesn't exist is refused too: the spec tools answer it as they answer a folder
+// with no spec, and only the second is that. Node builtins, the harness types and the worktrees state rules only: a chat process
 // and a worker load it.
+import { statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import type { ToolCtx, ToolResult, ToolSpec } from "../shared/harness";
 import { activeTrees, canonical, isWithin, treeOf } from "../pi-config/extensions/worktrees/state.ts";
@@ -47,24 +49,41 @@ const OUTPUT_MAX = 48 * 1024;
 
 const text = (t: string): ToolResult<undefined> => ({ content: [{ type: "text", text: t }], details: undefined });
 
+/** `folder`, once it is one: a root that doesn't exist must not reach the spec tools, which would read it as a project with no spec. */
+function existingFolder(folder: string, what: string): string {
+  let isFolder: boolean;
+  try {
+    isFolder = statSync(folder).isDirectory();
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      throw new SpecToolRefusal(`${what} ${folder} does not exist, so this answer says nothing about whether the project has a spec. If a command in this same step is creating it, call spec again once it has finished; otherwise check the path.`);
+    }
+    throw new SpecToolRefusal(`${what} ${folder} can't be read: ${(err as Error).message}`);
+  }
+  if (!isFolder) throw new SpecToolRefusal(`${what} ${folder} is not a folder; name the project's folder.`);
+  return folder;
+}
+
 /**
  * The root a call may read: `root` (absolute, or relative to the session's cwd) when it is at or below the
  * session's cwd or inside one of its active tracked worktrees, the folders a worker may start in; the
- * session's cwd when absent. Throws a SpecToolRefusal naming those folders otherwise, and in a remote session.
+ * session's cwd when absent. Throws a SpecToolRefusal naming those folders otherwise, and in a remote session;
+ * and one saying so when an allowed root doesn't exist or isn't a folder.
  */
 export function specRootFor(ctx: Pick<ToolCtx, "cwd" | "state">, root: string | undefined): string {
   if (!ctx.cwd) throw new SpecToolRefusal("This session has no folder to read a spec in.");
   if (targetOfCwd(ctx.cwd)) throw new SpecToolRefusal(REMOTE_REFUSAL);
-  if (root === undefined || root === "") return ctx.cwd;
+  if (root === undefined || root === "") return existingFolder(ctx.cwd, "This session's folder");
   const want = canonical(isAbsolute(root) ? root : resolve(ctx.cwd, root));
-  if (isWithin(want, canonical(ctx.cwd))) return want;
+  if (isWithin(want, canonical(ctx.cwd))) return existingFolder(want, "root");
   let set;
   try {
     set = ctx.state().latest(WORKTREES)?.data ?? undefined;
   } catch {
     set = undefined;
   }
-  if (treeOf(set, want)) return want;
+  if (treeOf(set, want)) return existingFolder(want, "root");
   const allowed = [ctx.cwd, ...activeTrees(set).map((t) => t.path)];
   throw new SpecToolRefusal(`root ${want} is outside this session's folder and its tracked worktrees (${[...new Set(allowed)].join(", ")}); omit root or name one of them.`);
 }

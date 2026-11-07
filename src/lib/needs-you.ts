@@ -74,7 +74,10 @@ export function needsYouRows(
   return [...acc.values()]
     .map((a) => {
       // Newest first; the sort is stable, so one time keeps the digest's own order (most urgent kind first).
-      const sorted = a.details.sort((x, y) => y.at - x.at);
+      const newest = a.details.sort((x, y) => y.at - x.at);
+      // A card or offer raised during an alignment doesn't change what the row is: an open question still reads as one.
+      const question = newest[0] && WAITS_BESIDE_A_QUESTION.has(newest[0].kind) ? newest.find((d) => d.kind === "open-questions") : undefined;
+      const sorted = question ? [question, ...newest.filter((d) => d !== question)] : newest;
       const details = sorted.map((d) => d.text);
       // The wire's newest: the digest's cap may have cut it, and a Dismiss must cover it (§app.session-list/needs-you-dismiss).
       return { session: a.session, since: Math.max(a.since, digest.newestListed?.[a.session.path] ?? 0), details, detail: details[0] ?? null, kind: sorted[0]?.kind ?? a.first, soft: a.soft, ...(a.playbook ? { playbook: a.playbook } : {}) };
@@ -98,6 +101,8 @@ export function withPressedDismissals<D extends Pick<AttentionDigest, "items" | 
 }
 
 /** A project's release items: each opens its Releases tab. */
+const WAITS_BESIDE_A_QUESTION: ReadonlySet<AttentionItem["kind"]> = new Set(["card-waiting", "offer-waiting"]);
+
 export const RELEASE_KINDS: readonly AttentionItem["kind"][] = ["release-ready", "release-request", "release-held", "release-failed", "release-quiet"];
 export const isReleaseItem = (it: Pick<AttentionItem, "kind">): boolean => RELEASE_KINDS.includes(it.kind);
 

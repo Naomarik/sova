@@ -132,7 +132,7 @@
       "§app.updates/operator"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/page-only.ts",
       "server/session-offers-routes.ts",
@@ -179,8 +179,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T22:57Z",
-      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
+      "at": "2026-11-06T21:52Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
     }
   },
   "§app/access": {

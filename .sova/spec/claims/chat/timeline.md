@@ -188,7 +188,8 @@ rows; the direction is the tab's, so both modes run newest first.
 
 ### Who sent it
 
-A message another session sent (§chat.profiles/delivery), one the Overseer sent (its
+A message another session or an extension sent (§chat.profiles/delivery,
+§app.extensions/name-badge), one the Overseer sent (its
 `sova-overseer-sent` marker, or a brief) and one a teammate sent in a shared session (a
 `sova-baton-sent` marker whose `by` isn't `operator`, §app.baton/attribution) keep their row,
 their place in time, their density line, their jump and their Rewind. Above the title, inside the
@@ -200,9 +201,11 @@ row's third column and outside its jump button (so no control nests in another),
 - **The Overseer**: the `eye` icon, "From the Overseer".
 - **A teammate**: the `chat` icon, "From {name}", the name the shared session's roster gives the
   person ("Someone" while unknown).
+- **An extension** (§app.extensions/name-badge), or a card's press marked during an alignment's wait
+  (§chat.alignment/session-mark): the `sliders` icon, "From {title}", with no link and no hop.
 
 The row's title, its tooltip and its full text are the message body: a message from another
-session drops its `[from session …]` header line, and a brief drops its brief tag. The sender comes
+session or an extension drops its `[from session …]` header line, and a brief drops its brief tag. The sender comes
 only from those markers, never from the text, the same rule the transcript uses; one helper
 (`sendersOf` in `shared/senders.ts`) reads them for both, in either arrival order. A wake nudge
 keeps the row it always had, its reason as the title, with no sender line.

@@ -15,7 +15,7 @@ import { stateRoot } from "./state-root";
 import { viewOffersOf } from "./extension-views";
 import { isExtensionKey, sovaToken } from "./auth";
 
-// The generic extension host (ext-contract-v1.18: v1.15 plus each backend's own key, server/extension-keys.ts, and a command's optional `menu` key, src/lib/menu-place.ts, v1.16; card types and drawing kinds in chat transcripts, server/extension-views.ts, v1.17; a command's `overseer`, `description` and `job` keys, §app.overseer/extension-commands, v1.18). An extension is a static UI (`dist`) plus a
+// The generic extension host (ext-contract-v1.19: v1.15 plus each backend's own key, server/extension-keys.ts, and a command's optional `menu` key, src/lib/menu-place.ts, v1.16; card types and drawing kinds in chat transcripts, server/extension-views.ts, v1.17; a command's `overseer`, `description` and `job` keys, §app.overseer/extension-commands, v1.18). An extension is a static UI (`dist`) plus a
 // loopback HTTP backend (`api`), both named in a manifest the user installs; Sova never writes it.
 // Sova serves the UI at /ext/<id>/, proxies /ext/<id>/api/* and /ext/<id>/ws/* to the backend,
 // and lists the extensions (with a cached health probe, and what each declares it offers) at

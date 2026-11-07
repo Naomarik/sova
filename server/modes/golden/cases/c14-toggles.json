@@ -55,12 +55,12 @@
       "content": "",
       "sections": {
        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-       "tools": "@44baa8b2ed1e6cce",
-       "rules": "@bb6b8db0787c1b6b",
+       "tools": "@4638ec08e2a6ed45",
+       "rules": "@3af6ecc6d5313626",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>"
       },
-      "toolsAdded": "@428f943a602ffe68"
+      "toolsAdded": "@2c5271a6bdd68226"
      },
      {
       "role": "user",
@@ -103,12 +103,12 @@
      "content": "",
      "sections": {
       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-      "tools": "@44baa8b2ed1e6cce",
-      "rules": "@bb6b8db0787c1b6b",
+      "tools": "@4638ec08e2a6ed45",
+      "rules": "@3af6ecc6d5313626",
       "docs": "@0f5fabf6c3c47c4c",
       "cwd": "<cwd>\n<ws:plain>\n</cwd>"
      },
-     "toolsAdded": "@ded17415db866517"
+     "toolsAdded": "@60e9d376a52b34af"
     }
    }
   ],
@@ -196,7 +196,7 @@
       "stopReason": "stop",
       "thinkingLevel": "off"
      },
-     "@4000223a106dd329",
+     "@9e3976f3d53b29a0",
      {
       "role": "user",
       "content": [
@@ -250,7 +250,7 @@
      "role": "system",
      "content": "",
      "sections": {
-      "tools": "@3fcdd3ae7332f29c"
+      "tools": "@cb26925ded0f45a6"
      },
      "toolsAdded": [
       {
@@ -473,7 +473,7 @@
       "role": "system",
       "content": "",
       "sections": {
-       "tools": "@44baa8b2ed1e6cce"
+       "tools": "@4638ec08e2a6ed45"
       },
       "toolsRemoved": [
        {
@@ -539,7 +539,7 @@
      "role": "system",
      "content": "",
      "sections": {
-      "tools": "@44baa8b2ed1e6cce"
+      "tools": "@4638ec08e2a6ed45"
      },
      "toolsRemoved": [
       {
@@ -656,7 +656,7 @@
       "role": "system",
       "content": "",
       "sections": {
-       "mode": "@32f5b9a7dd92d10b"
+       "mode": "@4032dd1df8b07f41"
       }
      },
      {
@@ -699,7 +699,7 @@
      "role": "system",
      "content": "",
      "sections": {
-      "mode": "@32f5b9a7dd92d10b"
+      "mode": "@4032dd1df8b07f41"
      }
     }
    }
@@ -792,9 +792,9 @@
       "role": "system",
       "content": "",
       "sections": {
-       "tools": "@15d31f2a78f55765",
-       "rules": "@c812aa6c1d63cb16",
-       "mode": "@435090063634d020"
+       "tools": "@14069dc67c42c871",
+       "rules": "@2c247acceb91fdc3",
+       "mode": "@5af30bbdfc035fa7"
       },
       "toolsAdded": [
        {
@@ -815,7 +815,7 @@
           "ops": {
            "type": "array",
            "items": {
-            "anyOf": "@2e5962457ad766ec"
+            "anyOf": "@8f0d66a627303464"
            },
            "description": "Operations, applied in order. change_request, when given, comes before every other op; create or import comes next (else first) and appears once.",
            "minItems": 1
@@ -840,7 +840,7 @@
       "content": [
        {
         "type": "text",
-        "text": "@d7ac9f8c286df53e"
+        "text": "@0be17424cf9ac08e"
        }
       ]
      }
@@ -876,9 +876,9 @@
      "role": "system",
      "content": "",
      "sections": {
-      "tools": "@15d31f2a78f55765",
-      "rules": "@c812aa6c1d63cb16",
-      "mode": "@435090063634d020"
+      "tools": "@14069dc67c42c871",
+      "rules": "@2c247acceb91fdc3",
+      "mode": "@5af30bbdfc035fa7"
      },
      "toolsAdded": [
       {
@@ -899,7 +899,7 @@
          "ops": {
           "type": "array",
           "items": {
-           "anyOf": "@8089de1594532028"
+           "anyOf": "@efddf5ee21db1c1d"
           },
           "description": "Operations, applied in order. change_request, when given, comes before every other op; create or import comes next (else first) and appears once.",
           "minItems": 1
@@ -914,7 +914,7 @@
    {
     "type": "custom_message",
     "customType": "mode-note",
-    "content": "@d7ac9f8c286df53e",
+    "content": "@0be17424cf9ac08e",
     "display": false,
     "details": {
      "v": 1,

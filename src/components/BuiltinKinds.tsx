@@ -257,7 +257,7 @@ function UserRow(props: KindViewProps) {
       overseer={rows.senderOf(item.id)?.kind === "overseer"}
       mergeQueue={isMergeQueueText(item.text) || rows.senderOf(item.id)?.kind === "merge-queue"}
       sender={((s) => (s?.kind === "baton" ? rows.nameOf(s.by) : undefined))(rows.senderOf(item.id))}
-      fromSession={((s) => (s?.kind === "session" && !isMergeQueueText(item.text) ? { sessionId: s.sessionId, title: s.title, hop: s.hop } : undefined))(rows.senderOf(item.id))}
+      fromSession={((s) => (s?.kind === "session" && !isMergeQueueText(item.text) ? { sessionId: s.sessionId, title: s.title, hop: s.hop } : s?.kind === "extension" ? { sessionId: s.sessionId, title: s.title } : undefined))(rows.senderOf(item.id))}
       images={item.images}
       attachments={item.attachments}
     />

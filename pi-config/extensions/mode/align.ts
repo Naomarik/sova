@@ -456,7 +456,7 @@ export function parseDocInput(value: unknown, where: string, visuals = false): A
  */
 export function alignFileSchema(visuals = false): string {
 	const visual = visuals ? `, "visual"?: {"kind": string, "source": string}` : "";
-	return `{"title": string, "summary": string (one line), "findings"?: [string], "approach"?: [string, in order], "rejected"?: [{"option": string, "why": string}], "technical"?: [string (a technical note)], "questions"?: [{"topic": string, "ask": string, "context"?: string, "options"?: [{"label": string, "tradeoff": string}], "recommendation": {"choice": string, "why": string}${visual}}]${visual}}`;
+	return `{"title": string, "summary": string (one line), "findings"?: [string], "approach"?: [string; say which steps can run at the same time], "rejected"?: [{"option": string, "why": string}], "technical"?: [string (a technical note)], "questions"?: [{"topic": string, "ask": string, "context"?: string, "options"?: [{"label": string, "tradeoff": string}], "recommendation": {"choice": string, "why": string}${visual}}]${visual}}`;
 }
 export const ALIGN_FILE_SCHEMA = alignFileSchema();
 

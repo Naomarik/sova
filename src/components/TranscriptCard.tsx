@@ -1,5 +1,5 @@
 import { createSignal, createUniqueId, Show, useContext, type JSX } from "solid-js";
-import { answerOf, raiserText, type CardAnswerValue, type CardInfo } from "../../shared/transcript-cards";
+import { answerOf, raiserText, trustAskBody, type CardAnswerValue, type CardInfo } from "../../shared/transcript-cards";
 import { checkCardData, letterIndex, type ChecklistCard, type DataCardKind, type QuestionCard } from "../../shared/view-cards";
 import { CardContext, type CardControls } from "../lib/card-controls";
 import type { KindViewProps } from "../lib/transcript-kinds";
@@ -94,7 +94,7 @@ function CardBody(props: { card: CardInfo; ctx: CardControls | undefined }) {
             <Icon name="attention" class="banner-icon" />
             <div class="banner-main">
               <p class="banner-title">Let {a().name}'s cards act for you?</p>
-              <p class="banner-body">They can then run any Sova command, such as sending messages or merging, without asking again.</p>
+              <p class="banner-body">{trustAskBody(a().owner, false)}</p>
             </div>
             <div class="banner-action">
               <button type="button" class="button button-sm button-primary" onClick={() => props.ctx?.trust(true)}>

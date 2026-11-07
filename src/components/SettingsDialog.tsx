@@ -945,7 +945,8 @@ const baseWord = (base: ThemeBase) => (base === "light" ? "Light" : "Dark");
 
 /**
  * Settings → Themes. Appearance on top, then every theme the app can find, split by base into
- * a Light theme and a Dark theme section, each a radiogroup where the row IS the preview:
+ * a Dark theme section and then a Light theme section (Dark first, at every width), each a
+ * radiogroup where the row IS the preview:
  * swatches and a font sample painted out of the theme's own values. Those values came off disk,
  * which is why the server checks them at read time rather than at apply time — by the time a row
  * draws there is nothing left to sanitize.
@@ -1101,7 +1102,7 @@ function ThemesPanel() {
           </div>
         }
       >
-        <For each={["light", "dark"] as const}>
+        <For each={["dark", "light"] as const}>
           {(slot) => (
             <>
               <div class="settings-type-head">

@@ -225,17 +225,23 @@ function watchSystem(): void {
  * Change one or both faces. A kind set to null goes back to the theme's own face — which is a
  * repaint of the theme, not a `removeProperty`, because the theme may have set that key itself.
  * Applies immediately and persists; called from Settings → Themes → Typography.
+ *
+ * The save re-reads the stored choice and changes only the kinds in `patch`, as the theme's saves
+ * do (`saveThemes`): another tab open in this browser shares the key, and a write of this tab's
+ * whole memory would erase the other kind's pick that tab made since (its storage event may not
+ * have arrived yet).
  */
 export function setTypography(patch: Partial<Typography>): Typography {
   const next: Typography = { ...typography(), ...patch };
   setTypographySignal(next);
-  writeStoredTypography(next);
+  writeStoredTypography({ ...readStoredTypography(), ...patch });
   paint();
   return next;
 }
 
 /** Small, Medium or Large. Applies immediately and persists; Medium removes the key. Called from
-    Settings → Themes → Typography. */
+    Settings → Themes → Typography. The size is one value, so its save is its own part whole; other
+    tabs follow it through their storage event (`followOtherTabs`). */
 export function setTextSize(size: TextSize): void {
   setTextSizeSignal(size);
   writeStoredTextSize(size);
@@ -315,21 +321,27 @@ function setPick(slot: ThemeBase, theme: StoredTheme | null): void {
   else setDarkPick(theme);
 }
 
-/** Another tab's save, followed at once: its mode and picks become this tab's, and the window repaints,
-    with no reload. A cleared store (key null) reads as the starting setup, as a reload would. Installed
+/** Another tab's save, followed at once: its mode and picks, its font pick or its text size become this
+    tab's, and the window repaints, with no reload. Each key is read only when its own event comes. A
+    cleared store (key null) reads as the starting setup for all three, as a reload would. Installed
     once, from the first paint on; guarded, because the unit tests' document has no window events. */
 let followingTabs = false;
 function followOtherTabs(): void {
   if (followingTabs || typeof addEventListener !== "function") return;
   followingTabs = true;
   addEventListener("storage", (e: StorageEvent) => {
-    if (e.key !== THEME_KEY && e.key !== null) return;
-    const { record } = readStoredThemes();
-    setThemeModeSignal(record.mode);
-    setLightPick(record.light);
-    setDarkPick(record.dark);
-    const dropped = droppedTheme();
-    if (dropped && pickOf(dropped.slot)) setDroppedTheme(null); // that list has a pick again
+    const all = e.key === null;
+    if (!all && e.key !== THEME_KEY && e.key !== TYPOGRAPHY_KEY && e.key !== TEXT_SIZE_KEY) return;
+    if (all || e.key === THEME_KEY) {
+      const { record } = readStoredThemes();
+      setThemeModeSignal(record.mode);
+      setLightPick(record.light);
+      setDarkPick(record.dark);
+      const dropped = droppedTheme();
+      if (dropped && pickOf(dropped.slot)) setDroppedTheme(null); // that list has a pick again
+    }
+    if (all || e.key === TYPOGRAPHY_KEY) setTypographySignal(readStoredTypography());
+    if (all || e.key === TEXT_SIZE_KEY) setTextSizeSignal(readStoredTextSize());
     paint();
   });
 }

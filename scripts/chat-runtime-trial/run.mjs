@@ -4026,9 +4026,10 @@ async function tj5() {
 // tj6 / tj6b: a worker that finished, woken by its own job's end, reports again (§app.background-jobs/end-card).
 // A real worker process, a real job held until the worker's first report is in, and the parent's view of it:
 // its second completion with that reply, the worker idle, a wait that ends at once, the job still running
-// named. tj6: every process stays up, so the wake comes from inside the worker's own process. tj6b: short idle
-// times, so the worker's and the parent's processes have stopped by then: the job's end reopens the worker and
-// the parent hears of it from what the worker's file says.
+// named. tj6: every process stays up, so the wake comes from inside the worker's own process: the lost report.
+// tj6b: short idle times, so the worker's and the parent's processes have stopped by then; the job's end reopens
+// the worker and the parent, reopened, picks it back up. That path already delivered the reply before the fix
+// (a worker picked back up re-arms its report), so tj6b keeps it delivering, once, and adds the jobs line.
 async function jobWakesWorker(name, idleMs) {
   if (!needSystemd(name)) return;
   await teardown();
@@ -4083,9 +4084,14 @@ async function jobWakesWorker(name, idleMs) {
   await waitFor(() => asksWith(reply).length > 0, 30000);
   R.check(asksWith(reply).length > 0, `${name}: the reply started a turn in the parent`);
 
-  await waitFor(() => a.s.got.some(isEvent("run.settled")), 30000);
+  // The parent's own turn on that report ends with its scripted reply in its file. Only then is the script
+  // cleared. With short idle times its process then stops: a prompt sent as it stops reaches nobody, so wait
+  // for the stop and open the chat again, as tj3 does.
+  const parentReplied = () => entries(a.path).some((e) => e.type === "message" && e.message?.role === "assistant" && fullText(e).includes(reply));
+  await wakeWait(parentReplied, 60000);
   await mock.plain("");
-  if (!chatPid(a.path)) {
+  if (idleMs < 30000) {
+    await wakeWait(() => !chatPid(a.path), 30000);
     a.s.close();
     a.s = await chat(c, a.path);
   }

@@ -309,7 +309,9 @@ export function parseToolInput(json: string, startInput?: unknown): ToolInputVer
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "";
 			const at = /at position (\d+)/.exec(message);
-			const position = at ? Number(at[1]) : /Unexpected end/.test(message) ? json.length : undefined;
+			// V8 names the position; Bun's JavaScriptCore never does ("Unexpected EOF", "Unable to parse JSON
+			// string"), so the two shapes seen live are found from the input itself on either runtime.
+			const position = at ? Number(at[1]) : /Unexpected (?:end|EOF)/.test(message) ? json.length : leftoverAt(json);
 			// V8 quotes the input in some messages (`"{oops" is not valid JSON`); keep only those that don't.
 			return { ok: false, bytes, error: message && !message.includes("\"") ? message : "invalid JSON", ...(position === undefined ? {} : { position }) };
 		}
@@ -326,6 +328,31 @@ export function parseToolInput(json: string, startInput?: unknown): ToolInputVer
  */
 export function cliHasTool(name: string): boolean {
 	return name.startsWith(MCP_TOOL_PREFIX);
+}
+
+/**
+ * Where a complete JSON object or array ends with more after it (arguments closed
+ * early, closers left over): the first non-whitespace character left over, as V8
+ * reports it. Undefined for any other fault.
+ */
+function leftoverAt(json: string): number | undefined {
+	let depth = 0, inString = false, escaped = false;
+	for (let i = 0; i < json.length; i++) {
+		const c = json[i];
+		if (inString) {
+			if (escaped) escaped = false;
+			else if (c === "\\") escaped = true;
+			else if (c === "\"") inString = false;
+		} else if (c === "\"") inString = true;
+		else if (c === "{" || c === "[") depth++;
+		else if ((c === "}" || c === "]") && --depth <= 0) {
+			if (depth < 0) return undefined;
+			try { JSON.parse(json.slice(0, i + 1)); } catch { return undefined; }
+			const rest = json.slice(i + 1).search(/\S/);
+			return rest < 0 ? undefined : i + 1 + rest;
+		}
+	}
+	return undefined;
 }
 
 /** Map an MCP facade tool name back to the pi tool name pi will execute. */

@@ -325,6 +325,13 @@ test("parseToolInput: the block-start input for no deltas, a plain object only, 
 	assert.ok(!extra.ok);
 	assert.equal(extra.bytes, Buffer.byteLength(BAD_JSON));
 	assert.equal(extra.position, BAD_JSON.indexOf("]}"));
+	// The same on Bun as on Node: a closer inside a string ends nothing, whitespace before the leftover is skipped.
+	const inString = parseToolInput("{\"a\":\"}]\"}]");
+	assert.ok(!inString.ok);
+	assert.equal(inString.position, 10);
+	const spaced = parseToolInput("{\"a\":1}  ]");
+	assert.ok(!spaced.ok);
+	assert.equal(spaced.position, 9);
 	const cut = parseToolInput("{\"a\":");
 	assert.ok(!cut.ok);
 	assert.equal(cut.position, 5);

@@ -4,6 +4,8 @@ import { estimateWidth } from "../../core/text";
 import { parseVis } from "../../parse";
 import { axisTitle, CHART_CSS, chartMode, chartWidth, estimateHeight, FONT, layoutChart, legendBreaks, overlaps, textBox, type ChartLayout } from "./layout";
 import type { ChartSpec } from "./parse";
+import { partsHeight } from "./parts";
+import { chartViews, drawAs, settle, shownToggles } from "./switch";
 
 const chart = (body: string) => {
   const r = parseVis("chart", body);
@@ -150,4 +152,64 @@ test("chart estimateHeight: the layout's own height plus the legend and axis nam
   // Below the minimum layout width the drawing scales down with the width.
   const small = chart(SAMPLES.bar!);
   assert.ok(estimateHeight(small, 200, estimateWidth) < estimateHeight(small, 260, estimateWidth));
+});
+
+/** Every chart a reader can switch to from SAMPLES (and a parts sample): each offered view, with and without Log, Sort and %. */
+const SWITCHED = (): [string, ChartSpec][] => {
+  const bodies = { ...SAMPLES, parts: 'type: parts\nunit: tokens\n"System prompt" 9000\n"Tools" 14000 warn\n"Messages" 61000\nmark Tools "big"', over: "type: parts\nof: 10\na 30\nb 20" };
+  const out: [string, ChartSpec][] = [];
+  for (const [name, body] of Object.entries(bodies)) {
+    const spec = chart(body);
+    const { views } = chartViews(spec);
+    for (const view of views.length ? views : [spec.type])
+      for (const log of [false, true])
+        for (const sort of [false, true])
+          for (const pct of [false, true]) {
+            const c = settle(spec, { view, log, sort, pct });
+            // Only the combinations a reader can reach, each once.
+            if (c.view !== view || c.log !== log || c.sort !== sort || c.pct !== pct) continue;
+            const shown = shownToggles(spec, c);
+            if ((log && !shown.log && view !== "stacked" && view !== "parts") || (sort && !shown.sort) || (pct && !shown.pct)) continue;
+            out.push([`${name} as ${view}${log ? " log" : ""}${sort ? " sorted" : ""}${pct ? " %" : ""}`, drawAs(spec, c)]);
+          }
+  }
+  return out;
+};
+
+test("chart views: every view a reader can pick lays out inside the frame, and its height is estimated", () => {
+  const all = SWITCHED();
+  assert.ok(all.length > 60, `${all.length} switched charts`);
+  for (const [name, spec] of all) {
+    for (const W of WIDTHS) {
+      const h = estimateHeight(spec, W, estimateWidth);
+      if (spec.type === "parts") {
+        assert.equal(h, partsHeight(spec, W), `${name}@${W}: the parts height`);
+        assert.ok(h > 40 && h < 700, `${name}@${W}: ${h}px`);
+        continue;
+      }
+      const g = layoutChart(spec, chartWidth(W), estimateWidth);
+      const at = `${name}@${W} (${g.mode})`;
+      for (const b of g.bars) {
+        inside(g, b.x, b.y, `${at} bar`);
+        inside(g, b.x + b.w, b.y + b.h, `${at} bar`);
+      }
+      for (const p of g.points) inside(g, p.x, p.y, `${at} point`);
+      for (const b of g.badges) inside(g, b.x, b.y, `${at} badge`);
+      for (const v of g.values) {
+        const box = textBox(v, estimateWidth);
+        inside(g, box.x, box.y, `${at} value ${v.text}`);
+        inside(g, box.x + box.w, box.y + box.h, `${at} value ${v.text}`);
+      }
+      for (const t of [...g.xTicks, ...g.yTicks]) assert.ok(Number.isFinite(t.pos), `${at} tick`);
+      const legend = spec.series.length > 1 ? (legendBreaks(spec, W, estimateWidth).length + 1) * CHART_CSS.legendLine + legendBreaks(spec, W, estimateWidth).length * CHART_CSS.legendGapY + CHART_CSS.legendBelow : 0;
+      const titles = (axisTitle(spec) ? CHART_CSS.axisLine + CHART_CSS.axisGap : 0) + (spec.x ? CHART_CSS.axisLine + CHART_CSS.axisGap : 0);
+      assert.ok(Math.abs(h - (g.H * Math.min(1, W / chartWidth(W)) + legend + titles)) < 1e-9, `${at}: estimateHeight matches the layout`);
+      // Sideways bars grow 30px a row (a 24-row line as bars runs past 700px).
+      assert.ok(h > 100 && h < Math.max(700, 100 + spec.rows.length * 40), `${at}: ${h}px is sane`);
+      // Each marked row is still drawn as marked, in its new place.
+      const marked = (spec.emphasis ?? []).map((e) => Number(e.key)).sort();
+      const drawn = g.mode === "scatter" || g.mode === "line" ? g.rings.map((r) => r.row) : g.bands.map((b) => b.row);
+      assert.deepEqual([...new Set(drawn)].sort(), marked, `${at}: emphasis drawn`);
+    }
+  }
 });

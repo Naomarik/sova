@@ -3204,11 +3204,27 @@ export type WorktreesSummary =
       unmerged: number;
     };
 /** POST /api/worktrees/cleanup's body: `dryRun` previews; `expect` removes exactly those paths
-    that are still removable (never both). */
+    that are still removable; `force` is Remove Anyway for one kept tree, with the digest of the
+    listing the user confirmed (exactly one of the three). */
 export interface WorktreeCleanupRequest {
   path: string;
   dryRun?: boolean;
   expect?: string[];
+  force?: { path: string; digest: string };
+}
+/** What Remove Anyway would delete from a tree kept only for what it holds: paths relative to the
+    tree's top, each list its first 500 entries, `counts` the exact totals, `digest` the whole list's. */
+export interface WorktreeRemoveAnyway {
+  /** Uncommitted changes and untracked files. */
+  uncommitted: string[];
+  /** Ignored files outside the rebuildable folders. */
+  ignored: string[];
+  /** Repositories and worktrees nested inside it, each deleted whole (`of`: a worktree's repository). */
+  nested: { path: string; kind: "repository" | "worktree"; of?: string }[];
+  /** Rebuildable folders and files that go with it (a folder ends in "/"). */
+  rebuildable: string[];
+  counts: { uncommitted: number; ignored: number; nested: number; rebuildable: number };
+  digest: string;
 }
 /** A worktree that goes (dry run) or went: how it is merged, and whether its branch is deleted. */
 export interface WorktreeCleanupRemoved {
@@ -3217,11 +3233,19 @@ export interface WorktreeCleanupRemoved {
   kind: "ancestor" | "content" | "empty";
   branchDeleted: boolean;
 }
+/** POST /api/projects/:pid/overseer/worktrees/remove {dryRun: true}: why Remove Worktree keeps a coding
+    session's folder (null: it may go), and, when what it holds is the reason, what Remove Anyway would delete. */
+export interface CodingWorktreeHold {
+  reason: string | null;
+  removeAnyway?: WorktreeRemoveAnyway;
+}
 /** A worktree that stays, and the one reason why. */
 export interface WorktreeCleanupKept {
   path: string;
   branch?: string;
   reason: string;
+  /** Dry run only: present when what it holds is the only reason it stays (§chat.worktrees/cleanup). */
+  removeAnyway?: WorktreeRemoveAnyway;
 }
 /** The dry run's answer. */
 export interface WorktreeCleanupPlan {

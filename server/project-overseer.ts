@@ -31,7 +31,7 @@ import {
   type ProjectOverseerMarkerData,
   type StartedSession,
 } from "../shared/project-overseer";
-import type { OverseerState } from "../shared/protocol";
+import type { CodingWorktreeHold, OverseerState } from "../shared/protocol";
 import { noteBuildMerged } from "./build-merged";
 import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, buildOfSession, buildStartedBy, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath, type BuildRow } from "./build-loadout";
 import { acquireChatHandle, BusyError, chatHandle, closeChat, isSessionBusy, onAgentSettled, onAgentStarted, declOfTool, registerSpecialHost, serverToolCall, serveTools, type SessionMarks, specialComposersChanged } from "./chat-handle";
@@ -43,7 +43,8 @@ import { workingSubagents } from "./live";
 import { alreadyAgreedOf, checkedCodingModeChoice, codingModeSwitch, confirmBriefPrompt, describeCodingMode, hostDefaultMode, PLAYBOOK_RUN_KINDS, playbookRunMode, profileRefusal, type ModeRequest } from "./project-coding-mode";
 import { subagentProfilesInfo } from "./subagent-profiles";
 import { baseAbilities } from "./gathering-abilities";
-import { gitRootOf, readWorktree } from "./project-worktrees";
+import { gitRootOf, readWorktree, removalHold, withRemoveAnyway } from "./project-worktrees";
+import { removeAnywayOf } from "./worktree-leftovers";
 import { readCodingPass } from "./project-coding-read";
 import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
 import { pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
@@ -1279,6 +1280,31 @@ export async function removeCodingWorktree(projectId: string, sessionId: unknown
   // Its cwd is gone: a held runtime would run tools in nothing.
   if (path) await closeChat(path, "Its worktree was removed, so it has no folder to work in.").catch(() => {});
   return projectWorktrees(projectId);
+}
+
+/** The coding session's worktree folder on this host, or a refusal. */
+async function codingTreePath(projectId: string, sessionId: unknown): Promise<string> {
+  if (typeof sessionId !== "string" || !sessionId) throw new OrgError("Give the sessionId");
+  const row = readBuild(projectId, sessionId);
+  if (!row) throw new OrgError("Unknown coding session of this project", 404);
+  const tree = await withWorktreePath(row, projectOf(projectId).root);
+  if (!tree) throw new OrgError("It runs in the project root.", 409);
+  return tree.worktree.path;
+}
+
+/** POST …/worktrees/remove {dryRun: true}: why Remove Worktree would keep the folder, and, when what it holds is
+    the reason, exactly what Remove Anyway would delete (server/worktree-leftovers.ts, the cleanup's check). */
+export async function codingWorktreeHold(projectId: string, sessionId: unknown): Promise<CodingWorktreeHold> {
+  const hold = await removalHold(await codingTreePath(projectId, sessionId));
+  if (!hold) return { reason: null };
+  return { reason: hold.words, ...(hold.content ? { removeAnyway: removeAnywayOf(hold.content) } : {}) };
+}
+
+/** POST …/worktrees/remove {digest}: Remove Worktree with the listing the user confirmed on their page; removed
+    only while what the folder holds is still exactly that listing (its digest), every other step as Remove Worktree. */
+export async function removeCodingWorktreeAnyway(projectId: string, sessionId: unknown, digest: string): Promise<ProjectWorktrees> {
+  const path = await codingTreePath(projectId, sessionId);
+  return withRemoveAnyway(path, digest, () => removeCodingWorktree(projectId, sessionId));
 }
 
 // ---- the runtime loadout ------------------------------------------------------------------------------

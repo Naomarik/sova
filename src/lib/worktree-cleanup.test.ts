@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { branchFate, confirmBody, confirmTitle, doneText, doneTitle, offersCleanup, removeLabel, showsLine, summaryLine } from "./worktree-cleanup.ts";
+import { anywayBody, anywayMore, branchFate, confirmBody, confirmTitle, doneText, doneTitle, offersCleanup, removeLabel, showsLine, summaryLine } from "./worktree-cleanup.ts";
 
 const ok = (total: number, merged: number, empty: number) => ({ state: "ok" as const, repo: "/r", total, merged, empty, unmerged: total - merged - empty });
 
@@ -43,4 +43,13 @@ test("the result reads removed, then kept", () => {
   assert.equal(doneTitle(3, 2), "Removed 3 · kept 2");
   assert.equal(doneText(1, 0), "Removed 1 worktree. Kept 0.");
   assert.equal(doneText(0, 5), "Removed 0 worktrees. Kept 5.");
+});
+
+test("Remove Anyway's listing says what goes that git can't bring back, and how many a cut list leaves out", () => {
+  const a = (uncommitted: number, ignored: number, nested: number) => ({ uncommitted: [], ignored: [], nested: [], rebuildable: [], counts: { uncommitted, ignored, nested, rebuildable: 0 }, digest: "d" });
+  assert.equal(anywayBody(a(0, 1, 0)), "1 file is deleted with it. Git can't bring it back.");
+  assert.equal(anywayBody(a(1, 3, 1)), "4 files and 1 nested repository are deleted with it. Git can't bring them back.");
+  assert.equal(anywayBody(a(0, 0, 2)), "2 nested repositories are deleted with it. Git can't bring them back.");
+  assert.equal(anywayMore(500, 500), null);
+  assert.equal(anywayMore(500, 3512), "and 3012 more");
 });

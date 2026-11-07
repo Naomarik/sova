@@ -59,6 +59,10 @@ export interface OpenFlags {
   /** The cwd is the home folder standing in for a stored folder that is gone: the sandbox must not
       make it a writable root (§app.shell/missing-folder-home). */
   cwdNotWritable?: boolean;
+  /** The sandbox's read-only level whatever the policy file says (the merge thread: its tools write only in their tmp). */
+  sandboxReadOnly?: boolean;
+  /** Start with the sandbox On, which the chat can't lower (the sandbox extension's `--sandbox on`). */
+  sandboxOn?: boolean;
   /** A worker chat's own extension flags (`--name value` on an RPC worker's argv), set last. */
   extra?: Record<string, string | true>;
 }
@@ -76,6 +80,8 @@ export function extensionFlagValues(f: OpenFlags): Map<string, boolean | string>
     flags.set("sova-link-tools", f.link.tools);
   }
   if (f.cwdNotWritable) flags.set("sandbox-cwd-not-writable", true);
+  if (f.sandboxReadOnly) flags.set("sandbox-read-only", true);
+  if (f.sandboxOn) flags.set("sandbox", "on");
   for (const [name, value] of Object.entries(f.extra ?? {})) flags.set(name, value);
   return flags;
 }

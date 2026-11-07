@@ -579,7 +579,8 @@
     "evidence": "verified",
     "about": [
       "§chat.transcript/empty-worktrees",
-      "§chat.worktrees/cleanup"
+      "§chat.worktrees/cleanup",
+      "§chat.worktrees/leftovers"
     ]
   },
   "§design.copy-deck/your-click": {

@@ -87,7 +87,7 @@ import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, sa
 import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
-import { cleanupPlan, cleanupRemove, configureCleanup, worktreesSummary } from "./worktree-cleanup";
+import { cleanupPlan, cleanupRemove, cleanupRemoveAnyway, configureCleanup, worktreesSummary } from "./worktree-cleanup";
 import { applyLoadout, getSessionSetup, readSetupFile } from "./session-setup";
 import { getContextView } from "./context-tab";
 import { getSessionTools } from "./session-tools";
@@ -922,7 +922,7 @@ export function buildApp(deps: AppDeps) {
 
   // Merged worktrees of the session's repository (server/worktree-cleanup.ts, §chat.worktrees/cleanup):
   // the count for a new session's empty state, the dry run, and a removal of exactly the confirmed
-  // paths that are still removable. Only when asked; never --force.
+  // paths that are still removable. Only when asked; --force only for Remove Anyway of one kept tree.
   configureCleanup({
     summary: (path) => getSessionSummary(path),
     sessionFiles: listSessionFiles,
@@ -937,7 +937,7 @@ export function buildApp(deps: AppDeps) {
     return c.json(await worktreesSummary(path), 200, { "Cache-Control": "no-store" });
   });
   app.post("/api/worktrees/cleanup", async (c) => {
-    const body = (await c.req.json().catch(() => null)) as { path?: unknown; dryRun?: unknown; expect?: unknown } | null;
+    const body = (await c.req.json().catch(() => null)) as { path?: unknown; dryRun?: unknown; expect?: unknown; force?: unknown } | null;
     const path = resolveSessionPath(typeof body?.path === "string" ? body.path : null);
     if (!path) return c.json({ error: "Invalid or missing path" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
@@ -945,6 +945,24 @@ export function buildApp(deps: AppDeps) {
     const expect = body?.expect;
     if (expect !== undefined && !(Array.isArray(expect) && expect.every((p) => typeof p === "string" && p.startsWith("/"))))
       return c.json({ error: "expect must be a list of absolute paths" }, 400);
+    // Remove Anyway (§chat.worktrees/cleanup): one kept tree, with the digest of the listing the user confirmed.
+    if (body?.force !== undefined) {
+      const f = body.force as { path?: unknown; digest?: unknown } | null;
+      if (body.dryRun !== undefined || expect !== undefined || !f || typeof f.path !== "string" || !f.path.startsWith("/") || typeof f.digest !== "string" || !/^[0-9a-f]{8,64}$/.test(f.digest))
+        return c.json({ error: "force must be {path: absolute path, digest}, sent alone" }, 400);
+      // It deletes what git can't bring back: only the person's own click in the dialog (§app.access/your-click's test).
+      const notYou = pageOnlyRefusal(c, {
+        overseer: "Only the user removes a kept worktree anyway. Ask them to press Remove Anyway in Clean Up Merged. Nothing was deleted.",
+        local: "A kept worktree is removed anyway only on the page of the computer it is on. Nothing was deleted.",
+        chat: "Only the user removes a kept worktree anyway. Ask them to press Remove Anyway in Clean Up Merged. Nothing was deleted.",
+        script: "Only the user removes a kept worktree anyway. Ask them to press Remove Anyway in Clean Up Merged. Nothing was deleted.",
+        extension: "Only the user removes a kept worktree anyway. Ask them to press Remove Anyway in Clean Up Merged. Nothing was deleted.",
+      });
+      if (notYou) return c.json({ error: notYou, yourClick: true }, 403);
+      const r = await cleanupRemoveAnyway(path, { path: f.path, digest: f.digest });
+      if (r === "busy") return c.json({ error: "A cleanup of this repository is already running." }, 409);
+      return r ? c.json(r) : c.json({ error: "This session's folder isn't in a local git repository." }, 409);
+    }
     const dryRun = body?.dryRun === true;
     if (dryRun === Array.isArray(expect) || (Array.isArray(expect) && !expect.every((p) => typeof p === "string" && p.startsWith("/"))))
       return c.json({ error: "Send either dryRun: true or expect: [absolute paths]" }, 400);

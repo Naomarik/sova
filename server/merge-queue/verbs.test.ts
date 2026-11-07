@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { recordGoAhead, typedGoAhead } from "../../pi-config/extensions/worktrees/landing.ts";
-import { isVerbResult, MERGE_VERBS } from "../../shared/project-contract";
+import { isVerbResult, MERGE_READ_VERBS, MERGE_VERBS } from "../../shared/project-contract";
 import { COMMANDS } from "../../shared/commands-catalog";
 import type { Caller } from "../project-services/engine";
 import { ingestOnce } from "./ingest";
@@ -149,6 +149,12 @@ describe("the verbs and who may call them", () => {
       assert.equal((await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "ok" }, session(reviewer))).ok, true);
       assert.equal((await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "ok" }, t)).error!.code, "forbidden");
       assert.equal((await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "blocking" }, session(reviewer))).error!.code, "invalid-request");
+      // The verdict's shape is Sova's check now (the reviewer has no shell): a malformed one is refused, saying what is wrong.
+      const bare = await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "notes", text: "Looks a bit off." }, session(reviewer));
+      assert.equal(bare.error!.code, "invalid-request");
+      assert.match(bare.error!.message, /needs at least one finding/);
+      const kind = await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "blocking", text: "Bad.\n- [style] a.ts:3: tabs" }, session(reviewer));
+      assert.match(kind.error!.message, /kind must be one of/);
       const e = q.entry(id)!;
       assert.equal(e.notes[0]!.text, "changes server code");
       assert.equal(e.picks[0]!.id, "statecharts");
@@ -185,13 +191,51 @@ describe("the verbs and who may call them", () => {
     }
   });
 
+  test("merge.restart, merge.test and merge.names are the merge thread's (and the user's page's): never another chat, a reviewer or a chat's script on the operator route; merge.live is a read", async () => {
+    const { k, call, thread, reviewer, session } = setup();
+    try {
+      await k.q();
+      const fromChat = { kind: "operator", fromChat: true } as unknown as Caller;
+      for (const verb of ["merge.restart", "merge.test", "merge.names"]) {
+        for (const who of [session("someone"), session(reviewer), { kind: "project-overseer", root: k.repo.root } as unknown as Caller, fromChat]) {
+          const r = await call(verb, { project: k.repo.root, entry: "mq_x", action: "show" }, who);
+          assert.equal(r.error?.code, "forbidden", `${verb} by ${JSON.stringify(who)}`);
+        }
+        const t = await call(verb, { project: k.repo.root, entry: "mq_x", action: "show" }, session(thread));
+        assert.notEqual(t.error?.code, "forbidden", `${verb} is the thread's: ${t.error?.message}`);
+      }
+      // No restart deps wired here: the thread is told so, and nothing restarts.
+      assert.equal((await call("merge.restart", { project: k.repo.root }, session(thread))).error?.code, "unsupported");
+      assert.equal((await call("merge.live", { project: k.repo.root }, session("someone"))).error?.code, "unsupported", "a read anyone on the project may make (unwired here)");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("merge.status {entry} answers that entry's rows only", async () => {
+    const { k, call } = setup();
+    try {
+      const q = await k.q();
+      await q.pause("hold");
+      const a = await call("merge.add", { checkout: k.repo.branch("feat/a", { "a.txt": "a\n" }).path }, op);
+      await call("merge.add", { checkout: k.repo.branch("feat/b", { "b.txt": "b\n" }).path }, op);
+      const all = (await call("merge.status", { project: k.repo.root }, op)).merge!.view!;
+      const one = (await call("merge.status", { project: k.repo.root, entry: a.merge!.entry!.id }, op)).merge!.view!;
+      const ids = (v: typeof all) => [...v.checking, ...v.waiting, ...v.needsYou, ...v.needsFix].map((e) => e.id);
+      assert.equal(ids(all).length, 2);
+      assert.deepEqual(ids(one), [a.merge!.entry!.id]);
+    } finally {
+      await k.done();
+    }
+  });
+
   test("every merge verb is on the catalogue, at its route, as the admin's", () => {
     for (const v of MERGE_VERBS) {
       const c = COMMANDS.find((x) => x.id === `project.verb.${v}`);
       assert.ok(c, v);
       assert.equal(c!.route.path, `/api/project-services/${v}`);
       assert.equal(c!.meshNeed, "admin");
-      assert.equal(c!.effect, v === "merge.status" || v === "merge.logs" ? "looks" : "changes");
+      assert.equal(c!.effect, (MERGE_READ_VERBS as readonly string[]).includes(v) ? "looks" : "changes");
     }
   });
 });

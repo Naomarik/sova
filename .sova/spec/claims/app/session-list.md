@@ -2801,3 +2801,14 @@ next listing afresh: no caller joins or reuses a list built before them, except 
 above, which the further one then follows. So a caller that archives,
 renames, creates a session or gives one a One at a time profile sees that change in the very next
 listing it asks for, and so does the One at a time check that follows it.
+
+## §app.session-list/first-listing — A cold listing reads a few files at a time
+
+A listing that has session files to read (the first one after a start, a full build, a file the
+cache doesn't hold; §app.session-list/listing-reuse) reads at most 24 of them at once, never every
+file together, and its scan for worker marks has a limit of 24 of its own, so the memory a cold
+listing takes stays bounded however many sessions there are. It reads every session that isn't
+archived first: an archived session's file is opened only once every other session's file has been
+read, and the worker-mark scan follows the same order. A listing still answers once, with every
+session, archived ones included, once all are read: no caller ever gets a list with the archived
+ones missing.

@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 574 |
-| Routes a catalogue entry points at | 180 |
-| Catalogue entries | 244 |
+| Routes registered | 576 |
+| Routes a catalogue entry points at | 182 |
+| Catalogue entries | 250 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -133,6 +133,10 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.verb.merge.clear` | Project merge.clear | changes | `POST /api/project-services/merge.clear` | admin |
 | `project.verb.merge.hold` | Project merge.hold | changes | `POST /api/project-services/merge.hold` | admin |
 | `project.verb.merge.try` | Project merge.try | changes | `POST /api/project-services/merge.try` | admin |
+| `project.verb.merge.restart` | Project merge.restart | changes | `POST /api/project-services/merge.restart` | admin |
+| `project.verb.merge.live` | Project merge.live | looks | `POST /api/project-services/merge.live` | admin |
+| `project.verb.merge.test` | Project merge.test | changes | `POST /api/project-services/merge.test` | admin |
+| `project.verb.merge.names` | Project merge.names | changes | `POST /api/project-services/merge.names` | admin |
 | `project.verb.release.status` | Project release.status | looks | `POST /api/project-services/release.status` | admin |
 | `project.verb.release.logs` | Project release.logs | looks | `POST /api/project-services/release.logs` | admin |
 | `project.verb.release.request` | Project release.request | changes | `POST /api/project-services/release.request` | admin |
@@ -201,6 +205,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.merge-queue.land-how.clear` | Clear This Computer's Choice | changes | `DELETE /api/merge-queue/projects/:project/land-how/override` | admin |
 | `project.merge-queue.branch-summary.retry` | Try Again | changes | `POST /api/merge-queue/projects/:project/branch-summary` | admin |
 | `project.merge-queue.landing-summary` | Show Landings | looks | `GET /api/merge-queue/landing-summary` | sessions |
+| `project.merge-queue.run-logs` | Show Run Logs Size | looks | `GET /api/merge-queue/run-logs` | sessions |
+| `project.merge-queue.run-logs.clean` | Clean Logs | changes | `POST /api/merge-queue/run-logs/clean` | admin |
 | `overseer.attention` | Show Attention | looks | `GET /api/overseer/attention` | sessions |
 | `overseer.abilities` | Show Overseer Abilities | looks | `GET /api/overseer/abilities` | sessions |
 | `overseer.todo.list` | List To-dos | looks | `GET /api/overseer/todos` | sessions |
@@ -838,6 +844,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/merge-queue/projects/:project/settings` | admin | `project.merge-queue.settings.save` |
 | `DELETE /api/merge-queue/projects/:project/settings/pending` | admin | `project.merge-queue.settings.cancel` |
 | `POST /api/merge-queue/projects/:project/update-local-main` | admin | `project.merge-queue.update-local-main` |
+| `GET /api/merge-queue/run-logs` | sessions | `project.merge-queue.run-logs` |
+| `POST /api/merge-queue/run-logs/clean` | admin | `project.merge-queue.run-logs.clean` |
 | `GET /api/mode` | sessions | `session.mode.get` |
 | `POST /api/mode` | sessions | `session.mode.set` |
 | `POST /api/mode/command` | full | `chat.mode-command` |
@@ -866,7 +874,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `PUT /api/overseer/todos/order` | admin | `overseer.todo.reorder` |
 | `GET /api/playbooks` | sessions | `playbook.list` |
 | `POST /api/previews/:id/off` | admin | `project.preview.off` |
-| `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.merge.add`, `project.verb.merge.answer`, `project.verb.merge.ask`, `project.verb.merge.cancel`, `project.verb.merge.clear`, `project.verb.merge.extend`, `project.verb.merge.fresh`, `project.verb.merge.hold`, `project.verb.merge.logs`, `project.verb.merge.note`, `project.verb.merge.pause`, `project.verb.merge.reply`, `project.verb.merge.resolve`, `project.verb.merge.resume`, `project.verb.merge.retry`, `project.verb.merge.review`, `project.verb.merge.setup`, `project.verb.merge.status`, `project.verb.merge.try`, `project.verb.release.abandon`, `project.verb.release.continue`, `project.verb.release.logs`, `project.verb.release.note`, `project.verb.release.notes`, `project.verb.release.publish`, `project.verb.release.request`, `project.verb.release.retry`, `project.verb.release.start`, `project.verb.release.status`, `project.verb.release.step`, `project.verb.release.withdraw`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
+| `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.merge.add`, `project.verb.merge.answer`, `project.verb.merge.ask`, `project.verb.merge.cancel`, `project.verb.merge.clear`, `project.verb.merge.extend`, `project.verb.merge.fresh`, `project.verb.merge.hold`, `project.verb.merge.live`, `project.verb.merge.logs`, `project.verb.merge.names`, `project.verb.merge.note`, `project.verb.merge.pause`, `project.verb.merge.reply`, `project.verb.merge.resolve`, `project.verb.merge.restart`, `project.verb.merge.resume`, `project.verb.merge.retry`, `project.verb.merge.review`, `project.verb.merge.setup`, `project.verb.merge.status`, `project.verb.merge.test`, `project.verb.merge.try`, `project.verb.release.abandon`, `project.verb.release.continue`, `project.verb.release.logs`, `project.verb.release.note`, `project.verb.release.notes`, `project.verb.release.publish`, `project.verb.release.request`, `project.verb.release.retry`, `project.verb.release.start`, `project.verb.release.status`, `project.verb.release.step`, `project.verb.release.withdraw`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
 | `GET /api/projects` | sessions | `project.list` |
 | `POST /api/projects` | admin | `project.create` |
 | `GET /api/projects/:pid` | sessions | `project.get` |

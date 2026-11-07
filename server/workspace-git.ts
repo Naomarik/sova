@@ -166,8 +166,7 @@ export function commitAll(dir: string, message: string, dependencies: { readTour
         // Nothing new, but the remote may lack commits (one just set, or commits made without it):
         // push them. Only Commit Now gets here; the committer calls this only with changes.
         if ((await remoteOf(dir)) && (await unpushed(dir))) {
-          const push = await git(dir, ["push", "-q", "origin", "HEAD"], noBackgroundCleanupEnv());
-          if (push.code !== 0) throw new Error(`git push failed: ${push.stderr.trim()}`);
+          await scannedPush(dir);
           out.pushed = true;
         }
         if (!(await verifyTourBackup(dir, tours, format, false))) throw new Error(TOUR_BACKUP_WARNING);
@@ -180,8 +179,7 @@ export function commitAll(dir: string, message: string, dependencies: { readTour
       out.sha = (await git(dir, ["rev-parse", "--short", "HEAD"])).stdout.trim();
       if (!(await verifyTourBackup(dir, tours, format, false))) throw new Error(TOUR_BACKUP_WARNING);
       if (await remoteOf(dir)) {
-        const push = await git(dir, ["push", "-q", "origin", "HEAD"], noBackgroundCleanupEnv());
-        if (push.code !== 0) throw new Error(`git push failed: ${push.stderr.trim()}`);
+        await scannedPush(dir);
         out.pushed = true;
       }
       lastErrors.set(dir, null);
@@ -252,6 +250,26 @@ async function verifyTourBackup(dir: string, inventory: TourBackupInventory, for
   return true;
 }
 
+/** The start of the last error when the leak scan held a push. */
+export const PUSH_HELD = "upload held";
+
+/**
+ * Push HEAD to `origin` only after the secret scan read every commit the remote lacks (all of
+ * HEAD when no remote-tracking ref is known). A hit, or a scan that can't read, throws and nothing
+ * is pushed; the message names where (commit, file, line) and the kind, never the matched text.
+ */
+async function scannedPush(dir: string): Promise<void> {
+  const { scanPublication } = await import("./merge-queue/publish-scan");
+  const branch = (await git(dir, ["symbolic-ref", "-q", "--short", "HEAD"])).stdout.trim();
+  const ref = `refs/remotes/origin/${branch}`;
+  const known = branch && (await git(dir, ["rev-parse", "-q", "--verify", ref])).code === 0;
+  const scanGit = (args: string[], cwd: string, opts: { timeoutMs?: number } = {}) => git(cwd, args, {}, opts.timeoutMs ?? TIMEOUT_MS, 64 * 1024 * 1024);
+  const scan = await scanPublication(scanGit, { repo: dir, range: known ? `${ref}..HEAD` : "HEAD", secretsOnly: true, maxCommits: 20_000 });
+  if (!scan.ok) throw new Error(`${PUSH_HELD}: ${scan.hits[0] ?? scan.why}${scan.hits.length > 1 ? ` (and ${scan.hits.length - 1} more)` : ""}`);
+  const push = await git(dir, ["push", "-q", "origin", "HEAD"], noBackgroundCleanupEnv());
+  if (push.code !== 0) throw new Error(`git push failed: ${push.stderr.trim()}`);
+}
+
 /** Whether the repo's index tracks anything under `path` (false outside a repo). */
 export async function tracks(dir: string, path: string): Promise<boolean> {
   const r = await git(dir, ["ls-files", "--", path]);
@@ -309,10 +327,11 @@ export async function headCommitMs(dir: string): Promise<number | null> {
 export function retryPush(dir: string): Promise<CommitOutcome> {
   return serial(dir, async () => {
     const out: CommitOutcome = { committed: false };
-    if (!lastErrors.get(dir)?.startsWith("git push failed") || !(await remoteOf(dir))) return out;
-    const push = await git(dir, ["push", "-q", "origin", "HEAD"], noBackgroundCleanupEnv());
-    if (push.code !== 0) {
-      out.error = `git push failed: ${push.stderr.trim()}`;
+    const last = lastErrors.get(dir);
+    if (!(last?.startsWith("git push failed") || last?.startsWith(PUSH_HELD)) || !(await remoteOf(dir))) return out;
+    try { await scannedPush(dir); }
+    catch (err) {
+      out.error = err instanceof Error ? err.message : String(err);
       lastErrors.set(dir, out.error);
       return out;
     }

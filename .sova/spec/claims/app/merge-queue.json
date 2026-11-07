@@ -242,8 +242,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-05T16:44Z",
-      "source": "pi-session:01a1ac85-7019-77e8-b78d-58217842f2ef#e4f5f750"
+      "at": "2026-11-07T15:25Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
     },
     "code": [
       "server/merge-queue/conflicts.ts",
@@ -252,7 +252,9 @@
       "server/merge-queue/scenarios-conflicts.integration.test.ts",
       "server/merge-queue/queue.test.ts",
       "server/merge-queue/scratch.ts",
-      "server/merge-queue/scratch.test.ts"
+      "server/merge-queue/scratch.test.ts",
+      "server/merge-queue/copy.ts",
+      "server/merge-queue/run.integration.test.ts"
     ]
   },
   "§app.merge-queue/empty": {
@@ -679,12 +681,14 @@
       "playbooks/merge-queue/PLAYBOOK.md",
       "playbooks/merge-queue/references/conflicts.md",
       "playbooks/merge-queue/scripts/conflict-hunks.mjs",
-      "server/worktree-targeted-removal.test.ts"
+      "server/worktree-targeted-removal.test.ts",
+      "server/merge-queue/resolve-content.ts",
+      "server/merge-queue/resolve-content.test.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-05T16:44Z",
-      "source": "pi-session:01a1ac85-7019-77e8-b78d-58217842f2ef#e4f5f750"
+      "at": "2026-11-07T15:21Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
     }
   },
   "§app.merge-queue/review": {
@@ -695,14 +699,13 @@
       "§app.merge-queue/run"
     ],
     "agreed": {
-      "by": "Omar",
-      "at": "2026-11-04T21:41Z",
-      "source": "pi-session:ca4bcdc5-a6ff-4dbd-bf8b-509ecc177885#8dd14eed"
+      "by": "naomarik",
+      "at": "2026-11-07T15:21Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
     },
     "code": [
       ".sova/playbooks/review/PLAYBOOK.md",
       ".sova/playbooks/review/references/checklist.md",
-      ".sova/playbooks/review/scripts/verdict.mjs",
       "server/merge-queue/playbooks.test.ts",
       "server/merge-queue/review-step.ts",
       "server/merge-queue/reviewer.ts",
@@ -714,7 +717,16 @@
       "server/merge-queue/thread-modes.test.ts",
       "server/merge-queue/chats.ts",
       "server/merge-queue/run.ts",
-      "server/merge-queue/clip.test.ts"
+      "server/merge-queue/clip.test.ts",
+      "server/merge-queue/review-change.ts",
+      "server/merge-queue/review-verdict.ts",
+      "server/merge-queue/routes.ts",
+      "server/merge-queue/run.integration.test.ts",
+      "server/merge-queue/thread.integration.test.ts",
+      "server/merge-queue/verbs.test.ts",
+      "server/project-services/tools.ts",
+      "server/project-services/reviewer-verbs.test.ts",
+      "server/topics.ts"
     ]
   },
   "§app.merge-queue/run": {
@@ -754,6 +766,41 @@
       "server/merge-queue/scenarios-landed-drafts.integration.test.ts",
       "server/merge-queue/scenarios-landed-drafts-edges.integration.test.ts"
     ]
+  },
+  "§app.merge-queue/run-logs": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.merge-queue/view",
+      "§chat.merge-queue/thread"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-07T15:21Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
+    },
+    "code": [
+      "server/merge-queue/run-logs.ts",
+      "server/merge-queue/run-logs-routes.ts",
+      "server/merge-queue/run-logs.test.ts",
+      "server/merge-queue/store.ts",
+      "server/merge-queue/run.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/routes.ts",
+      "shared/merge-run-logs.ts",
+      "shared/commands/projects.ts",
+      "shared/commands-ids.json",
+      "docs/commands.md",
+      "server/commands-inventory/baseline.json",
+      "src/lib/api.ts",
+      "src/components/MergeRunLogsChip.tsx",
+      "src/components/merge-run-logs.css",
+      "src/components/SessionView.tsx",
+      "src/card-toolkit/commands.gen.ts",
+      "server/create-guide-growth.json",
+      "server/commands-fuzz.test.ts"
+    ],
+    "evidence": "verified"
   },
   "§app.merge-queue/served": {
     "kind": "behavior",

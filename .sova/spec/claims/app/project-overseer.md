@@ -1026,8 +1026,22 @@ judgement.
   branch gone, git's own failure) is also a reason for the overseer to look
   (§app.project-overseer/watch-loop), so it can tell the session to commit or fix it; a refusal
   about the project root's own checkout, or a busy session, is the operator's and is not.
-- **Remove Worktree** removes the worktree folder (git's own `worktree remove`; one with
-  uncommitted changes is refused, naming them) and deletes the branch only when it is merged; an
+- **Remove Worktree** removes the worktree folder (git's own `worktree remove`) and deletes the
+  branch only when it is merged. Before its running copy is torn down, it runs the same check as
+  Clean Up Merged (§chat.worktrees/leftovers), whoever sets it off (the page's button, or the build's
+  remove-worktree effect, the Project Overseer's included): a worktree holding uncommitted or
+  untracked files, ignored files that can't be rebuilt or a nested repository stays, as does one
+  whose files can't be read; nothing is torn down or removed, and the refusal gives the reason
+  (uncommitted files only, in today's words, otherwise "{reason} Nothing was removed."). On the
+  project page the Remove confirmation asks first (`POST /api/projects/:pid/overseer/worktrees/remove
+  {sessionId, dryRun: true}` answers the reason and the listing): a held worktree shows its reason
+  in place of the "folder goes away" sentence, and, when what it holds is the reason, offers `Remove
+  Anyway` with the cleanup dialog's listing and buttons. Confirming (the same route with `{sessionId,
+  digest}`, your own click only; both together is a 400) re-reads the worktree and removes it with one `--force` only when the listing is
+  unchanged and every other check still passes, tearing its running copy down only then; otherwise
+  nothing is deleted: "Changed since the list, nothing was deleted: {reason}". A worktree cut for a
+  session that then fails to start is removed the same way, so it stays if it holds anything. The
+  branch rule is unchanged; an
   unmerged branch keeps its commits, and Merge Branch stays on its row. It is refused while the
   session is working or has workers running. When the worktree has a running copy of the project
   (an instance, §app.project-services/instances), Remove Worktree first tears that copy down

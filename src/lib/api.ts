@@ -1090,6 +1090,9 @@ export const previewWorktreeCleanup = (path: string) =>
 /** Remove exactly `expect` (the dry run's paths), each only if still removable. */
 export const removeWorktrees = (path: string, expect: string[]) =>
   request<WorktreeCleanupResult>("/api/worktrees/cleanup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, expect }) });
+/** Remove Anyway: one kept tree, only while what it holds is still the listing confirmed (its digest). */
+export const removeWorktreeAnyway = (path: string, tree: string, digest: string) =>
+  request<WorktreeCleanupResult>("/api/worktrees/cleanup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, force: { path: tree, digest } }) });
 
 /**
  * `force` (chat only) lets the server open a session whose file was written recently by
@@ -1644,6 +1647,12 @@ export const mergeCodingWorktree = (projectId: string, sessionId: string) =>
   request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));
 export const removeCodingWorktree = (projectId: string, sessionId: string) =>
   request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId }));
+/** Why Remove Worktree would keep the folder, and what Remove Anyway would delete (§chat.worktrees/leftovers). */
+export const codingWorktreeHold = (projectId: string, sessionId: string) =>
+  request<import("../../shared/protocol").CodingWorktreeHold>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId, dryRun: true }));
+/** Remove Anyway: removed only while the folder holds exactly the listing confirmed (its digest). */
+export const removeCodingWorktreeAnyway = (projectId: string, sessionId: string, digest: string) =>
+  request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId, digest }));
 
 // ---- voice input (§chat/voice, §app.settings-dialog/voice) ---------------------------------------
 
@@ -1837,3 +1846,10 @@ export const startMcpSignIn = (id: string) => request<McpSignIn>(mcpRow(id, "/si
 export const readMcpSignIn = (id: string) => request<McpSignIn>(mcpRow(id, "/sign-in"));
 export const finishMcpSignIn = (id: string, address: string) => request<McpSignIn>(mcpRow(id, "/sign-in/address"), jsonInit("POST", { address }));
 export const cancelMcpSignIn = (id: string) => request<unknown>(mcpRow(id, "/sign-in"), { method: "DELETE" });
+
+// ---- the merge thread's Run Logs chip (§app.merge-queue/run-logs, shared/merge-run-logs.ts) ----
+/** The run folders' size of the project whose merge thread is `session` (404: it isn't one). */
+export const fetchRunLogsOfThread = (session: string) =>
+  request<import("../../shared/merge-run-logs").RunLogsInfo>(`/api/merge-queue/run-logs?session=${encodeURIComponent(session)}`, { cache: "no-store" });
+/** Clean Logs: the user's own click, confirmed. */
+export const cleanRunLogs = (project: string) => request<import("../../shared/merge-run-logs").RunLogsCleaned>("/api/merge-queue/run-logs/clean", jsonInit("POST", { project, confirm: true }));

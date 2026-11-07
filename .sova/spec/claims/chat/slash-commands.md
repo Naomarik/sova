@@ -337,9 +337,14 @@ device alike. A failed question says why in a notification and keeps the thread.
 The side thread runs as a hidden chat in a process of its own, started by Sova's worker host
 like any worker (§app.chat-processes/workers), never inside the main chat's process; its session
 is kept out of every session list. It starts from the main thread's conversation (none for a
-tangent) and the thread's earlier answers, with the read, bash, edit and write tools, no other
-extensions, the main thread's system prompt followed by the aside instructions, and the /btw
-model and thinking level. It is not sandboxed. Its model calls are counted like any chat's,
+tangent) and the thread's earlier answers, with the read-only tools read, grep, find and ls only:
+it reads and answers, and never runs a command or changes a file. It has no other extensions but
+the sandbox's while that is On, the main thread's system prompt followed by the aside instructions,
+and the /btw model and thinking level. While the main chat's sandbox is On, the side thread runs
+inside it: it starts under the main chat's sandbox scope through the same one call a worker's start
+goes through (§chat.sandbox/workers), and when that sandbox refuses or can give it no launch, /btw
+doesn't start the thread and says why. With the main chat's sandbox Off or Subagents only, it starts
+unconfined (it has no tool that writes or runs anything). Its model calls are counted like any chat's,
 under the main thread.
 
 The chat is kept between questions, so a follow-up continues it, and it outlives a reload, a

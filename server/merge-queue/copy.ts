@@ -71,7 +71,7 @@ const OUT_CAP = 256 * 1024;
  */
 export function runProc(
   argv: string[],
-  opts: { cwd: string; env: Record<string, string>; timeoutMs?: number; signal?: AbortSignal; log?: (chunk: string) => void },
+  opts: { cwd: string; env: Record<string, string>; timeoutMs?: number; signal?: AbortSignal; log?: (chunk: string) => void; graceMs?: number },
 ): Promise<Proc> {
   const started = Date.now();
   return new Promise((done) => {
@@ -92,12 +92,21 @@ export function runProc(
     }
     let timedOut = false;
     let aborted = false;
-    const kill = () => {
+    // With graceMs, the group gets SIGTERM first and SIGKILL only if it is still there after it:
+    // git removes its temp files (.merge_file_*, index locks) on SIGTERM, never on SIGKILL.
+    let hard: ReturnType<typeof setTimeout> | null = null;
+    const signalGroup = (sig: NodeJS.Signals) => {
       try {
-        process.kill(-child.pid!, "SIGKILL");
+        process.kill(-child.pid!, sig);
       } catch {
         /* gone */
       }
+    };
+    const kill = () => {
+      if (!opts.graceMs) return signalGroup("SIGKILL");
+      if (hard) return;
+      signalGroup("SIGTERM");
+      hard = setTimeout(() => signalGroup("SIGKILL"), opts.graceMs);
     };
     const timer = opts.timeoutMs ? setTimeout(() => ((timedOut = true), kill()), opts.timeoutMs) : null;
     const onAbort = () => ((aborted = true), kill());
@@ -109,6 +118,7 @@ export function runProc(
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      if (hard) clearTimeout(hard);
       opts.signal?.removeEventListener("abort", onAbort);
       done({ code, timedOut, aborted, ms: Date.now() - started, out });
     };
@@ -120,9 +130,10 @@ export function runProc(
   });
 }
 
-/** git with no fsmonitor and no pager, in `cwd`; the same contract as runProc. */
+/** git with no fsmonitor and no pager, in `cwd`; the same contract as runProc, except that a time limit or an abort
+    ends git with SIGTERM (SIGKILL 5 s later), so git cleans up its temp files in the work tree first. */
 export const gitProc = (cwd: string, args: string[], opts: { env?: Record<string, string>; log?: (chunk: string) => void; signal?: AbortSignal; timeoutMs?: number } = {}) =>
-  runProc(["git", "-c", "core.fsmonitor=false", "-c", "core.pager=cat", ...args], { cwd, env: { ...gitEnv(), ...opts.env }, timeoutMs: opts.timeoutMs ?? 300_000, ...(opts.signal ? { signal: opts.signal } : {}), ...(opts.log ? { log: opts.log } : {}) });
+  runProc(["git", "-c", "core.fsmonitor=false", "-c", "core.pager=cat", ...args], { cwd, env: { ...gitEnv(), ...opts.env }, timeoutMs: opts.timeoutMs ?? 300_000, graceMs: 5_000, ...(opts.signal ? { signal: opts.signal } : {}), ...(opts.log ? { log: opts.log } : {}) });
 
 /** The server's environment minus whatever points git at another repository. */
 export function gitEnv(): Record<string, string> {

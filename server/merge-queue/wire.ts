@@ -39,6 +39,8 @@ let queues: MergeQueues | null = null;
 let summaries: BranchSummaries | null = null;
 /** The summaries' background sweep (summary-sweep.ts): every Ready row's bullets once its chat is idle. */
 let sweep: SummarySweep | null = null;
+/** The run logs' packing (run-logs.ts): finished runs' logs gzipped a day after they ended, hourly. */
+let logSweep: { stop(): void } | null = null;
 type RowFields = { queue?: WorktreeQueueInfo; mergeProject?: WorktreeMergeProject; mergeStats?: WorktreeMergeStats; mergeServed?: true; mergeSummary?: BranchSummary; mergeOwner?: SessionWorktreeInfo["mergeOwner"] };
 let servedWriter: { refresh(): Promise<void>; stop(): void } | null = null;
 /** The served roots as last computed (the writer's pass): the thread wake's synchronous check. */
@@ -916,6 +918,9 @@ export async function startMergeQueue(
     isReviewerChat: review.isReviewerChat,
     deliverReview: review.deliverReview,
     ...(await threadVerbDeps(served)),
+    // merge.live / merge.restart (restart.ts) and merge.names (names-verb.ts): what the sandboxed thread can't reach.
+    restart: await (await import("./restart")).liveRestartDeps(),
+    names: async (pq, action, text) => (await import("./names-verb")).namesStep(pq, action, text, join(threadMod.DEFAULT_PLAYBOOK_DIR, "scripts", "discover-names.mjs")),
   });
   // A setup run changes the answer: the chats' file follows at once.
   projectEngine().merger = async (verb, body, caller) => {
@@ -973,6 +978,7 @@ export async function startMergeQueue(
     draftsStamp: (worktree) => draftsStamp(worktree),
     now: Date.now,
   };
+  logSweep = (await import("./run-logs")).startRunLogSweep({ queues: async () => (queues ? queues.loaded() : []) });
   // Rows read before this line have no queue fields, and nothing else re-reads an archived one.
   void rereadUnrooted();
   // The chats' file is current before the typed go-ahead door opens.
@@ -982,6 +988,8 @@ export async function startMergeQueue(
     void served
       .served(root)
       .then((yes) => (yes ? q.get(root) : null))
+      // A restart this queue asked for: checked against the commit this start runs (restart.ts).
+      .then(async (pq) => (pq ? (await import("./restart")).checkRestartAtStart((await import("./restart")).restartQueueOf(pq), await (await import("./restart")).liveRestartDeps()) : null))
       .catch((err) => console.warn(`[merge-queue] ${root}: ${err instanceof Error ? err.message : err}`));
   ingest = startIngest(
     ingestDepsFor({
@@ -1062,6 +1070,8 @@ export const branchSummariesNow = (): BranchSummaries | null => summaries;
 export async function stopMergeQueue(): Promise<void> {
   sweep?.stop();
   sweep = null;
+  logSweep?.stop();
+  logSweep = null;
   summaries = null;
   rowsOf = null;
   listDeps = null;

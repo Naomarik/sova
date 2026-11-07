@@ -294,6 +294,9 @@ const VALIDATE_ONLY: Record<string, string> = {
   "project.merge-queue.land-how.set": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
   "project.merge-queue.land-how.clear": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
   "project.merge-queue.branch-summary.retry": "a valid call needs the server's merge queue started with a branch whose summary failed, which the unit tier's app doesn't start",
+  // The merge thread's Run Logs chip reads and cleans a started queue's run folders (server/merge-queue/run-logs.test.ts).
+  "project.merge-queue.run-logs": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
+  "project.merge-queue.run-logs.clean": "a valid call deletes a started queue's run logs, which the unit tier's app doesn't start",
   "project.folder.list": "a valid call needs a registered project with git history (folder-read.test.ts covers it)",
   "project.folder.read": "a valid call needs a registered project with git history (folder-read.test.ts covers it)",
   "server.restart": "a valid call schedules a restart of the service that runs this server (and in-process it is refused before any body is read: only the user's own page may)",

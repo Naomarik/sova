@@ -19,6 +19,7 @@ import { paneTitleCost } from "../lib/spend";
 import { createSessionSpend } from "./SessionUsage";
 import { ChatView, type ChatRefusal, type OverseerChat } from "./ChatView";
 import { ContextGauge, contextDescribedBy } from "./ContextGauge";
+import { MergeRunLogsChip } from "./MergeRunLogsChip";
 import { ProfileChip } from "./ProfileChip";
 import { CodeState } from "./CodeState";
 import type { CodeControl } from "../lib/code-state";
@@ -308,6 +309,10 @@ export function SessionView(props: {
       </div>
       <ContextGauge path={path} />
       <ProfileChip summary={s()} info={profileInfo()} />
+      {/* The merge thread's chat alone: its run logs' size and Clean Logs (§app.merge-queue/run-logs). */}
+      <Show when={s().queueChat?.role === "thread" && !hostOf(path)}>
+        <MergeRunLogsChip session={s().id} />
+      </Show>
       <CodeState control={codeControl()} />
       {/* The remote identity is always present; the connection chip reports liveness separately. */}
       <RemoteChip path={path} summary={s()} />
@@ -370,6 +375,10 @@ export function SessionView(props: {
           <Show when={hostOf(path)}>{(h) => <HostStateMark host={h()} class="workspace-pane-host" />}</Show>
           <ContextGauge path={path} />
           <ProfileChip summary={s()} info={profileInfo()} />
+          {/* The merge thread's chat alone: its run logs' size and Clean Logs (§app.merge-queue/run-logs). */}
+          <Show when={s().queueChat?.role === "thread" && !hostOf(path)}>
+            <MergeRunLogsChip session={s().id} />
+          </Show>
           <CodeState control={codeControl()} />
           {/* Mid-turn, said at workspace level: split mode has N panes and
               no single place that says who is still working — the tab strip's dot covers tabs

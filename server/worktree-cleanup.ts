@@ -5,7 +5,12 @@
 // uses. Only when asked: the count and the dry run read, and a removal acts on the confirmed paths
 // alone, each checked again right before it goes.
 //
-// Removal is git's own `git worktree remove -- <path>` from the main checkout, never --force, and
+// A tree that holds what can't be rebuilt (ignored files outside rebuildable folders, nested
+// repositories: server/worktree-leftovers.ts) stays like one with uncommitted files; Remove Anyway,
+// on the user's click alone, takes one such tree with a single --force when what it holds is exactly
+// what was listed.
+//
+// Removal is git's own `git worktree remove -- <path>` from the main checkout, never --force but for Remove Anyway, and
 // `git branch -d` only for a branch in the main branch by ancestry. Each removal is appended to the
 // ledger (server/removed-worktrees.ts) that readiness reads for a removed tree. Git by argv, never
 // a shell; reads under --no-optional-locks (server/worktrees.ts execGit).
@@ -25,6 +30,8 @@ import { appendLedger, mergedByContent, resetContentMerges, type RemovedWorktree
 import { sandboxInfo } from "./sandbox-state";
 import { parseTargetCwd } from "./targets";
 import { worktreesOf } from "./worktrees-state";
+import { leftovers, leftoversDigest, leftoversReason, removeAnywayOf, type Leftovers } from "./worktree-leftovers";
+export { REMOVE_ANYWAY_LIST, removeAnywayOf } from "./worktree-leftovers";
 import { execGit, type GitResult, type GitRunner } from "./worktrees";
 
 /** How long a count stands while git's list of worktrees doesn't change. */
@@ -444,27 +451,6 @@ export async function useFacts(paths: readonly string[], exclude?: string): Prom
   return { sessionCwds, trackers };
 }
 
-/** Uncommitted and untracked files (ignored ones don't count, as with git's own remove). */
-async function dirtyFiles(git: GitRunner, dir: string): Promise<string[] | string> {
-  const r = await git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], { cwd: dir });
-  if (r.code !== 0) return `Git couldn't read it: ${firstLine(r)}`;
-  const out: string[] = [];
-  const parts = r.stdout.split("\0");
-  for (let i = 0; i < parts.length; i++) {
-    const e = parts[i];
-    if (!e || e.length < 4) continue;
-    out.push(e.slice(3));
-    if (e[0] === "R" || e[0] === "C") i++;
-  }
-  return out;
-}
-
-const filesWords = (files: string[]): string => {
-  const n = files.length;
-  const first = files[0]!;
-  return n === 1 ? `1 uncommitted file: ${first}` : `${n} uncommitted files: ${first} and ${n - 1} more`;
-};
-
 /** A live record under the tree's own `.agent/sessions/live` naming a process still alive. */
 function liveRecordPid(tree: string, alive: (pid: number) => boolean): number | null {
   const dir = join(tree, ".agent", "sessions", "live");
@@ -487,27 +473,40 @@ function liveRecordPid(tree: string, alive: (pid: number) => boolean): number | 
   return null;
 }
 
+/** Why a merged or empty tree must stay (null: it may go), and, when what it holds is the only
+    reason, what it holds: the tree Remove Anyway may take. */
+export interface Assessment {
+  why: string | null;
+  content?: Leftovers;
+}
+
+/** Every check of one tree: its use first (git, sessions, processes), then what it holds that can't
+    be rebuilt (server/worktree-leftovers.ts), read fresh. */
+export async function assess(t: ClassifiedTree, use: UseFacts, procs: readonly ProcFacts[]): Promise<Assessment> {
+  const d = need();
+  if (t.class === "unmerged") return { why: t.why ?? "Not merged." };
+  if (t.locked) return { why: "Locked." };
+  const root = canonical(t.path);
+  for (const s of use.sessionCwds) if (isWithin(s.cwd, root)) return { why: `Session ${s.name}'s folder is inside it.` };
+  for (const tr of use.trackers.get(t.path) ?? []) {
+    if (tr.live) return { why: `Session ${tr.name} tracks it and is open in a TUI.` };
+    if (tr.running) return { why: `Session ${tr.name} tracks it and is running.` };
+    if (tr.sandbox) return { why: `Session ${tr.name} tracks it and has its sandbox on.` };
+  }
+  if (t.gone) return { why: null };
+  for (const p of procs) if (p.unreadable) return { why: p.unreadable };
+  for (const p of procs) if (p.paths.some((x) => isWithin(x, root))) return { why: `A running process is inside it: ${p.command} (${p.pid}).` };
+  const pid = liveRecordPid(t.path, d.alive);
+  if (pid) return { why: `A live session under its .agent: ${pid}.` };
+  const held = await leftovers(t.path, d.git).catch((err: Error): Leftovers => ({ dirty: [], ignored: [], nested: [], rebuildable: [], unreadable: `Its files couldn't be read: ${err.message}` }));
+  const why = leftoversReason(held);
+  if (why === null) return { why: null };
+  return held.unreadable ? { why } : { why, content: held };
+}
+
 /** Why a merged or empty tree must stay, or null when it may go. */
 export async function refusal(t: ClassifiedTree, use: UseFacts, procs: readonly ProcFacts[]): Promise<string | null> {
-  const d = need();
-  if (t.class === "unmerged") return t.why ?? "Not merged.";
-  if (t.locked) return "Locked.";
-  const root = canonical(t.path);
-  for (const s of use.sessionCwds) if (isWithin(s.cwd, root)) return `Session ${s.name}'s folder is inside it.`;
-  for (const tr of use.trackers.get(t.path) ?? []) {
-    if (tr.live) return `Session ${tr.name} tracks it and is open in a TUI.`;
-    if (tr.running) return `Session ${tr.name} tracks it and is running.`;
-    if (tr.sandbox) return `Session ${tr.name} tracks it and has its sandbox on.`;
-  }
-  if (t.gone) return null;
-  const files = await dirtyFiles(d.git, t.path);
-  if (typeof files === "string") return files;
-  if (files.length) return `${filesWords(files)}.`;
-  for (const p of procs) if (p.unreadable) return p.unreadable;
-  for (const p of procs) if (p.paths.some((x) => isWithin(x, root))) return `A running process is inside it: ${p.command} (${p.pid}).`;
-  const pid = liveRecordPid(t.path, d.alive);
-  if (pid) return `A live session under its .agent: ${pid}.`;
-  return null;
+  return (await assess(t, use, procs)).why;
 }
 
 // --- dry run and removal -----------------------------------------------------------------------
@@ -528,11 +527,12 @@ export async function cleanupPlan(sessionPath: string): Promise<WorktreeCleanupP
   const remove: WorktreeCleanupRemoved[] = [];
   const keep: WorktreeCleanupKept[] = [];
   // Each tree's checks (a git status for a candidate) a few at a time; the answer keeps git's order.
-  const whys = await mapLimit(repo.trees, READ_CONCURRENCY, (t) => refusal(t, use, procs));
+  const found = await mapLimit(repo.trees, READ_CONCURRENCY, (t) => assess(t, use, procs));
   repo.trees.forEach((t, i) => {
-    const why = whys[i]!;
+    const { why, content } = found[i]!;
     if (why === null) remove.push(removedRow(t));
-    else keep.push({ path: t.path, ...(t.branch ? { branch: t.branch } : {}), reason: why });
+    // Kept only for what it holds: Remove Anyway, listing exactly that.
+    else keep.push({ path: t.path, ...(t.branch ? { branch: t.branch } : {}), reason: why, ...(content ? { removeAnyway: removeAnywayOf(content) } : {}) });
   });
   return { repo: repo.main, ...(repo.mainBranch ? { mainBranch: repo.mainBranch } : {}), home: homedir(), remove, keep };
 }
@@ -567,7 +567,7 @@ export async function checkTrees(dir: string, paths: readonly string[], opts: { 
  * trees); `changedSince` words a refusal as a change since the dry run. "busy": a removal in the
  * same repository is running; null: `dir` isn't in a repository with a main checkout.
  */
-export async function removeTrees(dir: string, paths: readonly string[], opts: { exclude?: string; changedSince?: boolean } = {}): Promise<WorktreeCleanupResult | "busy" | null> {
+export async function removeTrees(dir: string, paths: readonly string[], opts: { exclude?: string; changedSince?: boolean; anyway?: { path: string; digest: string } } = {}): Promise<WorktreeCleanupResult | "busy" | null> {
   const d = need();
   const repo = await classifyRepo(dir, d.git);
   if (!repo) return null;
@@ -587,17 +587,27 @@ export async function removeTrees(dir: string, paths: readonly string[], opts: {
         kept.push({ path, reason: "No longer in git's worktree list." });
         return;
       }
-      const why = await refusal(t, use, t.gone ? [] : await d.processes());
-      if (why !== null) {
-        kept.push({ path, ...(t.branch ? { branch: t.branch } : {}), reason: opts.changedSince ? `Changed since the preview: ${why}` : why });
+      const { why, content } = await assess(t, use, t.gone ? [] : await d.processes());
+      // Remove Anyway: only a tree kept for what it holds, and only while that is exactly what was listed.
+      const anyway = opts.anyway?.path === path ? opts.anyway : null;
+      const forced = !!anyway && !!content && leftoversDigest(content) === anyway.digest;
+      if (why !== null && !forced) {
+        const prefix = anyway ? "Changed since the list, nothing was deleted: " : opts.changedSince ? "Changed since the preview: " : "";
+        kept.push({ path, ...(t.branch ? { branch: t.branch } : {}), reason: `${prefix}${why}` });
         return;
       }
-      const r = await d.gitWrite(["worktree", "remove", "--", t.path], { cwd: repo.main });
+      // One --force deletes what was listed; a locked tree was refused above.
+      const r = await d.gitWrite(["worktree", "remove", ...(forced ? ["--force"] : []), "--", t.path], { cwd: repo.main });
       if (r.code !== 0) {
         kept.push({ path, ...(t.branch ? { branch: t.branch } : {}), reason: `Git refused: ${firstLine(r)}` });
         return;
       }
       removed.push({ ...removedRow(t), branchDeleted: false });
+      // A worktree of another repository that went with it: its folder is gone, so the same command in its own
+      // repository only drops it from that list, by name (never a bare prune).
+      if (forced)
+        for (const n of content!.nested)
+          if (n.kind === "worktree" && n.of && existsSync(n.of)) await d.gitWrite(["worktree", "remove", "--", join(t.path, n.path)], { cwd: n.of }).catch(() => null);
     };
     await Promise.all(
       Array.from({ length: Math.min(REMOVE_CONCURRENCY, queue.length) }, async () => {
@@ -630,6 +640,16 @@ export async function removeTrees(dir: string, paths: readonly string[], opts: {
 export async function cleanupRemove(sessionPath: string, expect: readonly string[]): Promise<WorktreeCleanupResult | "busy" | null> {
   const cwd = await folderOf(sessionPath);
   return cwd ? removeTrees(cwd, expect, { changedSince: true }) : null;
+}
+
+/**
+ * POST /api/worktrees/cleanup {force: {path, digest}}: Remove Anyway, on the user's click in the
+ * dialog only. Removes that one tree when every use check still passes and what it holds is exactly
+ * what the dry run listed (its digest); otherwise it stays, and nothing is deleted.
+ */
+export async function cleanupRemoveAnyway(sessionPath: string, force: { path: string; digest: string }): Promise<WorktreeCleanupResult | "busy" | null> {
+  const cwd = await folderOf(sessionPath);
+  return cwd ? removeTrees(cwd, [force.path], { anyway: force }) : null;
 }
 
 /** Tests: start over. */

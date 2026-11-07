@@ -457,9 +457,9 @@
       "§app.project-setup/trust"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T19:18Z",
-      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
+      "by": "naomarik",
+      "at": "2026-11-07T15:21Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
     },
     "code": [
       "server/merge-queue/routes.ts",
@@ -481,7 +481,12 @@
       "server/merge-queue/queue.test.ts",
       "server/merge-queue/scenarios-approval.integration.test.ts",
       "server/merge-queue/setup-trust.test.ts",
-      "server/merge-queue/view.ts"
+      "server/merge-queue/view.ts",
+      "server/merge-queue/restart.ts",
+      "server/merge-queue/resolve-content.ts",
+      "server/merge-queue/names-verb.ts",
+      "server/project-services/tools-answer.test.ts",
+      "server/merge-queue/names-verb.integration.test.ts"
     ]
   },
   "§app.project-services/on-merge": {
@@ -640,8 +645,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T13:41Z",
-      "source": "pi-session:01a1ab30-f643-72b7-9a70-76331f9c7523#21128e50"
+      "at": "2026-11-07T14:36Z",
+      "source": "pi-session:01a1afdd-a250-74e2-9bd4-05240ba34ff4#a9d5393f"
     }
   },
   "§app.project-services/share": {
@@ -753,8 +758,14 @@
       "server/project-services/share.test.ts",
       "server/project-services/share.integration.test.ts",
       "server/project-services/adopt.test.ts",
-      "server/project-services/adopt.integration.test.ts"
-    ]
+      "server/project-services/adopt.integration.test.ts",
+      "server/worktree-leftovers.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-07T15:21Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
+    }
   },
   "§app.project-services/test": {
     "kind": "behavior",

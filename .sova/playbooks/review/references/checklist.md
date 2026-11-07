@@ -4,7 +4,7 @@ Each item: what counts as a finding, and what doesn't. Kinds in brackets.
 
 ## Dead code [dead-code]
 Counts: a function, export, branch, parameter or file the change adds or leaves unused; commented-out code; a debug `console.log`/print, a leftover `only`/`skip` in a test; a feature flag that can never be on.
-Doesn't: code used by a test or another file you didn't read (grep before calling it unused); an exported type kept for a documented API.
+Doesn't: code used by a test or another file you didn't read (look for its uses in the diff and the files it touches before calling it unused); an exported type kept for a documented API.
 
 ## Duplication [duplication]
 Counts: the change copies a block (roughly ten lines or more, or a non-trivial rule) that already exists in the repo, instead of reusing or extracting it; two new functions doing the same thing.

@@ -8,12 +8,12 @@ import { gapsOf } from "./projects/contributions";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
 import { addIdea, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea } from "./overseer-ideas";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
-import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, mergeCodingWorktree, messageProjectOverseer, patchProjectOverseer, projectOverseerChat, projectOverseerInfo, projectWorktrees, removeCodingWorktree, startCoding } from "./project-overseer";
+import { clearProjectOverseer, codeItem, ensureProjectOverseer, codingWorktreeHold, lookNow, mergeCodingWorktree, messageProjectOverseer, patchProjectOverseer, projectOverseerChat, projectOverseerInfo, projectWorktrees, removeCodingWorktree, removeCodingWorktreeAnyway, startCoding } from "./project-overseer";
 import { projectOf, projectOverseerPaths, type ProjectOverseerPaths, readPoSettings, writePoSettings } from "./project-overseer-store";
 import { overseerMemoryInfo, putOverseerMemorySwitch } from "./memory/routes";
 import { recordKept } from "./project-settings";
 import { TOKEN_HEADER } from "./auth";
-import { yourClickRefusal } from "./page-only";
+import { pageOnlyRefusal, yourClickRefusal } from "./page-only";
 import { powerTurnsOn } from "../shared/powers";
 
 /**
@@ -258,8 +258,18 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
     const b = await body(c);
     return c.json(await mergeCodingWorktree(p.projectId, b.sessionId, b.commit), 200, NO_STORE);
   }));
+  // Remove Worktree; `dryRun: true` answers why it would keep the folder and what Remove Anyway would delete
+  // (§chat.worktrees/leftovers); `digest` is Remove Anyway with that listing, on the user's own click in the page only.
   app.post(`${base}/worktrees/remove`, handle(async (c) => {
-    const p = pathsOf(c);
-    return c.json(await removeCodingWorktree(p.projectId, (await body(c)).sessionId), 200, NO_STORE);
+    const b = await body(c);
+    if (b.dryRun !== undefined || b.digest !== undefined) {
+      if (b.dryRun === true && b.digest === undefined) return c.json(await codingWorktreeHold(pathsOf(c).projectId, b.sessionId), 200, NO_STORE);
+      if (b.dryRun !== undefined || typeof b.digest !== "string" || !/^[0-9a-f]{8,64}$/.test(b.digest)) return c.json({ error: "Send dryRun: true or a digest, not both" }, 400);
+      const words = "Only the user removes a kept worktree anyway. Ask them to press Remove Anyway on the project page. Nothing was deleted.";
+      const notYou = pageOnlyRefusal(c, { overseer: words, chat: words, script: words, extension: words, local: "A kept worktree is removed anyway only on the page of the computer it is on. Nothing was deleted." });
+      if (notYou) return c.json({ error: notYou, yourClick: true }, 403);
+      return c.json(await removeCodingWorktreeAnyway(pathsOf(c).projectId, b.sessionId, b.digest), 200, NO_STORE);
+    }
+    return c.json(await removeCodingWorktree(pathsOf(c).projectId, b.sessionId), 200, NO_STORE);
   }));
 }

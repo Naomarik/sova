@@ -15,6 +15,7 @@ import { isTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
 import { RECENT_WRITE_MS } from "./write-guard";
 import { isArchived, setArchived } from "./archived-sessions";
+import { mapLimit } from "./map-limit";
 import { dropGroupAssignments, readAssignments } from "./session-groups";
 import { draftCounts, draftPreview, dropDrafts, readDrafts } from "./drafts";
 import { dropSessionTitles, memoSessionTitleRecords, readSessionTitleRecords, type StoredTitle } from "./session-titles";
@@ -1425,6 +1426,32 @@ function summaryOf(path: string, resolveWindow: WindowResolver | undefined, dirt
   return summarize(path, resolveWindow);
 }
 
+/** How many session files a listing reads at once: every file's
+    buffers live together while it is read, so reading all of them at once held gigabytes. */
+export const LIST_READ_LIMIT = 24;
+
+/** `files` split by whether the session is archived (by the id in its file name), each part in the
+    files' own order; `all` is the open ones, then the archived. */
+function openFirst(files: readonly string[]): { open: string[]; archived: string[]; all: string[] } {
+  const open: string[] = [];
+  const archived: string[] = [];
+  for (const f of files) (isArchived(idOf(f)) ? archived : open).push(f);
+  return { open, archived, all: [...open, ...archived] };
+}
+
+/** Every file's summary, LIST_READ_LIMIT reads at a time: every open session's before any archived
+    one's is started. */
+async function summariesOf(files: { open: string[]; archived: string[] }, resolveWindow: WindowResolver | undefined, dirty: ReadonlySet<string> | undefined): Promise<(BaseSummary | null)[]> {
+  const read = (p: string) => summaryOf(p, resolveWindow, dirty);
+  const open = await mapLimit(files.open, LIST_READ_LIMIT, read);
+  listPhases.openRead?.();
+  const archived = await mapLimit(files.archived, LIST_READ_LIMIT, read);
+  return [...open, ...archived];
+}
+
+/** Test and measurement hooks into a listing's phases (unset in production). */
+export const listPhases: { openRead?: () => void } = {};
+
 /** The husk check (isZeroInput) from the summary cache when it holds this file, else from the file. */
 async function zeroInputOf(path: string): Promise<boolean> {
   const hit = cache.get(path);
@@ -1463,10 +1490,8 @@ async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<st
   // Group gesture, so the member would vanish silently instead of showing its state. Only
   // Archive cleanup prunes, and only the ids it deleted itself (cleanupSessions, below). The
   // batch prompt already answers a gone member with its own "missing" refusal code.
-  const [results, workers] = await Promise.all([
-    Promise.all(files.map((f) => summaryOf(f, resolveWindow, track?.dirty))),
-    workerSessionPaths(files, track?.dirty),
-  ]);
+  const ordered = openFirst(files);
+  const [results, workers] = await Promise.all([summariesOf(ordered, resolveWindow, track?.dirty), workerSessionPaths(ordered.all, track?.dirty)]);
   const present = new Set(files);
   for (const k of cache.keys()) if (!present.has(k)) dropEntry(k);
   const out: SessionSummary[] = [];

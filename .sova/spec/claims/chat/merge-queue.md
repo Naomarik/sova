@@ -39,7 +39,7 @@ it differs; without one, Sova's stands, with the project playbook's section of t
 **One thread, with memory, on its own.** Each project keeps one merge thread, whose only mode is
 memory (UniiChat). It reads its playbook again whenever it changed, works without waiting for the
 user, and is never replaced for its age, only when it can't go on or the user presses Start Fresh
-(§chat.merge-queue/thread-life). It has no MCP servers (§app.mcp/who-gets).
+(§chat.merge-queue/thread-life). It has no MCP servers (§app.mcp/who-gets). It runs sandboxed (§chat.merge-queue/thread-sandbox).
 
 **Its model.** A new merge thread opens on the merge-thread model the project has on this computer
 (§app.merge-queue/models), else on the new-chat default. A thread already open keeps its model
@@ -84,12 +84,12 @@ chat the user talks to (§app/project-setup), and the thread neither starts it n
 or `merge.setup`. It messages no other
 chat directly. When it needs the user (the names interview below, or any question it can't settle
 itself), it asks through the merge verbs, and Sova carries the question to the branch's chat
-(§chat.merge-queue/asks). Its profile has no web, no workers and no timers, grants no session
+(§chat.merge-queue/asks). Its profile has no web, no workers, no timers and no worktree tool, grants no session
 powers, and the Overseer can't start it.
 
 **The names interview.** When a project that pushes has no private names yet, Sova holds its pushes
-and calls the thread with the project's names file and target. The thread first runs the name
-finder (`discover-names.mjs`). It then asks the user with `merge.ask`, naming the newest landed
+and calls the thread with the project's names file and target. The thread first has Sova run the
+name finder (`merge.names {action: "discover"}`, §chat.merge-queue/thread-sandbox). It then asks the user with `merge.ask`, naming the newest landed
 entry so that branch's chat asks them (§chat.merge-queue/asks), never in its own chat, what must
 never reach the public repository:
 - servers and their addresses;
@@ -98,7 +98,7 @@ never reach the public repository:
 - client or person names;
 - anything else.
 
-When their answer comes back, it adds their names to the list, then asks the same way whether the
+When their answer comes back, it has Sova add their names to the list (`merge.names`), then asks the same way whether the
 list is complete, giving only its kinds and counts. A question never quotes a name: to see the
 names themselves the user opens the merge thread, which shows the list there only. Once they
 confirm, it says in the entry's note (with no names) that the push hold lifts with the next
@@ -106,8 +106,8 @@ landing. The names are kept only in the project's names file (`<state root>/merg
 key>/names.json`; Sova's own
 repository falls back to `<state root>/merge-round.json`), which the leak scan reads
 (§app.merge-queue/push); Sova's own project keeps `<state root>/merge-round.json`. The file is
-private to the user (mode 0600), only ever added to, and never committed. The finder prints the
-names themselves only when asked to show them. Sova's method playbook says so, and so does Sova's
+private to the user (mode 0600), written only by Sova, only ever added to, and never committed.
+Sova shows the names themselves only to the merge thread (`merge.names {action: "show"}`). Sova's method playbook says so, and so does Sova's
 own project playbook: the names interview and every other question go this way, and otherwise the
 thread acts on its own.
 
@@ -117,6 +117,46 @@ is missing, slow or failing:
 - the run uses the required checks and their triggers;
 - the landing has no note;
 - a conflict goes back to the branch's chat.
+
+## §chat.merge-queue/thread-sandbox — The merge thread works sandboxed, through Sova's verbs
+
+The merge thread starts in the project's main checkout with its sandbox On at the read-only level
+(§chat/sandbox), and without the worktree tool. That folder is never a writable root (the session's
+folder is marked not writable): its tools read
+wherever the sandbox allows and write only in their own temp folder. There is no other writable
+mount (not the main checkout, a scratch copy or any worktree) and no network. The sandbox takes a
+tightening-only flag for this (the session runs at read-only whatever the policy's level says); it
+never loosens anything. It tries things in a scratch clone it makes under its temp folder, and
+deletes the clone when it is done.
+
+Everything it does beyond reading goes through the merge verbs Sova runs for it
+(§app.project-services/merge-verbs):
+- **Restarting Sova**: `merge.restart` (§chat.merge-queue/sova-restart).
+- **What is live**: `merge.live {project}`, to any caller that may read the queue: the commit Sova
+  runs and when it started (what `GET /api/health` says), the target's head, and the plan between
+  them (nothing, build or restart; whether an install is owed; file counts).
+- **Resolving a conflict**: `merge.resolve` also takes `contents`, each conflicted file's whole
+  merged text by its repository path, with either verdict, and never together with `commit`. Sova merges the approved commit into the entry's scratch copy
+  (detached, at the target's head), writes those files there, refuses when a conflicted file is
+  left unresolved or a path leaves the copy, commits the merge in the copy and uses that commit as
+  the resolution (§app.merge-queue/resolve-copy). The target branch, the main checkout and every
+  branch stay where they were. The thread never commits in a scratch copy itself.
+- **Trying a resolution**: `merge.test {entry, select?}`, the merge thread's only, runs the
+  project's merge install (when declared) and its test command with the given selectors in that
+  entry's scratch copy, and answers pass or fail with the last lines of the output. It changes
+  nothing in the queue or the entry.
+- **The names interview**: only Sova writes the private-names file (§chat.merge-queue/thread).
+  `merge.names {action: "discover"}` has Sova run the name finder itself into the project's names
+  file (the one Sova keeps, never a path the thread picks) and answers kinds and counts, never
+  values; `{action: "add", text}` adds the user's names, one `<kind>: <value>` per line, through a
+  private temp file Sova deletes; `{action: "show"}` answers
+  the list, and only to the merge thread.
+
+**Answers it can read whole.** Every merge verb's answer, as a chat's tool returns it, stays under
+24,000 characters, so the Claude Code CLI never saves it to a file under `claude-accounts/`, which
+the sandbox hides. A longer answer is sent again as compact JSON, then cut, and the cut says what was left
+out and how to ask for less: `merge.status {entry}` answers that one entry, `merge.logs {run, step,
+lines}` one step.
 
 ## §chat.merge-queue/thread-life — The merge thread's memory, and when it is replaced
 
@@ -364,11 +404,13 @@ thread. The user can always open the merge thread and talk to it directly; that 
 
 Sova's own project playbook (`.sova/playbooks/merge-queue/`, its "When the queue is idle") has
 Sova's merge thread restart Sova after landings that change what its server runs, so new server code
-goes live without the operator pressing Restart Sova. It is an instruction in that playbook, with
-its script (`scripts/restart-sova.mjs`), not a product setting: there is no switch and nothing on
-screen for it, and no other project's merge thread does it (each follows its own project's playbook;
-Sova's method playbook forbids restarting anything unless the project's playbook says so,
-§chat.merge-queue/thread).
+goes live without the operator pressing Restart Sova. The thread does it through one merge verb Sova
+runs for it, `merge.restart {project}`, never a script or command of its own
+(§chat.merge-queue/thread-sandbox). It is an instruction in that playbook, not a product setting:
+there is no switch and nothing on screen for it, and no other project's merge thread does it (each
+follows its own project's playbook; Sova's method playbook forbids restarting anything unless the
+project's playbook says so, §chat.merge-queue/thread). `merge.restart` answers only for the project
+Sova itself runs from, and only to that project's merge thread or the operator.
 
 - **What needs a restart.** One rule (`server/restart-paths.ts`) says which landed files the server
   loads only at its start:
@@ -382,32 +424,38 @@ Sova's method playbook forbids restarting anything unless the project's playbook
   rebuilt, never a restart. A `package.json` whose only change is its `version` (a release's bump)
   counts for neither. A session's "restart pending" and its status line's "restart owed" read the
   same file rule (§chat.worktrees/readiness), file by file, so a release commit may still show there.
-- **When.** Only on the queue's Idle (§app.merge-queue/empty), and once: one plan covers every file
-  that changed between the commit Sova runs (`GET /api/health`'s `head`) and the target's head. With
-  anything queued or checking it waits for the next Idle. When nothing needs it, nothing happens;
-  when Sova doesn't answer, or the main checkout isn't on the target's head, it does nothing and
-  waits for the next Idle.
-- **Never during a release.** While a release is open (§app.release/checks) it builds and restarts
-  nothing. The release's hold lifting at Publish or Abandon sends Idle again, and the thread catches
-  up then. A release's own commit is never a reason to restart: trying a release live stays the
-  operator's Apply (§app.release/sova).
-- **Page files only:** it builds the page (`pnpm run build` in the main checkout), restarts nothing,
-  and on a failure notes "The page build failed after landing {branch}: {first error line}." Open
+- **When.** Only on the queue's Idle (§app.merge-queue/empty), and once: `merge.restart` plans from
+the commit Sova started on to the target's head, with the file rule above. It does nothing while
+anything is queued or checking; the thread waits for the next Idle. When nothing needs it, nothing
+happens. `merge.live {project}` tells the thread, without reaching Sova's port, the commit Sova runs
+and when it started, the target's head and the plan between them, and the Idle message carries the
+live commit too.
+- **Never during a release.** While a release is open (§app.release/checks) `merge.restart` builds
+  and restarts nothing. The release's hold lifting at Publish or Abandon sends Idle again, and the
+  thread catches up then. A release's own commit is never a reason to restart: trying a release
+  live stays the operator's Apply (§app.release/sova).
+- **Page files only:** it runs `pnpm run build` in the main checkout and restarts nothing; on a
+  failure the note says "The page build failed after landing {branch}: {first error line}." Open
   tabs offer the newer page.
 - **A restart, in order:**
   1. It holds the queue's new starts (`merge.hold`, §app.merge-queue/empty).
-  2. In the main checkout it runs `pnpm install --frozen-lockfile` when an install file changed, then
-     `pnpm run build`. If either fails, nothing restarts, it clears the hold, and its note says "Not
-     restarted: {install|build} failed after landing {branch}: {first error line}."
-  3. If a run started before the hold, it clears the hold and waits for the next Idle.
-  4. It restarts `sova-runtime.service` the way the operator's own terminal does (`systemctl --user
-     restart`; on macOS `launchctl kickstart -k`), never through `POST /api/updates/restart`, which
-     still refuses it (§app.updates/restart). Chats and workers, the merge thread included, keep
-     running through it (§app.chat-processes/survives-restart).
-  5. It waits up to a minute for `GET /api/health` to answer with a new start on the target's head.
-  6. It clears the hold (the new start already lifted it) and adds to its note on the newest landing
-     (§app.merge-queue/note), keeping what the note said: "Restarted Sova after landing {branch}.",
-     or "Restart after landing {branch} didn't come back on {sha}: {why}. Check
-     sova-runtime.service." It never retries a failed restart itself: the next Idle plans again.
+  2. In the main checkout it runs `pnpm install --frozen-lockfile` when an install file changed,
+     then `pnpm run build`. If either fails, nothing restarts, the hold is cleared, and the answer
+     and the note say "Not restarted: {install|build} failed after landing {branch}: {first error
+     line}."
+  3. Otherwise it renews the hold, so it still holds new starts when the restart is scheduled,
+     however long the install and build took; then it answers with the commit it expects and
+     restarts the project's adopted unit
+     (Sova's: `sova-runtime.service`) 3 seconds later, as Apply does, but only when the server
+     answering is that unit's own main process; otherwise nothing restarts ("this server isn't run
+     by {unit}: nothing restarts"), never through `POST
+     /api/updates/restart`, which still refuses chats (§app.updates/restart). Chats and workers,
+     the merge thread included, keep running through it (§app.chat-processes/survives-restart).
+  4. At its next start Sova compares the commit it started on with the expected one, lifts the
+     hold, and adds to the newest landing's note (§app.merge-queue/note), keeping what the note
+     said: "Restarted Sova after landing {branch}.", or "Restart after landing {branch} didn't come
+     back on {sha}: it started on {sha}. Check sova-runtime.service." A restart scheduled but not
+     seen at a start within 2 minutes goes stale. The thread never retries a failed restart: the
+     next Idle plans again.
 
-This is the one place a chat restarts Sova (§app.access/your-click).
+This is the one place a chat restarts Sova (§app.access/your-click), and only through that verb.

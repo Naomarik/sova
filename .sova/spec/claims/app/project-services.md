@@ -455,8 +455,9 @@ An adopted slot 0 refuses `reset` (`refused-slot0`); see §app.project-services/
 The only verb that deletes. First every share link of the instance is revoked, each person's
 sibling of one included (§app.project-services/share, a `links` step), then down (every service down
 covers, those that left the definition included), then each data resource deprovisioned and the data dir removed
-(unless `keepData`), then the worktree removed only when Sova cut it and it is clean (a dirty one
-stays, named in a skipped step), then the slot freed. The branch is never deleted. Slot 0 is
+(unless `keepData`), then the worktree removed only when Sova cut it, it is clean and it holds nothing that can't be
+rebuilt (the same check as §chat.worktrees/cleanup, §chat.worktrees/leftovers); otherwise it stays,
+named with the reason in a skipped step, then the slot freed. The branch is never deleted. Slot 0 is
 refused (`refused-slot0`). An instance that is absent answers `ok` with state `absent`.
 An adopted slot 0 is refused the same way, naming its unit; see §app.project-services/adopt.
 
@@ -656,7 +657,7 @@ the same route (`POST /api/project-services/<verb>`), the same CLI and the same 
 answering
 the one result shape with its own `merge` key (§app.project-services/result).
 
-- **Reads**: `merge.status` (a project: the queue's view, its state and why it is paused, the
+- **Reads**: `merge.status` (a project, or one entry, which narrows the view to it: the queue's view, its state and why it is paused, the
   current run, the waiting line with estimates, what needs the user, what needs a fix, recent
   landings with their runs, the target's and pushed heads, and the test checks flagged broken on the
   target) and `merge.logs` (a run, optionally
@@ -687,8 +688,10 @@ the one result shape with its own `merge` key (§app.project-services/result).
   for `checks` and `select` names the full pick and says a check that takes a selection runs bare
   without one and fails), `merge.resolve` (an
   entry, its judgement, no behaviour change or behaviour differs, the files, both sides and the
-  proposal in plain words, and the commit of its resolution), `merge.retry` (a project or entry
-  paused for the machine), `merge.ask` (the question for the user, and the entry it is about:
+  proposal in plain words, and the commit of its resolution, or `contents`, each resolved file's text, which Sova commits in
+  the scratch copy), `merge.retry` (a project or entry
+  paused for the machine), `merge.restart`, `merge.live`, `merge.test` and `merge.names`
+  (§chat.merge-queue/thread-sandbox), `merge.ask` (the question for the user, and the entry it is about:
   §chat.merge-queue/asks) and `merge.hold` (a project and `action`: `set` holds the queue's new
   starts for 5 minutes, set again renewing them, and `clear` lifts the hold; it answers the hold
   now: §app.merge-queue/empty). Each but `merge.hold`, which names no entry, takes an optional
@@ -706,7 +709,8 @@ the one result shape with its own `merge` key (§app.project-services/result).
 - A typed "land it" reaches `merge.add` as the user's approval through `worktree land`
   (§chat.worktrees/tool); no session can call `merge.add` as a tool.
 - The project's merge thread (§chat.merge-queue/thread) calls the reads and its own verbs (note,
-  extend, resolve, retry, ask, hold), for its own project only.
+  extend, resolve, retry, ask, hold, restart, live, test, names), for its own project only; every
+  merge verb's answer stays under 24,000 characters (§chat.merge-queue/thread-sandbox).
 - A review step's reviewer calls `merge.review` for its own run only (§app.merge-queue/review).
 - Any chat, the project's Setup chat included (§app.project-setup/trust), calls `merge.try` for its
   own project; `merge.setup` and every other user's verb is `forbidden` to it, as to every chat. The
@@ -820,8 +824,8 @@ The operator sees and drives every running copy from two places, both on this ho
   `main`, then each branch copy by slot. A row shows the branch, `slot {n}`, each checkout service's
   ports (a port with HTTP readiness is a link to the site at `http://<this page's host>:<port>/`, never the readiness check's path), the copy's
   memory (the sum of its services' memory, each process's own memory as the resource monitor
-  measures it, so it reads what a project card's Memory in use counts for that copy,
-  §app.projects/home-glance; "—" when none reports one), its state as a chip
+  measures it, as a project card counts a copy, §app.projects/home-glance, which leaves out Sova's
+  own server; "—" when none reports one), its state as a chip
   (Running, Starting, Degraded, Stopped, Absent; Starting while the copy is degraded only because a
   service is still starting, none failed or degraded; a service that is not ready is named under the
   row with its state), and who created it ("by you", "by a coding session", "by its overseer", "by the Overseer",

@@ -223,6 +223,26 @@
       "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
     }
   },
+  "§app.session-list/first-listing": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.session-list/listing-reuse"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-07T15:22Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
+    },
+    "code": [
+      "server/sessions-index.ts",
+      "server/worker-sessions.ts",
+      "server/map-limit.ts",
+      "server/map-limit.test.ts",
+      "server/sessions-index-order.test.ts"
+    ],
+    "evidence": "verified"
+  },
   "§app.session-list/fixed-names": {
     "kind": "behavior",
     "requires": [

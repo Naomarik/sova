@@ -139,12 +139,17 @@
       "src/lib/merge-queue.ts",
       "src/lib/merge-queue.test.ts",
       "src/lib/merge-queue-sent-back.test.ts",
-      "server/merge-queue/view.ts"
+      "server/merge-queue/view.ts",
+      "server/worktree-leftovers.ts",
+      "src/components/RemoveAnywayListing.tsx",
+      "src/components/EmptyWorktrees.tsx",
+      "src/app.css",
+      "server/cleanup-dry-run.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T19:18Z",
-      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
+      "by": "naomarik",
+      "at": "2026-11-07T15:42Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
     }
   },
   "§app.project-overseer/confirm-brief": {

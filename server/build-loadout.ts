@@ -14,7 +14,7 @@ import { carryOnCut } from "./draft-carry";
 import { projectOf, projectOverseerPaths, readPoState } from "./project-overseer-store";
 import { buildSid, engineOf, projectHost } from "./projects/spaces";
 import type { CodingModeSwitch, ProjectCodingMode } from "../shared/project-overseer";
-import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, uncommitted, worktreePathOf, type GitRoot, type WorktreeReading, type WorktreeRecord } from "./project-worktrees";
+import { cutWorktree, gitRootOf, mayRemove, mergeBack, readWorktree, removeWorktree, worktreePathOf, type GitRoot, type WorktreeReading, type WorktreeRecord } from "./project-worktrees";
 import { teardownCopyOf } from "./project-services/checkout-teardown";
 import { mainMoved } from "./project-services/on-merge";
 import { runGit } from "../pi-config/extensions/worktrees/git.ts";
@@ -491,8 +491,9 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
     const row = await withWorktreePath(rowOf(host.configuration(e.sessionId) ?? [], d), root);
     if (!row) throw new Error("It runs in the project root.");
     // Its running copy goes first, with its links (§app.project-overseer/coding-worktrees); a teardown that fails removes
-    // nothing. A worktree with uncommitted changes is refused by removeWorktree before its copy is touched.
-    if (!existsSync(row.worktree.path) || !(await uncommitted(runGit, row.worktree.path)).length) await teardownCopyOf(row.worktree.path);
+    // nothing. A worktree holding what git can't bring back (uncommitted, ignored work, a nested repository) is refused
+    // by removeWorktree before its copy is touched, unless Remove Anyway confirmed exactly that.
+    if (await mayRemove(row.worktree.path)) await teardownCopyOf(row.worktree.path);
     const out = await removeWorktree(row.worktree, root);
     return { branchDeleted: out.branchDeleted };
   });

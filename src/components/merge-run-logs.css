@@ -1,0 +1,36 @@
+/* The merge thread's Run Logs chip and its popover (MergeRunLogsChip.tsx), in the session head. */
+.run-logs-wrap { position: relative; display: inline-flex; flex: none; }
+.run-logs-chip {
+  gap: var(--space-1);
+  min-height: var(--control-sm);
+  padding: 0 var(--space-2);
+  border-radius: var(--r-full);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-2);
+}
+.run-logs-chip-size { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink); }
+.run-logs-popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(360px, calc(100vw - var(--space-6)));
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: var(--stroke-thin) solid var(--color-border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-2, 0 8px 24px rgb(0 0 0 / 0.18));
+  text-align: left;
+}
+.run-logs-sentence { margin: 0; color: var(--color-ink); }
+.run-logs-figure { font-family: var(--font-mono); font-size: var(--fs-mono); }
+.run-logs-muted { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.run-logs-confirm { display: flex; flex-direction: column; gap: var(--space-2); }
+.run-logs-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+@container (max-width: 520px) { .run-logs-chip-label { display: none; } }
+@media (max-width: 640px) {
+  .run-logs-popover { position: fixed; top: 64px; left: var(--space-3); right: var(--space-3); width: auto; }
+}

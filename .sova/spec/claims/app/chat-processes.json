@@ -552,7 +552,8 @@
       "server/wake-keeper-live.ts",
       "server/chat-runtime/trial-wake-tw5.integration.test.ts",
       "server/background-jobs.ts",
-      "server/chat-runtime/trial-jobs-tj3.integration.test.ts"
+      "server/chat-runtime/trial-jobs-tj3.integration.test.ts",
+      "server/harness/pi/worker-tools.test.ts"
     ],
     "requires": [
       "§app/chat-processes",
@@ -564,9 +565,9 @@
       "§app.chat-processes/worker-reports"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-07T03:59Z",
-      "source": "pi-session:01a1b2d6-bea7-73d4-9fe9-b82dc23ae834#98dba469"
+      "by": "naomarik",
+      "at": "2026-11-07T15:38Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
     },
     "evidence": "verified"
   },

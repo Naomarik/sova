@@ -91,16 +91,17 @@ export type SpentView = {
 };
 
 /**
- * Your Messages in whole seconds: what the page hasn't reported yet has no message after it, so it is
- * Since Your Last Message's, and that row ticks with You. A row's messages add up to the row. Seconds
- * counted with the switch off are in no row, so the rows may add up to less than You.
+ * Your Messages in whole seconds, adding up to `you` (the You on screen) to the second: Since Your Last
+ * Message is what the other rows leave, so it takes what the page hasn't reported yet, which has no
+ * message after it, and ticks with You. A row's messages add up to the row.
  */
-export function messageLines(messages: TimeSpentMessages, unreported: number): SpentMessageLine[] {
+export function messageLines(messages: TimeSpentMessages, you: number): SpentMessageLine[] {
   const byKey = new Map(messages.rows.map((r) => [r.key, r]));
-  const order = [...MESSAGE_LABELS.map((l) => l.key as string), "before-action", "since-last"];
-  const seconds: Record<string, number> = { "before-action": messages.beforeAction.seconds, "since-last": messages.sinceLast + Math.max(0, unreported) };
+  const order = [...MESSAGE_LABELS.map((l) => l.key as string), "before-action"];
+  const seconds: Record<string, number> = { "before-action": messages.beforeAction.seconds };
   for (const r of messages.rows) seconds[r.key] = r.seconds;
   const whole = wholeSeconds<string>(seconds, order);
+  const sinceLast = Math.max(0, you - order.reduce((n, k) => n + whole[k]!, 0));
   const lines: SpentMessageLine[] = [];
   for (const { key, label } of MESSAGE_LABELS) {
     const row = byKey.get(key);
@@ -118,7 +119,7 @@ export function messageLines(messages: TimeSpentMessages, unreported: number): S
     });
   }
   if (whole["before-action"]! > 0) lines.push({ key: "before-action", label: "Before An Action", count: messages.beforeAction.count, seconds: whole["before-action"]!, messages: null });
-  if (whole["since-last"]! > 0) lines.push({ key: "since-last", label: "Since Your Last Message", count: null, seconds: whole["since-last"]!, messages: null });
+  if (sinceLast > 0) lines.push({ key: "since-last", label: "Since Your Last Message", count: null, seconds: sinceLast, messages: null });
   return lines;
 }
 
@@ -154,7 +155,7 @@ export function spentView(record: TimeSpentRecord, live: SpentLive, agentElapsed
   const parts = READING_LABELS.map((r) => ({ key: r.key as string, label: r.label, seconds: whole[r.key] })).filter((r) => r.seconds > 0);
   const readingSeconds = parts.reduce((n, p) => n + p.seconds, 0);
   const you = SPENT_ROWS.reduce((n, k) => n + whole[k], 0);
-  const lines = record.messages ? messageLines(record.messages, you - record.you) : [];
+  const lines = record.messages ? messageLines(record.messages, you) : [];
   const messages = lines.length > 0 ? lines : null;
   return {
     word: live.word,

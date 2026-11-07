@@ -95,10 +95,10 @@ const labelled = (over: Partial<Parameters<typeof messageLines>[0]> = {}) => ({
 });
 
 test("Your Messages: seconds not yet read are Since Your Last Message's, and the rows stay whole", () => {
-  const lines = messageLines(labelled(), 3);
+  const lines = messageLines(labelled(), 23);
   assert.deepEqual(lines.map((l) => l.key), ["reworking", "before-action", "since-last"]);
-  assert.equal(lines.reduce((n, l) => n + l.seconds, 0), 23, "10.6 + 4 + 5.4 + 3, to the second");
-  assert.equal(lines.find((l) => l.key === "since-last")!.seconds, 8, "5.4 + 3 rounds down with the rest");
+  assert.equal(lines.reduce((n, l) => n + l.seconds, 0), 23, "You, to the second");
+  assert.equal(lines.find((l) => l.key === "since-last")!.seconds, 9, "what the other rows leave, 10 and 4");
   const row = lines[0]!;
   assert.equal(row.count, 2);
   assert.equal(row.messages!.reduce((n, m) => n + m.seconds, 0), row.seconds, "a row's messages add up to it");
@@ -110,10 +110,16 @@ test("Your Messages: seconds not yet read are Since Your Last Message's, and the
   assert.equal(row.messages![0]!.labelledBy, null);
 });
 
-test("Your Messages: seconds counted with the switch off are in no row, so the rows may add up to less than You", () => {
-  const view = spentView(record({ rows: { typing: 1000 }, you: 1000, messages: labelled() }), live(), 0);
-  assert.equal(view.you, 1000);
-  assert.equal(view.messages!.reduce((n, l) => n + l.seconds, 0), 20, "Since Your Last Message doesn't take the off seconds");
+test("Your Messages: the rows add up to You to the second, while You ticks and whatever the read's fractions", () => {
+  for (const unreported of [0, 1, 37]) {
+    const you = 20 + unreported;
+    const view = spentView(record({ rows: { typing: 20 }, you: 20, messages: labelled() }), live({ you: unreported, rows: { typing: unreported }, word: "Counting" }), 0);
+    assert.equal(view.you, you);
+    assert.equal(view.messages!.reduce((n, l) => n + l.seconds, 0), you, `${unreported}s not yet read`);
+    assert.equal(view.messages!.find((l) => l.key === "since-last")!.seconds, 6 + unreported, "those seconds are Since Your Last Message's and no other row's");
+  }
+  const late = spentView(record({ rows: { typing: 1000 }, you: 1000, messages: labelled() }), live(), 0);
+  assert.equal(late.messages!.reduce((n, l) => n + l.seconds, 0), 1000, "a read whose rows fall short of You still adds up");
 });
 
 test("Your Messages: a label's row with a message shows at 0 seconds; before-action and since-last don't, and no rows at all is null", () => {

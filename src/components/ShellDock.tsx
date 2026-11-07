@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import type { ShellRun } from "../../shared/protocol";
 import { cardOfRun, lastLine } from "../lib/shell-runs";
 import { Chip } from "./ui";
@@ -24,6 +24,21 @@ export function ShellDock(props: {
     equals: (a, b) => a.length === b.length && a.every((id, i) => id === b[i]),
   });
   const runOf = (id: string) => props.runs.find((r) => r.id === id);
+  /** The dock, and the pane around it (its message box). */
+  let anchor: HTMLSpanElement | undefined;
+  /** Focus lost with a card that left (its command ended, or its window closed after): the next
+      card's Show Output, else the pane's message box, so a keyboard user is never left on the page. */
+  const refocus = () =>
+    queueMicrotask(() => {
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      const pane = anchor?.parentElement;
+      // Not the message box on a touch-only screen: focusing it there raises the keyboard.
+      const touchOnly = matchMedia("(hover: none) and (pointer: coarse)").matches;
+      const next = pane?.querySelector<HTMLElement>(".shell-dock-card button") ?? (touchOnly ? null : pane?.querySelector<HTMLElement>(".composer-input:not([disabled])"));
+      next?.focus();
+    });
+  createEffect(on(running, refocus, { defer: true }));
   /** The open window's run as last seen: one that ends keeps its window (it reads how it ended), and
       one saved meanwhile keeps the output it had. */
   let seen: ShellRun | null = null;
@@ -34,6 +49,7 @@ export function ShellDock(props: {
   });
   return (
     <>
+    <span ref={anchor} hidden />
     <Show when={running().length > 0}>
       <section class="shell-dock" aria-label={running().length === 1 ? "Running command" : `${running().length} running commands`}>
         <For each={running()}>
@@ -77,7 +93,10 @@ export function ShellDock(props: {
           <ShellOutputWindow
             card={cardOfRun(run())}
             source={{ live: true }}
-            onClose={() => setOpenId(null)}
+            onClose={() => {
+              setOpenId(null);
+              refocus();
+            }}
             onStop={() => props.onStop(run().id)}
             stopping={props.stopping.has(run().id)}
           />

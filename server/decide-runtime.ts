@@ -9,7 +9,7 @@ import { createLlmProvider, type LlmProviderDeps, type LlmRuntime } from "./deci
 import { readJevKey, last4 } from "./decide-secret";
 import { readDecisionSettings } from "./decide-settings";
 import { modelDenial, readModelPolicy } from "./model-policy";
-import { serverRedactor } from "./overseer-redact";
+import { serverRedactor, type Redactor } from "./overseer-redact";
 import { stateRoot } from "./state-root";
 
 // The one wiring of the decision seam: the chain built from Settings → Decisions and the stored
@@ -47,6 +47,17 @@ export function withholdPasswords<T>(value: T): T {
     return out as T;
   }
   return value;
+}
+
+/**
+ * The one path for what Sova sends to an outside model of its own accord (§app.decisions/privacy): a text that may
+ * carry a pasted password withheld whole first, then the server's Redactor with its outside tier: known secret
+ * values, secret shapes (prefixed tokens, JWTs, `NAME=value`…), emails and random-looking strings. Every decision
+ * request's state and questions pass it in the redacting provider below; a feature that builds or shows an excerpt
+ * of what a decision would send uses it too.
+ */
+export function redactForOutside<T>(value: T, redactor: Redactor = serverRedactor()): T {
+  return redactor.redactDeep(withholdPasswords(value), { outside: true });
 }
 
 /** One ledger line: what a call cost and how it went. Never the state, questions, answers or key. */
@@ -182,16 +193,18 @@ export function createDecisionRuntime(deps: DecisionRuntimeDeps = {}): DecisionR
     label: theChain.label,
     async decide(req: DecisionRequest): Promise<DecisionResult> {
       const started = now();
-      // Withhold and redact before anything leaves the process, whichever provider answers: a
-      // text that may carry a pasted password goes whole, then known and secret-shaped values.
-      const state = serverRedactor().redactDeep(withholdPasswords(req.state));
+      // Withhold and redact before anything leaves the process, whichever provider answers: the
+      // state and the questions (some carry a document's own words) both pass the one path.
+      const redactor = serverRedactor();
+      const state = redactForOutside(req.state, redactor);
+      const questions = redactForOutside(req.questions, redactor);
       const size = typeof state === "string" ? state.length : JSON.stringify(state).length;
       if (size > MAX_STATE_CHARS) {
         record({ at: started, purpose: req.purpose, ok: false, failure: "too-large", latencyMs: 0 });
         throw new DecisionError("too-large", `state is ${size} characters (cap ${MAX_STATE_CHARS}, ≈${estimateTokens(state)} tokens)`);
       }
       try {
-        const r = await theChain.decide({ ...req, state });
+        const r = await theChain.decide({ ...req, state, questions });
         const u = r.usage;
         record({
           at: started,

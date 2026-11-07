@@ -830,6 +830,76 @@ export interface MergeReport {
   trial?: MergeTrial;
   /** merge.hold: the merge thread's hold now (null: none); `until` when it lifts by itself. */
   hold?: { at: string; until: string } | null;
+  /** merge.live: what the running server started on, the target's head, and the restart plan between them. */
+  live?: MergeLive;
+  /** merge.restart: what the restart verb did. */
+  restart?: MergeRestart;
+  /** merge.test: the tests run in an entry's scratch copy. */
+  test?: MergeCopyTest;
+  /** merge.names: what the names step did (kinds and counts; `list` only for show). */
+  names?: MergeNamesReport;
+}
+
+/** The restart plan from the running server's commit to the target's head (server/restart-paths.ts's rule). */
+export interface MergeRestartPlan {
+  action: "nothing" | "build" | "restart" | "unknown";
+  install: boolean;
+  why: string;
+  /** How many landed files, and how many of them need a restart / a page build. */
+  counts?: { files: number; restart: number; build: number };
+  /** Up to 20 of each. */
+  restartFiles?: string[];
+  buildFiles?: string[];
+}
+
+/** merge.live's answer. */
+export interface MergeLive {
+  /** The commit the running server started on (GET /api/health's head), null outside a checkout. */
+  head: string | null;
+  startedAt: string;
+  target: string;
+  /** The target's head now ("" when the branch doesn't exist). */
+  tip: string;
+  /** Whether this queue's project is the one the running server was loaded from. */
+  self: boolean;
+  plan: MergeRestartPlan;
+}
+
+/** merge.restart's answer. */
+export interface MergeRestart {
+  /** nothing: no restart owed or not now (`why`); built: page files only, built; failed: install or build failed;
+   *  restarting: the unit restarts in a few seconds, expecting `expect`. */
+  outcome: "nothing" | "built" | "failed" | "restarting";
+  why: string;
+  plan?: MergeRestartPlan;
+  step?: "install" | "build" | "restart";
+  /** The last lines of the failed step's output. */
+  tail?: string;
+  expect?: string;
+  unit?: string;
+}
+
+/** merge.test's answer. */
+export interface MergeCopyTest {
+  pass: boolean;
+  /** Which step: install (the merge install) or test. */
+  step: "install" | "test";
+  exit: number | null;
+  timedOut?: boolean;
+  ms: number;
+  copy: string;
+  /** The last lines of the output. */
+  tail: string;
+}
+
+/** merge.names's answer: never a name, except `list` (show). */
+export interface MergeNamesReport {
+  action: "discover" | "add" | "show";
+  /** The script's own summary (kinds and counts; masked public hits). */
+  summary: string;
+  count?: number;
+  /** show: the list, one `<kind>: <value>` per line. */
+  list?: string;
 }
 
 // ---- the WS feed --------------------------------------------------------------------------------

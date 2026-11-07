@@ -80,18 +80,22 @@
       "src/lib/unacked-sends.ts",
       "src/lib/unacked-sends.test.ts",
       "server/background-jobs-capture.ts",
-      "server/chat-runtime/trial-jobs-tj2.integration.test.ts"
+      "server/chat-runtime/trial-jobs-tj2.integration.test.ts",
+      "server/chat-runtime/mirror.ts",
+      "shared/chat-runtime.ts",
+      "server/chat-shell.ts",
+      "server/chat-runtime/host.test.ts"
     ],
     "requires": [
       "§app/chat-processes",
       "§app.chat-processes/supervision"
     ],
+    "evidence": "verified",
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-04T10:59Z",
-      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
-    },
-    "evidence": "verified"
+      "by": "naomarik",
+      "at": "2026-11-07T12:38Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
+    }
   },
   "§app.chat-processes/crash": {
     "kind": "behavior",
@@ -161,19 +165,22 @@
       "server/chat-runtime/trial-wake-tw1.integration.test.ts",
       "server/background-jobs-capture.ts",
       "server/chat-runtime/trial-jobs-tj1.integration.test.ts",
-      "server/chat-runtime/trial-jobs-tj2.integration.test.ts"
+      "server/chat-runtime/trial-jobs-tj2.integration.test.ts",
+      "server/chat-runtime/mirror.ts",
+      "shared/chat-runtime.ts",
+      "server/chat-shell.ts"
     ],
     "requires": [
       "§app/chat-processes",
       "§app.worker-restore/restore",
       "§app.chat-processes/supervision"
     ],
+    "evidence": "verified",
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-04T11:02Z",
-      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#a22a19ea"
-    },
-    "evidence": "verified"
+      "by": "naomarik",
+      "at": "2026-11-07T12:38Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
+    }
   },
   "§app.chat-processes/no-terminal-drawing": {
     "kind": "behavior",
@@ -545,7 +552,8 @@
       "server/wake-keeper-live.ts",
       "server/chat-runtime/trial-wake-tw5.integration.test.ts",
       "server/background-jobs.ts",
-      "server/chat-runtime/trial-jobs-tj3.integration.test.ts"
+      "server/chat-runtime/trial-jobs-tj3.integration.test.ts",
+      "server/harness/pi/worker-tools.test.ts"
     ],
     "requires": [
       "§app/chat-processes",
@@ -557,9 +565,9 @@
       "§app.chat-processes/worker-reports"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-07T03:59Z",
-      "source": "pi-session:01a1b2d6-bea7-73d4-9fe9-b82dc23ae834#98dba469"
+      "by": "naomarik",
+      "at": "2026-11-07T17:25Z",
+      "source": "pi-session:4f394f82-707c-4335-a9f0-dfacbbbe4a11#d57957c0"
     },
     "evidence": "verified"
   },

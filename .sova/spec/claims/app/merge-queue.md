@@ -611,14 +611,14 @@ Sova restarts itself once the queue is idle", or "regenerated the lockfile". Sov
 ## §app.merge-queue/review — The optional review step
 
 A project may declare a **review kit** in its definition's `merge` section. It is a skill-shaped
-folder (instructions and references, later its own scripts), such as `.sova/playbooks/review/`.
+folder (instructions and references), such as `.sova/playbooks/review/`.
 It is never loaded into an ordinary chat: it isn't under the skills folders or in any skill path,
 and only the review step opens it. A project with no kit has no review step.
 
 **How it runs.** For each run, a fresh, read-only chat reviews exactly the commit being checked,
 in the merge copy, alongside the checks.
-- It runs on the shipped **Merge reviewer** profile: no edit tools, no web, no workers, no timers,
-  no worktrees and no MCP servers (§app.mcp/who-gets).
+- It runs on the shipped **Merge reviewer** profile: no edit tools, no shell (no bash, no background
+  jobs), no web, no workers, no timers, no worktrees and no MCP servers (§app.mcp/who-gets).
 - It runs in mode normal with no minor modes at all: no Delegate, Align, Spec or Vis, and no
   memory. Its mode is pinned at creation, so the default modes saved on this computer never reach
   it, now or after they change.
@@ -626,8 +626,23 @@ in the merge copy, alongside the checks.
   on the new-chat default.
 - Each attempt is a new chat, titled "Review · {branch} · {sha}" (with " · attempt {n}" after the
   first).
-- It reads the kit, checks its verdict with the kit's own script, and answers with `merge.review`.
-  It writes no file.
+- Sova writes the change under review for it before it starts: the commits and the changed paths
+  with their status in one file, and the whole diff from the target commit in another, in the run's
+  folder (`<run>/review/change.txt`, `change.diff`), both named in its first message and removed
+  when the review step ends; when Sova can't write them the step fails as the reviewer's failure.
+  It reads and searches (of pi's built-in tools it has exactly read, grep, find and ls) those and
+  the files of the merge copy, which is at the commit under review, and answers with `merge.review`.
+  Through `project_verbs` it only reads and answers: status, logs, doctor, the merge, release and deploy
+  reads, and `merge.review`; every other verb (test, up, apply, share, `merge.try` …) is refused as
+  `forbidden` before it runs. Sova knows the reviewer by its own profile record (Sova's
+  `merge-reviewer`), never by its title. It posts into no topic: its `queue_push` is refused before
+  anything is pushed. It runs nothing and
+  writes no file. A kit therefore holds instructions and references only; it has no scripts of
+  its own.
+- `merge.review` checks a verdict's shape before taking it and refuses a malformed one, saying
+  what is wrong, so the reviewer fixes it and answers again: its text is a one-sentence summary (at
+  most 300 characters), then one line per finding, `- [kind] file:line: text` (file and line
+  optional; text at most 400 characters); ok carries no finding, notes and blocking at least one.
 - Each attempt's chat is recorded with its run, branch, attempt and verdict (or that it failed),
   and is reached from the Merge Queue tab, the run page and the branch's own Worktrees row
   (§app.merge-queue/chats, §chat.worktrees/pane).
@@ -681,6 +696,12 @@ conflicts between the two sides, never as a machine failure. The thread works ea
 a scratch copy Sova makes for that attempt, and Sova removes the copy once the attempt ends
 (§app.merge-queue/resolve-copy).
 
+**The conflict probe leaves nothing in your folder.** The sanity probe of a resolution runs in the
+entry's scratch copy (§app.merge-queue/resolve-copy), a copy of the project's files that isn't your
+folder, made again if it is gone, so the project's merge drivers work and anything git leaves
+behind when cut off goes with that copy, never into the main checkout. Git cut off at its time
+limit gets SIGTERM, and SIGKILL only 5 s later.
+
 **No behaviour change.** Neighbouring edits, imports, formatting, both sides extending a list: the
 thread resolves the conflict itself. The approval carries, and the full checks run on the
 resolution. The landing's note says what it resolved and why it was safe.
@@ -714,8 +735,10 @@ The queue moves on to the next entry meanwhile.
 judge it (§app.merge-queue/conflicts), Sova first makes a scratch copy of the project for that
 attempt: beside the project, like the merge copy (§app.merge-queue/run), never inside it, at the
 target's newest commit, and on no branch. The message that calls the thread in says where the copy
-is. The thread works out and commits its resolution there, and never makes a worktree or a branch
-of its own for a conflict (§chat.merge-queue/thread). With no thread to call in, no copy is made.
+is. The thread reads the copy and sends each conflicted file's merged text; Sova merges the branch
+into the copy, writes those files there and commits the merge as the resolution. It may have Sova
+run the install and selected tests in the copy (`merge.test`, §chat.merge-queue/thread-sandbox). It never makes a worktree or a branch of its own for a conflict
+(§chat.merge-queue/thread). With no thread to call in, no copy is made.
 
 **When it can't be made** (a folder Sova didn't make is already at its place, which is left as it
 is; a place under Sova's state root; git refusing), the message says why, and the thread judges from
@@ -1132,6 +1155,44 @@ from the session feed's merge-queue frames, at desktop and phone widths. The sam
 served
 project's, also drive the sidebar's landing bar, which opens this tab at an entry for the actions it
 doesn't take in place (§app.merge-queue/landing-bar).
+
+## §app.merge-queue/run-logs — Run logs: packed as they age, cleaned only by you
+
+Each run keeps its step logs and the spec drafts snapshot it carried (copied in at the run's start,
+read only during the run) in its folder on this computer. Sova packs a finished run's logs on its
+own and never deletes them: once a run ended at least a day ago, each step log (and its counts
+file) is gzipped in place and the drafts snapshot is packed into one archive in the run's folder;
+the run's record (`run.json`) and its small records stay as they are. A run in use is never
+touched: the queue's current run, a run an entry still checking, still open or sent back to fix
+names, a run whose record says it is running, and one with no recorded end. The sweep runs 1 minute after the queue starts, then
+hourly, one at a time.
+
+- **A packed log opens as before**: `merge.logs` and the run page's logs (§app.merge-queue/view)
+  read it the same way, its tail and line count included.
+- **Run logs, in the current merge thread's chat only.** The chat that is the project's current
+  merge thread, and no other (an earlier thread's chat, a peer's session), shows a `Run logs` chip
+  with the size in mono in its head, in the full chat head and the workspace pane head alike (the
+  label hides on a narrow pane; its accessible name still reads "Run logs {size}" there). It opens a popover: "{size} in {n} runs, {m} packed." and "A
+  finished run's logs are packed a day after it ends. Nothing is deleted unless you clean.", with
+  `Clean Logs…` (destructive; disabled, with the reason, when nothing is cleanable).
+- **Clean Logs** confirms first: "Deletes the logs of {n} runs ({size}). The newest 10 runs, the run
+  checking now, and the runs of entries still open or sent back to fix keep theirs. Every run keeps
+  its record, verdict, and steps." (`Clean Logs`, `Cancel`). The confirmation replaces the
+  popover's first step in place, by mouse or keyboard, and focus moves to its `Cancel`. `Cancel` goes back to the first step with focus on
+  `Clean Logs…`; Escape closes the popover from either step and gives focus back to the chip; focus
+  moving outside the chip and its popover closes it, and a click on the popover's own text (not a
+  button) keeps it open at the step it shows. It takes from each cleanable run (a
+  finished run older than the newest 10, not checking, named by no entry still open or sent back to
+  fix) everything in its folder but `run.json`, `changed.txt` and `docs-landed.json`: step logs,
+  the drafts snapshot or its archive, the run's service data. Toast, shown once (a second clean
+  replaces it): "Cleaned the logs of {n} runs: {size} freed." Each cleaned run is marked so, and its steps' logs read one line, "(log cleaned)",
+  in `merge.logs` and on the run page.
+- **Only your click cleans.** Any other caller is refused (`forbidden`: "A chat can't clean the merge
+  queue's run logs: use Clean Logs in the merge thread's chat yourself."); a clean without `confirm`
+  answers `needs-confirm` (409).
+- **Commands** (§app/commands): `project.merge-queue.run-logs` (looks, `GET
+  /api/merge-queue/run-logs?project=|session=`) and `project.merge-queue.run-logs.clean` (changes,
+  `POST /api/merge-queue/run-logs/clean {project, confirm}`).
 
 ## §app.merge-queue/branch-summary — What a branch does, in a few bullets
 

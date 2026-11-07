@@ -20,7 +20,7 @@ import {
 	Type,
 } from "@earendil-works/pi-ai";
 import { dropPiPreamble, MEASUREMENT_INVALID_DIAGNOSTIC, PI_STOCK_PREAMBLE, streamClaudeCode, resolveClaudeEffort } from "./stream.ts";
-import { parseClaudeFrame, parseToolInput, type ClaudeFrame, type ClaudeSessionBridge, type ClaudeTurnRequest } from "./types.ts";
+import { cliHasTool, parseClaudeFrame, parseToolInput, type ClaudeFrame, type ClaudeSessionBridge, type ClaudeTurnRequest } from "./types.ts";
 import { STATIC_MODELS, toProviderModel } from "./index.ts";
 
 const fixtures = fileURLToPath(new URL("./fixtures/", import.meta.url));
@@ -287,7 +287,7 @@ function frames(lines: unknown[]): ClaudeFrame[] {
 	return lines.flatMap((line) => { const frame = parseClaudeFrame(line); return frame ? [frame] : []; });
 }
 
-type CliBlock = { text: string } | { tool: string; id: string; json: string };
+type CliBlock = { text: string } | { tool: string; id: string; json: string; asIs?: boolean };
 
 /** One streamed CLI message: its blocks, its stop reason, and its usage at start and end. */
 function cliMessage(blocks: CliBlock[], stop: string, usage: { input: number; cacheRead?: number; output: number } = { input: 10, output: 5 }): unknown[] {
@@ -298,7 +298,7 @@ function cliMessage(blocks: CliBlock[], stop: string, usage: { input: number; ca
 			out.push({ type: "stream_event", event: { type: "content_block_start", index, content_block: { type: "text", text: "" } } });
 			out.push({ type: "stream_event", event: { type: "content_block_delta", index, delta: { type: "text_delta", text: block.text } } });
 		} else {
-			out.push({ type: "stream_event", event: { type: "content_block_start", index, content_block: { type: "tool_use", id: block.id, name: `mcp__sova__${block.tool}`, input: {} } } });
+			out.push({ type: "stream_event", event: { type: "content_block_start", index, content_block: { type: "tool_use", id: block.id, name: block.asIs ? block.tool : `mcp__sova__${block.tool}`, input: {} } } });
 			out.push({ type: "stream_event", event: { type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json: block.json } } });
 		}
 		out.push({ type: "stream_event", event: { type: "content_block_stop", index } });
@@ -325,6 +325,19 @@ test("parseToolInput: the block-start input for no deltas, a plain object only, 
 	assert.ok(!extra.ok);
 	assert.equal(extra.bytes, Buffer.byteLength(BAD_JSON));
 	assert.equal(extra.position, BAD_JSON.indexOf("]}"));
+	// The same on Bun as on Node: a closer inside a string ends nothing, whitespace before the leftover is skipped.
+	const inString = parseToolInput("{\"a\":\"}]\"}]");
+	assert.ok(!inString.ok);
+	assert.equal(inString.position, 10);
+	const spaced = parseToolInput("{\"a\":1}  ]");
+	assert.ok(!spaced.ok);
+	assert.equal(spaced.position, 9);
+	// Cut off right after a complete value or inside a string: Bun says "Expected '}'", not EOF; the end of the input either way.
+	for (const cutOff of ["{\"a\":1", "{\"a\":[1,{\"b\":\"x\"}", "{\"a\":\"ab", "{\"a\":1,", "{\"a\":[1,", "{\"a\"", "{\"a\":1."]) {
+		const verdict = parseToolInput(cutOff);
+		assert.ok(!verdict.ok, cutOff);
+		assert.equal(verdict.position, cutOff.length, cutOff);
+	}
 	const cut = parseToolInput("{\"a\":");
 	assert.ok(!cut.ok);
 	assert.equal(cut.position, 5);
@@ -398,6 +411,39 @@ test("the rejected attempt's 1-hour cache split never carries into the retry's u
 	assert.equal(message.usage.cacheWrite, 0);
 	assert.equal(message.usage.cacheWrite1h, undefined);
 	assert.equal(invalidDiagnostics(message)[0]?.details?.usage && (invalidDiagnostics(message)[0]!.details!.usage as { cacheWrite1h?: number }).cacheWrite1h, 900);
+});
+
+test("a call under a bare tool name never reaches pi: the CLI's retry continues the same message", async () => {
+	const { bridge } = fakeBridge(frames([
+		// The CLI has no tool "bash" (only mcp__sova__bash): it answers this call itself.
+		...cliMessage([{ text: "Listing." }, { tool: "bash", id: "toolu_BARE", json: "{\"command\":\"ls\"}", asIs: true }], "tool_use"),
+		...cliMessage([{ tool: "bash", id: "toolu_RETRY", json: "{\"command\":\"ls\"}" }], "tool_use", { input: 7, output: 9 }),
+	]));
+	const events = await collect(streamClaudeCode(bridge, model(), context()));
+	const message = finalMessage(last(events));
+	assert.equal(message.stopReason, "toolUse");
+	assert.deepEqual(message.content.map((block) => block.type === "toolCall" ? block.id : block.type), ["text", "toolu_RETRY"]);
+	assert.deepEqual(toolCallEnds(events), ["toolu_RETRY"], "the bare-named call must never reach toolcall_end");
+	assertNoPartialToolCalls(message.content);
+	const [diagnostic, ...more] = invalidDiagnostics(message);
+	assert.equal(more.length, 0);
+	assert.equal(diagnostic?.error?.message, "Claude called tool \"bash\", which it does not have");
+	assert.equal(diagnostic?.details?.reason, "unknown-tool");
+	assert.equal(diagnostic?.details?.toolCallId, "toolu_BARE");
+	assert.ok((message.diagnostics ?? []).some((d) => d.type === MEASUREMENT_INVALID_DIAGNOSTIC));
+	assert.equal(cliHasTool("bash"), false);
+	assert.equal(cliHasTool("mcp__sova__bash"), true);
+});
+
+test("a whole-message frame (no stream) with only a bare tool name ends nothing; the retry decides", async () => {
+	const { bridge } = fakeBridge(frames([
+		{ type: "assistant", message: { content: [{ type: "tool_use", id: "toolu_BARE", name: "project_verbs", input: { verb: "status" } }], stop_reason: "tool_use" } },
+		...cliMessage([{ text: "I'll answer in text instead." }], "end_turn"),
+	]));
+	const message = finalMessage(last(await collect(streamClaudeCode(bridge, model(), context()))));
+	assert.equal(message.stopReason, "stop");
+	assert.ok(!message.content.some((block) => block.type === "toolCall"));
+	assert.equal(invalidDiagnostics(message)[0]?.details?.reason, "unknown-tool");
 });
 
 /** A tool_use block that streams no input_json: its block-start input is all there is. */

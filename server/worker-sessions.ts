@@ -5,6 +5,7 @@ import { lineEntry } from "./harness/pi/reader";
 import { WORKER_SESSION } from "./harness/state-kinds";
 import { stateView } from "./harness/state-view";
 import { type RawLiveRecord, readLiveRecords } from "./live";
+import { mapLimit } from "./map-limit";
 import { canonicalPath, sessionPathShape } from "./paths";
 
 /**
@@ -31,6 +32,8 @@ export const WORKER_SESSION_MARKER = "subagents-worker-session";
 export const COMPLETION_TYPE = "subagent-complete";
 
 const CHUNK = 16 * 1024;
+/** How many files a refresh scans at once (the session listing's own limit). */
+export const SCAN_LIMIT = 24;
 const NEEDLES = [WORKER_SESSION_MARKER, COMPLETION_TYPE].map((t) => Buffer.from(`"${t}"`));
 
 export interface ScanEntry {
@@ -279,8 +282,10 @@ export class WorkerSessions {
         this.entries.delete(k);
         this.version++;
       }
-    // With `changed`, a file already scanned and not named in it is unchanged: no stat.
-    await Promise.all(files.map((f) => (!changed || changed.has(f) || !this.entries.has(f) ? this.scan(f) : undefined)));
+    // With `changed`, a file already scanned and not named in it is unchanged: no stat. At most
+    // SCAN_LIMIT scans at once, started in the files' order (a cold refresh reads every file whole).
+    const due = changed ? files.filter((f) => changed.has(f) || !this.entries.has(f)) : files;
+    await mapLimit(due, SCAN_LIMIT, (f) => this.scan(f));
     return this.flagged(listed);
   }
 

@@ -209,7 +209,8 @@ starts a chat again.
 ## §app.chat-processes/idle-stop — An idle chat process stops
 
 A chat's process with nothing in flight (no reply, compaction, queued message, open dialog,
-working worker or server action) is asked to close after 30 minutes like that
+working worker, server action or command run from its message box, §chat.shell-mode/lifecycle)
+is asked to close after 30 minutes like that
 (`SOVA_CHAT_IDLE_MIN`, in minutes, fractions allowed; 0 is never), whether or not a browser tab
 has it open: an open tab doesn't keep it running, and neither does a pending wake nudge or a
 running background job. The chat checks again that it is still quiet,
@@ -239,8 +240,10 @@ by itself as an idle stop, so the next server reads its end as orderly: no death
 does a process started for a chat that never opened it (a server that stopped mid-start, or a
 reload's replacement it never moved the chat into); such a process never touches the chat's record
 of a run in flight, which belongs to the process that has the chat open.
-A reply in flight or an open dialog keeps it running until that ends; a pane left attached when
-the server went does not. To stop them at once instead, `bun scripts/stop-chats.ts [--agent-dir <dir>]` stops every chat
+A reply in flight or an open dialog keeps it running until that ends; a pane left attached when the
+server went does not, and neither does a command run from its message box: a chat with no server
+linked for its idle time stops its running commands, as its close does (§chat.shell-mode/lifecycle),
+and exits. While a server is linked, a running command keeps its chat as long as it runs. To stop them at once instead, `bun scripts/stop-chats.ts [--agent-dir <dir>]` stops every chat
 process the install's state root records, through its records and driver (never a process found by
 name), each as an operator stop, and every background job of that state root
 (§app.background-jobs/stopping).
@@ -252,7 +255,9 @@ generation (§app.chat-processes/code-generations), and carries that generation'
 plus a digest of uncommitted changes and untracked files when the tree is dirty (`SOVA_BUILD`
 overrides it for tests; an unknown build means no badge). A chat whose build differs from the server's, both known, is on older code. It asks
 to reload at a quiet moment: when nobody is attached, or after 5 minutes quiet. "Reload Now" asks at
-once when the chat is quiet, else when its reply ends. Its workers don't hold a reload: they run in
+once when the chat is quiet, else when its reply ends. A command run from its message box keeps the
+chat from being quiet, for both, until it ends (§chat.shell-mode/lifecycle).
+Its workers don't hold a reload: they run in
 processes of their own, keep working through it and are reattached (§app.chat-processes/workers);
 only a working worker of another backend, which runs inside the chat's process, still holds it. Nor
 do its background jobs, which keep running through it (§app.background-jobs/keeping). Reloads run one
@@ -277,9 +282,11 @@ A chat running in its own process on older code than its server says so in its h
 `On older code` chip (tooltip: "This chat keeps the code it started with until its next quiet
 moment.") and a ghost `Reload Now` button beside it, in the chat's own head and in its workspace
 pane's. On a chat head narrower than 720px the button is its refresh icon, a 44px target, with
-its words as its name and tooltip, so the head's share and details buttons stay in view. Pressed while a reply runs, the button reads `Reloads after this reply` (`Reloads when its
-workers finish` when only another backend's workers, which run inside the chat's process, are working) and the reload waits for that moment; it never
-cuts a reply off. While the chat reloads, the chip reads `Reloading`; the pane then reconnects
+its words as its name and tooltip, so the head's share and details buttons stay in view. Pressed while the chat isn't quiet, the button reads `Reloads after this reply` while a reply runs,
+`Reloads when its command ends` while no reply runs but a command run from its message box does
+(§chat.shell-mode/lifecycle), and `Reloads when its workers finish` when only another backend's
+workers, which run inside the chat's process, are working; the reload waits for that moment, and it
+never cuts a reply or a command off. While the chat reloads, the chip reads `Reloading`; the pane then reconnects
 quietly, the draft kept, and on the current code the chip and the button are gone. If the new code
 fails to start, the chat keeps running on older code: the chip stays `On older code`, and a warning
 banner over the thread says "Couldn't start this chat on new code." with "It keeps running on older
@@ -407,9 +414,10 @@ hidden chat: `/explain`'s fork, a compaction's hand-off fork and `/btw`'s side t
 starts each from the loadout its parent computed (model, effort, tools, MCP servers, extensions, flags,
 system prompt, sandbox, remote target, modes, team identity, agent dir), with nothing of an ordinary chat
 added (no profile, mode menu, memory, topics, links or session powers, and of the Sova-served tools
-only `project_verbs` with its instance note, which a worker or team member gets and a hidden chat
-doesn't, §app.project-services/callers; each, hidden or not, gets the kill guard, §chat/kill-guard), and
-opens it the way it opens any chat. The parent never starts a worker's process and never talks to
+only `project_verbs` with its instance note, on the rule of §app.project-services/tool-offered, never
+for a hidden chat; each, hidden or not, gets the kill guard, §chat/kill-guard), and
+opens it the way it opens any chat. A worker chat has exactly the built-in tools its loadout lists:
+the rest are excluded and the listed ones are on (no list keeps pi's default set). The parent never starts a worker's process and never talks to
 it directly: the server passes it the parent's task, steers, follow-ups, aborts and stops, and
 passes its events back. A worker never runs inside the server's process.
 

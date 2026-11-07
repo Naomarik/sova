@@ -77,7 +77,7 @@ Once its branch lands or merges, or its worktree is removed, its next change sta
 branch from the target's newest commit. It starts in the normal mode with align and vis on (vis to draw
 the plan, §app.project-setup/drawing) and no other minor mode, whatever this computer's default modes
 are, so the spec minor mode is off: setting up the
-pipeline is configuration, not a change to the product. The project's other chats keep spec on.
+pipeline is configuration, not a change to the product.
 A chat Start Fresh starts gets the same modes before its first message.
 
 **One open proposal.** The project has at most one setup branch proposed at a time
@@ -249,8 +249,8 @@ land reading offers no Land meanwhile, and its note names the missing trial
 
 The Setup chat may:
 - read and edit anything in its own worktree, and run the project's commands there;
-- use the project verbs on its own copies, as any project chat does
-  (§app.project-services/callers);
+- use the project verbs on its own copies, as any project chat with the tool does
+  (§app.project-services/callers); it is always offered the tool (§app.project-services/tool-offered);
 - start trials with `merge.try`, for its own project only;
 - read the queue, releases and deploys (`merge.status`, `merge.logs`, `release.status`,
   `deploy.status`, `deploy.logs`) and prove a recipe offline with `deploy.check`;

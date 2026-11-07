@@ -75,6 +75,15 @@ A session's **Usage** tab, in the session pane, is that session's spend: tokens 
 and cache hit rate, then a row per model and where it was spent (**Main thread**, **Side calls**,
 **Subagents**). Click a row for where its cost went. The session's workers are counted in it.
 
+## Time spent in a session
+
+A session's **Time Spent** tab, between Usage and Context in the session pane, says how long you have been with the session and how long its agent has worked. At its top are **You** and **Agent**, and one word: **Counting** while this page counts the session, else **Paused**.
+
+- **When your time counts.** Only while the page is visible and you have been active recently: about a minute, longer when there is a lot of text in view, never more than 3 minutes. Hiding the tab stops it at once, and any touch, click, scroll or key starts it again. Voice input keeps it counting while it records.
+- **Where it went.** Rows split your time into Reading, Typing, Dictating, Scrolling, Reviewing Changes, Reviewing Screenshots, Viewing Tours and Other, and add up to You. Reading opens into Main Thread, Alignments and Workers.
+- **Alignments.** A line per alignment, with how long it was on screen.
+- **Your Messages.** With **Label your messages** on in Settings → Decisions (off by default), each message you type or dictate gets one label: Specifying, Directing, Reworking or Asking. Your time goes to the next message you send, and the rows show where it went; open a row for the messages it counted. Labelling a message sends its start and the end of the reply before it, redacted, to the Decisions providers (Jev, then the fallback model if you set one); nothing is sent while the switch is off, and the agent never sees a label.
+
 ## Subscription limits
 
 The **Usage** page (`#/usage`), from the Usage row at the foot of the session list, shows each

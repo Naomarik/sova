@@ -84,8 +84,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T06:59Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+      "at": "2026-11-06T22:14Z",
+      "source": "pi-session:b406e4de-b015-4dbb-b201-14ab20b5da44#2b9be4c7"
     }
   },
   "§app.project-overseer/coding-worktrees": {
@@ -139,12 +139,17 @@
       "src/lib/merge-queue.ts",
       "src/lib/merge-queue.test.ts",
       "src/lib/merge-queue-sent-back.test.ts",
-      "server/merge-queue/view.ts"
+      "server/merge-queue/view.ts",
+      "server/worktree-leftovers.ts",
+      "src/components/RemoveAnywayListing.tsx",
+      "src/components/EmptyWorktrees.tsx",
+      "src/app.css",
+      "server/cleanup-dry-run.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T19:18Z",
-      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
+      "by": "naomarik",
+      "at": "2026-11-07T15:42Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
     }
   },
   "§app.project-overseer/confirm-brief": {
@@ -174,9 +179,9 @@
     ],
     "authority": "accepted",
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-27T23:54Z",
-      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
+      "by": "user",
+      "at": "2026-11-06T22:14Z",
+      "source": "pi-session:b406e4de-b015-4dbb-b201-14ab20b5da44#2b9be4c7"
     },
     "evidence": "verified"
   },

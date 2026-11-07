@@ -10,7 +10,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { workerHostOf } from "../subagents/fork/background.ts";
 import { NO_WORKER_HOST, type WorkerHost } from "../subagents/worker-host.ts";
-import { BTW_TOOLS, BtwChat, btwChatMode, type BtwAnswer, type BtwFeedEvent } from "./chat.ts";
+import { BTW_TOOLS, BtwChat, btwChatMode, btwSandboxLaunch, btwSandboxOwner, btwWorkerId, type BtwAnswer, type BtwFeedEvent } from "./chat.ts";
+import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent } from "../sandbox/state.ts";
 import { type AssistantMessage, type Message, type ThinkingLevel as AiThinkingLevel, type UserMessage } from "@earendil-works/pi-ai";
 import {
   Box,
@@ -45,6 +46,7 @@ const BTW_SYSTEM_PROMPT = [
   "If no main session messages are provided, treat this as a fully contextless tangent thread and rely only on the user's words plus your general instructions.",
   "Focus on answering the user's side questions, helping them think through ideas, or planning next steps.",
   "Do not act as if you need to continue unfinished work from the main session unless the user explicitly asks you to prepare something for injection back to it.",
+  "You can read files (read, grep, find, ls) but cannot run commands or change files; when something needs that, say so and leave it to the main session.",
 ].join(" ");
 
 const BTW_SUMMARIZE_SYSTEM_PROMPT =
@@ -145,7 +147,14 @@ type BtwTranscriptState = {
 type BtwSessionRuntime = {
   chat: BtwChat;
   mode: BtwThreadMode;
+  /** The main chat's sandbox state the chat started under (`btwSandboxKey`); absent: unknown (reattached). */
+  sandboxKey?: string;
 };
+
+/** What a side thread's confinement follows: the main chat's sandbox state (On or not, and its enforcement). */
+function btwSandboxKey(state: SandboxStateEvent | undefined): string {
+  return state?.on ? `on:${state.enforcement}` : "off";
+}
 
 type OverlayRuntime = {
   handle?: OverlayHandle;
@@ -1284,6 +1293,8 @@ export type BtwDeps = {
   workerHost?: () => WorkerHost | undefined;
   /** Where the side threads' runs and sessions go; default `<agent dir>/btw`. */
   root?: () => string;
+  /** The main chat's sandbox state; default: the one the sandbox extension announces on pi.events. */
+  sandbox?: () => SandboxStateEvent | undefined;
 };
 
 export default function (pi: ExtensionAPI) {
@@ -1303,6 +1314,23 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
       });
   const hostOf = deps.workerHost ?? (() => announced?.current());
   const rootOf = deps.root ?? (() => join(getAgentDir(), "btw"));
+  // The main chat's sandbox (pi-config's sandbox extension), announced on the bus as for workers: a
+  // side thread starts inside it while it is On (btwSandboxLaunch).
+  let sandboxState: SandboxStateEvent | undefined;
+  if (!deps.sandbox) {
+    pi.events?.on(SANDBOX_STATE_EVENT, (data: unknown) => {
+      const e = data as SandboxStateEvent | undefined;
+      if (!e || e.version !== 1 || typeof e.on !== "boolean") return;
+      if (e.workerLaunch !== undefined && typeof e.workerLaunch !== "function") return;
+      sandboxState = e;
+    });
+    try {
+      pi.events?.emit(SANDBOX_DISCOVER_EVENT, { version: 1 });
+    } catch {
+      /* Nobody listening: no sandbox. */
+    }
+  }
+  const sandboxOf = deps.sandbox ?? (() => sandboxState);
   let pendingThread: BtwDetails[] = [];
   let pendingMode: BtwThreadMode = "contextual";
   let btwModelOverride: SessionModel | null = null;
@@ -1559,13 +1587,17 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
       throw new Error(`/btw ${NO_WORKER_HOST}`);
     }
 
+    const nonce = `${Date.now().toString(36)}${randomBytes(3).toString("hex")}`;
+    const sessionId = ctx.sessionManager.getSessionId();
+    // A thread with tools runs inside the main chat's sandbox while it is On; one with none (summarize) has nothing to confine.
+    const sandbox = tools.length ? btwSandboxLaunch(sandboxOf(), ctx.cwd, btwSandboxOwner(sessionId, btwWorkerId(mode, nonce))) : undefined;
     let chat: BtwChat | undefined;
     chat = await BtwChat.start(
       host,
       {
-        parent: { sessionId: ctx.sessionManager.getSessionId(), path: ctx.sessionManager.getSessionFile() ?? "" },
+        parent: { sessionId, path: ctx.sessionManager.getSessionFile() ?? "" },
         mode,
-        nonce: `${Date.now().toString(36)}${randomBytes(3).toString("hex")}`,
+        nonce,
         cwd: ctx.cwd,
         model: `${model.provider}/${model.id}`,
         thinking: thinkingLevel,
@@ -1573,6 +1605,7 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
         systemPrompt,
         root: rootOf(),
         tools,
+        ...(sandbox ? { sandbox } : {}),
       },
       (event) => {
         if (chat) handleBtwChatEvent(chat, event);
@@ -1588,9 +1621,16 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
     }
 
     const seed = buildBtwSeedState(ctx, pendingThread, mode, settings.model);
-    // Match pi's default coding-agent toolset (read/bash/edit/write).
+    // Read-only: it reads and answers, never runs a command or changes a file.
+    const sandboxKey = btwSandboxKey(sandboxOf());
     const chat = await startBtwChat(ctx, mode, settings.model, settings.thinkingLevel, seed.messages, btwSystemPrompt(ctx), BTW_TOOLS);
-    return { chat, mode };
+    return { chat, mode, sandboxKey };
+  }
+
+  /** The thread's chat still runs under the main chat's current sandbox state. A reattached one (unknown) counts while the sandbox is not On. */
+  function sandboxUnchanged(runtime: BtwSessionRuntime): boolean {
+    const now = btwSandboxKey(sandboxOf());
+    return runtime.sandboxKey === undefined ? now === "off" : runtime.sandboxKey === now;
   }
 
   async function ensureBtwSession(ctx: ExtensionCommandContext, mode: BtwThreadMode): Promise<BtwSessionRuntime | null> {
@@ -1599,10 +1639,12 @@ export function registerBtw(pi: ExtensionAPI, deps: BtwDeps = {}) {
       return null;
     }
 
-    if (activeBtwSession?.mode === mode) {
+    if (activeBtwSession?.mode === mode && sandboxUnchanged(activeBtwSession)) {
       return activeBtwSession;
     }
 
+    // A mode switch, or the main chat's sandbox changed since the thread started: start it again under
+    // the current state, seeded with the side conversation so far (pendingThread), so nothing is lost.
     await disposeBtwSession();
     activeBtwSession = await createBtwSubSession(ctx, mode);
     return activeBtwSession;

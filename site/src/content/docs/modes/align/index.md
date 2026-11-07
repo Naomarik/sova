@@ -32,8 +32,7 @@ While align is on, every reply opens with a short part for you: the answer, what
 must decide, and any warnings or things it didn't check. The agent's working detail, when there
 is any, comes after it under **Working notes**, which the chat shows folded closed.
 
-You never edit an alignment yourself. You answer in chat, and the agent records your answer. It
-works the same in Sova and in pi's terminal UI.
+You never edit an alignment yourself. You answer in chat, and the agent records your answer.
 
 ## What an alignment holds
 
@@ -71,7 +70,6 @@ How readily alignments open and how the agent writes them is set in **Settings �
   work. See [Adversarial review](/docs/modes/align/review/).
 
 A subagent profile can set its own eagerness, writing style and visuals (Settings → Subagents).
-pi's terminal UI reads the same eagerness, writing style and Visuals.
 
 ## Status
 
@@ -150,6 +148,11 @@ Once you've replied and the agent moved on without touching an alignment, or you
 the questions stay on the card and the badge but leave the row, Needs you and notifications. Once
 the session's branch is merged, they leave Needs you too.
 
+Only your own messages count as a reply. A message from the Overseer or an extension doesn't, and
+neither does an answer on a transcript card or an offer: pressing one while the session waits sends
+a message marked **From a card**, which starts a turn but leaves the questions open and the session
+waiting.
+
 ## What keeps the agent on it
 
 - With each message you send while an alignment is open, the agent gets a hidden note listing the
@@ -161,16 +164,11 @@ the session's branch is merged, they leave Needs you too.
 - **Nothing blocks the agent.** It can still edit, start workers or create worktrees while a
   question is open, so a stuck worker or a parallel concern never leaves the session stuck.
 
-## In the terminal
+## Typed in a chat
 
-pi's terminal UI draws each alignment as a compact card, and shows the open alignments above the
-editor while align is on.
-
-| Command | What it does |
-|---|---|
-| `/align` | Open the alignment viewer, one alignment at a time (← and → switch) |
-| `/align status` | List the alignments |
-| `/align export [path]` | Write them out as Markdown |
+`/align on` and `/align off` typed in a chat turn align on or off; anything else after `/align`
+answers with its usage line. A pi terminal session has no align from Sova: no alignment cards, viewer
+or commands there.
 
 ## Where align isn't available
 

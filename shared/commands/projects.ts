@@ -11,7 +11,8 @@ function verbParam(flag: string, deploy: boolean): [string, CommandParam] {
   const p = VERB_PARAMS.find((r) => r.cli?.flag === flag);
   if (!p || !p.cli) throw new Error(`no verb param with the flag --${flag}`);
   const def = deploy ? p.cli.deployDefault : undefined;
-  return [flag, { type: p.type, description: p.cli.description, in: "body", ...(p.wire !== flag ? { key: p.wire } : {}), ...(def !== undefined ? { default: def } : {}) }];
+  // A `map` param is the tools' only (no flag), so never reaches here.
+  return [flag, { type: p.type as Exclude<typeof p.type, "map">, description: p.cli.description, in: "body", ...(p.wire !== flag ? { key: p.wire } : {}), ...(def !== undefined ? { default: def } : {}) }];
 }
 
 /** The keys scripts/sova-project.mjs sends for an instance verb, as params. */
@@ -182,6 +183,31 @@ const MERGE_SUMMARY: CommandEntry[] = [
     sessionKey: null,
     sessionFile: "never",
     meshNeed: "sessions",
+  },
+  {
+    id: "project.merge-queue.run-logs",
+    label: "Show Run Logs Size",
+    summary: "How much room a project's merge queue run folders take, how many runs are packed, and what Clean Logs would free.",
+    effect: "looks",
+    params: { project: { type: "string", description: "The project's id", in: "query", required: true } },
+    route: { method: "GET", path: "/api/merge-queue/run-logs" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
+    id: "project.merge-queue.run-logs.clean",
+    label: "Clean Logs",
+    summary: "Delete the logs of a project's old finished merge runs (past the newest 10; never a run still checking or one an open or sent-back entry names). Each run keeps its record, verdict and steps. Your own page only.",
+    effect: "changes",
+    params: {
+      project: { type: "string", description: "The project's id", in: "body", required: true },
+      confirm: { type: "boolean", description: "Confirm the deletion (needed)", in: "body", required: true },
+    },
+    route: { method: "POST", path: "/api/merge-queue/run-logs/clean" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
   },
 ];
 

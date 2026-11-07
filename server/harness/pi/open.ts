@@ -22,6 +22,7 @@ import { steerAllAtOnce } from "./queue-modes";
 import { agentRoot } from "../../state-root";
 import type { PiExtensionFactory, PiLoaderOptions, PiToolDefinition } from "./extension-types";
 import { installOwnCode, ownCodeLoader, withModesEntry } from "./own-code";
+import { sandboxBus } from "./shell";
 import { liveRead } from "./reader";
 import { PiHarnessSession } from "./session";
 import { piSessionState } from "./state";
@@ -58,6 +59,10 @@ export interface OpenFlags {
   /** The cwd is the home folder standing in for a stored folder that is gone: the sandbox must not
       make it a writable root (§app.shell/missing-folder-home). */
   cwdNotWritable?: boolean;
+  /** The sandbox's read-only level whatever the policy file says (the merge thread: its tools write only in their tmp). */
+  sandboxReadOnly?: boolean;
+  /** Start with the sandbox On, which the chat can't lower (the sandbox extension's `--sandbox on`). */
+  sandboxOn?: boolean;
   /** A worker chat's own extension flags (`--name value` on an RPC worker's argv), set last. */
   extra?: Record<string, string | true>;
 }
@@ -75,6 +80,8 @@ export function extensionFlagValues(f: OpenFlags): Map<string, boolean | string>
     flags.set("sova-link-tools", f.link.tools);
   }
   if (f.cwdNotWritable) flags.set("sandbox-cwd-not-writable", true);
+  if (f.sandboxReadOnly) flags.set("sandbox-read-only", true);
+  if (f.sandboxOn) flags.set("sandbox", "on");
   for (const [name, value] of Object.entries(f.extra ?? {})) flags.set(name, value);
   return flags;
 }
@@ -166,7 +173,9 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
   // A chat process on a code generation loads Sova's extensions from its own copy, discovered and
   // listed alike (§app.chat-processes/code-generations). The server: nothing.
   installOwnCode();
-  const resourceLoaderOptions = ownCodeLoader(loader);
+  // The extensions' bus is Sova's, so the user's own commands see the sandbox's state (shell.ts, P40).
+  const sandbox = sandboxBus();
+  const resourceLoaderOptions = { ...ownCodeLoader(loader), eventBus: sandbox.bus };
   // Who runs this runtime's modes (§chat.mode-menu/sova-runs-modes): Sova's entry takes the discovered
   // mode extension's slot for this build's package manager, for the runtime's whole life (own-code.ts).
   const services = await withModesEntry(modesEntry, () =>
@@ -178,6 +187,7 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
       resourceLoaderOptions,
     }),
   );
+  sandbox.attach(services);
   lowerToolCommands(services.settingsManager);
   // Steers sent while the chat is busy land together, at the agent's next step (P28 steer-all).
   steerAllAtOnce(services.settingsManager);

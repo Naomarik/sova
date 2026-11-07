@@ -9,7 +9,10 @@ Forked from `npm:pi-btw` 0.4.1 (github.com/dbachelder/pi-btw, MIT). Diverges fro
 - The side thread is a hidden chat in a process of its own (`chat.ts`), started by
   Sova's worker host like any worker, never a pi session inside the main chat's
   process: seeded with the main thread's conversation (none for a tangent) and the
-  thread so far, the read/bash/edit/write tools, and the main thread's system prompt
+  thread so far, the read-only tools (read/grep/find/ls: it never runs a command or
+  changes a file), inside the main chat's sandbox while that is On (the same
+  `workerLaunch` call a worker's start makes; a refusal stops the thread from
+  starting), and the main thread's system prompt
   plus the aside instructions (`child.ts` replaces the chat's prompt with that text,
   read from a 0600 file in `<agent dir>/btw/.runs/<id>/`). Its model calls are
   counted like any chat's. A reload of the main session leaves it running; the

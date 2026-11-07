@@ -64,7 +64,8 @@ import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } 
 import { setFavorite } from "./model-favorites";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
-import { draftForClient, putBackDraft, setDraft } from "./drafts";
+import { draftForClient, isDraftMode, markerOf, putBackDraft, setDraft } from "./drafts";
+import { shellOutputPage } from "./shell-output";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
 import { getAgentsInsight, getHiddenWorkers, getMemberInbox, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
@@ -86,7 +87,7 @@ import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, sa
 import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
-import { cleanupPlan, cleanupRemove, configureCleanup, worktreesSummary } from "./worktree-cleanup";
+import { cleanupPlan, cleanupRemove, cleanupRemoveAnyway, configureCleanup, worktreesSummary } from "./worktree-cleanup";
 import { applyLoadout, getSessionSetup, readSetupFile } from "./session-setup";
 import { getContextView } from "./context-tab";
 import { getSessionTools } from "./session-tools";
@@ -97,8 +98,6 @@ import { AUTO_TITLE_MAX_PATHS, TOOL_CONTENT_MAX_IDS, type SessionsDirInfo, type 
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
-import { codingSpecRefusal } from "./project-coding-mode";
-import { projectCodingIds } from "./project-sessions";
 import { configureSession } from "./sessions-configure";
 import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
 import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
@@ -847,7 +846,7 @@ export function buildApp(deps: AppDeps) {
   });
 
   app.put("/api/sessions/draft", async (c) => {
-    let body: { path?: unknown; text?: unknown; attachments?: unknown };
+    let body: { path?: unknown; text?: unknown; attachments?: unknown; mode?: unknown };
     try {
       body = await c.req.json();
     } catch {
@@ -859,9 +858,29 @@ export function buildApp(deps: AppDeps) {
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
     if (body.text.length > MAX_DRAFT_CHARS) return c.json({ error: "Draft too long" }, 400);
     if (body.attachments !== undefined && !Array.isArray(body.attachments)) return c.json({ error: "attachments must be an array" }, 400);
+    if (body.mode !== undefined && !isDraftMode(body.mode)) return c.json({ error: 'mode must be "shell" or "private"' }, 400);
+    // Only the person's own page saves a command (§chat.shell-mode/box): any other writer's draft is a message,
+    // so a script, a chat, a card or a page over the peer listener can never leave the box one Enter from
+    // running something. A refused mode stays in view as its marker ("!ls"), as a hand-back's does.
+    const keep = body.mode !== undefined && notPage(c) === null;
+    const text = body.mode !== undefined && !keep ? `${markerOf(body.mode)}${body.text}` : body.text;
     // Invalid entries are dropped by the store rather than failing the whole write.
-    setDraft(idOf(path), body.text, body.attachments);
+    setDraft(idOf(path), text, body.attachments, keep ? body.mode : undefined);
     return c.json({ ok: true });
+  });
+
+  // A finished command's whole output, a page at a time (server/shell-output.ts, §chat.shell-mode/card).
+  app.get("/api/sessions/shell-output", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const entry = c.req.query("entry");
+    if (!entry) return c.json({ error: "Missing ?entry= (the command's row id)" }, 400);
+    const from = Number(c.req.query("from") ?? 0);
+    if (!Number.isSafeInteger(from) || from < 0) return c.json({ error: "from must be a byte offset, 0 or more" }, 400);
+    const r = await shellOutputPage(path, entry, from);
+    if (r.status !== 200) return c.json({ error: r.error, code: r.code }, r.status);
+    return c.json(r.body, 200, { "Cache-Control": "no-store" });
   });
 
   app.get("/api/cwds", async (c) => c.json(await listCwds()));
@@ -903,7 +922,7 @@ export function buildApp(deps: AppDeps) {
 
   // Merged worktrees of the session's repository (server/worktree-cleanup.ts, §chat.worktrees/cleanup):
   // the count for a new session's empty state, the dry run, and a removal of exactly the confirmed
-  // paths that are still removable. Only when asked; never --force.
+  // paths that are still removable. Only when asked; --force only for Remove Anyway of one kept tree.
   configureCleanup({
     summary: (path) => getSessionSummary(path),
     sessionFiles: listSessionFiles,
@@ -918,7 +937,7 @@ export function buildApp(deps: AppDeps) {
     return c.json(await worktreesSummary(path), 200, { "Cache-Control": "no-store" });
   });
   app.post("/api/worktrees/cleanup", async (c) => {
-    const body = (await c.req.json().catch(() => null)) as { path?: unknown; dryRun?: unknown; expect?: unknown } | null;
+    const body = (await c.req.json().catch(() => null)) as { path?: unknown; dryRun?: unknown; expect?: unknown; force?: unknown } | null;
     const path = resolveSessionPath(typeof body?.path === "string" ? body.path : null);
     if (!path) return c.json({ error: "Invalid or missing path" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
@@ -926,6 +945,24 @@ export function buildApp(deps: AppDeps) {
     const expect = body?.expect;
     if (expect !== undefined && !(Array.isArray(expect) && expect.every((p) => typeof p === "string" && p.startsWith("/"))))
       return c.json({ error: "expect must be a list of absolute paths" }, 400);
+    // Remove Anyway (§chat.worktrees/cleanup): one kept tree, with the digest of the listing the user confirmed.
+    if (body?.force !== undefined) {
+      const f = body.force as { path?: unknown; digest?: unknown } | null;
+      if (body.dryRun !== undefined || expect !== undefined || !f || typeof f.path !== "string" || !f.path.startsWith("/") || typeof f.digest !== "string" || !/^[0-9a-f]{8,64}$/.test(f.digest))
+        return c.json({ error: "force must be {path: absolute path, digest}, sent alone" }, 400);
+      // It deletes what git can't bring back: only the person's own click in the dialog (§app.access/your-click's test).
+      const notYou = pageOnlyRefusal(c, {
+        overseer: "Only the user removes a kept worktree anyway. Ask them to press Remove Anyway in Clean Up Merged. Nothing was deleted.",
+        local: "A kept worktree is removed anyway only on the page of the computer it is on. Nothing was deleted.",
+        chat: "Only the user removes a kept worktree anyway. Ask them to press Remove Anyway in Clean Up Merged. Nothing was deleted.",
+        script: "Only the user removes a kept worktree anyway. Ask them to press Remove Anyway in Clean Up Merged. Nothing was deleted.",
+        extension: "Only the user removes a kept worktree anyway. Ask them to press Remove Anyway in Clean Up Merged. Nothing was deleted.",
+      });
+      if (notYou) return c.json({ error: notYou, yourClick: true }, 403);
+      const r = await cleanupRemoveAnyway(path, { path: f.path, digest: f.digest });
+      if (r === "busy") return c.json({ error: "A cleanup of this repository is already running." }, 409);
+      return r ? c.json(r) : c.json({ error: "This session's folder isn't in a local git repository." }, 409);
+    }
     const dryRun = body?.dryRun === true;
     if (dryRun === Array.isArray(expect) || (Array.isArray(expect) && !expect.every((p) => typeof p === "string" && p.startsWith("/"))))
       return c.json({ error: "Send either dryRun: true or expect: [absolute paths]" }, 400);
@@ -1432,9 +1469,6 @@ export function buildApp(deps: AppDeps) {
     if (queueChatRole((await getSessionSummary(path).catch(() => null))?.profile)) return c.json({ error: QUEUE_CHAT_MODE_REFUSAL }, 409);
     const got = await chatFor(path);
     if ("error" in got) return c.json({ error: got.error }, got.status);
-    // A project's coding session keeps spec on (§app.project-overseer/coding-mode).
-    const specOff = codingSpecRefusal(request.patch.minorModes);
-    if (specOff && projectCodingIds().has(got.chat.mirror.sessionId)) return c.json({ error: specOff }, 409);
     // The Overseer's own call turns a project mode on as its approval (q7); a body never says so itself.
     // Who approves (§chat.mode-menu/project-mode-hooks): the Overseer's turn-on, the operator's own page (`user`, the
     // only approval hooks run on), or any other caller (`caller`: tools and commands run on it, as today, hooks don't).
@@ -1474,6 +1508,8 @@ export function buildApp(deps: AppDeps) {
       putBackDraft(idOf(path), framesDraft(frames));
       return refusedAnswer(c, refused);
     }
+    // Only shell-mode frames, all dropped: nothing to deliver, so the chat isn't opened for it.
+    if (!frames.length) return c.json({ accepted: 0 }, 202);
     sessionsChanged();
     deliverFrames(path, frames, asExtension ? "extension" : notPage(c));
     return c.json({ accepted: frames.length }, 202);

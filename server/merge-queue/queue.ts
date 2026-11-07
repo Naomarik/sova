@@ -62,7 +62,8 @@ import { gitlabAdapter } from "./hosts/gitlab";
 import { suggestLanding } from "./hosts/repo";
 import { changeWords, editSettingsText, isEmptyChange, REVIEW_KIT_DIR, SettingsEditError } from "./settings-edit";
 import { PROJECT_PLAYBOOK } from "./thread";
-import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, sweepScratch } from "./scratch";
+import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, scratchCopyPath, scratchMarkOf, sweepScratch } from "./scratch";
+import { commitResolution } from "./resolve-content";
 import { isSetupChange, SETUP_UNREADABLE, setupChangeOf, trialReleaseChecks, untriedWhy } from "./setup-branch";
 
 /** Land's refusal of a worktree the merge queue made for itself (a conflict's scratch copy). */
@@ -317,6 +318,23 @@ export class ProjectQueue {
   private log(line: string): void {
     (this.deps.log ?? ((l) => console.log(l)))(`[merge-queue] ${this.id}: ${line}`);
   }
+  /** A line in this queue's log (restart.ts). */
+  logLine(line: string): void {
+    this.log(line);
+  }
+
+  /** What merge.restart reads (restart.ts): anything queued or checking (or a run, trial or landing going on), the
+   *  release holding the queue, and the newest landing. */
+  restartFacts(): { busy: boolean; release: boolean; landed: { id: string; branch: string } | null } {
+    const busy = !!this.current || !!this.trying || !!this.landing || this.q.entries.some((e) => e.state === "queued" || e.state === "checking");
+    const l = this.newestLanded();
+    return { busy, release: !!this.q.release, landed: l ? { id: l.id, branch: l.branch } : null };
+  }
+
+  /** The thread's or operator's note on an entry now ("" when none). */
+  entryNote(entryId: string): string {
+    return this.entry(entryId)?.notes.find((n) => n.kind === "thread" || n.kind === "operator")?.text ?? "";
+  }
 
   /** Load the records and work out the target. Recovery (recover.ts) runs after. */
   async load(): Promise<void> {
@@ -396,6 +414,16 @@ export class ProjectQueue {
         return { scratchError: why };
       }
     });
+  }
+
+  /** Where the sanity probe runs: the entry's scratch copy, made at `base` if it isn't there; never the main
+   *  checkout. Throws when no copy can be made (the resolution then isn't judged). */
+  private async probeDir(e: Entry, base: string): Promise<string> {
+    const path = scratchCopyPath(this.root, e.id);
+    if (scratchMarkOf(path)?.entry === e.id) return path;
+    const made = await this.makeScratch(e, base);
+    if ("scratchError" in made) throw new MergeFailure("busy", `the resolution can't be checked: its scratch copy couldn't be made (${made.scratchError})`);
+    return made.scratch;
   }
 
   /** At start: drop every copy and ref whose entry is final or gone from the queue file (pruned: final); keep the
@@ -1424,12 +1452,13 @@ export class ProjectQueue {
   }
 
   /**
-   * merge.resolve: the merge thread's judgement of a conflict, one of three: no behaviour change (its resolution
-   * commit lands through the full checks), the chat fixes it (sent back with the conflict as it is now and the
-   * thread's diagnosis), or it needs the user (a decision with the thread's question and choices; "behaviour-differs"
-   * is the old word for it). A decision a chat raised can't be overruled.
+   * merge.resolve: the merge thread's judgement of a conflict, one of three: no behaviour change (the thread's merged
+   * file contents, which Sova commits in the entry's scratch copy, land through the full checks), the chat fixes it
+   * (sent back with the conflict as it is now and the thread's diagnosis), or it needs the user (a decision with the
+   * thread's question and choices; "behaviour-differs" is the old word for it). Only "no-behaviour-change" carries
+   * contents. A decision a chat raised can't be overruled.
    */
-  resolve(entryId: string, j: { verdict: string; files?: string[]; ours: string; theirs: string; proposal: string; commit?: string; note?: string; text?: string; choices?: string[] }): Promise<MergeEntry> {
+  resolve(entryId: string, j: { verdict: string; files?: string[]; ours: string; theirs: string; proposal: string; commit?: string; contents?: Record<string, string>; note?: string; text?: string; choices?: string[] }): Promise<MergeEntry> {
     return this.serial(async () => {
       const e = this.mustEntry(entryId);
       if (e.state !== "conflict" && e.state !== "behaviour-differs") throw new MergeFailure("invalid-request", `${e.branch} has no conflict to resolve (it is ${e.state})`);
@@ -1442,13 +1471,29 @@ export class ProjectQueue {
       let verdict = asked;
       let sanity: { ok: boolean; why?: string } | undefined;
       let commit: string | undefined;
+      if (j.contents && j.commit) throw new MergeFailure("invalid-request", "give the merged contents or a commit, not both");
+      if (j.contents && asked !== "no-behaviour-change") throw new MergeFailure("invalid-request", 'only verdict "no-behaviour-change" carries contents: "chat-fixes" and "needs-user" carry none');
+      if (j.contents) {
+        // The thread's merged files, committed by Sova in the entry's scratch copy (no branch moves).
+        const contents = j.contents;
+        const made = await this.scratchStep(() =>
+          commitResolution(this.git, { copy: scratchCopyPath(this.root, e.id), entry: e.id, base: head, commit: e.commit, target: this.q.target, branch: e.branch, contents }),
+        ).catch((err: unknown) => {
+          throw new MergeFailure("invalid-request", err instanceof Error ? err.message : String(err));
+        });
+        j = { ...j, commit: made };
+      }
       if (j.commit && asked !== "chat-fixes") {
         commit = (await revParse(this.git, this.root, j.commit)) ?? undefined;
         if (!commit) throw new MergeFailure("not-found", `no commit ${j.commit} in ${this.root}`);
-        const s = await (this.deps.sanity ?? sanityCheck)(this.root, { base: head, commit: e.commit, resolution: commit });
+        // The probe's content merge runs git's merge drivers in its working directory, and git leaves their
+        // .merge_file_* temp files behind when it is cut off: so it runs in the entry's scratch copy (made now
+        // if it is gone), a work tree with the project's files that isn't the main checkout, never in this.root.
+        const probe = await this.probeDir(e, head);
+        const s = await (this.deps.sanity ?? sanityCheck)(probe, { base: head, commit: e.commit, resolution: commit });
         sanity = { ok: s.ok, ...(s.why ? { why: s.why } : {}) };
         if (!s.ok) verdict = "needs-user";
-      } else if (verdict === "no-behaviour-change") throw new MergeFailure("invalid-request", "a resolution judged to change no behaviour names its commit (a merge of the target and the approved commit)");
+      } else if (verdict === "no-behaviour-change") throw new MergeFailure("invalid-request", "a resolution judged to change no behaviour gives its contents: each conflicted file's whole merged text by its path");
       this.clearConflictTimer(e.id);
       // The resolution stays reachable under a hidden ref until the run uses it (or the attempt ends).
       if (commit) {
@@ -2943,7 +2988,7 @@ export class ProjectQueue {
         changed = true;
       } else {
         changed = this.liftHold();
-        if (changed) this.log("the merge thread lifted its hold");
+        if (changed) this.log("lifted the merge thread's hold");
       }
       this.kickSoon();
       return { changed, hold: this.holdNow() };

@@ -468,8 +468,11 @@ describe("a merge run", () => {
     const fx = fixture({ review: true });
     // A stand-in reviewer: reads review.conf at the commit it is given and answers through deliverReview.
     const started: string[] = [];
+    // The change Sova wrote for each reviewer (it has no shell): what it held while the reviewer ran.
+    const changes: { summary: string; diff: string; summaryText: string; diffText: string }[] = [];
     const startReviewer: StartReviewer = async (o) => {
       started.push(o.commit);
+      if (o.change) changes.push({ ...o.change, summaryText: readFileSync(o.change.summary, "utf8"), diffText: readFileSync(o.change.diff, "utf8") });
       const conf = git(fx.project, ["show", `${o.commit}:review.conf`]);
       if (conf === "crash") throw new Error("reviewer crashed");
       setTimeout(() => {
@@ -482,6 +485,9 @@ describe("a merge run", () => {
     const ok = await run(fx, fx.branch("r-ok", { "src/app.txt": "a\n" }), { review: true, deps });
     expect(ok.out).toMatchObject({ verdict: "passed", review: { verdict: "ok" } });
     expect(started[0]).toBe(ok.out.tip!);
+    expect(changes[0]!.summaryText).toMatch(/^M\tsrc\/app\.txt$/m);
+    expect(changes[0]!.diffText).toContain("+a");
+    expect(existsSync(changes[0]!.summary) || existsSync(changes[0]!.diff)).toBe(false);
     const notes = await run(fx, fx.branch("r-notes", { "review.conf": "notes: a helper is duplicated\n" }), { review: true, deps });
     expect(notes.out.verdict).toBe("passed");
     expect(notes.out.notes.find((x) => x.kind === "review")!.text).toBe("a helper is duplicated");

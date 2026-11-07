@@ -431,13 +431,14 @@ these through project_verbs, never by hand."; and, when the session's sandbox is
 sandboxed and cannot reach these ports: use project_verbs." A checkout with a definition but no
 instance gets one line saying it has no running copy yet and that project_verbs up gives it its own
 ports; one whose definition is invalid, one line naming the problem. A project without a definition
-gets no note.
+gets no note, even where something else offers the tool (§app.project-services/tool-offered). Every
+checkout the note covers has a definition, valid or not, so a chat with a note always has the tool.
 
 The note reaches the model as a hidden message (`sova-instance-note`, never shown in the
 transcript) at the start of a turn, only when its text differs from the last such message on the
 branch: the text holds no live state (no pids, no running or stopped), so it changes only when a
 slot, port, data ref, `about`, the test command or the sandbox does. After a
-compaction the current note is sent again. The system prompt never changes. The same text follows
+compaction the current note is sent again. The system prompt never carries the note. The same text follows
 the result of `project_verbs` and `sova_project_verbs` for create, up, apply and status of one
 instance, so a turn that just ran up learns its ports at once, and status is the note on demand.
 
@@ -455,8 +456,9 @@ An adopted slot 0 refuses `reset` (`refused-slot0`); see §app.project-services/
 The only verb that deletes. First every share link of the instance is revoked, each person's
 sibling of one included (§app.project-services/share, a `links` step), then down (every service down
 covers, those that left the definition included), then each data resource deprovisioned and the data dir removed
-(unless `keepData`), then the worktree removed only when Sova cut it and it is clean (a dirty one
-stays, named in a skipped step), then the slot freed. The branch is never deleted. Slot 0 is
+(unless `keepData`), then the worktree removed only when Sova cut it, it is clean and it holds nothing that can't be
+rebuilt (the same check as §chat.worktrees/cleanup, §chat.worktrees/leftovers); otherwise it stays,
+named with the reason in a skipped step, then the slot freed. The branch is never deleted. Slot 0 is
 refused (`refused-slot0`). An instance that is absent answers `ok` with state `absent`.
 An adopted slot 0 is refused the same way, naming its unit; see §app.project-services/adopt.
 
@@ -607,7 +609,7 @@ same engine in-process, never over HTTP:
 
 - **`project_verbs`**, in every ordinary hosted session and in every worker and team member a
   chat starts (an `agent_spawn` worker, a team member, coordinator, monitor or successor; never a
-  hidden chat), each under the same rules: reads (status, logs, doctor) on its own
+  hidden chat) that is offered it (§app.project-services/tool-offered), each under the same rules: reads (status, logs, doctor) on its own
   project; create, up, down, apply and test on instances of checkouts that are its own (its tracked
   worktrees, and its cwd's checkout unless that is the main checkout); reset and teardown only on
   instances it created; conform of its project. Anything else is `forbidden`. A create, up or test
@@ -649,6 +651,41 @@ verbs have callers of their own (§app.project-services/deploy-callers), and so 
 session's `project_verbs` reads its project's releases and nothing more, and the release chat's
 reports its own release's steps.
 
+## §app.project-services/tool-offered — Which chats are offered `project_verbs`
+
+An ordinary chat, a worker, a team member and a restored worker, Claude Code's included, follow one
+rule: the tool is offered where the project has something for it to work on. A folder with no Project
+Verbs setup never sees it, and it appears on its own the moment setup exists. A hidden chat never has
+it, and the Overseers' `sova_project_verbs` is outside this rule.
+
+- **What offers it.** A chat is offered the tool when any of these is true:
+  - the folder it works in has a `.sova/project.json`, valid or not;
+  - the project's main folder has one;
+  - a worktree the chat tracks has one;
+  - the merge queue serves the project (§app/merge-queue);
+  - a copy is registered for the project (§app.project-services/instances);
+  - the chat is running a playbook that proposes setup, one whose frontmatter says `proposes:
+    definition`, `deploy`, `release` or `pipeline` (§app.project-runtime/verb-playbooks), however it
+    was started, by hand included.
+
+  A chat whose folder is on another computer is not offered it, whatever that folder holds.
+- **With none of these.** A new chat opens without the tool, at no cost, and the tool count in its
+  profile picker (§chat.profiles/picker) is one lower.
+- **When Sova looks.** As a chat opens, at each message and after each step of a reply. A chat or
+  worker that writes a definition has the tool on its next step. When setup lands on the project's
+  main folder, or a chat merges it in, every open chat of the project has the tool at its next message
+  or step, without reopening.
+- **What arriving costs.** That one change costs one uncached message, and in a Claude Code chat one
+  condensed restart (§app.claude-code-provider/continuity). A project with setup sees no change: the
+  same tools, in the same order, the same prompt and no restart.
+- **Once offered, kept.** A chat keeps the tool as long as it stays open, even when the definition
+  disappears; it is judged again only when the chat reopens. A chat in strict mode when setup arrives
+  keeps the tool after strict mode ends, with no second tool change (§chat.mode-menu/strict).
+- **What Sova says stays true without it.** The macOS kill guard's reply says "If you have the
+  project_verbs tool, use project_verbs down for a project's services." (§chat.kill-guard/refusal),
+  and the Create guide says a chat with every group removed can start its project's copies only where
+  the project has setup.
+
 ## §app.project-services/merge-verbs — The merge verbs
 
 The merge queue (§app/merge-queue) is worked through verbs beside the deploy verbs, the same way:
@@ -656,7 +693,7 @@ the same route (`POST /api/project-services/<verb>`), the same CLI and the same 
 answering
 the one result shape with its own `merge` key (§app.project-services/result).
 
-- **Reads**: `merge.status` (a project: the queue's view, its state and why it is paused, the
+- **Reads**: `merge.status` (a project, or one entry, which narrows the view to it: the queue's view, its state and why it is paused, the
   current run, the waiting line with estimates, what needs the user, what needs a fix, recent
   landings with their runs, the target's and pushed heads, and the test checks flagged broken on the
   target) and `merge.logs` (a run, optionally
@@ -681,14 +718,17 @@ the one result shape with its own `merge` key (§app.project-services/result).
   and the user's answer: §chat.merge-queue/asks), `merge.fresh` (a project: Start Fresh,
   §chat.merge-queue/thread-life) and `merge.clear` (a queue chat's id, or `all`:
   §app.merge-queue/chats).
-- **The merge thread's**: `merge.note` (an entry and at most 300 characters; empty clears it),
+- **The merge thread's**: `merge.note` (an entry and at most 300 characters; an empty note clears it, sent from the
+  thread's tool as from the routes or the CLI),
   `merge.extend` (an entry, the check ids it adds, why, and a selection, `select`, for a check that
   takes one: the slow test group, files or walkthroughs it runs; never removes one; the tool's help
   for `checks` and `select` names the full pick and says a check that takes a selection runs bare
   without one and fails), `merge.resolve` (an
   entry, its judgement, no behaviour change or behaviour differs, the files, both sides and the
-  proposal in plain words, and the commit of its resolution), `merge.retry` (a project or entry
-  paused for the machine), `merge.ask` (the question for the user, and the entry it is about:
+  proposal in plain words, and the commit of its resolution, or `contents`, each resolved file's text, which Sova commits in
+  the scratch copy), `merge.retry` (a project or entry
+  paused for the machine), `merge.restart`, `merge.live`, `merge.test` and `merge.names`
+  (§chat.merge-queue/thread-sandbox), `merge.ask` (the question for the user, and the entry it is about:
   §chat.merge-queue/asks) and `merge.hold` (a project and `action`: `set` holds the queue's new
   starts for 5 minutes, set again renewing them, and `clear` lifts the hold; it answers the hold
   now: §app.merge-queue/empty). Each but `merge.hold`, which names no entry, takes an optional
@@ -706,7 +746,8 @@ the one result shape with its own `merge` key (§app.project-services/result).
 - A typed "land it" reaches `merge.add` as the user's approval through `worktree land`
   (§chat.worktrees/tool); no session can call `merge.add` as a tool.
 - The project's merge thread (§chat.merge-queue/thread) calls the reads and its own verbs (note,
-  extend, resolve, retry, ask, hold), for its own project only.
+  extend, resolve, retry, ask, hold, restart, live, test, names), for its own project only; every
+  merge verb's answer stays under 24,000 characters (§chat.merge-queue/thread-sandbox).
 - A review step's reviewer calls `merge.review` for its own run only (§app.merge-queue/review).
 - Any chat, the project's Setup chat included (§app.project-setup/trust), calls `merge.try` for its
   own project; `merge.setup` and every other user's verb is `forbidden` to it, as to every chat. The
@@ -820,8 +861,8 @@ The operator sees and drives every running copy from two places, both on this ho
   `main`, then each branch copy by slot. A row shows the branch, `slot {n}`, each checkout service's
   ports (a port with HTTP readiness is a link to the site at `http://<this page's host>:<port>/`, never the readiness check's path), the copy's
   memory (the sum of its services' memory, each process's own memory as the resource monitor
-  measures it, so it reads what a project card's Memory in use counts for that copy,
-  §app.projects/home-glance; "—" when none reports one), its state as a chip
+  measures it, as a project card counts a copy, §app.projects/home-glance, which leaves out Sova's
+  own server; "—" when none reports one), its state as a chip
   (Running, Starting, Degraded, Stopped, Absent; Starting while the copy is degraded only because a
   service is still starting, none failed or degraded; a service that is not ready is named under the
   row with its state), and who created it ("by you", "by a coding session", "by its overseer", "by the Overseer",

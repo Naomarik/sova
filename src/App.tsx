@@ -37,6 +37,7 @@ import { HostUpdatePage } from "./components/HostStateNotices";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerCantOpen, peerInfo, sameMeshInfo, sessionRouteFromHash, updateNeededFor, setMeshState } from "./lib/mesh";
 import { bindKey, paletteKeyAction } from "./commands/keys";
 import { composerOf } from "./commands/composers";
+import { DETAILS_BESIDE_QUERY, keyPlatform, OVERLAY_CANDIDATES, startTyping } from "./lib/type-anywhere";
 import { closePalette, paletteRequest, togglePaletteFromKey } from "./commands/palette-open";
 import { isOverseerHash, OVERSEER_HASH, overseerHistoryId, overseerRedirect } from "./lib/overseer";
 import { followListRows, onFeedPush, requestListRead, sessionFeedOpen } from "./lib/session-feed";
@@ -165,7 +166,6 @@ const folded = () => window.matchMedia("(max-width: 767px)").matches;
 /** The command palette and the shortcut sheet: their own files, fetched on their first opening. */
 const CommandPalette = lazy(() => import("./components/CommandPalette"));
 const ShortcutSheet = lazy(() => import("./components/ShortcutSheet"));
-const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
 /** Live `matchMedia` (the ExplainTiles pattern): the spine is a desktop affordance, so it only
     shows while the viewport is unfolded, and a resize across 768px swaps it in or out. */
@@ -546,6 +546,8 @@ export function App() {
   const refresh = () => void refetch();
   /** The sessions pane as the 64px spine (lib/spine.ts): the user's choice, on a wide viewport. */
   const unfolded = createMediaQuery("(min-width: 768px)");
+  /** Session details sits beside the chat (not over its message box) from this width. */
+  const detailsBeside = createMediaQuery(DETAILS_BESIDE_QUERY);
   const collapsed = () => spine() && unfolded();
   // One knob: the collapsed pane is `--sidebar-width` set to `--spine-width`, and nothing else in the
   // CSS knows about it. Expanding writes back the width the resizer last applied.
@@ -631,7 +633,7 @@ export function App() {
       separate file the browser fetches on its first opening. On a Mac, Ctrl+K in a text field is
       the field's own (delete to the end of the line), so it's left to it there. */
   const offPaletteKey = bindKey("palette.open", (e) => {
-    const act = paletteKeyAction(e, IS_MAC);
+    const act = paletteKeyAction(e, keyPlatform.mac);
     if (act === "field") return false; // the browser's: a Mac text field's delete-to-end
     if (act === "toggle") togglePaletteFromKey();
     return true; // a held key's repeats are swallowed: it toggles once
@@ -859,6 +861,29 @@ export function App() {
   const hasGroupComposer = () => !!groupRoute() && !!openGroup() && groupMembers().length > 0 && groupSendAll();
   const skipHref = () => (hasGroupComposer() ? "#group-composer" : `#${transcriptIdOf(focusedPath())}`);
   const skipLabel = () => (hasGroupComposer() ? "Skip to Group Composer" : "Skip to Transcript");
+
+  /**
+   * A character typed outside a text field starts the message in the box on screen
+   * (lib/type-anywhere): the group composer while Send to All is on, else the focused pane's, the
+   * open chat's or the Overseer's own (an earlier conversation is read-only). A box that takes no
+   * typing takes nothing: the key never goes to another pane.
+   */
+  const typingBox = () => {
+    if (hasGroupComposer()) {
+      const el = document.getElementById("group-composer-input") as HTMLTextAreaElement | null;
+      // Never read-only, and Focus never hides it (Focus is the single view's).
+      return el && { take: () => (el.focus(), document.activeElement === el) };
+    }
+    const o = overseerRoute();
+    if (o) return o.historyId ? null : composerOf(overseer.data()?.path ?? null);
+    return composerOf(focusedPath());
+  };
+  // False always: the browser's default then types the key in the box focus moved to.
+  const offTypeKey = bindKey("compose.type", (e) => {
+    startTyping(e, { overlays: () => document.querySelectorAll(OVERLAY_CANDIDATES), covered: () => !!subagentsPath() && !detailsBeside(), box: typingBox });
+    return false;
+  });
+  onCleanup(offTypeKey);
 
   // At folded width, opening a session swaps the column: move focus to its title.
   let titleEl: HTMLHeadingElement | undefined;

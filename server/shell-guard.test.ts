@@ -168,7 +168,7 @@ describe("the reply", () => {
     assert.match(r, /`pkill -f 'bun --watch src\/server\/main\.ts' -P 1`/);
     assert.match(r, /on macOS, pkill reads every argument after the first pattern as another pattern/);
     assert.match(r, /put every option before the pattern/);
-    assert.match(r, /project_verbs down/);
+    assert.match(r, /If you have the project_verbs tool, use project_verbs down for a project's services\./, "true in a chat with no such tool too");
   });
   test("killall's reply says its manual shows options first, not what happens to a later one, and fixes it with killall's own form", () => {
     const r = refused(`killall my-long-app-name -9`)!;

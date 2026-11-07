@@ -1,6 +1,7 @@
 /**
  * In-chat actions with an outcome to wait for (§app/chat-actions): Stop, Compact, Rewind,
- * Regenerate, Remove a queued message and Reload Now, each one request to POST /api/chat/action
+ * Regenerate, Remove a queued message, Reload Now, and listing and stopping commands from shell mode
+ * (never starting one), each one request to POST /api/chat/action
  * (server/chat-actions.ts), which hands the chat the same frame its button sends; and a project mode's
  * command (POST /api/mode/command). Part of the
  * command catalogue, through shared/commands/other.ts's OTHER_ENTRIES (rules: agents/server/commands/overview.md).
@@ -42,6 +43,11 @@ export const CHAT_ENTRIES: CommandEntry[] = [
     item: { type: "string", description: "The queued message's id", in: "body", key: "itemId", required: true },
   }),
   entry("chat.reload-code", "Reload Now", "Reload a chat on the server's current code, now or at its next quiet moment.", "reload_code"),
+  // A chat's commands from shell mode (§chat.shell-mode/running): seen and stopped, never started from here.
+  { ...entry("chat.shell.list", "List Commands", "The commands running in a chat from shell mode: id, command (none for a `!!` one) and when each started.", "shell_list"), effect: "looks" },
+  entry("chat.shell.stop", "Stop Command", "Stop one command running in a chat from shell mode, as its card's Stop Command does, and wait until it has stopped.", "shell_stop", {
+    command: { type: "string", description: "The command's run id (from List Commands)", in: "body", key: "id", required: true },
+  }),
   // A project mode's command (§chat.mode-menu/project-mode-commands): `sova run mode.<id>.<name>` lands here.
   {
     id: "chat.mode-command",

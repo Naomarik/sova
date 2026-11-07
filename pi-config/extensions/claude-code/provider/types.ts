@@ -309,13 +309,61 @@ export function parseToolInput(json: string, startInput?: unknown): ToolInputVer
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "";
 			const at = /at position (\d+)/.exec(message);
-			const position = at ? Number(at[1]) : /Unexpected end/.test(message) ? json.length : undefined;
+			// V8 names the position; Bun's JavaScriptCore never does ("Unexpected EOF", "Unable to parse JSON
+			// string"), so the two shapes seen live are found from the input itself on either runtime.
+			const position = at ? Number(at[1]) : /Unexpected (?:end|EOF)/.test(message) ? json.length : leftoverAt(json);
 			// V8 quotes the input in some messages (`"{oops" is not valid JSON`); keep only those that don't.
 			return { ok: false, bytes, error: message && !message.includes("\"") ? message : "invalid JSON", ...(position === undefined ? {} : { position }) };
 		}
 	}
 	if (!record(value)) return { ok: false, bytes, error: `not a JSON object (${Array.isArray(value) ? "array" : value === null ? "null" : typeof value})` };
 	return { ok: true, args: value };
+}
+
+/**
+ * Whether the CLI has a tool of this name. It has no built-ins and no MCP server
+ * but pi's, so every tool it can run is `mcp__sova__<name>`; under any other name
+ * (a bare `bash` the model copied from prose) the CLI answers the call itself
+ * ("No such tool available") and asks the model again, never dispatching it.
+ */
+export function cliHasTool(name: string): boolean {
+	return name.startsWith(MCP_TOOL_PREFIX);
+}
+
+/**
+ * Where the two faults seen live begin, from the input alone, as V8 reports them:
+ * a complete JSON object or array with more after it (arguments closed early,
+ * closers left over) gives the first non-whitespace character left over;
+ * arguments cut off (the input completes to valid JSON with at most one value or
+ * key and its missing closers) give the end of the input. Undefined for any other fault.
+ */
+function leftoverAt(json: string): number | undefined {
+	const open: string[] = [];
+	let inString = false, escaped = false;
+	for (let i = 0; i < json.length; i++) {
+		const c = json[i];
+		if (inString) {
+			if (escaped) escaped = false;
+			else if (c === "\\") escaped = true;
+			else if (c === "\"") inString = false;
+		} else if (c === "\"") inString = true;
+		else if (c === "{") open.push("}");
+		else if (c === "[") open.push("]");
+		else if (c === "}" || c === "]") {
+			if (open.pop() !== c) return undefined;
+			if (open.length) continue;
+			try { JSON.parse(json.slice(0, i + 1)); } catch { return undefined; }
+			const rest = json.slice(i + 1).search(/\S/);
+			return rest < 0 ? undefined : i + 1 + rest;
+		}
+	}
+	if (!open.length || escaped) return undefined;
+	// Cut after a comma, a colon, a key or a number's point needs one value or key first.
+	const closers = (inString ? "\"" : "") + open.reverse().join("");
+	for (const value of ["", "0", "\"\":0", ":0"]) {
+		try { JSON.parse(json + (inString ? "" : value) + closers); return json.length; } catch { /* try the next */ }
+	}
+	return undefined;
 }
 
 /** Map an MCP facade tool name back to the pi tool name pi will execute. */

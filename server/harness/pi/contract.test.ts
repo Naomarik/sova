@@ -5,7 +5,7 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P39 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P40 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
@@ -109,6 +109,8 @@ interface QuirkSessionOptions {
   beforeBuild?: (sm: any) => void;
   /** Keep pi's built-in tools (default: none). */
   builtinTools?: boolean;
+  /** The extensions' event bus (the loader's `eventBus`). */
+  eventBus?: unknown;
 }
 
 /** A real pi session the way Sova builds one (a resource loader, extensions bound), its turns on a
@@ -125,6 +127,7 @@ async function quirkSession(o: QuirkSessionOptions = {}) {
     extensionFactories: (o.extensions ?? []) as never,
     additionalExtensionPaths: o.extensionPaths ?? [],
     ...(o.appendSystemPrompt ? { appendSystemPromptOverride: o.appendSystemPrompt } : {}),
+    ...(o.eventBus ? { eventBus: o.eventBus as never } : {}),
   });
   await resourceLoader.reload();
   const sessionManager = o.file ? SessionManager.open(o.file, undefined, cwd) : SessionManager.inMemory(cwd);
@@ -798,9 +801,13 @@ describe("pi contract", () => {
     let turnStarts = 0;
     const late = (api: any) => {
       api.registerTool(tool("echo"));
+      api.registerTool(tool("activated"));
+      api.on("session_start", () => api.setActiveTools(api.getActiveTools().filter((n: string) => n !== "activated")));
       // The first step's end and the second step's start, both inside the one run.
       api.on("turn_end", () => {
-        if (++turnEnds === 1) api.registerTool(tool("at_turn_end"));
+        if (++turnEnds !== 1) return;
+        api.registerTool(tool("at_turn_end"));
+        api.setActiveTools([...api.getActiveTools(), "activated"]);
       });
       api.on("turn_start", () => {
         if (++turnStarts === 2) api.registerTool(tool("at_turn_start"));
@@ -820,10 +827,75 @@ describe("pi contract", () => {
     const [first, second, third] = model.calls.map(declaredIn);
     assert.ok(first!.has("echo") && !first!.has("at_turn_end"), "the first request: the tools from the start");
     assert.ok(second!.has("at_turn_end"), "registered at turn_end: declared in the next request of the same run");
+    assert.ok(!first!.has("activated") && second!.has("activated"), "activated at turn_end: the same (offeredToolExtension)");
     assert.ok(JSON.stringify((model.calls[1]!.context as { messages: unknown[] }).messages).includes("steered while the tool ran"), "the request that carries the steered message");
     assert.ok(!second!.has("at_turn_start"), "registered at turn_start: too late for that request (fixed: pi builds the loadout after turn_start)");
     assert.ok(third!.has("at_turn_start"), "the control: it is declared in the request after");
     session.dispose();
+  });
+
+  test("project_verbs arriving at turn_end, on P23 (§app.project-services/tool-offered): the chat's tools in a fresh chat's order, the first request unchanged where it was offered, and the run's prompt sections kept", async () => {
+    const { offeredToolExtension } = await import("../../served-tools");
+    const tool = (name: string) => ({ name, label: name, description: `The ${name} tool.`, parameters: Type.Object({}), execute: async () => ({ content: [{ type: "text", text: name }], details: {} }) });
+    /** Tools before and after the gated one, and a section written as the mode engine writes it, at every run's start. */
+    const chat = (offered: () => boolean) => [
+      { name: "before", factory: (api: any) => {
+        api.registerTool(tool("earlier"));
+        api.on("before_agent_start", (e: any) => void (e.systemPromptOptions.sections.mode = "CONTRACT-MODE-SECTION"));
+      } },
+      offeredToolExtension({ name: "gated", factory: (api: any) => void api.registerTool(tool("gated")) }, "gated", async () => offered()),
+      { name: "after", factory: (api: any) => void api.registerTool(tool("later")) },
+    ];
+    const toolsOf = (call: { context: unknown }) => {
+      const out: string[] = [];
+      for (const m of (call.context as { messages: any[] }).messages) {
+        if (m.role !== "system") continue;
+        for (const r of m.toolsRemoved ?? []) out.splice(out.indexOf(typeof r === "string" ? r : r.name), 1);
+        for (const t of m.toolsAdded ?? []) out.push(t.name);
+      }
+      return out;
+    };
+
+    const fresh = await quirkSession({ extensions: chat(() => true) as never });
+    const order = fresh.session.getActiveToolNames();
+    assert.ok(order.indexOf("earlier") < order.indexOf("gated") && order.indexOf("gated") < order.indexOf("later"), `the control: ${order}`);
+    fresh.model.reply({ text: "done" });
+    await fresh.session.prompt("go");
+    assert.deepEqual(toolsOf(fresh.model.calls[0]!), order, "offered from the start: the first request has it, in its place");
+    fresh.session.dispose();
+
+    let yes = false;
+    const file = headerFile("offered-arrival");
+    const { session, model } = await quirkSession({ file, extensions: chat(() => yes) as never });
+    assert.deepEqual(session.getActiveToolNames(), order.filter((n: string) => n !== "gated"), "not offered: gone as the chat opens");
+    model.reply(
+      async () => {
+        yes = true;
+        return { toolCall: { name: "earlier", arguments: {} } };
+      },
+      { text: "done" },
+    );
+    await session.prompt("go");
+    assert.equal(model.calls.length, 2, "one run, two requests");
+    assert.ok(!toolsOf(model.calls[0]!).includes("gated"), "the first request doesn't have it");
+    assert.ok(toolsOf(model.calls[1]!).includes("gated"), "the step after setup arrived does");
+    assert.deepEqual(session.getActiveToolNames(), order, "the order a fresh chat has, so a reopen changes nothing");
+    assert.deepEqual([...toolsOf(model.calls[1]!)].sort(), [...order].sort());
+    assert.match(systemPromptOf(model.calls[1]!), /CONTRACT-MODE-SECTION/, "the tool change keeps the run's sections for the rest of the run (P39)");
+    model.reply({ text: "again" });
+    await session.prompt("next");
+    assert.match(systemPromptOf(model.calls[2]!), /CONTRACT-MODE-SECTION/, "and the next run's start writes them again");
+    session.dispose();
+
+    const reopened = await quirkSession({ file, extensions: chat(() => yes) as never });
+    assert.deepEqual(reopened.session.getActiveToolNames(), order, "reopened: the same order");
+    reopened.model.reply({ text: "back" });
+    await reopened.session.prompt("back again");
+    const updates = (reopened.model.calls[0]!.context as { messages: any[] }).messages.filter((m) => m.role === "system");
+    assert.ok(updates.length >= 2, "the control: the transcript's system messages are in the request");
+    assert.equal(updates.at(-1).sections?.tools, undefined, "the tool list in the prompt doesn't change at a reopen (appending the tool would: fixed order)");
+    assert.equal((updates.at(-1).toolsAdded ?? []).length, 0, "nor does the declared set");
+    reopened.session.dispose();
   });
 
   test("P24 own-code-discovery: resolve() is the loader's only source of discovered extension paths: patched, the same extensions load, Sova's from the copy", async () => {
@@ -1119,6 +1191,111 @@ describe("pi contract", () => {
     assert.deepEqual(asked.sort(), ["first", "second"], "createTransport builds both");
     assert.deepEqual(declared, ["mcp__second__t"], "the first request declares the swapped list");
     session.dispose();
+  });
+
+  test("P40 user-bash: executeBash emits no user_bash, runs the operations with the prefixed command, defers its record while streaming until the run settles, and cuts the tail at pi's limits; the loader's event bus is the extensions'; each run has its own abort controller", async () => {
+    const { sandboxBus, sandboxOf } = await import("./shell");
+    const { PI_SHELL_MAX_BYTES, PI_SHELL_MAX_LINES, shellTruncation } = await import("./reader");
+    const hooked: string[] = [];
+    const ran: string[] = [];
+    const ops = (lines: string[] = ["hi"]) => ({
+      exec: async (command: string, _cwd: string, o: { onData(d: Buffer): void }) => {
+        ran.push(command);
+        o.onData(Buffer.from(lines.join("\n")));
+        return { exitCode: 0 };
+      },
+    });
+    const sb = sandboxBus();
+    const { session, model } = await quirkSession({
+      settings: { shellCommandPrefix: "PREFIX" },
+      eventBus: sb.bus,
+      extensions: [
+        (api) => {
+          api.on("user_bash", (e: { command: string }) => void hooked.push(e.command));
+          api.events.emit("sandbox:state", { version: 1, on: true, scope: { worktreeRoots: ["/w"] } });
+        },
+      ],
+    });
+    sb.attach(session);
+    assert.deepEqual(sandboxOf(session), { on: true, scope: { worktreeRoots: ["/w"] } }, "the loader's bus is the one its extensions emit on");
+    const sm = session.sessionManager as any;
+    const bashEntries = () => sm.getEntries().filter((e: any) => e.type === "message" && e.message.role === "bashExecution");
+
+    // Idle: no user_bash from executeBash, the prefixed command reaches the operations, the record is written at once.
+    const idle = await session.executeBash("echo hi", undefined, { operations: ops() as never });
+    assert.deepEqual(hooked, [], "executeBash emits user_bash now: drop Sova's own emitUserBash call");
+    assert.deepEqual(ran, ["PREFIX\necho hi"], "the operations get the settings' prefix, then the command");
+    assert.equal(idle.exitCode, 0);
+    assert.equal(bashEntries().length, 1, "an idle record is written before executeBash resolves");
+    assert.equal(await session.extensionRunner.emitUserBash({ type: "user_bash", command: "x", excludeFromContext: false, cwd: "/" }), undefined);
+    assert.deepEqual(hooked, ["x"], "emitUserBash runs the handlers, and a handler returning nothing means run locally");
+
+    // Streaming: the record waits in the pending list, with no event, and is written before agent_settled.
+    const release = model.hold();
+    model.reply({ text: "done" });
+    const turn = session.prompt("go");
+    await until(() => session.isStreaming, "the reply to start");
+    await session.executeBash("echo mid", undefined, { operations: ops() as never });
+    assert.equal(session.hasPendingBashMessages, true, "a record made mid-stream is no longer deferred");
+    assert.equal((session as any)._pendingBashMessages.length, 1);
+    assert.equal(bashEntries().length, 1, "nothing written while the reply streams");
+    let atSettle = -1;
+    session.subscribe((e: any) => {
+      if (e.type === "agent_settled") atSettle = bashEntries().length;
+    });
+    release();
+    await turn;
+    assert.equal(atSettle, 2, "the deferred record is written before agent_settled");
+
+    // The saved output is the tail at pi's limits, and the cut tells which limit by the lines it kept.
+    assert.equal(pi.agent.DEFAULT_MAX_LINES, PI_SHELL_MAX_LINES);
+    assert.equal(pi.agent.DEFAULT_MAX_BYTES, PI_SHELL_MAX_BYTES);
+    const long = await session.executeBash("seq", undefined, { operations: ops(Array.from({ length: 2500 }, (_, i) => String(i))) as never });
+    assert.equal(long.truncated, true);
+    assert.equal(long.output.split("\n").length, PI_SHELL_MAX_LINES);
+    assert.deepEqual(shellTruncation(long.output), { by: "lines", max: PI_SHELL_MAX_LINES });
+    const wide = await session.executeBash("wide", undefined, { operations: ops(["x".repeat(30_000), "y".repeat(30_000)]) as never });
+    assert.equal(wide.truncated, true);
+    assert.deepEqual(shellTruncation(wide.output), { by: "bytes", max: PI_SHELL_MAX_BYTES });
+
+    // Each run has its own abort controller, the one whose signal its operations get, and a run its own
+    // controller stopped is recorded as cancelled while the other goes on (Sova's per-run stop, ownStop).
+    const gate: (() => void)[] = [];
+    const held = (signals: AbortSignal[]) => ({
+      exec: (_c: string, _d: string, o: { signal?: AbortSignal }) =>
+        new Promise<{ exitCode: number }>((resolve, reject) => {
+          signals.push(o.signal!);
+          o.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+          gate.push(() => resolve({ exitCode: 0 }));
+        }),
+    });
+    const signals: AbortSignal[] = [];
+    const one = session.executeBash("one", undefined, { operations: held(signals) as never });
+    const two = session.executeBash("two", undefined, { operations: held(signals) as never });
+    await until(() => signals.length === 2, "both runs to reach their operations");
+    const controllers = (session as any)._bashAbortControllers as Set<AbortController>;
+    assert.ok(controllers instanceof Set && controllers.size === 2, "one abort controller per running command");
+    const mine = [...controllers].find((c) => c.signal === signals[0]);
+    assert.ok(mine, "the operations get their own run's controller's signal");
+    mine.abort();
+    assert.equal((await one).cancelled, true, "a run stopped by its own controller is recorded as cancelled");
+    assert.equal(signals[1]!.aborted, false, "the other run's signal is untouched");
+    gate[1]!();
+    assert.deepEqual([(await two).cancelled, (await two).exitCode], [false, 0]);
+
+    // dispose stops a running command (its operations see the abort).
+    let aborted = false;
+    const running = session.executeBash("sleep", undefined, {
+      operations: {
+        exec: (_c: string, _d: string, o: { signal?: AbortSignal }) =>
+          new Promise((_r, reject) => o.signal?.addEventListener("abort", () => ((aborted = true), reject(new Error("aborted"))))),
+      } as never,
+    });
+    await until(() => session.isBashRunning, "the command to run");
+    session.dispose();
+    const stopped = await running;
+    assert.equal(aborted, true, "dispose no longer aborts a running command");
+    assert.equal(stopped.cancelled, true);
   });
 
   test("P36 mcp-http-transport: a url server's transport gets pi's auth provider, which reads the store and refreshes with an escaped secret literally; pi-mcp's HTTP client sends headers as given and reports a dropped session", async () => {

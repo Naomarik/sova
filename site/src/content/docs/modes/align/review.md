@@ -99,8 +99,9 @@ problems. It can't change code or run anything." The button sends an ordinary me
 that review. Once a phase has run, its verdict shows in place of its button. With no reviewer in
 the chat's profile, the button is disabled and says why.
 
-## In the terminal
+## Typed in a chat
 
-pi's terminal UI doesn't read the Settings switch: there, review is on when pi starts with
-`--adversarial-review`. Then `/review plan` or `/review implementation`, optionally followed by an
-alignment id such as `al_3`, sends the same message as the card's button.
+With review switched on, `/review plan` or `/review implementation` typed in the chat's composer,
+optionally followed by an alignment id such as `al_3`, sends the same message as the card's button.
+With it off there is no `/review` command, and a pi terminal session has none.
+

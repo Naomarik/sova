@@ -102,8 +102,9 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
-import { WIRE_PARAM, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
+import { WIRE_PARAM, type ShellOutputPage, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
 import { LIST_VERSION_HEADER, parseListVersion } from "./summary-diff";
+import type { ShellDraftMode } from "./draft-save";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
 import type {
   MeshAccessPut,
@@ -952,25 +953,33 @@ export async function fetchTranscriptForCache(
 /** The composer draft stored for a session; `text: null` when there is none. The server has
     already dropped attachments whose file is gone. */
 export const fetchDraft = (path: string) =>
-  request<{ text: string | null; attachments?: UploadResult[]; updatedAt: string | null }>(
+  request<{ text: string | null; attachments?: UploadResult[]; mode?: ShellDraftMode; updatedAt: string | null }>(
     `/api/sessions/draft?path=${encodeURIComponent(path)}`,
     { cache: "no-store" },
   ).then((r) => {
     const attachments = r.attachments ?? [];
     const host = hostOf(path);
     if (host) for (const a of attachments) noteHost(a.path, host);
-    return { text: r.text, attachments, updatedAt: r.updatedAt };
+    return { text: r.text, attachments, ...(r.mode === "shell" || r.mode === "private" ? { mode: r.mode } : {}), updatedAt: r.updatedAt };
   });
 
 /** Stores a session's draft; blank text with no attachments deletes it. `keepalive` lets the
-    write outlive a page that is being hidden or closed. */
-export const putDraft = (path: string, text: string, attachments: UploadResult[], opts: { keepalive?: boolean } = {}) =>
+    write outlive a page that is being hidden or closed; `mode` keeps a shell-mode command's mode. */
+export const putDraft = (path: string, text: string, attachments: UploadResult[], opts: { keepalive?: boolean; mode?: ShellDraftMode } = {}) =>
   request<{ ok: true }>("/api/sessions/draft", {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path, text, attachments }),
+    body: JSON.stringify({ path, text, attachments, ...(opts.mode ? { mode: opts.mode } : {}) }),
     keepalive: opts.keepalive,
   });
+
+/** A page of a saved shell row's whole output (ShellOutputPage); a 404 `gone` once its file is deleted
+    (its chat was archived). */
+export const fetchShellOutput = (path: string, entry: string, from = 0) =>
+  request<ShellOutputPage>(
+    `/api/sessions/shell-output?path=${encodeURIComponent(path)}&entry=${encodeURIComponent(entry)}&from=${from}`,
+    { cache: "no-store" },
+  );
 
 /** Stores an image in the session's attachments folder the moment it's attached, so it survives
     a reload as part of the draft; the prompt text then names its path. */
@@ -1081,6 +1090,9 @@ export const previewWorktreeCleanup = (path: string) =>
 /** Remove exactly `expect` (the dry run's paths), each only if still removable. */
 export const removeWorktrees = (path: string, expect: string[]) =>
   request<WorktreeCleanupResult>("/api/worktrees/cleanup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, expect }) });
+/** Remove Anyway: one kept tree, only while what it holds is still the listing confirmed (its digest). */
+export const removeWorktreeAnyway = (path: string, tree: string, digest: string) =>
+  request<WorktreeCleanupResult>("/api/worktrees/cleanup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, force: { path: tree, digest } }) });
 
 /**
  * `force` (chat only) lets the server open a session whose file was written recently by
@@ -1635,6 +1647,12 @@ export const mergeCodingWorktree = (projectId: string, sessionId: string) =>
   request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));
 export const removeCodingWorktree = (projectId: string, sessionId: string) =>
   request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId }));
+/** Why Remove Worktree would keep the folder, and what Remove Anyway would delete (§chat.worktrees/leftovers). */
+export const codingWorktreeHold = (projectId: string, sessionId: string) =>
+  request<import("../../shared/protocol").CodingWorktreeHold>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId, dryRun: true }));
+/** Remove Anyway: removed only while the folder holds exactly the listing confirmed (its digest). */
+export const removeCodingWorktreeAnyway = (projectId: string, sessionId: string, digest: string) =>
+  request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId, digest }));
 
 // ---- voice input (§chat/voice, §app.settings-dialog/voice) ---------------------------------------
 
@@ -1828,3 +1846,10 @@ export const startMcpSignIn = (id: string) => request<McpSignIn>(mcpRow(id, "/si
 export const readMcpSignIn = (id: string) => request<McpSignIn>(mcpRow(id, "/sign-in"));
 export const finishMcpSignIn = (id: string, address: string) => request<McpSignIn>(mcpRow(id, "/sign-in/address"), jsonInit("POST", { address }));
 export const cancelMcpSignIn = (id: string) => request<unknown>(mcpRow(id, "/sign-in"), { method: "DELETE" });
+
+// ---- the merge thread's Run Logs chip (§app.merge-queue/run-logs, shared/merge-run-logs.ts) ----
+/** The run folders' size of the project whose merge thread is `session` (404: it isn't one). */
+export const fetchRunLogsOfThread = (session: string) =>
+  request<import("../../shared/merge-run-logs").RunLogsInfo>(`/api/merge-queue/run-logs?session=${encodeURIComponent(session)}`, { cache: "no-store" });
+/** Clean Logs: the user's own click, confirmed. */
+export const cleanRunLogs = (project: string) => request<import("../../shared/merge-run-logs").RunLogsCleaned>("/api/merge-queue/run-logs/clean", jsonInit("POST", { project, confirm: true }));

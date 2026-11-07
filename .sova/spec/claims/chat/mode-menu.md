@@ -274,9 +274,7 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
 not written. A chat this server doesn't hold open (one closed for being quiet,
 §app.chat-processes/idle-stop) is opened for it, as a send opens it; a session that can't open (a
 TUI holds it, its remote placeholder folder is gone) is refused with why (409), and a file that isn't there is a 404.
-A switch of a project's coding session whose minor modes leave `spec` out is refused before
-anything switches (409, "Spec is always on for coding sessions; it can't be turned off.",
-§app.project-overseer/coding-mode). The chat then:
+The chat then:
 
 - **Typed is the same switch.** `/mode normal`, `/mode delegate` or `/mode create` as a client's
   composer send, without images, is the menu's switch, with its refusals, and nothing reaches the model.
@@ -468,11 +466,12 @@ spec's block, from the parent's saved copy of it, with its tools when the worker
   (§tools.spec/writing-on-demand). Nothing else of the parent's mode reaches it: no
   Delegate block, no align block, no Delegate+align bridge, and never the spec-writer paragraph
   (a worker can't spawn one). With spec off the worker's prompt carries nothing from the mode.
-- **Not everyone.** A team's monitor (no `spec` tool and no file tools) gets no spec block. A worker on its
-  worktree's own agent dir (§chat.worktrees/worktree-config) gets none from the parent either: it
-  has spec always on, in its worker form (the same block and note, no writer paragraph), from Sova
-  while Sova runs chat modes, never from a copy of the mode extension in its tree, which it never
-  needs to start; with the switch off, from its tree's own mode extension, as before
+- **Not everyone.** A team's monitor (no `spec` tool and no file tools) gets no spec block.
+- **On its worktree's own agent dir.** A worker there (§chat.worktrees/worktree-config) follows the
+  chat that started it too: while that chat has spec on, it has spec in its worker form (the same
+  block and note, no writer paragraph); with spec off in that chat, its prompt carries nothing from
+  spec. The block comes from Sova while Sova runs chat modes, never from a copy of the mode extension
+  in its tree, which it never needs to start; with the switch off, from its tree's own mode extension
   (§chat.mode-menu/sova-runs-modes).
 - **A snapshot, taken at spawn.** The worker gets the modes the parent has when it starts; a
   later switch in the chat doesn't reach a running worker (§chat.mode-menu/how-a-switch-reaches-the-chat:
@@ -769,9 +768,11 @@ line names the type ("UniiChat — by Victor Taelin", "Zoomable compaction — S
 `write` tools away from the orchestrator.
 
 - **Only those two.** `bash` and every other tool stay, and the Delegate instructions read the same
-  with strict on or off: the prompt never mentions it. The tools the chat had before are kept and
-  come back when strict goes off or the chat leaves both. Moving between Delegate and Create keeps
-  them away.
+  with strict on or off: the prompt never mentions it. `edit` and `write`, if the chat had them before,
+  come back where they were when strict goes off or the chat leaves both, and nothing else moves: a
+  tool that arrives while strict is on, such as `project_verbs` (§app.project-services/tool-offered),
+  stays with no second tool change, and a tool removed while strict is on stays removed. Moving
+  between Delegate and Create keeps them away.
 - **In the normal mode** the flag is kept and does nothing; switching to Delegate or Create applies
   it, and a session restored in either with strict on applies it on open.
 - **Setting it.** `/mode strict on|off`, per session like the rest of the mode, with a transcript

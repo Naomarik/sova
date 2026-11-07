@@ -6,14 +6,14 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { profileFileError } from "../../shared/profiles";
+import { excludedTools, profileFileError } from "../../shared/profiles";
 import { findProfile } from "../profile-sources";
 // @ts-expect-error: plain .mjs scripts of the playbooks, typed by use here
 import { blastRadius, globRe } from "../../playbooks/merge-queue/scripts/blast-radius.mjs";
 // @ts-expect-error: as above
 import { hunksOf } from "../../playbooks/merge-queue/scripts/conflict-hunks.mjs";
-// @ts-expect-error: as above
-import { KINDS, TEXT_MAX, reviewText, validate } from "../../.sova/playbooks/review/scripts/verdict.mjs";
+import { checkReviewText, REVIEW_KINDS as KINDS, REVIEW_TEXT_MAX as TEXT_MAX } from "./review-verdict";
+import { reviewerText } from "./review-step";
 
 const REPO = join(import.meta.dirname, "..", "..");
 const SOVA_MAP = JSON.parse(readFileSync(join(REPO, ".sova", "playbooks", "merge-queue", "references", "blast-radius.json"), "utf8"));
@@ -39,8 +39,9 @@ test("Sova's map: each area picks its check with its reason; docs alone pick not
   assert.match(charts.statecharts!.why, /^statecharts changed.*\(statecharts\/src\/org\.cljs\)$/);
   assert.deepEqual(Object.keys(by(["pi-config/extensions/spec/core/sova-spec.mjs"])), ["spec-replay"]);
   const composer = by(["src/components/Composer.tsx"]);
-  assert.deepEqual(composer.e2e?.select, ["scripts/e2e/focus-view.mjs", "scripts/e2e/instant-open.mjs"]);
+  assert.deepEqual(composer.e2e?.select, ["scripts/e2e/focus-view.mjs", "scripts/e2e/instant-open.mjs", "scripts/e2e/type-anywhere.mjs"]);
   assert.match(composer.e2e!.why, /composer changed/);
+  assert.deepEqual(by(["src/commands/keys.ts"]).e2e?.select, ["scripts/e2e/type-anywhere.mjs"]);
   assert.deepEqual(by(["server/tours/browser.ts"])["integration-group"]?.select, ["tours"]);
   assert.deepEqual(by(["server/chat-runtime/host.ts"])["integration-group"]?.select, ["trial"]);
 });
@@ -49,7 +50,7 @@ test("one id hit by several rules is one pick: reasons joined, selections unione
   const p = picks(["src/components/Composer.tsx", "src/components/TranscriptView.tsx", "src/lib/focus-view.ts"]);
   assert.equal(p.length, 1);
   assert.equal(p[0]!.id, "e2e");
-  assert.deepEqual(p[0]!.select, ["scripts/e2e/focus-view.mjs", "scripts/e2e/instant-open.mjs", "scripts/e2e/transcript-follow.mjs", "scripts/e2e/transcript-drift.mjs", "scripts/e2e/jump-settle.mjs"]);
+  assert.deepEqual(p[0]!.select, ["scripts/e2e/focus-view.mjs", "scripts/e2e/instant-open.mjs", "scripts/e2e/type-anywhere.mjs", "scripts/e2e/transcript-follow.mjs", "scripts/e2e/transcript-drift.mjs", "scripts/e2e/jump-settle.mjs"]);
   assert.match(p[0]!.why, /composer changed.*; the transcript view changed/);
   const many = blastRadius(["statecharts/a", "statecharts/b", "statecharts/c", "statecharts/d"], SOVA_MAP).picks[0];
   assert.match(many.why, /\(statecharts\/a, statecharts\/b, statecharts\/c, \+1 more\)$/);
@@ -93,29 +94,45 @@ test("conflict hunks: diff3 and plain markers, several per file, base null witho
   assert.deepEqual(hunksOf("no markers\n======= alone\n"), []);
 });
 
-test("review verdict: ok carries no findings, notes and blocking need one, kinds and lines checked, at most ten", () => {
-  const f = { file: "server/x.ts", line: 3, kind: "dead-code", text: "unused export" };
-  assert.deepEqual(validate({ verdict: "ok", summary: "Fine.", findings: [] }), { verdict: "ok", summary: "Fine.", findings: [] });
-  assert.deepEqual(validate({ verdict: "notes", summary: " One note. ", findings: [f] }), { verdict: "notes", summary: "One note.", findings: [f] });
-  assert.match(validate({ verdict: "ok", summary: "x", findings: [f] }), /no findings/);
-  assert.match(validate({ verdict: "blocking", summary: "x", findings: [] }), /at least one finding/);
-  assert.match(validate({ verdict: "maybe", summary: "x", findings: [] }), /verdict must be/);
-  assert.match(validate({ verdict: "notes", summary: "", findings: [f] }), /summary/);
-  assert.match(validate({ verdict: "notes", summary: "x", findings: [{ ...f, kind: "style" }] }), /kind must be/);
-  assert.match(validate({ verdict: "notes", summary: "x", findings: [{ ...f, line: 0 }] }), /line/);
-  assert.match(validate({ verdict: "notes", summary: "x", findings: Array(11).fill(f) }), /at most 10/);
+test("review verdict (merge.review's check): ok carries no findings, notes and blocking need one, kinds and lines checked, at most ten", () => {
+  const ok = (v: "ok" | "notes" | "blocking", t?: string) => checkReviewText(v, t);
+  assert.deepEqual(ok("ok"), { text: "", findings: [] }, "ok may say nothing");
+  assert.deepEqual(ok("ok", " Fine. "), { text: "Fine.", findings: [] });
+  assert.deepEqual(ok("notes", " One note.\n\n- [dead-code] server/x.ts:3: unused export "), {
+    text: "One note.\n- [dead-code] server/x.ts:3: unused export",
+    findings: [{ kind: "dead-code", file: "server/x.ts", line: 3, text: "unused export" }],
+  });
+  assert.deepEqual((ok("notes", "N.\n- [missing-test] no test for the empty case") as { findings: unknown[] }).findings, [{ kind: "missing-test", text: "no test for the empty case" }]);
+  assert.deepEqual((ok("notes", "N.\n- [naming] a.ts: x says nothing") as { findings: unknown[] }).findings, [{ kind: "naming", file: "a.ts", text: "x says nothing" }]);
+  const why = (r: ReturnType<typeof checkReviewText>) => ("why" in r ? r.why : "accepted");
+  assert.match(why(ok("ok", "Fine.\n- [hack] a.ts:1: x")), /no findings/);
+  assert.match(why(ok("blocking", "Bad.")), /at least one finding/);
+  assert.match(why(ok("notes")), /needs a one-sentence summary/);
+  assert.match(why(ok("notes", "- [hack] a.ts:1: x")), /starts with its summary/);
+  assert.match(why(ok("notes", "x".repeat(301) + "\n- [hack] y")), /summary must be at most 300/);
+  assert.match(why(ok("notes", "S.\n- [style] a.ts:1: tabs")), /kind must be one of/);
+  assert.match(why(ok("notes", "S.\n- [hack] a.ts:0: x")), /line must be a positive/);
+  assert.match(why(ok("notes", "S.\n- [hack]")), /must read/);
+  assert.match(why(ok("notes", "S.\nloose words")), /must read "- \[kind\]/);
+  assert.match(why(ok("notes", "S.\n- [hack] " + "y".repeat(401))), /at most 400/);
+  assert.match(why(ok("notes", ["S.", ...Array(11).fill("- [other] f.ts: y")].join("\n"))), /at most 10/);
   assert.deepEqual(KINDS, ["dead-code", "duplication", "hack", "missing-test", "naming", "other"]);
 });
 
-test("review text for merge.review: the summary, one line per finding, capped", () => {
-  assert.equal(reviewText({ verdict: "ok", summary: "Fine.", findings: [] }), "Fine.");
-  assert.equal(
-    reviewText({ verdict: "notes", summary: "Two notes.", findings: [{ file: "a.ts", line: 3, kind: "naming", text: "x says nothing" }, { kind: "missing-test", text: "no test for the empty case" }] }),
-    "Two notes.\n- [naming] a.ts:3: x says nothing\n- [missing-test] no test for the empty case",
-  );
-  const long = reviewText({ verdict: "notes", summary: "s", findings: Array(10).fill({ file: "f.ts", kind: "other", text: "y".repeat(400) }) });
-  assert.equal(long.length, TEXT_MAX);
-  assert.ok(long.endsWith("…"));
+test("review text as kept: the summary, one line per finding, capped with an ellipsis", () => {
+  const long = checkReviewText("notes", ["s", ...Array(10).fill(`- [other] f.ts: ${"y".repeat(400)}`)].join("\n")) as { text: string };
+  assert.equal(long.text.length, TEXT_MAX);
+  assert.ok(long.text.endsWith("…"));
+});
+
+test("the reviewer's first message names the change Sova wrote for it, says it has no shell, and gives the verdict's format", () => {
+  const o = { runId: "mr_1", projectId: "p", root: "/p", copy: "/copy", base: "b".repeat(40), commit: "a".repeat(40), branch: "feat/x", kit: ".sova/playbooks/review", change: { summary: "/run/review/change.txt", diff: "/run/review/change.diff" } };
+  const text = reviewerText(o, "master");
+  assert.ok(text.includes("/run/review/change.txt") && text.includes("/run/review/change.diff"));
+  assert.match(text, /you have no shell/);
+  assert.match(text, /- \[kind\] file:line: text/);
+  for (const kind of KINDS) assert.ok(text.includes(kind), kind);
+  assert.doesNotMatch(text, /git show|verdict\.mjs/, "nothing it would need a shell for");
 });
 
 test("the review kit is never a registered skill: not under a skills folder, not in pi's skill settings", () => {
@@ -134,11 +151,19 @@ test("the review kit is never a registered skill: not under a skills folder, not
   for (const kind of KINDS) assert.match(checklist, new RegExp(`\\[${kind}\\]`));
 });
 
-test("the merge-reviewer profile ships with Sova: no edit tools, web, workers, timers or worktrees", async () => {
+test("the merge-reviewer profile ships with Sova, read only: no shell, edit tools, web, workers, timers or worktrees", async () => {
   const raw = JSON.parse(readFileSync(join(REPO, "profiles", "system", "merge-reviewer.json"), "utf8"));
   assert.equal(profileFileError(raw), null);
   assert.equal((await findProfile({ source: "sova", id: "merge-reviewer" }, null))?.id, "merge-reviewer");
-  assert.deepEqual([...raw.remove].sort(), ["edit", "mcp", "timers", "web", "workers", "worktrees"]);
+  assert.deepEqual([...raw.remove].sort(), ["edit", "mcp", "shell", "timers", "web", "workers", "worktrees"]);
+  // What that removes: bash and background jobs with the shell, edit and write with the edit tools.
+  const gone = excludedTools(raw.remove, ["read", "bash", "edit", "write", "background_job", "grep", "find", "ls"]);
+  for (const t of ["bash", "background_job", "edit", "write"]) assert.ok(gone.includes(t), t);
+  for (const t of ["read", "grep", "find", "ls"]) assert.ok(!gone.includes(t), t);
+  // The kit asks for nothing it could only run with a shell.
+  const kit = join(REPO, ".sova", "playbooks", "review");
+  assert.equal(existsSync(join(kit, "scripts")), false, "the kit has no scripts: the reviewer can't run them");
+  assert.doesNotMatch(readFileSync(join(kit, "PLAYBOOK.md"), "utf8"), /`(node|git|pnpm|bash) /);
   assert.deepEqual(raw.grant, []);
 });
 

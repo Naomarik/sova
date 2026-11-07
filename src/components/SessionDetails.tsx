@@ -35,7 +35,6 @@ import { announce, copyText, home, toast } from "../lib/ui-state";
 import { sessionWorking } from "../lib/workers";
 import { Banner, CopyButton, Icon } from "./ui";
 import { BackgroundJobsSection } from "./BackgroundJobs";
-import { TimeSpentSection } from "./TimeSpent";
 import { sessionHref } from "./Sidebar";
 import { MoveToGroupMenu } from "./Groups";
 import { ChangesDialog } from "./ChangesViewer";
@@ -139,14 +138,11 @@ export function SessionDetails(props: {
         </div>
       </section>
 
-      {/* 2 · Time Spent. Reads on its own; its placeholder keeps Repository from jumping. */}
-      <TimeSpentSection path={props.path} labelId={id("time-spent")} />
-
-      {/* 3 · Repository. The git state of the folder the session works in, read on its own
+      {/* 2 · Repository. The git state of the folder the session works in, read on its own
           schedule: never part of the insight poll. */}
       <RepositorySection path={props.path} cwd={summary()?.cwd} now={now()} changed={props.gitChanged} labelId={id("repository")} />
 
-      {/* 4 · Worktrees. The ones this session tracks (the worktrees extension's entry on the
+      {/* 3 · Worktrees. The ones this session tracks (the worktrees extension's entry on the
           branch), read with the insight; the pane only shows them, the agent's tool changes them.
           Present from the first paint: a placeholder while the insight loads, as tall as the empty
           line (most sessions track none), then the rows or that line. Only a failed first load (the

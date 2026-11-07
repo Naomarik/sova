@@ -60,8 +60,11 @@ import { setSovaPort } from "./extensions";
 import { startExtensionKeys } from "./extension-keys";
 import { startExtensionLoader } from "./extension-loader";
 import { startUpdates } from "./updates/routes";
-import { decisions, decisionSettings, decisionsReady } from "./decide-runtime";
+import { decisions, decisionSettings, decisionsReady, redactForOutside } from "./decide-runtime";
 import { AttentionSignals } from "./attention-signals";
+import { sessionOwnMessages } from "./message-input";
+import { MessageLabeller } from "./message-labeller";
+import { messageLabelStore } from "./message-labels";
 import { configureSessionFeed, nudgeMarks, sessionFeed } from "./session-feed";
 import { startEvents } from "./events";
 import { onAttentionNotified } from "./attention-memo";
@@ -76,7 +79,6 @@ import { checkReadinessInputs, configureReadiness } from "./merge-readiness";
 import { addOwnPid, readLiveRecords } from "./live";
 import { claimRecordedChats, scrubChatProcessEnv } from "./chat-runtime/supervisor";
 import { startResourceMonitor, stopResourceMonitor } from "./resource-monitor";
-import { serverRedactor } from "./overseer-redact";
 import { serverAuthEnabled, setAuthHosts, setAuthPort, initAuthToken } from "./auth";
 
 // A server started from a chat's own tools (a hermetic server in a worktree) inherits that chat
@@ -319,10 +321,19 @@ const attentionSignals = new AttentionSignals({
   liveRecords: () => readLiveRecords({ includeOwn: true }),
   decodeWorkers: (presence) => decodeWorkers(presence),
   duties: teamDuties,
-  redact: (value) => serverRedactor().redactDeep(value),
+  redact: (value) => redactForOutside(value),
   changed: nudgeMarks,
 });
 attentionSignals.start();
+// Labelling each typed message (§app.message-labels/labelling): the same seam and privacy gate, its own switch.
+new MessageLabeller({
+  settings: decisionSettings,
+  provider: () => (decisionsReady() ? decisions() : null),
+  list: listSessions,
+  held: (path) => !!chatHandle(path),
+  read: sessionOwnMessages,
+  store: messageLabelStore,
+}).start();
 onAgentSettled((path) => attentionSignals.turnSettled(path));
 onTagsChanged(() => nudgeMarks());
 // Merge readiness (§chat.worktrees/readiness) is git and the file; its one follow-up check per

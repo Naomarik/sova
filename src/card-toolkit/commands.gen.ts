@@ -18,6 +18,7 @@ export type CommandId =
   | "session.send"
   | "session.fork"
   | "session.draft.get"
+  | "session.shell.output"
   | "session.draft.set"
   | "session.sandbox.set"
   | "session.tools.get"
@@ -94,6 +95,10 @@ export type CommandId =
   | "project.verb.merge.clear"
   | "project.verb.merge.hold"
   | "project.verb.merge.try"
+  | "project.verb.merge.restart"
+  | "project.verb.merge.live"
+  | "project.verb.merge.test"
+  | "project.verb.merge.names"
   | "project.verb.merge.rule"
   | "project.verb.merge.respond"
   | "project.verb.release.status"
@@ -164,6 +169,8 @@ export type CommandId =
   | "project.merge-queue.land-how.clear"
   | "project.merge-queue.branch-summary.retry"
   | "project.merge-queue.landing-summary"
+  | "project.merge-queue.run-logs"
+  | "project.merge-queue.run-logs.clean"
   | "overseer.attention"
   | "overseer.abilities"
   | "overseer.todo.list"
@@ -245,6 +252,8 @@ export type CommandId =
   | "chat.regenerate"
   | "chat.queue.remove"
   | "chat.reload-code"
+  | "chat.shell.list"
+  | "chat.shell.stop"
   | "chat.mode-command";
 
 /** Each command's params, as its catalogue entry declares them. */
@@ -347,6 +356,15 @@ export interface CommandParams {
     /** The session, by id or by path */
     "session"?: string;
   };
+  /** One page of a finished command's whole output (a command from shell mode), about 1 MB, from a byte offset. (only looks; needs the card's owner trusted) */
+  "session.shell.output": {
+    /** The session, by id or by path */
+    "session"?: string;
+    /** The command's transcript row id */
+    "entry": string;
+    /** The byte to start at (the previous page's `next`; default 0) */
+    "from"?: number;
+  };
   /** Replace a session's composer draft; its file is never written. (changes something; needs the card's owner trusted) */
   "session.draft.set": {
     /** The session, by id or by path */
@@ -368,7 +386,7 @@ export interface CommandParams {
     /** The session, by id or by path */
     "session"?: string;
   };
-  /** How long you have been with a session and how long its agent has worked: your time by activity, and each alignment's time on screen. (only looks; needs the card's owner trusted) */
+  /** How long you have been with a session and how long its agent has worked: your time by activity, by the message it led to, and each alignment's time on screen. (only looks; needs the card's owner trusted) */
   "session.time-spent": {
     /** The session, by id or by path */
     "session"?: string;
@@ -2668,6 +2686,298 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
+  /** The project verb merge.restart (sova-project merge.restart): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
+  "project.verb.merge.restart": {
+    /** The project's root */
+    "project"?: string;
+    /** A branch name */
+    "branch"?: string;
+    /** A checkout's path */
+    "checkout"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** A merge queue entry id */
+    "entry"?: string;
+    /** A merge run id */
+    "run"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** A note on the entry */
+    "note"?: string;
+    /** Land without its spec drafts */
+    "without-specs"?: boolean;
+    /** Land without the review step */
+    "without-review"?: boolean;
+    /** The chat the approval was given in */
+    "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
+    /** Check ids, comma-separated */
+    "checks"?: string[];
+    /** Test selectors, comma-separated */
+    "select"?: string[];
+    /** Why */
+    "why"?: string;
+    /** A verdict */
+    "verdict"?: string;
+    /** Files, comma-separated */
+    "files"?: string[];
+    /** The target's side, in plain words */
+    "ours"?: string;
+    /** The branch's side, in plain words */
+    "theirs"?: string;
+    /** The proposed resolution, in plain words */
+    "proposal"?: string;
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    "answer"?: string;
+    /** Text */
+    "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
+    "dry-run"?: boolean;
+    /** A merge thread question id */
+    "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
+  };
+  /** The project verb merge.live, as the operator (sova-project merge.live). (only looks; needs the card's owner trusted) */
+  "project.verb.merge.live": {
+    /** The project's root */
+    "project"?: string;
+    /** A branch name */
+    "branch"?: string;
+    /** A checkout's path */
+    "checkout"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** A merge queue entry id */
+    "entry"?: string;
+    /** A merge run id */
+    "run"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** A note on the entry */
+    "note"?: string;
+    /** Land without its spec drafts */
+    "without-specs"?: boolean;
+    /** Land without the review step */
+    "without-review"?: boolean;
+    /** The chat the approval was given in */
+    "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
+    /** Check ids, comma-separated */
+    "checks"?: string[];
+    /** Test selectors, comma-separated */
+    "select"?: string[];
+    /** Why */
+    "why"?: string;
+    /** A verdict */
+    "verdict"?: string;
+    /** Files, comma-separated */
+    "files"?: string[];
+    /** The target's side, in plain words */
+    "ours"?: string;
+    /** The branch's side, in plain words */
+    "theirs"?: string;
+    /** The proposed resolution, in plain words */
+    "proposal"?: string;
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    "answer"?: string;
+    /** Text */
+    "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
+    "dry-run"?: boolean;
+    /** A merge thread question id */
+    "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
+  };
+  /** The project verb merge.test (sova-project merge.test): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
+  "project.verb.merge.test": {
+    /** The project's root */
+    "project"?: string;
+    /** A branch name */
+    "branch"?: string;
+    /** A checkout's path */
+    "checkout"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** A merge queue entry id */
+    "entry"?: string;
+    /** A merge run id */
+    "run"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** A note on the entry */
+    "note"?: string;
+    /** Land without its spec drafts */
+    "without-specs"?: boolean;
+    /** Land without the review step */
+    "without-review"?: boolean;
+    /** The chat the approval was given in */
+    "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
+    /** Check ids, comma-separated */
+    "checks"?: string[];
+    /** Test selectors, comma-separated */
+    "select"?: string[];
+    /** Why */
+    "why"?: string;
+    /** A verdict */
+    "verdict"?: string;
+    /** Files, comma-separated */
+    "files"?: string[];
+    /** The target's side, in plain words */
+    "ours"?: string;
+    /** The branch's side, in plain words */
+    "theirs"?: string;
+    /** The proposed resolution, in plain words */
+    "proposal"?: string;
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    "answer"?: string;
+    /** Text */
+    "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
+    "dry-run"?: boolean;
+    /** A merge thread question id */
+    "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
+  };
+  /** The project verb merge.names (sova-project merge.names): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
+  "project.verb.merge.names": {
+    /** The project's root */
+    "project"?: string;
+    /** A branch name */
+    "branch"?: string;
+    /** A checkout's path */
+    "checkout"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** A merge queue entry id */
+    "entry"?: string;
+    /** A merge run id */
+    "run"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** A note on the entry */
+    "note"?: string;
+    /** Land without its spec drafts */
+    "without-specs"?: boolean;
+    /** Land without the review step */
+    "without-review"?: boolean;
+    /** The chat the approval was given in */
+    "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
+    /** Check ids, comma-separated */
+    "checks"?: string[];
+    /** Test selectors, comma-separated */
+    "select"?: string[];
+    /** Why */
+    "why"?: string;
+    /** A verdict */
+    "verdict"?: string;
+    /** Files, comma-separated */
+    "files"?: string[];
+    /** The target's side, in plain words */
+    "ours"?: string;
+    /** The branch's side, in plain words */
+    "theirs"?: string;
+    /** The proposed resolution, in plain words */
+    "proposal"?: string;
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    "answer"?: string;
+    /** Text */
+    "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
+    "dry-run"?: boolean;
+    /** A merge thread question id */
+    "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
+  };
   /** The project verb merge.rule (sova-project merge.rule): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.rule": {
     /** The project's root */
@@ -3611,6 +3921,18 @@ export interface CommandParams {
   };
   /** Every project's merge queue and open release in one quick read: the run checking now, the line, what waits for you, the newest landings and the release's steps. (only looks; needs the card's owner trusted) */
   "project.merge-queue.landing-summary": Record<string, never>;
+  /** How much room a project's merge queue run folders take, how many runs are packed, and what Clean Logs would free. (only looks; needs the card's owner trusted) */
+  "project.merge-queue.run-logs": {
+    /** The project's id */
+    "project": string;
+  };
+  /** Delete the logs of a project's old finished merge runs (past the newest 10; never a run still checking or one an open or sent-back entry names). Each run keeps its record, verdict and steps. Your own page only. (changes something; needs the card's owner trusted) */
+  "project.merge-queue.run-logs.clean": {
+    /** The project's id */
+    "project": string;
+    /** Confirm the deletion (needed) */
+    "confirm": boolean;
+  };
   /** What needs the user now, as the Overseer's digest has it. (only looks; needs the card's owner trusted) */
   "overseer.attention": Record<string, never>;
   /** What the Overseer can do: its built-in abilities, its limits and the commands its extensions offer it. (only looks; needs the card's owner trusted) */
@@ -4027,6 +4349,22 @@ export interface CommandParams {
     /** How long to wait for the outcome, in ms (0 to 300000; default 30000). Past it the answer is `unknown` (exit 5), never a retry */
     "wait"?: number;
   };
+  /** The commands running in a chat from shell mode: id, command (none for a `!!` one) and when each started. (only looks; needs the card's owner trusted) */
+  "chat.shell.list": {
+    /** The session, by id or by path */
+    "session"?: string;
+    /** How long to wait for the outcome, in ms (0 to 300000; default 30000). Past it the answer is `unknown` (exit 5), never a retry */
+    "wait"?: number;
+  };
+  /** Stop one command running in a chat from shell mode, as its card's Stop Command does, and wait until it has stopped. (changes something; needs the card's owner trusted) */
+  "chat.shell.stop": {
+    /** The session, by id or by path */
+    "session"?: string;
+    /** How long to wait for the outcome, in ms (0 to 300000; default 30000). Past it the answer is `unknown` (exit 5), never a retry */
+    "wait"?: number;
+    /** The command's run id (from List Commands) */
+    "command": string;
+  };
   /** Run a command of a project mode that is on in a chat, from the version the chat approved. (changes something; needs the card's owner trusted) */
   "chat.mode-command": {
     /** The session, by id or by path */
@@ -4057,6 +4395,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "session.send": "changes",
   "session.fork": "changes",
   "session.draft.get": "looks",
+  "session.shell.output": "looks",
   "session.draft.set": "changes",
   "session.sandbox.set": "changes",
   "session.tools.get": "looks",
@@ -4133,6 +4472,10 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.verb.merge.clear": "changes",
   "project.verb.merge.hold": "changes",
   "project.verb.merge.try": "changes",
+  "project.verb.merge.restart": "changes",
+  "project.verb.merge.live": "looks",
+  "project.verb.merge.test": "changes",
+  "project.verb.merge.names": "changes",
   "project.verb.merge.rule": "changes",
   "project.verb.merge.respond": "changes",
   "project.verb.release.status": "looks",
@@ -4203,6 +4546,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.merge-queue.land-how.clear": "changes",
   "project.merge-queue.branch-summary.retry": "changes",
   "project.merge-queue.landing-summary": "looks",
+  "project.merge-queue.run-logs": "looks",
+  "project.merge-queue.run-logs.clean": "changes",
   "overseer.attention": "looks",
   "overseer.abilities": "looks",
   "overseer.todo.list": "looks",
@@ -4284,5 +4629,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "chat.regenerate": "changes",
   "chat.queue.remove": "changes",
   "chat.reload-code": "changes",
+  "chat.shell.list": "looks",
+  "chat.shell.stop": "changes",
   "chat.mode-command": "changes",
 };

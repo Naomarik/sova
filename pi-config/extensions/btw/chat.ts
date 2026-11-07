@@ -6,9 +6,10 @@
  * while nobody watched).
  *
  * The chat starts from a seed (the main thread's conversation, then the thread so far), with the
- * read/bash/edit/write tools, the worker marker (so Sova keeps its session out of every list) and
- * `./child.ts`, which replaces the system prompt with the one the parent wrote to a file: the main
- * thread's prompt plus the aside instructions. The file lives in the thread's run directory (0700,
+ * read-only tools (read/grep/find/ls: it reads and answers, never runs or changes anything), the
+ * worker marker (so Sova keeps its session out of every list), the main chat's sandbox while that is
+ * on (`btwSandboxLaunch`) and `./child.ts`, which replaces the system prompt with the one the parent
+ * wrote to a file: the main thread's prompt plus the aside instructions. The file lives in the thread's run directory (0700,
  * file 0600) and goes when the chat is stopped. Node built-ins and the host's types only.
  */
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -18,12 +19,39 @@ import { WORKER_MARK_EXTENSION } from "../subagents/fork/background.ts";
 import { claudeCodeProviderLoad } from "../subagents/runner.ts";
 import { lastExchange as fileExchange, RunWatch, type FeedEvent } from "../subagents/run-watch.ts";
 import type { WorkerHost, WorkerRef, WorkerState } from "../subagents/worker-host.ts";
+import type { SandboxStateEvent } from "../sandbox/state.ts";
 import { BTW_PROMPT_ENV } from "./child.ts";
 
 /** The btw chat's own extension, loaded last. */
 export const BTW_CHILD_EXTENSION = fileURLToPath(new URL("./child.ts", import.meta.url));
-/** The side thread's tools: pi's default coding set. */
-export const BTW_TOOLS = ["read", "bash", "edit", "write"];
+/** The side thread's tools: read-only. It reads and answers; it never runs a command or changes a file. */
+export const BTW_TOOLS = ["read", "grep", "find", "ls"];
+
+/** How a btw chat starts inside the main chat's sandbox: the sandbox extension and its flags. */
+export interface BtwSandbox {
+	extensionPath: string;
+	flags: Record<string, string>;
+}
+
+/**
+ * The main chat's sandbox for its side thread, through the one call a worker's start goes through
+ * (`workerLaunch`): undefined while the sandbox is not On (the thread then has nothing to confine: no
+ * tool writes or runs), its pi launch while On. Fails closed: On with no launch, a refusal or any
+ * other answer throws, and the thread doesn't start.
+ */
+export function btwSandboxLaunch(state: SandboxStateEvent | undefined, cwd: string, owner: string): BtwSandbox | undefined {
+	if (!state?.on) return undefined;
+	if (typeof state.workerLaunch !== "function") throw new Error("/btw: this chat's sandbox is on but gave no launch, so the side thread can't start inside it.");
+	const launch = state.workerLaunch({ cwd, backend: "pi", owner });
+	if (launch.kind === "refused") throw new Error(`/btw: the side thread can't start inside this chat's sandbox: ${launch.reason}`);
+	if (launch.kind !== "pi") throw new Error("/btw: this chat's sandbox gave the side thread no launch, so it can't start inside it.");
+	return { extensionPath: launch.extensionPath, flags: launch.flags };
+}
+
+/** The sandbox's owner id of a btw chat (its tmp and proxy names): `[A-Za-z0-9._-]` only. */
+export function btwSandboxOwner(sessionId: string, workerId: string): string {
+	return `${sessionId.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 112)}-${workerId}`;
+}
 
 export type BtwChatMode = "contextual" | "tangent" | "summarize";
 
@@ -75,6 +103,8 @@ export interface BtwChatStart {
 	root: string;
 	/** null = pi's default set. */
 	tools: string[];
+	/** The main chat's sandbox while it is On (`btwSandboxLaunch`); absent: unconfined. */
+	sandbox?: BtwSandbox;
 }
 
 /** The last user question and assistant answer of a btw chat's session file, with the answer's entry id. */
@@ -125,7 +155,7 @@ export class BtwChat {
 		mkdirSync(runDir, { recursive: true, mode: 0o700 });
 		const promptFile = join(runDir, "system-prompt.md");
 		writeFileSync(promptFile, start.systemPrompt, { mode: 0o600 });
-		const load = claudeCodeProviderLoad(start.model, [WORKER_MARK_EXTENSION], undefined);
+		const load = claudeCodeProviderLoad(start.model, [WORKER_MARK_EXTENSION, ...(start.sandbox ? [start.sandbox.extensionPath] : [])], start.sandbox ? { ...start.sandbox.flags } : undefined);
 		let ref: WorkerRef;
 		try {
 			ref = await host.start({

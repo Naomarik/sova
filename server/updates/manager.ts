@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { UpdateCheck, UpdateJob, UpdatesRunning, UpdatesSettings, UpdatesState } from "../../shared/protocol";
 import { branchMismatch, checkForUpdate, describeRunning, lsRemoteArgs, offersUpgrade, parseLsRemote, sourceRef } from "./check";
@@ -355,12 +355,12 @@ export class UpdatesManager {
       plan.installer = { script: path, launcher: info.launcher!, binDir: binDirOf(info.launcher!), installPort: info.installPort, noExtensions: info.noExtensions, noAppEntry: info.noAppEntry, serverLog: this.deps.serverLog };
     }
     const job: UpdateJob = { id, kind: info.kind, from, to: plan.to, auto: plan.auto, startedAt: plan.startedAt, step: "starting", state: "running", detail: null, logPath: join(jobDir, "log.txt"), endedAt: null };
-    writeFileSync(join(jobDir, "plan.json"), `${JSON.stringify(plan, null, 2)}\n`);
-    writeFileSync(join(jobDir, "state.json"), `${JSON.stringify(job, null, 2)}\n`);
+    writeWhole(join(jobDir, "plan.json"), `${JSON.stringify(plan, null, 2)}\n`);
+    writeWhole(join(jobDir, "state.json"), `${JSON.stringify(job, null, 2)}\n`);
     const why = await this.deps.launch(plan);
     if (why) {
       const failed: UpdateJob = { ...job, state: "failed", step: "done", detail: `The upgrade couldn't start: ${why}. Nothing changed.`, endedAt: new Date(this.deps.now()).toISOString() };
-      writeFileSync(join(jobDir, "state.json"), `${JSON.stringify(failed, null, 2)}\n`);
+      writeWhole(join(jobDir, "state.json"), `${JSON.stringify(failed, null, 2)}\n`);
       throw new UpdatesRefusal(failed.detail!);
     }
     this.deps.log(`[updates] ${plan.auto ? "automatic " : ""}upgrade ${id} started: ${from.label} → ${target.label}`);
@@ -445,3 +445,14 @@ export class UpdatesManager {
   }
 }
 
+/** Write `text` to `file` whole or not at all: a temp file beside it, then a rename over it. */
+function writeWhole(file: string, text: string, mode?: number): void {
+  const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    writeFileSync(tmp, text, mode === undefined ? {} : { mode });
+    renameSync(tmp, file);
+  } catch (err) {
+    try { rmSync(tmp, { force: true }); } catch { /* gone */ }
+    throw err;
+  }
+}

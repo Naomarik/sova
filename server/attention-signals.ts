@@ -4,7 +4,7 @@ import { isLinkMessage } from "../shared/link-message";
 import { isMergeQueueBatch, isTopicBatch } from "../shared/topic-message";
 import { redactTourToolArgs } from "../shared/tour";
 import { DecisionError, type DecisionProvider, type DecisionResult, type JsonObject, type Question } from "./decide";
-import { maySend, terminalSession } from "./decide-settings";
+import { maySend, terminalSession, type DecisionFeature } from "./decide-settings";
 import type { RawLiveRecord } from "./live";
 import { readSignals, signalsFile, type StoredStall, updateSignals } from "./signals-store";
 import { pruneTurnOutcomes, recordTurnOutcome } from "./turn-outcomes";
@@ -338,6 +338,7 @@ export function exclusionReason(
   settings: DecisionSettings,
   held: boolean,
   home?: string,
+  feature: DecisionFeature = "attention",
 ): string | null {
   if (s.overseer) return "overseer";
   if (s.projectOverseer) return "project overseer";
@@ -347,7 +348,7 @@ export function exclusionReason(
   if (s.workerSession) return "worker session";
   if (s.queueChat) return "merge queue chat";
   if (s.archived) return "archived";
-  const gate = maySend(settings, "attention", { cwd: s.cwd, terminal: terminalSession(s, held) }, home);
+  const gate = maySend(settings, feature, { cwd: s.cwd, terminal: terminalSession(s, held) }, home);
   return gate.ok ? null : gate.reason;
 }
 

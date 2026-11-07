@@ -19,6 +19,11 @@
       "why": "the composer changed: drive its browser walkthroughs"
     },
     {
+      "paths": ["src/lib/type-anywhere*.ts", "src/commands/keys*.ts", "src/components/Composer*.tsx", "src/components/SessionPane.tsx", "scripts/e2e/type-anywhere.mjs"],
+      "pick": { "id": "e2e", "select": ["scripts/e2e/type-anywhere.mjs"] },
+      "why": "the app-wide keys, the composer or Session details changed: drive Type anywhere in a browser"
+    },
+    {
       "paths": ["src/components/Transcript*.tsx", "src/lib/transcript*.ts", "src/lib/follow*.ts"],
       "pick": { "id": "e2e", "select": ["scripts/e2e/transcript-follow.mjs", "scripts/e2e/transcript-drift.mjs", "scripts/e2e/jump-settle.mjs"] },
       "why": "the transcript view changed: drive its scrolling walkthroughs"

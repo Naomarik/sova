@@ -132,7 +132,7 @@ also update Y" list live in its guide: read the guide of every area your task to
   notes each landing ("changes server code; restart Sova to pick it up"), picks extra tests by what
   changed, judges conflicts, diagnoses failures and checks each fix; it never moves master itself,
   and when it isn't running a fix waits for it rather than landing unchecked.
-- **Specs land with the branch.** A chat writes drafts and one verification note per promise; drafts
+- **Specs land with the branch.** A chat with spec on writes drafts and one verification note per promise; drafts
   that don't fit hold the branch (Landing specs) and Sova tells the chat, as a merge queue request,
   what to fix; after Land, a fix that only makes them fit lands with no new Land. If the chat
   answers Can't, the merge thread may try another way once, then it waits for the user, who may
@@ -218,12 +218,11 @@ claim a feature.
 
 - Drafts and reviews are local only (`.sova/spec/.gitignore`); commit by explicit path, as
   `.sova/spec/README.md` shows, never `git add -A`.
-- **Before and while a task changes behavior, follow the spec discipline.** If your system prompt
-  already includes the `# Minor mode: spec` block, follow it without rereading; otherwise read
-  `pi-config/extensions/mode/spec-mode.md`, the same text, and follow it. Before your first edit that
-  changes behavior, read `pi-config/extensions/spec/WRITING.md`, the writing procedure (drafts,
-  agreeing, evidence, promoting), unless a census note or an alignment's go-ahead already handed it to
-  you. Both apply in Sova whether or not that mode is on; don't turn any mode on. Commands are in
+- **When your system prompt has the `# Minor mode: spec` block, follow the spec discipline, before and
+  while a task changes behavior.** Before your first edit that changes behavior, read
+  `pi-config/extensions/spec/WRITING.md`, the writing procedure (drafts, agreeing, evidence, promoting),
+  unless a census note or an alignment's go-ahead already handed it to you. Without that block the mode
+  is off: the chat writes no drafts and no notes; don't turn any mode on. Commands are in
   `.sova/spec/USAGE.md`.
 - A change to the spec tools themselves: read [agents/modes/spec/overview.md](agents/modes/spec/overview.md).
 - Before planning anything that changes what a Claude Code chat's model sees or which tools it has,

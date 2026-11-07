@@ -751,7 +751,8 @@ user row.
   computer's default mode (`mode.json`, the default every new session starts from, read when the
   session starts), with no subagent profile picked, so it runs on this computer's default profile.
   That covers the operator's Start Coding Session and New Coding Session, New Session's Project tab
-  (§app/new-session-dialog), an Overseer's start that names none, and a build a gap's statechart
+  (§app/new-session-dialog), a Build from a conversation's draft (§app.requirements/draft-approval), an
+  Overseer's start that names none, and a build a gap's statechart
   starts by itself with `codingStart` On (§app.project-overseer/drive), which also gets the project's coding model,
   as Start Coding Session does, before its first prompt. The mode is applied, and written into the
   session file as its `mode` entry (§chat/mode-menu), before the first prompt, even when it equals
@@ -761,14 +762,15 @@ user row.
   page's error) says "Started, but not prompted: its mode could not be set." New Coding Session
   sends no prompt anyway; its page error says "Started, but its mode could not be set. Set it from
   the chat's mode menu before you send." Neither has a mode picker; the chat's own mode menu can
-  switch it afterwards, like any chat, except that spec stays on.
-- **Spec is always on.** Every project coding session runs with the `spec` minor mode, in every
-  project, whatever this computer's default says: a start adds it to the default's minor modes,
-  and nothing turns it off. An Overseer's `minor_modes` that leave `spec` out (on a start or on
-  `sova_send`) are refused before anything else, as an unknown name is: "Spec is always on for
-  coding sessions; it can't be turned off. Name spec among minor_modes." The web mode menu's
-  switch of a project coding session that leaves `spec` out is refused (409) with "Spec is always
-  on for coding sessions; it can't be turned off." A verb playbook's run keeps it too.
+  switch it afterwards, like any chat.
+- **Spec is a minor mode like the others.** A project coding session has the `spec` minor mode only
+  when this computer's saved default, an Overseer's `minor_modes` or someone's switch in that chat
+  puts it on; a start adds nothing. A computer that never saved a default starts its coding sessions
+  without spec, the same as any other new chat there. The chat's mode menu, a typed `/mode` and
+  either Overseer can turn spec on or off in a running coding session, and none of them is refused
+  for it. This holds in every project, an organization's and Sova's own included: the composer offers
+  what it does in any chat, with no row hidden, and a chat with spec off writes no drafts and no
+  notes. Its workers follow it (§chat.mode-menu/workers).
 - **What the page says.** The project page's Settings tab keeps a read-only "Coding sessions'
   mode" line beside the coding sessions' model and thinking, naming what a session started now
   gets and how to change it: "Coding sessions start in {mode}, with the {profile} subagent profile:
@@ -782,8 +784,8 @@ user row.
   `mode` (`normal` or `delegate`), `minor_modes` (the whole set on: any of `align`, `spec`, `vis`,
   never `memory` (§chat.memory/where); `[]` turns them all off) and `subagent_profile` (an id in this computer's subagent
   profiles, or `off`; the project overseer's `sova_list_subagent_profiles` lists them). There is no
-  ceiling but spec (above) and Create, which only a chat picks for itself
-  (§chat.create-mode/per-chat-only): any other mode, any minor modes with `spec` among them and any
+  ceiling but Create, which only a chat picks for itself
+  (§chat.create-mode/per-chat-only): any other mode, any minor modes and any
   profile are taken. On a start, what the call names
   replaces that part of this computer's default and the rest is the default's, except that a start
   without `already_agreed` also gets align on (§app.project-overseer/confirm-brief); a named profile is
@@ -792,8 +794,8 @@ user row.
   profile: {x}. sova_list_subagent_profiles lists them." Each refusal happens before anything
   else: no session is created, nothing is sent, and no cap or counter is taken, attended or not.
   The reply names the mode and the subagent profile the session started with ("…, mode delegate ·
-  visuals, subagent profile Big team."). Both prompts say Delegate suits large, multi-part work,
-  and that spec is always on. Both starts also take `already_agreed` (§app.project-overseer/confirm-brief).
+  visuals, subagent profile Big team."). Both prompts say Delegate suits large, multi-part work.
+  Both starts also take `already_agreed` (§app.project-overseer/confirm-brief).
 - **`sova_send` with a mode** switches only what it names (the session keeps the rest of its own
   mode and its profile), pins the mode and picks a named profile for that session, then sends the
   text. Mid-turn, the change applies from the session's next turn, and the result says so. The
@@ -818,7 +820,8 @@ user row.
   way, in its own words: "{title} is waiting on the user's answers to its alignment questions. Tell
   the user; never answer them. Nothing was sent."
 - **A verb playbook's run** starts with align on beside this computer's default mode, set by Sova
-  (§app.project-runtime/onboard), because the operator answers its questions.
+  (§app.project-runtime/onboard), because the operator answers its questions. Align is all it adds:
+  the run has spec only when that default does.
 - `strict` is never set or offered; a session keeps the strict flag it started with.
 - A gathering session loads no extensions, so it has no mode; what it can do is the project's
   gathering abilities (§app.baton/abilities).
@@ -833,7 +836,7 @@ that they want this built; both prompts say so, and say never to set it on the O
 judgement.
 
 - **Without it**, Sova turns align on in the session's mode beside what the Overseer named, whatever
-  its `minor_modes` say (spec stays on; align is never added twice), so the operator's check-in
+  its `minor_modes` say (align is never added twice), so the operator's check-in
   never rests on the Overseer's choice of minor modes; the start's reply names that mode. The
   session's first turn opens one small alignment before any plan, investigation or edit: one
   question, topic "What to build", asking "Is this what you want built?", its context the brief
@@ -1023,8 +1026,22 @@ judgement.
   branch gone, git's own failure) is also a reason for the overseer to look
   (§app.project-overseer/watch-loop), so it can tell the session to commit or fix it; a refusal
   about the project root's own checkout, or a busy session, is the operator's and is not.
-- **Remove Worktree** removes the worktree folder (git's own `worktree remove`; one with
-  uncommitted changes is refused, naming them) and deletes the branch only when it is merged; an
+- **Remove Worktree** removes the worktree folder (git's own `worktree remove`) and deletes the
+  branch only when it is merged. Before its running copy is torn down, it runs the same check as
+  Clean Up Merged (§chat.worktrees/leftovers), whoever sets it off (the page's button, or the build's
+  remove-worktree effect, the Project Overseer's included): a worktree holding uncommitted or
+  untracked files, ignored files that can't be rebuilt or a nested repository stays, as does one
+  whose files can't be read; nothing is torn down or removed, and the refusal gives the reason
+  (uncommitted files only, in today's words, otherwise "{reason} Nothing was removed."). On the
+  project page the Remove confirmation asks first (`POST /api/projects/:pid/overseer/worktrees/remove
+  {sessionId, dryRun: true}` answers the reason and the listing): a held worktree shows its reason
+  in place of the "folder goes away" sentence, and, when what it holds is the reason, offers `Remove
+  Anyway` with the cleanup dialog's listing and buttons. Confirming (the same route with `{sessionId,
+  digest}`, your own click only; both together is a 400) re-reads the worktree and removes it with one `--force` only when the listing is
+  unchanged and every other check still passes, tearing its running copy down only then; otherwise
+  nothing is deleted: "Changed since the list, nothing was deleted: {reason}". A worktree cut for a
+  session that then fails to start is removed the same way, so it stays if it holds anything. The
+  branch rule is unchanged; an
   unmerged branch keeps its commits, and Merge Branch stays on its row. It is refused while the
   session is working or has workers running. When the worktree has a running copy of the project
   (an instance, §app.project-services/instances), Remove Worktree first tears that copy down

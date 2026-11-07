@@ -15,7 +15,7 @@ import type {
 } from "../shared/protocol";
 import type { PeerStateView } from "../shared/mesh-access";
 import { hostState, WIRE_AREAS, type WireAreas } from "../shared/wire-areas";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { fixedNameRefusal } from "../shared/fixed-names";
 import { relativeTime } from "../pi-config/extensions/stamp/format.ts";
@@ -62,8 +62,7 @@ import { approvalRefusal } from "./profile-trust";
 import { singletonHolder } from "./session-profile";
 import { keyOf, singletonRunningText, titleCase } from "../shared/profiles";
 import { MEMORY_CODING_REFUSAL } from "../shared/memory";
-import { alignDropRefusal, codingSpecRefusal, SPEC_ALWAYS_ON } from "./project-coding-mode";
-import { projectCodingIds } from "./project-sessions";
+import { alignDropRefusal } from "./project-coding-mode";
 import { listProjects } from "./projects/spaces";
 import { copyApproval, copyItem, leftoverItem, liveLeftoverHost, nameOr, realCopyRowHost, starterWorking } from "./overseer-copies";
 import type { ClickChoice } from "../shared/overseer-card";
@@ -382,10 +381,22 @@ export class TurnLimits {
     if (!this.file) return;
     try {
       mkdirSync(dirname(this.file), { recursive: true });
-      writeFileSync(this.file, `${JSON.stringify({ version: 1, used: this.used })}\n`);
+      writeWhole(this.file, `${JSON.stringify({ version: 1, used: this.used })}\n`);
     } catch (err) {
       console.warn("[overseer] turn counters not saved:", err instanceof Error ? err.message : String(err));
     }
+  }
+}
+
+/** Write `text` to `file` whole or not at all: a temp file beside it, then a rename over it. */
+function writeWhole(file: string, text: string, mode?: number): void {
+  const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    writeFileSync(tmp, text, mode === undefined ? {} : { mode });
+    renameSync(tmp, file);
+  } catch (err) {
+    try { rmSync(tmp, { force: true }); } catch { /* gone */ }
+    throw err;
   }
 }
 
@@ -1600,8 +1611,6 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         // A session waiting on the user's alignment answers keeps align on (§app.project-overseer/coding-mode): checked first.
         const drop = alignDropRefusal(!!s.align, p.minor_modes);
         if (drop) throw new Refusal(`${drop} Nothing was changed.`);
-        // A project's coding session keeps spec on (§app.project-overseer/coding-mode).
-        if (Array.isArray(p.minor_modes) && codingSpecRefusal(p.minor_modes) && projectCodingIds().has(s.id)) throw new Refusal(`${SPEC_ALWAYS_ON} Nothing was changed.`);
         if (p.subagent_profile !== undefined) await checkSubagentProfile(p.subagent_profile);
         // The sandbox is checked before anything changes: lowering it needs this turn to be the user's
         // click on a card that lists this session (§app.overseer/tools), never an approval for later.

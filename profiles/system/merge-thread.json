@@ -2,12 +2,13 @@
   "id": "merge-thread",
   "label": "Merge thread",
   "icon": "branch",
-  "description": "The merge queue's thread, started by Sova: notes on landings, extra checks by blast radius, conflict judgements, failure explanations. Acts only through the merge verbs. No web, no workers.",
+  "description": "The merge queue's thread, started by Sova: notes on landings, extra checks by blast radius, conflict judgements, failure explanations. Acts only through the merge verbs, in a sandbox that writes only in its own temp folder. No web, no workers, no worktrees.",
   "remove": [
     "mcp",
     "web",
     "workers",
-    "timers"
+    "timers",
+    "worktrees"
   ],
   "grant": [],
   "singleton": false,

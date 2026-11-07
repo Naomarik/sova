@@ -1,4 +1,5 @@
 import { ClaudeLoginCard } from "./ClaudeLoginCard";
+import { RemoveAnywayListing } from "./RemoveAnywayListing";
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, onMount, Show } from "solid-js";
 import { TODO_TEXT_MAX, type IdeaRecord, type OverseerAction, type OverseerTodosInfo } from "../../shared/protocol";
 import {
@@ -17,7 +18,7 @@ import {
   type ProjectOverseerCaps,
 } from "../../shared/project-overseer";
 import { type CodingStartResult, type ItemCodeInput, type ItemCodeResult, type ItemSendResult, type CodingSession, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch, type ProjectWorktrees } from "../../shared/project-overseer";
-import type { SessionSummary } from "../../shared/protocol";
+import type { CodingWorktreeHold, SessionSummary } from "../../shared/protocol";
 import {
   addProjectOverseerIdea,
   addProjectOverseerTodo,
@@ -34,6 +35,8 @@ import {
   projectOverseerIdeas,
   projectOverseerTodos,
   removeCodingWorktree,
+  removeCodingWorktreeAnyway,
+  codingWorktreeHold,
   runProjectOverseer,
   mergeCodingWorktree,
   startProjectCoding,
@@ -1043,6 +1046,14 @@ function CodingSessions(props: {
         <ForKey each={rows()} by={(r) => r.sessionId}>
           {(row) => {
             const armed = () => confirming() === row().sessionId;
+            // Remove Worktree asks first what the folder holds that git can't bring back (§chat.worktrees/leftovers):
+            // a held folder shows why, and Remove Anyway's exact listing when that is the only reason.
+            const [hold] = createResource(
+              () => (armed() ? row().sessionId : null),
+              (sid) => codingWorktreeHold(po().projectId(), sid).catch((x): CodingWorktreeHold => ({ reason: errText(x) })),
+            );
+            const [listing, setListing] = createSignal(false);
+            createEffect(on(armed, (a) => !a && setListing(false)));
             const folder = () => {
               const w = row().worktree;
               return w ? tildePath(w, home()) : "";
@@ -1155,29 +1166,64 @@ function CodingSessions(props: {
                 <Show when={errors()[row().sessionId]}>{(e) => <p class="field-error project-worktree-note">{e()}</p>}</Show>
                 <Show when={armed() && facts() && po().worktrees.fresh()}>
                   <div class="person-confirm project-worktree-note" role="group" aria-label="Remove worktree">
-                    <p class="orgs-line">
+                    <Show when={listing() && hold()?.removeAnyway} fallback={
+                      <Show when={hold()?.reason} fallback={
+                        <p class="orgs-line">
+                        <Show
+                          when={row().merged}
+                          fallback={
+                            <>
+                              The folder <span class="orgs-mono">{folder()}</span> goes away. The branch <span class="orgs-mono">{row().branch}</span> keeps its commits, and the session and its transcript stay.
+                            </>
+                          }
+                        >
+                          The folder <span class="orgs-mono">{folder()}</span> and the merged branch <span class="orgs-mono">{row().branch}</span> go away. The session and its transcript stay.
+                        </Show>
+                      </p>
+                      }>
+                        {(r) => <p class="orgs-line">{r()}</p>}
+                      </Show>
+                    }>
+                      {(a) => <RemoveAnywayListing listing={a()} home={home()} />}
+                    </Show>
+                    <div class="button-row">
                       <Show
-                        when={row().merged}
+                        when={listing() && hold()?.removeAnyway}
                         fallback={
-                          <>
-                            The folder <span class="orgs-mono">{folder()}</span> goes away. The branch <span class="orgs-mono">{row().branch}</span> keeps its commits, and the session and its transcript stay.
-                          </>
+                          <Show
+                            when={!hold()?.reason}
+                            fallback={
+                              <Show when={hold()?.removeAnyway}>
+                                <button type="button" class="button button-sm button-destructive" onClick={() => setListing(true)}>
+                                  Remove Anyway
+                                </button>
+                              </Show>
+                            }
+                          >
+                            <button
+                              type="button"
+                              class="button button-sm button-destructive"
+                              aria-disabled={working() || hold.loading ? "true" : undefined}
+                              onClick={() => !hold.loading && void act(row(), () => removeCodingWorktree(po().projectId(), row().sessionId), "Worktree removed.")}
+                            >
+                              Remove Worktree
+                            </button>
+                          </Show>
                         }
                       >
-                        The folder <span class="orgs-mono">{folder()}</span> and the merged branch <span class="orgs-mono">{row().branch}</span> go away. The session and its transcript stay.
+                        {(a) => (
+                          <button
+                            type="button"
+                            class="button button-sm button-destructive"
+                            aria-disabled={working() ? "true" : undefined}
+                            onClick={() => void act(row(), () => removeCodingWorktreeAnyway(po().projectId(), row().sessionId, a().digest), "Worktree removed.")}
+                          >
+                            Delete and Remove Worktree
+                          </button>
+                        )}
                       </Show>
-                    </p>
-                    <div class="button-row">
-                      <button
-                        type="button"
-                        class="button button-sm button-destructive"
-                        aria-disabled={working() ? "true" : undefined}
-                        onClick={() => void act(row(), () => removeCodingWorktree(po().projectId(), row().sessionId), "Worktree removed.")}
-                      >
-                        Remove Worktree
-                      </button>
-                      <button type="button" class="button button-sm button-ghost" onClick={() => setConfirming(null)}>
-                        Cancel
+                      <button type="button" class="button button-sm button-ghost" onClick={() => (listing() ? setListing(false) : setConfirming(null))}>
+                        {listing() ? "Back" : "Cancel"}
                       </button>
                     </div>
                   </div>

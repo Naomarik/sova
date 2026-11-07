@@ -3,17 +3,18 @@ import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync } from "node:fs";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type ChatSpecialKind, type RunStartAnswer, type ServerToolCall, type ServerToolDecl, type ServerToolOutcome, type SpecialSpec, unsentRefusal, type WorkerHost, type WorkerSpec } from "../shared/chat-runtime";
+import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type ChatSpecialKind, type RunStartAnswer, type ServerToolCall, type ServerToolDecl, type ServerToolOutcome, type SpecialSpec, SHELL_CLOSING_TEXT, unsentRefusal, type WorkerHost, type WorkerSpec } from "../shared/chat-runtime";
 import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORKER_HOST_EVENT, type WorkerHostAnnouncement } from "../pi-config/extensions/subagents/worker-host.ts";
 import { prepareOwnerArea } from "../shared/decisions";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
-import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, ProjectModeApproval, ProjectModeApprovalNeeded, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
+import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, ProjectModeApproval, ProjectModeApprovalNeeded, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, ShellRefusal, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 import { isLinkMessage, parseLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
+import { recordPress, recordProgram } from "./message-labels";
 import { inputSourceOf, type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
 import { decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
@@ -31,7 +32,7 @@ import { applySandbox, onSandboxAppend, sandboxInfo, sandboxMessage, type Sandbo
 import type { SandboxState } from "../pi-config/extensions/sandbox/state.ts";
 import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick, loginName } from "./claude-login-state";
 import { rowsOf, rowsOfEntry } from "./transcript";
-import { onWire, onWire1, withRows, type ReplyLookup } from "./wire-rows";
+import { isShellMessage, onWire, onWire1, rowFor, withRows, type ReplyLookup } from "./wire-rows";
 import { perfRecordOf, ReplyTimer, type ReplyOutcome } from "./reply-timing";
 import { appendPerfRecord, replyTimingOf, type PerfKind } from "./perf-record";
 import { replyTimingsOf } from "./reply-facts";
@@ -43,6 +44,7 @@ import { branchOf, historyOf, lineHeader, readPi, storedAsString } from "./harne
 import { stateView } from "./harness/state-view";
 import { LiveTail } from "./chat-runtime/live-tail";
 import { takeWriterLock, type WriterLock, WriterLockHeld } from "./chat-runtime/writer-lock";
+import { sovaNamedKind } from "../shared/fixed-names";
 import { extensionFlagValues, getModelRuntime, openPiSession, type OpenFlags, type OpenRead, type PiBuild, type PiModelRuntime, warmClaudeCodeProvider as warmPiProvider } from "./harness/pi/open";
 import type { PiExtensionAPI, PiLoaderOptions, PiToolDefinition } from "./harness/pi/extension-types";
 import { PiChatHost } from "./harness/pi/host";
@@ -52,7 +54,8 @@ import { modesEntries, workerModePaths } from "./harness/pi/own-code";
 import { modesBridgeExtension, type ModesHandle } from "./harness/pi/modes";
 import { isAlreadyProcessing } from "./harness/pi/session";
 import { isCompactionInProgress } from "./harness/pi/history-ops";
-import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MCP_NOTE, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
+import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MCP_NOTE, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SHELL_CLOSED, SHELL_RUN, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
+import { ChatShell } from "./chat-shell";
 import { piPrepare, toolCtx, toPiTool } from "./harness/pi/tools";
 import { forgetSpecial, specialLoadout, specialWriter } from "./chat-special";
 import { cutTail, helloAfterHave, type HistoryPart, pullFields } from "./tail-hello";
@@ -67,6 +70,7 @@ import { SHELL_GUARD_FACTORY } from "./shell-guard-extension";
 import { forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache.ts";
 import { VIS_CHECK_TOOL, visCheckExtension, type VisCheckHost } from "./vis-check";
 import { MEMORY_COMPACTION_REFUSAL, memoryExtension, type MemoryHost } from "./harness/pi/memory";
+import { shellModelExtension } from "./harness/pi/shell";
 import { deeperContextExtension } from "./harness/pi/deeper-context";
 import { backgroundJobsExtension } from "./harness/pi/background-jobs";
 import { mcpExtension } from "./harness/pi/mcp";
@@ -102,8 +106,8 @@ import { PROJECT_MODE_PREFIX, type ProjectModeRef } from "../shared/project-mode
 import { overseerMemoryOf, type OverseerMemoryInForce, parseOverseerMemory, saveDefaultMemoryType } from "./memory/settings";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { projectEngine } from "./project-services/routes";
-import { projectVerbsExtension, sessionInstanceNote } from "./project-services/tools";
-import { servedToolsExtension, servedVisToolsExtension } from "./served-tools";
+import { projectVerbsExtension, projectVerbsOffered, sessionInstanceNote } from "./project-services/tools";
+import { offeredToolExtension, servedToolsExtension, servedVisToolsExtension } from "./served-tools";
 import { specCodingTool } from "./spec-coding-tool";
 import { BACKGROUND_JOB_TOOL } from "./background-jobs-request";
 import { JOB_CARDS_ENV } from "./background-jobs";
@@ -111,7 +115,7 @@ import { JOB_CARDS_ENV } from "./background-jobs";
 const JOB_CARDS_EXTENSION = fileURLToPath(new URL("../pi-config/extensions/wake-nudge.ts", import.meta.url));
 import { TOUR_TOOLS } from "../shared/tour";
 import { tourTools } from "./tours/tools";
-import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
+import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, searchToolsFor, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { QUEUE_OPEN_TOOL, queuePushExtension, topicStore } from "./topics";
@@ -248,6 +252,9 @@ export const markRunResuming = (path: string): void => runRecorder.markResuming(
  *   what it began with across every later start. Without a record (a caller with no chat), the review
  *   switch as saved now, and no Visuals flag (the extension then reads mode-align.json itself).
  */
+/** The merge thread's sandbox flags: On, read-only level, the cwd never writable. */
+export const MERGE_THREAD_FLAGS = { sandboxOn: true, sandboxReadOnly: true, cwdNotWritable: true } as const satisfies Partial<OpenFlags>;
+
 function sessionFlags(cwd: string, outline = true, linkTools: "member" | "legacy" = "legacy", launch?: AlignLaunchData): OpenFlags {
   const flags: OpenFlags = { outline };
   const target = targetOfCwd(cwd);
@@ -555,7 +562,7 @@ export interface CutHello {
 
 /** `history`: false when only `?tail=rest` clients get it, who are never pushed any. */
 export function cutHello(hello: Extract<ChatServerMessage, { type: "hello" }>, history = true): CutHello {
-  const cut = cutTail(hello.items, { history });
+  const cut = cutTail(hello.items, { history, v1: (it) => rowFor(it, 1) });
   return { hello: cut.older > 0 ? { ...hello, items: cut.items, older: cut.older } : hello, history: cut.history, all: hello.items };
 }
 
@@ -582,7 +589,7 @@ function sendHistory(cut: CutHello | null, clients: readonly ChatClient[], still
     const parts = c.wire === 2 ? (cut.history2 ??= cut.history.map((p) => historyOnWire2(p, replies))) : cut.history;
     for (const part of parts) {
       if (c.sendRaw) c.sendRaw(part.raw);
-      else c.send(part.msg);
+      else c.send(c.wire === 2 ? part.msg : withRows(part.msg, 1));
     }
   }
 }
@@ -817,6 +824,16 @@ export function modesStamped(host: WorkerHost, sovaModes: boolean): WorkerHost {
 /** The coding agent's `spec` tool, run in the chat's own process: it reads only. */
 const specToolExtension = () => servedToolsExtension("sova-spec", [specCodingTool()]);
 
+/** project_verbs and its instance note, in a chat that is offered it (§app.project-services/tool-offered): served when the server declared it, else in this process. */
+const projectVerbsLoad = (path: string) =>
+  offeredToolExtension(
+    servedDecls
+      ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
+      : projectVerbsExtension(projectEngine),
+    "project_verbs",
+    projectVerbsOffered,
+  );
+
 /**
  * A worker chat's own inline extensions: every one, hidden chats included, gets the macOS kill guard
  * (server/shell-guard.ts); a worker or team member (never a hidden chat) also gets project_verbs and its
@@ -837,9 +854,7 @@ export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtin
     ...(mcp?.servers.length
       ? [mcpExtension({ list: async () => mcp, label: () => w.parent?.workerId ?? "A worker", tellParent: (note) => (chatHosts.mcpTell ?? mcpTellHere)(w.parent?.path ?? "", note) })]
       : []),
-    servedDecls
-      ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
-      : projectVerbsExtension(projectEngine),
+    projectVerbsLoad(path),
     // background_job: a job under the worker's own confinement, run by the server (§app.background-jobs/request).
     ...(servedDecls && (!w.builtins || w.builtins.includes("bash")) ? [servedToolsExtension("sova-background-job", servedSpecs(path, (n) => n === BACKGROUND_JOB_TOOL))] : []),
     // spec: the read-only spec look-up, last of all so nothing else moves. By its duty, never by its built-ins:
@@ -866,6 +881,14 @@ export function workerBuild(w: WorkerSpec, path: string): PiBuild {
     },
     flags: () => ({ extra: w.flags }),
     exclude: () => (w.builtins === null ? [] : WORKER_BUILTIN_TOOLS.filter((t) => !w.builtins!.includes(t))),
+    // Its listed built-ins on: excluding the rest only filters pi's default set (read, bash, edit, write), so a
+    // listed grep, find or ls would otherwise never be active.
+    built: (session) => {
+      if (w.builtins === null) return;
+      const active = session.activeTools();
+      const missing = w.builtins.filter((t) => WORKER_BUILTIN_TOOLS.includes(t) && !active.includes(t));
+      if (missing.length) session.setActiveTools([...active, ...missing]);
+    },
     // A worker trusts its project's local files as every Sova chat does.
     opening: () => ({
       ...(w.model ? { model: w.model } : {}),
@@ -1052,7 +1075,15 @@ type Sender = { kind: "overseer"; overseerId?: string } | { kind: "baton"; by: s
     message may still be in the SDK's queue). `sender` null: a queue item with no sender, marked only
     to keep its place, so a later item with the same text (several are in pi at once when steers land
     together) never takes this one's message: marks match in hand-off order, first in, first out. */
-type SenderMark = { text: string; sender: Sender | null; itemId?: string; held?: boolean };
+type SenderMark = {
+  text: string;
+  sender: Sender | null;
+  itemId?: string;
+  held?: boolean;
+  pressedAt?: number;
+  /** No person sent it, whatever its row looks like: Time Spent neither labels nor counts it (§app.message-labels/labelling). */
+  program?: boolean;
+};
 
 /** `customType` of the invisible marker beside a delivered topic batch (§chat.topics/delivery). */
 export const TOPIC_DELIVERED_ENTRY = "sova-topic-delivered";
@@ -1340,6 +1371,34 @@ class ChatSession {
   /** A pick is landing (a borrow can take up to 30 s): the web queue holds its items meanwhile. */
   private get loginApplying() { return this.loginPick.applying; }
 
+  /** The user's commands from shell mode (server/chat-shell.ts, §chat.shell-mode/running). */
+  readonly shell: ChatShell = new ChatShell({
+    harness: () => this.harness,
+    broadcast: (msg) => this.broadcast(msg),
+    refusal: () => this.shellRefusal(),
+    beforeWrite: () => this.flushDeferredAppends(),
+    rowsOf: (entry, stopped, durationMs) =>
+      rowsOfEntry(entry, "?", entry.id ? { ...(stopped ? { stoppedShell: new Map([[entry.id, stopped]]) } : {}), ...(durationMs !== undefined ? { shellDurations: new Map([[entry.id, durationMs]]) } : {}) } : undefined),
+    markRun: (entryId, facts) => {
+      if (facts.durationMs !== undefined) this.harness.state.append(SHELL_RUN, { targetId: entryId, durationMs: facts.durationMs });
+      if (facts.stopped) this.harness.state.append(SHELL_CLOSED, { targetId: entryId, ...(facts.stopped !== "closed" ? { why: facts.stopped } : {}) });
+    },
+  });
+
+  /** Why this chat runs no command from shell mode now, or null (§chat.shell-mode/box, /who). */
+  private shellRefusal(): { reason: ShellRefusal; message: string } | null {
+    if (this.disposed) return { reason: "unavailable", message: SHELL_CLOSING_TEXT };
+    // The Overseer, project overseers and assistants, gathering sessions: their agents have no shell.
+    if (this.special) return { reason: "unavailable", message: "This chat has no shell mode." };
+    try {
+      assertNotLive(this.path);
+      this.assertNoForeignWrites();
+    } catch (err) {
+      return { reason: err instanceof BusyError && err.code === "recent" ? "recent" : "busy", message: err instanceof Error ? err.message : String(err) };
+    }
+    return null;
+  }
+
   /**
    * Sova's own outgoing queue (server/queue.ts). Every message that would have gone straight
    * into the SDK's queue goes here first: one follow-up of ours inside the SDK at a time, or every
@@ -1499,7 +1558,7 @@ class ChatSession {
     // until the message ends (markSend) or the item departs undelivered (onGone). An item with no
     // sender gets a place-keeping mark: marks match first in, first out (SenderMark).
     const sender = senderOfItem(item);
-    const mark: SenderMark = { text: item.text, sender, itemId: item.id, held: true };
+    const mark: SenderMark = { text: item.text, sender, itemId: item.id, held: true, ...(item.pressedAt !== undefined ? { pressedAt: item.pressedAt } : {}), ...(source === "queued" || item.notUser ? { program: true } : {}) };
     this.senderMarks.push(mark);
     if (sender?.kind === "session") this.profileState?.run?.expectHop(item.text, sender.hop);
     if (!streaming) {
@@ -1574,6 +1633,7 @@ class ChatSession {
       byPerson?: WebQueueItem["byPerson"];
       notUser?: WebQueueItem["notUser"];
       key?: string;
+      pressedAt?: number;
     },
   ): boolean {
     if (!isCompactionInProgress(err) || this.disposed) return false;
@@ -1592,6 +1652,7 @@ class ChatSession {
       ...(item.byPerson ? { byPerson: true as const } : {}),
       ...(item.notUser ? { notUser: true as const } : {}),
       ...(item.key !== undefined ? { key: item.key } : {}),
+      ...(item.pressedAt !== undefined ? { pressedAt: item.pressedAt } : {}),
     });
     return true;
   }
@@ -2930,6 +2991,7 @@ class ChatSession {
     const harness = this.harness;
     const branch = harness.branch();
     const tail = live ? this.liveTail.snapshot() : undefined;
+    const shell = this.shell.snapshot();
     return {
       type: "hello",
       items: rowsOf(branch),
@@ -2941,6 +3003,9 @@ class ChatSession {
       ...(this.alignLaunch?.data ? { alignReview: this.alignLaunch.data.review } : {}),
       ...(this.cwdFallback ? { cwdFallback: this.cwdFallback } : {}),
       ...(tail ? { live: tail } : {}),
+      ...(shell ? { shell } : {}),
+      // Its own agent and folder (§chat.shell-mode/box): a special kind's agent has no shell.
+      ...(this.special ? {} : { shellMode: true as const }),
     };
   }
 
@@ -3113,10 +3178,11 @@ class ChatSession {
         : opts?.sentBySession
           ? { kind: "session", ...opts.sentBySession }
           : null;
-    const send: SenderMark | null = sender ? { text, sender } : null;
+    const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
+    const program = source === "queued" || !!opts?.notUser;
+    const send: SenderMark | null = sender || program ? { text, sender, ...(program ? { program } : {}) } : null;
     if (send) this.senderMarks.push(send);
     if (opts?.sentBySession) this.profileState?.run?.expectHop(text, opts.sentBySession.hop);
-    const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
     const turn = this.sendKeys.run(key, () => this.toSdk(opts?.notUser ? "server" : origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm, !!opts?.sentByOverseer));
     this.noteStarting(turn);
     // Whoever sent it: a `/mode …` that reaches the extension (strict, a minor mode) is read back, so the menu never lags.
@@ -3173,6 +3239,8 @@ class ChatSession {
     const i = this.senderMarks.findIndex((s) => s.text === text);
     if (i < 0) return;
     const [send] = this.senderMarks.splice(i, 1);
+    const { pressedAt, program } = send!;
+    if (pressedAt !== undefined || program) queueMicrotask(() => this.noteEntered(pressedAt, !!program));
     const sender = send!.sender;
     if (!sender) return; // a place-keeping mark: this message has no sender
     queueMicrotask(() => {
@@ -3188,6 +3256,15 @@ class ChatSession {
         if (items.length) this.broadcast({ type: "append", items });
       }
     });
+  }
+
+  /** What Time Spent needs of the message that just entered, beside the session: when a person's was pressed, or that no person sent it. */
+  private noteEntered(pressedAt: number | undefined, program: boolean): void {
+    const leaf = this.harness.leafId();
+    const entry = leaf ? this.harness.entry(leaf) : undefined;
+    if (entry?.kind !== "user" || !entry.id) return;
+    if (program) recordProgram(this.path, entry.id);
+    else if (pressedAt !== undefined) recordPress(this.path, entry.id, pressedAt);
   }
 
   /**
@@ -3258,6 +3335,8 @@ class ChatSession {
       const marks = this.senderMarks.filter((m) => m.itemId === item.id);
       for (const m of marks) this.dropSenderMark(m);
       const id = this.harness.appendUserMessage(item.text, item.images);
+      if (inputSourceOf(item) === "queued" || item.notUser) recordProgram(this.path, id);
+      else if (item.pressedAt !== undefined) recordPress(this.path, id, item.pressedAt);
       const sender = senderOfItem(item);
       const markerId = sender ? appendSenderMarker(this.harness.state, id, sender) : null;
       const items = [id, markerId].flatMap((eid) => {
@@ -3481,7 +3560,7 @@ class ChatSession {
     // A message after a model switch or a rewind still under way waits for it, so what the person
     // asked first is applied first (§chat.transcript/send-while-starting). A dialog's answer and a
     // Stop never wait.
-    if (this.behind && msg.type !== "ui_response" && msg.type !== "abort") {
+    if (this.behind && msg.type !== "ui_response" && msg.type !== "abort" && msg.type !== "shell_stop") {
       const tail = this.behind.then(() => this.handleNow(client, msg));
       this.behind = tail;
       void tail.then(() => {
@@ -3668,6 +3747,12 @@ class ChatSession {
           else client.send({ type: "code", state: "current" });
           return;
         }
+        case "shell":
+          this.shell.start(client, msg);
+          return;
+        case "shell_stop":
+          this.shell.stop(String(msg.id ?? ""), (msg as { by?: unknown }).by === "other");
+          return;
         case "ui_response": {
           const pending = this.pendingUi.get(msg.id);
           if (pending) {
@@ -3928,8 +4013,9 @@ class ChatSession {
     let on1: ChatServerMessage | undefined;
     for (const c of this.clients) {
       if (c.wire === 2) for (const m of (on2 ??= onWire(msg, 2, this.replyLookup))) c.send(m);
-      // Wire 1 stays byte for byte: a message_end's reply timing rides wire 2 only.
-      else c.send((on1 ??= onWire1(msg)));
+      // Wire 1 stays byte for byte: a message_end's reply timing rides wire 2 only, and so does shell mode
+      // (a command's row and its live messages).
+      else if (!isShellMessage(msg)) c.send((on1 ??= withRows(onWire1(msg), 1)));
     }
   }
 
@@ -4029,6 +4115,10 @@ class ChatSession {
   }
 
   async dispose(): Promise<void> {
+    if (this.disposed) return;
+    // A command running stops and is saved as stopped by the close, before anything goes
+    // (§chat.shell-mode/lifecycle); a run waiting for the reply to end is saved first.
+    await this.shell.close().catch((err) => console.warn(`[chat] shell run not saved at close: ${err instanceof Error ? err.message : String(err)}`));
     if (this.disposed) return;
     // A baton session closing cleanly (archive, shutdown, reload) keeps every message still
     // waiting in its queue, as its sender's: nothing sent is dropped (§app.baton/hand-off). A
@@ -4543,7 +4633,10 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
   const build = async ({ cwd, read }: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
     // A worker chat (§app.chat-processes/workers) is its loadout and nothing else, its messages labelled
     // with the keys of the sends they came from (§app.chat-processes/worker-instructions).
-    if (worker) return { ...workerBuild(worker, path), built: (session) => sendKeys.watch(session) };
+    if (worker) {
+      const b = workerBuild(worker, path);
+      return { ...b, built: (session) => (sendKeys.watch(session), b.built?.(session)) };
+    }
     if (!launch.recorded) {
       const now = alignLaunchOf(read.state);
       if (now.recorded || launch.data === null) Object.assign(launch, now);
@@ -4639,14 +4732,14 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
               // Sova's mode engine's handle, for this chat (only a runtime whose modes Sova runs has one to announce).
               ...(modes.sova ? [modesBridgeExtension((handle) => (modes.handle = handle))] : []),
               visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null)),
+              // What the model is sent of a `!` command (§chat.shell-mode/model): before memory, which sees it so too.
+              shellModelExtension(),
               // The memory minor mode's engine (§chat/memory): idle until memory is turned on.
               memory(),
               // playbook_read, once a schedule's fire delivered a playbook here (§chat.schedules/playbook-read).
               playbookExtension(chatHosts.playbook ?? playbookHost),
               // project_verbs: its own worktrees' running instances (server/project-services/tools.ts).
-              servedDecls
-                ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
-                : projectVerbsExtension(projectEngine),
+              projectVerbsLoad(path),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
               servedDecls
                 ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && n !== CARD_TOOL && n !== CREATE_SETTINGS_TOOL && !TOUR_TOOLS.has(n)))
@@ -4665,7 +4758,9 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
             ],
             ...overrides,
           },
-      flags: () => sessionFlags(cwd, outline, linkTools, launch.data ?? undefined),
+      // The merge thread (its Sova profile): its sandbox On from its start, at the read-only level (its tools write only
+      // in their tmp) and the main checkout it starts in never a writable root; the rest goes through the merge verbs.
+      flags: () => ({ ...sessionFlags(cwd, outline, linkTools, launch.data ?? undefined), ...(sovaNamedKind(snap) === "merge-thread" ? MERGE_THREAD_FLAGS : {}) }),
       // Sova's engine in the discovered mode extension's slot, when Sova runs this chat's modes.
       modesEntry: modes.sova ? modesEntries().entry : null,
       // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's
@@ -4692,6 +4787,11 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
       forkCacheRouting: !special,
       built: (session) => {
         sendKeys.watch(session);
+        // A profile without the shell can still search: pi's read-only grep, find and ls on, beside read (pi's
+        // built-ins, so never in the extension registry; a name the runtime lacks is ignored by pi).
+        const search = snap ? searchToolsFor(snap.remove) : [];
+        const active = session.activeTools();
+        if (search.some((t) => !active.includes(t))) session.setActiveTools([...active, ...search.filter((t) => !active.includes(t))]);
         if (profile.run) {
           const run = profile.run;
           run.turns.watch(session);

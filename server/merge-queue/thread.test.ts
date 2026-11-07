@@ -374,11 +374,12 @@ test("each event names the verbs it is answered with, all of them merge verbs th
 
 test("conflict: the message names Sova's scratch copy to resolve in, or says none could be made and what to answer", () => {
   const withCopy = eventText({ kind: "conflict", entry: entry("mq_5"), run: "mr_1", files: ["a.ts"], scratch: "/p/.worktrees/proj-conflict-mq_5" });
-  assert.match(withCopy, /Sova made a scratch copy for it at \/p\/\.worktrees\/proj-conflict-mq_5: a worktree with no branch, at master's head\. Resolve there, and never make a worktree of your own/);
-  assert.match(withCopy, /your resolution commit from the scratch copy/);
+  assert.match(withCopy, /Sova made a scratch copy for it at \/p\/\.worktrees\/proj-conflict-mq_5: a worktree with no branch, at master's head\. Read it, try the merge in a scratch clone in your temp folder \(delete it when done\), and never make a worktree of your own/);
+  assert.match(withCopy, /verdict "no-behaviour-change" with contents, each conflicted file's whole merged text by its path \(Sova merges, writes and commits it in the scratch copy\)/);
+  assert.match(withCopy, /contents\?/);
   assert.doesNotMatch(withCopy, /side worktree/);
   const none = eventText({ kind: "conflict", entry: entry("mq_5"), run: "mr_1", files: ["a.ts"], scratchError: "git worktree add failed: disk full" });
-  assert.match(none, /Sova couldn't make a scratch copy for it \(git worktree add failed: disk full\): judge it from the diff and answer with no commit: verdict "chat-fixes" when it needs no decision of the user's, else "needs-user"/);
+  assert.match(none, /Sova couldn't make a scratch copy for it \(git worktree add failed: disk full\): judge it from the diff and answer with no contents: verdict "chat-fixes" when it needs no decision of the user's, else "needs-user"/);
 });
 
 test("idle: the queue is quiet; the newest landing and the target's head are named; the playbook decides, merge.hold is offered", () => {
@@ -388,6 +389,7 @@ test("idle: the queue is quiet; the newest landing and the target's head are nam
   assert.match(text, /"When the queue is idle"/);
   assert.match(text, /merge\.hold \{action: "set"\}/);
   assert.match(text, /Otherwise nothing is needed: end your turn\./);
+  assert.match(text, /merge\.live \{project\} answers it with the restart plan/, "the live commit, which the sandboxed thread can't ask the server for");
   const bare = eventText({ kind: "idle", entry: entry("mq_9") });
   assert.doesNotMatch(bare, /newest landing|is at/);
 });
@@ -404,7 +406,9 @@ test("queued: the diff and the picks read from the base the entry was queued aga
 test("names: the thread is told the project's names file and target, and to ask through merge.ask, never waiting in its chat", async () => {
   const text = eventText({ kind: "names", file: "/state/merge-queue/p1/names.json", target: "main" });
   assert.match(text, /every push of main is held\. Landings go on\./);
-  assert.ok(text.includes(`${join(DEFAULT_PLAYBOOK_DIR, "scripts", "discover-names.mjs")} --file /state/merge-queue/p1/names.json --target main`));
+  // Sova writes the names file (merge.names): the thread's sandbox can't, and is never handed a path to write.
+  assert.match(text, /merge\.names \{action: "discover"\}/);
+  assert.ok(!text.includes("discover-names.mjs") && !text.includes("/state/merge-queue/p1/names.json"));
   assert.match(text, /merge\.ask \{text, entry\?\}/);
   assert.match(text, /Never wait for them in your chat/);
   assert.doesNotMatch(text, /here, in your chat/);

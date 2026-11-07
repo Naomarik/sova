@@ -1,7 +1,7 @@
 // Run: npx tsx --test server/drafts.test.ts
 // Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -13,7 +13,7 @@ mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const draftsFile = join(agentDir, "sova", "drafts.json");
 
-const { draftForClient, draftPreview, dropDrafts, getDraft, readDrafts, setDraft } = await import("./drafts");
+const { draftForClient, draftPreview, dropDrafts, getDraft, putBackDraft, readDrafts, setDraft } = await import("./drafts");
 const { isPiClipboardName } = await import("../shared/tmp-paths");
 const { cleanupSessions, listSessions } = await import("./sessions-index");
 const { canonicalPath } = await import("./paths");
@@ -281,4 +281,40 @@ test("DELETE /api/attachment: one file under the attachments root only", () => {
   }
   const none = deleteAttachment(undefined);
   assert.equal(none.ok ? 0 : none.status, 400);
+});
+
+test("store: the drafts file is readable only by this account (a draft can hold a typed secret)", () => {
+  setDraft("perm", "secret");
+  assert.equal(statSync(draftsFile).mode & 0o777, 0o600);
+  dropDrafts(["perm"]);
+});
+
+test("store: a command's mode is kept apart from its text, and a leading ! is only ever text (§chat.shell-mode/box)", () => {
+  setDraft("mode-msg", "!important: read this");
+  assert.equal(getDraft("mode-msg")?.mode, undefined, "a message starting with ! stays a message");
+  assert.equal("mode" in draftForClient("mode-msg"), false);
+  setDraft("mode-cmd", "ls -la", undefined, "shell");
+  setDraft("mode-hush", "cat .env", undefined, "private");
+  assert.deepEqual([draftForClient("mode-cmd").mode, draftForClient("mode-cmd").text], ["shell", "ls -la"]);
+  assert.equal(onDisk().drafts["mode-hush"]!.text, "cat .env", "the text holds no marker");
+  assert.equal((onDisk().drafts["mode-hush"] as { mode?: string }).mode, "private");
+  // Read back by a fresh load: a bad mode on disk is dropped, the text kept as a message.
+  const disk = onDisk();
+  (disk.drafts["mode-cmd"] as { mode?: string }).mode = "root";
+  writeFileSync(draftsFile, JSON.stringify(disk));
+  assert.deepEqual([getDraft("mode-cmd")?.mode, getDraft("mode-cmd")?.text], [undefined, "ls -la"]);
+  // Any write without a mode clears it.
+  setDraft("mode-hush", "cat .env");
+  assert.equal(getDraft("mode-hush")?.mode, undefined);
+  dropDrafts(["mode-msg", "mode-cmd", "mode-hush"]);
+});
+
+test("putBackDraft: what goes back is a message; a saved command joins it as text, its marker shown", () => {
+  setDraft("back", "rm -rf build", undefined, "shell");
+  putBackDraft("back", ["the message that couldn't go"]);
+  assert.deepEqual([getDraft("back")?.mode, getDraft("back")?.text], [undefined, "the message that couldn't go\n\n!rm -rf build"]);
+  setDraft("back", "cat .env", undefined, "private");
+  putBackDraft("back", ["again"]);
+  assert.deepEqual([getDraft("back")?.mode, getDraft("back")?.text], [undefined, "again\n\n!!cat .env"]);
+  dropDrafts(["back"]);
 });

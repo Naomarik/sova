@@ -652,14 +652,16 @@ export function killProblem(command: string): Problem | undefined {
 }
 
 /** The reply that refuses an agent's bash command on macOS, or undefined to let it run. Linux and
- *  every other platform: always undefined, the check never runs. */
-export function killGuardRefusal(command: string, platform: string = process.platform): string | undefined {
+ *  every other platform: always undefined, the check never runs. `who: "user"`: the reply to a command
+ *  the user ran from shell mode (§chat.kill-guard/refusal), shown under the message box. */
+export function killGuardRefusal(command: string, platform: string = process.platform, who: "agent" | "user" = "agent"): string | undefined {
   if (platform !== "darwin") return undefined;
   if (!/kill|pgrep/.test(command)) return undefined;
   const p = killProblem(command);
   if (!p) return undefined;
+  if (who === "user") return `Sova refused this command before it ran; nothing ran. \`${p.what}\`: ${p.why}. Fix: ${p.fix}.`;
   return [
     `Sova refused this bash command before it ran; nothing ran. \`${p.what}\`: ${p.why}.`,
-    `Fix: ${p.fix}. For a project's services, use project_verbs down.`,
+    `Fix: ${p.fix}. If you have the project_verbs tool, use project_verbs down for a project's services.`,
   ].join("\n");
 }

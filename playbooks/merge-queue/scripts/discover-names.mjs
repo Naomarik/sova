@@ -11,7 +11,8 @@
 //
 // Sources, each a kind: this host's name and home path; `tailscale status --json` (skipped silently
 // when it can't run); host.json, peers.json and mesh-extensions.json under the state root; the
-// device names in claude-accounts.json; login emails and git's user.email (and the domain, unless a
+// device names in claude-accounts.json; login emails (not in a hermetic agent dir, one with its own claude-projects/)
+// and git's user.email (and the domain, unless a
 // public mail provider's); orgs.json; the values in the repo's scripts/mesh-vps/local.env. Dropped:
 // the owner in origin's GitHub URL, anything under 4 characters, generic words and path prefixes, and
 // a discovered term already in more than 10 of origin/<target>'s tracked files (too common to block on).
@@ -21,7 +22,7 @@
 // Prints kinds and counts only, and which names origin/<target> already has (masked). Only `--show`
 // prints the values, for the merge thread to show the user in its own chat.
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { basename, dirname, join } from "node:path";
 
@@ -200,18 +201,27 @@ if (isObj(mesh) && isObj(mesh.peers)) {
   }
 }
 
+// A hermetic agent dir (scripts/hermetic-agent-dir.mjs gives it its own claude-projects/) is a throwaway test copy: its
+// login records are copies of the real ones, so their emails are never collected there.
+const hermetic = (() => {
+  try {
+    return statSync(join(agent, "claude-projects")).isDirectory();
+  } catch {
+    return false;
+  }
+})();
 const accounts = readJson(join(agent, "claude-accounts.json"));
 if (isObj(accounts)) {
   if (isObj(accounts.devices)) for (const d of Object.keys(accounts.devices)) add("device", d);
   for (const l of Array.isArray(accounts.logins) ? accounts.logins.filter(isObj) : []) {
     add("device", l.device);
-    addEmail(l.identity?.email);
+    if (!hermetic) addEmail(l.identity?.email);
   }
 }
 // Each login's own Claude Code file, and Claude Code's own login.
-const loginDirs = [process.env.CLAUDE_CONFIG_DIR, home];
+const loginDirs = hermetic ? [] : [process.env.CLAUDE_CONFIG_DIR, home];
 try {
-  for (const d of readdirSync(join(agent, "claude-accounts"))) loginDirs.push(join(agent, "claude-accounts", d));
+  if (!hermetic) for (const d of readdirSync(join(agent, "claude-accounts"))) loginDirs.push(join(agent, "claude-accounts", d));
 } catch {
   // no added logins
 }
@@ -390,6 +400,7 @@ out.push(
 );
 for (const [kind, t] of Object.entries(tally).sort()) out.push(`- ${kind}: ${t.found} found, ${t.added} new`);
 if (!ts) out.push("- tailscale: not available here, skipped");
+if (hermetic) out.push("- login emails: a hermetic agent dir, skipped");
 const drops = Object.entries(droppedCount).filter(([, n]) => n);
 if (drops.length) out.push(`Dropped: ${drops.map(([why, n]) => `${n} ${why}`).join(", ")}.`);
 const short = userNames.filter((u) => u.value.length < 4).length;

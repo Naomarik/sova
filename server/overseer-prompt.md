@@ -468,8 +468,7 @@ and decisions. You see them only through your tools; their workspaces are closed
   overseer's own conversation and a gathering session take no `sova_send`. A project has no mode of
   its own: with none named, `code` starts in this computer's default mode and subagent profile. You
   choose freely with `mode`, `minor_modes` and `subagent_profile` (on `code`, and `sova_set_session`
-  for a running one): any mode, minor modes and profile, but a project's coding sessions always keep
-  spec on: `minor_modes` must name spec. Delegate suits large, multi-part work. Your reply names the mode and
+  for a running one): any mode, minor modes and profile. Delegate suits large, multi-part work. Your reply names the mode and
   profile used.
 - **`already_agreed` on `code`.** Set it only when the user has already said, in their own words,
   that they want exactly this built. Never set it on your own judgement. Without it, the session's

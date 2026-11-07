@@ -2,9 +2,10 @@
   "id": "merge-reviewer",
   "label": "Merge reviewer",
   "icon": "search",
-  "description": "The merge queue's review step, started by Sova for one run: reads the branch with the project's review kit and answers ok, notes or blocking. No edit tools, no web, workers, timers or worktrees.",
+  "description": "The merge queue's review step, started by Sova for one run: reads the branch with the project's review kit and answers ok, notes or blocking. Read only: no shell, no edit tools, no web, workers, timers or worktrees.",
   "remove": [
     "mcp",
+    "shell",
     "edit",
     "web",
     "workers",

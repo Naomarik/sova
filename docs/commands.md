@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 573 |
-| Routes a catalogue entry points at | 179 |
-| Catalogue entries | 243 |
+| Routes registered | 576 |
+| Routes a catalogue entry points at | 182 |
+| Catalogue entries | 252 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -33,7 +33,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Live capability links | 1 |
 | Class: Approvals and grants | 5 |
 | Pending (not yet a command) | 23 |
-| Chat socket frame types | 12 |
+| Chat socket frame types | 14 |
 | Document/window keydown listeners | 11 |
 | Hand-written tool specs | 132 |
 
@@ -56,6 +56,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.send` | Send Message | changes | `POST /api/sessions/prompt` | sessions |
 | `session.fork` | Fork Session | changes | `POST /api/sessions/fork` | sessions |
 | `session.draft.get` | Show Draft | looks | `GET /api/sessions/draft` | sessions |
+| `session.shell.output` | Show Command Output | looks | `GET /api/sessions/shell-output` | sessions |
 | `session.draft.set` | Set Draft | changes | `PUT /api/sessions/draft` | sessions |
 | `session.sandbox.set` | Set Sandbox | changes | `POST /api/sandbox` | sessions |
 | `session.tools.get` | Show Session Tools | looks | `GET /api/sessions/tools` | sessions |
@@ -132,6 +133,10 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.verb.merge.clear` | Project merge.clear | changes | `POST /api/project-services/merge.clear` | admin |
 | `project.verb.merge.hold` | Project merge.hold | changes | `POST /api/project-services/merge.hold` | admin |
 | `project.verb.merge.try` | Project merge.try | changes | `POST /api/project-services/merge.try` | admin |
+| `project.verb.merge.restart` | Project merge.restart | changes | `POST /api/project-services/merge.restart` | admin |
+| `project.verb.merge.live` | Project merge.live | looks | `POST /api/project-services/merge.live` | admin |
+| `project.verb.merge.test` | Project merge.test | changes | `POST /api/project-services/merge.test` | admin |
+| `project.verb.merge.names` | Project merge.names | changes | `POST /api/project-services/merge.names` | admin |
 | `project.verb.merge.rule` | Project merge.rule | changes | `POST /api/project-services/merge.rule` | admin |
 | `project.verb.merge.respond` | Project merge.respond | changes | `POST /api/project-services/merge.respond` | admin |
 | `project.verb.release.status` | Project release.status | looks | `POST /api/project-services/release.status` | admin |
@@ -202,6 +207,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.merge-queue.land-how.clear` | Clear This Computer's Choice | changes | `DELETE /api/merge-queue/projects/:project/land-how/override` | admin |
 | `project.merge-queue.branch-summary.retry` | Try Again | changes | `POST /api/merge-queue/projects/:project/branch-summary` | admin |
 | `project.merge-queue.landing-summary` | Show Landings | looks | `GET /api/merge-queue/landing-summary` | sessions |
+| `project.merge-queue.run-logs` | Show Run Logs Size | looks | `GET /api/merge-queue/run-logs` | sessions |
+| `project.merge-queue.run-logs.clean` | Clean Logs | changes | `POST /api/merge-queue/run-logs/clean` | admin |
 | `overseer.attention` | Show Attention | looks | `GET /api/overseer/attention` | sessions |
 | `overseer.abilities` | Show Overseer Abilities | looks | `GET /api/overseer/abilities` | sessions |
 | `overseer.todo.list` | List To-dos | looks | `GET /api/overseer/todos` | sessions |
@@ -283,6 +290,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `chat.regenerate` | Regenerate | changes | `POST /api/chat/action` | sessions |
 | `chat.queue.remove` | Remove Queued Message | changes | `POST /api/chat/action` | sessions |
 | `chat.reload-code` | Reload Now | changes | `POST /api/chat/action` | sessions |
+| `chat.shell.list` | List Commands | looks | `POST /api/chat/action` | sessions |
+| `chat.shell.stop` | Stop Command | changes | `POST /api/chat/action` | sessions |
 | `chat.mode-command` | Run Mode Command | changes | `POST /api/mode/command` | full |
 
 ## Pending routes
@@ -806,7 +815,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `DELETE /api/attention/dismiss` | full | `attention.undismiss` |
 | `POST /api/attention/dismiss` | full | `attention.dismiss` |
 | `GET /api/audit` | full | `audit.list` |
-| `POST /api/chat/action` | sessions | `chat.compact`, `chat.queue.remove`, `chat.regenerate`, `chat.reload-code`, `chat.rewind`, `chat.stop` |
+| `POST /api/chat/action` | sessions | `chat.compact`, `chat.queue.remove`, `chat.regenerate`, `chat.reload-code`, `chat.rewind`, `chat.shell.list`, `chat.shell.stop`, `chat.stop` |
 | `GET /api/cwds` | sessions | `cwds.list` |
 | `GET /api/diff/summary` | sessions | `session.diff.summary` |
 | `GET /api/draft-specs` | full | `draft-spec.list` |
@@ -837,6 +846,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/merge-queue/projects/:project/settings` | admin | `project.merge-queue.settings.save` |
 | `DELETE /api/merge-queue/projects/:project/settings/pending` | admin | `project.merge-queue.settings.cancel` |
 | `POST /api/merge-queue/projects/:project/update-local-main` | admin | `project.merge-queue.update-local-main` |
+| `GET /api/merge-queue/run-logs` | sessions | `project.merge-queue.run-logs` |
+| `POST /api/merge-queue/run-logs/clean` | admin | `project.merge-queue.run-logs.clean` |
 | `GET /api/mode` | sessions | `session.mode.get` |
 | `POST /api/mode` | sessions | `session.mode.set` |
 | `POST /api/mode/command` | full | `chat.mode-command` |
@@ -865,7 +876,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `PUT /api/overseer/todos/order` | admin | `overseer.todo.reorder` |
 | `GET /api/playbooks` | sessions | `playbook.list` |
 | `POST /api/previews/:id/off` | admin | `project.preview.off` |
-| `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.merge.add`, `project.verb.merge.answer`, `project.verb.merge.ask`, `project.verb.merge.cancel`, `project.verb.merge.clear`, `project.verb.merge.extend`, `project.verb.merge.fresh`, `project.verb.merge.hold`, `project.verb.merge.logs`, `project.verb.merge.note`, `project.verb.merge.pause`, `project.verb.merge.reply`, `project.verb.merge.resolve`, `project.verb.merge.respond`, `project.verb.merge.resume`, `project.verb.merge.retry`, `project.verb.merge.review`, `project.verb.merge.rule`, `project.verb.merge.setup`, `project.verb.merge.status`, `project.verb.merge.try`, `project.verb.release.abandon`, `project.verb.release.continue`, `project.verb.release.logs`, `project.verb.release.note`, `project.verb.release.notes`, `project.verb.release.publish`, `project.verb.release.request`, `project.verb.release.retry`, `project.verb.release.start`, `project.verb.release.status`, `project.verb.release.step`, `project.verb.release.withdraw`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
+| `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.merge.add`, `project.verb.merge.answer`, `project.verb.merge.ask`, `project.verb.merge.cancel`, `project.verb.merge.clear`, `project.verb.merge.extend`, `project.verb.merge.fresh`, `project.verb.merge.hold`, `project.verb.merge.live`, `project.verb.merge.logs`, `project.verb.merge.names`, `project.verb.merge.note`, `project.verb.merge.pause`, `project.verb.merge.reply`, `project.verb.merge.resolve`, `project.verb.merge.respond`, `project.verb.merge.restart`, `project.verb.merge.resume`, `project.verb.merge.retry`, `project.verb.merge.review`, `project.verb.merge.rule`, `project.verb.merge.setup`, `project.verb.merge.status`, `project.verb.merge.test`, `project.verb.merge.try`, `project.verb.release.abandon`, `project.verb.release.continue`, `project.verb.release.logs`, `project.verb.release.note`, `project.verb.release.notes`, `project.verb.release.publish`, `project.verb.release.request`, `project.verb.release.retry`, `project.verb.release.start`, `project.verb.release.status`, `project.verb.release.step`, `project.verb.release.withdraw`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
 | `GET /api/projects` | sessions | `project.list` |
 | `POST /api/projects` | admin | `project.create` |
 | `GET /api/projects/:pid` | sessions | `project.get` |
@@ -945,6 +956,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/sessions/pairs/resume` | sessions | `session.pairs.resume` |
 | `POST /api/sessions/pairs/unpair` | sessions | `session.pairs.unpair` |
 | `POST /api/sessions/prompt` | sessions | `session.send` |
+| `GET /api/sessions/shell-output` | sessions | `session.shell.output` |
 | `POST /api/sessions/shorten-titles` | sessions | `session.title.shorten` |
 | `GET /api/sessions/summary` | sessions | `session.get` |
 | `POST /api/sessions/tags` | sessions | `session.tags.set` |
@@ -987,7 +999,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 
 The `type` of every `ChatClientMessage` (`shared/protocol.ts`), the frames a page sends on `/ws/chat`:
 
-`prompt`, `steer`, `abort`, `set_model`, `set_thinking`, `set_claude_login`, `ui_response`, `rewind`, `regenerate`, `compact`, `queue_remove`, `reload_code`
+`prompt`, `steer`, `abort`, `set_model`, `set_thinking`, `set_claude_login`, `ui_response`, `rewind`, `regenerate`, `compact`, `queue_remove`, `reload_code`, `shell`, `shell_stop`
 
 ## Keydown listeners on the document or the window
 

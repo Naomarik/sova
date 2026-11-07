@@ -25,6 +25,7 @@ import { randomBytes } from "node:crypto";
 import type { MergeEntry, MergeThreadAsk } from "../../shared/merge-queue";
 import { mergeThreadTitle } from "../../shared/fixed-names";
 import { NEEDS_USER_RULE } from "./rulings";
+import { serverStart } from "../project-services/self-host";
 
 /** A thread without memory older than this is replaced at its next event (a thread with memory never ages out). */
 export const THREAD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -255,7 +256,7 @@ export function eventText(ev: ThreadEvent): string {
 const NEEDS_USER_LINE = `Rule "needs-user" only for what is the user's. ${NEEDS_USER_RULE} Everything else you and the branch's chat settle yourselves.`;
 
 const resolveLine = (id: string): string =>
-  `Judge it (references/conflicts.md) and answer with merge.resolve {entry: "${id}", verdict, files, ours, theirs, proposal, commit?, text?, choices?, note?}: no behaviour change → verdict "no-behaviour-change" with your resolution commit from the scratch copy; you can't resolve it safely but it needs no decision of the user's → verdict "chat-fixes", with your diagnosis in proposal, and the branch's chat fixes it; the two sides want different behaviour → verdict "needs-user" with your question in text and its choices, and the user decides.`;
+  `Judge it (references/conflicts.md) and answer with merge.resolve {entry: "${id}", verdict, files, ours, theirs, proposal, contents?, text?, choices?, note?}: no behaviour change → verdict "no-behaviour-change" with contents, each conflicted file's whole merged text by its path (Sova merges, writes and commits it in the scratch copy); you can't resolve it safely but it needs no decision of the user's → verdict "chat-fixes", with your diagnosis in proposal and no contents, and the branch's chat fixes it; the two sides want different behaviour → verdict "needs-user" with your question in text and its choices and no contents, and the user decides.`;
 
 function eventBody(ev: ThreadEvent): string {
   switch (ev.kind) {
@@ -274,8 +275,8 @@ function eventBody(ev: ThreadEvent): string {
       return [
         `Conflict: entry ${e.id} · ${e.branch} at ${short(e.commit)} conflicts with ${e.target} in ${ev.files.join(", ") || "(files in the run log)"}.${ev.run ? ` Run ${ev.run}.` : ""}`,
         ev.scratch
-          ? `Sova made a scratch copy for it at ${ev.scratch}: a worktree with no branch, at ${e.target}'s head. Resolve there, and never make a worktree of your own; Sova removes the copy when this attempt ends.`
-          : `Sova couldn't make a scratch copy for it${ev.scratchError ? ` (${ev.scratchError})` : ""}: judge it from the diff and answer with no commit: verdict "chat-fixes" when it needs no decision of the user's, else "needs-user".`,
+          ? `Sova made a scratch copy for it at ${ev.scratch}: a worktree with no branch, at ${e.target}'s head. Read it, try the merge in a scratch clone in your temp folder (delete it when done), and never make a worktree of your own; Sova removes the copy when this attempt ends.`
+          : `Sova couldn't make a scratch copy for it${ev.scratchError ? ` (${ev.scratchError})` : ""}: judge it from the diff and answer with no contents: verdict "chat-fixes" when it needs no decision of the user's, else "needs-user".`,
         resolveLine(e.id),
         NEEDS_USER_LINE,
       ].join("\n");
@@ -362,13 +363,14 @@ function eventBody(ev: ThreadEvent): string {
       const l = ev.lastLanded;
       return [
         `Idle: the queue has nothing left to check and nothing running (the last change: entry ${e.id} · ${e.branch}).${l ? ` The newest landing: entry ${l.id} · ${l.branch} as ${short(l.sha)}.` : ""}${ev.head ? ` ${e.target} is at ${short(ev.head)}.` : ""}`,
+        `Sova runs ${short(serverStart().head ?? "") || "an unknown commit"} (merge.live {project} answers it with the restart plan).`,
         `If the project's playbook says what to do once the queue is quiet ("When the queue is idle"), do it now, through the verbs; merge.hold {action: "set"} keeps new runs from starting meanwhile and {action: "clear"} lifts it. Otherwise nothing is needed: end your turn.`,
       ].join("\n");
     }
     case "names":
       return [
         `Names: this project has no private-names list, so every push of ${ev.target} is held. Landings go on.`,
-        `Run the names interview (references/names.md): \`node ${join(DEFAULT_PLAYBOOK_DIR, "scripts", "discover-names.mjs")} --file ${ev.file} --target ${ev.target} --repo <project root>\`, then ask the user what else must never reach the public repo with merge.ask {text, entry?} (the newest landed entry, so its branch's chat asks them). Never wait for them in your chat, and never put a name in a question, a note or anywhere but that file.`,
+        `Run the names interview (references/names.md): merge.names {action: "discover"} (Sova fills the project's names file and answers kinds and counts), then ask the user what else must never reach the public repo with merge.ask {text, entry?} (the newest landed entry, so its branch's chat asks them). Never wait for them in your chat, and never put a name in a question, a note or anywhere but that file.`,
       ].join("\n");
     case "answer":
       return [
@@ -389,6 +391,7 @@ export function firstText(root: string, playbook: string, ev: ThreadEvent): stri
     `You are the merge thread for the project at ${root}. ${read}, and read their references as they say. The method's scripts are in ${join(DEFAULT_PLAYBOOK_DIR, "scripts")}.`,
     `You act only through the merge verbs (the project verbs tool), on your own: you never wait for the user in this chat. When you need them, ask with merge.ask {text, entry?}: Sova asks in the branch's own chat and their answer comes back to you as a message. The user may still write to you here; answer them when they do.`,
     `You never move ${"entry" in ev ? ev.entry.target : "target" in ev ? ev.target : "the target branch"}, never run git that writes in the main checkout, and never land anything: Sova does that.`,
+    `Your tools run in a sandbox that writes only in your own temp folder and has no network: read anything, try things in a scratch clone there (delete it when done), and do everything else through the merge verbs, which Sova runs for you.`,
     "",
     eventText(ev),
   ].join("\n");

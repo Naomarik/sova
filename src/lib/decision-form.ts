@@ -32,7 +32,7 @@ export const draftOf = (s: DecisionSettings): DecisionDraft => ({
   version: 1,
   jev: { enabled: s.jev.enabled },
   fallback: s.fallback ? { ...s.fallback } : null,
-  features: { attention: s.features.attention, tags: s.features.tags, reconcile: reconcileOn(s.features) },
+  features: { attention: s.features.attention, tags: s.features.tags, reconcile: reconcileOn(s.features), ...(s.features.messageLabels === true ? { messageLabels: true } : {}) },
   exclusions: s.exclusions.join("\n"),
   neverSendTui: s.neverSendTui,
 });
@@ -50,7 +50,7 @@ export function settingsOf(d: DecisionDraft): DecisionSettings {
     version: 1,
     jev: { enabled: d.jev.enabled },
     fallback: d.fallback ? ({ ...d.fallback } as WorkerChoice) : null,
-    features: { attention: d.features.attention, tags: d.features.tags, reconcile: reconcileOn(d.features) },
+    features: { attention: d.features.attention, tags: d.features.tags, reconcile: reconcileOn(d.features), ...(d.features.messageLabels === true ? { messageLabels: true } : {}) },
     exclusions: parseExclusions(d.exclusions),
     neverSendTui: d.neverSendTui,
   };
@@ -65,6 +65,7 @@ export function sameDecision(a: DecisionDraft, b: DecisionSettings | DecisionDra
     a.features.attention === b.features.attention &&
     a.features.tags === b.features.tags &&
     reconcileOn(a.features) === reconcileOn(b.features) &&
+    (a.features.messageLabels === true) === (b.features.messageLabels === true) &&
     a.neverSendTui === b.neverSendTui &&
     ax.length === bx.length &&
     ax.every((p, i) => p === bx[i])
@@ -95,6 +96,7 @@ export function rebaseDecision(d: DecisionDraft, base: DecisionSettings, fresh: 
   if (d.features.attention === base.features.attention) out.features.attention = now.features.attention;
   if (d.features.tags === base.features.tags) out.features.tags = now.features.tags;
   if (reconcileOn(d.features) === reconcileOn(base.features)) out.features.reconcile = now.features.reconcile;
+  if ((d.features.messageLabels === true) === (base.features.messageLabels === true)) out.features.messageLabels = now.features.messageLabels;
   if (d.neverSendTui === base.neverSendTui) out.neverSendTui = now.neverSendTui;
   if (sameList(parseExclusions(d.exclusions), base.exclusions) && !sameList(fresh.exclusions, base.exclusions)) out.exclusions = now.exclusions;
   return out;
@@ -150,7 +152,7 @@ export function unavailableLine(jevEnabled: boolean, key: DecisionKeyInfo): stri
  * send nothing and mark nothing. Null when both features are off or someone can answer.
  */
 export function unansweredIssue(d: DecisionDraft, key: DecisionKeyInfo): string | null {
-  if (!d.features.attention && !d.features.tags && !reconcileOn(d.features)) return null;
+  if (!d.features.attention && !d.features.tags && !reconcileOn(d.features) && !d.features.messageLabels) return null;
   if (draftProviders(d, key).length > 0) return null;
   return unavailableLine(d.jev.enabled, key);
 }

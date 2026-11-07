@@ -294,6 +294,53 @@ describe("conflicts", () => {
     await scratchGone(fx, eb.id);
   });
 
+  test("S2j: the thread sends merged contents (it can't write the copy): Sova commits them in the detached scratch copy; no branch and not the main checkout moves; refusals name the file", async () => {
+    let res = "";
+    let before = "";
+    let after = "";
+    let mainHead = "";
+    const refused: string[] = [];
+    const { fx, h, addB } = await twoAppenders({
+      thread: {
+        conflict: async (h, e, ev) => {
+          const heads = () => git(h.fx.project, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/heads"]);
+          before = heads();
+          mainHead = git(h.fx.project, ["rev-parse", "HEAD"]);
+          const base = { verdict: "no-behaviour-change" as const, files: ["src/list.txt"], ours: "master adds delta", theirs: "the branch adds echo", proposal: "keep both" };
+          for (const contents of <Record<string, string>[]>[{ "../outside.txt": "x" }, { "src/other.txt": "no conflict here\n" }, { "src/list.txt": "<<<<<<< ours\ndelta\n=======\necho\n>>>>>>> theirs\n" }])
+            await h.resolve(e.id, { ...base, contents }).then(
+              () => assert.fail(`contents ${JSON.stringify(Object.keys(contents))} were taken`),
+              (err: Error) => refused.push(err.message),
+            );
+          // Only a no-behaviour-change resolution carries contents: chat-fixes and needs-user carry none.
+          for (const verdict of ["chat-fixes", "needs-user"] as const)
+            await h.resolve(e.id, { ...base, verdict, text: "Which?", contents: { "src/list.txt": LIST_PLUS("delta\necho") } }).then(
+              () => assert.fail(`${verdict} took contents`),
+              (err: Error) => assert.match(err.message, /only verdict "no-behaviour-change" carries contents/),
+            );
+          const r = await h.resolve(e.id, { ...base, contents: { "src/list.txt": LIST_PLUS("delta\necho") } });
+          res = r.conflict!.commit!;
+          after = heads();
+          assert.equal(git(h.fx.project, ["rev-parse", "HEAD"]), mainHead, "the main checkout didn't move");
+          assert.equal(git(ev.scratch!, ["rev-parse", "HEAD"]), res, "the copy holds Sova's commit");
+          assert.equal(git(ev.scratch!, ["symbolic-ref", "-q", "HEAD"], { allowFail: true }), "", "still on no branch");
+          assert.deepEqual(git(h.fx.project, ["rev-list", "--parents", "-n", "1", res]).split(" ").slice(1), [git(h.fx.project, ["rev-parse", `refs/heads/${h.fx.target}`]), e.commit], "first parent the target's head, second the approved commit");
+          assert.equal(refOf(h.fx, e.id), res, "pinned under the hidden ref");
+        },
+      },
+    });
+    const eb = await addB();
+    const landed = await h.waitEntry(eb.id, settled);
+    assert.equal(landed.state, "landed", `${landed.state}: ${landed.reason}`);
+    assert.equal(before, after, "no branch moved while Sova committed the resolution");
+    assert.match(refused[0]!, /isn't a path inside the repository/);
+    assert.match(refused[1]!, /still conflicted, with no content given: src\/list\.txt/);
+    assert.match(refused[2]!, /conflict markers are still in: src\/list\.txt/);
+    assert.equal(fx.head(), res, "the resolution Sova committed is what landed");
+    assert.equal(fx.fileAt(fx.head(), "src/list.txt"), LIST_PLUS("delta\necho"));
+    await scratchGone(fx, eb.id);
+  });
+
   test("S3c: behaviour differs, answered from the chat: the scratch copy and the proposal's pin go", async () => {
     let seen: Seen | null = null;
     const { fx, h, b, addB } = await differing({

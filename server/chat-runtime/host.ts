@@ -846,8 +846,10 @@ export class ChatRuntimeHost {
   private unlinkedQuietSince: number | null = null;
   /** No server linked (Sova stopped for good, §app.chat-processes/idle-stop): a chat with nothing in
       flight for the idle-stop time (as the last server set it) exits by itself, as an idle stop. Run
-      facts no server has acknowledged don't hold it: the session file has them. A process never opened
-      (its server stopped mid-start, or a reload's replacement never moved into) is quiet. */
+      facts no server has acknowledged don't hold it: the session file has them, and neither does a command
+      from shell mode: it keeps its chat while Sova is up, and is stopped by this close, saved as stopped
+      when the chat closed (§chat.shell-mode/lifecycle). A process never opened (its server stopped
+      mid-start, or a reload's replacement never moved into) is quiet. */
   private idleWithoutServer(): void {
     const chat = this.chat;
     const quiet = !chat || (!chat.disposed && this.quietOf(mirrorOf(chat), false, true));
@@ -885,12 +887,14 @@ export class ChatRuntimeHost {
     return this.clients.size + (this.orphaned ? 1 : 0);
   }
 
-  /** Nothing in flight: no run, compaction, start, queue, dialog, working worker, server call or
-      action, unacked run fact or wait-ask. For a reload, only a worker inside this process counts:
-      the rest run in processes of their own and are reattached (§app.chat-processes/code-pickup). */
+  /** Nothing in flight: no run, command from shell mode, compaction, start, queue, dialog, working worker,
+      server call or action, unacked run fact or wait-ask. For a reload, only a worker inside this process
+      counts: the rest run in processes of their own and are reattached (§app.chat-processes/code-pickup).
+      `unlinked` (no server): neither unacked run facts nor a command from shell mode count (idleWithoutServer). */
   private quietOf(m: ChatStateMirror, reload = false, unlinked = false): boolean {
     return (
       !m.running &&
+      (unlinked || !m.shell) &&
       !m.compacting &&
       !m.starting &&
       m.queue.web === 0 &&
@@ -935,8 +939,9 @@ export class ChatRuntimeHost {
         quiet,
         since: this.quietSince,
         clients: this.clientCount(),
-        // What holds a reload: "Reloads when its workers finish" (src/lib/code-state.ts).
+        // What holds a reload: "Reloads when its workers finish", "… when its command ends" (src/lib/code-state.ts).
         workersWorking: this.workersInProcess,
+        commandRunning: chat.shell.running(),
         serverCalls: this.tools.size - (hooks - this.waits.size),
         outbox: this.outbox.length,
         hooks,

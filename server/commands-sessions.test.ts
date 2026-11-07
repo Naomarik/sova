@@ -99,6 +99,36 @@ describe("answers: the route's own, on the same fixture", () => {
     assert.deepEqual(await viaId("session.draft.set", { session: path, text: "x", attachments: 7 }), [400, { error: "attachments must be an array" }]);
   });
 
+  test("a draft's mode (§chat.shell-mode/box): only the page's write keeps it; a script's or a chat's is a message; a bad one is refused", async () => {
+    const [path] = session();
+    const { pageHeaders } = await import("./testing/page");
+    const put = async (headers: Record<string, string>, body: unknown) => (await app.request("/api/sessions/draft", { method: "PUT", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) })).status;
+    const read = async () => (await send("GET", `/api/sessions/draft?path=${q(path)}`))[1] as { text: string; mode?: string };
+    assert.equal(await put(pageHeaders(), { path, text: "ls", mode: "shell" }), 200);
+    assert.deepEqual([(await read()).text, (await read()).mode], ["ls", "shell"], "the page's command is kept as one");
+    for (const who of [{ "x-sova-token": "t" }, { "x-sova-token": "t", "x-sova-caller": "a-chat-key" }, {}] as Record<string, string>[]) {
+      assert.equal(await put(who, { path, text: "rm -rf ~", mode: "private" }), 200);
+      assert.deepEqual([(await read()).text, (await read()).mode], ["!!rm -rf ~", undefined], `${JSON.stringify(who)}: saved as a message, its marker shown`);
+    }
+    assert.deepEqual(await viaId("session.draft.set", { session: path, text: "!!whoami" }), [200, { ok: true }]);
+    assert.deepEqual([(await read()).text, (await read()).mode], ["!!whoami", undefined], "a leading !! from a script is text");
+    assert.equal(await put(pageHeaders(), { path, text: "ls", mode: "sudo" }), 400);
+  });
+
+  test("a page over the peer listener saves a command as a message with its marker shown, never as a bare text (§chat.shell-mode/box)", async () => {
+    const [path] = session();
+    const { pageHeaders } = await import("./testing/page");
+    const asPeer = async (body: unknown) =>
+      (await app.request("/api/sessions/draft", { method: "PUT", headers: { "Content-Type": "application/json", ...pageHeaders() }, body: JSON.stringify(body) }, { meshPeer: { id: "peer-1" } })).status;
+    const read = async () => (await send("GET", `/api/sessions/draft?path=${q(path)}`))[1] as { text: string; mode?: string };
+    assert.equal(await asPeer({ path, text: "ls", mode: "shell" }), 200);
+    let d = await read();
+    assert.deepEqual([d.text, "mode" in d], ["!ls", false], "the shell command reopens as a visible !ls message");
+    assert.equal(await asPeer({ path, text: "cat .env", mode: "private" }), 200);
+    d = await read();
+    assert.deepEqual([d.text, "mode" in d], ["!!cat .env", false], "the private command reopens as a visible !!cat .env message");
+  });
+
   test("session.fork: a new session, the source untouched; a terminal-held one gets the route's 409", async () => {
     const [path] = session();
     const [s, made] = await viaId("session.fork", { session: path, entry: "a1" });

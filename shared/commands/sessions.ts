@@ -206,6 +206,21 @@ export const SESSION_ENTRIES: CommandEntry[] = [
     meshNeed: "sessions",
   },
   {
+    id: "session.shell.output",
+    label: "Show Command Output",
+    summary: "One page of a finished command's whole output (a command from shell mode), about 1 MB, from a byte offset.",
+    effect: "looks",
+    params: {
+      session: session("query", "path"),
+      entry: { type: "string", description: "The command's transcript row id", in: "query", required: true },
+      from: { type: "integer", description: "The byte to start at (the previous page's `next`; default 0)", in: "query" },
+    },
+    route: { method: "GET", path: "/api/sessions/shell-output" },
+    sessionKey: "path",
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
     id: "session.draft.set",
     label: "Set Draft",
     summary: "Replace a session's composer draft; its file is never written.",

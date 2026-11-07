@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { COMPACT_COMMAND, compactCommand } from "../../shared/compact";
 import { COMPACT_IMAGES_REFUSAL } from "../../shared/compact";
-import { compactedAnnouncement, runControls } from "./compact";
+import { compactedAnnouncement, runControls, stopButton } from "./compact";
 
 test("only a WHOLE /compact message is one, with its instructions trimmed", () => {
   assert.deepEqual(compactCommand("/compact"), {});
@@ -33,4 +33,17 @@ test("a compaction is not a turn: Stop and the status row, never Steer", () => {
   assert.deepEqual(runControls(true, false), { steer: true, stop: true, status: true });
   assert.deepEqual(runControls(true, true), { steer: true, stop: true, status: true });
   assert.deepEqual(runControls(false, false), { steer: false, stop: false, status: false });
+});
+
+test("Stop is on screen while a reply or compaction runs in a writable box, usable unless stopping or the socket is shut", () => {
+  const idle = { running: false, compacting: false, readOnly: false, stopping: false, stopBlocked: false };
+  assert.equal(stopButton(idle), "hidden");
+  assert.equal(stopButton({ ...idle, running: true }), "usable");
+  assert.equal(stopButton({ ...idle, compacting: true }), "usable");
+  assert.equal(stopButton({ ...idle, running: true, stopping: true }), "disabled");
+  assert.equal(stopButton({ ...idle, running: true, stopBlocked: true }), "disabled");
+  assert.equal(stopButton({ ...idle, compacting: true, stopBlocked: true }), "disabled");
+  // Read-only (a watched session, the baton gate): no Stop at all, whatever runs.
+  assert.equal(stopButton({ ...idle, running: true, readOnly: true }), "hidden");
+  assert.equal(stopButton({ ...idle, compacting: true, readOnly: true, stopping: true }), "hidden");
 });

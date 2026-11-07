@@ -39,6 +39,15 @@ with its policy templates in `pi-config/sandbox-policy/`. Sova imports its sessi
   change to either is a contract change (README). `ResolvedPolicy` carries `browser` (the policy's
   optional `browser` key, macOS only): it governs no path, so the transfer's refusals ignore it, and
   `prepareSessionCommand` hands it to the backend as the extension does.
+- `prepareSessionCommand` is also how a command the user runs from shell mode is confined while the chat's
+  sandbox is On (§chat.shell-mode/running, `server/harness/pi/shell.ts`, quirk P40): the pi adapter hears the
+  extension's `sandbox:state` (`on`, `scope`: worktree roots, a worker's parent, `cwdWritable: false` for a
+  stand-in cwd, `invalid` for a malformed parent, which refuses) on the runtime's extension bus, which Sova hands
+  the loader; the state says On from the moment the sandbox starts turning on, before its snapshot. It prepares
+  exactly the prefixed `<shell> -c <command>` pi's `executeBash` will run, and refuses the command (nothing runs,
+  nothing is saved) when preparing fails. The extension itself has no `user_bash` hook and gains none; a remote
+  session's hook operations win (the sandbox isn't enforced there). A change to the `sandbox:state` payload or to
+  `prepareSessionCommand`'s input is a contract change for that file too.
 - The provisional `starting` entry (`SANDBOX_STARTING`, `isStarting` in `state.ts`) is read by
   `server/sandbox-state.ts` (`SandboxInfo.starting`, the shield's "Turning on…") and by the tour
   recorder (`server/tours/context.ts`, which refuses while it is newest). Keep all three on the constant.

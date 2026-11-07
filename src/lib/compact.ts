@@ -17,6 +17,25 @@ export function runControls(running: boolean, compacting: boolean): { steer: boo
   return { steer: running, stop: running || compacting, status: running || compacting };
 }
 
+/** What the composer's Stop is: missing, on screen but `aria-disabled`, or usable. */
+export type StopButton = "hidden" | "disabled" | "usable";
+
+/**
+ * The composer's Stop: on screen while a reply or compaction runs in a box that isn't read-only,
+ * `aria-disabled` while it is already stopping or the socket isn't open. Esc in the box reads the
+ * same answer, so it stops exactly when pressing Stop would.
+ */
+export function stopButton(s: {
+  running: boolean;
+  compacting: boolean;
+  readOnly: boolean;
+  stopping: boolean;
+  stopBlocked: boolean;
+}): StopButton {
+  if (!runControls(s.running, s.compacting).stop || s.readOnly) return "hidden";
+  return s.stopping || s.stopBlocked ? "disabled" : "usable";
+}
+
 /** One line for the live region when the compaction landed. */
 export function compactedAnnouncement(tokensBefore: number): string {
   return tokensBefore > 0 ? `Compacted ${tokensBefore.toLocaleString("en-US")} tokens of context.` : "Compacted.";

@@ -29,6 +29,8 @@ export function codeChip(view: CodeView | null): { label: string; title: string 
 export interface Quiet {
   running: boolean;
   workersWorking: number;
+  /** A command from shell mode is running in the chat (§chat.shell-mode/lifecycle): the chat reloads when it ends. */
+  commandRunning?: boolean;
 }
 
 /**
@@ -38,6 +40,7 @@ export interface Quiet {
 export function reloadButton(view: CodeView | null, quiet: Quiet): { label: string; waiting: boolean } | null {
   if (!view || view.state !== "older") return null;
   if (!view.pending) return { label: "Reload Now", waiting: false };
+  if (!quiet.running && quiet.commandRunning) return { label: "Reloads when its command ends", waiting: true };
   if (!quiet.running && quiet.workersWorking > 0)
     return { label: quiet.workersWorking === 1 ? "Reloads when its worker finishes" : "Reloads when its workers finish", waiting: true };
   return { label: "Reloads after this reply", waiting: true };

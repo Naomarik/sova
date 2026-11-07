@@ -64,12 +64,19 @@ export function stopAll(stopping: ReadonlySet<string>, runs: readonly ShellRun[]
   return runs.filter((r) => r.state === "running").reduce((s, r) => stopRun(s, r.id, send), stopping);
 }
 
-/** The running bar's own button: Stop Command while exactly 1 command runs and the list is shut; Stop
-    All N while the list is open on more than 1; else none (each row has its Stop). */
-export function barAction(running: number, open: boolean): "stop" | "stop-all" | null {
-  if (running === 1 && !open) return "stop";
-  if (running > 1 && open) return "stop-all";
-  return null;
+/** What the running bar offers: with exactly 1 command running, Show Output (its window) and Stop
+    Command, and no list; with more, Show All / Hide for the list, and Stop All while the list is open. */
+export interface BarButtons {
+  showOutput: boolean;
+  stop: boolean;
+  showAll: boolean;
+  stopAll: boolean;
+}
+
+export function barButtons(running: number, open: boolean): BarButtons {
+  if (running === 1) return { showOutput: true, stop: true, showAll: false, stopAll: false };
+  if (running > 1) return { showOutput: false, stop: false, showAll: true, stopAll: open };
+  return { showOutput: false, stop: false, showAll: false, stopAll: false };
 }
 
 /** A duration as a clock: "0:07", "12:30", "1:02:05". */

@@ -8,13 +8,6 @@ test("a typed ! into the empty box steps the mode one deeper, and a third ! type
   assert.equal(enterOnInput("private", "", "!", "insertText"), null); // it is the command's first character
 });
 
-test("a ! that Type anywhere brought into the empty box is a plain !, never shell mode", () => {
-  assert.equal(enterOnInput("off", "", "!", "insertText", true), null);
-  assert.equal(enterOnInput("shell", "", "!", "insertText", true), null);
-  // Typed in the box itself, the same ! still enters shell mode.
-  assert.deepEqual(enterOnInput("off", "", "!", "insertText", false), { mode: "shell", text: "" });
-});
-
 test("a ! into a box that holds text is text, and so is anything else", () => {
   assert.equal(enterOnInput("off", "ls", "ls!", "insertText"), null);
   assert.equal(enterOnInput("off", "", "a", "insertText"), null);

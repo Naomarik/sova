@@ -198,6 +198,28 @@ try {
       assert(s.draft === "abc", `draft ${JSON.stringify(s.draft)}`);
     });
 
+    await check("wide: a ! typed outside the empty box enters shell mode, and nothing runs until Enter", async () => {
+      const shellOn = () => page.evaluate(() => document.querySelector(".composer-field")?.hasAttribute("data-shell") ?? false);
+      await page.locator("#composer-input").fill("");
+      await blur(page);
+      const before = await look(page);
+      await page.keyboard.press("!");
+      await settle();
+      let s = await look(page);
+      assert(s.inBox, `focus is on ${s.active}`);
+      assert(await shellOn(), `the box stayed a message box: ${JSON.stringify(s)}`);
+      assert(s.draft === "", `the ! went in as text: ${JSON.stringify(s.draft)}`);
+      await page.keyboard.type("ls");
+      await settle();
+      s = await look(page);
+      assert(s.draft === "ls" && (await shellOn()), JSON.stringify(s));
+      assert(s.userRows === before.userRows && !(await page.locator(".shell-card").count()), "something ran or was sent before Enter");
+      // Leave it as it was: an empty box, then Esc back to a message box.
+      await page.locator("#composer-input").fill("");
+      await page.keyboard.press("Escape");
+      assert(!(await shellOn()), "Esc in the empty shell box left shell mode on");
+    });
+
     await check("wide: / opens session search and ? the shortcut sheet; neither types in the box", async () => {
       await page.locator("#composer-input").fill("");
       await blur(page);

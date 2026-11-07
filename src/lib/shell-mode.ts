@@ -35,12 +35,10 @@ const deeper = (mode: ShellMode): ShellMode | null => (mode === "off" ? "shell" 
  * What an input into the EMPTY box does in a box that has shell mode: a typed `!` steps the mode
  * one deeper (message → `!` → `!!`), and pasted or dropped text that starts with `!` enters it as
  * typing would, its leading `!` (or `!!`) becoming the mode and the rest the command. Null: the
- * input is text, as ever (the box wasn't empty, a third `!`, anything else). A character Type
- * anywhere brought into the box (`typedAnywhere`, lib/type-anywhere) is always text: a `!` typed
- * outside the box goes in as a plain `!`.
+ * input is text, as ever (the box wasn't empty, a third `!`, anything else). A `!` Type anywhere
+ * brought into the box (lib/type-anywhere) is the same typed `!`: it enters shell mode too.
  */
-export function enterOnInput(mode: ShellMode, before: string, value: string, inputType: string, typedAnywhere = false): { mode: ShellMode; text: string } | null {
-  if (typedAnywhere) return null;
+export function enterOnInput(mode: ShellMode, before: string, value: string, inputType: string): { mode: ShellMode; text: string } | null {
   if (before !== "" || !value.startsWith("!") || deeper(mode) === null) return null;
   const pasted = inputType === "insertFromPaste" || inputType === "insertFromDrop";
   if (!pasted && value !== "!") return null;

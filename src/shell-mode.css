@@ -95,12 +95,13 @@
 .shell-bar {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1) var(--space-2);
   padding: var(--space-1) var(--space-3);
 }
 .shell-bar-toggle {
-  flex: 1;
+  flex: 1 1 14rem;
   min-width: 0;
   min-height: var(--tap-min);
   display: flex;
@@ -116,6 +117,17 @@
   cursor: pointer;
 }
 .shell-bar-toggle:hover { background: var(--color-surface); }
+/* With 1 running the summary is plain text, laid out as the toggle is, beside Show Output and Stop. */
+.shell-bar-summary {
+  flex: 1 1 14rem;
+  min-width: 0;
+  min-height: var(--tap-min);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+}
+.shell-bar-summary > .chip { flex: none; }
 .shell-bar-toggle > .chip { flex: none; }
 .shell-bar-line,
 .shell-list-command,
@@ -131,7 +143,10 @@
 }
 .shell-bar-line { flex: 1; color: var(--color-ink-muted); }
 .shell-bar-show { flex: none; font-weight: var(--fw-medium); color: var(--color-accent); }
-.shell-bar > .button { flex: none; }
+/* The bar's buttons stay together (Stop 8px from Show Output); narrow, they wrap under the summary
+   as one group, to the right. */
+.shell-bar-actions { flex: none; display: flex; gap: var(--space-2); margin-left: auto; }
+.shell-bar-actions:empty { display: none; }
 
 .shell-list {
   list-style: none;

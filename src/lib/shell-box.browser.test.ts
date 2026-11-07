@@ -18,7 +18,7 @@ type StoredDraft = import("./shell-box").StoredDraft;
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 /** A box over a stand-in chat: the shell control it is given (or none), its Runs and answers, and every save. */
-function harness(o: { stored?: StoredDraft; server?: StoredDraft; shell?: boolean } = {}) {
+function harness(o: { stored?: StoredDraft; server?: StoredDraft; shell?: boolean; unknown?: boolean } = {}) {
   const runs: { command: string; priv: boolean }[] = [];
   const writes: { text: string; mode?: string }[] = [];
   const said: string[] = [];
@@ -33,10 +33,12 @@ function harness(o: { stored?: StoredDraft; server?: StoredDraft; shell?: boolea
     answer,
   };
   const [hasShell, setHasShell] = solid.createSignal(o.shell ?? true);
+  const [unknown, setUnknown] = solid.createSignal(o.unknown ?? false);
   let box!: ReturnType<typeof createShellBox>;
   const dispose = solid.createRoot((dispose) => {
     box = createShellBox({
       shell: () => (hasShell() ? control : null),
+      unknown,
       stored: () => o.stored ?? { text: "" },
       load: () => Promise.resolve(o.server ?? o.stored ?? { text: "" }),
       write: (text, mode) => void writes.push(mode ? { text, mode } : { text }),
@@ -45,7 +47,13 @@ function harness(o: { stored?: StoredDraft; server?: StoredDraft; shell?: boolea
     });
     return dispose;
   });
-  return { box, runs, writes, said, setAnswer, setHasShell, dispose, cleared: () => cleared };
+  /** The chat's hello: shell mode offered (its control) or not; either way it is known now. */
+  const hello = (offers: boolean) =>
+    solid.batch(() => {
+      setHasShell(offers);
+      setUnknown(false);
+    });
+  return { box, runs, writes, said, setAnswer, setHasShell, hello, dispose, cleared: () => cleared };
 }
 
 describe("a draft reopening", () => {
@@ -197,11 +205,15 @@ describe("the chat's answer arriving while you type", () => {
 });
 
 describe("Type anywhere", () => {
-  test("a ! a key outside the box typed in is a plain !; the box stays a message box", () => {
+  test("a ! a key outside the box typed in enters shell mode, and nothing runs until Enter", () => {
+    // Type anywhere hands the key to the box, which takes it as typed there: the same input.
     const h = harness();
-    assert.equal(h.box.input("!", "insertText", false, true), null);
-    assert.equal(h.box.mode(), "off");
-    assert.equal(h.box.text(), "!");
+    assert.equal(h.box.input("!", "insertText", false), "");
+    assert.equal(h.box.mode(), "shell");
+    assert.equal(h.box.input("ls", "insertText", false), null);
+    assert.equal(h.runs.length, 0, "a typed command never runs by itself");
+    h.box.run({ canSend: true, blocked: null, readOnly: false });
+    assert.deepEqual(h.runs, [{ command: "ls", priv: false }]);
     h.dispose();
   });
 
@@ -284,5 +296,53 @@ describe("the whole output's window", () => {
     release();
     await p;
     assert.equal(r.read(), null);
+  });
+});
+
+describe("a ! typed before the chat's hello says whether it offers shell mode", () => {
+  /** "!ls" typed into the empty box, as the textarea's input events give it. */
+  const typeBang = (box: ReturnType<typeof createShellBox>) => {
+    box.input("!", "insertText", false);
+    box.input("ls", "insertText", false);
+  };
+
+  test("is a command: Enter before the hello sends nothing, as a command or a message, and says Not connected yet", () => {
+    const h = harness({ shell: false, unknown: true });
+    typeBang(h.box);
+    assert.equal(h.box.mode(), "shell");
+    assert.equal(h.box.text(), "ls");
+    assert.notEqual(h.box.run({ canSend: true, blocked: null, readOnly: false }), "message", "never a prompt");
+    assert.deepEqual(h.runs, []);
+    assert.equal(h.box.reason(), NOT_CONNECTED_YET);
+    h.dispose();
+  });
+
+  test("runs as a command once the hello offers shell mode", () => {
+    const h = harness({ shell: false, unknown: true });
+    typeBang(h.box);
+    h.hello(true);
+    assert.equal(h.box.mode(), "shell");
+    assert.equal(h.box.text(), "ls");
+    assert.equal(h.box.run({ canSend: true, blocked: null, readOnly: false }), "sent");
+    assert.deepEqual(h.runs, [{ command: "ls", priv: false }]);
+    h.dispose();
+  });
+
+  test("turns into visible text when the hello says there is no shell mode", () => {
+    const h = harness({ shell: false, unknown: true });
+    typeBang(h.box);
+    h.hello(false);
+    assert.equal(h.box.mode(), "off");
+    assert.equal(h.box.text(), "!ls");
+    h.dispose();
+  });
+
+  test("a stored message's leading ! stays text while shell mode is unknown", () => {
+    const h = harness({ stored: { text: "!ls" }, shell: false, unknown: true });
+    assert.equal(h.box.mode(), "off");
+    assert.equal(h.box.text(), "!ls");
+    h.hello(true);
+    assert.equal(h.box.mode(), "off", "a message, whatever its text starts with");
+    h.dispose();
   });
 });

@@ -233,6 +233,9 @@ export function Composer(props: {
   /** Shell mode (§chat.shell-mode/box): only a chat with its own agent and folder gives it. Absent,
       the box has no shell mode and a leading "!" is text, as ever. */
   shell?: ShellControl | null;
+  /** The chat hasn't said yet whether it offers shell mode (no hello so far): a "!" typed meanwhile is
+      a command that waits, never a message (lib/shell-box). */
+  shellUnknown?: boolean;
   /** `text` already names each attachment's path; `running`: a reply runs, as this pane sees it (the
       frame is the chat's choice, sendFrame); `attachments` are for the optimistic row. */
   onSend(text: string, running: boolean, attachments: UploadResult[]): boolean;
@@ -339,6 +342,7 @@ export function Composer(props: {
 
   box = createShellBox({
     shell: () => props.shell,
+    unknown: () => !!props.shellUnknown,
     stored: () => ({ text: drafts.get(props.path) ?? "", mode: draftModes.get(props.path) }),
     load: () => loadDraft(props.path),
     write: (v, m) => setDraftText(props.path, v, m),
@@ -350,8 +354,6 @@ export function Composer(props: {
   const setDraft = (v: string) => box.setDraft(v);
   const switchMode = (next: ShellMode, say?: string) => box.switchMode(next, say);
   let disposed = false;
-  /** The next input is the character a key typed outside the box brought in (lib/type-anywhere). */
-  let typedAnywhere = false;
   /** Listeners Solid can't delegate (paste), added by hand so closing can take them off. */
   const listening = new AbortController();
   /** The page's Esc times: an Esc right after another never stops the reply, so the press that
@@ -715,7 +717,9 @@ export function Composer(props: {
       },
       // Focus hides only the single view's composer (the footer's inert, below).
       take: () => {
-        const took = takeTyping({
+        // The browser types the key into the box in this same keydown, as if typed there: a "!"
+        // into the empty box enters shell mode as it would in the box (Enter still runs it).
+        return takeTyping({
           readOnly: !!props.readOnly,
           draftLoaded: box.loaded(),
           el: input,
@@ -723,14 +727,6 @@ export function Composer(props: {
           hiddenByFocus: focusView() && scope.id === null,
           endFocus: () => setFocusView(false),
         });
-        // The browser types the key into the box in this same keydown, so the next input is that
-        // character: text, never shell mode (a "!" typed outside the box is a plain "!"). Cleared by
-        // that input, or after this task if the key typed nothing.
-        if (took) {
-          typedAnywhere = true;
-          setTimeout(() => (typedAnywhere = false));
-        }
-        return took;
       },
       attach: () => {
         if (!disabled()) picker?.click(); // no await before it: the picker needs the gesture
@@ -1311,8 +1307,7 @@ export function Composer(props: {
                 const value = e.currentTarget.value;
                 // A "!" typed into the empty box, or pasted text starting with one: shell mode.
                 const ev = e as InputEvent;
-                const entered = box.input(value, ev.inputType ?? "", !!ev.isComposing, typedAnywhere);
-                typedAnywhere = false;
+                const entered = box.input(value, ev.inputType ?? "", !!ev.isComposing);
                 if (entered !== null) {
                   e.currentTarget.value = entered;
                   e.currentTarget.setSelectionRange(entered.length, entered.length);

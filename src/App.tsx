@@ -37,7 +37,7 @@ import { HostUpdatePage } from "./components/HostStateNotices";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerCantOpen, peerInfo, sameMeshInfo, sessionRouteFromHash, updateNeededFor, setMeshState } from "./lib/mesh";
 import { bindKey, paletteKeyAction } from "./commands/keys";
 import { composerOf } from "./commands/composers";
-import { keyPlatform, OVERLAY_CANDIDATES, startTyping } from "./lib/type-anywhere";
+import { DETAILS_BESIDE_QUERY, keyPlatform, OVERLAY_CANDIDATES, startTyping } from "./lib/type-anywhere";
 import { closePalette, paletteRequest, togglePaletteFromKey } from "./commands/palette-open";
 import { isOverseerHash, OVERSEER_HASH, overseerHistoryId, overseerRedirect } from "./lib/overseer";
 import { followListRows, onFeedPush, requestListRead, sessionFeedOpen } from "./lib/session-feed";
@@ -543,6 +543,8 @@ export function App() {
   const refresh = () => void refetch();
   /** The sessions pane as the 64px spine (lib/spine.ts): the user's choice, on a wide viewport. */
   const unfolded = createMediaQuery("(min-width: 768px)");
+  /** Session details sits beside the chat (not over its message box) from this width. */
+  const detailsBeside = createMediaQuery(DETAILS_BESIDE_QUERY);
   const collapsed = () => spine() && unfolded();
   // One knob: the collapsed pane is `--sidebar-width` set to `--spine-width`, and nothing else in the
   // CSS knows about it. Expanding writes back the width the resizer last applied.
@@ -874,7 +876,7 @@ export function App() {
   };
   // False always: the browser's default then types the key in the box focus moved to.
   const offTypeKey = bindKey("compose.type", (e) => {
-    startTyping(e, { overlays: () => document.querySelectorAll(OVERLAY_CANDIDATES), box: typingBox });
+    startTyping(e, { overlays: () => document.querySelectorAll(OVERLAY_CANDIDATES), covered: () => !!subagentsPath() && !detailsBeside(), box: typingBox });
     return false;
   });
   onCleanup(offTypeKey);

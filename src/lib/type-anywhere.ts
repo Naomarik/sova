@@ -103,15 +103,23 @@ export interface TypingBox {
 }
 
 /**
+ * From this width Session details is a column beside the chat; below it the panel is a drawer or a
+ * full screen over the chat, covering its message box (base.css, .app-subagents).
+ */
+export const DETAILS_BESIDE_QUERY = "(min-width: 1280px)";
+
+/**
  * The key's owner (App): with a key no widget already used (a diff's n and p prevent theirs), on a
- * free target, no overlay open and a box on screen that takes typing, focus moves into the box.
+ * free target, no overlay open, the box not covered by Session details, and a box on screen that
+ * takes typing, focus moves into the box.
  * True when it did. Its bound owner returns false either way, so the browser's default stays and
  * types the key in the box (keys.ts KeyRun).
  */
-export function startTyping(e: { target?: unknown; defaultPrevented?: boolean }, ctx: { overlays(): Iterable<ElementLike>; box(): TypingBox | null }): boolean {
+export function startTyping(e: { target?: unknown; defaultPrevented?: boolean }, ctx: { overlays(): Iterable<ElementLike>; covered(): boolean; box(): TypingBox | null }): boolean {
   if (e.defaultPrevented) return false;
   if (keyBelongsToTarget(e.target as ElementLike | null)) return false;
   for (const el of ctx.overlays()) if (isOpenOverlay(el)) return false;
+  if (ctx.covered()) return false; // nothing moves: no hidden box takes the letter, Focus stays as it was
   const box = ctx.box();
   return !!box && box.take();
 }

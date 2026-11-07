@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as typeAnywhereModule from "./type-anywhere";
-import { isOpenOverlay, keyBelongsToTarget, OVERLAY_CANDIDATES, startTyping, takeTyping, typesCharacter, type CharKeyLike, type ElementLike } from "./type-anywhere";
+import { readFileSync } from "node:fs";
+import { DETAILS_BESIDE_QUERY, isOpenOverlay, keyBelongsToTarget, OVERLAY_CANDIDATES, startTyping, takeTyping, typesCharacter, type CharKeyLike, type ElementLike } from "./type-anywhere";
 
 const key = (over: Partial<CharKeyLike>): CharKeyLike => ({ key: "", altKey: false, ctrlKey: false, metaKey: false, ...over });
 const altGraph = (k: string) => k === "AltGraph";
@@ -149,13 +150,14 @@ const opened = el("DIV", { popover: "auto" }, body, { matches: (s) => s === ":po
 const closed = el("DIV", { popover: "auto" }, body, { matches: () => false });
 const button = el("BUTTON", {}, main);
 
-const run = (over: { target?: unknown; defaultPrevented?: boolean; overlays?: ElementLike[]; box?: { take(): boolean } | null }) => {
+const run = (over: { target?: unknown; defaultPrevented?: boolean; overlays?: ElementLike[]; covered?: boolean; box?: { take(): boolean } | null }) => {
   const calls = { box: 0, take: 0 };
   const box = over.box === undefined ? { take: () => true } : over.box;
   const acted = startTyping(
     { target: "target" in over ? over.target : button, defaultPrevented: over.defaultPrevented },
     {
       overlays: () => over.overlays ?? [],
+      covered: () => over.covered ?? false,
       box: () => (calls.box++, box && { take: () => (calls.take++, box.take()) }),
     },
   );
@@ -182,6 +184,19 @@ test("nothing happens while a dialog, sheet, menu or popover is open, focus outs
 test("nothing happens to a key a widget already used: a diff's n and p prevent theirs", () => {
   assert.deepEqual(run({ defaultPrevented: true }), { acted: false, box: 0, take: 0 });
   assert.deepEqual(run({ defaultPrevented: false }), { acted: true, box: 1, take: 1 });
+});
+
+test("nothing moves while Session details covers the box: no box is asked, so none takes the letter or ends Focus", () => {
+  assert.deepEqual(run({ covered: true }), { acted: false, box: 0, take: 0 });
+  assert.deepEqual(run({ covered: false }), { acted: true, box: 1, take: 1 });
+});
+
+test("the width the panel stops covering the box is the one the stylesheet moves it beside the chat at", () => {
+  const css = readFileSync(new URL("../design/base.css", import.meta.url), "utf8");
+  const width = DETAILS_BESIDE_QUERY.match(/^\(min-width: (\d+)px\)$/)?.[1];
+  assert.ok(width, DETAILS_BESIDE_QUERY);
+  const block = css.split(`@media (min-width: ${width}px) {`).slice(1).find((b) => /\.app-subagents\s*\{[^}]*position:\s*static/.test(b.split(/\n\}/)[0]!));
+  assert.ok(block, `base.css has no @media (min-width: ${width}px) block that puts .app-subagents beside the chat`);
 });
 
 test("nothing happens with no box on screen, or a box that takes no typing (read-only)", () => {

@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
 import type { ShellRun } from "../../shared/protocol";
-import { barAction, cardOfRun, clock, lastLine, NOT_SHARED } from "../lib/shell-runs";
+import { cardOfRun, clock, lastLine, NOT_SHARED } from "../lib/shell-runs";
+import type { ShellBar } from "../lib/shell-bar";
 import { Chip } from "./ui";
 import { ShellOutputWindow } from "./ShellOutputWindow";
 import "../shell-mode.css";
@@ -15,24 +16,14 @@ let lists = 0;
  * ends it leaves the list and comes into the transcript as its card.
  */
 export function ShellDock(props: {
-  /** The chat's live runs, running or ended and not saved yet: the bar counts the running ones. */
-  runs: readonly ShellRun[];
-  onStop(id: string): void;
-  /** Stops every running command, each with its own stop. */
-  onStopAll(): void;
-  stopping: ReadonlySet<string>;
+  /** The bar's state (lib/shell-bar): what runs, the list, Stop and Stop All. */
+  bar: ShellBar;
 }) {
+  const bar = props.bar;
   const listId = `shell-list-${++lists}`;
   /** The run whose window is open, by id: it stays open as the run's output arrives. */
   const [openId, setOpenId] = createSignal<string | null>(null);
-  const [listOpen, setListOpen] = createSignal(false);
-  // By id, oldest first, so a row stays the same element (and keeps focus) as its output arrives.
-  const running = createMemo(() => props.runs.filter((r) => r.state === "running").map((r) => r.id), undefined, {
-    equals: (a, b) => a.length === b.length && a.every((id, i) => id === b[i]),
-  });
-  const runOf = (id: string) => props.runs.find((r) => r.id === id);
-  const newest = () => runOf(running().at(-1) ?? "");
-  const action = () => barAction(running().length, listOpen());
+  const { running, runOf, newest, listOpen, action, stopping, allStopping } = bar;
   /** Now, each second while the list shows how long each command has run. */
   const [now, setNow] = createSignal(Date.now());
   createEffect(() => {
@@ -41,7 +32,6 @@ export function ShellDock(props: {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     onCleanup(() => clearInterval(timer));
   });
-  createEffect(on(() => running().length, (n) => n === 0 && setListOpen(false), { defer: true }));
 
   /** The bar, and the pane around it (its message box). */
   let anchor: HTMLSpanElement | undefined;
@@ -63,20 +53,19 @@ export function ShellDock(props: {
   const opened = createMemo(() => {
     const id = openId();
     if (!id) return (seen = null);
-    return (seen = props.runs.find((r) => r.id === id) ?? (seen?.id === id ? seen : null));
+    return (seen = runOf(id) ?? (seen?.id === id ? seen : null));
   });
 
   const StopButton = (p: { id: string }) => (
     <button
       type="button"
       class="button button-sm button-destructive"
-      aria-disabled={props.stopping.has(p.id) ? "true" : undefined}
-      onClick={() => !props.stopping.has(p.id) && props.onStop(p.id)}
+      aria-disabled={stopping().has(p.id) ? "true" : undefined}
+      onClick={() => !stopping().has(p.id) && bar.stop(p.id)}
     >
-      {props.stopping.has(p.id) ? "Stopping…" : "Stop Command"}
+      {stopping().has(p.id) ? "Stopping…" : "Stop Command"}
     </button>
   );
-  const allStopping = () => running().every((id) => props.stopping.has(id));
 
   return (
     <>
@@ -115,7 +104,7 @@ export function ShellDock(props: {
             </ul>
           </Show>
           <div class="shell-bar">
-            <button type="button" class="shell-bar-toggle" aria-expanded={listOpen()} aria-controls={listId} onClick={() => setListOpen((o) => !o)}>
+            <button type="button" class="shell-bar-toggle" aria-expanded={listOpen()} aria-controls={listId} onClick={() => bar.toggle()}>
               <Chip tone="accent" live>
                 {running().length} running
               </Chip>
@@ -131,7 +120,7 @@ export function ShellDock(props: {
                   type="button"
                   class="button button-sm button-destructive"
                   aria-disabled={allStopping() ? "true" : undefined}
-                  onClick={() => !allStopping() && props.onStopAll()}
+                  onClick={() => !allStopping() && bar.stopAll()}
                 >
                   {allStopping() ? "Stopping…" : `Stop All ${running().length}`}
                 </button>
@@ -149,8 +138,8 @@ export function ShellDock(props: {
               setOpenId(null);
               refocus();
             }}
-            onStop={() => props.onStop(run().id)}
-            stopping={props.stopping.has(run().id)}
+            onStop={() => bar.stop(run().id)}
+            stopping={stopping().has(run().id)}
           />
         )}
       </Show>

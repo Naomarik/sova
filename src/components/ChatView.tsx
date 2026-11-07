@@ -149,7 +149,8 @@ import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
 import { ShellCard } from "./ShellCard";
 import { ShellDock } from "./ShellDock";
-import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf, shellOffered, stillStopping, stopAll, stopOnClose, stopRun } from "../lib/shell-runs";
+import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf, shellOffered, stopOnClose } from "../lib/shell-runs";
+import { createShellBar } from "../lib/shell-bar";
 import type { ShellAnswer, ShellControl } from "../lib/shell-mode";
 import type { ShellRun } from "../../shared/protocol";
 import { HostSendNotice } from "./HostStateNotices";
@@ -572,8 +573,6 @@ export function ChatView(props: {
   const [shellRuns, setShellRuns] = createSignal<ShellRun[]>([]);
   /** The ids drawn, in order, so a card keeps its node (and its output's scroll) as its run changes. */
   const shellIds = createMemo(() => shellRuns().map((r) => r.id), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
-  /** Runs whose Stop Command went: the button waits for their end. */
-  const [shellStopping, setShellStopping] = createSignal<ReadonlySet<string>>(new Set());
   /** The newest answer to a Run from this tab's composer; `shellWaiting` the Runs not answered yet. */
   const [shellAnswer, setShellAnswer] = createSignal<ShellAnswer | null>(null);
   const shellWaiting = new Set<string>();
@@ -860,7 +859,6 @@ export function ChatView(props: {
       const runs = nextShellRuns(untrack(shellRuns), msg);
       if (runs) {
         setShellRuns(runs);
-        setShellStopping((s) => stillStopping(s, runs));
       }
       const answer = shellAnswerOf(msg);
       if (answer && shellWaiting.delete(answer.clientId)) setShellAnswer(answer);
@@ -935,7 +933,7 @@ export function ChatView(props: {
           // Its commands stopped with it (archive, restart, a switch): their cards say so now, and the
           // next hello brings their saved rows (§chat.shell-mode/card).
           setShellRuns((runs) => stopOnClose(runs));
-          setShellStopping(new Set<string>());
+          shellBar.reset();
           // Sends it never took can't be refused back on this socket any more: they come back now.
           handBackSends(unacked.takeAll(handedBack), "That message couldn't be sent. It's back in the composer.");
           return;
@@ -2244,9 +2242,8 @@ export function ChatView(props: {
     }),
   );
   /** The card's Stop Command: that command and everything it started, never the model's reply. */
-  const stopShell = (id: string) => {
-    setShellStopping((s) => stopRun(s, id, (frame) => socket.send(frame)));
-  };
+  /** The running commands' bar (lib/shell-bar): Stop and Stop All go over this chat's socket. */
+  const shellBar = createShellBar({ runs: shellRuns, send: (frame) => socket.send(frame) });
   /** Shell mode is in every chat with its own agent and folder (§chat.shell-mode/box); not in the
       Overseer, a project overseer or assistant, a gathering session, or a read-only box. The hello
       says (`shellMode`); before this view's first one, what the session list knows decides. */
@@ -2660,7 +2657,7 @@ export function ChatView(props: {
         <For each={feed().entries}>{(m) => <><Show when={feedBanner(m) === "turn"}><TurnError message={m.message} /></Show><Show when={feedBanner(m) === "start"}><StartError message={m.message} back={m.back ?? 0} /></Show><Show when={!failureHasRow(live.entries, m.message)}><SubagentLimitRow path={props.path} message={m.message} provider={m.provider} /></Show></>}</For>
       </ThreadScroller>
       </ToolSourceContext.Provider>
-      <ShellDock runs={shellRuns()} onStop={stopShell} onStopAll={() => setShellStopping((st) => stopAll(st, shellRuns(), (frame) => socket.send(frame)))} stopping={shellStopping()} />
+      <ShellDock bar={shellBar} />
       <Show when={!hostGate()} fallback={<HostSendNotice host={hostOf(props.path)!} reading={hostGate()!} />}>
       <Composer
         path={props.path}

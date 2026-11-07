@@ -143,8 +143,9 @@ found so far (pi 1.0.3).
   (`piProviderKeys` in `server/harness/pi/sign-in.ts`, the contract's `ProviderKeyStore`, quirk P38); pi
   exports no `AuthStorage`, and `setRuntimeApiKey` stores nothing. `server/provider-keys.ts` checks a key
   before it calls them and refreshes the shared runtime after.
-- The user's own `!` commands (shell mode, §chat.shell-mode/running) are `HarnessSession.shell` (run, stop,
-  isRunning), pi's in `server/harness/pi/shell.ts` (quirk P40): `executeBash` emits no `user_bash`, so the adapter
+- The user's own `!` commands (shell mode, §chat.shell-mode/running) are `HarnessSession.shell` (`run`, any
+  number at once, each with its own stop signal and output limit), pi's in `server/harness/pi/shell.ts` (quirk
+  P40; `ownStop` aborts that run's own controller in pi's `_bashAbortControllers`): `executeBash` emits no `user_bash`, so the adapter
   calls `extensionRunner.emitUserBash` first as pi's RPC mode does, then picks the operations in a fixed order (the
   hook's, else the sandbox's `prepareSessionCommand` confinement when On, failing closed, else pi's local shell).
   pi records the result as a `bashExecution` message itself, deferred while the agent streams until the run ends

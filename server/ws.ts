@@ -7,6 +7,7 @@ import { cappedWebSocketServer, streamWebSocketServer } from "./runtime-quirks";
 import type { ChatClientMessage, ChatServerMessage, LlmFeedMessage, SessionFeedMessage, V2EventFrame, WatchServerMessage } from "../shared/protocol";
 import { refuseUpgrade } from "./auth";
 import { type NotPage, notPageSocket, yourClickBody } from "./page-only";
+import { onCardNews } from "./transcript-cards";
 import { chatClosedToKeys, EXTENSION_CHAT_DOOR, extensionFrameRefusal } from "./extension-doors";
 import { sandboxAfterRewind, sandboxCommand, sandboxLowers } from "./sandbox-state";
 import { isDirectLocal } from "./compression";
@@ -225,8 +226,11 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     trackViewer(id, 1);
     nudgeMarks(); // a mark clears once its session is on screen (server/session-feed.ts)
   }
+  // A pane on screen hears its chat's cards change at once (§chat.transcript-cards/answering); a script's socket doesn't ask.
+  const offCards = viewer ? onCardNews((e) => e.id === id && client.send({ type: "cards_changed" })) : null;
   ws.on("close", () => {
     gone = true;
+    offCards?.();
     if (viewer) trackViewer(id, -1);
     if (chat) stayToHear();
   });

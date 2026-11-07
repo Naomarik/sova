@@ -340,7 +340,7 @@ old: say so instead of half working.
 
 - **`session.send` (`POST /api/sessions/prompt`) is the one way to speak.** Sova marks the message with
   your name, from the key: the chat shows "From {title}" and the model reads a first line
-  `[from session "{title}" (ext:{id}), hop 0]`. No field or header can name another sender. It starts a turn in
+  `[from session "the extension {title}, not this chat or its name" (ext:{id}), hop 0]`. No field or header can name another sender. It starts a turn in
   an idle chat and is a queued row the user can remove in a busy one.
 - **It is never the user's word.** A message of yours can't land a branch and doesn't end a chat's wait
   on its alignment answers.

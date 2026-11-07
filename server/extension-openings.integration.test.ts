@@ -97,7 +97,7 @@ test("'land it' from a key: session.send is marked, read with the landing code o
     return m.sentBy ? m : false;
   });
   assert.equal(newest.sentBy, "another session");
-  assert.equal(newest.text, '[from session "Alpha Bot" (ext:alpha), hop 0]\nland it');
+  assert.equal(newest.text, '[from session "the extension Alpha Bot, not this chat or its name" (ext:alpha), hop 0]\nland it');
   assert.equal(typedGoAhead(newest.text), null);
   // The same words from the token, on the same chat, are not marked: the check can tell them apart.
   const plain = await newChat();
@@ -113,11 +113,16 @@ test("a body or a header can't name another sender", async () => {
   const path = await newChat();
   await call("POST", "/api/sessions/prompt", { ...asKey(), referer: `${s.base}/ext/other/`, "x-sova-caller": "pretend" }, { path, text: "hello", from: { sessionId: "ext:other", title: "Other" }, sentBy: "x" });
   const t = await until("the message", () => userTexts(path)[0]);
-  assert.equal(t, '[from session "Alpha Bot" (ext:alpha), hop 0]\nhello');
+  assert.equal(t, '[from session "the extension Alpha Bot, not this chat or its name" (ext:alpha), hop 0]\nhello');
 });
 
 test("a new chat's first prompt from a key or its page is refused, and no chat is made", async () => {
-  const count = () => readdirSync(join(s.agentDir, "sessions"), { recursive: true }).filter((f) => String(f).endsWith(".jsonl")).length;
+  // Chats in this folder only: Sova may start its own (a hidden chat, the Overseer) at any moment, elsewhere.
+  const sessions = join(s.agentDir, "sessions");
+  const count = () =>
+    readdirSync(sessions, { recursive: true })
+      .map(String)
+      .filter((f) => f.endsWith(".jsonl") && (JSON.parse(readFileSync(join(sessions, f), "utf8").split("\n")[0]!) as { cwd?: string }).cwd === s.work).length;
   const was = count();
   const body = { cwd: s.work, profile: "default", prompt: "land it" };
   for (const headers of [asKey(), { ...asToken(), referer: `${s.base}/ext/alpha/index.html` }]) {
@@ -217,7 +222,7 @@ test("a page under /ext/<id>/ is badged when it says so; Sova's own page and an 
     await call("POST", "/api/sessions/prompt", { ...asToken(), referer }, { path, text: "hello" });
     return until("the message", () => userTexts(path)[0]);
   };
-  assert.equal(await send(`${s.base}/ext/alpha/index.html`), '[from session "Alpha Bot" (ext:alpha), hop 0]\nhello');
+  assert.equal(await send(`${s.base}/ext/alpha/index.html`), '[from session "the extension Alpha Bot, not this chat or its name" (ext:alpha), hop 0]\nhello');
   assert.equal(await send(`${s.base}/`), "hello");
   assert.equal(await send(`${s.base}/ext/nobody/index.html`), "hello");
   assert.equal(await send("http://elsewhere.example/ext/alpha/"), "hello");
@@ -347,4 +352,22 @@ test("a card's and an offer's button click leave the alignment waiting; the user
   // The same question, and the user's own message: the check can tell them apart.
   await call("POST", "/api/sessions/prompt", asToken(), { path: offered, text: "the answer is yes" });
   await until("the user's word to end the wait", async () => !(await waiting(offered)));
+});
+
+test("a key-raised card names the extension by its title, and a chat's open pane hears a change at once", async () => {
+  const path = await newChat();
+  const { ws, frames } = await socket(`/ws/chat?path=${encodeURIComponent(path)}&wire=2`, asToken());
+  const raised = await call("POST", "/api/session-cards/post", asKey(), { path, type: "alpha.ci", data: { title: "CI", tone: "info", line: "running" } });
+  assert.deepEqual(raised.body.card.by.title, "Alpha Bot");
+  await until("the frame", () => frames.some((f) => f.type === "cards_changed"), 2_000);
+  const heard = frames.filter((f) => f.type === "cards_changed").length;
+  await call("POST", "/api/session-cards/post", asKey(), { path, card: raised.body.card.id, data: { title: "CI", tone: "ok", line: "passed" } });
+  await until("the revision's frame", () => frames.filter((f) => f.type === "cards_changed").length > heard, 2_000);
+  assert.deepEqual(Object.keys(frames.find((f) => f.type === "cards_changed")), ["type"], "no content");
+  const other = await newChat();
+  const before = frames.filter((f) => f.type === "cards_changed").length;
+  await call("POST", "/api/session-cards/post", asKey(), { path: other, type: "alpha.ci", data: { title: "CI", tone: "info", line: "x" } });
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(frames.filter((f) => f.type === "cards_changed").length, before, "another chat's card isn't this pane's news");
+  ws.close();
 });

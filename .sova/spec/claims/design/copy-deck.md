@@ -850,8 +850,14 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | Where | Copy |
 |---|---|
 | Tab | Themes |
-| List `aria-label` | Theme |
-| Panel intro | Applies as you pick. The choice is remembered in this browser. |
+| Panel intro | A pick in the list that's showing applies at once; the other list's pick shows when its mode does. The choice is remembered in this browser. |
+| Appearance legend | Appearance |
+| Appearance options | `Light` · `Dark` · `Auto` |
+| Appearance hint | Auto follows your system's light or dark setting. |
+| Appearance announcement (polite region) | `Appearance is now {Light\|Dark\|Auto}.` |
+| List headings, in this order | `Dark theme` · `Light theme` |
+| List `aria-label`, one per list | `Dark theme` / `Light theme` |
+| List note, beside its heading | `Showing now` on the list the window wears; on the other `Shows in Light mode` · `Shows in Dark mode`, or under Auto `Shows while your system is light` · `Shows while your system is dark` |
 | Row accessible name | `{name}, {base} base, {source}` — e.g. "Catppuccin Mocha, dark base, built-in". Field names are `shared/protocol.ts`'s: `base`, `source` (`builtin`\|`user`), `path`, `replacesBuiltin` |
 | Row meta | `{Dark\|Light} base · {Built-in\|User}` · a user file holding a built-in's id adds a third clause: `Dark base · User · replaces the built-in` |
 | Row `title`, user themes | the file's full path — e.g. `~/.pi/agent/sova/themes/dracula.json` |
@@ -874,7 +880,8 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | Footer | Drop a `.json` file in `~/.pi/agent/sova/themes/` and it shows up here. |
 | Footer action | `Refresh` (icon `refresh.svg`; `aria-busy` while a refresh it started is in flight) |
 | Folder unreadable (banner) | We couldn't read `~/.pi/agent/sova/themes/`. Your own themes aren't listed; the built-in ones still work. Retry or check the folder's permissions. |
-| Missing theme fell back (banner) | `{id}` isn't there anymore, so you're back on Dark. |
+| A pick fell back (banner) | It names the list that fell back and why. Its file is gone: `{id}` isn't there anymore, so your dark theme is back on the built-in Dark. · It can't be read: We couldn't read `{id}`, so your dark theme is back on the built-in Dark. · It now stands on the other base: `{id}` is a light theme now, so your dark theme is back on the built-in Dark. The same for a light pick: `…, so your light theme is back on the built-in Light.`, and `{id}` is a dark theme now for the third |
+| Theme list didn't load (banner) | title `Couldn't load the theme list` · body `The theme you're wearing is unchanged. {message}` · action `Retry` |
 | Loading | skeleton rows — no copy |
 
 

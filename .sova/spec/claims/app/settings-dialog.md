@@ -382,14 +382,26 @@ from each chat's next summary.
 
 ## §app.settings-dialog/themes — Themes
 
-The eighth tab. It lists every theme the app can find — the ones shipped with it and the ones
-you dropped in yourself — as a radiogroup of **cards in a grid**, one of them checked. The grid
-follows the panel's width: 3 cards across at the unfolded panel, 2 in the folded sheet, so 18
-themes are 6 rows rather than 18 and the footer is a screen away instead of a page. Arrow keys
-move the choice the way they do in the rail, across the grid: Left and Right step one card and
-wrap, Up and Down step one row and stop at the top and bottom edges, Home and End go to the
-first and last card. The column count is read off the rendered cards, never restated from the
-stylesheet, so any panel width agrees with itself.
+The sixteenth tab. At its top, **Appearance** offers Light, Dark and Auto, three radios in one
+fieldset like Text size: Light always wears your light theme, Dark your dark theme, and Auto the
+light one while the device's system setting is light and the dark one while it is dark (no
+preference reads as dark), switching the moment that setting changes, with no reload. Below it,
+every theme the app can find — the ones shipped with it and the ones you dropped in yourself — is
+split by base into two lists, **Dark theme** first and **Light theme** under it, each a
+radiogroup of **cards in a grid**: a dark theme is listed only under Dark theme, a light one only
+under Light theme. The order never moves: Dark theme comes first in every mode, Auto's switches
+included, because Dark is the default most people wear and lists that swap under your hand are
+harder to learn. A list's heading carries a note saying when it shows: `Showing now` on the list
+the window is wearing, and on the other `Shows in Light mode` or `Shows in Dark mode`, or under
+Auto `Shows while your system is light` or `Shows while your system is dark`. The grid follows
+the panel's width: 3 cards across at the unfolded panel, 2 in the folded sheet, so the 14 shipped
+dark themes are 5 rows rather than 14 and the footer is a screen away instead of a page. Arrow
+keys move the choice within a list the way they do in the rail, across its grid: Left and Right
+step one card and wrap, Up and Down step one row and stop at the top and bottom edges, Home and
+End go to the list's first and last card. Each list is its own tab stop, its checked card (its
+first usable card when none is checked), and an arrow never leaves the list it is in. The column
+count is read off the rendered cards, never restated from the stylesheet, so any panel width
+agrees with itself.
 
 A card is the preview. It carries the theme's name, a meta line reading its base and where it
 came from (`Dark base · Built-in`, `Light base · User`), a strip of 5 swatches painted in the
@@ -408,19 +420,34 @@ same color as the panel is still a dot.
 
 The checked card is the tint plus a 1.5px accent edge plus a check mark in its corner: the mark
 is what says "selected" in shape, because the tint and the edge alone are a color-only state.
+**The checked card is the theme that list wears.** It is the list's pick; with no pick, it is
+that base's built-in card, `dark` or `light`, unless a user file has taken the built-in's id
+(`replaces the built-in`). That file isn't what the window wears while nothing is picked, so then
+no card in the list is checked, and the window keeps the built-in look until you pick one.
 
-**Choosing applies immediately.** There is no Save and no preview mode: the row you check is the
-theme the window is wearing before your finger leaves the key, because a theme you have to
-commit to is a theme you can't compare. The choice is the id, and it persists in `localStorage`
-under `sova:theme`, read and applied before first paint (§design/ground-rules) so a reload never flashes the
-default first. A stored id that no longer resolves — the file was deleted or renamed — falls back
-to `dark`, and the list shows `dark` checked.
+**Choosing in the list that's showing applies immediately.** There is no Save and no preview
+mode: the card you check is the theme the window is wearing before your finger leaves the key,
+because a theme you have to commit to is a theme you can't compare. Choosing in the other list
+makes that card its pick and changes nothing on screen until that list shows; to see it, switch
+Appearance. The mode and both picks persist in `localStorage` under `sova:theme`, each pick's
+resolved values cached beside its id, and the page's own first script puts the theme they show
+on before the first frame (§design/ground-rules) — under Auto too, the system setting being read in
+the same step — so a reload never flashes the other theme. Every save reads the stored choice
+again and changes only its own part, the mode or one list's pick, so two tabs never erase each
+other's picks; and an open tab follows a change made in another tab at once, mode and picks
+alike, with no reload. A pick that can't be worn any more falls back to its own list's built-in,
+`dark` or `light`, and a notice names the theme, the list that went back and why: its file isn't
+there anymore (deleted or renamed), we couldn't read it, or it is now a theme of the other base.
+The other list's pick stays. A browser with nothing stored starts in Dark with the built-in Dark
+and Light picked; a single theme stored before there were two picks becomes its base's pick, with
+the other the built-in one and the mode set to that base, so the window looks as it did.
 
 **A theme file we can't use stays in the list.** It renders as a disabled card spanning the
 whole row — a reason is a sentence and needs the width — its filename in
 mono where the name would be and its reason where the meta line would be. The card can't be
-checked, arrow keys step over it, and it never replaces the theme you're wearing. A theme that
-vanishes when it breaks is a theme you can't fix.
+checked, arrow keys step over it, and it never replaces the theme you're wearing. It sits in the
+list of the base its file names, Dark theme when the file doesn't parse. A theme that vanishes
+when it breaks is a theme you can't fix.
 
 Two things go wrong, and they read differently. **A file that doesn't parse** carries the
 parser's own message — "Expected double-quoted property name in JSON at position 15 (line 3
@@ -434,7 +461,7 @@ always a spelling we don't take, so the copy names the ones we do (§design/grou
 
 ### Typography
 
-Under the grid, above the footer: the fonts **this browser** puts over whichever theme is on.
+Under the two lists, above the footer: the fonts **this browser** puts over whichever theme is on.
 Two closed lists, each a native select so a phone gets its own picker — **Text**, which sets the
 body and the display face together (the sidebar, messages, headings; a separate heading face is
 not a choice worth a control), and **Code**, which sets the mono face (paths, ids, diffs, fenced
@@ -450,6 +477,17 @@ its file loses to an explicit pick and wins over Theme default. The pick is over
 part of it: switching themes keeps it, and it persists in `localStorage["sova:typography"]`
 as catalogue ids (§design/ground-rules). **Use Theme Fonts** takes both picks off and is disabled while there are
 none; `?theme=default` takes them off too.
+
+**Text size**, under the two lists: Small, Medium and Large, three radios in one fieldset, Medium
+the default. It scales every size on the page over whichever theme is on, a theme's own sizes
+included, applies as you pick, and persists in `localStorage` under `sova:text-size`. Like the
+fonts, it is one choice for both picks and survives every theme switch, Auto's included; it is
+not part of Use Theme Fonts, and `?theme=default` puts it back to Medium.
+
+**Fonts and size are safe across open tabs, like the theme.** Each save changes only its own
+choice — the Text font, the Code font, or the size — read fresh from storage, so a tab opened
+earlier never erases a pick made since in another; and every other open tab follows a font or
+size change at once, with no reload, the panel's controls included.
 
 It applies as you pick, like the theme. The preview under the two lists — a heading, two lines
 of prose, and a two-line mono block whose lines are the same length so a column that stopped

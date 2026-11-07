@@ -486,7 +486,7 @@
   "§design.copy-deck/settings-themes": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "reviewed",
     "about": [
       "§app.settings-dialog/themes"
     ]

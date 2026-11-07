@@ -1,6 +1,6 @@
 // Run: node scripts/run-tests.mjs server/sessions-index-order.test.ts
 // A cold listing reads every open session before any archived one, and still answers with every
-// session (§app.session-list/first-listing). Throwaway PI_CODING_AGENT_DIR; ~/.pi is never touched.
+// session. Throwaway PI_CODING_AGENT_DIR; ~/.pi is never touched.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

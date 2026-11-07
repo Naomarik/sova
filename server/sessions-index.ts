@@ -1426,7 +1426,7 @@ function summaryOf(path: string, resolveWindow: WindowResolver | undefined, dirt
   return summarize(path, resolveWindow);
 }
 
-/** How many session files a listing reads at once (§app.session-list/first-listing): every file's
+/** How many session files a listing reads at once: every file's
     buffers live together while it is read, so reading all of them at once held gigabytes. */
 export const LIST_READ_LIMIT = 24;
 

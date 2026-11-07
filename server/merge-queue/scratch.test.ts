@@ -122,6 +122,34 @@ describe("scratch copies: the queue", () => {
     }
   });
 
+  test("the sanity probe runs in the entry's scratch copy, made again if it is gone, never in the main checkout", async () => {
+    const dirs: string[] = [];
+    const k = makeKit({ threadAnswers: true, deps: { sanity: async (dir) => (dirs.push(dir), { ok: false, why: "held for the test", files: ["a.txt"] }) } });
+    try {
+      const q = await k.q();
+      conflicting(k);
+      const c = await q.add({ branch: "feat/c", by: "land-button" });
+      await told(k, c.entry.id);
+      const path = scratchCopyPath(k.repo.root, c.entry.id);
+      tryGit(path, "merge", "--no-ff", "--no-commit", c.entry.commit);
+      writeFileSync(join(path, "a.txt"), "one\nTWO-both\nthree\n");
+      sh(path, "add", "a.txt");
+      sh(path, "-c", "user.name=t", "-c", "user.email=t@t.invalid", "commit", "-q", "--no-edit");
+      const res = sh(path, "rev-parse", "HEAD");
+      await q.resolve(c.entry.id, { verdict: "no-behaviour-change", ours: "o", theirs: "t", proposal: "keep both", commit: res });
+      assert.deepEqual(dirs, [path], "the copy, not the main checkout");
+      // The copy is gone (removed by hand): the probe makes it again rather than fall back to the checkout.
+      sh(k.repo.root, "worktree", "remove", "--force", "--force", path);
+      await q.resolve(c.entry.id, { verdict: "behaviour-differs", ours: "o", theirs: "t", proposal: "keep both", commit: res });
+      assert.equal(dirs.length, 2);
+      assert.equal(dirs[1], path);
+      assert.notEqual(dirs[1], k.repo.root);
+      assert.ok(existsSync(path), "the copy was made again for the probe");
+    } finally {
+      await k.done();
+    }
+  });
+
   test("resolve pins the commit under the hidden ref; landing removes the copy and the ref", async () => {
     const k = makeKit({ threadAnswers: true, deps: { sanity: async () => ({ ok: true, files: ["a.txt"] }) } });
     try {

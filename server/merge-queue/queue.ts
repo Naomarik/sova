@@ -53,7 +53,7 @@ import { gitlabAdapter } from "./hosts/gitlab";
 import { suggestLanding } from "./hosts/repo";
 import { changeWords, editSettingsText, isEmptyChange, REVIEW_KIT_DIR, SettingsEditError } from "./settings-edit";
 import { PROJECT_PLAYBOOK } from "./thread";
-import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, sweepScratch } from "./scratch";
+import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, scratchCopyPath, scratchMarkOf, sweepScratch } from "./scratch";
 import { isSetupChange, SETUP_UNREADABLE, setupChangeOf, trialReleaseChecks, untriedWhy } from "./setup-branch";
 
 /** Land's refusal of a worktree the merge queue made for itself (a conflict's scratch copy). */
@@ -343,6 +343,16 @@ export class ProjectQueue {
         return { scratchError: why };
       }
     });
+  }
+
+  /** Where the sanity probe runs: the entry's scratch copy, made at `base` if it isn't there; never the main
+   *  checkout. Throws when no copy can be made (the resolution then isn't judged). */
+  private async probeDir(e: Entry, base: string): Promise<string> {
+    const path = scratchCopyPath(this.root, e.id);
+    if (scratchMarkOf(path)?.entry === e.id) return path;
+    const made = await this.makeScratch(e, base);
+    if ("scratchError" in made) throw new MergeFailure("busy", `the resolution can't be checked: its scratch copy couldn't be made (${made.scratchError})`);
+    return made.scratch;
   }
 
   /** At start: drop every copy and ref whose entry is final or gone from the queue file (pruned: final); keep the
@@ -1345,7 +1355,11 @@ export class ProjectQueue {
       if (j.commit) {
         commit = (await revParse(this.git, this.root, j.commit)) ?? undefined;
         if (!commit) throw new MergeFailure("not-found", `no commit ${j.commit} in ${this.root}`);
-        const s = await (this.deps.sanity ?? sanityCheck)(this.root, { base: head, commit: e.commit, resolution: commit });
+        // The probe's content merge runs git's merge drivers in its working directory, and git leaves their
+        // .merge_file_* temp files behind when it is cut off: so it runs in the entry's scratch copy (made now
+        // if it is gone), a work tree with the project's files that isn't the main checkout, never in this.root.
+        const probe = await this.probeDir(e, head);
+        const s = await (this.deps.sanity ?? sanityCheck)(probe, { base: head, commit: e.commit, resolution: commit });
         sanity = { ok: s.ok, ...(s.why ? { why: s.why } : {}) };
         if (!s.ok) verdict = "behaviour-differs";
       } else if (verdict === "no-behaviour-change") throw new MergeFailure("invalid-request", "a resolution judged to change no behaviour names its commit (a merge of the target and the approved commit)");

@@ -127,7 +127,8 @@ duty (a successor takes over from its predecessor the moment it starts).
 - **Completions.** When any other member settles, its completion (the same summary the parent
   would get) is queued for the routing coordinator as a `report` item in its inbox
   (§app.teams/inbox; urgent when the task failed), not sent to the parent; it ends with the
-  member's `[Left open: …]` line when it left items open (§app.teams/inbox-zero). A killed
+  member's `[Left open: …]` line when it left items open (§app.teams/inbox-zero). A reply it makes
+  on its own after finishing is routed the same way (§app.chat-processes/worker-reports). A killed
   member's completion goes nowhere. The monitor's own settles go nowhere (it settles after every
   check); only a failed monitor task is reported to the coordinator, except a failure that moves a
   standing member to its fallback or stops it, which is said once instead

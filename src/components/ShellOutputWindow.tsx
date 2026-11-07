@@ -43,20 +43,22 @@ export function ShellOutputWindow(props: {
   let atEnd = true;
   let dialog: HTMLDivElement | undefined;
   let close: HTMLButtonElement | undefined;
-  // Stop Command leaves with the run it stopped: focus it held goes to Close, so it stays in the
-  // window and Esc still closes it.
-  createEffect(
-    on(
-      () => props.card.running,
-      (running) => {
-        if (running || !dialog) return;
-        queueMicrotask(() => {
-          if (dialog?.isConnected && !dialog.contains(document.activeElement)) close?.focus();
-        });
-      },
-      { defer: true },
-    ),
-  );
+  // A control that leaves with focus in it (Stop Command once the run ends, Load More at the last
+  // page) hands focus to Close, so it stays in the window. Esc closes the window wherever focus is.
+  const keepFocus = () =>
+    queueMicrotask(() => {
+      if (dialog?.isConnected && !dialog.contains(document.activeElement)) close?.focus();
+    });
+  createEffect(on(() => props.card.running, (running) => !running && keepFocus(), { defer: true }));
+  onMount(() => {
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.stopPropagation();
+      props.onClose();
+    };
+    document.addEventListener("keydown", onEsc, true);
+    onCleanup(() => document.removeEventListener("keydown", onEsc, true));
+  });
   onMount(() => void load());
 
   /** What the window shows: the live output, or the whole output read so far. */
@@ -65,6 +67,7 @@ export function ShellOutputWindow(props: {
     const r = read();
     return r ? readWords(r, new TextEncoder().encode(r.text).length) : null;
   };
+  createEffect(on(() => !!more(), (has) => !has && keepFocus(), { defer: true }));
   createEffect(
     on(text, () => {
       if (out && atEnd && !saved()) out.scrollTop = out.scrollHeight;
@@ -82,12 +85,6 @@ export function ShellOutputWindow(props: {
         ref={(el) => {
           dialog = el;
           trapFocus(el);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.stopPropagation();
-            props.onClose();
-          }
         }}
       >
         <i class="sheet-grip" aria-hidden="true" />

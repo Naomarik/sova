@@ -187,6 +187,7 @@ describe("merge queue requests in a branch's chat (§chat.merge-queue/requests)"
     const text = batchesIn(path)[0]!;
     assert.ok(isMergeQueueBatch(text), text);
     assert.ok(!text.includes(MERGE_QUEUE_SENT_PREFIX), "the old prefix is gone from the notes");
+    assert.match(text.split("\n")[1]!, /Your user's Land stands/, "a request about a queued entry: the Land stands");
     const b = parseTopicBatch(text)!;
     assert.deepEqual(b.notes.map((x) => [x.request?.id, x.request?.branch, x.text]), [
       [id1, "feat/x", "feat/x didn't land: Unit tests failed."],
@@ -201,6 +202,18 @@ describe("merge queue requests in a branch's chat (§chat.merge-queue/requests)"
     assert.deepEqual(turnQuestions({ lastUser: text } as Parameters<typeof turnQuestions>[0]), CARD_QUESTIONS);
     await until(() => !running!.log.length || running!.log.at(-1)!.outcome !== "in-flight");
     assert.equal(batchesIn(path).length, 1, "exactly one batch");
+  });
+
+  test("a request from before any Land (no entry): its batch never says the user's Land stands", async () => {
+    fresh();
+    const path = makeSession();
+    await held(path);
+    await request(path, "feat/d is finished, but its spec drafts wouldn't land with it.", { kind: "drafts", branch: "feat/d" });
+    await until(() => batchesIn(path).length === 1);
+    await piSession(await acquireChat(path, true)).waitForIdle();
+    const text = batchesIn(path)[0]!;
+    assert.ok(isMergeQueueBatch(text));
+    assert.doesNotMatch(text, /Land stands|land it again/);
   });
 
   test("a busy chat gets it after its turn, never in it, and never in Sova's web queue", async () => {

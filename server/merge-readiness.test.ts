@@ -1321,7 +1321,7 @@ test("Ready to land: decisions off falls back to the code-only conditions; a run
     const tr = r.readinessReading(path);
     assert.ok(tr.known && tr.value?.trees[0]?.landing?.state === "specs");
     assert.equal(sent.length, 1);
-    assert.match(sent[0]!, /^\[merge-queue\] feat\/agents-row-dropdown is finished at eeeeeee, but its spec drafts wouldn't land with it: §x\/a \(draft landing-offer\): §x\/a has no verification note from its chat\. .*--note --write.*merge\.respond: Fixed \(drafts: true\), or Can't with why\.$/);
+    assert.match(sent[0]!, /^\[merge-queue\] feat\/agents-row-dropdown is finished at eeeeeee, but its spec drafts wouldn't land with it: §x\/a \(draft landing-offer\): §x\/a has no verification note from its chat\. .*--note --write.*merge\.respond: Fixed \(drafts: true\), or Can't with why\. Once they fit, the user presses Land; nothing has been landed or approved yet\.$/);
     assert.doesNotMatch(sent[0]!, /Land It|promote/);
     now += r.READINESS_TTL_MS + 1;
     r.readinessOverlay(row);
@@ -1404,7 +1404,7 @@ test("a finished branch that can't be queued to land: Sova names what blocks it 
   const note = blockedNoteText("feat/x", t.head, landingBlockers({ ...t, dirty: true, dirtyCount: 1, dirtyFiles: ["notes/"] }, live)!);
   assert.match(note, /^\[merge-queue\] feat\/x is finished at fffffff, but it can't be queued to land yet: 1 uncommitted folder\. /);
   assert.doesNotMatch(note, /Land It|card/);
-  assert.match(note, /Once nothing blocks it, the user's go-ahead lands it through the merge queue: they press Land, or type "land it" in this chat, which you record with the worktree tool's land action\.$/);
+  assert.match(note, /Fix that; once nothing blocks it, the user presses Land \(or types "land it" in this chat, which you record with the worktree tool's land action\)\. Nothing has been landed or approved yet\.$/);
 
   // End to end, through the published reading.
   const lines = chain([worktrees([tracked()], "2026-10-23T10:00:00.000Z"), assistant([{ type: "text", text: "Done." }], "stop", "2026-10-23T10:05:00.000Z")]);

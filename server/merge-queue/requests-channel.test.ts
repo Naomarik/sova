@@ -14,6 +14,7 @@ import {
   splitHeldNote,
   isMergeQueueBatch,
   isTopicBatch,
+  MERGE_QUEUE_ANSWER_BASE,
   MERGE_QUEUE_ANSWER_LINE,
   MERGE_QUEUE_NOTE_SENDER,
   MERGE_REQUEST_ID_RE,
@@ -27,6 +28,7 @@ import { dropMergeRequests, inviteFromSend, onTopicPush, pushMergeRequest, pushN
 import { Refusal } from "../session-guards";
 import { pickHeldDecision, setChannelHooks } from "./channel";
 import { withHeldNote } from "../ws";
+import { blockedNoteText, docsNudgeText } from "../ready-to-land";
 
 const root = mkdtempSync(join(tmpdir(), "sova-mq-requests-"));
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -40,8 +42,8 @@ afterEach(() => setTopicStore(null));
 const A = { sessionId: "sess-a", path: "/x/a.jsonl" };
 
 const AT = "2026-11-07T10:00:00.000Z";
-const mq = (notes: { id: string; text: string; request?: { id: string; branch?: string } }[]) =>
-  formatTopicBatch({ topic: "merge-queue-k7m4qz", batch: "tb_0123456789ab", mergeQueue: true, notes: notes.map((n) => ({ ...n, from: { ...MERGE_QUEUE_NOTE_SENDER }, at: AT })) });
+const mq = (notes: { id: string; text: string; request?: { id: string; branch?: string } }[], landStands = true) =>
+  formatTopicBatch({ topic: "merge-queue-k7m4qz", batch: "tb_0123456789ab", mergeQueue: true, landStands, notes: notes.map((n) => ({ ...n, from: { ...MERGE_QUEUE_NOTE_SENDER }, at: AT })) });
 
 describe("the batch (§chat.topics/delivery, §chat.topics/row)", () => {
   test("its own first line, the answer line, each note naming its request and branch; parsed back exactly", () => {
@@ -236,4 +238,27 @@ test("two decisions waiting in one chat: the message answers the one its compose
   assert.equal(pickHeldDecision([A, B, C, done], "P", undefined, chatOf), B, "none named: the newest waiting here");
   assert.equal(pickHeldDecision([A, B, C], "P", "dc_c", chatOf), null, "another chat's decision is never answered here");
   assert.equal(pickHeldDecision([done], "P", undefined, chatOf), null);
+});
+
+describe("before any Land, nothing says the Land stands (§chat.merge-queue/requests)", () => {
+  test("the batch's answer line says the user's Land stands only when a request is about an entry the Land queued", () => {
+    const req = [{ id: "qi_0123456789ab", text: "drafts don't fit", request: { id: "rq_aaaaaaaaaaaa", branch: "feat/x" } }];
+    const before = mq(req, false).split("\n")[1]!;
+    assert.equal(before, MERGE_QUEUE_ANSWER_BASE);
+    assert.doesNotMatch(before, /Land stands|land it again/);
+    assert.match(mq(req, true).split("\n")[1]!, /Your user's Land stands: never ask them to land it again\.$/);
+    assert.ok(parseTopicBatch(mq(req, false))?.mergeQueue, "either line parses as the merge queue's batch");
+  });
+
+  test("the before-Land notes (drafts wouldn't land, still blocked) say to fix it and that the user then presses Land; never that a Land stands", () => {
+    const docs = docsNudgeText("feat/x", "a".repeat(40), ["§x/a: no note"]);
+    const blocked = blockedNoteText("feat/x", "a".repeat(40), [{ text: "1 uncommitted folder", fix: "commit it" } as never]);
+    for (const t of [docs, blocked]) {
+      assert.match(t, /the user presses Land/);
+      assert.match(t, /[Nn]othing has been landed or approved yet\./);
+      assert.doesNotMatch(t, /Land stands|land it again|Land This Commit Again/);
+    }
+    assert.match(docs, /Fix them in your drafts/);
+    assert.match(blocked, /commit it\. Fix that;/);
+  });
 });

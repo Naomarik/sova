@@ -129,7 +129,7 @@ export function landingBlockers(t: LandingTree, s: LandingSession): LandingBlock
 export function blockedNoteText(branch: string, commit: string, blockers: readonly LandingBlocker[]): string {
   const list = blockers.map((b) => b.text).join(", ");
   const fixes = blockers.map((b) => b.fix).join("; ");
-  return `${MERGE_QUEUE_SENT_PREFIX} ${branch} is finished at ${commit.slice(0, 7)}, but it can't be queued to land yet: ${list}. On ${branch}, ${fixes}. Once nothing blocks it, the user's go-ahead lands it through the merge queue: they press Land, or type "land it" in this chat, which you record with the worktree tool's land action.`;
+  return `${MERGE_QUEUE_SENT_PREFIX} ${branch} is finished at ${commit.slice(0, 7)}, but it can't be queued to land yet: ${list}. On ${branch}, ${fixes}. Fix that; once nothing blocks it, the user presses Land (or types "land it" in this chat, which you record with the worktree tool's land action). Nothing has been landed or approved yet.`;
 }
 
 /**
@@ -406,6 +406,6 @@ export function docsNudgeText(branch: string, commit: string, problems: readonly
   return (
     `${MERGE_QUEUE_SENT_PREFIX} ${branch} is finished at ${commit.slice(0, 7)}, but its spec drafts wouldn't land with it: ${shown}. ` +
     `Fix them in your drafts on ${branch}: that needs no commit (a promise with no note: record what you verified with the draft tool's evidence <draft> --id '<§id>' --by <you> --verification "<what you checked>" --note --write; a promise changed in the spec since the draft was made: run the draft tool's refresh <draft> --write and rewrite what it marks). ` +
-    "Then answer this request with merge.respond: Fixed (drafts: true), or Can't with why."
+    "Then answer this request with merge.respond: Fixed (drafts: true), or Can't with why. Once they fit, the user presses Land; nothing has been landed or approved yet."
   );
 }

@@ -2818,6 +2818,8 @@ export type ChatServerMessage =
       (raw text) and the SDK's own (expanded) — in delivery order, SDK's first, and is followed by
       a `{ type: "queue", items: [] }`. */
   | { type: "queue_cleared"; steering: string[]; followUp: string[] }
+  /** A transcript card of this chat changed: read them again. No content (§app.events/card-news). */
+  | { type: "cards_changed" }
   /** A rewind landed. Every client of the chat first got a fresh `hello` (the new branch) and a
       `mode` (re-resolved from it); only the requester then gets this, with the input's text for
       its composer (images are not handed back, as in pi's /tree). A rewind to the first input
@@ -4409,6 +4411,10 @@ export interface ExtensionInfo {
   status: "ok" | "down";
   error?: string;
   offers?: ExtensionOffers;
+  /** v1.20: it has no page of its own. */
+  page?: false;
+  /** v1.20: its code changed since you approved it, so its page is off. */
+  changed?: true;
 }
 /** What an extension offers Sova (ext-contract-v1.15): only the keys it declared something valid
     under, each non-empty. */

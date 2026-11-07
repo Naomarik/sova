@@ -200,7 +200,8 @@ with `effect: changes`. Its optional `menu` key puts it in a menu of Sova's too
   Sova's extension proxy (§app.extensions/serving), which takes Sova's token off before the
   backend sees the request. The answer is the backend's, printed as it came.
 - The command line reads the manifest file itself (`SOVA_EXTENSIONS_FILE`, else
-  `<agent dir>/sova/extensions.json`). The server applies the same rules to list them in
+  `<agent dir>/sova/extensions.json`), leaving out an entry marked `off`; the proxy still refuses any
+  entry that isn't active (§app.extensions/loader). The server applies the same rules to list them in
   `GET /api/extensions`'s `offers` (§app.extensions/offers), where a reply chip's action is checked
   against them (§app.commands/reply-slot).
 

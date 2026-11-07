@@ -304,6 +304,8 @@ export async function startHermeticServer(opts: HermeticServerOptions = {}): Pro
       ...env,
       HOME: home,
       PATH: `${bin}:${process.env.PATH ?? ""}`,
+      // Named, so what a scenario writes there counts as approved as it appears: what a test copy does, never a person's server.
+      SOVA_EXTENSIONS_FILE: join(agent, "sova", "extensions.json"),
       PORT: "0",
       PI_CODING_AGENT_DIR: agent,
       SOVA_TOKEN: token,

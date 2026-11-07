@@ -252,6 +252,10 @@ appends (one line each).
   Overseer's digest. Needs you lists it in its softer tier and the Overseer's "need you" count
   counts it, but it never wakes the Overseer with a brief and never sends a phone notification.
   It goes after 7 idle days (no reply since), like every soft item.
+- **An open card says it already.** While a session waits on an answerable transcript card, that card is
+  its Needs you item (`card-waiting`, §app.overseer/attention-digest) and the digest doesn't also list
+  this guess. The row's mark stays. Once the card is answered or done, the guess lists again if it
+  still holds.
 - **An open offer asks too.** While an idle session shows an open offer card (§chat.offers/card),
   its row carries `asks-you` as if its last reply asked, with no model call, while the feature is
   on. It clears when the card is answered, set to Not Now, no longer offered or replaced by a newer

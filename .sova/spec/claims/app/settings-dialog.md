@@ -8,7 +8,7 @@ the session stays behind, closed by the scrim, Esc, or its Close button (Cancel 
 is unsaved, which discards it, §app.settings-dialog/save-bar). A number box in a form that waits
 for Save keeps whatever you type in it, red until it is valid (§app.settings-dialog/number-boxes).
 
-The rail is the structure: each settings screen is one tab — General, Models, Accounts, MCP Servers, Subagents,
+The rail is the structure: each settings screen is one tab — General, Models, Accounts, MCP Servers, Extensions, Subagents,
 Alignment, Profiles, Overseer, Notifications, Decisions, Summaries, Memory, Organizations, Merge Queue, Themes, Mesh, Public links, Outreach, Voice, Experimental.
 Merge Queue shows one project's queue settings at a time (§app.merge-queue/settings): a project's
 **Queue Settings** opens it on that project, and its picker switches project.
@@ -727,7 +727,7 @@ Folders box or the tab writes nothing.
 Every Settings tab that writes a file on the server is Save-gated: **Models**, **Subagents**
 (the library and this device's default), **Overseer**, **Notifications** (the **Phone Notifications** form), **Decisions**, **Summaries**, **Memory**, **Organizations**,
 **Mesh**, **Alignment** and **Experimental**, and on General the **Updates** form (§app/updates). A change on them is staged, never written as it is made. No form has a Save or
-Discard button of its own: saving is the dialog's. Merge Queue (below) and MCP Servers (§app.mcp/settings-tab) are the tabs that save on their own.
+Discard button of its own: saving is the dialog's. Merge Queue (below), MCP Servers (§app.mcp/settings-tab) and Extensions (§app.settings-dialog/extensions) are the tabs that save on their own.
 
 - **The footer.** Left to right: a status line, then **Save Changes**
   (primary; **Saving…** while it writes) and **Cancel** (ghost), while any gated form on any tab holds
@@ -793,6 +793,52 @@ reads "Save them on their tab, or discard them and close."
   Refresh, the Jev key's Save Key, Replace Key and Remove Key, Test Decisions, Tag Last 30 Days,
   Tag All Sessions and Stop Tagging, and Phone Notifications' Enable on This Device, Turn Off on
   This Device, Remove and Send Test.
+
+## §app.settings-dialog/extensions — The Extensions tab
+
+Settings gains **Extensions**, the tab after MCP Servers. It lists this computer's extensions, one row each,
+under **Add Extension**. The tab saves on its own: every action and switch on it applies at once, and none
+waits for the dialog's Save Changes. Its words are §design.copy-deck/settings-extensions.
+
+- **One state per row.** Each row names the extension and its folder and shows one state, the first that
+  applies:
+
+| State | Means | The row offers |
+|---|---|---|
+| **Not Usable** | The entry or its description can't be used; the row says why. Nothing runs. | Remove |
+| **Folder Not Found** | Its folder is gone. The program is stopped. | Choose Folder, Remove |
+| **Needs a Newer Sova** | It needs newer rules than this Sova. Nothing runs. | Restart Sova or Open Updates, Remove |
+| **Waiting for You** | Not approved. Nothing runs. | Review, Remove |
+| **Changed** | Its code changed since you approved it. The program goes on with the old code; its page and views are off. | Review, View Log, Remove |
+| **Off** | Turned off. | the switch, Remove |
+| **Stopped** | On, and its program exited or stopped answering; the row says which. | the switch, Start, View Log, Remove |
+| **Starting** | On, and its program hasn't answered yet. | the switch, View Log, Remove |
+| **Running** | On, and its program answers, or it has none. | the switch, Restart Program, View Log, Remove |
+
+- **Add Extension** opens the same folder picker as New Session, on the computer Sova runs on. The folder
+  being browsed is the choice, so each pick is read at once (§app.extensions/folder): it either names the
+  extension, with **Review**, or says plainly why it can't be used.
+- **The review**, shown before anything is on, and again for Waiting for You and Changed, states:
+  the exact program, and that it runs as you with no sandbox; that its page runs on Sova's own address and
+  can do what you can, including adding other extensions; that its key opens nearly all of Sova, with its
+  calls recorded under its name; its cards, commands and what it offers the Overseer; which rules it
+  needs; and what was left out and why. A part it doesn't have is left out of the review. Nothing runs
+  before **Install and Turn On**, or **Approve** for one already on the list. Cancel changes nothing.
+- **Once on.** The row goes to Starting and Running with no restart (§app.extensions/loader), and a toast says
+  so; for an extension with cards it adds that new chats can use them and open chats keep what they started
+  with. The tab says the same under its intro, whenever any extension declares cards.
+- **Restart Sova appears only** on Needs a Newer Sova, and only when newer code is already on this computer
+  and this copy can restart itself (`running.diskAhead` and `canRestart`, §app.updates/restart). It goes to
+  Settings → General, whose button is the one way to restart; the tab has no restart of its own. Otherwise
+  the row offers **Open Updates** (§app/updates). Either one, with Settings already open, switches the tab to
+  General and brings Server · this machine into view, with Updates just below it.
+- **Remove** asks first, inline, with **Also delete its data**, unticked (§app.extensions/loader).
+- **Other computers.** Peers' extensions are in a group of their own as Not Installed Here, with the computer's
+  name and no actions (§mesh.sync/categories). Installing one means doing it on this computer from a
+  folder here.
+- **Through another computer** the tab is read-only: the rows show, with no Add Extension, switch or action,
+  and it says to open Sova on the computer they belong to. A click that gets through is refused
+  (§app.access/your-click).
 
 ## §app.settings-dialog/number-boxes — A number box keeps what you typed
 

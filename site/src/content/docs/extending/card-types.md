@@ -51,7 +51,7 @@ other special chats never do, and a chat with no such type sees no change at all
 
 From outside, scripts, hooks and extensions raise cards with the `session.card.post` command, read
 them with `session.card.get`, and answer with `session.card.answer`. See [Scripting Sova](/docs/extending/scripting/).
-While a chat has an open alignment question, no card is raised. A card's data is at most 64 KB, is
+A card can stand beside an open alignment question: answering it never answers the question or ends the chat's wait on it. A card's data is at most 64 KB, is
 checked when it's raised, and a card that doesn't fit is never raised.
 
 ## What a view can do

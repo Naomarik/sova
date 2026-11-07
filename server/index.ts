@@ -55,9 +55,10 @@ import { setLinkOrigin } from "./link-delivery";
 import { feedFrameKey, feedFrames, setOverseerDispatch, startOverseerLoop } from "./overseer";
 import { watchFeedInputs } from "./session-feed-watch";
 import { setOffersDispatch } from "./session-offers";
-import { setCardsDispatch } from "./transcript-cards";
+import { onCardNews, setCardsDispatch } from "./transcript-cards";
 import { setSovaPort } from "./extensions";
 import { startExtensionKeys } from "./extension-keys";
+import { startExtensionLoader } from "./extension-loader";
 import { startUpdates } from "./updates/routes";
 import { decisions, decisionSettings, decisionsReady, redactForOutside } from "./decide-runtime";
 import { AttentionSignals } from "./attention-signals";
@@ -182,7 +183,9 @@ export const tourSweep = startTourSweep();
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);
   setAuthPort(info.port);
-  // Each installed extension's own key, kept in step with the manifest (§app.extensions/backend-key).
+  // The first start's approvals and a reading of what is approved, before anything is answered,
+  // then each active extension's own key, kept in step with the list.
+  startExtensionLoader();
   startExtensionKeys();
   // The link extension's tools call this server back here: the real bound port (PORT=0 in tests).
   setLinkOrigin(linkOrigin(info.port));
@@ -263,6 +266,7 @@ onSummaryLineChanged(() => autoTitleSweep.nudge());
 const events = startEvents({
   onChatEvent,
   onAttention: onAttentionNotified,
+  onCard: onCardNews,
   holdFeed: () => sessionFeed()?.add(() => {}) ?? null,
   isHosted: (path) => chatHandle(path) !== undefined,
   idOf,

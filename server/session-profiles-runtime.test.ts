@@ -178,11 +178,25 @@ describe("removals hold in the runtime (excludeTools)", () => {
     assert.ok(!piSession(chat).getAllTools().some((t) => t.name === "bash"), "not even in the registry");
   });
 
+  test("the shipped Merge reviewer reads and searches only: of pi's built-in tools exactly read, grep, find and ls", async () => {
+    const raw = JSON.parse(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../profiles/system/merge-reviewer.json"), "utf8"));
+    const chat = await acquireChat(makeSession({ ...(parseProfile(raw) as object), source: "sova" }), true);
+    const builtins = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
+    const active = () => piSession(chat).getActiveToolNames();
+    assert.deepEqual(active().filter((t) => builtins.includes(t)).sort(), ["find", "grep", "ls", "read"]);
+    for (const t of ["bash", "edit", "write", "background_job"]) assert.ok(!active().includes(t), `${t} must be gone`);
+    assert.ok(!piSession(chat).getAllTools().some((t) => t.name === "bash" || t.name === "edit" || t.name === "write"), "not even in the registry");
+    // The Read-only reviewer fixture removes the shell too: it searches as well.
+    const ro = await acquireChat(makeSession(profile("reviewer")), true);
+    for (const t of ["grep", "find", "ls"]) assert.ok(piSession(ro).getActiveToolNames().includes(t), t);
+  });
+
   test("a Default session is exactly as before: every tool, and no session tools", async () => {
     const chat = await acquireChat(makeSession(), true);
     const active = piSession(chat).getActiveToolNames();
     for (const t of ["bash", "edit", "write", "agent_spawn", "web_search"]) assert.ok(active.includes(t), t);
     assert.ok(!active.some((t) => t.startsWith("session_")));
+    for (const t of ["grep", "find", "ls"]) assert.ok(!active.includes(t), `${t}: pi's own default set, unchanged`);
   });
 });
 

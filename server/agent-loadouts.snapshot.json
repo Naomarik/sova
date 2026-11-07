@@ -11621,7 +11621,7 @@
       ]
     },
     "project-verbs:session": {
-      "bytes": 8829,
+      "bytes": 9186,
       "tools": [
         {
           "name": "project_verbs",
@@ -11673,6 +11673,10 @@
                   "merge.clear",
                   "merge.hold",
                   "merge.try",
+                  "merge.restart",
+                  "merge.live",
+                  "merge.test",
+                  "merge.names",
                   "release.status",
                   "release.logs",
                   "release.request",
@@ -11866,6 +11870,13 @@
               "ask": {
                 "type": "string",
                 "description": "merge.reply: the merge thread's question you relay the user's answer to, by its id (ak_…, in the merge queue's message)."
+              },
+              "contents": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "merge.resolve: each conflicted file's merged text, by its path in the repository; Sova merges the approved commit in the entry's scratch copy, writes these files and commits the resolution there (then omit commit)."
               }
             },
             "required": [

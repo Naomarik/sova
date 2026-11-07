@@ -91,7 +91,7 @@ export interface SandboxStateEvent {
 	 *  tracked worktrees, in a worker its parent's scope, `cwdWritable: false` when the cwd is a stand-in for a
 	 *  folder that is gone, and `invalid` when the parent's scope is malformed (the session's own tools refuse
 	 *  then, and so must such a command). Absent in a remote session. */
-	scope?: { worktreeRoots: string[]; parent?: unknown; cwdWritable?: false; invalid?: string };
+	scope?: { worktreeRoots: string[]; parent?: unknown; cwdWritable?: false; readOnly?: true; invalid?: string };
 	/**
 	 * The one call every worker start goes through: on, the parent's scope (narrowed to a tracked
 	 * worktree's `root` when given) or a refusal (cwd outside the parent's writable roots, the

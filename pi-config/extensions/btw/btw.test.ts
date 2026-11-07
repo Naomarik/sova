@@ -126,6 +126,8 @@ type HarnessOptions = {
 	idle?: boolean;
 	/** The worker host the session sees; default a fresh fake. `null`: none (the pi TUI). */
 	host?: BtwHost | null;
+	/** The main chat's sandbox state, as the sandbox extension announces it. */
+	sandbox?: () => any;
 };
 
 const roots: string[] = [];
@@ -200,7 +202,7 @@ function harness(options: HarnessOptions = {}) {
 		},
 	};
 
-	registerBtw(pi, { workerHost: () => (host ?? undefined) as any, root: () => root });
+	registerBtw(pi, { workerHost: () => (host ?? undefined) as any, root: () => root, ...(options.sandbox ? { sandbox: options.sandbox } : {}) });
 
 	return {
 		ctx,
@@ -465,7 +467,7 @@ test("TUI /btw:inject never asks for confirmation", async () => {
 const WORKER_MARK = join(import.meta.dirname, "..", "subagents", "worker-mark.ts");
 const BTW_CHILD = join(import.meta.dirname, "child.ts");
 
-test("the first question starts one hidden btw chat: seeded, the coding tools, the marker and child.ts, the prompt in a 0600 file named by path", async () => {
+test("the first question starts one hidden btw chat: seeded, the read-only tools, the marker and child.ts, the prompt in a 0600 file named by path", async () => {
 	const h = harness({ entries: [{ type: "message", id: "m1", parentId: null, message: { role: "user", content: [{ type: "text", text: "main work" }], timestamp: 1 } }] });
 	await h.run("btw", "what is x?");
 	await h.run("btw", "and y?");
@@ -478,7 +480,8 @@ test("the first question starts one hidden btw chat: seeded, the coding tools, t
 	assert.equal(spec.cwd, "/repo");
 	assert.equal(spec.model, "test/m1");
 	assert.equal(spec.thinking, "off");
-	assert.deepEqual(spec.builtins, ["read", "bash", "edit", "write"]);
+	assert.deepEqual(spec.builtins, ["read", "grep", "find", "ls"], "it reads and answers: no bash, edit or write");
+	for (const tool of ["bash", "edit", "write", "powershell"]) assert.ok(!spec.builtins!.includes(tool), tool);
 	assert.deepEqual(spec.extensions, [WORKER_MARK, BTW_CHILD], "the marker first, child.ts last");
 	assert.equal(spec.appendSystemPrompt, null);
 	assert.equal(start.task, null, "it comes up idle; the question is a send");
@@ -497,6 +500,58 @@ test("the first question starts one hidden btw chat: seeded, the coding tools, t
 	assert.notEqual(h.host.sends[0]!.key, h.host.sends[1]!.key, "each question is its own keyed send");
 	assert.equal(h.entries.filter((e) => e.customType === "btw-note").length, 2);
 	assert.equal(h.entries.find((e) => e.customType === "btw-note").details.entryId, answerIds(h.host)[0], "the answer's entry id in the btw chat is recorded with it");
+});
+
+// ── the main chat's sandbox ───────────────────────────────────────────────────
+
+const SANDBOX_EXT = "/sandbox/ext";
+function sandboxOn(answer: (req: any) => any) {
+	const asked: any[] = [];
+	return {
+		asked,
+		state: () => ({ version: 1, on: true, extensionPath: SANDBOX_EXT, enforcement: "full", workerLaunch: (req: any) => (asked.push(req), answer(req)) }),
+	};
+}
+
+test("with the main chat's sandbox On, the side thread starts inside it: the sandbox's own launch, asked once per start", async () => {
+	const sb = sandboxOn(() => ({ kind: "pi", extensionPath: SANDBOX_EXT, flags: { sandbox: "on", "sandbox-parent": "scope-json" } }));
+	const h = harness({ sandbox: sb.state });
+	await h.run("btw", "what is x?");
+	await h.run("btw", "and y?");
+	assert.equal(h.sessions.length, 1);
+	const { start, spec } = h.sessions[0]!;
+	assert.deepEqual(spec.extensions, [WORKER_MARK, SANDBOX_EXT, BTW_CHILD], "the sandbox's extension, child.ts still last");
+	assert.deepEqual(spec.flags, { sandbox: "on", "sandbox-parent": "scope-json" });
+	assert.deepEqual(spec.builtins, ["read", "grep", "find", "ls"]);
+	assert.equal(sb.asked.length, 1, "asked at the start, not per question");
+	assert.equal(sb.asked[0].cwd, "/repo");
+	assert.equal(sb.asked[0].backend, "pi");
+	assert.equal(sb.asked[0].owner, `parent-sid-${start.key.slice("parent-sid:".length)}`);
+	assert.match(sb.asked[0].owner, /^[A-Za-z0-9._-]+$/);
+});
+
+test("with the main chat's sandbox On but refusing or giving no launch, /btw starts no thread and says why", async () => {
+	const cases: [string, () => any, RegExp][] = [
+		["refused", sandboxOn(() => ({ kind: "refused", reason: "cwd outside the parent's writable roots" })).state, /can't start inside this chat's sandbox: cwd outside/],
+		["none", sandboxOn(() => ({ kind: "none" })).state, /gave the side thread no launch/],
+		["no workerLaunch", () => ({ version: 1, on: true, extensionPath: SANDBOX_EXT, enforcement: "full" }), /gave no launch/],
+	];
+	for (const [label, state, why] of cases) {
+		const h = harness({ sandbox: state });
+		await h.run("btw", "anything?");
+		assert.equal(h.sessions.length, 0, `${label}: no chat started`);
+		assert.deepEqual(h.prompts, [], `${label}: no model called`);
+		assert.ok(h.notices.some((n) => why.test(n.message)), `${label}: ${JSON.stringify(h.notices)}`);
+		assert.ok(!h.entries.some((e) => e.customType === "btw-note"), `${label}: nothing recorded as answered`);
+	}
+});
+
+test("with the main chat's sandbox Off (or Subagents only), the side thread starts unconfined and the sandbox is never asked", async () => {
+	const sb = sandboxOn(() => ({ kind: "pi", extensionPath: SANDBOX_EXT, flags: {} }));
+	const h = harness({ sandbox: () => ({ ...sb.state(), on: false }) });
+	await h.run("btw", "q");
+	assert.equal(sb.asked.length, 0);
+	assert.deepEqual(h.sessions[0]!.spec.extensions, [WORKER_MARK, BTW_CHILD]);
 });
 
 test("a thread switch, /btw:new, /btw:clear and a model change stop the chat and remove its run dir", async () => {

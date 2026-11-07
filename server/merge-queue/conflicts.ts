@@ -16,8 +16,9 @@ export interface Sanity {
 }
 
 /** The files two commits conflict in (git merge-tree, nothing written to any work tree), and the remerged tree. */
-export async function conflictsBetween(root: string, a: string, b: string): Promise<{ tree: string; files: string[] } | { error: string }> {
-  const r = await gitProc(root, ["merge-tree", "--write-tree", "--name-only", "--no-messages", a, b]);
+export async function conflictsBetween(root: string, a: string, b: string, timeoutMs?: number): Promise<{ tree: string; files: string[] } | { error: string }> {
+  const r = await gitProc(root, ["merge-tree", "--write-tree", "--name-only", "--no-messages", a, b], timeoutMs ? { timeoutMs } : {});
+  if (r.timedOut) return { error: "git merge-tree took too long" };
   if (r.code !== 0 && r.code !== 1) return { error: r.out.trim().split("\n")[0] || `git merge-tree exited ${r.code}` };
   const lines = r.out.split("\n").map((l) => l.trim());
   const tree = lines[0] ?? "";
@@ -55,7 +56,7 @@ export function hunksInside(hunks: readonly { start: number; count: number }[], 
 }
 
 /** The mechanical sanity check of `resolution` for merging `commit` onto `base`. */
-export async function sanityCheck(root: string, o: { base: string; commit: string; resolution: string }): Promise<Sanity> {
+export async function sanityCheck(root: string, o: { base: string; commit: string; resolution: string; timeoutMs?: number }): Promise<Sanity> {
   const no = (why: string, files: string[] = []): Sanity => ({ ok: false, why, files });
   const parents = await gitProc(root, ["rev-list", "--parents", "-n", "1", o.resolution]);
   if (parents.code !== 0) return no(`${o.resolution.slice(0, 12)} isn't a commit here`);
@@ -65,7 +66,7 @@ export async function sanityCheck(root: string, o: { base: string; commit: strin
   const [p1, p2] = ps as [string, string];
   if (p2 !== (await full(o.commit))) return no(`its second parent is ${p2.slice(0, 12)}, not the approved commit ${o.commit.slice(0, 12)}`);
   if ((await gitProc(root, ["merge-base", "--is-ancestor", p1, o.base])).code !== 0) return no(`its first parent ${p1.slice(0, 12)} isn't on the target`);
-  const re = await conflictsBetween(root, p1, p2);
+  const re = await conflictsBetween(root, p1, p2, o.timeoutMs);
   if ("error" in re) return no(re.error);
   const files = re.files;
   if (!files.length) return no("its parents merge without a conflict: there is nothing to resolve", files);

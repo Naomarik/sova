@@ -44,6 +44,7 @@ import { branchOf, historyOf, lineHeader, readPi, storedAsString } from "./harne
 import { stateView } from "./harness/state-view";
 import { LiveTail } from "./chat-runtime/live-tail";
 import { takeWriterLock, type WriterLock, WriterLockHeld } from "./chat-runtime/writer-lock";
+import { sovaNamedKind } from "../shared/fixed-names";
 import { extensionFlagValues, getModelRuntime, openPiSession, type OpenFlags, type OpenRead, type PiBuild, type PiModelRuntime, warmClaudeCodeProvider as warmPiProvider } from "./harness/pi/open";
 import type { PiExtensionAPI, PiLoaderOptions, PiToolDefinition } from "./harness/pi/extension-types";
 import { PiChatHost } from "./harness/pi/host";
@@ -114,7 +115,7 @@ import { JOB_CARDS_ENV } from "./background-jobs";
 const JOB_CARDS_EXTENSION = fileURLToPath(new URL("../pi-config/extensions/wake-nudge.ts", import.meta.url));
 import { TOUR_TOOLS } from "../shared/tour";
 import { tourTools } from "./tours/tools";
-import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
+import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, searchToolsFor, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { QUEUE_OPEN_TOOL, queuePushExtension, topicStore } from "./topics";
@@ -251,6 +252,9 @@ export const markRunResuming = (path: string): void => runRecorder.markResuming(
  *   what it began with across every later start. Without a record (a caller with no chat), the review
  *   switch as saved now, and no Visuals flag (the extension then reads mode-align.json itself).
  */
+/** The merge thread's sandbox flags: On, read-only level, the cwd never writable. */
+export const MERGE_THREAD_FLAGS = { sandboxOn: true, sandboxReadOnly: true, cwdNotWritable: true } as const satisfies Partial<OpenFlags>;
+
 function sessionFlags(cwd: string, outline = true, linkTools: "member" | "legacy" = "legacy", launch?: AlignLaunchData): OpenFlags {
   const flags: OpenFlags = { outline };
   const target = targetOfCwd(cwd);
@@ -869,6 +873,14 @@ export function workerBuild(w: WorkerSpec, path: string): PiBuild {
     },
     flags: () => ({ extra: w.flags }),
     exclude: () => (w.builtins === null ? [] : WORKER_BUILTIN_TOOLS.filter((t) => !w.builtins!.includes(t))),
+    // Its listed built-ins on: excluding the rest only filters pi's default set (read, bash, edit, write), so a
+    // listed grep, find or ls would otherwise never be active.
+    built: (session) => {
+      if (w.builtins === null) return;
+      const active = session.activeTools();
+      const missing = w.builtins.filter((t) => WORKER_BUILTIN_TOOLS.includes(t) && !active.includes(t));
+      if (missing.length) session.setActiveTools([...active, ...missing]);
+    },
     // A worker trusts its project's local files as every Sova chat does.
     opening: () => ({
       ...(w.model ? { model: w.model } : {}),
@@ -4613,7 +4625,10 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
   const build = async ({ cwd, read }: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
     // A worker chat (§app.chat-processes/workers) is its loadout and nothing else, its messages labelled
     // with the keys of the sends they came from (§app.chat-processes/worker-instructions).
-    if (worker) return { ...workerBuild(worker, path), built: (session) => sendKeys.watch(session) };
+    if (worker) {
+      const b = workerBuild(worker, path);
+      return { ...b, built: (session) => (sendKeys.watch(session), b.built?.(session)) };
+    }
     if (!launch.recorded) {
       const now = alignLaunchOf(read.state);
       if (now.recorded || launch.data === null) Object.assign(launch, now);
@@ -4737,7 +4752,9 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
             ],
             ...overrides,
           },
-      flags: () => sessionFlags(cwd, outline, linkTools, launch.data ?? undefined),
+      // The merge thread (its Sova profile): its sandbox On from its start, at the read-only level (its tools write only
+      // in their tmp) and the main checkout it starts in never a writable root; the rest goes through the merge verbs.
+      flags: () => ({ ...sessionFlags(cwd, outline, linkTools, launch.data ?? undefined), ...(sovaNamedKind(snap) === "merge-thread" ? MERGE_THREAD_FLAGS : {}) }),
       // Sova's engine in the discovered mode extension's slot, when Sova runs this chat's modes.
       modesEntry: modes.sova ? modesEntries().entry : null,
       // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's
@@ -4764,6 +4781,11 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
       forkCacheRouting: !special,
       built: (session) => {
         sendKeys.watch(session);
+        // A profile without the shell can still search: pi's read-only grep, find and ls on, beside read (pi's
+        // built-ins, so never in the extension registry; a name the runtime lacks is ignored by pi).
+        const search = snap ? searchToolsFor(snap.remove) : [];
+        const active = session.activeTools();
+        if (search.some((t) => !active.includes(t))) session.setActiveTools([...active, ...search.filter((t) => !active.includes(t))]);
         if (profile.run) {
           const run = profile.run;
           run.turns.watch(session);

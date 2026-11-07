@@ -1,7 +1,7 @@
 // Run: npx tsx --test server/overseer-tools.test.ts (or npm test). Uses a throwaway
 // PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { linkSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -47,6 +47,22 @@ describe("per-turn caps", () => {
     assert.notEqual(l.take("archive", caps, 6), null);
     assert.equal(l.count("archive"), 45);
     assert.equal(l.take("archive", caps, 5), null);
+  });
+
+  test("the counters file is replaced whole (temp file and rename), never rewritten in place", () => {
+    const dir = mkdtempSync(join(tmpdir(), "turn-limits-"));
+    try {
+      const file = join(dir, "limits.json"), twin = join(dir, "twin.json");
+      writeFileSync(file, "old\n");
+      linkSync(file, twin); // an in-place write would change the twin too; a rename leaves it alone
+      const l = new TurnLimits(file);
+      l.take("create", { ...DEFAULT_CAPS, createPerTurn: 2 });
+      assert.equal(JSON.parse(readFileSync(file, "utf8")).used.create, 1);
+      assert.equal(readFileSync(twin, "utf8"), "old\n");
+      assert.deepEqual(readdirSync(dir).sort(), ["limits.json", "twin.json"], "no temp file is left");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test("reset starts a new turn", () => {

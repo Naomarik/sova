@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { readRunLogText } from "./run-logs";
 import { ENTRY_FINAL, type LandHow, type MergeEntry, type MergeRun, type PauseInfo } from "../../shared/merge-queue";
 
 /**
@@ -165,7 +166,10 @@ export class QueueStore {
   readLog(run: string, log: string, lines = 200): string[] | null {
     if (!/^mr_[0-9a-z]+$/.test(run) || log.includes("..") || log.startsWith("/")) return null;
     try {
-      const all = readFileSync(join(this.runDir(run), log), "utf8").split("\n");
+      // Packed or not (run-logs.ts): a finished run's logs are gzipped a day after it ended.
+      const text = readRunLogText(this.runDir(run), log);
+      if (text === null) return null;
+      const all = text.split("\n");
       if (all.at(-1) === "") all.pop();
       return all.slice(-lines);
     } catch {

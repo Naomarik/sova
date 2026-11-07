@@ -188,7 +188,22 @@ describe("a project's coding sessions", async () => {
     assert.equal(readFileSync(join(client, "logout.txt"), "utf8"), "logout\n");
     assert.deepEqual([rowOf()?.state, rowOf()?.merged, rowOf()?.newSinceMerge], ["merged", true, undefined]);
     assert.equal(offersMerge(rowOf()!), false);
-    wt = await po.removeCodingWorktree(project.id, started.sessionId);
+    // Something git can't bring back keeps the folder (§chat.worktrees/leftovers): an ignored local.env.
+    writeFileSync(join(client, ".git", "info", "exclude"), "local.env\n");
+    writeFileSync(join(w.path, "local.env"), "TOKEN=x\n");
+    await assert.rejects(po.removeCodingWorktree(project.id, started.sessionId), /Holds what can't be rebuilt: 1 ignored file: local\.env\. Nothing was removed\./);
+    assert.ok(existsSync(join(w.path, "local.env")), "the folder and its file stay");
+    assert.notEqual((await po.projectWorktrees(project.id)).sessions.find((s) => s.sessionId === started!.sessionId)?.state, "removed");
+    // The page's dry run: the reason and exactly what Remove Anyway would delete.
+    const hold = await po.codingWorktreeHold(project.id, started.sessionId);
+    assert.equal(hold.reason, "Holds what can't be rebuilt: 1 ignored file: local.env. Nothing was removed.");
+    assert.deepEqual([hold.removeAnyway?.ignored, hold.removeAnyway?.counts.ignored], [["local.env"], 1]);
+    // A listing that no longer matches deletes nothing.
+    writeFileSync(join(w.path, "local2.env"), "y\n");
+    await assert.rejects(po.removeCodingWorktreeAnyway(project.id, started.sessionId, hold.removeAnyway!.digest), /^.*Changed since the list, nothing was deleted: /);
+    assert.ok(existsSync(join(w.path, "local2.env")));
+    const fresh = await po.codingWorktreeHold(project.id, started.sessionId);
+    wt = await po.removeCodingWorktreeAnyway(project.id, started.sessionId, fresh.removeAnyway!.digest);
     assert.equal(existsSync(w.path), false);
     assert.equal(git(client, "branch", "--list", w.branch), "", "a merged branch goes with it");
     assert.deepEqual([rowOf()?.state, !!rowOf()?.removedAt, rowOf()?.merged, rowOf()?.branchGone], ["removed", true, true, true], "removed with its branch: still merged, nothing left to merge");

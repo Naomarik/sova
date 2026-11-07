@@ -9,7 +9,7 @@ import { revokePersonLinks } from "./person-links";
 import { watchSid } from "./projects/sids";
 import { refreshShare } from "./share/hub";
 import { changeSummary } from "./workspace-commits";
-import { changedPaths, commitAll, headCommitMs, retryPush } from "./workspace-git";
+import { changedPaths, commitAll, headCommitMs, PUSH_HELD, retryPush } from "./workspace-git";
 
 /**
  * The server's side of the org statecharts' effects (design §2.6): each is an intent a statechart step emitted,
@@ -30,7 +30,8 @@ function dirOf(orgId: string): string {
 
 /** What a commit did, as the residence reads it (`head-at`, `push-failed`, `error`). */
 async function commitResult(dir: string, out: { committed: boolean; sha?: string; pushed?: boolean; error?: string }) {
-  const pushFailed = !!out.error?.startsWith("git push failed");
+  // A push the leak scan held is a failed push too: the commit stays local, the error names the file.
+  const pushFailed = !!out.error && (out.error.startsWith("git push failed") || out.error.startsWith(PUSH_HELD));
   if (out.error && !pushFailed) throw new Error(out.error);
   return { committed: out.committed, ...(out.sha ? { sha: out.sha } : {}), ...(out.pushed ? { pushed: true } : {}), headAt: (await headCommitMs(dir)) ?? Date.now(), pushFailed, ...(out.error ? { error: out.error } : {}) };
 }

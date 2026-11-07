@@ -12,10 +12,10 @@ export type Verb = (typeof VERBS)[number];
 export const DEPLOY_VERBS = ["deploy.check", "deploy.plan", "deploy.run", "deploy.status", "deploy.logs", "deploy.rollback", "deploy.request"] as const;
 export type DeployVerb = (typeof DEPLOY_VERBS)[number];
 /** The merge queue's verbs (shared/merge-queue.ts): a project's queue, its entries and runs, never an instance. */
-export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup", "merge.ask", "merge.reply", "merge.fresh", "merge.clear", "merge.hold", "merge.try"] as const;
+export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup", "merge.ask", "merge.reply", "merge.fresh", "merge.clear", "merge.hold", "merge.try", "merge.restart", "merge.live", "merge.test", "merge.names"] as const;
 export type MergeVerb = (typeof MERGE_VERBS)[number];
 /** The merge verbs that change nothing. */
-export const MERGE_READ_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs"];
+export const MERGE_READ_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.live"];
 /** The release verbs (shared/release.ts): a project's release in progress and its history, never an instance. */
 export const RELEASE_VERBS = ["release.status", "release.logs", "release.request", "release.start", "release.step", "release.notes", "release.continue", "release.retry", "release.publish", "release.abandon", "release.withdraw", "release.note"] as const;
 export type ReleaseVerb = (typeof RELEASE_VERBS)[number];
@@ -36,7 +36,8 @@ export const DEPLOY_READ_VERBS: readonly DeployVerb[] = ["deploy.status", "deplo
 // ---- a verb's params (§app.project-commands/verb-params) ------------------------------------------
 
 /** A verb param's type on the command line (`list`: comma-separated there, an array on the wire); the tools' schema type follows from it. */
-export type VerbParamType = "string" | "path" | "integer" | "boolean" | "list";
+/** `map`: an object of strings by name (the tools only, never the command line). */
+export type VerbParamType = "string" | "path" | "integer" | "boolean" | "list" | "map";
 
 /**
  * One param a verb's request body may carry, written once for every caller: the agents' tools
@@ -121,6 +122,7 @@ export const VERB_PARAMS: readonly VerbParam[] = [
   { wire: "text", type: "string", mergeOnly: true, tool: { name: "text", description: "merge.review: the reviewer's notes, short; merge.ask: the merge thread's question for the user; merge.reply: the user's answer, in their words; release.notes: the release notes, in full." }, cli: { flag: "text", description: "Text" } },
   { wire: "action", type: "string", mergeOnly: true, tool: { name: "action", description: "merge.hold (the merge thread's): set | clear. set holds every new run for 5 minutes (set again renews it); a run already checking goes on." }, cli: { flag: "action", description: "merge.hold: set | clear" } },
   { wire: "ask", type: "string", mergeOnly: true, tool: { name: "ask", description: "merge.reply: the merge thread's question you relay the user's answer to, by its id (ak_…, in the merge queue's message)." }, cli: { flag: "ask", description: "A merge thread question id" } },
+  { wire: "contents", type: "map", mergeOnly: true, tool: { name: "contents", description: "merge.resolve: each conflicted file's merged text, by its path in the repository; Sova merges the approved commit in the entry's scratch copy, writes these files and commits the resolution there (then omit commit)." } },
   // The release verbs' own keys (shared/release.ts). On no generic tool: the release chat's tool lists them.
   { wire: "release", type: "string", releaseOnly: true, tool: { name: "release", description: "release.*: a release, by its id (rl_…; default the open one)." }, cli: { flag: "release", description: "A release id" } },
   { wire: "state", type: "string", releaseOnly: true, tool: { name: "state", description: "release.step: running | done | failed | skipped | held." }, cli: { flag: "state", description: "A step's state" } },

@@ -77,7 +77,7 @@
    the title, then the Log / Sort / % toggles at the far end beside Source and Copy. Every toggle the
    chart can use is always there (greyed where this view can't use it), so nothing moves when the
    reader switches views or flips one. Short words, never icons, so the share build needs none. */
-.vis-head:has(> .vis-chart-controls) > :is(.vis-title, .vis-eyebrow) { flex: 0 1 auto; }
+.vis-head:has(> .vis-chart-controls:not(:empty)) > :is(.vis-title, .vis-eyebrow) { flex: 0 1 auto; }
 .vis-chart-controls { display: flex; align-items: center; gap: var(--space-1); flex: 1 0 auto; }
 .vis-chart-controls:empty { display: none; }
 .vis-chart-toggles { display: flex; align-items: center; gap: var(--space-1); margin-left: auto; }
@@ -114,9 +114,9 @@
 @container vis (max-width: 420px) {
   .vis-action { font-size: 0; gap: 0; min-width: var(--control-sm); justify-content: center; }
   .vis-body { padding: var(--space-2); }
-  .vis-head:has(> .vis-chart-controls) { flex-wrap: wrap; }
+  .vis-head:has(> .vis-chart-controls:not(:empty)) { flex-wrap: wrap; }
   .vis-head > .vis-chart-controls { order: 1; flex: 1 0 100%; padding-bottom: var(--space-1); }
-  .vis-head:has(> .vis-chart-controls) > :is(.vis-title, .vis-eyebrow) { flex: 1; }
+  .vis-head:has(> .vis-chart-controls:not(:empty)) > :is(.vis-title, .vis-eyebrow) { flex: 1; }
   .vis-chart-view, .vis-chart-toggle { min-height: var(--tap-min); }
 }
 

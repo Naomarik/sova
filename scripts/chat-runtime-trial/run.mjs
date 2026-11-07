@@ -4082,14 +4082,23 @@ async function jobWakesWorker(name, idleMs) {
   R.check(/Still running: j2 \(sleep 300\)/.test(text) && text.indexOf(reply) < text.indexOf("Still running"), `${name}: it names the job still running, after the reply (${text.slice(-300)})`);
   await waitFor(() => lastStatus() === "waiting", 15000);
   R.check(lastStatus() === "waiting", `${name}: status waiting in the parent's record (${JSON.stringify(manifests().slice(-3).map((r) => r.status))})`);
-  await waitFor(() => asksWith(reply).length > 0, 30000);
-  R.check(asksWith(reply).length > 0, `${name}: the reply started a turn in the parent`);
+  // The parent's file, not the mock's log: that keeps a request's first 300 characters, and the report's header
+  // (its session path, as long as the scratch dir makes it) can push the reply past them. Read before anything
+  // else prompts the parent, so only that report can have started what follows it.
+  const turnOnReport = () => {
+    const es = entries(a.path);
+    const at = es.findLastIndex((e) => e.customType === "subagent-complete" && JSON.stringify(e).includes(reply));
+    return at >= 0 && es.slice(at + 1).some((e) => e.type === "message" && e.message?.role === "assistant");
+  };
+  await waitFor(turnOnReport, 30000);
+  R.check(turnOnReport(), `${name}: the reply started a turn in the parent`);
+  R.note(`${name}: the reply starts ${text.indexOf(reply)} characters into the report; the mock's 300-character log held it: ${asksWith(reply).length > 0}`);
 
   // The parent's own turn on that report ends with its scripted reply in its file. Only then is the script
   // cleared. With short idle times its process then stops: a prompt sent as it stops reaches nobody, so wait
   // for the stop and open the chat again, as tj3 does.
   const parentReplied = () => entries(a.path).some((e) => e.type === "message" && e.message?.role === "assistant" && fullText(e).includes(reply));
-  if (asksWith(reply).length > 0) await wakeWait(parentReplied, 60000);
+  if (turnOnReport()) await wakeWait(parentReplied, 60000);
   await mock.plain("");
   if (idleMs < 30000) {
     await wakeWait(() => !chatPid(a.path), 30000);

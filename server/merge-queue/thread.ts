@@ -334,7 +334,7 @@ function eventBody(ev: ThreadEvent): string {
       return [
         `Fix: entry ${e.id} · ${e.branch}'s chat answered request ${ev.request} Fixed, changing ${what}${ev.summary ? `: ${ev.summary}` : ""}.`,
         `What was asked: ${ev.asked}`,
-        `Check the fix (references/fixes.md)${ev.commit ? `: \`git diff ${short(e.commit)}..${short(ev.commit)}\` in the project` : ""}: does it change only what was asked, and does it decide nothing that is the user's? Then rule, in one call:`,
+        `Check the fix (references/fixes.md)${ev.commit ? `: \`git range-diff ${ev.base ? short(ev.base) : e.target} ${short(e.commit)} ${short(ev.commit)}\` in the project (the branch as approved against the branch now, each against the target; \`git diff ${ev.base ? short(ev.base) : e.target}...${short(ev.commit)}\` is the whole branch now)` : ""}: does it change only what was asked, and does it decide nothing that is the user's? Then rule, in one call:`,
         `- only what was asked, and nothing of the user's decided: merge.rule {entry: "${e.id}", request: "${ev.request}", ruling: "checked"} — it goes back in line on the user's Land;`,
         `- it decides something that is the user's (wording a person sees in the product (UI copy, messages, docs they read), layout, controls, defaults, notifications, noticeable timing, data kept or deleted, permissions; e.g. it picked "Store" where the branch said "Save changes"): merge.rule {entry: "${e.id}", ruling: "needs-user", text: <the question>, choices: [<the fix's way>, <the other way>]} — never "checked", even when it was the only way to make it pass;`,
         `- more than was asked: merge.rule {entry: "${e.id}", request: "${ev.request}", ruling: "beyond", text: <what more it changes>} — the user decides.`,

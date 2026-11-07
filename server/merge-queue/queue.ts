@@ -2128,7 +2128,8 @@ export class ProjectQueue {
       // In line, not started: out of line until the thread has checked the fix (it goes back in at the fix's commit).
       if (e.state === "queued") e.state = "with-chat";
       // The merge thread checks it changes only what was asked; until it rules (or while it isn't running) it waits.
-      const told = this.wake("fix", e, undefined, { request: r.id, asked: r.text, ...(commit ? { fixCommit: commit } : {}), ...(draftsFix ? { drafts: true } : {}), summary: answer.summary });
+      const fixBase = commit ? await this.mergeBase(commit) : undefined;
+      const told = this.wake("fix", e, undefined, { request: r.id, asked: r.text, ...(commit ? { fixCommit: commit } : {}), ...(draftsFix ? { drafts: true } : {}), summary: answer.summary, ...(fixBase ? { base: fixBase } : {}) });
       e.fix = { request: r.id, told, at: this.iso() };
       if (e.state === "with-chat") this.setPhase(e, { phase: "waiting-thread", answer });
       this.save();
@@ -2165,6 +2166,15 @@ export class ProjectQueue {
       if (!ok) {
         const what = text.trim() || "more than the request asked";
         this.raiseDecision(e, { kind: answer ? "fix-ok" : "drafts-changed", question: `${answer ? "The fix changes" : "Its spec drafts change"} more than was asked: ${what}`, choices: [], raisedBy: "merge-thread", actions: ["land", "remove"] });
+        this.save();
+        return this.withPosition(e);
+      }
+      // A fix that rewrote the branch (a rebase, an amend): the approved commit isn't under it, so nothing can tell its
+      // commits from work the user asked for (a rebase rewrites their dates too). Never covered by the Land: the user
+      // decides once.
+      if (answer?.commit && r && !(await isAncestor(this.git, this.root, e.commit, answer.commit))) {
+        this.raiseDecision(e, { kind: "fix-ok", question: `The fix rewrote ${e.branch}'s history (a rebase or an amend), so Sova can't tell the fix from other work on it: Land takes ${e.branch} at ${answer.commit.slice(0, 7)} as it is now`, choices: [], raisedBy: "queue", actions: ["land", "remove"] });
+        e.fix = { request: r.id, told: true, at: this.iso() };
         this.save();
         return this.withPosition(e);
       }
@@ -2208,11 +2218,19 @@ export class ProjectQueue {
     });
   }
 
+  /** The fix's merge base with the target: what the merge thread diffs the fix against (never two-dot from the old
+   *  approved commit, which after a rebase holds the target's own changes). */
+  private async mergeBase(commit: string): Promise<string | undefined> {
+    const r = await this.git(["merge-base", `refs/heads/${this.q.target}`, commit], this.root);
+    return r.code === 0 ? r.stdout.trim() || undefined : undefined;
+  }
+
   /** How many commits in `from..to` were made before the request (`since`): work the user asked for, not the fix. */
   private async unaskedWork(from: string, to: string, since: string): Promise<string | null> {
     // The branch's own commits only: a merge of the target into the branch (the fix for a conflict) brings the target's
     // commits, which are nobody's unasked work; the merge commit itself is the fix's.
-    const r = await this.git(["log", "--first-parent", "--format=%ct", `${from}..${to}`, "--not", `refs/heads/${this.q.target}`], this.root);
+    // Author dates: a rebase or a cherry-pick keeps them (it rewrites committer dates).
+    const r = await this.git(["log", "--first-parent", "--format=%at", `${from}..${to}`, "--not", `refs/heads/${this.q.target}`], this.root);
     if (r.code !== 0) return null;
     const at = Math.floor(Date.parse(since) / 1000);
     const n = r.stdout.split("\n").filter(Boolean).filter((t) => Number(t) < at).length;
@@ -2440,7 +2458,8 @@ export class ProjectQueue {
         const r = e.requests?.find((x) => x.id === e.fix!.request);
         const a = r?.answer;
         if (r && a?.kind === "fixed") {
-          e.fix.told = this.wake("fix", e, undefined, { request: r.id, asked: r.text, ...(a.commit ? { fixCommit: a.commit } : {}), ...(a.changed !== "commit" ? { drafts: true } : {}), summary: a.summary });
+          const fixBase = a.commit ? await this.mergeBase(a.commit) : undefined;
+          e.fix.told = this.wake("fix", e, undefined, { request: r.id, asked: r.text, ...(a.commit ? { fixCommit: a.commit } : {}), ...(a.changed !== "commit" ? { drafts: true } : {}), summary: a.summary, ...(fixBase ? { base: fixBase } : {}) });
           if (e.fix.told) this.save();
         }
         continue;
@@ -3906,7 +3925,7 @@ export class ProjectQueue {
     // What the thread diffs against: the run's base, else the target as the queue last saw it.
     const runBase = run ? (this.current?.run.id === run ? this.current.run.base : this.store.readRun(run)?.base) : undefined;
     const base = runBase ?? this.q.knownTarget;
-    if (base) (extra as { base?: string }).base = base;
+    if (base && !(extra as { base?: string }).base) (extra as { base?: string }).base = base;
     try {
       return this.deps.thread({ kind, project: this.id, root: this.root, target: this.q.target, entry: structuredClone(e), ...(run ? { run } : {}), ...extra });
     } catch (err) {

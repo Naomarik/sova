@@ -395,7 +395,7 @@ describe("what a fix may carry", () => {
       // Made before the request (commit times are whole seconds: dated well before it).
       writeFileSync(join(b.path, "w.txt"), "the user's\n");
       sh(b.path, "add", "w.txt");
-      execFileSync("git", ["commit", "-q", "-m", "work the user asked for"], { cwd: b.path, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid", GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z" } });
+      execFileSync("git", ["commit", "-q", "-m", "work the user asked for"], { cwd: b.path, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid", GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z", GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z" } });
       const userWork = sh(b.path, "rev-parse", "HEAD");
       await q.resume();
       const rq = lastRequest(await withChat(k, entry.id));
@@ -576,7 +576,7 @@ describe("fixes under one Land build on each other", () => {
       lastRequest(q.entry(entry.id) as MergeEntry).at = "2019-01-01T00:00:00.000Z";
       writeFileSync(join(b.path, "ch.txt"), "c1\n");
       sh(b.path, "add", "ch.txt");
-      execFileSync("git", ["commit", "-q", "-m", "fix one"], { cwd: b.path, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid", GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z" } });
+      execFileSync("git", ["commit", "-q", "-m", "fix one"], { cwd: b.path, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid", GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z", GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z" } });
       const fix1 = sh(b.path, "rev-parse", "HEAD");
       await q.respond(rq1.id, "s1", { answer: "fixed", commit: fix1 });
       failing = "this chat's last test run failed"; // the requeue is held: the pin stays at the Land's commit
@@ -605,7 +605,7 @@ describe("fixes under one Land: what still counts as unasked work", () => {
   const datedCommit = (path: string, file: string, text: string, message: string, date: string) => {
     writeFileSync(join(path, file), text);
     sh(path, "add", file);
-    execFileSync("git", ["commit", "-q", "-m", message], { cwd: path, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid", GIT_COMMITTER_DATE: date } });
+    execFileSync("git", ["commit", "-q", "-m", message], { cwd: path, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid", GIT_COMMITTER_DATE: date, GIT_AUTHOR_DATE: date } });
     return sh(path, "rev-parse", "HEAD");
   };
   /** Land, sent back once (request 1 dated 2019), fix one (2020) answered on it. */
@@ -776,4 +776,53 @@ describe("a failure counts its try once", () => {
       }
     });
   }
+});
+
+describe("a fix that rewrote the branch (rebase)", () => {
+  async function rebased(withUserWork: boolean) {
+    const { k, events } = standingKit({ thread: (ev) => ev.kind === "fix" });
+    k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit tests failed" }));
+    const q = await k.q();
+    const b = k.repo.branch(`feat/rb-${withUserWork}`, { [`rb-${withUserWork}.txt`]: "r\n" });
+    await q.pause("hold");
+    const { entry } = await q.add({ branch: `feat/rb-${withUserWork}`, by: "land-button", session: "s1" });
+    // W: work the user asked for, after the Land, before the request (its dates are rewritten by the rebase below).
+    if (withUserWork) k.repo.commitOn(b.path, { "w.txt": "the user's\n" }, "work the user asked for");
+    await q.resume();
+    const rq = lastRequest(await withChat(k, entry.id));
+    // Master moves; the chat rebases onto it and commits its fix F.
+    k.repo.commitOn(k.repo.root, { "list.txt": "alpha\nbeta\nmaster\n" }, "master moves");
+    sh(b.path, "rebase", "-q", "master");
+    const fix = k.repo.commitOn(b.path, { [`rb-${withUserWork}.txt`]: "fixed\n" }, "the fix");
+    await q.respond(rq.id, "s1", { answer: "fixed", commit: fix });
+    const ev = events.find((x) => x.kind === "fix" && x.request === rq.id)!;
+    const e = await q.fixRuling(entry.id, rq.id, true, "");
+    return { k, e, ev, fix };
+  }
+
+  test("(a) Land at C, the user's commit W, the request, a rebase onto a moved master, the fix F: never carried by the Land — the user decides", async () => {
+    const { k, e, ev, fix } = await rebased(true);
+    try {
+      assert.equal(e.decision?.kind, "fix-ok");
+      assert.match(e.decision?.question ?? "", /rewrote .* history/);
+      assert.notEqual(e.state, "queued", "not back in line");
+      assert.notEqual(e.commit, fix, "the pin unmoved");
+      assert.equal(ev.base, sh(k.repo.root, "merge-base", "master", fix), "the thread diffs the fix against its merge base");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("(b) a rebase with no unasked work: also the user's once (Sova can't tell the commits apart), Land takes it as it is now", async () => {
+    const { k, e, fix } = await rebased(false);
+    try {
+      assert.equal(e.decision?.kind, "fix-ok");
+      k.run.set(null);
+      const after = await k.q().then((q) => q.answer(e.id, "land"));
+      assert.equal(after.commit, fix);
+      await landed(k, e.id);
+    } finally {
+      await k.done();
+    }
+  });
 });

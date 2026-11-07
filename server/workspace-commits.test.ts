@@ -168,4 +168,28 @@ describe("the workspace commit (the residence's effects)", () => {
     assert.equal((await commitAll(dir, "m")).committed, true);
     for (const rev of ["HEAD", "HEAD~1"]) assert.equal(git(dir, "log", "-1", "--format=%an <%ae> / %cn <%ce>", rev), "Sova <sova@localhost> / Sova <sova@localhost>", rev);
   });
+
+  test("a secret in a commit the remote lacks holds the push and names where, never the text", async () => {
+    const bare = join(root, "leak.git");
+    execFileSync("git", ["init", "-q", "--bare", "-b", "main", bare]);
+    const dir = await repo("leaky");
+    await setRemote(dir, bare);
+    const secret = `ghp_${"a".repeat(36)}`;
+    writeFileSync(join(dir, "notes.md"), `token here ${secret}\n`);
+    const held = await commitAll(dir, "m");
+    assert.equal(held.committed, true);
+    assert.notEqual(held.pushed, true);
+    assert.match(String(held.error), /^upload held: commit [0-9a-f]{7} · notes\.md:1 · looks like a GitHub token/);
+    assert.ok(!String(held.error).includes(secret));
+    assert.throws(() => git(bare, "rev-parse", "--verify", "-q", "main"), "nothing reached the remote");
+    // Retrying holds again while the secret is in what would be uploaded.
+    assert.match(String((await push(dir)).error ?? ""), /upload held/);
+    // A clean repo pushes.
+    const clean = await repo("clean-push");
+    const bare2 = join(root, "clean.git");
+    execFileSync("git", ["init", "-q", "--bare", "-b", "main", bare2]);
+    await setRemote(clean, bare2);
+    writeFileSync(join(clean, "roster.json"), "{}\n");
+    assert.equal((await commitAll(clean, "m")).pushed, true);
+  });
 });

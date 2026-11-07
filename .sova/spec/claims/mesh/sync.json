@@ -23,12 +23,14 @@
       "server/sync/index.test.ts",
       "server/sync/docs-grants.test.ts",
       "server/wire-gate.ts",
-      "server/mesh/index.ts"
+      "server/mesh/index.ts",
+      "shared/wire-areas.json",
+      "scripts/mesh-lab/e2e/m3.test.mjs"
     ],
     "agreed": {
-      "by": "user (omar)",
-      "at": "2026-11-03T22:12Z",
-      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+      "by": "Omar (user)",
+      "at": "2026-11-06T21:56Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
     }
   },
   "§mesh.sync/kept-copies": {

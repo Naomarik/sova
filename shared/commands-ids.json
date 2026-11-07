@@ -240,7 +240,11 @@
     "session.pairs.unpair",
     "session.pairs.resume",
     "attention.dismiss",
-    "attention.undismiss"
+    "attention.undismiss",
+    "session.time-spent",
+    "chat.shell.list",
+    "chat.shell.stop",
+    "session.shell.output"
   ],
   "retired": [
     "settings.agents.get",

@@ -14,8 +14,9 @@ import type { SocketStatus } from "./socket";
     (1 for the first that opened; 0 before any did): every send is tagged with it. `open`: that
     connection is open now; once it ends, nothing of it is handed back again. `asleep`: the chat
     closed for being quiet and the view holds no socket until something needs the chat; `waking`:
-    something did, and the connection that wakes it hasn't opened yet (it reads Connecting, not
-    Reconnecting). Both absent otherwise. */
+    something did, or the view has just opened and its first connection hasn't opened yet (it reads
+    Connecting, not Reconnecting, and what the tab asks meanwhile is held for that connection). Both
+    absent otherwise. */
 export interface ChatWait {
   ready: boolean;
   lost: boolean;
@@ -77,8 +78,20 @@ export const waitOnHello = (wait: ChatWait): ChatWait => ({ ready: true, lost: f
 export const waitOnSleep = (wait: ChatWait): ChatWait => ({ ready: false, lost: false, conn: wait.conn, open: false, asleep: true });
 
 /** The wait a chat view opens in: an archived chat's is asleep from the start, so it holds no socket
-    and shows only its file's rows (§chat.transcript/instant-open, "An archived chat"). */
-export const waitAtOpen = (archived: boolean): ChatWait => (archived ? waitOnSleep(WAIT_START) : WAIT_START);
+    and shows only its file's rows (§chat.transcript/instant-open, "An archived chat"). Any other's
+    first connect is waking, as a sleeping chat's wake is: a send (or a model, thinking, mode or
+    sandbox change) made before that connection's hello is held and goes, in order, as it opens. Only
+    the first: a reconnect waits as before. */
+export const waitAtOpen = (archived: boolean): ChatWait => (archived ? waitOnSleep(WAIT_START) : { ...WAIT_START, waking: true });
+
+/** Whether what the tab asks now is held for the next connection (ChatView's outbox): asleep, waking
+    (a first connect included) with no connection open yet, or behind `kept` frames already held (they
+    go in order). */
+export const holdsSends = (wait: ChatWait, kept: number): boolean => !!wait.asleep || (!!wait.waking && !wait.open) || kept > 0;
+
+/** The composer's wait reason, given the connection's (`waitReason`): none while waking, whose
+    sends are held and whose note still floats (ChatView `waitNote`). */
+export const composerWait = (wait: ChatWait, reason: ComposerReason | null): ComposerReason | null => (wait.waking ? null : reason);
 
 /** Whether something that needs the chat (a send, its tab coming to the front, another tab's open)
     may wake it: only a chat asleep, and never an archived one, which waits for Unarchive. */

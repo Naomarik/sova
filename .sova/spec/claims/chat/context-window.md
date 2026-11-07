@@ -11,8 +11,9 @@ The readout is a token count with the list's 12px ring beside it (§chat.context
 never a bar and never the ring alone. The skill's `.meter` puts a 6px bar under its number, and
 in a 56px head that costs a line; the ring sits on the row. The count says how much is in
 context, "222k", and from a 720px head also what it is out of, "222k / 1M". The share is the
-ring's arc: **no percent is shown in the head.** The percent is said in the `title`, to AT
-(§chat.context-window/exact-numbers) and in Session details, all in the one sentence.
+ring's arc: **no percent is shown in the head.** The percent is said in the `title` and to AT
+(§chat.context-window/exact-numbers), in the one sentence, and on the Context tab's top line
+(§app.subagents-pane/context-tab).
 Closeness to the limit is carried by the arc, then by the hue of the ring and the count, and at
 the top step by a glyph too, so it never rests on hue alone.
 

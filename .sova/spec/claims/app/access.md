@@ -236,7 +236,7 @@ Every caller keeps working with no new step for the person:
 
 ## §app.access/your-click — What only your own click passes
 
-Nine approvals pass only on what Sova takes for the person's own click in its page on this machine, but
+Ten approvals pass only on what Sova takes for the person's own click in its page on this machine, but
 for what the Overseer keeps and a schedule on another computer (both below). Each one lets something
 act later without asking, so the ordinary roads of a chat, a script or another computer are refused.
 This stops a chat following its instructions, not a program on this computer posing as your browser
@@ -254,6 +254,7 @@ every chat, not only Create, and it ships before Create does.
 | Trusting a project's or an extension's cards | `POST /api/session-cards/trust` with `on: true` | **Trust {name}'s Cards** on one of its cards |
 | Restarting Sova | `POST /api/updates/restart`, or Apply of Sova's own checkout (`POST /api/project-services/apply`, `POST /api/projects/:pid/services/apply`) | **Restart Sova** in Settings → General, or **Apply** on the Branches tab of Sova's project page |
 | Updating Sova | `POST /api/updates/check`, `POST /api/updates/apply`, `PUT /api/updates/settings` | Settings → General |
+| Adding or changing an extension | `POST /api/extensions/inspect`, `/install`, `/:id/approve`, `/:id/folder`, `/:id/on`, `/:id/off`, `/:id/program`, `DELETE /api/extensions/:id` | Settings → Extensions |
 
 - **Who is refused.** A request with the Overseer's sender mark, a chat's key, the token in a header
   (a script, a chat's terminal, a tool), an extension's key, a mesh peer, or a request with no mark at
@@ -276,9 +277,11 @@ every chat, not only Create, and it ships before Create does.
   `forbidden`, with no `yourClick`.
 - **Only the widening closes.** Turning a power Off, raising a sandbox, turning a mode off, turning
   on a mode at a version already approved, and turning a card owner's trust off stay open to whoever
-  could do them. So
+  could do them, but for what an extension's key is refused (§app.extensions/not-you). So
   `session.sandbox.set` and `project.overseer.settings.set` stay commands, and answer a lowering or a
-  power turned On with this refusal (§app.commands/catalogue).
+  power turned On with this refusal (§app.commands/catalogue). Extensions are the exception: Turn Off and
+  Remove stay at the page too, as everything that changes an MCP server does (§app.mcp/reads), so a misled
+  chat can't quietly turn one off.
 - **The same act by another road.** A `/sandbox` that lowers, sent through `POST /api/sessions/prompt`
   (`session.send`, or the Overseer's `sova_send`), `POST /api/chat/frames`, a `/ws/chat` socket that
   isn't the page, or any `chat.send` the server makes, and not typed in the page's composer, is refused
@@ -287,9 +290,10 @@ every chat, not only Create, and it ships before Create does.
   and it never reaches the chat. A rewind or regenerate that would lower the sandbox, because it goes back past a
   raise, is refused to anything but the page, a linked computer included, and the chat doesn't move: it answers
   `rewind_refused` or `regenerate_refused`, reason `cancelled`, not a 403 body. One that lowers nothing still runs.
-  A prompt, steer or regenerate from a script's, a chat's or an extension's
-  socket, `POST /api/chat/frames` or `POST /api/chat/action` still runs, but no turn it opens is yours, in the queue and through a
-  compaction hold too (§app.overseer/tools). The page's socket and a linked computer's are unchanged, and
+  A prompt, steer or regenerate from a script's or a chat's
+  socket, `POST /api/chat/frames` or `POST /api/chat/action` still runs, but no turn it
+  opens is yours, in the queue and through a compaction hold too (§app.overseer/tools). An extension's key sends none of them
+  that way at all (§app.extensions/not-you). The page's socket and a linked computer's are unchanged, and
   so is the Overseer's own message into a project overseer. A running chat
   picks this up at its next reload.
 - **What still passes.** **Apply and Approve** on a Settings change card is your click
@@ -325,7 +329,10 @@ every chat, not only Create, and it ships before Create does.
   This applies only to computers you've linked. The proof above covers a schedule's single request only.
 - **An installed extension's page.** An extension's page passes as your click, by the same
   origin and cookie: its script can reach every door above without you, so installing one is a trust
-  decision.
+  decision. The badge on what it sends guards against accidents and stops none of this
+  (§app.extensions/page-badge). At the extension door alone, a request whose `Referer` is a page under `/ext/`
+  is refused too (§app.extensions/loader). That too stops an accident, not a hostile page, which can leave the
+  `Referer` off.
 - **How strong this is.** The approvals stop a chat following its instructions. They don't stop a
   program on this computer deliberately posing as your browser. Telling your page from a program is a
   heuristic: a local request made to look like a browser's navigation gets the install's cookie from

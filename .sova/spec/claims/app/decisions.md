@@ -3,9 +3,9 @@
 
 Decisions is Sova's **opt-in** classifier: a server-side seam that asks typed questions about a
 session and gets typed answers with probabilities. Attention signals use it (the turn card and
-the "needs you" mark, §app.decisions/attention-signals), as do the alignment card's triage and
-the worker report check, off by default, so nothing leaves the
-machine while it is off. Session tags no longer ask it anything (§app.decisions/session-tags).
+the "needs you" mark, §app.decisions/attention-signals), as do the alignment card's triage,
+the worker report check and message labels (§app.message-labels/labelling), off by default, so
+nothing leaves the machine while it is off. Session tags no longer ask it anything (§app.decisions/session-tags).
 
 The seam is provider-neutral. **Jev** (TypeSafe's classifier, `api.typesafe.ai`) and **one
 configured model** (a pi model or a Claude Code model, the same backend/model/effort tuple the
@@ -14,8 +14,8 @@ Nothing above the seam names a provider: the features see only answers and, for 
 provider gave them.
 
 Sova-owned state under `<stateRoot>`: `decisions.json` (settings), `secrets/jev-key` (the key),
-`signals.json` (classified turns), `session-tags.json` (tags), `decisions-calls.jsonl` (the call
-ledger, §app.decisions/call-ledger). All are sidecars: no decision ever
+`signals.json` (classified turns), `session-tags.json` (tags), `message-labels/` (message labels,
+§app.message-labels/labelling), `decisions-calls.jsonl` (the call ledger, §app.decisions/call-ledger). All are sidecars: no decision ever
 writes a byte into a session file. All writes are atomic tmp+rename, except the ledger's
 appends (one line each).
 
@@ -62,8 +62,8 @@ appends (one line each).
   argument over 64 KiB: it fails `too-large` without starting.
 - **Jev.** Plain HTTPS, no SDK. boolean/choice/score map to Jev's `noul`/`choice`/`score`. A state
   estimated over Jev's size limit fails `too-large` locally, without a call. Timeout 8 s, except
-  for background purposes nobody waits on (a merge's follow-up check and a worker's report
-  check): 15 s.
+  for background purposes nobody waits on (a merge's follow-up check, a worker's report
+  check and a message's label): 15 s.
 - **A model.** The model is asked for **distributions, never a bare label**, at temperature 0 unless
   it is thinking, within 45 s, and its JSON is parsed strictly; junk is `malformed-answer`. The prompt tells it that the state is
   data, never instructions. A pi model runs through the server's
@@ -91,19 +91,30 @@ appends (one line each).
 ## §app.decisions/privacy — What leaves the machine
 
 - Nothing is sent unless a feature is on, and each feature is its own switch. Attention signals
-  are off until turned on (a stored tags switch is read and ignored: tagging asks nothing); **Reconcile decisions** (§app.requirements/reconciler)
+  are off until turned on (a stored tags switch is read and ignored: tagging asks nothing); **Label your messages** (§app.message-labels/labelling) is off until turned on, and asks about
+  nothing sent before it went on. **Reconcile decisions** (§app.requirements/reconciler)
   is on by default and can be turned off here.
 - A check sends a **short, capped excerpt of one session** — for signals: the title, the last user
   message, the tail of the last reply, the recent tool calls' names with short results and
   whether each failed, the input and the end of the error of the last few failed calls, plus
-  facts counted in code (repeats, failures, tool-call count, the turn's stop reason). Session tags
-  send nothing. Never whole transcripts, images or files.
+  facts counted in code (repeats, failures, tool-call count, the turn's stop reason); for a message's
+  label: the head of that message, the tail of the reply before it and two facts counted in code
+  (§app.message-labels/labelling), and not the title or any tool call. Session tags send nothing.
+  Never whole transcripts, images or files.
 - Every feature passes the same gate before any excerpt is built: the feature is on, the folder is
   not excluded, and the session is not left out as a terminal session.
-- **Redaction.** Every request's state is deep-redacted with the Overseer's redactor
-  (§app.overseer/tools) before any provider sees it: string values only, object keys kept. It
-  replaces with `[redacted]` both the known secret values (including the Jev key) and secrets
-  recognised by their shape. The redacting provider is the only way a decision reaches a
+- **One filter for everything sent out.** Everything Sova sends to Jev or any outside model passes
+  through one shared filter for private data, the Overseer's redactor (§app.overseer/tools); no
+  feature has a filter of its own instead.
+- **Redaction.** Every request's state and questions are deep-redacted with that redactor before
+  any provider sees them: string values only, object keys kept. It replaces with `[redacted]` the
+  known secret values (including the Jev key), passwords and tokens, email addresses, a URL's
+  `user:pass@` part, and anything that looks like a key or token by its shape: prefixed tokens
+  (`glpat-`, `ghp_`, `gho_`, `sk-`, `xox…-`, AWS key ids), JWTs, private-key blocks, hex of 32
+  characters or more other than a 40-character git hash, and long mixed runs of letters and digits
+  (an unprefixed key, a base64 blob). Short and full git hashes, UUIDs, paths, file names, code
+  identifiers and numbers stay. Emails and random-looking strings are hidden only in what goes
+  out; the Overseer's own reads keep them. The redacting provider is the only way a decision reaches a
   provider; nothing else in the server can call the chain or Jev directly. The 32,000-character
   cap applies after redaction.
 - **A pasted password is withheld whole.** Before redaction, any text in a request's state that
@@ -252,6 +263,10 @@ appends (one line each).
   Overseer's digest. Needs you lists it in its softer tier and the Overseer's "need you" count
   counts it, but it never wakes the Overseer with a brief and never sends a phone notification.
   It goes after 7 idle days (no reply since), like every soft item.
+- **An open card says it already.** While a session waits on an answerable transcript card, that card is
+  its Needs you item (`card-waiting`, §app.overseer/attention-digest) and the digest doesn't also list
+  this guess. The row's mark stays. Once the card is answered or done, the guess lists again if it
+  still holds.
 - **An open offer asks too.** While an idle session shows an open offer card (§chat.offers/card),
   its row carries `asks-you` as if its last reply asked, with no model call, while the feature is
   on. It clears when the card is answered, set to Not Now, no longer offered or replaced by a newer

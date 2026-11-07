@@ -112,7 +112,7 @@ route, when it runs, blockers, and what the card shows.
 The spec minor mode: its guide's two parts (finding your way on every turn, the writing procedure
 once, before the first behavior-changing edit or with the first census note or an alignment's
 go-ahead), working from the project's spec, the read-only `spec` tool every chat you code in and
-every worker has for those look-ups, spec on or off (§app.spec-lookup/spec-tool), the census note and its one unread line before
+every worker but a team's monitor has for those look-ups, spec on or off (§app.spec-lookup/spec-tool), the census note and its one unread line before
 finishing, updating a claim the task didn't create without asking and listing it in the reply's one
 spec line ("Also updates …"), the Agree step when align is on too, drafts and promotion, the spec
 writer, what workers get (and the claims a finished worker's changes landed in), and project coding

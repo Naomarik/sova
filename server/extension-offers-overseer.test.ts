@@ -84,7 +84,7 @@ describe("overseerExtCommands", () => {
         extensions: [
           entry("tickets", [cmd("file")]),
           entry("acme", [cmd("status", { overseer: true }), cmd("launch", { overseer: true, job: true, description: "Opens a session.", params: { prompt: { type: "string", required: true } } }), cmd("hidden")], "Acme"),
-          { id: "broken", commands: [cmd("x", { overseer: true })] },
+          { id: "broken", dist: "relative/dist", commands: [cmd("x", { overseer: true })] },
         ],
       }),
     );

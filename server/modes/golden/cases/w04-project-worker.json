@@ -36,6 +36,7 @@
     "<inline:sova-mcp>",
     "<inline:sova-worker-host>",
     "<inline:sova-vis-check>",
+    "<inline:sova-shell-model>",
     "<inline:sova-memory>",
     "<inline:sova-playbook>",
     "<inline:sova-project-verbs>",
@@ -191,13 +192,13 @@
        "content": "",
        "sections": {
         "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-        "tools": "@44baa8b2ed1e6cce",
-        "rules": "@bb6b8db0787c1b6b",
+        "tools": "@4638ec08e2a6ed45",
+        "rules": "@3af6ecc6d5313626",
         "docs": "@0f5fabf6c3c47c4c",
         "cwd": "<cwd>\n<ws:project>\n</cwd>",
         "mode": "@2f8f600eeb60d291"
        },
-       "toolsAdded": "@9882fb1d099049d7"
+       "toolsAdded": "@2737ccf457e33552"
       },
       {
        "role": "user",
@@ -309,13 +310,13 @@
       "content": "",
       "sections": {
        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-       "tools": "@44baa8b2ed1e6cce",
-       "rules": "@bb6b8db0787c1b6b",
+       "tools": "@4638ec08e2a6ed45",
+       "rules": "@3af6ecc6d5313626",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:project>\n</cwd>",
        "mode": "@2f8f600eeb60d291"
       },
-      "toolsAdded": "@ec4c860c8a2447d1"
+      "toolsAdded": "@c0c5a0a71ac97805"
      }
     }
    ],

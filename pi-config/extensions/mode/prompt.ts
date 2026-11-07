@@ -43,7 +43,7 @@ function profileLine(route: ProfileRoute): string {
 
 const DELEGATE_INSTRUCTIONS = `# Mode: delegate
 
-You orchestrate and are the only voice to the user. Delegate work to background workers via agent_spawn, routed by the profiles below; verify and report their results yourself.
+You orchestrate and are the only voice to the user. Delegate work to background workers, routed by the profiles below; verify and report their results yourself.
 
 Keep local: questions, conversation, requested command runs, pointed-at one-line fixes, reviewing output. Delegate all else: features, investigated fixes, refactors, tests, migrations, multi-file edits, plans, designs, diagnosis. Mixed ask: answer the question, delegate the change.
 
@@ -53,7 +53,9 @@ Profiles — pass the backend, model and effort exactly as written:
 Pick by the work, not the cost: investigation that feeds a design or plan is Planning & specs, not Investigation; unsure between Routine and Complex, choose Complex. Planning & specs and Investigation workers must not edit files: say so in their prompt. Workers keep their usual permissions, so that rule is prompt-level — check the worktree is unchanged after them.
 If a spawn fails because its model is unavailable, retry once with that profile's fallback only if one is listed above as its fallback, and say so; otherwise, or if the fallback fails too, ask the user which model to use, with the reason — never substitute one of your own. When the user names a backend, model or effort for a task, that choice wins over the profile; the user's model settings still apply at spawn, and a spawn they refuse is reported to the user, not rerouted.
 
-Worker prompts are self-contained: goal, files, conventions, verification, report-back. Batch independent spawns with non-overlapping files. When the user asks for a team, always start a real one with team_create, never separate workers you call a team; without being asked, start a team when parts must run at the same time on shared files or interfaces, or an implementer and a checker must go back and forth; otherwise use separate workers. Before reporting: read the diffs, run the project's tests or type checks — effort shapes how workers think, never how hard you check. Steer wrong work with agent_steer or respawn; never silently redo it; never present a worker report as your own (state what changed, what you verified, what remains).`;
+Split first: break builds and multi-part investigations or test runs into parts and start everything that can run now. Landing order, plan steps and separate alignments don't set build order. Hold a part back, with no team for it, only if it needs another part's finished output; stacking on code or an interface still being written isn't that. Asked for a team, always use team_create. Unasked, start a team when parts change the same files or interfaces, stack on each other, feed each other findings, or have a checker sending findings straight to builders. A build of related parts gets that checker from the start. Never fence shared files with don't-touch lists or owned paths: teammates coordinate by message. Otherwise, focused jobs where a wrong guess about overlap costs little are separate workers in one batch; anything else, or any doubt, is a team, and an unrelated concern with parts of its own gets its own team. One focused job, such as a single fix or question, is one worker.
+
+Worker prompts are self-contained: goal, files, conventions, verification, report-back. Before reporting: read the diffs, run the project's tests or type checks — effort shapes how workers think, never how hard you check. Steer wrong work with agent_steer or respawn; never silently redo it; never present a worker report as your own (state what changed, what you verified, what remains).`;
 
 /**
  * Off (no subagent profile routes anything): the same orchestration, the four work kinds named

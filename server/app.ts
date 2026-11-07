@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { registerTimeSpentRoutes } from "./time-spent-routes";
 import { compress } from "hono/compress";
 import { isDirectLocal } from "./compression";
 import { replyTimingsOf, sessionIdOfPath } from "./reply-facts";
@@ -26,6 +27,7 @@ import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
 import { registerProjectFileRoutes } from "./project-files-routes";
 import { registerMcpRoutes } from "./mcp/routes";
+import { registerExtensionRoutes } from "./extension-routes";
 import { registerSessionOfferRoutes } from "./session-offers-routes";
 import { registerTranscriptCardRoutes } from "./transcript-cards-routes";
 import { registerPairRoutes } from "./topic-pairs";
@@ -62,7 +64,8 @@ import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } 
 import { setFavorite } from "./model-favorites";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
-import { draftForClient, putBackDraft, setDraft } from "./drafts";
+import { draftForClient, isDraftMode, markerOf, putBackDraft, setDraft } from "./drafts";
+import { shellOutputPage } from "./shell-output";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
 import { getAgentsInsight, getHiddenWorkers, getMemberInbox, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
@@ -182,6 +185,8 @@ import { setCreateSettingsRun } from "./create-settings-tool";
 import { runCreateSettings } from "./create-settings-run";
 import { isProjectModeId } from "../shared/project-modes";
 import { extensionKeys } from "./extension-keys";
+import { actsAsExtension, EXTENSION_FIRST_PROMPT, extensionDoorRefusal, extensionFrameRefusal } from "./extension-doors";
+import { extensionSenderOf } from "./extension-sender";
 import { registerUpdatesRoutes } from "./updates/routes";
 
 /** The built frontend; SOVA_DIST: another build (a test's scratch one), as SOVA_SHARE_DIST is for the share page. */
@@ -254,6 +259,12 @@ export function buildApp(deps: AppDeps) {
     // Who ran what (server/command-audit.ts, §app.command-audit/record): only a call that shows the
     // token; noted once answered, off the answer's path. Neither step can change the answer.
     const audited = auditStart(c);
+    // A door an extension's key never opens (server/extension-doors.ts, §app.extensions/not-you).
+    const closed = extensionDoorRefusal(c);
+    if (closed) {
+      audited?.(403, closed.route);
+      return c.json({ error: closed.error, extensionRefused: true }, 403, { [SERVER_HEADER]: "sova" });
+    }
     await next();
     try {
       c.res.headers.set(SERVER_HEADER, "sova");
@@ -322,6 +333,7 @@ export function buildApp(deps: AppDeps) {
     return c.json(body);
   });
   registerProfileRoutes(app);
+  registerTimeSpentRoutes(app);
 
   /** Create a new empty webapp-owned session in `cwd` (an existing absolute directory) → 201 SessionSummary.
       With `start`, it is made with that profile (§chat.profiles/after-first-message) and, given one, its
@@ -410,6 +422,8 @@ export function buildApp(deps: AppDeps) {
     } catch {
       return c.json({ error: "Expected JSON body { cwd } or { target, remoteCwd }" }, 400);
     }
+    // An extension speaks through session.send, which names it: nothing is created (§app.extensions/not-you).
+    if (typeof body.prompt === "string" && body.prompt.trim() && actsAsExtension(c)) return c.json({ error: EXTENSION_FIRST_PROMPT, extensionRefused: true }, 403);
     let subagentProfile: string | undefined;
     if (body.subagent_profile !== undefined) {
       try { subagentProfile = requireSubagentProfile(body.subagent_profile); }
@@ -481,6 +495,7 @@ export function buildApp(deps: AppDeps) {
   registerSessionOfferRoutes(app);
   // MCP servers: the Settings tab, the project page's section, Check, approval and sign-in (§app/mcp).
   registerMcpRoutes(app);
+  registerExtensionRoutes(app);
   registerTranscriptCardRoutes(app);
   // The Overseer's pairings (§app.overseer/pairs): each paired chat's line, Unpair and Resume.
   registerPairRoutes(app, {
@@ -831,7 +846,7 @@ export function buildApp(deps: AppDeps) {
   });
 
   app.put("/api/sessions/draft", async (c) => {
-    let body: { path?: unknown; text?: unknown; attachments?: unknown };
+    let body: { path?: unknown; text?: unknown; attachments?: unknown; mode?: unknown };
     try {
       body = await c.req.json();
     } catch {
@@ -843,9 +858,29 @@ export function buildApp(deps: AppDeps) {
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
     if (body.text.length > MAX_DRAFT_CHARS) return c.json({ error: "Draft too long" }, 400);
     if (body.attachments !== undefined && !Array.isArray(body.attachments)) return c.json({ error: "attachments must be an array" }, 400);
+    if (body.mode !== undefined && !isDraftMode(body.mode)) return c.json({ error: 'mode must be "shell" or "private"' }, 400);
+    // Only the person's own page saves a command (§chat.shell-mode/box): any other writer's draft is a message,
+    // so a script, a chat, a card or a page over the peer listener can never leave the box one Enter from
+    // running something. A refused mode stays in view as its marker ("!ls"), as a hand-back's does.
+    const keep = body.mode !== undefined && notPage(c) === null;
+    const text = body.mode !== undefined && !keep ? `${markerOf(body.mode)}${body.text}` : body.text;
     // Invalid entries are dropped by the store rather than failing the whole write.
-    setDraft(idOf(path), body.text, body.attachments);
+    setDraft(idOf(path), text, body.attachments, keep ? body.mode : undefined);
     return c.json({ ok: true });
+  });
+
+  // A finished command's whole output, a page at a time (server/shell-output.ts, §chat.shell-mode/card).
+  app.get("/api/sessions/shell-output", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const entry = c.req.query("entry");
+    if (!entry) return c.json({ error: "Missing ?entry= (the command's row id)" }, 400);
+    const from = Number(c.req.query("from") ?? 0);
+    if (!Number.isSafeInteger(from) || from < 0) return c.json({ error: "from must be a byte offset, 0 or more" }, 400);
+    const r = await shellOutputPage(path, entry, from);
+    if (r.status !== 200) return c.json({ error: r.error, code: r.code }, r.status);
+    return c.json(r.body, 200, { "Cache-Control": "no-store" });
   });
 
   app.get("/api/cwds", async (c) => c.json(await listCwds()));
@@ -1443,14 +1478,22 @@ export function buildApp(deps: AppDeps) {
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
     const frames = postedFrames(await c.req.json().catch(() => null));
     if (!frames) return c.json({ error: `Expected { frames: [...] }, 1 to ${POSTED_FRAMES_MAX} objects with a type` }, 400);
+    // A key's prompt or steer: nothing runs and nothing goes back as a draft (§app.extensions/not-you).
+    const asExtension = actsAsExtension(c);
+    if (asExtension) {
+      const why = frames.map((f) => extensionFrameRefusal(f as { type?: unknown })).find((w) => w);
+      if (why) return c.json({ error: why, extensionRefused: true }, 403);
+    }
     // The page is going, so nobody hears a refusal: what it carried goes back as the draft.
     const refused = writingRefused(c.req.header(COMPOSER_HEADER));
     if (refused) {
       putBackDraft(idOf(path), framesDraft(frames));
       return refusedAnswer(c, refused);
     }
+    // Only shell-mode frames, all dropped: nothing to deliver, so the chat isn't opened for it.
+    if (!frames.length) return c.json({ accepted: 0 }, 202);
     sessionsChanged();
-    deliverFrames(path, frames, notPage(c));
+    deliverFrames(path, frames, asExtension ? "extension" : notPage(c));
     return c.json({ accepted: frames.length }, 202);
   });
 
@@ -1955,7 +1998,7 @@ export function buildApp(deps: AppDeps) {
       if ("error" in got) return c.json({ error: got.error }, got.status);
       if (sandboxLowers((await got.chat.sandboxInfo())?.state, asked)) return c.json(yourClickBody("sandbox", notPage(c) ?? "script"), 403);
     }
-    const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery);
+    const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery, undefined, undefined, extensionSenderOf(c));
     return r.ok ? c.json({ ok: true, queued: r.queued, kind: r.kind, ...(r.compacting ? { compacting: true } : {}) }) : c.json({ error: r.error }, r.status);
   });
   // Installed extensions (server/extensions.ts), with each backend's cached health.

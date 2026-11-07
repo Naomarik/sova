@@ -30,6 +30,13 @@ test("Reload Now pressed during a reply waits, and says for what", () => {
   assert.deepEqual(reloadButton(v, idle), { label: "Reloads after this reply", waiting: true }, "the server's word wins over a stale local idle");
 });
 
+test("Reload Now pressed while a command runs waits for the command, after a reply in flight", () => {
+  const v = codeView({ type: "code", state: "older", pending: true });
+  assert.deepEqual(reloadButton(v, { running: false, workersWorking: 2, commandRunning: true }), { label: "Reloads when its command ends", waiting: true });
+  assert.deepEqual(reloadButton(v, { running: true, workersWorking: 0, commandRunning: true }), { label: "Reloads after this reply", waiting: true });
+  assert.deepEqual(reloadButton(codeView({ type: "code", state: "older" }), { running: false, workersWorking: 0, commandRunning: true }), { label: "Reload Now", waiting: false });
+});
+
 test("reloading: the chip says so and nothing can be pressed", () => {
   const v = codeView({ type: "code", state: "reloading" });
   assert.equal(codeChip(v)?.label, "Reloading");

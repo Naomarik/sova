@@ -186,6 +186,8 @@ A hosted chat (`server/chat-manager.ts`) drives its agent through the contract's
 (`HarnessSession`, `shared/harness-session.ts`), whose pi implementation is
 `server/harness/pi/session.ts`: it sends, steers and wakes a run, reads and clears the agent's own
 queue, stops a run, switches model and thinking, appends a note or a user message outside a run,
+runs a command the user typed in shell mode, shared with the model or not, hearing its output as it
+comes, and stops it (§chat.shell-mode/running),
 lists the active and registered tools and the slash commands, reads its session's history and state,
 and hears the run's live events. The session looks pi up again at every call, so whatever pi
 session the chat's runtime holds at that moment, and any method replaced on it since, is the one

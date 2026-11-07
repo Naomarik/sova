@@ -43,6 +43,7 @@ import { relativeTime, tildePath } from "../lib/format";
 import { home } from "../lib/ui-state";
 import { Icon, trapFocus } from "./ui";
 import "./ChangesViewer.css";
+import { trackForeground } from "../lib/time-spent";
 
 /** What the viewer shows: a comparison the server resolves, and where its steps come from. */
 export interface ChangesSource {
@@ -86,6 +87,7 @@ let seq = 0;
 /** The viewer as a dialog over the page (a full-height sheet at folded width). */
 export function ChangesDialog(props: ChangesSource & { onClose(): void }) {
   const titleId = `changes-title-${++seq}`;
+  trackForeground("changes");
   // On the document, not the dialog: focus can sit on the page for a moment (a control that just
   // hid itself), and Esc still closes.
   const onKey = (e: KeyboardEvent) => {

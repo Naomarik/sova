@@ -918,7 +918,7 @@ test("picked back up after its process was reopened: the file tells a run settle
 		const file = path.join(dir, "w.jsonl");
 		const line = (id: string, at: string, stopReason: string) => JSON.stringify({ type: "message", id, timestamp: at, message: { role: "assistant", content: [], stopReason } });
 		fs.writeFileSync(file, [line("a1", "2026-10-12T10:00:00.000Z", "stop"), line("a2", "2026-10-12T11:00:00.000Z", "toolUse"), line("a3", "2026-10-12T11:05:00.000Z", "stop")].join("\n") + "\n");
-		assert.deepEqual(lastSettledRun(file), { entryId: "a3", at: Date.parse("2026-10-12T11:05:00.000Z") });
+		assert.deepEqual(lastSettledRun(file), { entryId: "a3", at: Date.parse("2026-10-12T11:05:00.000Z"), outcome: "success" });
 		const host = new FakeWorkerHost();
 		const ref = await host.start({ ...workerStartOf({ id: "ag_05", groupId: "g", name: "n", task: "t", cwd: "/w", resume: { sessionFile: file } }, PARENT, "k5", () => dir) });
 		host.state(ref.chatId, { status: "idle", lastSettled: null });

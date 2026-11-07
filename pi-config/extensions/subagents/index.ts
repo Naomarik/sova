@@ -90,6 +90,7 @@ import {
 	type UsageProvider,
 	type UsageWindow,
 } from "./coordination.ts";
+import { JOBS_DIR_ENV, stillRunningLine } from "./job-store.ts";
 import { publishWakes, wakeStoreOf, wakesCancelledBefore } from "./wake-store.ts";
 import { WorkerRegistryRecorder, type WorkerLaunchSpec } from "./registry.ts";
 import { manifestModes, readWorkerManifests, resolvedModel, viewWorker, type FoldedWorkerManifest, type WorkerTranscriptView } from "./worker-transcript.ts";
@@ -193,10 +194,10 @@ const TeamMemberSpec = Type.Object(
 		role: Type.String({ minLength: 1, maxLength: MAX_LABEL_CHARS, description: "Unique role within the team; also the worker name." }),
 		prompt: Type.String({
 			minLength: 1,
-			description: "Self-contained task. A fixed team header (team, objective, this role and declared ownership, other roles) is prepended before backend validation.",
+			description: "Self-contained task. A fixed team header (team, objective, each role and its owned paths) is prepended. Only a coordinator sees teammates' tasks, so say who this member works with and on what.",
 		}),
 		ownedPaths: Type.Optional(
-			Type.Array(Nonempty, { maxItems: MAX_OWNED_PATHS, description: "Declared scope shown to the member and in team_list. Advisory only; not a filesystem lock." }),
+			Type.Array(Nonempty, { maxItems: MAX_OWNED_PATHS, description: "Optional: paths only this member edits. Shown to the team and in team_list; teammates are told to avoid them unless their task says otherwise, so leave out shared files. Advisory; not a lock." }),
 		),
 		orchestrator: Type.Optional(
 			Type.Boolean({
@@ -1276,11 +1277,18 @@ export function registerSubagents(
 		// Busy workers show live tool activity instead of a premature "no output";
 		// settled ones keep the final-answer line the completion message quotes.
 		`${summaryHeader(a)}\n${a.finalOutput() || (a.isSettled() ? "(no output for this task)" : recentActivity(a))}`;
-	/** A text with the worker's landed line last: after the answer, so the answer's first line stays the report's preview (server/reports.ts). */
-	const withLanded = (a: Worker, text: string) => {
-		const line = landedOf(a);
-		return line ? `${text}\n\n${line}` : text;
+	/** The worker's own jobs still running or owed, read from its session directory; a finished worker has nothing left to wake. */
+	const stillRunningOf = (a: Worker): string | undefined => {
+		const dir = process.env[JOBS_DIR_ENV];
+		if (!dir || !a.sessionId || a.isFinished()) return undefined;
+		try {
+			return stillRunningLine(dir, a.sessionId);
+		} catch {
+			return undefined; // A record that can't be read never costs the report.
+		}
 	};
+	/** A text with the worker's landed and jobs lines last: after the answer, so the answer's first line stays the report's preview (server/reports.ts). */
+	const withLanded = (a: Worker, text: string) => [text, landedOf(a), stillRunningOf(a)].filter(Boolean).join("\n\n");
 	const summary = (a: Worker) => withLanded(a, answerSummary(a));
 	/**
 	 * A cut completion message: the preview, the worker's landed line if any, one line naming the final answer's size and a
@@ -1379,6 +1387,32 @@ export function registerSubagents(
 			scheduleRefresh();
 		}
 	};
+	/** Teams whose coordinator's finish held back its wake because a teammate was working. */
+	const heldTeamWakes = new Set<string>();
+	/** A run the worker started on its own ended well with nothing written: idle again as at any settle, with no report. */
+	const onQuietSettled = (a: Worker) => {
+		if (shuttingDown || !agents.includes(a)) return;
+		registry.settled(a);
+		successionCheck(a);
+		retireCheck(a);
+		try {
+			sweepSettled(a, (settleSeq.get(a.id) ?? 0) + 1);
+			sendHeldTeamWake(a);
+		} finally {
+			wakes?.settled(a.id);
+			pruneFinished();
+			scheduleRefresh();
+		}
+	};
+	/** No report follows a quiet settle, so nothing else would wake the main chat for a finish that waited on this worker. */
+	const sendHeldTeamWake = (a: Worker) => {
+		const teamId = teams.teamOf(a.id);
+		if (!teamId || !heldTeamWakes.has(teamId) || teamWorking(teamId, a.id)) return;
+		heldTeamWakes.delete(teamId);
+		// A parent mid-run reads the finish at its own release point, so it needs no wake.
+		if (shuttingDown || !activeCtx || parentLoops > 0) return;
+		sendCompletion(`[${teamId}: no teammate is working now. ${teams.memberInfo(a.id)?.member.role ?? a.id} went idle with nothing to report.]`, true);
+	};
 	/** The parent's (or the coordinator's) copy of a settle, read from the worker as it settled. */
 	const announceSettle = (a: Worker, seq: number) => {
 		if (shuttingDown || !activeCtx) return;
@@ -1395,8 +1429,15 @@ export function registerSubagents(
 		const route = completionRoute(a, failed);
 		if (route.kind === "drop") return;
 		if (route.kind === "coordinator") {
+			// The coordinator runs on this report, and its own settle decides the wake.
+			heldTeamWakes.delete(teams.teamOf(a.id) ?? "");
 			void deliverCompletion(route.to, a, verb);
 			return;
+		}
+		const teamId = teams.memberInfo(a.id)?.team.coordination ? teams.teamOf(a.id) : undefined;
+		if (teamId) {
+			if (route.wake || !a.wake || a.status === "killed") heldTeamWakes.delete(teamId);
+			else heldTeamWakes.add(teamId);
 		}
 		if (!["tui", "rpc"].includes(activeCtx.mode)) return;
 		// Independent: a broken UI must not suppress the completion message/wake.
@@ -1724,6 +1765,7 @@ export function registerSubagents(
 						{
 							onChange: () => { if (committed) scheduleRefresh(); },
 							onSettled: (worker) => { if (committed) onSettled(worker); else if (!abandoned) earlySettled.add(worker); },
+							onQuietSettled: (worker) => { if (committed) onQuietSettled(worker); },
 							onExit,
 						},
 					);
@@ -3576,7 +3618,7 @@ export function registerSubagents(
 			`Start independent background agents (backend defaults to pi; claude-code runs a Claude model on Sova's tools); returns IDs without waiting for tasks. Use agent_list/agent_transcript to inspect, agent_steer to redirect or queue follow-ups, agent_kill to stop, agent_wait when results are needed. Settled workers wake you when idle (wake=true, default). Workers share the filesystem. fork=true copies conversation history; extensions loads listed Pi extensions. Limits: no per-request limit; this chat runs at most ${MAX_LIVE} workers at once, idle ones and team members (a team's coordinator and monitor included) counted, and a request that would pass that is refused before anything starts. agents is a list of agent objects; backend, model, effort, cwd, wake, tools, systemPrompt, backendOptions, extensions and useWorktreeConfig given beside agents apply to every agent that leaves them out (refused if one sets a different value); name, count, fork and agentType go inside each agent.`,
 		promptSnippet: "Spawn background subagents (non-blocking) and manage them by id",
 		promptGuidelines: [
-			"Use agent_spawn to parallelise independent work; it returns immediately and does not block you.",
+			"Use agent_spawn for one focused job, or a batch of focused jobs that don't depend on each other.",
 			"Use agent_models to find requested worker models by name before spawning when the exact ID is unknown; it uses this session's registry, not a separate CLI search.",
 			"Use agent_wait only when you genuinely need a subagent's result before continuing; by default a finished subagent wakes you with its result when you are idle.",
 			"Tell a worker whose report may run past about 3,500 characters to write it to a file and end with that file's path plus a short summary; the completion message quotes only the first 4,000 characters.",
@@ -3735,14 +3777,16 @@ export function registerSubagents(
 				usage: { ...a.usage },
 			};
 			if (params.full) {
-				const header = `${a.id} (${a.name}) — ${a.status}\nSession: ${a.sessionFile ?? a.sessionId ?? "unavailable"}${a.transcriptOmitted?.items ? `\n[Retained transcript: ${a.transcriptOmitted.items} earlier item(s) omitted, approximately ${a.transcriptOmitted.approxBytes} bytes.]` : ""}`;
+				const jobs = stillRunningOf(a);
+				const header = `${a.id} (${a.name}) — ${a.status}\nSession: ${a.sessionFile ?? a.sessionId ?? "unavailable"}${a.transcriptOmitted?.items ? `\n[Retained transcript: ${a.transcriptOmitted.items} earlier item(s) omitted, approximately ${a.transcriptOmitted.approxBytes} bytes.]` : ""}${jobs ? `\n${jobs}` : ""}`;
 				const items = a.transcript.map((t) => `[${t.kind}${t.toolName ? `:${t.toolName}` : ""}] ${t.text}`).join("\n");
 				return toolResult(fullTranscriptText(a.id, header, answer, items), { ...details, finalAnswerChars: answer.length, retention: retention() }, true);
 			}
 			// No answer yet: the bounded summary (recent activity or the no-output line).
 			if (!answer) return result(summary(a), details);
 			const { text, page } = finalAnswerPage(a.id, summaryHeader(a), answer, params.offset, params.limit, params.offset !== undefined || params.limit !== undefined);
-			return toolResult(text, { ...details, finalAnswer: page, retention: retention() }, true);
+			const jobs = stillRunningOf(a);
+			return toolResult(jobs ? `${text}\n\n${jobs}` : text, { ...details, finalAnswer: page, retention: retention() }, true);
 		},
 	});
 	pi.registerTool({
@@ -4364,11 +4408,11 @@ export function registerSubagents(
 		label: "Create Team",
 		exposure: "model-only",
 		description:
-			"Create a named team of background workers with one unique role each, a shared objective and declared (advisory) ownership. Each member's prompt gets a fixed team header prepended. Members get team tools: team_msg (message a teammate by role; queued in its inbox and listed when it wakes), team_inbox (open and close its own items), team_ask (question to you/the user, surfaced as a team-question message that starts your turn when idle; answer with agent_steer). A member with orchestrator: true also gets team_roster and team_steer over its own team only; no member can spawn, add or stop workers. Members (pi or claude-code) load them as a Pi extension. Starts all members through the same path as agent_spawn (validated before any start, rolled back together on failure) and returns exact worker IDs without waiting. Members default to the pi backend unless defaults.backend or the member sets another. " + TEAM_LIMITS,
-		promptSnippet: "Create a team of role-based background workers with declared ownership",
+			"Create a named team of background workers with one unique role each and a shared objective, working in one filesystem. Members (pi or claude-code) get team tools: team_msg (message a teammate by role; queued in its inbox and listed when it wakes), team_inbox (open and close its own items), team_ask (question to its coordinator, or when it has none to you, surfaced as a team-question message that starts your turn when idle; answer with agent_steer). A member with orchestrator: true also gets team_roster and team_steer over its own team only; no member can spawn, add or stop workers. Starts all members through the same path as agent_spawn (validated before any start, rolled back together on failure) and returns exact worker IDs without waiting. Members default to the pi backend unless defaults.backend or the member sets another. " + TEAM_LIMITS,
+		promptSnippet: "Create a team of role-based background workers who message each other",
 		promptGuidelines: [
-			"Use team_create when the user asks for a team, or when parts of the work depend on each other mid-task (shared files or interfaces, an implement-and-check loop); use agent_spawn for independent parts and single jobs.",
-			"team_create ownership is advisory: members share the filesystem, and each settled member with wake=true starts a parent turn. Members (pi or Claude) can message teammates (team_msg) and ask you questions (team_ask); answer a team-question message with agent_steer on that worker ID.",
+			"Use team_create when the user asks for a team, or when parts change the same files or interfaces, stack on each other, feed each other findings, or have a checker sending findings straight to builders.",
+			"team_create members share the filesystem and agree shared files and interfaces by message (team_msg). Without a coordinator, each settled member with wake=true starts a parent turn and members ask you questions (team_ask); answer a team-question message with agent_steer on that worker ID.",
 			"Set orchestrator: true on one member (pi or claude-code) when the team should coordinate itself: it can see the roster and steer siblings by role, but never spawn or stop anyone; you keep the authority to add/stop members.",
 			"When this chat's subagent profile (or legacy team-defaults.json) configures standing roles, team_create itself adds a coordinator (your orchestrator member becomes it if you named one) and a monitor; only the coordinator then reaches you (completions, team-report messages that ask for nothing, team-question messages). Pass defaults.coordinator: false or defaults.monitor: false only when the user asks for a team without them. /team defaults shows the file's effect.",
 			"Never stop a coordinated team's coordinator or monitor while any of its members is still working (check team_list), even when the coordinator reports the objective complete; stopping them once no member is working is fine.",
@@ -4737,7 +4781,7 @@ export function registerSubagents(
 			`Objective: ${objective}`,
 			"",
 			"Plan and create a team for this objective with the team tools, then coordinate it:",
-			"- Use team_create with a short unique name, this objective, and members that each have one explicit unique role, a self-contained prompt and declared ownedPaths (advisory coordination, not a lock). Extend later with team_add; inspect with team_list; steer or stop members with agent_steer/agent_kill by exact worker ID.",
+			"- Use team_create with a short unique name, this objective, and members that each have one explicit unique role, a self-contained prompt and declared ownedPaths for files they don't share (advisory coordination, not a lock). Extend later with team_add; inspect with team_list; steer or stop members with agent_steer/agent_kill by exact worker ID.",
 			"- Obey the team tool descriptions, schemas and limits. All members share one filesystem; ownership does not protect files.",
 			`- ${TEAM_LIMITS}`,
 			"- Members can message teammates with team_msg (this extension delivers it) and ask you questions with team_ask (they arrive as team-question messages; answer with agent_steer on that worker ID). Give one member (pi or claude-code) orchestrator: true if the team should coordinate itself: it can see the roster and steer siblings by role but never spawn or stop anyone. You remain the authority, and each member's final answer is its report.",
@@ -4856,7 +4900,7 @@ export function registerSubagents(
 								...(launch.mcpServers ? { mcpServers: [...launch.mcpServers] } : {}),
 								...(launch.extensions ? { extensions: [...launch.extensions] } : {}),
 							},
-							{ onChange: scheduleRefresh, onSettled, onExit },
+							{ onChange: scheduleRefresh, onSettled, onQuietSettled, onExit },
 							{
 								host,
 								parent,
@@ -4866,6 +4910,7 @@ export function registerSubagents(
 									...(manifest.settleKey ? { settleKey: manifest.settleKey } : {}),
 									...(manifest.settleEntryId ? { settleEntryId: manifest.settleEntryId } : {}),
 									...(manifest.settledAt ?? manifest.resumedAt ? { settledAt: Math.max(manifest.settledAt ?? 0, manifest.resumedAt ?? 0) } : {}),
+									...(manifest.priorSettle ? { priorSettle: manifest.priorSettle } : {}),
 								},
 							},
 						);

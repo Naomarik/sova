@@ -72,7 +72,20 @@
   "§workspace.groups/keyboard": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed"
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/Composer.tsx",
+      "src/lib/input-mode.ts",
+      "src/lib/input-mode.test.ts",
+      "src/App.tsx",
+      "src/lib/type-anywhere.ts",
+      "scripts/e2e/type-anywhere.mjs"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-07T13:31Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#f856a549"
+    }
   },
   "§workspace.groups/layout-split": {
     "kind": "behavior",

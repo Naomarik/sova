@@ -101,6 +101,7 @@
   "SOVA_SELF_DNS",
   "SOVA_SELF_NODE_ID",
   "SOVA_SHARE_DIST",
+  "SOVA_SHELL_OUTPUT_MAX_BYTES",
   "SOVA_SLOT",
   "SOVA_SOCAT",
   "SOVA_SOURCE_URL",
@@ -184,7 +185,8 @@
    "outreach": "attention",
    "voice": "computers",
    "experimental": "computers",
-   "mcp-servers": "tools"
+   "mcp-servers": "tools",
+   "extensions": "extensions"
   },
   "definition": {
    "top.release": "releases",
@@ -416,9 +418,11 @@
    "session.fork": "scripts",
    "session.draft.get": "scripts",
    "session.draft.set": "scripts",
+   "session.shell.output": "scripts",
    "session.sandbox.set": "scripts",
    "session.tools.get": "scripts",
    "session.align.triage": "scripts",
+   "session.time-spent": "scripts",
    "session.workers.checks": "scripts",
    "session.context": "scripts",
    "session.context.file": "scripts",
@@ -602,6 +606,8 @@
    "chat.regenerate": "scripts",
    "chat.queue.remove": "scripts",
    "chat.reload-code": "scripts",
+   "chat.shell.list": "scripts",
+   "chat.shell.stop": "scripts",
    "chat.mode-command": "scripts",
    "settings.cards.get": "scripts",
    "settings.cards.withdraw": "scripts",

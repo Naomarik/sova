@@ -190,6 +190,11 @@ describe("the route classifier", () => {
     assert.equal(need("GET", "/api/peer/sync/manifest"), "sync.docs");
     assert.equal(need("POST", "/api/peer/sync/push"), "sync.docs");
     assert.equal(need("GET", "/api/peer/sync/extensions"), "sync.extensions");
+    // Settings → Extensions names folders and commands: `full`, reads too. The list itself stays a read.
+    assert.equal(need("GET", "/api/extensions"), "sessions");
+    assert.equal(need("GET", "/api/extensions/installed"), "full");
+    assert.equal(need("GET", "/api/extensions/x/log"), "full");
+    assert.equal(need("POST", "/api/extensions/install"), "full");
     assert.equal(need("GET", "/api/peer/credentials/entry"), "sync.logins");
     assert.equal(need("POST", "/api/peer/claude-pool/lend"), "sync.logins");
     assert.equal(need("POST", "/api/peer/links"), "links");
@@ -218,6 +223,11 @@ describe("the route classifier", () => {
     assert.equal(need("PUT", "/api/claude/pool/keeper"), "admin");
     assert.equal(need("GET", "/api/auth/token"), "full");
     assert.deepEqual(classifyRequest("GET", "/api/brand-new-route"), { need: "full", rule: "default" });
+  });
+
+  test("Time Spent asks only for the sessions grant (§app.subagents-pane/time-spent-record)", () => {
+    assert.equal(classifyRequest("POST", "/api/time-spent/report").need, "sessions");
+    assert.equal(classifyRequest("GET", "/api/time-spent").need, "sessions");
   });
 
   test("tour reader/position, outside-sharing and runtime routes have distinct exact capabilities", () => {

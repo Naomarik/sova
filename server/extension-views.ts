@@ -25,7 +25,7 @@ export function distFile(dist: string, rel: string): string | null {
 }
 
 /** An entry's `cards` and `drawings` → what it validly declares, and what was left out (for the once-per-process log). */
-export function viewOffersOf(ext: { id: string; title: string; dist: string }, raw: { cards?: unknown; drawings?: unknown }): { offers: Pick<ExtensionOffers, "cards" | "drawings">; dropped: string[] } {
+export function viewOffersOf(ext: { id: string; title: string; dist?: string }, raw: { cards?: unknown; drawings?: unknown }): { offers: Pick<ExtensionOffers, "cards" | "drawings">; dropped: string[] } {
   const dropped: string[] = [];
   const offers: Pick<ExtensionOffers, "cards" | "drawings"> = {};
   if (raw.cards === undefined && raw.drawings === undefined) return { offers, dropped };
@@ -34,7 +34,8 @@ export function viewOffersOf(ext: { id: string; title: string; dist: string }, r
     dropped.push(`its cards and drawings: "${PROJECT_OWNER}" is the namespace of a project's own`);
     return { offers, dropped };
   }
-  const there = (p: string) => distFile(ext.dist, p) !== null;
+  // No page, no files: a card it draws from Sova's own parts still counts.
+  const there = (p: string) => !!ext.dist && distFile(ext.dist, p) !== null;
   if (raw.cards !== undefined) {
     if (!Array.isArray(raw.cards)) dropped.push("cards is not an array");
     else {
@@ -69,8 +70,8 @@ export function viewOffersOf(ext: { id: string; title: string; dist: string }, r
 }
 
 /** An offered drawing kind as a chat's snapshot takes it: its guide's text read now, so the chat's tool text never changes. */
-export function extDrawingDecl(ext: { id: string; title: string; dist: string }, d: ExtensionDrawingOffer): DrawingDecl | null {
-  const file = distFile(ext.dist, d.guide);
+export function extDrawingDecl(ext: { id: string; title: string; dist?: string }, d: ExtensionDrawingOffer): DrawingDecl | null {
+  const file = ext.dist ? distFile(ext.dist, d.guide) : null;
   if (!file) return null;
   let guide: string;
   try {

@@ -27,6 +27,7 @@ import { InsightStrip } from "./InsightStrip";
 import { createProjectOverseerControl, ProjectOverseerHead } from "./ProjectOverseerHead";
 import { RemoteChip, RemoteHeadChip } from "./RemoteStatus";
 import type { PaneInsight, TabId } from "./SessionPane";
+import { trackSessionView } from "../lib/time-spent";
 import { WatchView } from "./WatchView";
 import { Banner, Chip, Icon } from "./ui";
 import { hostOf, sendingOff, updateNeededFor } from "../lib/mesh";
@@ -156,6 +157,7 @@ export function SessionView(props: {
   overseer?: OverseerChat;
 }) {
   const path = props.path;
+  trackSessionView(path, props.front);
   const s = () => props.summary();
 
   /**

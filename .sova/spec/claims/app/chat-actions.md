@@ -1,9 +1,12 @@
 # §app/chat-actions — In-chat actions a script can wait on
 
-A script can stop, compact, rewind or regenerate a chat, remove one of its queued messages, or
-reload it on the server's current code, and learn how that went, with one request
+A script can stop, compact, rewind or regenerate a chat, remove one of its queued messages,
+reload it on the server's current code, or list and stop the commands running in it from shell mode
+(§chat.shell-mode/who), and learn how that went, with one request
 (`POST /api/chat/action?path=<session>&wait=<ms>`) or `sova run chat.<action>`. The chat takes the
-action exactly as it takes the same button pressed in a tab.
+action exactly as it takes the same button pressed in a tab. An extension's key is refused some of
+these, and on Sova's special chats takes none, but for a Stop or reload with no process open, which answers
+as for any chat that isn't open and runs nothing (§app.extensions/not-you).
 
 ## §app.chat-actions/route — The same action as the button, with its answer
 
@@ -13,8 +16,11 @@ another tab presses the button: the transcript, the queue, whether a reply is ru
 state. The answer names the outcome. Stop answers `stopped`, saying whether anything was running
 and returning any queued text the stop cleared. Compact, Rewind, Regenerate and Remove answer
 `done` with the chat's own reply. Rewind's reply includes the text the composer would get.
-Reload Now answers `current`, `reloading`, `pending` or `failed`. A refusal answers 409 with the
-chat's own sentence. On an archived chat every action but Stop and Reload Now answers 409 (`code`
+Reload Now answers `current`, `reloading`, `pending` or `failed`. List Commands answers `listed` with
+the running commands (id, command, none for a `!!` one, and when each started); Stop Command answers
+`stopped` with how the command ended once it has, or `not-running` with the running list when no
+command of that id runs. A refusal answers 409 with the
+chat's own sentence. On an archived chat every action but Stop, Reload Now, List Commands and Stop Command answers 409 (`code`
 `archived`) with "That session is archived; unarchive it first." and starts nothing
 (§chat.transcript/instant-open, "An archived chat").
 
@@ -23,7 +29,8 @@ open composer, and an action does not mark the session as seen, so its unread ma
 A third: a Rewind or Regenerate that would lower the chat's sandbox is refused to a script, and what a script
 starts through this route is never the user's (§app.access/your-click).
 
-The route never sends a message, a steer or an answer to a waiting dialog. Answering a dialog can
+The route never sends a message, a steer or an answer to a waiting dialog, and never starts a
+command. Answering a dialog can
 approve a sandbox widening, so it stays with the person and the Overseer's own tool.
 
 ## §app.chat-actions/never-replay — Each action reaches the chat at most once
@@ -53,13 +60,14 @@ open or refuse.
 ## §app.chat-actions/cold — Stop and Reload Now start nothing
 
 Stop on a chat that isn't open answers that nothing was running, and Reload Now answers that the
-chat isn't running. Neither starts the chat. A chat that is still starting counts as not open, so a
+chat isn't running; List Commands answers an empty list and Stop Command `not-running`, since a
+chat that isn't open runs no command. None of them starts the chat. A chat that is still starting counts as not open, so a
 reply it starts after the answer is not stopped. A chat whose process ran on through a server
 restart is open: right after the restart, the answer waits until the server has taken it back, so
 a reply still streaming there is stopped. A session open in a terminal still gets its 409.
 
-## §app.chat-actions/catalogue — The six commands
+## §app.chat-actions/catalogue — The eight commands
 
 The catalogue lists them as `chat.stop`, `chat.compact`, `chat.rewind`, `chat.regenerate`,
-`chat.queue.remove` and `chat.reload-code`. They all need the `sessions` peer capability, the same
+`chat.queue.remove`, `chat.reload-code`, `chat.shell.list` and `chat.shell.stop`. They all need the `sessions` peer capability, the same
 as a chat's own connection.

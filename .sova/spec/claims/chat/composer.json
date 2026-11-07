@@ -30,12 +30,13 @@
       "src/components/ComposerMenu.tsx",
       "src/components/EffortRing.tsx",
       "src/lib/run-status.ts",
-      "src/components/WorktreesControl.tsx"
+      "src/components/WorktreesControl.tsx",
+      "src/shell-mode.css"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-02T15:04Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+      "by": "naomarik",
+      "at": "2026-11-07T12:39Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
     }
   },
   "§chat.composer/behavior": {
@@ -60,19 +61,24 @@
       "src/lib/effort.ts",
       "src/components/EffortRing.tsx",
       "src/lib/effort.test.ts",
-      "src/components/fold-fit.ts"
+      "src/components/fold-fit.ts",
+      "src/lib/compact.ts",
+      "src/lib/compact.test.ts",
+      "src/lib/shell-mode.ts",
+      "src/lib/shell-mode.test.ts"
     ],
     "requires": [
       "§chat.images/composer-attachments",
       "§chat.voice/button",
-      "§chat.composer/focus"
+      "§chat.composer/focus",
+      "§chat.composer/esc-stop"
     ],
     "authority": "accepted",
     "evidence": "verified",
     "agreed": {
-      "by": "user",
-      "at": "2026-10-31T13:22Z",
-      "source": "pi-session:9bf178cf-ac0e-4c07-b96e-64387c1097fc#cd59540b"
+      "by": "naomarik",
+      "at": "2026-11-07T13:31Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#f856a549"
     }
   },
   "§chat.composer/composer-flyout": {
@@ -116,12 +122,41 @@
       "src/design/base.css",
       "src/lib/chat-wait.ts",
       "src/components/WatchView.tsx",
-      "src/components/HostStateNotices.tsx"
+      "src/components/HostStateNotices.tsx",
+      "src/lib/shell-mode.ts",
+      "src/lib/chat-wait.test.ts",
+      "src/lib/first-connect-send.browser.test.ts"
     ],
     "agreed": {
-      "by": "user (omar)",
-      "at": "2026-11-03T22:11Z",
-      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+      "by": "naomarik",
+      "at": "2026-11-07T13:46Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#f856a549"
+    }
+  },
+  "§chat.composer/esc-stop": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.voice/states",
+      "§chat.transcript/a-queued-message",
+      "§chat/slash-commands",
+      "§chat.shell-mode/box"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/Composer.tsx",
+      "src/lib/input-mode.ts",
+      "src/lib/input-mode.test.ts",
+      "src/lib/compact.ts",
+      "src/lib/compact.test.ts",
+      "src/lib/shell-mode.ts",
+      "src/lib/shell-box.ts",
+      "src/lib/shell-box.browser.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-07T13:31Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#f856a549"
     }
   },
   "§chat.composer/file-index-deadline": {
@@ -166,7 +201,7 @@
       "§app.claude-logins/active-login"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/lib/composer-known.ts",
       "src/lib/composer-known.test.ts",
@@ -178,8 +213,15 @@
       "server/sessions-index.ts",
       "server/chat-manager.ts",
       "server/session-summary-chat.test.ts",
-      "server/claude-login-state.ts"
-    ]
+      "server/claude-login-state.ts",
+      "src/lib/chat-wait.ts",
+      "src/lib/first-connect-send.browser.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-07T11:46Z",
+      "source": "pi-session:507564a9-be11-44f3-986c-2fbc90e6725b#24834804"
+    }
   },
   "§chat.composer/land-confirm": {
     "kind": "behavior",
@@ -257,6 +299,41 @@
     "about": [
       "§chat.composer/anatomy"
     ]
+  },
+  "§chat.composer/type-anywhere": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.composer/behavior",
+      "§chat.composer/disabled-states",
+      "§chat.transcript/focus-view",
+      "§app/command-palette",
+      "§app.command-palette/shortcut-sheet",
+      "§app.subagents-pane/shell-a-third-column",
+      "§workspace.groups/the-group-composer",
+      "§workspace.groups/keyboard",
+      "§chat.shell-mode/box"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/type-anywhere.ts",
+      "src/lib/type-anywhere.test.ts",
+      "src/commands/keys.ts",
+      "src/commands/keys.test.ts",
+      "src/commands/composers.ts",
+      "src/App.tsx",
+      "src/components/Composer.tsx",
+      "scripts/e2e/type-anywhere.mjs",
+      "package.json",
+      "src/lib/shell-mode.ts",
+      "src/lib/shell-box.ts",
+      "src/lib/shell-box.browser.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-07T13:31Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#f856a549"
+    }
   },
   "§chat.composer/waiting-badge": {
     "kind": "behavior",
@@ -379,8 +456,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-22T15:11Z",
-      "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+      "at": "2026-11-07T13:31Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#f856a549"
     }
   }
 }

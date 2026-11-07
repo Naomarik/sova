@@ -127,7 +127,8 @@ duty (a successor takes over from its predecessor the moment it starts).
 - **Completions.** When any other member settles, its completion (the same summary the parent
   would get) is queued for the routing coordinator as a `report` item in its inbox
   (§app.teams/inbox; urgent when the task failed), not sent to the parent; it ends with the
-  member's `[Left open: …]` line when it left items open (§app.teams/inbox-zero). A killed
+  member's `[Left open: …]` line when it left items open (§app.teams/inbox-zero). A reply it makes
+  on its own after finishing is routed the same way (§app.chat-processes/worker-reports). A killed
   member's completion goes nowhere. The monitor's own settles go nowhere (it settles after every
   check); only a failed monitor task is reported to the coordinator, except a failure that moves a
   standing member to its fallback or stops it, which is said once instead
@@ -179,8 +180,9 @@ has the tool; the parent refuses it from anyone else. Each report is a team acti
 - **Tools.** `team_msg` (with an optional `notice`: `wrap-up`, `pause` or `resume`), `team_inbox`,
   `team_roster` (read-only) and **`wake_nudge`**, through the member extension (a claude-code monitor is a pi worker on
   the Claude Code provider, so the same). No other member has `wake_nudge`; the
-  monitor has no `team_ask`, `team_steer`, `team_report` or built-in tools, and it can never reach
-  the parent.
+  monitor has no `team_ask`, `team_steer`, `team_report`, `spec` or built-in tools, and it can never
+  reach the parent. It also has `project_verbs`, as every worker does; a successor adds `team_ready`
+  while it takes over. `spec` is the one worker tool it lacks (§app.spec-lookup/spec-tool).
 - **Standing instruction** (its header, with the effective thresholds at spawn; subsequent
   roster answers and pause/resume checks resolve the chat's current profile): at each wake, read
   `team_roster`; a member whose context is at or above `contextPct` % of its window is told

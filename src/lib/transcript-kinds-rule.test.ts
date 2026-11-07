@@ -51,6 +51,7 @@ const MOVED: Record<string, string[]> = {
   topic: ["TopicCard"],
   compaction: ["Compaction"],
   info: ["InfoRow", "SubagentLimitRow"],
+  shell: ["ShellCard"],
   card: [],
   settings: ["SettingsToolCard"],
   offer: ["OfferCardView"],

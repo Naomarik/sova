@@ -77,12 +77,13 @@
       "server/session-fork-routes.ts",
       "server/sessions-index.ts",
       "server/memory/engine.test.ts",
-      "server/archive-subagent-guard.test.ts"
+      "server/archive-subagent-guard.test.ts",
+      "server/memory/chat-memory.test.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-22T02:32Z",
-      "source": "pi-session:457b0871-a9ab-4440-ad9e-96ef012e0adf#b2ae2249"
+      "at": "2026-11-07T11:52Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
     }
   },
   "§chat.memory/overseer": {

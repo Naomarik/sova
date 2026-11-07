@@ -1,5 +1,5 @@
 import { For, Show } from "solid-js";
-import { mergeQueueBody } from "../../shared/senders";
+import { isCardSender, isSessionlessSender, mergeQueueBody } from "../../shared/senders";
 import type { TmpAttachment } from "../../shared/protocol";
 import { stripSessionHeader } from "../../shared/profiles";
 import type { ReplyTiming } from "../../shared/usage/perf";
@@ -71,8 +71,9 @@ export function UserTurn(props: {
   images?: string[];
   attachments?: TmpAttachment[];
 }) {
+  const fromExtension = () => (props.fromSession ? isSessionlessSender(props.fromSession.sessionId) : false);
   const author = () =>
-    props.fromSession ? "From a session" : props.overseer ? "Overseer" : props.mergeQueue ? "Merge queue" : (props.sender ?? AUTHOR[props.origin ?? "client"]);
+    fromExtension() ? (isCardSender(props.fromSession!.sessionId) ? "From a card" : "From an extension") : props.fromSession ? "From a session" : props.overseer ? "Overseer" : props.mergeQueue ? "Merge queue" : (props.sender ?? AUTHOR[props.origin ?? "client"]);
   // The model reads the header line; the row shows it as the sender header instead.
   const text = () => (props.fromSession ? stripSessionHeader(props.text) : props.mergeQueue ? mergeQueueBody(props.text) : props.text);
   return (
@@ -80,12 +81,22 @@ export function UserTurn(props: {
     <Show when={props.fromSession}>
       {(from) => (
         <p class="session-sender">
-          <Icon name="network" small />
-          <span>
-            From <a href={`#/sid/${encodeURIComponent(from().sessionId)}`}>{from().title || "another session"}</a>
-          </span>
-          <Show when={from().hop !== undefined}>
-            <span class="text-muted">· hop {from().hop}</span>
+          <Show
+            when={!fromExtension()}
+            fallback={
+              <>
+                <Icon name="sliders" small />
+                <span>From {from().title || "an extension"}</span>
+              </>
+            }
+          >
+            <Icon name="network" small />
+            <span>
+              From <a href={`#/sid/${encodeURIComponent(from().sessionId)}`}>{from().title || "another session"}</a>
+            </span>
+            <Show when={from().hop !== undefined}>
+              <span class="text-muted">· hop {from().hop}</span>
+            </Show>
           </Show>
         </p>
       )}

@@ -66,7 +66,8 @@ export async function rowsOf(path: string): Promise<Rows> {
   }
   const { branch, ids: fileIds } = parsePiBranch(await readFile(path, "utf8"), { ids: true });
   const items = historyRows(branch);
-  const json = items.map((it) => JSON.stringify(it));
+  // Wire 1's JSON (a command's row is its plain row there, server/wire-rows.ts rowFor).
+  const json = items.map((it) => JSON.stringify(it.kind === "shell" ? rowFor(it, 1) : it));
   const ids = (list: readonly unknown[]) => new Set(list.filter((id): id is string => typeof id === "string"));
   const sizes = json.map((s) => s.length);
   const weight = st.size + sizes.reduce((n, x) => n + x, 0);
@@ -91,7 +92,7 @@ function jsonOn(rows: Rows, wire: WireVersion, from: number, end: number, replie
     let s = json2[i];
     if (s === undefined) {
       const it = rows.items[i]!;
-      s = json2[i] = it.meta === undefined ? rows.json[i]! : JSON.stringify(rowFor(it, 2, replies?.get));
+      s = json2[i] = it.meta === undefined && it.kind !== "shell" ? rows.json[i]! : JSON.stringify(rowFor(it, 2, replies?.get));
       made += s.length;
     }
     out.push(s);
@@ -187,7 +188,7 @@ export async function transcriptRows(
 
 /** Rows whose text a pane reads: an input's preview and title, a change row's "Model: x", a tool
     call's name. Every other row's text is only drawn by the thread. */
-const LIGHT_TEXT = new Set<TranscriptItem["kind"]>(["user", "wake", "info", "tool-call"]);
+const LIGHT_TEXT = new Set<TranscriptItem["kind"]>(["user", "wake", "info", "tool-call", "shell"]);
 /** A tool call's line is kept this long. */
 const LIGHT_ARG_CHARS = 200;
 /** A compaction's summary is kept this long. */
@@ -206,6 +207,8 @@ export function lightRow(it: TranscriptItem): TranscriptItem {
   if (!LIGHT_TEXT.has(it.kind)) delete out.text;
   if (it.images) out.images = it.images.map(() => "");
   if (it.report) out.report = { ...it.report, body: "", preview: "" };
+  // A command's output is the thread's alone; its line (`$ command`) and outcome stay.
+  if (it.shell) out.shell = { ...it.shell, output: "" };
   if (it.meta && (it.meta.details !== undefined || (it.meta.summary?.length ?? 0) > LIGHT_SUMMARY_CHARS)) {
     const { details: _details, ...meta } = it.meta;
     if (meta.summary !== undefined) meta.summary = meta.summary.slice(0, LIGHT_SUMMARY_CHARS);
@@ -228,7 +231,8 @@ export async function transcriptLight(
   replies: ReplyTimings | null = null,
 ): Promise<string> {
   const rows = await rowsOf(path);
-  return JSON.stringify({ items: rows.items.map((it) => rowFor(lightRow(it), wire, replies?.get)), context: await context(rows.branch) });
+  // Wire 1's light row is made from its own plain row, as it always was (a command's included).
+  return JSON.stringify({ items: rows.items.map((it) => rowFor(lightRow(wire === 1 ? rowFor(it, 1) : it), wire, replies?.get)), context: await context(rows.branch) });
 }
 
 /** Forget every parsed file (tests). */

@@ -1,0 +1,214 @@
+/* ---- SHELL MODE IN THE MESSAGE BOX (§chat.shell-mode/box). The box's mode in the caution tone:
+   its edge, the marker at its left and the foot's chip. Never the tone alone: the marker and the
+   chip's icon and words say it too. */
+
+.composer-field[data-shell] > .composer-input,
+.composer-field[data-shell] > .composer-input:hover,
+.composer-field[data-shell] > .composer-input:focus-visible { border-color: var(--status-warn); }
+/* One ring, not two: with focus, the caution edge itself carries it, the focus ring's width drawn
+   in the caution tone right against the edge (no offset), so focus still reads from the edge
+   growing, never from a colour change alone. */
+.composer-field[data-shell] > .composer-input:focus-visible {
+  outline: var(--focus-width) solid var(--status-warn);
+  outline-offset: 0;
+}
+
+/* The marker ("!" or "!!") sits where the text would start, on the first line; the text starts
+   after its two-character mono column on every line, so a long command reads as one column. */
+.composer-field[data-shell] > .composer-input { padding-left: calc(var(--space-3) + var(--fs-body) * 1.2 + var(--space-1)); }
+.composer-field[data-shell][data-waiting] > .composer-input { padding-left: calc(var(--tap-min) + var(--space-1) + var(--fs-body) * 1.2 + var(--space-1)); }
+.composer-shell-marker {
+  position: absolute;
+  z-index: 1;
+  left: calc(var(--stroke-icon) + var(--space-3));
+  top: calc((var(--control-md) - var(--fs-body) * var(--lh-body)) / 2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  line-height: calc(var(--fs-body) * var(--lh-body));
+  color: var(--status-warn);
+  pointer-events: none;
+}
+.composer-field[data-waiting] > .composer-shell-marker { left: calc(var(--tap-min) + var(--space-1)); }
+
+/* ---- THE COMMAND'S CARD (§chat.shell-mode/card). A tool card's shell (sunken, the card radius):
+   the command in mono, then its output on the surface, then its notes in the caption size. */
+
+.shell-card {
+  max-width: var(--measure);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-sunken);
+}
+.shell-card-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-height: var(--control-sm);
+}
+.shell-card-command {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.shell-card-stop { flex: none; }
+.shell-card-output {
+  max-height: var(--tool-output-max);
+  overflow-y: auto;
+  background: var(--color-surface);
+  font-size: var(--fs-mono);
+}
+.shell-card-note {
+  margin: 0;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Show Full Output: under the card's notes, at its left. */
+.shell-card-actions { display: flex; gap: var(--space-2); }
+
+/* ---- THE RUNNING COMMANDS' BAR (§chat.shell-mode/card). One quiet bar above the message box, in the
+   sunken tone: "N running", the newest command and its latest line, Show All / Hide, and Stop Command
+   when only 1 runs. Show All opens the list above it; past about half the pane the list scrolls. */
+
+.shell-dock {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  max-height: 55%;
+  border-top: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-sunken);
+}
+.shell-bar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-1) var(--space-3);
+}
+.shell-bar-toggle {
+  flex: 1 1 14rem;
+  min-width: 0;
+  min-height: var(--tap-min);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--color-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.shell-bar-toggle:hover { background: var(--color-surface); }
+/* With 1 running the summary is plain text, laid out as the toggle is, beside Show Output and Stop. */
+.shell-bar-summary {
+  flex: 1 1 14rem;
+  min-width: 0;
+  min-height: var(--tap-min);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+}
+.shell-bar-summary > .chip { flex: none; }
+.shell-bar-toggle > .chip { flex: none; }
+.shell-bar-line,
+.shell-list-command,
+.shell-list-line {
+  min-width: 0;
+  padding: 0;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shell-bar-line { flex: 1; color: var(--color-ink-muted); }
+.shell-bar-show { flex: none; font-weight: var(--fw-medium); color: var(--color-accent); }
+/* The bar's buttons stay together (Stop 8px from Show Output); narrow, they wrap under the summary
+   as one group, to the right. */
+.shell-bar-actions { flex: none; display: flex; gap: var(--space-2); margin-left: auto; }
+.shell-bar-actions:empty { display: none; }
+
+.shell-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-3);
+  overflow-y: auto;
+}
+.shell-list-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.shell-list-main {
+  flex: 1 1 14rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.shell-list-head { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+.shell-list-command { flex: 1; font-weight: var(--fw-semibold); color: var(--color-ink); }
+.shell-list-time,
+.shell-card-took {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+.shell-list-line { color: var(--color-ink-muted); }
+.shell-list-note { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* Stop Command keeps the 8px gap from Show Output (destructive never adjacent to another action). */
+.shell-list-actions { flex: none; display: flex; gap: var(--space-2); margin-left: auto; }
+
+/* ---- THE OUTPUT WINDOW (§chat.shell-mode/card): the wide modal (a sheet when folded), the output
+   filling its body, in mono, scrolling on its own. */
+
+.shell-window { height: min(720px, calc(100dvh - var(--space-8))); }
+.shell-window-head { display: flex; flex-direction: column; gap: var(--space-2); }
+.shell-window-body { flex: 1; min-height: 0; }
+.shell-window-output {
+  flex: 1;
+  min-height: 8rem;
+  overflow: auto;
+  background: var(--color-sunken);
+  font-size: var(--fs-mono);
+}
+.shell-window .modal-foot { flex-wrap: wrap; }
+@media (max-width: 767px) {
+  .shell-window { height: 85dvh; }
+}
+
+/* A Run's refusal can be long and quotes code (the kill guard's reply): it takes a line of its own
+   under the foot's controls, which keep their size, and wraps there. Its icon sits on its first line. */
+.composer-foot[data-reason-wide] { flex-wrap: wrap; row-gap: var(--space-1); }
+.composer-foot[data-reason-wide] > .composer-reason {
+  order: 1;
+  flex: 1 0 100%;
+  align-items: flex-start;
+}
+.composer-foot[data-reason-wide] > .composer-reason > .icon { margin-top: calc((var(--fs-caption) * var(--lh-caption) - 16px) / 2); }
+.composer-foot[data-reason-wide] > .composer-reason code { overflow-wrap: anywhere; }

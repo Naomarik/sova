@@ -114,6 +114,10 @@ resulting set.
   words. It refuses, records nothing in `landing.json`, queues nothing, and says the newest
   message wasn't typed by the user, so the go-ahead must be the user's own word in this chat (or
   the Land button, §app.merge-queue/approve).
+- An extension's message (§app.extensions/name-badge) is never the user's word either: it carries the
+  `sova-session-sent` marker, so the refusal calls it another session's, and its text starts
+  `[from session `, which is refused as not typed by the user whatever marker it has. So is a card's or an
+  offer's press marked during an alignment's wait (§chat.alignment/session-mark).
 - A merge queue message (§chat.merge-queue/chat-turns) is never the user's word either, in any
   chat: it carries another sender's marker, and a message whose text starts `[merge-queue]` or
   `[overseer-brief]` is refused as not typed by the user whatever marker it has. A chat takes this

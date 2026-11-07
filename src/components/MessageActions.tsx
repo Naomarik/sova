@@ -1,17 +1,9 @@
 import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, Show } from "solid-js";
-import { ACTION_CONFIRM, ACTION_LABEL, type MessageActionKind } from "../lib/message-actions";
+import { ACTION_CONFIRM, ACTION_ICON, ACTION_LABEL, type MessageActionKind } from "../lib/message-actions";
 import { acquireMessageReveal } from "../lib/message-reveal";
 import { confirmActivate } from "../lib/confirm-step";
-import { Icon, type IconName } from "./ui";
+import { Icon } from "./ui";
 
-const ICON: Record<MessageActionKind, IconName> = {
-  copy: "copy",
-  share: "share",
-  rewind: "undo",
-  regenerate: "refresh",
-  fork: "branch",
-  remove: "close",
-};
 
 /** How long Copy's button shows it worked (the code-block button's own interval). */
 const COPIED_MS = 1500;
@@ -187,7 +179,7 @@ export function MessageActions(props: {
                     if (current) press(current);
                   }}
                 >
-                  <Icon name={kind === "copy" && copied() ? "check" : ICON[kind]} small />
+                  <Icon name={kind === "copy" && copied() ? "check" : ACTION_ICON[kind]} small />
                   <Show when={reason()}>
                     <span class="visually-hidden" id={describe(kind)}>
                       {reason()}

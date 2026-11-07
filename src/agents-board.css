@@ -76,7 +76,6 @@
 .board-group-head + .board-list > .board-row:first-child { border-top: var(--stroke-thin) solid var(--color-border); }
 .board-row { position: relative; cursor: pointer; transition: background var(--dur-fast) var(--ease-standard); }
 .board-row:hover { background: var(--color-sunken); }
-.board-rename { cursor: auto; }
 .board-row + .board-row { border-top: var(--stroke-thin) solid var(--color-border); }
 /* The state rail: the row's left edge. Decorative — the heading and a hidden word after the title say it. */
 .board-rail { position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--color-border); }
@@ -134,10 +133,6 @@
 }
 .board-title:hover { text-decoration: underline; text-underline-offset: 2px; }
 .board-title:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
-.board-rename { display: flex; flex-direction: column; gap: var(--space-1); padding-right: var(--space-2); }
-.board-rename .group-field { flex-wrap: wrap; }
-.board-rename .input { flex: 1; min-width: 12rem; }
-.board-rename p { margin: 0; }
 
 .board-gist {
   margin: 0;

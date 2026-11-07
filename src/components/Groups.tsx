@@ -6,7 +6,7 @@ import { announce, toast } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
 
 /**
- * One inline name field, used for "New group" in the pane and for renaming a group in place.
+ * One inline name field, used for "New group" in the pane (a group's Rename… is its menu's name box).
  * Enter saves, Escape cancels, and leaving the field saves what's
  * there — clicking away after typing a name must not lose it. An empty field cancels.
  */

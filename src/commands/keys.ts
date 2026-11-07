@@ -3,7 +3,8 @@
 // Each row is one chord with the rules for where it fires. The first four rules are exactly what
 // each key did before this table existed (Alt+O in App, Ctrl/⌘+P in ComposerMenu, Ctrl/⌘+B and "/"
 // in Sidebar). Ctrl/⌘+K (the command palette) and "?" (the shortcut sheet) came after, both owned
-// by App (§app/command-palette). Keys scoped to a widget (GroupView, ChangesViewer, InsightStrip,
+// by App (§app/command-palette), and Shift+F10 / the Menu key (the right-click menu, owned by
+// components/ContextMenu.tsx, §app.context-menus/keyboard). Keys scoped to a widget (GroupView, ChangesViewer, InsightStrip,
 // VoiceInput, a chart's Escape) stay with their widget and are not here.
 //
 // Scope words:
@@ -19,10 +20,11 @@
 //
 // This file stays DOM-free at import: listeners attach on the first `bindKey`.
 
+import { isContextMenuKey } from "../lib/context-menu";
 import { isOverseerShortcut } from "../lib/overseer";
 import { isTextEntry } from "../lib/text-entry";
 
-export type KeyId = "overseer.open" | "model.picker" | "sidebar.toggle" | "sidebar.search" | "palette.open" | "shortcuts.open";
+export type KeyId = "overseer.open" | "model.picker" | "sidebar.toggle" | "sidebar.search" | "palette.open" | "shortcuts.open" | "menu.context";
 
 export interface KeyLike {
   key: string;
@@ -113,6 +115,16 @@ export const KEYS: readonly KeyRow[] = [
     modal: "fires",
     // Shift is allowed, as most layouts need it for "?".
     chord: (e) => e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey,
+  },
+  {
+    id: "menu.context",
+    label: "Shift+F10 · Menu key",
+    does: "Opens the focused session's, group's, pane's, message's or worktree's menu, as a right-click does. In a text field they stay the browser's.",
+    target: "document",
+    textEntry: "ignored",
+    composing: "fires",
+    modal: "fires",
+    chord: (e) => isContextMenuKey(e),
   },
 ];
 

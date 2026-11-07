@@ -100,11 +100,14 @@
       "src/components/UpdatesSettings.tsx",
       "src/components/ServerSettings.tsx",
       "src/lib/recent.test.ts",
-      "src/components/form/index.tsx"
+      "src/components/form/index.tsx",
+      "src/lib/type-anywhere.ts",
+      "src/lib/type-anywhere.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-14T15:54Z"
+      "by": "operator",
+      "at": "2026-11-06T01:58Z",
+      "source": "pi-session:f7917025-9e2d-4e99-8fef-e8b3b530e532#9532da18"
     }
   },
   "§app.settings-dialog/memory": {

@@ -3,15 +3,23 @@
 // Each row is one chord with the rules for where it fires. The first four rules are exactly what
 // each key did before this table existed (Alt+O in App, Ctrl/⌘+P in ComposerMenu, Ctrl/⌘+B and "/"
 // in Sidebar). Ctrl/⌘+K (the command palette) and "?" (the shortcut sheet) came after, both owned
-// by App (§app/command-palette). Keys scoped to a widget (GroupView, ChangesViewer, InsightStrip,
-// VoiceInput, a chart's Escape) stay with their widget and are not here.
+// by App (§app/command-palette). A typed character (compose.type) came last, owned by App too: it
+// starts the message in the chat's box (lib/type-anywhere). Keys scoped to a widget (GroupView,
+// ChangesViewer, InsightStrip, VoiceInput, a chart's Escape) stay with their widget and are not here.
 //
 // Scope words:
 // - `textEntry`: "ignored" means a keydown whose target is a caret-bearing field (lib/text-entry)
 //   does nothing; "fires" means it fires there too.
-// - `composing`: whether an IME composition (`isComposing`) stops it. No key checks it today, so all
-//   say "fires": a composition keydown carries key "Process", which matches no chord anyway.
-// - `modal`: no key checks for an open modal today; a modal that stops the event first wins.
+// - `composing`: whether an IME composition (`isComposing`) stops it. Only a typed character
+//   checks it; the others say "fires": a composition keydown carries key "Process", which matches
+//   no chord anyway.
+// - `modal`: "fires" means no check for an open modal; a modal that stops the event first wins.
+//   "ignored" means its owner declines while a dialog, sheet, menu or popover is open or holds the
+//   target (lib/type-anywhere).
+// - `prevented`: "ignored" means a keydown a widget already used (`defaultPrevented`, as a diff's
+//   n and p do) does nothing; "fires" means it fires anyway.
+// - `actDefault`: what an owner that acts does to the browser's default: "prevented", or "kept"
+//   (a typed character must reach the box its owner focused).
 // - Extension frames: a keydown inside an iframe never reaches this page's listeners, so no key
 //   fires from inside one. That holds for every row and needs no rule.
 // - `target`: the listener's place (window or document), kept as it was so propagation order with
@@ -21,8 +29,9 @@
 
 import { isOverseerShortcut } from "../lib/overseer";
 import { isTextEntry } from "../lib/text-entry";
+import { typesCharacter } from "../lib/type-anywhere";
 
-export type KeyId = "overseer.open" | "model.picker" | "sidebar.toggle" | "sidebar.search" | "palette.open" | "shortcuts.open";
+export type KeyId = "overseer.open" | "model.picker" | "sidebar.toggle" | "sidebar.search" | "palette.open" | "shortcuts.open" | "compose.type";
 
 export interface KeyLike {
   key: string;
@@ -32,6 +41,9 @@ export interface KeyLike {
   metaKey: boolean;
   shiftKey: boolean;
   isComposing?: boolean;
+  keyCode?: number;
+  defaultPrevented?: boolean;
+  getModifierState?(key: string): boolean;
   target?: unknown;
 }
 
@@ -44,7 +56,9 @@ export interface KeyRow {
   target: "window" | "document";
   textEntry: "fires" | "ignored";
   composing: "fires" | "ignored";
-  modal: "fires";
+  modal: "fires" | "ignored";
+  prevented: "fires" | "ignored";
+  actDefault: "prevented" | "kept";
   /** The chord, without the scope rules. */
   chord: (e: KeyLike) => boolean;
 }
@@ -60,6 +74,8 @@ export const KEYS: readonly KeyRow[] = [
     textEntry: "fires",
     composing: "fires",
     modal: "fires",
+    prevented: "fires",
+    actDefault: "prevented",
     chord: (e) => isOverseerShortcut(e),
   },
   {
@@ -70,6 +86,8 @@ export const KEYS: readonly KeyRow[] = [
     textEntry: "fires",
     composing: "fires",
     modal: "fires",
+    prevented: "fires",
+    actDefault: "prevented",
     chord: (e) => ctrlOrMeta(e, "p"),
   },
   {
@@ -80,6 +98,8 @@ export const KEYS: readonly KeyRow[] = [
     textEntry: "fires",
     composing: "fires",
     modal: "fires",
+    prevented: "fires",
+    actDefault: "prevented",
     chord: (e) => ctrlOrMeta(e, "b"),
   },
   {
@@ -90,6 +110,8 @@ export const KEYS: readonly KeyRow[] = [
     textEntry: "ignored",
     composing: "fires",
     modal: "fires",
+    prevented: "fires",
+    actDefault: "prevented",
     // Shift is allowed: on some layouts "/" needs it.
     chord: (e) => e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey,
   },
@@ -101,6 +123,8 @@ export const KEYS: readonly KeyRow[] = [
     textEntry: "fires",
     composing: "fires",
     modal: "fires",
+    prevented: "fires",
+    actDefault: "prevented",
     chord: (e) => ctrlOrMeta(e, "k"),
   },
   {
@@ -111,8 +135,24 @@ export const KEYS: readonly KeyRow[] = [
     textEntry: "ignored",
     composing: "fires",
     modal: "fires",
+    prevented: "fires",
+    actDefault: "prevented",
     // Shift is allowed, as most layouts need it for "?".
     chord: (e) => e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey,
+  },
+  {
+    id: "compose.type",
+    label: "A character",
+    does: "Starts typing in the chat's message box, from outside a text field.",
+    // On the window, so it runs after every widget's own handler (Solid delegates to the document).
+    target: "window",
+    textEntry: "ignored",
+    composing: "ignored",
+    modal: "ignored",
+    prevented: "ignored",
+    actDefault: "kept",
+    // Any key that types a character, except another row's: "/", "?" and Alt+O (ø on a Mac) keep theirs.
+    chord: (e) => typesCharacter(e) && !KEYS.some((r) => r.id !== "compose.type" && r.chord(e)),
   },
 ];
 
@@ -125,6 +165,7 @@ export function keyFires(row: KeyRow, e: KeyLike): boolean {
   if (!row.chord(e)) return false;
   if (row.textEntry === "ignored" && isTextEntry(e.target as Parameters<typeof isTextEntry>[0])) return false;
   if (row.composing === "ignored" && e.isComposing) return false;
+  if (row.prevented === "ignored" && e.defaultPrevented) return false;
   return true;
 }
 
@@ -132,8 +173,9 @@ export function keyFires(row: KeyRow, e: KeyLike): boolean {
 export const firingRows = (target: KeyRow["target"], e: KeyLike): KeyRow[] => KEYS.filter((r) => r.target === target && keyFires(r, e));
 
 /**
- * A key's owner: returns true when it acted (the browser default is then prevented), false when its
- * own condition (a chat open, the sidebar unfolded) says no, leaving the key to the browser.
+ * A key's owner: returns true when it acted (the browser default is then prevented, unless its row
+ * keeps it), false when its own condition (a chat open, the sidebar unfolded) says no, leaving the
+ * key to the browser.
  */
 export type KeyRun = (e: KeyboardEvent) => boolean;
 
@@ -144,7 +186,7 @@ let attached = { window: false, document: false };
 
 function dispatch(target: KeyRow["target"], e: KeyboardEvent) {
   for (const row of firingRows(target, e)) {
-    for (const run of [...(bound.get(row.id) ?? [])]) if (run(e)) e.preventDefault();
+    for (const run of [...(bound.get(row.id) ?? [])]) if (run(e) && row.actDefault === "prevented") e.preventDefault();
   }
 }
 const onWindow = (e: KeyboardEvent) => dispatch("window", e);

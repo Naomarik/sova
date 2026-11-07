@@ -5,7 +5,8 @@ The composer is the form pinned to the foot of a chat where you write its next m
 Steer and Stop beside the textarea and the model indicator and mode switch in the foot below it.
 In Focus (§chat.transcript/focus-view) it is hidden but kept, draft and all.
 
-Owns: its markup, the textarea's keys and placeholder, sending, steering and stopping, drafts, the
+Owns: its markup, the textarea's keys and placeholder, a character typed outside a text field
+(§chat.composer/type-anywhere), sending, steering and stopping, drafts, the
 disabled reasons, the waiting badge and its dialog, the `plus` button (it opens the Commands palette, §app/command-palette), the
 flyout that holds the model, login and sandbox panels, the sandbox shield, the worktrees control and its modal
 (§chat.composer/worktrees-control), the @ menu's folder read,
@@ -271,6 +272,58 @@ are kept, and what the foot and its model indicator show.
   to edit and send nothing.
 - The mic never moves focus: its press keeps the textarea's focus and selection, and dictated text
   lands at the caret (§chat.voice/insertion) as part of the draft.
+
+## §chat.composer/type-anywhere — Typing anywhere starts a message
+
+When focus isn't in a text field and you type a character, the message box of the chat on screen
+takes focus and the character goes into it at the box's caret: where the caret was when you last
+left the box, which is the end of the draft unless you had clicked inside the text. The first
+keystroke is never lost. Nothing is sent: the draft keeps the character like any typing
+(§chat.composer/behavior, Drafts), and typing continues in the box. The browser types the character
+itself, so an accent key's composition, the `@` file menu and Undo treat it exactly as a character
+typed in the box.
+
+- **A character** is any key that types one: a letter, a digit, punctuation, Shift for capitals and
+  symbols, an Option (Mac) or AltGr character, and an accent key, whose character comes out in the
+  box (´ then e gives é). A held key goes on repeating into the box.
+- **Keys that keep their jobs.** Space, Enter, Tab, Esc, the arrows, Page Up/Down, Home/End,
+  Backspace and Delete; every Ctrl or ⌘ chord (Ctrl/⌘+C still copies), plain Alt on Windows and
+  Linux; and the app's own keys (§app/command-palette): `/` session search, `?` Keyboard Shortcuts
+  and Alt+O the Overseer. So `/` from outside the box never starts a slash command: click in the box
+  first.
+- **Which box.** The open chat's, the Overseer's or a project overseer's. In a workspace, the
+  focused pane's box, or the group box (§workspace.groups/the-group-composer) while Send to All is
+  on (§workspace.groups/keyboard).
+- **In Focus.** With Focus on (§chat.transcript/focus-view), a character turns Focus off and lands
+  in the box, which comes back with its draft and caret as they were.
+- **The box takes it while it can't send yet** (§chat.composer/disabled-states): connecting,
+  reconnecting, a model switch, a compaction, an archived chat, and while a reply runs, where the
+  message becomes a steer as usual.
+- **When nothing moves.** The key does what it did before, and no message starts:
+  - while focus is in a dialog, a sheet, a menu or a list that jumps to the item you type (the mode
+    menu, the model menu, the folder picker), or while a dialog, sheet, menu or the command palette
+    is open; a tooltip doesn't count;
+  - while the box can't take typing (the session is open in the TUI, an earlier Overseer
+    conversation, a baton you don't hold); in a workspace whose focused pane is read-only, nothing
+    goes to another pane instead;
+  - on a page with no message box (projects, settings, insights, organizations);
+  - during an input method's composition;
+  - when a part of the page already used the key: in a diff, `n` and `p` move between changes;
+  - inside an extension's frame, whose keys the page never sees.
+
+  A button or a link with focus doesn't stop it, since neither uses letter keys. Text highlighted in
+  the conversation doesn't either: the highlight clears, as a click would.
+- **Any real keyboard.** It follows key presses, not the device: a laptop's, a desktop's, or a
+  tablet's attached keyboard (an iPad with a Magic Keyboard) all start a message. An on-screen
+  keyboard is unchanged: it types only into a field that already has focus.
+- **A switch turns it off:** **Type anywhere to write** in Settings → General, on by default and
+  kept in this browser (§app.settings-dialog/general). Off, keys outside a text field do what they
+  did before.
+- **Listed.** The Keyboard Shortcuts sheet has its row (§app.command-palette/shortcut-sheet): "A
+  character", "Starts typing in the chat's message box, from outside a text field."
+- **Screen readers.** In reading mode, a screen reader keeps its single-letter keys (h, k, b…): it
+  takes them before the page sees them. The move into the box is a real focus move, announced as
+  the message box.
 
 ## §chat.composer/disabled-states — Disabled states
 

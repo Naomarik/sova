@@ -50,7 +50,9 @@ import {
   openLightbox,
   setDraftAttachments,
   setDraftText,
+  setFocusView,
 } from "../lib/ui-state";
+import { takeTyping } from "../lib/type-anywhere";
 import { paneScopedId, usePaneAnnounce, usePaneScope } from "../lib/pane-scope";
 import { inputsText } from "../lib/input-count";
 import { createWaiting, WaitingBadge, type WaitingSource } from "./WaitingBadge";
@@ -649,6 +651,15 @@ export function Composer(props: {
         input.setSelectionRange(next.length, next.length);
         updateSlash();
       },
+      // Focus hides only the single view's composer (the footer's inert, below).
+      take: () =>
+        takeTyping({
+          readOnly: !!props.readOnly,
+          el: input,
+          active: () => document.activeElement,
+          hiddenByFocus: focusView() && scope.id === null,
+          endFocus: () => setFocusView(false),
+        }),
       attach: () => {
         if (!disabled()) picker?.click(); // no await before it: the picker needs the gesture
       },

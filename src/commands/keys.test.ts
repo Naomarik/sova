@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { bindKey, firingRows, KEYS, keyFires, keyRow, type KeyId, type KeyLike } from "./keys";
+import { keyPlatform } from "../lib/type-anywhere";
 
 const field = { tagName: "TEXTAREA" };
 const input = { tagName: "INPUT", type: "text" };
@@ -10,6 +11,16 @@ const button = { tagName: "BUTTON" };
 
 const ev = (over: Partial<KeyLike>): KeyLike => ({ key: "", code: "", altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, target: button, ...over });
 const fires = (id: KeyId, e: KeyLike) => keyFires(keyRow(id), e);
+/** Runs `fn` as on a Mac or not (Option types characters on a Mac; Windows reports AltGr as Ctrl+Alt). */
+const onPlatform = <T>(mac: boolean, fn: () => T): T => {
+  const was = keyPlatform.mac;
+  keyPlatform.mac = mac;
+  try {
+    return fn();
+  } finally {
+    keyPlatform.mac = was;
+  }
+};
 
 /** Each key's chord, as the browser reports it on a US layout. */
 const CHORD: Record<KeyId, KeyLike[]> = {
@@ -19,16 +30,18 @@ const CHORD: Record<KeyId, KeyLike[]> = {
   "sidebar.search": [ev({ key: "/", code: "Slash" }), ev({ key: "/", code: "Digit7", shiftKey: true })], // shift+7 on a German layout
   "palette.open": [ev({ key: "k", code: "KeyK", ctrlKey: true }), ev({ key: "k", code: "KeyK", metaKey: true }), ev({ key: "K", code: "KeyK", ctrlKey: true })],
   "shortcuts.open": [ev({ key: "?", code: "Slash", shiftKey: true }), ev({ key: "?", code: "Minus", shiftKey: true })], // shift+ß on a German layout
+  "compose.type": [ev({ key: "a", code: "KeyA" }), ev({ key: "A", code: "KeyA", shiftKey: true }), ev({ key: "7", code: "Digit7" }), ev({ key: "@", code: "Digit2", shiftKey: true })],
 };
 
 /** What each key did before the table, written out here rather than read from it. */
-const TODAY: Record<KeyId, { inField: boolean }> = {
+const TODAY: Record<KeyId, { inField: boolean; composingStops?: true }> = {
   "overseer.open": { inField: true },
   "model.picker": { inField: true },
   "sidebar.toggle": { inField: true },
   "sidebar.search": { inField: false },
   "palette.open": { inField: true }, // fires in text entry (the composer opens the palette, as Ctrl/⌘+P opens the picker there); composing: fires (a composing keydown is "Process"); modal: fires
   "shortcuts.open": { inField: false }, // ignored in text entry ("?" types in a field); composing: fires (a composing keydown is "Process"); modal: fires
+  "compose.type": { inField: false, composingStops: true }, // new: a character in a field is the field's, and an input method's keys are its own
 };
 
 for (const row of KEYS) {
@@ -43,8 +56,8 @@ for (const row of KEYS) {
     for (const e of CHORD[row.id]) assert.equal(fires(row.id, { ...e, target: checkbox }), true);
   });
 
-  test(`${row.id}: IME composing changes nothing it did before (a composing keydown is "Process")`, () => {
-    for (const e of CHORD[row.id]) assert.equal(fires(row.id, { ...e, isComposing: true }), true); // no key checked isComposing before
+  test(`${row.id}: IME composing ${TODAY[row.id].composingStops ? "stops it" : "changes nothing it did before"} (a composing keydown is "Process")`, () => {
+    for (const e of CHORD[row.id]) assert.equal(fires(row.id, { ...e, isComposing: true }), !TODAY[row.id].composingStops); // no key checked isComposing before
     assert.equal(fires(row.id, { ...CHORD[row.id][0]!, key: "Process", isComposing: true }), row.id === "overseer.open"); // Alt+O reads the code, as before
   });
 
@@ -53,35 +66,71 @@ for (const row of KEYS) {
       for (const mod of ["altKey", "ctrlKey", "metaKey", "shiftKey"] as const) {
         if (e[mod]) continue;
         if (row.id === "sidebar.search" && mod === "shiftKey") continue; // "/" allows Shift, as before
-        if (row.id !== "overseer.open" && row.id !== "sidebar.search" && (mod === "ctrlKey" || mod === "metaKey")) continue; // Ctrl and ⌘ together, as before
+        if (row.id === "compose.type" && (mod === "shiftKey" || mod === "altKey")) continue; // Shift types capitals; Option types on a Mac (lib/type-anywhere.test.ts)
+        if (row.id !== "overseer.open" && row.id !== "sidebar.search" && row.id !== "compose.type" && (mod === "ctrlKey" || mod === "metaKey")) continue; // Ctrl and ⌘ together, as before
         assert.equal(fires(row.id, { ...e, [mod]: true }), false, `${mod} ${JSON.stringify(e)}`);
       }
   });
 }
 
-test("keys stay where they were: Alt+O on the window, the rest on the document", () => {
+test("keys stay where they were: Alt+O on the window, the rest on the document; a typed character on the window, after every widget", () => {
   assert.deepEqual(
     KEYS.map((r) => [r.id, r.target]),
-    [["overseer.open", "window"], ["model.picker", "document"], ["sidebar.toggle", "document"], ["sidebar.search", "document"], ["palette.open", "document"], ["shortcuts.open", "document"]],
+    [["overseer.open", "window"], ["model.picker", "document"], ["sidebar.toggle", "document"], ["sidebar.search", "document"], ["palette.open", "document"], ["shortcuts.open", "document"], ["compose.type", "window"]],
   );
 });
 
-test("conflict: no keydown fires two rows, in any target", () => {
-  const keys = [..."abcdefghijklmnopqrstuvwxyz0123456789/?.,;'[]-=`\\", "Process", "Escape", "Enter", "ø"];
+test("conflict: no keydown fires two rows, in any target, on a Mac or not", () => {
+  const keys = [..."abcdefghijklmnopqrstuvwxyz0123456789/?.,;'[]-=`\\@é", "Process", "Escape", "Enter", "ø", "Dead", " ", "Tab", "ArrowLeft"];
   const targets = [button, field, checkbox, editable, null];
-  let seen = 0;
-  for (const key of keys)
-    for (let m = 0; m < 16; m++)
-      for (const target of targets)
-        for (const upper of [false, true]) {
-          const k = upper ? key.toUpperCase() : key;
-          const code = /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : key === "ø" ? "KeyO" : key === "/" ? "Slash" : "Other";
-          const e = ev({ key: k, code, altKey: !!(m & 1), ctrlKey: !!(m & 2), metaKey: !!(m & 4), shiftKey: !!(m & 8), target });
-          const all = [...firingRows("window", e), ...firingRows("document", e)];
-          assert.ok(all.length <= 1, `${JSON.stringify(e)} fires ${all.map((r) => r.id).join(" and ")}`);
-          seen += all.length;
+  for (const mac of [false, true])
+    onPlatform(mac, () => {
+      let seen = 0;
+      const typed = new Set<string>();
+      for (const key of keys)
+        for (let m = 0; m < 16; m++)
+          for (const target of targets)
+            for (const upper of [false, true]) {
+              const k = upper && key.length === 1 ? key.toUpperCase() : key;
+              const code = /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : key === "ø" ? "KeyO" : key === "/" ? "Slash" : "Other";
+              const e = ev({ key: k, code, altKey: !!(m & 1), ctrlKey: !!(m & 2), metaKey: !!(m & 4), shiftKey: !!(m & 8), target });
+              const all = [...firingRows("window", e), ...firingRows("document", e)];
+              assert.ok(all.length <= 1, `mac=${mac} ${JSON.stringify(e)} fires ${all.map((r) => r.id).join(" and ")}`);
+              seen += all.length;
+              if (all[0]?.id === "compose.type" && !e.altKey && !e.ctrlKey && !e.metaKey) typed.add(k); // plain or Shift: an AltGr "/" is a character
+            }
+      assert.ok(seen > 0); // the sweep reached the chords at all
+      assert.ok(typed.has("a") && typed.has("A") && typed.has("@") && typed.has("Dead"), `mac=${mac}: the sweep reached typed characters`);
+      for (const own of ["/", "?", " ", "Tab", "ArrowLeft", "Enter", "Escape", "Process"]) assert.equal(typed.has(own), false, `mac=${mac}: ${own} is not a typed character`);
+    });
+});
+
+test("compose.type: /, ? and Alt+O keep their own rows, on a Mac or not", () => {
+  for (const mac of [false, true])
+    onPlatform(mac, () => {
+      for (const id of ["sidebar.search", "shortcuts.open", "overseer.open"] as const)
+        for (const e of CHORD[id]) {
+          assert.equal(fires(id, e), true, `mac=${mac} ${id}`);
+          assert.equal(fires("compose.type", e), false, `mac=${mac} ${JSON.stringify(e)} stays ${id}'s`);
         }
-  assert.ok(seen > 0); // the sweep reached the chords at all
+    });
+});
+
+test("compose.type: a key a widget already used (a diff's n and p) does nothing", () => {
+  const diff = { tagName: "DIV", getAttribute: (n: string) => (n === "data-hunk" ? "" : null) };
+  for (const key of ["n", "p"]) {
+    assert.equal(fires("compose.type", ev({ key, code: `Key${key.toUpperCase()}`, target: diff })), true, "a free n is a character");
+    assert.equal(fires("compose.type", ev({ key, code: `Key${key.toUpperCase()}`, target: diff, defaultPrevented: true })), false);
+  }
+  // The rows before it never looked at defaultPrevented, and still don't.
+  for (const row of KEYS) if (row.id !== "compose.type") assert.equal(fires(row.id, { ...CHORD[row.id][0]!, defaultPrevented: true }), true, row.id);
+});
+
+test("compose.type: Windows AltGr (Ctrl+Alt) types its character; GroupView's Ctrl+Alt+arrows stay the workspace's", () => {
+  onPlatform(false, () => {
+    assert.equal(fires("compose.type", ev({ key: "@", code: "KeyQ", ctrlKey: true, altKey: true, target: button })), true);
+    for (const key of ["ArrowLeft", "ArrowRight"]) assert.equal(fires("compose.type", ev({ key, code: key, ctrlKey: true, altKey: true, target: button })), false);
+  });
 });
 
 // ---- dispatch, on stand-in window and document ----
@@ -133,6 +182,20 @@ test("dispatch: an owner that acts prevents the default; one that declines leave
   const acted = keydown(CHORD["model.picker"][0]!);
   d.dispatchEvent(acted);
   assert.equal(acted.defaultPrevented, true);
+});
+
+test("dispatch: a typed character's owner keeps the default when it acts, so the browser types it; a used key never reaches it", () => {
+  const { w } = stage();
+  let ran = 0;
+  unbinds.push(bindKey("compose.type", () => (ran++, true)));
+  const typed = keydown({ key: "n", code: "KeyN" });
+  w.dispatchEvent(typed);
+  assert.equal(ran, 1);
+  assert.equal(typed.defaultPrevented, false);
+  const used = keydown({ key: "n", code: "KeyN" });
+  used.preventDefault(); // a diff's n, handled on the document first
+  w.dispatchEvent(used);
+  assert.equal(ran, 1);
 });
 
 test("dispatch: a key on the wrong target, or not its chord, runs nothing", () => {

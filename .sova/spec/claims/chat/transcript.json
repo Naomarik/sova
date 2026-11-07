@@ -118,12 +118,14 @@
       "src/lib/focus-view.test.ts",
       "src/lib/focus-view.browser.test.ts",
       "scripts/e2e/focus-view.mjs",
-      "package.json"
+      "package.json",
+      "src/lib/type-anywhere.ts",
+      "src/lib/type-anywhere.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-22T02:40Z",
-      "source": "pi-session:aaa55e42-efea-4624-8d25-f08fbba7fb25#75e80ed8"
+      "by": "operator",
+      "at": "2026-11-06T01:58Z",
+      "source": "pi-session:f7917025-9e2d-4e99-8fef-e8b3b530e532#9532da18"
     }
   },
   "§chat.transcript/instant-open": {

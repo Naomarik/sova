@@ -37,6 +37,7 @@ import { HostUpdatePage } from "./components/HostStateNotices";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerCantOpen, peerInfo, sameMeshInfo, sessionRouteFromHash, updateNeededFor, setMeshState } from "./lib/mesh";
 import { bindKey, paletteKeyAction } from "./commands/keys";
 import { composerOf } from "./commands/composers";
+import { OVERLAY_CANDIDATES, startTyping, takeTyping, typeAnywhere } from "./lib/type-anywhere";
 import { closePalette, paletteRequest, togglePaletteFromKey } from "./commands/palette-open";
 import { isOverseerHash, OVERSEER_HASH, overseerHistoryId, overseerRedirect } from "./lib/overseer";
 import { followListRows, onFeedPush, requestListRead, sessionFeedOpen } from "./lib/session-feed";
@@ -855,6 +856,27 @@ export function App() {
   const hasGroupComposer = () => !!groupRoute() && !!openGroup() && groupMembers().length > 0 && groupSendAll();
   const skipHref = () => (hasGroupComposer() ? "#group-composer" : `#${transcriptIdOf(focusedPath())}`);
   const skipLabel = () => (hasGroupComposer() ? "Skip to Group Composer" : "Skip to Transcript");
+
+  /**
+   * A character typed outside a text field starts the message in the box on screen
+   * (lib/type-anywhere): the group composer while Send to All is on, else the focused pane's, the
+   * open chat's or the Overseer's own (an earlier conversation is read-only). A box that takes no
+   * typing takes nothing: the key never goes to another pane.
+   */
+  const typingBox = () => {
+    if (hasGroupComposer()) {
+      const el = document.getElementById("group-composer-input") as HTMLTextAreaElement | null;
+      if (!el) return null;
+      return { take: () => takeTyping({ readOnly: el.disabled, el, active: () => document.activeElement, hiddenByFocus: false, endFocus: () => {} }) };
+    }
+    const o = overseerRoute();
+    if (o) return o.historyId ? null : composerOf(overseer.data()?.path ?? null);
+    return composerOf(focusedPath());
+  };
+  const offTypeKey = bindKey("compose.type", (e) =>
+    startTyping(e, { on: typeAnywhere(), overlays: () => document.querySelectorAll(OVERLAY_CANDIDATES), box: typingBox }),
+  );
+  onCleanup(offTypeKey);
 
   // At folded width, opening a session swaps the column: move focus to its title.
   let titleEl: HTMLHeadingElement | undefined;

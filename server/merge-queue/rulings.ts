@@ -40,8 +40,8 @@ export const RULING_TEXT_MAX = 2000;
 
 /** What is the user's to decide, and what is not (al_3 q3), in the words the thread and the chat both rule by. */
 export const NEEDS_USER_RULE = [
-  "The user's: anything a person sees or does differently (wording, layout, controls, defaults, notifications, noticeable timing, data kept or deleted, permissions and safety), a change of meaning to a promise the user agreed, and anything the branch's task never decided.",
-  "Not the user's: regenerated files, recorded test outputs, lockfiles, list order with no visible effect, compile fixes, internal logs.",
+  "The user's: anything a person sees or does differently (wording a person sees in the product (UI copy, messages, docs they read), layout, controls, defaults, notifications, noticeable timing, data kept or deleted, permissions and safety), a change of meaning to a promise the user agreed, and anything the branch's task never decided.",
+  "Not the user's: regenerated files, recorded test outputs, lockfiles, list order with no visible effect, compile fixes, internal logs, code comments, identifiers and internal names, test names: no person using the product sees them, so two sides rewording the same comment or name is no behaviour change (keep the branch's) or the chat's to fix.",
 ].join(" ");
 
 /** Choices as given: trimmed, empties dropped, at most CHOICES_MAX of at most CHOICE_MAX characters. */

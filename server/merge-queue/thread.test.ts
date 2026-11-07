@@ -671,3 +671,19 @@ test("the fix check asks whether the fix decides something that is the user's, a
   assert.match(page, /Does it decide something that is the user's\?/);
   assert.match(page, /ruling: "needs-user", text, choices/);
 });
+
+test("what is the user's: wording a person sees in the product; code comments, identifiers and test names are not (e2e S3)", () => {
+  const conflict = eventText({ kind: "conflict", entry: entry("mq_9"), run: "mr_9", files: ["src/total.ts"], scratch: "/p/s" });
+  assert.match(conflict, /wording a person sees in the product \(UI copy, messages, docs they read\)/);
+  assert.match(conflict, /Not the user's: [^.]*internal logs, code comments, identifiers and internal names, test names/);
+  assert.match(conflict, /two sides rewording the same comment or name is no behaviour change \(keep the branch's\)/);
+  assert.doesNotMatch(conflict, /\(wording, layout/, "never bare \"wording\"");
+  const fix = eventText({ kind: "fix", entry: entry("mq_9"), request: "rq_7", asked: "a", commit: "c".repeat(40) });
+  assert.match(fix, /it decides something that is the user's \(wording a person sees in the product/);
+  const method = readFileSync(join(DEFAULT_PLAYBOOK_DIR, "PLAYBOOK.md"), "utf8");
+  assert.match(method, /\*\*Not the user's:\*\*[^\n]*code comments, identifiers and internal names, test names/);
+  assert.doesNotMatch(method, /\(wording, layout/);
+  const conflicts = readFileSync(join(DEFAULT_PLAYBOOK_DIR, "references", "conflicts.md"), "utf8");
+  assert.match(conflicts, /internal text: both sides reworded the same code comment/);
+  assert.match(conflicts, /user-facing text or call differently/);
+});

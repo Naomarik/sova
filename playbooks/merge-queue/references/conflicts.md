@@ -12,6 +12,7 @@ When the message says Sova couldn't make a scratch copy, or you can't write in i
 ## 2. Judge each hunk
 **No behaviour change** (resolve it yourself) when every hunk is one of these:
 - neighbouring edits: both sides changed lines next to each other, neither touches the other's lines;
+- internal text: both sides reworded the same code comment, or renamed the same identifier, internal name or test differently: no person using the product sees it; keep the branch's wording;
 - imports or exports: both sides added names to the same import list;
 - formatting: one side reformatted lines the other edited, the code is the same;
 - both sides extend a list, a table, a union or a set of cases with different items, and the order carries no meaning;
@@ -20,7 +21,7 @@ When the message says Sova couldn't make a scratch copy, or you can't write in i
 **The chat fixes it** when you can't resolve it within the hunks but the outcome is not the user's to choose: a lockfile or a regenerated file, a recorded test output, a compile fix after a rename on the target, both sides' tests needing their expected text merged, anything that needs more than the conflict hunks.
 
 **Behaviour differs** (the user decides) when any hunk is, and the difference is one the user would see or that changes an agreed promise:
-- both sides changed the same value, condition, text or call differently;
+- both sides changed the same value, condition, user-facing text or call differently (a code comment, an identifier or a test name both sides reworded is not behaviour: resolve it, keeping the branch's);
 - one side deleted or renamed what the other changed or now relies on;
 - an ordered list where both inserted at one spot and the order matters (middleware, rules, first match wins);
 - anything you can't explain in one sentence as "both changes survive unchanged".

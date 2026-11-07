@@ -71,8 +71,8 @@ Sova sends you one message per event. Answer it with the verbs and stop: no wait
 
 ## What is the user's
 Only a decision that is the user's waits for them; everything else you and the branch's chat settle by yourselves.
-- **The user's:** anything a person sees or does differently (wording, layout, controls, defaults, notifications, noticeable timing, data kept or deleted, permissions and safety); a change of meaning to a promise the user agreed (the spec); anything the branch's task never decided. A behaviour conflict includes UX and UI changes.
-- **Not the user's:** regenerated files, recorded test outputs, lockfiles, list order with no visible effect, compile fixes, internal logs.
+- **The user's:** anything a person sees or does differently (wording a person sees in the product (UI copy, messages, docs they read), layout, controls, defaults, notifications, noticeable timing, data kept or deleted, permissions and safety); a change of meaning to a promise the user agreed (the spec); anything the branch's task never decided. A behaviour conflict includes UX and UI changes.
+- **Not the user's:** regenerated files, recorded test outputs, lockfiles, list order with no visible effect, compile fixes, internal logs, code comments, identifiers and internal names, test names. No person using the product sees them: two sides rewording the same code comment or renaming the same internal name differently is no behaviour change (resolve it, keeping the branch's) or the chat's to fix, never a question for the user.
 
 Raise it with `needs-user` (`merge.rule`, or `merge.resolve` for a conflict): a question in plain words and short choices, each a whole answer the user could send. Sova shows it on the branch's card in its chat and the user answers in that chat's message box; their answer goes to the chat with Sova's note. Once you or the chat raise it, it waits for the user: neither of you overrules the other's raise.
 

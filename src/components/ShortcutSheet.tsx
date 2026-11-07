@@ -1,11 +1,17 @@
 import { createUniqueId, For } from "solid-js";
 import { Portal } from "solid-js/web";
 import { KEYS } from "../commands/keys";
+import { SHELL_KEYS } from "../lib/shell-mode";
 import { trapFocus } from "./ui";
 import "../command-palette.css";
 
-/** The one panel key the sheet lists: Esc in a chat's composer, which stops a running reply. */
+/**
+ * The message box's own keys: shell mode's ! and !!, then its two Esc rows. Esc in an empty
+ * shell-mode box leaves shell mode first; only in a message box does Esc stop a running reply.
+ */
 const MESSAGE_BOX_KEYS: readonly { keys: string; does: string }[] = [
+  ...SHELL_KEYS,
+  { keys: "Esc", does: "In an empty ! or !! box: leaves shell mode for a message box." },
   { keys: "Esc", does: "In the composer while a reply runs: stops it and puts its text so far in the composer." },
 ];
 
@@ -18,8 +24,8 @@ const PALETTE_KEYS: readonly { keys: string; does: string }[] = [
 
 /**
  * The shortcut sheet (§app.command-palette/shortcut-sheet): every app-wide key in the one table
- * (commands/keys), then the composer's Esc, then the palette's own. Loaded on the first "?"
- * (App's `lazy`).
+ * (commands/keys), then the message box's own (shell mode's ! and !!, its Esc rows), then the
+ * palette's own. Loaded on the first "?" (App's `lazy`).
  */
 export default function ShortcutSheet(props: { onClose(): void }) {
   const uid = createUniqueId();

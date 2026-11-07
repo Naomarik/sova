@@ -175,6 +175,8 @@ export interface ChatRuntimeMirror extends ChatStateMirror {
     since: number;
     clients: number;
     workersWorking: number;
+    /** A command from shell mode runs (§chat.shell-mode/lifecycle): a reload waits for it to end. Absent from an older runtime. */
+    commandRunning?: boolean;
     serverCalls: number;
     /** Run facts the server hasn't acked (proto 2; absent from a proto-1 runtime). */
     outbox?: number;

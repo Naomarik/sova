@@ -35,6 +35,7 @@ import { commandContextOf, ownedCommand } from "./commands";
 import { compactSession, rewindSession } from "./history-ops";
 import { liveHistory, toHEntry } from "./reader";
 import { resourcesOf } from "./resources";
+import { piShell, sandboxOf } from "./shell";
 import { piSessionState } from "./state";
 import { fromPiTool } from "./tools";
 import { steerTicket } from "./steer-ticket";
@@ -374,6 +375,8 @@ export class PiHarnessSession implements HarnessSession {
   abort(): Promise<void> {
     return this.s.abort();
   }
+  /** P40: pi's `!`, run as its RPC mode runs it (shell.ts). */
+  readonly shell = piShell(() => this.s, () => sandboxOf(this.runtime.services));
 
   /** P10: navigateTree, then the marker (history-ops.ts rewindSession). */
   rewindTo(entryId: EntryId, hooks: RewindHooks): Promise<RewindOutcome> {

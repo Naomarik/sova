@@ -194,6 +194,14 @@ test("nothing open, Stop usable: Esc stops", () => {
   assert.equal(composerKey(esc(), { ...idle, popoverOpen: () => true }), "default");
 });
 
+test("shell mode with a command typed: Esc never stops the reply, and Enter still runs", () => {
+  // An empty shell box's Esc left shell mode before composerKey is asked (lib/shell-box key).
+  assert.equal(composerKey(esc(), { ...idle, shell: true }), "default");
+  assert.equal(composerKey(press("Enter"), { ...idle, shell: true }), "send");
+  // Out of shell mode, the same Esc stops as before.
+  assert.equal(composerKey(esc(), { ...idle, shell: false }), "stop");
+});
+
 test("Esc right after an Esc: nothing", () => {
   assert.equal(composerKey(esc({ timeStamp: 10_300 }), { ...idle, escs: escAfter(10_000) }), "default");
   // Only Esc is held back: Enter right after an Esc still sends.

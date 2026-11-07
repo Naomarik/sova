@@ -52,10 +52,17 @@ export { isNoAnswer, NO_ANSWER, noAnswer } from "../pi-config/extensions/subagen
 /** A hosted chat's id across the boundary: its session file's canonical path. */
 export type ChatId = string;
 
+/** A command that reached a chat while it closes (archived, restarted, reloaded, switched): it never runs. */
+export const SHELL_CLOSING_TEXT = "The chat was closing, so your command didn't run.";
+
 /** What a pane hears for a prompt or steer that reached a chat whose process is stopping (or a link
     that is closing or closed): the refusal its page answers by putting the text back in the draft,
     never silence. Null for any other message: those mean nothing to a stopping chat. */
-export function unsentRefusal(msg: ChatClientMessage): { type: "error"; code: "refused"; message: string; clientId?: string } | null {
+export function unsentRefusal(
+  msg: ChatClientMessage,
+): { type: "error"; code: "refused"; message: string; clientId?: string } | { type: "shell_refused"; clientId: string; reason: "unavailable"; message: string } | null {
+  // A command from shell mode goes back to its box the same way, and never runs later (§chat.shell-mode/who).
+  if (msg.type === "shell") return { type: "shell_refused", clientId: String(msg.clientId ?? ""), reason: "unavailable", message: SHELL_CLOSING_TEXT };
   if (msg.type !== "prompt" && msg.type !== "steer") return null;
   return { type: "error", code: "refused", message: "The chat was restarting; your message wasn't sent.", ...(msg.clientId ? { clientId: msg.clientId } : {}) };
 }
@@ -121,6 +128,9 @@ export interface ChatStateMirror {
   special: ChatSpecialKind | null;
   /** A run is in progress. */
   running: boolean;
+  /** A command from shell mode runs, or ran and isn't saved yet (§chat.shell-mode/lifecycle): the chat isn't
+      quiet. Absent from an older chat process. */
+  shell?: boolean;
   compacting: boolean;
   /** A turn was handed to the agent and has not started yet. */
   starting: boolean;

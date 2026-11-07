@@ -102,8 +102,9 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
-import { WIRE_PARAM, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
+import { WIRE_PARAM, type ShellOutputPage, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
 import { LIST_VERSION_HEADER, parseListVersion } from "./summary-diff";
+import type { ShellDraftMode } from "./draft-save";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
 import type {
   MeshAccessPut,
@@ -951,25 +952,33 @@ export async function fetchTranscriptForCache(
 /** The composer draft stored for a session; `text: null` when there is none. The server has
     already dropped attachments whose file is gone. */
 export const fetchDraft = (path: string) =>
-  request<{ text: string | null; attachments?: UploadResult[]; updatedAt: string | null }>(
+  request<{ text: string | null; attachments?: UploadResult[]; mode?: ShellDraftMode; updatedAt: string | null }>(
     `/api/sessions/draft?path=${encodeURIComponent(path)}`,
     { cache: "no-store" },
   ).then((r) => {
     const attachments = r.attachments ?? [];
     const host = hostOf(path);
     if (host) for (const a of attachments) noteHost(a.path, host);
-    return { text: r.text, attachments, updatedAt: r.updatedAt };
+    return { text: r.text, attachments, ...(r.mode === "shell" || r.mode === "private" ? { mode: r.mode } : {}), updatedAt: r.updatedAt };
   });
 
 /** Stores a session's draft; blank text with no attachments deletes it. `keepalive` lets the
-    write outlive a page that is being hidden or closed. */
-export const putDraft = (path: string, text: string, attachments: UploadResult[], opts: { keepalive?: boolean } = {}) =>
+    write outlive a page that is being hidden or closed; `mode` keeps a shell-mode command's mode. */
+export const putDraft = (path: string, text: string, attachments: UploadResult[], opts: { keepalive?: boolean; mode?: ShellDraftMode } = {}) =>
   request<{ ok: true }>("/api/sessions/draft", {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path, text, attachments }),
+    body: JSON.stringify({ path, text, attachments, ...(opts.mode ? { mode: opts.mode } : {}) }),
     keepalive: opts.keepalive,
   });
+
+/** A page of a saved shell row's whole output (ShellOutputPage); a 404 `gone` once its file is deleted
+    (its chat was archived). */
+export const fetchShellOutput = (path: string, entry: string, from = 0) =>
+  request<ShellOutputPage>(
+    `/api/sessions/shell-output?path=${encodeURIComponent(path)}&entry=${encodeURIComponent(entry)}&from=${from}`,
+    { cache: "no-store" },
+  );
 
 /** Stores an image in the session's attachments folder the moment it's attached, so it survives
     a reload as part of the draft; the prompt text then names its path. */

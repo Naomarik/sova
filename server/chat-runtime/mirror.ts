@@ -29,6 +29,9 @@ export class LiveMirror implements ChatStateMirror {
   get running() {
     return this.chat.harness.isRunning();
   }
+  get shell() {
+    return this.chat.shell.inFlight();
+  }
   get compacting() {
     return this.chat.isCompacting();
   }
@@ -114,7 +117,7 @@ export class LiveMirror implements ChatStateMirror {
 
 /** The fields of a mirror, every one read once, now. */
 const FIELDS = [
-  "chatId", "sessionId", "cwd", "cwdFallback", "closed", "special", "running", "compacting", "starting", "model", "thinking", "leafId",
+  "chatId", "sessionId", "cwd", "cwdFallback", "closed", "special", "running", "shell", "compacting", "starting", "model", "thinking", "leafId",
   "lastStop", "queue", "dialogs", "mode", "held", "memory", "streamTrip", "foreignWrite", "pendingSends", "pristine",
   "subagentPick", "profile", "loadout", "attended", "confirmedCard", "modesOwner",
 ] as const satisfies readonly (keyof ChatStateMirror)[];

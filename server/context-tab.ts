@@ -86,7 +86,8 @@ function entryChars(h: HEntry): number {
     case "compaction":
       return (h.summary ?? "").length;
     case "shell":
-      return (h.command ?? "").length + (h.output ?? "").length;
+      // A `!!` command never reaches the model (§chat.shell-mode/model): it holds no context.
+      return h.private ? 0 : (h.command ?? "").length + (h.output ?? "").length;
     case "note":
       return h.inMessage ? (typeof h.content === "string" ? h.content : JSON.stringify(h.content ?? "")).length : 0;
     default:
@@ -128,7 +129,8 @@ export function conversationTalk(branch: readonly HEntry[], loadedNested = 0): S
     const h = branch[i]!;
     const c = entryChars(h);
     const kind =
-      h.kind === "user" || h.kind === "shell" ? "user"
+      // A `!!` command is not in the window (§chat.shell-mode/model): no message of yours there.
+      h.kind === "user" || (h.kind === "shell" && !h.private) ? "user"
       : h.kind === "assistant" ? "replies"
       : h.kind === "tool-result" ? "toolResults"
       : (h.kind === "note" || h.kind === "summary") && c > 0 ? "other"

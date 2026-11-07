@@ -99,13 +99,17 @@ export type ComposerKeyState = {
   popoverOpen: () => boolean;
   /** The page's Esc times (createEscTimes): the Esc before this one never lets it stop too soon. */
   escs: EscTimes;
+  /** The box is in shell mode (lib/shell-box): Esc never stops the reply there. An empty box's Esc
+      left shell mode before this rule is asked; with a command typed, the reply keeps running. */
+  shell?: boolean;
 };
 
 /**
  * The message box's one key rule: what a keydown does, asked in this order. The / menu, then the @
  * menu, each takes its arrows (with rows to move through), Enter or Tab (with a row to pick) and
  * Esc (always: it closes, and never stops); an IME composition leaves both menus alone. Then Esc
- * may stop the reply (escStops), then Enter may send (enterSends). Anything else is "default".
+ * may stop the reply (escStops), never in shell mode, then Enter may send (enterSends). Anything
+ * else is "default".
  */
 export function composerKey(e: EscKey, s: ComposerKeyState): ComposerKey {
   if (s.slash.open && !e.isComposing && !s.runsLocal) {
@@ -116,7 +120,7 @@ export function composerKey(e: EscKey, s: ComposerKeyState): ComposerKey {
     const k = menuKey(e, s.mention.matches);
     if (k) return k === "default" ? k : `mention-${k}`;
   }
-  if (escStops(e, s.stop, s.popoverOpen, s.escs.before(e))) return "stop";
+  if (!s.shell && escStops(e, s.stop, s.popoverOpen, s.escs.before(e))) return "stop";
   if (enterSends(e, s.touch)) return "send";
   return "default";
 }

@@ -99,6 +99,22 @@ describe("answers: the route's own, on the same fixture", () => {
     assert.deepEqual(await viaId("session.draft.set", { session: path, text: "x", attachments: 7 }), [400, { error: "attachments must be an array" }]);
   });
 
+  test("a draft's mode (§chat.shell-mode/box): only the page's write keeps it; a script's or a chat's is a message; a bad one is refused", async () => {
+    const [path] = session();
+    const { pageHeaders } = await import("./testing/page");
+    const put = async (headers: Record<string, string>, body: unknown) => (await app.request("/api/sessions/draft", { method: "PUT", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) })).status;
+    const read = async () => (await send("GET", `/api/sessions/draft?path=${q(path)}`))[1] as { text: string; mode?: string };
+    assert.equal(await put(pageHeaders(), { path, text: "ls", mode: "shell" }), 200);
+    assert.deepEqual([(await read()).text, (await read()).mode], ["ls", "shell"], "the page's command is kept as one");
+    for (const who of [{ "x-sova-token": "t" }, { "x-sova-token": "t", "x-sova-caller": "a-chat-key" }, {}] as Record<string, string>[]) {
+      assert.equal(await put(who, { path, text: "rm -rf ~", mode: "private" }), 200);
+      assert.deepEqual([(await read()).text, (await read()).mode], ["rm -rf ~", undefined], `${JSON.stringify(who)}: saved as a message`);
+    }
+    assert.deepEqual(await viaId("session.draft.set", { session: path, text: "!!whoami" }), [200, { ok: true }]);
+    assert.deepEqual([(await read()).text, (await read()).mode], ["!!whoami", undefined], "a leading !! from a script is text");
+    assert.equal(await put(pageHeaders(), { path, text: "ls", mode: "sudo" }), 400);
+  });
+
   test("session.fork: a new session, the source untouched; a terminal-held one gets the route's 409", async () => {
     const [path] = session();
     const [s, made] = await viaId("session.fork", { session: path, entry: "a1" });

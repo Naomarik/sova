@@ -114,6 +114,7 @@ import {
   sentHere,
   sessionContext,
   setDraftText,
+  draftMessage,
   setLocalRunning,
   setLocalWorking,
   setSessionContext,
@@ -150,6 +151,12 @@ import { liveTourCalls } from "../lib/tour-rows";
 import { alignRowFromDetails, foldAlignRows, isOpenDoc, openCount, recommendedOption, type AlignEntry } from "../lib/align";
 import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
+import { ShellCard } from "./ShellCard";
+import { ShellDock } from "./ShellDock";
+import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf, shellOffered, stopOnClose } from "../lib/shell-runs";
+import { createShellBar } from "../lib/shell-bar";
+import type { ShellAnswer, ShellControl } from "../lib/shell-mode";
+import type { ShellRun } from "../../shared/protocol";
 import { HostSendNotice } from "./HostStateNotices";
 import { OverseerMemoryMenu, projectOverseerMemory } from "./OverseerMemoryMenu";
 import { type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
@@ -567,6 +574,16 @@ export function ChatView(props: {
   /** Local "Ran /name args" rows; `tui` marks one that asked for a UI Sova can't show, `note` one
       that was refused (a /compact), whose row then says why instead of "Ran". */
   const [commandRows, setCommandRows] = createSignal<{ label: string; tui: boolean; note?: string }[]>([]);
+  /** This chat's commands from shell mode that aren't saved rows yet (§chat.shell-mode/card): every
+      hello says which, and the shell events keep them until each run's row arrives. */
+  const [shellRuns, setShellRuns] = createSignal<ShellRun[]>([]);
+  /** The ids drawn, in order, so a card keeps its node (and its output's scroll) as its run changes. */
+  const shellIds = createMemo(() => shellRuns().map((r) => r.id), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
+  /** The newest answer to a Run from this tab's composer; `shellWaiting` the Runs not answered yet. */
+  const [shellAnswer, setShellAnswer] = createSignal<ShellAnswer | null>(null);
+  const shellWaiting = new Set<string>();
+  /** This chat runs commands from shell mode, as its last hello said; null before this view's first hello. */
+  const [shellMode, setShellMode] = createSignal<boolean | null>(null);
   /** Subagents working now (WS "workers"); 0 until the first one arrives. */
   const [workersWorking, setWorkersWorking] = createSignal(0);
   /** The same message's list, so the status row can split the count against this session's teams. */
@@ -601,7 +618,7 @@ export function ChatView(props: {
   const [code, setCode] = createSignal<CodeView | null>(null);
   /** Reload Now, and the failed banner's Try Again: the chat reloads at once if quiet, else when it is. */
   const reloadCode = () => void chatSend({ type: "reload_code" });
-  props.onCode?.({ view: () => (hostGate() ? null : code()), quiet: () => ({ running: live.running, workersWorking: workersWorking() }), reload: reloadCode });
+  props.onCode?.({ view: () => (hostGate() ? null : code()), quiet: () => ({ running: live.running, workersWorking: workersWorking(), commandRunning: shellRuns().some((r) => r.state === "running") }), reload: reloadCode });
   onCleanup(() => props.onCode?.(null));
   let modelTimer: ReturnType<typeof setTimeout> | undefined;
   let thinkingTimer: ReturnType<typeof setTimeout> | undefined;
@@ -744,7 +761,7 @@ export function ChatView(props: {
    */
   const handBackSends = (back: readonly Unsent[], said?: string): string[] => {
     if (!back.length) return [];
-    const r = handBack({ draft: drafts.get(props.path), cardSent: untrack(cardSent) }, back, clicks);
+    const r = handBack({ draft: draftMessage(props.path) || undefined, cardSent: untrack(cardSent) }, back, clicks);
     if (r.texts.length) {
       setDraftText(props.path, r.draft ?? "");
       setRestored({ text: r.texts.join("\n\n") });
@@ -842,6 +859,22 @@ export function ChatView(props: {
     },
     onMessage(msg) {
       if (loginUnsaid !== undefined && msg.type !== "claude_login") awaitLogin();
+      // Shell mode's runs and answers (§chat.shell-mode/card): a hello rebuilds the live cards, each
+      // event moves one, and the answer to this tab's Run reaches its composer.
+      if (msg.type === "hello") {
+        setShellMode(!!msg.shellMode);
+        // A Run sent before the connection dropped: its run, by its id, or the dropped answer.
+        for (const a of answersAtHello(shellWaiting, msg.shell ?? [])) {
+          shellWaiting.delete(a.clientId);
+          setShellAnswer(a);
+        }
+      }
+      const runs = nextShellRuns(untrack(shellRuns), msg);
+      if (runs) {
+        setShellRuns(runs);
+      }
+      const answer = shellAnswerOf(msg);
+      if (answer && shellWaiting.delete(answer.clientId)) setShellAnswer(answer);
       switch (msg.type) {
         case "hello":
           dropNotFound();
@@ -910,6 +943,10 @@ export function ChatView(props: {
           setWait(waitOnSleep(untrack(wait)));
           sawGone = !props.summary?.()?.chat;
           socket.close();
+          // Its commands stopped with it (archive, restart, a switch): their cards say so now, and the
+          // next hello brings their saved rows (§chat.shell-mode/card).
+          setShellRuns((runs) => stopOnClose(runs));
+          shellBar.reset();
           // Sends it never took can't be refused back on this socket any more: they come back now.
           handBackSends(unacked.takeAll(handedBack), "That message couldn't be sent. It's back in the composer.");
           return;
@@ -2187,6 +2224,45 @@ export function ChatView(props: {
     return true;
   };
 
+  /**
+   * Shell mode's Run (§chat.shell-mode/who): the command goes over this live socket and nowhere
+   * else, never into the outbox a waking chat takes; with no open connection it stays in the box.
+   * One at a time: a second Run while one runs is refused here, as the chat would.
+   */
+  const shellControl: ShellControl = {
+    run: (command, priv) => {
+      const sent = runShell(
+        { open: !holding() && socket.status() === "open", send: (frame) => socket.send(frame), newId: newClientId },
+        command,
+        priv,
+      );
+      if ("clientId" in sent) shellWaiting.add(sent.clientId);
+      // A chat closed while quiet: nothing was sent, and the chat starts so the next Run can go.
+      else if (holding()) wake();
+      return sent;
+    },
+    answer: shellAnswer,
+  };
+  // The connection is gone for good before the chat answered a Run: say so, and the command stays in
+  // the box. A reconnect answers at its hello instead (answersAtHello).
+  createEffect(
+    on(socket.status, (s) => {
+      if (s !== "failed" && s !== "closed") return;
+      for (const clientId of [...shellWaiting]) {
+        shellWaiting.delete(clientId);
+        setShellAnswer({ clientId, refused: SHELL_DROPPED });
+      }
+    }),
+  );
+  /** The card's Stop Command: that command and everything it started, never the model's reply. */
+  /** The running commands' bar (lib/shell-bar): Stop and Stop All go over this chat's socket. */
+  const shellBar = createShellBar({ runs: shellRuns, send: (frame) => socket.send(frame) });
+  /** Shell mode is in every chat with its own agent and folder (§chat.shell-mode/box); not in the
+      Overseer, a project overseer or assistant, a gathering session, or a read-only box. The hello
+      says (`shellMode`); before this view's first one, what the session list knows decides. */
+  const shellAllowed = () =>
+    shellOffered({ helloShellMode: shellMode(), overseer: !!props.overseer, projectOverseer: !!props.projectOverseer || !!props.summary?.()?.projectOverseer, baton: !!props.summary?.()?.baton, batonHeld: !!batonGate() });
+
   const abort = (via: "button" | "esc") => {
     // Stop before the waking connection opened: what the tab kept never goes, and its text comes back.
     if (outbox.size) return giveUpWake();
@@ -2268,7 +2344,8 @@ export function ChatView(props: {
       whole() &&
       (props.overseer ? list.every((it) => it.kind === "info") : list.every((it) => isChangeRow(it) || isProfileRow(it) || isLoginNoteRow(it))) &&
       live.entries.length === 0 &&
-      commandRows().length === 0
+      commandRows().length === 0 &&
+      shellRuns().length === 0
     );
   };
   /** A baton session's names, from its strip (§app/baton). */
@@ -2509,6 +2586,16 @@ export function ChatView(props: {
                 limitPath={props.path}
                 queueActions={queueActions}
               />
+              {/* Commands from shell mode that ended and aren't saved yet: after the streaming reply, where
+                  their rows land (pi saves one that ends mid-reply after that reply), on every device. A
+                  running one floats in the dock below the transcript instead (§chat.shell-mode/card). */}
+              <For each={shellIds()}>
+                {(id) => (
+                  <Show when={shellRuns().find((r) => r.id === id && r.state === "ended")}>
+                    {(run) => <ShellCard card={cardOfRun(run())} replying={live.running} />}
+                  </Show>
+                )}
+              </For>
               <OfferTray />
               </CardContext.Provider>
               </OfferContext.Provider>
@@ -2592,6 +2679,7 @@ export function ChatView(props: {
         <For each={feed().entries}>{(m) => <><Show when={feedBanner(m) === "turn"}><TurnError message={m.message} /></Show><Show when={feedBanner(m) === "start"}><StartError message={m.message} back={m.back ?? 0} /></Show><Show when={!failureHasRow(live.entries, m.message)}><SubagentLimitRow path={props.path} message={m.message} provider={m.provider} /></Show></>}</For>
       </ThreadScroller>
       </ToolSourceContext.Provider>
+      <ShellDock bar={shellBar} />
       <Show when={!hostGate()} fallback={<HostSendNotice host={hostOf(props.path)!} reading={hostGate()!} />}>
       <Composer
         path={props.path}
@@ -2676,6 +2764,7 @@ export function ChatView(props: {
         thinking={thinkingControl}
         mode={props.overseer || props.summary?.()?.baton || props.summary?.()?.projectOverseer ? null : modeControl}
         sandbox={sandboxControl}
+        shell={shellAllowed() ? shellControl : null}
         onPlaybooks={() => setShowPlaybooks(true)}
         undo={undoControl}
         onSend={(text, running, attachments) => send(text, running, attachments, undefined, true)}
@@ -2706,7 +2795,7 @@ export function ChatView(props: {
           // The view is going away under the open dialog (the session turned read-only): what was
           // typed goes to the top of this session's draft, where restoreUnsent puts unsent turns.
           onOrphan={(text) => {
-            const current = drafts.get(props.path);
+            const current = draftMessage(props.path);
             setDraftText(props.path, current ? `${text}\n\n${current}` : text);
           }}
         />

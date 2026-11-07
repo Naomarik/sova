@@ -13,6 +13,10 @@ import { PathText } from "./PathAttachment";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { TopicCard } from "./TopicCard";
 import { WakeCard } from "./WakeCard";
+import { ShellCard } from "./ShellCard";
+import { useChangesSession } from "./ChangesViewer";
+import { cardOfRow } from "../lib/shell-runs";
+import type { ShellRowInfo } from "../../shared/protocol";
 import { BUILTIN_VIEWS } from "./BuiltinKinds";
 import { LIVE_VIEWS } from "./LiveKinds";
 import { Icon } from "./ui";
@@ -196,5 +200,11 @@ export const PAGE_VIEWS: { [K in PageView]: Component<KindViewProps<never>> } = 
   topic: (props: KindViewProps<TopicBatchInfo>) => <TopicCard batch={props.value} time={props.item.at} />,
   compaction: (props: KindViewProps<NonNullable<RowFacts["compaction"]>>) => <Compaction compaction={props.value} />,
   info: InfoView,
+  shell: (props: KindViewProps<ShellRowInfo>) => {
+    // The row's whole output is read through its chat's path and the row's id (§chat.shell-mode/card).
+    const session = useChangesSession();
+    const full = () => (session?.path ? { path: session.path, entry: props.item.id } : undefined);
+    return <ShellCard card={cardOfRow(props.value)} full={full()} />;
+  },
   ...BUILTIN_VIEWS,
 };

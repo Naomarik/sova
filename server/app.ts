@@ -63,7 +63,8 @@ import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } 
 import { setFavorite } from "./model-favorites";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
-import { draftForClient, putBackDraft, setDraft } from "./drafts";
+import { draftForClient, isDraftMode, putBackDraft, setDraft } from "./drafts";
+import { shellOutputPage } from "./shell-output";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
 import { getAgentsInsight, getHiddenWorkers, getMemberInbox, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
@@ -845,7 +846,7 @@ export function buildApp(deps: AppDeps) {
   });
 
   app.put("/api/sessions/draft", async (c) => {
-    let body: { path?: unknown; text?: unknown; attachments?: unknown };
+    let body: { path?: unknown; text?: unknown; attachments?: unknown; mode?: unknown };
     try {
       body = await c.req.json();
     } catch {
@@ -857,9 +858,27 @@ export function buildApp(deps: AppDeps) {
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
     if (body.text.length > MAX_DRAFT_CHARS) return c.json({ error: "Draft too long" }, 400);
     if (body.attachments !== undefined && !Array.isArray(body.attachments)) return c.json({ error: "attachments must be an array" }, 400);
+    if (body.mode !== undefined && !isDraftMode(body.mode)) return c.json({ error: 'mode must be "shell" or "private"' }, 400);
+    // Only the person's own page saves a command (§chat.shell-mode/box): any other writer's draft is a message,
+    // so a script, a chat or a card can never leave the box one Enter from running something.
+    const mode = body.mode !== undefined && notPage(c) === null ? body.mode : undefined;
     // Invalid entries are dropped by the store rather than failing the whole write.
-    setDraft(idOf(path), body.text, body.attachments);
+    setDraft(idOf(path), body.text, body.attachments, mode);
     return c.json({ ok: true });
+  });
+
+  // A finished command's whole output, a page at a time (server/shell-output.ts, §chat.shell-mode/card).
+  app.get("/api/sessions/shell-output", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const entry = c.req.query("entry");
+    if (!entry) return c.json({ error: "Missing ?entry= (the command's row id)" }, 400);
+    const from = Number(c.req.query("from") ?? 0);
+    if (!Number.isSafeInteger(from) || from < 0) return c.json({ error: "from must be a byte offset, 0 or more" }, 400);
+    const r = await shellOutputPage(path, entry, from);
+    if (r.status !== 200) return c.json({ error: r.error, code: r.code }, r.status);
+    return c.json(r.body, 200, { "Cache-Control": "no-store" });
   });
 
   app.get("/api/cwds", async (c) => c.json(await listCwds()));
@@ -1472,6 +1491,8 @@ export function buildApp(deps: AppDeps) {
       putBackDraft(idOf(path), framesDraft(frames));
       return refusedAnswer(c, refused);
     }
+    // Only shell-mode frames, all dropped: nothing to deliver, so the chat isn't opened for it.
+    if (!frames.length) return c.json({ accepted: 0 }, 202);
     sessionsChanged();
     deliverFrames(path, frames, asExtension ? "extension" : notPage(c));
     return c.json({ accepted: frames.length }, 202);

@@ -378,7 +378,7 @@ test("drain: a pane attached doesn't hold an idle close (§app.chat-processes/id
   assert.equal(readInflight(t.id), null);
 });
 
-test("drain: a reply running or a message queued refuses an idle close, a pane attached or not; quiet again, it closes", async () => {
+test("drain: a reply running, a message queued or a command from shell mode refuses an idle close, a pane attached or not; quiet again, it closes", async () => {
   const t = await setup();
   const states = collect(t.ctl.server, "state");
   const tick = () => (t.host as unknown as { tick(): void }).tick();
@@ -408,12 +408,24 @@ test("drain: a reply running or a message queued refuses an idle close, a pane a
   assert.equal(states.at(-1)?.mirror.quiet.quiet, false, "a queued message is not quiet");
   assert.deepEqual(await drain(), { t: "drained", id: "d2", ok: false, why: "busy" });
   delete (chat.queue as unknown as { size?: number }).size;
+  // A command from shell mode in flight (§chat.shell-mode/lifecycle): no idle close and no reload either.
+  const inFlight = chat.shell.inFlight.bind(chat.shell);
+  chat.shell.inFlight = () => true;
+  tick();
+  await settle();
+  assert.equal(states.at(-1)?.mirror.shell, true);
+  assert.equal(states.at(-1)?.mirror.quiet.quiet, false, "a running command is not quiet");
+  assert.deepEqual(await drain(), { t: "drained", id: "d3", ok: false, why: "busy" });
+  const reload = awaitFrame(t.ctl.server, "drained", 2_000, (f) => f.id === "r1");
+  t.ctl.server.send({ t: "drain", id: "r1", reason: "reload", force: false });
+  assert.deepEqual(await reload, { t: "drained", id: "r1", ok: false, why: "busy" }, "no reload onto new code while it runs");
+  chat.shell.inFlight = inFlight;
   tick();
   await settle();
   assert.equal(states.at(-1)?.mirror.quiet.quiet, true);
   assert.equal(states.at(-1)?.mirror.quiet.clients, 1, "the pane is still attached");
   assert.deepEqual(t.exits, []);
-  assert.deepEqual(await drain(), { t: "drained", id: "d3", ok: true });
+  assert.deepEqual(await drain(), { t: "drained", id: "d4", ok: true });
   t.ctl.server.close();
   await settle();
   assert.deepEqual(t.exits, ["idle"]);
@@ -593,6 +605,40 @@ test("5e: with no server linked, a chat with something in flight keeps running",
   tick();
   await settle(100);
   assert.deepEqual(t.exits, ["idle"], "once nothing is in flight");
+});
+
+test("5e: with no server linked, a running command from shell mode doesn't hold the chat: it exits after the idle-stop time, the command stopped by the close (§chat.shell-mode/lifecycle)", async () => {
+  const t = await setup({ settings: { idleStopMin: 0.001 } });
+  const tick = () => (t.host as unknown as { tick(): void }).tick();
+  const chat = t.host.heldChat()!;
+  let closed = 0;
+  chat.shell.inFlight = () => true;
+  chat.shell.running = () => true;
+  const close = chat.shell.close.bind(chat.shell);
+  chat.shell.close = () => (closed++, close());
+  // Linked: the command holds the chat, as Sova is up (a dev server runs as long as it runs).
+  tick();
+  await settle(120);
+  tick();
+  await settle(100);
+  assert.deepEqual(t.exits, [], "a server is linked: the command keeps its chat");
+  t.ctl.drop();
+  await settle();
+  tick();
+  await settle(120);
+  tick();
+  await settle(100);
+  assert.deepEqual(t.exits, ["idle"], "Sova gone for the idle time: the chat exits");
+  assert.ok(closed > 0, "its close stops the command");
+});
+
+test("the mirror says whether a command is running (Reload Now: \"Reloads when its command ends\")", async () => {
+  const t = await setup({});
+  const chat = t.host.heldChat()!;
+  const mirror = () => (t.host as unknown as { mirror(): { quiet: { commandRunning?: boolean } } }).mirror();
+  assert.equal(mirror().quiet.commandRunning, false);
+  chat.shell.running = () => true;
+  assert.equal(mirror().quiet.commandRunning, true);
 });
 
 test("code: older than the server's build shows the badge and asks for a reload once quiet and alone", async () => {

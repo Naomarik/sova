@@ -56,8 +56,13 @@ export type HEntry = HBase & (
       stop?: string; error?: string; sentAt?: number;
     }
   | { kind: "tool-result"; callId?: string; tool?: string; blocks: HBlock[]; details?: unknown; isError?: boolean; sentAt?: number }
-  /** A shell command the user ran (pi's `!` / bashExecution). */
-  | { kind: "shell"; command?: string; output?: string; sentAt?: number }
+  /** A shell command the user ran (pi's `!` / bashExecution), from Sova's shell mode or pi's terminal.
+      `output` is as saved (already cut: `truncated` says what it kept, `fullOutputPath` where the whole
+      went); `exitCode` is absent when it was killed; `private` (`!!`): it never reaches the model. */
+  | {
+      kind: "shell"; command?: string; output?: string; sentAt?: number;
+      exitCode?: number; cancelled?: boolean; truncated?: { by: "lines" | "bytes"; max: number }; fullOutputPath?: string; private?: boolean;
+    }
   /** An extension's message: `inMessage` is pi's custom message role, else a custom_message entry. */
   | { kind: "note"; noteType?: string; content: unknown; display: boolean; details?: unknown; inMessage: boolean }
   /** A summary that stands in for earlier context: a branch's (pi's branch_summary entry or role) or a

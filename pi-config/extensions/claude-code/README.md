@@ -50,6 +50,11 @@ Claude Code worker's included, and model discovery) runs on one Claude login, ch
   `<agent dir>/claude-accounts/<id>/` (0700), with `projects/`, `settings.json`,
   `CLAUDE.md`, `agents`, `commands`, `skills` and `plugins` symlinked to
   `default`'s, so every login writes its session records into one `projects/`.
+  An agent dir with its own `claude-projects/` (a hermetic test copy) links every
+  login's `projects` there instead, and runs `default` on `<agent dir>/claude-default/`,
+  whose `.credentials.json`, `.claude.json` and shared entries link to `default`'s
+  own (`projects` into `claude-projects/`), so a test chat writes no transcript into
+  `~/.claude`. On macOS a `default` whose token is only in the keychain runs as it is.
   The registry is `<agent dir>/claude-accounts.json`; Sova's Settings → Accounts
   writes it (adding a login runs `claude auth login` for a new directory).
 - A spawn uses this host's first usable login in its device's order (enabled,

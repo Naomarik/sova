@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import {
 	ACCOUNTS_DEV_ENV, ClaudeLogins, LEASES_DIR_NAME, LEASE_STALE_MS, readLoginUse, DEFAULT_LIMIT_COOLDOWN_MS, SHARED_ENTRIES, accountsPath, claudeBaseEnv, claudeJsonPath,
-	defaultClaudeDir, deviceOrder, ensureLoginDir, groupByAccount, OWN_PROJECTS_DIR_NAME,
+	defaultClaudeDir, deviceOrder, ensureLoginDir, groupByAccount, OWN_PROJECTS_DIR_NAME, OWN_DEFAULT_DIR_NAME, ownDefaultTarget, DEFAULT_LOGIN_ID,
 	loginDir, loginEntryFor, manualSwitchText, parseAccounts, poolAgentPath, readWants, wantsDir, planLabel, readAccounts, readAccountsState, readIdentityFile, recordedLogin, switchText,
 	thisDeviceId, updateAccounts, writeAccounts, type ClaudeAccountsFile, type ClaudeLoginRecord,
 	claudeConfigDirEnv, credentialsMtime,
@@ -19,6 +19,7 @@ import {
 	LOGIN_CONTEXT_ENV, loginContextFromEnv, orderWithContext, parseLoginContext, preferenceText, type ClaudeLoginContext,
 } from "./accounts.ts";
 import { keychainService, resetKeychainMtimes } from "./keychain.ts";
+import { claudeProjectsRoot } from "./provider/session-records.ts";
 import { claudeEnv, classifyClaudeFailure, ClaudeFailureDetector } from "./transport.ts";
 
 const FIXTURES = fileURLToPath(new URL("./tests/fixtures/failures/", import.meta.url));
@@ -108,6 +109,46 @@ test("an agent dir with its own claude-projects/ (a hermetic .agent) links every
 	fs.writeFileSync(path.join(loginDir(s.agentDir, A), "projects", "x.jsonl"), "{}\n");
 	assert.ok(fs.existsSync(path.join(own, "x.jsonl")), "a CLI record lands in the agent dir's own folder");
 	assert.deepEqual(fs.readdirSync(path.join(s.claudeDir, "projects")), [], "nothing reaches default's projects/");
+});
+
+test("default in an agent dir with its own claude-projects/ runs on the agent dir's claude-default/, signed in through links to default's own", (t) => {
+	const s = sandbox(t);
+	fs.writeFileSync(path.join(s.claudeDir, ".credentials.json"), "{\"token\":\"real\"}", { mode: 0o600 });
+	const own = path.join(s.agentDir, OWN_PROJECTS_DIR_NAME);
+	fs.mkdirSync(own);
+	const before = fs.readdirSync(s.claudeDir).sort();
+	const env = s.logins.choice(DEFAULT_LOGIN_ID)!.env;
+	const dir = env.CLAUDE_CONFIG_DIR;
+	assert.ok(dir && path.relative(s.agentDir, dir) === OWN_DEFAULT_DIR_NAME, `default runs inside the agent dir: ${dir}`);
+	// Where the CLI writes its transcripts: $CLAUDE_CONFIG_DIR/projects, as the bridge resolves it.
+	const projects = claudeProjectsRoot(claudeBaseEnv({ ...s.env, ...env }, s.agentDir));
+	assert.equal(fs.realpathSync(projects), fs.realpathSync(own), "the CLI's projects folder is the agent dir's own");
+	assert.equal(fs.statSync(dir).mode & 0o777, 0o700);
+	// Signed in as the user's default: links, never copies.
+	assert.equal(fs.readlinkSync(path.join(dir, ".credentials.json")), path.join(s.claudeDir, ".credentials.json"));
+	assert.equal(fs.readlinkSync(path.join(dir, ".claude.json")), claudeJsonPath(s.claudeDir, true, s.env, s.agentDir));
+	assert.equal(fs.readlinkSync(path.join(dir, "settings.json")), path.join(s.claudeDir, "settings.json"));
+	fs.writeFileSync(path.join(projects, "x.jsonl"), "{}\n");
+	assert.ok(fs.existsSync(path.join(own, "x.jsonl")));
+	assert.deepEqual(fs.readdirSync(s.claudeDir).sort(), before, "nothing new in default's own directory");
+	assert.deepEqual(fs.readdirSync(path.join(s.claudeDir, "projects")), []);
+	assert.equal(s.logins.choice(DEFAULT_LOGIN_ID)!.label, "me@example.com", "its identity is still default's");
+	assert.deepEqual(s.logins.choice(DEFAULT_LOGIN_ID)!.env, env, "the same on every spawn");
+	// A default already inside the agent dir (a fixture) runs as it is; so does a keychain-only default on macOS.
+	assert.equal(ownDefaultTarget(s.agentDir, path.join(s.agentDir, "fixture-claude")), undefined);
+	fs.rmSync(path.join(s.claudeDir, ".credentials.json"));
+	assert.equal(ownDefaultTarget(s.agentDir, s.claudeDir, "darwin"), undefined);
+	assert.equal(ownDefaultTarget(s.agentDir, s.claudeDir, "linux"), dir);
+});
+
+test("default without claude-projects/ (the real setup) inherits the environment and nothing is made", (t) => {
+	const s = sandbox(t);
+	assert.deepEqual(s.logins.choice(DEFAULT_LOGIN_ID)!.env, {});
+	assert.ok(!fs.existsSync(path.join(s.agentDir, OWN_DEFAULT_DIR_NAME)));
+	assert.equal(ownDefaultTarget(s.agentDir, s.claudeDir), undefined);
+	const home = new ClaudeLogins({ agentDir: s.agentDir, env: { PI_CODING_AGENT_DIR: s.agentDir } as NodeJS.ProcessEnv });
+	assert.deepEqual(home.choice(DEFAULT_LOGIN_ID)!.env, {}, "nor on ~/.claude");
+	assert.ok(!fs.existsSync(path.join(s.agentDir, OWN_DEFAULT_DIR_NAME)));
 });
 
 test("an inherited CLAUDE_CONFIG_DIR naming a login's directory is not default: ~/.claude is, and the login's links stay", (t) => {

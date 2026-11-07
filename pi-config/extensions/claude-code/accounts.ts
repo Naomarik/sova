@@ -144,7 +144,7 @@ export interface ClaudeLoginChoice {
 	id: string;
 	/** What notices call it: its label, else its email, else its id. */
 	label: string;
-	/** Merged over the child's environment: `CLAUDE_CONFIG_DIR`, or nothing for `default`. */
+	/** Merged over the child's environment: `CLAUDE_CONFIG_DIR`, or nothing for `default` (in a hermetic agent dir, its `claude-default/`). */
 	env: Record<string, string>;
 	accountUuid?: string;
 }
@@ -458,6 +458,59 @@ export function loginProjectsTarget(agentDir: string, defaultDir: string): strin
 	return path.join(defaultDir, "projects");
 }
 /**
+ * `default`'s directory in a hermetic agent dir: `<agent dir>/claude-default/` (0700), run as `default`'s
+ * CLAUDE_CONFIG_DIR. Its `.credentials.json` and `.claude.json` link to `default`'s own (read through the
+ * link, never copied or written here) and its shared entries link as an added login's do, `projects` into
+ * the agent dir's `claude-projects/`: a hermetic chat on `default` signs in as the user's own login and
+ * keeps its CLI transcripts in the agent dir.
+ */
+export const OWN_DEFAULT_DIR_NAME = "claude-default";
+/**
+ * The directory a `default` spawn runs on in `agentDir`, when it has one of its own: only in an agent dir
+ * with its own `claude-projects/` whose `default` directory lies outside it (a `default` inside the agent
+ * dir, a test fixture, runs as it is). On macOS a `default` with no `.credentials.json` keeps its token in
+ * the keychain under an item named for its exact CLAUDE_CONFIG_DIR, which no other directory reaches: it
+ * runs as it is. Undefined: `default` runs on its own directory, as always.
+ */
+export function ownDefaultTarget(agentDir: string, defaultDir: string, platform: NodeJS.Platform = process.platform): string | undefined {
+	if (loginProjectsTarget(agentDir, defaultDir) === path.join(defaultDir, "projects")) return undefined;
+	if (within(defaultDir, agentDir)) return undefined;
+	if (platform === "darwin" && !fs.existsSync(path.join(defaultDir, ".credentials.json"))) return undefined;
+	return path.join(agentDir, OWN_DEFAULT_DIR_NAME);
+}
+/**
+ * Link `dir/name` to `target`: only when the target exists and lies outside `dir`; a real file or
+ * directory is left alone; a link pointing elsewhere is replaced (unlinked, never removed recursively).
+ */
+function linkEntry(dir: string, name: string, target: string): void {
+	if (!fs.existsSync(target) || within(target, dir)) return;
+	const link = path.join(dir, name);
+	let stat: fs.Stats | undefined;
+	try { stat = fs.lstatSync(link); } catch { stat = undefined; }
+	if (stat && !stat.isSymbolicLink()) return;
+	if (stat) {
+		if (fs.readlinkSync(link) === target) return;
+		fs.unlinkSync(link);
+	}
+	fs.symlinkSync(target, link);
+}
+/**
+ * Create (0700) `default`'s own directory in a hermetic agent dir (ownDefaultTarget) and link it to
+ * `default`'s: its credentials and `.claude.json` (`claudeJsonPath`), and the shared entries, `projects`
+ * into the agent dir's `claude-projects/`. Writes nothing in `default`'s directory.
+ */
+export function ensureOwnDefaultDir(agentDir: string, defaultDir: string, env: NodeJS.ProcessEnv = process.env): string {
+	const dir = path.join(agentDir, OWN_DEFAULT_DIR_NAME);
+	fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+	try { fs.chmodSync(dir, 0o700); } catch { /* best effort */ }
+	linkEntry(dir, ".credentials.json", path.join(defaultDir, ".credentials.json"));
+	linkEntry(dir, ".claude.json", claudeJsonPath(defaultDir, true, env, agentDir));
+	for (const name of SHARED_ENTRIES) {
+		linkEntry(dir, name, name === "projects" ? loginProjectsTarget(agentDir, defaultDir) : path.join(defaultDir, name));
+	}
+	return dir;
+}
+/**
  * Create (0700) the login's directory and link the shared entries to `default`'s directory. Each
  * link is made only when its target exists, except `projects/`, which is created in `default`'s
  * directory if missing: every login must write its session records there (an agent dir with its own
@@ -475,17 +528,8 @@ export function ensureLoginDir(agentDir: string, id: string, defaultDir: string)
 	try { fs.chmodSync(dir, 0o700); } catch { /* best effort */ }
 	for (const name of SHARED_ENTRIES) {
 		const target = name === "projects" ? loginProjectsTarget(agentDir, defaultDir) : path.join(defaultDir, name);
-		const link = path.join(dir, name);
 		if (name === "projects" && !fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
-		if (!fs.existsSync(target) || within(target, dir)) continue;
-		let stat: fs.Stats | undefined;
-		try { stat = fs.lstatSync(link); } catch { stat = undefined; }
-		if (stat && !stat.isSymbolicLink()) continue;
-		if (stat) {
-			if (fs.readlinkSync(link) === target) continue;
-			fs.unlinkSync(link);
-		}
-		fs.symlinkSync(target, link);
+		linkEntry(dir, name, target);
 	}
 	return dir;
 }
@@ -1020,6 +1064,18 @@ export class ClaudeLogins {
 	get device(): string { return thisDeviceId(this.agentDir, this.env); }
 	accounts(): ClaudeAccountsFile { return readAccounts(this.agentDir).value; }
 	dirOf(id: string): string { return id === DEFAULT_LOGIN_ID ? this.defaultDir : loginDir(this.agentDir, id); }
+	/**
+	 * What a `default` spawn merges over its environment: nothing (Claude Code's own directory), or in a
+	 * hermetic agent dir its own `claude-default/` (ownDefaultTarget), made and linked first. A failed
+	 * repair still names that directory (the spawn then reports what is wrong), never `default`'s own.
+	 */
+	private defaultEnv(): Record<string, string> {
+		const defaultDir = this.defaultDir;
+		const own = ownDefaultTarget(this.agentDir, defaultDir);
+		if (!own) return {};
+		try { ensureOwnDefaultDir(this.agentDir, defaultDir, this.env); } catch { /* the spawn reports what is wrong */ }
+		return { CLAUDE_CONFIG_DIR: own };
+	}
 	identityOf(id: string, accounts = this.accounts()): ClaudeLoginIdentity | null {
 		if (id === DEFAULT_LOGIN_ID) return readIdentityFile(claudeJsonPath(this.defaultDir, true, this.env, this.agentDir));
 		return accounts.logins.find((l) => l.id === id)?.identity ?? null;
@@ -1034,7 +1090,7 @@ export class ClaudeLogins {
 		if (id !== DEFAULT_LOGIN_ID) repairOnce(this.agentDir, id, this.defaultDir);
 		return {
 			id, label,
-			env: id === DEFAULT_LOGIN_ID ? {} : { CLAUDE_CONFIG_DIR: loginDir(this.agentDir, id) },
+			env: id === DEFAULT_LOGIN_ID ? this.defaultEnv() : { CLAUDE_CONFIG_DIR: loginDir(this.agentDir, id) },
 			...(identity?.accountUuid ? { accountUuid: identity.accountUuid } : {}),
 		};
 	}

@@ -6,9 +6,8 @@ user-invocable: true
 
 **Read all of this file first.** Before your first change to Sova's UI, read this whole file,
 about 550 lines, with the read tool: not a slice with `sed`, `head` or a line range. Then read
-`reference/components/<name>.md` for each component you touch (tabs, list, empty, button…), and
-open its rendered page before writing CSS for it. A slice misses what a green build can't catch: a
-class whose **Ported** cell in **Components** says `no` renders unstyled in the app, with no error.
+`reference/components/<name>.md` for each component you touch (tabs, list, empty, button…). A
+slice misses what a green build can't catch: a class whose **Ported** cell in **Components** says `no` renders unstyled in the app, with no error.
 
 This file is the design system: how a surface looks, reads and behaves. It says nothing about
 what the product does — the project documentation in `.sova/spec/` owns that, and duplicating
@@ -85,9 +84,9 @@ unstyled without it. Both are plain CSS: no build step, no network requests, fon
 **Theme.** Nothing to do for system-following. To force one: `<html data-theme="dark">` or
 `<html data-theme="light">`.
 
-**Look before you build.** `site/index.html` links all 34 pages — 7 foundations, 2 brand topics,
-25 components — rendered in both themes. A screenshot answers questions a table can't. Then load
-`reference/<category>/<page>.md` for the section you're actually rendering.
+**Load the page for what you're rendering.** `reference/<category>/<page>.md` holds each of
+the 34 pages in full (7 foundations, 2 brand topics, 25 components): **Where to look** names the
+page.
 
 **In Sova, the app does not load these two files.** It imports `src/design/tokens.css` and
 `src/design/base.css`, and `base.css` is a hand-ported subset: it ports only what the app's spec
@@ -111,12 +110,10 @@ fold-ai-dev-design/
 │   ├── foundations/            # colors typography spacing radius shadow grid-composition motion
 │   ├── brand/                  # logo iconography
 │   └── components/             # one file per component in the inventory
-├── site/                       # rendered reference site — open site/index.html
-│   └── docs.css                # site chrome only; never merged into fold-ai-dev.css
-└── .build/                     # generates reference/ and site/ from one content model
+└── .build/                     # generates reference/ from one content model
 ```
 
-`node .build/build.mjs` regenerates `reference/**.md` and `site/**.html` from `.build/content.mjs` +
+`node .build/build.mjs` regenerates `reference/**.md` from `.build/content.mjs` +
 `.build/components.mjs`, reading values from `tokens.css`; `node .build/audit.mjs` checks the result.
 **Edit the model, not the output.**
 
@@ -342,7 +339,7 @@ fades included — so a state change must read from its end state, never from th
 
 **Required, shipped, and equal.** Neither theme is the default: the system follows
 `prefers-color-scheme` and honors a `data-theme` override in both directions. Both themes have
-full token sets and rendered site pages. A component never knows which theme it's in.
+full token sets. A component never knows which theme it's in.
 
 **Dark is not inverted light.** The accent lifts, and elevation is surface lightness rather than
 a heavier shadow, so **dark paper is a dark gray (L\* 11.6), never a near-black**: a page with no

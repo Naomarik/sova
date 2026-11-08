@@ -4,8 +4,6 @@
 
 A 44px field with a real label. The placeholder is never the label — it disappears the moment someone types, and a form you cannot re-read is a form you cannot check.
 
-Rendered: `site/components/input.html#anatomy`
-
 ## Styles
 
 | Class | Role | Notes |
@@ -57,9 +55,8 @@ Rendered: `site/components/input.html#anatomy`
 </div>
 ```
 
-Every state is rendered together in the site page's state matrix. The `.is-hover`,
-`.is-focus`, `.is-active` and `.is-disabled` helpers are **documentation scaffolding
-only** — production code uses the real pseudo-classes.
+The `.is-hover`, `.is-focus`, `.is-active` and `.is-disabled`
+helpers are **documentation scaffolding only** — production code uses the real pseudo-classes.
 
 ## DO / DON'T
 

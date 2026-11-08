@@ -4,8 +4,6 @@
 
 Three ways to put something on top. At folded width a modal becomes a bottom sheet, so the decision arrives inside the thumb arc rather than in the middle of a screen nobody can reach one-handed. A popover is also every menu: a ⋯ overflow, a dropdown, a picker and a flyout all use `.popover-item` rows, one line or label + description.
 
-Rendered: `site/components/overlay.html#modal`
-
 ## Styles
 
 | Class | Role | Notes |

@@ -184,27 +184,14 @@ const mdTable = (head, rows) =>
   `| ${head.join(' | ')} |\n|${head.map(() => '---').join('|')}|\n` +
   rows.map((r) => `| ${r.join(' | ')} |`).join('\n');
 
-// The `Rendered:` anchor is picked from the ids this entry's page actually
-// emits (its own sections, then the table sections), never a string kept
-// beside the model. Foundations and brand topics cite their spec table; a
-// component cites its variants section, else its first demo — the part a
-// builder reads first.
-const anchorOf = (dir, entry) => {
-  const ids = [...entry.sections.map((s) => s.id), ...(entry.spec ? ['spec'] : []), 'styles', 'tokens', 'usage'];
-  const want = dir === 'components' ? ['variants', entry.sections[0]?.id] : ['spec', entry.sections[0]?.id];
-  const id = want.find((w) => w && ids.includes(w));
-  if (!id) throw new Error(`${dir}/${entry.slug}: no anchorable section`);
-  return id;
-};
-
-for (const { dir, entry, path } of written) {
+// The reference docs are what agents read, and they never mention the showcase
+// site: it is for people. audit.mjs checks that no doc does.
+for (const { dir, entry } of written) {
   const md = `# ${entry.title}
 
 ## Purpose
 
 ${entry.purpose}
-
-Rendered: \`${path}#${anchorOf(dir, entry)}\`
 
 ## Styles
 
@@ -228,9 +215,8 @@ ${entry.snippets.map(([name, code]) => `### ${name}
 ${code}
 \`\`\`
 `).join('\n')}
-${entry.classes.some(([c]) => c.includes('.is-')) ? `Every state is rendered together in the site page's state matrix. The \`.is-hover\`,
-\`.is-focus\`, \`.is-active\` and \`.is-disabled\` helpers are **documentation scaffolding
-only** — production code uses the real pseudo-classes.
+${entry.classes.some(([c]) => c.includes('.is-')) ? `The \`.is-hover\`, \`.is-focus\`, \`.is-active\` and \`.is-disabled\`
+helpers are **documentation scaffolding only** — production code uses the real pseudo-classes.
 ` : ''}` : ''}${entry.subsections ? entry.subsections.map(([h, body]) => `
 ### ${h}
 

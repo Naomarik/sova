@@ -72,7 +72,7 @@ export interface SubagentProfile {
 	 * Retired: members run on their work kind's route (Delegate's four). Always null as parsed and
 	 * written; the key stays in the file because older readers require it. Any saved value is ignored.
 	 */
-	members: WorkerChoice | null;
+	members: null;
 	/** null: the session writes the spec itself. */
 	specWriter: SpecWriter | null;
 	/**

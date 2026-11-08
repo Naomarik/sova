@@ -62,7 +62,7 @@ test("every chosen row needs a model and an effort, whichever section it sits in
   delegated.delegate.complex.primary = claude("", "");
   assert.match(profilesProblem(file([delegated]))!, /model and an effort/);
   // Members have no row (they follow Delegate's work kinds): a saved incomplete value never holds Save.
-  const members = validProfile({ members: { backend: "pi", model: "zai/glm-5.3", effort: "" } });
+  const members = validProfile({ members: { backend: "pi", model: "zai/glm-5.3", effort: "" } as never });
   assert.equal(profilesProblem(file([members])), null);
   const teams = validProfile({
     teams: {

@@ -50,7 +50,7 @@ describe("the joined list", () => {
     assert.equal(pair.libraryId, "claude-lib");
     assert.equal(pair.library?.name, "Claude helpers");
     assert.equal(pair.helperRoles, 4);
-    const withMembers = rows([session("m", "M", { subagents: "ml" })], [{ ...lib("ml", "ML"), members: worker("b/two") }]);
+    const withMembers = rows([session("m", "M", { subagents: "ml" })], [{ ...lib("ml", "ML"), members: worker("b/two") as never }]);
     assert.equal(withMembers.find((x) => x.key === "user:m")!.helperRoles, 4, "members are no helper role of a profile's");
     // The chat's own model first, Claude by its catalog name, then the helpers' distinct primaries.
     assert.equal(pair.footprint, "Opus 5.5 + gpt-6.1-sol + glm-5.3");

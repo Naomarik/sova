@@ -90,7 +90,7 @@ test("the footprint: distinct models, the chat's own first, at most 3 then +N; n
   const row = { key: "k", name: "n", starts: null, model: "claude-code-cli/claude-opus-5-5", thinking: null, lib: "x" };
   assert.equal(footprintOfDraft(row, h), "Opus 5.5 + one + two +2");
   assert.equal(footprintOfDraft({ ...row, model: null, lib: null }, undefined), "Keeps the chat's own model");
-  assert.equal(footprintOfDraft({ ...row, model: null }, { ...h, members: w("pi", "z/members", "low") }), "one + two + three +1", "a saved members value is no model of the profile's");
+  assert.equal(footprintOfDraft({ ...row, model: null }, { ...h, members: w("pi", "z/members", "low") as never }), "one + two + three +1", "a saved members value is no model of the profile's");
 });
 
 test("Set All To: every model row to the pick on its own backend, This chat included; each effort kept where the model takes it", () => {
@@ -111,7 +111,7 @@ test("Set All To: every model row to the pick on its own backend, This chat incl
   assert.equal(h.teams, null, "a row holding no model (the roles on the default model) stays");
   assert.equal(h.members, null);
   const withMembers: ProfilesDraft = JSON.parse(JSON.stringify(d));
-  withMembers.library.c!.members = w("pi", "zai/glm-5.3", "low");
+  withMembers.library.c!.members = w("pi", "zai/glm-5.3", "low") as never;
   const set = setAllTo(withMembers, "user:claude", { backend: "pi", model: "openai/gpt-6.1-sol" }, { efforts: () => null, levels: () => null });
   assert.deepEqual(set.library.c!.members, w("pi", "zai/glm-5.3", "low"), "Set All has no Members target: a saved value is left as it is");
   const chat = next.rows.find((r) => r.key === "user:claude")!;

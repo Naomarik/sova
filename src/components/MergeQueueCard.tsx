@@ -83,8 +83,12 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
     // By the card's own id: an outside card's row id shares its "card:" prefix with every other outside card's.
     const root = transcriptRoot(session?.path);
     ensureRendered(outsideCardRowId(reviewRowCardId(p.id)), root);
-    const el = root?.querySelector<HTMLElement>(`[data-card-id="${CSS.escape(reviewRowCardId(p.id))}"]`);
-    if (el) el.scrollIntoView({ block: "center", behavior: "instant" });
+    const el = root?.querySelector<HTMLElement>(`[data-card-id="${CSS.escape(reviewRowCardId(p.id))}"] .mq-review-card`);
+    // Its top, not its middle: a long report is taller than the screen. Focus follows, for keyboard and screen readers.
+    if (el) {
+      el.scrollIntoView({ block: "start", behavior: "instant" });
+      el.focus({ preventScroll: true });
+    }
     else toast("That card isn't in the transcript on screen.");
   };
   const reviewHref = () => {

@@ -1914,7 +1914,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-card-folded .disclosure-label { overflow-wrap: anywhere; }
 .mq-chat-card .mq-card-pointer { display: inline; }
 /* A blocking review's own card (§chat.merge-queue/review-card): every finding whole, one row each. */
-.mq-review-card { padding: var(--space-3) var(--space-4); display: grid; gap: var(--space-2); }
+.mq-review-card { padding: var(--space-3) var(--space-4); display: grid; gap: var(--space-2); scroll-margin-top: var(--space-3); }
 .mq-review-card p { margin: 0; }
 .mq-review-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .mq-review-title { font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); }

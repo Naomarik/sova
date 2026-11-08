@@ -54,7 +54,7 @@ function Body(props: { review: Review; readOnly?: boolean }) {
     else toast("That card isn't in the transcript on screen.");
   };
   return (
-    <div class="card mq-review-card" role="group" aria-label={reviewCardLabel(r())} data-state={r().state} data-branch={r().branch}>
+    <div class="card mq-review-card" tabindex="-1" role="group" aria-label={reviewCardLabel(r())} data-state={r().state} data-branch={r().branch}>
       <div class="mq-review-head">
         <span class="icon icon-sm" style={{ "--icon": "url(/icons/alert-circle.svg)" }} aria-hidden="true" />
         <span class="mq-review-title">Review found issues</span>

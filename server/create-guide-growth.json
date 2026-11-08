@@ -413,6 +413,8 @@
    "session.configure": "scripts",
    "session.mode.get": "scripts",
    "session.mode.set": "scripts",
+   "session.profile.switch": "scripts",
+   "session.profile.switch.cancel": "scripts",
    "session.send": "scripts",
    "session.fork": "scripts",
    "session.draft.get": "scripts",

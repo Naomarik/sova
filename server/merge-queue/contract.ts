@@ -158,8 +158,10 @@ export interface ThreadEvent {
   /** conflict: the scratch copy Sova made for the thread to resolve in (scratch.ts), or why it couldn't. */
   scratch?: string;
   scratchError?: string;
-  /** review: the blocking verdict's findings. */
+  /** review: the blocking verdict's whole report. */
   findings?: string;
+  /** review: it already waits for the user (out of tries, or the same findings twice): nothing to hand on. */
+  waits?: "out-of-tries" | "same-twice";
   /** fix / chat-answer / drafts-changed: the request (rq_…) it is about; fix: what it asked. */
   request?: string;
   asked?: string;

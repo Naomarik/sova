@@ -11,6 +11,7 @@ import { after } from "node:test";
 import type { MergeEntry } from "../../../shared/merge-queue";
 import { type HarnessOptions, type QueueHarness, startHarness } from "./harness";
 import { Fixture, git } from "./repo";
+import { checkReviewText } from "../review-verdict";
 
 process.env.PI_CODING_AGENT_DIR = realpathSync(mkdtempSync(join(tmpdir(), "sova-mq-agent-")));
 export const STATE = process.env.PI_CODING_AGENT_DIR;
@@ -76,7 +77,13 @@ export const reviewer: HarnessOptions["reviewer"] = async ({ commit, copy }) => 
   const c = git(copy, ["show", `${commit}:review.conf`]).trim();
   if (c === "crash") return "crash";
   if (c === "hang") return "hang";
-  if (c.startsWith("blocking")) return { verdict: "blocking", text: c.slice(9).trim() };
-  if (c.startsWith("notes")) return { verdict: "notes", text: c.slice(6).trim() };
+  // As merge.review takes it (routes.ts): checked, its findings parsed; a bare text is its summary and one finding.
+  const said = (verdict: "notes" | "blocking", t: string) => {
+    const r = checkReviewText(verdict, t.includes("\n- [") ? t : `${t}\n- [other] ${t}`);
+    if ("why" in r) throw new Error(`the stand-in review is malformed: ${r.why}`);
+    return { verdict, text: r.text, summary: r.summary, findings: r.findings };
+  };
+  if (c.startsWith("blocking")) return said("blocking", c.slice(9).trim());
+  if (c.startsWith("notes")) return said("notes", c.slice(6).trim());
   return { verdict: "ok" };
 };

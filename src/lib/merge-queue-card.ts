@@ -1,7 +1,8 @@
 // The merge queue's card in the chat that built a branch (shared/merge-queue.ts MergeCard): one card per
 // branch from Land onward. It updates in place while queued and checking; each outcome is a new revision
 // at the bottom, and earlier copies fold to one line. Pure words: no Solid, no DOM.
-import type { MergeCard, MergeCardRevision } from "../../shared/merge-queue";
+import type { MergeCard, MergeCardRevision, ReviewFinding } from "../../shared/merge-queue";
+import { reviewFoundWords } from "./merge-review-card";
 import { newerWords, ordinal } from "../../shared/merge-queue";
 import type { CardInfo } from "../../shared/transcript-cards";
 import { mins, notesOf, sentence, short } from "./merge-queue";
@@ -107,7 +108,29 @@ export const CARD_ACTION_LABEL: Record<CardAction, string> = {
   remove: "Remove from Queue",
 };
 
-export const cardNotes = (c: Pick<MergeCard, "notes">) => notesOf(c.notes);
+/** The card's notes. A review's notes listed in full (the Landed card's folded "Review: {summary}") aren't repeated as
+ *  the one-line "Review" note. */
+export const cardNotes = (c: Pick<MergeCard, "notes"> & Partial<Pick<MergeCard, "review">>) => {
+  const notes = notesOf(c.notes);
+  return reviewNotes(c) ? notes.filter((n) => n.label !== "Review") : notes;
+};
+
+/** A Landed card's review notes, listed in full: "Review: {summary}" and its findings; null when there are none. */
+export function reviewNotes(c: Partial<Pick<MergeCard, "review" | "state">>): { summary: string; findings: ReviewFinding[] } | null {
+  const r = c.review;
+  if (c.state !== "landed" || !r || r.verdict !== "notes" || !r.findings?.length) return null;
+  return { summary: r.summary ?? "", findings: r.findings };
+}
+
+/** A blocking review's pointer on the card: "Review found 3 issues", with the try it was ("try 1 of 3"), or null. The
+ *  card then shows no reason line and no Review failing check: the review card holds them. */
+export function reviewPointer(c: Partial<Pick<MergeCard, "reviewFound" | "state">> & CardAutomation): { tries: string | null; words: string; id: string; session: string; path?: string } | null {
+  const p = c.reviewFound;
+  if (!p || c.state === "landed" || c.state === "cancelled") return null;
+  const s = c.standing;
+  const tries = s?.phase === "with-chat" && !s.checked && s.try > 0 ? `try ${s.try} of ${s.of}` : null;
+  return { tries, words: reviewFoundWords(p.count), id: p.card, session: p.session, ...(p.path ? { path: p.path } : {}) };
+}
 
 /** What the card offers. Every one is a merge verb; none writes into the chat. There is no Send Back and no re-land:
  *  the user's one Land stands while the queue, the merge thread and the chat fix what blocks it (al_3). Remove from

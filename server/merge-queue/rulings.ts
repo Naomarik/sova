@@ -8,7 +8,8 @@
  * No fs, no queue state: queue.ts calls these.
  */
 import { join } from "node:path";
-import type { MergeEntry, MergeRun, SentBackFor } from "../../shared/merge-queue";
+import type { MergeEntry, MergeRun, ReviewFinding, SentBackFor } from "../../shared/merge-queue";
+import { reviewPrint } from "./review-record";
 
 /** merge.resolve's verdicts on a conflict. "behaviour-differs" (the old word) reads as "needs-user". */
 export const RESOLVE_VERDICTS = ["no-behaviour-change", "chat-fixes", "needs-user"] as const;
@@ -76,13 +77,14 @@ export function branchFailures(run: MergeRun): { step: string; label: string; de
  * failing steps and their failing tests or files; a conflict: the conflicting files; a review: its findings; drafts:
  * the docs step's detail. Order never matters.
  */
-export function fingerprintOf(f: { cause: SentBackFor | "review"; run?: MergeRun; files?: string[]; review?: string; why?: string; tails?: Record<string, string> }): string {
+export function fingerprintOf(f: { cause: SentBackFor | "review"; run?: MergeRun; files?: string[]; review?: string; findings?: readonly ReviewFinding[]; why?: string; tails?: Record<string, string> }): string {
   const sorted = (xs: string[]) => [...new Set(xs)].sort().join(",");
   switch (f.cause) {
     case "conflict":
       return `conflict:${sorted(f.files ?? [])}`;
     case "review":
-      return `review:${normalise(f.review ?? "")}`;
+      // Every finding, whole (a text-only one from before findings were kept: its words).
+      return f.findings?.length ? `review:${reviewPrint(f.findings)}` : `review:${normalise(f.review ?? "")}`;
     case "checks":
     case "drafts": {
       // A step with no parsed tests (a typecheck, a build, the docs step) is told apart by what it says: its detail and
@@ -125,9 +127,9 @@ export interface SendBackFacts {
   logDir?: string;
   /** conflict: the files as they conflict on the newest target, from this run only. */
   files?: string[];
-  /** review: the reviewer's findings. */
+  /** review: the reviewer's whole report, as written (review-record.ts reportText). */
   review?: string;
-  /** The merge thread's diagnosis, when it gave one. */
+  /** The merge thread's diagnosis, when it gave one (on a review: its note). */
   diagnosis?: string;
   /** This try and the tries the standing approval has. */
   attempt?: { try: number; of: number };
@@ -149,8 +151,10 @@ export function sendBackText(e: Pick<MergeEntry, "branch" | "target" | "commit">
       break;
     }
     case "review":
+      // The reviewer's own words, every finding as written; the thread's note after them, never in their place.
       lines.push(`The merge queue's review found problems in ${e.branch} at ${e.commit.slice(0, 7)}${tryWords}:`);
       if (f.review?.trim()) lines.push(f.review.trim());
+      if (f.diagnosis?.trim()) lines.push(`Merge thread: ${f.diagnosis.trim()}`);
       lines.push("Address each finding and commit.");
       break;
     case "drafts":
@@ -166,7 +170,7 @@ export function sendBackText(e: Pick<MergeEntry, "branch" | "target" | "commit">
       if (f.cause === "checks") lines.push(`It passes on ${e.target} alone in the same copy, so it is this branch's to fix. Fix it and commit.`);
     }
   }
-  if (f.diagnosis?.trim()) lines.push(`The merge thread's diagnosis: ${f.diagnosis.trim()}`);
+  if (f.diagnosis?.trim() && f.cause !== "review") lines.push(`The merge thread's diagnosis: ${f.diagnosis.trim()}`);
   // Short, since a batch's own line (MERGE_QUEUE_ANSWER_LINE) says it in full; a request reaching the chat any other way
   // (a chat that takes no notes) still names the verb.
   lines.push('Change only what this asks, then answer this request by its id with merge.respond: "fixed", "needs-you" (the question, its choices) or "cant". The user\'s Land stands: your checked fix goes back in line by itself.');

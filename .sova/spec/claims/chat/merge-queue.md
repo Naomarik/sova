@@ -8,7 +8,8 @@ only through the merge verbs (§app.project-services/merge-verbs), and the queue
 
 The chat that built a branch follows its trip through the queue on one card per branch
 (§chat.merge-queue/chat-card), and its model hears of it without a message pretending to be the
-user's (§chat.merge-queue/chat-turns). What the queue asks of the chat arrives as requests on a chat
+user's (§chat.merge-queue/chat-turns). A review that blocks the branch also gets a card of its own,
+with the reviewer's whole report (§chat.merge-queue/review-card). What the queue asks of the chat arrives as requests on a chat
 queue Sova opens there (§chat.merge-queue/requests); the chat answers each one Fixed, Needs you or
 Can't (§chat.merge-queue/answers); and what only the user can decide waits on the card as one
 decision, answered from the chat's message box (§chat.merge-queue/decision).
@@ -65,8 +66,15 @@ approval, when:
   never makes a worktree or a branch of its own for it (§app.merge-queue/resolve-copy).
 - **a run failed on the branch.** It explains the failure as the entry's note and gives the chat its
   diagnosis, which goes with the request (§app.merge-queue/send-back).
-- **a failure whose owner can't be told, a blocking review, a resolution of its own that failed a
-  check.** It rules what happens: the chat fixes it, it tries again, or it needs the user
+- **a review blocked.** It gets the whole report and hands it to the branch's chat with
+  `merge.rule` chat-fixes, never retyping a finding: Sova delivers the reviewer's words
+  (§app.merge-queue/send-back). It may add a note with the hand-off, or later as a further
+  chat-fixes with its text while the entry is back with the chat; `merge.note` stays the landing
+  note and never reaches the chat. It may instead rule that it needs the user
+  (§app.merge-queue/needs-user). A review whose try runs out (the last try, or the same findings
+  twice) already waits for the user: the thread gets its report and is told nothing is to hand on.
+- **a failure whose owner can't be told, a resolution of its own that failed a check.** It rules
+  what happens: the chat fixes it, it tries again, or it needs the user
   (§app.merge-queue/needs-user).
 - **a fix arrived.** From a range-diff of the branch as approved against the branch now, from the
   merge base, it rules whether the fix changes only what was asked and decides nothing of the user's
@@ -92,6 +100,8 @@ missing, slow or failing:
 - the landing has no note;
 - a conflict waits for it, never going to the chat unjudged (§app.merge-queue/conflicts);
 - a failure goes back to the chat without a diagnosis;
+- a blocking review's report goes to the chat by itself after 5 minutes, without a note, or at once
+  when no merge thread is running;
 - a fix waits for it, never for the user, and lands only once checked
   (§app.merge-queue/standing-approval).
 
@@ -112,7 +122,12 @@ It may:
   own (§chat.merge-queue/thread-sandbox).
 
 It may not approve, cancel or land an entry, answer a decision for the user, pause or resume the
-queue, merge into the target, or push. It never sets the queue up or changes its setup: that is the
+queue, merge into the target, or push. It can't remove, rewrite or soften a review's finding: it
+has no verb for it, and Sova delivers the reviewer's words as written. Its note on a review is
+short (at most 500 characters) and says only what the findings don't: a note that repeats any 40
+characters of the reviewer's summary or a finding is refused, saying the findings already go as the
+reviewer wrote them, and nothing goes to the chat for it. It never sets the queue up or changes its
+setup: that is the
 project's Setup chat, a separate chat the user talks to (§app/project-setup), and the thread neither
 starts it nor calls `merge.try` or `merge.setup`. It messages no other chat directly: what it wants
 of a branch's chat goes as the queue's requests (§chat.merge-queue/requests). When it needs the user
@@ -299,7 +314,9 @@ approved one), the worktree's path, and **View Merge Queue**. While queued it sa
 - **Landed** looks like the Merged card a chat's own merge gets (§chat.worktrees/merge-card): a
   LANDED pill, "{branch} into {target} {sha}", "{n} commits · +{a} −{d} · {time}" (counted at the
   landing, from the target before it to the approved commit, so they never drift), the merge
-  thread's note, Sova's other notes (flaky tests, review notes, what a resolved conflict did), the
+  thread's note, Sova's other notes (flaky tests, review notes, what a resolved conflict did; the
+  review's notes in full, "Review: {summary}", folded, opening to one row per note as on the review
+  card, §chat.merge-queue/review-card), the
   reason once when the push didn't happen ("Push held: {why}." when the queue's reason already says
   it is held, else "Not pushed: {why}.", or "Not pushed: this project doesn't push from the
   queue."), and "1 newer commit not included" with **Land Again** when the branch moved past the
@@ -342,7 +359,12 @@ Beside Queued, Checking and Landed (§chat.merge-queue/chat-card), the card read
 - **Back with the chat** (in place) gives the reason with **See Why**, "try {n} of 3" (none for a
   conflict that was already there at the Land, which costs no try), and lists the failing checks
   ("Unit tests · 1 failed") with their failing tests and a link to each log, or the conflicting
-  files, or the review's findings. The merge thread's diagnosis is added as it arrives ("Merge
+  files. For a blocking review the state line ends "Review found {k} issues" ("1 issue"), which
+  jumps to the review card (§chat.merge-queue/review-card), landing on its top and focusing it; when
+  that card stands in another chat (a worker's branch, in the chat that runs it), it is a link that
+  opens that chat on the card. The reason isn't repeated under it, and the review isn't listed as a
+  failing check, since its findings and the merge thread's note are on that card. The line shows
+  while the review is with the merge thread, being fixed or waiting for the user. The merge thread's diagnosis of any other failure is added as it arrives ("Merge
   thread: …"), and so is the chat's answer ("Fixed: commit 4fec160", "Fixed: drafts", "Fixed: commit
   4fec160 and drafts", "Needs you: …", "Can't: …"). A fix that arrives while the entry's run is
   checking reads "Back with the chat · Fix waits for the run checking now". It offers **Remove from
@@ -380,6 +402,79 @@ composer's modal and the pane, kept in sync with them. They are catalogue comman
 verbs (§app.project-services/merge-verbs): they act on the queue directly, never type into the chat,
 and count only as the user's own click in Sova's page (§app.access/your-click).
 
+## §chat.merge-queue/review-card — Review found issues: a blocking review's own card
+
+When the review blocks a branch (§app.merge-queue/review), the chat gets a **Review found issues**
+card for that review: the reviewer's whole report, uncut, the merge thread's note, and how the fix
+is going. There is one card per review that blocks, apart from the branch's queue card
+(§chat.merge-queue/chat-card), which only points to it.
+
+**Where it stands.** It appears at the bottom of the chat when the review blocks, after what was
+then the transcript's last row, where the chat is about to work on the fix; the request's folded
+row comes below it (§chat.merge-queue/requests). It stands in the chat the review's request goes
+to: for a worker's branch, the chat that runs the worker, up to the top chat when workers run
+workers (§chat.merge-queue/chat-turns); when no such chat is known, the branch's own chat. It
+changes in place as the fix goes on and never moves or shifts the rows above it. A blocking review
+on an entry with no standing approval (a release's) gets no record and no card.
+
+**What it shows.** A **Found issues** chip; "{branch} into {target} · {sha} · try {n} of 3", {sha}
+the branch's commit that was reviewed; the reviewer's summary; then one row per finding, in the
+reviewer's order: its kind as a word (Dead code, Duplication, Hack, Missing test, Naming, Other),
+its file and line in mono when it names one, and its text, whole, as the reviewer wrote it. Under
+the findings, the merge thread's note, "Merge thread: {note}", once it gives one; then the state
+line; then **See Run** (the run page of the run that reviewed it) and **Open Reviewer Chat** (that
+review's reviewer chat, readable once archived; a cleared one reads "Reviewer chat cleared" with no
+link, §app.merge-queue/chats). It has no text box and no action on the queue.
+
+**A finding's file.** A finding's file and line opens the changes viewer (§chat.changes/entry) on
+that file in the change that was reviewed: the commit the reviewer read (the branch merged onto the
+target, its drafts made official) against the target it was merged onto, so the reviewer's line
+numbers match. It opens on the file, not scrolled to the line. Once that reviewed commit is no
+longer kept (whether it is, is read again each time the chat's cards are read), the file opens on
+the branch as it is now against the target instead, and the card says once, under its findings,
+"The reviewed commit is gone: lines may have moved." A finding that names no file has no link.
+
+**Its states**, in place. The card follows the review it belongs to, never the branch's newest state:
+- **With the merge thread**: the review blocked and the merge thread has the whole report
+  (§chat.merge-queue/thread).
+- **Fixing**: the chat has the request: "Fixing · this chat answers when it's done".
+- **Fix sent · re-reviewing**: the chat answered Fixed and the fix was checked
+  (§app.merge-queue/standing-approval), or the merge thread put the entry back in line; it holds
+  while the next run checks it.
+- **Stopped before re-review**: the next run was sent back for something else: "a check failed: …"
+  (the check's first line), "its spec drafts didn't fit" or "a conflict with {target}". It reads so
+  whatever that run's reviewer answered, since no re-review passed it. The card keeps its findings,
+  and goes back to Fix sent · re-reviewing when the branch is next checked.
+- **Passed on re-review**: the next review didn't block; the queue card's Landed revision follows
+  below as usual.
+- **Waiting for you**: the entry waits for the user's decision: the chat answered Needs you, a Can't
+  reached the user, the merge thread ruled it needs the user (§app.merge-queue/needs-user), or it ran
+  out of tries, the same findings twice included (§app.merge-queue/tries). The decision itself
+  stays on the queue card (§chat.merge-queue/decision); "Waiting for you" is a link that goes to it
+  when it is on screen. Once the user answers it and the report goes to the chat with their answer,
+  the card reads Fixing again (§app.merge-queue/send-back).
+- **Removed**: the user pressed Remove from Queue.
+
+**Blocked again.** When the re-review blocks again, a new card appears at the bottom for that
+review, with its own findings and try. The earlier one folds to one line, "Review · try {n} · {k}
+issues · fixed" ("1 issue"), which opens it as it was, read-only, its links (See Run, Open
+Reviewer Chat, its files) and nothing else. Each review keeps its own report: a later review never
+changes an earlier one's card.
+
+**One record.** The card, the chat's request with its folded row, and the run's log all come from
+one saved record of that review, kept with the queue's records (§app.merge-queue/review), so they
+never disagree. The card is a kind built into Sova on the transcript toolkit
+(§chat.transcript-cards/built-ins), raised by the server from those records; nothing is written into
+the chat's session file. It is read with the chat's queue cards (`GET /api/merge-queue/cards`,
+whose answer carries them beside the queue cards) and follows the session feed, and a restart never
+adds it twice.
+
+**In every chat Sova shows**: on reload, in an archived chat (shown from its record when it is
+opened), and in a chat that can't take requests (archived, or open in a terminal, drawn in its
+read-only watch view with nothing written to its session file), where it is the only place the
+findings show. It sends no notification: a blocked review reaches the user only when
+it needs them (§app.notifications/delivery).
+
 ## §chat.merge-queue/chat-turns — What the queue tells the chat's model
 
 The queue never sends a chat a message that looks typed by the user: no "Sova: …" message is put
@@ -395,17 +490,19 @@ the queue turns down for that reason, said as below.
   next turn, in a block of the chat's card note (so chats started before this shipped get it too).
   The block's first line is "From Sova's merge queue (not the user's words; nothing to answer):",
   then one line per fact, for example "feat/x landed on master at 4fec160, 8 commits. Note: …", or
-  that the branch's spec drafts changed since the approval. Each fact is given once, even across a
-  server restart. The line is kept apart from the card, so it reaches the model whatever happened to
-  the card.
+  that the branch's spec drafts changed since the approval. A landing with review notes adds them,
+  whole: "Review notes: …", so the model is told of them quietly and no turn starts for them. Each
+  fact is given once, even across a server restart. The line is kept apart from the card, so it
+  reaches the model whatever happened to the card.
 - **Requests start a turn**, as batches on the merge queue's chat queue in the owning chat
   (§chat.merge-queue/requests): every send-back (a failure that is the branch's, a conflict the chat
-  fixes, the review's findings, drafts that don't fit, the host's failing checks, changes requested
+  fixes, a blocking review's report, drafts that don't fit, the host's failing checks, changes requested
   or conflicts; §app.merge-queue/send-back), what still blocks a finished branch, before or after
   Land (§chat.worktrees/ready-to-land), and a merge thread's other approach after a "Can't". Each
   request carries what the card shows (the failing checks and where their logs are, the conflicting
-  files as they are on the newest target, the review's findings, what doesn't fit) and the merge
-  thread's diagnosis, and asks the chat to answer Fixed, Needs you or Can't
+  files as they are on the newest target, a blocking review's whole report as the reviewer wrote it,
+  what doesn't fit) and the merge thread's diagnosis (for a review, its note), and asks the chat to
+  answer Fixed, Needs you or Can't
   (§chat.merge-queue/answers). After a Land, it tells the chat that the user's Land stands, so once
   its fix is checked the branch goes back in line by itself, and that it must not ask the user to
   land it again; a batch of before-Land requests only says nothing of a Land. A request is never
@@ -489,8 +586,10 @@ The user can always open the merge thread and talk to it directly; that is never
 
 Everything the merge queue asks of a branch's chat reaches it as a **request**: a note on a chat
 queue (§chat/topics) Sova opens in that chat, from the sender **Merge queue**. The branch's queue
-card (§chat.merge-queue/chat-card) stays the one place its state and the chat's answers show; there
-is no second card.
+card (§chat.merge-queue/chat-card) stays the one place its state and the chat's answers show. The
+one other card is a blocking review's own, **Review found issues** (§chat.merge-queue/review-card),
+one per review, drawn from the same saved record of that review as its request, so the two never
+disagree.
 
 - **One queue per chat.** Sova opens it the first time it has a request for the chat (for a worker's
   branch, the chat that runs the worker, §chat.merge-queue/chat-turns), on base `merge-queue`

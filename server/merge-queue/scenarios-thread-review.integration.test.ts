@@ -123,20 +123,20 @@ describe("review", () => {
     assert.ok(l.notes.some((n) => n.kind === "review" && /name x is unclear/.test(n.text)), JSON.stringify(l.notes));
   });
 
-  test("S17c: review blocking: its findings go back to the chat by themselves, the thread is told; Land Anyway is never offered over a review", async () => {
+  test("S17c: review blocking: its whole report goes to the thread, which hands it on with a note; the chat gets the reviewer's words; Land Anyway is never offered over a review", async () => {
     let told = "";
-    const { fx, h } = await setup({ review: true }, { reviewer, thread: { review: async (_h, _e, ev) => void (told = ev.findings ?? "") } });
+    const { fx, h } = await setup({ review: true }, { reviewer, thread: { review: async (hh, e, ev) => void ((told = ev.findings ?? ""), await hh.rule(e.id, { ruling: "chat-fixes", text: "Delete it rather than hide it." })) } });
     const base = fx.head();
     const b = fx.branch("b", { "review.conf": "blocking: dead code left in\n" });
     const e = await h.add({ branch: b.branch });
-    const w = await h.waitEntry(e.id, settled);
-    assert.equal(w.state, "with-chat", `${w.state}: ${w.reason}`);
+    const w = await h.waitEntry(e.id, (x) => x.state === "with-chat" && !!x.requests?.length);
     assert.match(w.reason ?? "", /dead code/);
-    assert.match(w.requests?.at(-1)?.text ?? "", /review found problems[\s\S]*dead code left in/);
+    const text = w.requests!.at(-1)!.text;
+    assert.match(text, /review found problems[\s\S]*- \[other\] dead code left in[\s\S]*Merge thread: Delete it rather than hide it\./);
+    assert.match(told, /dead code/);
+    assert.deepEqual({ state: w.reviews?.at(-1)?.state, note: w.reviews?.at(-1)?.note?.text, findings: w.reviews?.at(-1)?.findings.length }, { state: "fixing", note: "Delete it rather than hide it.", findings: 1 });
     assert.ok(h.notices.some((n) => n.branch === b.branch && n.kind === "needs-fix"), "its chat is sent the request");
     assert.equal(fx.head(), base);
-    await until("the thread told of the blocking verdict", () => !!told);
-    assert.match(told, /dead code/);
     await assert.rejects(h.answer(e.id, "land-anyway"), /Land Anyway answers a failure no one can be blamed for/);
     assert.equal(fx.head(), base);
   });

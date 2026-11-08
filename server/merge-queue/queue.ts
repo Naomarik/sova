@@ -29,6 +29,7 @@ import {
   type PauseInfo,
   type PauseKind,
   type PushState,
+  type ReviewFinding,
   type ReviewVerdict,
   type RunStep,
   type SentBackFor,
@@ -43,6 +44,7 @@ import { sanityCheck } from "./conflicts";
 import { cleanChoices, fingerprintOf, isRuling, resolveVerdict, RULING_TEXT_MAX, RULING_WAIT_MS, type Ruling, sendBackText } from "./rulings";
 import { estimateFromRuns } from "./estimate";
 import { deliverReview } from "./review-step";
+import { applyReviewEvent, openReview, reportText, reviewNoteText, reviewRecord, type ReviewEvent } from "./review-record";
 import { invalidOf, resolveTarget, setUpOf } from "./served";
 import { isFinal, newId, type QueueFile, QueueStore } from "./store";
 import { hasOrigin, publishGit, revertCommit, withdrawGit } from "./release-git";
@@ -97,6 +99,32 @@ const REQUESTS_KEPT = 30;
 /** entry.fix.request while a conflict waits for the merge thread (no request of the chat's is involved). */
 const CONFLICT_WAIT = "conflict";
 /** The states Remove from Queue ends as "removed by you" under a standing approval (out of line, waiting on someone). */
+/** A merge thread's note on a blocking review: short, and never the findings again (Sova sends them as written). */
+export const REVIEW_NOTE_MAX = 500;
+function reviewNoteOk(r: { summary: string; findings: { text: string }[] }, note: string): void {
+  if (!note) return;
+  const said = "the findings already go to the chat as the reviewer wrote them; add only what they don't say";
+  if (note.length > REVIEW_NOTE_MAX) throw new MergeFailure("invalid-request", `a note on a review is at most ${REVIEW_NOTE_MAX} characters: ${said}`);
+  const flat = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
+  const n = flat(note);
+  // Any 40 characters of the summary or a finding, repeated: refused (a short finding may still be named by its words).
+  const repeats = [r.summary, ...r.findings.map((f) => f.text)].some((t) => {
+    const f = flat(t);
+    if (f.length < 40) return false;
+    for (let i = 0; i + 40 <= f.length; i += 20) if (n.includes(f.slice(i, i + 40))) return true;
+    return false;
+  });
+  if (repeats) throw new MergeFailure("invalid-request", `the note repeats the review: ${said}`);
+}
+
+/** Blocking reviews kept per entry (each its own card); the tries bound them well below this. */
+const REVIEWS_KEPT = 10;
+/** Why a run stopped before its review, one line (the review card's Stopped). */
+function stoppedWhy(out: { verdict: string; cause?: string; why?: string }, target: string): string {
+  if (out.verdict === "conflict") return `a conflict with ${target}`;
+  if (out.cause === "drafts") return "its spec drafts didn't fit";
+  return `a check failed${out.why ? `: ${out.why.split("\n")[0]!.slice(0, 160)}` : ""}`;
+}
 const REMOVABLE: readonly string[] = ["needs-user", "drafts-changed", "behaviour-differs", "unattributed", "review-flagged", "conflict"];
 /** The states a chat's answer is taken in: back with it, its drafts changed, or in line (a fix then waits for the run). */
 const ANSWERABLE: readonly string[] = ["with-chat", "queued", "checking"];
@@ -1350,6 +1378,7 @@ export class ProjectQueue {
         delete e.pausedFrom;
         e.state = "cancelled";
         e.reason = "removed by you";
+        this.reviewEvent(e, { kind: "removed" });
         e.updatedAt = this.iso();
         if (note !== undefined) this.setNote(e, note, "thread");
         this.save();
@@ -1574,6 +1603,23 @@ export class ProjectQueue {
       if (r.note !== undefined) this.setNote(e, r.note, "thread");
       switch (ruling) {
         case "chat-fixes": {
+          // A blocking review is handed on with no text (Sova sends the reviewer's words); its text is the thread's note.
+          const review = e.ruling?.pending?.cause === "review" ? openReview(e) : undefined;
+          const later = !e.ruling?.pending && e.state === "with-chat" && e.sentBackFor === "review" ? openReview(e) : undefined;
+          if (review || later) reviewNoteOk(review ?? later!, text);
+          if (review) {
+            const p = e.ruling!.pending!;
+            this.sendBack(e, { cause: "review", why: p.why, ...(p.run ? { runId: p.run } : {}), ...(p.review ? { review: p.review } : {}), ...(text ? { diagnosis: text } : {}) });
+            break;
+          }
+          if (later) {
+            if (!text) throw new MergeFailure("invalid-request", "the review went to the chat already: give your note (text) to add to it");
+            // A note after the hand-off: on that review's record and card, and to the chat as a short request, no try.
+            later.note = { text, at: this.iso() };
+            later.updatedAt = this.iso();
+            this.request(e, "fix", reviewNoteText(e, later, text), {});
+            break;
+          }
           if (!text) throw new MergeFailure("invalid-request", "give your diagnosis (text): what failed, what in the branch causes it, what to change");
           if (e.state === "conflict") {
             const files = e.conflictFiles ?? [];
@@ -1666,6 +1712,7 @@ export class ProjectQueue {
 
   /** The thread's try-again on an entry back with its chat: in line again at its commit (its try already counted). */
   private backInLine(e: Entry): void {
+    this.reviewEvent(e, { kind: "checked" });
     this.clearRulingTimer(e.id);
     delete e.ruling;
     delete e.standing;
@@ -1696,8 +1743,14 @@ export class ProjectQueue {
     }
     // A failure that waited for the thread's diagnosis had its try counted when it happened (awaitDiagnosis).
     const counted = e.ruling?.pending?.counted && e.ruling.pending.run === f.runId ? e.ruling.pending.counted : undefined;
-    const fingerprint = counted?.fingerprint ?? this.failurePrint(f, run);
     const diagnosis = f.diagnosis ?? e.ruling?.diagnosis;
+    // A review's request is Sova's, from its saved record: the reviewer's words whole, the thread's note after them.
+    const rec = f.cause === "review" ? openReview(e) : undefined;
+    if (rec) {
+      f = { ...f, review: reportText(rec) };
+      if (diagnosis?.trim()) rec.note = { text: diagnosis.trim(), at: this.iso() };
+    }
+    const fingerprint = counted?.fingerprint ?? this.failurePrint(f, run, rec?.findings);
     const ruling = e.ruling ? { ...(e.ruling.otherTried ? { otherTried: true as const } : {}) } : undefined;
     if (ruling && Object.keys(ruling).length) e.ruling = ruling;
     else delete e.ruling;
@@ -1710,6 +1763,10 @@ export class ProjectQueue {
     }
     if (f.cause !== "review") delete e.review;
     const t = counted ? { tries: counted.tries, max: counted.max } : this.countTry(e, fingerprint);
+    if (rec) {
+      rec.try = t.tries;
+      rec.of = t.max;
+    }
     if ("out" in t && t.out) {
       this.outOfTries(e, t.out === "same-twice" ? `Failed the same way twice: ${f.why}` : `Tried ${t.tries} times: ${f.why}`);
       return;
@@ -1720,13 +1777,24 @@ export class ProjectQueue {
     e.standing = { phase: "with-chat", try: t.tries, of: t.max, why: f.why };
     e.updatedAt = this.iso();
     const text = sendBackText(e, { cause: f.cause, why: f.why, ...(run ? { run, logDir: this.store.runDir(run.id) } : {}), ...(f.files ? { files: f.files } : {}), ...(f.review ? { review: f.review } : {}), ...(diagnosis ? { diagnosis } : {}), attempt: { try: t.tries, of: t.max } });
+    // Every send-back reaches the newest review's card: Fixing for its own, a Stopped card's cause keeps it Stopped.
+    this.reviewEvent(e, { kind: "handed" });
     this.save();
-    this.request(e, "fix", text, { try: t.tries, fingerprint, ...(run ? { run } : {}) });
+    const req = this.request(e, "fix", text, { try: t.tries, fingerprint, ...(run ? { run } : {}) });
+    if (rec) {
+      rec.request = req.id;
+      this.save();
+    }
+  }
+
+  /** The entry's newest review record takes an event (review-record.ts): its card follows; the caller saves. */
+  private reviewEvent(e: Entry, ev: ReviewEvent): void {
+    applyReviewEvent(e, ev, this.iso());
   }
 
   /** A send-back's same-failure fingerprint (rulings.ts fingerprintOf). */
-  private failurePrint(f: { cause: SentBackFor; why: string; files?: string[]; review?: string }, run: MergeRun | undefined): string {
-    return fingerprintOf({ cause: f.cause, ...(run ? { run, tails: this.failedTails(run) } : {}), ...(f.files ? { files: f.files } : {}), ...(f.review ? { review: f.review } : {}), why: f.why });
+  private failurePrint(f: { cause: SentBackFor; why: string; files?: string[]; review?: string }, run: MergeRun | undefined, findings?: readonly ReviewFinding[]): string {
+    return fingerprintOf({ cause: f.cause, ...(run ? { run, tails: this.failedTails(run) } : {}), ...(f.files ? { files: f.files } : {}), ...(f.review ? { review: f.review } : {}), ...(findings?.length ? { findings } : {}), why: f.why });
   }
 
   /** The last lines of each failed step's log that names no failing test (a typecheck, a build): what tells two such
@@ -1750,9 +1818,14 @@ export class ProjectQueue {
     // The failure is the branch's: its try counts now, whatever the thread rules (a diagnosis, or a decision for the
     // user), and the same failure twice, or out of tries, stops here (q2): the user decides, nothing more to the chat.
     const run = p.run ? (this.store.readRun(p.run) ?? undefined) : undefined;
-    const fingerprint = p.counted?.fingerprint ?? this.failurePrint(p, run);
+    const rec = p.cause === "review" ? openReview(e) : undefined;
+    const fingerprint = p.counted?.fingerprint ?? this.failurePrint(p, run, rec?.findings);
     // Re-armed after a restart (recover): counted already, never twice.
     const t = p.counted ? { tries: p.counted.tries, max: p.counted.max } : this.countTry(e, fingerprint);
+    if (rec) {
+      rec.try = t.tries;
+      rec.of = t.max;
+    }
     if ("out" in t && t.out) {
       this.clearRulingTimer(e.id);
       if (e.ruling) delete e.ruling.pending;
@@ -1771,7 +1844,8 @@ export class ProjectQueue {
       const q = x?.ruling?.pending;
       if (!x || !q) return;
       // Only a note the thread wrote for this failure (after it was called in), never the landing note it wrote earlier.
-      const note = x.notes.find((n) => n.kind === "thread" && n.at >= q.at)?.text;
+      // A review goes without one: the thread's note on a review is its hand-off's (merge.note stays the landing note).
+      const note = q.cause === "review" ? undefined : x.notes.find((n) => n.kind === "thread" && n.at >= q.at)?.text;
       this.sendBack(x, { cause: q.cause, why: q.why, ...(q.run ? { runId: q.run } : {}), ...(q.files ? { files: q.files } : {}), ...(q.review ? { review: q.review } : {}), ...(note ? { diagnosis: note } : {}) });
     });
   }
@@ -1826,6 +1900,7 @@ export class ProjectQueue {
       return;
     }
     e.decision = { ...d, id: newId("dc"), at: this.iso() };
+    this.reviewEvent(e, { kind: "waiting" });
     if (!keep) {
       e.state = state;
       e.reason = reason ?? d.question.split("\n")[0]!.slice(0, 200);
@@ -1896,16 +1971,28 @@ export class ProjectQueue {
       if (e.ruling) delete e.ruling.cant;
       e.state = "with-chat";
       e.standing = { phase: "with-chat", try: e.tries?.used ?? 1, of: e.tries?.max ?? 3, why: e.reason ?? "your answer went to the chat" };
+      // A blocking review the user decided before it ever reached the chat: its report goes with their answer, as Sova
+      // wrote it from the saved record (the reviewer's words, then the thread's note); its card is Fixing from here.
+      const rec = openReview(e);
+      let note = held;
+      if (rec && held && !rec.request) {
+        note = { ...held, text: `${held.text}\nThe review's findings, as the reviewer wrote them:\n${reportText(rec)}${rec.note ? `\nMerge thread: ${rec.note.text}` : ""}` };
+        e.decision = { ...e.decision, heldNote: note };
+      }
+      if (rec && held) {
+        rec.request ??= held.request;
+        this.reviewEvent(e, { kind: "handed" });
+      }
       // The held note is a request from now on, under the id the chat answers it by (merge.respond): recorded here,
       // delivered with the user's message (channel stamps its delivery), never sent a second time.
-      if (held && !e.requests?.some((r) => r.id === held.request)) {
-        const req = this.addRequest(e, { kind: "decision", text: held.text, ...(e.sentBackFor ? { cause: e.sentBackFor } : {}) });
-        req.id = held.request;
+      if (note && !e.requests?.some((r) => r.id === note.request)) {
+        const req = this.addRequest(e, { kind: "decision", text: note.text, ...(e.sentBackFor ? { cause: e.sentBackFor } : {}) });
+        req.id = note.request;
         req.delivery = "delivered";
       }
       e.updatedAt = this.iso();
       this.save();
-      return held;
+      return note;
     });
   }
 
@@ -2066,6 +2153,13 @@ export class ProjectQueue {
    * this was the last try, or the run failed the same way as the one before it (`fingerprint`, rulings.ts). Callers
    * count only runs whose failure is the branch's (never a void run, a machine failure, or one nobody can be blamed for).
    */
+  /** Whether a try counted now with `fingerprint` would run out (countTry's rule, changing nothing). */
+  private triesOut(e: Entry, fingerprint: string): "out-of-tries" | "same-twice" | undefined {
+    const t = e.tries ?? { used: 0, max: MERGE_TRIES, fingerprints: [] };
+    if (t.fingerprints.length > 0 && t.fingerprints[t.fingerprints.length - 1] === fingerprint) return "same-twice";
+    return t.used + 1 >= t.max ? "out-of-tries" : undefined;
+  }
+
   countTry(e: Entry, fingerprint?: string): { tries: number; max: number; out?: "out-of-tries" | "same-twice" } {
     const t = e.tries ?? { used: 0, max: MERGE_TRIES, fingerprints: [] };
     const same = !!fingerprint && t.fingerprints.length > 0 && t.fingerprints[t.fingerprints.length - 1] === fingerprint;
@@ -2375,6 +2469,7 @@ export class ProjectQueue {
       this.armFixTimer();
       return;
     }
+    this.reviewEvent(e, { kind: "checked" });
     const moved = commit !== e.commit;
     e.commit = commit;
     e.approval.commit = commit;
@@ -2538,15 +2633,17 @@ export class ProjectQueue {
   }
 
   /** merge.review: the review step's agent posts its verdict on the run. */
-  review(runId: string, v: { verdict: string; text?: string }): Promise<MergeRun> {
+  review(runId: string, v: { verdict: string; text?: string; summary?: string; findings?: ReviewFinding[] }): Promise<MergeRun> {
     return this.serial(async () => {
       if (!["ok", "notes", "blocking"].includes(v.verdict)) throw new MergeFailure("invalid-request", 'verdict is "ok", "notes" or "blocking"');
       const cur = this.current?.run.id === runId ? this.current.run : null;
       if (!cur) throw new MergeFailure("invalid-request", `run ${runId} isn't checking now`);
       if ((v.verdict === "notes" || v.verdict === "blocking") && !v.text?.trim()) throw new MergeFailure("invalid-request", "say what the review found (text)");
-      const verdict: ReviewVerdict = { verdict: v.verdict as ReviewVerdict["verdict"], ...(v.text?.trim() ? { text: v.text.trim().slice(0, 2000) } : {}), commit: cur.mergeSha ?? cur.commit, at: this.iso() };
+      // Whole: merge.review checked its shape, and the format bounds it (§app.merge-queue/review-report).
+      const report = v.text?.trim() ? { text: v.text.trim(), ...(v.summary !== undefined ? { summary: v.summary } : {}), ...(v.findings ? { findings: v.findings } : {}) } : {};
+      const verdict: ReviewVerdict = { verdict: v.verdict as ReviewVerdict["verdict"], ...report, commit: cur.mergeSha ?? cur.commit, at: this.iso() };
       // The review step (review-step.ts) waits on its own; the run's awaitReview() is the other door.
-      if ((this.deps.deliverReview ?? deliverReview)(runId, { verdict: verdict.verdict, ...(verdict.text ? { text: verdict.text } : {}) })) return cur;
+      if ((this.deps.deliverReview ?? deliverReview)(runId, { verdict: verdict.verdict, ...report })) return cur;
       const w = this.reviewWaiters.get(runId);
       if (!w) throw new MergeFailure("invalid-request", `run ${runId} isn't waiting for a review`);
       this.reviewWaiters.delete(runId);
@@ -3126,6 +3223,7 @@ export class ProjectQueue {
     const run: MergeRun = { id: runId, entry: e.id, project: this.id, branch: e.branch, base, commit: e.commit, steps: [], checks: [], verdict: "running", startedAt: this.iso() };
     e.state = "checking";
     e.run = runId;
+    this.reviewEvent(e, { kind: "checking" });
     // Only the first run meets the conflict that was there at the Land; a later run (another target, a fix) counts.
     if (e.runs.length > 0) delete e.approval.conflictAtLand;
     e.runs = [...e.runs, runId];
@@ -3265,6 +3363,10 @@ export class ProjectQueue {
       this.kickSoon();
       return;
     }
+    // The review card of the entry's last blocking review follows this run (never a voided one): a new review answered,
+    // or the run stopped before one.
+    if (out.verdict === "failed" || out.verdict === "conflict") this.reviewEvent(e, { kind: "stopped", why: stoppedWhy(out, this.q.target) });
+    else if (out.review && out.verdict !== "machine") this.reviewEvent(e, { kind: "reviewed", verdict: out.review.verdict });
     switch (out.verdict) {
       case "void":
         run.verdict = "void";
@@ -3379,14 +3481,26 @@ export class ProjectQueue {
       }
       case "review-flagged": {
         if (!e.release && e.approval.standing) {
-          // Its findings go back to the branch's chat by themselves; the thread is told and may rule it the user's.
+          // Its whole report goes to the merge thread first, which hands it on (merge.rule chat-fixes, its note optional);
+          // Sova writes the request from the saved record. With no thread, or after the wait, it goes by itself.
           run.verdict = "failed";
           this.store.writeRun(run);
           if (out.review) e.review = out.review;
           this.addNotes(e, out.notes);
-          const findings = out.review?.text ?? "the review flagged it";
-          this.sendBack(e, { cause: "review", why: `the review flagged it: ${findings.split("\n")[0]!.slice(0, 160)}`, runId: run.id, review: findings });
-          this.wake("review", e, run.id, { findings });
+          const rec = reviewRecord({ entry: e.id, run: run.id, commit: e.commit, base: run.base, verdict: out.review ?? { verdict: "blocking", text: "the review flagged it", commit: run.tip ?? e.commit, at: this.iso() }, at: this.iso() });
+          e.reviews = [...(e.reviews ?? []), rec].slice(-REVIEWS_KEPT);
+          const why = `the review flagged it: ${rec.summary.slice(0, 160) || "see its findings"}`;
+          const report = reportText(rec);
+          // Its try would run out (the last one, or the same findings twice): it waits for the user, nothing to hand on.
+          const waits = this.triesOut(e, this.failurePrint({ cause: "review", why, review: report }, run, rec.findings));
+          if (waits) {
+            this.sendBack(e, { cause: "review", why, runId: run.id, review: report });
+            this.wake("review", e, run.id, { findings: report, waits });
+          } else {
+            const asked = this.wake("review", e, run.id, { findings: report });
+            if (asked) this.awaitDiagnosis(e, { cause: "review", why, run: run.id, review: report, at: this.iso() });
+            else this.sendBack(e, { cause: "review", why, runId: run.id, review: report });
+          }
           this.kickSoon();
           return;
         }
@@ -3827,6 +3941,7 @@ export class ProjectQueue {
           for (const c of r.parents) if (!this.q.landed.includes(c)) this.q.landed.push(c);
           e.request.mergeCommit = r.sha;
           e.state = "landed";
+          this.reviewEvent(e, { kind: "landed" });
           delete e.reason;
           e.landed = { sha: r.sha, from: run?.base ?? from ?? "", at: this.iso(), pushed: "pushed", via: "host" };
           this.save();
@@ -3902,6 +4017,7 @@ export class ProjectQueue {
     for (const c of parents.length ? parents : [tip]) if (!this.q.landed.includes(c)) this.q.landed.push(c);
     this.q.knownTarget = tip;
     e.state = "landed";
+    this.reviewEvent(e, { kind: "landed" });
     delete e.reason;
     e.landed = { sha: tip, from: run.base, at: this.iso(), pushed: "pending" };
     e.updatedAt = this.iso();

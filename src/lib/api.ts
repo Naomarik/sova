@@ -1584,7 +1584,7 @@ export async function runReleaseVerb(project: string, verb: `release.${string}`,
   }
 }
 /** A chat's merge queue cards: one per branch it owns, from its approval on (`session.merge-cards`). */
-export const getMergeCards = (sessionId: string) => request<{ cards: import("../../shared/merge-queue").MergeCard[] }>(`/api/merge-queue/cards?session=${encodeURIComponent(sessionId)}`);
+export const getMergeCards = (sessionId: string) => request<{ cards: import("../../shared/merge-queue").MergeCard[]; reviews?: import("../../shared/merge-queue").ReviewCard[] }>(`/api/merge-queue/cards?session=${encodeURIComponent(sessionId)}`);
 /** Every project's queue and releases in one quick read: the landing bar's starting picture (page open, reconnect). */
 export const getLandingSummary = () => request<import("../../shared/merge-queue").LandingSummary>("/api/merge-queue/landing-summary");
 /** What runs on this host now, every project's (Running branches on `#/projects`). */

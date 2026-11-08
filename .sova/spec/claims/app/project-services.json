@@ -526,7 +526,9 @@
       "server/merge-queue/names-verb.ts",
       "server/project-services/tools-answer.test.ts",
       "server/merge-queue/names-verb.integration.test.ts",
-      "server/merge-queue/scenarios-conflicts.integration.test.ts"
+      "server/merge-queue/scenarios-conflicts.integration.test.ts",
+      "server/merge-queue/queue-review.test.ts",
+      "server/merge-queue/review-verdict.ts"
     ]
   },
   "§app.project-services/on-merge": {

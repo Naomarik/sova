@@ -444,7 +444,8 @@ of its own:
   confirm, link and profile cards), orphan tool results, the alignment card and the old alignment
   report, offer cards, tours, show changes, settings change cards, worktree merge cards, the
   Overseer's and team cards, reports, briefs, explanations, owner requests, hand-off runs, baton
-  cards, the merge queue's cards (§chat.merge-queue/chat-card), and the info, topic, wake and
+  cards, the merge queue's cards (§chat.merge-queue/chat-card) and review cards
+  (§chat.merge-queue/review-card), and the info, topic, wake and
   compaction rows. None is drawn any other way; a tool result
   shown in its call's card is a type that draws nothing.
 - **Nothing a user sees changes.** Each looks, reads aloud, takes the keyboard, lays out on a phone

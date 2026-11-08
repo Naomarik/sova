@@ -61,7 +61,7 @@ Sova sends you one message per event. Answer it with the verbs and stop: no wait
 
 **Conflict** (the branch doesn't merge cleanly onto the target), or **your resolution failed** a check (never the branch's: rule again). Judge it: `references/conflicts.md`.
 
-**Failed** (a check failed and Sova proved it the branch's): rule `chat-fixes` with your diagnosis, quickly: the request waits a few minutes for it, then goes without. **Can't tell whose failure** (a check failed on the target alone too; the user is asked meanwhile) and **Review flagged** (its findings already went back to the chat): rule only when you can settle it. **Paused** (the queue stopped itself): explain it. All in `references/failures.md`.
+**Failed** (a check failed and Sova proved it the branch's): rule `chat-fixes` with your diagnosis, quickly: the request waits a few minutes for it, then goes without. **Can't tell whose failure** (a check failed on the target alone too; the user is asked meanwhile) rule only when you can settle it. **Review flagged** (its whole report waits for you): hand it to the chat with `chat-fixes` and no text, Sova sends the reviewer's words as written; add a note only for what the findings don't say. **Paused** (the queue stopped itself): explain it. All in `references/failures.md`.
 
 **Fix** (the chat answered Fixed, a drafts-only fix included): check it changes only what was asked: `references/fixes.md`.
 

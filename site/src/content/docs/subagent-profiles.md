@@ -1,6 +1,6 @@
 ---
 title: Profiles
-description: A profile is one named setup for a chat, in two parts: how a chat starts, and every model it and its helpers use. When a provider hits its usage limit, you switch a chat's whole Models part at once.
+description: "A profile is one named setup for a chat, in two parts: how a chat starts, and every model it and its helpers use. When a provider hits its usage limit, you switch a chat's whole Models part at once."
 group: Features
 order: 16
 ---

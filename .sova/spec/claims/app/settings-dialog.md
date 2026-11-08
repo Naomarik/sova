@@ -39,6 +39,11 @@ and on a short window the floor under the body gives way rather than the foot: t
 part that already knows how to scroll. Adding a tab is then a content question only; no screen
 can change the dialog's size by being long or short.
 
+Nor can a click or a focus move its frame: pressing or tabbing to a switch low in a long list
+(Models) scrolls only that list, as far as the switch's row, while the title, the tabs and the foot
+stay put (§app/shell, Dialogs) — a correction, since a frame focus could still scroll and switch
+inputs hidden against the dialog rather than their rows once slid the whole dialog up out of view.
+
 ## §app.settings-dialog/general — General
 
 - **Compress thinking & tool calls** — a default-on browser-local switch, applied immediately to every open transcript and stored in `localStorage["sova:compress-work"]`. Only `"false"` disables it; missing, unreadable, or corrupt values mean on. On selects the compact work timeline; off restores the original cards (§chat.work-chain-setting/preference).

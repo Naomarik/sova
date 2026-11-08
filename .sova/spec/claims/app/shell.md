@@ -55,7 +55,11 @@ unfolded (≥768)                                  folded (<768)
   `.rail` / `.navitem` component stays unported, and the spine is built from `.button-icon` and
   its own `.spine*` classes.
 - **Dialogs** follow the skill's modal pattern and become a bottom sheet under 768px
-  automatically (`.modal` restyles itself).
+  automatically (`.modal` restyles itself). Like `.app`, every dialog's frame is
+  `overflow: clip`: it never scrolls, by the user, a script or the browser bringing a focused
+  control into view. A focused control scrolls only the list it sits in (`.modal-body`, or a
+  dialog's own scroll area), and each scroll area and switch row is `position: relative`, so a
+  hidden input stays inside its row rather than reaching for the dialog.
 - **Toasts** go in one `.toast-stack` portal. A toast carries a transient event: the confirmation
   of an action ("Copied path.", "Deleted {n} sessions."), the failure of an action you just took and
   what it left ("Couldn't open that session. …", "Couldn't delete sessions. Some may be gone; the

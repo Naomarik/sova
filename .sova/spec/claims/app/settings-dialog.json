@@ -243,8 +243,15 @@
     "evidence": "verified",
     "code": [
       "src/components/SettingsDialog.tsx",
-      "src/app.css"
-    ]
+      "src/app.css",
+      "src/design/base.css",
+      "server/forms-dialog-frame-browser.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-08T11:14Z",
+      "source": "pi-session:45cc9bb9-bace-4ea1-9191-77bbe8ec8e40#e21c19a7"
+    }
   },
   "§app.settings-dialog/organizations": {
     "kind": "behavior",

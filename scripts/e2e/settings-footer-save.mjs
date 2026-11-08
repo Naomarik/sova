@@ -106,7 +106,7 @@ try {
     await ready.waitFor({ state: "visible", timeout: 20000 });
   };
   const hostInput = dialog.locator("#mesh-host-label");
-  /** The first profile's Edit in Settings → Subagents (the library is seeded on first read). */
+  /** The first profile's Edit in Settings → Profiles (the library is seeded on first read). */
   const subagentEdit = dialog.locator('[id^="subagents-edit-"]').first();
   const profileName = dialog.locator("#subagents-name");
   const neverTui =dialog.getByRole("checkbox", { name: "Never send TUI sessions" });

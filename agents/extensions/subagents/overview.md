@@ -13,7 +13,7 @@ the `spec` tool out of a monitor).
 
 - [`README.md`](../../../pi-config/extensions/subagents/README.md) and
   [`pi-config/docs/native-teams.md`](../../../pi-config/docs/native-teams.md).
-- Settings → Subagents and the Delegate side: [modes/delegate](../../modes/delegate/overview.md).
+- Settings → Profiles (a profile's Models part) and the Delegate side: [modes/delegate](../../modes/delegate/overview.md).
 - Tests: `cd pi-config/extensions/subagents && node tests/run.mjs && node tests/smoke.mjs && node tests/team-smoke.mjs`.
 
 ## What Sova relies on
@@ -36,18 +36,18 @@ The module holds the shapes, the strict parses, the atomic writers, the pick ent
 switches, and a malformed legacy `team-defaults.json` postpones seeding. One resolver, `resolveSubagents`, goes
 pick → this device's default → legacy files. A dangling pick falls to the default; a missing, malformed or dangling
 default reads as Off; an unusable library falls to the legacy files.
-- Written by the mode menu, Settings → Subagents, `/mode subagents <id|off>`, the Overseer and the limit row.
+- Written by the mode menu, Settings → Profiles, `/mode subagents <id|off>`, the Overseer and the limit row.
 - Read by the mode extension (Delegate routing and the spec writer at each turn boundary, either major mode), by
   this extension (`team_create`, `team_add`, `team_succeed`, roster answers, `/team defaults`), and by the server:
-  `server/subagent-profiles.ts` (Settings → Subagents, the `/api/subagents` pick route, the session-create field;
+  `server/subagent-profiles.ts` (Settings → Profiles' Models part, the `/api/subagents` pick route, the session-create field;
   `server/sessions-configure.ts` and `server/overseer-tools.ts` validate through it), `server/sync/docs.ts` (the
   library's mesh registration; the default file is deliberately absent), `server/chat-manager.ts` (the pick entry
   helpers and `saveModeDefault`), and `shared/subagent-profiles.ts` (types only).
 
 **Team defaults.** Every `team_create` team gets Sova's coordinator and monitor; nothing turns either off and no
 member the chat names is the lead (`orchestrator` and `defaults.coordinator`/`defaults.monitor` are refused as
-unknown keys). `team-defaults.json` is the legacy input for their models and thresholds. It seeds Settings →
-Subagents' Teams section and is read here at team creation. One resolver, `teamDefaultsNow`, always returns a full
+unknown keys). `team-defaults.json` is the legacy input for their models and thresholds. It seeds the Teams rows of
+Settings → Profiles' Models part and is read here at team creation. One resolver, `teamDefaultsNow`, always returns a full
 value: where the settings name no model (Off, `teams: null`, an absent or malformed legacy file, the last with a
 warning) both roles run on the chat's own model and effort with the built-in thresholds, so every reader (usage
 pause, roster thresholds, a successor's standing text, retire timeout, planning) works the same. `enabled` on
@@ -89,7 +89,7 @@ next code reload.
 
 ## When you change it, also update
 
-- A profile, team-defaults or entry shape: the README, Settings → Subagents' reader in `server/`, and the site page
+- A profile, team-defaults or entry shape: the README, Settings → Profiles' reader in `server/`, and the site page
   `site/src/content/docs/subagent-profiles.md` when what the user sees changes.
 - The worker-transcript protocol: both backends' readers (here and in claude-code) in the same branch.
 - `spec-brief.ts` quotes `mode/spec-mode.md` by anchor: when the guide moves, run its test

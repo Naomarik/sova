@@ -1971,16 +1971,28 @@ export class ProjectQueue {
       if (e.ruling) delete e.ruling.cant;
       e.state = "with-chat";
       e.standing = { phase: "with-chat", try: e.tries?.used ?? 1, of: e.tries?.max ?? 3, why: e.reason ?? "your answer went to the chat" };
+      // A blocking review the user decided before it ever reached the chat: its report goes with their answer, as Sova
+      // wrote it from the saved record (the reviewer's words, then the thread's note); its card is Fixing from here.
+      const rec = openReview(e);
+      let note = held;
+      if (rec && held && !rec.request) {
+        note = { ...held, text: `${held.text}\nThe review's findings, as the reviewer wrote them:\n${reportText(rec)}${rec.note ? `\nMerge thread: ${rec.note.text}` : ""}` };
+        e.decision = { ...e.decision, heldNote: note };
+      }
+      if (rec && held) {
+        rec.request ??= held.request;
+        this.reviewEvent(e, { kind: "handed" });
+      }
       // The held note is a request from now on, under the id the chat answers it by (merge.respond): recorded here,
       // delivered with the user's message (channel stamps its delivery), never sent a second time.
-      if (held && !e.requests?.some((r) => r.id === held.request)) {
-        const req = this.addRequest(e, { kind: "decision", text: held.text, ...(e.sentBackFor ? { cause: e.sentBackFor } : {}) });
-        req.id = held.request;
+      if (note && !e.requests?.some((r) => r.id === note.request)) {
+        const req = this.addRequest(e, { kind: "decision", text: note.text, ...(e.sentBackFor ? { cause: e.sentBackFor } : {}) });
+        req.id = note.request;
         req.delivery = "delivered";
       }
       e.updatedAt = this.iso();
       this.save();
-      return held;
+      return note;
     });
   }
 

@@ -129,6 +129,12 @@ describe("a blocking review goes through the merge thread", () => {
       assert.equal(newest(e).state, "waiting");
       assert.equal(e.requests?.length ?? 0, 0);
       assert.deepEqual(newest(e).findings, FINDINGS.slice(0, 1));
+      // The user answers: their answer's note carries the report it never had, and the card is Fixing.
+      const held = await q.decisionAnswered(entry.id, e.decision!.id, "Keep it.");
+      assert.ok(held!.text.includes(`- [${FINDINGS[0]!.kind}] ${FINDINGS[0]!.file}:${FINDINGS[0]!.line}: ${FINDINGS[0]!.text}`), "the findings go with the user's answer");
+      const after = await k.entry(entry.id);
+      assert.deepEqual({ state: newest(after).state, request: newest(after).request }, { state: "fixing", request: held!.request });
+      assert.equal(after.requests!.at(-1)!.text, held!.text);
     } finally {
       await k.done();
     }

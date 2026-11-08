@@ -2746,6 +2746,7 @@ export function ChatView(props: {
                             info={info()}
                             live={{ mode: modeState()?.mode, minorModes: modeState()?.minorModes, model: model(), thinking: thinking() }}
                             race={profileRace()}
+                            chatProfile={chatProfile()}
                             onFirstMessage={(text) => {
                               if (!drafts.get(props.path)?.trim()) setDraftText(props.path, text);
                             }}

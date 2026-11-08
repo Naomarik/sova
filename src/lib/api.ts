@@ -704,7 +704,7 @@ export const listSessionGroups = () => request<SessionGroup[]>("/api/session-gro
 
 /** Profiles (§chat/profiles): what a folder can use, one pick, approving and hiding, and saving the
     session's model, effort and subagent pick as a new profile of yours (the one profile file written). */
-export type ProfilePickRef = { source: "sova" | "user" | "project"; id: string };
+export type ProfilePickRef = { source: "sova" | "user" | "project" | "library"; id: string };
 export const fetchProfiles = (cwd?: string | null, host?: string | null) =>
   request<ProfilesListing>(hostUrl(host, cwd ? `/api/profiles?cwd=${encodeURIComponent(cwd)}` : "/api/profiles"), { cache: "no-store" });
 export const pickProfile = (path: string, profile: ProfilePickRef | { remove: string[]; grant: string[]; from?: ProfilePickRef } | null) =>

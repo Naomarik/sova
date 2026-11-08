@@ -21,7 +21,7 @@ export interface Part {
   share: number;
   valueText: string;
   pctText: string;
-  /** Colour class: the row's tone, else the next series colour no tone uses; the free rest has none. */
+  /** Colour class: the row's tone, else its mark's tone, else the next series colour no tone uses; the free rest has none. */
   color: string;
 }
 
@@ -46,14 +46,18 @@ export function partsOf(spec: ChartSpec): { parts: Part[]; total: number; whole:
   const total = spec.rows.reduce((a, r) => a + r.values[0]!, 0);
   const whole = spec.of ?? total;
   const big = whole >= 1e4;
+  // A row's own tone wins; a marked row without one takes its mark's tone, as in Bar.
+  const em = emphasisMap(spec);
+  const toneOf = (i: number): Tone | undefined => spec.rows[i]!.tone ?? em.get(String(i))?.tone;
   // Untoned parts take the series colours no tone in this chart already shows, in turn.
-  const taken = new Set(spec.rows.map((r) => (r.tone ? TONE_SERIES[r.tone] : -1)));
+  const taken = new Set(spec.rows.map((_, i) => { const t = toneOf(i); return t ? TONE_SERIES[t] : -1; }));
   const free = [0, 1, 2, 3, 4, 5].filter((s) => !taken.has(s));
   const palette = free.length ? free : [0, 1, 2, 3, 4, 5];
   let series = 0;
   const parts: Part[] = spec.rows.map((r, i) => {
     const v = r.values[0]!;
-    return { row: i, label: r.label, value: v, share: v / whole, valueText: numText(v, big), pctText: pctText(v / whole), color: r.tone ? `vis-chart-toned vis-tone-${r.tone}` : `vis-chart-s${palette[series++ % palette.length]}` };
+    const tone = toneOf(i);
+    return { row: i, label: r.label, value: v, share: v / whole, valueText: numText(v, big), pctText: pctText(v / whole), color: tone ? `vis-chart-toned vis-tone-${tone}` : `vis-chart-s${palette[series++ % palette.length]}` };
   });
   if (spec.of !== undefined && spec.of > total) {
     const free = spec.of - total;

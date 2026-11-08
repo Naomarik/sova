@@ -55,6 +55,14 @@ const markedRows = (spec: ChartSpec) => new Map((spec.emphasis ?? []).map((e) =>
 const seriesCount = (spec: ChartSpec) => Math.max(1, spec.series.length);
 const titleOf = (spec: ChartSpec, row: number, s: number, v: number) => `${spec.series[s] ? `${spec.series[s]}, ` : ""}${spec.rows[row]!.label}: ${fmtValue(v, spec.unit)}`;
 const sum = (vals: (number | null)[]) => vals.reduce<number>((a, v) => a + (v ?? 0), 0);
+/** Stacks of shares (`unit: %`, every row adding up to 100): a total over each would only say 100. */
+const wholeStacks = (spec: ChartSpec) => spec.unit === "%" && spec.rows.every((r) => r.values.every((v) => v === null || v === 0) || Math.abs(sum(r.values) - 100) < 1e-6);
+/**
+ * A stacked chart's inside labels are judged for the chart as a whole: a segment names its value
+ * when it is tall (or long) enough, and only if the widest such label fits the narrowest segment
+ * room it gets, so segments of one size all show theirs or none do.
+ */
+const insideText = (spec: ChartSpec) => spec.rows.flatMap((r) => (r.values.filter((x) => x !== null).length > 1 ? r.values.filter((v): v is number => v !== null).map(valueLabel) : []));
 
 /** The mode a chart draws in at width W: bars go sideways when their labels can't sit under them. */
 export function chartMode(spec: ChartSpec, W: number, measure: Measure): ChartMode {
@@ -73,9 +81,11 @@ export function chartMode(spec: ChartSpec, W: number, measure: Measure): ChartMo
 export function layoutChart(spec: ChartSpec, W: number, measure: Measure): ChartLayout {
   const mode = chartMode(spec, W, measure);
   const out = mode === "hbar" ? layoutHBars(spec, W, measure) : mode === "scatter" ? layoutScatter(spec, W, measure) : layoutColumns(spec, W, measure, mode);
-  // A badge wins over any other row's value label it would cover.
+  // A badge wins over any other unmarked row's value label it would cover.
   const badges = out.badges.map((b) => ({ row: b.row, x: b.x - BADGE_R, y: b.y - BADGE_R, w: BADGE_R * 2, h: BADGE_R * 2 }));
-  out.values = out.values.filter((v) => !badges.some((b) => b.row !== v.row && overlaps(b, textBox(v, measure))));
+  // A marked row's own label always stays: badges are placed clear of those.
+  const marks = markedRows(spec);
+  out.values = out.values.filter((v) => marks.has(v.row) || !badges.some((b) => b.row !== v.row && overlaps(b, textBox(v, measure))));
   return out;
 }
 
@@ -109,7 +119,148 @@ const ticksOf = (axis: Axis): Tick[] => [
 /** Where a bar starts: 0 on a linear axis, the axis floor on a log one. */
 const base = (axis: Axis) => (axis.log ? axis.min : Math.max(axis.min, Math.min(axis.max, 0)));
 
+/** Room kept between two value labels side by side, so they never read as one number. */
+const VALUE_GAP = 4;
+/** Room kept between two category labels along a line chart's axis. */
+const CAT_GAP = 10;
+
+/** Two value labels too close to read apart: their boxes overlap, or stand closer than VALUE_GAP side by side. */
+const crowded = (a: Rect, b: Rect) => a.x < b.x + b.w + VALUE_GAP && b.x < a.x + a.w + VALUE_GAP && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/** The box a category label covers. */
+export function catBox(c: CatLabel, mode: ChartMode, measure: Measure): Rect {
+  const w = Math.max(...c.lines.map((l) => measure(l, mode === "hbar" ? FONT.hcat : FONT.cat)));
+  return { x: c.anchor === "start" ? c.x : c.anchor === "end" ? c.x - w : c.x - w / 2, y: c.y - LH / 2, w, h: c.lines.length * LH };
+}
+
+/** A value label a layout would like to draw; a marked row's are always drawn. `down`: it hangs below a negative bar. */
+interface Wanted extends ValueText {
+  marked: boolean;
+  down: boolean;
+}
+
+/**
+ * The value labels drawn, and how far the highest would rise above the frame. A marked row's labels
+ * all stay: one that would touch another marked label steps up past it (down, below a negative
+ * bar), over its own bar. Any other label that would touch a drawn one is dropped.
+ */
+function settleValues(wanted: Wanted[], measure: Measure): { values: ValueText[]; need: number } {
+  const placed: ValueText[] = [];
+  const boxes: Rect[] = [];
+  const marked = wanted.filter((w) => w.marked);
+  // Nearest their bars first: the lowest of those above bars, the highest of those below.
+  marked.sort((a, b) => (a.down === b.down ? (a.down ? a.y - b.y : b.y - a.y) : a.down ? 1 : -1));
+  for (const w of marked) {
+    const v: ValueText = { row: w.row, x: w.x, y: w.y, text: w.text, anchor: w.anchor };
+    for (let tries = 0; tries <= boxes.length; tries++) {
+      const box = textBox(v, measure);
+      const hit = boxes.filter((b) => crowded(b, box));
+      if (!hit.length) break;
+      v.y = w.down ? Math.max(...hit.map((b) => b.y + b.h)) + 1 + 6.5 : Math.min(...hit.map((b) => b.y)) - 1 - 6.5;
+    }
+    placed.push(v);
+    boxes.push(textBox(v, measure));
+  }
+  for (const w of wanted) {
+    if (w.marked) continue;
+    const v: ValueText = { row: w.row, x: w.x, y: w.y, text: w.text, anchor: w.anchor };
+    const box = textBox(v, measure);
+    if (boxes.some((b) => crowded(b, box))) continue;
+    placed.push(v);
+    boxes.push(box);
+  }
+  // Half a pixel past the frame is nothing to make room for.
+  const need = Math.max(0, ...boxes.map((b) => -b.y - 0.5));
+  // Source order, so the same input always lists its labels the same way.
+  const order = new Map(wanted.map((w, i) => [`${w.row}|${w.x}`, i]));
+  placed.sort((a, b) => order.get(`${a.row}|${a.x}`)! - order.get(`${b.row}|${b.x}`)!);
+  return { values: placed, need };
+}
+
+/**
+ * Where a marked row's numbered badge goes, by its own bar or point: right of the row's labels,
+ * else above them, else left of them. It never covers another marked row's label or another
+ * badge; it prefers a spot that covers no label at all (any other it covers is dropped later).
+ * `need` is the room above the frame the spot above would take, when nothing else fits.
+ */
+function placeBadge(row: number, cx: number, own: Rect[], body: Rect[], gap: number, W: number, values: ValueText[], marks: Map<number, unknown>, badges: Badge[], measure: Measure): { badge: Badge; need: number } {
+  const all = [...own, ...body];
+  const top = Math.min(...all.map((r) => r.y));
+  // Level with the row's top label over its bars (or, with none there, a little above the bars).
+  const bodyTop = Math.min(...body.map((r) => r.y));
+  const over = own.filter((r) => r.y < bodyTop);
+  const yMid = Math.max(BADGE_R, over.length ? Math.min(...over.map((r) => r.y)) + 6.5 : bodyTop - (own.length ? 7 : 12));
+  // Beside the row at that height: past whatever of its labels and bars stands within the badge's reach.
+  const level = all.filter((r) => r.y < yMid + BADGE_R + 1 && r.y + r.h > yMid - BADGE_R - 1);
+  const reach = level.length ? level : all;
+  const spots: Badge[] = [
+    { row, x: Math.max(...reach.map((r) => r.x + r.w)) + gap + BADGE_R, y: yMid },
+    { row, x: cx, y: top - 2 - BADGE_R },
+    { row, x: Math.min(...reach.map((r) => r.x)) - gap - BADGE_R, y: yMid },
+  ];
+  const disc = (b: Badge): Rect => ({ x: b.x - BADGE_R - 1, y: b.y - BADGE_R - 1, w: BADGE_R * 2 + 2, h: BADGE_R * 2 + 2 });
+  const others = values.filter((v) => v.row !== row && !v.inside);
+  const ok = (b: Badge, strict: boolean) => {
+    if (b.x < BADGE_R || b.x > W - BADGE_R || b.y < BADGE_R) return false;
+    const d = disc(b);
+    if (badges.some((o) => overlaps(disc(o), d))) return false;
+    return !others.some((v) => (strict || marks.has(v.row)) && overlaps(textBox(v, measure), d));
+  };
+  for (const strict of [true, false]) {
+    const hit = spots.find((b) => ok(b, strict));
+    if (hit) return { badge: hit, need: 0 };
+  }
+  // Nothing fits as the frame stands: above the labels, with the room it takes.
+  const above = spots[1]!;
+  return { badge: { row, x: Math.min(W - BADGE_R, Math.max(BADGE_R, above.x)), y: Math.max(BADGE_R, above.y) }, need: BADGE_R - above.y };
+}
+
 function layoutColumns(spec: ChartSpec, W: number, measure: Measure, mode: "column" | "line"): ChartLayout {
+  const first = layoutColumnsAt(spec, W, measure, mode, 0);
+  // A marked row's label or badge that steps up past another may need more room above the plot.
+  return first.need > 0 ? layoutColumnsAt(spec, W, measure, mode, Math.ceil(first.need) + 2).out : first.out;
+}
+
+/**
+ * A line chart's category labels: every marked row's, then the first and the last, then every
+ * k-th (k the smallest step at which the widest label clears its neighbours), each kept only where
+ * it touches none already kept. Each fits the frame: a long one wraps to two lines (then "…"), and
+ * one at an end slides inward.
+ */
+function lineCats(spec: ChartSpec, measure: Measure, cx: (i: number) => number, band: number, W: number, y: number, marks: Map<number, unknown>): CatLabel[] {
+  const rows = spec.rows.length;
+  const cap = Math.max(40, Math.min(160, (W - 20) / 3));
+  const lines = spec.rows.map((r) => wrap(r.label, cap, 2, FONT.cat, measure));
+  const widths = lines.map((l) => Math.max(...l.map((s) => measure(s, FONT.cat))));
+  // One that would pass an edge is anchored to it instead, so a font wider than measured grows inward.
+  const at = (i: number, ls: string[], w: number): CatLabel =>
+    cx(i) - w / 2 < 2 ? { row: i, x: 2, y, lines: ls, anchor: "start" } : cx(i) + w / 2 > W - 2 ? { row: i, x: W - 2, y, lines: ls, anchor: "end" } : { row: i, x: cx(i), y, lines: ls, anchor: "middle" };
+  const k = Math.max(1, Math.ceil((Math.max(...widths) + CAT_GAP) / band));
+  const kept: CatLabel[] = [];
+  const clear = (c: CatLabel) => {
+    const b = catBox(c, "line", measure);
+    return kept.every((o) => {
+      const ob = catBox(o, "line", measure);
+      return b.x >= ob.x + ob.w + CAT_GAP || ob.x >= b.x + b.w + CAT_GAP;
+    });
+  };
+  const order = [...[...marks.keys()].filter((i) => i >= 0 && i < rows).sort((a, b) => a - b), 0, rows - 1, ...Array.from({ length: rows }, (_, i) => i).filter((i) => i % k === 0)];
+  for (const i of order) {
+    if (kept.some((c) => c.row === i)) continue;
+    let c = at(i, lines[i]!, widths[i]!);
+    // A marked label squeezed by another marked one narrows to its own share of the axis.
+    if (!clear(c) && marks.has(i)) {
+      const narrow = wrap(spec.rows[i]!.label, Math.max(20, band - CAT_GAP), 2, FONT.cat, measure);
+      c = at(i, narrow, Math.max(...narrow.map((s) => measure(s, FONT.cat))));
+      kept.push(c);
+      continue;
+    }
+    if (clear(c)) kept.push(c);
+  }
+  return kept.sort((a, b) => a.row - b.row);
+}
+
+function layoutColumnsAt(spec: ChartSpec, W: number, measure: Measure, mode: "column" | "line", extra: number): { out: ChartLayout; need: number } {
   const out = emptyLayout(W, mode);
   const marks = markedRows(spec);
   const stacked = spec.type === "stacked";
@@ -117,36 +268,42 @@ function layoutColumns(spec: ChartSpec, W: number, measure: Measure, mode: "colu
   const rows = spec.rows.length;
   const plotH = Math.round(Math.min(240, Math.max(140, W * 0.42)));
   // Room above the plot for value labels, and for badges where a line chart puts them.
-  const top = 18 + (marks.size ? 4 : 0) + (mode === "line" && seriesCount(spec) > 1 && [...marks.values()].some((e) => e.n) ? 6 : 0);
+  const top = 18 + (marks.size ? 4 : 0) + (mode === "line" && seriesCount(spec) > 1 && [...marks.values()].some((e) => e.n) ? 6 : 0) + extra;
   // Tick labels decide the left margin, so measure them on a provisional axis first.
   const probe = valueAxis(spec, top + plotH, top, stacked, mode === "column");
   const left = Math.ceil(Math.max(...probe.ticks.map((t) => measure(probe.fmt(t), FONT.tick)))) + 10;
   const right = mode === "line" ? 10 : 6;
   const band = (W - left - right) / rows;
-  // Category labels: two lines under a bar; one line under a line chart's point, every k-th.
-  // A line chart's labels stay whole: when they can't all fit, every k-th one is shown.
-  const every = mode === "line" ? Math.max(1, Math.ceil((Math.max(...spec.rows.map((r) => measure(r.label, FONT.cat))) + 10) / band)) : 1;
-  const catLines = spec.rows.map((r) => wrap(r.label, mode === "line" ? Math.max(24, band * every - 10) : Math.max(24, band - 4), mode === "line" ? 1 : 2, FONT.cat, measure));
-  const lineCount = Math.max(...catLines.map((l) => l.length));
-  const bottom = 8 + lineCount * LH;
   const y0 = top;
   const y1 = top + plotH;
+  const cx = (i: number) => left + band * (i + 0.5);
+  const catY = y1 + 8 + LH / 2;
+  // Category labels: two lines under each bar; a line chart's thinned to fit (lineCats).
+  out.cats =
+    mode === "line"
+      ? lineCats(spec, measure, cx, band, W, catY, marks)
+      : spec.rows.map((r, i) => ({ row: i, x: cx(i), y: catY, lines: wrap(r.label, Math.max(24, band - 4), 2, FONT.cat, measure), anchor: "middle" as const }));
+  const lineCount = Math.max(1, ...out.cats.map((c) => c.lines.length));
+  const bottom = 8 + lineCount * LH;
   const axis = valueAxis(spec, y1, y0, stacked, mode === "column");
   out.plot = { x0: left, y0, x1: W - right, y1 };
   out.yTicks = ticksOf(axis);
   out.H = y1 + bottom;
-  const cx = (i: number) => left + band * (i + 0.5);
   const zero = axis.at(base(axis));
+  let need = 0;
 
   spec.rows.forEach((row, i) => {
     const e = marks.get(i);
-    if (i % every === 0) out.cats.push({ row: i, x: cx(i), y: y1 + 8 + LH / 2, lines: catLines[i]!, anchor: "middle" });
     if (e) out.bands.push({ row: i, x: cx(i) - band / 2 + 1, y: y0 - (e.n ? 4 : 0), w: band - 2, h: y1 - y0 + 6 + lineCount * LH + (e.n ? 4 : 0) });
   });
 
   if (mode === "column") {
     const bw = Math.min(stacked ? 56 : 44, (band * (n > 1 ? 0.8 : 0.66)) / n);
-    const valueFits = (text: string) => measure(text, FONT.value) <= (n > 1 ? bw + 2 : Math.min(band - 4, bw + 24));
+    const valueFits = (text: string) => measure(text, FONT.value) <= Math.min(band - 4, bw + 24);
+    // Every stacked column is bw wide: the widest inside label decides for all of them.
+    const insideOk = stacked && Math.max(0, ...insideText(spec).map((t) => measure(t, FONT.value))) <= bw - 6;
+    const totals = stacked && !wholeStacks(spec);
+    const wanted: (Wanted & { fits: boolean })[] = [];
     spec.rows.forEach((row, i) => {
       const gx = cx(i) - (bw * n) / 2;
       let acc = 0;
@@ -161,28 +318,48 @@ function layoutColumns(spec: ChartSpec, W: number, measure: Measure, mode: "colu
         const bar: Bar = { row: i, series: s, x: x + (n > 1 ? 1 : 0), y: Math.min(a, b), w: Math.max(1, bw - (n > 1 ? 2 : 0)), h: Math.max(v === 0 ? 0 : 1, Math.abs(a - b)), title: titleOf(spec, i, s, v) };
         out.bars.push(bar);
         topY = Math.min(topY, bar.y);
+        const text = valueLabel(v);
         if (stacked) {
           // A segment names its own value when there's room inside it.
-          const text = valueLabel(v);
-          if (bar.h >= 15 && measure(text, FONT.value) <= bar.w - 6 && row.values.filter((x) => x !== null).length > 1) out.values.push({ row: i, x: bar.x + bar.w / 2, y: bar.y + bar.h / 2, text, anchor: "middle", inside: true });
+          if (insideOk && bar.h >= 15 && row.values.filter((x) => x !== null).length > 1) out.values.push({ row: i, x: bar.x + bar.w / 2, y: bar.y + bar.h / 2, text, anchor: "middle", inside: true });
         } else {
-          const text = valueLabel(v);
-          if (valueFits(text) && rows * n <= 24) out.values.push({ row: i, x: bar.x + bar.w / 2, y: v < 0 ? bar.y + bar.h + 8 : bar.y - 7, text, anchor: "middle" });
+          // Side by side in a group, a label needs its own bar's width (and a gap); alone, its band.
+          const fits = n > 1 ? measure(text, FONT.value) + VALUE_GAP <= bw : valueFits(text);
+          // Below a negative bar, unless that runs into the category labels: then just above zero.
+          const below = v < 0 && bar.y + bar.h + 8 + 6.5 <= y1;
+          wanted.push({ row: i, x: bar.x + bar.w / 2, y: below ? bar.y + bar.h + 8 : v < 0 ? zero - 7 : bar.y - 7, text, anchor: "middle", marked: marks.has(i), down: below, fits });
         }
       });
-      if (stacked) {
+      if (totals) {
         const text = valueLabel(sum(row.values));
-        if (valueFits(text)) out.values.push({ row: i, x: cx(i), y: topY - 7, text, anchor: "middle" });
+        wanted.push({ row: i, x: cx(i), y: topY - 7, text, anchor: "middle", marked: marks.has(i), down: false, fits: valueFits(text) });
       }
-      // The badge sits right of the row's top value label (or of the bars), clear of both.
-      const e = marks.get(i);
-      if (e?.n) {
-        const labels = out.values.filter((v) => v.row === i && !v.inside).map((v) => textBox(v, measure));
-        const right = Math.max(cx(i) + (bw * n) / 2, ...labels.map((b) => b.x + b.w));
-        const y = Math.max(BADGE_R, Math.min(topY, zero) - (labels.length ? 7 : 12));
-        const x = right + 3 + BADGE_R;
-        out.badges.push(x <= W - BADGE_R ? { row: i, x, y } : { row: i, x: Math.min(W - BADGE_R, cx(i) + (bw * n) / 2), y: Math.max(BADGE_R, y - 18) });
+    });
+    // A marked group's label wider than its own bar would sit on the bar beside it: it goes over
+    // the group's tallest bar instead (settleValues stacks it clear of the others there).
+    if (n > 1)
+      for (const w of wanted) {
+        if (!w.marked || w.fits || w.down) continue;
+        const group = out.bars.filter((b) => b.row === w.row);
+        w.y = Math.min(w.y, Math.min(...group.map((b) => b.y)) - 7);
       }
+    // A group's labels are all drawn or, for the whole chart, none are (a marked row keeps its own).
+    const all = stacked || n === 1 ? true : rows * n <= 24 && wanted.every((w) => w.fits);
+    const settled = settleValues(
+      wanted.filter((w) => w.marked || (all && w.fits && (stacked || rows * n <= 24))),
+      measure,
+    );
+    need = Math.max(need, settled.need);
+    out.values.push(...settled.values);
+    // The badge sits right of the row's top value label (or of the bars), clear of both.
+    spec.rows.forEach((_, i) => {
+      if (!marks.get(i)?.n) return;
+      const own = out.values.filter((v) => v.row === i && !v.inside).map((v) => textBox(v, measure));
+      // A group's bars each give up 1px a side to the gap between them: the badge measures from the group's edge.
+      const body = out.bars.filter((b) => b.row === i).map((b) => (n > 1 ? { ...b, x: b.x - 1, w: b.w + 2 } : b));
+      const placed = placeBadge(i, cx(i), own, body, 3, W, out.values, marks, out.badges, measure);
+      out.badges.push(placed.badge);
+      need = Math.max(need, placed.need);
     });
   } else {
     // Lines: a path per series, broken at gaps; single series label their points when they fit.
@@ -204,24 +381,30 @@ function layoutColumns(spec: ChartSpec, W: number, measure: Measure, mode: "colu
       out.paths.push({ series: s, d: d.trim() });
     }
     const labelAll = nSeries === 1 && spec.rows.every((r) => r.values[0] === null || measure(valueLabel(r.values[0]!), FONT.value) <= band - 4);
+    const wanted: Wanted[] = [];
     for (const p of out.points) {
       const e = marks.get(p.row);
-      const v = spec.rows[p.row]!.values[p.series]!;
-      const text = valueLabel(v);
-      const labelled = nSeries === 1 && (labelAll || !!e);
-      // A ring pushes its point's label up; the badge sits right of the label, or of the ring.
-      if (labelled) out.values.push({ row: p.row, x: p.x, y: p.y - (e ? 16 : 11), text, anchor: "middle" });
+      const text = valueLabel(spec.rows[p.row]!.values[p.series]!);
+      // A ring pushes its point's label up.
+      if (nSeries === 1 && (labelAll || e)) wanted.push({ row: p.row, x: p.x, y: p.y - (e ? 16 : 11), text, anchor: "middle", marked: !!e, down: false });
       if (e) out.rings.push({ row: p.row, x: p.x, y: p.y });
-      // One series: the badge follows its point's label. Several: it goes to the band's top corner, off the lines.
-      if (e?.n && nSeries === 1) {
-        const bx = labelled ? p.x + measure(text, FONT.value) / 2 + 4 + BADGE_R : p.x + 13;
-        out.badges.push({ row: p.row, x: Math.min(W - BADGE_R, bx), y: Math.max(BADGE_R, labelled ? p.y - 16 : p.y - 13) });
-      }
     }
+    const settled = settleValues(wanted, measure);
+    need = Math.max(need, settled.need);
+    out.values.push(...settled.values);
+    // One series: the badge follows its point's label. Several: it goes to the band's top corner, off the lines.
+    if (nSeries === 1)
+      for (const p of out.points) {
+        if (!marks.get(p.row)?.n) continue;
+        const own = out.values.filter((v) => v.row === p.row).map((v) => textBox(v, measure));
+        const placed = placeBadge(p.row, p.x, own, [{ x: p.x - 4, y: p.y - 4, w: 8, h: 8 }], 4, W, out.values, marks, out.badges, measure);
+        out.badges.push(placed.badge);
+        need = Math.max(need, placed.need);
+      }
     if (nSeries > 1)
       for (const b of out.bands) if (marks.get(b.row)?.n) out.badges.push({ row: b.row, x: Math.min(W - BADGE_R, b.x + b.w / 2 + 12), y: y0 - 13 });
   }
-  return out;
+  return { out, need };
 }
 
 
@@ -235,8 +418,11 @@ function layoutHBars(spec: ChartSpec, W: number, measure: Measure): ChartLayout 
   const labelMax = Math.round(W * 0.36);
   const labels = spec.rows.map((r) => wrap(r.label, labelMax, 2, FONT.hcat, measure));
   const labelW = Math.ceil(Math.min(labelMax, Math.max(...labels.map((l) => Math.max(...l.map((s) => measure(s, FONT.hcat)))))));
-  const texts = spec.rows.flatMap((r) => (stacked ? [valueLabel(sum(r.values))] : r.values.map((v) => (v === null ? "" : valueLabel(v)))));
-  const valueRoom = Math.ceil(Math.max(...texts.map((t) => measure(t, FONT.value)))) + 8;
+  const totals = stacked && !wholeStacks(spec);
+  const texts = spec.rows.flatMap((r) => (stacked ? (totals ? [valueLabel(sum(r.values))] : []) : r.values.map((v) => (v === null ? "" : valueLabel(v)))));
+  // A segment names its value when the widest inside label would fit it: one length, one answer.
+  const insideW = stacked ? Math.max(0, ...insideText(spec).map((t) => measure(t, FONT.value))) : 0;
+  const valueRoom = Math.ceil(Math.max(0, ...texts.map((t) => measure(t, FONT.value)))) + 8;
   const anyNeg = spec.rows.some((r) => r.values.some((v) => v !== null && v < 0));
   const badgeRoom = [...marks.values()].some((e) => e.n) ? BADGE_R * 2 + 4 : 0;
   const x0 = 8 + labelW + 10 + (anyNeg ? valueRoom : 0);
@@ -269,11 +455,11 @@ function layoutHBars(spec: ChartSpec, W: number, measure: Measure): ChartLayout 
       lo = Math.min(lo, bar.x);
       if (stacked) {
         const text = valueLabel(v);
-        if (measure(text, FONT.value) <= bar.w - 8 && row.values.filter((x) => x !== null).length > 1) out.values.push({ row: i, x: bar.x + bar.w / 2, y: by + barH / 2, text, anchor: "middle", inside: true });
+        if (insideW <= bar.w - 8 && row.values.filter((x) => x !== null).length > 1) out.values.push({ row: i, x: bar.x + bar.w / 2, y: by + barH / 2, text, anchor: "middle", inside: true });
       } else if (v < 0) out.values.push({ row: i, x: bar.x - 5, y: by + barH / 2, text: valueLabel(v), anchor: "end" });
       else out.values.push({ row: i, x: bar.x + bar.w + 5, y: by + barH / 2, text: valueLabel(v), anchor: "start" });
     });
-    if (stacked) out.values.push({ row: i, x: end + 5, y: y + rowH / 2, text: valueLabel(sum(row.values)), anchor: "start" });
+    if (totals) out.values.push({ row: i, x: end + 5, y: y + rowH / 2, text: valueLabel(sum(row.values)), anchor: "start" });
     if (e?.n) {
       const texts = out.values.filter((t) => t.row === i && !t.inside && t.anchor === "start");
       const right = Math.max(end, ...texts.map((t) => t.x + measure(t.text, FONT.value)));

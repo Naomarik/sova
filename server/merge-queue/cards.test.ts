@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
+import { scratchRoot } from "../test-scratch";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import type { SessionSummary } from "../../shared/protocol";
@@ -509,6 +510,25 @@ describe("a blocking review's own card", () => {
     } finally {
       await t.k.done();
     }
+  });
+});
+
+describe("a review card's reviewed commit", () => {
+  test("is read as kept or gone at each read, not only when the queue revises the card", async () => {
+    const dir = scratchRoot("rc-kept-");
+    const present = new Set(["t".repeat(40), "b".repeat(40)]);
+    let now = 0;
+    const cards = new MergeCards({
+      dir,
+      now: () => now,
+      git: async (args) => ({ code: args[0] === "cat-file" && present.has(String(args[2]).replace("^{commit}", "")) ? 0 : 1, stdout: "", stderr: "" }),
+    });
+    const rec = { id: "mq_1:mr_1", run: "mr_1", commit: "c".repeat(40), tip: "t".repeat(40), base: "b".repeat(40), summary: "S.", findings: [{ kind: "hack" as const, text: "x" }], try: 1, of: 3, state: "passed" as const, at: "t", updatedAt: "t" };
+    await cards.reviews({ id: "mq_1", session: "s1", project: "p", branch: "feat/x", target: "master", reviews: [rec] } as unknown as MergeEntry, "/repo");
+    assert.equal((await cards.reviewsRead("s1"))[0]!.reviewed.kept, true);
+    present.delete("t".repeat(40)); // gone at a gc: no queue event, and a passed card is never revised again
+    now += 60_000;
+    assert.equal((await cards.reviewsRead("s1"))[0]!.reviewed.kept, false);
   });
 });
 

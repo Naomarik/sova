@@ -89,6 +89,7 @@ const OUTCOME_OF_STATE: Partial<Record<MergeEntry["state"], MergeCardOutcome>> =
 const LINES_MAX = 50;
 const CARDS_MAX = 200;
 const REVIEW_CARDS_MAX = 100;
+const KEPT_TTL_MS = 10_000;
 /** A review card's states that the queue card points to ("Review found {k} issues"). */
 const POINTED: readonly ReviewCard["state"][] = ["with-thread", "fixing", "waiting"];
 const short = (sha: string | undefined) => (sha ?? "").slice(0, 7);
@@ -101,6 +102,8 @@ export class MergeCards {
   private readonly waking = new Set<string>();
   /** Each entry's review cards' chat, as last found (the queue card's pointer names it). */
   private readonly homes = new Map<string, { id: string; path?: string }>();
+  /** Recent readings of whether a reviewed commit is kept. */
+  private readonly kept = new Map<string, { kept: boolean; at: number }>();
 
   constructor(private readonly deps: CardsDeps) {
     this.git = deps.git ?? realGit;
@@ -151,9 +154,21 @@ export class MergeCards {
     return this.read(session).cards;
   }
 
-  /** A chat's review cards, oldest first. */
+  /** A chat's review cards, oldest first, as last revised. */
   reviewsOf(session: string): ReviewCard[] {
     return this.read(session).reviews ?? [];
+  }
+
+  /** A chat's review cards as the page reads them: whether each reviewed commit is still kept is read now (a commit
+   *  goes at a gc, with no queue event, and a finished entry's card is never revised again), cached briefly. */
+  async reviewsRead(session: string): Promise<ReviewCard[]> {
+    const list = this.reviewsOf(session);
+    const out: ReviewCard[] = [];
+    for (const c of list) {
+      const kept = (await this.commitKept(c.root, c.reviewed.tip)) && (await this.commitKept(c.root, c.reviewed.base));
+      out.push(kept === c.reviewed.kept ? c : { ...c, reviewed: { ...c.reviewed, kept } });
+    }
+    return out;
   }
 
   /**
@@ -166,7 +181,7 @@ export class MergeCards {
     const home = found?.id ?? e.session;
     this.homes.set(e.id, found ?? { id: home });
     const kept = new Map<string, boolean>();
-    for (const r of e.reviews) kept.set(r.tip, await this.commitKept(root, r.tip));
+    for (const r of e.reviews) kept.set(r.tip, (await this.commitKept(root, r.tip)) && (await this.commitKept(root, r.base)));
     const pre = this.read(home);
     const fresh = e.reviews.filter((r) => !pre.reviews?.some((c) => c.id === r.id) && !this.pending.has(`review:${r.id}`));
     for (const r of fresh) this.pending.add(`review:${r.id}`);
@@ -223,10 +238,18 @@ export class MergeCards {
     }
   }
 
-  /** The commit is still in the project's repository (a finding's lines are read against it). */
+  /** The commit is still in the project's repository (a finding's lines are read against it); a reading is reused for
+   *  KEPT_TTL_MS, so a chat's reads never run git per card each time. */
   private async commitKept(root: string, sha: string): Promise<boolean> {
+    const key = `${root}\0${sha}`;
+    const now = this.deps.now?.() ?? Date.now();
+    const hit = this.kept.get(key);
+    if (hit && now - hit.at < KEPT_TTL_MS) return hit.kept;
     const r = await this.git(["cat-file", "-e", `${sha}^{commit}`], root).catch(() => null);
-    return !!r && r.code === 0;
+    const kept = !!r && r.code === 0;
+    if (this.kept.size > 500) this.kept.clear();
+    this.kept.set(key, { kept, at: now });
+    return kept;
   }
 
   /** The hidden lines given after `since` (the chat's last card note), once each; null: none. */

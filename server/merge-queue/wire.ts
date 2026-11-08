@@ -375,8 +375,8 @@ export function mergeCardsOf(session: string): import("../../shared/merge-queue"
 }
 
 /** A chat's review cards (§chat.merge-queue/review-card); [] while the queue isn't started. */
-export function mergeReviewCardsOf(session: string): import("../../shared/merge-queue").ReviewCard[] {
-  return cards?.reviewsOf(session) ?? [];
+export async function mergeReviewCardsOf(session: string): Promise<import("../../shared/merge-queue").ReviewCard[]> {
+  return (await cards?.reviewsRead(session)) ?? [];
 }
 
 /** The merge queue's hidden lines for a chat's next turn since its last card note; null: none. */

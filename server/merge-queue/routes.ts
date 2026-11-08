@@ -672,7 +672,7 @@ export function registerMergeCardRoutes(app: import("hono").Hono): void {
     if (!s) return c.json({ error: "No such session (name it by its file path or id)" }, 404);
     const id = s.id;
     const { mergeCardsOf, mergeReviewCardsOf } = await import("./wire");
-    return c.json({ cards: mergeCardsOf(id), reviews: mergeReviewCardsOf(id) });
+    return c.json({ cards: mergeCardsOf(id), reviews: await mergeReviewCardsOf(id) });
   });
 }
 

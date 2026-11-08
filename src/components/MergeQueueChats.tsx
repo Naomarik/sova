@@ -96,7 +96,7 @@ export function MergeThreadCard(props: { projectId: string; view: MergeQueueView
             </Show>
             <Show when={confirm()}>
               <div class="mq-confirm" role="group" aria-label="Start a fresh merge thread">
-                <p class="field-hint">This thread is archived once its turn ends, and its memory of past landings goes with it. The next event starts a new one. The old thread stays readable in History.</p>
+                <p class="field-hint">This thread is archived once its turn ends, and its memory of past landings goes with it. The next event starts a new one. The old thread stays readable in Queue chats.</p>
                 <span class="button-row">
                   <button type="button" class="button button-sm button-ghost" onClick={() => setConfirm(false)}>
                     Cancel
@@ -161,7 +161,7 @@ const FILTERS: { id: HistoryFilter; label: string }[] = [
   { id: "reviews", label: "Reviews" },
 ];
 
-/** The History section: every chat the queue has had, each opening its chat; Clear and Clear All… delete for good. */
+/** The Queue chats tab: every chat the queue has had, each opening its chat; Clear and Clear All… delete for good. */
 export function QueueHistory(props: { projectId: string; view: MergeQueueView; onChanged(): void }) {
   const act = useAct(props.onChanged);
   const [filter, setFilter] = createSignal<HistoryFilter>("all");
@@ -172,8 +172,9 @@ export function QueueHistory(props: { projectId: string; view: MergeQueueView; o
     <Show when={(props.view.chats ?? []).length > 0}>
       <div class="stack-2 mq-history">
         <div class="spread">
-          <h3 class="text-heading-s" id="mq-history-title">
-            History
+          {/* It is the Queue chats tab: the tab names it, so its title is for a screen reader only. */}
+          <h3 class="visually-hidden" id="mq-history-title">
+            Queue chats
           </h3>
           <div class="button-row">
             <div class="segmented" role="group" aria-label="Show">

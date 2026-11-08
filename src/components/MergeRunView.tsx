@@ -5,7 +5,7 @@ import { answerEntry, cancelEntry, mergeChanged, readLog, readRun, refusal } fro
 import { createFollowedRead, createRunRead, logFollow } from "../lib/merge-run";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { announce, home, toast } from "../lib/ui-state";
-import { projectSessionHref, projectTabHref } from "../lib/projects-route";
+import { mergeQueueTabHref, projectSessionHref, type QueueTab } from "../lib/projects-route";
 import { Banner, Icon } from "./ui";
 import { type ChatOf, FromChat } from "./MergeQueueTab";
 import { ReviewerLinks } from "./MergeQueueChats";
@@ -18,9 +18,10 @@ const LOG_FOLLOW_MS = 3000;
 /**
  * One run of the queue (`#/projects/<pid>/merge-queue/<run>`): what was merged onto what and what it
  * tested, whose failure it was when it failed (checked against the target alone), and every step —
- * the copy and setup included — with where each check came from, why, its time and its log.
+ * the copy and setup included — with where each check came from, why, its time and its log. `from`: the queue's tab
+ * it was opened from (`…/merge-queue/<tab>/<run>`), which Back to Queue returns to; absent, Ready to land.
  */
-export function MergeRunView(props: { projectId: string; view: MergeQueueView; runId: string; chatOf?: ChatOf }) {
+export function MergeRunView(props: { projectId: string; view: MergeQueueView; runId: string; chatOf?: ChatOf; from?: QueueTab }) {
   // A running run moves: it's read again while it runs, and on any queue change. Each read is reconciled into
   // the last (lib/merge-run), so the step rows stay put and an open log stays open.
   const read = createRunRead(() => props.runId, readRun, RUN_POLL_MS);
@@ -45,10 +46,10 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
     <div class="stack mq-run" aria-labelledby="mq-run-title">
       {/* Back to Queue is the arrow before the path, never a third action that wraps onto a line of its own. */}
       <nav class="mq-crumbs text-caption" aria-label="Breadcrumb">
-        <a class="button button-sm button-ghost button-icon mq-back" href={projectTabHref(props.projectId, "merge-queue")} aria-label="Back to Queue" title="Back to Queue">
+        <a class="button button-sm button-ghost button-icon mq-back" href={mergeQueueTabHref(props.projectId, props.from)} aria-label="Back to Queue" title="Back to Queue">
           <Icon name="chevron-left" small />
         </a>
-        <a href={projectTabHref(props.projectId, "merge-queue")}>Merge queue</a>
+        <a href={mergeQueueTabHref(props.projectId, props.from)}>Merge queue</a>
         <span aria-hidden="true"> › </span>
         <span>{run()?.branch ?? props.runId}</span>
       </nav>

@@ -1209,6 +1209,40 @@ test("run hold: a wake:false settle reaches the context at the next turn end, un
 	} finally { await h.close(); }
 });
 
+test("run hold: a wake:false settle waits out a turn end where a user message is pending, then goes at the next one, never lost", async () => {
+	const h = harness();
+	try {
+		const user = [{ role: "user", content: "what is 7 times 6?", timestamp: 0 }];
+		h.event("agent_start", {});
+		await h.call("agent_spawn", { agents: [{ prompt: "a", wake: false }, { prompt: "b", wake: false }, { prompt: "c", wake: false }] });
+		const [w1, w2, w3] = h.workers;
+		w1.output = "quiet 1";
+		w1.settle();
+		turnEnd(h, TOOL_TURN, { pendingMessages: user });
+		assert.equal(completions(h).length, 0, "the user's typed message goes to the model alone");
+		turnEnd(h, TOOL_TURN);
+		assert.equal(completions(h).length, 1, "released at the next turn end");
+		assert.match(completions(h)[0][0].content, /quiet 1/);
+		assert.deepEqual(completions(h)[0][1], { deliverAs: "followUp", triggerTurn: false });
+		// Only a user message defers it: a pending custom message (another notice) does not.
+		w2.output = "quiet 2";
+		w2.settle();
+		turnEnd(h, TOOL_TURN, { pendingMessages: [{ role: "custom", customType: "team-report", content: "r", timestamp: 0 }] });
+		assert.equal(completions(h).length, 2, "no user message pending: released as today");
+		assert.match(completions(h)[1][0].content, /quiet 2/);
+		// A run that ends at the deferring turn end still delivers it, without starting a turn.
+		w3.output = "quiet 3";
+		w3.settle();
+		turnEnd(h, TOOL_TURN, { pendingMessages: user });
+		assert.equal(completions(h).length, 2);
+		h.event("agent_end", { messages: [] });
+		assert.equal(completions(h).length, 3, "never lost: agent_end releases it");
+		assert.match(completions(h)[2][0].content, /quiet 3/);
+		assert.deepEqual(completions(h)[2][1], { deliverAs: "followUp", triggerTurn: false });
+		assert.equal(completions(h).filter((c: any) => /quiet 1/.test(c[0].content)).length, 1, "each exactly once");
+	} finally { await h.close(); }
+});
+
 test("run hold: a settle a steered re-run moved past is sent at the stop; the one a wait returned is not", async () => {
 	const h = harness();
 	try {

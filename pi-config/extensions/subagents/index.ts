@@ -5010,13 +5010,15 @@ export function registerSubagents(
 	});
 	pi.on("turn_end", (event) => {
 		lastOutcome = event.outcome;
+		// A queued user message speaks first, alone: a settle released beside it would reach the model
+		// in the same block (a Claude Code chat reads the two as one message from the user).
+		const userPending = event.context?.pendingMessages?.some((m) => m.role === "user");
 		// Context-only settles reach the context after every turn, as a follow-up sent mid-run did.
-		releaseHeld((h) => !h.wake, false);
+		if (!userPending) releaseHeld((h) => !h.wake, false);
 		// Waking settles go out where the run would otherwise stop: these handlers run inside finishTurn,
-		// before pi polls its follow-ups, so they continue this run. A queued user message speaks first.
+		// before pi polls its follow-ups, so they continue this run.
 		const content = (event.message as { content?: unknown }).content;
 		const toolCalls = Array.isArray(content) && content.some((c) => (c as { type?: unknown } | null)?.type === "toolCall");
-		const userPending = event.context?.pendingMessages?.some((m) => m.role === "user");
 		if (!toolCalls && event.outcome === "completed" && !userPending) releaseHeld((h) => h.wake);
 	});
 	// What a waiting steer is (agent_wait's early stop): a team question the parent route sent, and a

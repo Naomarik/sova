@@ -50,11 +50,48 @@ describe("one clock per computer", () => {
     assert.deepEqual(sums.rows, { typing: 15 }, "the phone's input is the newer");
   });
 
-  test("the answer doesn't depend on which report arrived first", () => {
-    const newerFirst = freshStore();
-    newerFirst.report("one", { pageId: "phone", inputAgeMs: 1_000, slices: [slice("typing", 15)] }, NOW);
-    newerFirst.report("one", { pageId: "desktop", inputAgeMs: 9_000, slices: [slice("reading-transcript", 15, 1_000)] }, NOW + 1_000);
-    assert.deepEqual(newerFirst.sums("one").rows, { typing: 15 });
+  test("the same reports give the same sums in every arrival order, and a resend adds nothing", () => {
+    // Runs with ids and without, the same id on two pages, ties, a one-second run, a report sent
+    // again under a later clock. No-id reports share no moments across pages or id'd runs (known order bugs, bug round).
+    type Report = { pageId: string; inputAgeMs: number; slices: (TimeSpentSlice & { id?: number })[] };
+    const reports: Report[] = [
+      { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 15), id: 1 }] },
+      { pageId: "p", inputAgeMs: 8_000, slices: [{ ...slice("scrolling", 1, 8_000), id: 2 }] },
+      { pageId: "q", inputAgeMs: 0, slices: [{ ...slice("scrolling", 15, 5_000), id: 1 }] },
+      { pageId: "p", inputAgeMs: 80_000, slices: [slice("typing", 15, 80_000)] },
+      { pageId: "p", inputAgeMs: 85_000, slices: [slice("typing", 15, 85_000)] },
+    ];
+    const sentAt = [NOW + 5_000, NOW + 13_000, NOW + 15_000, NOW + 20_000, NOW + 25_000];
+    const again = (i: number) => ({ pageId: reports[i]!.pageId, inputAgeMs: reports[i]!.inputAgeMs + 10_000, slices: reports[i]!.slices.map((sl) => ({ ...sl, ageMs: sl.ageMs + 10_000 })) });
+    type Store = { report(session: string, body: Report, now: number): unknown; sums(session: string): { you: number; rows: Partial<Record<TimeSpentRow, number>> } };
+    const sumsOf = (s: Store) => { const { you, rows } = s.sums("one"); return { you, rows }; };
+    const late = freshStore();
+    late.report("one", reports[0]!, NOW + 5_000);
+    late.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 15), id: 2 }] }, NOW + 15_000);
+    assert.deepEqual(sumsOf(late), { you: 30, rows: { typing: 30 } }, "a new id moves past held moments: the second run counts in full");
+    const checkEveryOrder = (fresh: () => Store) => {
+      const orders: number[][] = [];
+      (function walk(pending: number[], delivered: number[]) { pending.length ? pending.forEach((i, k) => walk([...pending.slice(0, k), ...pending.slice(k + 1)], [...delivered, i])) : void orders.push(delivered); })(reports.map((_, i) => i), []);
+      const deliver = (order: number[]) => { const s = fresh(); order.forEach((i) => s.report("one", reports[i]!, sentAt[i]!)); return s; };
+      const reference = sumsOf(deliver(orders[0]!));
+      for (const order of orders) {
+        const s = deliver(order);
+        assert.deepEqual(sumsOf(s), reference, `arrival order [${order.join(", ")}] changed the sums`);
+        for (const [i] of reports.entries()) {
+          s.report("one", again(i), sentAt[i]! + 10_000);
+          assert.deepEqual(sumsOf(s), reference, `report ${i} sent again after order [${order.join(", ")}] changed the sums`);
+        }
+      }
+    };
+    checkEveryOrder(freshStore);
+    const laterArrivalLooksNewest = (real: InstanceType<typeof TimeSpentStore>): Store => {
+      let first = true;
+      return {
+        report: (session, body, now) => { real.report(session, first ? { ...body, inputAgeMs: 60_000 } : body, now); first = false; },
+        sums: (session) => real.sums(session),
+      };
+    };
+    assert.throws(() => checkEveryOrder(() => laterArrivalLooksNewest(freshStore())), { name: "AssertionError", message: /changed the sums/ });
   });
 
   test("a page with an older input keeps only the seconds nobody else reported", () => {
@@ -93,36 +130,6 @@ describe("one clock per computer", () => {
     assert.equal(s.sums("one").you, 45);
   });
 
-  test("a report sent again after its answer was lost adds nothing", () => {
-    const s = freshStore();
-    s.report("one", { pageId: "p", inputAgeMs: 0, slices: [slice("typing", 15)] }, NOW);
-    s.report("one", { pageId: "p", inputAgeMs: 20_000, slices: [slice("typing", 15, 20_000)] }, NOW + 20_000);
-    assert.equal(s.sums("one").you, 15);
-  });
-
-  test("a report that arrived late doesn't cost the page the next one's seconds", () => {
-    const s = freshStore();
-    s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 15), id: 1 }] }, NOW + 5_000);
-    s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 15), id: 2 }] }, NOW + 15_000);
-    assert.equal(s.sums("one").you, 30);
-  });
-
-  test("runs arriving out of order each keep their own moments", () => {
-    const s = freshStore();
-    s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 10), id: 2 }] }, NOW);
-    s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("scrolling", 10, 10_000), id: 1 }] }, NOW);
-    assert.deepEqual(s.sums("one").rows, { typing: 10, scrolling: 10 });
-  });
-
-  test("a same-id resend of a run that was moved along still counts once", () => {
-    const s = freshStore();
-    s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 15), id: 1 }] }, NOW + 5_000);
-    const second = { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 15), id: 2 }] };
-    s.report("one", second, NOW + 15_000);
-    s.report("one", second, NOW + 15_000);
-    assert.equal(s.sums("one").you, 30);
-  });
-
   test("without an id an overlap can't be told from a resend, so it counts once", () => {
     const s = freshStore();
     s.report("one", { pageId: "old", inputAgeMs: 0, slices: [slice("typing", 15)] }, NOW + 5_000);
@@ -144,13 +151,6 @@ describe("one clock per computer", () => {
     const sums = s.sums("one");
     assert.equal(sums.you, 30);
     assert.deepEqual(sums.rows, { typing: 25, scrolling: 5 });
-  });
-
-  test("a short run sent again after its answer was lost counts once", () => {
-    const s = freshStore();
-    s.report("one", { pageId: "p", inputAgeMs: 0, slices: [{ ...slice("typing", 1), id: 1 }] }, NOW);
-    s.report("one", { pageId: "p", inputAgeMs: 2_000, slices: [{ ...slice("typing", 1, 2_000), id: 1 }] }, NOW + 2_000);
-    assert.equal(s.sums("one").you, 1);
   });
 
   test("a resent run counts once and the runs beside it still count, however the next report is cut", () => {

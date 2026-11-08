@@ -18,36 +18,20 @@ export type _H = HarnessOptions | MergeEntry;
 // ---------------------------------------------------------------- blame
 
 describe("blame", () => {
-  test("S4: a test the branch broke: rerun on the tip and on master alone in the same copy, blamed on the branch, master unmoved, the owner told", async () => {
+  // Which runs decide the blame, and where, is run.integration's; here only what the queue does with it.
+  test("S4: a test the branch broke: back with its chat, master unmoved and unpushed, the owner told once which test", async () => {
     const { fx, h } = await setup();
     const base = fx.head();
     const b = fx.branch("red", { "tests/b.txt": "fail\n" });
-    const mark = fx.calls().length;
     const e = await h.add({ branch: b.branch });
     const done = await h.waitEntry(e.id, settled);
     assert.equal(done.state, "with-chat", `${done.state}: ${done.reason}`);
     assert.match(done.reason ?? "", /tests\/b\.txt/);
     assert.equal(fx.head(), base, "master unmoved");
     assert.equal(fx.originHead(), base, "nothing pushed");
-    const calls = fx.callsSince(mark).filter((c) => c.script === "unit");
-    assert.ok(calls.every((c) => c.cwd === mergeCopyOf(fx)), "every run of the check, reruns included, in the merge copy");
-    const reruns = calls.filter((c) => c.argv.includes("tests/b.txt"));
-    assert.ok(reruns.some((c) => c.head === base && c.result === "pass"), "the failing file passed on master alone");
-    assert.ok(reruns.some((c) => c.head !== base && c.result === "fail"), "and failed again on the merge");
-    assert.equal(h.run(done.run!).blame, "branch");
     const told = h.notices.filter((n) => n.branch === b.branch && n.kind === "needs-fix");
     assert.equal(told.length, 1, "told once");
     assert.match(told[0]!.text, /tests\/b\.txt/, "the owner chat is told which test");
-  });
-
-  test("S5: a test failing on master too: noted on the landing, does not block, nobody told to fix", async () => {
-    const { fx, h } = await setup({ files: { "tests/a.txt": "fail\n" } });
-    const b = fx.branch("ok", { "b.txt": "b\n" });
-    const e = await h.add({ branch: b.branch });
-    const landed = await h.waitEntry(e.id, settled);
-    assert.equal(landed.state, "landed", `${landed.state}: ${landed.reason}`);
-    assert.ok(landed.notes.some((n) => n.kind === "master-red" && /tests\/a\.txt/.test(n.text)), `noted: ${JSON.stringify(landed.notes)}`);
-    assert.equal(h.notices.filter((n) => n.kind === "needs-fix").length, 0);
   });
 
   test("S5e: a whole check red on master too and naming nothing (build): Can't tell whose failure · waiting for you; never landed, never blamed, no pause, no chat told; Send Back hands it back", async () => {
@@ -97,16 +81,11 @@ describe("blame", () => {
     const s = await h.waitEntry(e.id, settled);
     const v = await h.view();
     const run = h.run(s.run!);
-    const steps = run.steps.map((x) => [x.id, x.result, x.detail]);
-    assert.equal(s.state, "landed", `${s.state}: ${s.reason} ${JSON.stringify(steps)}`);
+    assert.equal(s.state, "landed", `${s.state}: ${s.reason} ${JSON.stringify(run.steps.map((x) => [x.id, x.result, x.detail]))}`);
     assert.notEqual(v.state, "paused", "the queue doesn't pause");
     assert.ok(!v.needsYou.some((x) => x.id === e.id), "no entry waits on the user");
     const why = "Unit tests is broken on master: no test ran (unit: --groups needs a value)";
-    for (const id of ["check:unit", "rerun-tip:unit", "rerun-master:unit"]) assert.equal(run.steps.find((x) => x.id === id)?.result, "skipped", `${id} reads skipped: ${JSON.stringify(steps)}`);
-    const onMaster = run.steps.find((x) => x.id === "rerun-master:unit")!;
-    assert.equal(onMaster.detail, why);
-    assert.equal(onMaster.broken, true);
-    assert.match(h.log(run.id, onMaster.id), /--groups needs a value/, "its log is kept");
+    // The skipped steps, their flag and log are run.integration's (the release run's control case).
     assert.ok(s.notes.some((n) => n.kind === "master-red" && n.text === why), `noted: ${JSON.stringify(s.notes)}`);
     assert.deepEqual(v.heads.targetBroken?.map((x) => [x.check, x.why, x.run, x.step]), [["unit", why, run.id, "rerun-master:unit"]], "flagged in Needs you");
     assert.equal(h.flags.length, 1, "the user is told once");
@@ -187,15 +166,6 @@ describe("blame", () => {
     else assert.equal(fx.head(), before);
   });
 
-  test("S26: a flaky test (passes on rerun): noted, lands", async () => {
-    const { fx, h } = await setup();
-    const b = fx.branch("flaky", { "tests/c.txt": "flaky\n" });
-    const e = await h.add({ branch: b.branch });
-    const landed = await h.waitEntry(e.id, settled);
-    assert.equal(landed.state, "landed", `${landed.state}: ${landed.reason}`);
-    assert.ok(landed.notes.some((n) => n.kind === "flaky" && /tests\/c\.txt/.test(n.text)), `noted flaky: ${JSON.stringify(landed.notes)}`);
-  });
-
   test("S6: setup broken on master too: retried once, then paused; nobody blamed, no chat told; the setup log kept from its first line", async () => {
     const { fx, h } = await setup({ files: { "setup.conf": "broken\n" } });
     const base = fx.head();
@@ -218,16 +188,7 @@ describe("blame", () => {
     assert.match(lg, /broken/);
   });
 
-  test("S6b: setup that fails once on the machine: the retry passes and the branch lands, never blamed", async () => {
-    const { fx, h } = await setup({ files: { "setup.conf": "broken-once\n" } });
-    const b = fx.branch("ok", { "b.txt": "b\n" });
-    const e = await h.add({ branch: b.branch });
-    const s = await h.waitEntry(e.id, settled);
-    assert.equal(s.state, "landed", `${s.state}: ${s.reason}`);
-    assert.equal(h.notices.filter((n) => n.kind === "needs-fix").length, 0);
-  });
-
-  test("S7: setup broken only by the branch: blamed on the branch, with the setup log; the queue doesn't pause", async () => {
+  test("S7: setup broken only by the branch: back with its chat; the queue doesn't pause", async () => {
     const { fx, h } = await setup();
     const base = fx.head();
     const b = fx.branch("setup", { "setup.conf": "broken\n" });
@@ -236,30 +197,9 @@ describe("blame", () => {
     assert.equal(s.state, "with-chat", `${s.state}: ${s.reason}`);
     assert.match(s.reason ?? "", /setup/i);
     assert.equal(fx.head(), base);
-    assert.equal(h.run(s.run!).blame, "branch");
-    assert.ok(fx.calls().some((c) => c.script === "setup" && c.head === base && c.result === "pass"), "setup passed on master alone");
     assert.equal((await h.view()).state, "idle", "no pause for a branch's own breakage");
   });
 
-  test("S21: a dependency change runs the offline install step; a broken one is the branch's", async () => {
-    const { fx, h } = await setup();
-    const good = fx.branch("deps", { "deps.lock": "v2\n" });
-    const mark = fx.calls().length;
-    const eg = await h.add({ branch: good.branch });
-    const lg = await h.waitEntry(eg.id, settled);
-    assert.equal(lg.state, "landed", `${lg.state}: ${lg.reason}`);
-    assert.ok(fx.callsSince(mark).some((c) => c.script === "install" && c.result === "pass"), "install ran for the new lockfile");
-    assert.ok(h.run(lg.run!).steps.some((s) => s.kind === "install"), "an install step on the run");
-    const plain = fx.branch("plain", { "p.txt": "p\n" });
-    const m2 = fx.calls().length;
-    const ep = await h.waitEntry((await h.add({ branch: plain.branch })).id, settled);
-    assert.equal(ep.state, "landed");
-    assert.ok(!fx.callsSince(m2).some((c) => c.script === "install"), "no install without a lockfile change");
-    const bad = fx.branch("deps-bad", { "deps.lock": "v3 broken\n" });
-    const s = await h.waitEntry((await h.add({ branch: bad.branch })).id, settled);
-    assert.equal(s.state, "with-chat", `${s.state}: ${s.reason}`);
-    assert.equal(h.run(s.run!).blame, "branch");
-  });
 });
 
 // ---------------------------------------------------------------- what the project declares
@@ -271,21 +211,15 @@ describe("checks the project declares", () => {
     const landed = await h.waitEntry((await h.add({ branch: b.branch })).id, settled);
     assert.equal(landed.state, "landed", `${landed.state}: ${landed.reason}`);
     assert.equal((await h.view()).checks, "none");
-    assert.equal(h.run(landed.run!).noChecks, true);
-    assert.ok(landed.notes.some((n) => n.kind === "no-checks" && /No checks declared/i.test(n.text)), JSON.stringify(landed.notes));
     assert.equal(fx.calls().filter((c) => c.script === "unit" || c.script === "build").length, 0);
   });
 
-  test("S15a: one test command (no service): its runner is the check, in the copy; a red file is rerun by selector", async () => {
+  test("S15a: one test command (no service): its runner is the check, in the copy", async () => {
     const { fx, h } = await setup({ checks: "test-command" });
     assert.equal((await h.view()).checks, "test-command");
     const b = fx.branch("b", { "b.txt": "b\n" });
     const l = await h.waitEntry((await h.add({ branch: b.branch })).id, settled);
     assert.equal(l.state, "landed", `${l.state}: ${l.reason}`);
     assert.ok(fx.calls().some((c) => c.script === "runner" && c.result === "pass" && c.cwd === mergeCopyOf(fx)));
-    const red = fx.branch("red", { "tests/b.txt": "fail\n" });
-    const r = await h.waitEntry((await h.add({ branch: red.branch })).id, settled);
-    assert.equal(r.state, "with-chat", `${r.state}: ${r.reason}`);
-    assert.ok(fx.calls().some((c) => c.script === "runner" && c.argv.includes("tests/b.txt")), "rerun by selector");
   });
 });

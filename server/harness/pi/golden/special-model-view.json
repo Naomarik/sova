@@ -656,11 +656,11 @@
       },
       "settings_tab": {
        "type": "string",
-       "description": "With page settings: general | models | subagents | overseer | summaries | themes | experimental",
+       "description": "With page settings: general | models | profiles | overseer | summaries | themes | experimental",
        "enum": [
         "general",
         "models",
-        "subagents",
+        "profiles",
         "overseer",
         "summaries",
         "themes",

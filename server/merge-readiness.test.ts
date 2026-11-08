@@ -1065,10 +1065,14 @@ test("idle unmerged sessions (§app/idle-git-cache): no Git between 5-minute rea
   servedReset();
   r.configureReadiness({ now: () => now, insights: ins, treeStamp: (d) => ins.quietStamp(d), asksUser: () => undefined });
   const reason = () => r.readinessOverlay(row)?.trees[0]?.reason;
+  const conflicts = () => r.readinessOverlay(row)?.trees[0]?.conflicts;
   const tick = async (ms: number) => { now += ms; r.readinessOverlay(row); await r.readinessIdle(); };
   try {
     await tick(0);
-    assert.equal(reason(), "Conflicts with master · 1 file");
+    // A conflict doesn't block the Land (al_3 q7: the merge thread judges it in line): the row is Ready to land, and
+    // still carries the conflict it found.
+    assert.equal(conflicts(), 1);
+    assert.equal(reason(), "Ready to land · 1 commit ahead");
     await tick(r.READINESS_TTL_MS); // the first read found the drivers: from here the stamps hold
     const settledAt = now;
     calls.length = 0;
@@ -1088,12 +1092,14 @@ test("idle unmerged sessions (§app/idle-git-cache): no Git between 5-minute rea
     git(wt, "add", ".");
     git(wt, "commit", "-q", "-m", "commit the edits");
     await tick(1);
-    assert.equal(reason(), "Conflicts with master · 1 file", "a commit shows at the next listing");
+    assert.equal(reason(), "Ready to land · 2 commits ahead", "a commit shows at the next listing");
+    assert.equal(conflicts(), 1);
 
     writeFileSync(driver, "exit 0\n");
     await tick(1);
     // Decisions off: the code-only conditions make it Ready to land, which its reason says (§chat.worktrees/ready-to-land).
-    assert.equal(reason(), "Ready to land · 2 commits ahead", "a change to the merge driver's code alone shows at the next listing");
+    assert.equal(conflicts(), undefined, "a change to the merge driver's code alone shows at the next listing");
+    assert.equal(reason(), "Ready to land · 2 commits ahead");
 
     calls.length = 0;
     commit(main, "b.txt", "master moves");
@@ -1275,7 +1281,7 @@ test("b2: one uncommitted file, a commit ahead, idle, check ok: ready to merge w
 });
 
 test("Ready to land: decisions off falls back to the code-only conditions; a running turn, a failing check or an open question stops it; drafts land with it once Sova's try says they would, and drafts that wouldn't read Landing specs with Sova telling the session once per commit", async () => {
-  const { fileLandingStore, landingOf, landingReason, specsWhyOf } = await import("./ready-to-land");
+  const { fileLandingStore, landingOf, landingReason } = await import("./ready-to-land");
   type DocsPreview = import("./ready-to-land").DocsPreview;
   const t = { readable: true, merged: false, dirty: false, ahead: 2, head: "d".repeat(40) };
   assert.equal(landingOf(t, "ready", "off", false, undefined)?.state, "ready", "decisions off: code-only");
@@ -1292,8 +1298,20 @@ test("Ready to land: decisions off falls back to the code-only conditions; a run
   const noNote = "§x/new (draft a): §x/new has no verification note from its chat";
   assert.deepEqual(landingOf(t, s, "yes", false, docs({ ...fits, problems: [noNote] }), "the tools are missing"), { state: "specs", commit: t.head, drafts: ["a", "b"], specsWhy: "the tools are missing", docs: { drafts: 2, added: 1, changed: 1, names: ["§x/new", "§x/old"], problems: [noNote] } });
   assert.equal(landingReason(landingOf(t, s, "yes", false, docs(fits))!, 3), "Ready to land · 3 commits ahead · docs: 1 new, 1 changed");
-  assert.equal(specsWhyOf("Done.\nCan't land specs: the spec tools aren't installed here."), "the spec tools aren't installed here");
-  assert.equal(specsWhyOf("Nothing to say."), undefined);
+  // The chat's reason is its Can't answer to Sova's drafts request (merge.respond), never a line in its reply.
+  {
+    const dir = mkdtempSync(join(tmpdir(), "rtl-asks-"));
+    const store = fileLandingStore(() => join(dir, "ready-to-land.json"));
+    store.asked("s1", "/wt/a", t.head, "rq_0123456789ab", "drafts");
+    assert.equal(store.cantWhy("s1", "/wt/a", t.head), undefined, "asked, not answered");
+    store.delivered("rq_0123456789ab", "parent");
+    assert.equal(store.ask("rq_0123456789ab")?.to, "parent");
+    store.answer("rq_0123456789ab", { kind: "cant", text: "the spec tools aren't installed here", at: 1 });
+    store.answer("rq_0123456789ab", { kind: "fixed", text: "again", at: 2 });
+    assert.equal(store.cantWhy("s1", "/wt/a", t.head), "the spec tools aren't installed here", "answered once; the first answer stands");
+    assert.equal(store.cantWhy("s1", "/wt/a", "f".repeat(40)), undefined, "only at the head it was asked at");
+    rmSync(dir, { recursive: true, force: true });
+  }
 
   // The nudge, end to end: once per commit, never for a session a TUI holds.
   const lines = chain([worktrees([tracked()], "2026-10-23T10:00:00.000Z"), assistant([{ type: "text", text: "Done." }], "stop", "2026-10-23T10:05:00.000Z")]);
@@ -1309,7 +1327,7 @@ test("Ready to land: decisions off falls back to the code-only conditions; a run
     const tr = r.readinessReading(path);
     assert.ok(tr.known && tr.value?.trees[0]?.landing?.state === "specs");
     assert.equal(sent.length, 1);
-    assert.match(sent[0]!, /^\[merge-queue\] feat\/agents-row-dropdown is finished at eeeeeee, but its spec drafts wouldn't land with it: §x\/a \(draft landing-offer\): §x\/a has no verification note from its chat\. .*--note --write.*Can't land specs: <why>\.$/);
+    assert.match(sent[0]!, /^\[merge-queue\] feat\/agents-row-dropdown is finished at eeeeeee, but its spec drafts wouldn't land with it: §x\/a \(draft landing-offer\): §x\/a has no verification note from its chat\. .*--note --write.*merge\.respond: Fixed \(drafts: true\), or Can't with why\. Once they fit, the user presses Land; nothing has been landed or approved yet\.$/);
     assert.doesNotMatch(sent[0]!, /Land It|promote/);
     now += r.READINESS_TTL_MS + 1;
     r.readinessOverlay(row);
@@ -1379,12 +1397,16 @@ test("a finished branch that can't be queued to land: Sova names what blocks it 
   const drafts = Array.from({ length: 11 }, (_, i) => `d${i}`);
   const words = landingBlockers({ ...t, dirty: true, dirtyCount: 1, dirtyFiles: ["notes/"] }, live)!.map((b) => b.text);
   assert.deepEqual(words, ["1 uncommitted folder"]);
+  // A conflict with master is never a blocker the chat fixes (al_3 q7): the merge thread judges it once the user lands.
   assert.deepEqual(landingBlockers({ ...t, dirty: true, dirtyCount: 2, dirtyFiles: ["a.ts", "b.ts"], conflicts: 3, tempCommit: "WIP x" }, { ...live, lastCheck: { at: 1, ok: false } })!.map((b) => b.text), [
     "2 uncommitted files",
-    "conflicts with master in 3 files",
     'a temporary commit ("WIP x")',
     "this chat's last check run failed",
   ]);
+  assert.deepEqual(landingBlockers({ ...t, conflicts: 3 }, live), [], "a conflict alone blocks nothing");
+  const withConflict = blockedNoteText("feat/x", t.head, [{ kind: "temp", text: 'a temporary commit ("WIP x")', fix: "reword or squash the temporary commit" }], { base: "master", files: 3 });
+  assert.match(withConflict, /It also conflicts with master in 3 files: don't resolve them yourself; once the user presses Land, the merge thread judges them\./);
+  assert.doesNotMatch(withConflict, /merge master in|resolve them\b(?! yourself)/);
   // Whose run and what failed: the chat's own last test run, with its failing file.
   const own = landingBlockers(t, { ...live, lastCheck: { at: 1, ok: false, what: "test run", failed: "1 failing file, server/a.test.ts" } })!;
   assert.deepEqual(own.map((b) => b.text), ["this chat's last test run failed: 1 failing file, server/a.test.ts"]);
@@ -1392,7 +1414,7 @@ test("a finished branch that can't be queued to land: Sova names what blocks it 
   const note = blockedNoteText("feat/x", t.head, landingBlockers({ ...t, dirty: true, dirtyCount: 1, dirtyFiles: ["notes/"] }, live)!);
   assert.match(note, /^\[merge-queue\] feat\/x is finished at fffffff, but it can't be queued to land yet: 1 uncommitted folder\. /);
   assert.doesNotMatch(note, /Land It|card/);
-  assert.match(note, /Once nothing blocks it, the user's go-ahead lands it through the merge queue: they press Land, or type "land it" in this chat, which you record with the worktree tool's land action\.$/);
+  assert.match(note, /Fix that; once nothing blocks it, the user presses Land \(or types "land it" in this chat, which you record with the worktree tool's land action\)\. Nothing has been landed or approved yet\.$/);
 
   // End to end, through the published reading.
   const lines = chain([worktrees([tracked()], "2026-10-23T10:00:00.000Z"), assistant([{ type: "text", text: "Done." }], "stop", "2026-10-23T10:05:00.000Z")]);

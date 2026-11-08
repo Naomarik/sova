@@ -52,7 +52,7 @@ const ROWS: Record<string, SessionSummary> = {
     branches: [branch("feat/a"), branch("feat/b")],
   }),
   "needs a fix": session({ branches: [branch("feat/login", { queue: { state: "needs-fix", commit: SHA, reason: "Unit tests failed on the merge" } })] }),
-  "needs you": session({ branches: [branch("feat/a", { queue: { state: "review-flagged", commit: SHA } }), branch("feat/b", { queue: { state: "needs-fix", commit: SHA } })] }),
+  "needs you": session({ branches: [branch("feat/a", { queue: { state: "unattributed", commit: SHA } }), branch("feat/b", { queue: { state: "needs-fix", commit: SHA } })] }),
   checking: session({ branches: [branch("feat/a", { queue: { state: "checking", commit: SHA } })] }),
   queued: session({ branches: [branch("feat/a", { queue: { state: "queued", commit: SHA, position: 2 } }), branch("feat/b", { queue: { state: "queued", commit: SHA, position: 3 } })] }),
   "inherited, ready": session({ branches: [branch("feat/parent", { sharedWith: "s-0" })] }),

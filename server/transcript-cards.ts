@@ -34,7 +34,7 @@ import { DRAWING_VIEW_FILE, DRAWINGS_DIR, GUIDE_FILE, GUIDE_MAX_BYTES, KIND_FILE
 import { typeOwnerWord } from "../shared/transcript-cards";
 import { queueChatRole } from "../shared/merge-queue";
 import { closedDoor, EXTENSION_CARD_DOORS } from "./extension-doors";
-import { cardSenderHeaders, type PressSender } from "./extension-sender";
+import { cardRunHeaders, cardSenderHeaders, type PressSender } from "./extension-sender";
 import { CARD_SENDER_PREFIX } from "../shared/senders";
 import { checkoutRootOf } from "../pi-config/extensions/mode/project-discovery.ts";
 import { sessionsChanged } from "./list-generation";
@@ -705,7 +705,7 @@ async function runCommand(id: string, params: Record<string, unknown>, path: str
   }
   // A click on an extension's card never opens a door its key can't (§app.extensions/not-you).
   if (ownerExt && closedDoor(req.method, new URL(req.url, "http://sova").pathname)) return { state: "failed", text: `An extension's card can't run ${entry.label}. Nothing ran.` };
-  const res = await deps.request(req.url, { method: req.method, headers: { "content-type": "application/json", "x-sova-command": id, ...(sender ? cardSenderHeaders(sender) : {}) }, ...(req.body ? { body: JSON.stringify(req.body) } : {}) });
+  const res = await deps.request(req.url, { method: req.method, headers: { "content-type": "application/json", "x-sova-command": id, ...cardRunHeaders(), ...(sender ? cardSenderHeaders(sender) : {}) }, ...(req.body ? { body: JSON.stringify(req.body) } : {}) });
   const j = (await res.json().catch(() => null)) as { error?: unknown } | null;
   if (res.ok) return { state: "done", text: `${entry.label} done.` };
   return { state: "failed", text: typeof j?.error === "string" ? j.error : `${entry.label} failed (${res.status}).` };
@@ -817,7 +817,7 @@ export async function runCardCommand(path: string, id: unknown, command: unknown
   }
   const ownerExt = ownerExtensionOf(rec!, card.type);
   if (ownerExt && closedDoor(req.method, new URL(req.url, "http://sova").pathname)) throw new CardRefusal(`An extension's card can't run ${entry.label}. Nothing ran.`, 403);
-  const res = await deps.request(req.url, { method: req.method, headers: { "content-type": "application/json", "x-sova-command": entry.id, ...(ownerExt ? cardSenderHeaders({ ext: ownerExt }) : (s.align?.openQuestions ?? 0) > 0 ? cardSenderHeaders({ sessionId: `${CARD_SENDER_PREFIX}${card.type}`, title: dataTitle(card) ?? card.title }) : {}) }, ...(req.body ? { body: JSON.stringify(req.body) } : {}) });
+  const res = await deps.request(req.url, { method: req.method, headers: { "content-type": "application/json", "x-sova-command": entry.id, ...cardRunHeaders(), ...(ownerExt ? cardSenderHeaders({ ext: ownerExt }) : (s.align?.openQuestions ?? 0) > 0 ? cardSenderHeaders({ sessionId: `${CARD_SENDER_PREFIX}${card.type}`, title: dataTitle(card) ?? card.title }) : {}) }, ...(req.body ? { body: JSON.stringify(req.body) } : {}) });
   const text = await res.text();
   let body: unknown = text;
   try {

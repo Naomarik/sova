@@ -154,40 +154,49 @@ test("a check added mid-run adds a segment and grows the total", () => {
 
 test("merge needs-you while a landing runs: no chip and no count on the running bar, listed only in the detail", () => {
   const r = run([step("check:unit", "check", "running")]);
-  const q = queue({ state: "running", current: r, needsYou: [entry({ id: "me_9", branch: "feat/flag", state: "review-flagged", reason: "the reviewer said blocking" })] });
+  const q = queue({ state: "running", current: r, needsYou: [entry({ id: "me_9", branch: "feat/flag", state: "unattributed", reason: "unit fails on master too" })] });
   const b = bar([proj({ queue: q })])!;
   assert.equal(b.top.kind, "landing");
   assert.equal(b.top.count, undefined);
   assert.ok(!("needsChip" in b.top));
   assert.ok(!b.name.includes("needs you"), b.name);
   assert.ok(!b.top.peek.some((l) => l.text.includes("feat/flag")));
-  assert.ok(b.top.lines.some((l) => l.text.startsWith("feat/flag · Review flagged")));
+  assert.ok(b.top.lines.some((l) => l.text.startsWith("feat/flag · Can't tell whose failure")));
 });
 
 test("merge needs-you with nothing running takes the whole bar, in the tab's words, its actions opening the tab", () => {
-  const q = queue({ needsYou: [entry({ id: "me_9", branch: "feat/flag", state: "behaviour-differs", run: "mr_7" })] });
+  const q = queue({ needsYou: [entry({ id: "me_9", branch: "feat/flag", state: "unattributed", run: "mr_7" })] });
   const b = bar([proj({ queue: q })])!;
   assert.equal(b.top.kind, "merge-needs");
   assert.equal(b.top.tone, "warn");
-  assert.equal(b.top.title, "Behaviour differs · waiting for you");
+  assert.equal(b.top.title, "Can't tell whose failure · waiting for you");
   assert.equal(b.top.sub, "feat/flag");
   assert.ok(!b.top.lines.some((l) => l.text.startsWith("feat/flag")), "the detail doesn't repeat the face");
   const labels = b.top.actions.map((a) => a.label);
-  assert.deepEqual(labels.slice(0, 2), ["Accept", "Send Back"]);
+  assert.deepEqual(labels.slice(0, 2), ["Land Anyway", "Try Again"]);
+  assert.ok(!labels.includes("Send Back"), "no Send Back anywhere (al_3)");
   for (const a of b.top.actions) assert.equal(a.kind, "link");
   assert.ok(b.top.actions.some((a) => a.kind === "link" && a.href === "#/projects/prj_a/merge-queue/mr_7"));
   const { doing, places } = splitActions(b.top.actions);
-  assert.deepEqual(doing.map((a) => a.label), ["Accept", "Send Back"], "the things that do something: buttons, their own row");
+  assert.deepEqual(doing.map((a) => a.label), ["Land Anyway", "Try Again"], "the things that do something: buttons, their own row");
   assert.deepEqual(places.map((a) => a.label), ["Queue"], "the places to go: one row of links");
   assert.ok(places.every((a) => a.aria?.startsWith("Open")), "each place keeps a full accessible name");
 });
 
 test("several merge needs-you with nothing running: the first takes the bar, the rest one short count", () => {
-  const q = queue({ needsYou: [entry({ id: "me_8", branch: "feat/a", state: "drafts-changed" }), entry({ id: "me_9", branch: "feat/b", state: "review-flagged" })] });
+  const q = queue({ needsYou: [entry({ id: "me_8", branch: "feat/a", state: "drafts-changed" }), entry({ id: "me_9", branch: "feat/b", state: "unattributed" })] });
   const b = bar([proj({ queue: q })])!;
   assert.equal(b.top.kind, "merge-needs");
   assert.equal(b.top.icon, "alert-circle");
   assert.deepEqual(b.top.count, { text: "+1", label: "1 more needs you" });
+});
+
+test("an entry back with its chat is never needs-you; a decision is, in its own words and answers", () => {
+  assert.equal(bar([proj({ queue: queue({ needsYou: [entry({ branch: "feat/r", state: "review-flagged" })] }) })]), null, "review findings go back to the chat by themselves");
+  const decision = { id: "dc_1", kind: "out-of-tries" as const, question: "Tried 3 times: Unit tests failed each time", choices: [], raisedBy: "queue" as const, actions: ["land" as const], at: "" };
+  const b = bar([proj({ queue: queue({ needsYou: [entry({ id: "me_7", branch: "feat/o", state: "needs-fix", decision })] }) })])!;
+  assert.equal(b.top.kind, "merge-needs");
+  assert.deepEqual(splitActions(b.top.actions).doing.map((a) => a.label), ["Land"]);
 });
 
 test("a conflict the thread is judging is not needs-you: at most a detail line", () => {

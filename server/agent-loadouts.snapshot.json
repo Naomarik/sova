@@ -11621,7 +11621,7 @@
       ]
     },
     "project-verbs:session": {
-      "bytes": 9186,
+      "bytes": 10577,
       "tools": [
         {
           "name": "project_verbs",
@@ -11677,6 +11677,8 @@
                   "merge.live",
                   "merge.test",
                   "merge.names",
+                  "merge.rule",
+                  "merge.respond",
                   "release.status",
                   "release.logs",
                   "release.request",
@@ -11838,7 +11840,7 @@
               },
               "verdict": {
                 "type": "string",
-                "description": "merge.resolve: no-behaviour-change | behaviour-differs; merge.review: ok | notes | blocking."
+                "description": "merge.resolve: no-behaviour-change (contents: the merged files) | chat-fixes (the branch's chat fixes it; your diagnosis in proposal; no contents) | needs-user (the user decides; question in text, choices; no contents); merge.review: ok | notes | blocking."
               },
               "files": {
                 "type": "array",
@@ -11859,9 +11861,32 @@
                 "type": "string",
                 "description": "merge.resolve: what the resolution does, in plain words."
               },
+              "answer": {
+                "type": "string",
+                "description": "merge.respond (the branch's chat, answering a merge queue request by its id): fixed | needs-you | cant."
+              },
+              "request": {
+                "type": "string",
+                "description": "merge.respond / merge.rule: a merge queue request, by its id (rq_…, in the merge queue's note)."
+              },
+              "drafts": {
+                "type": "boolean",
+                "description": "merge.respond with fixed: you changed the branch's spec drafts (that needs no commit)."
+              },
+              "ruling": {
+                "type": "string",
+                "description": "merge.rule (the merge thread's): chat-fixes (text: your diagnosis, sent to the branch's chat) | try-again (back in line; after a chat's Can't, text: the other approach, once) | needs-user (text: the question, choices: its options; only for what is the user's) | checked | beyond (a chat's fix, by its request: only what was asked, or text: what more it changes)."
+              },
+              "choices": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "merge.rule / merge.resolve with needs-user, merge.respond with needs-you: the options for the user, short, at most 4 (each fills the chat's message box when picked)."
+              },
               "text": {
                 "type": "string",
-                "description": "merge.review: the reviewer's notes, short; merge.ask: the merge thread's question for the user; merge.reply: the user's answer, in their words; release.notes: the release notes, in full."
+                "description": "merge.review: the reviewer's notes, short; merge.ask: the merge thread's question for the user; merge.reply: the user's answer, in their words; merge.respond: what you changed (fixed), the question for your user (needs-you) or why you can't (cant); release.notes: the release notes, in full."
               },
               "action": {
                 "type": "string",
@@ -11869,14 +11894,14 @@
               },
               "ask": {
                 "type": "string",
-                "description": "merge.reply: the merge thread's question you relay the user's answer to, by its id (ak_…, in the merge queue's message)."
+                "description": "merge.reply (the user's page only): the merge thread's question the user answers, by its id (ak_…)."
               },
               "contents": {
                 "type": "object",
                 "additionalProperties": {
                   "type": "string"
                 },
-                "description": "merge.resolve: each conflicted file's merged text, by its path in the repository; Sova merges the approved commit in the entry's scratch copy, writes these files and commits the resolution there (then omit commit)."
+                "description": "merge.resolve, verdict no-behaviour-change only: each conflicted file's merged text, by its path in the repository; Sova merges the approved commit in the entry's scratch copy, writes these files and commits the resolution there. chat-fixes and needs-user carry none."
               }
             },
             "required": [

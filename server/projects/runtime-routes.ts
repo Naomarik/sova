@@ -6,7 +6,8 @@ import { mergeRun, readRuntime, RuntimeRefusal, startOnboard, startRuntimeTick }
 import { operatorEnvelopeOf, type OperatorBy } from "./spaces";
 import { FOLDED_PLAYBOOKS, SETUP_MODE, SETUP_PLAYBOOK_ID } from "./onboard";
 import { mergeSetup, openSetup, readSetup, SETUP_FROM, type SetupDeps, type SetupFrom, type SetupMergeDeps } from "./setup-chat";
-import { pageOnlyRefusal } from "../page-only";
+import { notPage, pageOnlyRefusal } from "../page-only";
+import { notPageNorProven } from "../mesh/click-proof";
 import { realGit } from "../project-services/engine";
 import { readProject } from "./spaces";
 import type { Envelope } from "../org-envelope";
@@ -31,6 +32,16 @@ const handle =
       throw err;
     }
   };
+
+/** A raw body as the route's object ({} when it isn't one), for a route that read it as text (its click proof). */
+function jsonObject(raw: string): Record<string, unknown> {
+  try {
+    const b = JSON.parse(raw) as unknown;
+    return b && typeof b === "object" && !Array.isArray(b) ? (b as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
 
 async function body(c: Context): Promise<Record<string, unknown>> {
   const b = await c.req.json().catch(() => ({}));
@@ -98,6 +109,15 @@ export const SETUP_MERGE_WORDS = {
   extension: "Only the user merges the Setup chat's proposal: an extension never does. Nothing was merged.",
 } as const;
 
+/** Merge Branch on a proposed run (and its Land once the queue serves it): the operator's own page only. */
+export const RUN_MERGE_WORDS = {
+  overseer: "Only the user merges a proposed branch. Ask them to press Merge Branch or Land. Nothing was merged.",
+  local: "Only the user merges a proposed branch, from their own page on this computer. Nothing was merged.",
+  chat: "Only the user merges a proposed branch: a chat never does. Ask them to press Merge Branch or Land. Nothing was merged.",
+  script: "Only the user merges a proposed branch, from their own page. Nothing was merged.",
+  extension: "Only the user merges a proposed branch: an extension never does. Nothing was merged.",
+} as const;
+
 export function registerRuntimeRoutes(app: Hono<any>): void {
   startRuntimeTick();
 
@@ -135,7 +155,17 @@ export function registerRuntimeRoutes(app: Hono<any>): void {
   app.post(
     "/api/projects/:pid/runtime/merge",
     handle(async (c) => {
-      const b = await body(c);
+      // Merge Branch lands the branch (a Land once the queue serves it): the operator's own page only, whatever it proposes
+      // (§app.access/your-click). A script, a chat's shell, an in-process call: refused before anything is read.
+      // A Setup proposal keeps the Setup route's rule (this machine's page only); any other proposal also takes a proven
+      // click from another of the user's computers (server/mesh/click-proof.ts), as Land does.
+      const isSetup = !!(await import("./playbook-review")).playbookReviewOf(c.req.param("pid") ?? "")?.setup;
+      const raw = await c.req.text().catch(() => "");
+      if (isSetup) {
+        const notYou = pageOnlyRefusal(c, SETUP_MERGE_WORDS);
+        if (notYou) return c.json({ error: notYou }, 403);
+      } else if (await notPageNorProven(c, raw)) return c.json({ error: RUN_MERGE_WORDS[notPage(c) ?? "script"] }, 403);
+      const b = jsonObject(raw);
       const hash = opt(b.hash);
       if (!hash) return c.json({ error: "Give the hash you were shown (hash)." }, 400);
       // Needs you's Merge Branch on a Setup proposal: the Setup route's own rules (the user's click only).

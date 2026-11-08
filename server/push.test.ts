@@ -300,3 +300,14 @@ test("a proposed playbook run is a push kind, on by default, worded \"Playbook n
   const out = pushDecision({ current: [b], announced: new Set(), settings, devices: 1, now: 100_000, lastSentAt: 0, quiet: false, viewing: () => false });
   assert.deepEqual(out.send.map((x) => x.kind), ["playbook-review"]);
 });
+
+// A reply that asks the user (the asks_user verdict, a soft "asks-you" item) is never pushed, so a merge queue batch
+// turn read for attention (§chat.merge-queue/requests) adds no second notification to its decision's one
+// (§chat.merge-queue/decision, §app.notifications/delivery).
+test("an asks-you item is never pushed; a blocker of a push kind in the same reading still is", () => {
+  const first = pushDecision({ ...base, current: [], announced: new Set() });
+  const asks = pushDecision({ ...base, current: [b("a", "asks-you", "Keep the old label or the new?")], announced: first.announced });
+  assert.deepEqual(asks.send, [], "asks-you: told, never sent");
+  const control = pushDecision({ ...base, current: [b("a", "asks-you"), b("a", "error")], announced: new Set() });
+  assert.deepEqual(keysOf(control), ["a:error"], "control: the push path is on for this reading");
+});

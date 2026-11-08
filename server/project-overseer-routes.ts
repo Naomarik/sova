@@ -14,6 +14,8 @@ import { overseerMemoryInfo, putOverseerMemorySwitch } from "./memory/routes";
 import { recordKept } from "./project-settings";
 import { TOKEN_HEADER } from "./auth";
 import { pageOnlyRefusal, yourClickRefusal } from "./page-only";
+import { notPageNorProven } from "./mesh/click-proof";
+import { PAGE_IS_THE_USERS } from "./merge-queue/routes";
 import { powerTurnsOn } from "../shared/powers";
 
 /**
@@ -253,9 +255,21 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
     return c.json(await projectWorktrees(p.projectId), 200, NO_STORE);
   }));
   // A coding session's own worktree: merge its branch back into its target, or remove it once merged (or empty).
+  // It lands the branch (through the merge queue as a Land, or a plain merge where none serves): the user's own click in
+  // Sova's page only, here or a proven click from another of their computers (§app.access/your-click). A script, a
+  // chat's shell, the Overseers' in-process calls: refused.
   app.post(`${base}/worktrees/merge`, handle(async (c) => {
+    const raw = await c.req.text().catch(() => "");
+    if (await notPageNorProven(c, raw)) return c.json({ error: PAGE_IS_THE_USERS }, 403, NO_STORE);
     const p = pathsOf(c);
-    const b = await body(c);
+    let b: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("not an object");
+      b = parsed as Record<string, unknown>;
+    } catch {
+      throw new OrgError("Expected a JSON object body");
+    }
     return c.json(await mergeCodingWorktree(p.projectId, b.sessionId, b.commit), 200, NO_STORE);
   }));
   // Remove Worktree; `dryRun: true` answers why it would keep the folder and what Remove Anyway would delete

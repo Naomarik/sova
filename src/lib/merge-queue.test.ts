@@ -51,11 +51,11 @@ test("a repo the queue doesn't serve: Ready to merge, the plain-merge line, neve
   assert.deepEqual(controlWords([queueRow(wt({ readiness: ready }))]), { text: "1 ready", n: 1, dot: "ok" });
 });
 
-test("queued: its place, its estimates, Cancel; a newer commit is said", () => {
+test("queued: its place, its estimates, Remove from Queue; a newer commit is said", () => {
   const r = queueRow(wt({ queue: q({ state: "queued", position: 2, eta: { startsInMs: 4 * 60_000, takesMs: 9 * 60_000 }, newerCommits: 1 }) }));
   assert.equal(r.label, "Queued · 2nd");
   assert.equal(r.detail, "starts in ~4 min · takes ~9 min");
-  assert.equal(r.action, "cancel");
+  assert.deepEqual(rowButtons(r, "prj_1"), ["Remove from Queue"]);
   assert.equal(r.newer, "1 newer commit not included");
 });
 
@@ -66,25 +66,27 @@ test("checking pulses and has no action", () => {
   assert.equal(r.action, "none");
 });
 
-test("behaviour differs: both sides in words, Accept and Send Back", () => {
+test("behaviour differs: both sides in words, Accept (a proposal), Answer in Chat and Remove from Queue; no Send Back", () => {
   const r = queueRow(
     wt({ queue: q({ state: "behaviour-differs", conflict: { files: ["a.ts"], verdict: "behaviour-differs", ours: "Master retries twice.", theirs: "The branch never retries.", proposal: "Keep master's retry.", at: "" } }) }),
   );
   assert.equal(r.label, "Behaviour differs");
   assert.equal(r.action, "accept");
-  assert.equal(r.sendBack, true);
+  assert.deepEqual(rowButtons(r, "prj_1"), ["Accept", "Answer in Chat", "Remove from Queue"]);
   assert.equal(r.reason, "Target: Master retries twice.\nBranch: The branch never retries.\nProposed: Keep master's retry.");
 });
 
-test("review flagged: the review's words, Land Anyway and Send Back", () => {
+test("review flagged: the review's words; it goes back to the chat by itself, so only Remove from Queue", () => {
   const r = queueRow(wt({ queue: q({ state: "review-flagged", review: { verdict: "blocking", text: "Leaves a TODO hack in land.ts.", commit: SHA, at: "" } }) }));
-  assert.equal(r.action, "land-anyway");
-  assert.equal(r.sendBack, true);
+  assert.equal(r.action, "none");
+  assert.deepEqual(rowButtons(r, "prj_1"), ["Remove from Queue"]);
   assert.equal(r.reason, "Leaves a TODO hack in land.ts.");
 });
 
-test("drafts changed asks for a new Land; needs a fix offers Land This Commit Again, never Land (al_4, al_1)", () => {
-  assert.equal(queueRow(wt({ queue: q({ state: "needs-fix", reason: "unit failed: a.test.ts", run: "mr_1" }) })).action, "land-this-again");
+test("drafts changed asks for a new Land; needs a fix offers only Remove from Queue, never Land or a re-land (al_3)", () => {
+  const nf = queueRow(wt({ queue: q({ state: "needs-fix", reason: "unit failed: a.test.ts", run: "mr_1" }) }));
+  assert.equal(nf.action, "none");
+  assert.deepEqual(rowButtons(nf, "prj_1"), ["Remove from Queue"]);
   const d = queueRow(wt({ queue: q({ state: "drafts-changed" }) }));
   assert.equal(d.label, "Drafts changed");
   assert.equal(d.action, "land");
@@ -122,7 +124,9 @@ test("the control: what needs you first, then a fix, then ready; hidden with non
   assert.equal(controlWords([]), null);
   assert.deepEqual(controlWords([{ key: "ready" }, { key: "ready" }, { key: "queued" }]), { text: "2 ready", n: 2, dot: "ok" });
   assert.deepEqual(controlWords([{ key: "ready" }, { key: "needs-fix" }]), { text: "1 needs a fix", n: 1, dot: "err" });
-  assert.deepEqual(controlWords([{ key: "needs-fix" }, { key: "review-flagged" }]), { text: "1 needs you", n: 1, dot: "warn" });
+  assert.deepEqual(controlWords([{ key: "needs-fix" }, { key: "review-flagged" }]), { text: "2 need a fix", n: 2, dot: "err" }, "review findings go back to the chat by themselves");
+  assert.deepEqual(controlWords([{ key: "needs-fix" }, { key: "with-chat" }, { key: "needs-you" }]), { text: "1 needs you", n: 1, dot: "warn" });
+  assert.deepEqual(controlWords([{ key: "with-chat" }, { key: "ready" }]), { text: "1 needs a fix", n: 1, dot: "err" }, "back with the chat: its chat fixes it");
   assert.deepEqual(controlWords([{ key: "landed" }, { key: "merged" }]), { text: "2 worktrees", n: 2, dot: null });
 });
 
@@ -212,11 +216,11 @@ test("an invalid definition is said as such: never Not set up; a row keeps Land 
   assert.equal(r.reason, `This project's .sova/project.json doesn't parse: ${bad}. Fix it on the target, or land a branch that fixes it; nothing else lands until it parses.`);
 });
 
-test("can't tell whose failure: its words, the queue's why, Land Anyway and Send Back; it needs you", () => {
+test("can't tell whose failure: its words, the queue's why, Land Anyway, Try Again and Remove from Queue; it needs you", () => {
   const r = queueRow(wt({ queue: q({ state: "unattributed", reason: "build failed with this branch and on master alone" }) }));
   assert.equal(r.label, "Can't tell whose failure");
   assert.equal(r.action, "land-anyway");
-  assert.equal(r.sendBack, true);
+  assert.deepEqual(rowButtons(r, "prj_1"), ["Land Anyway", "Try Again", "Remove from Queue"]);
   assert.equal(r.reason, "Build failed with this branch and on master alone.");
   assert.deepEqual(controlWords([{ key: "unattributed" }, { key: "ready" }]), { text: "1 needs you", n: 1, dot: "warn" });
   assert.equal(rowsSummary([{ key: "unattributed" }]), "1 can't tell whose failure");
@@ -282,8 +286,8 @@ test("a needs-fix row at its sent-back commit has no Land anywhere: no Land butt
     const r = queueRow(sentBack({ readiness }));
     assert.equal(r.key, "needs-fix");
     assert.equal(r.label, "Needs a fix");
-    assert.equal(r.action, "land-this-again");
-    assert.deepEqual(rowButtons(r, "prj_1"), ["Land This Commit Again", "Remove from Queue"], "no Land split (and so no ▾ menu): its own two buttons");
+    assert.equal(r.action, "none");
+    assert.deepEqual(rowButtons(r, "prj_1"), ["Remove from Queue"], "no Land split (and so no ▾ menu), no re-land: the user's Land stands");
   }
   assert.equal(queueRow(sentBack()).reason, SENT_BACK_LINE);
   assert.equal(queueRow(sentBack({ queue: q({ state: "needs-fix", reason: "unit failed: a.test.ts" }) })).reason, "unit failed: a.test.ts", "the queue's reason, as today");

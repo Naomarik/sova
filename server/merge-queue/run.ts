@@ -883,7 +883,7 @@ async function landDrafts(o: { input: RunInput; copy: string; ident: Record<stri
   if (j.exit !== 0 || !j.written) {
     const f = (j.findings ?? []).slice(0, 6).map((x) => `${x.id ?? x.draft ?? ""} ${x.code ?? ""}: ${x.message ?? ""}`.trim());
     st.end("failed", { detail: `drafts don't fit: ${f.join("; ").slice(0, 300)}` });
-    return { kind: "refused", why: `your spec drafts don't fit, so nothing was made official: ${f.join("; ").slice(0, 400)}. Fix them in your drafts (no commit needed); Land comes back here, or type "land it" in this chat.` };
+    return { kind: "refused", why: `your spec drafts don't fit, so nothing was made official: ${f.join("; ").slice(0, 400)}. Fix them in your drafts (no commit needed) and answer the request: your user's Land stands.` };
   }
   const paths = (j.paths ?? []).filter((x): x is string => typeof x === "string" && x.startsWith(".sova/spec/") && !x.startsWith(".sova/spec/drafts/"));
   if (!paths.length) {

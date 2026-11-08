@@ -19,6 +19,19 @@ export type PressSender = { ext: string } | { sessionId: string; title: string }
 const CARD_SENDER_HEADER = "x-sova-card-sender";
 const CARD_SENDER_SECRET = randomBytes(32).toString("hex");
 export const cardSenderHeaders = (sender: PressSender): Record<string, string> => ({ [CARD_SENDER_HEADER]: `${CARD_SENDER_SECRET}:${encodeURIComponent(JSON.stringify(sender))}` });
+/** What every command a card runs carries in-process (a view's command, a press's command): the same secret, so no HTTP
+    caller can forge it. A card's code is a chat's or an extension's, never the user's click on Sova's own controls: the
+    merge queue's acts refuse it (§app.access/your-click). */
+const CARD_RUN_HEADER = "x-sova-card-run";
+export const cardRunHeaders = (): Record<string, string> => ({ [CARD_RUN_HEADER]: CARD_SENDER_SECRET });
+/** Whether a request is a command a card ran (the in-process secret, never a client's word). */
+export function isCardRun(header: (name: string) => string | undefined): boolean {
+  const v = header(CARD_RUN_HEADER);
+  if (!v) return false;
+  const got = Buffer.from(v);
+  const want = Buffer.from(CARD_SENDER_SECRET);
+  return got.length === want.length && timingSafeEqual(got, want);
+}
 function cardSender(header: string | undefined): PressSender | null {
   const at = header?.indexOf(":") ?? -1;
   if (!header || at <= 0) return null;

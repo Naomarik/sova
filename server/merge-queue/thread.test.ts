@@ -379,7 +379,7 @@ test("conflict: the message names Sova's scratch copy to resolve in, or says non
   assert.match(withCopy, /contents\?/);
   assert.doesNotMatch(withCopy, /side worktree/);
   const none = eventText({ kind: "conflict", entry: entry("mq_5"), run: "mr_1", files: ["a.ts"], scratchError: "git worktree add failed: disk full" });
-  assert.match(none, /Sova couldn't make a scratch copy for it \(git worktree add failed: disk full\): judge it from the diff, and answer verdict "behaviour-differs" with no contents/);
+  assert.match(none, /Sova couldn't make a scratch copy for it \(git worktree add failed: disk full\): judge it from the diff and answer with no contents: verdict "chat-fixes" when it needs no decision of the user's, else "needs-user"/);
 });
 
 test("idle: the queue is quiet; the newest landing and the target's head are named; the playbook decides, merge.hold is offered", () => {
@@ -612,6 +612,12 @@ test("every event tells the thread to read its moment's Read as you go row now, 
     { kind: "idle", entry: entry() },
     { kind: "names", file: "/s/names.json", target: "main" },
     { kind: "answer", ask: { id: "ak_1", question: "q?" }, text: "yes", from: "the user" },
+    { kind: "unattributed", entry: entry(), run: "mr_1", summary: "unit failed on both" },
+    { kind: "review", entry: entry(), run: "mr_1", findings: "dead code in a.ts" },
+    { kind: "resolution-failed", entry: entry(), run: "mr_1", files: ["a.ts"] },
+    { kind: "drafts-changed", entry: entry(), names: ["d"] },
+    { kind: "fix", entry: entry(), request: "rq_1", asked: "fix the unit test", commit: "b".repeat(40) },
+    { kind: "chat-answer", entry: entry(), request: "rq_1", answer: "cant", text: "no way" },
   ];
   assert.deepEqual(evs.map((e) => e.kind).sort(), Object.keys(READ_AS_YOU_GO).sort(), "every event kind the thread is sent has a moment");
   const method = readFileSync(join(DEFAULT_PLAYBOOK_DIR, "PLAYBOOK.md"), "utf8");
@@ -627,4 +633,61 @@ test("every event tells the thread to read its moment's Read as you go row now, 
   assert.match(method, /use it for history only/);
   assert.match(method, /never from memory/);
   assert.match(table, /A project's own playbook may give its own "Read as you go" table: its row wins where it differs/);
+});
+
+test("the rulings: each moment names merge.rule's rulings, and what is the user's goes with every one that may raise it", () => {
+  const failed = eventText({ kind: "failed", entry: entry("mq_9"), run: "mr_9", summary: "unit failed" });
+  assert.match(failed, /merge\.rule \{entry: "mq_9", ruling: "chat-fixes", text: <your diagnosis/);
+  assert.match(failed, /ruling: "needs-user"/);
+  assert.match(failed, /The user's: anything a person sees or does differently/);
+  assert.match(failed, /Not the user's: regenerated files, recorded test outputs, lockfiles/);
+  const conflict = eventText({ kind: "conflict", entry: entry("mq_9"), run: "mr_9", files: ["a.ts"], scratch: "/p/s" });
+  assert.match(conflict, /verdict "chat-fixes"/);
+  assert.match(conflict, /verdict "needs-user" with your question in text and its choices/);
+  assert.doesNotMatch(conflict, /behaviour-differs/, "the old word isn't taught");
+  const un = eventText({ kind: "unattributed", entry: entry("mq_9"), run: "mr_9" });
+  assert.match(un, /nothing went to the branch's chat/);
+  assert.match(un, /ruling: "try-again".*counts no try/);
+  const review = eventText({ kind: "review", entry: entry("mq_9"), run: "mr_9", findings: "dead code in a.ts" });
+  assert.match(review, /went back to the branch's chat by themselves:\ndead code in a\.ts/);
+  const rf = eventText({ kind: "resolution-failed", entry: entry("mq_9"), run: "mr_9", files: ["a.ts"], scratch: "/p/s2" });
+  assert.match(rf, /The branch isn't blamed and nothing went to its chat/);
+  assert.match(rf, /fresh scratch copy at \/p\/s2/);
+  const fix = eventText({ kind: "fix", entry: entry("mq_9"), request: "rq_7", asked: "fix the unit test", commit: "c".repeat(40) });
+  assert.match(fix, /request: "rq_7", ruling: "checked"/);
+  assert.match(fix, /ruling: "beyond", text: <what more it changes>/);
+  assert.match(fix, /What was asked: fix the unit test/);
+  const cant = eventText({ kind: "chat-answer", entry: entry("mq_9"), request: "rq_7", answer: "cant", text: "no way" });
+  assert.match(cant, /You may try one other approach: merge\.rule \{entry: "mq_9", ruling: "try-again"/);
+  const cant2 = eventText({ kind: "chat-answer", entry: entry("mq_9"), request: "rq_7", answer: "cant", text: "no way", otherTried: true });
+  assert.match(cant2, /You already tried another approach for it: raise it to the user/);
+  const needs = eventText({ kind: "chat-answer", entry: entry("mq_9"), request: "rq_7", answer: "needs-you", text: "which wording?" });
+  assert.match(needs, /you can't overrule it/);
+});
+
+test("the fix check asks whether the fix decides something that is the user's, and says to rule needs-user then", () => {
+  const fix = eventText({ kind: "fix", entry: entry("mq_9"), request: "rq_7", asked: "make the save test pass", commit: "c".repeat(40) });
+  assert.match(fix, /does it decide nothing that is the user's\?/);
+  assert.match(fix, /e\.g\. it picked "Store" where the branch said "Save changes"\): merge\.rule \{entry: "mq_9", ruling: "needs-user"/);
+  assert.match(fix, /never "checked", even when it was the only way to make it pass/);
+  assert.match(fix, /The user's: anything a person sees or does differently/);
+  const page = readFileSync(join(DEFAULT_PLAYBOOK_DIR, "references", "fixes.md"), "utf8");
+  assert.match(page, /Does it decide something that is the user's\?/);
+  assert.match(page, /ruling: "needs-user", text, choices/);
+});
+
+test("what is the user's: wording a person sees in the product; code comments, identifiers and test names are not (e2e S3)", () => {
+  const conflict = eventText({ kind: "conflict", entry: entry("mq_9"), run: "mr_9", files: ["src/total.ts"], scratch: "/p/s" });
+  assert.match(conflict, /wording a person sees in the product \(UI copy, messages, docs they read\)/);
+  assert.match(conflict, /Not the user's: [^.]*internal logs, code comments, identifiers and internal names, test names/);
+  assert.match(conflict, /two sides rewording the same comment or name is no behaviour change \(keep the branch's\)/);
+  assert.doesNotMatch(conflict, /\(wording, layout/, "never bare \"wording\"");
+  const fix = eventText({ kind: "fix", entry: entry("mq_9"), request: "rq_7", asked: "a", commit: "c".repeat(40) });
+  assert.match(fix, /it decides something that is the user's \(wording a person sees in the product/);
+  const method = readFileSync(join(DEFAULT_PLAYBOOK_DIR, "PLAYBOOK.md"), "utf8");
+  assert.match(method, /\*\*Not the user's:\*\*[^\n]*code comments, identifiers and internal names, test names/);
+  assert.doesNotMatch(method, /\(wording, layout/);
+  const conflicts = readFileSync(join(DEFAULT_PLAYBOOK_DIR, "references", "conflicts.md"), "utf8");
+  assert.match(conflicts, /internal text: both sides reworded the same code comment/);
+  assert.match(conflicts, /user-facing text or call differently/);
 });

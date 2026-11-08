@@ -28,7 +28,10 @@ after(() => closeAllOrgHosts());
 
 const app = new Hono();
 registerProjectRoutes(app);
-const json = (method: string, body?: unknown) => ({ method, headers: { "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+const { AUTH_COOKIE, initAuthToken } = await import("../auth");
+const { RUN_MERGE_WORDS } = await import("./runtime-routes");
+/** As the user's own page sends it: its sign-in cookie (Merge Branch is page-only, §app.access/your-click). */
+const json = (method: string, body?: unknown, headers: Record<string, string> = { cookie: `${AUTH_COOKIE}=${initAuthToken().token}` }) => ({ method, headers: { "Content-Type": "application/json", ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, stdio: "pipe" }).toString().trim();
 const commit = (dir: string, files: Record<string, string>, msg: string) => {
   for (const [f, text] of Object.entries(files)) {
@@ -111,6 +114,20 @@ test("a run that ends with commits is proposed: a playbook-review item on its se
   const it = items.find((i) => i.kind === "playbook-review");
   assert.equal(it?.tier, "act");
   assert.equal(it?.detail, `Project verbs: merge ${v.playbook!.branchHash!.replace(/^sha256:/, "").slice(0, 12)} into main`);
+});
+
+test("Merge Branch is the user's page only: a token in a header, a chat's key (blank or not), or nothing that shows the page is refused, merging nothing", async () => {
+  for (const [headers, words] of [
+    [{ "x-sova-token": "t" }, RUN_MERGE_WORDS.script],
+    [{ "x-sova-caller": "k" }, RUN_MERGE_WORDS.chat],
+    [{ "x-sova-caller": "" }, RUN_MERGE_WORDS.chat],
+    [{}, RUN_MERGE_WORDS.script],
+  ] as const) {
+    const r = await app.request(`/api/projects/${pid}/runtime/merge`, json("POST", { hash: "sha256:00000000" }, { ...headers }));
+    assert.equal(r.status, 403, JSON.stringify(headers));
+    assert.equal(((await r.json()) as { error: string }).error, words);
+  }
+  assert.equal((await read()).playbookState, "proposed");
 });
 
 test("Merge Branch refuses a hash that is not the one proposed, merging nothing", async () => {

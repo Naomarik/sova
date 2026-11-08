@@ -668,7 +668,7 @@ test("'open a PR/MR': on a served repo a go-ahead naming the request; unserved, 
 	}
 });
 
-test("land refuses a newest message the Overseer, a baton or another session sent, whatever it says, and never looks past it", async () => {
+test("land refuses a newest message the Overseer, a baton, another session or a chat queue sent, whatever it says, and never looks past it", async () => {
 	const r = repo();
 	try {
 		const file = join(r.root, "state", "landing.json");
@@ -694,7 +694,7 @@ test("land refuses a newest message the Overseer, a baton or another session sen
 		// The user's own "land it" came first; the newest is another sender's: refused, and the older one isn't used.
 		say("land it");
 		reply();
-		for (const [customType, who] of [["sova-overseer-sent", "the Overseer"], ["sova-baton-sent", "a baton participant"], ["sova-session-sent", "another session"]] as const) {
+		for (const [customType, who] of [["sova-overseer-sent", "the Overseer"], ["sova-baton-sent", "a baton participant"], ["sova-session-sent", "another session"], ["sova-topic-delivered", "a chat queue"]] as const) {
 			mark(customType, say("land it"));
 			reply();
 			await assert.rejects(f.call(c, { action: "land" }), new RegExp(`sent by ${who}, not typed by the user.*Nothing was recorded`));

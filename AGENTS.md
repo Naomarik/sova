@@ -89,32 +89,55 @@ also update Y" list live in its guide: read the guide of every area your task to
 - **One way in.** Every branch reaches master through Sova's merge queue, one branch at a time, and
   only on the user's go-ahead: **Land** (the worktrees control beside the composer, the session
   pane's Worktrees section, or the project page's Merge Queue tab) or **"land it" typed by the user**
-  in the branch's own chat. Nothing else approves a branch, and no chat merges into master: `worktree
-  merge` into a queue-managed target is refused.
+  in the branch's own chat. Nothing else approves a branch: the merge thread and the branch's chat
+  fix what the user's Land covers but never start, re-approve or move a landing, and no chat merges
+  into master: `worktree merge` into a queue-managed target is refused. Land, a decision's answers,
+  Cancel and Remove from Queue pass only on the user's own click in Sova's page (or their own words
+  in the branch's chat), never from a chat's script or tool or a card's command.
 - **Ready to land** is Sova's own reading of a branch's head commit: no uncommitted files at all, no
-  conflicts with master, the newest checks not failing, no open alignment questions, the session
-  idle, and its latest turn outcome says the work is finished (with Decisions off: the code checks
-  alone). It holds for that commit until the branch changes or lands. Land is offered on it.
+  conflicts with master where the queue doesn't serve the repo (in a served project a conflict never
+  blocks it: the merge thread judges it after Land, and the chat never resolves it itself), the
+  newest checks not failing, no open alignment questions, the session idle, and its latest turn
+  outcome says the work is finished (with Decisions off: the code checks alone). It holds for that
+  commit until the branch changes or lands. Land is offered on it, and also on a finished branch
+  blocked only for something its chat can fix (its own failing check, drafts that don't fit): it
+  waits as Approved · waiting for a fix and goes in line by itself once nothing blocks it.
 - **The user's typed word.** When the user types "land it" or "merge it" in the chat that owns the
   branch, commit what is left and record it with `worktree land` (it refuses anything but their own
-  newest message; one the Overseer, a baton or another session sent is refused, whatever it says, though a
-  program holding the token may still pass as their word); the queue takes it as an approval of that commit. "land it without its specs"
-  and "land it, skip review" are recorded as said. Never send a session "land it" on the user's
-  behalf. When the work is done, say what still blocks landing (Sova's note names it), or that they
-  can press Land or type "land it" here.
+  newest message; one the Overseer, a baton or another session sent is refused, whatever it says,
+  and so is every note on a chat queue, the merge queue's requests included: no queue note ever
+  counts as typed "land it", though a program holding the token may still pass as their word); the
+  queue takes it as an approval of that commit. "land it without its specs" and "land it, skip
+  review" are recorded as said. Never send a session "land it" on the user's behalf. When the work
+  is done, say what still blocks landing (Sova's note names it), or that they can press Land or type
+  "land it" here; once they have, never ask them to land it again: their Land stands.
 - **The queue lands.** An approval pins the commit and the branch's spec drafts. The queue merges it
   onto the newest master in a merge copy beside the project, makes the drafts official there, runs
   the project's checks, fast-forwards master to exactly the tested commit, then the main checkout,
-  then pushes. A newer commit on the branch isn't included ("1 newer commit not included") and needs
-  a new Land; drafts changed since the approval wait for a new Land. A failure reaches the branch's
-  chat only when it is the branch's; the queue's own setup trouble pauses the queue instead. The
-  merge thread (a chat Sova starts per project) notes each landing ("changes server code; restart
-  Sova to pick it up"), picks extra tests by what changed, and judges conflicts; it never moves
-  master itself.
+  then pushes. **One Land stands** until the branch lands, the user removes it, or it waits for
+  their decision: it covers the fix commits and draft fixes the branch's chat makes for the queue's
+  requests, once the merge thread confirms each changes only what was asked. Other work committed
+  meanwhile isn't included ("1 newer commit not included") and lands with Land Again after the
+  landing; a fix on top of such work asks the user once; drafts the chat only made fit are re-pinned with no new Land, while a new or changed
+  promise, or an edit the user made, waits for the user's decision. A failure, conflict or review
+  finding that is the branch's goes back to its chat by itself, as a request on a chat queue Sova
+  opens in that chat, and the chat answers Fixed, Needs you or Can't; the entry goes back in line by
+  itself, up to 3 tries (fewer when the same failure comes twice), then waits for the user with the
+  reason. Stop in the chat pauses the requests until the user's next message. What isn't the
+  branch's (a flaky test, a failure the target shares, a machine or setup failure) never reaches
+  the chat: a check the target fails too asks the user; the queue's own setup trouble pauses the queue
+  instead. Only the user's decisions (anything a person sees or does differently, a change of
+  meaning to an agreed promise, anything the task never decided) stop for the user, on the branch's
+  card, answered from the chat's message box. The merge thread (a chat Sova starts per project)
+  notes each landing ("changes server code; restart Sova to pick it up"), picks extra tests by what
+  changed, judges conflicts, diagnoses failures and checks each fix; it never moves master itself,
+  and when it isn't running a fix waits for it rather than landing unchecked.
 - **Specs land with the branch.** A chat with spec on writes drafts and one verification note per promise; drafts
-  that don't fit hold the branch (Landing specs) and Sova tells the chat what to fix. If it can't,
-  the user may land it without them: "land it without its specs" typed in the chat, or Land without
-  its specs… in the Land menu.
+  that don't fit hold the branch (Landing specs) and Sova tells the chat, as a merge queue request,
+  what to fix; after Land, a fix that only makes them fit lands with no new Land. If the chat
+  answers Can't, the merge thread may try another way once, then it waits for the user, who may
+  land it without them: "land it without its specs" typed in the chat, or Land without its specs…
+  in the Land menu.
 - **The exceptions:** a Project Overseer's settings change card on Sova's own project lands its
   settings files on master at your Apply (§app.project-overseer/settings); Save Checks and a save from
   Settings → Merge Queue each land one commit of the project file's `merge` section at your confirm

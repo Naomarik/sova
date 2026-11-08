@@ -81,7 +81,9 @@ const KEEP_LANDED = 500;
 
 export const projectKey = (root: string): string => createHash("sha256").update(root).digest("hex").slice(0, 16);
 
-export function newId(prefix: "mq" | "mr"): string {
+export function newId(prefix: "mq" | "mr" | "rq" | "dc"): string {
+  // A request's id is the chat queue's own form (shared/topic-message.ts MERGE_REQUEST_ID_RE): the chat answers by it.
+  if (prefix === "rq") return `rq_${randomBytes(6).toString("hex")}`;
   return `${prefix}_${Date.now().toString(36)}${randomBytes(4).toString("hex")}`;
 }
 

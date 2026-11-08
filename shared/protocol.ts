@@ -14,6 +14,8 @@ import type { OverseerCard } from "./overseer-card";
 import type { ReplyTiming, RowFacts, SovaEvent, SovaPart } from "./harness-wire";
 import type { OwnerRequestCard } from "./project-assistant";
 import type { CardInfo } from "./transcript-cards";
+import type { ChatProfileState } from "./profile-switch";
+export type { ChatProfileState, ProfileSwitchResult, ProfileSwitchTarget } from "./profile-switch";
 export type { WakeInfo };
 
 /** One running background job, as `GET /api/sessions/jobs?path=` lists it (§app.background-jobs/pane):
@@ -3042,7 +3044,11 @@ export type ChatServerMessage =
       profileRunning?: { id: string; path: string; title: string };
       /** The provider of the model whose turn failed, when the error IS the turn's failure (never a worker's or a guessed one); absent otherwise. */
       provider?: string;
-    };
+      /** With `provider`: the model ref that turn actually ran (§chat.subagent-profiles/limit-row), even when it differs from the chat's profile's. */
+      model?: string;
+    }
+  /** Which profile the chat is on, "(edited)", and a switch waiting for the reply to end (§chat.profiles/switch). Sent at hello and on every change. */
+  | { type: "chat_profile"; state: ChatProfileState };
 
 /** WS /ws/watch?path= — read-only live view. Safe for sessions a TUI currently owns. Never writes.
     `&tail=1` cuts the snapshot as `/ws/chat` cuts its hello (`older`, then `history`); `&tail=rest`

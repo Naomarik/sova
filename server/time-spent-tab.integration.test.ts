@@ -223,7 +223,7 @@ async function openTheRows(page: Page) {
   for (const row of ["reading", "screenshots", "reworking"]) await page.locator(`[data-time-row="${row}"]`).click();
   await page.mouse.move(5, 5);
 }
-const settled = (page: Page) => page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {}))));
+const settled = (page: Page) => page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a.timeline === document.timeline).map((a) => a.finished.catch(() => {}))));
 
 test("shots: the tab at both widths and the Session tab it left", { skip: !SHOTS }, async () => {
   {

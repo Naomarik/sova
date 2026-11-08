@@ -76,7 +76,7 @@
 /* A chart's reader controls (kinds/chart/ChartControls.tsx): the segmented view switch right after
    the title, then the Log / Sort / % toggles at the far end beside Source and Copy. Every toggle the
    chart can use is always there (greyed where this view can't use it), so nothing moves when the
-   reader switches views or flips one. Short words, never icons, so the share build needs none. */
+   reader switches views or flips one; at phone width one Options menu holds them. Short words, never icons, so the share build needs none. */
 .vis-head:has(> .vis-chart-controls:not(:empty)) > :is(.vis-title, .vis-eyebrow) { flex: 0 1 auto; }
 .vis-chart-controls { display: flex; align-items: center; gap: var(--space-1); flex: 1 0 auto; }
 .vis-chart-controls:empty { display: none; }
@@ -104,25 +104,64 @@
 .vis-chart-view:hover { background: var(--color-sunken); color: var(--color-ink); }
 .vis-chart-view[aria-checked="true"] { background: color-mix(in srgb, var(--color-accent-tint) 60%, transparent); color: var(--color-accent); }
 .vis-chart-view:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-width) * -1); }
-/* The model's own view: a small accent dot (its name is the hidden "(as drawn)"). */
-.vis-chart-model-dot { flex: none; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--color-accent); }
+/* The model's own view: a small neutral dot, titled "As drawn by the reply" (its name is the hidden
+   "(as drawn)"). Never the accent: beside the selected view it would read as a second selection. */
+.vis-chart-model-dot { flex: none; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--color-ink-muted); }
 .vis-chart-toggle { flex: none; font-variant-numeric: tabular-nums; }
-.vis-chart-toggle[aria-pressed="true"] { background: var(--color-accent-tint); color: var(--color-accent); }
-/* Greyed: this view can't use it. It keeps its pressed tint when set (kept for a view that can), and
-   hovering it changes nothing. */
-.vis-chart-toggle[aria-disabled="true"]:is(:hover, :active) { background: transparent; color: var(--color-ink-muted); }
-.vis-chart-toggle[aria-disabled="true"][aria-pressed="true"],
-.vis-chart-toggle[aria-disabled="true"][aria-pressed="true"]:is(:hover, :active) { background: var(--color-accent-tint); color: var(--color-accent); }
+/* Pressed: tinted, with an accent outline (the ghost button's transparent border), so it reads from
+   a shape as well as a tint. Hover on an unpressed toggle is the ghost's neutral grey, never this. */
+.vis-chart-toggle[aria-pressed="true"],
+.vis-chart-toggle[aria-pressed="true"]:is(:hover, :active) { background: var(--color-accent-tint); border-color: var(--color-accent); color: var(--color-accent); }
+/* Greyed: this view can't use it, and hovering it changes nothing. Off, it fades; set (kept for a
+   view that can), it keeps the whole pressed shape at reduced ink, so set and unset stay apart. */
+.vis-chart-toggle[aria-disabled="true"] { cursor: not-allowed; }
+.vis-chart-toggle[aria-disabled="true"][aria-pressed="false"],
+.vis-chart-toggle[aria-disabled="true"][aria-pressed="false"]:is(:hover, :active) { background: transparent; color: var(--color-ink-muted); opacity: .45; }
+.vis-chart-toggle[aria-disabled="true"][aria-pressed="true"] { opacity: .6; }
+
+/* The phone head's Options menu (ChartControls.tsx): hidden above phone width. Its count sits in a
+   slot one digit wide, empty at none, so the trigger never changes width. */
+.vis-chart-more { display: none; margin-left: auto; }
+.button.vis-chart-options { gap: var(--space-1); padding: 0 var(--space-2); }
+.vis-chart-options-count { display: inline-block; min-width: 1ch; font-variant-numeric: tabular-nums; color: var(--color-accent); text-align: start; }
+/* In the top layer, placed under its trigger by ChartControls.tsx (the UA centres a popover). */
+.vis-chart-menu {
+  position: fixed;
+  inset: auto;
+  top: var(--vis-menu-top, 0);
+  left: var(--vis-menu-left, 0);
+  margin: 0;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 2 * var(--space-2)));
+}
+.vis-chart-menu .popover-item[aria-disabled="true"] { cursor: not-allowed; }
+/* The row's tick, drawn (the share build carries no icon set): a short and a long stroke. */
+.vis-chart-tick { flex: none; position: relative; width: 16px; height: 16px; }
+.vis-chart-tick::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 5px;
+  height: 9px;
+  border: solid currentColor;
+  border-width: 0 var(--stroke-icon) var(--stroke-icon) 0;
+  transform: rotate(45deg);
+}
 
 /* At phone width the head keeps the title and trades the button words for their icons; a chart's
-   controls take their own row under it. */
+   controls take a second row under it, exactly a touch target tall: the view switch, then the
+   Options menu in place of the inline toggles. */
 @container vis (max-width: 420px) {
   .vis-action { font-size: 0; gap: 0; min-width: var(--control-sm); justify-content: center; }
   .vis-body { padding: var(--space-2); }
-  .vis-head:has(> .vis-chart-controls:not(:empty)) { flex-wrap: wrap; }
-  .vis-head > .vis-chart-controls { order: 1; flex: 1 0 100%; padding-bottom: var(--space-1); }
+  .vis-head:has(> .vis-chart-controls:not(:empty)) { flex-wrap: wrap; row-gap: 0; }
+  .vis-head > .vis-chart-controls { order: 1; flex: 1 0 100%; }
   .vis-head:has(> .vis-chart-controls:not(:empty)) > :is(.vis-title, .vis-eyebrow) { flex: 1; }
-  .vis-chart-view, .vis-chart-toggle { min-height: var(--tap-min); }
+  .vis-chart-view { min-height: calc(var(--tap-min) - 2 * var(--stroke-thin)); }
+  .vis-chart-toggles { display: none; }
+  .vis-chart-more { display: block; }
+  .button.vis-chart-options { min-height: var(--tap-min); }
 }
 
 /* ---- Placeholder states in markdown ------------------------------------------------------ */

@@ -96,17 +96,31 @@ tier and comes back is new again.
   urgency high, kept by the push service up to 6 hours. A device the push service answers 404 or
   410 is gone and is removed; any other failure is kept on the device as its last error, and it
   stays subscribed.
-- **A merge thread's question with no chat to ask** (§chat.merge-queue/asks) is sent once, at
-  once, outside this loop and its kinds: to every device, when sending is on, a contact is set, a
-  device is subscribed and it isn't quiet hours (else it is dropped), redacted like the others.
-  Its title is "The merge thread needs you · {project}", its body the question, its tag
-  `sova:merge-ask:{project id}`, and a tap opens the project's Merge Queue tab.
-- **A test check broken on the target** (§app.merge-queue/blame) is sent the same way, once per check
-  until a later run lifts its flag. Its title is "The merge queue needs you · {project folder}", its
-  body "{flag line}. Branches skip it until it's fixed: start a chat to fix it.", its tag
-  `sova:merge-broken:{project id}:{check}`, and a tap opens the project's Merge Queue tab.
+- **The merge queue's** questions, decisions and broken test checks are sent outside this loop
+  and its kinds, once each (§app.notifications/merge-queue).
 - **No silent pushes.** The service worker shows a notification for every push it receives,
   whatever the payload — with a generic "Sova" title when it can't read one.
+
+## §app.notifications/merge-queue — The merge queue's notifications
+
+The merge queue sends its own notifications outside the delivery loop's kinds
+(§app.notifications/delivery), to the same devices, redacted the same way:
+- **A merge thread's question with no chat to ask** (§chat.merge-queue/asks) is sent once, at once,
+  outside this loop and its kinds: to every device, when sending is on, a contact is set, a device
+  is subscribed and it isn't quiet hours (else it is dropped), redacted like the others. Its title
+  is "The merge thread needs you · {project}", its body the question, its tag
+  `sova:merge-ask:{project id}`, and a tap opens the project's Merge Queue tab.
+- **A merge queue decision** (§chat.merge-queue/decision, §app.merge-queue/needs-user: behaviour
+  differs, a question the merge thread or a chat raised, a check that also fails on the target, out
+  of tries, a fix that needs your OK, drafts changed beyond fitting) is sent the same way, exactly
+  once per decision. Its title is "The merge queue needs you · {branch}", its body the question or
+  reason, its tag `sova:merge-decision:{entry id}`, and a tap opens the branch's chat at its card,
+  or the project's Merge Queue tab when the decision waits there. A merge thread's question asked in
+  a chat is one such decision. Nothing is sent for an entry back with its chat.
+- **A test check broken on the target** (§app.merge-queue/broken-check) is sent the same way, once
+  per check until a later run lifts its flag. Its title is "The merge queue needs you · {project
+  folder}", its body "{flag line}. Branches skip it until it's fixed: start a chat to fix it.", its
+  tag `sova:merge-broken:{project id}:{check}`, and a tap opens the project's Merge Queue tab.
 
 ## §app.notifications/settings — Settings → Notifications
 

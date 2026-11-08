@@ -1,8 +1,31 @@
 {
+  "§chat.merge-queue/answers": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.merge-queue/chat-card",
+      "§chat.merge-queue/thread"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-07T16:59Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
+    },
+    "code": [
+      "server/merge-queue/answers.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/routes.ts",
+      "shared/project-contract.ts",
+      "shared/topic-message.ts",
+      "server/ready-to-land.ts",
+      "server/merge-queue/queue-standing.test.ts"
+    ]
+  },
   "§chat.merge-queue/asks": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.merge-queue/thread",
       "§chat.merge-queue/chat-turns",
@@ -29,14 +52,46 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T18:31Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
+      "at": "2026-11-07T16:59Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
+    }
+  },
+  "§chat.merge-queue/card-states": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.merge-queue/chat-card",
+      "§chat.merge-queue/decision",
+      "§chat.merge-queue/answers",
+      "§app.merge-queue/requests",
+      "§app.merge-queue/standing-approval",
+      "§app.merge-queue/tries",
+      "§app.merge-queue/blame",
+      "§app.project-services/merge-verbs",
+      "§app.access/your-click"
+    ],
+    "code": [
+      "src/lib/merge-queue-card.ts",
+      "src/components/MergeQueueCard.tsx",
+      "src/lib/merge-queue-card.test.ts",
+      "server/merge-queue/cards.ts",
+      "server/merge-queue/cards.test.ts",
+      "server/merge-queue/wire.ts",
+      "shared/merge-queue.ts",
+      "src/lib/merge-standing.ts",
+      "src/lib/merge-standing.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-07T16:57Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
     }
   },
   "§chat.merge-queue/chat-card": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§app.merge-queue/approve",
       "§chat.transcript-cards/placement",
@@ -45,7 +100,8 @@
       "§chat.composer/worktrees-control",
       "§app.project-services/merge-verbs",
       "§chat.changes/entry",
-      "§app.merge-queue/owner"
+      "§app.merge-queue/owner",
+      "§chat.merge-queue/card-states"
     ],
     "code": [
       "src/lib/merge-queue-card.ts",
@@ -77,14 +133,14 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T19:18Z",
-      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
+      "at": "2026-11-07T16:57Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
     }
   },
   "§chat.merge-queue/chat-turns": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§chat.merge-queue/chat-card",
       "§chat.profiles/delivery",
@@ -118,9 +174,99 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T19:18Z",
-      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
+      "at": "2026-11-07T18:26Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
     }
+  },
+  "§chat.merge-queue/decision": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.merge-queue/chat-card",
+      "§app.merge-queue/view",
+      "§app.merge-queue/landing-bar-states",
+      "§app.notifications/delivery",
+      "§app.access/your-click",
+      "§chat.merge-queue/asks"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-07T17:12Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
+    },
+    "code": [
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/cards.ts",
+      "server/merge-queue/channel.ts",
+      "shared/topic-message.ts",
+      "server/ws.ts",
+      "src/components/MergeQueueCard.tsx",
+      "src/components/Composer.tsx",
+      "src/components/MessageRows.tsx",
+      "src/lib/merge-queue-card.ts",
+      "src/lib/send-frame.ts",
+      "server/held-note-landing.test.ts",
+      "src/lib/merge-decision-pick.ts",
+      "src/components/ChatView.tsx"
+    ]
+  },
+  "§chat.merge-queue/names-interview": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.merge-queue/thread",
+      "§chat.merge-queue/asks",
+      "§app.merge-queue/push"
+    ],
+    "code": [
+      "server/merge-queue/thread.ts",
+      "playbooks/merge-queue/references/names.md",
+      "playbooks/merge-queue/scripts/discover-names.mjs",
+      "server/merge-queue/discover-names.integration.test.ts",
+      ".sova/playbooks/merge-queue/PLAYBOOK.md",
+      "server/merge-queue/names-verb.ts",
+      "server/merge-queue/names-verb.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-07T16:57Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
+    }
+  },
+  "§chat.merge-queue/requests": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.topics/open",
+      "§chat.topics/delivery",
+      "§chat.topics/row",
+      "§chat.merge-queue/chat-card",
+      "§chat.merge-queue/chat-turns",
+      "§chat.worktrees/land-own-word",
+      "§app.decisions/attention-signals"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-07T17:12Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
+    },
+    "code": [
+      "server/merge-queue/channel.ts",
+      "server/merge-queue/wake.ts",
+      "server/topics.ts",
+      "server/topic-store.ts",
+      "server/topic-delivery.ts",
+      "shared/topic-message.ts",
+      "src/components/TopicCard.tsx",
+      "server/attention-signals.ts",
+      "server/merge-readiness.ts",
+      "server/merge-queue/requests-channel.test.ts",
+      "server/merge-queue-requests.integration.test.ts",
+      "server/merge-queue/wake.test.ts"
+    ]
   },
   "§chat.merge-queue/sova-restart": {
     "kind": "behavior",
@@ -170,12 +316,14 @@
       "§app.merge-queue/conflicts",
       "§app.merge-queue/push",
       "§chat.merge-queue/thread-life",
-      "§chat.merge-queue/asks"
+      "§chat.merge-queue/asks",
+      "§chat.merge-queue/thread-powers",
+      "§chat.merge-queue/names-interview"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-07T17:04Z",
-      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#55f8e26b"
+      "by": "user",
+      "at": "2026-11-07T23:34Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#bbc66d7f"
     },
     "code": [
       "server/merge-queue/thread.ts",
@@ -203,6 +351,7 @@
       "server/merge-queue/contract.ts",
       "server/merge-queue/wire.ts",
       "server/merge-queue/scratch.ts",
+      "playbooks/merge-queue/references/fixes.md",
       "server/merge-queue/names-verb.ts"
     ]
   },
@@ -234,6 +383,36 @@
       "by": "user",
       "at": "2026-11-05T19:18Z",
       "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
+    }
+  },
+  "§chat.merge-queue/thread-powers": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.merge-queue/thread",
+      "§app.project-services/merge-verbs",
+      "§app.merge-queue/needs-user",
+      "§chat.merge-queue/requests",
+      "§chat.merge-queue/asks",
+      "§chat.merge-queue/decision",
+      "§app.merge-queue/tries"
+    ],
+    "code": [
+      "server/merge-queue/thread.ts",
+      "profiles/system/merge-thread.json",
+      "playbooks/merge-queue/PLAYBOOK.md",
+      "server/merge-queue/routes.ts",
+      "server/merge-queue/contract.ts",
+      "server/merge-queue/thread.test.ts",
+      "server/merge-queue/rulings.ts",
+      "server/merge-queue/restart.ts",
+      "server/merge-queue/names-verb.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-07T16:57Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
     }
   },
   "§chat.merge-queue/thread-sandbox": {
@@ -287,14 +466,14 @@
   "§chat/merge-queue": {
     "kind": "surface",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app/merge-queue"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-02T15:04Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+      "at": "2026-11-07T16:09Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#92eb7761"
     },
     "code": [
       "server/merge-queue/thread.ts",

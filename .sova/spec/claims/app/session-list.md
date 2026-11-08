@@ -515,12 +515,12 @@ label a person reads says "sessions pane".
 - **Row line 3.** The session's **branch status leads the facts after the time**: the same status
   its chat shows in the composer's run-status row (§chat.composer/worktrees-control), worked out by
   the same rule from the rows the list last read. A row says what its chat says once it has caught
-  up, and it can lag its chat only as far as "How far a row can lag its chat" below says. A sent-back
-  branch counts as needing a fix only while its chat's row reads Needs a fix: never once the queue
-  has settled that entry, once the branch reads ready again at a newer commit (or, sent back for its
-  drafts, at the same commit once they changed and fit), once it is removed from the queue, or once
-  it is merged or its worktree folder removed (§chat.composer/worktrees-control "Land comes back
-  once its chat fixes it"). It is the
+  up, and it can lag its chat only as far as "How far a row can lag its chat" below says. A branch
+  counts as needing a fix only while its chat's row reads back with the chat, approved and waiting
+  for a fix, or paused: never once its fix is checked and it is back in line, once it waits for the
+  user's decision (that is needs you), once it is removed from the queue, or once it is merged or
+  its worktree folder removed (§chat.composer/worktrees-control "Your Land stands while its chat
+  fixes it"). It is the
   control's headline, the first that holds: needs you, needs a fix, ready, checking, queued, else
   the fallback, "{n} worktrees". Ready means exactly what it means there (a served branch Ready to
   land, an unserved one Ready to merge), and the branches are counted as the chat counts them:

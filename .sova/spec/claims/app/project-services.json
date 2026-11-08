@@ -445,6 +445,41 @@
       "server/project-services/conform.ts"
     ]
   },
+  "§app.project-services/merge-callers": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.project-services/merge-verbs",
+      "§app.project-services/callers",
+      "§app.access/your-click",
+      "§chat.worktrees/tool",
+      "§app.merge-queue/served",
+      "§app.project-setup/trust",
+      "§chat.merge-queue/asks"
+    ],
+    "code": [
+      "server/merge-queue/routes.ts",
+      "server/project-services/routes.ts",
+      "server/project-services/engine.ts",
+      "server/project-services/tools.ts",
+      "server/merge-queue/served.ts",
+      "server/merge-queue/served-rule.test.ts",
+      "server/merge-queue/verbs.test.ts",
+      "server/merge-queue/setup-trust.test.ts",
+      "server/project-services/view-routes.ts",
+      "server/mesh/click-proof.ts",
+      "shared/commands/projects.ts",
+      "src/card-toolkit/commands.gen.ts",
+      "scenarios/projects.json",
+      "shared/project-contract.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-07T16:57Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
+    }
+  },
   "§app.project-services/merge-verbs": {
     "kind": "behavior",
     "authority": "accepted",
@@ -457,12 +492,13 @@
       "§chat.worktrees/tool",
       "§app/commands",
       "§app.project-setup/trial",
-      "§app.project-setup/trust"
+      "§app.project-setup/trust",
+      "§app.project-services/merge-callers"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-07T17:04Z",
-      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#55f8e26b"
+      "by": "user",
+      "at": "2026-11-07T23:34Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#bbc66d7f"
     },
     "code": [
       "server/merge-queue/routes.ts",
@@ -489,7 +525,8 @@
       "server/merge-queue/resolve-content.ts",
       "server/merge-queue/names-verb.ts",
       "server/project-services/tools-answer.test.ts",
-      "server/merge-queue/names-verb.integration.test.ts"
+      "server/merge-queue/names-verb.integration.test.ts",
+      "server/merge-queue/scenarios-conflicts.integration.test.ts"
     ]
   },
   "§app.project-services/on-merge": {

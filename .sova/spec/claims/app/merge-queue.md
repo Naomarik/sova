@@ -85,22 +85,24 @@ verb's error `unsupported`), and leaves no record behind: asking never creates a
 this rule, or a project since removed from the list) is never loaded at start-up: Sova neither runs it nor feeds
 it go-aheads, and leaves the file as it is.
 
-## §app.merge-queue/approve — Approving a branch, and taking it back
+## §app.merge-queue/approve — Approving a branch
 
 **Two ways to approve.** A branch enters the queue only on the user's approval:
-- **Land**, in the composer's worktrees control (§chat.composer/worktrees-control), on the
-  session pane's Worktrees rows (§chat.worktrees/pane) or on the Merge Queue view
-  (§app.merge-queue/view);
+- **Land**, in the composer's worktrees control (§chat.composer/worktrees-control), on the session
+  pane's Worktrees rows (§chat.worktrees/pane) or on the Merge Queue view (§app.merge-queue/view);
 - or the user typing "land it" (or "merge it") in the branch's own chat, which that chat records
   with `worktree land` (§chat.worktrees/tool). That action refuses any message the user didn't type
   themselves (§chat.worktrees/land-own-word).
 
 Both approve the same thing. The Land button asks once, on the row itself, before it approves
 (§chat.composer/land-confirm); a typed "land it" asks nothing more. Nothing else approves: not the
-merge thread,
-not an Overseer card, not another chat. The one entry no person approves is a release's own (its
-release commit, or the revert of an abandoned one): Sova adds it itself, approved `by: release`,
-without review (§app.release/checks).
+merge thread, not the branch's chat, not an Overseer card, not another chat. Land counts only as the
+user's own click in Sova's page (§app.access/your-click): the same request from a chat's script, a
+tool, a token script or another session is refused with where to click, and nothing is queued. The
+merge thread and the branch's chat can never start a landing; they only fix what the user's Land
+already covers (§app.merge-queue/standing-approval). The one entry no person approves is a release's
+own (its release commit, or the revert of an abandoned one): Sova adds it itself, approved `by:
+release`, without review (§app.release/checks).
 
 **What an approval pins.**
 - The commit the screen showed: the row's head on the project page, in the composer's modal and in
@@ -113,11 +115,21 @@ without review (§app.release/checks).
   §chat.worktrees/ready-to-land reads them), with those drafts copied aside so the run uses exactly
   them. A branch's own drafts are the ones Git doesn't track, plus any tracked draft the branch adds
   or changes since its merge base with the target. A draft already on the target that the branch
-  leaves alone is
-  never hashed, named, landed or deleted.
+  leaves alone is never hashed, named, landed or deleted.
 
 The entry joins the end of the line, which runs in the order approvals came, and shows its place
 ("Queued · 2nd"). Approving a commit that is already queued changes nothing.
+
+**Finished but blocked.** Land is also taken on a branch whose chat says its work is finished but
+that isn't Ready to land only for something its chat can fix (§chat.worktrees/ready-to-land). A
+branch that only conflicts with the target is Ready to land (§chat.worktrees/ready-to-land) and
+joins the line as usual, and its run's conflict path takes over (§app.merge-queue/conflicts), using
+no try. For the chat's own failing check run or spec drafts that don't fit, the entry reads
+**Approved · waiting for a fix** and doesn't join the line yet; the chat is told, as a merge queue
+request (§chat.merge-queue/requests), what still blocks it. Sova looks again every minute: once
+nothing blocks the approved commit and its drafts, Sova puts it in line by itself, at that same
+commit, with no new Land. A new commit becomes the one that goes in line only as a fix the chat
+answered with, under the fix rules of §app.merge-queue/standing-approval.
 
 **What it refuses**, with the reason and nothing queued:
 - a branch with uncommitted files;
@@ -125,9 +137,9 @@ The entry joins the end of the line, which runs in the order approvals came, and
 - a branch with a temporary commit subject;
 - the queue's own scratch copy (§app.merge-queue/resolve-copy);
 - the target branch itself;
-- a repository the queue doesn't serve (not on the Projects list, or its merge setup not done),
-  with "not a project the merge queue serves: merge it into main from the chat", making no queue
-  record (§app.merge-queue/served);
+- a repository the queue doesn't serve (not on the Projects list, or its merge setup not done), with
+  "not a project the merge queue serves: merge it into main from the chat", making no queue record
+  (§app.merge-queue/served);
 - the project's setup branch at a commit with no passing trial: "This setup branch has no passing
   trial at {sha7}: run a trial of it first." (§app.project-setup/land-gate);
 - while the target's `.sova/project.json` doesn't parse, any branch but one whose own commit carries
@@ -146,133 +158,292 @@ An approval is still taken while the queue is paused; a pause stops runs, not ap
 **Its options.** Each is set once per approval, on the Land control's menu or in the typed words:
 - **Land without review** ("land it, skip review") skips the review step (§app.merge-queue/review)
   for this approval only.
-- **Land without its specs…** ("land it without its specs") leaves the branch's drafts behind.
-  Its docs step then turns nothing into docs.
+- **Land without its specs…** ("land it without its specs") leaves the branch's drafts behind. Its
+  docs step then turns nothing into docs.
 
 The Land menu has no choice of how it lands: the project's setting decides. But words typed in the
-branch's chat that ask for a pull request or a merge request ("open a PR", "open an MR") are
-never blocked: on a project the queue serves they record a go-ahead that lands as a request on
-`origin`'s host whatever the project's setting, through the same checks
-(§app.merge-queue/strategies).
+branch's chat that ask for a pull request or a merge request ("open a PR", "open an MR") are never
+blocked: on a project the queue serves they record a go-ahead that lands as a request on `origin`'s
+host whatever the project's setting, through the same checks (§app.merge-queue/strategies).
 
-**After approval.**
-- **A new commit on the branch** doesn't change the entry. The approved commit lands, and the row
-  says "1 newer commit not included" (or "{n} newer commits"), counting the branch's own
-  first-parent
-  commits past it, none the target already has. Landing the newer commits takes a new Land.
+**After approval** (§app.merge-queue/after-approval): the user's one Land stands until the branch
+lands, the user removes it, or it waits for the user's decision; Remove from Queue takes it back.
+
+## §app.merge-queue/after-approval — After approval: one Land stands, and taking it back
+
+**After approval: one Land stands.** The user's one Land stands until the branch lands, the user
+removes it, or it waits for the user's decision (§app.merge-queue/standing-approval). It covers the
+fix commits and draft fixes the branch's chat makes while working the queue's requests, once the
+merge thread confirms each changes only what was asked; nothing else.
+- **A new commit that isn't a checked fix** (work the user asked for meanwhile, or anything the
+  merge thread doesn't confirm) doesn't change the entry. The approved commit, with any checked
+  fixes, lands, and the row says "1 newer commit not included" (or "{n} newer commits"), counting
+  the branch's own first-parent commits past it, none the target already has. After the landing,
+  **Land Again** on the Landed card and rows lands that later work.
 - **Drafts edited after approval** (the branch's own drafts no longer match the pinned hash; an edit
-  to any other draft in its worktree doesn't count) stop the entry before
-  its run starts, or void a run already started. It waits as "Drafts changed since you approved",
-  and the branch's queue card moves down as Drafts changed, with Land; the chat's model reads it as
-  a hidden
-  line at its next turn, with no turn started (§chat.merge-queue/chat-turns). A new Land makes a new
-  entry for the drafts as they are now,
-  and the old one is cancelled as "approved again".
+  to any other draft in its worktree doesn't count): when the chat only made them fit, answering
+  Fixed to the queue's request, and the merge thread confirms it, Sova re-pins the approval's drafts
+  as they are now and the entry goes on, with no new Land. A new or changed promise, an edit the
+  user made, or any drafts change not answered Fixed to a request of the queue's, stops the entry
+  before its run starts, or voids a run already started, and waits for the user's decision as
+  "Drafts changed since you approved" (§chat.merge-queue/decision), with Land (the drafts as they
+  are now) and Remove from Queue; the chat's model reads it as a hidden line at its next turn, with
+  no turn started (§chat.merge-queue/chat-turns).
 
-**After a send-back.** A sent-back entry (Needs a fix) is final: nothing moves it on by itself.
-- **The re-land button**, on every Needs a fix row and card, is an ordinary new approval of the
-  branch's **newest commit** (`merge.add` with no commit: its head at that moment; the project
-  page's
-  menu, which reads the branch itself, pins the head it read), never of the sent-back one once the
-  branch has moved: it pins the branch's drafts as they are now and runs every check from the start,
-  whatever it was sent back for. There is one such button, never a second one for the old commit.
-  - **Land This Commit Again** while the branch has nothing new of its own past the sent-back
-    commit.
-  - **Land Newest Commit** once it has, with "{n} newer commits included" ("1 newer commit
-    included").
-    The count is the branch's own line only: its first-parent commits past the sent-back one, none
-    the
-    target already has, so a merge of the target into the branch counts once and what it brought in
-    never counts.
-  - **Land Newest Commit** too once the branch was rewritten (amended or rebased, so the sent-back
-    commit is no ancestor of its head), with "the branch was rewritten since it was sent back" and
-    no
-    count.
-  - When that newest commit isn't Ready to land, the row and card add "The newest commit isn't Ready
-    to land: {why}.", in the Ready to land reading's own words
-    (§chat.worktrees/ready-to-land, "Why a sent-back branch's newest commit isn't"). That reason
-    only
-    reports: the approval's own refusals still apply (uncommitted files are refused, as for any
-    Land).
-- **Land**, once it comes back on a branch sent back for its drafts whose drafts now fit
-  (§chat.composer/worktrees-control), approves the same commit the same way.
-- **"land it" typed in its chat** is an approval of the head at that moment, as always: at the
-  sent-back commit, that commit again.
-- **Remove from Queue**, on every Needs a fix row and card, takes the entry off the queue with no
-  confirm and deletes nothing (branch, folder, commits, drafts and run logs stay): it ends
-  cancelled,
-  "removed by you", its card gets a final Removed revision, and the branch reads as itself again.
+**Back with its chat.** An entry the queue sends back (§app.merge-queue/send-back) is not final:
+while the user's Land stands, Sova puts it back in line by itself once its chat's checked fix
+arrives, up to its tries (§app.merge-queue/tries). There is no button to send anything back, and no
+button to land the sent-back commit again or the branch's newest commit: Send Back, Send Back to
+Chat, Land This Commit Again and Land Newest Commit exist nowhere. While it is with its chat:
+- **"land it" typed in its chat** is the user's approval of the head at that moment, as always; it
+  replaces the standing entry with a new one at that head (§chat.worktrees/land-own-word).
+- **Remove from Queue**, at every stage (approved and waiting for a fix, in line, checking, back
+  with its chat, paused, waiting for the user's decision, out of tries), takes the entry off the
+  queue with no confirm and deletes nothing (branch, folder, commits, drafts and run logs stay): it
+  ends cancelled, "removed by you", its card gets a final Removed revision, requests not yet
+  delivered to its chat are dropped, and the branch reads as itself again. A release's own entry
+  (§app.release/checks) ends plainly cancelled instead.
 
-**Taking it back.** **Cancel** on a queued entry takes it out of the line; nothing lands, and the
-branch is Ready again. The screens offer Cancel on queued entries, and on the Merge Queue tab on a
-Drafts changed entry too. `merge.cancel` of a checking entry stops the run, resets the merge copy
-and leaves the target where it was; `merge.cancel` of a Needs a fix entry is Remove from Queue.
+**Taking it back.** In the line, **Remove from Queue** takes a queued entry out of the line; nothing
+lands, and the branch is Ready again. On a checking entry it stops the run, resets the merge copy
+and leaves the target where it was. No screen has a separate Cancel button: Remove from Queue is
+`merge.cancel` at every stage. Like Land, Remove from Queue counts only as the user's own click in
+Sova's page (§app.access/your-click).
+
+## §app.merge-queue/standing-approval — One Land covers the checked fixes
+
+The user's Land (or typed "land it") is a **standing approval**: it stands until the branch lands,
+the user removes it (Remove from Queue), or it waits for the user's decision
+(§chat.merge-queue/decision), and while it stands the user never presses Land again for it.
+
+**What it covers: checked fixes only.** A **fix** is what the branch's chat changes while working a
+request the queue sent it (§chat.merge-queue/requests): commits it makes for that request, spec
+drafts it only makes fit, or both. A fix is **checked** once the merge thread confirms it changes
+only what was asked and decides nothing that is the user's (§chat.merge-queue/thread), comparing the
+branch as approved with the branch now, each against the target from its merge base, never a plain
+diff from the approved commit; one that does decide something of theirs waits for them
+(§app.merge-queue/needs-user). The standing approval covers checked fixes and nothing else:
+- work the user asks the chat for meanwhile isn't covered, and isn't landed by it;
+- when a fix sits on top of such work (commits of the branch's own, not on the target, authored
+  before the request, by author date so a rebase keeps them, counted from the newest commit the Land
+  already covers: the approved commit or an earlier fix the thread checked; merging the target in
+  isn't such work), the card asks the user once (§chat.merge-queue/decision): **Land** takes the
+  branch at the fix's commit, that work included; **Remove from Queue** ends it;
+- a fix that rewrote the branch's history (a rebase or an amend, so the approved commit isn't under
+  it) is never carried, with or without other work on it: the card asks the user once, "The fix
+  rewrote {branch}'s history (a rebase or an amend), so Sova can't tell the fix from other work on
+  it: Land takes {branch} at {sha} as it is now", with **Land** and **Remove from Queue**. That Land
+  is the user's own approval of the branch as it is, so its Landed card lists no rewritten commit as
+  a fix. Sova doesn't match rewritten commits to the ones they replace (by patch id);
+- a fix the merge thread finds changes more than was asked (which also catches work the user asked
+  for after the request) is not covered: it waits for the user the same way, with what it changes
+  beyond the request;
+- a fix the merge thread can't check yet, because it isn't running (its provider down, crashed or
+  stopped) or hasn't ruled on it, **waits for the merge thread**: the card reads "Waiting for the
+  merge thread" (§chat.merge-queue/chat-card), and Sova hands the fix to the thread again whenever
+  the thread next acts on the queue, every minute, and once more when a fix it was given has no
+  ruling after 15 minutes. It lands only once the thread is back and has checked it: never
+  unchecked, and it never asks the user or sends a notification for this. Remove from Queue still
+  ends it.
+
+**Drafts-only fixes make no commit.** When the chat only changes spec drafts to make them fit, its
+answer says so (§chat.merge-queue/answers), and once the merge thread confirms them, Sova re-pins
+the approval's drafts to exactly the drafts the thread checked. Drafts edited after the answer wait
+for the user as Drafts changed (Land takes them as they are now, or Remove from Queue). A new or
+changed promise, or an edit the user made, is never a fix: it waits for the user
+(§app.merge-queue/after-approval, "Drafts edited after approval").
+
+**Back in line by itself.** Once a checked fix arrives, Sova re-reads the branch before it puts the
+entry back: its newest commit must be free of the things Land refuses (uncommitted files, a
+temporary commit subject, nothing ahead) and of what Ready to land checks itself that the queue
+can't settle (the chat's own failing check run, drafts that don't fit;
+§chat.worktrees/ready-to-land). A conflict with the target never holds a fix out of line: its run's
+conflict path takes it (§app.merge-queue/conflicts). When it is, the entry goes back in line at that
+commit, keeping its options (without review, without its specs) and its tries
+(§app.merge-queue/tries), and runs every check from the start. When it isn't, it stays with the chat
+and the chat is told what still blocks it. A fix that arrives while the entry's run is checking
+waits until that run ends: the run is never voided for it, and if the run lands, the fix is later
+work, landed only by Land Again; if the run ends any other way, the merge thread checks the fix
+next. A fix that arrives while the entry waits in line takes it out of the line until the fix is
+checked.
+
+**The Landed card says what it took.** When a branch lands, its Landed card and row list the checked
+fix commits that landed after the user's Land (never a rewritten one) (§chat.merge-queue/chat-card),
+so the user sees everything that went in on their one Land.
+
+**Never started by a chat.** The merge thread and the branch's chat can fix, answer and raise
+questions; neither can approve, re-approve, start or move on a landing the user didn't approve. A
+standing approval the user ended is never revived by a fix.
+
+## §app.merge-queue/send-back — The queue sends a branch back by itself
+
+Every problem that is the branch's goes back to the branch's chat **by itself**, with no button and
+no wait for the user, unless it needs the user (§app.merge-queue/needs-user). The user's Land stands
+meanwhile (§app.merge-queue/standing-approval).
+
+**What goes back.** A failure proven the branch's (§app.merge-queue/blame); a conflict the merge
+thread rules the chat should fix (§app.merge-queue/conflicts); the review's findings, flagged or not
+(§app.merge-queue/review); spec drafts that don't fit at landing (§app.merge-queue/run); a setup or
+install failure that is the branch's; on a project that lands on its host, host checks failing,
+changes requested and conflicts on the host (§app.merge-queue/requests); and, before a
+finished-but-blocked branch joins the line, what still blocks it (§app.merge-queue/approve).
+
+**With a diagnosis.** The branch's queue card reads **Back with the chat** in place, with the try
+count and what failed (§chat.merge-queue/chat-card). Each send-back reaches the chat as a request on
+its merge queue chat queue (§chat.merge-queue/requests): what failed, where its log is, and the
+merge thread's diagnosis when it has one (what it thinks went wrong and what to change), never more
+than was asked. A failure's request waits for that diagnosis at most 5 minutes, then goes without
+it; with no merge thread to call in, it goes at once. A diagnosis that comes after the request went
+is sent as a request of its own and counts no try. The thread's note on the landing alone never
+reaches the chat. A conflict's request names the conflict as it is on the newest target at that
+moment, never a conflict text from an earlier run or an older target.
+
+**Never what isn't the branch's.** A flaky test, a failure the target shares, a test check broken on
+the target, a machine or setup failure, a reviewer that fails, a run voided, and a merge thread
+resolution that fails a check are never sent to the chat as the branch's: they stay with the queue
+and the merge thread, or wait for the user (§app.merge-queue/blame).
+
+## §app.merge-queue/tries — Three tries, then the user
+
+Each standing approval has **3 tries**: each run of the entry whose failure is the branch's counts
+one, when it fails, also when the merge thread then rules that it needs the user. A run voided, a
+machine failure and a run whose failure wasn't the branch's count none, and neither does a conflict
+that was already there when the user pressed Land (once).
+- **The same failure twice** stops early: when a run fails the same way as the run before it (the
+  same check and the same failing tests or files, or the same conflicting files, or the same review
+  findings), the queue stops at that run, whatever tries are left. The merge thread's try-again or
+  retry over a failure already counted uses no second try. Known limit: when the first run after the
+  Land is voided, a conflict that was already there at the Land uses a try on the rerun.
+- **Out of tries**, the entry waits for the user: its card moves down as **Out of tries** with the
+  reason ("Tried 3 times: Unit tests failed each time", "Failed the same way twice: …"), **Land**
+  (try again: a new entry and standing approval at the branch's newest commit with 3 new tries, the
+  old entry ending "landed again by you") and **Remove from Queue**. Nothing more goes to the chat
+  for it. Exactly one notification is sent (§app.notifications/delivery), and it shows in the Merge
+  Queue tab's Needs you and the landing bar.
+- The card shows the count while the entry is with its chat: "Back with the chat · try 2 of 3 · Unit
+  tests failed" (§chat.merge-queue/chat-card).
+
+## §app.merge-queue/needs-user — What waits for the user
+
+Only a decision that is the user's waits for the user; everything else is settled by the merge
+thread and the branch's chat by themselves.
+
+**The user's.** Anything a person sees or does differently: wording (the words a person sees in the
+product), layout, controls, defaults, notifications, noticeable timing, data kept or deleted,
+permissions and safety; a change of meaning to a promise the user agreed; and anything the branch's
+task never decided. A behaviour conflict includes UX and UI changes: anything that can't be resolved
+without the user's input.
+
+**Not the user's.** Regenerated files, recorded test outputs, lockfiles, list order with no visible
+effect, compile fixes, internal logs, and code comments, identifiers and test names.
+
+**Who raises it.** The merge thread rules first: it judges each conflict, failure, review finding
+and fix, and may rule that it needs the user (§chat.merge-queue/thread). The branch's chat may also
+raise it, by answering a request "Needs you" (§chat.merge-queue/answers). Neither can overrule the
+other's raise: once either raises it, it waits for the user.
+
+**"Can't".** A chat that answers "Can't: <why>" goes to the merge thread first, which may try one
+other approach (a request to the chat with a different way, or a resolution of its own). When that
+too comes back "Can't", or the thread has no other approach, or it hasn't ruled within 5 minutes (a
+wait a restart doesn't cut short), it is raised to the user as "can't be settled without you". A
+second "Can't" after the other approach goes straight to the user.
+
+**A check that also fails on the target.** When whose failure it is can't be told because the check
+also fails on the target alone (§app.merge-queue/blame), the merge thread rules first, within the
+same 5 minutes a diagnosis waits (§app.merge-queue/send-back): from the logs it may find it the
+branch's (the chat fixes it) or try again, which counts no try. Only when it doesn't settle it does
+the entry wait for the user as **Can't tell whose failure · waiting for you**, with the check and
+its log, and exactly one notification is sent; once raised, only the user settles it:
+- **Land Anyway** lands the tested commit, noted "Landed anyway: {why}". When the target has moved
+  since the run, it is rerun first, and a rerun that still can't tell lands too.
+- **Try Again** puts the entry back in line at the same commit, to run every check afresh; it counts
+  no try (§app.merge-queue/tries).
+- **Remove from Queue** ends it (§app.merge-queue/after-approval).
+
+Nothing goes to the branch's chat for it. The queue doesn't pause, and the branches after it go on.
+
+**Also the user's**: a fix on top of work the user asked for, a fix the thread finds too wide
+(§app.merge-queue/standing-approval; a fix the thread can't check yet waits for the thread, not the
+user), drafts changed beyond fitting (§app.merge-queue/after-approval), and an entry out of tries
+(§app.merge-queue/tries).
+
+Each waits as one decision on the branch's card (§chat.merge-queue/decision), in the Merge Queue
+tab's Needs you (§app.merge-queue/view) and in the landing bar
+(§app.merge-queue/landing-bar-states), with exactly one notification (§app.notifications/delivery).
 
 ## §app.merge-queue/run — One branch at a time, in a merge copy
 
 **The merge copy.** Each project's queue runs in one merge copy of the project, beside it, never
 inside it: `<parent of the main checkout>/.worktrees/<repo>-merge`, marked as the queue's own. A
-worktree already at that path that isn't marked as the queue's (one a person made on a branch
-called "merge", say) is refused and never reset. A copy whose path would fall under Sova's state
-root or any directory under `~/.pi` is refused before any git command runs, with the reason, and
-nothing is blamed.
+worktree already at that path that isn't marked as the queue's (one a person made on a branch called
+"merge", say) is refused and never reset. A copy whose path would fall under Sova's state root or
+any directory under `~/.pi` is refused before any git command runs, with the reason, and nothing is
+blamed.
 
-**One run per entry, its steps in order.** Each step's log starts at its first line, under the
-run's own folder, so a failure at any step, the first included, has its log.
+**One run per entry, its steps in order.** Each step's log starts at its first line, under the run's
+own folder, so a failure at any step, the first included, has its log.
 1. **Copy.** Any merge in progress is abandoned, and the copy is forced back to the target's newest
-   commit: the local target under Merge locally; on a project that lands on its host (a request or
-   a pushed branch, §app.merge-queue/strategies), the host's target, fetched from `origin` just
-   before the run, never the local one. A fetch that fails is tried once more, then counts as a
-   machine failure: the queue pauses and no branch is blamed. Its untracked files are cleared, keeping ignored setup outputs (dependency folders, its
-   `.agent`), and its untracked spec drafts are removed; tracked drafts the target already has are
-   kept.
-2. **Merge.** The approved commit is merged onto the target's commit as a merge commit, or the
-   merge thread's resolution is used. Git's recorded resolutions (rerere) are never used here,
-   whatever the user's git config says. A conflict goes to the merge thread's judgement
+   commit: the local target under Merge locally; on a project that lands on its host (a request or a
+   pushed branch, §app.merge-queue/strategies), the host's target, fetched from `origin` just before
+   the run, never the local one. A fetch that fails is tried once more, then counts as a machine
+   failure: the queue pauses and no branch is blamed. Its untracked files are cleared, keeping
+   ignored setup outputs (dependency folders, its `.agent`), and its untracked spec drafts are
+   removed; tracked drafts the target already has are kept.
+2. **Merge.** The approved commit is merged onto the target's commit as a merge commit, or the merge
+   thread's resolution is used. Git's recorded resolutions (rerere) are never used here, whatever
+   the user's git config says. A conflict goes to the merge thread's judgement
    (§app.merge-queue/conflicts).
-3. **Setup.** The project's setup steps (the definition's `setup`, §app.project-services/contract) run on the merged tree, so a
-   branch that breaks setup is caught. Their results are reused while their argv and inputs are
-   unchanged.
-4. **Install.** When the branch changes one of the definition's install inputs (Sova's: the
-   lockfile or `package.json`), the install runs offline.
+3. **Setup.** The project's setup steps (the definition's `setup`, §app.project-services/contract)
+   run on the merged tree, so a branch that breaks setup is caught. Their results are reused while
+   their argv and inputs are unchanged.
+4. **Install.** When the branch changes one of the definition's install inputs (Sova's: the lockfile
+   or `package.json`), the install runs offline.
 5. **Docs.** The branch's own drafts pinned at approval, and no other, are copied into the copy and
    turned into docs there (the spec tool's `land`), as one docs commit on top of the merge. A
    branch's own drafts are the untracked ones, plus the tracked ones it added or changed since its
    merge base with the target. Tracked drafts already on the target are never landed, changed or
-   deleted. A draft of the branch's own that doesn't fit hands the entry back to its chat ("your spec
-   drafts don't fit…", with what to fix, then "Fix them in your drafts (no commit needed); Land comes
-  back here, or type "land it" in this chat."), recorded as a send-back for its drafts, so Land can
-  come back at the same commit once they fit (§chat.composer/worktrees-control). What it made
-   official (the spec commit, each draft's hash and the spec tool's promotion entries) is kept with
-   the run, for the landing to mark the branch's drafts with (§app.merge-queue/land,
-   §app.merge-queue/publish); nothing reaches the branch's folder here. The step is skipped, with its reason, for a project with
-   no spec, an approval without its specs, or a branch with no drafts of its own ("no spec drafts
-   of the branch's own").
+   deleted. A draft of the branch's own that doesn't fit sends the entry back to its chat by itself
+   (§app.merge-queue/send-back): a request saying what doesn't fit and that fixing it in the drafts
+   needs no commit. Once the chat answers Fixed with drafts only and the merge thread confirms they
+   only fit now, Sova re-pins the approval's drafts and puts the entry back in line at the same
+   commit, with no new Land (§app.merge-queue/standing-approval). What it made official (the spec
+   commit, each draft's hash and the spec tool's promotion entries) is kept with the run, for the
+   landing to mark the branch's drafts with (§app.merge-queue/land, §app.merge-queue/publish);
+   nothing reaches the branch's folder here. The step is skipped, with its reason, for a project
+   with no spec, an approval without its specs, or a branch with no drafts of its own ("no spec
+   drafts of the branch's own").
 6. **Checks.** The checks run on that commit, in order (§app.merge-queue/checks), with the review
    (§app.merge-queue/review) alongside them.
-7. **Reruns.** A red check is rerun to place the blame (§app.merge-queue/blame), always fresh:
-   a rerun reuses no earlier pass.
+7. **Reruns.** A red check is rerun to place the blame (§app.merge-queue/blame), always fresh: a
+   rerun reuses no earlier pass.
 8. **Land** the way the approval pinned (§app.merge-queue/strategies): under Merge locally, land
    (§app.merge-queue/land), then **push** (§app.merge-queue/push); otherwise publish the branch to
-   its host (§app.merge-queue/publish) and, for a request, open it (§app.merge-queue/requests).
-   Then the branch's chat hears of it (§chat.merge-queue/chat-card).
+   its host (§app.merge-queue/publish) and, for a request, open it (§app.merge-queue/requests). Then
+   the branch's chat hears of it (§chat.merge-queue/chat-card).
 
-Under Merge locally nothing is committed after the checks: the commit that lands is the commit
-that was tested, docs included. On the host the merge with the target is only tested: what is
-published is the branch with its docs commit (§app.merge-queue/publish).
+Under Merge locally nothing is committed after the checks: the commit that lands is the commit that
+was tested, docs included. On the host the merge with the target is only tested: what is published
+is the branch with its docs commit (§app.merge-queue/publish).
 
 **One at a time.** A project's queue checks one entry at a time. The next waiting entry starts once
-the previous one has landed, been handed back, waits for the user, been pushed, or has its request
-opened: an open request never holds up the line (§app.merge-queue/requests). Every run, the copy, setup and
-merge included, has a run page with each step's log (§app.merge-queue/view).
+the previous one has landed, been sent back to its chat, waits for the user, been pushed, or has its
+request opened. An entry Sova puts back in line after a checked fix
+(§app.merge-queue/standing-approval) joins the end of the line, as a new approval would: an open
+request never holds up the line (§app.merge-queue/requests). Every run, the copy, setup and merge
+included, has a run page with each step's log (§app.merge-queue/view).
 
 **Frozen for a release.** While a release is open (§app.release/checks), the queue runs only that
 release's entries, first in line; every other entry waits with "waits for {tag} to be published or
 abandoned", and a run of another branch checking when the release starts is voided and goes back to
 the front of the line, never blamed.
 
-**Held for a restart.** While the merge thread holds new starts (§app.merge-queue/empty), no
-waiting entry starts, each saying "Waiting: Sova is restarting"; a run already checking finishes.
+**Held for a restart.** While the merge thread holds new starts (§app.merge-queue/empty), no waiting
+entry starts, each saying "Waiting: Sova is restarting"; a run already checking finishes.
+
+**Stopping and pausing** (§app.merge-queue/pausing): a run cut off mid-way is void and rerun, never
+blamed; a paused queue starts no run until Resume.
+
+## §app.merge-queue/pausing — Stopping and pausing the queue
 
 **Stopping.** A run that times out, is killed, or loses its server mid-way is **void**: it is
 rerun from the start for the same entry, which keeps its place, and is never blamed.
@@ -445,42 +616,12 @@ in the same copy. Every rerun below runs fresh (§app.merge-queue/checks).
     - Failing there too when either run names nothing (the target's run included) means **whose
       failure it is can't be told**. It is never taken as the target's, and the branch is never
       blamed. The entry waits for the user as **Can't tell whose failure · waiting for you**, with
-      the check and its log:
-      - **Land Anyway** lands the tested commit, noted "Landed anyway: {why}". When the target has
-        moved since the run, it is rerun first, and a rerun that still can't tell lands too.
-      - **Send Back** hands it to its chat as **Needs a fix**.
-
-      The queue doesn't pause, and the branches after it go on. When it failed on the target, the
-      view says the check is red on the target alone ("Red on {target} alone: {check}"); one that
-      only ran no test there isn't called red.
-- **A test check broken on the target.** A **test check** is one whose command holds the project's
-  whole test command (`test.run`), after any wrapper such as `nice` and with any flags after it; a
-  project with no `test.run` has none. A test check is **broken on the target**, neither the branch's
-  failure nor a Can't tell whose failure, when it names no failure and its three runs (on the merge,
-  its rerun there, and on the target alone) each fail with the same non-zero exit code and **no test
-  run**.
-  - **No test run** means the run's report exists and counts zero tests, with no failing files or
-    names and no file listed as run. A run with no report at all (a crash midway, or a runner that
-    writes none) shows nothing, and stays Can't tell whose failure: real failures may be in there.
-    Sova's own runner writes a zero-count report on its usage-error exits
-    (§app.server-runtime/test-tiers).
-  - **For the branch.** The queue skips that check for this branch: its steps read Skipped, and the
-    branch carries on, its other checks deciding as usual, so it lands when they pass. The queue
-    doesn't pause, and nothing waits for the user.
-  - **The flag.** "{check} is broken on {target}: no test ran ({first line it printed})" ("exit {code}"
-    in the brackets when it printed nothing but the runner's framing), so the user can start a chat
-    to fix the target. It shows on the run (§app.merge-queue/view), in the Merge Queue tab's Needs
-    you, in the landing's note as a Red on the target too note, on the strip's "Red on {target} alone:
-    {check}", and as one push notification per check (§app.notifications/delivery). Finding it again
-    in later runs updates the flag and sends no second notification.
-  - **When it clears.** A later run of that check that runs tests again (its step passes, or counts a
-    test passed or failed) lifts the flag. A run the queue voided proves nothing either way.
-  - **Never on a release.** A release's run is never skipped past its gates: there the same failure
-    waits on the user as Can't tell whose failure, with its gates unrun (§app.release/checks).
-
-  Any other run of it (a different exit code on one side, or one that ran a test) is blamed as above. A
-  check that isn't a test check (a build, a type check) failing on both sides keeps the rule above:
-  it waits as Can't tell whose failure, and the queue doesn't pause.
+      the check and its log, as one decision with Land Anyway, Try Again and Remove from Queue
+      (§app.merge-queue/needs-user). When it failed on the target, the view says the check is red
+      on the target alone ("Red on {target} alone: {check}"); one that only ran no test there isn't
+      called red.
+- **A test check broken on the target** (its three runs fail the same way with no test run) is
+  neither the branch's failure nor a Can't tell whose failure: §app.merge-queue/broken-check.
 - **Setup fails** on the merged tree. It is first rerun once on the merge; passing then makes it
   **flaky**, as above. Failing again, setup is rerun on the target alone, with nothing reused.
   - If the target passes, it's the **branch's**, with the setup log.
@@ -489,10 +630,38 @@ in the same copy. Every rerun below runs fresh (§app.merge-queue/checks).
 - **The install fails.** It's the branch's, since the target alone needs no install. The message
   says to install the new package once in the project when the offline store lacks it.
 
-**The branch's failure** goes back to its chat: its queue card moves down as **Needs a fix** with
-the check, the test and file, the error, and the run's log, and a turn marked as coming from the
-merge queue starts there (§chat.merge-queue/chat-card, §chat.merge-queue/chat-turns). Fixing it
-takes a new Land.
+**The branch's failure** goes back to its chat by itself, with the check, the test and file, the
+error and the run's log (§app.merge-queue/send-back); the user's Land stands meanwhile.
+
+## §app.merge-queue/broken-check — A test check broken on the target
+
+A **test check** is one whose command holds the project's whole test command (`test.run`), after
+any wrapper such as `nice` and with any flags after it; a project with no `test.run` has none. A test check is **broken on the target**, neither the branch's
+failure nor a Can't tell whose failure, when it names no failure and its three runs (on the merge,
+its rerun there, and on the target alone) each fail with the same non-zero exit code and **no test
+run**.
+- **No test run** means the run's report exists and counts zero tests, with no failing files or
+  names and no file listed as run. A run with no report at all (a crash midway, or a runner that
+  writes none) shows nothing, and stays Can't tell whose failure: real failures may be in there.
+  Sova's own runner writes a zero-count report on its usage-error exits
+  (§app.server-runtime/test-tiers).
+- **For the branch.** The queue skips that check for this branch: its steps read Skipped, and the
+  branch carries on, its other checks deciding as usual, so it lands when they pass. The queue
+  doesn't pause, and nothing waits for the user.
+- **The flag.** "{check} is broken on {target}: no test ran ({first line it printed})" ("exit {code}"
+  in the brackets when it printed nothing but the runner's framing), so the user can start a chat
+  to fix the target. It shows on the run (§app.merge-queue/view), in the Merge Queue tab's Needs
+  you, in the landing's note as a Red on the target too note, on the strip's "Red on {target} alone:
+  {check}", and as one push notification per check (§app.notifications/delivery). Finding it again
+  in later runs updates the flag and sends no second notification.
+- **When it clears.** A later run of that check that runs tests again (its step passes, or counts a
+  test passed or failed) lifts the flag. A run the queue voided proves nothing either way.
+- **Never on a release.** A release's run is never skipped past its gates: there the same failure
+  waits on the user as Can't tell whose failure, with its gates unrun (§app.release/checks).
+
+Any other run of it (a different exit code on one side, or one that ran a test) is blamed as above. A
+check that isn't a test check (a build, a type check) failing on both sides keeps the rule above:
+it waits as Can't tell whose failure, and the queue doesn't pause.
 
 ## §app.merge-queue/land — Landing exactly the tested commit
 
@@ -501,9 +670,10 @@ lands on its host never moves its target here: the host merges (§app.merge-queu
 
 **Before it moves anything**, the landing checks:
 - the run passed (flaky and target-only failures noted, not blocking), or the user answered Land
-  Anyway to a flagged review or to a failure whose owner can't be told;
+  Anyway to a failure whose owner can't be told;
 - the target is still at the run's base;
-- the entry is still approved at its pinned commit and drafts;
+- the entry is still approved at its pinned commit and drafts (as a checked fix last re-pinned
+  them, §app.merge-queue/standing-approval);
 - and the main checkout, when it has the target checked out, has no tracked changes and no merge
   in progress.
 
@@ -599,8 +769,9 @@ Sova restarts itself once the queue is idle", or "regenerated the lockfile". Sov
   verbs, following what the project's playbook says is worth noting. The operator may also write
   one, which stands over the thread's. For each writer the newest write wins, and an empty one
   clears it. A note may be written before or after the landing.
-- **On a hand-back.** The thread's explanation of an entry handed back to its chat is added to that
-  entry's queue card (§chat.merge-queue/chat-card).
+- **On a send-back.** The thread's diagnosis of an entry sent back to its chat is added to that
+  entry's queue card (§chat.merge-queue/card-states) and goes with the request
+  (§app.merge-queue/send-back); its note on the landing alone never reaches the chat.
 - **Where it shows.** On the landed row in the Merge Queue view, the composer's worktrees control,
   the session pane's Worktrees rows, on the branch's Landed queue card, and in the hidden line its
   chat's model reads (§chat.merge-queue/chat-turns).
@@ -659,12 +830,12 @@ reviewer chat stays readable from its run and the tab's History until the user c
 **Its verdict.**
 - **ok** — no findings.
 - **notes** — findings, attached to the landing.
-- **blocking** — the entry waits for the user as **Review flagged**, with the findings, and
-  doesn't land until the user chooses:
-  - **Land Anyway** lands the tested commit without a rerun, noted "Landed over the review: …".
-    When the target has moved since the run, it goes to the front of the line and is rerun
-    without review first;
-  - **Send Back** hands it to its chat with the findings, as a conflict's Send Back does.
+- **blocking** — the entry doesn't land: its findings go back to its chat by itself
+  (§app.merge-queue/send-back), as a request with each finding, and the card reads **Back with the
+  chat** with them. Once the chat's fix is checked, the entry goes back in line and is reviewed
+  again (§app.merge-queue/standing-approval). The merge thread is told of every blocking verdict
+  and may rule that a finding needs the user (§app.merge-queue/needs-user); only then does it wait
+  for the user, as a decision. Land Anyway is never offered over a review.
 
 **When the reviewer fails.** A reviewer that errs or passes its 20-minute limit is retried once,
 after 60 seconds, then the queue pauses. No chat is told. The branch is never blamed for it.
@@ -692,9 +863,19 @@ The kit can be read, never edited, from Settings → Merge Queue (**Open Folder*
 A merge that conflicts is held in the copy, and the merge thread judges each conflict. A resolution
 git recorded earlier is never applied silently, so the same conflict comes back to the thread every
 time. A merge that fails with no unmerged paths left still counts as a conflict when git finds
-conflicts between the two sides, never as a machine failure. The thread works each conflict out in
-a scratch copy Sova makes for that attempt, and Sova removes the copy once the attempt ends
+conflicts between the two sides, never as a machine failure. The thread works each conflict out in a
+scratch copy Sova makes for that attempt, and Sova removes the copy once the attempt ends
 (§app.merge-queue/resolve-copy).
+
+**Before Land.** A finished branch that only conflicts with the target reads Ready to land
+(§chat.worktrees/ready-to-land), and its chat is never asked to resolve the conflict itself: a note
+sent before Land for other blockers says not to (§chat.worktrees/blocks-landing). After Land the
+merge thread judges it, as below; the chat works on a conflict only when the thread rules that it
+fixes it.
+
+The thread rules each conflict one of three ways (`merge.resolve`,
+§app.project-services/merge-verbs): no behaviour change, the chat fixes it, or the two sides want
+different behaviour (it needs the user, §app.merge-queue/needs-user).
 
 **The conflict probe leaves nothing in your folder.** The sanity probe of a resolution runs in the
 entry's scratch copy (§app.merge-queue/resolve-copy), a copy of the project's files that isn't your
@@ -713,21 +894,42 @@ Sova still checks the resolution mechanically:
 
 Anything outside that counts as behaviour that differs.
 
-**The two sides want different behaviour.** The entry waits for the user as **Behaviour differs**.
-It shows both sides in plain words and the thread's proposed resolution:
+**The chat fixes it.** A conflict the thread can't resolve safely but that needs no decision of the
+user's goes back to the branch's chat by itself (§app.merge-queue/send-back), with the conflicting
+files and the thread's diagnosis, as they are on the newest target. The user's Land stands, and the
+chat's checked fix goes back in line by itself (§app.merge-queue/standing-approval).
+
+**The two sides want different behaviour.** The entry waits for the user as **Behaviour differs**,
+one decision (§chat.merge-queue/decision). It shows both sides in plain words, the thread's question
+and choices, and the resolution there is to take when there is one:
 - **Accept** takes the resolution, and the checks run;
-- **Send Back** hands the conflict to the branch's chat: its queue card moves down as Sent back,
-  and a turn marked as coming from the merge queue starts there (§chat.merge-queue/chat-turns).
+- a choice, or the user's own answer, written in the chat's message box, goes to the branch's chat
+  with the queue's held note, for the chat to resolve it that way; its fix is then covered as any
+  other (§app.merge-queue/standing-approval);
+- **Remove from Queue** ends it.
 
-Accept needs a proposed resolution commit. A resolution the thread called no behaviour change also
-needs its commit, and one that fails the mechanical check counts as behaviour that differs.
+Accept needs a resolution commit. Only a resolution the thread called no behaviour change brings
+one: its contents, each conflicted file's whole merged text, which Sova commits in the scratch copy
+(§app.merge-queue/resolve-copy), or its commit. The chat fixes it and needs the user carry no
+contents (refused with them), so a question the thread raises has no Accept. A no-behaviour-change
+resolution that fails the mechanical check counts as behaviour that differs: it waits for the user
+as Behaviour differs, raised by the queue, with Accept on that resolution, and the thread may still
+bring a resolution that passes.
 
-**A safe resolution that then fails a check** comes back to the user as Behaviour differs. The
-branch is not blamed, and no chat is told.
+**A safe resolution that then fails a check** is never the branch's: the branch is not blamed and
+nothing goes to its chat. The conflict is held again, in a fresh scratch copy, and the thread is
+told its resolution failed and rules again: another resolution, the chat fixes it, or the user
+decides. With no ruling within 20 minutes, or no thread, it waits for the user as Behaviour differs,
+never the chat. A decision the thread or the chat raised is never overruled: the thread's only
+ruling it takes is another question for the user.
 
-**No thread.** With no thread the conflict goes back to the branch's chat at once, with the
-conflicting files named; a thread that hasn't answered in 20 minutes hands it back the same way.
-The queue moves on to the next entry meanwhile.
+**No thread.** Under the user's standing Land, a conflict no thread judged (none running, or no
+ruling within 20 minutes) waits for the merge thread: the card reads "{reason}; waiting for the
+merge thread", Sova hands it to the thread again once it runs (whenever it next acts on the queue,
+or every minute), and it never goes to the chat unjudged; it waits as long as that takes, with no
+notification and no question to the user. The queue moves on to the next entry meanwhile. An
+approval from before the standing Land keeps the old way: the conflict goes back to the branch's
+chat by itself, with the conflicting files named.
 
 ## §app.merge-queue/resolve-copy — A conflict's scratch copy, made and removed by Sova
 
@@ -742,7 +944,8 @@ run the install and selected tests in the copy (`merge.test`, §chat.merge-queue
 
 **When it can't be made** (a folder Sova didn't make is already at its place, which is left as it
 is; a place under Sova's state root; git refusing), the message says why, and the thread judges from
-the diff alone, answering behaviour differs with no resolution commit, so you decide.
+the diff alone, with no contents and no resolution commit: the chat fixes it, or it needs the user,
+so you decide.
 
 **The fix is kept out of sight.** The resolution commit the thread names when it judges the
 conflict is kept by Sova under a hidden reference of the queue's own, never as a branch, so no
@@ -822,8 +1025,7 @@ restart Sova (§chat.merge-queue/sova-restart).
 
 - **Telling the thread the queue is idle.** When the queue has nothing left to check and nothing
   running after it was busy, it tells its merge thread so, once (**Idle**). That happens when a run
-  ends (it landed, was handed back for a failure, or waits for the user after a judged conflict, a
-  flagged review or a failure whose owner can't be told) and nothing else is in line, when a cancel
+  ends (it landed, was sent back to its chat, or waits for the user's decision, §app.merge-queue/needs-user) and nothing else is in line, when a cancel
   takes out the last entry in line or checking, and when a release's hold of the queue lifts at its
   Publish or Abandon. "Nothing left to check" means no entry checking or in line, and no conflict
   waiting for the thread's judgement; entries waiting for the user, on the host or sent back to
@@ -946,17 +1148,24 @@ shows, top to bottom:
   state chip ("In line · 2"), its branch and commit, its chat, when it was approved and how (the
   Land button, or typed in its chat), its
   options (without review, without its specs), "starts in ~N min · takes ~N min", newer commits not
-  included, and **Cancel Landing**. A release's own entry reads **Release** as its chip; while a
+  included, and **Remove from Queue**. A release's own entry reads **Release** as its chip; while a
   release holds the queue, the other entries show no estimate and say why they wait. While the
   merge thread holds new starts (§app.merge-queue/empty), each waiting entry says "Waiting: Sova is
   restarting" instead.
-- **Needs you**: entries waiting for the user, in full words:
-  - **Behaviour differs · waiting for you**, with the target's side, the branch's side and the merge
-    thread's proposal, and Accept and Send Back;
-  - **Review flagged · waiting for you**, with Land Anyway and Send Back;
+- **Needs you**: entries waiting for the user's decision (§app.merge-queue/needs-user), in full
+  words, each with Remove from Queue. No row here has a text box: a decision answered in words
+  links to the branch's chat, where the user answers in its message box (§chat.merge-queue/decision):
+  - **Behaviour differs · waiting for you**, with the target's side, the branch's side, the merge
+    thread's question and proposal, Accept when it proposed a resolution, and **Answer in Chat**;
+  - **Needs you · {branch}**, a question the merge thread or the chat raised, with its choices
+    ("Choices: a · b"), "The merge queue's note to the chat isn't sent yet: it goes with your
+    answer." and **Answer in Chat** ("can't be settled without you" when it came from a chat's "Can't");
   - **Can't tell whose failure · waiting for you**, with the check that failed on both sides, its
-    log, and Land Anyway and Send Back (§app.merge-queue/blame);
-  - **Drafts changed since you approved**, with Land and Cancel;
+    log, and Land Anyway and Try Again (§app.merge-queue/blame);
+  - **Out of tries**, with the reason and Land (§app.merge-queue/tries);
+  - **A fix needs your OK**, a fix on top of your own work or too wide, with Land
+    (§app.merge-queue/standing-approval);
+  - **Drafts changed since you approved**, with Land and Remove from Queue;
   - **Review the request**, a request's words waiting for you before it goes to the host, with
     Review Request (§app.merge-queue/requests);
   - a **Conflict** while it is being judged;
@@ -969,32 +1178,18 @@ shows, top to bottom:
     nothing and holds nothing up.
 - **Waiting on the host · {n}**: entries whose request is open, each with its request and its host
   state in the request's words (§app.merge-queue/requests), its chat as a link, **Open on GitHub**
-  (or GitLab), and **Send Back to Chat** or **Land Again** where they apply. Opening the tab checks
+  (or GitLab), and **Land Again** where it applies; host checks failing, changes requested and
+  conflicts read "Back with the chat" while its chat fixes them (§app.merge-queue/requests). Opening the tab checks
   them on the host.
-- **Sent back to its chat**: only entries that still need a fix, the newest 20, each with **See
-  Why**, the re-land button and **Remove from Queue**, and never Land
-  (§chat.composer/worktrees-control). The re-land button lands the branch's newest commit
-  (§app.merge-queue/approve). Once the branch moved, the row's facts read "sent back at {sha}",
-  since
-  that is no longer the commit the button lands, and the row adds what the button brings in ("{n}
-  newer
-  commits included", or "the branch was rewritten since it was sent back") and, when it applies,
-  "The
-  newest commit isn't Ready to land: {why}.". The row also reads "Sent back to its chat. Land comes
-  back once its chat fixes it, or land its newest commit now." An entry leaves this list, and isn't
-  shown dimmed or anywhere else here (See Why on its run still opens), once:
-  - its branch was approved again later, whatever became of that approval (in line, checking,
-    waiting for you, landed, sent back again or cancelled): the newer row stands for it;
-  - its sent-back commit, or the branch, is already in {target}, by any route;
-  - its branch was deleted, or its worktree folder removed, even when the branch remains;
-  - its branch reads ready again at a newer commit: its Ready to land row, with Land, stands for it.
-    While the entry is sent back and that newest commit isn't Ready to land (the reason above), a
-    moved, clean tip is not listed under Ready to land, so the sent-back row and its button stay
-    visible;
-  - it was sent back for its spec drafts, and its drafts have changed since it was sent back and now
-    fit: its Ready to land row at the same commit, with Land, stands for it, with no reload;
-  - it was removed with Remove from Queue (the branch then shows as itself, in Ready to land when it
-    is ready).
+- **With its chat**: entries whose standing approval stands while their chat fixes something
+  (§app.merge-queue/standing-approval), and branches **Approved · waiting for a fix**
+  (§app.merge-queue/approve), each with its state in the card's words ("Back with the chat · try 2
+  of 3 · Unit tests failed", "Waiting for the merge thread", "Paused: you stopped the chat"), **See
+  Why** and **Remove from Queue**,
+  and never Land, a re-land or a send-back button. The row reads "Your Land stands: it goes back in
+  line by itself once its chat's fix is checked." An entry leaves this list once it goes back in
+  line, lands, waits for the user (it moves to Needs you), is removed, or its branch is deleted or
+  its worktree folder removed.
 - **Recent**: landings, each with a **Landed** chip, "Landed as {sha} · {when} · pushed" (or "not
   pushed: {why}"), "No checks
   declared" when so, every note, and **View Checks**. A request the host merged has, in place of
@@ -1002,12 +1197,11 @@ shows, top to bottom:
   says pushed or not pushed; a pushed branch reads "Pushed {branch} at {sha}".
 - **Ready to land, not approved**: the project's worktree branches with commits the target hasn't, a
   clean tree, none of the queue's scratch copies (§app.merge-queue/resolve-copy), a head that
-  isn't a temporary commit, and no entry in line, landed or sent back at
-  that commit (a sent-back branch shows here only at a newer commit with nothing saying it isn't
-  Ready to land, or, sent back for its drafts, at the same commit once they changed and fit, or once
-  removed from the queue,
-  §chat.composer/worktrees-control;
-  the list is read at most every 15 seconds, so that row may take that long to appear).
+  isn't a temporary commit, and no standing approval (in line, checking, with its chat or waiting
+  for the user) and no landing at that commit (a branch removed from the queue shows here again;
+  the list is read at most every 15 seconds, so that row may take that long to appear). Land on a
+  row whose chip says it is blocked for something its chat can fix approves it as **Approved ·
+  waiting for a fix** (§app.merge-queue/approve).
   Each shows its chat and branch, then its chip, commit and "{n} commits ahead · +{a} −{d} ·
   {when}",
   and **Land** with the same menu as the modal's (Land Without Review, Land Without Its Specs…).
@@ -1033,9 +1227,9 @@ shows, top to bottom:
   (§app.merge-queue/owner), so the chat the row shows is the one the queue records and tells.
 - **History**, at the bottom: every chat the queue has had for the project, each opening its chat,
   with **Clear** and **Clear All…** (§app.merge-queue/chats). Each run's row in Checking now, Needs
-  you, Sent back and Recent also shows its review with **Open Reviewer Chat**.
+  you, With its chat and Recent also shows its review with **Open Reviewer Chat**.
 
-**Every row's chat.** Every row of Checking now, Waiting, Needs you, Sent back, Recent and Ready to
+**Every row's chat.** Every row of Checking now, Waiting, Needs you, With its chat, Recent and Ready to
 land names its chat by title: a row in the line or landed names the chat its entry recorded; a
 Ready row names the branch's owner (§app.merge-queue/owner). The row's top line is that chat's
 title first, then the branch name in small mono, then an "archived" tag when the chat is archived;
@@ -1064,7 +1258,8 @@ viewer shows the files alone. What it compares, read by the server from the queu
 - **Ready to land**: the branch as it is now against its merge-base with the target it lands on;
   uncommitted files in its worktree, if any appeared since the row was listed, are included and
   marked as uncommitted;
-- **Checking now, Waiting, Needs you and Sent back**: the commit that was approved, never a newer
+- **Checking now, Waiting, Needs you and With its chat**: the commit that was approved (with any
+  checked fix since, §app.merge-queue/standing-approval), never a newer
   one on the branch, against its merge-base with the target;
 - **Recent**: what that landing brought in, from the target before it to the landed commit.
 
@@ -1081,8 +1276,8 @@ closing the sidebar can change it.
   the line's left and the row's other actions at its right, each button the same size as with room.
   A card's head (Checking now, the Merge thread, History) puts its buttons on their own line under
   its title. Nothing scrolls sideways at 360px.
-- **With room**, every row of the tab alike (Checking now, Waiting, Needs you, Ready to land, Sent
-  back, Recent and History) puts its actions in a column at its top right,
+- **With room**, every row of the tab alike (Checking now, Waiting, Needs you, Ready to land, With its
+  chat, Recent and History) puts its actions in a column at its top right,
   each button at its own width; an open Land confirmation spans the row, at its right. A card's head
   keeps its title and its buttons on one line.
 
@@ -1105,10 +1300,12 @@ Land's size. Nothing is offered only on hover.
   (§app.merge-queue/chats);
 - "Nothing has merged from this run. {target} moves only once every check passes." while it runs,
   waits or conflicts, except on a run whose owner can't be told, where its own banner says it once;
-- a verdict in plain words: the branch broke a check; the merge thread's resolution failed one (back
-  to you, the branch not blamed); red on the target too, or flaky (noted, not blocking); can't tell
+- a verdict in plain words: the branch broke a check (back with its chat, its try count); the merge
+  thread's resolution failed one (back to the merge thread, the branch not blamed); red on the
+  target too, or flaky (noted, not blocking); can't tell
   whose failure it is ("Can't tell whose failure · waiting for you", with the checks that failed
-  on both sides, Land Anyway and Send Back); a test check broken on the target (a warning banner per
+  on both sides, "Nobody is blamed. Land Anyway lands the commit it tested; Try Again checks it
+  afresh.", Land Anyway, Try Again and Remove from Queue); a test check broken on the target (a warning banner per
   such check, "{check} is broken on {target}: no test ran ({first line})", with "Skipped for this
   branch; it doesn't block. Every branch skips it until it's fixed on {target}: start a chat to fix
   it
@@ -1144,9 +1341,8 @@ was waiting when the page loaded and is running when its log is opened follows. 
 to fit its panel counts as at its bottom, and keeps following as it grows past it. Scrolling up
 stops following; scrolling back to the end resumes it.
 
-Every action here is a catalogue command: Land, Land This Commit Again (read Land Newest Commit
-once the branch moved on), Cancel, Remove from Queue,
-Pause, Resume, Accept, Send Back, Land Anyway, Start Fresh, Send Answer, Clear and Clear All over
+Every action here is a catalogue command: Land, Remove from Queue,
+Pause, Resume, Accept, Land Anyway, Try Again, Start Fresh, Clear and Clear All over
 the merge verbs (§app.project-services/merge-verbs), Update Local Main, Publish and a
 branch summary's Try Again over the queue's own routes, which the merge thread can't call. Queue
 Settings and Open on GitHub only
@@ -1196,55 +1392,55 @@ hourly, one at a time.
 
 ## §app.merge-queue/branch-summary — What a branch does, in a few bullets
 
-**Each branch row of a project the merge queue serves (§app.merge-queue/served) says what the
-branch does in up to 5 short bullets, written in the background for every branch on the Ready to
-land, not approved list (§app.merge-queue/view) once its chat is idle, and for every branch
-approved at a commit.** A repository the queue doesn't serve gets no bullets.
+**Each branch row of a project the merge queue serves (§app.merge-queue/served) says what the branch
+does in up to 5 short bullets, written in the background for every branch on the Ready to land, not
+approved list (§app.merge-queue/view) once its chat is idle, and for every branch approved at a
+commit.** A repository the queue doesn't serve gets no bullets.
 
-- **What they say.** Plain words, most important first: what the branch adds, changes or fixes.
-  They never name files or commit ids. A small branch may get 1 or 2.
+- **What they say.** Plain words, most important first: what the branch adds, changes or fixes. They
+  never name files or commit ids. A small branch may get 1 or 2.
 - **Who writes them.** The summary-line model of Settings → Summaries
   (§app.settings-dialog/summaries): its Primary, then its Fallback when the Primary can't run or
-  gives nothing usable; never the Session titles model. Settings → Models' switch applies as it
-  does to the summary line: a model turned off there is skipped.
+  gives nothing usable; never the Session titles model. Settings → Models' switch applies as it does
+  to the summary line: a model turned off there is skipped.
 - **When.** Every branch on the Ready to land, not approved list gets bullets for its commit once
   the chat that owns it (§app.merge-queue/owner) is idle; a branch with no known chat, or whose chat
   is archived, counts as idle. Not at every commit: while its chat works, the row keeps the bullets
   it has. A sweep in the background does it, whether or not anyone is looking: about 30 seconds
   after Sova starts, then at least every 5 minutes, and within about a minute of the target moving
-  or of a branch's chat being read idle. Its first run after Sova starts writes every branch
-  already on the list, those with no chat included. A branch that reads Ready to land
+  or of a branch's chat being read idle. Its first run after Sova starts writes every branch already
+  on the list, those with no chat included. A branch that reads Ready to land
   (§chat.worktrees/ready-to-land) or is approved at a commit gets bullets for that commit too.
   Writes go one at a time on this computer, whatever started them and across every project; an
   approved branch's and a Try Again go ahead of the ones waiting (the one being written finishes
   first), and a waiting one already reads "Summarizing…". A commit is written at most once at a
-  time. Opening or refreshing a view never starts a write, and a finished write
-  doesn't start the next one by being shown. Once written, every view shows them at once.
-- **What they're written from.** The branch's commit messages and the parts it changed, with
-  lines added and removed, against the target; never the code change itself. On a large branch
-  the newest messages are read in full and older ones by their subject only, and the list of parts
-  is capped, so a summary costs about the same however large the branch is; when commits were left
-  out, the ask says so ("the newest 200 of {n} commits").
+  time. Opening or refreshing a view never starts a write, and a finished write doesn't start the
+  next one by being shown. Once written, every view shows them at once.
+- **What they're written from.** The branch's commit messages and the parts it changed, with lines
+  added and removed, against the target; never the code change itself. On a large branch the newest
+  messages are read in full and older ones by their subject only, and the list of parts is capped,
+  so a summary costs about the same however large the branch is; when commits were left out, the ask
+  says so ("the newest 200 of {n} commits").
 - **Where.** Always shown, with no switch to hide them, under the row's facts line: on every row of
-  a branch not yet landed on the Merge Queue tab (Ready to land, In line, Checking, Needs you, Sent
-  back; §app.merge-queue/view) and on the Worktrees rows, in the composer's modal and the session
-  pane (§chat.composer/worktrees-control, §chat.worktrees/pane). A landed row under Recent keeps
-  the bullets it had. On a phone they wrap; nothing scrolls sideways.
+  a branch not yet landed on the Merge Queue tab (Ready to land, In line, Checking, Needs you, With
+  its chat; §app.merge-queue/view) and on the Worktrees rows, in the composer's modal and the
+  session pane (§chat.composer/worktrees-control, §chat.worktrees/pane). A landed row under Recent
+  keeps the bullets it had. On a phone they wrap; nothing scrolls sideways.
 - **While writing**, the row says "Summarizing…", busy to a screen reader.
 - **A newer commit.** The bullets of an earlier commit stay up, marked "From an earlier commit",
   until new ones are written for the new commit.
 - **When it fails**, the row says "Couldn't summarize this branch" with **Try Again**, which writes
-  it again for the same commit. Try Again shows only after a failure: a summary that worked offers no
-  rewrite. Nothing else on the row changes, and Land works as before. Try Again is a catalogue
+  it again for the same commit. Try Again shows only after a failure: a summary that worked offers
+  no rewrite. Nothing else on the row changes, and Land works as before. Try Again is a catalogue
   command (§app/commands). A failure because no model answered (none could run or was signed in, a
   timeout, the model service failing) is tried once more by the sweep, by itself, about 10 minutes
   later, while the branch is still on the list with its chat idle; a failure whose models answered
   with nothing usable (a reply that isn't bullets) never is. After that one retry it waits for Try
   Again.
-- **Kept** per project and commit on this computer, so a restart doesn't write them again; a
-  failure is kept too, with whether its retry was spent, and waits as above. Once
-  the branch has landed or is gone they are dropped, unless a queue row still shows them; a live
-  branch keeps only its newest few.
+- **Kept** per project and commit on this computer, so a restart doesn't write them again; a failure
+  is kept too, with whether its retry was spent, and waits as above. Once the branch has landed or
+  is gone they are dropped, unless a queue row still shows them; a live branch keeps only its newest
+  few.
 - **Spend.** Each write's calls are recorded in the usage ledger (§app.insights/usage-ledger) as
   one-shots under a purpose of their own, `git-branch-summary`, with the project set, so they are
   never counted as a conversation's `branch-summary`.
@@ -1349,9 +1545,10 @@ shows to about two lines in the hover card and in full in the detail:
   adds mid-run adds its segment and {M} grows by one. The review runs beside the checks, so it is never a segment; its state is in
   the detail. A project that opens a pull or merge request, or only pushes the
   branch, shows its own steps the same way (§app.merge-queue/strategies).
-- **Needs you** (warn tone): an entry waiting for the user (Behaviour differs, Review flagged, Can't
-  tell whose failure, Drafts changed since you approved, Review the request), its branch and one line
-  of why, in the tab's words. A conflict the merge thread is judging is not one: at most the detail
+- **Needs you** (warn tone): an entry waiting for the user's decision (Behaviour differs, a
+  question the merge thread or the chat raised, Can't tell whose failure, Out of tries, a fix that
+  needs your OK, Drafts changed since you approved, Review the request; §app.merge-queue/needs-user),
+  its branch and one line of why, in the tab's words. An entry back with its chat is never one. A conflict the merge thread is judging is not one: at most the detail
   says "{branch} · conflict being judged". While a landing runs, a waiting entry does not take the bar
   and adds nothing to it (no chip, no count): it appears only in the detail. With nothing running,
   the waiting entry takes the bar, with the warn icon.
@@ -1401,13 +1598,21 @@ Publish isn't offered yet, **Release Chat** and **Releases**.
 **Links and buttons.** In the floating panel, the phone sheet and the collapsed popover alike, the
 places to go (Branch Chat, Checks, Queue, Release Chat, Releases, On GitHub or On GitLab) are plain
 links on one row, which never runs past the panel's edge. The things that do something (Land Anyway,
-Accept, Send Back, Land, Resume Queue, Continue, Retry Step) are buttons on their own row above the
-links, drawn only when there are any.
+Accept, Try Again, Land, Remove from Queue, Answer in Chat, Resume Queue, Continue, Retry Step) are
+buttons on their own row above the links, drawn only when there are any. There is no Send Back, and
+no re-land button.
+
+**Decisions.** Each entry waiting for the user's decision (§app.merge-queue/needs-user) shows in the
+detail with its branch, its question or reason and its answers. A decision answered in words offers
+**Answer in Chat**, which opens the branch's chat at its card, where the user answers in the message
+box (§chat.merge-queue/decision); the bar never holds a text box. An entry back with its chat isn't
+listed as needing you.
 
 **Actions in place, or the tab.** Resume Queue, Retry Step and Continue act right there, through the
 same catalogue commands the tabs use (the verbs `merge.resume`, `release.retry` and `release.continue`,
 §app.project-services/merge-verbs, §app.release/verbs). Land Anyway,
-Send Back, Accept and Land open the Merge Queue tab at that entry; Publish and Abandon open the
+Accept, Try Again, Land and Remove from Queue open the Merge Queue tab at that entry, where the
+user's own click acts (§app.access/your-click); Publish and Abandon open the
 Releases tab. Neither Publish nor Abandon is ever in the bar.
 
 **On a phone (<768px).** The bar is the same 44px row, directly above the foot bar
@@ -1441,7 +1646,7 @@ and a worker whose chat isn't known counts for nothing. The queue's own chats
 (§app.merge-queue/chats) never own a branch. So a worktree created by one chat, with a newer worker
 working inside it, belongs to the chat that created it, and one with no tracking chat where only a
 worker works belongs to the chat that runs that worker. Land on its row with no chat named records
-and tells that chat, so its card and a Send Back reach it.
+and tells that chat, so its card and the queue's requests reach it.
 
 Working out owners never rereads chats' transcripts each time the view is read: Sova keeps which
 chat tracks which worktree, and updates it as those chats' worktree records change.
@@ -1485,7 +1690,9 @@ queued branch · {branch}, {when}"). It has **Open Merge Thread**, the tab's onl
 Fresh…**, on one line, which asks
 first ("This thread is archived once its turn ends, and its memory of past landings goes with it.
 The next event starts a new one. The old thread stays readable in History.", **Cancel** /
-**Start Fresh**). A question it asks shows on the card (§chat.merge-queue/asks). With no thread:
+**Start Fresh**). A question it asks shows on the card (§chat.merge-queue/asks); one no branch chat
+can carry has one button, **Answer in Merge Thread**, which opens the merge thread's chat to answer
+in its message box, and no text box or Send Answer. With no thread:
 "No merge thread now: the next event starts one (it reads each branch as it is queued)."
 
 **A running review.** While a review runs, a button in the queue's head, beside Queue Settings and
@@ -1502,7 +1709,7 @@ thread, a running reviewer and a row already cleared; **Clear All…** asks firs
 chats for good. Runs keep their verdicts and findings. The current merge thread and a running
 review stay."
 
-**The review on every run.** Rows of Checking now, Needs you, Sent back and Recent, and the run
+**The review on every run.** Rows of Checking now, Needs you, With its chat and Recent, and the run
 page, show each of the run's reviewer chats, oldest attempt first: "Review: {verdict}" or "Review
 running" (with " (attempt {n})" when there are several), then **Open Reviewer Chat**.
 
@@ -1797,7 +2004,7 @@ to the published tip (their messages, file names and added lines, spec text incl
 against its first parent) and, for a request, its title and description. This holds whatever checks
 the project lists. A finding, or a scan that can't run (git failing, names that can't be read, more
 than 2,000 commits), publishes nothing; the why never repeats the text that matched. A finding in the
-branch's commits hands the entry back to its chat as Needs a fix (§chat.merge-queue/chat-turns); one
+branch's commits sends the entry back to its chat by itself (§app.merge-queue/send-back); one
 in the request's words waits for you with the reason. A project whose private names aren't set up
 publishes nothing, says so, and calls the merge thread in for them (§chat.merge-queue/thread).
 
@@ -1824,75 +2031,86 @@ On a project that lands by pull request on GitHub or merge request on GitLab
 (§app.merge-queue/strategies), a branch that passed is published (§app.merge-queue/publish) and a
 request is opened from it into the target.
 
-**Its words, seen first.** Sova writes the request's title (the chat's title, else the branch's name) and description (the
-merge thread's note, the checks that passed, the review's notes and the specs it changes, ending
-"Opened by Sova"), following the project's request kit and the repository's own template
-(§app.merge-queue/request-kit). Before anything goes to the host, the entry and the chat's card show
-them to read and edit ("Review the request", **Review Request**): the title, the description, **Open
-as a draft** (off: it opens ready), where the text came from ("Written from {folder} · {n} checks
-passed", "{x} of {n} checks failed", or "No request folder: written in Sova's plain default."), and
-**Publish Pull Request** (or **Publish Draft Merge Request**, and so on) and **Send Back to Chat**.
-Only Sova's own checks hold Publish (a title, on one line, at most 255 characters; a description
-of at most 60,000): the kit's failed checks are shown, never a lock (§app.merge-queue/request-kit). A wait on the chat,
-a finding in the words, a missing sign-in or private names not set up keep it here, with the reason.
-When Sova couldn't write the text at all (a kit check that can't run), Review Request opens an empty
-form with the reason and "Write the title and description yourself, then publish." After Publish,
-it reads "Opening the PR" ("Opening the MR"; Push branch only: "Pushing the branch") with the
-queue's reason as its line ("Publishing to GitHub."), and no Review Request, until the request is open
-or refused. A refusal leaves the words as you left them, with Review Request and "{reason}. Fix it,
-then publish again." The line moves on meanwhile.
+**Its words, seen first.** Sova writes the request's title (the chat's title, else the branch's
+name) and description (the merge thread's note, the checks that passed, the review's notes and the
+specs it changes, ending "Opened by Sova"), following the project's request kit and the repository's
+own template (§app.merge-queue/request-kit). Before anything goes to the host, the entry and the
+chat's card show them to read and edit ("Review the request", **Review Request**): the title, the
+description, **Open as a draft** (off: it opens ready), where the text came from ("Written from
+{folder} · {n} checks passed", "{x} of {n} checks failed", or "No request folder: written in Sova's
+plain default."), and **Publish Pull Request** (or **Publish Draft Merge Request**, and so on) and
+**Remove from Queue**. There is no Send Back to Chat: a request's words are the user's to edit here.
+Only Sova's own checks hold Publish (a title, on one line, at most 255 characters; a description of
+at most 60,000): the kit's failed checks are shown, never a lock (§app.merge-queue/request-kit). A
+wait on the chat, a finding in the words, a missing sign-in or private names not set up keep it
+here, with the reason. When Sova couldn't write the text at all (a kit check that can't run), Review
+Request opens an empty form with the reason and "Write the title and description yourself, then
+publish." After Publish, it reads "Opening the PR" ("Opening the MR"; Push branch only: "Pushing the
+branch") with the queue's reason as its line ("Publishing to GitHub."), and no Review Request, until
+the request is open or refused. A refusal leaves the words as you left them, with Review Request and
+"{reason}. Fix it, then publish again." The line moves on meanwhile.
 
 **Who merges.** You or your team, on the host. Sova never merges a request and never turns on the
 host's auto-merge.
 
-**An open request never holds up the line.** The next branch starts as soon as it is opened. The entry
-waits on the host (§app.merge-queue/view), and the card follows it
+**An open request never holds up the line.** The next branch starts as soon as it is opened. The
+entry waits on the host (§app.merge-queue/view), and the card follows it
 (§chat.merge-queue/chat-card): "PR #{n} open · checks running on GitHub" (GitLab: "MR !{n} open ·
 …"), "… · checks passed on GitHub", then "Host checks failed", "Changes requested", "Approved",
-"Conflicts on GitHub"; the first that holds of merged, closed, conflicts, host checks failed, changes
-requested, approved, open. Host checks that report nothing read "… · no checks reported on GitHub",
-never passed. **Open on GitHub** (or GitLab) shows whenever the request has an address. Sova checks the host every
-3 minutes while any request is open, and when the Merge Queue tab is opened (at most every 20
-seconds). These changes start no paid chat turn. The queue view lists open requests newest first,
-with those closed or pushed in the last 7 days.
+"Conflicts on GitHub"; the first that holds of merged, closed, conflicts, host checks failed,
+changes requested, approved, open. Host checks that report nothing read "… · no checks reported on
+GitHub", never passed. **Open on GitHub** (or GitLab) shows whenever the request has an address.
+Sova checks the host every 3 minutes while any request is open, and when the Merge Queue tab is
+opened (at most every 20 seconds). These changes start no paid chat turn. The queue view lists open
+requests newest first, with those closed or pushed in the last 7 days.
 
 **Host checks failing** is not blamed on the branch as Sova's checks are, and the entry says nobody
-is blamed. Host checks failing, changes requested and conflicts offer **Send Back to Chat**, which
-hands it to the chat with that reason, as Send Back does; a request waiting for your review can be
-sent back too.
+is blamed. Host checks failing, changes requested and conflicts go back to the branch's chat by
+themselves, as a request with the host's reason and the request's address
+(§app.merge-queue/send-back), once per problem at the request's head, and the entry reads "Back with
+the chat". While the user's Land stands, the chat's checked fix is checked again and pushed to the
+same request by itself (§app.merge-queue/standing-approval), as Land Again would, up to its tries;
+changes requested that ask for something the user must decide wait for them
+(§app.merge-queue/needs-user). There is no Send Back to Chat.
 
 **Merged.** Only when the host says merged does the entry read **Landed**, and the chat hears of it
 as today (§chat.merge-queue/chat-turns). The host's merge counts as the queue's own
-(§app.merge-queue/master-moved). The host may squash or rebase, so it says what Sova checked
-and that the host's merge is final ("Merged on GitHub. Sova checked it merged with {target}; GitHub's
-merge is final."). Deleting the branch on
-the host is left to the host's own setting; removing the worktree stays yours.
+(§app.merge-queue/master-moved). The host may squash or rebase, so it says what Sova checked and
+that the host's merge is final ("Merged on GitHub. Sova checked it merged with {target}; GitHub's
+merge is final."). Deleting the branch on the host is left to the host's own setting; removing the
+worktree stays yours.
 
-**Closed without merging** reads "Closed on GitHub", with **Land Again** while the queue still serves
-the project; a repository it no longer serves shows no Land at all, even on an old closed request. Land Again also shows
-while a request is open, or a branch pushed, once the branch has newer commits.
+**Closed without merging** reads "Closed on GitHub", with **Land Again** while the queue still
+serves the project; a repository it no longer serves shows no Land at all, even on an old closed
+request. Land Again also shows while a request is open, or a branch pushed, once the branch has
+newer commits.
 
 **New commits: added on top, never rewritten.** Land Again on a branch whose request is open,
-waiting for review or closed puts the same entry back in line (it keeps its request). It checks it again, merged with the host's latest target, makes a new docs commit for any new drafts, and
-pushes it to the same request as ordinary new commits: what the request had stays an ancestor of
-what it gets.
+waiting for review or closed puts the same entry back in line (it keeps its request). It checks it
+again, merged with the host's latest target, makes a new docs commit for any new drafts, and pushes
+it to the same request as ordinary new commits: what the request had stays an ancestor of what it
+gets.
 
 **Tested against what the host has.** Every run on such a project starts from the host's target,
 fetched just before (§app.merge-queue/run), so a branch waiting while the host merges another is
 tested on the host's newest target, and the host's merge never pauses the line
 (§app.merge-queue/master-moved).
 
-**Update Local Main.** The target on this computer is never moved by itself. The Merge Queue tab
-and the entry show "Local main is {n} commits behind" with **Update Local Main**, which
-fetches the host's target and fast-forwards the local one, and the main checkout, to it. The queue
-does it itself, so it never counts as moved outside the queue, and it never pauses the line; a run
-checking meanwhile keeps going on its moved base and is never voided. When the
-project folder has uncommitted edits ("{folder} has uncommitted changes (…): commit or put them
-away, then Update Local Main again"), or the local target has commits the host lacks, it is refused
-with the reason and nothing is forced. When it is already current it says "Local main is already
-current." While a release is open it is refused too, since the target stays on the release: "{target}
-stays on the release commit while release {tag} is open: update it after Publish or Abandon"
-(§app.release/checks).
+**Update Local Main** brings the target on this computer up to the host's, only when the user
+presses it (§app.merge-queue/update-local-main).
+
+## §app.merge-queue/update-local-main — Update Local Main
+
+The target on this computer is never moved by itself. The Merge Queue tab and the entry show "Local
+main is {n} commits behind" with **Update Local Main**, which fetches the host's target and
+fast-forwards the local one, and the main checkout, to it. The queue does it itself, so it never
+counts as moved outside the queue, and it never pauses the line; a run checking meanwhile keeps
+going on its moved base and is never voided. When the project folder has uncommitted edits
+("{folder} has uncommitted changes (…): commit or put them away, then Update Local Main again"), or
+the local target has commits the host lacks, it is refused with the reason and nothing is forced.
+When it is already current it says "Local main is already current." While a release is open it is
+refused too, since the target stays on the release: "{target} stays on the release commit while
+release {tag} is open: update it after Publish or Abandon" (§app.release/checks).
 
 ## §app.merge-queue/hosts — GitHub and GitLab, signed in on this computer
 

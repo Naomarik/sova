@@ -163,7 +163,11 @@ in this document is sent or shown, except the tab's own figures.
   card, a button on an offer (§chat.offers/buttons) and a regenerate, the same words sent again from the same place
   (§chat.transcript/message-actions). A slash command that leaves itself in the chat
   (§chat/slash-commands) and a message of images with no words count the same. So does Land
-  (§app.merge-queue/approve), though it puts no message in the chat; a typed "land it" is a message. A
+  (§app.merge-queue/approve), though it puts no message in the chat, once per press at the press's
+  time, and so does Land on a merge queue decision (§chat.merge-queue/decision); a typed "land it" is
+  a message. A checked fix the queue puts back in line by itself under your standing Land
+  (§app.merge-queue/standing-approval) is no press and closes no stretch. Stated limit: a Land on a
+  decision that finds the branch blocked again closes no stretch either. A
   pick with words of your own after it is a message, labelled on those words, and typing a button's exact
   words reads as the button. After a reload or a restart of Sova, each of these still reads as it did.
 - **What doesn't count.** A background job's end, a wake-up, a worker's report, another session's

@@ -513,6 +513,33 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     assert.deepEqual(pin?.data.active.minorModes, ["align", "spec", "vis"]);
     assert.equal(pin?.data.active.mode, "delegate");
     await piSession(await acquireChat(path)).waitForIdle();
+    // A profile it names (§app.project-overseer/coding-mode): its modes where the call names none, its Models part
+    // switched in; an unknown one, or one with tools or powers, starts nothing and takes nothing.
+    mkdirSync(join(agentDir, "sova"), { recursive: true });
+    writeFileSync(
+      join(agentDir, "sova", "session-profiles.json"),
+      JSON.stringify({ version: 1, profiles: [{ id: "solo", label: "Solo", mode: "delegate", minorModes: ["spec"] }, { id: "wide", label: "Wide", remove: ["web"], grant: ["sessions.message"], overseerMayStart: true }] }),
+    );
+    try {
+      const before = limits.count("create");
+      const nope = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "p", title: "t", profile: "nope" });
+      assert.match(nope.text, /Unknown profile: nope\. sova_list_profiles lists them\. No session was started\./);
+      const wide = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "p", title: "t", profile: "wide" });
+      assert.match(wide.text, /Wide changes tools or session powers/);
+      const both = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "p", title: "t", profile: "solo", subagent_profile: "off" });
+      assert.match(both.text, /Give profile or subagent_profile, not both/);
+      assert.equal(limits.count("create"), before, "no session counted for a refusal");
+      const solo = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "Profile it", title: "Profiled", profile: "solo", already_agreed: true });
+      assert.ok(solo.ok, solo.text);
+      assert.match(solo.text, /, mode delegate · spec, profile Solo\./);
+      const sp = readBuilds(project.id).find((r) => r.sessionId === (solo.details as { session: string }).session)!.path!;
+      const entries = readFileSync(sp, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+      assert.deepEqual(entries.filter((e) => e.type === "custom" && e.customType === "mode").at(-1)?.data.active.minorModes, ["spec"]);
+      assert.deepEqual(entries.filter((e) => e.type === "custom" && e.customType === "sova-profile"), [], "never its When a Chat Starts entry");
+      await piSession(await acquireChat(sp)).waitForIdle();
+    } finally {
+      rmSync(join(agentDir, "sova", "session-profiles.json"), { force: true });
+    }
   });
 
   test("§app.project-overseer/confirm-brief: an Overseer's start without already_agreed asks first, waits on the operator, and takes no Overseer message", async () => {

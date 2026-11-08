@@ -4,8 +4,6 @@
 
 The decision, made tappable. One primary per view — the thing the user came to do — and destructive actions are outlined rather than filled, because a filled red button is the most tappable thing on screen, which is exactly backwards.
 
-Rendered: `site/components/button.html#variants`
-
 ## Styles
 
 | Class | Role | Notes |
@@ -67,9 +65,8 @@ Rendered: `site/components/button.html#variants`
 <div class="button-split"><a class="button" href="…">Overseer</a><button class="button button-icon" aria-haspopup="menu" aria-expanded="false" aria-label="Project overseers">…</button></div>
 ```
 
-Every state is rendered together in the site page's state matrix. The `.is-hover`,
-`.is-focus`, `.is-active` and `.is-disabled` helpers are **documentation scaffolding
-only** — production code uses the real pseudo-classes.
+The `.is-hover`, `.is-focus`, `.is-active` and `.is-disabled`
+helpers are **documentation scaffolding only** — production code uses the real pseudo-classes.
 
 ## DO / DON'T
 

@@ -4,8 +4,6 @@
 
 Checkbox, radio, and switch, sharing one label row. The label row is the target, not the 18px box — a control you have to aim at is a control that gets missed on a moving train.
 
-Rendered: `site/components/toggle.html#variants`
-
 ## Styles
 
 | Class | Role | Notes |

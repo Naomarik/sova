@@ -137,26 +137,6 @@ export function SessionPane(props: {
   // The strip scrolls sideways in a narrow pane: keep the tab showing, on open and on every change,
   // so a tab a door opened (Explain, Usage) is never off the end of the strip.
   createEffect(() => tabEls[TABS.findIndex((t) => t.id === tab())]?.scrollIntoView({ inline: "nearest", block: "nearest" }));
-  // Which edge has tabs beyond it: read on scroll and resize only, drawn by a CSS mask.
-  let strip!: HTMLDivElement;
-  const [fade, setFade] = createSignal<"start" | "end" | "both" | undefined>();
-  const measureFade = () => {
-    const max = strip.scrollWidth - strip.clientWidth;
-    const start = strip.scrollLeft > 1;
-    const end = max - strip.scrollLeft > 1;
-    setFade(start && end ? "both" : start ? "start" : end ? "end" : undefined);
-  };
-  onMount(() => {
-    measureFade();
-    strip.addEventListener("scroll", measureFade, { passive: true });
-    const ro = new ResizeObserver(measureFade);
-    ro.observe(strip);
-    for (const el of tabEls) if (el) ro.observe(el);
-    onCleanup(() => {
-      ro.disconnect();
-      strip.removeEventListener("scroll", measureFade);
-    });
-  });
   let aside!: HTMLElement;
   onMount(() =>
     queueMicrotask(() => {
@@ -217,7 +197,7 @@ export function SessionPane(props: {
       <RemotePaneStatus path={props.path} summary={props.summary} />
       {/* Named apart from the landmark: both saying "Session detail" made a reader announce the
           same name twice, nesting into itself. */}
-      <div class="tabs session-tabs" role="tablist" aria-label="Session detail tabs" ref={strip} data-fade={fade()}>
+      <div class="tabs session-tabs" role="tablist" aria-label="Session detail tabs">
         <For each={TABS}>
           {(t, i) => (
             <button

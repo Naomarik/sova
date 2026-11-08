@@ -4,8 +4,6 @@
 
 A stepped record of what a worker actually did. Every step states what happened; a failure states where it stopped and what it did *not* touch — which is the sentence that tells a user whether to panic.
 
-Rendered: `site/components/timeline.html#anatomy`
-
 ## Styles
 
 | Class | Role | Notes |

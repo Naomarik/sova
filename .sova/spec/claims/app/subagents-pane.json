@@ -89,12 +89,16 @@
       "shared/harness-session.ts",
       "src/components/ReaderDoc.tsx",
       "server/context-tab-sheet.integration.test.ts",
-      "server/transcript-shell.test.ts"
+      "server/transcript-shell.test.ts",
+      "server/skill-lines.ts",
+      "server/skill-lines.test.ts",
+      "server/skills.ts",
+      "server/skills.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-07T12:38Z",
-      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
+      "by": "user",
+      "at": "2026-11-08T22:24Z",
+      "source": "pi-session:1e2d4212-e8f2-4d90-95f6-538201cbd3f1#a87554fb"
     }
   },
   "§app.subagents-pane/head": {
@@ -236,12 +240,16 @@
     "requires": [],
     "code": [
       "src/components/SessionPane.tsx",
-      "src/app.css"
+      "src/design/base.css",
+      "server/time-spent-tab.integration.test.ts",
+      "src/lib/tabs-overflow.ts",
+      "src/lib/tabs-overflow.test.ts",
+      "src/main.tsx"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-07T10:33Z",
-      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#2dc6cf75"
+      "by": "user",
+      "at": "2026-11-08T22:39Z",
+      "source": "pi-session:1e2d4212-e8f2-4d90-95f6-538201cbd3f1#5cf517d3"
     }
   },
   "§app.subagents-pane/tabs": {

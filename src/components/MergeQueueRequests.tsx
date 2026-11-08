@@ -11,7 +11,6 @@ import {
   requestChecksWords,
   requestChip,
   requestReason,
-  waitingOnHostHead,
   type RequestView,
   type RequestAction,
   type RequestState,
@@ -274,19 +273,5 @@ export function RequestRow(props: { root: string; target: string; entry: Request
         </Show>
       </div>
     </li>
-  );
-}
-
-/** The tab's Waiting on the host group: requests open on the host, closed ones and pushed branches. */
-export function WaitingOnHost(props: { root: string; target: string; entries: RequestEntry[]; from?(e: RequestEntry): JSX.Element; onChanged?(): void }) {
-  return (
-    <Show when={props.entries.length > 0}>
-      <div class="stack-2" role="group" aria-label="Waiting on the host">
-        <h3 class="text-heading-s">{waitingOnHostHead(props.entries.length)}</h3>
-        <ul class="list mq-list">
-          <For each={props.entries}>{(e) => <RequestRow root={props.root} target={props.target} entry={e} from={props.from?.(e)} onChanged={props.onChanged} />}</For>
-        </ul>
-      </div>
-    </Show>
   );
 }

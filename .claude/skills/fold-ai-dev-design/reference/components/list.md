@@ -4,8 +4,6 @@
 
 A scannable column of things to decide on. The whole row is the target — 44px tall with 12px padding, because the target grew and the row didn't.
 
-Rendered: `site/components/list.html#anatomy`
-
 ## Styles
 
 | Class | Role | Notes |
@@ -45,6 +43,8 @@ Rendered: `site/components/list.html#anatomy`
 - **DO** Make the whole row the link — a 44px row with a 20px hit area wastes the row.
 - **DO** Group rows with `.list-group-label` — "Waiting on you" is the most useful heading in the product.
 - **DO** Put the machine facts in mono on the meta line — they are scannable exactly because they look different.
+- **DO** Round the `.list`, never its rows — its end rows take its corners, so a hover fill never pokes past them.
 - **DON'T** Put row actions behind hover — a phone has no hover, so they do not exist there.
 - **DON'T** Let the title wrap to three lines — truncate; the detail pane has the full text.
 - **DON'T** Use a list where a table is right — if you need aligned columns, use the table.
+- **DON'T** Leave a `--color-sunken` box inside a tappable row sunken on hover — that is the row's hover fill, so the box vanishes; give it the surface then.

@@ -158,9 +158,9 @@ and a chat in any of them is one press away.
   - A chat that is done but not archived (an ended terminal chat) counts in neither row.
 - **Runtime**, a caption with the project's memory in use at its right, `idle` while that is 0, or
   `no project setup` for a project with no project file (`.sova/project.json`), over three rows:
-  - **Ready to merge**: how many branches the project's Merge Queue tab lists under `Ready to land,
-    not approved` (§app.merge-queue/view), with a success dot while above 0, then `· {k} in line`
-    while approved branches wait or are being checked. It opens the Merge Queue tab,
+  - **Ready to merge**: how many branches the project's Merge Queue tab lists on its `Ready to
+    land` tab (§app.merge-queue/view), with a success dot while above 0, then `· {k} in line`
+    while approved branches wait or are being checked. It opens the Merge Queue tab at Ready to land,
     `#/projects/<pid>/merge-queue`. A muted `…` while the queue serves the project but its first
     view since Sova started is still being read. `—` for a project the merge queue doesn't serve,
     and then the row is not a link.
@@ -250,7 +250,7 @@ changes nothing.
 
 - **Ready to merge, in line, landing and frozen** come only from the merge queue's newest view of
   that project, the one it already keeps for the Merge Queue tab and the landing bar
-  (§app.merge-queue/view, §app.merge-queue/landing-bar): its `Ready to land, not approved` list, its
+  (§app.merge-queue/view, §app.merge-queue/landing-bar): its `Ready to land` list, its
   waiting and checking entries, its Checking now check and estimates, and whether a release holds
   it. A project the queue doesn't serve (not listed, or its merge setup not done, as the queue
   last named its served projects) reads `unserved`: nothing is read for it and no queue is made. A

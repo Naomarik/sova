@@ -4,8 +4,6 @@
 
 37 line icons on a 24px grid, shipped as local files. They inherit color from context via `currentColor`, which is what lets one file serve both themes and every surface it lands on.
 
-Rendered: `site/brand/iconography.html#spec`
-
 ## Styles
 
 | Class | Role | Notes |

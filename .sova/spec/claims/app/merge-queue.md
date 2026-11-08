@@ -853,7 +853,7 @@ minutes, and stops the chat if it hasn't by then; the run goes on meanwhile. The
 chat, up to 3 tries 2 seconds apart, and logs only a final failure; a second stop does nothing,
 and a failure never fails the run. 30 seconds after Sova starts, it archives the same way every
 reviewer chat still open that no review is waiting on. An archived
-reviewer chat stays readable from its run and the tab's History until the user clears it
+reviewer chat stays readable from its run and the tab's Queue chats until the user clears it
 (§app.merge-queue/chats); a cleared one's run keeps its verdict and findings.
 
 **Its verdict.**
@@ -1008,7 +1008,7 @@ branch list or screen shows it and git's own cleanup can't drop it before the ru
 
 **Never something you can land.** A scratch copy is the queue's own. It never shows, even when a
 branch was switched to in it:
-- on the Merge Queue tab's Ready to land, not approved list (§app.merge-queue/view), so it never
+- on the Merge Queue tab's Ready to land list (§app.merge-queue/view), so it never
   counts in the project card's Ready to merge figure, which reads that list
   (§app.projects/home-glance);
 - among the branches that get bullets: no model is asked to summarize one
@@ -1195,62 +1195,71 @@ shows, top to bottom:
   and **Open Releases** (§app.release/tab). With nothing checking, the line reads "{n} waiting for
   release {tag}: they start once it's published or abandoned." or "Nothing being checked. A branch
   you land now waits for release {tag}."
+
+Under them, the same whatever tab is chosen:
+
 - **Checking now**: the branch, its commit and chat, "{target} {base} + this branch → testing
   {tip}",
   the current check ("check N of M") with a meter, when it started, how long it takes, how many
-  checks the merge thread added, and **View Checks**.
-- **Waiting**, in order, with when the last one should be done. Each entry shows its place as its
-  state chip ("In line · 2"), its branch and commit, its chat, when it was approved and how (the
-  Land button, or typed in its chat), its
-  options (without review, without its specs), "starts in ~N min · takes ~N min", newer commits not
-  included, and **Remove from Queue**. A release's own entry reads **Release** as its chip; while a
-  release holds the queue, the other entries show no estimate and say why they wait. While the
-  merge thread holds new starts (§app.merge-queue/empty), each waiting entry says "Waiting: Sova is
-  restarting" instead.
-- **Needs you**: entries waiting for the user's decision (§app.merge-queue/needs-user), in full
-  words, each with Remove from Queue. No row here has a text box: a decision answered in words
-  links to the branch's chat, where the user answers in its message box (§chat.merge-queue/decision):
-  - **Behaviour differs · waiting for you**, with the target's side, the branch's side, the merge
-    thread's question and proposal, Accept when it proposed a resolution, and **Answer in Chat**;
-  - **Needs you · {branch}**, a question the merge thread or the chat raised, with its choices
-    ("Choices: a · b"), "The merge queue's note to the chat isn't sent yet: it goes with your
-    answer." and **Answer in Chat** ("can't be settled without you" when it came from a chat's "Can't");
-  - **Can't tell whose failure · waiting for you**, with the check that failed on both sides, its
-    log, and Land Anyway and Try Again (§app.merge-queue/blame);
-  - **Out of tries**, with the reason and Land (§app.merge-queue/tries);
-  - **A fix needs your OK**, a fix on top of your own work or too wide, with Land
-    (§app.merge-queue/standing-approval);
-  - **Drafts changed since you approved**, with Land and Remove from Queue;
-  - **Review the request**, a request's words waiting for you before it goes to the host, with
-    Review Request (§app.merge-queue/requests);
-  - a **Conflict** while it is being judged;
-  - and, first and apart from the entries, one row per test check broken on the target
-    (§app.merge-queue/blame), which brings the section up even with no entry in it: a **Broken on
-    {target}** chip and when it was first found, "{check} is broken on {target}: no test ran ({first
-    line})", "Every branch skips it until it's fixed, and lands without it. Start a chat in this
-    project to fix it on {target}.", and **View the Log**, which opens the run that found it. It
-    asks
-    nothing and holds nothing up.
-- **Waiting on the host · {n}**: entries whose request is open, each with its request and its host
-  state in the request's words (§app.merge-queue/requests), its chat as a link, **Open on GitHub**
-  (or GitLab), and **Land Again** where it applies; host checks failing, changes requested and
-  conflicts read "Back with the chat" while its chat fixes them (§app.merge-queue/requests). Opening the tab checks
-  them on the host.
-- **With its chat**: entries whose standing approval stands while their chat fixes something
-  (§app.merge-queue/standing-approval), and branches **Approved · waiting for a fix**
-  (§app.merge-queue/approve), each with its state in the card's words ("Back with the chat · try 2
-  of 3 · Unit tests failed", "Waiting for the merge thread", "Paused: you stopped the chat"), **See
-  Why** and **Remove from Queue**,
-  and never Land, a re-land or a send-back button. The row reads "Your Land stands: it goes back in
-  line by itself once its chat's fix is checked." An entry leaves this list once it goes back in
-  line, lands, waits for the user (it moves to Needs you), is removed, or its branch is deleted or
-  its worktree folder removed.
-- **Recent**: landings, each with a **Landed** chip, "Landed as {sha} · {when} · pushed" (or "not
-  pushed: {why}"), "No checks
-  declared" when so, every note, and **View Checks**. A request the host merged has, in place of
-  Landed, a **Merged on GitHub** (or **Merged on GitLab**) chip, then "as {sha} · {when}", and never
-  says pushed or not pushed; a pushed branch reads "Pushed {branch} at {sha}".
-- **Ready to land, not approved**: the project's worktree branches with commits the target hasn't, a
+  checks the merge thread added, and **View Checks**. With nothing checking, the card says so in its
+  place: "Nothing being checked", then what happens next (or the frozen line above while a release
+  holds the queue).
+- **Waiting**, a section that opens and closes. It starts closed each time the Merge Queue tab is
+  opened or reloaded, a return from a run's page included, and the project page's **Refresh
+  Project** and a page the browser restores from its back-forward cache close it too; switching
+  between the status tabs, and the queue's own live updates, leave it as it is. Closed, it is one
+  header line with the count and, when the queue has an estimate, when the last one should be done
+  ("Waiting · 3 · the last one done in ~40 min"), set no louder than the tabs under it (their size
+  and weight). With nothing in line it is a plain line reading "Waiting · 0": no toggle, nothing to
+  open. Opened, it shows the entries in line order. Each entry shows its place
+  as its state chip ("In line · 2"), its branch and commit, its chat, when it was approved and how
+  (the Land button, or typed in its chat), its options (without review, without its specs), "starts
+  in ~N min · takes ~N min", newer commits not included, and **Remove from Queue**. A release's own
+  entry reads **Release** as its chip; while a release holds the queue, the other entries show no
+  estimate and say why they wait. While the merge thread holds new starts
+  (§app.merge-queue/empty), each waiting entry says "Waiting: Sova is restarting" instead.
+
+**The status tabs.** Under Waiting, a strip of tabs, in this order: **Ready to land**, **Needs
+you**, **With its chat**, **Waiting on GitHub** (or **Waiting on GitLab**, or **Waiting on the host** for a project that
+only pushes its branches; only on a project that lands on its host, or while an entry still waits
+on one, §app.merge-queue/requests), **Landed** and **Queue chats**. One tab shows at a time, under the strip; **Ready to land** is chosen
+first. Each tab shows exactly the rows its section showed before the tabs (Ready to land was "Ready
+to land, not approved", Landed was "Recent", Queue chats was "History"), with the same contents and
+actions, nothing more and nothing fewer. A tab with nothing in it stays in the strip and, when
+chosen, says in one line what the queue is doing now, then what will show there ("The queue is
+idle. A branch shows here when it needs your decision."; the words: §design.copy-deck/merge-queue).
+The fact is the queue's live state: "The queue is idle.", "1 being checked.", "1 being checked,
+{n} waiting.", "{n} waiting.", "The queue is paused." or "The queue is paused with {n} waiting."
+An empty tab's panel can be reached with the keyboard (Tab from the strip focuses it, with the focus
+ring), so its line is read; a panel with rows is reached through its rows' own controls. Each tab's label carries its count ("Needs you ·
+2"), but for Landed, which has none; Needs you's counts its rows, the broken-check rows included,
+and is in the warn colour while it is above 0. Landed shows at most the newest 20.
+
+**The tab is in the address.** The chosen tab is part of the page's address, so a reload, Back and
+Forward, and a link copied from the page keep it: Ready to land is the plain
+`#/projects/<pid>/merge-queue`, and each other tab adds its word (`…/merge-queue/needs-you`,
+`with-its-chat`, `waiting-on-host`, `landed`, `queue-chats`). A run opened from a tab keeps the tab
+in its address (`…/merge-queue/needs-you/<run>`; from Ready to land, `…/merge-queue/<run>`), and
+its **Back to Queue** returns there. Coming back from a run's page (Back to Queue, the path's
+"Merge queue" or the browser's Back) scrolls the page so the tab strip is at its top, where the
+rows the run was opened from are; any other visit opens at the top of the page. Opening the Merge
+Queue tab from anywhere else (the project page's tab strip, the project card, the landing bar's
+Queue, a chat's View Merge Queue) opens **Ready to land**. An address naming a tab the project
+doesn't show (Waiting on GitHub on a project that lands locally) shows Ready to land. A typed or
+pasted `…/merge-queue/ready` (and `…/merge-queue/ready/<run>`) opens Ready to land (or that run),
+and the address is put back as the plain one in place, adding no history entry.
+
+**Switching tabs never moves the strip.** Picking a tab whose rows are shorter than the one shown
+leaves the strip where it was on the page: the panel keeps at least the tallest height it has had
+since the tab was opened.
+
+**On narrow room** (below), the strip keeps every tab on one line and scrolls sideways, fading at an
+edge while tabs are hidden past it, as every tab strip does (§design/deviations); the tab chosen is
+scrolled into view, clear of that fade.
+
+The tabs' rows:
+
+- **Ready to land**: the project's worktree branches with commits the target hasn't, a
   clean tree, none of the queue's scratch copies (§app.merge-queue/resolve-copy), a head that
   isn't a temporary commit, and no standing approval (in line, checking, with its chat or waiting
   for the user) and no landing at that commit (a branch removed from the queue shows here again;
@@ -1280,11 +1289,53 @@ shows, top to bottom:
   (§chat.composer/land-confirm), and only Land {n} Commits queues the branch.
   Land there names no chat: the queue records the branch's owner by the same rule the row shows
   (§app.merge-queue/owner), so the chat the row shows is the one the queue records and tells.
-- **History**, at the bottom: every chat the queue has had for the project, each opening its chat,
+- **Needs you**: entries waiting for the user's decision (§app.merge-queue/needs-user), in full
+  words, each with Remove from Queue. No row here has a text box: a decision answered in words
+  links to the branch's chat, where the user answers in its message box (§chat.merge-queue/decision):
+  - **Behaviour differs · waiting for you**, with the target's side, the branch's side, the merge
+    thread's question and proposal, Accept when it proposed a resolution, and **Answer in Chat**;
+  - **Needs you · {branch}**, a question the merge thread or the chat raised, with its choices
+    ("Choices: a · b"), "The merge queue's note to the chat isn't sent yet: it goes with your
+    answer." and **Answer in Chat** ("can't be settled without you" when it came from a chat's "Can't");
+  - **Can't tell whose failure · waiting for you**, with the check that failed on both sides, its
+    log, and Land Anyway and Try Again (§app.merge-queue/blame);
+  - **Out of tries**, with the reason and Land (§app.merge-queue/tries);
+  - **A fix needs your OK**, a fix on top of your own work or too wide, with Land
+    (§app.merge-queue/standing-approval);
+  - **Drafts changed since you approved**, with Land and Remove from Queue;
+  - **Review the request**, a request's words waiting for you before it goes to the host, with
+    Review Request (§app.merge-queue/requests);
+  - a **Conflict** while it is being judged;
+  - and, at the top, before the entries and apart from them, one row per test check broken on the
+    target (§app.merge-queue/blame), which counts in the tab's label even with no entry: a **Broken
+    on {target}** chip and when it was first found, "{check} is broken on {target}: no test ran
+    ({first line})", "Every branch skips it until it's fixed, and lands without it. Start a chat in
+    this project to fix it on {target}.", and **View the Log**, which opens the run that found it.
+    It asks nothing and holds nothing up.
+- **With its chat**: entries whose standing approval stands while their chat fixes something
+  (§app.merge-queue/standing-approval), and branches **Approved · waiting for a fix**
+  (§app.merge-queue/approve), each with its state in the card's words ("Back with the chat · try 2
+  of 3 · Unit tests failed", "Waiting for the merge thread", "Paused: you stopped the chat"), **See
+  Why** and **Remove from Queue**,
+  and never Land, a re-land or a send-back button. The row reads "Your Land stands: it goes back in
+  line by itself once its chat's fix is checked." An entry leaves this list once it goes back in
+  line, lands, waits for the user (it moves to Needs you), is removed, or its branch is deleted or
+  its worktree folder removed.
+- **Waiting on GitHub** (or GitLab): entries whose request is open, each with its request and its
+  host state in the request's words (§app.merge-queue/requests), its chat as a link, **Open on
+  GitHub** (or GitLab), and **Land Again** where it applies; host checks failing, changes requested
+  and conflicts read "Back with the chat" while its chat fixes them (§app.merge-queue/requests).
+  Opening the Merge Queue tab checks them on the host.
+- **Landed**: landings, each with a **Landed** chip, "Landed as {sha} · {when} · pushed" (or "not
+  pushed: {why}"), "No checks
+  declared" when so, every note, and **View Checks**. A request the host merged has, in place of
+  Landed, a **Merged on GitHub** (or **Merged on GitLab**) chip, then "as {sha} · {when}", and never
+  says pushed or not pushed; a pushed branch reads "Pushed {branch} at {sha}".
+- **Queue chats**: every chat the queue has had for the project, each opening its chat,
   with **Clear** and **Clear All…** (§app.merge-queue/chats). Each run's row in Checking now, Needs
-  you, With its chat and Recent also shows its review with **Open Reviewer Chat**.
+  you, With its chat and Landed also shows its review with **Open Reviewer Chat**.
 
-**Every row's chat.** Every row of Checking now, Waiting, Needs you, With its chat, Recent and Ready to
+**Every row's chat.** Every row of Checking now, Waiting, Needs you, With its chat, Landed and Ready to
 land names its chat by title: a row in the line or landed names the chat its entry recorded; a
 Ready row names the branch's owner (§app.merge-queue/owner). The row's top line is that chat's
 title first, then the branch name in small mono, then an "archived" tag when the chat is archived;
@@ -1316,23 +1367,24 @@ viewer shows the files alone. What it compares, read by the server from the queu
 - **Checking now, Waiting, Needs you and With its chat**: the commit that was approved (with any
   checked fix since, §app.merge-queue/standing-approval), never a newer
   one on the branch, against its merge-base with the target;
-- **Recent**: what that landing brought in, from the target before it to the landed commit.
+- **Landed**: what that landing brought in, from the target before it to the landed commit.
 
 **Its layout follows the queue's own room**, the width the project page gives the tab, never the
 screen's: a phone, the Fold with the sidebar open and a narrow window read alike, and opening or
 closing the sidebar can change it.
 - **Under about 600px of room** the tab loses its outer card frame, and the strip, the Merge thread
-  card, Checking now, the lists and the run page's cards run edge to edge, split by hairlines, with
+  card, Checking now, Waiting, the tabs' lists and the run page's cards run edge to edge, split by hairlines, with
   12px side padding. Banners stay boxed, their button under their words. Each row stacks: the
   chat's title and the branch, wrapping anywhere; a facts line led by the state chip, then the
   commit and "{n} commits ahead · +{a} −{d}" (or the row's own facts), wrapping; the summary's
   bullets, wrapping; and the row's actions
   (Review Changes, Land ▾ or the row's other actions) on their own line under it, Review Changes at
   the line's left and the row's other actions at its right, each button the same size as with room.
-  A card's head (Checking now, the Merge thread, History) puts its buttons on their own line under
-  its title. Nothing scrolls sideways at 360px.
-- **With room**, every row of the tab alike (Checking now, Waiting, Needs you, Ready to land, With its
-  chat, Recent and History) puts its actions in a column at its top right,
+  A card's head (Checking now, the Merge thread, Queue chats) puts its buttons on their own line
+  under its title. Nothing scrolls sideways at 360px but the strip of status tabs, which keeps its
+  tabs on one line and scrolls by itself, never the page.
+- **With room**, every row of the tab alike (Checking now, Waiting, Ready to land, Needs you, With its
+  chat, Landed and Queue chats) puts its actions in a column at its top right,
   each button at its own width; an open Land confirmation spans the row, at its right. A card's head
   keeps its title and its buttons on one line.
 
@@ -1340,12 +1392,12 @@ Where a row's actions sit is decided by the room alone, never by how long the ro
 **Buttons**: every group of buttons on the tab, the run page and the Merge thread card has one even
 gap between buttons and holds them on one centre line, wrapping as a group; a borderless button that
 starts a line lines up with the words above it. On a touch screen the head's, the Merge thread
-card's, banners', History's and the run page's buttons are 44px tall; a row's own actions keep
+card's, banners', Queue chats' and the run page's buttons are 44px tall; a row's own actions keep
 Land's size. Nothing is offered only on hover.
 
 **The run page** (`…/merge-queue/<run>`) shows:
 - its path, "Merge queue › {branch}", led by a back arrow named **Back to Queue** that opens the
-  tab (44px square on a touch screen);
+  tab on the status tab the run was opened from (44px square on a touch screen);
 - the branch and its verdict, the base, the branch's commit and the tested commit, when it started
   and how long it took, its chat, and how it was approved;
 - one action row: **View Logs** (outlined, opening full width below the row: every step's log, in
@@ -1448,8 +1500,8 @@ hourly, one at a time.
 ## §app.merge-queue/branch-summary — What a branch does, in a few bullets
 
 **Each branch row of a project the merge queue serves (§app.merge-queue/served) says what the branch
-does in up to 5 short bullets, written in the background for every branch on the Ready to land, not
-approved list (§app.merge-queue/view) once its chat is idle, and for every branch approved at a
+does in up to 5 short bullets, written in the background for every branch on the Merge Queue tab's Ready
+to land list (§app.merge-queue/view) once its chat is idle, and for every branch approved at a
 commit.** A repository the queue doesn't serve gets no bullets.
 
 - **What they say.** Plain words, most important first: what the branch adds, changes or fixes. They
@@ -1458,7 +1510,7 @@ commit.** A repository the queue doesn't serve gets no bullets.
   (§app.settings-dialog/summaries): its Primary, then its Fallback when the Primary can't run or
   gives nothing usable; never the Session titles model. Settings → Models' switch applies as it does
   to the summary line: a model turned off there is skipped.
-- **When.** Every branch on the Ready to land, not approved list gets bullets for its commit once
+- **When.** Every branch on the Ready to land list gets bullets for its commit once
   the chat that owns it (§app.merge-queue/owner) is idle; a branch with no known chat, or whose chat
   is archived, counts as idle. Not at every commit: while its chat works, the row keeps the bullets
   it has. A sweep in the background does it, whether or not anyone is looking: about 30 seconds
@@ -1477,9 +1529,9 @@ commit.** A repository the queue doesn't serve gets no bullets.
   so a summary costs about the same however large the branch is; when commits were left out, the ask
   says so ("the newest 200 of {n} commits").
 - **Where.** Always shown, with no switch to hide them, under the row's facts line: on every row of
-  a branch not yet landed on the Merge Queue tab (Ready to land, In line, Checking, Needs you, With
-  its chat; §app.merge-queue/view) and on the Worktrees rows, in the composer's modal and the
-  session pane (§chat.composer/worktrees-control, §chat.worktrees/pane). A landed row under Recent
+  a branch not yet landed on the Merge Queue tab (Checking now, Waiting, and the Ready to land,
+  Needs you and With its chat tabs; §app.merge-queue/view) and on the Worktrees rows, in the composer's modal and the
+  session pane (§chat.composer/worktrees-control, §chat.worktrees/pane). A landed row on the Landed tab
   keeps the bullets it had. On a phone they wrap; nothing scrolls sideways.
 - **While writing**, the row says "Summarizing…", busy to a screen reader.
 - **A newer commit.** The bullets of an earlier commit stay up, marked "From an earlier commit",
@@ -1734,9 +1786,11 @@ queue's own chats: it keeps the modes and settings Sova starts it with." A messa
 from another chat or the Overseer is refused too: "That is one of the merge queue's own chats:
 only Sova writes to it. Open it from the project's Merge Queue tab.", and so is a mesh link to one.
 The user may still write in the chat itself. Clean Up never sweeps one, and refuses one named by
-path: "That is one of the merge queue's own chats: clear it from the Merge Queue tab's History."
+path: "That is one of the merge queue's own chats: clear it from the Merge Queue tab's Queue chats."
 
-The project's Merge Queue tab (§app.merge-queue/view) is where they are found, in four places.
+The project's Merge Queue tab (§app.merge-queue/view) is where they are found, in four places:
+the Merge thread card and the head's running review, on every status tab; the reviews on the runs'
+rows; and the Queue chats tab.
 
 **The Merge thread card**, under the queue's head: "Merge thread" with its state chip (**Idle**,
 **Working** while its turn runs, **Asking you** while a question is open), its memory type
@@ -1744,7 +1798,7 @@ The project's Merge Queue tab (§app.merge-queue/view) is where they are found, 
 queued branch · {branch}, {when}"). It has **Open Merge Thread**, the tab's only one, and **Start
 Fresh…**, on one line, which asks
 first ("This thread is archived once its turn ends, and its memory of past landings goes with it.
-The next event starts a new one. The old thread stays readable in History.", **Cancel** /
+The next event starts a new one. The old thread stays readable in Queue chats.", **Cancel** /
 **Start Fresh**). A question it asks shows on the card (§chat.merge-queue/asks); one no branch chat
 can carry has one button, **Answer in Merge Thread**, which opens the merge thread's chat to answer
 in its message box, and no text box or Send Answer. With no thread:
@@ -1754,7 +1808,8 @@ in its message box, and no text box or Send Answer. With no thread:
 Pause Queue, reads "Review running · {branch} · Open" (" (attempt {n})" after the branch on a retry) and
 opens that reviewer's chat; it goes away when the review ends.
 
-**History**, at the bottom of the tab when the queue has had any chat: every one, the current
+**Queue chats**, a status tab of its own (shown even before the queue has had any chat, with an
+empty tab's line, §app.merge-queue/view): every one, the current
 merge thread on top, then newest first, archived ones included, with the filters **All**, **Merge
 threads** and **Reviews**. A thread's row reads "Merge thread" ("Merge thread (current)"), its
 memory type and why it ended; a reviewer's "Review · {branch}" (" · attempt {n}"), "running" or
@@ -1764,13 +1819,13 @@ thread, a running reviewer and a row already cleared; **Clear All…** asks firs
 chats for good. Runs keep their verdicts and findings. The current merge thread and a running
 review stay."
 
-**The review on every run.** Rows of Checking now, Needs you, With its chat and Recent, and the run
+**The review on every run.** Rows of Checking now, Needs you, With its chat and Landed, and the run
 page, show each of the run's reviewer chats, oldest attempt first: "Review: {verdict}" or "Review
 running" (with " (attempt {n})" when there are several), then **Open Reviewer Chat**.
 
 **Kept until the user clears them.** Sova never deletes a queue chat by age: archived, it stays
-readable from History and its run for good. **Clear** archives the chat and deletes it for good;
-**Clear All…** does so for every row it counted. A cleared row stays in History, marked cleared
+readable from Queue chats and its run for good. **Clear** archives the chat and deletes it for good;
+**Clear All…** does so for every row it counted. A cleared row stays in Queue chats, marked cleared
 ("chat cleared"; a reviewer's "Reviewer chat cleared") with no link, and a cleared reviewer's run
 keeps its verdict and findings, reading "· Reviewer chat cleared" in place of its link. A delete
 that is refused leaves the row as it was. Both are catalogue commands over `merge.clear`

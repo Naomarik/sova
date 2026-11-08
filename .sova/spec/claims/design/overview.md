@@ -3,9 +3,9 @@
 The UX spec for the Sova MVP. The frontend builds exactly this with plain SolidJS and two
 stylesheets — no component library.
 
-- **System.** fold-ai-dev design system v1.8.0 (`.claude/skills/fold-ai-dev-design/`), rebranded
-  as Sova. Where these notes don't say otherwise, the skill's rules apply: `SKILL.md` for
-  anything that spans components, `reference/components/*.md` for how each component is built.
+- **System.** fold-ai-dev design system (`.claude/skills/fold-ai-dev-design/`), rebranded as
+  Sova. Where these notes don't say otherwise, the skill's rules apply: `SKILL.md` for anything
+  that spans components, `reference/components/*.md` for how each component is built.
 - **Stylesheets.** `src/design/tokens.css`, then `src/design/base.css`. Import both once, in that
   order, from `src/main.tsx`. Every class named here is defined in `base.css`.
 - **Assets.** Vite serves `public/` at the site root: `/fonts/*.woff2`, `/icons/*.svg`,

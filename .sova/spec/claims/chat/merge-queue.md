@@ -254,7 +254,7 @@ a new one:
 A thread running without memory (its memory switch refused, or a runtime with none) is still
 replaced once it is more than 24 hours old. Sova records why each thread was replaced, in plain
 words ("its chat is gone", "it refused messages (…)", "you started a fresh one"), keeping the newest
-200, and each stays listed in the tab's History (§app.merge-queue/chats).
+200, and each stays listed in the tab's Queue chats (§app.merge-queue/chats).
 
 **Start Fresh** is a catalogue command over `merge.fresh` (§app.project-services/merge-verbs). It
 waits for what the thread is being sent, then moves the thread into the history and archives it

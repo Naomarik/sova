@@ -337,14 +337,14 @@ for (const [width, height] of [[1440, 1300], [375, 1100]] as const) {
         for (const theme of ["dark", "light"]) {
           await page.evaluate((t) => document.documentElement.setAttribute("data-theme", t), theme);
           await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r(null)))); // the theme's transitions have begun...
-          await page.evaluate(() => Promise.all(document.getAnimations().map((x) => x.finished.catch(() => {})))); // ...and run
+          await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a.timeline === document.timeline).map((x) => x.finished.catch(() => {})))); // ...and run
           await page.screenshot({ path: join(SHOTS, `${width}-${state}-${theme}.png`) });
         }
         await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
       };
       await page.mouse.move(5, 5); // off the rows: hover is its own state
       await page.locator('[data-time-word]:text-is("Counting")').waitFor({ timeout: 10_000 });
-      await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {}))));
+      await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a.timeline === document.timeline).map((a) => a.finished.catch(() => {}))));
       const counting = await placeColours(page);
       assert.equal(counting.you, counting.agent);
       assert.equal(counting.rowTime, counting.you, "a row's time is as bright as the main times");

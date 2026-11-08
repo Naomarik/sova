@@ -4,8 +4,6 @@
 
 Inter for what a person reads, JetBrains Mono for what a machine produced. The mono does the technical work so the sans can stay calm — which is why run IDs, paths and diffs are always mono and prose never is.
 
-Rendered: `site/foundations/typography.html#spec`
-
 ## Styles
 
 | Class | Role | Notes |

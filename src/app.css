@@ -1706,6 +1706,22 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-now { color: var(--color-ink); font-weight: var(--fw-medium); }
 .mq-empty { margin: 0; padding: var(--space-3) var(--space-4); border: 1px dashed var(--color-border-strong); border-radius: var(--r-lg); color: var(--color-ink-2); }
 .mq-list { margin: 0; padding: 0; border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-surface); }
+/* Waiting (§app.merge-queue/view): a header that opens and closes its rows, closed each time the tab is shown. */
+/* No louder than the tabs under it: the tab's size and weight. With nothing in line it is a plain line, no toggle. */
+.mq-waiting-head { margin: 0; font-size: var(--fs-body); font-weight: var(--fw-medium); line-height: var(--lh-body); color: var(--color-ink); }
+.mq-waiting-none { display: flex; align-items: center; min-height: var(--tap-min); color: var(--color-ink-2); }
+.mq-waiting-toggle { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--tap-min); max-width: 100%; padding: 0 var(--space-2); margin-inline-start: calc(-1 * var(--space-2)); border: 0; border-radius: var(--r-md); background: transparent; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.mq-waiting-toggle:hover { background: var(--color-sunken); }
+.mq-waiting-toggle:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.mq-waiting-toggle .mq-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
+.mq-waiting-toggle[aria-expanded="true"] .mq-twist { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .mq-waiting-toggle .mq-twist { transition: none; } }
+/* The status tabs under Waiting: the skill's strip, one line that scrolls sideways when it can't fit, never the page.
+   A label's count is muted; Needs you's is the warn colour while it has anything (its word and count say it too). */
+.mq-tabs { flex: none; flex-wrap: nowrap; scrollbar-width: thin; }
+.mq-tabs > .tab { flex: none; }
+.mq-tab-count { color: var(--color-ink-muted); font-weight: var(--fw-regular); }
+.mq-tab-count.mq-tab-count-warn { color: var(--status-warn); font-weight: var(--fw-medium); }
 .mq-row { align-items: flex-start; flex-wrap: wrap; gap: var(--space-2) var(--space-3); }
 .mq-row > .list-main { flex: 1 1 16rem; min-width: 0; }
 .mq-row .list-title { flex-wrap: wrap; white-space: normal; }
@@ -1747,6 +1763,8 @@ html, body { overflow: clip; overscroll-behavior: none; }
   /* The page's own side padding (.insights-inner) is given back: the hairlines reach the pane's edges. */
   .card.mq-tab { border: 0; border-radius: 0; background: none; box-shadow: none; overflow: visible; margin-inline: calc(-1 * var(--space-4)); padding: var(--space-3) 12px; }
   .mq-tab :is(.mq-list, .mq-card, .mq-strip, .mq-thread-card) { margin-inline: -12px; border-inline: 0; border-radius: 0; }
+  /* The status strip reaches the pane's edges too, so its last tab scrolls in from the edge. */
+  .mq-tab .mq-tabs { margin-inline: -12px; padding-inline: 12px; }
   .mq-tab :is(.mq-card, .mq-strip, .mq-thread-card) { padding-inline: 12px; }
   .mq-tab .mq-row { flex-direction: column; flex-wrap: nowrap; align-items: stretch; padding: var(--space-3) 12px; }
   .mq-tab .mq-row > .list-main { flex: none; }
@@ -1796,6 +1814,8 @@ html, body { overflow: clip; overscroll-behavior: none; }
 }
 .mq-sides { display: grid; gap: var(--space-2); margin: var(--space-2) 0 0; }
 .mq-sides > div { padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
+/* A row's hover fill is the boxes' own: on hover they take the surface, so they never melt into it. */
+.mq-tap:hover .mq-sides > div { background: var(--color-surface); }
 .mq-sides dt { margin: 0 0 var(--space-1); }
 .mq-sides dd { margin: 0; white-space: normal; overflow-wrap: anywhere; }
 .mq-note { color: var(--color-ink-2); }
@@ -2032,24 +2052,3 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .time-spent-skeleton { display: flex; flex-direction: column; gap: var(--space-4); }
 .time-spent-skeleton .time-spent-rows .text-skeleton { flex: none; }
 
-/* The session strip scrolls sideways: a soft fade at each edge with tabs beyond it (data-fade, set
-   on scroll and resize). A mask, so it fades into the pane's own ground in either theme; the bottom
-   3px stay whole, so the selected tab's underline and the strip's rule never fade, and the mask
-   takes no clicks. scroll-padding keeps a tab scrolled into view clear of the fade. */
-.session-tabs { scroll-padding-inline: var(--space-7); }
-.session-tabs[data-fade] {
-  --fade-l: #000;
-  --fade-r: #000;
-  -webkit-mask-image: linear-gradient(to right, var(--fade-l), #000 var(--space-7), #000 calc(100% - var(--space-7)), var(--fade-r)), linear-gradient(#000, #000);
-  mask-image: linear-gradient(to right, var(--fade-l), #000 var(--space-7), #000 calc(100% - var(--space-7)), var(--fade-r)), linear-gradient(#000, #000);
-  -webkit-mask-size: 100% 100%, 100% 3px;
-  mask-size: 100% 100%, 100% 3px;
-  -webkit-mask-position: 0 0, 0 100%;
-  mask-position: 0 0, 0 100%;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-}
-.session-tabs[data-fade="start"],
-.session-tabs[data-fade="both"] { --fade-l: transparent; }
-.session-tabs[data-fade="end"],
-.session-tabs[data-fade="both"] { --fade-r: transparent; }

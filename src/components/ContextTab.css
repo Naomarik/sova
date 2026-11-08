@@ -53,6 +53,8 @@
   color: var(--color-ink-muted);
 }
 .context-row-meta-text { min-width: 0; overflow-wrap: anywhere; }
+/* A skill's line count beside its Partly read chip: plain muted words, kept on one line. */
+.context-row-beside { white-space: nowrap; }
 .context-share {
   display: block;
   height: 3px;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { defaultLabel, defaultTitle, updateOffered, editedName, limitLine, limitOffers, newChatLine, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, type SwitchRow } from "./profile-switch";
+import { defaultLabel, defaultTitle, menuPick, updateOffered, editedName, limitLine, limitOffers, newChatLine, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, type SwitchRow } from "./profile-switch";
 
 const row = (key: string, providers: string[], extra: Partial<SwitchRow> = {}): SwitchRow => ({ key, id: key, kind: "pair", group: "yours", name: key.toUpperCase(), providers, setsModel: providers.length > 0, ...extra });
 const OFF = row("off", [], { kind: "off", group: "builtin", name: "Off" });
@@ -74,4 +74,20 @@ test("Update {name}: only yours, only while something it saves differs", () => {
   assert.equal(updateOffered(yours, { profile: { model: same.model, thinking: same.thinking }, chat: { ...same, mode: "normal", minorModes: [] } }), false, "a mode the profile leaves unset is no difference");
   assert.equal(updateOffered(yours, { profile: { minorModes: [] }, chat: { ...same, minorModes: ["align"] } }), true, "[] is set: no add-ons");
   assert.equal(updateOffered(row("lib", ["zai"], { kind: "library" }), { profile: undefined, chat: same }), false, "a library-only row sets none of them");
+});
+
+test("a mode-menu pick before the first message is a card pick, both parts; after it, the switch", async () => {
+  const calls: string[] = [];
+  const io = { pick: async (ref: unknown) => void calls.push(`pick ${JSON.stringify(ref)}`), switchTo: async (id: string) => (calls.push(`switch ${id}`), { applies: "now" }) };
+  const pair = { kind: "pair", id: "claude", session: { source: "user" as const, id: "claude" } };
+  assert.deepEqual(await menuPick(pair, true, io), { kind: "card" });
+  assert.deepEqual(calls, ['pick {"source":"user","id":"claude"}'], "never the Models-only switch before the first message");
+  calls.length = 0;
+  assert.deepEqual(await menuPick(pair, false, io), { kind: "switch", result: { applies: "now" } });
+  assert.deepEqual(calls, ["switch claude"]);
+  calls.length = 0;
+  await menuPick({ kind: "off", id: "off" }, true, io);
+  await menuPick({ kind: "library", id: "fast", libraryId: "fast" }, true, io);
+  await menuPick({ kind: "project", id: "rel", session: { source: "project", id: "rel" } }, true, io);
+  assert.deepEqual(calls, ["pick null", 'pick {"source":"library","id":"fast"}', 'pick {"source":"project","id":"rel"}'], "Off, a library-only row and a project's, as their cards send them");
 });

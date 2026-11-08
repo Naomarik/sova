@@ -146,3 +146,10 @@ test("what a chat that can do less can't do in Create: nothing when it can do ev
   const both = createLimits({ sandboxOn: true, remote: true })!;
   assert.ok(both.includes("sandbox On") && both.includes("remote machine"), "both reasons");
 });
+
+test("the menu's profile pick goes through menuPick, told whether the first message is sent", () => {
+  const source = readFileSync(new URL("../components/ModeMenu.tsx", import.meta.url), "utf8");
+  const choose = source.slice(source.indexOf("const chooseProfile ="), source.indexOf("const saveCurrent ="));
+  assert.match(choose, /await menuPick\(r, !!props\.control\.beforeFirstMessage\?\.\(\), \{/);
+  assert.doesNotMatch(choose.replace(/switchTo: \(id\) => switchProfile\(/, ""), /switchProfile\(/, "no switch around menuPick");
+});

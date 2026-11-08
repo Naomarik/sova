@@ -2,10 +2,10 @@ import { createEffect, createMemo, createSignal, For, on, Show, type Accessor } 
 import type { ChatMemoryChoice, ChatProjectModes, ChatServerMessage, MemoryType, ModeApplies, ModeInfo, ProjectMinorInfo, ProjectModeApprovalNeeded } from "../../shared/protocol";
 import { memoryRowText, sameMemoryChoice } from "../lib/memory-ui";
 import { focusPanel, MemoryTypePanel, panelKeys } from "./MemoryTypePanel";
-import { ApiError, fetchProfiles, getChatMode, getMode, postMode, putDefaultProfile, saveCurrentProfile, switchProfile, updateProfileFromChat } from "../lib/api";
+import { ApiError, fetchProfiles, getChatMode, getMode, pickProfile, postMode, putDefaultProfile, saveCurrentProfile, switchProfile, updateProfileFromChat } from "../lib/api";
 import type { ChatProfileState } from "../../shared/protocol";
 import type { JoinedProfile, ProfilesListing } from "../../shared/profiles";
-import { defaultLabel, defaultTitle, editedName, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, updateOffered } from "../lib/profile-switch";
+import { defaultLabel, defaultTitle, editedName, menuPick, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, updateOffered } from "../lib/profile-switch";
 import {
   APPROVE_HOOKS_LABEL,
   approvalFootFor,
@@ -65,6 +65,11 @@ export interface ModeControl {
   /** This chat's model and effort now, for Update {name}'s comparison. */
   model?: () => string | null;
   thinking?: () => string | null;
+  /** Before the first message (the empty screen's picker is open): a pick here is a card pick, both parts. */
+  beforeFirstMessage?: () => boolean;
+  /** A card pick went through (the runtime reopens): the setup reads again, and a profile's first
+      message fills an empty composer, as a card pick does. */
+  onPicked?: (firstMessage?: string) => void;
 }
 
 /** radio: the major mode; check: a minor mode; project: one of this project's own minor modes;
@@ -584,7 +589,20 @@ export function ModeMenu(props: { control: ModeControl }) {
     setError(null);
     try {
       wakeChat();
-      const res = await switchProfile(props.control.path, r.id, host());
+      // Before the first message it is the empty screen's card pick, both parts; the runtime
+      // reopens, so the menu closes. After it, the switch of the Models part (§chat.profiles/switch).
+      const done = await menuPick(r, !!props.control.beforeFirstMessage?.(), {
+        pick: (ref) => pickProfile(props.control.path, ref),
+        switchTo: (id) => switchProfile(props.control.path, id, host()),
+      });
+      if (done.kind === "card") {
+        props.control.onPicked?.(r.session?.firstMessage);
+        closedByChoice = true;
+        closeMenu();
+        announce(`Profile: ${r.name}.`);
+        return;
+      }
+      const res = done.result;
       closePicker();
       announce(res.applies === "after-turn" ? switchWaitingLine(r.name, res.state.pending?.helpers ?? r.helperRoles, res.state.pending?.setsModel ?? !!r.session?.model) : switchedLine(r.name));
     } catch (err) {

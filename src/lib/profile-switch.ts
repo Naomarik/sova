@@ -104,3 +104,29 @@ export function updateOffered(row: Pick<SwitchRow, "kind" | "group" | "unusable"
   const minors = (a: readonly string[] | null | undefined, b: readonly string[] | null | undefined) => !!a && !!b && (a.length !== b.length || a.some((m) => !b.includes(m)));
   return differs(p.model, c.model) || differs(p.thinking, c.thinking) || differs(p.mode, c.mode) || minors(p.minorModes, c.minorModes);
 }
+
+/** What a card pick sends for a joined row (POST /api/sessions/profile): Off is null, a library
+    profile no session profile links is picked as Off with its helpers, any other its session half. */
+export type CardPickRef = { source: "sova" | "user" | "project" | "library"; id: string } | null;
+export function cardPickRef(r: { kind: string; id: string; libraryId?: string; session?: { source: "sova" | "user" | "project"; id: string } }): CardPickRef {
+  if (r.kind === "off") return null;
+  if (r.kind === "library") return { source: "library", id: r.libraryId ?? r.id };
+  return r.session ? { source: r.session.source, id: r.session.id } : { source: "user", id: r.id };
+}
+
+/**
+ * A pick in the mode menu's picker (§chat.profiles/switch): before the chat's first message it is
+ * exactly a card pick, both parts (§chat.profiles/applying), so the empty screen's card, its details
+ * and the menu name one profile; after it, the switch of the Models part. Errors are the caller's.
+ */
+export async function menuPick<S>(
+  r: { kind: string; id: string; libraryId?: string; session?: { source: "sova" | "user" | "project"; id: string } },
+  beforeFirstMessage: boolean,
+  io: { pick: (ref: CardPickRef) => Promise<unknown>; switchTo: (id: string) => Promise<S> },
+): Promise<{ kind: "card" } | { kind: "switch"; result: S }> {
+  if (beforeFirstMessage) {
+    await io.pick(cardPickRef(r));
+    return { kind: "card" };
+  }
+  return { kind: "switch", result: await io.switchTo(r.id) };
+}

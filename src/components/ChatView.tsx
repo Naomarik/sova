@@ -2122,7 +2122,12 @@ export function ChatView(props: {
   const modeControl: ModeControl = { state: modeState, path: props.path, blocked: () => {
       const r = blocked();
       return r?.quiet ? r.text : null;
-    }, ready: chatReady, wake, limits: createLimitsHere, profile: chatProfile, cwd: () => props.summary?.()?.cwd ?? null, model, thinking };
+    }, ready: chatReady, wake, limits: createLimitsHere, profile: chatProfile, cwd: () => props.summary?.()?.cwd ?? null, model, thinking,
+    beforeFirstMessage: () => !!profileInfo()?.pickable && !profileInfo()?.locked,
+    onPicked: (firstMessage) => {
+      setProfilePicks((n) => n + 1);
+      if (firstMessage && !drafts.get(props.path)?.trim()) setDraftText(props.path, firstMessage);
+    } };
   /** What the setup card's Tools group re-reads on (§chat.transcript/setup-card-tools): the model, the
       mode triple and each (re)connect, as one string, so only a change of value re-reads (the mode
       signal's objects are new on every "mode" message). */

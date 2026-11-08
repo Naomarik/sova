@@ -10,6 +10,8 @@ export interface SwitchRow {
   name: string;
   /** Canonical providers of every model in its Models part, the chat's own model included. */
   providers?: readonly string[];
+  /** Whether it sets the chat's own model (its This chat row). */
+  setsModel?: boolean;
   hidden?: true;
   unusable?: string;
   approval?: "needed" | "approved";
@@ -20,7 +22,8 @@ export const editedName = (name: string, edited: boolean): string => (edited ? `
 
 /** The line above the composer while a switch waits for the reply to end. */
 export function switchWaitingLine(name: string, helpers: number, setsModel: boolean): string {
-  const moved = [...(setsModel ? ["this chat's model"] : []), `its ${helpers} helper${helpers === 1 ? "" : "s"}`, "alignment settings"];
+  const moved = [...(setsModel ? ["this chat's model"] : []), ...(helpers > 0 ? [`its ${helpers} helper${helpers === 1 ? "" : "s"}`] : []), "alignment settings"];
+  if (moved.length === 1) return `Switching to ${name} when this reply ends. Moves its alignment settings. Tools and modes stay.`;
   const list = moved.length === 3 ? `${moved[0]}, ${moved[1]}, and ${moved[2]}` : `${moved[0]} and ${moved[1]}`;
   return `Switching to ${name} when this reply ends. Moves ${list}. Tools and modes stay.`;
 }
@@ -41,14 +44,14 @@ export function limitLine(model: string, resetsIn?: string | null): string {
 /**
  * The limit row's offers (§chat.subagent-profiles/limit-row): up to two of your profiles, in list
  * order, never Off, whose Models part (the chat's own model included) uses no model of the exhausted
- * provider. The chat's current profile only while the chat reads "(edited)". A row with no known
- * providers (no models) promises no provider choice, so it is never offered; neither is a hidden,
- * unusable or unapproved one.
+ * provider. The chat's current profile only while the chat reads "(edited)". A row that sets no
+ * model for the chat is never offered: switching to it would leave the chat on the limited model.
+ * Neither is a hidden, unusable or unapproved one.
  */
 export function limitOffers<T extends SwitchRow>(rows: readonly T[], exhausted: string, current: { key: string | null; edited: boolean }, max = 2): T[] {
   return rows
     .filter((r) => r.group === "yours" && r.kind !== "off" && !r.hidden && !r.unusable && r.approval !== "needed")
-    .filter((r) => (r.providers?.length ?? 0) > 0 && !r.providers!.includes(exhausted))
+    .filter((r) => r.setsModel === true && (r.providers?.length ?? 0) > 0 && !r.providers!.includes(exhausted))
     .filter((r) => r.key !== current.key || current.edited)
     .slice(0, max);
 }

@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { defaultLabel, defaultTitle, editedName, limitLine, limitOffers, newChatLine, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, type SwitchRow } from "./profile-switch";
 
-const row = (key: string, providers: string[], extra: Partial<SwitchRow> = {}): SwitchRow => ({ key, id: key, kind: "pair", group: "yours", name: key.toUpperCase(), providers, ...extra });
+const row = (key: string, providers: string[], extra: Partial<SwitchRow> = {}): SwitchRow => ({ key, id: key, kind: "pair", group: "yours", name: key.toUpperCase(), providers, setsModel: providers.length > 0, ...extra });
 const OFF = row("off", [], { kind: "off", group: "builtin", name: "Off" });
 
 test("the waiting line names the chat's model only when the profile sets one", () => {
   assert.equal(switchWaitingLine("OpenAI", 9, true), "Switching to OpenAI when this reply ends. Moves this chat's model, its 9 helpers, and alignment settings. Tools and modes stay.");
   assert.equal(switchWaitingLine("Ollama", 1, false), "Switching to Ollama when this reply ends. Moves its 1 helper and alignment settings. Tools and modes stay.");
+  assert.equal(switchWaitingLine("Plain", 0, true), "Switching to Plain when this reply ends. Moves this chat's model and alignment settings. Tools and modes stay.", "never \"its 0 helpers\"");
+  assert.equal(switchWaitingLine("Plain", 0, false), "Switching to Plain when this reply ends. Moves its alignment settings. Tools and modes stay.");
 });
 
 test("switched, refused, edited and limit wording", () => {
@@ -29,6 +31,8 @@ test("limit offers: the current profile only while edited, and not unusable, hid
   const rows = [row("openai", ["openai-codex"]), row("hid", ["zai"], { hidden: true }), row("bad", ["zai"], { unusable: "No credentials here for x." }), row("proj", ["zai"], { group: "project" }), row("lib", [], { kind: "library" })];
   assert.deepEqual(limitOffers(rows, "claude", { key: "openai", edited: false }).map((r) => r.key), []);
   assert.deepEqual(limitOffers(rows, "claude", { key: "openai", edited: true }).map((r) => r.key), ["openai"]);
+  const helpersOnly = row("lib-openai", ["openai-codex"], { kind: "library", setsModel: false });
+  assert.deepEqual(limitOffers([helpersOnly], "claude", { key: null, edited: false }), [], "a row that sets no chat model leaves the chat on the limited model");
 });
 
 test("picker rows: Off first, then yours, then the project's; hidden and built-in left out", () => {

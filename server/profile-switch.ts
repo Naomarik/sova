@@ -50,7 +50,8 @@ export async function switchChatProfile(path: string, idOrKey: unknown): Promise
   if (typeof idOrKey !== "string" || !idOrKey) return { ok: false, status: 400, error: "Name a profile to switch to." };
   const s = await getSessionSummary(path);
   if (!s) return { ok: false, status: 404, error: "Session file not found" };
-  if (s.overseer || s.projectOverseer || s.baton || s.org || s.workerSession) return { ok: false, status: 409, error: "This chat can't switch profiles." };
+  // An org session (a project's coding session) switches like any chat; Sova's special sessions are refused here and by the chat.
+  if (s.overseer || s.projectOverseer || s.baton || s.workerSession) return { ok: false, status: 409, error: "This chat can't switch profiles." };
   if (s.queueChat) return { ok: false, status: 409, error: QUEUE_CHAT_MODE_REFUSAL };
   if (s.live) return { ok: false, status: 409, error: `It is open in a terminal (pid ${s.live.pid}), so this server must not write to it.` };
   const target = await switchTargetOf(idOrKey, s.cwd);

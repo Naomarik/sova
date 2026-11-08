@@ -361,11 +361,11 @@ export function stripSessionHeader(text: string): string {
 
 export const DEFAULT_PROFILE_ID = "default";
 
-/** Default, the picker's My settings: no profile, nothing changed. The one profile in code; every
+/** Default, the picker's Off: no profile, nothing changed. The one profile in code; every
     other is a file (§chat.profiles/projects). */
 export const DEFAULT_PROFILE: Profile = {
   id: DEFAULT_PROFILE_ID,
-  label: "My settings",
+  label: "Off",
   icon: "grid",
   description: "The settings you chose for this session.",
   remove: [],

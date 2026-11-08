@@ -238,22 +238,23 @@ export function clockOf(iso: string | undefined): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-/** A skill's chip: Read only for the whole SKILL.md, the count when part of it loaded, else Not read yet. Pure. */
-export function skillChip(p: Pick<ContextPart, "read" | "linesRead" | "lines">): { word: string; done: boolean } {
-  if (p.read) return { word: "Read", done: true };
-  if (p.linesRead) return { word: p.lines ? `Read ${p.linesRead} of ${p.lines} lines` : `Read ${counted(p.linesRead, "line", "lines")}`, done: false };
-  return { word: "Not read yet", done: false };
+/** A skill's chip, and the count beside it: Read only for the whole SKILL.md; Partly read with "140 of 555
+    lines" beside it when part of it loaded; else Not read yet. Pure. */
+export function skillChip(p: Pick<ContextPart, "read" | "linesRead" | "lines">): { chip: { word: string; done: boolean }; beside?: string } {
+  if (p.read) return { chip: { word: "Read", done: true } };
+  if (p.linesRead) return { chip: { word: "Partly read", done: false }, beside: p.lines ? `${p.linesRead} of ${p.lines} lines` : counted(p.linesRead, "line", "lines") };
+  return { chip: { word: "Not read yet", done: false } };
 }
 
-/** A part's short line: a chip (Loaded, Read, Read n of m lines, Not read yet) and the words beside it. Pure. */
-export function partMeta(p: ContextPart): { chip?: { word: string; done: boolean }; text: string } {
+/** A part's short line: a chip (Loaded, Read, Partly read, Not read yet), a count beside it, and the words after. Pure. */
+export function partMeta(p: ContextPart): { chip?: { word: string; done: boolean }; beside?: string; text: string } {
   switch (p.group) {
     case "instructions":
       return { chip: { word: "Loaded", done: true }, text: fileFolder(p) };
     case "subfolder":
       return p.loaded ? { chip: { word: "Loaded", done: true }, text: fileFolder(p) } : { text: fileFolder(p) };
     case "skills":
-      return { chip: skillChip(p), text: p.detail ?? "" };
+      return { ...skillChip(p), text: p.detail ?? "" };
     case "conversation": {
       if (p.id === "conversation:summary") {
         const at = clockOf(p.at);

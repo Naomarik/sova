@@ -142,12 +142,12 @@ describe("a part's row and reading", () => {
     assert.equal(partOpens(get("conversation:replies")), false);
   });
 
-  test("a skill's chip tells a full read from a skim: Read only for all of it, the count for part, Not read yet for none", () => {
-    assert.deepEqual(skillChip({ read: true }), { word: "Read", done: true });
-    assert.deepEqual(skillChip({ read: false, linesRead: 140, lines: 510 }), { word: "Read 140 of 510 lines", done: false });
-    assert.deepEqual(skillChip({ read: false, linesRead: 1 }), { word: "Read 1 line", done: false });
-    assert.deepEqual(skillChip({ read: false }), { word: "Not read yet", done: false });
-    assert.deepEqual(skillChip({}), { word: "Not read yet", done: false });
+  test("a skill's chip tells a full read from a skim: Read for all of it, Partly read with the count beside it, Not read yet for none", () => {
+    assert.deepEqual(skillChip({ read: true }), { chip: { word: "Read", done: true } });
+    assert.deepEqual(skillChip({ read: false, linesRead: 140, lines: 555 }), { chip: { word: "Partly read", done: false }, beside: "140 of 555 lines" });
+    assert.deepEqual(skillChip({ read: false, linesRead: 1 }), { chip: { word: "Partly read", done: false }, beside: "1 line" });
+    assert.deepEqual(skillChip({ read: false }), { chip: { word: "Not read yet", done: false } });
+    assert.deepEqual(skillChip({}), { chip: { word: "Not read yet", done: false } });
   });
 
   test("short lines: a file's folder and Loaded, a skill's description and Read or Not read yet, a count's words", () => {

@@ -8,9 +8,10 @@
 //  - the instruction files below cwd: the deeper-context engine's own walk (server/deeper-context.ts);
 //  - the total and the window: the transcript head's rule (contextOfBranch, resolveContext).
 // The conversation is estimated from the branch's messages since the latest compaction, and tallied by
-// kind (`talk`); a skill counts as read when the Skills tab's own rules (server/skills.ts) find it loaded
-// in what the model still sees.
+// kind (`talk`); a skill counts as read when the Skills tab's own rules (server/skills.ts) find all of its
+// SKILL.md loaded in what the model still sees, and as read in part with the count of its lines that were.
 
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { relative, sep } from "node:path";
 import type { HBlock, HEntry, HarnessToolInfo } from "../shared/harness";
@@ -22,7 +23,8 @@ import { listSubfolderInstructions, resolveToolPath, visiblePart } from "./deepe
 import { resolveContext } from "./models";
 import { estimateTokens, getSessionSetup } from "./session-setup";
 import { toolTokens } from "./session-tools";
-import { collectSkills, skillLinesOf } from "./skills";
+import { fileLinesOf, linesLoaded } from "./skill-lines";
+import { collectSkillLoads, type SkillLoad, skillLinesOf } from "./skills";
 import { readBranch } from "./harness/pi/reader";
 import { contextOfBranch, resetsContext } from "./harness/pi/usage";
 
@@ -46,6 +48,8 @@ export interface ContextViewDeps {
   branch?: (path: string) => Promise<readonly HEntry[]>;
   context?: typeof resolveContext;
   nested?: typeof listSubfolderInstructions;
+  /** A skill's SKILL.md as it is now, to count the lines its reads loaded. */
+  readText?: (path: string) => Promise<string>;
   now?: () => number;
 }
 
@@ -153,15 +157,34 @@ export function conversationTalk(branch: readonly HEntry[], loadedNested = 0): S
 }
 
 /** The skills loaded in what the model still sees, by name and by resolved SKILL.md path: the Skills tab's
-    own evidence (a read, an invocation, or a shell command reading the file), since the latest compaction. */
-export function skillsRead(branch: readonly HEntry[], cwd: string): { names: Set<string>; paths: Set<string> } {
-  const names = new Set<string>();
-  const paths = new Set<string>();
-  for (const u of collectSkills(skillLinesOf(visiblePart(branch), cwd)).used) {
-    names.add(u.name);
-    if (u.location) paths.add(resolveToolPath(cwd, u.location));
+    own evidence (a read, an invocation, or a shell command reading the file), since the latest compaction.
+    Each with its loads, which say which lines of the file they loaded. */
+export function skillsRead(branch: readonly HEntry[], cwd: string): { names: Map<string, SkillLoad[]>; paths: Map<string, SkillLoad[]> } {
+  const names = new Map<string, SkillLoad[]>();
+  const paths = new Map<string, SkillLoad[]>();
+  const add = (m: Map<string, SkillLoad[]>, key: string, u: SkillLoad) => m.set(key, [...(m.get(key) ?? []), u]);
+  for (const u of collectSkillLoads(skillLinesOf(visiblePart(branch), cwd)).used) {
+    add(names, u.name, u);
+    if (u.location) add(paths, resolveToolPath(cwd, u.location), u);
   }
   return { names, paths };
+}
+
+/**
+ * How much of one skill's SKILL.md its loads put in front of the model, counted against the file as it
+ * is now: whole (`read: true`), some of its lines (`linesRead` of `lines`), or none. An invocation loads
+ * the whole skill; a read or shell load, the lines its chains reach (server/skill-lines.ts), as a union.
+ */
+export function skillReadState(loads: readonly SkillLoad[], text: string | null, knownLines?: number): Pick<SessionContextPart, "read" | "linesRead" | "lines"> {
+  if (loads.length === 0) return { read: false };
+  if (loads.some((u) => !u.chains)) return { read: true };
+  const file = text !== null ? fileLinesOf(text) : knownLines !== undefined ? { count: knownLines } : null;
+  // A file that can't be measured can't be counted: a read with no bounds counts as whole, any other as none.
+  if (!file) return loads.some((u) => u.chains!.some((c) => c.every((s) => s.kind === "cap"))) ? { read: true } : { read: false };
+  const loaded = linesLoaded(loads.flatMap((u) => u.chains!), file).size;
+  if (loaded >= file.count) return { read: true };
+  if (loaded === 0) return { read: false };
+  return { read: false, linesRead: loaded, lines: file.count };
 }
 
 /** The text pi lists one offered skill with (pi formatSkillsForPrompt): its name, description and location. */
@@ -182,16 +205,24 @@ export async function getContextView(path: string, deps: ContextViewDeps = {}): 
     .filter((f) => !f.off)
     .map((f) => ({ id: `file:${f.path}`, label: labelOf(cwd, f.path), path: f.path, tokens: f.tokens ?? Math.ceil(f.bytes / CHARS_PER_TOKEN) }));
   const loads = skillsRead(branch, cwd);
-  const skills: SessionContextPart[] = setup.skills
-    .filter((k) => !k.off)
-    .map((k) => ({
-      id: `skill:${k.name}`,
-      label: k.name,
-      ...(k.description ? { detail: k.description } : {}),
-      path: k.path,
-      tokens: estimateTokens(skillListing(k.name, k.description, k.path)),
-      read: loads.names.has(k.name) || loads.paths.has(resolveToolPath(cwd, k.path)),
-    }));
+  const readText = deps.readText ?? ((p: string) => readFile(p, "utf8"));
+  const skills: SessionContextPart[] = await Promise.all(
+    setup.skills
+      .filter((k) => !k.off)
+      .map(async (k) => {
+        // A load found by name and by path is one load, not two.
+        const mine = [...new Set([...(loads.names.get(k.name) ?? []), ...(loads.paths.get(resolveToolPath(cwd, k.path)) ?? [])])];
+        const text = mine.length > 0 ? await readText(k.path).catch(() => null) : null;
+        return {
+          id: `skill:${k.name}`,
+          label: k.name,
+          ...(k.description ? { detail: k.description } : {}),
+          path: k.path,
+          tokens: estimateTokens(skillListing(k.name, k.description, k.path)),
+          ...skillReadState(mine, text, k.lines),
+        };
+      }),
+  );
 
   let mode: SessionContextPart | null = null;
   const rules: SessionContextPart[] = [];

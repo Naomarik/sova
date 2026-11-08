@@ -4,8 +4,6 @@
 
 Three bands, and they are the device, not a screen-size ladder: folded is designed first, and 768 is the one threshold the stylesheet branches on. Components ask their own box with container queries rather than the window with media queries, because a pane can be at folded width inside a desktop window and should look like it.
 
-Rendered: `site/foundations/grid-composition.html#spec`
-
 ## Styles
 
 | Class | Role | Notes |

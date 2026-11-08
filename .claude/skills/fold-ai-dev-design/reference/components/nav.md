@@ -4,8 +4,6 @@
 
 One navigation, two placements: a bottom bar under 768px where the thumb is, a side rail above it. Never both at once — two navs in one view means neither is the answer to "where am I?"
 
-Rendered: `site/components/nav.html#bottom`
-
 ## Styles
 
 | Class | Role | Notes |

@@ -4,8 +4,6 @@
 
 A placeholder shaped like the thing that's coming. If the skeleton doesn't match what lands, it's a lie the interface tells for half a second — and the layout shift that follows is the user's punishment for believing it.
 
-Rendered: `site/components/skeleton.html#anatomy`
-
 ## Styles
 
 | Class | Role | Notes |

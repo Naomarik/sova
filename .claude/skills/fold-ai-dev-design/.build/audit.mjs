@@ -37,25 +37,24 @@ for (const f of files.filter((f) => /\.(html|css)$/.test(f))) {
 }
 if (!linkBad) ok(`${linkTotal} local references, all resolve`);
 
-// -------------------------------------------- 2. every doc names a real page
-console.log('\n== each reference doc points at a shipped page');
-let pageBad = 0, pageTotal = 0, anchored = 0, anchorsOk = 0;
+// ------------------------------- 2. the showcase site is built, never cited
+// site/ is for people. What agents read (SKILL.md and reference/) never
+// mentions it, so each doc stands on its own; the build still writes a page
+// for every doc.
+console.log('\n== each reference doc has a built page, and no agent text cites the site');
+let pageBad = 0, pageTotal = 0;
+const agentText = [`${ROOT}/SKILL.md`];
 for (const md of files.filter((f) => f.includes('/reference/') && f.endsWith('.md'))) {
   pageTotal++;
-  const rel = readFileSync(md, 'utf8').match(/^Rendered: `([^`]+)`$/m)?.[1];
-  if (!rel) { bad(`${relative(ROOT, md)} — no Rendered line`); pageBad++; continue; }
-  const [path, frag] = rel.split('#');
-  if (!existsSync(`${ROOT}/${path}`)) { bad(`${relative(ROOT, md)} → missing ${path}`); pageBad++; continue; }
-  if (!frag) { bad(`${relative(ROOT, md)} → ${path} cites no #section-id`); pageBad++; continue; }
-  anchored++;
-  const esc = frag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  if (!new RegExp(`\\bid="${esc}"`).test(readFileSync(`${ROOT}/${path}`, 'utf8'))) {
-    bad(`${relative(ROOT, md)} → #${frag} not an id in ${path}`); pageBad++; continue;
-  }
-  anchorsOk++;
+  agentText.push(md);
+  const html = `${ROOT}/site/${relative(`${ROOT}/reference`, md).replace(/\.md$/, '.html')}`;
+  if (!existsSync(html)) { bad(`${relative(ROOT, md)} — no built page ${relative(ROOT, html)}`); pageBad++; }
 }
-if (!pageBad) ok(`${pageTotal} reference docs, each pointing at a page that exists`);
-if (!pageBad) ok(`${anchored} anchored docs, ${anchorsOk} anchors verified as ids in their page`);
+if (!pageBad) ok(`${pageTotal} reference docs, each with a built page`);
+const siteRe = /site\/|\bRendered:|\.html\b|docs\.css|\bsite page|rendered (?:site|page)/i;
+const cites = agentText.filter((f) => siteRe.test(readFileSync(f, 'utf8')));
+cites.length ? bad(`site cited in ${cites.map((f) => relative(ROOT, f)).join(', ')}`)
+             : ok(`no mention of the site in ${agentText.length} agent-facing files`);
 
 // -------------------------------------------------------------- 3. counts
 console.log('\n== counts in prose vs files on disk');

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { headerOf, historyOf } from "./harness/pi/reader";
-import { claudeSkillLines, collectSkills, hasSkills, parseSkillSection, skillLinesOf, skillNameFromPath } from "./skills";
+import { claudeSkillLines, collectSkillLoads, collectSkills, hasSkills, parseSkillSection, skillLinesOf, skillNameFromPath } from "./skills";
 
 /** Skills of pi entries written raw: read as neutral history, the header's cwd as the session's. */
 const skillsOf = (entries: unknown[]) => collectSkills(skillLinesOf(historyOf(entries), entries.map(headerOf).find((h) => h)?.cwd));
@@ -218,9 +218,26 @@ describe("loaded skills", () => {
     assert.deepEqual(skillsOf([call("e1", "t1", "bash", { command })]).used, []);
   });
 
-  test("a read verb immediately before the file is a load, flags and quotes included", () => {
-    assert.deepEqual(skillsOf([call("e1", "t1", "bash", { command: "head -n 40 '/s/playwright/SKILL.md'" })]).used.map((u) => u.name), ["playwright"]);
-    assert.deepEqual(skillsOf([call("e1", "t1", "bash", { command: "cat /s/a/SKILL.md" })]).used.map((u) => u.name), ["a"]);
+  test("a command printing the file is a load, ranges, flags and quotes included", () => {
+    // `sed -n 1,140p` was missed before: its range broke the old argument scan.
+    for (const command of ["head -n 40 '/s/a/SKILL.md'", "cat /s/a/SKILL.md", "sed -n 1,140p /s/a/SKILL.md", "nl -ba /s/a/SKILL.md | sed -n '1,600p'"]) {
+      assert.deepEqual(skillsOf([call("e1", "t1", "bash", { command })]).used.map((u) => u.name), ["a"], command);
+    }
+  });
+
+  test("Sova's tools as Claude Code names them are read by the same rules", () => {
+    const skills = skillsOf([call("e1", "t1", "mcp__sova__read", { path: "/s/a/SKILL.md", limit: 10 }), call("e2", "t2", "mcp__sova__bash", { command: "sed -n 1,140p /s/b/SKILL.md" })]);
+    assert.deepEqual(skills.used.map((u) => [u.name, u.how]), [
+      ["a", "read"],
+      ["b", "shell"],
+    ]);
+  });
+
+  test("each load keeps the lines it read for the Context tab, and none of it reaches the wire", () => {
+    const lines = skillLinesOf(historyOf([call("e1", "t1", "bash", { command: "sed -n 1,10p /s/a/SKILL.md; sed -n 20,30p /s/a/SKILL.md" })]));
+    const [load] = collectSkillLoads(lines).used;
+    assert.equal(load?.chains?.length, 2, "one load per skill per command, holding both of its parts");
+    assert.equal("chains" in collectSkills(lines).used[0]!, false);
   });
 
   test("one bash command loading 2 skills reports both", () => {

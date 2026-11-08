@@ -462,7 +462,7 @@ const SPECS = {
            ['--focus-offset', 'Gap between the ring and the element'], ['--focus-color', 'Ring color — the accent, per theme']]
       .map(([t, u]) => [`\`${t}\``, `\`${token(t)}\``, u]),
     prose: [
-      '**What never animates: decoration.** Nothing loops, drifts, or pulses, with two exceptions — the live-run indicator and the skeleton sweep, both of which report that work is happening.',
+      '**What never animates: decoration.** Nothing loops, drifts, or pulses, with two exceptions — the live-run indicator and the skeleton sweep, both of which report that work is happening. The live-run pulse fades opacity 1 → .4 → 1 over 1.6s (`run-pulse`): deep enough to read as motion, shallow enough that the mark never all but vanishes. The same pulse serves a figure (Sova\'s worker count): at .4 a numeral stays readable.',
       '**Under `prefers-reduced-motion`,** `tokens.css` collapses animation and transition durations to near zero, which stops both exceptions. Nothing is exempt — opacity fades land instantly too — and transforms are not removed, only made instant.',
       '**The focus ring is `:focus-visible` only, never removed, and never replaced by a color change alone.**',
     ],

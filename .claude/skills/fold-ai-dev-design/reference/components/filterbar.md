@@ -4,8 +4,6 @@
 
 What a set is narrowed by, what it is ordered by, and how many it is showing — one bar, because those three facts are read together or not at all. A count sitting anywhere else eventually reads 5 while three rows are hidden, and nobody notices.
 
-Rendered: `site/components/filterbar.html#anatomy`
-
 ## Styles
 
 | Class | Role | Notes |

@@ -4,8 +4,6 @@
 
 The persistent decision affordance — where Approve, Review, and Discard live. It pins to the bottom at folded width, inside the thumb arc, and destructive keeps its distance from primary so one mis-tap never throws away a run.
 
-Rendered: `site/components/approvalbar.html#anatomy`
-
 ## Styles
 
 | Class | Role | Notes |

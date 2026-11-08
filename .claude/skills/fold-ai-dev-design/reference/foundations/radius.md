@@ -4,8 +4,6 @@
 
 Seven steps, assigned by element rather than by taste. The load-bearing rule: status is round, actions are not — shape alone tells you what's clickable, before color does.
 
-Rendered: `site/foundations/radius.html#spec`
-
 ## Styles
 
 | Class | Role | Notes |

@@ -4,8 +4,6 @@
 
 A status, said twice — once in color and once in words. Chips are fully round because status is round and actions are not; the shape alone tells you this is something you read, not something you press.
 
-Rendered: `site/components/chip.html#variants`
-
 ## Styles
 
 | Class | Role | Notes |

@@ -883,6 +883,9 @@ folder or pi setting.
 
 Sova's own first kit is simple: an ordinary code review that the branch adds no tech debt (dead
 code, duplication, hacks or workarounds left in, missing tests for new behaviour, unclear names).
+It also judges the diff against the project's testing principles (the testing guide's "Writing
+tests" section): a clear break is blocking, a judgement call is a note. That is the reviewer's
+judgement alone; nothing checks it mechanically.
 
 The kit can be read, never edited, from Settings → Merge Queue (**Open Folder**,
 §app.merge-queue/settings), as it is on the target. Review on or off is a setting saved there

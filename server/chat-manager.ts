@@ -4205,6 +4205,7 @@ class ChatSession {
     }
     this.modeState = chatModeOf(this.harness.state.branch());
     this.broadcast(this.modeMessage());
+    this.broadcastChatProfile(); // the new branch may name another profile
     if (this.memoryAvailable()) this.memory.changed(); // the engine re-syncs on session_tree
     this.sendSandbox((m) => this.broadcast(m)); // the extension re-restores on session_tree too
     this.broadcast(this.loginAfterHello()); // the new branch's newest entry

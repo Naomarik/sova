@@ -768,12 +768,18 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
   border-radius: var(--r-xl);
   background: var(--color-surface);
   box-shadow: var(--shadow-3);
-  overflow: hidden;
+  /* clip, not hidden (as .app): a hidden box still scrolls programmatically, so focusing a
+     control whose box overflows it (a visually hidden input) slid the head, body and foot up
+     inside the frame, left a blank under the foot, and nothing scrolled it back. Only the
+     dialog's own scroll areas (.modal-body, .settings-panel) ever scroll. */
+  overflow: clip;
   animation: enter-fade var(--dur-base) var(--ease-standard);
 }
 .modal-head { padding: var(--space-4); border-bottom: var(--stroke-thin) solid var(--color-border); }
 .modal-title{ font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); font-weight: var(--fw-semibold); margin: 0; }
-.modal-body { padding: var(--space-4); color: var(--color-ink-2); overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); }
+/* `relative`: anything absolute inside with no nearer positioned ancestor (.visually-hidden) stays
+   in this scroller's content, so focusing it scrolls this, never the frame. */
+.modal-body { position: relative; padding: var(--space-4); color: var(--color-ink-2); overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); }
 .modal-foot {
   display: flex;
   gap: var(--space-2);
@@ -953,6 +959,10 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
   min-height: var(--tap-min);
   cursor: pointer;
   font-size: var(--fs-body);
+  /* The hidden box's containing block: without it the box resolved against the nearest positioned
+     ancestor (a dialog's frame), sat at its row's un-scrolled place, and focusing it scrolled
+     that ancestor instead of bringing its row into view. */
+  position: relative;
 }
 .toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
 .toggle-box {
@@ -1070,6 +1080,8 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 .settings-tab:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
 
 .settings-panel {
+  /* As .modal-body: a hidden box inside stays in the panel's scroll content. */
+  position: relative;
   padding: var(--space-4);
   overflow-y: auto;
   display: flex;

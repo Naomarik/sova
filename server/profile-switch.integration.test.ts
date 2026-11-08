@@ -345,4 +345,43 @@ describe("a profile switch, all at once (§chat.profiles/switch)", () => {
     assert.ok(switchRefusalOf({ queueChat: true } as never));
     assert.equal(switchRefusalOf({}), null);
   });
+  test("a switch held only by a compaction (Sova's /compact, idle) applies when the compaction ends, with no reply", async () => {
+    const { path, chat, model } = await openChat();
+    const session = piSession(chat) as unknown as { compact: (i?: string) => Promise<unknown> };
+    let release!: () => void;
+    let compacting = false;
+    session.compact = async () => {
+      compacting = true;
+      await new Promise<void>((r) => (release = r));
+      return { tokensBefore: 300 };
+    };
+    const client = { send: () => {} };
+    chat.handle(client as never, { type: "compact", id: "c1" });
+    await until(() => compacting && chat.isCompacting(), "the compaction to start");
+    const r = await switchChatProfile(path, "fast");
+    assert.ok(r.ok && r.applies === "after-turn", JSON.stringify(r));
+    assert.equal(chat.harness.model()?.ref, "scripted/scripted");
+    release();
+    await until(() => !chat.chatProfileState().pending, "the held switch to apply at the compaction's end");
+    assert.equal(chat.harness.model()?.ref, "openai/gpt-5.5");
+    assert.equal(chat.subagentPick, "gpt-subs");
+    assert.equal(model.calls.length, 0, "no prompt was sent");
+  });
+
+  test("a switch held by pi's automatic compaction after a turn applies at compaction_end, not at the turn's settle", async () => {
+    const { path, chat, model } = await openChat();
+    const session = piSession(chat) as unknown as { _emit: (e: unknown) => void };
+    // pi compacts on its own after a turn: isCompacting stays true through the turn's settle.
+    Object.defineProperty(session, "isCompacting", { get: () => true, configurable: true });
+    const r = await switchChatProfile(path, "fast");
+    assert.ok(r.ok && r.applies === "after-turn", JSON.stringify(r));
+    session._emit({ type: "agent_settled" });
+    await new Promise((res) => setImmediate(res));
+    assert.ok(chat.chatProfileState().pending, "the settle came while compacting: it still waits");
+    session._emit({ type: "compaction_end", reason: "threshold", aborted: true, willRetry: false });
+    delete (session as { isCompacting?: unknown }).isCompacting; // pi's finally, right after the emit returns
+    await until(() => !chat.chatProfileState().pending, "the held switch to apply at compaction_end");
+    assert.equal(chat.harness.model()?.ref, "openai/gpt-5.5");
+    assert.equal(model.calls.length, 0, "no prompt was sent");
+  });
 });

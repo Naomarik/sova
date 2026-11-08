@@ -2137,6 +2137,8 @@ class ChatSession {
           if (this.disposed) return;
           this.queue.onSdkEvent();
           this.releaseLinks(false);
+          // A profile switch held only by this compaction applies now (§chat.profiles/switch).
+          this.settleHeldSwitch();
         });
       if (event.type === "run.start") {
         this.releaseLinks(true);
@@ -2197,7 +2199,7 @@ class ChatSession {
         this.modeActions.turnSettled();
       }
       // A profile switch held for this reply applies now, checked again (§chat.profiles/switch).
-      if (event.type === "run.settled" && this.pendingSwitch) void this.settleProfileSwitch().catch((err) => console.error("[chat] held profile switch failed", err));
+      if (event.type === "run.settled") this.settleHeldSwitch();
       if (event.type === "run.settled" && this.modeApplies === "after-turn") {
         // A mid-turn switch reaches the next prompt from here on.
         this.modeApplies = "now";
@@ -2785,7 +2787,7 @@ class ChatSession {
    * Switch this chat's whole Models part to a profile (§chat.profiles/switch): the chat's own model and
    * effort where the profile sets them, its helper pick and the alignment settings that ride on it, never
    * its tools or modes. Checked first, writing nothing on a refusal. Idle: applied at once. While a reply
-   * runs: held, and applied (checked again) when the reply ends; Cancel Switch drops it. The model is set
+   * runs or the chat compacts: held, and applied (checked again) when that ends; Cancel Switch drops it. The model is set
    * only between turns, never mid-turn (setModel's own rule).
    */
   async switchProfile(t: ProfileSwitchTarget): Promise<({ ok: true } & ProfileSwitchResult) | { ok: false; status: 400 | 409; error: string }> {
@@ -2857,13 +2859,19 @@ class ChatSession {
     return { ok: true };
   }
 
-  /** At a reply's end: the held switch, checked again, then applied whole or not at all. */
+  /** At a reply's or a compaction's end: settle the held switch, if any (it checks and waits itself). */
+  private settleHeldSwitch(): void {
+    if (this.pendingSwitch) void this.settleProfileSwitch().catch((err) => console.error("[chat] held profile switch failed", err));
+  }
+
+  /** At a reply's or a compaction's end: the held switch, checked again, then applied whole or not at all.
+      While either still runs it keeps waiting; the next end settles it. */
   private async settleProfileSwitch(): Promise<void> {
     const t = this.pendingSwitch;
     if (!t || this.disposed || this.harness.isRunning() || this.isCompacting()) return;
     const checked = await this.checkProfileSwitch(t);
     if (this.pendingSwitch !== t) return; // cancelled or replaced meanwhile
-    if (this.harness.isRunning()) return; // a new reply started: it waits for that one's end
+    if (this.harness.isRunning() || this.isCompacting()) return; // a new reply or compaction started: it waits for that one's end
     this.pendingSwitch = null;
     const done = checked.ok ? await this.applyProfileSwitch(t, checked.model) : checked;
     if (!done.ok) {
@@ -4103,6 +4111,8 @@ class ChatSession {
     }
     this.queue.onSdkEvent();
     this.releaseLinks(false);
+    // Our own /compact clears compactRunning only here, after pi's compaction_end: settle a held switch now.
+    this.settleHeldSwitch();
   }
 
   /**

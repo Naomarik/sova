@@ -466,22 +466,12 @@ function layoutScatter(spec: ChartSpec, W: number, measure: Measure): ChartLayou
   };
   const probe = mk(ys, top + plotH, top, 40);
   const left = Math.ceil(Math.max(...probe.ticks.map((t) => measure(probe.fmt(t), FONT.tick)))) + 10;
-  let right = 12;
+  const right = 12;
   const y = mk(ys, top + plotH, top, 40);
+  let x = mk(xs, left, W - right, 70);
   // Tick labels along x must not touch: thin the ticks until they fit.
-  const xAxis = () => {
-    const a = mk(xs, left, W - right, 70);
-    const xw = Math.max(...a.ticks.map((t) => measure(a.fmt(t), FONT.tick)));
-    return a.ticks.length > 1 && Math.abs(a.at(a.ticks[1]!) - a.at(a.ticks[0]!)) < xw + 10 ? mk(xs, left, W - right, xw * 2 + 30) : a;
-  };
-  let x = xAxis();
-  // The last tick's label is centred on it: when it would pass the edge, the plot ends sooner.
-  const last = x.ticks[x.ticks.length - 1];
-  const over = last === undefined ? 0 : x.at(last) + (measure(x.fmt(last), FONT.tick) * 1.1) / 2 - (W - 2);
-  if (over > 0) {
-    right += Math.ceil(over);
-    x = xAxis();
-  }
+  const xw = Math.max(...x.ticks.map((t) => measure(x.fmt(t), FONT.tick)));
+  if (x.ticks.length > 1 && Math.abs(x.at(x.ticks[1]!) - x.at(x.ticks[0]!)) < xw + 10) x = mk(xs, left, W - right, xw * 2 + 30);
   out.plot = { x0: left, y0: top, x1: W - right, y1: top + plotH };
   out.yTicks = ticksOf(y);
   out.xTicks = ticksOf(x);

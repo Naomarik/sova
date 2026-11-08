@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { PROJECT_TABS, projectHref, projectOverseerHref, projectsRouteFromHash, projectTabHref } from "./projects-route";
+import { canonicalQueueHash, PROJECT_TABS, projectHref, projectOverseerHref, projectsRouteFromHash, projectTabHref } from "./projects-route";
 
 test("the list, one project, its tabs and its overseer", () => {
   assert.deepEqual(projectsRouteFromHash("#/projects"), { kind: "list" });
@@ -82,10 +82,17 @@ test("the Merge Queue tab's own tabs: Ready to land is the bare address, each ot
   }
   assert.equal(new Set(QUEUE_TABS).size, QUEUE_TABS.length);
   assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/merge-queue/needs-you/"), { kind: "project", projectId: "prj_1", tab: "merge-queue", queueTab: "needs-you" });
+  // Ready to land has one address, the bare one: a typed `…/ready` opens it and is put back as the bare one.
+  assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/merge-queue/ready"), { kind: "project", projectId: "prj_1", tab: "merge-queue" });
+  assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/merge-queue/ready/"), { kind: "project", projectId: "prj_1", tab: "merge-queue" });
+  assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/merge-queue/ready/mr_42"), { kind: "project", projectId: "prj_1", tab: "merge-queue", run: "mr_42" });
+  assert.equal(canonicalQueueHash("#/projects/prj_1/merge-queue/ready"), "#/projects/prj_1/merge-queue");
+  assert.equal(canonicalQueueHash("#/projects/prj_1/merge-queue/ready/mr_42"), "#/projects/prj_1/merge-queue/mr_42");
+  assert.equal(canonicalQueueHash("#/projects/prj_1/merge-queue/ready?host=vps"), "#/projects/prj_1/merge-queue?host=vps");
+  for (const h of ["#/projects/prj_1/merge-queue", "#/projects/prj_1/merge-queue/needs-you", "#/projects/prj_1/merge-queue/readyish", "#/projects/prj_1/branches/ready"]) assert.equal(canonicalQueueHash(h), null, h);
   for (const h of [
-    // Ready to land has one address, the bare one.
-    "#/projects/prj_1/merge-queue/ready",
-    "#/projects/prj_1/merge-queue/ready/mr_42",
+    "#/projects/prj_1/merge-queue/ready/needs-you",
+    "#/projects/prj_1/merge-queue/ready/mr_1/x",
     "#/projects/prj_1/merge-queue/mr_42/needs-you",
     "#/projects/prj_1/merge-queue/mr_1/mr_2",
     "#/projects/prj_1/merge-queue/needs-you/landed",

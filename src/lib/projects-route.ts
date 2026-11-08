@@ -54,15 +54,24 @@ function hashRoute(hash: string): ProjectsRoute | null {
   // from that tab).
   if (m[3] !== undefined) {
     if (m[2] !== "merge-queue") return null;
+    // `ready` names Ready to land, whose address is the bare one: it is read as no tab (canonicalQueueHash drops it).
     const word = QUEUE_TAB_WORDS.includes(m[3]) ? (m[3] as QueueTab) : undefined;
-    if (!word && m[4] !== undefined) return null;
-    const run = word ? m[4] : m[3];
+    const named = word !== undefined || m[3] === "ready";
+    if (!named && m[4] !== undefined) return null;
+    const run = named ? m[4] : m[3];
     if (run !== undefined && (!ID_RE.test(run) || isQueueTab(run))) return null;
     return { kind: "project", projectId, tab: "merge-queue", ...(word ? { queueTab: word } : {}), ...(run ? { run } : {}) };
   }
   if (m[2] === undefined) return { kind: "project", projectId };
   if (m[2] === "overseer") return { kind: "overseer", projectId };
   return { kind: "project", projectId, tab: m[2] as Exclude<ProjectTab, "overview"> };
+}
+
+/** A typed or pasted `…/merge-queue/ready[/<run>]` as its one address, the bare `…/merge-queue[/<run>]`; null when
+    the hash is already canonical. */
+export function canonicalQueueHash(hash: string): string | null {
+  const to = hash.replace(/^(#\/projects\/[^/?]+\/merge-queue)\/ready(?=[/?]|$)/, "$1");
+  return to === hash ? null : to;
 }
 
 /** An address inside project `id`'s pages; a project on a peer carries its host, so a reload opens it there. */

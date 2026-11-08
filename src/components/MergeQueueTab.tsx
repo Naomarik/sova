@@ -1,4 +1,4 @@
-import { createContext, createEffect, createMemo, createSignal, For, on, Show, useContext, type JSX } from "solid-js";
+import { createContext, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, useContext, type JSX } from "solid-js";
 import { MergeThreadCard, QueueHistory, ReviewerLinks, ReviewRunningButton } from "./MergeQueueChats";
 import type { ChatRef } from "../lib/merge-chat";
 import type { MergeAnswer } from "../../shared/merge-queue";
@@ -31,9 +31,10 @@ const POLL_MS = 4000;
  * what went back to its chat, and recent landings with their notes, with Change Setup and the Setup chat. A project
  * with no merge setup gets what the queue does and Set Up with a Chat instead. `run`: one run's page
  * (`…/merge-queue/<run>`). `queueTab`: which of the queue's tabs the address names (on a run's page, the one it was
- * opened from). `setup`: the page's read of the Setup chat (one of its own when absent).
+ * opened from). `setup`: the page's read of the Setup chat (one of its own when absent). `refreshed`: the page's
+ * Refresh tick (each press closes Waiting, as a fresh visit shows it).
  */
-export function MergeQueueTab(props: { projectId: string; root: string; name: string; run?: string; queueTab?: QueueTab; chatOf?: ChatOf; treesOf?: TreesOf; setup?: SetupPoll }) {
+export function MergeQueueTab(props: { projectId: string; root: string; name: string; run?: string; queueTab?: QueueTab; refreshed?: () => number; chatOf?: ChatOf; treesOf?: TreesOf; setup?: SetupPoll }) {
   const setup = props.setup ?? createSetupPoll(props.projectId);
   const poll = createPoll(() => readQueue(props.root), POLL_MS, { cacheKey: `project:${props.projectId}:merge-queue` });
   createEffect(on(mergeChanged, () => poll.refetch(), { defer: true }));
@@ -44,6 +45,15 @@ export function MergeQueueTab(props: { projectId: string; root: string; name: st
     }, { defer: true }),
   );
   const view = () => poll.data();
+  // Back from a run's page (Back to Queue, the breadcrumb or the browser's Back): the queue opens with its tab strip
+  // at the top of the pane, where the rows the run was opened from are.
+  let was = props.run;
+  const fromRun = createMemo(() => {
+    const run = props.run;
+    const back = !run && !!was;
+    was = run;
+    return back;
+  });
   return (
     <section class="card orgs-section mq-tab" aria-labelledby="mq-title">
       <Show
@@ -57,7 +67,7 @@ export function MergeQueueTab(props: { projectId: string; root: string; name: st
           >
             {/* An invalid definition reads "unset" too: its error is said, never the not-set-up words. */}
             <Show when={!notSetUp(v())} fallback={<NotSetUp projectId={props.projectId} view={v()} setup={setup} />}>
-              <QueueBody projectId={props.projectId} view={v()} tab={props.queueTab} chatOf={props.chatOf} treesOf={props.treesOf} setup={setup} onChanged={() => poll.refetch()} />
+              <QueueBody projectId={props.projectId} view={v()} tab={props.queueTab} refreshed={props.refreshed} toStrip={fromRun} chatOf={props.chatOf} treesOf={props.treesOf} setup={setup} onChanged={() => poll.refetch()} />
             </Show>
           </Show>
         )}
@@ -235,7 +245,7 @@ export function useAct(onChanged: () => void) {
   return { busy, error, run };
 }
 
-function QueueBody(props: { projectId: string; view: MergeQueueView; tab?: QueueTab; chatOf?: ChatOf; treesOf?: TreesOf; setup: SetupPoll; onChanged(): void }) {
+function QueueBody(props: { projectId: string; view: MergeQueueView; tab?: QueueTab; refreshed?: () => number; toStrip(): boolean; chatOf?: ChatOf; treesOf?: TreesOf; setup: SetupPoll; onChanged(): void }) {
   const v = () => props.view;
   const onHost = createMemo(() => hostOf(v()) !== null);
   const tabs = createMemo(() => queueTabs(props.projectId, v, onHost(), props.chatOf, props.treesOf, props.onChanged));
@@ -327,8 +337,8 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; tab?: Queue
         )}
       </Show>
       <CheckingNow projectId={props.projectId} view={v()} chatOf={props.chatOf} />
-      <Waiting projectId={props.projectId} view={v()} chatOf={props.chatOf} onChanged={props.onChanged} />
-      <QueueTabs projectId={props.projectId} tabs={tabs()} tab={tab()} />
+      <Waiting projectId={props.projectId} view={v()} refreshed={props.refreshed} chatOf={props.chatOf} onChanged={props.onChanged} />
+      <QueueTabs projectId={props.projectId} tabs={tabs()} tab={tab()} toStrip={props.toStrip} />
     </div>
     </RunFrom.Provider>
   );
@@ -339,13 +349,32 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; tab?: Queue
  * a history entry), Left/Right move focus along it (wrapping), Home/End jump, Enter or Space picks. A label carries its
  * count; Needs you's warns while it has anything. A tab with no rows says so in one line.
  */
-function QueueTabs(props: { projectId: string; tabs: QueueTabDef[]; tab: QueueTab }) {
+function QueueTabs(props: { projectId: string; tabs: QueueTabDef[]; tab: QueueTab; toStrip(): boolean }) {
   const els: HTMLButtonElement[] = [];
   const at = () => Math.max(0, props.tabs.findIndex((t) => t.id === props.tab));
   const shown = createMemo(() => props.tabs[at()]!);
   let strip: HTMLDivElement | undefined;
-  // On a narrow strip the tab shown is scrolled into view: the strip scrolls sideways, never the page (the strip sits
-  // low on it, so scrollIntoView would move the page to it on an address that names a tab).
+  let panel: HTMLDivElement | undefined;
+  // Back from a run: the pane scrolls so the strip is at its top (its own scrollTop: scrollIntoView would move every
+  // scroller up the tree), the panel at least the rest of the pane's height so a short tab can be scrolled that far.
+  onMount(() => {
+    if (!props.toStrip()) return;
+    requestAnimationFrame(() => {
+      const pane = strip && scrollerOf(strip);
+      if (!pane || !strip || !panel) return;
+      const top = pane === document.scrollingElement ? 0 : pane.getBoundingClientRect().top;
+      panel.style.minHeight = `${Math.max(panel.offsetHeight, pane.clientHeight - strip.offsetHeight)}px`;
+      pane.scrollTop += strip.getBoundingClientRect().top - top;
+    });
+  });
+  // A pick never moves the strip under the pointer: the panel keeps at least the tallest height it had this visit, so
+  // a shorter tab can't shorten the page under the scroll position.
+  const keepHeight = () => {
+    if (panel) panel.style.minHeight = `${Math.max(panel.offsetHeight, parseFloat(panel.style.minHeight) || 0)}px`;
+  };
+  // On a narrow strip the tab shown is scrolled into view, clear of the strip's edge fade: the strip scrolls sideways,
+  // never the page (the strip sits low on it, so scrollIntoView would move the page to it on an address that names a
+  // tab).
   createEffect(
     on(
       () => props.tab,
@@ -353,9 +382,10 @@ function QueueTabs(props: { projectId: string; tabs: QueueTabDef[]; tab: QueueTa
         queueMicrotask(() => {
           const el = els[at()];
           if (!strip || !el) return;
-          const left = el.offsetLeft - strip.offsetLeft;
+          const left = el.offsetLeft - strip.offsetLeft - TAB_FADE_PX;
+          const right = el.offsetLeft - strip.offsetLeft + el.offsetWidth + TAB_FADE_PX;
           if (left < strip.scrollLeft) strip.scrollLeft = left;
-          else if (left + el.offsetWidth > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = left + el.offsetWidth - strip.clientWidth;
+          else if (right > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = right - strip.clientWidth;
         }),
     ),
   );
@@ -384,7 +414,9 @@ function QueueTabs(props: { projectId: string; tabs: QueueTabDef[]; tab: QueueTa
               aria-label={t.count !== null ? `${t.label} · ${t.count}` : t.label}
               ref={(el) => (els[i()] = el)}
               onClick={() => {
-                if (props.tab !== t.id) location.hash = mergeQueueTabHref(props.projectId, t.id);
+                if (props.tab === t.id) return;
+                keepHeight();
+                location.hash = mergeQueueTabHref(props.projectId, t.id);
               }}
               onKeyDown={(e) => onKey(e, i())}
             >
@@ -398,7 +430,8 @@ function QueueTabs(props: { projectId: string; tabs: QueueTabDef[]; tab: QueueTa
           )}
         </For>
       </div>
-      <div class="stack-2 mq-tabpanel" role="tabpanel" id="mq-tabpanel" aria-labelledby={`mq-tab-${shown().id}`} data-tab={shown().id}>
+      {/* An empty tab's panel takes focus itself, so its one line is in the tab order (its rows' links are otherwise). */}
+      <div class="stack-2 mq-tabpanel" role="tabpanel" id="mq-tabpanel" aria-labelledby={`mq-tab-${shown().id}`} data-tab={shown().id} tabindex={shown().rows > 0 ? undefined : 0} ref={panel}>
         <Show when={shown().rows > 0} fallback={<p class="mq-empty text-caption">{shown().empty}</p>}>
           <Show when={shown()} keyed>
             {(t) => t.panel()}
@@ -407,6 +440,29 @@ function QueueTabs(props: { projectId: string; tabs: QueueTabDef[]; tab: QueueTa
       </div>
     </div>
   );
+}
+
+/** The width of a tab strip's edge fade (the design system's `.tabs`): a tab scrolled into view clears it. */
+const TAB_FADE_PX = 32;
+
+/** The nearest ancestor that scrolls vertically: the page's pane. */
+function scrollerOf(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const y = getComputedStyle(p).overflowY;
+    if (y === "auto" || y === "scroll") return p;
+  }
+  return document.scrollingElement as HTMLElement | null;
+}
+
+/**
+ * The live fact an empty tab's line starts with (the design system's empty state: the fact, then the absence): what
+ * the queue is doing now.
+ */
+export function queueFact(v: MergeQueueView): string {
+  const n = v.waiting.length;
+  if (v.state === "paused") return n ? `The queue is paused with ${n} waiting.` : "The queue is paused.";
+  if (v.current) return n ? `1 being checked, ${n} waiting.` : "1 being checked.";
+  return n ? `${n} waiting.` : "The queue is idle.";
 }
 
 /** The tab a run's page is opened from: its Back to Queue returns there (`…/merge-queue/<tab>/<run>`). */
@@ -460,7 +516,9 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
       get rows() {
         return ready().length;
       },
-      empty: "Nothing is ready to land.",
+      get empty() {
+        return `${queueFact(v())} Nothing is ready to land.`;
+      },
       panel: () => (
         <ul class="list mq-list">
           <For each={v().ready}>{(r) => <ReadyRow projectId={projectId} root={v().root} target={v().target} how={v().settings?.how?.effective} ready={r} review={v().review} chatOf={chatOf} treesOf={treesOf} onChanged={onChanged} />}</For>
@@ -479,7 +537,9 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
       get rows() {
         return needsCount();
       },
-      empty: "Nothing needs you.",
+      get empty() {
+        return `${queueFact(v())} Nothing needs you.`;
+      },
       panel: () => (
         <ul class="list mq-list">
           <For each={v().heads.targetBroken ?? []}>{(b) => <BrokenRow projectId={projectId} target={v().target} broken={b} />}</For>
@@ -504,7 +564,9 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
       get rows() {
         return withItsChat(v()).length;
       },
-      empty: "Nothing is with its chat.",
+      get empty() {
+        return `${queueFact(v())} Nothing is with its chat.`;
+      },
       panel: () => (
         <ul class="list mq-list">
           <For each={withItsChat(v())}>{(e) => <WithChatRow projectId={projectId} entry={e} view={v()} chatOf={chatOf} onChanged={onChanged} />}</For>
@@ -524,7 +586,7 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
             return (v().waitingOnHost ?? []).length;
           },
           get empty() {
-            return `Nothing is waiting on ${hostOf(v()) ?? "the host"}.`;
+            return `${queueFact(v())} Nothing is waiting on ${hostOf(v()) ?? "the host"}.`;
           },
           panel: () => (
             <ul class="list mq-list" aria-label={`Waiting on ${hostOf(v()) ?? "the host"}`}>
@@ -543,7 +605,9 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
       get rows() {
         return v().recent.length;
       },
-      empty: "Nothing has landed through the queue yet.",
+      get empty() {
+        return `${queueFact(v())} Nothing has landed through the queue yet.`;
+      },
       panel: () => (
         <ul class="list mq-list">
           <For each={v().recent}>{(l) => <LandedRow projectId={projectId} view={v()} landed={l} chatOf={chatOf} />}</For>
@@ -559,7 +623,9 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
       get rows() {
         return (v().chats ?? []).length;
       },
-      empty: "The queue hasn't had a chat yet.",
+      get empty() {
+        return `${queueFact(v())} No queue chat yet.`;
+      },
       panel: () => <QueueHistory projectId={projectId} view={v()} onChanged={onChanged} />,
     },
   ];
@@ -692,20 +758,27 @@ function CheckingNow(props: { projectId: string; view: MergeQueueView; chatOf?: 
   );
 }
 
-function Waiting(props: { projectId: string; view: MergeQueueView; chatOf?: ChatOf; onChanged(): void }) {
-  // Closed each time it is shown: whether it was open is never kept.
+function Waiting(props: { projectId: string; view: MergeQueueView; refreshed?: () => number; chatOf?: ChatOf; onChanged(): void }) {
+  // Closed each time it is shown: whether it was open is never kept. The page's Refresh and a page restored from the
+  // browser's back-forward cache close it too; the queue's own live reads keep it as it is.
   const [open, setOpen] = createSignal(false);
+  if (props.refreshed) createEffect(on(props.refreshed, () => setOpen(false), { defer: true }));
+  const onShow = (e: PageTransitionEvent) => e.persisted && setOpen(false);
+  window.addEventListener("pageshow", onShow);
+  onCleanup(() => window.removeEventListener("pageshow", onShow));
   return (
     <div class="stack-2 mq-waiting">
-      <h3 class="text-heading-s mq-waiting-head">
+      {/* With nothing in line, a plain line: nothing to open. */}
+      <Show when={props.view.waiting.length > 0} fallback={<h3 class="mq-waiting-head mq-waiting-none">{waitingHead(props.view.waiting)}</h3>}>
+      <h3 class="mq-waiting-head">
         <button type="button" class="mq-waiting-toggle" aria-expanded={open() ? "true" : "false"} aria-controls="mq-waiting-rows" onClick={() => setOpen(!open())}>
           <Icon name="chevron-right" small class="mq-twist" />
           <span>{waitingHead(props.view.waiting)}</span>
         </button>
       </h3>
-      <div id="mq-waiting-rows" role="region" aria-label="Waiting" hidden={!open()}>
-      <Show when={open()}>
-      <Show when={props.view.waiting.length > 0} fallback={<p class="text-caption text-muted">Nothing waiting. A branch joins when you press Land or type "land it" in its chat.</p>}>
+      </Show>
+      <div id="mq-waiting-rows" role="region" aria-label="Waiting" hidden={!open() || props.view.waiting.length === 0}>
+      <Show when={open() && props.view.waiting.length > 0}>
         <ul class="list mq-list">
           <For each={props.view.waiting}>
             {(e) => {
@@ -753,7 +826,6 @@ function Waiting(props: { projectId: string; view: MergeQueueView; chatOf?: Chat
             }}
           </For>
         </ul>
-      </Show>
       </Show>
       </div>
     </div>

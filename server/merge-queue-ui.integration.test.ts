@@ -575,6 +575,24 @@ async function openWaiting(page: Page) {
   await until("Waiting open", async () => (await b.getAttribute("aria-expanded")) === "true");
 }
 const box = async (l: { boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null> }) => (await l.boundingBox())!;
+/** Which edges of a tab strip fade (the design system's .tabs mask, its edge widths read from the strip), and whether
+    it overflows. */
+const stripFade = (strip: Locator) =>
+  strip.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    const w = (p: string) => parseFloat(cs.getPropertyValue(p)) || 0;
+    return { start: w("--tabs-fade-start") > 0, end: w("--tabs-fade-end") > 0, overflows: el.scrollWidth > el.clientWidth };
+  });
+/** The strip's top against the top of the pane that scrolls it, and that pane's scroll. `toTop`: scroll it there first. */
+const stripAtTop = (strip: Locator, toTop = false) =>
+  strip.evaluate((el, toTop) => {
+    let p = el.parentElement;
+    while (p && !/auto|scroll/.test(getComputedStyle(p).overflowY)) p = p.parentElement;
+    const pane = p ?? (document.scrollingElement as HTMLElement);
+    const top = () => (p ? p.getBoundingClientRect().top : 0);
+    if (toTop) pane.scrollTop += el.getBoundingClientRect().top - top();
+    return { gap: el.getBoundingClientRect().top - top(), y: el.getBoundingClientRect().top, scroll: pane.scrollTop, atEnd: pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 1 };
+  }, toTop);
 
 for (const width of [1280, 390]) {
   describe(`${width}px`, () => {
@@ -813,6 +831,9 @@ for (const width of [1280, 390]) {
       const panel = tab.getByRole("tabpanel");
       assert.equal(await panel.getAttribute("aria-labelledby"), "mq-tab-ready");
       assert.equal(await panel.locator('[data-state="ready"]').count(), 1);
+      assert.equal(await panel.getAttribute("tabindex"), null, "a panel with rows takes no focus of its own");
+      // The design system's edge fade: on a phone the strip overflows and its end fades; with room, nothing does.
+      assert.deepEqual(await stripFade(strip), width < 600 ? { start: false, end: true, overflows: true } : { start: false, end: false, overflows: false });
       await waiting.click();
       assert.equal(await waiting.getAttribute("aria-expanded"), "true");
       const line = tab.getByRole("region", { name: "Waiting" });
@@ -821,6 +842,12 @@ for (const width of [1280, 390]) {
       assert.match(lt, /2 newer commits not included/);
       assert.match(lt, /typed in its chat/);
       assert.deepEqual(await line.locator("[data-state=queued]").evaluateAll((els) => els.map((e) => e.getAttribute("data-branch"))), ["feat/pending-chip", "feat/replay-timeouts"], "in line order");
+      // The page's Refresh Project closes it, as a fresh visit shows it.
+      await page.getByRole("button", { name: "Refresh Project" }).click();
+      await until("Waiting closed by Refresh Project", async () => (await waiting.getAttribute("aria-expanded")) === "false");
+      assert.equal(await tab.locator('[data-state="queued"]').count(), 0, "no waiting row after Refresh Project");
+      await waiting.click();
+      await until("Waiting open again", async () => (await waiting.getAttribute("aria-expanded")) === "true");
       await shot(page, `${width}-queue`);
       await tab.getByRole("button", { name: "Pause Queue" }).click();
       await called(o, "merge.pause");
@@ -847,20 +874,33 @@ for (const width of [1280, 390]) {
       await tab.locator('.mq-needs[data-branch="feat/hack"]').getByRole("button", { name: "Remove feat/hack from the merge queue" }).click();
       await until("a remove", () => o.calls.some((c) => c.verb === "merge.cancel" && c.body.entry === "me_r"));
 
+      // A pick never moves the strip under the pointer: scrolled toward the strip as far as the pane goes (at its end,
+      // where a shorter page would pull the strip down), a shorter tab keeps it there.
+      const atTop = await stripAtTop(strip, true);
+      assert.ok(atTop.scroll > 0 && (Math.abs(atTop.gap) < 1 || atTop.atEnd), `the pane scrolled to the strip: ${JSON.stringify(atTop)}`);
       // With its chat, Landed, and an empty tab saying so in one line.
       await showTab(page, "With its chat");
+      const after = await stripAtTop(strip);
+      assert.ok(Math.abs(after.y - atTop.y) < 1, `the strip stays put: ${atTop.y} → ${after.y}`);
       assert.equal(await hashOf(page), `#/projects/${PID}/merge-queue/with-its-chat`);
       assert.match(await words(panel), /Your Land stands: it goes back in line by itself once its chat's fix is checked\./);
       await showTab(page, "Landed");
       assert.equal(await hashOf(page), `#/projects/${PID}/merge-queue/landed`);
       assert.match(await words(panel), new RegExp(NOTE.replace(/[.;]/g, "\\$&")));
       await showTab(page, "Queue chats");
-      assert.equal((await words(panel)).trim(), "The queue hasn't had a chat yet.");
+      // An empty tab: the live fact, then the absence; its panel takes focus, so Tab from the strip reaches the line.
+      assert.equal((await words(panel)).trim(), "1 being checked, 2 waiting. No queue chat yet.");
+      assert.equal(await panel.getAttribute("tabindex"), "0");
+      await strip.getByRole("tab", { selected: true }).focus();
+      await page.keyboard.press("Tab");
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "mq-tabpanel", "Tab from the strip lands on the empty panel");
       if (width < 600) {
-        // The strip scrolls sideways by itself, never the page, and the tab shown is scrolled into view.
+        // The strip scrolls sideways by itself, never the page, and the tab shown is scrolled into view, clear of the
+        // fade, which is now at the start only (the last tab is shown).
         assert.ok(await strip.evaluate((el) => el.scrollWidth > el.clientWidth), "the strip overflows at a phone's width");
         const picked = await box(strip.getByRole("tab", { selected: true }));
         assert.ok(picked.x >= -1 && picked.x + picked.width <= width + 1, "the tab shown is in view");
+        await until("the strip scrolled to its end", async () => JSON.stringify(await stripFade(strip)) === JSON.stringify({ start: true, end: false, overflows: true }));
       }
       await noSideScroll(page);
       // The tab is in the address: Back, and a reload, keep it; Waiting is closed again after the reload.
@@ -885,6 +925,9 @@ for (const width of [1280, 390]) {
       await back.click();
       await until("back on With its chat", async () => (await strip.getByRole("tab", { selected: true }).getAttribute("aria-label").catch(() => null)) === "With its chat · 1");
       assert.equal(await tab.getByRole("button", { name: /^Waiting · / }).getAttribute("aria-expanded"), "false", "closed again after a run");
+      // Back from a run, the strip is at the top of the pane, over the rows the run was opened from.
+      await until("the strip at the pane's top after a run", async () => Math.abs((await stripAtTop(strip)).gap) < 1);
+      assert.ok((await stripAtTop(strip)).scroll > 0, "the pane scrolled to it");
       // The project's own Merge Queue tab opens Ready to land.
       assert.equal(await page.getByRole("tab", { name: "Merge Queue" }).count(), 1);
       await page.getByRole("tab", { name: "Branches" }).click();
@@ -1332,6 +1375,36 @@ for (const width of [1280, 390]) {
       assert.equal(await ls.getByRole("tab", { selected: true }).getAttribute("aria-label"), "Ready to land · 1");
       assert.equal(await ls.getByRole("tab", { name: /Waiting on/ }).count(), 0);
       await l.ctx.close();
+    });
+
+    test("an empty queue: Waiting is a plain line; each empty tab says the live fact first; a typed …/ready opens Ready to land", async () => {
+      const view = viewOf({ current: undefined, checking: [], waiting: [], needsYou: [], needsFix: [], recent: [], ready: [] });
+      const o = await open(width, `#/projects/${PID}/merge-queue/ready`, { view });
+      const { page } = o;
+      const tab = page.locator(".mq-tab");
+      const strip = tab.getByRole("tablist", { name: "Merge queue" });
+      await strip.waitFor({ timeout: 20_000 });
+      // `…/ready` is Ready to land, put back as its one address with no history entry.
+      assert.equal(await strip.getByRole("tab", { selected: true }).getAttribute("aria-label"), "Ready to land · 0");
+      await until("the bare address", async () => (await hashOf(page)) === `#/projects/${PID}/merge-queue`);
+      // Nothing in line: a plain line, no toggle, and nothing that repeats Checking now's line.
+      assert.equal(await tab.getByRole("button", { name: /^Waiting/ }).count(), 0, "no Waiting toggle");
+      assert.equal((await words(tab.locator(".mq-waiting-head"))).trim(), "Waiting · 0");
+      assert.equal(await tab.getByText(/A branch joins when you press Land/).count(), 0);
+      const panel = tab.locator(".mq-tabpanel");
+      for (const [label, line] of [
+        ["Ready to land", "The queue is idle. Nothing is ready to land."],
+        ["Needs you", "The queue is idle. Nothing needs you."],
+        ["With its chat", "The queue is idle. Nothing is with its chat."],
+        ["Landed", "The queue is idle. Nothing has landed through the queue yet."],
+        ["Queue chats", "The queue is idle. No queue chat yet."],
+      ] as const) {
+        if (label !== "Ready to land") await showTab(page, label);
+        assert.equal((await words(panel)).trim(), line, label);
+        assert.equal(await panel.getAttribute("tabindex"), "0", `${label}: its panel takes focus`);
+      }
+      await shot(page, `${width}-queue-empty`);
+      await o.ctx.close();
     });
 
     test("paused: the banner says why, and Resume resumes", async () => {

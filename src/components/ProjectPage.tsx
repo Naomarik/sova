@@ -364,6 +364,7 @@ export function ProjectPage(props: {
               name={project().name}
               run={props.run}
               queueTab={props.queueTab}
+              refreshed={costTick}
               setup={setup}
               // The queue records a chat by its id (an older record by its path); a worker is named as its chat's.
               chatOf={(id) => chatRefOf(id, props.sessions?.())}

@@ -88,6 +88,11 @@ describe("the joined list", () => {
     assert.equal(pickJoined(r, "project:/p#same")?.name, "Theirs");
   });
 
+  test("a model the registry names shows by that name; a Claude model by its catalog name; anything else by its id", () => {
+    const names = new Map([["openai-codex/gpt-6.1-sol", "GPT-6.1 Sol"]]);
+    assert.equal(joinedFootprint("claude-code-cli/claude-opus-5-5", lib("x", "X"), 3, names), "Opus 5.5 + GPT-6.1 Sol + glm-5.3");
+  });
+
   test("the footprint stops at three models, then +N", () => {
     const l = lib("x", "X", "a/one");
     l.members = worker("b/two");

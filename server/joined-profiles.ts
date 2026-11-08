@@ -22,6 +22,8 @@ export interface JoinInputs {
   hidden?: readonly string[];
   running?: Record<string, { id: string; path: string; title: string }>;
   unusable?: Record<string, string>;
+  /** Model display names by ref (models.ts modelNames), for the footprints. */
+  names?: ReadonlyMap<string, string>;
 }
 
 /** The roles a library profile sets: Delegate's four kinds, the coordinator and monitor, members, spec writer, reviewer. */
@@ -31,10 +33,12 @@ export function helperRoles(lib: SubagentProfile | undefined): number {
 }
 
 /** The footprint (§chat.profiles/joined): distinct models, the chat's own first, " + ", at most 3 then "+N". */
-export function joinedFootprint(model: string | undefined, lib: SubagentProfile | undefined, max = 3): string {
+export function joinedFootprint(model: string | undefined, lib: SubagentProfile | undefined, max = 3, known: ReadonlyMap<string, string> = new Map()): string {
   const names: string[] = [];
   const add = (m: string) => {
-    const n = shortModel(m);
+    // A Claude model by its catalog name; another by the name pi's registry gives it, else its id.
+    const short = shortModel(m);
+    const n = short !== (m.includes("/") ? m.slice(m.lastIndexOf("/") + 1) : m) ? short : (known.get(m) ?? short);
     if (!names.includes(n)) names.push(n);
   };
   if (model) add(model);
@@ -80,7 +84,7 @@ export function buildJoined(input: JoinInputs): JoinedProfile[] {
       ...(libraryId && !library
         ? { linkMissing: libError ? `Its helpers can't be shown: ${libError}.` : `Its helpers ("${libraryId}") aren't on this device yet.` }
         : {}),
-      footprint: joinedFootprint(p.model, library),
+      footprint: joinedFootprint(p.model, library, 3, input.names),
       providers: joinedProviders(p.model, library),
       helperRoles: helperRoles(library),
       ...(hidden.has(key) ? { hidden: true as const } : {}),
@@ -103,7 +107,7 @@ export function buildJoined(input: JoinInputs): JoinedProfile[] {
       const key = `library:${l.id}`;
       return {
         key, id: l.id, kind: "library", group: "yours", name: l.name, libraryId: l.id, library: l,
-        footprint: joinedFootprint(undefined, l), providers: joinedProviders(undefined, l), helperRoles: helperRoles(l),
+        footprint: joinedFootprint(undefined, l, 3, input.names), providers: joinedProviders(undefined, l), helperRoles: helperRoles(l),
         ...(hidden.has(key) ? { hidden: true as const } : {}),
       };
     });

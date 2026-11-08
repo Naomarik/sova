@@ -6,7 +6,7 @@ import type { SessionSummary } from "../shared/protocol";
 import { acquireChatHandle, chatHandle, type ChatHandle, closeChat, setOpeningChoice, setSingletonCheck } from "./chat-handle";
 import { modelDenial, readModelPolicy } from "./model-policy";
 import { parseModePatch, readMode, type ModePatch } from "./mode-state";
-import { listModels } from "./models";
+import { listModels, modelNames } from "./models";
 import { profileModelCount, subagentProfilesInfo } from "./subagent-profiles";
 import { getSessionInsight } from "./insights";
 import { loadSubagentProfiles } from "../pi-config/extensions/subagents/subagent-profiles.ts";
@@ -237,7 +237,7 @@ export async function profilesListing(cwd?: string | null): Promise<ProfilesList
   const unusable = await unusableProfiles([...src.builtins, ...src.yours, ...src.project.profiles], info);
   // The one list (§chat.profiles/joined) and this computer's default (§chat.profiles/default).
   const library = loadSubagentProfiles(agentRoot());
-  const joined = buildJoined({ sources: src, library, hidden: readHidden(), running, unusable });
+  const joined = buildJoined({ sources: src, library, hidden: readHidden(), running, unusable, names: await modelNames() });
   const def = await resolveDefaultProfile(cwd, joined);
   for (const r of joined) if (r.key === def.row.key) r.isDefault = true;
   const { id: _id, name: _name, ...template } = info.template;

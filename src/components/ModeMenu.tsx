@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, For, on, Show, type Accessor } 
 import type { ChatMemoryChoice, ChatProjectModes, ChatServerMessage, MemoryType, ModeApplies, ModeInfo, ProjectMinorInfo, ProjectModeApprovalNeeded } from "../../shared/protocol";
 import { memoryRowText, sameMemoryChoice } from "../lib/memory-ui";
 import { focusPanel, MemoryTypePanel, panelKeys } from "./MemoryTypePanel";
-import { ApiError, fetchProfiles, getChatMode, getMode, postMode, putDefaultProfile, saveCurrentProfile, switchProfile, updateProfileFromChat } from "../lib/api";
+import { ApiError, fetchProfiles, getChatMode, getMode, pickProfile, postMode, putDefaultProfile, saveCurrentProfile, switchProfile, updateProfileFromChat } from "../lib/api";
 import type { ChatProfileState } from "../../shared/protocol";
 import type { JoinedProfile, ProfilesListing } from "../../shared/profiles";
 import { defaultLabel, defaultTitle, editedName, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, updateOffered } from "../lib/profile-switch";
@@ -65,6 +65,10 @@ export interface ModeControl {
   /** This chat's model and effort now, for Update {name}'s comparison. */
   model?: () => string | null;
   thinking?: () => string | null;
+  /** Before the first message (the empty screen's picker is open): a pick here is a card pick, both parts. */
+  beforeFirstMessage?: () => boolean;
+  /** A card pick went through (the runtime reopens): what reads the chat's setup reads again. */
+  onPicked?: () => void;
 }
 
 /** radio: the major mode; check: a minor mode; project: one of this project's own minor modes;
@@ -582,6 +586,26 @@ export function ModeMenu(props: { control: ModeControl }) {
     }
     setBusy(true);
     setError(null);
+    // Before the first message nothing is fixed yet: the pick is the empty screen's, both parts
+    // (§chat.profiles/applying), so its cards, its details and this menu say the same thing. The
+    // runtime reopens, so the menu closes.
+    if (props.control.beforeFirstMessage?.()) {
+      try {
+        wakeChat();
+        await pickProfile(props.control.path, r.kind === "off" ? null : r.kind === "library" ? { source: "library", id: r.libraryId ?? r.id } : r.session ? { source: r.session.source, id: r.session.id } : { source: "user", id: r.id });
+        props.control.onPicked?.();
+        closedByChoice = true;
+        closeMenu();
+        announce(`Profile: ${r.name}.`);
+      } catch (err) {
+        const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
+        setError(switchRefused(r.name, why));
+        closePicker();
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     try {
       wakeChat();
       const res = await switchProfile(props.control.path, r.id, host());

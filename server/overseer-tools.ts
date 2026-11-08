@@ -882,6 +882,13 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
     );
   }
 
+  /** sova_list_profiles, and its older name. */
+  async function listProfilesTool(p: any): Promise<{ content: ReturnType<typeof text>; details: unknown }> {
+    const peer = p.host ? await peerOf(p.host) : null;
+    const rows = await listProfiles(peer, typeof p.cwd === "string" && p.cwd ? p.cwd : undefined);
+    return { content: text(rows.map(profileLine).join("\n")), details: { profiles: rows } };
+  }
+
   /** sova_create_session after its caps: create, title, group, model, thinking, mode and minor
       modes, first prompt. */
   async function createSession(p: any, hasPrompt: boolean): Promise<{ content: ReturnType<typeof text>; details: unknown }> {
@@ -1423,20 +1430,21 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         return { content: text(lines.length ? lines.join("\n") : "No models match."), details: { count: models.length } };
       }),
     },
-    ...(["sova_list_profiles", "sova_list_subagent_profiles"] as const).map((name) => ({
-      name,
+    {
+      name: "sova_list_profiles",
       label: "List profiles",
       description:
-        name === "sova_list_profiles"
-          ? "List this host's profiles: Off and each profile's id (what `profile` takes), name, footprint (its models), which parts it has, the library id `subagent_profile` takes when it differs, whether you may start it, and which is the default. With cwd, a project's own profiles too."
-          : "The same list as sova_list_profiles (its older name).",
+        "List this host's profiles: Off and each profile's id (what `profile` takes), name, footprint (its models), which parts it has, the library id `subagent_profile` takes when it differs, whether it is marked \"The Overseer may start it\", and which is the default. With cwd, a project's own profiles too.",
       parameters: obj({ host: str("Optional mesh peer id."), cwd: str("A folder, to include its project's profiles.") }),
-      execute: read(async (p) => {
-        const peer = p.host ? await peerOf(p.host) : null;
-        const rows = await listProfiles(peer, typeof p.cwd === "string" && p.cwd ? p.cwd : undefined);
-        return { content: text(rows.map(profileLine).join("\n")), details: { profiles: rows } };
-      }),
-    })),
+      execute: read(listProfilesTool),
+    },
+    {
+      name: "sova_list_subagent_profiles",
+      label: "List profiles",
+      description: "The same list as sova_list_profiles (its older name).",
+      parameters: obj({ host: str("Optional mesh peer id."), cwd: str("A folder, to include its project's profiles.") }),
+      execute: read(listProfilesTool),
+    },
     {
       name: "sova_list_folders",
       label: "List folders",
@@ -1480,7 +1488,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         project_modes: { type: "array", items: { type: "string" }, description: PROJECT_MODES_PARAM },
         title: str(`A title for the list: ${SESSION_TITLE_HINT}`),
         group: str("Group id to add it to."),
-        profile: str('A profile id (§ profiles: what the session can do), this host only, looked up in the new session\'s project, then the user\'s, then built in. Only profiles marked "The Overseer may start it", and a project\'s profile only once the user approved it. Its mode, minor modes and model apply unless you give your own.'),
+        profile: str('A profile id (sova_list_profiles), this host only, looked up in the new session\'s project, then the user\'s, then built in: the session starts on it, both parts. One with a When a Chat Starts part only when marked "The Overseer may start it", and a project\'s profile only once the user approved it; one with only a Models part needs neither. Its mode, minor modes and model apply unless you give your own. Not with subagent_profile.'),
       }),
       execute: act("sova_create_session", async (p) => {
         const caps = host.caps();

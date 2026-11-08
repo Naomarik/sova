@@ -23,7 +23,7 @@ const landed = (k: ReturnType<typeof makeKit>, id: string) =>
   }, `${id} landed`);
 
 /** A kit whose queue raises real cards: notify → cards, publish → sync; `last` is the chat's last transcript entry. */
-function cardKit(o: { deps?: Partial<QueueDeps>; threadAnswers?: boolean; wakeFails?: boolean; wakeHangs?: boolean; wake?: (session: string, text: string) => Promise<unknown> } = {}) {
+function cardKit(o: { deps?: Partial<QueueDeps>; threadAnswers?: boolean; wakeFails?: boolean; wakeHangs?: boolean; wake?: (session: string, text: string) => Promise<unknown>; homeOf?: (session: string) => Promise<{ id: string; path: string } | null> } = {}) {
   const chat = { last: "e1" as string | null };
   const wakes: { session: string; text: string; info?: { id?: string; kind?: string; branch?: string; entry?: string } }[] = [];
   const published: { session: string; cards: MergeCard[] }[] = [];
@@ -60,6 +60,7 @@ function cardKit(o: { deps?: Partial<QueueDeps>; threadAnswers?: boolean; wakeFa
         wakes.push({ session, text, ...(info ? { info } : {}) });
       },
       publish: (session, list) => published.push({ session, cards: list }),
+      ...(o.homeOf ? { homeOf: o.homeOf } : {}),
     });
   cards = make();
   return {
@@ -459,6 +460,52 @@ describe("a branch's card in its own chat", () => {
       assert.deepEqual(t.cards.cardsOf("s1")[0]!.progress, { done: 1, total: 1 });
       assert.equal(t.cards.cardsOf("s1")[0]!.revisions.length, 1);
       await q.cancel(entry.id);
+    } finally {
+      await t.k.done();
+    }
+  });
+});
+
+describe("a blocking review's own card", () => {
+  test("a worker's review card stands in the chat that runs it, at that chat's end, once; the queue card points to it; a notes-only landing tells the model its notes whole", async () => {
+    const t = cardKit({ homeOf: async (s) => (s === "s1" ? { id: "p1", path: "/sessions/p1.jsonl" } : null) });
+    try {
+      const tip = sh(t.k.repo.root, "rev-parse", "master");
+      const findings = [{ kind: "hack" as const, file: "a.ts", line: 3, text: "a flag only tests read" }, { kind: "naming" as const, text: "x says nothing" }];
+      let runs = 0;
+      t.k.run.set(() =>
+        ++runs === 1
+          ? { verdict: "review-flagged", review: { verdict: "blocking", summary: "Not yet.", findings, text: "Not yet.", commit: tip, at: "t" } }
+          : { review: { verdict: "notes", summary: "Fine.", findings: [findings[1]!], text: "Fine.", commit: tip, at: "t" } },
+      );
+      const q = await t.k.q();
+      const b = t.k.repo.branch("feat/w", { "w.txt": "w\n" });
+      const { entry } = await q.add({ branch: "feat/w", by: "land-button", session: "s1" });
+      await until(async () => (await t.k.entry(entry.id)).requests?.length === 1, "sent (no thread)");
+      await t.settle();
+      t.chat.last = "e9";
+      await q.republish();
+      await t.settle();
+      const [rc, ...more] = t.cards.reviewsOf("p1");
+      assert.equal(more.length, 0, "once");
+      assert.equal(t.cards.reviewsOf("s1").length, 0, "not in the worker's own session");
+      assert.deepEqual({ state: rc!.state, after: rc!.after, findings: rc!.findings, kept: rc!.reviewed.kept, try: rc!.try }, { state: "fixing", after: "e1", findings, kept: true, try: 1 });
+      const card = t.cards.cardsOf("s1").find((c) => c.entry === entry.id)!;
+      assert.deepEqual(card.reviewFound, { card: rc!.id, session: "p1", path: "/sessions/p1.jsonl", count: 2 });
+      assert.ok(!(card.failures ?? []).some((f) => f.step === "review"));
+
+      const e = await t.k.entry(entry.id);
+      const fix = t.k.repo.commitOn(b.path, { "w.txt": "fixed\n" }, "fix");
+      await q.respond(e.requests![0]!.id, "s1", { answer: "fixed", commit: fix, text: "x" });
+      await until(async () => (await t.k.entry(entry.id)).fix !== undefined, "fix recorded");
+      await q.fixRuling(entry.id, e.requests![0]!.id, true, "");
+      await landed(t.k, entry.id);
+      await t.settle();
+      await q.republish();
+      await t.settle();
+      assert.equal(t.cards.reviewsOf("p1")[0]!.state, "passed");
+      assert.equal(t.cards.cardsOf("s1").find((c) => c.entry === entry.id)!.reviewFound, undefined);
+      assert.ok(t.cards.noteFor("s1", null)!.includes("Review notes: Fine.\n- [naming] x says nothing"));
     } finally {
       await t.k.done();
     }

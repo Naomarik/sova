@@ -649,7 +649,8 @@ test("the rulings: each moment names merge.rule's rulings, and what is the user'
   assert.match(un, /nothing went to the branch's chat/);
   assert.match(un, /ruling: "try-again".*counts no try/);
   const review = eventText({ kind: "review", entry: entry("mq_9"), run: "mr_9", findings: "dead code in a.ts" });
-  assert.match(review, /went back to the branch's chat by themselves:\ndead code in a\.ts/);
+  assert.match(review, /as the reviewer wrote it:\ndead code in a\.ts/);
+  assert.match(review, /merge\.rule \{entry: "mq_9", ruling: "chat-fixes"\} — Sova sends the reviewer's words/);
   const rf = eventText({ kind: "resolution-failed", entry: entry("mq_9"), run: "mr_9", files: ["a.ts"], scratch: "/p/s2" });
   assert.match(rf, /The branch isn't blamed and nothing went to its chat/);
   assert.match(rf, /fresh scratch copy at \/p\/s2/);

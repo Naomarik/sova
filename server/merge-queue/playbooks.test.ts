@@ -12,7 +12,7 @@ import { findProfile } from "../profile-sources";
 import { blastRadius, globRe } from "../../playbooks/merge-queue/scripts/blast-radius.mjs";
 // @ts-expect-error: as above
 import { hunksOf } from "../../playbooks/merge-queue/scripts/conflict-hunks.mjs";
-import { checkReviewText, REVIEW_KINDS as KINDS, REVIEW_TEXT_MAX as TEXT_MAX } from "./review-verdict";
+import { checkReviewText, FINDING_MAX, MAX_FINDINGS, REVIEW_KINDS as KINDS } from "./review-verdict";
 import { reviewerText } from "./review-step";
 
 const REPO = join(import.meta.dirname, "..", "..");
@@ -96,10 +96,11 @@ test("conflict hunks: diff3 and plain markers, several per file, base null witho
 
 test("review verdict (merge.review's check): ok carries no findings, notes and blocking need one, kinds and lines checked, at most ten", () => {
   const ok = (v: "ok" | "notes" | "blocking", t?: string) => checkReviewText(v, t);
-  assert.deepEqual(ok("ok"), { text: "", findings: [] }, "ok may say nothing");
-  assert.deepEqual(ok("ok", " Fine. "), { text: "Fine.", findings: [] });
+  assert.deepEqual(ok("ok"), { text: "", summary: "", findings: [] }, "ok may say nothing");
+  assert.deepEqual(ok("ok", " Fine. "), { text: "Fine.", summary: "Fine.", findings: [] });
   assert.deepEqual(ok("notes", " One note.\n\n- [dead-code] server/x.ts:3: unused export "), {
     text: "One note.\n- [dead-code] server/x.ts:3: unused export",
+    summary: "One note.",
     findings: [{ kind: "dead-code", file: "server/x.ts", line: 3, text: "unused export" }],
   });
   assert.deepEqual((ok("notes", "N.\n- [missing-test] no test for the empty case") as { findings: unknown[] }).findings, [{ kind: "missing-test", text: "no test for the empty case" }]);
@@ -119,10 +120,13 @@ test("review verdict (merge.review's check): ok carries no findings, notes and b
   assert.deepEqual(KINDS, ["dead-code", "duplication", "hack", "missing-test", "naming", "other"]);
 });
 
-test("review text as kept: the summary, one line per finding, capped with an ellipsis", () => {
-  const long = checkReviewText("notes", ["s", ...Array(10).fill(`- [other] f.ts: ${"y".repeat(400)}`)].join("\n")) as { text: string };
-  assert.equal(long.text.length, TEXT_MAX);
-  assert.ok(long.text.endsWith("…"));
+test("review text as kept at the format's maximum: whole, every finding parsed, nothing cut", () => {
+  const lines = ["s", ...Array.from({ length: MAX_FINDINGS }, (_, i) => `- [other] f${i}.ts:${i + 1}: ${String(i).repeat(FINDING_MAX)}`)];
+  const long = checkReviewText("blocking", lines.join("\n")) as { text: string; summary: string; findings: { file?: string; line?: number; text: string }[] };
+  assert.equal(long.text, lines.join("\n"));
+  assert.equal(long.summary, "s");
+  assert.equal(long.findings.length, MAX_FINDINGS);
+  assert.deepEqual(long.findings.at(-1), { kind: "other", file: "f9.ts", line: 10, text: "9".repeat(FINDING_MAX) });
 });
 
 test("the reviewer's first message names the change Sova wrote for it, says it has no shell, and gives the verdict's format", () => {

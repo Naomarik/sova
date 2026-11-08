@@ -6,7 +6,7 @@
  * or a timeout is retried once with a fresh reviewer, then reported as the reviewer's failure (the queue pauses; the
  * branch is never blamed).
  */
-import type { ReviewVerdict } from "../../shared/merge-queue";
+import type { ReviewFinding, ReviewVerdict } from "../../shared/merge-queue";
 import type { ReviewChange } from "./review-change";
 import { REVIEW_KINDS } from "./review-verdict";
 
@@ -68,9 +68,14 @@ export function setReviewerStarter(fn: StartReviewer | null): void {
   starter = fn;
 }
 
+/** A reviewer's answer as merge.review checked it: the text whole, its summary and parsed findings beside it. */
+export type ReviewAnswer = { verdict: ReviewVerdict["verdict"]; text?: string; summary?: string; findings?: ReviewFinding[] };
+/** The answer's report, whole: never cut, never re-parsed later. */
+const reportOf = (v: ReviewAnswer) => ({ ...(v.text ? { text: String(v.text) } : {}), ...(v.summary !== undefined ? { summary: v.summary } : {}), ...(v.findings ? { findings: v.findings } : {}) });
+
 interface Waiting {
   sessionId: string | null;
-  resolve: (v: { verdict: ReviewVerdict["verdict"]; text?: string }) => void;
+  resolve: (v: ReviewAnswer) => void;
 }
 const waiting = new Map<string, Waiting>();
 
@@ -84,11 +89,11 @@ export const isReviewerChat = (sessionId: string): boolean => [...waiting.values
 export const activeReviewers = (): Set<string> => new Set([...waiting.values()].map((w) => w.sessionId).filter((id): id is string => !!id));
 
 /** merge.review's verdict for `runId`. False when no review of that run is waiting (late, or a stranger's). */
-export function deliverReview(runId: string, v: { verdict: ReviewVerdict["verdict"]; text?: string }): boolean {
+export function deliverReview(runId: string, v: ReviewAnswer): boolean {
   const w = waiting.get(runId);
   if (!w || !["ok", "notes", "blocking"].includes(v.verdict)) return false;
   waiting.delete(runId);
-  w.resolve({ verdict: v.verdict, ...(v.text ? { text: String(v.text).slice(0, 2000) } : {}) });
+  w.resolve({ verdict: v.verdict, ...reportOf(v) });
   return true;
 }
 
@@ -127,7 +132,7 @@ export async function reviewStep(
     let timer: ReturnType<typeof setTimeout> | null = null;
     let onAbort: (() => void) | null = null;
     const w: Waiting = { sessionId: null, resolve: () => {} };
-    const answer = new Promise<{ verdict: ReviewVerdict["verdict"]; text?: string } | { failed: string }>((resolve) => {
+    const answer = new Promise<ReviewAnswer | { failed: string }>((resolve) => {
       w.resolve = resolve;
       timer = setTimeout(() => resolve({ failed: `no verdict within ${Math.round(timeoutMs / 60_000)} min` }), timeoutMs);
       onAbort = () => resolve({ failed: "aborted" });
@@ -137,7 +142,7 @@ export async function reviewStep(
     // map has none) answers too.
     waiting.set(o.runId, w);
     o.awaitReview?.().then(
-      (v) => w.resolve({ verdict: v.verdict, ...(v.text ? { text: v.text } : {}) }),
+      (v) => w.resolve({ verdict: v.verdict, ...reportOf(v) }),
       () => undefined,
     );
     try {
@@ -156,7 +161,7 @@ export async function reviewStep(
         continue;
       }
       o.log(`verdict: ${a.verdict}${a.text ? `\n${a.text}` : ""}\n`);
-      return { ok: true, verdict: { verdict: a.verdict, ...(a.text ? { text: a.text } : {}), commit: o.commit, at: new Date().toISOString() } };
+      return { ok: true, verdict: { verdict: a.verdict, ...reportOf(a), commit: o.commit, at: new Date().toISOString() } };
     } catch (err) {
       why = `the reviewer couldn't start: ${err instanceof Error ? err.message : String(err)}`;
       o.log(`${why}\n`);

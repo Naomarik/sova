@@ -17,7 +17,7 @@ import { scratchCopyPath } from "./scratch";
 import { envOf } from "./checks";
 import { mergeSlotOf } from "./run";
 
-import { checkReviewText } from "./review-verdict";
+import { checkReviewText, REVIEW_TEXT_LIMIT } from "./review-verdict";
 
 /**
  * The merge verbs (POST /api/project-services/merge.<x>, through the engine's `merger` hook; the merge thread's tool
@@ -50,7 +50,7 @@ export interface MergerDeps {
   /** The reviewer chat run `run` waits on. */
   reviewerOf?: (run: string) => string | null;
   /** Hand a reviewer's verdict to the review step (review-step.ts deliverReview); false: none waits. */
-  deliverReview?: (run: string, v: { verdict: "ok" | "notes" | "blocking"; text?: string }) => boolean;
+  deliverReview?: (run: string, v: import("./review-step").ReviewAnswer) => boolean;
   /** The thread's question: asked in the owning chat of `entry`'s branch (else held on the tab, one notification). */
   threadAsk?: (root: string, q: { question: string; entry?: MergeEntry; choices?: string[]; decide?: import("./asks").AskDeps["decide"] }) => Promise<MergeThreadAsk>;
   /** A recorded question of `root`'s thread, by id. */
@@ -151,6 +151,11 @@ const KEYS: Record<keyof Req, "string" | "boolean" | "number" | "strings" | "map
   contents: "map",
 };
 
+/** A string key's length limit. `text` carries a whole review (merge.review), whose own format bounds it below this
+ *  (review-verdict.ts REVIEW_TEXT_LIMIT); every other text a verb takes is shorter. */
+const STRING_MAX = 4000;
+const stringMax = (k: string) => (k === "text" ? REVIEW_TEXT_LIMIT : STRING_MAX);
+
 function parse(body: unknown): Req {
   if (body === undefined || body === null) return {};
   if (typeof body !== "object" || Array.isArray(body)) throw new MergeFailure("invalid-request", "the body is a JSON object");
@@ -167,9 +172,9 @@ function parse(body: unknown): Req {
         : want === "number"
           ? typeof v === "number" && Number.isInteger(v) && v > 0 && v <= 5000
           : want === "string"
-            ? typeof v === "string" && v.length <= 4000
+            ? typeof v === "string" && v.length <= stringMax(k)
             : typeof v === "boolean";
-    if (!ok) throw new MergeFailure("invalid-request", `"${k}" must be ${want === "map" ? `an object of file texts by path (at most ${CONTENTS_MAX_FILES})` : want === "strings" ? "a list of names" : want === "number" ? "a whole number (1–5000)" : `a ${want}`}`);
+    if (!ok) throw new MergeFailure("invalid-request", `"${k}" must be ${want === "map" ? `an object of file texts by path (at most ${CONTENTS_MAX_FILES})` : want === "strings" ? "a list of names" : want === "number" ? "a whole number (1–5000)" : typeof v === "string" ? `at most ${stringMax(k)} characters` : `a ${want}`}`);
     out[k] = v;
   }
   return out as Req;
@@ -494,7 +499,7 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
       // The verdict's shape is checked here (the reviewer has no shell to run a kit script): a malformed one is refused.
       const checked = checkReviewText(v as "ok" | "notes" | "blocking", req.text);
       if ("why" in checked) throw new MergeFailure("invalid-request", `review refused: ${checked.why}; fix it and answer again`);
-      const verdict = { verdict: v as "ok" | "notes" | "blocking", ...(checked.text ? { text: checked.text } : {}) };
+      const verdict = { verdict: v as "ok" | "notes" | "blocking", ...(checked.text ? { text: checked.text, summary: checked.summary, findings: checked.findings } : {}) };
       if (deps.deliverReview?.(runId, verdict)) return { changed: true, report: {} };
       const run = await q.review(runId, verdict);
       return { changed: true, report: { run } };
@@ -666,8 +671,8 @@ export function registerMergeCardRoutes(app: import("hono").Hono): void {
     const s = isAbsolute(raw) ? await getSessionSummary(raw).catch(() => null) : raw.length <= 200 ? ((await listSessions().catch(() => [])).find((x) => x.id === raw) ?? null) : null;
     if (!s) return c.json({ error: "No such session (name it by its file path or id)" }, 404);
     const id = s.id;
-    const { mergeCardsOf } = await import("./wire");
-    return c.json({ cards: mergeCardsOf(id) });
+    const { mergeCardsOf, mergeReviewCardsOf } = await import("./wire");
+    return c.json({ cards: mergeCardsOf(id), reviews: mergeReviewCardsOf(id) });
   });
 }
 

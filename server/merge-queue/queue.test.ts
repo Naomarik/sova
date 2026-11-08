@@ -902,7 +902,7 @@ describe("conflicts", () => {
 });
 
 describe("review", () => {
-  test("blocking: its findings go back to the chat by themselves; the thread is told; Land Anyway is never offered over a review", async () => {
+  test("blocking: its findings wait for the thread, which may rule them the user's; Land Anyway is never offered over a review", async () => {
     const k = makeKit({ threadAnswers: true });
     try {
       const q = await k.q();
@@ -912,15 +912,15 @@ describe("review", () => {
       await until(async () => (await k.entry(r.entry.id)).state === "with-chat", "back with the chat");
       const e = await k.entry(r.entry.id);
       assert.match(e.reason!, /dead code/);
-      assert.match(e.requests!.at(-1)!.text, /review found problems[\s\S]*dead code left in x\.ts/);
-      assert.deepEqual(k.notices.map((n) => n.kind), ["needs-fix"]);
+      assert.equal(e.requests?.length ?? 0, 0, "the thread hands it on (queue-review.test.ts)");
+      assert.deepEqual(k.notices.map((n) => n.kind), []);
       assert.ok(k.thread.some((t) => t.kind === "review" && t.findings === "dead code left in x.ts"));
       await assert.rejects(q.answer(r.entry.id, "land-anyway"), /Land Anyway answers a failure no one can be blamed for/);
       // The thread may rule a finding the user's.
       const d = await q.rule(r.entry.id, { ruling: "needs-user", text: "Keep the old setting or drop it?", choices: ["Keep it", "Drop it"] });
       assert.equal(d.state, "needs-user");
       assert.equal(d.decision?.raisedBy, "merge-thread");
-      assert.deepEqual(k.notices.map((n) => n.kind), ["needs-fix", "decision"]);
+      assert.deepEqual(k.notices.map((n) => n.kind), ["decision"]);
     } finally {
       await k.done();
     }

@@ -374,6 +374,11 @@ export function mergeCardsOf(session: string): import("../../shared/merge-queue"
   return cards?.cardsOf(session) ?? [];
 }
 
+/** A chat's review cards (§chat.merge-queue/review-card); [] while the queue isn't started. */
+export function mergeReviewCardsOf(session: string): import("../../shared/merge-queue").ReviewCard[] {
+  return cards?.reviewsOf(session) ?? [];
+}
+
 /** The merge queue's hidden lines for a chat's next turn since its last card note; null: none. */
 export function mergeCardNote(session: string, since: string | null): string | null {
   return cards?.noteFor(session, since) ?? null;
@@ -564,7 +569,7 @@ async function projectRootOf(id: string): Promise<string | null> {
 
 /** What a queue diff scope names (server/git-diff.ts), from this queue's records only: an entry of project `id`, or a
  *  branch checked out in a worktree of its main checkout (its own `git worktree list`, never the checkout itself). */
-export async function queueSubjectOf(id: string, sel: { entry?: string; branch?: string }): Promise<QueueSubject | null> {
+export async function queueSubjectOf(id: string, sel: { entry?: string; branch?: string; review?: string }): Promise<QueueSubject | null> {
   if (!queues) return null;
   // A queue already read (the tab's own read loads it), else the registered project's.
   let q = (await queues.loaded()).find((x) => x.id === id);
@@ -583,6 +588,16 @@ export async function queueSubjectOf(id: string, sel: { entry?: string; branch?:
     q = await queues.get(root);
   }
   const root = q.root;
+  if (sel.review) {
+    // A finding's file (§chat.merge-queue/review-card): what that review read, while its commit is kept; then the branch now.
+    const e = q.entry(sel.review.split(":")[0]!);
+    const r = e?.project === q.id ? e.reviews?.find((x) => x.id === sel.review) : undefined;
+    if (!e || !r) return null;
+    const kept = async (sha: string) => (await realGit(["cat-file", "-e", `${sha}^{commit}`], root).catch(() => null))?.code === 0;
+    if ((await kept(r.tip)) && (await kept(r.base))) return { kind: "reviewed", root, target: e.target, branch: e.branch, tip: r.tip, base: r.base };
+    const w = (await worktreesOf(realGit, root)).find((x) => x.branch === e.branch && canonical(x.path) !== canonical(root));
+    return w ? { kind: "ready", root, target: e.target, branch: e.branch, worktree: w.path } : { kind: "entry", root, target: e.target, branch: e.branch, commit: e.commit };
+  }
   if (sel.entry) {
     const e = q.entry(sel.entry);
     if (!e || e.project !== q.id) return null;
@@ -760,7 +775,23 @@ export async function startMergeQueue(
     wake: sendTo,
     dropRequests: (entry) => void import("../topics").then((t) => t.dropMergeRequests(entry)),
     delivered: (request, delivery) => void stampDelivery(request, delivery),
-    publish: (session, list) => publishFeed({ type: "merge_cards", session, cards: list }),
+    publish: (session, list, reviews) => publishFeed({ type: "merge_cards", session, cards: list, ...(reviews ? { reviews } : {}) }),
+    // A review card stands where its request goes: a worker's in the chat that runs it (wake.ts sendQueueWake).
+    homeOf: async (session) => {
+      const { getSessionSummary, workerParentOf } = await import("../sessions-index");
+      let path = await sessionPath(session);
+      for (let hops = 0; path && hops <= 8; hops++) {
+        const s = await getSessionSummary(path).catch(() => null);
+        if (!s) return null;
+        if (!s.workerSession) return { id: s.id, path: s.path };
+        path = await workerParentOf(path);
+      }
+      return null;
+    },
+    reviewerOf: (root, run) => {
+      const r = reviewerOfRun(root, run);
+      return r ? { session: r.session, path: r.path, ...(r.cleared ? { cleared: true as const } : {}) } : undefined;
+    },
     log: (line) => console.warn(line),
   });
   cards = mc;

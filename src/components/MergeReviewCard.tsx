@@ -1,7 +1,7 @@
 import { createSignal, For, onMount, Show } from "solid-js";
 import type { ReviewCard as Review, ReviewFinding } from "../../shared/merge-queue";
 import type { CardInfo } from "../../shared/transcript-cards";
-import { transcriptRoot } from "../lib/jump";
+import { JUMP_EVENT, transcriptRoot } from "../lib/jump";
 import { takeReviewJump } from "../lib/review-jump";
 import { findingPlace, foldedReviewLine, kindWord, reviewCardLabel, reviewHead, reviewRowOf, reviewStateLine, TIP_GONE_LINE } from "../lib/merge-review-card";
 import { mergeRunHref, projectSessionHref } from "../lib/projects-route";
@@ -58,10 +58,15 @@ function Body(props: { review: Review; readOnly?: boolean }) {
   // Followed from a queue card in another chat: land on this card's top and focus it, as the same-chat jump does.
   onMount(() => {
     if (props.readOnly || !el || !takeReviewJump(r().id)) return;
-    const land = el;
+    const card = el;
     requestAnimationFrame(() => {
-      land.scrollIntoView({ block: "start", behavior: "instant" });
-      land.focus({ preventScroll: true });
+      // Through the transcript's own jump: it stops following the latest row (the chat opens at its end, and on a
+      // narrow screen that scroll ran after ours) and holds the target while the rows around it draw. The target is
+      // the head, so the title, chip and try line are in view however tall the report is.
+      const head = card.querySelector<HTMLElement>(".mq-review-head") ?? card;
+      const taken = !card.dispatchEvent(new CustomEvent<HTMLElement>(JUMP_EVENT, { detail: head, cancelable: true, bubbles: true }));
+      if (!taken) card.scrollIntoView({ block: "start", behavior: "instant" });
+      card.focus({ preventScroll: true });
     });
   });
   return (

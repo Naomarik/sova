@@ -408,16 +408,20 @@ the menu the main part stands alone with both rounded ends.</p>` },
              ['--stroke-icon','1.5px underline weight.']],
     snippets: [
       ['Tabs', `<div class="tabs" role="tablist">
-  <button class="tab tab-active" role="tab" aria-selected="true">Queue</button>
-  <button class="tab" role="tab" aria-selected="false">Runs</button>
-</div>`],
+  <button class="tab tab-active" role="tab" id="tab-queue" aria-selected="true" aria-controls="panel" tabindex="0">Queue</button>
+  <button class="tab" role="tab" id="tab-runs" aria-selected="false" tabindex="-1">Runs</button>
+</div>
+<div role="tabpanel" id="panel" tabindex="0">2 runs working. Nothing queued.</div>`],
     ],
     dos: [['Put the active tab in the URL','`?tab=chats` survives reload and can be shared'],
           ['Use `role="tab"` and `aria-selected`','the underline alone is invisible to a screen reader'],
-          ['Let the strip scroll horizontally','truncating tab labels hides what the tabs are']],
+          ['Let the strip scroll horizontally','truncating tab labels hides what the tabs are'],
+          ['Leave the edge fade to `.tabs`','an edge fades only while tabs are hidden past it, with no script'],
+          ['Give a panel with nothing focusable `tabindex="0"`','Tab from the strip then reaches what the empty tab says']],
     donts: [['Use tabs to submit or act','tabs change what you see, never what exists'],
             ['Nest tab strips','the second level is a segmented control or a filter'],
-            ['Ship more than about five tabs','beyond that it is navigation, not a view switch']],
+            ['Ship more than about five tabs','beyond that it is navigation, not a view switch'],
+            ['Set a heading just above the strip louder than its tabs','it reads as the strip\'s title, not a section beside it']],
   },
   {
     slug: 'breadcrumb', title: 'Breadcrumb',
@@ -647,10 +651,12 @@ the menu the main part stands alone with both rounded ends.</p>` },
     ],
     dos: [['Make the whole row the link','a 44px row with a 20px hit area wastes the row'],
           ['Group rows with `.list-group-label`','"Waiting on you" is the most useful heading in the product'],
-          ['Put the machine facts in mono on the meta line','they are scannable exactly because they look different']],
+          ['Put the machine facts in mono on the meta line','they are scannable exactly because they look different'],
+          ['Round the `.list`, never its rows','its end rows take its corners, so a hover fill never pokes past them']],
     donts: [['Put row actions behind hover','a phone has no hover, so they do not exist there'],
             ['Let the title wrap to three lines','truncate; the detail pane has the full text'],
-            ['Use a list where a table is right','if you need aligned columns, use the table']],
+            ['Use a list where a table is right','if you need aligned columns, use the table'],
+            ['Fill a box inside a tappable row with `--color-sunken`','that is the row\'s hover fill, so the box vanishes on hover']],
   },
   {
     slug: 'tree', title: 'Tree',

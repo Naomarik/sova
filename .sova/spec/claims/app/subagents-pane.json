@@ -89,12 +89,16 @@
       "shared/harness-session.ts",
       "src/components/ReaderDoc.tsx",
       "server/context-tab-sheet.integration.test.ts",
-      "server/transcript-shell.test.ts"
+      "server/transcript-shell.test.ts",
+      "server/skill-lines.ts",
+      "server/skill-lines.test.ts",
+      "server/skills.ts",
+      "server/skills.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-07T12:38Z",
-      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
+      "by": "user",
+      "at": "2026-11-08T22:24Z",
+      "source": "pi-session:1e2d4212-e8f2-4d90-95f6-538201cbd3f1#a87554fb"
     }
   },
   "§app.subagents-pane/head": {

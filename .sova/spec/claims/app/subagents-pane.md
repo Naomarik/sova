@@ -497,11 +497,18 @@ sent. Each part is read as the chat's folder and the chat hold it now (`GET
   what it would cost (`+≈{n}`), draws no share bar and isn't in any total. The folder walk follows
   the loading's skip rule and stops after 5,000 folders; then the group says "This list may be
   incomplete."
-- **Skills offered** lists each skill by its name, its description under it, and a **Read** or
-  **Not read yet** chip: Read when the conversation since the latest compaction loads the skill: a
-  read of its `SKILL.md`, a `/skill:` invocation of it, or a shell command reading its `SKILL.md`.
-  A skill loaded before the latest compaction shows Not read yet; its
-  text has left the window.
+- **Skills offered** lists each skill by its name, its description under it, and a chip that tells
+  a full read from a skim, counting only the conversation since the latest compaction: **Read**
+  only when the whole `SKILL.md` has loaded (an invocation of it, a read of it, or a shell command
+  that prints it); **Partly read** when only part of it has, with `{n} of {total} lines` beside
+  the chip as plain text ("140 of 510 lines"); **Not read yet** when none of it has. The lines are
+  counted against the file as it is now: paged reads add up, each line counted once, and a read
+  cut short by its tool's own limit counts only the lines it got. A shell command counts only the
+  lines Sova can tell it printed (such as `cat`, `head`, `tail` or `sed -n` with line numbers, and
+  pipes through them); one it can't follow (`grep`, a pipe into another filter) counts none. When
+  the file can't be measured, a read with no bounds shows Read and any other Not read yet. The
+  line's `{r} read` counts whole reads only. A skill loaded before the latest compaction shows Not
+  read yet; its text has left the window.
 - **Conversation** opens to its parts: **Tool results**, **Replies** and **Your messages**, each
   with its count and ≈ size, then **Other messages** (an extension's messages and branch summaries)
   only while there are some, and, once the chat has compacted, the **Compaction summary** the

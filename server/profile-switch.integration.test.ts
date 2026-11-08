@@ -57,7 +57,7 @@ const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { markOwned } = await import("./write-guard");
 const { addWebSession } = await import("./web-sessions");
-const { switchChatProfile, switchTargetOf, cancelChatProfileSwitch } = await import("./profile-switch");
+const { switchChatProfile, switchTargetOf, cancelChatProfileSwitch, switchRefusalOf } = await import("./profile-switch");
 const { CHAT_PROFILE_ENTRY } = await import("../shared/profile-switch");
 
 after(async () => {
@@ -336,5 +336,13 @@ describe("a profile switch, all at once (§chat.profiles/switch)", () => {
     }
     assert.deepEqual(written(path), counts);
     assert.equal(chat.harness.model()?.ref, "scripted/scripted");
+  });
+  test("of an organization's sessions only a project's coding session takes a switch; Sova's special sessions never", () => {
+    const org = (kind: "gathering" | "offer" | "overseer" | "coding" | "other") => ({ org: { kind } as never });
+    assert.equal(switchRefusalOf(org("coding")), null);
+    for (const kind of ["gathering", "offer", "overseer", "other"] as const) assert.equal(switchRefusalOf(org(kind)), "This chat can't switch profiles.", kind);
+    for (const s of [{ overseer: true }, { projectOverseer: true }, { baton: true }, { workerSession: true }] as never[]) assert.ok(switchRefusalOf(s));
+    assert.ok(switchRefusalOf({ queueChat: true } as never));
+    assert.equal(switchRefusalOf({}), null);
   });
 });

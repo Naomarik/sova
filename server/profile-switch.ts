@@ -6,6 +6,7 @@ import type { Hono } from "hono";
 import type { ChatProfileState, ProfileSwitchResult, ProfileSwitchTarget } from "../shared/profile-switch";
 import { acquireChatHandle, chatHandle } from "./chat-handle";
 import { getSessionSummary } from "./sessions-index";
+import type { SessionSummary } from "../shared/protocol";
 import { resolveSessionPath } from "./paths";
 import { QUEUE_CHAT_MODE_REFUSAL } from "../shared/merge-queue";
 import { findJoined } from "./joined-profiles";
@@ -45,14 +46,25 @@ export async function switchTargetOf(idOrKey: string, cwd: string): Promise<Prof
   };
 }
 
+/**
+ * Why a session can't take a switch, from its summary, or null. Sova's special sessions are refused (the
+ * chat refuses them too); of an organization's sessions only a project's coding session switches, and
+ * then only its Models part, as any chat.
+ */
+export function switchRefusalOf(s: Pick<SessionSummary, "overseer" | "projectOverseer" | "baton" | "workerSession" | "queueChat" | "org">): string | null {
+  if (s.overseer || s.projectOverseer || s.baton || s.workerSession) return "This chat can't switch profiles.";
+  if (s.org && s.org.kind !== "coding") return "This chat can't switch profiles.";
+  if (s.queueChat) return QUEUE_CHAT_MODE_REFUSAL;
+  return null;
+}
+
 /** Switch the chat at `path` to the joined profile `idOrKey`, all at once; nothing is written on a refusal. */
 export async function switchChatProfile(path: string, idOrKey: unknown): Promise<SwitchAnswer> {
   if (typeof idOrKey !== "string" || !idOrKey) return { ok: false, status: 400, error: "Name a profile to switch to." };
   const s = await getSessionSummary(path);
   if (!s) return { ok: false, status: 404, error: "Session file not found" };
-  // An org session (a project's coding session) switches like any chat; Sova's special sessions are refused here and by the chat.
-  if (s.overseer || s.projectOverseer || s.baton || s.workerSession) return { ok: false, status: 409, error: "This chat can't switch profiles." };
-  if (s.queueChat) return { ok: false, status: 409, error: QUEUE_CHAT_MODE_REFUSAL };
+  const refused = switchRefusalOf(s);
+  if (refused) return { ok: false, status: 409, error: refused };
   if (s.live) return { ok: false, status: 409, error: `It is open in a terminal (pid ${s.live.pid}), so this server must not write to it.` };
   const target = await switchTargetOf(idOrKey, s.cwd);
   if ("error" in target) return { ok: false, ...target };

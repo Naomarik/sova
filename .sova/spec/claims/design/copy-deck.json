@@ -189,7 +189,9 @@
       "src/lib/merge-queue-settings.ts",
       "server/merge-queue/notices.ts",
       "src/components/BranchSummary.tsx",
-      "src/components/SummarizerSettings.tsx"
+      "src/components/SummarizerSettings.tsx",
+      "src/lib/merge-review-card.ts",
+      "src/components/MergeReviewCard.tsx"
     ]
   },
   "§design.copy-deck/merge-queue-chats": {

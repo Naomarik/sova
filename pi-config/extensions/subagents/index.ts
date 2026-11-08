@@ -3254,22 +3254,32 @@ export function registerSubagents(
 					} catch {
 						/* Session replacement can invalidate the UI. */
 					}
-					pi.sendMessage(
-						{
-							customType: "team-question",
-							display: true,
-							content: [
-								`[Team question from ${tag} — ${info.team.name}]`,
-								question,
-								"",
-								`Answer with agent_steer { id: "${me.workerId}", message: "<answer>" }; the member continues (or resumes, if idle) from your message. If only the user can decide, ask them and relay their answer the same way.`,
-							].join("\n"),
-						},
-						{ deliverAs: "steer", triggerTurn: true },
-					);
-					// Read after the parent's current step; until then it ends any agent_wait.
+					// Counted before the send: pi may read it (message_end) before sendMessage returns, and a count
+					// raised after that would stay up for the rest of the run, stopping every agent_wait in it.
+					// Until it is read it ends any agent_wait.
 					questionsQueued++;
+					const previousFrom = questionFrom;
 					questionFrom = `${me.role} (${me.workerId}) of the team ${info.team.name}`;
+					try {
+						pi.sendMessage(
+							{
+								customType: "team-question",
+								display: true,
+								content: [
+									`[Team question from ${tag} — ${info.team.name}]`,
+									question,
+									"",
+									`Answer with agent_steer { id: "${me.workerId}", message: "<answer>" }; the member continues (or resumes, if idle) from your message. If only the user can decide, ask them and relay their answer the same way.`,
+								].join("\n"),
+							},
+							{ deliverAs: "steer", triggerTurn: true },
+						);
+					} catch (error) {
+						questionsQueued = Math.max(0, questionsQueued - 1);
+						questionFrom = previousFrom;
+						teams.settleAction(action, "failed", error instanceof Error ? error.message : String(error));
+						throw error;
+					}
 					teams.settleAction(action, "accepted-or-queued");
 					scheduleRefresh();
 					reply({ ok: true, text: "Question surfaced to the operator: the main chat reads it after its current step, or at once if it is idle. The answer arrives as a new message in your session — continue with independent work or end your turn." });

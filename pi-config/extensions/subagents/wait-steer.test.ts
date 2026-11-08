@@ -35,7 +35,7 @@ function eventBus() {
 	};
 }
 
-function harness() {
+function harness(opts: { readOnSend?: boolean; sendThrows?: boolean } = {}) {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "subagents-wait-steer-"));
 	const agentDir = path.join(root, "agent");
 	fs.mkdirSync(agentDir);
@@ -68,7 +68,13 @@ function harness() {
 			appendEntry() {},
 			getAgentDir: () => agentDir,
 			getActiveTools: () => ["read", "bash", "agent_spawn"],
-			sendMessage: (...m: any[]) => messages.push(m),
+			sendMessage: (...m: any[]) => {
+				if (opts.sendThrows && m[0]?.customType === "team-question") throw new Error("session replaced");
+				messages.push(m);
+				// pi may read a steer at once (an idle parent, or a step that ends right now): message_end fires
+				// inside sendMessage, before it returns.
+				if (opts.readOnSend && m[0]?.customType === "team-question") events.get("message_end")?.({ message: { role: "custom", ...m[0] } }, ctx);
+			},
 			sendUserMessage() {},
 		} as any,
 		(options, handlers) => {
@@ -186,6 +192,31 @@ test("a team question queued before agent_wait starts stops it at once", async (
 		const r = await h.call("agent_wait", { ids: [coordinator.id], timeoutSeconds: 30 });
 		assert.ok(Date.now() - started < 1000, "returned without waiting");
 		assert.match(textOf(r), /^Stopped waiting early: a team question from coordinator/);
+	} finally { await h.cleanup(); }
+});
+
+test("a team question read inside sendMessage is not counted as waiting: a later agent_wait in the run waits", async () => {
+	const h = harness({ readOnSend: true });
+	try {
+		const { coordinator } = await crew(h);
+		h.event("agent_start", {});
+		await h.ask(coordinator.id, { type: "question", message: "Which schema?" });
+		assert.equal(h.of("team-question").length, 1);
+		assert.equal(await stillWaiting(h.call("agent_wait", { ids: [coordinator.id], timeoutSeconds: 1.5 })), true, "the question was already read");
+	} finally { await h.cleanup(); }
+});
+
+test("a team question whose send throws is not counted as waiting", async () => {
+	const h = harness({ sendThrows: true });
+	try {
+		const { coordinator } = await crew(h);
+		h.event("agent_start", {});
+		const me = decodeMemberContext(coordinator.env?.[MEMBER_ENV])!;
+		const full: MailboxRequest = { version: 1, id: requestId(), at: Date.now(), type: "question", message: "Which schema?" };
+		writeRequest(me.dir, full);
+		const response = await awaitResponse(me.dir, full.id, 3000, undefined, 5);
+		assert.equal(response?.ok, false, "the member is told it failed");
+		assert.equal(await stillWaiting(h.call("agent_wait", { ids: [coordinator.id], timeoutSeconds: 1.5 })), true);
 	} finally { await h.cleanup(); }
 });
 

@@ -59,6 +59,8 @@ export interface TeamMemberInput {
 	modelOverride?: Pick<TeamDefaults, "backend" | "model" | "effort">;
 	/** The member's work kind (Delegate's four), as read: the chat's profile routes it to that kind's model. */
 	kind?: DelegateProfileId;
+	/** Set by the manager only: its tuple came from its kind's route, so the team's defaults give it nothing (no effort, no backendOptions). */
+	kindRouted?: boolean;
 	/** Set by the manager only (never a tool argument): a standing role from team defaults. */
 	duty?: MemberDuty;
 	/** Set by the manager only: the role this member succeeds (team_succeed). */
@@ -518,7 +520,8 @@ export const memberBackend = (member: { backend?: string }, defaults: TeamDefaul
 export function resolveMemberSpec(member: TeamMemberInput, role: string, prompt: string, defaults: TeamDefaults | undefined): ComposedMemberSpec {
 	const defaultBackend = defaults?.backend ?? "pi";
 	const backend = member.backend ?? defaultBackend;
-	const inherit = defaults && backend === defaultBackend ? defaults : undefined;
+	// A member routed by its kind outranks the team-wide choice: only what is named on the member itself counts.
+	const inherit = defaults && backend === defaultBackend && !member.kindRouted ? defaults : undefined;
 	const backendOptions = inherit?.backendOptions || member.backendOptions
 		? { ...inherit?.backendOptions, ...member.backendOptions }
 		: undefined;

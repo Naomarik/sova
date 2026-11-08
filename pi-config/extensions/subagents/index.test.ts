@@ -4613,6 +4613,30 @@ test("member kinds: a model named for the member wins; then its kind; then the t
 	} finally { await h.cleanup(); }
 });
 
+test("member kinds: a member routed by its kind takes nothing from the team's defaults: no effort when its route names none, no backendOptions; its own effort and options still count", async () => {
+	// At the member's spec: a kind route with no effort (a parsed route always names one, so it is built here) and defaults.effort "high".
+	const { resolveMemberSpec } = await import("./teams.ts");
+	const defaults = { backend: "claude-code", effort: "high", backendOptions: { team: 1 } };
+	const routed = resolveMemberSpec({ role: "r", prompt: "p", backend: "claude-code", model: "sonnet", kind: "routine", kindRouted: true }, "r", "p", defaults);
+	assert.equal(routed.effort, undefined, "the route names no effort, and defaults.effort is the team-wide choice its kind outranks");
+	assert.equal(routed.backendOptions, undefined, "no backendOptions from the team's defaults");
+	const own = resolveMemberSpec({ role: "o", prompt: "p", backend: "claude-code", model: "sonnet", kind: "routine", kindRouted: true, effort: "low", backendOptions: { mine: 2 } }, "o", "p", defaults);
+	assert.deepEqual([own.effort, own.backendOptions], ["low", { mine: 2 }], "the member's own effort and options count");
+	const named = resolveMemberSpec({ role: "n", prompt: "p", backend: "claude-code", model: "sonnet" }, "n", "p", defaults);
+	assert.deepEqual([named.effort, named.backendOptions], ["high", { team: 1 }], "a member not routed by a kind: the team's defaults as before");
+	// Through team_create: the kind-routed member is marked so, a member with a model named is not and still takes defaults.effort.
+	const h = await kindsHarness();
+	try {
+		await h.callRaw("team_create", { name: "Crew", objective: "Ship", defaults: { effort: "high" }, members: [{ role: "kinded", prompt: "p", kind: "routine" }, { role: "plain", prompt: "p", model: "test/mine" }] });
+		assert.deepEqual([h.named("kinded").model, h.named("kinded").effort], ["test/fast", "low"], "the route's own effort");
+		assert.equal(h.named("plain").effort, "high");
+		// Its successor is routed by its kind again, and so takes nothing from the team's defaults either.
+		h.setRoutes({ routine: { primary: { backend: "pi", model: "test/quick", effort: "minimal" }, fallback: null } });
+		await h.succeed("kinded");
+		assert.deepEqual([h.named("kinded-2").model, h.named("kinded-2").effort], ["test/quick", "minimal"]);
+	} finally { await h.cleanup(); }
+});
+
 test("member kinds: Planning & specs and Investigation members are told not to edit, and so is a successor of one; the implementation kinds are not", async () => {
 	const h = await kindsHarness();
 	try {

@@ -2313,6 +2313,7 @@ export function registerSubagents(
 			const effortNamed = m.effort !== undefined;
 			m.backend = r.tuple.backend;
 			m.model = r.tuple.model;
+			m.kindRouted = true;
 			if (!effortNamed && r.tuple.effort) m.effort = r.tuple.effort;
 			lines.push(`${m.role}: ${label} on ${m.backend}/${m.model}${m.effort ? `/${m.effort}` : ""} (${r.how}${effortNamed ? "; effort named for it" : ""}; subagent profile "${resolved.name}").`);
 		});
@@ -4274,6 +4275,7 @@ export function registerSubagents(
 				else {
 					input.backend = r.tuple.backend;
 					input.model = r.tuple.model;
+					input.kindRouted = true;
 					input.effort = explicit?.effort ?? r.tuple.effort;
 					if (input.effort === undefined) delete input.effort;
 					memberNotes.push(`${role}: ${label} on ${tupleText({ ...r.tuple, ...(input.effort ? { effort: input.effort as WorkerTuple["effort"] } : {}) })} (${r.how}; subagent profile "${now.name}").`);

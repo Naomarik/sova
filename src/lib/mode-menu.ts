@@ -22,11 +22,11 @@ export interface ShownMode {
 
 /** The footer's sentence, after the `strict:` chip: a switch is this chat's own — nothing else
     follows it — and new sessions start from the default, which the button below it sets. */
-export const FOOT_NOTE = "A switch here is this chat's own. New sessions start from the default.";
+export const FOOT_NOTE = "A switch here is this chat's own. New chats start from the default profile.";
 
 /** The foot's sentence in Create: no default holds it, so the button saves the chat's last other
     mode, and says which. */
-export const CREATE_FOOT_NOTE = "Create is chosen in each chat, so no default holds it.";
+export const CREATE_FOOT_NOTE = "Create is chosen in each chat, so no profile starts in it.";
 
 /** What a save writes for this chat: its own mode, except that Create is never a default. A chat
     in Create that has been in no other mode saves normal. */
@@ -34,9 +34,12 @@ export function savableMode(m: ShownMode): ShownMode {
   return { ...m, mode: m.saveMode ?? (m.mode === "create" ? "normal" : m.mode) };
 }
 
-/** The footer's sentence, after the `strict:` chip. */
-export function footNote(m: ShownMode | null): string {
-  return m?.mode === "create" ? `${CREATE_FOOT_NOTE} Save as default saves ${modeSummary(savableMode(m))}.` : FOOT_NOTE;
+/** The footer's sentence, after the `strict:` chip. In Create, what Update {name} would save, when
+    this chat's profile is known. */
+export function footNote(m: ShownMode | null, profile: string | null = null): string {
+  if (m?.mode !== "create") return FOOT_NOTE;
+  const s = savableMode(m);
+  return profile ? `${CREATE_FOOT_NOTE} Update ${profile} saves ${[s.mode, ...s.minorModes].join(" · ")}.` : CREATE_FOOT_NOTE;
 }
 
 /** The major modes a chat's menu offers, from the global list: those a default can hold, then those
@@ -133,7 +136,7 @@ export function filterProfiles<T extends { name: string }>(profiles: readonly T[
 
 /** The line under an empty search result. A live fact, then the absence — and the way out. */
 export function noProfileMatch(query: string): string {
-  return `No subagent profile matches \u201c${query.trim()}\u201d.`;
+  return `No profile matches \u201c${query.trim()}\u201d.`;
 }
 
 /** An id and placeholder name for a new profile, skipping ones already taken. */

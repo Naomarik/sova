@@ -926,6 +926,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .message-images-single > li.thumb-sized .thumb img { width: 100%; aspect-ratio: var(--thumb-ratio); }
 
 /* ---- Session profiles (§chat/profiles) ---------------------------------------------------- */
+/* A profile switch's line in the thread, just above the composer (§chat.profiles/switch): the
+   session column, empty when there is nothing to say. */
+.profile-switch-line { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; max-width: var(--measure); }
+.profile-switch-line:empty { display: none; }
 /* The empty screen's picker: left-aligned, the session column (--measure), above the setup card. */
 .profile-picker {
   display: flex;

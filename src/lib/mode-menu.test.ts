@@ -32,7 +32,7 @@ test("the label is the state, and no two states share one", () => {
   assert.equal(saveLabel("saving"), SAVING_LABEL);
   assert.equal(saveLabel("done"), SAVED_LABEL);
   assert.equal(new Set([SAVE_LABEL, SAVING_LABEL, SAVED_LABEL]).size, 3);
-  assert.equal(FOOT_NOTE, "A switch here is this chat's own. New sessions start from the default.");
+  assert.equal(FOOT_NOTE, "A switch here is this chat's own. New chats start from the default profile.");
 });
 
 test("the title says what the press makes true, with the mode it names", () => {
@@ -78,8 +78,8 @@ test("the saved announcement names both halves of what was written", () => {
 
 test("a partial default save keeps the server's outcome instead of claiming nothing was saved", () => {
   const source = readFileSync(new URL("../components/ModeMenu.tsx", import.meta.url), "utf8");
-  const save = source.slice(source.indexOf("const saveAsDefault ="), source.indexOf("const chooseProfile ="));
-  assert.match(save, /await saveModeDefault\(props\.control\.path\)/);
+  const save = source.slice(source.indexOf("const saveAsDefault ="), source.indexOf("const updateProfile ="));
+  assert.match(save, /await putDefaultProfile\(\{ path: props\.control\.path/, "the server takes this chat's profile: the request names none");
   assert.match(save, /title: "Couldn't save the default\.", body: `\$\{why\}\.`/);
   assert.doesNotMatch(save, /Nothing was saved|unchanged/, "the backend owns partial-write outcomes; the UI must not append an unconditional outcome");
 });
@@ -93,8 +93,8 @@ test("the picker search is a case-insensitive name match that keeps list order",
 });
 
 test("an empty search says so and no two setup suggestions collide", () => {
-  assert.equal(noProfileMatch("xyz"), "No subagent profile matches \u201cxyz\u201d.");
-  assert.equal(noProfileMatch("  xyz  "), "No subagent profile matches \u201cxyz\u201d.");
+  assert.equal(noProfileMatch("xyz"), "No profile matches \u201cxyz\u201d.");
+  assert.equal(noProfileMatch("  xyz  "), "No profile matches \u201cxyz\u201d.");
   assert.deepEqual(nextSetup([]), { id: "setup-1", name: "Setup 1" });
   assert.deepEqual(nextSetup([{ id: "setup-1", name: "Setup 1" }]), { id: "setup-2", name: "Setup 2" });
   // Both checks block: a taken id and a taken name each move the suggestion on.
@@ -181,7 +181,8 @@ test("Create is never a default: a save writes the chat's last other mode, and t
   assert.equal(savableMode({ mode: "delegate", minorModes: [], strict: false }).mode, "delegate");
   assert.equal(isDefaultMode({ mode: "delegate", minorModes: ["align"], strict: true }, savableMode(inCreate("delegate"))), true, "compared by what a save writes");
   assert.equal(isDefaultMode({ mode: "create", minorModes: ["align"], strict: true }, savableMode(inCreate("delegate"))), false);
-  assert.equal(footNote(inCreate("delegate")), "Create is chosen in each chat, so no default holds it. Save as default saves delegate · strict · align.");
+  assert.equal(footNote(inCreate("delegate"), "Claude"), "Create is chosen in each chat, so no profile starts in it. Update Claude saves delegate · align.");
+  assert.equal(footNote(inCreate("delegate")), "Create is chosen in each chat, so no profile starts in it.");
   assert.equal(footNote({ mode: "normal", minorModes: [], strict: false }), FOOT_NOTE);
   assert.equal(footNote(null), FOOT_NOTE);
   assert.ok(!saveTitle(savableMode(inCreate("delegate")), false).includes("create"), "the button never names Create");

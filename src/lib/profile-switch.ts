@@ -83,3 +83,24 @@ export function defaultTitle(name: string | null, already: boolean): string {
 
 /** "New chat in {project}. The default is already picked." */
 export const newChatLine = (project: string | null | undefined): string => (project ? `New chat in ${project}. The default is already picked.` : "New chat. The default is already picked.");
+
+/** What Update {name} compares: the profile's session half against the chat now. */
+export interface UpdateSides {
+  profile: { model?: string | null; thinking?: string | null; mode?: string | null; minorModes?: readonly string[] | null } | undefined;
+  chat: { model?: string | null; thinking?: string | null; mode?: string | null; minorModes?: readonly string[] | null };
+}
+
+/**
+ * Whether Update {name} is offered (§chat.subagent-profiles/menu): only for one of your profiles,
+ * while this chat's model, effort, mode or add-on modes differ from what it saves. Unknown on the
+ * chat's side (its mode or model not arrived) is never a difference. A library-only row (no session
+ * half) differs on anything the chat has, since an update creates its session half.
+ */
+export function updateOffered(row: Pick<SwitchRow, "kind" | "group" | "unusable"> | null | undefined, s: UpdateSides): boolean {
+  if (!row || row.group !== "yours" || row.kind === "off" || row.unusable) return false;
+  const p = s.profile ?? {};
+  const c = s.chat;
+  const differs = (a: string | null | undefined, b: string | null | undefined) => !!b && (a ?? null) !== b;
+  const minors = (a: readonly string[] | null | undefined, b: readonly string[] | null | undefined) => !!b && (!a || a.length !== b.length || a.some((m) => !b.includes(m)));
+  return differs(p.model, c.model) || differs(p.thinking, c.thinking) || differs(p.mode, c.mode) || minors(p.minorModes, c.minorModes);
+}

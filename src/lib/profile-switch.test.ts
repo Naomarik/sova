@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { defaultLabel, defaultTitle, editedName, limitLine, limitOffers, newChatLine, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, type SwitchRow } from "./profile-switch";
+import { defaultLabel, defaultTitle, updateOffered, editedName, limitLine, limitOffers, newChatLine, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, type SwitchRow } from "./profile-switch";
 
 const row = (key: string, providers: string[], extra: Partial<SwitchRow> = {}): SwitchRow => ({ key, id: key, kind: "pair", group: "yours", name: key.toUpperCase(), providers, setsModel: providers.length > 0, ...extra });
 const OFF = row("off", [], { kind: "off", group: "builtin", name: "Off" });
@@ -58,4 +58,18 @@ test("the default button and the new chat line", () => {
   assert.equal(defaultTitle(null, false), "Make this chat's profile the default for new chats.");
   assert.equal(newChatLine("sova"), "New chat in sova. The default is already picked.");
   assert.equal(newChatLine(null), "New chat. The default is already picked.");
+});
+
+test("Update {name}: only yours, only while something it saves differs", () => {
+  const yours = row("claude", ["claude"]);
+  const same = { model: "claude-code-cli/claude-opus-5-5", thinking: "high", mode: "delegate", minorModes: ["align", "spec"] };
+  assert.equal(updateOffered(yours, { profile: same, chat: same }), false);
+  assert.equal(updateOffered(yours, { profile: same, chat: { ...same, minorModes: ["spec", "align"] } }), false, "the same add-ons in another order");
+  assert.equal(updateOffered(yours, { profile: same, chat: { ...same, thinking: "low" } }), true);
+  assert.equal(updateOffered(yours, { profile: same, chat: { ...same, mode: "normal" } }), true);
+  assert.equal(updateOffered(yours, { profile: same, chat: { ...same, minorModes: ["align"] } }), true);
+  assert.equal(updateOffered(yours, { profile: same, chat: { model: null, thinking: null, mode: null, minorModes: null } }), false, "unknown is never a difference");
+  assert.equal(updateOffered(row("p", ["zai"], { group: "project" }), { profile: same, chat: { ...same, mode: "normal" } }), false, "a project's file");
+  assert.equal(updateOffered(OFF, { profile: undefined, chat: same }), false, "never Off");
+  assert.equal(updateOffered(row("lib", ["zai"], { kind: "library" }), { profile: undefined, chat: same }), true, "a library-only row gets its session half");
 });

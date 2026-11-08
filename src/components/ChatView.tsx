@@ -11,6 +11,7 @@ import type {
   OverseerQuickAction,
   SandboxInfo,
   ChatProfileInfo,
+  ChatProfileState,
   SessionSummary,
   SlashCommand,
   TeamInfo,
@@ -170,6 +171,7 @@ import { TourSessionContext } from "./TourCard";
 import { HistoryItems, holdReaderAcrossSwap, LiveEntries, StartError, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
 import { type ReplyPlace, useReplyAdditions } from "../lib/reply-place";
 import { SubagentLimitRow } from "./SubagentLimitRow";
+import { ProfileSwitchLine } from "./ProfileSwitchLine";
 import { failureHasRow } from "../lib/subagent-limit";
 import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
@@ -539,6 +541,8 @@ export function ChatView(props: {
   });
   /** The socket's `profile` message (§chat.profiles/applying); null until one arrives. */
   const [profileInfo, setProfileInfo] = createSignal<ChatProfileInfo | null>(null);
+  /** Which profile this chat is on now, "(edited)", and a switch waiting for the reply (§chat.profiles/switch). */
+  const [chatProfile, setChatProfile] = createSignal<ChatProfileState | null>(null);
   /** Picks applied here: the setup card reads again at once, ahead of a chat socket still in its reconnect wait. */
   const [profilePicks, setProfilePicks] = createSignal(0);
   /** A One at a time race at Send (§chat.profiles/singleton): the session that has it. */
@@ -796,8 +800,8 @@ export function ChatView(props: {
     }
   };
   /** The server's failure `error`: `beforeHello` and `back` as lib/error-feed's feedOnFailure. */
-  const turnFailed = (message: string, provider?: string, beforeHello = false, back = 0) => {
-    const step = feedOnFailure(untrack(feed), { message, ...(provider ? { provider } : {}), beforeHello, back });
+  const turnFailed = (message: string, provider?: string, beforeHello = false, back = 0, model?: string) => {
+    const step = feedOnFailure(untrack(feed), { message, ...(provider ? { provider } : {}), ...(model ? { model } : {}), beforeHello, back });
     setFeed(step.feed);
     sayFeed(step.says);
     // A prompt that failed before the agent started leaves nothing running.
@@ -930,6 +934,7 @@ export function ChatView(props: {
           // The shield and the login stay as shown until the messages after the hello settle them
           // ("commands", "sandbox", "claude_login"), so neither blinks out and back.
           setProfileInfo(null); // a "profile" message follows for a profile or a session before its first message
+          setChatProfile(null); // and a "chat_profile" one from a server that has it
           awaitLogin();
           batch(() => {
             setThinking(msg.thinking);
@@ -1189,6 +1194,9 @@ export function ChatView(props: {
         case "sandbox":
           setSandboxState({ on: msg.on, ...(msg.state ? { state: msg.state } : {}), enforcement: msg.enforcement, status: msg.status });
           break;
+        case "chat_profile":
+          setChatProfile(msg.state);
+          break;
         case "profile": {
           const { type: _t, ...info } = msg;
           setProfileInfo(info);
@@ -1324,7 +1332,7 @@ export function ChatView(props: {
                 holdNotFound(msg.message);
                 break;
               }
-              turnFailed(msg.message, msg.provider, failed !== null, back);
+              turnFailed(msg.message, msg.provider, failed !== null, back, msg.model);
             }
           }
           break;
@@ -2108,7 +2116,7 @@ export function ChatView(props: {
   const modeControl: ModeControl = { state: modeState, path: props.path, blocked: () => {
       const r = blocked();
       return r?.quiet ? r.text : null;
-    }, ready: chatReady, wake, limits: createLimitsHere };
+    }, ready: chatReady, wake, limits: createLimitsHere, profile: chatProfile, cwd: () => props.summary?.()?.cwd ?? null, model, thinking };
   /** What the setup card's Tools group re-reads on (§chat.transcript/setup-card-tools): the model, the
       mode triple and each (re)connect, as one string, so only a change of value re-reads (the mode
       signal's objects are new on every "mode" message). */
@@ -2762,7 +2770,8 @@ export function ChatView(props: {
         {/* One failure, one row: a failure with its own errored turn row in the thread carries the
             limit switch there (with that row's provider); the error feed's mount is for failures
             that never made a thread row (a refusal before any turn, a host move). */}
-        <For each={feed().entries}>{(m) => <><Show when={feedBanner(m) === "turn"}><TurnError message={m.message} /></Show><Show when={feedBanner(m) === "start"}><StartError message={m.message} back={m.back ?? 0} /></Show><Show when={!failureHasRow(live.entries, m.message)}><SubagentLimitRow path={props.path} message={m.message} provider={m.provider} /></Show></>}</For>
+        <For each={feed().entries}>{(m) => <><Show when={feedBanner(m) === "turn"}><TurnError message={m.message} /></Show><Show when={feedBanner(m) === "start"}><StartError message={m.message} back={m.back ?? 0} /></Show><Show when={!failureHasRow(live.entries, m.message)}><SubagentLimitRow path={props.path} message={m.message} provider={m.provider} model={m.model} /></Show></>}</For>
+        <ProfileSwitchLine path={props.path} state={chatProfile()} />
       </ThreadScroller>
       </ToolSourceContext.Provider>
       <ShellDock bar={shellBar} />

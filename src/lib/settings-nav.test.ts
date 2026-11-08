@@ -59,7 +59,9 @@ test("the mode menu's gear actions open Settings → Profiles and switch nothing
   // never touched by it.
   const menu = readFileSync(new URL("../components/ModeMenu.tsx", import.meta.url), "utf8");
   const action = /if \(it\.kind === "action"\) \{([\s\S]*?)\n    \}/.exec(menu)?.[1] ?? "";
-  assert.match(action, /openProfiles\(\{[^}]*section: it\.id === CONFIGURE_SPEC\.id \? "spec" : undefined[^}]*\}\)/, "Configure Spec opens Profiles at the spec writer; Configure Delegate at the Models part's top");
+  assert.match(action, /manageProfiles\(it\.id === CONFIGURE_SPEC\.id \? "spec" : undefined\)/, "Configure Spec opens Profiles at the spec writer; Configure Delegate at the Models part's top");
+  const manage = /const manageProfiles = \(section\?: "spec"\) => \{([\s\S]*?)\n  \};/.exec(menu)?.[1] ?? "";
+  assert.match(manage, /openProfiles\(\{[^\n]*part: "models"[^\n]*section/, "on this chat's profile, at its Models part");
   assert.match(action, /return;/);
   assert.doesNotMatch(action, /postMode|setBusy/);
   assert.ok(menu.indexOf('if (it.kind === "action")') < menu.indexOf("postMode(patch"), "the action returns before the switch");

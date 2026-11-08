@@ -11,7 +11,7 @@ import "./alignment-draft";
 import "./experimental-draft";
 import "./model-policy-draft";
 import "./overseer-draft";
-import "./subagent-profiles-draft";
+import "./profiles-draft";
 import "./summarizer-draft";
 
 interface Doc {
@@ -61,7 +61,7 @@ test("the registry: every server-backed tab has a gated form, the browser-local 
   const real = gatedForms().filter((f) => !f.label.startsWith("Test"));
   assert.deepEqual(
     real.map((f) => `${f.tab}:${f.label}`),
-    ["models:Models", "subagents:Subagents", "alignment:Alignment", "overseer:Overseer", "decisions:Decisions", "summaries:Summaries", "mesh:Mesh", "experimental:Experimental"],
+    ["models:Models", "alignment:Alignment", "profiles:Profiles", "overseer:Overseer", "decisions:Decisions", "summaries:Summaries", "mesh:Mesh", "experimental:Experimental"],
   );
   assert.equal(formNames([]), "");
   assert.equal(formNames([{ label: "Models" }]), "Models");

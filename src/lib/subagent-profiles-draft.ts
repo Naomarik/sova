@@ -1,16 +1,13 @@
 import type { SubagentProfile, SubagentProfilesInfo } from "../../shared/subagent-profiles";
-import { putSubagentProfileDefault, putSubagentProfiles } from "./api";
-import { createDraftStore, SaveFailed } from "./settings-draft";
-import { check, type FieldCheck, firstIssue } from "../../shared/form-rules";
+import { type FieldCheck, firstIssue } from "../../shared/form-rules";
 import { profileFields } from "../../shared/subagent-profile-checks";
-import { TEAM_NUMBERS, TEAM_RULES, type TeamNumberField } from "../../shared/subagent-limits";
 
 export const cloneProfiles = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 
 /**
- * The library draft: the synced file's profiles plus this device's `default`, staged in the draft
- * like any other field. The wire file carries no `default` — it
- * lives in `subagent-profiles-default.json`, never synced — so a Save writes the two apart.
+ * The library as its rules read it: the synced file's profiles plus this device's `default`. The
+ * Profiles form (profiles-draft.ts) checks each library half through these same rules, so the
+ * editor's sentences are the ones the Subagents tab said.
  */
 export interface LibraryDraft {
   version: 1;
@@ -63,49 +60,5 @@ export function profilesFields(d: LibraryDraft): (FieldCheck | { message: string
 /** The first way the draft can't be saved, as the footer says it. */
 export const profilesProblem = (d: LibraryDraft): string | null => {
   const bad = firstIssue(profilesFields(d));
-  return bad && `Subagents: ${bad.message}`;
+  return bad && `Profiles: ${bad.message}`;
 };
-
-/** The draft as the file takes it: each team number box's typed text as its number. */
-function typedOut(d: LibraryDraft): LibraryDraft {
-  const out = cloneProfiles(d);
-  for (const p of out.profiles)
-    for (const f of Object.keys(TEAM_RULES) as TeamNumberField[]) {
-      const path = TEAM_NUMBERS[f].path;
-      const parent = path.slice(0, -1).reduce<any>((o, k) => o?.[k], p.teams);
-      const r = parent ? check(TEAM_RULES[f], parent[path.at(-1)!]) : null;
-      if (r?.ok) parent[path.at(-1)!] = r.value;
-    }
-  return out;
-}
-
-/**
- * Settings → Subagents' draft of the whole library. The file's
- * validation is whole-file, so one Save writes it all; a moved `default` goes to its own file in
- * the same save, and its failure is said as partial — the library already changed.
- */
-export const profilesDraft = createDraftStore<LibraryDraft, LibraryDraft, SubagentProfilesInfo>({
-  tab: "subagents",
-  label: "Subagents",
-  toDraft: cloneProfiles,
-  same: (a, b) => JSON.stringify(typedOut(a)) === JSON.stringify(b),
-  fields: profilesFields,
-  write: async (typed, base) => {
-    const d = typedOut(typed);
-    // The synced library first, then this device's default only when it moved. Two files, no
-    // transaction: a default failure after the library wrote is partial, and says so.
-    const profilesMoved = JSON.stringify(d.profiles) !== JSON.stringify(base.profiles);
-    let r: SubagentProfilesInfo | null = null;
-    if (profilesMoved) r = await putSubagentProfiles({ version: 1, profiles: d.profiles });
-    if (d.default !== base.default) {
-      try {
-        r = await putSubagentProfileDefault(d.default);
-      } catch (err) {
-        if (profilesMoved) throw new SaveFailed(`The profiles were saved, then the default failed: ${(err instanceof Error ? err.message : String(err)).replace(/\.$/, "")}`, true);
-        throw err;
-      }
-    }
-    if (!r) throw new Error("Nothing to save"); // unreachable: same() gates the write
-    return { saved: { version: 1, default: r.default, profiles: r.settings.profiles }, warnings: r.warnings ?? [], result: r };
-  },
-});

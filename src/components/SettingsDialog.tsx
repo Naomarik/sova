@@ -58,7 +58,6 @@ import {
 import { effectiveStack } from "../lib/typography";
 import { announce, home } from "../lib/ui-state";
 import { DecisionSettingsSection } from "./DecisionSettings";
-import { SubagentProfilesSettings } from "./SubagentProfilesSettings";
 import { MeshSettingsSection } from "./MeshSettings";
 import { AccountsPanel } from "./ProviderKeys";
 import { ExtensionsSettingsSection } from "./ExtensionsSettings";
@@ -80,7 +79,7 @@ import { VoiceSettingsSection } from "./VoiceSetup";
 import { Banner, Icon, trapFocus } from "./ui";
 import { sentence } from "./WorkerSlotRow";
 
-/** The tab rail. Twenty-one screens; the rail is the structure further settings slot into. General is
+/** The tab rail. Twenty screens; the rail is the structure further settings slot into. General is
     first because it is the one screen about this browser's own behaviour rather than a subsystem.
     Same ids, same order as `SETTINGS_TABS` (lib/settings-nav.ts), which is what opens it. */
 export const TABS = [
@@ -89,7 +88,6 @@ export const TABS = [
   { id: "accounts", label: "Accounts", icon: "refresh" as const },
   { id: "mcp-servers", label: "MCP Servers", icon: "grid" as const },
   { id: "extensions", label: "Extensions", icon: "sliders" as const },
-  { id: "subagents", label: "Subagents", icon: "worker" as const },
   { id: "alignment", label: "Alignment", icon: "check" as const },
   { id: "profiles", label: "Profiles", icon: "wrench" as const },
   { id: "overseer", label: "Overseer", icon: "eye" as const },
@@ -255,17 +253,14 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
                 }} />
             </div>
           </Show>
-          {/* Mounted only while its tab is: the backend discovery (a Claude Code CLI call) runs
-              when the tab opens, not with the dialog. */}
-          <Show when={tab() === "subagents"}>
-            <div class="settings-panel" role="tabpanel" id="settings-panel-subagents" aria-labelledby="settings-tab-subagents"><SubagentProfilesSettings /></div>
-          </Show>
           {/* Mounted only while its tab is: both of its stores are read when it opens. */}
           <Show when={tab() === "alignment"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-alignment" aria-labelledby="settings-tab-alignment">
               <AlignmentSettings />
             </div>
           </Show>
+          {/* Mounted only while its tab is: the backend discovery (a Claude Code CLI call) for its
+              Models part runs when the tab opens, not with the dialog. */}
           <Show when={tab() === "profiles"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-profiles" aria-labelledby="settings-tab-profiles">
               <ProfilesSettingsSection cwd={props.cwd ?? null} />
@@ -282,13 +277,13 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
               <PushSettingsSection />
             </div>
           </Show>
-          {/* Mounted only while its tab is, like Subagents: it asks the same backend discovery. */}
+          {/* Mounted only while its tab is, like Profiles: it asks the same backend discovery. */}
           <Show when={tab() === "decisions"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-decisions" aria-labelledby="settings-tab-decisions">
               <DecisionSettingsSection />
             </div>
           </Show>
-          {/* Mounted only while its tab is, like Subagents: it asks the same backend discovery. */}
+          {/* Mounted only while its tab is, like Profiles: it asks the same backend discovery. */}
           <Show when={tab() === "summaries"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-summaries" aria-labelledby="settings-tab-summaries">
               <SummarizerSettingsSection />

@@ -143,3 +143,118 @@ div.subagent-editor-flush { display: flex; flex-direction: column; gap: var(--sp
   .subagent-editor .subagent-editor-slot .settings-delegate-fields > .field:nth-child(3) { grid-column: 3; }
   .subagent-editor .subagent-editor-slot > .settings-delegate-issue { grid-column: 1 / -1; }
 }
+
+/* ---- SETTINGS · PROFILES (§app.settings-dialog/profiles): the list beside the editor, the list
+   under 560px of panel; the editor's head, its two parts, and the Models part's compact rows. Each
+   role is one row of label, model and effort; its label expands it, in place, to today's controls. */
+.profiles-settings { container: profiles-settings / inline-size; }
+.profiles-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+@container profiles-settings (min-width: 35rem) {
+  .profiles-layout { grid-template-columns: minmax(0, 13rem) minmax(0, 1fr); }
+}
+.profiles-list-pane { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.profiles-list-pane > .profiles-group-head { margin: var(--space-3) 0 var(--space-1); }
+.profiles-picks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.profiles-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-height: var(--tap-min);
+  padding: var(--space-2);
+  border: var(--stroke-thin) solid transparent;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--color-ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.profiles-pick:hover { background: var(--color-sunken); }
+.profiles-pick:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.profiles-pick.is-picked { background: var(--color-accent-tint); }
+/* A long name or footprint wraps and is never cut short, and never overlaps a chip. */
+.profiles-pick-name { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+.profiles-pick-title { font-weight: var(--fw-semibold); overflow-wrap: anywhere; }
+.profiles-pick-meta { font-size: var(--fs-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+
+.profiles-editor { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.profiles-editor-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-2) var(--space-3); }
+.profiles-editor-head > .profiles-editor-name-field { flex: 1 1 12rem; min-width: 0; }
+.profiles-editor-name { font-size: var(--fs-heading-s); font-weight: var(--fw-semibold); }
+.profiles-editor-head > .chip,
+.profiles-editor-head > .button { margin-top: var(--space-1); }
+.profiles-editor-actions { gap: var(--space-2); }
+.profiles-editor-actions > .button-destructive { margin-inline-start: auto; }
+.profiles-parts { flex: none; }
+.profiles-part { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.profiles-shared { margin: 0; }
+.profiles-foot { margin-top: var(--space-5); }
+
+.profile-set-all { display: flex; align-items: flex-end; gap: var(--space-2); }
+.profile-set-all > .profile-set-all-field { flex: 1 1 auto; max-width: 24rem; }
+
+.profile-models { display: flex; flex-direction: column; gap: var(--space-3); }
+.profile-model-rows { display: flex; flex-direction: column; gap: var(--space-1); }
+.profile-model-group-head {
+  margin: var(--space-3) 0 0;
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
+.profile-model-lede { margin: 0; }
+/* Label, model, effort: the model takes the room, the effort is sized to "medium". */
+.profile-model-row {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--space-2);
+  row-gap: var(--space-2);
+  min-width: 0;
+}
+.profile-model-row.is-open { padding: var(--space-2) 0 var(--space-3); }
+.profile-model-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-sm);
+  color: var(--color-ink-2);
+  overflow-wrap: anywhere;
+}
+.profile-model-toggle {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.profile-model-toggle:hover { color: var(--color-ink); }
+.profile-model-toggle:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.profile-model-toggle[aria-expanded="true"] { color: var(--color-ink); font-weight: var(--fw-semibold); }
+.profile-model-toggle[aria-expanded="true"] .icon-twist { transform: rotate(90deg); }
+/* A label with no fold keeps the chevron's room, so every row's selects line up. */
+span.profile-model-label { padding-inline-start: calc(var(--icon-sm, 16px) + var(--space-1)); }
+.profile-model-line { display: grid; grid-template-columns: minmax(0, 1fr) 6.5rem; gap: var(--space-2); align-items: center; min-width: 0; }
+.profile-model-line > .profile-model-none { grid-column: 1 / -1; color: var(--color-ink-muted); }
+.profile-model-line > .profile-model-wide { grid-column: 1 / -1; max-width: 16rem; }
+.profile-model-line .select { text-overflow: ellipsis; padding-right: var(--space-5); }
+.profile-model-line .select-caret { right: var(--space-2); }
+.profile-model-more { grid-column: 1 / -1; display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+
+.profiles-starts { display: flex; flex-direction: column; gap: var(--space-4); }
+.profiles-starts-group { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.profiles-starts-checks { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
+.profiles-limits { grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); }
+
+/* A phone's panel: the label takes its own line over the model and effort. */
+@container profiles-settings (max-width: 30rem) {
+  .profile-model-row { grid-template-columns: minmax(0, 1fr); }
+}

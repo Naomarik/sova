@@ -26,8 +26,9 @@ export interface ProfileSwitchTarget {
   /** The chat's own model the profile sets; absent: the chat keeps its model. */
   model?: string;
   thinking?: string;
-  /** The helper pick the chat gets: a library id, or "off". */
-  subagents: string;
+  /** The helper pick the chat gets: a library id, or "off". Absent: the profile sets no helpers, so the chat
+      takes this computer's default's (it keeps following the default when it has no pick of its own). */
+  subagents?: string;
   /** How many helper roles the profile sets (the waiting line's {n}). */
   helpers: number;
 }
@@ -65,11 +66,4 @@ export function normalizeChatProfile(d: unknown): ChatProfileEntryData | null {
     ...(str(r.model) ? { model: r.model } : {}),
     ...(str(r.thinking) ? { thinking: r.thinking } : {}),
   };
-}
-
-/** The waiting line's sentence (§chat.profiles/switch). */
-export function waitingLine(p: { name: string; helpers: number; setsModel: boolean }): string {
-  const helpers = `${p.helpers} helper${p.helpers === 1 ? "" : "s"}`;
-  const moves = p.setsModel ? `this chat's model, its ${helpers}, and alignment settings` : `this chat's ${helpers} and alignment settings`;
-  return `Switching to ${p.name} when this reply ends. Moves ${moves}. Tools and modes stay.`;
 }

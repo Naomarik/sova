@@ -27,9 +27,10 @@ export async function switchTargetOf(idOrKey: string, cwd: string): Promise<Prof
   const name = row.name;
   if (row.approval === "needed") return { status: 400, error: "Approve it in Settings first.", name };
   if (row.linkMissing) return { status: 400, error: row.linkMissing, name };
-  // A profile with no helpers gives the chat this computer's default helpers.
+  // A profile with no helpers gives the chat this computer's default helpers: no pick of its own, so a
+  // chat that follows the default keeps following it (the chat pins the default only over a pick it has).
   const helpersOf = row.libraryId ? row : (await resolveDefaultProfile(cwd)).row;
-  const subagents = helpersOf.libraryId ?? "off";
+  const subagents = row.libraryId;
   const model = row.session?.model ?? undefined;
   const thinking = row.session?.thinking;
   return {
@@ -38,8 +39,8 @@ export async function switchTargetOf(idOrKey: string, cwd: string): Promise<Prof
     name,
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),
-    subagents,
-    helpers: subagents === "off" ? 0 : helpersOf.helperRoles,
+    ...(subagents ? { subagents } : {}),
+    helpers: helpersOf.libraryId && helpersOf.libraryId !== "off" ? helpersOf.helperRoles : 0,
   };
 }
 

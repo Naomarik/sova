@@ -48,6 +48,7 @@ writeFileSync(
     profiles: [
       { id: "fast", label: "Fast", model: "openai/gpt-5.5", thinking: "high", subagents: "gpt-subs" },
       { id: "glm", label: "GLM", model: "zai/glm-5.3", subagents: "gpt-subs" },
+      { id: "solo", label: "Solo", model: "openai/gpt-5.5" },
     ],
   }),
 );
@@ -86,7 +87,13 @@ async function openChat() {
   return { path, chat, model, heard, profileMessages };
 }
 const fileOf = (path: string) => readFileSync(path, "utf8");
-const switchEntries = (path: string) => fileOf(path).trim().split("\n").map((l) => JSON.parse(l)).filter((e) => e.customType === CHAT_PROFILE_ENTRY);
+const lines = (path: string) => fileOf(path).trim().split("\n").map((l) => JSON.parse(l)) as { type: string; customType?: string; data?: unknown }[];
+const switchEntries = (path: string) => lines(path).filter((e) => e.customType === CHAT_PROFILE_ENTRY);
+/** What a switch writes, counted: model and effort changes, helper picks, the profile entry. */
+const written = (path: string) => {
+  const all = lines(path);
+  return { model: all.filter((e) => e.type === "model_change").length, thinking: all.filter((e) => e.type === "thinking_level_change").length, pick: all.filter((e) => e.customType === sp.PICK_ENTRY_TYPE).length, profile: all.filter((e) => e.customType === CHAT_PROFILE_ENTRY).length };
+};
 
 describe("a profile switch, all at once (§chat.profiles/switch)", () => {
   test("resolves a joined profile into the chat's model, effort and helpers", async () => {
@@ -104,6 +111,7 @@ describe("a profile switch, all at once (§chat.profiles/switch)", () => {
   test("idle: model, effort and helper pick move together, and the chat remembers the profile", async () => {
     const { path, chat, profileMessages } = await openChat();
     assert.equal(chat.harness.model()?.ref, "scripted/scripted");
+    const was = written(path);
     const r = await switchChatProfile(path, "fast");
     assert.ok(r.ok, JSON.stringify(r));
     assert.equal(r.applies, "now");
@@ -113,7 +121,13 @@ describe("a profile switch, all at once (§chat.profiles/switch)", () => {
     assert.equal(r.state.current.id, "fast");
     assert.equal(r.state.current.edited, false);
     assert.equal(r.state.applied?.name, "Fast");
-    assert.equal(switchEntries(path).length, 1);
+    // The open's own deferred model and effort entries go out first, then the switch's.
+    const now = written(path);
+    assert.ok(now.model > was.model && now.thinking > was.thinking, JSON.stringify({ was, now }));
+    assert.deepEqual({ pick: now.pick, profile: now.profile }, { pick: 1, profile: 1 });
+    const last = (type: string) => [...lines(path)].reverse().find((e) => e.type === type) as Record<string, unknown> | undefined;
+    assert.equal(last("model_change")?.modelId, "gpt-5.5");
+    assert.equal(last("thinking_level_change")?.thinkingLevel, "high");
     assert.ok(profileMessages().some((s) => s.current.id === "fast" && s.applied?.name === "Fast"));
   });
 
@@ -129,10 +143,12 @@ describe("a profile switch, all at once (§chat.profiles/switch)", () => {
     // Nothing moved yet: the running reply keeps the old model and helpers.
     assert.equal(chat.harness.model()?.ref, "scripted/scripted");
     assert.equal(chat.subagentPick, undefined);
-    assert.equal(switchEntries(path).length, 0);
+    const held = written(path);
+    assert.deepEqual({ pick: held.pick, profile: held.profile }, { pick: 0, profile: 0 });
     release();
     await run;
     await until(() => chat.harness.model()?.ref === "openai/gpt-5.5", "the held switch to apply");
+    assert.deepEqual(written(path), { model: held.model + 1, thinking: held.thinking + 1, pick: 1, profile: 1 });
     assert.equal(chat.subagentPick, "gpt-subs");
     assert.equal(chat.harness.thinking(), "high");
     const state = chat.chatProfileState();
@@ -145,19 +161,21 @@ describe("a profile switch, all at once (§chat.profiles/switch)", () => {
   test("a denied model leaves the model and the helpers as they are and writes nothing", async () => {
     const { path, chat } = await openChat();
     const before = fileOf(path);
+    const counts = written(path);
     const r = await switchChatProfile(path, "glm");
     assert.equal(r.ok, false);
     assert.ok(!r.ok && r.status === 400 && r.name === "GLM", JSON.stringify(r));
     assert.equal(chat.harness.model()?.ref, "scripted/scripted");
     assert.equal(chat.subagentPick, undefined);
     assert.equal(fileOf(path), before, "the session file is untouched");
+    assert.deepEqual(written(path), counts);
   });
 
   test("a model this computer can't find is refused the same way, idle or at the reply's end", async () => {
     const { path, chat, model } = await openChat();
     const before = fileOf(path);
     const r = await chat.switchProfile({ id: "x", name: "X", model: "nowhere/none", subagents: "gpt-subs", helpers: 1 });
-    assert.deepEqual(r, { ok: false, status: 400, error: "No credentials here for nowhere/none." });
+    assert.deepEqual(r, { ok: false, status: 400, error: "No credentials here for none." });
     assert.equal(fileOf(path), before);
     // Held, then its turn-end check fails: nothing switches and the chat says why.
     const release = model.hold();
@@ -196,7 +214,7 @@ describe("a profile switch, all at once (§chat.profiles/switch)", () => {
     await until(() => model.calls.length === 2 && !chat.harness.isRunning(), "a second reply");
     assert.equal(chat.harness.model()?.ref, "scripted/scripted");
     assert.equal(chat.subagentPick, undefined);
-    assert.equal(switchEntries(path).length, 0);
+    assert.deepEqual({ pick: written(path).pick, profile: written(path).profile }, { pick: 0, profile: 0 });
   });
 
   test("a composer pick after a switch reads (edited); the profile's model again clears it; a failed turn names the model it ran", async () => {
@@ -241,5 +259,86 @@ describe("a profile switch, all at once (§chat.profiles/switch)", () => {
     assert.equal(chat.subagentPick, "off");
     assert.equal(r.state.current.id, "off");
     assert.equal(r.state.current.edited, false);
+  });
+  test("the same profile again, unedited, changes nothing and says nothing", async () => {
+    const { path, chat } = await openChat();
+    assert.ok((await switchChatProfile(path, "fast")).ok);
+    const counts = written(path);
+    const said = chat.chatProfileState().applied;
+    const again = await switchChatProfile(path, "fast");
+    assert.ok(again.ok && again.applies === "now");
+    assert.deepEqual(written(path), counts);
+    assert.equal(chat.chatProfileState().applied, said, "no new line");
+  });
+
+  test("a profile without helpers takes the default's: a chat with no pick keeps following the default; one with a pick is pinned to it", async () => {
+    const free = await openChat();
+    const r = await switchChatProfile(free.path, "solo");
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.equal(free.chat.harness.model()?.ref, "openai/gpt-5.5");
+    assert.equal(free.chat.subagentPick, undefined, "no pick: it follows this computer's default");
+    assert.equal(free.chat.subagentProfileInfo().current.id, "house");
+    const pinned = await openChat();
+    assert.ok((await switchChatProfile(pinned.path, "fast")).ok);
+    assert.ok((await switchChatProfile(pinned.path, "solo")).ok);
+    assert.equal(pinned.chat.subagentPick, "house", "a pick can't be cleared, so the default is pinned");
+    assert.equal(pinned.chat.chatProfileState().current.id, "solo");
+  });
+
+  test("all or nothing: when a write after the model fails, the model and effort are put back", async () => {
+    const { path, chat } = await openChat();
+    const real = chat.harness.state;
+    const failing = Object.create(real, {
+      append: { value: (kind: { type: string }, data: unknown) => {
+        if (kind.type === CHAT_PROFILE_ENTRY) throw new Error("disk full");
+        return (real.append as (k: unknown, d: unknown) => string).call(real, kind, data);
+      } },
+    });
+    Object.defineProperty(chat.harness, "state", { value: failing, configurable: true });
+    try {
+      const r = await switchChatProfile(path, "fast");
+      assert.ok(!r.ok && /disk full/.test(r.error), JSON.stringify(r));
+      assert.equal(chat.harness.model()?.ref, "scripted/scripted");
+      assert.notEqual(chat.harness.thinking(), "high");
+    } finally {
+      delete (chat.harness as unknown as { state?: unknown }).state;
+    }
+  });
+
+  test("the Overseer's subagent_profile alias moves only the helpers: the chat stays on its profile", async () => {
+    const { path, chat } = await openChat();
+    assert.equal(chat.chatProfileState().current.id, "off");
+    await chat.switchSubagentProfile("gpt-subs");
+    assert.equal(chat.subagentPick, "gpt-subs");
+    assert.equal(chat.chatProfileState().current.id, "off", "still Off, not the library profile");
+    assert.ok((await switchChatProfile(path, "fast")).ok);
+    await chat.switchSubagentProfile("house");
+    assert.equal(chat.chatProfileState().current.id, "fast");
+    assert.equal(chat.harness.model()?.ref, "openai/gpt-5.5");
+  });
+
+  test("refused for the Overseer's own chat, a TUI-live session and an unknown id, writing nothing", async () => {
+    const { path, chat } = await openChat();
+    const counts = written(path);
+    // A TUI holds it: a live record for another process that is alive (this one's parent).
+    const live = join(agentDir, "sessions", "live", `${process.ppid}.json`);
+    writeFileSync(live, JSON.stringify({ session: { pid: process.ppid, sessionFile: path, cwd } }));
+    try {
+      const r = await chat.switchProfile({ id: "fast", name: "Fast", model: "openai/gpt-5.5", subagents: "gpt-subs", helpers: 1 });
+      assert.ok(!r.ok && r.status === 409, JSON.stringify(r));
+    } finally {
+      rmSync(live, { force: true });
+    }
+    const unknown = await switchChatProfile(path, "nope");
+    assert.ok(!unknown.ok && unknown.status === 404);
+    Object.defineProperty(chat, "overseer", { get: () => true, configurable: true });
+    try {
+      const r = await chat.switchProfile({ id: "fast", name: "Fast", model: "openai/gpt-5.5", subagents: "gpt-subs", helpers: 1 });
+      assert.ok(!r.ok && r.status === 409, JSON.stringify(r));
+    } finally {
+      delete (chat as unknown as { overseer?: unknown }).overseer;
+    }
+    assert.deepEqual(written(path), counts);
+    assert.equal(chat.harness.model()?.ref, "scripted/scripted");
   });
 });

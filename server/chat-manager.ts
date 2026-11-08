@@ -23,7 +23,9 @@ import { sessionsChanged } from "./list-generation";
 import { appliesAfter, type BranchEntries, chatModeOf, CREATE_NOT_TAKEN, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, saveModeOf, typedMajorMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
 import { loadDefaults } from "./web-defaults";
 import { subagentProfilesInfo, requireSubagentProfile, saveSubagentProfileDefault } from "./subagent-profiles";
-import { restorePick, pickEntryFor } from "../pi-config/extensions/subagents/subagent-profiles.ts";
+import { restorePick, pickEntryFor, shortModel } from "../pi-config/extensions/subagents/subagent-profiles.ts";
+/** The profile a chat is on when it names none: Off (§chat.subagent-profiles/off). */
+const OFF_ON = Object.freeze({ id: "off", key: "sova:default", name: "Off" });
 import { decodeMemberContext, MEMBER_ENV } from "../pi-config/extensions/subagents/mailbox.ts";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
 import { toContextInfo, workerWindowResolver } from "./models";
@@ -2665,7 +2667,15 @@ class ChatSession {
     if (!this.hasModeOwner()) throw new ModeRefusedError("The mode extension isn't loaded in this chat.");
     this.flushDeferredAppends();
     const entry = pickEntryFor(this.extensionBranch(), profile);
-    if (entry) this.harness.state.append(SUBAGENT_PROFILE, entry.data);
+    if (entry) {
+      // Only the helpers move (§chat.subagent-profiles/overseer): a chat that names its profile only by its
+      // helper pick (or by nothing) first records the profile it is on, so the new pick doesn't rename it.
+      if (!this.profileOnBranch()) {
+        const on = this.chatProfileOn();
+        this.harness.state.append(CHAT_PROFILE, { v: 1, id: on.id, ...(on.key ? { key: on.key } : {}), name: on.name });
+      }
+      this.harness.state.append(SUBAGENT_PROFILE, entry.data);
+    }
     markOwned(this.path);
     return { ...this.subagentProfileInfo(), applies: this.harness.isRunning() ? "after-turn" as const : "now" as const };
   }
@@ -2680,6 +2690,19 @@ class ChatSession {
    * chat started with, else the helper pick's library profile, else Off.
    */
   chatProfileOn(): { id: string; key?: string; name: string; model?: string; thinking?: string } {
+    const named = this.profileOnBranch();
+    if (named) return named;
+    const pick = this.subagentPick;
+    if (pick && pick !== "off") {
+      const name = this.subagentProfileInfo().profiles.find((p) => p.id === pick)?.name ?? pick;
+      return { id: pick, key: `library:${pick}`, name };
+    }
+    return OFF_ON;
+  }
+
+  /** The profile the branch names: the newest of a switch's hidden entry and the profile entry the chat started
+      with (one that picked no profile is Off); undefined when it names none. */
+  private profileOnBranch(): { id: string; key?: string; name: string; model?: string; thinking?: string } | undefined {
     const branch = this.extensionBranch();
     for (let i = branch.length - 1; i >= 0; i--) {
       const e = branch[i]!;
@@ -2688,17 +2711,14 @@ class ChatSession {
         const d = normalizeChatProfile(e.data);
         if (d) return { id: d.id, ...(d.key ? { key: d.key } : {}), name: d.name, ...(d.model ? { model: d.model } : {}), ...(d.thinking ? { thinking: d.thinking } : {}) };
       } else if (e.customType === PROFILE_ENTRY) {
-        const p = (e.data as ProfileEntryData | undefined)?.profile;
+        const data = e.data as ProfileEntryData | undefined;
+        if (!data || data.v !== 1) continue;
+        const p = data.profile;
+        if (p === null) return OFF_ON;
         if (p && typeof p.id === "string") return { id: p.id, key: keyOf(p), name: p.label, ...(p.model ? { model: p.model } : {}), ...(p.thinking ? { thinking: p.thinking } : {}) };
-        if (p === null) break; // Default ("My settings") picked: the helper pick decides
       }
     }
-    const pick = this.subagentPick;
-    if (pick && pick !== "off") {
-      const name = this.subagentProfileInfo().profiles.find((p) => p.id === pick)?.name ?? pick;
-      return { id: pick, key: `library:${pick}`, name };
-    }
-    return { id: "off", key: "sova:default", name: "Off" };
+    return undefined;
   }
 
   /** What the menu, the thread's line and the limit row read (the `chat_profile` message). */
@@ -2746,7 +2766,8 @@ class ChatSession {
     if (refused) return { ok: false, status: 409, error: refused };
     if (t.thinking !== undefined && !THINKING_LEVELS.includes(t.thinking)) return { ok: false, status: 400, error: `"${t.thinking}" isn't an effort level.` };
     try {
-      requireSubagentProfile(t.subagents);
+      // A profile with no helpers of its own takes the default's: the library must answer for that too.
+      requireSubagentProfile(t.subagents ?? this.subagentProfileInfo().default);
     } catch (err) {
       return { ok: false, status: 400, error: err instanceof Error ? err.message : String(err) };
     }
@@ -2754,7 +2775,7 @@ class ChatSession {
     const denial = modelDenial(readModelPolicy(), t.model);
     if (denial) return { ok: false, status: 400, error: denial };
     const found = await this.harness.findModel(t.model).catch(() => null);
-    if (!found?.ok) return { ok: false, status: 400, error: `No credentials here for ${t.model}.` };
+    if (!found?.ok) return { ok: false, status: 400, error: `No credentials here for ${shortModel(t.model)}.` };
     // The lookup was async: a TUI or another writer may have appeared meanwhile.
     const again = this.profileSwitchRefusal();
     if (again) return { ok: false, status: 409, error: again };
@@ -2798,30 +2819,40 @@ class ChatSession {
   private async applyProfileSwitch(t: ProfileSwitchTarget, model: HarnessModel | undefined): Promise<{ ok: true } | { ok: false; status: 409; error: string }> {
     if (this.harness.isRunning()) return { ok: false, status: 409, error: "A reply started; try again when it ends." };
     const on = this.chatProfileOn();
-    const ref = this.harness.model()?.ref;
-    const edited = !!on.model && !!ref && ref !== on.model;
-    // The same profile again while it isn't edited changes nothing (its helpers already are its own).
-    if (on.id === t.id && !edited && this.subagentPick === t.subagents) {
-      this.switchOutcome = { applied: { id: t.id, name: t.name, at: Date.now() } };
-      this.broadcastChatProfile();
-      return { ok: true };
-    }
+    const was = { model: this.harness.model(), thinking: this.harness.thinking() };
+    const edited = !!on.model && !!was.model && was.model.ref !== on.model;
+    // The helper pick it writes: its own helpers; without any, the default's, pinned only when the chat already
+    // has a pick (a pick can't be cleared); a chat with none keeps following the default.
+    const pick = t.subagents ?? (this.subagentPick !== undefined ? this.subagentProfileInfo().default : undefined);
+    const samePick = pick === undefined || pick === this.subagentPick;
+    // The same profile again while it isn't edited changes nothing, and says nothing.
+    if (on.id === t.id && !edited && samePick) return { ok: true };
     this.flushDeferredAppends();
     try {
-      if (model && model.ref !== ref) {
-        await this.harness.setModel(model);
-        this.broadcast({ type: "model", model: this.harness.model()?.ref ?? model.ref });
-      }
+      if (model && model.ref !== was.model?.ref) await this.harness.setModel(model);
       if (t.thinking && t.thinking !== this.harness.thinking()) this.harness.setThinking(t.thinking);
-      this.broadcast({ type: "thinking", level: this.harness.thinking() });
+      const entry = pick !== undefined ? pickEntryFor(this.extensionBranch(), pick) : null;
+      if (entry) this.harness.state.append(SUBAGENT_PROFILE, entry.data);
+      const named: ChatProfileEntryData = { v: 1, id: t.id, ...(t.key ? { key: t.key } : {}), name: t.name, ...(t.model ? { model: t.model } : {}), ...(t.thinking ? { thinking: t.thinking } : {}) };
+      this.harness.state.append(CHAT_PROFILE, named);
     } catch (err) {
+      // All or nothing: never the new model with the old helpers. Put the model and effort back.
+      try {
+        if (was.model && this.harness.model()?.ref !== was.model.ref) {
+          const back = await this.harness.findModel(was.model.ref);
+          if (back.ok) await this.harness.setModel(back.model);
+        }
+        if (this.harness.thinking() !== was.thinking) this.harness.setThinking(was.thinking);
+      } catch (back) {
+        console.error("[chat] a failed profile switch couldn't put the model back", back);
+      }
+      this.broadcast({ type: "model", model: this.harness.model()?.ref ?? "" });
+      this.broadcast({ type: "thinking", level: this.harness.thinking() });
       return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
     }
-    const pick = pickEntryFor(this.extensionBranch(), t.subagents);
-    if (pick) this.harness.state.append(SUBAGENT_PROFILE, pick.data);
-    const entry: ChatProfileEntryData = { v: 1, id: t.id, ...(t.key ? { key: t.key } : {}), name: t.name, ...(t.model ? { model: t.model } : {}), ...(t.thinking ? { thinking: t.thinking } : {}) };
-    this.harness.state.append(CHAT_PROFILE, entry);
     markOwned(this.path);
+    this.broadcast({ type: "model", model: this.harness.model()?.ref ?? "" });
+    this.broadcast({ type: "thinking", level: this.harness.thinking() });
     this.switchOutcome = { applied: { id: t.id, name: t.name, at: Date.now() } };
     this.broadcastChatProfile();
     return { ok: true };

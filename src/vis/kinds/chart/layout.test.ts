@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { estimateWidth } from "../../core/text";
 import { parseVis } from "../../parse";
-import { axisTitle, CHART_CSS, chartMode, chartWidth, estimateHeight, FONT, layoutChart, legendBreaks, overlaps, textBox, type ChartLayout } from "./layout";
+import { axisTitle, catBox, CHART_CSS, chartMode, chartWidth, estimateHeight, FONT, layoutChart, legendBreaks, overlaps, textBox, type ChartLayout } from "./layout";
 import type { ChartSpec } from "./parse";
 import { partsHeight } from "./parts";
 import { chartViews, drawAs, settle, shownToggles } from "./switch";
@@ -212,4 +212,111 @@ test("chart views: every view a reader can pick lays out inside the frame, and i
       assert.deepEqual([...new Set(drawn)].sort(), marked, `${at}: emphasis drawn`);
     }
   }
+});
+
+/** Charts that once drew badly on a phone: two marks side by side after Sort, a crowded group, long labels on a line. */
+const CROWDED: Record<string, string> = {
+  adjacentMarks: 'unit: ms\n"11-01" 40\n"11-02" 52\n"11-03" 61\n"11-04" 48\n"11-05" 70\n"11-06" 73.3\n"11-07" 90\nmark "11-07" warn "deploy"\nmark "11-06" error "spike"',
+  closeMarks: '"a" 100\n"b" 99\n"c" 98\n"d" 40\nmark "a" "one"\nmark "b" "two"\nmark "c" "three"',
+  threeSeries: "series: web, phone, tablet\nW1 120 135 142\nW2 130 128 150\nW3 135 140 138\nW4 140 190 160\nW5 150 230 170\nmark W3 \"flat\"",
+  twoSeries: "series: web, phone\nMon 120 135\nTue 130 128\nWed 135 140\nThu 140 190\nFri 150 230\nSat 120 110\nmark Tue \"dip\"",
+  longLine: 'type: line\n"Week of 3 November" 12\n"Week of 10 November" 15\n"Week of 17 November" 11\n"Week of 24 November" 19\n"Week of 1 December" 22\n"Week of 8 December" 18\n"Week of 15 December" 25\nmark "Week of 24 November" ok "launch"',
+  manyMarked: `type: line\n${Array.from({ length: 30 }, (_, d) => `"Nov ${d + 1}" ${20 + ((d * 7) % 11)}`).join("\n")}\nmark "Nov 13" "a"\nmark "Nov 29" "b"`,
+};
+const PHONE_WIDTHS = [260, 330, 390, 560, 720];
+
+/** Every reachable view of SAMPLES and CROWDED, each laid out at every width. */
+function* everyLayout(): Generator<[string, ChartSpec, ChartLayout]> {
+  for (const [name, body] of Object.entries({ ...SAMPLES, ...CROWDED })) {
+    const spec = chart(body);
+    const { views } = chartViews(spec);
+    for (const view of views.length ? views : [spec.type])
+      for (const sort of [false, true])
+        for (const pct of [false, true]) {
+          const c = settle(spec, { view, sort, pct, log: spec.scale === "log" });
+          if (c.view !== view || c.sort !== sort || c.pct !== pct) continue;
+          const drawn = drawAs(spec, c);
+          if (drawn.type === "parts") continue;
+          for (const W of PHONE_WIDTHS) {
+            const g = layoutChart(drawn, W, estimateWidth);
+            yield [`${name} as ${view}${sort ? " sorted" : ""}${pct ? " %" : ""}@${W} (${g.mode})`, drawn, g];
+          }
+        }
+  }
+}
+
+const BADGE = 9;
+const disc = (b: { x: number; y: number }) => ({ x: b.x - BADGE, y: b.y - BADGE, w: BADGE * 2, h: BADGE * 2 });
+/** How far apart two boxes are (0 when they touch or overlap). */
+const apart = (a: { x: number; y: number; w: number; h: number }, b: typeof a) => Math.hypot(Math.max(0, a.x - (b.x + b.w), b.x - (a.x + a.w)), Math.max(0, a.y - (b.y + b.h), b.y - (a.y + a.h)));
+
+test("chart labels, every view at every width: value labels stand apart, category labels stay in the frame", () => {
+  let n = 0;
+  for (const [at, , g] of everyLayout()) {
+    n++;
+    const boxes = g.values.filter((v) => !v.inside).map((v) => ({ v, box: textBox(v, estimateWidth) }));
+    for (let i = 0; i < boxes.length; i++)
+      for (let j = i + 1; j < boxes.length; j++) {
+        // Side by side they keep a gap, so two numbers never read as one. (A 13px line box holds
+        // 11px digits: one stacked 12px under another, as grouped sideways bars draw them, is clear.)
+        const a = { x: boxes[i]!.box.x - 1.5, w: boxes[i]!.box.w + 3, y: boxes[i]!.box.y + 0.5, h: boxes[i]!.box.h - 1 };
+        assert.ok(!overlaps(a, { ...boxes[j]!.box, y: boxes[j]!.box.y + 0.5, h: boxes[j]!.box.h - 1 }), `${at}: "${boxes[i]!.v.text}" runs into "${boxes[j]!.v.text}"`);
+      }
+    for (const c of g.cats) {
+      const b = catBox(c, g.mode, estimateWidth);
+      assert.ok(b.x >= 0 && b.x + b.w <= g.W && b.y >= 0 && b.y + b.h <= g.H, `${at}: category "${c.lines.join(" ")}" is cut by the frame (${b.x.toFixed(1)}..${(b.x + b.w).toFixed(1)} of ${g.W})`);
+    }
+    for (let i = 0; i < g.cats.length; i++)
+      for (let j = i + 1; j < g.cats.length; j++) assert.ok(!overlaps(catBox(g.cats[i]!, g.mode, estimateWidth), catBox(g.cats[j]!, g.mode, estimateWidth)), `${at}: categories ${g.cats[i]!.row} and ${g.cats[j]!.row} collide`);
+  }
+  assert.ok(n > 300, `${n} layouts`);
+});
+
+test("chart labels, every view at every width: a marked row keeps its value and category labels, and its badge stays by it", () => {
+  for (const [at, spec, g] of everyLayout()) {
+    if (g.mode === "scatter") continue;
+    const marked = (spec.emphasis ?? []).map((e) => Number(e.key));
+    const lineSeries = g.mode === "line" && spec.series.length > 1;
+    for (const row of marked) {
+      assert.ok(g.cats.some((c) => c.row === row), `${at}: marked row ${row} lost its category label`);
+      // Several lines label no points; every other marked bar or point names its value.
+      if (lineSeries) continue;
+      const own = g.values.filter((v) => v.row === row && !v.inside);
+      const items: number = g.mode === "line" ? g.points.filter((p) => p.row === row).length : spec.type === "stacked" ? 1 : g.bars.filter((b) => b.row === row).length;
+      assert.equal(own.length, items, `${at}: marked row ${row} shows ${own.length} of its ${items} value labels`);
+    }
+    const shown = new Set(g.values.map((v) => v.row));
+    for (const b of g.badges) {
+      const d = disc(b);
+      for (const o of g.badges) if (o !== b) assert.ok(!overlaps(d, disc(o)), `${at}: badges ${b.row} and ${o.row} overlap`);
+      for (const v of g.values) if (v.row !== b.row && marked.includes(v.row)) assert.ok(!overlaps(d, textBox(v, estimateWidth)), `${at}: badge ${b.row} covers marked "${v.text}"`);
+      if (lineSeries) continue;
+      // By its own bar or point: touching (within a few px of) its row's bars, points or labels.
+      const mine = [...g.bars.filter((x) => x.row === b.row), ...g.points.filter((p) => p.row === b.row).map((p) => ({ x: p.x - 4, y: p.y - 4, w: 8, h: 8 })), ...g.values.filter((v) => v.row === b.row).map((v) => textBox(v, estimateWidth))];
+      assert.ok(shown.has(b.row), `${at}: badge ${b.row} has no label beside it`);
+      assert.ok(Math.min(...mine.map((m) => apart(d, m))) <= 6, `${at}: badge ${b.row} floats away from its row`);
+    }
+  }
+});
+
+test("chart labels: a line chart thins its category labels evenly, keeping its ends where they fit", () => {
+  for (const [at, spec, g] of everyLayout()) {
+    if (g.mode !== "line") continue;
+    const marked = new Set((spec.emphasis ?? []).map((e) => Number(e.key)));
+    const last = spec.rows.length - 1;
+    const grid = g.cats.map((c) => c.row).filter((r) => !marked.has(r) && r !== 0 && r !== last);
+    const step = g.cats.map((c) => c.row).filter((r) => !marked.has(r) && r !== last);
+    // The labels between the ends sit on one even step from the first.
+    if (grid.length >= 2) {
+      const k = Math.min(...step.slice(1).map((r, i) => r - step[i]!));
+      for (const r of grid) assert.equal(r % k, 0, `${at}: label ${r} is off the step of ${k} (${g.cats.map((c) => c.row).join(",")})`);
+    }
+    for (const end of [0, last]) {
+      if (g.cats.some((c) => c.row === end)) continue;
+      // An end is dropped only for a neighbour it would touch.
+      assert.ok(g.cats.some((c) => Math.abs(c.row - end) <= Math.ceil(spec.rows.length / 2)), `${at}: end ${end} dropped for nothing`);
+    }
+  }
+  const long = layoutChart(chart(CROWDED.longLine!), 330, estimateWidth);
+  assert.ok(long.cats.length >= 2 && long.cats.some((c) => c.row === 0), `${long.cats.map((c) => c.row)}`);
 });

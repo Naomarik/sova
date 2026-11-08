@@ -232,9 +232,6 @@ export function behindWords(target: string, behind: number | undefined): string 
   return `Local ${target} is ${behind} ${behind === 1 ? "commit" : "commits"} behind`;
 }
 
-/** The Waiting on the host group's heading. */
-export const waitingOnHostHead = (n: number): string => `Waiting on the host · ${n}`;
-
 /** The tab's opening sentence: what happens to a branch after its checks, by the way in effect. */
 export function introWords(target: string, how: LandHow | undefined): string {
   const head = `One branch at a time, in order. Each is merged onto ${target} in a separate copy and checked there; `;

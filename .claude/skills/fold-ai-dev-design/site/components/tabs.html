@@ -103,11 +103,11 @@
         <div class="do-dont">
           <div class="do">
             <p class="text-eyebrow text-success">Do</p>
-            <ul><li><b>Put the active tab in the URL</b> — `?tab=chats` survives reload and can be shared.</li><li><b>Use `role="tab"` and `aria-selected`</b> — the underline alone is invisible to a screen reader.</li><li><b>Let the strip scroll horizontally</b> — truncating tab labels hides what the tabs are.</li></ul>
+            <ul><li><b>Put the active tab in the URL</b> — `?tab=chats` survives reload and can be shared.</li><li><b>Use `role="tab"` and `aria-selected`</b> — the underline alone is invisible to a screen reader.</li><li><b>Let the strip scroll horizontally</b> — truncating tab labels hides what the tabs are.</li><li><b>Leave the edge fade to `.tabs`</b> — an edge fades only while tabs are hidden past it, with no script. A browser without scroll timelines (Firefox) fades from `data-overflow-start` and `data-overflow-end`, set on every strip by one shared script (Sova: `src/lib/tabs-overflow.ts`). It is the one sanctioned exception to "No gradients": an alpha mask that fades content at an overflowing edge and paints no color.</li><li><b>Give a panel with nothing focusable `tabindex="0"`</b> — Tab from the strip then reaches what the empty tab says.</li></ul>
           </div>
           <div class="dont">
             <p class="text-eyebrow text-error">Don't</p>
-            <ul><li><b>Use tabs to submit or act</b> — tabs change what you see, never what exists.</li><li><b>Nest tab strips</b> — the second level is a segmented control or a filter.</li><li><b>Ship more than about five tabs</b> — beyond that it is navigation, not a view switch.</li></ul>
+            <ul><li><b>Use tabs to submit or act</b> — tabs change what you see, never what exists.</li><li><b>Nest tab strips</b> — the second level is a segmented control or a filter.</li><li><b>Ship more than about five tabs</b> — beyond that it is navigation, not a view switch.</li><li><b>Set a heading just above the strip louder than its tabs</b> — it reads as the strip's title, not a section beside it.</li></ul>
           </div>
         </div>
       </section>

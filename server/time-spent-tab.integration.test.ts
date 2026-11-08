@@ -223,7 +223,7 @@ async function openTheRows(page: Page) {
   for (const row of ["reading", "screenshots", "reworking"]) await page.locator(`[data-time-row="${row}"]`).click();
   await page.mouse.move(5, 5);
 }
-const settled = (page: Page) => page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {}))));
+const settled = (page: Page) => page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a.timeline === document.timeline).map((a) => a.finished.catch(() => {}))));
 
 test("shots: the tab at both widths and the Session tab it left", { skip: !SHOTS }, async () => {
   {
@@ -466,12 +466,12 @@ test("counts stay in one column when a row reaches an hour, and at 375px long me
   }
 });
 
-/** Which edges of the session strip fade, read from the strip itself (its data-fade) and from its mask. */
+/** Which edges of the session strip fade: the design system's .tabs mask, its edge widths read from the strip. */
 const stripFade = (page: Page) =>
   page.locator(".session-tabs").evaluate((el) => {
-    const f = el.getAttribute("data-fade");
-    const mask = getComputedStyle(el).maskImage || getComputedStyle(el).getPropertyValue("-webkit-mask-image");
-    return { left: f === "start" || f === "both", right: f === "end" || f === "both", masked: mask !== "none" && mask !== "", overflows: el.scrollWidth > el.clientWidth };
+    const cs = getComputedStyle(el);
+    const w = (p: string) => parseFloat(cs.getPropertyValue(p)) || 0;
+    return { left: w("--tabs-fade-start") > 0, right: w("--tabs-fade-end") > 0, overflows: el.scrollWidth > el.clientWidth };
   });
 const FADE_SHOTS = process.env.SPENT_FADE_SHOTS ?? "";
 
@@ -480,16 +480,16 @@ test("the session strip fades at the edge with tabs beyond it, and nowhere when 
     const { page } = await open(375, 812, "session", undefined, { pressTab: false });
     try {
       await page.locator("[role=tab][aria-selected=true]").waitFor();
-      assert.deepEqual(await stripFade(page), { left: false, right: true, masked: true, overflows: true }, "at 375 at the start: a fade at the right only");
+      assert.deepEqual(await stripFade(page), { left: false, right: true, overflows: true }, "at 375 at the start: a fade at the right only");
       if (FADE_SHOTS) await page.screenshot({ path: join(FADE_SHOTS, "375-dark-start.png") });
       await page.locator(".session-tabs").evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
-      await page.waitForFunction(() => document.querySelector(".session-tabs")?.getAttribute("data-fade") !== "end");
-      assert.deepEqual(await stripFade(page), { left: true, right: false, masked: true, overflows: true }, "at 375 scrolled to the end: a fade at the left only");
+      await page.waitForFunction(() => parseFloat(getComputedStyle(document.querySelector(".session-tabs")!).getPropertyValue("--tabs-fade-start")) > 0);
+      assert.deepEqual(await stripFade(page), { left: true, right: false, overflows: true }, "at 375 scrolled to the end: a fade at the left only");
       if (FADE_SHOTS) await page.screenshot({ path: join(FADE_SHOTS, "375-dark-end.png") });
       if (FADE_SHOTS) {
         await page.locator(".session-tabs").evaluate((el) => el.scrollTo({ left: 0 }));
         await page.evaluate(() => (document.documentElement.dataset.theme = "light"));
-        await page.waitForFunction(() => document.querySelector(".session-tabs")?.getAttribute("data-fade") === "end");
+        await page.waitForFunction(() => parseFloat(getComputedStyle(document.querySelector(".session-tabs")!).getPropertyValue("--tabs-fade-start")) === 0);
         await page.screenshot({ path: join(FADE_SHOTS, "375-light-start.png") });
       }
     } finally {
@@ -499,7 +499,7 @@ test("the session strip fades at the edge with tabs beyond it, and nowhere when 
   {
     const { page } = await open(2200, 1000, "time");
     try {
-      assert.deepEqual(await stripFade(page), { left: false, right: false, masked: false, overflows: false }, "every tab fits: no fade");
+      assert.deepEqual(await stripFade(page), { left: false, right: false, overflows: false }, "every tab fits: no fade");
     } finally {
       await page.context().close();
     }

@@ -400,6 +400,13 @@ test("chart views: Line is offered only for rows that read as an order", () => {
     ["Build #41", "Build #42"],
     ["Week 43", "Week 44"],
     ["iPhone 15", "iPhone 16"],
+    ["#1", "#2", "#3"],
+    ["1. Parse", "2. Plan", "3. Build"],
+    ["1) Parse", "2) Plan"],
+    ["2023", "2024", "2025 (est)"],
+    ["Turn 1", "Turn 2", "Turn 3 (final)"],
+    ["Step 1: parse", "Step 2: plan"],
+    ["10:30", "11:00: lunch"],
   ];
   const NOT: string[][] = [
     ["iPhone 16", "Pixel 9"],
@@ -415,6 +422,10 @@ test("chart views: Line is offered only for rows that read as an order", () => {
     ["Galaxy S24", "Pixel 9"],
     ["Jan", "Other"],
     ["Merge sort", "Quicksort"],
+    ["us-east (primary)", "eu-west"],
+    ["Parse: 1", "Plan: 2"],
+    ["1. Parse", "Plan"],
+    ["#a", "#b"],
     [],
   ];
   for (const ls of ORDERED) assert.equal(orderedLabels(ls), true, ls.join(" / "));
@@ -438,6 +449,10 @@ test("chart views: rows written like 92% keep their % sign in every view, the mo
   // The model's Parts, and a capacity parts chart.
   assert.equal(drawAs(chart("type: parts\na 12%\nb 30%"), choice({ view: "parts" })).unit, "%");
   assert.equal(drawAs(chart("type: parts\nof: 100\na 12%\nb 30%"), choice({ view: "parts" })).unit, "%");
+  // One row written `12%` makes the chart's numbers percents: every row draws with the sign.
+  const mixed = chart("Jan 12%\nFeb 30\nMar 45");
+  assert.equal(mixed.percent, true);
+  assert.equal(drawAs(mixed, choice({ view: "bar" })).unit, "%");
   // A unit the model wrote stays.
   assert.equal(drawAs(chart("unit: pts\nJan 12%\nFeb 30%"), choice({ view: "bar" })).unit, "pts");
   assert.equal(drawAs(chart("Jan 12\nFeb 30"), choice({ view: "bar" })).unit, undefined);

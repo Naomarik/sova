@@ -89,13 +89,18 @@ const wordNumber = (label: string): string | null => {
 /**
  * Rows that read as an order, so a Line between them means something: every label a date, time,
  * year, number, month or weekday name, quarter (Q1) or week (W43), or every label one shared word
- * plus a number (Turn 1, Step 2, v3). Regions, folders, test tiers or phone models aren't.
+ * plus a number (Turn 1, Step 2, v3), or a numbered list (`1. Parse`); a trailing `(…)` or
+ * `: …` and a leading `#` are set aside. Regions, folders, test tiers or phone models aren't.
  */
 export function orderedLabels(labels: readonly string[]): boolean {
   if (labels.length === 0) return false;
-  const words = (l: string) => l.trim().split(/[\s,]+/).filter(Boolean);
-  if (labels.every((l) => words(l).length > 0 && words(l).every((w) => ORDERED_WORD.test(w)))) return true;
-  const prefixes = labels.map(wordNumber);
+  // A numbered list (`1. Parse`, `2) Plan`) is an order whatever follows its numbers.
+  if (labels.every((l) => /^\s*#?\d+[.)]\s+\S/.test(l))) return true;
+  // What a label says after its point is an aside: `2025 (est)`, `Step 1: parse`, `#3`.
+  const core = labels.map((l) => l.trim().replace(/\s*\([^()]*\)$/, "").replace(/:\s.*$/, "").replace(/^#(?=\d)/, "").trim());
+  const words = (l: string) => l.split(/[\s,]+/).filter(Boolean);
+  if (core.every((l) => words(l).length > 0 && words(l).every((w) => ORDERED_WORD.test(w)))) return true;
+  const prefixes = core.map(wordNumber);
   return prefixes.every((p) => p !== null && p === prefixes[0]);
 }
 

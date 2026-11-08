@@ -25,11 +25,6 @@ export interface JoinedRow {
 /** Whether a row is only a Models part (a library-only profile, or Off): starting it needs no Overseer mark. */
 export const modelsOnly = (r: Pick<JoinedRow, "kind">): boolean => r.kind === "library" || r.kind === "off";
 
-/** The row whose id a call names. An id is matched before a library id, so a pair is never taken for its library half. */
-export function findRow(rows: readonly JoinedRow[], id: string): JoinedRow | undefined {
-  return rows.find((r) => r.id === id);
-}
-
 /** One line of sova_list_profiles: id, name, footprint, its parts, whether the Overseer may start it, the default. */
 export function profileLine(r: JoinedRow): string {
   const parts = r.kind === "off" ? "sets nothing" : modelsOnly(r) ? "Models part only" : r.libraryId ? "When a Chat Starts + Models" : "When a Chat Starts + this chat's model (helpers: the default's)";

@@ -560,6 +560,12 @@ describe("the coding sessions' model", () => {
     assert.deepEqual(po.codingChoice({}, { ...none, codingModel: "b/y", codingThinking: "minimal", model: "c/z", thinking: "low" }, { model: "d/w", thinking: "off" }), { model: "b/y", thinking: "minimal" });
     assert.deepEqual(po.codingChoice({}, { ...none, model: "c/z", thinking: "low" }, { model: "d/w", thinking: "off" }), { model: "c/z", thinking: "low" });
     assert.deepEqual(po.codingChoice({}, none, { model: "d/w", thinking: "off" }), { model: "d/w", thinking: "off" });
+    // §app.project-overseer/coding-mode: the default profile's own model comes after the project's coding model, before the overseer's.
+    const prof = { model: "p/m", thinking: "max" };
+    assert.deepEqual(po.codingChoice({}, { ...none, codingModel: "b/y", codingThinking: "minimal", model: "c/z" }, { model: "d/w", thinking: "off" }, prof), { model: "b/y", thinking: "minimal" });
+    assert.deepEqual(po.codingChoice({}, { ...none, model: "c/z", thinking: "low" }, { model: "d/w", thinking: "off" }, prof), { model: "p/m", thinking: "max" });
+    assert.deepEqual(po.codingChoice({ model: "a/x" }, none, { model: "d/w", thinking: "off" }, prof), { model: "a/x", thinking: "max" });
+    assert.deepEqual(po.sessionChoice("gathering", {}, { ...none, model: "c/z", thinking: "low" }, { model: null, thinking: null }, prof), { model: "c/z", thinking: "low" }, "a gathering session never takes it");
   });
   test("gathering sessions: the call, else gatheringModel, else the overseer's own; the coding choice never leaks in", () => {
     const s = { ...none, codingModel: "code/m", codingThinking: "high", model: "own/m", thinking: "low" };

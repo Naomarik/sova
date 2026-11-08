@@ -307,6 +307,32 @@ describe("a project's coding sessions", async () => {
     assert.deepEqual(listed && { state: listed.state, branch: listed.branch, inRoot: listed.inRoot }, { state: "root", branch: null, inRoot: "it isn't a Git repository." });
   });
 
+  test("the default profile reaches a coding session as its mode and models only: never its removals or grants (§app.project-overseer/coding-mode)", async () => {
+    // This computer's default: a pair whose When a Chat Starts part removes the web and grants messaging, in delegate · vis.
+    mkdirSync(join(agentDir, "sova"), { recursive: true });
+    const w = (model: string) => ({ backend: "pi", model, effort: "high" });
+    writeFileSync(join(agentDir, "subagent-profiles.json"), JSON.stringify({ version: 1, profiles: [{ id: "wide-lib", name: "Wide", delegate: { planning: { primary: w("zai/glm-5.3"), fallback: null }, investigation: { primary: w("zai/glm-5.3"), fallback: null }, routine: { primary: w("zai/glm-5.3"), fallback: null }, complex: { primary: w("zai/glm-5.3"), fallback: null } }, teams: null, members: null, specWriter: null }] }));
+    writeFileSync(join(agentDir, "sova", "session-profiles.json"), JSON.stringify({ version: 1, profiles: [{ id: "wide", label: "Wide", remove: ["web"], grant: ["sessions.message"], mode: "delegate", minorModes: ["vis"], subagents: "wide-lib", overseerMayStart: false }] }));
+    writeFileSync(join(agentDir, "sova", "default-profile.json"), JSON.stringify({ version: 1, profile: "wide" }));
+    // Choosing it wrote mode.json's default too (§chat.profiles/default); a coding session reads that.
+    writeDefault("delegate", ["vis"]);
+    try {
+      const p = store.projectOverseerPaths(plain.id);
+      const todo = addTodo({ text: "Wide default" }, p.todos, p.ideas);
+      await po.codeItem(plain.id, { todoId: todo.id }).catch(() => null);
+      const row = readBuilds(plain.id).find((r) => r.kind === "operator-coding" && r.title === "Wide default");
+      assert.ok(row?.path, JSON.stringify(readBuilds(plain.id)));
+      const entries = readFileSync(row.path!, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+      assert.deepEqual(entries.filter((e) => e.type === "custom" && e.customType === "sova-profile"), [], "no profile entry: its removals and grants never reach a coding session");
+      assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "delegate", strict: false, minorModes: ["vis"] }, "its mode and add-ons do");
+      const info = await po.projectOverseerInfo(plain.id);
+      assert.deepEqual(info.codingModeNow.profile, { id: "wide", name: "Wide" }, "the page names the default profile");
+    } finally {
+      for (const f of ["default-profile.json", "session-profiles.json"]) rmSync(join(agentDir, "sova", f), { force: true });
+      rmSync(join(agentDir, "subagent-profiles.json"), { force: true });
+    }
+  });
+
   test("a mode that can't be set sends no prompt; the session stays, listed", async () => {
     // No mode extension in the next runtime: nothing can take the mode.
     const settingsFile = join(agentDir, "settings.json");

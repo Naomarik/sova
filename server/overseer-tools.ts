@@ -63,7 +63,8 @@ import { singletonHolder } from "./session-profile";
 import { keyOf, singletonRunningText, titleCase } from "../shared/profiles";
 import { MEMORY_CODING_REFUSAL } from "../shared/memory";
 import { alignDropRefusal } from "./project-coding-mode";
-import { findRow, modelsOnly, profileLine, profileSwitchWords, unknownProfile, type JoinedRow } from "./overseer-profiles";
+import { modelsOnly, profileLine, profileSwitchWords, unknownProfile, type JoinedRow } from "./overseer-profiles";
+import { findJoined } from "./joined-profiles";
 import { listProjects } from "./projects/spaces";
 import { copyApproval, copyItem, leftoverItem, liveLeftoverHost, nameOr, realCopyRowHost, starterWorking } from "./overseer-copies";
 import type { ClickChoice } from "../shared/overseer-card";
@@ -1515,7 +1516,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
           const prof = await findProfile(p.profile, where);
           // A profile with only a Models part (a library profile no session profile links to, or Off) starts as Off with
           // its helpers: no mark or approval, since it changes no tool or power (§chat.subagent-profiles/overseer).
-          const row = prof ? undefined : findRow(await listProfiles(null, where ?? undefined), p.profile);
+          const row = prof ? undefined : await findJoined(p.profile, where);
           if (!prof && row && modelsOnly(row)) p = { ...p, profile: undefined, subagent_profile: row.kind === "off" ? "off" : (row.libraryId ?? row.id), profileModels: row.name };
           else if (!prof) throw new Refusal(`${(await profileRefusedWhy(p.profile, where)) ?? unknownProfile(p.profile)} No session was created.`);
         }

@@ -56,8 +56,23 @@ export function pictureFileName(label: string): string {
   return `${name || "drawing"}.png`;
 }
 
+/** Largest canvas most browsers will hand back (Safari's limit is near 16.7M pixels). */
+export const MAX_PIXELS = 16_000_000;
+/** Widest card drawn at phone scale, and the widest PNG a wider card makes. */
+export const PHONE_CARD = 480;
+export const MAX_PNG_WIDTH = 1280;
+
+/** The scale Copy draws a card's PNG at, from its CSS size alone (not the screen's pixel ratio): 2 for a
+    phone card (PHONE_CARD wide or narrower), otherwise 1.5 cut so the PNG is at most MAX_PNG_WIDTH wide;
+    then cut so it fits MAX_PIXELS. Never below 1. */
+export function pictureScale(width: number, height: number): number {
+  let scale = width <= PHONE_CARD ? 2 : Math.min(1.5, MAX_PNG_WIDTH / width);
+  if (width * height * scale * scale > MAX_PIXELS) scale = Math.min(scale, Math.sqrt(MAX_PIXELS / (width * height)));
+  return Math.max(1, scale);
+}
+
 /** The HTML that goes beside the PNG: the same picture at the card's size, for a target that pastes HTML
-    (a document, a mail) and would otherwise show the PNG's pixels at twice the size. `dataUrl` is the PNG. */
+    (a document, a mail) and would otherwise show the PNG's pixels at its scale (1.5 to 2 times larger). `dataUrl` is the PNG. */
 export function pictureHtml(dataUrl: string, width: number, height: number, alt: string): string {
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
   return `<img src="${esc(dataUrl)}" width="${width}" height="${height}" alt="${esc(alt)}">`;

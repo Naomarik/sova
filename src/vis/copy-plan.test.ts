@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { deflateSync } from "node:zlib";
 import { test } from "node:test";
-import { COPY_LABEL, copyRoute, copyWhat, crc32, nextRoute, pictureFileName, pictureHtml, solidColor, withPngScale, type PictureSupport } from "./copy-plan";
+import { COPY_LABEL, copyRoute, copyWhat, crc32, nextRoute, pictureFileName, pictureHtml, pictureScale, MAX_PIXELS, MAX_PNG_WIDTH, solidColor, withPngScale, type PictureSupport } from "./copy-plan";
 
 const full: PictureSupport = { secure: true, clipboardItem: true, png: true };
 
@@ -97,4 +97,20 @@ test("a saved picture is named after its card", () => {
   assert.equal(pictureFileName("How a prompt reaches the model"), "how-a-prompt-reaches-the-model.png");
   assert.equal(pictureFileName("Café: p95 / p99"), "cafe-p95-p99.png");
   assert.equal(pictureFileName("!!!"), "drawing.png");
+});
+
+test("pictureScale: 2 for a phone card, else at most 1280 px wide, never below 1, within MAX_PIXELS", () => {
+  const cases: [number, number][] = [[324, 400], [480, 500], [481, 500], [700, 600], [853, 600], [854, 600], [882, 600], [1280, 700], [1400, 800], [3000, 9000]];
+  for (const [w, h] of cases) {
+    const s = pictureScale(w, h);
+    const at = `${w}x${h} -> ${s}`;
+    assert.ok(s >= 1, at);
+    assert.ok(w * h * s * s <= MAX_PIXELS + 1e-6 || s === 1, at);
+    if (w <= 480) assert.equal(s, 2, at);
+    else assert.ok(w * s <= MAX_PNG_WIDTH + 1e-9 || s === 1, at);
+    if (w > 480 && w * 1.5 <= MAX_PNG_WIDTH) assert.equal(s, 1.5, at);
+  }
+  assert.ok(Math.abs(pictureScale(882, 600) - 1280 / 882) < 1e-9);
+  assert.ok(pictureScale(3000, 9000) === 1, "a huge card is cut to 1, never below");
+  assert.ok(pictureScale(400, 30000) < 2 && 400 * 30000 * pictureScale(400, 30000) ** 2 <= MAX_PIXELS + 1e-6, "a tall phone card hits MAX_PIXELS");
 });

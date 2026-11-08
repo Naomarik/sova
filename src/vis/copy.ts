@@ -59,7 +59,7 @@ export function copyCard(button: HTMLElement, card: { what: CopyWhat; fence: str
     let item: ClipboardItem;
     try {
       // The PNG, and beside it the same picture as HTML at the card's size: a target that pastes HTML
-      // shows it as big as the card, one that takes only the image gets its pixels (twice the size).
+      // shows it as big as the card, one that takes only the image gets its pixels (its scale times larger).
       const types: Record<string, Promise<Blob>> = { "image/png": picture.then((p) => p.blob) };
       const CI = ClipboardItem as unknown as { supports?: (type: string) => boolean };
       if (typeof CI.supports !== "function" || CI.supports("text/html")) {

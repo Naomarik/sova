@@ -6,12 +6,12 @@
  * The figure is cloned with every element's computed style written inline (so tokens and custom themes
  * are already resolved), its sideways-scrolling boxes opened to their full width, the fonts and images
  * it uses inlined as data URLs, and the whole drawn as an SVG `<foreignObject>` through an `<img>` onto a
- * canvas at twice its size or more. Its logical size is the card's. A `vis svg` frame becomes the
+ * canvas at pictureScale (copy-plan.ts): 2 for a phone card, else up to 1.5 and at most 1280 px wide. Its logical size is the card's. A `vis svg` frame becomes the
  * still image the share page draws (svg-image.ts). Safari refuses to read back a canvas that drew a
  * foreignObject: that rejects with NoPictureError.
  */
 import { appTheme } from "../lib/explain";
-import { solidColor, withPngScale } from "./copy-plan";
+import { pictureScale, solidColor, withPngScale } from "./copy-plan";
 import { readTokens, tokenCss } from "./kinds/frame/srcdoc";
 import { svgImageSrc } from "./kinds/frame/svg-image";
 
@@ -35,8 +35,6 @@ const DROP = [".vis-source", ".vis-warning", ".vis-stepper", ".vis-frame-failed"
 /** A focus ring is the page's, never the picture's. */
 const NO_RING = new Set(["outline", "outline-color", "outline-style", "outline-width", "outline-offset"]);
 const SVG_GEOMETRY = new Set([...NO_RING, "transform", "transform-origin", "x", "y", "cx", "cy", "r", "rx", "ry", "d", "width", "height", "inline-size", "block-size"]);
-/** Largest canvas most browsers will hand back (Safari's limit is near 16.7M pixels). */
-const MAX_PIXELS = 16_000_000;
 
 let defaultsDoc: Document | undefined;
 const defaults = new Map<string, Map<string, string>>();
@@ -319,8 +317,7 @@ export async function snapshot(figure: HTMLElement, opts: { svgSource?: string }
   } catch {
     throw new NoPictureError("The drawing couldn't be drawn as a picture.");
   }
-  let scale = Math.max(2, window.devicePixelRatio || 1);
-  if (width * height * scale * scale > MAX_PIXELS) scale = Math.max(1, Math.sqrt(MAX_PIXELS / (width * height)));
+  const scale = pictureScale(width, height);
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(width * scale);
   canvas.height = Math.round(height * scale);

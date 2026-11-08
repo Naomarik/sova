@@ -106,9 +106,9 @@ try {
     await ready.waitFor({ state: "visible", timeout: 20000 });
   };
   const hostInput = dialog.locator("#mesh-host-label");
-  /** The first profile's Edit in Settings → Profiles (the library is seeded on first read). */
-  const subagentEdit = dialog.locator('[id^="subagents-edit-"]').first();
-  const profileName = dialog.locator("#subagents-name");
+  /** The first of your profiles in Settings → Profiles' list (the library is seeded on first read). */
+  const firstMine = dialog.locator('ul[aria-label="Yours"] .profiles-pick').first();
+  const profileName = dialog.locator("#profile-name");
   const neverTui =dialog.getByRole("checkbox", { name: "Never send TUI sessions" });
   /** A switch's input is drawn by its label (the box is visual only): click the label to move it. */
   const setSwitch = async (input, on) => {
@@ -150,9 +150,8 @@ try {
     ["General", dialog.locator("#recent-count")],
     ["Models", dialog.locator(".model-policy-list")],
     ["Accounts", dialog.locator("#settings-accounts-title")],
-    ["Subagents", subagentEdit],
     ["Alignment", dialog.locator("#align-review-hint")],
-    ["Profiles", dialog.locator("#profiles-title")],
+    ["Profiles", firstMine],
     ["Overseer", dialog.locator(".overseer-advanced")],
     ["Notifications", dialog.locator("#settings-push-title")],
     ["Decisions", dialog.locator("#decisions-exclusions")],
@@ -295,23 +294,29 @@ try {
     eq(tuiOnDisk(), tui0, "the retry is written");
   });
 
-  await check("Subagents' profile editor: an edit is a draft until the footer saves it, and Discard brings the saved value back", async () => {
-    await openTab("Subagents", subagentEdit);
-    // Read the profile's id first: the editor replaces the list, Edit included.
-    const id = (await subagentEdit.getAttribute("id")).slice("subagents-edit-".length);
-    await subagentEdit.click();
+  await check("Profiles' editor: an edit is a draft until the footer saves it, and Discard brings the saved value back", async () => {
+    await openTab("Profiles", firstMine);
+    const shown = (await firstMine.locator(".profiles-pick-title").textContent()).trim();
+    await firstMine.click();
     await profileName.waitFor({ state: "visible", timeout: 20000 });
-    const info = await api("/api/settings/subagents");
-    const nameOnDisk = () => readJson(info.file).profiles.find((p) => p.id === id)?.name;
+    eq(await profileName.inputValue(), shown, "the picked profile is in the editor");
+    // Where its name is saved: the session half's label in your file, else the library profile's name.
+    const listing = await api("/api/profiles");
+    const row = listing.joined.find((x) => x.group === "yours" && x.name === shown);
+    assert(row, `${shown} is one of yours in GET /api/profiles`);
+    const nameOnDisk = row.session
+      ? () => readJson(listing.yoursFile).profiles.find((p) => p.id === row.session.id)?.label
+      : () => readJson(listing.library.file).profiles.find((p) => p.id === row.libraryId)?.name;
+    const file = row.session ? listing.yoursFile : listing.library.file;
     // Not what an earlier run saved: the edit must make the form dirty.
     const custom = `E2E ${Date.now().toString(36)}`;
     await profileName.fill(custom);
-    await waitStatus("Unsaved: Subagents");
+    await waitStatus("Unsaved: Profiles");
     await footButton("Save Changes").click();
-    await waitStatus("Saved Subagents.");
-    eq(nameOnDisk(), custom, `the profile's name in ${info.file}`);
+    await waitStatus("Saved Profiles.");
+    eq(nameOnDisk(), custom, `the profile's name in ${file}`);
     await profileName.fill(`${custom} x`);
-    await waitStatus("Unsaved: Subagents");
+    await waitStatus("Unsaved: Profiles");
     eq(nameOnDisk(), custom, "the file is unchanged");
     await footButton("Discard Changes").click();
     await waitStatus("");

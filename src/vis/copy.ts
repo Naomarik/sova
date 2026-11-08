@@ -4,7 +4,7 @@
  * imported on the first Copy so the chat's bundle doesn't carry it.
  */
 import { announce, copyText, openLightbox, toast } from "../lib/ui-state";
-import { COPY_DONE, copyRoute, nextRoute, type CopyRoute, type CopyWhat, type PictureSupport } from "./copy-plan";
+import { COPY_DONE, copyRoute, nextRoute, pictureFileName, pictureHtml, type CopyRoute, type CopyWhat, type PictureSupport } from "./copy-plan";
 import type { Picture } from "./snapshot";
 
 /** What this browser, on this page, offers for putting a picture on the clipboard. */
@@ -24,6 +24,14 @@ const say = (text: string) => {
 
 let viewerUrl: string | undefined;
 
+const asDataUrl = (blob: Blob) =>
+  new Promise<string>((done, fail) => {
+    const fr = new FileReader();
+    fr.onload = () => done(fr.result as string);
+    fr.onerror = () => fail(fr.error);
+    fr.readAsDataURL(blob);
+  });
+
 /** Copy on a card: `button` is the Copy button inside the card's figure. */
 export function copyCard(button: HTMLElement, card: { what: CopyWhat; fence: string; label: string; svgSource?: string }): void {
   const copySource = async (done: string) => {
@@ -38,7 +46,7 @@ export function copyCard(button: HTMLElement, card: { what: CopyWhat; fence: str
   const view = (p: Picture) => {
     if (viewerUrl) URL.revokeObjectURL(viewerUrl);
     viewerUrl = URL.createObjectURL(p.blob);
-    openLightbox([{ src: viewerUrl, alt: `Picture of ${card.label}`, width: p.width }], 0, button);
+    openLightbox([{ src: viewerUrl, alt: `Picture of ${card.label}`, width: p.width, download: pictureFileName(card.label) }], 0, button);
     say(COPY_DONE.viewer);
   };
   const failed = async (failure: "no-picture" | "clipboard-refused") => {
@@ -50,7 +58,14 @@ export function copyCard(button: HTMLElement, card: { what: CopyWhat; fence: str
   if (route === "clipboard") {
     let item: ClipboardItem;
     try {
-      item = new ClipboardItem({ "image/png": picture.then((p) => p.blob) });
+      // The PNG, and beside it the same picture as HTML at the card's size: a target that pastes HTML
+      // shows it as big as the card, one that takes only the image gets its pixels (twice the size).
+      const types: Record<string, Promise<Blob>> = { "image/png": picture.then((p) => p.blob) };
+      const CI = ClipboardItem as unknown as { supports?: (type: string) => boolean };
+      if (typeof CI.supports !== "function" || CI.supports("text/html")) {
+        types["text/html"] = picture.then(async (p) => new Blob([pictureHtml(await asDataUrl(p.blob), p.width, p.height, `Picture of ${card.label}`)], { type: "text/html" }));
+      }
+      item = new ClipboardItem(types);
     } catch {
       void picture.then(view, () => failed("no-picture"));
       return;

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { deflateSync } from "node:zlib";
 import { test } from "node:test";
-import { COPY_LABEL, copyRoute, copyWhat, crc32, nextRoute, solidColor, withPngScale, type PictureSupport } from "./copy-plan";
+import { COPY_LABEL, copyRoute, copyWhat, crc32, nextRoute, pictureFileName, pictureHtml, solidColor, withPngScale, type PictureSupport } from "./copy-plan";
 
 const full: PictureSupport = { secure: true, clipboardItem: true, png: true };
 
@@ -87,4 +87,14 @@ test("a pHYs already there is replaced, and bytes that aren't a PNG are left alo
   assert.equal(new DataView(out[1]!.data.buffer, out[1]!.data.byteOffset, 9).getUint32(0), 8504);
   const junk = new Uint8Array([1, 2, 3]);
   assert.equal(withPngScale(junk, 2), junk);
+});
+
+test("the HTML beside the PNG shows it at the card's size, its alt escaped", () => {
+  assert.equal(pictureHtml("data:image/png;base64,AAA=", 882, 420, 'Picture of "A" & <B>'), '<img src="data:image/png;base64,AAA=" width="882" height="420" alt="Picture of &quot;A&quot; &amp; &lt;B>">');
+});
+
+test("a saved picture is named after its card", () => {
+  assert.equal(pictureFileName("How a prompt reaches the model"), "how-a-prompt-reaches-the-model.png");
+  assert.equal(pictureFileName("Café: p95 / p99"), "cafe-p95-p99.png");
+  assert.equal(pictureFileName("!!!"), "drawing.png");
 });

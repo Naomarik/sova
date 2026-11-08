@@ -46,9 +46,22 @@ export function nextRoute(route: CopyRoute, failure: "no-picture" | "clipboard-r
 export const COPY_DONE = {
   picture: "Copied the drawing as a picture.",
   source: "Copied the drawing's source.",
-  viewer: "This browser won't put a picture on the clipboard here, so it opened in the image viewer: save or copy it from there.",
+  viewer: "This browser won't put a picture on the clipboard here, so it opened in the image viewer to save from there.",
   textInstead: "This browser couldn't make a picture of the drawing, so its source was copied instead.",
 } as const;
+
+/** A file name for a saved picture: the card's title or kind, as plain words. */
+export function pictureFileName(label: string): string {
+  const name = label.normalize("NFKD").replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase().slice(0, 60).replace(/-+$/, "");
+  return `${name || "drawing"}.png`;
+}
+
+/** The HTML that goes beside the PNG: the same picture at the card's size, for a target that pastes HTML
+    (a document, a mail) and would otherwise show the PNG's pixels at twice the size. `dataUrl` is the PNG. */
+export function pictureHtml(dataUrl: string, width: number, height: number, alt: string): string {
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  return `<img src="${esc(dataUrl)}" width="${width}" height="${height}" alt="${esc(alt)}">`;
+}
 
 /** Whether a computed colour is solid: `transparent`, `rgba(…, a)` and `… / a` with a below 1 are not. */
 export function solidColor(color: string): boolean {

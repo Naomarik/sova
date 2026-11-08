@@ -27,9 +27,10 @@ export interface Picture {
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
-/** What stays out of the picture: every head child but the title, the Source view, the warnings,
-    the step-through, a frame's failure line. */
-const DROP = [".vis-source", ".vis-warning", ".vis-stepper", ".vis-frame-failed"];
+/** What stays out of the picture: every head child but the title (an untitled card's whole head), the
+    Source view, the warnings, the step-through, a frame's failure line, a wireframe's screen picker (the
+    picture shows every screen). */
+const DROP = [".vis-source", ".vis-warning", ".vis-stepper", ".vis-frame-failed", ".vis-wf-nav"];
 /** Kept as the drawing's own attributes: written as CSS too they'd fight them (an SVG transform's origin). */
 /** A focus ring is the page's, never the picture's. */
 const NO_RING = new Set(["outline", "outline-color", "outline-style", "outline-width", "outline-offset"]);
@@ -238,7 +239,9 @@ function pathIn(clone: Element, figure: Element, o: Element): Element | null {
  */
 export async function snapshot(figure: HTMLElement, opts: { svgSource?: string } = {}): Promise<Picture> {
   const head = figure.querySelector(".vis-head");
-  const left = [...(head ? [...head.children].filter((c) => !c.matches(".vis-title, .vis-eyebrow")) : []), ...figure.querySelectorAll(DROP.join(","))] as HTMLElement[];
+  const titled = !!head?.querySelector(":scope > .vis-title");
+  const headLeft = !head ? [] : titled ? [...head.children].filter((c) => !c.matches(".vis-title")) : [head];
+  const left = [...headLeft, ...figure.querySelectorAll(DROP.join(","))] as HTMLElement[];
   // What the picture leaves out is taken out of the card's layout for the moment the styles are read,
   // so nothing keeps its room (the step-through's row, a phone head's second line). Put back before the
   // page paints; a focused button it hid gets its focus back.
@@ -262,7 +265,7 @@ export async function snapshot(figure: HTMLElement, opts: { svgSource?: string }
       .map((o) => [o, at(o), o.scrollWidth - o.clientWidth] as const)
       .filter(([, , hidden]) => hidden > 0);
     drop = left.map(at);
-    if (head) headClone = at(head);
+    if (head && titled) headClone = at(head);
     inline(figure, clone, null);
   } finally {
     left.forEach((el, i) => el.style.setProperty("display", saved[i]![0], saved[i]![1]));

@@ -8,6 +8,7 @@ import { roleSlug } from "./coordination.ts";
 import type { MemberDuty } from "./mailbox.ts";
 import type { AgentStatus, TaskOutcome } from "./runner.ts";
 import type { MonitorDefaults, TeamDefaultsFile, WorkerTuple } from "./team-defaults.ts";
+import { DELEGATE_PROFILE_INFO, isDelegateProfile, type DelegateProfileId } from "../mode/delegate.ts";
 
 export const TEAM_ENTRY_TYPE = "subagents-team-v1";
 /** Durable team events (handover, retire, wrap-up, pause, resume); Sova parses them. */
@@ -56,6 +57,8 @@ export interface TeamMemberInput {
 	extensions?: string[];
 	/** Caller choices, separate from the tuple filled by a subagent profile. Internal only. */
 	modelOverride?: Pick<TeamDefaults, "backend" | "model" | "effort">;
+	/** The member's work kind (Delegate's four), as read: the chat's profile routes it to that kind's model. */
+	kind?: DelegateProfileId;
 	/** Set by the manager only (never a tool argument): a standing role from team defaults. */
 	duty?: MemberDuty;
 	/** Set by the manager only: the role this member succeeds (team_succeed). */
@@ -82,6 +85,8 @@ export interface ComposedMemberSpec {
 export interface PersistedMember {
 	/** Explicit member/call choices; absent on older records. */
 	modelOverride?: Pick<TeamDefaults, "backend" | "model" | "effort">;
+	/** The work kind it was named with; absent on a member named without one, or saved before kinds. A successor keeps it. */
+	kind?: DelegateProfileId;
 	workerId: string;
 	role: string;
 	ownedPaths: string[];
@@ -464,8 +469,11 @@ export function workerSuccessorTask(o: {
 	assignment?: string; steers: readonly string[]; steersOmitted: number;
 	/** The successor is the team's coordinator: its own team_ask reaches the main thread. */
 	coordinator?: boolean;
+	/** The predecessor's work kind: a Planning & specs or Investigation successor is told not to edit. */
+	kind?: DelegateProfileId;
 }): string {
 	const later = inheritedSteersText(o.steers, o.steersOmitted, o.oldRole);
+	const noEdit = noEditLine(o.kind);
 	return [
 		`Continue the work of ${o.oldRole} (${o.oldId}), whose context is running out. Its handover note at ${o.note} is where you start: read it first and continue from the state it records. Do not redo steps the note marks done; verify them cheaply (ls, a quick grep, the tail of a file) instead of re-reading large inputs or re-running earlier steps.`,
 		...(o.missing
@@ -482,7 +490,16 @@ export function workerSuccessorTask(o: {
 			]
 			: [o.oldLive ? `Its original assignment is not known here: ask ${o.oldRole} for it with team_msg.` : `Its original assignment is not known here: ask ${o.coordinator ? "the main thread" : "the coordinator"} with team_ask.`]),
 		...(later ? ["", later] : []),
+		...(noEdit ? ["", noEdit] : []),
 	].join("\n");
+}
+
+/** The kinds whose members never edit: Planning & specs and Investigation. */
+export const NON_EDITING_KINDS: readonly DelegateProfileId[] = ["planning", "investigation"];
+/** What a non-editing member (and each successor of one) is told; undefined for the kinds that edit. */
+export function noEditLine(kind: DelegateProfileId | undefined): string | undefined {
+	if (!kind || !NON_EDITING_KINDS.includes(kind)) return undefined;
+	return `Your work kind is ${DELEGATE_PROFILE_INFO[kind].label}: do not edit, create or delete project files. Read, search and run read-only commands, and report what you find and propose by message and in your final answer (your handover note is the one file you write).`;
 }
 
 /** A synthesized coordinator or monitor as a team member input (duty set; the monitor gets no built-in tools). */
@@ -525,7 +542,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function decodeMember(value: unknown): PersistedMember | undefined {
 	if (!isRecord(value)) return undefined;
-	const { workerId, role, ownedPaths, backend, model, groupId, addedAt, orchestrator, duty, successorOf, modelOverride } = value;
+	const { workerId, role, ownedPaths, backend, model, groupId, addedAt, orchestrator, duty, successorOf, modelOverride, kind } = value;
+	if (kind !== undefined && !isDelegateProfile(kind)) return undefined;
 	if (modelOverride !== undefined && (!isRecord(modelOverride) || Object.entries(modelOverride).some(([k, v]) => !["backend", "model", "effort"].includes(k) || typeof v !== "string" || v.length > 200 || CONTROL.test(v)))) return undefined;
 	if (orchestrator !== undefined && typeof orchestrator !== "boolean") return undefined;
 	if (duty !== undefined && duty !== "coordinator" && duty !== "monitor") return undefined;
@@ -541,6 +559,7 @@ function decodeMember(value: unknown): PersistedMember | undefined {
 			...(model === undefined ? {} : { model }), groupId, addedAt, ...(orchestrator ? { orchestrator: true } : {}),
 			...(duty === undefined ? {} : { duty }), ...(successorOf === undefined ? {} : { successorOf }),
 			...(modelOverride === undefined ? {} : { modelOverride: { ...modelOverride } }),
+			...(kind === undefined ? {} : { kind }),
 		};
 	} catch {
 		return undefined;
@@ -627,6 +646,7 @@ export interface PreparedAdd {
 }
 export interface PreparedMember {
 	modelOverride?: Pick<TeamDefaults, "backend" | "model" | "effort">;
+	kind?: DelegateProfileId;
 	role: string;
 	ownedPaths: string[];
 	orchestrator: boolean;
@@ -653,6 +673,7 @@ const copyMember = (m: PersistedMember): PersistedMember => ({
 	...(m.model === undefined ? {} : { model: m.model }), ...(m.orchestrator ? { orchestrator: true } : {}), ...(m.duty ? { duty: m.duty } : {}),
 	...(m.successorOf ? { successorOf: m.successorOf } : {}),
 	...(m.modelOverride ? { modelOverride: { ...m.modelOverride } } : {}),
+	...(m.kind ? { kind: m.kind } : {}),
 });
 function coordinationHeader(coordination: { handoffDir: string; defaults: TeamDefaultsFile }, coordinatorRole: string): CoordinationHeader {
 	return {
@@ -677,6 +698,7 @@ function prepared(
 		}),
 		...(m.duty ? { duty: m.duty } : {}), ...(m.successorOf ? { successorOf: m.successorOf } : {}),
 		...(m.successorOfId ? { successorOfId: m.successorOfId } : {}),
+		...(m.input.kind && !m.duty ? { kind: m.input.kind } : {}),
 	};
 }
 

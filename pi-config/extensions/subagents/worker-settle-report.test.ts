@@ -15,6 +15,7 @@ import { MEMBER_ENV, awaitResponse, decodeMemberContext, requestId, writeRequest
 import { readMemberItems, writeInboxCaps } from "./inbox.ts";
 import { WORKER_MANIFEST_ENTRY_TYPE } from "./registry.ts";
 import { FakeWorkerHost } from "./tests/fake-worker-host.ts";
+import { profileOff } from "./tests/profile-off.ts";
 
 const NO_POLICY_FILE = path.join(os.tmpdir(), "subagents-tests-absent-policy.json");
 const OWNER = { sessionId: "owner-1", path: "/sessions/owner-1.jsonl" };
@@ -40,6 +41,7 @@ function sessionFile() {
 }
 
 function manager(file: ReturnType<typeof sessionFile>, host: FakeWorkerHost, agentDir: string) {
+	profileOff(agentDir);
 	const bus = eventBus();
 	host.announceOn(bus);
 	const tools = new Map<string, any>();

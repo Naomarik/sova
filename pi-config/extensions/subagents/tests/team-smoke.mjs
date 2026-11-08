@@ -220,7 +220,7 @@ async function deadline(promise, ms, label) {
 		const created = await call("team_create", {
 			name: "smoke-team",
 			objective: "SMOKE_OBJECTIVE",
-			members: [{ role: "builder", prompt: "Smoke build.", ownedPaths: ["src/smoke"], wake: false }],
+			members: [{ role: "builder", prompt: "Smoke build.", ownedPaths: ["src/smoke"], wake: false, kind: "routine" }],
 		});
 		assert.equal(created.details.teamId, "team_01");
 		// Sova's coordinator first and its monitor last, on the chat's own model.

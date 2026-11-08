@@ -16,6 +16,7 @@ import { WORKER_MANIFEST_ENTRY_TYPE } from "./registry.ts";
 import { resolvedModel } from "./worker-transcript.ts";
 import { MODE_WORKER_EVENT } from "../mode/events.ts";
 import { WAKE_DIR_ENV, cancelWakesBefore, readWakeRecords } from "./wake-store.ts";
+import { profileOff } from "./tests/profile-off.ts";
 
 const SNAPSHOT = "subagents:workers-snapshot";
 const NO_POLICY_FILE = path.join(os.tmpdir(), "subagents-tests-absent-policy.json");
@@ -98,7 +99,7 @@ function manager(file: ReturnType<typeof sessionFile>, options: Options = {}) {
 		sendMessage: (...m: any[]) => messages.push(m),
 	} as any, factory as any, {
 		policyFile: NO_POLICY_FILE,
-		...(options.agentDir ? { agentDir: options.agentDir } : {}), ...(options.mailboxRoot ? { mailboxRoot: options.mailboxRoot, mailboxPollMs: 10 } : {}),
+		...(options.agentDir ? { agentDir: profileOff(options.agentDir) } : {}), ...(options.mailboxRoot ? { mailboxRoot: options.mailboxRoot, mailboxPollMs: 10 } : {}),
 	});
 	const call = (name: string, params: any) => tools.get(name).execute("t", params, undefined, () => {}, ctx);
 	return {

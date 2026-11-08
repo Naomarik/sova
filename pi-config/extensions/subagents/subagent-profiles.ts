@@ -1,7 +1,7 @@
 /**
  * Subagent profiles: the one reader and writer of `<agent dir>/subagent-profiles.json`, named
  * bundles of every model a session's subagents are given — Delegate's four work kinds, the team
- * coordinator, monitor and members default, the spec writer and (optional) the alignment reviewer. A chat picks one (its hidden
+ * coordinator and monitor, the spec writer and (optional) the alignment reviewer. A chat picks one (its hidden
  * `subagent-profile` entry, newest on the branch wins); a chat with no pick follows this device's
  * default (`subagent-profiles-default.json`, its own tiny file so the mesh-synced library never
  * moves it); a missing pick target falls to the default, and an unusable library to the legacy
@@ -21,7 +21,6 @@ import {
 	DELEGATE_PROFILE_INFO,
 	DELEGATE_PROFILES,
 	loadDelegate,
-	parseChoice,
 	parseDelegate,
 	type DelegateProfile,
 	type DelegateProfileId,
@@ -69,7 +68,10 @@ export interface SubagentProfile {
 	delegate: Record<DelegateProfileId, DelegateProfile>;
 	/** null: no standing coordinator or monitor. */
 	teams: TeamsSetting | null;
-	/** null: a member nobody gave a model runs on the parent's model. */
+	/**
+	 * Retired: members run on their work kind's route (Delegate's four). Always null as parsed and
+	 * written; the key stays in the file because older readers require it. Any saved value is ignored.
+	 */
 	members: WorkerChoice | null;
 	/** null: the session writes the spec itself. */
 	specWriter: SpecWriter | null;
@@ -164,12 +166,7 @@ function parseProfile(at: string, raw: unknown, errors: string[]): SubagentProfi
 			else teams = { coordinator: parsed.value.coordinator, monitor: parsed.value.monitor, handover: parsed.value.handover };
 		}
 	}
-	let members: WorkerChoice | null = null;
-	if (raw.members !== null) {
-		const parsed = parseChoice(raw.members);
-		if ("error" in parsed) errors.push(`${at}.members: ${parsed.error} (or null for none)`);
-		else members = parsed;
-	}
+	// `members` (the retired members default): accepted present or absent, its value ignored.
 	let specWriter: SpecWriter | null = null;
 	if (raw.specWriter !== null) {
 		const parsed = parseSpec({ version: 1, writer: raw.specWriter });
@@ -195,7 +192,7 @@ function parseProfile(at: string, raw: unknown, errors: string[]): SubagentProfi
 		name: raw.name as string,
 		delegate: delegate.profiles,
 		teams,
-		members,
+		members: null,
 		specWriter,
 		...(reviewer === undefined ? {} : { reviewer }),
 		...(alignment === undefined ? {} : { alignment }),
@@ -463,7 +460,6 @@ export interface ResolvedSubagents {
 	alignment: AlignOverride | null;
 	/** Team defaults in the shape team_create reads; `absent` = the settings name none (both roles on the chat's own model). */
 	teams: TeamDefaultsState;
-	members: WorkerChoice | null;
 	/** Why resolution fell past a step (a dangling pick, an unusable file), for status text. */
 	note?: string;
 }
@@ -486,7 +482,6 @@ function fromProfile(file: string, profile: SubagentProfile, source: "pick" | "d
 		reviewer: profile.reviewer ? clone(profile.reviewer) : null,
 		alignment: profile.alignment ? { ...profile.alignment } : null,
 		teams: teamsState(file, profile.name, profile.teams),
-		members: profile.members ? clone(profile.members) : null,
 		...(note ? { note } : {}),
 	};
 }
@@ -501,7 +496,6 @@ function off(file: string, source: "pick" | "default", note?: string): ResolvedS
 		reviewer: null,
 		alignment: null,
 		teams: { state: "absent", file: `${file} (subagent profile "${OFF_PROFILE_NAME}")`, note: `the subagent profile "${OFF_PROFILE_NAME}" configures nothing` },
-		members: null,
 		...(note ? { note } : {}),
 	};
 }
@@ -517,7 +511,6 @@ export function legacyResolved(agentDir: string, note?: string): ResolvedSubagen
 		reviewer: null,
 		alignment: null,
 		teams: readTeamDefaults(agentDir),
-		members: null,
 		...(note ? { note } : {}),
 	};
 }
@@ -620,7 +613,6 @@ export function profileSlots(profile: SubagentProfile): { label: string; choice:
 		push(`${DELEGATE_PROFILE_INFO[id].label} primary`, profile.delegate[id].primary);
 		push(`${DELEGATE_PROFILE_INFO[id].label} fallback`, profile.delegate[id].fallback);
 	}
-	push("Members default", profile.members);
 	if (profile.teams) {
 		push("Coordinator primary", workerOf(profile.teams.coordinator.primary));
 		push("Coordinator fallback", profile.teams.coordinator.fallback ? workerOf(profile.teams.coordinator.fallback) : null);
@@ -637,7 +629,6 @@ export function profileSlots(profile: SubagentProfile): { label: string; choice:
 /** Every worker a profile names, primaries first in a stable order, then fallbacks. */
 export function profileWorkers(profile: SubagentProfile, fallbacks = true): WorkerChoice[] {
 	const primaries: WorkerChoice[] = DELEGATE_PROFILES.map((id) => profile.delegate[id].primary);
-	if (profile.members) primaries.push(profile.members);
 	if (profile.teams) primaries.push(workerOf(profile.teams.coordinator.primary), workerOf(profile.teams.monitor.primary));
 	if (profile.specWriter) primaries.push(profile.specWriter.primary);
 	if (profile.reviewer) primaries.push(profile.reviewer.primary);

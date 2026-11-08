@@ -385,15 +385,15 @@ const prof = (id: string, name: string, model?: string): SubagentProfile => ({
   name,
   delegate: delegateDefaults().profiles,
   teams: null,
-  members: model ? { backend: "pi", model, effort: "low" } : null,
-  specWriter: null,
+  members: null,
+  specWriter: model ? { primary: { backend: "pi", model, effort: "low" }, fallback: null } : null,
 });
 const LIB = "subagent-profiles.json";
-/** The library's profiles on a host, by id → members model ("-" for none). */
+/** The library's profiles on a host, by id → spec writer's model ("-" for none). */
 const libOf = (h: Host): Record<string, string> => {
   const st = readSubagentProfiles(h.agentDir);
   assert.equal(st.state, "ok", `${h.id}'s library parses`);
-  return Object.fromEntries((st as { value: { profiles: SubagentProfile[] } }).value.profiles.map((p) => [p.id, p.members?.model ?? "-"]));
+  return Object.fromEntries((st as { value: { profiles: SubagentProfile[] } }).value.profiles.map((p) => [p.id, p.specWriter?.primary.model ?? "-"]));
 };
 const save = (h: Host, profiles: SubagentProfile[]) => {
   writeSubagentProfiles(h.agentDir, { version: 1, profiles });

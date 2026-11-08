@@ -19,6 +19,7 @@ import type { MemberState, TeamAction, TeamMemberView, TeamView } from "./teams.
 import type { Worker } from "./contracts.ts";
 import { registerSubagents } from "./index.ts";
 import { BACKEND_DIALOG_EVENT } from "./contracts.ts";
+import { profileOff } from "./tests/profile-off.ts";
 
 // ── key data (raw terminal bytes, as the TUI would deliver them) ────────────
 
@@ -959,7 +960,7 @@ function harness(bus = eventBus()) {
 			return worker;
 		},
 		// A fresh agent dir with no team-defaults.json: Sova's coordinator and monitor run on the chat's own model.
-		{ agentDir: fs.mkdtempSync(path.join(os.tmpdir(), "subagents-tests-agent-")) },
+		{ agentDir: profileOff(fs.mkdtempSync(path.join(os.tmpdir(), "subagents-tests-agent-"))) },
 	);
 	return {
 		bus,

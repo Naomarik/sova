@@ -46,8 +46,25 @@ const NO_POLICY_FILE = path.join(os.tmpdir(), "subagents-tests-absent-policy.jso
 /** Likewise the agent dir: a fresh one per harness, with no team-defaults.json, so every team's coordinator
  *  (ag_01, first) and monitor (last) run on the chat's own model. Never one shared path: every team writes
  *  its handover notes there and the first read seeds a profile library there, which later tests would read. */
-const freshAgentDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "subagents-tests-agent-"));
+const freshAgentDir = () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "subagents-tests-agent-"));
+	// Off by default: under any other profile every member needs a work kind (or a model), and
+	// these tests are about the team machinery, not routing. Routing tests write their own profile.
+	fs.writeFileSync(path.join(dir, "subagent-profiles-default.json"), JSON.stringify({ version: 1, default: "off" }));
+	return dir;
+};
 
+/** Every work kind on the harness chat's own model (pi/test/model at high), as mode-delegate.json. */
+const OWN_MODEL_ROUTES = { version: 1, profiles: Object.fromEntries(["planning", "investigation", "routine", "complex"].map((k) => [k, { primary: { backend: "pi", model: "test/model", effort: "high" }, fallback: null }])) };
+/**
+ * A team call's members with kind "routine" filled in where a member names neither a kind nor a
+ * model nor a backend: these tests are about the team machinery, and under any profile but Off a
+ * member needs a kind. Refusal and routing tests use callRaw.
+ */
+const withKinds = (name: string, params: any): any => {
+	if ((name !== "team_create" && name !== "team_add") || !Array.isArray(params?.members)) return params;
+	return { ...params, members: params.members.map((m: any) => (m && typeof m === "object" && m.kind === undefined && m.model === undefined && m.backend === undefined ? { ...m, kind: "routine" } : m)) };
+};
 function harness(bus = eventBus(), options: SubagentsOptions = {}) {
 	const ownAgentDir = options.agentDir === undefined ? freshAgentDir() : undefined;
 	options = { policyFile: NO_POLICY_FILE, agentDir: ownAgentDir, ...options };
@@ -149,7 +166,11 @@ function harness(bus = eventBus(), options: SubagentsOptions = {}) {
 		appended,
 		tools,
 		commands,
+		/** A tool call; team_create and team_add members that name neither a kind nor a model get kind "routine" (see withKinds). */
 		call: (name: string, params: any = {}, signal?: AbortSignal) =>
+			tools.get(name).execute("test", withKinds(name, params), signal, (partial: any) => updates.push(partial), ctx),
+		/** A tool call exactly as given. */
+		callRaw: (name: string, params: any = {}, signal?: AbortSignal) =>
 			tools.get(name).execute("test", params, signal, (partial: any) => updates.push(partial), ctx),
 		event: (name: string, data: any) => events.get(name)?.(data, ctx),
 		start: () => events.get("session_start")({}, ctx),
@@ -2365,7 +2386,7 @@ test("/team <objective> while streaming queues the identical followUp and says s
 		assert.match(message.content, /Obey the team tool descriptions, schemas and limits/);
 		assert.match(message.content, /team_msg .* team_ask/);
 		assert.match(message.content, /You remain the authority, and each member's final answer is its report/);
-		assert.match(message.content, /default to the pi backend inheriting the parent model\/effort/);
+		assert.match(message.content, /each member runs on its work kind's model \(below; a model you name for it wins/);
 		// Every team gets Sova's coordinator and monitor: the chat plans only the workers, and is told the cost.
 		assert.match(message.content, /Every team gets a coordinator and a monitor from Sova: plan only the members who do the work\./);
 		assert.match(message.content, /the team runs 2 more workers than you name \(its coordinator and monitor\), so small independent jobs are cheaper as separate workers with agent_spawn/);
@@ -3370,6 +3391,9 @@ function coordinatedHarness(file?: unknown, opts: { claude?: boolean; sessionId?
 	const agentDir = path.join(root, "agent");
 	fs.mkdirSync(agentDir);
 	if (file !== undefined) fs.writeFileSync(path.join(agentDir, "team-defaults.json"), typeof file === "string" ? file : JSON.stringify(file));
+	// The seeded profile routes every work kind to the chat's own model, so members named with
+	// the kind below run as they would on the chat's model; routing has tests of its own.
+	fs.writeFileSync(path.join(agentDir, "mode-delegate.json"), JSON.stringify(OWN_MODEL_ROUTES));
 	const timers: { fn: () => void; ms: number }[] = [];
 	const h = harness(eventBus(), {
 		mailboxRoot: path.join(root, "mail"), mailboxPollMs: 10, agentDir, inboxDebounceMs: 30, inboxRetryMs: [30, 60],
@@ -3476,7 +3500,7 @@ test("team_create refuses a lead mark and per-call standing-role options as unkn
 	const h = coordinatedHarness(DEFAULTS_FILE);
 	try {
 		await assert.rejects(h.call("team_create", { name: "Led", objective: "o", members: [{ role: "lead", prompt: "lead", orchestrator: true }, { role: "dev", prompt: "p" }] }),
-			/^Error: members\[0\] \(lead\): unknown setting "orchestrator"\. A member takes role, prompt, ownedPaths, backend, model, effort, tools, mcpServers, systemPrompt, cwd, wake, backendOptions, extensions\.$/);
+			/^Error: members\[0\] \(lead\): unknown setting "orchestrator"\. A member takes role, prompt, ownedPaths, backend, model, effort, tools, mcpServers, systemPrompt, cwd, wake, backendOptions, extensions, kind\.$/);
 		await assert.rejects(h.call("team_create", { name: "Led", objective: "o", members: [{ role: "lead", prompt: "lead", orchestrator: false }] }), /unknown setting "orchestrator"/, "false is refused too: there is no such setting");
 		for (const key of ["coordinator", "monitor"])
 			for (const value of [false, true])
@@ -4016,7 +4040,7 @@ test("team_succeed starts <role>-<n+1> on the same backend/model/effort; team_re
 		[...h.workers, ...h.created].find((w: any) => w.name === "qa-3").settle(undefined, "killed");
 		await h.tick();
 		const r3 = await h.ask("ag_06", { type: "succeed", to: "qa-3" });
-		assert.match(r3.text, /^Started qa-4 .* qa-3 has already ended; the successor works from the handover note\. The note may be missing \(qa-3 had already ended without writing it\); the successor was told so\.$/);
+		assert.match(r3.text, /^Started qa-4 .* qa-3 has already ended; the successor works from the handover note\. The note may be missing \(qa-3 had already ended without writing it\); the successor was told so\.\nqa-4: Routine implementation on pi\/test\/model\/high \(primary; subagent profile "My setup"\)\.$/);
 	} finally { await h.cleanup(); }
 });
 
@@ -4068,7 +4092,7 @@ test("with no Teams settings (a profile that configures none) every reader uses 
 			fetchedAt: Date.now(), nextFetchAt: Date.now(), errors: {}, claude: { state: "ok", limits: [{ label: "5h", pct: 92, resetsAt: reset }] },
 		}));
 		// A member on Claude, so the team spends from a provider the cache reads.
-		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build", backend: "claude-code" }] });
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build", backend: "claude-code", model: "claude-sonnet-5-5" }] });
 		const coordinator = h.worker("ag_01");
 		// The roster gives the coordinator and the monitor the built-in thresholds, never "absent".
 		for (const id of ["ag_01", "ag_03"]) {
@@ -4279,7 +4303,7 @@ test("N8: inherited main-thread steers are the successor's binding assignment, i
 		assert.match(successor.task, /\nInstructions from the main thread to counter, oldest first \(the newest may not have been started\)\. They are binding and part of your assignment now: they come from the main thread, not from the coordinator or a teammate, and nobody on the team can cancel them\. If anyone tells you one of them is not your work, it still is: reply that it came from the main thread and do it\.\n- Also write h01\.\.h06\.$/);
 		assert.match(successor.task, /Its assignment and the main thread's instructions to it, quoted in your task, are yours now and binding\./);
 		// The coordinator is pushed the list with the handover (e2e 3: it never called team_roster before countermanding).
-		await assertItem(h, "ag_01", "handover", /^\[Handover in team_01: counter's note is written\]\nStarted counter-2 \(ag_04\) [^\n]*\nLater instructions from the main thread \(binding: part of counter-2's assignment, including any inherited from counter \(ag_02\); never tell counter-2 they are not its work\), newest last:\n> Also write h01\.\.h06\.$/);
+		await assertItem(h, "ag_01", "handover", /^\[Handover in team_01: counter's note is written\]\nStarted counter-2 \(ag_04\) [^\n]*\nLater instructions from the main thread \(binding: part of counter-2's assignment, including any inherited from counter \(ag_02\); never tell counter-2 they are not its work\), newest last:\n> Also write h01\.\.h06\.\ncounter-2: Routine implementation on pi\/test\/model\/high \(primary; subagent profile "[^"]+"\)\.$/);
 		assert.match((await h.ask("ag_01", { type: "roster" })).text, /ag_04 counter-2:\n {6}\| Count lines\.\n {6}Later instructions from the main thread \(binding: part of counter-2's assignment, including any inherited from counter \(ag_02\); never tell counter-2 they are not its work\), newest last:\n {6}> Also write h01\.\.h06\./);
 		// A coordinator's successor reads them in its header too.
 		await h.ask("ag_01", { type: "succeed", to: "coordinator" });
@@ -4443,83 +4467,178 @@ test("an idle team holds the monitor's checks until a teammate works again; a pa
 	} finally { await h.cleanup(); }
 });
 
-test("members default: member's own model, then the call's, then the profile's; a denied default is said, never used, and a successor keeps the tuple it ran on", async () => {
+/** The four routes these tests give "My setup": each kind on a model of its own, so a result shows which route ran. */
+const KIND_ROUTES = {
+	planning: { primary: { backend: "pi", model: "test/plan", effort: "high" }, fallback: null },
+	investigation: { primary: { backend: "pi", model: "test/look", effort: "low" }, fallback: { backend: "pi", model: "test/model", effort: "medium" } },
+	routine: { primary: { backend: "pi", model: "test/fast", effort: "low" }, fallback: { backend: "pi", model: "test/model", effort: "medium" } },
+	complex: { primary: { backend: "pi", model: "test/deep", effort: "xhigh" }, fallback: null },
+};
+/** A coordinated harness on "My setup" with KIND_ROUTES (or `routes`), whose registry knows every test/* model but test/nope. */
+async function kindsHarness(routes: Record<string, unknown> = {}) {
 	const h = coordinatedHarness(DEFAULTS_FILE);
-	try {
-		// The seeded "My setup" configures no members default; give it one: pi/test/model/high.
-		// (Seeding is lazy: a first read — here /team defaults — writes the library.)
-		await h.commands.get("team").handler("defaults", h.ctx);
-		const libPath = path.join(h.agentDir, "subagent-profiles.json");
-		const lib = JSON.parse(fs.readFileSync(libPath, "utf8"));
-		lib.profiles[0].members = { backend: "pi", model: "test/model", effort: "high" };
+	h.ctx.modelRegistry.find = (p: string, m: string) => (p === "test" && m !== "nope" ? { provider: p, id: m } : undefined);
+	await h.commands.get("team").handler("defaults", h.ctx); // a first read seeds the library
+	const libPath = path.join(h.agentDir, "subagent-profiles.json");
+	const lib = JSON.parse(fs.readFileSync(libPath, "utf8"));
+	const setRoutes = (r: Record<string, unknown>) => {
+		lib.profiles[0].delegate = { ...KIND_ROUTES, ...r };
 		fs.writeFileSync(libPath, JSON.stringify(lib));
-		const created = await h.call("team_create", {
-			name: "Crew", objective: "Ship",
-			members: [
-				{ role: "dev", prompt: "build" },
-				{ role: "own", prompt: "mine", backend: "pi", model: "test/model", effort: "low" },
-				{ role: "cc", prompt: "claude work", backend: "claude-code" },
-			],
-		});
-		assert.match(created.content[0].text, /Members default: dev run on pi\/test\/model\/high \(subagent profile "My setup"\)/);
-		const dev = h.worker("ag_02"), own = h.worker("ag_03"), cc = h.worker("ag_04");
-		assert.deepEqual([dev.backend, dev.model, dev.effort], ["pi", "test/model", "high"], "the profile fills the member nobody gave a model");
-		assert.deepEqual([own.backend, own.model, own.effort], ["pi", "test/model", "low"], "the member's own choice wins over the profile");
-		assert.equal(cc.model, "claude-code-cli/claude-sonnet-5-5", "a member naming claude-code keeps to it: Claude's default (Sonnet), never the pi default");
-		assert.equal(cc.effort, "medium");
-		const entry = h.appended.filter((e) => e.customType === "subagents-team-v1" && e.data.op === "create").at(-1);
-		const recOf = (id: string) => entry.data.members.find((m: any) => m.workerId === id);
-		assert.deepEqual(recOf("ag_02").modelOverride, {}, "a profile-filled member records no explicit choice");
-		assert.deepEqual(recOf("ag_03").modelOverride, { backend: "pi", model: "test/model", effort: "low" }, "the member's own choice is recorded apart from the resolved tuple");
-		assert.deepEqual(recOf("ag_04").modelOverride, { backend: "claude-code" }, "an explicit backend is recorded");
-		// team_add reads the current profile too.
-		const add = await h.call("team_add", { team: "team_01", members: [{ role: "docs", prompt: "write" }] });
-		assert.match(add.content[0].text, /Members default: docs run on pi\/test\/model\/high/);
-		assert.equal(h.worker("ag_06").model, "test/model");
-		// A default that can't run here is said, never used: the member runs on the parent's model.
-		lib.profiles[0].members = { backend: "pi", model: "zai/not-here", effort: "low" };
-		fs.writeFileSync(libPath, JSON.stringify(lib));
-		const denied = await h.call("team_add", { team: "team_01", members: [{ role: "late", prompt: "join" }] });
-		assert.match(denied.content[0].text, /Members default pi\/zai\/not-here\/low \(subagent profile "My setup"\) can't run here — unknown model zai\/not-here in this session's registry — so late run on this session's model\./);
-		assert.equal(h.worker("ag_07").model, "test/model", "a denied default is not used: the member runs on the session's model (the harness's test/model), as the line said");
-		// Succession under a working default: the profile-filled member's successor takes the CURRENT default…
-		lib.profiles[0].members = { backend: "pi", model: "test/model", effort: "low" };
-		fs.writeFileSync(libPath, JSON.stringify(lib));
-		const r = await h.ask("ag_01", { type: "succeed", to: "dev" });
+	};
+	setRoutes(routes);
+	const records = () => h.appended.filter((e) => e.customType === "subagents-team-v1" && e.data.op !== "eject").flatMap((e) => e.data.members);
+	const recOf = (id: string) => records().find((m: any) => m.workerId === id);
+	const named = (role: string) => [...h.workers, ...h.created].find((w: any) => w.name === role);
+	/** Start `role`'s successor through its coordinator, as team_succeed does, and return the coordinator's handover item. */
+	const succeed = async (role: string) => {
+		const r = await h.ask("ag_01", { type: "succeed", to: role });
 		assert.equal(r.ok, true, r.text);
-		h.writeNote("dev");
-		dev.status = "running";
-		dev.settle();
+		h.writeNote(role);
+		const old = named(role);
+		old.status = "running";
+		old.settle();
 		await h.tick();
-		const startedDev2 = (await assertItem(h, "ag_01", "handover", /Started dev-2/)).body;
-		assert.match(
-			startedDev2,
-			/Started dev-2 \(ag_\d+\) to succeed dev \(ag_02\) on pi\/test\/model\/low\.[\s\S]*Members default: dev-2 run on pi\/test\/model\/low/,
-			"the current default (not the tuple dev started with) fills the successor, and says so",
-		);
-		// …whereas a member's own recorded choice is preserved.
-		const r2 = await h.ask("ag_01", { type: "succeed", to: "own" });
-		assert.equal(r2.ok, true, r2.text);
-		h.writeNote("own");
-		own.status = "running";
-		own.settle();
-		await h.tick();
-		await assertItem(h, "ag_01", "handover", /Started own-2 \(ag_\d+\) to succeed own \(ag_03\) on pi\/test\/model\/low\./);
-		// And a default that went bad since is said and NOT used: the successor keeps the tuple it ran on.
-		lib.profiles[0].members = { backend: "pi", model: "zai/not-here", effort: "low" };
-		fs.writeFileSync(libPath, JSON.stringify(lib));
-		const r3 = await h.ask("ag_01", { type: "succeed", to: "docs" });
-		assert.equal(r3.ok, true, r3.text);
-		h.writeNote("docs");
-		const docs = h.worker("ag_06");
-		docs.status = "running";
-		docs.settle();
-		await h.tick();
-		await assertItem(
-			h, "ag_01", "handover",
-			/Started docs-2 \(ag_\d+\) to succeed docs \(ag_06\) on pi\/test\/model\/high\.[\s\S]*can't run here — unknown model zai\/not-here[\s\S]*keep the tuple they ran on\./,
-		); // a denied default leaves the predecessor's tuple in place, and the notice says so
+		return (await assertItem(h, "ag_01", "handover", new RegExp(`Started ${esc(role)}-2 `))).body;
+	};
+	return { ...h, setRoutes, recOf, named, succeed };
+}
+
+test("member kinds: each member runs on its kind's route from the chat's profile, the result says which, and the kind is recorded", async () => {
+	const h = await kindsHarness();
+	try {
+		const created = (await h.callRaw("team_create", {
+			name: "Crew", objective: "Ship",
+			members: [{ role: "dev", prompt: "build", kind: "routine" }, { role: "arch", prompt: "design", kind: "Complex implementation" }],
+		})).content[0].text;
+		assert.match(created, /^dev: Routine implementation on pi\/test\/fast\/low \(primary; subagent profile "My setup"\)\.$/m);
+		assert.match(created, /^arch: Complex implementation on pi\/test\/deep\/xhigh \(primary; subagent profile "My setup"\)\.$/m, "a kind's label is read as the kind");
+		assert.deepEqual([h.named("dev").model, h.named("dev").effort], ["test/fast", "low"]);
+		assert.deepEqual([h.named("arch").model, h.named("arch").effort], ["test/deep", "xhigh"]);
+		assert.deepEqual([h.recOf(h.named("dev").id).kind, h.recOf(h.named("dev").id).modelOverride], ["routine", {}], "the kind is recorded, the routed tuple is no explicit choice");
+		assert.equal(h.recOf(h.named("arch").id).kind, "complex");
+		// team_add reads the profile as it is now.
+		h.setRoutes({ routine: { primary: { backend: "pi", model: "test/quick", effort: "minimal" }, fallback: null } });
+		const added = (await h.callRaw("team_add", { team: "Crew", members: [{ role: "docs", prompt: "write", kind: "routine" }] })).content[0].text;
+		assert.match(added, /^docs: Routine implementation on pi\/test\/quick\/minimal \(primary; /m);
+		assert.equal(h.named("docs").model, "test/quick");
 	} finally { await h.cleanup(); }
+});
+
+test("member kinds: a kind whose primary can't run uses its fallback and says so; neither → nothing starts and the chat is told to ask the user", async () => {
+	const h = await kindsHarness({ routine: { primary: { backend: "pi", model: "test/nope", effort: "low" }, fallback: { backend: "pi", model: "test/model", effort: "medium" } } });
+	try {
+		const created = (await h.callRaw("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build", kind: "routine" }] })).content[0].text;
+		assert.match(created, /^dev: Routine implementation on pi\/test\/model\/medium \(fallback; primary pi\/test\/nope\/low can't run: unknown model test\/nope in this session's registry; subagent profile "My setup"\)\.$/m);
+		assert.deepEqual([h.named("dev").model, h.named("dev").effort], ["test/model", "medium"]);
+		// Neither can run: refused before any worker starts, never the chat's own model.
+		h.setRoutes({ complex: { primary: { backend: "pi", model: "test/nope", effort: "high" }, fallback: null } });
+		const before = h.workers.length;
+		const refused = await h.callRaw("team_create", { name: "Two", objective: "o", members: [{ role: "ok", prompt: "p", kind: "routine" }, { role: "hard", prompt: "p", kind: "complex" }] }).then(() => "", (e: Error) => e.message);
+		assert.match(refused, /^Team not created: hard's kind Complex implementation can't run here \(primary pi\/test\/nope\/high: unknown model test\/nope in this session's registry; fallback: no fallback is set\)\. Ask the user which model to use for it, then name that model on the member\.$/);
+		assert.equal(h.workers.length, before, "no worker started, the coordinator and monitor included");
+		assert.equal(h.appended.filter((e) => e.customType === "subagents-team-v1").length, 1, "only the first team was recorded");
+	} finally { await h.cleanup(); }
+});
+
+test("member kinds: under any profile but Off a member with neither a kind nor a model is refused before anything starts; under Off it runs on the chat's model", async () => {
+	const h = await kindsHarness();
+	try {
+		const refused = await h.callRaw("team_create", {
+			name: "Crew", objective: "Ship",
+			members: [{ role: "builder", prompt: "build" }, { role: "ok", prompt: "p", kind: "routine" }, { role: "tester", prompt: "test" }],
+		}).then(() => "", (e: Error) => e.message);
+		assert.equal(refused, "members[0] (builder) needs a kind: planning, investigation, routine or complex (or a model you were given). members[2] (tester) needs a kind: planning, investigation, routine or complex (or a model you were given).");
+		assert.equal(h.workers.length, 0, "nothing started");
+		assert.equal(h.appended.filter((e) => e.customType === "subagents-team-v1").length, 0);
+		// An unknown kind is refused by name too.
+		const bad = await h.callRaw("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "p", kind: "quick" }] }).then(() => "", (e: Error) => e.message);
+		assert.match(bad, /^members\[0\] \(dev\): kind must be one of planning, investigation, routine or complex \(got "quick"\)\.$/);
+		// team_add refuses the same way, before the team's seats or members are touched.
+		await h.callRaw("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "p", kind: "routine" }] });
+		const n = h.workers.length;
+		const addRefused = await h.callRaw("team_add", { team: "Crew", members: [{ role: "late", prompt: "p" }] }).then(() => "", (e: Error) => e.message);
+		assert.match(addRefused, /^members\[0\] \(late\) needs a kind: /);
+		assert.equal(h.workers.length, n);
+		// Under Off nothing routes: no kind is needed, and the member runs on the chat's own model.
+		h.ctx.sessionManager.getBranch = () => [{ type: "custom", customType: "subagent-profile", data: { v: 1, profile: "off" } }];
+		const off = (await h.callRaw("team_add", { team: "Crew", members: [{ role: "free", prompt: "p" }, { role: "kinded", prompt: "p", kind: "complex" }] })).content[0].text;
+		assert.match(off, /^free: no profile routes it \(this chat's subagent profile is Off\); on this chat's own model\.$/m);
+		assert.match(off, /^kinded \(Complex implementation\): no profile routes it \(this chat's subagent profile is Off\); on this chat's own model\.$/m);
+		assert.equal(h.named("kinded").model, "test/model", "Off: the kind routes nothing");
+	} finally { await h.cleanup(); }
+});
+
+test("member kinds: a model named for the member wins; then its kind; then the team's defaults.model, which covers members on its backend with no kind", async () => {
+	const h = await kindsHarness();
+	try {
+		const created = (await h.callRaw("team_create", {
+			name: "Crew", objective: "Ship", defaults: { model: "test/team", effort: "high" },
+			members: [
+				{ role: "own", prompt: "p", kind: "routine", model: "test/mine", effort: "minimal" },
+				{ role: "kinded", prompt: "p", kind: "routine" },
+				{ role: "teamwide", prompt: "p" },
+				{ role: "tuned", prompt: "p", kind: "routine", effort: "xhigh" },
+			],
+		})).content[0].text;
+		assert.deepEqual([h.named("own").model, h.named("own").effort], ["test/mine", "minimal"], "the member's own model");
+		assert.match(created, /^own \(Routine implementation\): on pi\/test\/mine\/minimal \(the model named for it\)\.$/m);
+		assert.deepEqual([h.named("kinded").model, h.named("kinded").effort], ["test/fast", "low"], "the kind's route beats the team-wide model and effort");
+		assert.deepEqual([h.named("teamwide").model, h.named("teamwide").effort], ["test/team", "high"], "no kind: the team's defaults.model");
+		assert.match(created, /^teamwide: on pi\/test\/team \(the team's defaults\.model\)\.$/m);
+		assert.deepEqual([h.named("tuned").model, h.named("tuned").effort], ["test/fast", "xhigh"], "an effort alone overrides only the effort");
+		assert.match(created, /^tuned: Routine implementation on pi\/test\/fast\/xhigh \(primary; effort named for it; /m);
+		assert.deepEqual(h.recOf(h.named("tuned").id).modelOverride, { effort: "xhigh" }, "the explicit effort is kept for its successor");
+		// A backend contradicting the kind's route is refused, never ignored; defaults may not carry a kind.
+		const contra = await h.callRaw("team_add", { team: "Crew", members: [{ role: "cc", prompt: "p", kind: "routine", backend: "claude-code" }] }).then(() => "", (e: Error) => e.message);
+		assert.match(contra, /^Members not added: members\[0\] \(cc\) names backend claude-code, but its kind Routine implementation runs on pi\/test\/fast\/low\. Leave backend out, or name a model for it\.$/);
+		const kindDefault = await h.callRaw("team_create", { name: "Two", objective: "o", defaults: { kind: "routine" }, members: [{ role: "x", prompt: "p", kind: "routine" }] }).then(() => "", (e: Error) => e.message);
+		assert.match(kindDefault, /^Unsupported team default kind; .* Put kind on each member that needs it\.$/);
+	} finally { await h.cleanup(); }
+});
+
+test("member kinds: Planning & specs and Investigation members are told not to edit, and so is a successor of one; the implementation kinds are not", async () => {
+	const h = await kindsHarness();
+	try {
+		await h.callRaw("team_create", {
+			name: "Crew", objective: "Ship",
+			members: [{ role: "scout", prompt: "find the leak", kind: "investigation" }, { role: "planner", prompt: "plan it", kind: "planning" }, { role: "dev", prompt: "fix it", kind: "routine" }],
+		});
+		const noEdit = /Your work kind is (Investigation|Planning & specs): do not edit, create or delete project files\./;
+		assert.match(h.named("scout").task, noEdit);
+		assert.match(h.named("planner").task, noEdit);
+		assert.doesNotMatch(h.named("dev").task, /do not edit, create or delete project files/);
+		const coordinator = h.worker("ag_01");
+		assert.doesNotMatch(coordinator.task, /Your work kind is/, "the coordinator's quoted assignment is the chat's prompt as given");
+		const body = await h.succeed("scout");
+		assert.match(body, /^Started scout-2 .* on pi\/test\/look\/low\./m, "the successor is routed by the same kind");
+		const successor = h.named("scout-2");
+		assert.match(successor.task, /Your work kind is Investigation: do not edit, create or delete project files\./, "the successor's own prompt carries the rule");
+		assert.equal(h.recOf(successor.id).kind, "investigation", "and its record keeps the kind");
+	} finally { await h.cleanup(); }
+});
+
+test("member kinds: a successor is routed by its kind under the chat's current profile; where that can't run, or the member was saved with no kind, it keeps its predecessor's model and says so", async () => {
+	const h = await kindsHarness();
+	try {
+		await h.callRaw("team_create", {
+			name: "Crew", objective: "Ship",
+			members: [{ role: "dev", prompt: "p", kind: "routine" }, { role: "arch", prompt: "p", kind: "complex" }, { role: "own", prompt: "p", model: "test/mine" }],
+		});
+		h.setRoutes({ routine: { primary: { backend: "pi", model: "test/quick", effort: "minimal" }, fallback: null }, complex: { primary: { backend: "pi", model: "test/nope", effort: "high" }, fallback: null } });
+		assert.match(await h.succeed("dev"), /^Started dev-2 .* on pi\/test\/quick\/minimal\.[\s\S]*\ndev-2: Routine implementation on pi\/test\/quick\/minimal \(primary; subagent profile "My setup"\)\.$/m, "the current profile's route");
+		assert.match(await h.succeed("arch"), /^Started arch-2 .* on pi\/test\/deep\/xhigh\.[\s\S]*\narch-2 \(Complex implementation\) keeps arch's model pi\/test\/deep\/xhigh: its kind can't run here \(primary pi\/test\/nope\/high: /m, "nobody to ask mid-handover: the predecessor's model stands");
+		assert.match(await h.succeed("own"), /^Started own-2 .* on pi\/test\/mine\b/m, "a model named for the member is kept");
+	} finally { await h.cleanup(); }
+	// A member with no kind on record (named under Off, or saved before work kinds: the same record) whose
+	// chat is now on a routing profile: never refused, never throws; it keeps its model and says so.
+	const old = await kindsHarness();
+	try {
+		old.ctx.sessionManager.getBranch = () => [{ type: "custom", customType: "subagent-profile", data: { v: 1, profile: "off" } }];
+		await old.callRaw("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "p" }] });
+		assert.equal(old.recOf(old.named("dev").id).kind, undefined);
+		old.ctx.sessionManager.getBranch = () => [];
+		assert.match(await old.succeed("dev"), /^Started dev-2 .* on pi\/test\/model\/high\.[\s\S]*\ndev-2 keeps dev's model pi\/test\/model\/high: dev was named without a work kind, so no profile routes its successor\.$/m);
+	} finally { await old.cleanup(); }
 });
 
 test("/team defaults prints both roles and the model each uses (named, or the chat's own), with the malformed reason, never 'off', and sends nothing", async () => {
@@ -5003,7 +5122,7 @@ test("through pi's own argument check: members and agents as JSON strings are re
 		assert.equal(r[1].isError, true);
 		assert.match(r[1].text, /^members\[0\] \(a\): count is not a member setting; a member is one role\. Add one member per role instead/);
 		assert.equal(r[2].isError, true);
-		assert.match(r[2].text, /^members\[0\] \(a\): unknown setting "colour"\. A member takes role, prompt, ownedPaths, backend, model, effort, tools, mcpServers, systemPrompt, cwd, wake, backendOptions, extensions\.$/);
+		assert.match(r[2].text, /^members\[0\] \(a\): unknown setting "colour"\. A member takes role, prompt, ownedPaths, backend, model, effort, tools, mcpServers, systemPrompt, cwd, wake, backendOptions, extensions, kind\.$/);
 		assert.equal(r[3].isError, true);
 		assert.match(r[3].text, /^Unsupported team default tools; defaults accept backend, model, effort, backendOptions\. Put tools on each member that needs it\.$/);
 		assert.equal(r[4].isError, true);
@@ -5160,6 +5279,28 @@ test("the main chat's team_succeed replaces an ended coordinator or monitor, onl
 		assert.match(m.content[0].text, /^Started monitor-2 \(ag_05\) to succeed monitor \(ag_03\)/);
 		assert.match(h.worker("ag_05").task, /You take over from the monitor monitor \(ag_03\), which has already ended: there is nobody to ask and no team_ready to call\. Run your standing instruction now/);
 		assert.equal(h.memberOf("ag_05")!.duty, "monitor");
+	} finally { await h.cleanup(); }
+});
+
+test("the guidance the chat reads says to name a kind for every member: team_create's and team_add's text, and /team, which lists what each kind runs on today", async () => {
+	const h = await kindsHarness();
+	try {
+		const create = h.tools.get("team_create");
+		for (const d of [create.description as string, h.tools.get("team_add").description as string]) {
+			assert.match(d, /Name a work kind for every member \(kind: planning, investigation, routine or complex/);
+			assert.match(d, /a member with neither a kind nor a model is refused unless the profile is Off/i);
+		}
+		assert.ok((create.promptGuidelines as string[]).some((g) => /^Give every team_create and team_add member a kind \(planning, investigation, routine or complex\) chosen by its work/.test(g)));
+		assert.match(JSON.stringify(create.parameters), /"kind":\{[^}]*"description":"The member's work kind: planning \(Planning & specs/);
+		await h.commands.get("team").handler("Ship the thing", h.ctx);
+		const plan = h.messages.at(-1)[0].content as string;
+		assert.match(plan, /- Name a kind for every member \(kind: planning, investigation, routine or complex\); Sova runs it on that kind's model from the subagent profile "My setup"/);
+		assert.match(plan, /\n {2}- planning \(Planning & specs\): pi\/test\/plan\/high, no fallback; told not to edit\n {2}- investigation \(Investigation\): pi\/test\/look\/low, fallback pi\/test\/model\/medium; told not to edit\n {2}- routine \(Routine implementation\): pi\/test\/fast\/low, fallback pi\/test\/model\/medium\n {2}- complex \(Complex implementation\): pi\/test\/deep\/xhigh, no fallback\n/);
+		h.ctx.sessionManager.getBranch = () => [{ type: "custom", customType: "subagent-profile", data: { v: 1, profile: "off" } }];
+		await h.commands.get("team").handler("Ship the thing", h.ctx);
+		const off = h.messages.at(-1)[0].content as string;
+		assert.match(off, /This chat's subagent profile is Off, so no profile routes members: a kind \(planning, investigation, routine or complex\) is optional/);
+		assert.doesNotMatch(off, /Name a kind for every member/);
 	} finally { await h.cleanup(); }
 });
 
@@ -5839,14 +5980,16 @@ test("runtime fallback: the out primary survives a reload; new teams, the member
 		await r.start();
 		const created = (await r.call("team_create", { name: "Next", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
 		assert.match(created, /Sova added the monitor "monitor" on claude-code\/claude-sonnet-5-5\/low \(fallback; primary pi\/ollama-cloud\/deepseek-v4\.1-flash\/low refused: it ran out at runtime .* ago \(hit its monthly usage limit\); it is tried again from /);
-		// The members default is a tuple check too.
+		// A work kind whose primary is out moves to the kind's fallback, and says so.
 		await r.commands.get("team").handler("defaults", r.ctx);
 		const libPath = path.join(r.agentDir, "subagent-profiles.json");
 		const lib = JSON.parse(fs.readFileSync(libPath, "utf8"));
-		lib.profiles[0].members = { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" };
+		lib.profiles[0].delegate.routine = { primary: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" }, fallback: { backend: "pi", model: "test/model", effort: "medium" } };
 		fs.writeFileSync(libPath, JSON.stringify(lib));
-		const added = (await r.call("team_add", { team: "Next", members: [{ role: "late", prompt: "p" }] })).content[0].text;
-		assert.match(added, /Members default pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(subagent profile "My setup"\) can't run here — it ran out at runtime/);
+		const added = (await r.callRaw("team_add", { team: "Next", members: [{ role: "late", prompt: "p", kind: "routine" }] })).content[0].text;
+		assert.match(added, /^late: Routine implementation on pi\/test\/model\/medium \(fallback; primary pi\/ollama-cloud\/deepseek-v4\.1-flash\/low can't run: it ran out at runtime /m);
+		const late = r.workers.find((w: any) => w.name === "late");
+		assert.deepEqual([late.model, late.effort], ["test/model", "medium"], "on the kind's fallback, never the out primary");
 		// A replacement from the main chat skips it as well.
 		const monitorId = (await r.call("team_list", { team: "Next" })).content[0].text.match(/(ag_\d+) monitor \(monitor\)/)[1];
 		r.worker(monitorId).exit();

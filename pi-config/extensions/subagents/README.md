@@ -487,8 +487,26 @@ parent editor while any team has a member that has not been stopped (killed memb
 `team_list` and `/team` keep them).
 
 A member takes `role`, `prompt`, `ownedPaths`, `backend`, `model`, `effort`,
-`tools`, `systemPrompt`, `cwd`, `wake`, `backendOptions` and `extensions` (by `agent_spawn`'s
-rules, loaded beside its team tools; a successor keeps them). `count`, `fork`, `agentType`,
+`tools`, `systemPrompt`, `cwd`, `wake`, `backendOptions`, `extensions` (by `agent_spawn`'s
+rules, loaded beside its team tools; a successor keeps them) and `kind`.
+
+**Work kinds.** `kind` is one of Delegate's four work kinds (`planning`, `investigation`,
+`routine`, `complex`; a kind's label, such as `Routine implementation`, is read as it). Under any
+subagent profile but Off, a member runs, most specific first: on a `model` named for it; else on
+its kind's model and effort from the chat's profile (`mode-delegate.json` when the library is
+malformed), or the kind's fallback when that can't run (the model settings, the registry, or an
+out-of-usage mark of the last hour); else on `defaults.model` when it is on that backend. A
+member `effort` alone changes only the effort; a member `backend` that contradicts its kind's
+route is refused; `defaults` takes no `kind`. A member with neither a kind nor a model (nor
+`defaults.model` for its backend) is refused before anything starts, and so is a kind whose
+model and fallback both can't run (the chat asks the user which model to use). The result has
+one line per member naming its kind, model, and whether it is the fallback. Under Off nothing
+routes: `kind` is optional and a member runs on the model named, else the chat's own. The kind is
+saved on the member's record (`kind` in `subagents-team-v1`), so a successor is routed by the
+same kind under the chat's profile at that moment; when that can't run, or the record has no
+kind (named under Off, or saved before kinds), the successor keeps its predecessor's model and
+the handover says so. Planning & specs and Investigation members, and every successor of one,
+are told in their prompt not to edit project files. `count`, `fork`, `agentType`,
 `orchestrator` and other unknown settings are refused, naming the setting; a missing role,
 prompt, team name or objective is refused, never filled in. `defaults` takes `backend`, `model`,
 `effort` and `backendOptions`; any other key (`coordinator` and `monitor` included) is refused.
@@ -843,7 +861,7 @@ is the usage pause's switch. The extension never writes the file.
   main chat) and a coordinator is reported to the main chat once (a `team-notice`), and keeps
   running. The model is marked out for an hour as a `subagents-dead-tuple-v1` entry (`{version: 1,
   backend, model, reason, at, teamId?, duty?}`), replayed from all of the session's entries at
-  `session_start`: every tuple check (standing roles, the members default, successors) refuses it
+  `session_start`: every tuple check (standing roles, members' work kinds, successors) refuses it
   meanwhile, and a team whose duty switched stays on its fallback. A failed monitor turn that
   doesn't switch, with no pending or held `wake_nudge`, gets its next check scheduled by the parent
   (`everyMinutes`), so the monitor never goes silent.

@@ -43,6 +43,7 @@ import {
 	checkStandingRoles,
 	synthesizedMember,
 	workerSuccessorTask,
+	noEditLine,
 	type AssignmentEntryData,
 	type PersistedMember,
 	type TeamActionKind,
@@ -68,6 +69,7 @@ import { DeliveryLanes, WakeScheduler, itemLine, steerUntilTaken, type LaneResul
 import { TEAM_NOTICE_TYPE, endReason, groupReturns, returnNoticeText } from "./inbox-lifecycle.ts";
 import { describeTeamDefaults, effectiveTeamDefaults, TEAM_DEFAULT_EFFORTS, type TeamDefaultsNow, type WorkerTuple } from "./team-defaults.ts";
 import { resolveSubagents, restorePick, type ResolvedSubagents } from "./subagent-profiles.ts";
+import { DELEGATE_PROFILES, DELEGATE_PROFILE_INFO, type DelegateProfileId, type WorkerChoice } from "../mode/delegate.ts";
 import {
 	NUDGE_MAX_ACTIVE,
 	NUDGE_MAX_IDLE_FIRES,
@@ -198,7 +200,7 @@ const TeamMemberSpec = Type.Object(
 		ownedPaths: Type.Optional(
 			Type.Array(Nonempty, { maxItems: MAX_OWNED_PATHS, description: "Optional: paths only this member edits. Shown to the team and in team_list; teammates are told to avoid them unless their task says otherwise, so leave out shared files. Advisory; not a lock." }),
 		),
-		backend: Type.Optional(Type.String({ minLength: 1, description: "Worker backend; default defaults.backend, else pi." })),
+		backend: Type.Optional(Type.String({ minLength: 1, description: "Worker backend; default defaults.backend, else pi. With a kind and no model, it must match the kind's route." })),
 		model: AgentSpec.properties.model,
 		effort: AgentSpec.properties.effort,
 		tools: AgentSpec.properties.tools,
@@ -208,6 +210,11 @@ const TeamMemberSpec = Type.Object(
 		wake: AgentSpec.properties.wake,
 		backendOptions: AgentSpec.properties.backendOptions,
 		extensions: AgentSpec.properties.extensions,
+		kind: Type.Optional(
+			Type.String({
+				description: `The member's work kind: ${DELEGATE_PROFILES.map((id) => `${id} (${DELEGATE_PROFILE_INFO[id].label}: ${DELEGATE_PROFILE_INFO[id].description})`).join("; ")}. Sova runs it on that kind's model and effort from this chat's subagent profile (its fallback when that can't run). Name one for every member; a model given for it wins.`,
+			}),
+		),
 	},
 	// Not closed: checkTeamKeys refuses an unknown setting in Sova's own words.
 );
@@ -232,6 +239,13 @@ const TEAM_MEMBER_KEYS = new Set(Object.keys(TeamMemberSpec.properties));
 const TEAM_DEFAULT_KEYS = new Set(Object.keys(TeamDefaultsSpec.properties));
 const AGENT_KEYS = new Set(Object.keys(AgentSpec.properties));
 const isPlainObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+const KIND_LIST = "planning, investigation, routine or complex";
+/** A work kind as given: its id, short name or label, any case; undefined when it is none of them. */
+export function readKind(value: unknown): DelegateProfileId | undefined {
+	if (typeof value !== "string") return undefined;
+	const key = value.trim().toLowerCase();
+	return DELEGATE_PROFILES.find((id) => id === key || DELEGATE_PROFILE_INFO[id].short === key || DELEGATE_PROFILE_INFO[id].label.toLowerCase() === key);
+}
 /**
  * `members`/`agents` as the model sent them: a list, or a JSON string whose parse is a list of
  * plain objects (read as that list, nothing else changed). Anything else is refused in Sova's words.
@@ -272,12 +286,34 @@ export function checkTeamKeys(members: unknown, defaults?: unknown): unknown[] {
 		if (member.prompt === undefined) throw new Error(`${where} has no prompt: give every member its own task.`);
 		if (member.extensions !== undefined && (!Array.isArray(member.extensions) || member.extensions.some((s) => typeof s !== "string" || !s.trim())))
 			throw new Error(`${where}: extensions must be a list of extension sources, e.g. ["npm:pi-web-access"].`);
+		if (member.kind !== undefined && !readKind(member.kind))
+			throw new Error(`${where}: kind must be one of ${KIND_LIST} (got ${JSON.stringify(member.kind)}).`);
 	});
-	if (defaults === undefined) return list;
+	const read = list.map((member) => {
+		const m = member as Record<string, unknown>;
+		const kind = m.kind === undefined ? undefined : readKind(m.kind);
+		return kind === undefined || kind === m.kind ? member : { ...m, kind };
+	});
+	const out = read.some((m, i) => m !== list[i]) ? read : list;
+	if (defaults === undefined) return out;
 	if (!isPlainObject(defaults)) throw new Error(`defaults must be an object, e.g. {"model": "...", "effort": "high"}.`);
 	const extra = Object.keys(defaults).find((key) => !TEAM_DEFAULT_KEYS.has(key));
 	if (extra) throw new Error(`Unsupported team default ${extra}; defaults accept ${[...TEAM_DEFAULT_KEYS].join(", ")}.${TEAM_MEMBER_KEYS.has(extra) ? ` Put ${extra} on each member that needs it.` : ""}`);
-	return list;
+	return out;
+}
+/**
+ * Under a profile that routes members (anything but Off), every member needs a kind, or a model:
+ * its own, or the team's defaults.model for a member on that backend. Refused before anything
+ * starts, naming each member that has neither.
+ */
+export function refuseUnrouted(members: readonly Record<string, unknown>[], defaults: { backend?: string; model?: string } | undefined): void {
+	const teamBackend = defaults?.backend ?? "pi";
+	const missing = members.flatMap((m, i) => {
+		if (m.kind !== undefined || m.model !== undefined) return [];
+		if (defaults?.model !== undefined && ((m.backend as string | undefined) ?? teamBackend) === teamBackend) return [];
+		return [`members[${i}] (${String(m.role)}) needs a kind: ${KIND_LIST} (or a model you were given).`];
+	});
+	if (missing.length) throw new Error(missing.join(" "));
 }
 const TEAM_CREATE_KEYS = ["name", "objective", "defaults", "members"] as const;
 const TEAM_ADD_KEYS = ["team", "members"] as const;
@@ -2209,53 +2245,85 @@ export function registerSubagents(
 		return own(`primary ${tupleText(primary)}: ${first}; fallback${fallback ? ` ${tupleText(fallback)}` : ""}: ${second}`);
 	};
 
+	/** A kind's route as a worker tuple. */
+	const choiceTuple = (c: WorkerChoice): WorkerTuple => ({ backend: c.backend, model: c.model, ...(c.effort ? { effort: c.effort as WorkerTuple["effort"] } : {}) });
 	/**
-	 * The profile's members default, filled into the
-	 * members nobody gave a model: a member's own model wins, then the call's defaults, then this,
-	 * then the parent's model. It applies only where any backend the member or the call states is
-	 * the default's own; its effort only where neither gave one. A default that can't run here
-	 * (policy, backend, registry) is not used, and the line says those members run on the parent's
-	 * model. Mutates `members`; returns the result lines.
+	 * A work kind's tuple under the chat's profile: its primary, else its fallback (each by
+	 * tupleDenial: model settings, availability, an out-of-usage mark); never the chat's own model.
 	 */
-	const applyMembersDefault = (
+	const routeKind = (ctx: ExtensionContext, kind: DelegateProfileId, delegate: NonNullable<ResolvedSubagents["delegate"]>):
+		| { tuple: WorkerTuple; how: string }
+		| { denied: string } => {
+		const route = delegate.profiles[kind];
+		const primary = choiceTuple(route.primary);
+		const first = tupleDenial(ctx, primary);
+		if (!first) return { tuple: primary, how: "primary" };
+		const fallback = route.fallback ? choiceTuple(route.fallback) : null;
+		const second = fallback ? tupleDenial(ctx, fallback) : "no fallback is set";
+		if (fallback && !second) return { tuple: fallback, how: `fallback; primary ${tupleText(primary)} can't run: ${first}` };
+		return { denied: `primary ${tupleText(primary)}: ${first}; fallback${fallback ? ` ${tupleText(fallback)}` : ""}: ${second}` };
+	};
+	/**
+	 * Route the members the chat named (create/add), most specific first: a model named for the member;
+	 * then its kind, on that kind's model and effort from the chat's profile (fallback when it can't
+	 * run; neither → refused, the chat asks the user); then the team's defaults.model for members on
+	 * its backend. A member effort alone overrides only the effort; a member backend contradicting its
+	 * kind's route is refused. Under Off nothing routes. Mutates `members` (the explicit choices stay
+	 * in modelOverride, so a successor re-routes by kind); returns one line per member. Throws before
+	 * anything starts.
+	 */
+	const routeMembers = (
 		ctx: ExtensionContext,
 		members: TeamMemberInput[],
 		call: { backend?: string; model?: string; effort?: string } | undefined,
 		resolved: ResolvedSubagents,
-		/** What those members run on when the default can't run here: the parent's model (create/add), or the tuple they already ran on (a successor). */
-		denied: "parent-model" | "keep-tuple" = "parent-model",
+		refused: string,
 	): string[] => {
-		const d = resolved.members;
-		if (!d) return [];
 		const callBackend = call?.backend ?? "pi";
-		const takes = members.filter((m) => {
-			if (m.duty || m.model !== undefined) return false;
-			const backend = m.backend ?? call?.backend;
-			if (backend !== undefined && backend !== d.backend) return false;
-			// The call's defaults reach a member on their backend; a model there is the call's choice.
-			return !((m.backend ?? callBackend) === callBackend && call?.model !== undefined);
-		});
-		if (!takes.length) return [];
-		const roles = takes.map((m) => m.role).join(", ");
-		const named = `${d.backend}/${d.model}/${d.effort}`;
-		const denial = tupleDenial(ctx, { backend: d.backend, model: d.model, effort: d.effort as WorkerTuple["effort"] });
-		if (denial)
-			return [
-				denied === "keep-tuple"
-					? `Members default ${named} (subagent profile "${resolved.name}") can't run here — ${denial} — so ${roles} keep the tuple they ran on.`
-					: `Members default ${named} (subagent profile "${resolved.name}") can't run here — ${denial} — so ${roles} run on this session's model.`,
-			];
-		for (const m of takes) {
+		const lines: string[] = [];
+		const named = members.filter((m) => !m.duty);
+		named.forEach((m, i) => {
+			const label = m.kind ? DELEGATE_PROFILE_INFO[m.kind].label : undefined;
+			const own = m.backend ?? callBackend;
+			if (!resolved.delegate) {
+				const on = m.model !== undefined ? `${own}/${m.model} (the model named for it)` : own === callBackend && call?.model !== undefined ? `${own}/${call.model} (the team's defaults.model)` : "this chat's own model";
+				lines.push(`${m.role}${label ? ` (${label})` : ""}: no profile routes it (this chat's subagent profile is Off); on ${on}.`);
+				return;
+			}
+			if (m.model !== undefined) {
+				lines.push(`${m.role}${label ? ` (${label})` : ""}: on ${own}/${m.model}${m.effort ? `/${m.effort}` : ""} (the model named for it).`);
+				return;
+			}
+			if (!m.kind) {
+				// refuseUnrouted let it through: the team's defaults.model covers it.
+				lines.push(`${m.role}: on ${own}/${call?.model} (the team's defaults.model).`);
+				return;
+			}
+			const r = routeKind(ctx, m.kind, resolved.delegate);
+			if ("denied" in r)
+				throw new Error(`${refused}: ${m.role}'s kind ${label} can't run here (${r.denied}). Ask the user which model to use for it, then name that model on the member.`);
+			if (m.backend !== undefined && m.backend !== r.tuple.backend)
+				throw new Error(`${refused}: members[${i}] (${m.role}) names backend ${m.backend}, but its kind ${label} runs on ${tupleText(r.tuple)}. Leave backend out, or name a model for it.`);
 			m.modelOverride = {
-				...(m.backend ?? call?.backend ? { backend: m.backend ?? call?.backend } : {}),
-				...(m.effort ?? call?.effort ? { effort: m.effort ?? call?.effort } : {}),
+				...(m.backend !== undefined ? { backend: m.backend } : {}),
+				...(m.effort !== undefined ? { effort: m.effort } : {}),
 			};
-			const callEffort = call?.effort !== undefined && callBackend === d.backend;
-			m.backend = d.backend;
-			m.model = d.model;
-			if (m.effort === undefined && !callEffort) m.effort = d.effort;
+			const effortNamed = m.effort !== undefined;
+			m.backend = r.tuple.backend;
+			m.model = r.tuple.model;
+			if (!effortNamed && r.tuple.effort) m.effort = r.tuple.effort;
+			lines.push(`${m.role}: ${label} on ${m.backend}/${m.model}${m.effort ? `/${m.effort}` : ""} (${r.how}${effortNamed ? "; effort named for it" : ""}; subagent profile "${resolved.name}").`);
+		});
+		return lines;
+	};
+	/** A member's prompt with its kind's no-edit line, for the kinds that never edit. */
+	const withNoEdit = (members: TeamMemberInput[]): void => {
+		for (const m of members) {
+			const line = m.duty ? undefined : noEditLine(m.kind);
+			if (!line) continue;
+			m.assignment ??= m.prompt;
+			m.prompt = `${m.prompt}\n\n${line}`;
 		}
-		return [`Members default: ${roles} run on ${named} (subagent profile "${resolved.name}").`];
 	};
 
 	const coordinationTimer = (fn: () => void, ms: number): ReturnType<typeof setTimeout> => {
@@ -3958,7 +4026,7 @@ export function registerSubagents(
 		"Members are session-scoped: reload, session switch or quit stops them; agent_resume brings one back idle, rejoining its team.",
 	];
 	/** Runs inside spawnBatch before publication, so a failure rolls the batch back. */
-	const memberRecords = (members: readonly { role: string; ownedPaths: string[]; orchestrator: boolean; duty?: MemberDuty; successorOfId?: string; modelOverride?: PersistedMember["modelOverride"] }[], group: AgentGroup, addedAt: number): PersistedMember[] =>
+	const memberRecords = (members: readonly { role: string; ownedPaths: string[]; orchestrator: boolean; duty?: MemberDuty; successorOfId?: string; modelOverride?: PersistedMember["modelOverride"]; kind?: PersistedMember["kind"] }[], group: AgentGroup, addedAt: number): PersistedMember[] =>
 		group.agents.map((a, i) => ({
 			workerId: a.id,
 			role: members[i].role,
@@ -3967,6 +4035,7 @@ export function registerSubagents(
 			...(members[i].duty ? { duty: members[i].duty } : {}),
 			...(members[i].successorOfId ? { successorOf: members[i].successorOfId } : {}),
 			...(members[i].modelOverride ? { modelOverride: { ...members[i].modelOverride } } : {}),
+			...(members[i].kind ? { kind: members[i].kind } : {}),
 			backend: a.backend ?? "pi",
 			...(a.model === undefined ? {} : { model: a.model }),
 			groupId: group.id,
@@ -4161,7 +4230,7 @@ export function registerSubagents(
 			role,
 			prompt: monitor
 				? monitorSuccessorTask(target.role, target.workerId, oldLive)
-				: workerSuccessorTask({ oldRole: target.role, oldId: target.workerId, note, oldLive, ...(missing ? { missing } : {}), ...(assignment ? { assignment } : {}), steers, steersOmitted: omitted, ...(target.duty === "coordinator" ? { coordinator: true } : {}) }),
+				: workerSuccessorTask({ oldRole: target.role, oldId: target.workerId, note, oldLive, ...(missing ? { missing } : {}), ...(assignment ? { assignment } : {}), steers, steersOmitted: omitted, ...(target.duty === "coordinator" ? { coordinator: true } : {}), ...(target.kind && !target.duty ? { kind: target.kind } : {}) }),
 			...(assignment ? { assignment } : {}),
 			ownedPaths: [...target.ownedPaths],
 			...(target.orchestrator ? { orchestrator: true } : {}),
@@ -4175,6 +4244,7 @@ export function registerSubagents(
 			...(launch?.backendOptions === undefined ? {} : { backendOptions: launch.backendOptions }),
 			...(launch?.extensions === undefined ? {} : { extensions: [...launch.extensions] }),
 			...(target.duty ? { duty: target.duty } : {}),
+			...(target.kind && !target.duty ? { kind: target.kind } : {}),
 			successorOf: target.role,
 			successorOfId: target.workerId,
 		};
@@ -4188,19 +4258,23 @@ export function registerSubagents(
 				input.backend = pick.tuple.backend;
 				input.model = pick.tuple.model;
 				input.effort = pick.tuple.effort;
-			} else if (!target.duty && now.members) {
-				// The current members default replaces the tuple — but only where it actually takes:
-				// denied, or against the member's own backend, the predecessor's tuple stands.
-				const kept = { backend: input.backend, model: input.model, effort: input.effort };
-				delete input.model;
-				delete input.backend;
-				delete input.effort;
-				Object.assign(input, explicit ?? {});
-				memberNotes.push(...applyMembersDefault(activeCtx, [input], undefined, now, "keep-tuple"));
-				if (input.model === undefined) {
-					if (input.backend === undefined && kept.backend !== undefined) input.backend = kept.backend;
-					if (kept.model !== undefined) input.model = kept.model;
-					if (input.effort === undefined && kept.effort !== undefined) input.effort = kept.effort;
+			} else if (!target.duty) {
+				// Same kind under the chat's current profile; where that can't route it (no kind saved,
+				// Off, neither model can run, its own backend contradicts the route), the predecessor's tuple stands.
+				const kept = `${input.backend}/${input.model ?? "its default model"}${input.effort ? `/${input.effort}` : ""}`;
+				const label = target.kind ? DELEGATE_PROFILE_INFO[target.kind].label : undefined;
+				const r = target.kind && now.delegate ? routeKind(activeCtx, target.kind, now.delegate) : undefined;
+				const wanted = explicit?.backend;
+				if (!now.delegate) memberNotes.push(`${role}${label ? ` (${label})` : ""} keeps ${target.role}'s model ${kept}: no profile routes it (this chat's subagent profile is Off).`);
+				else if (!target.kind || !r) memberNotes.push(`${role} keeps ${target.role}'s model ${kept}: ${target.role} was named without a work kind, so no profile routes its successor.`);
+				else if ("denied" in r) memberNotes.push(`${role} (${label}) keeps ${target.role}'s model ${kept}: its kind can't run here (${r.denied}).`);
+				else if (wanted !== undefined && wanted !== r.tuple.backend) memberNotes.push(`${role} (${label}) keeps ${target.role}'s model ${kept}: its backend ${wanted} contradicts its kind's route ${tupleText(r.tuple)}.`);
+				else {
+					input.backend = r.tuple.backend;
+					input.model = r.tuple.model;
+					input.effort = explicit?.effort ?? r.tuple.effort;
+					if (input.effort === undefined) delete input.effort;
+					memberNotes.push(`${role}: ${label} on ${tupleText({ ...r.tuple, ...(input.effort ? { effort: input.effort as WorkerTuple["effort"] } : {}) })} (${r.how}; subagent profile "${now.name}").`);
 				}
 			}
 		} else Object.assign(input, explicit);
@@ -4431,10 +4505,11 @@ export function registerSubagents(
 		label: "Create Team",
 		exposure: "model-only",
 		description:
-			"Create a named team of background workers with one unique role each and a shared objective, working in one filesystem. Members (pi or claude-code) get team tools: team_msg (message a teammate by role; queued in its inbox and listed when it wakes), team_inbox (open and close its own items), team_ask (a question to the team's coordinator; the coordinator's own questions reach you as team-question messages, read after your current step, ending any agent_wait, or starting your turn when idle; answer with agent_steer). Every team gets a coordinator and a monitor from Sova, so name only the workers who do the work: the coordinator (first) routes the team and is the only member that reaches you, and the monitor (last) watches context and usage; each team runs 2 more workers than you name, so small independent jobs are cheaper as separate workers (agent_spawn). Only the coordinator sees teammates' tasks, so say in each member's prompt who it works with and on what. No member can spawn, add or stop workers. Starts all members through the same path as agent_spawn (validated before any start, rolled back together on failure) and returns exact worker IDs without waiting. Members default to the pi backend unless defaults.backend or the member sets another. " + TEAM_LIMITS,
+			"Create a named team of background workers with one unique role each and a shared objective, working in one filesystem. Members (pi or claude-code) get team tools: team_msg (message a teammate by role; queued in its inbox and listed when it wakes), team_inbox (open and close its own items), team_ask (a question to the team's coordinator; the coordinator's own questions reach you as team-question messages, read after your current step, ending any agent_wait, or starting your turn when idle; answer with agent_steer). Every team gets a coordinator and a monitor from Sova, so name only the workers who do the work: the coordinator (first) routes the team and is the only member that reaches you, and the monitor (last) watches context and usage; each team runs 2 more workers than you name, so small independent jobs are cheaper as separate workers (agent_spawn). Only the coordinator sees teammates' tasks, so say in each member's prompt who it works with and on what. No member can spawn, add or stop workers. Starts all members through the same path as agent_spawn (validated before any start, rolled back together on failure) and returns exact worker IDs without waiting. Name a work kind for every member (kind: planning, investigation, routine or complex, as Delegate picks them): Sova runs it on that kind's model and effort from this chat's subagent profile, or the kind's fallback, and the result says which; a model named for a member wins, and defaults.model covers members on its backend. A member with neither a kind nor a model is refused unless the profile is Off. Planning and investigation members are told not to edit. " + TEAM_LIMITS,
 		promptSnippet: "Create a team of role-based background workers who message each other",
 		promptGuidelines: [
 			"Use team_create when the user asks for a team, or when parts change the same files or interfaces, stack on each other, feed each other findings, or have a checker sending findings straight to builders.",
+			"Give every team_create and team_add member a kind (planning, investigation, routine or complex) chosen by its work, as Delegate picks a worker's kind; name a member model only when the user gave you one. A member with neither is refused unless this chat's subagent profile is Off.",
 			"Every team gets a coordinator and a monitor from Sova: name only the members who do the work. Each team runs 2 more workers than you name, so small independent jobs are cheaper as separate workers with agent_spawn. Only the coordinator reaches you (its completion, team-report messages that ask for nothing, team-question messages: answer one with agent_steer on that worker ID); /team defaults shows the models they run on.",
 			"team_create members share the filesystem and agree shared files and interfaces by message (team_msg). A member's team_ask goes to its coordinator, or to you while no coordinator is live. ownedPaths is optional: paths only that member edits, never shared files.",
 			"Never stop a team's coordinator or monitor while any of its members is still working (check team_list), even when the coordinator reports the objective complete; stopping them once no member is working is fine.",
@@ -4459,12 +4534,14 @@ export function registerSubagents(
 			// Every team gets Sova's coordinator and monitor, on the settings read now (or the chat's own model).
 			const storeDefaults = params.defaults ?? {};
 			const subagentsForTeam = subagentsNow(ctx);
+			if (subagentsForTeam.delegate) refuseUnrouted(params.members, storeDefaults);
 			const standing = teamDefaultsNow(ctx, subagentsForTeam);
 			const { coordinator: c, monitor: m } = standing.value;
 			checkStandingRoles(standing.value, params.members);
 			const lines = standing.warning ? [standing.warning] : [];
 			const members: TeamMemberInput[] = params.members.map((m: TeamMemberInput) => ({ ...m }));
-			lines.push(...applyMembersDefault(ctx, members, storeDefaults, subagentsForTeam));
+			lines.push(...routeMembers(ctx, members, storeDefaults, subagentsForTeam, "Team not created"));
+			withNoEdit(members);
 			const coordinatorPick = pickTuple(ctx, "coordinator", c.role, c.primary, c.fallback, standing.chatsOwn);
 			const monitorPick = pickTuple(ctx, "monitor", m.role, m.primary, m.fallback, standing.chatsOwn);
 			members.unshift(synthesizedMember("coordinator", c.role, coordinatorPick.tuple));
@@ -4512,7 +4589,7 @@ export function registerSubagents(
 		name: "team_add",
 		label: "Add Team Members",
 		description:
-			"Add working members (one new unique role each) to a team created in this session, by exact team ID or unique name. Every team gets a coordinator and a monitor from Sova, which this team already has: name only the workers. Each team runs 2 more workers than you name, so small independent jobs are cheaper as separate workers (agent_spawn). New members see the current roster in their header, and the coordinator is told about each one with its assignment. Teams restored from history are read-only. Same validation and rollback as agent_spawn; the team's create-time defaults apply. " + TEAM_LIMITS,
+			"Add working members (one new unique role each) to a team created in this session, by exact team ID or unique name. Every team gets a coordinator and a monitor from Sova, which this team already has: name only the workers. Each team runs 2 more workers than you name, so small independent jobs are cheaper as separate workers (agent_spawn). New members see the current roster in their header, and the coordinator is told about each one with its assignment. Teams restored from history are read-only. Same validation and rollback as agent_spawn; the team's create-time defaults apply. Name a work kind for every member (kind: planning, investigation, routine or complex): it runs on that kind's model from this chat's subagent profile (or its fallback); a member with neither a kind nor a model is refused unless the profile is Off. " + TEAM_LIMITS,
 		parameters: Type.Object(
 			{ team: Type.String({ minLength: 1, description: "Team ID (team_NN) or unique team name." }), members: TeamMembers },
 			{ additionalProperties: false },
@@ -4524,10 +4601,13 @@ export function registerSubagents(
 			const params = readTeamArgs(raw, TEAM_ADD_KEYS) as Omit<typeof raw, "members"> & { members: MemberList };
 			// Re-read now: a coordinated team's new members get the current standing text; a malformed file is reported.
 			const now = subagentsNow(ctx);
+			const teamDefaults = teams.find(params.team).defaults;
+			if (now.delegate) refuseUnrouted(params.members, teamDefaults);
 			const standing = teamDefaultsNow(ctx, now);
 			checkStandingRoles(standing.value, params.members);
 			const additions: TeamMemberInput[] = params.members.map((m: TeamMemberInput) => ({ ...m }));
-			const membersLine = applyMembersDefault(ctx, additions, teams.find(params.team).defaults, now);
+			const membersLine = routeMembers(ctx, additions, teamDefaults, now, "Members not added");
+			withNoEdit(additions);
 			const prepared = teams.prepareAdd(params.team, additions, observeWorker, standing.value);
 			try {
 				const { group, members } = await addPrepared(ctx, prepared, signal, { kind: "team_add" });
@@ -4788,7 +4868,7 @@ export function registerSubagents(
 			"- Obey the team tool descriptions, schemas and limits. All members share one filesystem; ownership does not protect files.",
 			`- ${TEAM_LIMITS}`,
 			"- Every team gets a coordinator and a monitor from Sova: plan only the members who do the work. Members message teammates with team_msg (this extension delivers it); their reports and team_ask questions go to the coordinator, and only the coordinator reaches you (its completion once no teammate is working, team_report messages, team-question messages: answer with agent_steer on that worker ID). Only the coordinator sees teammates' tasks, so each member's prompt says who it works with and on what. You remain the authority, and each member's final answer is its report.",
-			"- When you present the plan, report the models and their cost: members default to the pi backend inheriting the parent model/effort (agent_models resolves exact IDs, including Claude's), and the team runs 2 more workers than you name (its coordinator and monitor), so small independent jobs are cheaper as separate workers with agent_spawn.",
+			"- When you present the plan, report the models and their cost: each member runs on its work kind's model (below; a model you name for it wins; agent_models resolves exact IDs, including Claude's), and the team runs 2 more workers than you name (its coordinator and monitor), so small independent jobs are cheaper as separate workers with agent_spawn.",
 			...teamDefaultsPlanLines(ctx),
 			"Do not start the objective's work yourself before the team exists; the /team workspace and team_list show the roster.",
 		].join("\n");
@@ -4801,7 +4881,21 @@ export function registerSubagents(
 		return [
 			`- team_create adds the coordinator "${c.role}" on ${on(c.primary)} and the monitor "${m.role}" on ${on(m.primary)}, which watches context and usage. Do not plan those roles yourself, and name no member with either role. They take seats and count toward this chat's ${MAX_LIVE} running workers.`,
 			...(standing.warning ? [`- ${standing.warning}`] : []),
-			...(now.members ? [`- Members you don't give a model run on ${now.members.backend}/${now.members.model}/${now.members.effort}; pass a member model to override.`] : []),
+			...memberKindLines(now),
+		];
+	};
+	/** What the chat reads about members' work kinds: name one for every member, and what each runs on now. */
+	const memberKindLines = (now: ResolvedSubagents): string[] => {
+		if (!now.delegate)
+			return [`- This chat's subagent profile is Off, so no profile routes members: a kind (${KIND_LIST}) is optional, and each member runs on the model you name for it, else this chat's own model.`];
+		const delegate = now.delegate;
+		const choice = (c: WorkerChoice) => `${c.backend}/${c.model}${c.effort ? `/${c.effort}` : ""}`;
+		return [
+			`- Name a kind for every member (kind: ${KIND_LIST}); Sova runs it on that kind's model from the subagent profile "${now.name}", or its fallback when that can't run. A member with neither a kind nor a model is refused. Pick the kind by the work, as Delegate does; name a model only when the user gave you one. Today the kinds run on:`,
+			...DELEGATE_PROFILES.map((id) => {
+				const r = delegate.profiles[id];
+				return `  - ${id} (${DELEGATE_PROFILE_INFO[id].label}): ${choice(r.primary)}${r.fallback ? `, fallback ${choice(r.fallback)}` : ", no fallback"}${id === "planning" || id === "investigation" ? "; told not to edit" : ""}`;
+			}),
 		];
 	};
 	/** Objective text for a planning message: bounded, control-free (newlines/tabs kept). */

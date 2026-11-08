@@ -619,3 +619,28 @@ test("checkReplacement: only the newest coordinator or monitor, only while none 
 	live.add("ag_04");
 	assert.throws(() => store.checkReplacement("Crew", "lead", isLive), /lead-2 \(ag_04\) is team_01's live coordinator/);
 });
+
+test("contract: a member's work kind goes from the prepared member to its record and back through the entry; a record without one stays without", () => {
+	const store = new TeamStore();
+	const prepared = createIn(store, { name: "Crew", objective: "obj", members: [{ role: "scout", prompt: "look", kind: "investigation" }, { role: "dev", prompt: "build" }] });
+	assert.deepEqual(prepared.members.map((m) => [m.role, m.kind]), [["scout", "investigation"], ["dev", undefined], ["coordinator", undefined]]);
+	const members = prepared.members.map((m, i) => member(i + 1, { role: m.role, ...(m.kind ? { kind: m.kind } : {}), ...(m.duty ? { duty: m.duty, orchestrator: true } : {}) }));
+	const data = { version: 1, op: "create", team: { id: prepared.teamId, name: "Crew", objective: "obj", createdAt: 1 }, members };
+	const decoded = decodeTeamEntry(JSON.parse(JSON.stringify(data)));
+	assert.deepEqual(decoded?.members.map((m) => m.kind), ["investigation", undefined, undefined]);
+	assert.equal("kind" in decoded!.members[1], false, "no kind is no key, as a record written before kinds");
+	const restored = new TeamStore();
+	restored.restoreHistory([entry(data)]);
+	assert.equal(restored.adoptHistoryTeam(prepared.teamId), true);
+	assert.equal(restored.memberInfo("ag_01")?.member.kind, "investigation", "the kind survives a reload");
+	assert.equal(decodeTeamEntry({ ...data, members: [member(1, { kind: "quick" as never })] }), undefined, "an unknown kind rejects the member");
+	prepared.release();
+});
+
+test("a Planning & specs or Investigation successor's task says not to edit; an implementation one's does not", () => {
+	const base = { oldRole: "scout", oldId: "ag_02", note: "/n.md", oldLive: false, steers: [], steersOmitted: 0 };
+	assert.match(workerSuccessorTask({ ...base, kind: "investigation" }), /\n\nYour work kind is Investigation: do not edit, create or delete project files\./);
+	assert.match(workerSuccessorTask({ ...base, kind: "planning" }), /Your work kind is Planning & specs: do not edit/);
+	assert.doesNotMatch(workerSuccessorTask({ ...base, kind: "complex" }), /do not edit/);
+	assert.doesNotMatch(workerSuccessorTask(base), /do not edit/);
+});

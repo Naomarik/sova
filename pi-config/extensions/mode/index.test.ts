@@ -807,6 +807,15 @@ test("delegate prompt names every profile's exact worker and leaves no placehold
 	assert.match(prompt, /a spawn they refuse is reported to the user, not rerouted/);
 });
 
+test("delegate prompt: every team member is named with a kind under a routing profile; under Off the kind is optional", () => {
+	const routed = buildDelegatePrompt(ALL_OK);
+	assert.match(routed, /Name a kind for every team member \(kind: planning, investigation, routine or complex\), picked by these same rules: Sova runs it on that kind's model above, or its fallback, and tells its Planning & specs and Investigation members not to edit; name a member model only when the user gave one\./);
+	assert.doesNotMatch(routed, /kind[^.]*is optional here/);
+	const off = buildDelegatePrompt([]);
+	assert.match(off, /A team member's kind \(kind: planning, investigation, routine or complex\) is optional here: no profile routes it/);
+	assert.doesNotMatch(off, /Name a kind for every team member/, "Off never says a kind is required");
+});
+
 test("delegate prompt discloses a fallback and asks when a profile has no worker", () => {
 	const fallback = buildDelegatePrompt(PLAN_FALLBACK);
 	assert.match(fallback, /- Planning & specs .* → backend "claude-code", model "claude-opus-5-5", effort "high"\. This is the configured FALLBACK: the primary \(backend "claude-code", model "claude-fable-5-1", effort "medium"\) is unavailable — claude-fable-5-1 does not support effort "medium" \(supports: low\)\. Tell the user/);

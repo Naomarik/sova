@@ -22,9 +22,11 @@ Teams and their snapshots are a contract Sova parses: coordinate before changing
 
 **Subagent profiles.** One module, `subagent-profiles.ts` (builtins only, plus `mode/delegate.ts`, `mode/spec.ts`,
 `mode/align-settings.ts` and `subagents/team-defaults.ts`), owns three things:
-- `subagent-profiles.json`, the library of named setups. A profile bundles Delegate's four routes, the standing
-  coordinator and monitor, the members default, the spec writer, and optionally the reviewer and the align writing
-  style / Visuals override.
+- `subagent-profiles.json`, the library of named setups. A profile bundles Delegate's four routes (which team members follow
+  too, by the work kind each is named with), the standing coordinator and monitor, the spec writer, and optionally the
+  reviewer and the align writing style / Visuals override. Each profile keeps a `members: null` key, the retired
+  members default: the parser accepts it present or absent and ignores its value, and the writer always emits it as
+  null, because older readers require it. Never write a library without it.
 - `subagent-profiles-default.json`, this device's default. Never synced. The library syncs profile by profile: the newest edit per profile wins, deletions are recorded in Sova's sync state (never in the file), and a seeded starter's mtime is the epoch, so it yields to a library edited elsewhere.
 - Each chat's hidden `subagent-profile` custom entry `{v: 1, profile}`: an id or `"off"`, newest on the branch wins.
   It is an id reference, not a snapshot: editing a profile reaches every chat on it from its next turn or team action.

@@ -97,7 +97,7 @@ describe("the joined list", () => {
 
   test("the footprint stops at three models, then +N", () => {
     const l = lib("x", "X", "a/one");
-    l.members = worker("b/two");
+    l.reviewer = { primary: worker("b/two"), fallback: null } as SubagentProfile["reviewer"];
     l.specWriter = { primary: worker("c/three"), fallback: null } as SubagentProfile["specWriter"];
     assert.equal(joinedFootprint("d/zero", l), "zero + one + glm-5.3 +2", "five primaries; fallbacks never count");
   });

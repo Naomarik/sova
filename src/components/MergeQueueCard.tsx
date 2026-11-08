@@ -1,13 +1,16 @@
 import { createSignal, For, Show, useContext } from "solid-js";
 import type { CardInfo } from "../../shared/transcript-cards";
 import { clockTime, tildePath } from "../lib/format";
-import { cardActionLabel, cardActions, cardDecision, cardFacts, cardLabel, cardNewer, cardNotes, cardPill, cardSha, foldedLine, isNewest, notPushed, queueRowOf, type CardAction, type QueueCard, type QueueCardRow } from "../lib/merge-queue-card";
+import { cardActionLabel, cardActions, cardDecision, cardFacts, cardLabel, cardNewer, cardNotes, cardPill, cardSha, foldedLine, isNewest, notPushed, queueRowOf, reviewNotes, reviewPointer, type CardAction, type QueueCard, type QueueCardRow } from "../lib/merge-queue-card";
+import { findingPlace, kindWord, reviewRowCardId } from "../lib/merge-review-card";
+import { ensureRendered, transcriptRoot } from "../lib/jump";
+import { outsideCardRowId } from "../lib/transcript-placement";
 import { HELD_NOTE_LINE, STANDING_LINE, standingWords } from "../lib/merge-standing";
 import { CardContext } from "../lib/card-controls";
 import { pickDecision } from "../lib/merge-decision-pick";
 import { paneScopedId, usePaneScope } from "../lib/pane-scope";
 import { answerEntry, cancelEntry, landBranch, refusal } from "../lib/merge-queue-client";
-import { mergeRunHref, projectTabHref } from "../lib/projects-route";
+import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { announce, home, toast } from "../lib/ui-state";
 import { ChangesDialog, useChangesSession } from "./ChangesViewer";
 import { CardErrorBox } from "./TranscriptKind";
@@ -68,6 +71,26 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
   const [reviewingRequest, setReviewingRequest] = createSignal(false);
   const decision = () => cardDecision(d());
   const standing = () => (decision() || d().state === "landed" || d().state === "cancelled" ? null : standingWords(d()));
+  /** A blocking review: "Review found 3 issues", which jumps to its card, instead of the reason and the Review check. */
+  const pointer = () => reviewPointer(d());
+  const notesList = () => reviewNotes(d());
+  const toReview = (e: MouseEvent) => {
+    const p = pointer();
+    if (!p) return;
+    // Its card stands in this chat: land on it; in another chat (a worker's branch), the link opens that chat.
+    if (p.session !== d().session && p.path) return;
+    e.preventDefault();
+    // By the card's own id: an outside card's row id shares its "card:" prefix with every other outside card's.
+    const root = transcriptRoot(session?.path);
+    ensureRendered(outsideCardRowId(reviewRowCardId(p.id)), root);
+    const el = root?.querySelector<HTMLElement>(`[data-card-id="${CSS.escape(reviewRowCardId(p.id))}"]`);
+    if (el) el.scrollIntoView({ block: "center", behavior: "instant" });
+    else toast("That card isn't in the transcript on screen.");
+  };
+  const reviewHref = () => {
+    const p = pointer();
+    return p && p.session !== d().session && p.path ? projectSessionHref(d().project, p.path) : "#";
+  };
   // A choice fills the chat's message box (the chat's card controls stage it at the draft's end); nothing is sent.
   const cards = useContext(CardContext);
   const scope = usePaneScope();
@@ -116,7 +139,7 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
   };
 
   return (
-    <div class="card worktree-merge mq-chat-card" role="group" aria-label={cardLabel(d())} data-state={d().state} data-branch={d().branch}>
+    <div class="card worktree-merge mq-chat-card" role="group" aria-label={cardLabel(d())} data-state={d().state} data-branch={d().branch} data-mq-entry={props.readOnly ? undefined : d().entry}>
       <div class="worktree-merge-head">
         <span class="worktree-merge-text">
           <span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
@@ -183,7 +206,7 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
           <RequestReview entry={reqEntry()} target={d().target} onDone={() => setReviewingRequest(false)} onCancel={() => setReviewingRequest(false)} />
         </Show>
       </Show>
-      <Show when={d().reason && d().state !== "landed" && d().state !== "unattributed" && !onRequest()}>
+      <Show when={d().reason && d().state !== "landed" && d().state !== "unattributed" && !onRequest() && !pointer()}>
         <p class="text-caption mq-card-line">
           {d().reason}
           <Show when={runHref()}>
@@ -214,7 +237,7 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
           </dl>
         )}
       </Show>
-      <Show when={d().review?.text && d().state === "review-flagged"}>
+      <Show when={d().review?.text && d().state === "review-flagged" && !pointer()}>
         <p class="text-caption mq-card-line">
           <span class="text-muted">Review:</span> {d().review!.text}
         </p>
@@ -222,10 +245,24 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
       <Show when={standing()}>
         {(w) => (
           <div class="mq-card-standing">
-            <Show when={w().detail}>{(x) => <p class="text-caption mq-card-line mq-card-standing-detail">{x()}</p>}</Show>
+            <Show when={pointer()} fallback={<Show when={w().detail}>{(x) => <p class="text-caption mq-card-line mq-card-standing-detail">{x()}</p>}</Show>}>
+              {(p) => (
+                <p class="text-caption mq-card-line mq-card-standing-detail">
+                  {[p().tries ?? w().detail].filter(Boolean).map((t) => `${t} · `)}
+                  <ReviewLink words={p().words} href={reviewHref()} onClick={toReview} />
+                </p>
+              )}
+            </Show>
             <Show when={w().answer}>{(x) => <p class="text-caption mq-card-line mq-card-answer"><span class="text-muted">Chat:</span> {x()}</p>}</Show>
             <p class="text-caption mq-card-line text-muted">{STANDING_LINE}</p>
           </div>
+        )}
+      </Show>
+      <Show when={standing() ? null : pointer()}>
+        {(p) => (
+          <p class="text-caption mq-card-line">
+            <ReviewLink words={p().words} href={reviewHref()} onClick={toReview} />
+          </p>
         )}
       </Show>
       <Show when={decision()}>
@@ -315,6 +352,31 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
           </p>
         )}
       </Show>
+      <Show when={notesList()}>
+        {(n) => (
+          <details class="disclosure mq-card-review-notes">
+            <summary class="disclosure-summary">
+              <Icon name="chevron-right" small class="icon-twist" />
+              <span class="disclosure-label text-caption">
+                <span class="text-muted">Review:</span> {n().summary}
+              </span>
+            </summary>
+            <div class="disclosure-body">
+              <ol class="mq-review-findings" aria-label="Review notes">
+                <For each={n().findings}>
+                  {(f) => (
+                    <li class="mq-review-finding">
+                      <span class="chip mq-review-kind">{kindWord(f.kind)}</span>
+                      <Show when={findingPlace(f)}>{(pl) => <span class="text-mono text-caption mq-review-place">{pl()}</span>}</Show>
+                      <span class="mq-review-text text-caption">{f.text}</span>
+                    </li>
+                  )}
+                </For>
+              </ol>
+            </div>
+          </details>
+        )}
+      </Show>
       <For each={cardNotes(d())}>
         {(n) => (
           <p class="text-caption mq-card-line mq-card-note">
@@ -357,5 +419,14 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
         <ChangesDialog scope={{ kind: "merge", sessionPath: session!.path, repoPath: d().root, sha: d().landed!.sha }} cwd={session!.cwd} onClose={() => setReviewing(false)} />
       </Show>
     </div>
+  );
+}
+
+/** The pointer to a blocking review's own card: a link when it stands in another chat, else a jump in this one. */
+function ReviewLink(props: { words: string; href: string; onClick(e: MouseEvent): void }) {
+  return (
+    <a class="mq-card-pointer" href={props.href} title="Go to the review's card, with every finding" onClick={(e) => props.onClick(e)}>
+      {props.words}
+    </a>
   );
 }

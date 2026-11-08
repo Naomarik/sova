@@ -3,7 +3,7 @@
 // action bumps `mergeChanged`, which the session view reads to reload the worktree rows and the tab
 // reads to read the queue again, so the modal, the pane and the tab agree.
 import { createSignal } from "solid-js";
-import type { MergeAnswer, MergeCard, MergeReport } from "../../shared/merge-queue";
+import type { MergeAnswer, MergeCard, MergeReport, ReviewCard as MergeReviewCard } from "../../shared/merge-queue";
 import type { VerbResult } from "../../shared/project-contract";
 import { runMergeVerb } from "./api";
 import type { MergeEntry, MergeQueueView } from "./merge-queue-types";
@@ -36,10 +36,11 @@ export function noteMergeFeed(msg: { project: string; view: MergeQueueView }): v
   noteMergeChanged();
 }
 
-const [cardsFeed, setCardsFeed] = createSignal<{ session: string; cards: MergeCard[] } | null>(null);
-/** The newest cards the session feed pushed for one chat (`merge_cards`). */
+const [cardsFeed, setCardsFeed] = createSignal<{ session: string; cards: MergeCard[]; reviews?: MergeReviewCard[] } | null>(null);
+/** The newest cards (and review cards) the session feed pushed for one chat (`merge_cards`). */
 export const mergeCardsFeed = cardsFeed;
-export const noteMergeCards = (msg: { session: string; cards: MergeCard[] }): void => void setCardsFeed({ session: msg.session, cards: msg.cards });
+export const noteMergeCards = (msg: { session: string; cards: MergeCard[]; reviews?: MergeReviewCard[] }): void =>
+  void setCardsFeed({ session: msg.session, cards: msg.cards, ...(msg.reviews ? { reviews: msg.reviews } : {}) });
 
 const report = (r: VerbResult): MergeReport | undefined => r.merge;
 

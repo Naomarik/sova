@@ -224,7 +224,9 @@ function lineCats(spec: ChartSpec, measure: Measure, cx: (i: number) => number, 
   const cap = Math.max(40, Math.min(160, (W - 20) / 3));
   const lines = spec.rows.map((r) => wrap(r.label, cap, 2, FONT.cat, measure));
   const widths = lines.map((l) => Math.max(...l.map((s) => measure(s, FONT.cat))));
-  const at = (i: number, ls: string[], w: number): CatLabel => ({ row: i, x: Math.max(w / 2 + 1, Math.min(W - w / 2 - 1, cx(i))), y, lines: ls, anchor: "middle" });
+  // One that would pass an edge is anchored to it instead, so a font wider than measured grows inward.
+  const at = (i: number, ls: string[], w: number): CatLabel =>
+    cx(i) - w / 2 < 2 ? { row: i, x: 2, y, lines: ls, anchor: "start" } : cx(i) + w / 2 > W - 2 ? { row: i, x: W - 2, y, lines: ls, anchor: "end" } : { row: i, x: cx(i), y, lines: ls, anchor: "middle" };
   const k = Math.max(1, Math.ceil((Math.max(...widths) + CAT_GAP) / band));
   const kept: CatLabel[] = [];
   const clear = (c: CatLabel) => {
@@ -312,7 +314,9 @@ function layoutColumnsAt(spec: ChartSpec, W: number, measure: Measure, mode: "co
         } else {
           // Side by side in a group, a label needs its own bar's width (and a gap); alone, its band.
           const fits = n > 1 ? measure(text, FONT.value) + VALUE_GAP <= bw : valueFits(text);
-          wanted.push({ row: i, x: bar.x + bar.w / 2, y: v < 0 ? bar.y + bar.h + 8 : bar.y - 7, text, anchor: "middle", marked: marks.has(i), down: v < 0, fits });
+          // Below a negative bar, unless that runs into the category labels: then just above zero.
+          const below = v < 0 && bar.y + bar.h + 8 + 6.5 <= y1;
+          wanted.push({ row: i, x: bar.x + bar.w / 2, y: below ? bar.y + bar.h + 8 : v < 0 ? zero - 7 : bar.y - 7, text, anchor: "middle", marked: marks.has(i), down: below, fits });
         }
       });
       if (stacked) {
@@ -462,12 +466,22 @@ function layoutScatter(spec: ChartSpec, W: number, measure: Measure): ChartLayou
   };
   const probe = mk(ys, top + plotH, top, 40);
   const left = Math.ceil(Math.max(...probe.ticks.map((t) => measure(probe.fmt(t), FONT.tick)))) + 10;
-  const right = 12;
+  let right = 12;
   const y = mk(ys, top + plotH, top, 40);
-  let x = mk(xs, left, W - right, 70);
   // Tick labels along x must not touch: thin the ticks until they fit.
-  const xw = Math.max(...x.ticks.map((t) => measure(x.fmt(t), FONT.tick)));
-  if (x.ticks.length > 1 && Math.abs(x.at(x.ticks[1]!) - x.at(x.ticks[0]!)) < xw + 10) x = mk(xs, left, W - right, xw * 2 + 30);
+  const xAxis = () => {
+    const a = mk(xs, left, W - right, 70);
+    const xw = Math.max(...a.ticks.map((t) => measure(a.fmt(t), FONT.tick)));
+    return a.ticks.length > 1 && Math.abs(a.at(a.ticks[1]!) - a.at(a.ticks[0]!)) < xw + 10 ? mk(xs, left, W - right, xw * 2 + 30) : a;
+  };
+  let x = xAxis();
+  // The last tick's label is centred on it: when it would pass the edge, the plot ends sooner.
+  const last = x.ticks[x.ticks.length - 1];
+  const over = last === undefined ? 0 : x.at(last) + (measure(x.fmt(last), FONT.tick) * 1.1) / 2 - (W - 2);
+  if (over > 0) {
+    right += Math.ceil(over);
+    x = xAxis();
+  }
   out.plot = { x0: left, y0: top, x1: W - right, y1: top + plotH };
   out.yTicks = ticksOf(y);
   out.xTicks = ticksOf(x);

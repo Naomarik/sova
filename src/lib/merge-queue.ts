@@ -8,6 +8,7 @@ import { clockTime, relativeTime } from "../../pi-config/extensions/stamp/format
 import { readinessChip } from "./worktrees";
 import type { MergeEntry, MergeNote, MergeProjectInfo, MergeQueueView, MergeRun, RunStep, WorktreeQueueInfo } from "./merge-queue-types";
 import { requestChip, requestReason } from "./merge-queue-requests";
+import { DECISION_LABEL, STANDING_LINE, answeredInChat, decisionActions, openDecision, standingWords, type CardDecision, type StandingFacts } from "./merge-standing";
 
 export type { MergeEntry, MergeProjectInfo, MergeQueueView, MergeRun, RunStep, WorktreeQueueInfo };
 export { ordinal };
@@ -38,7 +39,7 @@ export type Tone = "success" | "warn" | "error" | "info" | "accent" | "neutral";
 
 /** A row's one action. Land carries a ▾ with Land Without Review (only where the project has a
     review kit) and Land Without Its Specs…. */
-export type RowAction = "land" | "setup" | "cancel" | "accept" | "land-anyway" | "land-this-again" | "none";
+export type RowAction = "land" | "setup" | "accept" | "land-anyway" | "none";
 
 export type RowKey =
   | "uncommitted"
@@ -51,6 +52,8 @@ export type RowKey =
   | "review-flagged"
   | "unattributed"
   | "needs-fix"
+  | "with-chat"
+  | "needs-you"
   | "drafts-changed"
   | "landed"
   | "request-review"
@@ -82,12 +85,17 @@ export interface QueueRow {
   /** Notes on it (the merge thread's first), each with what kind it is. */
   notes: { label: string; text: string }[];
   action: RowAction;
-  /** Send Back beside the action (behaviour differs, review flagged). */
-  sendBack?: boolean;
-  /** Remove from Queue beside the action (Needs a fix): the entry leaves the queue; nothing is deleted. */
+  /** Try Again beside the action (can't tell whose failure: the check is run afresh; it uses no try). */
+  tryAgain?: boolean;
+  /** Answer in Chat: a decision answered in words, in the chat's message box (§chat.merge-queue/decision). */
+  answerInChat?: boolean;
+  /** Remove from Queue beside the action, on every stage of an approval that stands: the entry leaves the queue;
+   *  nothing is deleted. */
   remove?: boolean;
-  /** Needs a fix with commits of its own past the one sent back: its re-land reads Land Newest Commit. */
-  landNewest?: true;
+  /** The decision that waits for the user, when one does (its question and choices). */
+  decision?: CardDecision;
+  /** With its chat: chat's answer to the queue's newest request ("Fixed: commit a1b2c3d"). */
+  answer?: string;
   /** A run to See Why on. */
   run?: string;
 }
@@ -187,8 +195,8 @@ export function chatTreesOf(id: string | undefined, sessions: readonly Pick<Sess
 export const shownCommit = (w: Partial<Pick<SessionWorktreeInfo, "readiness" | "mergeStats">>): string | undefined =>
   w.mergeStats?.head ?? w.readiness?.landing?.commit;
 
-/** A sent-back row's line when the queue gave no reason. */
-export const SENT_BACK_LINE = "Sent back to its chat. Land comes back once its chat fixes it, or land its newest commit now.";
+/** A sent-back row's line when the queue gave no reason: the user's Land stands while its chat fixes it. */
+export const SENT_BACK_LINE = STANDING_LINE;
 
 /** The branch reads finished again at a commit other than the one sent back: the fix is in. */
 export const fixedPast = (w: { readiness?: { landing?: { commit: string } } }, sentBack: string): boolean => {
@@ -204,41 +212,10 @@ export const fixedPast = (w: { readiness?: { landing?: { commit: string } } }, s
 export function entryLandBlock(e: Pick<WorktreeQueueInfo, "state" | "redrafted" | "settled"> | undefined): string | undefined {
   if (!e) return undefined;
   if (e.state === "needs-fix") return e.redrafted || e.settled ? undefined : SENT_BACK_LINE;
+  if (e.state === "with-chat") return SENT_BACK_LINE;
   if ((["queued", "checking", "conflict", "behaviour-differs", "review-flagged"] as string[]).includes(e.state)) return "Already in the merge queue.";
   return undefined;
 }
-
-/**
- * A sent-back branch's re-land, as every row and card draws it: it always lands the branch's newest commit (Land with
- * no pinned commit). "Land This Commit Again" while the branch's head is still the commit sent back, "Land Newest
- * Commit" once it moved: the line says how many of its own commits that brings in, or that it was rewritten (amended or
- * rebased: nothing to count), and, when the newest commit isn't Ready to land, why. Pure.
- */
-export function landAgainOf(e: Pick<WorktreeQueueInfo, "newerCommits" | "newerRewritten" | "newerBlocked"> | undefined): { label: "Land This Commit Again" | "Land Newest Commit"; included: string | null; blocked: string | null } {
-  const n = e?.newerCommits ?? 0;
-  const moved = !!n || !!e?.newerRewritten;
-  return {
-    label: moved ? "Land Newest Commit" : "Land This Commit Again",
-    included: n ? `${n} newer commit${n === 1 ? "" : "s"} included` : moved ? "the branch was rewritten since it was sent back" : null,
-    blocked: moved && e?.newerBlocked ? `The newest commit isn't Ready to land: ${e.newerBlocked}.` : null,
-  };
-}
-
-/** The Overseer's menu item for that re-land: it lands `head`, the head its page read, so its words name that commit,
- *  never the one sent back once they differ. */
-export function landAgainItem(e: Pick<WorktreeQueueInfo, "commit" | "newerCommits" | "newerRewritten" | "newerBlocked">, head: string | undefined): { label: "Land This Commit Again" | "Land Newest Commit"; description: string } {
-  const again = landAgainOf(e);
-  const same = again.label === "Land This Commit Again" && (!head || head === e.commit);
-  const what = same ? `${short(e.commit)} again` : head ? short(head) : "its newest commit";
-  const lines = [again.included, again.blocked].filter(Boolean).map((l) => (l!.endsWith(".") ? l! : `${l}.`));
-  return { label: same ? "Land This Commit Again" : "Land Newest Commit", description: [`Approves ${what}: every check runs from the start.`, ...lines].join(" ") };
-}
-
-/** The commit a sent-back entry was sent back at, where an item that knows only the branch's queue entry offers its re-land (the
- *  Overseer's coding-worktree menu, beside its Land that entryLandBlock turns off): a sent-back entry still needing a
- *  fix. None once its drafts are fixed (Land is on) or it settled (nothing left to land). */
-export const landThisAgainOf = (e: Pick<WorktreeQueueInfo, "state" | "commit" | "redrafted" | "settled"> | undefined): string | undefined =>
-  e?.state === "needs-fix" && !e.redrafted && !e.settled ? e.commit : undefined;
 
 /** The tab's Sent back list: only entries that still need a fix. One the queue marks settled (a later entry for its
  *  branch, already in the target, its branch or folder removed) leaves it, and so does one whose branch already reads
@@ -247,18 +224,43 @@ export const landThisAgainOf = (e: Pick<WorktreeQueueInfo, "state" | "commit" | 
 export const stillSentBack = (v: Pick<MergeQueueView, "needsFix" | "ready">): MergeEntry[] =>
   v.needsFix.filter((e) => !e.settled && !e.redrafted && !(v.ready ?? []).some((r) => r.branch === e.branch && r.commit !== e.commit)).slice(0, 20);
 
+/** The tab's Needs you: the view's own list, then any entry whose decision waits for the user that a with-its-chat
+ *  list still holds (a server that lists it there), once each. */
+export function needsYouOf(v: Pick<MergeQueueView, "needsYou" | "needsFix"> & { withChat?: MergeEntry[] }): MergeEntry[] {
+  const seen = new Set<string>();
+  return [...v.needsYou, ...(v.withChat ?? []), ...v.needsFix].filter((e) => {
+    if (seen.has(e.id)) return false;
+    const mine = v.needsYou.includes(e) || (!!openDecision(e) && !e.settled);
+    if (mine) seen.add(e.id);
+    return mine;
+  });
+}
+
+/** The tab's With its chat: entries whose standing approval stands while their chat fixes something (state
+ *  with-chat, wherever the view lists it), and those still sent back from before (stillSentBack); never one a decision
+ *  holds (it is in Needs you). */
+export function withItsChat(v: Pick<MergeQueueView, "needsYou" | "needsFix" | "ready" | "waiting"> & { withChat?: MergeEntry[] }): MergeEntry[] {
+  const seen = new Set<string>();
+  const listed = [...(v.withChat ?? []), ...v.waiting.filter((e) => e.state === "with-chat"), ...v.needsYou.filter((e) => e.state === "with-chat"), ...stillSentBack(v)];
+  return listed.filter((e) => !openDecision(e) && !seen.has(e.id) && (seen.add(e.id), true));
+}
+
 /** The worktree is merged or removed: that wins over Needs a fix (nothing is left to fix). */
 const pastSentBack = (w: RowKeyInput): boolean => w.status === "merged" || !!w.mergedInto || !w.exists || !!w.gone || w.readiness?.state === "merged";
 
 /** Rows past the queue (landed, merged, gone) carry no size: there's nothing left to land. */
-const SIZED: RowKey[] = ["ready", "uncommitted", "queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "needs-fix", "drafts-changed", "request-review"];
+const SIZED: RowKey[] = ["ready", "uncommitted", "queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "needs-fix", "with-chat", "needs-you", "drafts-changed", "request-review"];
 
 /** What a row's key reads: the fields of QueueRowInput the ladder below looks at, and nothing else. */
 export type RowKeyInput = Pick<QueueRowInput, "status" | "exists"> &
   Partial<Pick<QueueRowInput, "mergedInto" | "gone">> & {
     readiness?: Pick<NonNullable<QueueRowInput["readiness"]>, "state" | "dirtyCount" | "noCommits" | "landing">;
-    queue?: Pick<RowQueueFacts, "state" | "commit" | "request" | "settled" | "redrafted">;
+    queue?: Pick<RowQueueFacts, "state" | "commit" | "request" | "settled" | "redrafted"> & Partial<Pick<StandingFacts, "decision">>;
   };
+
+/** A decision's row key: the kinds the tab already names keep their key; the rest read "Needs you". */
+const decisionKey = (d: CardDecision): RowKey =>
+  d.kind === "behaviour-differs" ? "behaviour-differs" : d.kind === "unattributed" ? "unattributed" : d.kind === "drafts-changed" ? "drafts-changed" : "needs-you";
 
 /** The key its queue entry gives a row, or null when the entry doesn't speak for it (none, cancelled, a sent-back
     branch whose fix reads finished at a newer commit, whose drafts the queue says are fixed at the same commit, is
@@ -266,7 +268,14 @@ export type RowKeyInput = Pick<QueueRowInput, "status" | "exists"> &
 export function entryKeyOf(w: RowKeyInput): RowKey | null {
   const e = w.queue;
   if (!e) return null;
+  // A decision waiting for the user speaks for the row, whatever state holds it (unless it settled or moved on).
+  const d = e.state !== "landed" && e.state !== "cancelled" && !e.settled ? openDecision(e) : null;
+  if (d && !pastSentBack(w)) return decisionKey(d);
   switch (e.state) {
+    case "with-chat":
+      return pastSentBack(w) ? null : "with-chat";
+    case "needs-user":
+      return pastSentBack(w) ? null : "needs-you";
     case "queued":
     case "checking":
     case "conflict":
@@ -318,7 +327,34 @@ export function queueRow(w: QueueRowInput): QueueRow {
 function queueRowOf(w: QueueRowInput): QueueRow {
   const e = w.queue;
   const base = { notes: notesOf(e?.notes), newer: newerWords(e?.newerCommits) ?? undefined, run: e?.run };
-  if (e && entryKeyOf(w)) {
+  const key = e ? entryKeyOf(w) : null;
+  if (e && key) {
+    const auto = e as RowQueueFacts & Partial<StandingFacts>;
+    // A decision: its question, its answers on the queue, Answer in Chat when it is answered in words, and Remove.
+    const dec = key !== "landed" ? openDecision(auto) : null;
+    if (dec) {
+      const acts = decisionActions(dec);
+      const one = acts.find((a) => a === "accept" || a === "land-anyway" || a === "land");
+      return {
+        ...base,
+        newer: undefined,
+        key,
+        label: DECISION_LABEL[dec.kind] ?? "Needs you",
+        tone: "warn",
+        reason: `${dec.question}${dec.cantSettle ? " · can't be settled without you" : ""}`,
+        action: (one ?? "none") as RowAction,
+        ...(acts.includes("try-again") ? { tryAgain: true } : {}),
+        ...(answeredInChat(dec) ? { answerInChat: true } : {}),
+        remove: true,
+        decision: dec,
+      };
+    }
+    // With its chat: the user's Land stands; the row says where, and offers only Remove from Queue.
+    if (key === "with-chat") {
+      const st = standingWords(auto) ?? { label: "Back with the chat", tone: "info" as const };
+      return { ...base, newer: undefined, key, label: st.label, tone: st.tone, detail: st.detail, reason: e.reason ? `${sentence(e.reason)} ${STANDING_LINE}` : STANDING_LINE, action: "none", remove: true, ...(st.answer ? { answer: st.answer } : {}) };
+    }
+    if (key === "needs-you") return { ...base, newer: undefined, key, label: "Needs you", tone: "warn", reason: e.reason, action: "none", answerInChat: true, remove: true };
     switch (e.state) {
       case "queued":
         return {
@@ -327,12 +363,14 @@ function queueRowOf(w: QueueRowInput): QueueRow {
           label: e.position ? `Queued · ${ordinal(e.position)}` : "Queued",
           tone: "info",
           detail: e.eta ? `starts in ~${mins(e.eta.startsInMs)} · takes ~${mins(e.eta.takesMs)}` : short(e.commit),
-          action: "cancel",
+          // Remove from Queue, the one name at every stage (merge.cancel takes it off the line).
+          action: "none",
+          remove: true,
         };
       case "checking":
-        return { ...base, key: "checking", label: "Checking", tone: "accent", live: true, detail: e.eta ? `~${mins(e.eta.takesMs)} in all` : short(e.commit), reason: e.reason, action: "none" };
+        return { ...base, key: "checking", label: "Checking", tone: "accent", live: true, detail: e.eta ? `~${mins(e.eta.takesMs)} in all` : short(e.commit), reason: e.reason, action: "none", remove: true };
       case "conflict":
-        return { ...base, key: "conflict", label: "Conflict", tone: "warn", reason: e.reason ?? "The merge thread is judging a conflict with the target. The line moves on meanwhile.", action: "none" };
+        return { ...base, key: "conflict", label: "Conflict", tone: "warn", reason: e.reason ?? "The merge thread is judging a conflict with the target. The line moves on meanwhile.", action: "none", remove: true };
       case "behaviour-differs": {
         const c = e.conflict;
         return {
@@ -341,30 +379,25 @@ function queueRowOf(w: QueueRowInput): QueueRow {
           label: "Behaviour differs",
           tone: "warn",
           reason: c ? `Target: ${c.ours}\nBranch: ${c.theirs}\nProposed: ${c.proposal}` : (e.reason ?? "This branch and the target want different behaviour."),
-          action: "accept",
-          sendBack: true,
+          // Accept only a resolution the merge thread proposed; otherwise it is answered in the chat.
+          action: c?.proposal ? "accept" : "none",
+          answerInChat: true,
+          remove: true,
         };
       }
       case "unattributed":
         // A check failed on the merge and on the target alone, naming no tests: nobody is blamed; you decide.
-        return { ...base, key: "unattributed", label: "Can't tell whose failure", tone: "warn", reason: unattributedWhy(e.reason), action: "land-anyway", sendBack: true };
+        return { ...base, key: "unattributed", label: "Can't tell whose failure", tone: "warn", reason: unattributedWhy(e.reason), action: "land-anyway", tryAgain: true, remove: true };
       case "review-flagged":
-        return { ...base, key: "review-flagged", label: "Review flagged", tone: "warn", reason: e.review?.text ?? e.reason ?? "The review found something that blocks it.", action: "land-anyway", sendBack: true };
+        // Review findings go back to the chat by themselves: nothing to press but Remove from Queue.
+        return { ...base, key: "review-flagged", label: "Review flagged", tone: "warn", reason: e.review?.text ?? e.reason ?? "The review found something that blocks it.", action: "none", remove: true };
       case "drafts-changed":
-        return { ...base, key: "drafts-changed", label: "Drafts changed", tone: "warn", reason: e.reason ?? "Its spec drafts changed since you approved. Land again to approve them.", action: "land" };
+        return { ...base, key: "drafts-changed", label: "Drafts changed", tone: "warn", reason: e.reason ?? "Its spec drafts changed since you approved. Land again to approve them.", action: "land", remove: true };
       case "needs-fix":
-        // Sent back: no Land while its chat fixes it; its re-land (the branch's newest commit, every check from the
-        // start) and Remove from Queue instead. Once the branch reads finished again at a newer commit (clean, no
-        // conflicts, its chat idle: Sova's ready reading), or sent back for its drafts and the queue says they're fixed,
-        // that commit wins and the row is Ready with Land. Settled (a later entry for the branch, already in the
-        // target, its branch or folder removed): nothing to fix. entryKeyOf gives no key in those cases, and the row
-        // reads as the worktree itself, below.
-        {
-          // Its re-land takes the branch's newest commit: the line says what that brings in (landAgainOf).
-          const again = landAgainOf(e);
-          const newer = [again.included, again.blocked].filter(Boolean).join(" · ");
-          return { ...base, newer: newer || undefined, key: "needs-fix", label: "Needs a fix", tone: "error", reason: e.reason ?? SENT_BACK_LINE, action: "land-this-again", ...(again.included ? { landNewest: true as const } : {}), remove: true };
-        }
+        // Sent back and no longer in line (Can't escalated, or from before standing approvals): no re-land and no
+        // Land while its chat fixes it; Remove from Queue. Once the branch reads finished again at a newer commit, or
+        // its drafts are fixed, entryKeyOf gives no key and the row reads as the worktree itself, Ready with Land.
+        return { ...base, newer: undefined, key: "needs-fix", label: "Needs a fix", tone: "error", reason: e.reason ?? SENT_BACK_LINE, action: "none", remove: true };
       case "landed":
         return {
           ...base,
@@ -382,7 +415,6 @@ function queueRowOf(w: QueueRowInput): QueueRow {
         // Past Sova's checks on a request or push project: the host's words (merge-queue-requests.ts).
         const chip = requestChip(e.state, e.request, e.reason);
         // The host merged it while the queue hasn't moved the entry yet: it reads as landed (entryKeyOf).
-        const key = entryKeyOf(w)!;
         return {
           ...base,
           newer: e.state === "requested" || e.state === "pushed" ? base.newer : undefined,
@@ -449,15 +481,16 @@ function queueRowOf(w: QueueRowInput): QueueRow {
 }
 
 /** A row's buttons, as the Worktrees modal and the session pane draw them, in order. Set Up Queue needs the
-    project to link to; Send Back follows the row's one action. */
-export type RowButton = "Land" | "Set Up Queue" | "Cancel" | "Accept" | "Land Anyway" | "Send Back" | "Land This Commit Again" | "Land Newest Commit" | "Remove from Queue";
-export function rowButtons(row: Pick<QueueRow, "action" | "sendBack" | "remove"> & Partial<Pick<QueueRow, "landNewest">>, projectId: string | undefined): RowButton[] {
-  const one: Partial<Record<RowAction, RowButton>> = { land: "Land", cancel: "Cancel", accept: "Accept", "land-anyway": "Land Anyway", "land-this-again": row.landNewest ? "Land Newest Commit" : "Land This Commit Again" };
+    project to link to. No row has Send Back or a re-land: the user's Land stands while its chat fixes it (al_3). */
+export type RowButton = "Land" | "Set Up Queue" | "Accept" | "Land Anyway" | "Try Again" | "Answer in Chat" | "Remove from Queue";
+export function rowButtons(row: Pick<QueueRow, "action" | "remove"> & Partial<Pick<QueueRow, "tryAgain" | "answerInChat">>, projectId: string | undefined): RowButton[] {
+  const one: Partial<Record<RowAction, RowButton>> = { land: "Land", accept: "Accept", "land-anyway": "Land Anyway" };
   const out: RowButton[] = [];
   if (row.action === "setup") {
     if (projectId) out.push("Set Up Queue");
   } else if (one[row.action]) out.push(one[row.action]!);
-  if (row.sendBack) out.push("Send Back");
+  if (row.tryAgain) out.push("Try Again");
+  if (row.answerInChat) out.push("Answer in Chat");
   if (row.remove) out.push("Remove from Queue");
   return out;
 }
@@ -504,7 +537,7 @@ export const unclearLine = (u: { label: string; why?: string }, target?: string)
   u.why?.trim() ? `${u.label}: ${u.why.trim().replace(/[.]$/, "")}` : `${u.label}: fails with this branch and on ${target ?? "the target"} alone, naming no tests`;
 
 /** The order the summary counts in. */
-const ORDER: RowKey[] = ["ready", "queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "needs-fix", "drafts-changed", "request-review", "requested", "uncommitted", "no-commits", "landed", "pushed", "closed", "merged", "removed", "dropped"];
+const ORDER: RowKey[] = ["ready", "queued", "checking", "conflict", "behaviour-differs", "needs-you", "review-flagged", "unattributed", "needs-fix", "with-chat", "drafts-changed", "request-review", "requested", "uncommitted", "no-commits", "landed", "pushed", "closed", "merged", "removed", "dropped"];
 const COUNT_WORD: Record<RowKey, [string, string]> = {
   ready: ["ready", "ready"],
   queued: ["queued", "queued"],
@@ -514,6 +547,8 @@ const COUNT_WORD: Record<RowKey, [string, string]> = {
   "review-flagged": ["review flagged", "reviews flagged"],
   unattributed: ["can't tell whose failure", "can't tell whose failure"],
   "needs-fix": ["needs a fix", "need a fix"],
+  "with-chat": ["back with its chat", "back with their chats"],
+  "needs-you": ["needs you", "need you"],
   "drafts-changed": ["drafts changed", "drafts changed"],
   uncommitted: ["uncommitted", "uncommitted"],
   "no-commits": ["no commits yet", "no commits yet"],
@@ -556,14 +591,17 @@ export const HEADLINE_WORDS: Record<HeadlineKind, (n: number) => string> = {
 const HEADLINE_DOT: Record<HeadlineKind, "ok" | "warn" | "err" | null> = { you: "warn", fix: "err", ready: "ok", checking: null, queued: null, worktrees: null };
 
 /** The rows' keys that need you (the headline's first fact). */
-export const NEEDS_YOU_KEYS: readonly RowKey[] = ["behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "request-review"];
+export const NEEDS_YOU_KEYS: readonly RowKey[] = ["behaviour-differs", "needs-you", "unattributed", "drafts-changed", "request-review"];
+/** The rows its chat fixes (the headline's "needs a fix"): back with the chat, waiting for a fix or the merge thread,
+    paused by Stop, review findings it was sent; nothing for the user to press. */
+export const FIX_KEYS: readonly RowKey[] = ["needs-fix", "with-chat", "review-flagged"];
 
 /** The one most useful fact about a set of rows: which, its words, its number and its dot. Null with no rows. */
 export function headline(rows: Pick<QueueRow, "key">[]): { kind: HeadlineKind; text: string; n: number; dot: "ok" | "warn" | "err" | null } | null {
   const kind = headlineKind(rows);
   if (!kind) return null;
   const count = (...k: readonly RowKey[]) => rows.filter((r) => k.includes(r.key)).length;
-  const n = kind === "you" ? count(...NEEDS_YOU_KEYS) : kind === "fix" ? count("needs-fix") : kind === "ready" ? count("ready") : kind === "checking" ? 1 : kind === "queued" ? count("queued") : rows.length;
+  const n = kind === "you" ? count(...NEEDS_YOU_KEYS) : kind === "fix" ? count(...FIX_KEYS) : kind === "ready" ? count("ready") : kind === "checking" ? 1 : kind === "queued" ? count("queued") : rows.length;
   const text = HEADLINE_WORDS[kind](n);
   return { kind, text, n: Number(/^\d+/.exec(text)?.[0] ?? rows.length), dot: HEADLINE_DOT[kind] };
 }
@@ -571,7 +609,7 @@ function headlineKind(rows: Pick<QueueRow, "key">[]): HeadlineKind | null {
   if (rows.length === 0) return null;
   const has = (...k: readonly RowKey[]) => rows.some((r) => k.includes(r.key));
   if (has(...NEEDS_YOU_KEYS)) return "you";
-  if (has("needs-fix")) return "fix";
+  if (has(...FIX_KEYS)) return "fix";
   if (has("ready")) return "ready";
   if (has("checking")) return "checking";
   if (has("queued")) return "queued";

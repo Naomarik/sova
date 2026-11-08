@@ -44,6 +44,14 @@ export interface ThreadStandIn {
   landed?: (h: QueueHarness, e: MergeEntry, ev: ThreadEvent) => Promise<void>;
   /** The names interview (a push held for want of the project's private names). */
   names?: (h: QueueHarness, e: MergeEntry, ev: ThreadEvent) => Promise<void>;
+  /** A chat's Fixed to check (al_3), its Can't or Needs you, drafts changed since the Land. */
+  fix?: (h: QueueHarness, e: MergeEntry, ev: ThreadEvent) => Promise<void>;
+  "chat-answer"?: (h: QueueHarness, e: MergeEntry, ev: ThreadEvent) => Promise<void>;
+  "drafts-changed"?: (h: QueueHarness, e: MergeEntry, ev: ThreadEvent) => Promise<void>;
+  /** The moments the thread rules on (al_3): Can't tell whose failure, a blocking review, its resolution that failed. */
+  unattributed?: (h: QueueHarness, e: MergeEntry, ev: ThreadEvent) => Promise<void>;
+  review?: (h: QueueHarness, e: MergeEntry, ev: ThreadEvent) => Promise<void>;
+  "resolution-failed"?: (h: QueueHarness, e: MergeEntry, ev: ThreadEvent) => Promise<void>;
 }
 
 /** What the stand-in reviewer answers for a commit (read in the merge copy). */
@@ -207,7 +215,7 @@ export class QueueHarness {
   resume(): Promise<void> {
     return this.q.resume();
   }
-  answer(entry: string, answer: "accept" | "send-back" | "land-anyway"): Promise<MergeEntry> {
+  answer(entry: string, answer: import("../../../shared/merge-queue").MergeAnswer): Promise<MergeEntry> {
     return this.q.answer(entry, answer);
   }
   note(entry: string, text: string): Promise<MergeEntry> {
@@ -216,8 +224,18 @@ export class QueueHarness {
   extend(entry: string, checks: string[], why: string, select?: string[]): Promise<MergeEntry> {
     return this.q.extend(entry, checks, why, select);
   }
-  resolve(entry: string, j: { verdict: "no-behaviour-change" | "behaviour-differs"; files?: string[]; ours: string; theirs: string; proposal: string; commit?: string; contents?: Record<string, string>; note?: string }): Promise<MergeEntry> {
+  resolve(entry: string, j: { verdict: "no-behaviour-change" | "chat-fixes" | "needs-user" | "behaviour-differs"; files?: string[]; ours: string; theirs: string; proposal: string; commit?: string; contents?: Record<string, string>; note?: string; text?: string; choices?: string[] }): Promise<MergeEntry> {
     return this.q.resolve(entry, j);
+  }
+  /** The thread's merge.rule. */
+  rule(entry: string, r: { ruling: string; text?: string; choices?: string[]; request?: string; note?: string }): Promise<MergeEntry> {
+    return this.q.rule(entry, r);
+  }
+  /** The user sent their answer to the entry's open decision from its chat's message box (channel's held note). */
+  async decisionAnswered(entry: string, text: string): Promise<{ request: string; text: string } | null> {
+    const d = this.q.entry(entry)?.decision;
+    if (!d) throw new Error(`${entry} has no decision`);
+    return this.q.decisionAnswered(entry, d.id, text);
   }
 
   // ---- reads ----------------------------------------------------------------------------------------

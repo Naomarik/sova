@@ -15,7 +15,7 @@ export const SETTLED_CHECKED = 60;
 export async function settledFacts(git: Git, root: string, head: string, entries: QueueFile["entries"], exists: (p: string) => boolean = existsSync): Promise<Map<string, "merged" | "gone">> {
   const facts = new Map<string, "merged" | "gone">();
   const candidates = entries
-    .filter((e) => e.state === "needs-fix" && !superseded(entries, e))
+    .filter((e) => (e.state === "needs-fix" || e.state === "with-chat") && !superseded(entries, e))
     .sort((x, y) => y.updatedAt.localeCompare(x.updatedAt))
     .slice(0, SETTLED_CHECKED);
   for (const e of candidates) {

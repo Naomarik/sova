@@ -124,9 +124,9 @@ test("tones: status never by hue alone (every chip has a word), failures are err
 
 test("actions: Open on the host always once linked; Send Back to Chat on host trouble; Land Again when closed or newer", () => {
   assert.deepEqual(requestActions("requested", pr({})), ["open-host"]);
-  assert.deepEqual(requestActions("requested", pr({ checks: "fail" })), ["open-host", "send-back"]);
-  assert.deepEqual(requestActions("requested", pr({ review: "changes-requested" })), ["open-host", "send-back"]);
-  assert.deepEqual(requestActions("requested", pr({ mergeable: "conflicts" })), ["open-host", "send-back"]);
+  assert.deepEqual(requestActions("requested", pr({ checks: "fail" })), ["open-host"]);
+  assert.deepEqual(requestActions("requested", pr({ review: "changes-requested" })), ["open-host"]);
+  assert.deepEqual(requestActions("requested", pr({ mergeable: "conflicts" })), ["open-host"]);
   assert.deepEqual(requestActions("closed", pr({ state: "closed" })), ["open-host", "land-again"]);
   assert.deepEqual(requestActions("requested", pr({}), { newerCommits: 2 }), ["open-host", "land-again"]);
   assert.deepEqual(requestActions("requested", pr({ state: "merged" }), { newerCommits: 2 }), ["open-host"], "merged: nothing to update");
@@ -135,7 +135,6 @@ test("actions: Open on the host always once linked; Send Back to Chat on host tr
   assert.deepEqual(requestActions("request-review", pr(), { reason: "Couldn't draft it." }), ["review"], "not drafted: Review Request to write it");
   assert.equal(requestActionLabel("open-host", pr()), "Open on GitHub");
   assert.equal(requestActionLabel("open-host", mr()), "Open on GitLab");
-  assert.equal(requestActionLabel("send-back", pr()), "Send Back to Chat");
 });
 
 test("a host merge says the host's merge is final, not 'exactly the tested commit' (f9)", () => {

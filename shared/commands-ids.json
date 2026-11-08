@@ -250,7 +250,9 @@
     "project.verb.merge.restart",
     "project.verb.merge.live",
     "project.verb.merge.test",
-    "project.verb.merge.names"
+    "project.verb.merge.names",
+    "project.verb.merge.rule",
+    "project.verb.merge.respond"
   ],
   "retired": [
     "settings.agents.get",

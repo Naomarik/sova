@@ -255,6 +255,9 @@ export function Composer(props: {
   } | null;
   /** Whether the draft holds anything to send (text or an attachment), as it changes. */
   onDraft?(has: boolean): void;
+  /** The merge queue's note held "not sent yet" for the user's next message (§chat.merge-queue/decision), or the merge
+      thread's question held in its own chat (§chat.merge-queue/asks): the line above the box, in full. */
+  heldNotes?: string[];
 }) {
   // The box's text and shell mode (lib/shell-box): a draft written in shell mode was saved with its
   // mode, apart from its text, so a leading "!" is only ever text (§chat.shell-mode/box). Made below,
@@ -1181,6 +1184,16 @@ export function Composer(props: {
         </Show>
         {runStatus()}
 
+        <For each={props.heldNotes ?? []}>
+          {(line) => (
+            <div class="align-picks mq-held-line" role="note" aria-label={line}>
+              <Icon name="branch" small />
+              <span class="align-picks-text" title={line}>
+                {line}
+              </span>
+            </div>
+          )}
+        </For>
         <Show when={props.picks}>
           {(p) => (
             <div class="align-picks" role="group" aria-label="Staged answers">

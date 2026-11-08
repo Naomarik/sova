@@ -690,82 +690,112 @@ it, and the Overseers' `sova_project_verbs` is outside this rule.
 
 The merge queue (§app/merge-queue) is worked through verbs beside the deploy verbs, the same way:
 the same route (`POST /api/project-services/<verb>`), the same CLI and the same tools, each
-answering
-the one result shape with its own `merge` key (§app.project-services/result).
+answering the one result shape with its own `merge` key (§app.project-services/result).
 
 - **Reads**: `merge.status` (a project, or one entry, which narrows the view to it: the queue's view, its state and why it is paused, the
   current run, the waiting line with estimates, what needs the user, what needs a fix, recent
   landings with their runs, the target's and pushed heads, and the test checks flagged broken on the
-  target) and `merge.logs` (a run, optionally
-  one step and a line count).
+  target) and `merge.logs` (a run, optionally one step and a line count).
 - **Setting it up**: `merge.setup` (a project's checks, one test command with its time and what
   starts first, or no automated tests; a dry run tries them, and a save commits them), the
   operator's only, from the routes and the CLI: no chat may call it, with or without a dry run
   (§app.merge-queue/setup).
-- **Trying a setup**: `merge.try` (a branch, by default the caller's own, or a commit, and the release check ids to run though unchanged): runs that commit's own
-  proposed merge checks and release-only checks in the merge copy, merging and saving nothing
-  (§app.project-setup/trial).
-- **The user's**: `merge.add` (a branch or checkout, its commit by default the head, and the
-  options without its specs and without review: §app.merge-queue/approve; at a sent-back branch's
-  head it is the re-land button, Land This Commit Again or Land Newest Commit), `merge.cancel` (an
-  entry: one in line, checking or
-  waiting is taken out of the line; a Needs a fix one is Remove from Queue, cancelled as
-  "removed by you", deleting nothing), `merge.pause` and `merge.resume` (a project, with an optional
-  why), and `merge.answer`
-  (an entry waiting for the user: `accept` a resolution, `land-anyway` over a blocking review or a
-  failure
-  whose owner can't be told, or `send-back`), `merge.reply` (a merge thread's question by its id
-  and the user's answer: §chat.merge-queue/asks), `merge.fresh` (a project: Start Fresh,
-  §chat.merge-queue/thread-life) and `merge.clear` (a queue chat's id, or `all`:
-  §app.merge-queue/chats).
-- **The merge thread's**: `merge.note` (an entry and at most 300 characters; an empty note clears it, sent from the
-  thread's tool as from the routes or the CLI),
+- **Trying a setup**: `merge.try` (a branch, by default the caller's own, or a commit, and the
+  release check ids to run though unchanged): runs that commit's own proposed merge checks and
+  release-only checks in the merge copy, merging and saving nothing (§app.project-setup/trial).
+- **The user's**: `merge.add` (a branch or checkout, its commit by default the head, and the options
+  without its specs and without review: §app.merge-queue/approve; on a finished branch blocked for
+  something its chat can fix it records Approved · waiting for a fix; on Out of tries it is Land, a
+  new standing approval), `merge.cancel` (an entry: one in line, checking or waiting is taken out of
+  the line; one back with its chat, approved and waiting for a fix, paused or waiting for the user's
+  decision is Remove from Queue, cancelled as "removed by you", deleting nothing), `merge.pause` and
+  `merge.resume` (a project, with an optional why), and `merge.answer` (an entry waiting for the
+  user's decision: `accept` a resolution, `land-anyway` over a failure whose owner can't be told,
+  `try-again` for such a failure, or `land` for a fix that needs the user's OK or drafts changed
+  beyond fitting; there is no `send-back`, and no `land-anyway` over a review), `merge.reply` (a
+  merge thread's question by its id and the user's answer: §chat.merge-queue/asks), `merge.fresh` (a
+  project: Start Fresh, §chat.merge-queue/thread-life) and `merge.clear` (a queue chat's id, or
+  `all`: §app.merge-queue/chats).
+- **The merge thread's**: `merge.note` (an entry and at most 300 characters; an empty note clears it,
+  sent from the thread's tool as from the routes or the CLI),
   `merge.extend` (an entry, the check ids it adds, why, and a selection, `select`, for a check that
   takes one: the slow test group, files or walkthroughs it runs; never removes one; the tool's help
   for `checks` and `select` names the full pick and says a check that takes a selection runs bare
-  without one and fails), `merge.resolve` (an
-  entry, its judgement, no behaviour change or behaviour differs, the files, both sides and the
-  proposal in plain words, and the commit of its resolution, or `contents`, each resolved file's text, which Sova commits in
-  the scratch copy), `merge.retry` (a project or entry
-  paused for the machine), `merge.restart`, `merge.live`, `merge.test` and `merge.names`
-  (§chat.merge-queue/thread-sandbox), `merge.ask` (the question for the user, and the entry it is about:
-  §chat.merge-queue/asks) and `merge.hold` (a project and `action`: `set` holds the queue's new
-  starts for 5 minutes, set again renewing them, and `clear` lifts the hold; it answers the hold
-  now: §app.merge-queue/empty). Each but `merge.hold`, which names no entry, takes an optional
-  `note`, recorded on the entry.
+  without one and fails), `merge.resolve` (an entry, its judgement, `no-behaviour-change` (with
+  `contents`, each resolved file's text, which Sova commits in the scratch copy, or the commit of
+  its resolution), `chat-fixes` (with its diagnosis), or `needs-user` (with its question and
+  choices for the user; `behaviour-differs` is taken as the old word for it), the files, both sides
+  and the proposal in plain words; `chat-fixes` and `needs-user` carry no contents and are refused
+  with them), `merge.rule` (an entry, its
+  ruling and the text: `chat-fixes` with its diagnosis, `try-again`, also its other approach after a
+  "Can't", or `needs-user` with the question and at most 4 choices, on a failure, a blocking review
+  or a "Can't", §app.merge-queue/needs-user; and, naming the request, `checked` or `beyond` for a
+  fix, with what it changes beyond the request, §app.merge-queue/standing-approval), `merge.retry`
+  (a project paused for the machine, or an entry whose user's Land still stands, put back in line
+  and counted against its tries, §app.merge-queue/tries; never an entry the user removed, out of
+  tries or waiting for the user's decision), `merge.restart`, `merge.live`, `merge.test` and
+  `merge.names` (§chat.merge-queue/thread-sandbox), `merge.ask` (the question for the user, its choices,
+  and the entry it is about: §chat.merge-queue/asks) and `merge.hold` (a project and `action`: `set`
+  holds the queue's new starts for 5 minutes, set again renewing them, and `clear` lifts the hold;
+  it answers the hold now: §app.merge-queue/empty). Each but `merge.hold`, which names no entry,
+  takes an optional `note`, recorded on the entry.
 - **The review step's**: `merge.review` (a run, its verdict `ok`, `notes` or `blocking`, and the
   reviewer's text).
+- **The branch's chat's**: `merge.respond` (a request by its id, `rq_…`, and the answer: `fixed`
+  with what changed, a commit, drafts or both; `needs-you` with the question and its `choices`; or
+  `cant` with why: §chat.merge-queue/answers).
+
+**Who may call each verb, and only where the queue serves**: §app.project-services/merge-callers.
+The user's verbs are the operator's, and pass only on the user's own click in Sova's page or a
+proven click from another of their computers.
+
+The Land, Cancel, Remove from Queue, Pause, Resume, Accept, Land Anyway, Try Again, Start Fresh,
+Clear, Clear All and Run Trial actions are catalogue commands pointing at these verbs
+(§app/commands). Send Back, Land This Commit Again, Land Newest Commit and Send Answer are retired
+from every screen. Catalogue ids are append-only (§app.commands/catalogue): the verbs' entries
+(`project.verb.merge.answer`, `project.verb.merge.reply`) keep their ids, and an entry retired with
+these actions keeps its id in the catalogue's retired list, never reused.
+
+## §app.project-services/merge-callers — Who calls the merge verbs, and where
 
 **Callers.**
 - The operator (the routes, the CLI, the Land and Cancel controls) calls the user's verbs (add,
   cancel, pause, resume, answer, reply, fresh, clear, setup), `merge.try` (Run Trial) and the reads,
-  and may write a note
-  or hold the queue (`merge.hold`).
-  Only the operator calls the user's verbs, with one exception: the chat a merge thread's question
-  was asked in may call `merge.reply` for that question only, to pass on the user's answer.
+  and may write a note or hold the queue (`merge.hold`). Only the operator calls the user's verbs:
+  no chat relays the user's answer with `merge.reply`, which a chat's script is refused; a question
+  asked in a branch's chat is answered by the user's own next message there
+  (§chat.merge-queue/asks). On the user's route every merge verb but the reads and `merge.try`
+  (`merge.add`, `merge.cancel`, `merge.answer`, pause, resume, fresh, clear, setup and the rest)
+  passes only on the user's own click in Sova's page, by its cookie, or a proven click from another
+  of their computers (§app.access/your-click): a request marked as from a chat, any caller key
+  (blank included), the token in a header (a script, a chat's terminal, a tool), a card's command,
+  an in-process call, an extension's key or a mesh peer is refused with where to click, and nothing
+  changes; the route never runs it as the operator. A chat's own scripts calling the operator's
+  route never act as the user on the queue: every verb but the reads (`merge.status`, `merge.logs`,
+  `merge.live`) and `merge.try` is refused to them. A typed "land it" through `worktree land` stays the other way
+  in.
 - A typed "land it" reaches `merge.add` as the user's approval through `worktree land`
   (§chat.worktrees/tool); no session can call `merge.add` as a tool.
 - The project's merge thread (§chat.merge-queue/thread) calls the reads and its own verbs (note,
-  extend, resolve, retry, ask, hold, restart, live, test, names), for its own project only; every
-  merge verb's answer stays under 24,000 characters (§chat.merge-queue/thread-sandbox).
+  extend, resolve, rule, retry, ask, hold, restart, live, test, names), for its own project only;
+  every merge verb's answer stays under 24,000 characters (§chat.merge-queue/thread-sandbox).
+- A branch's chat calls `merge.respond` for a request the queue sent it (§chat.merge-queue/answers),
+  once per request and only that chat (a worker's branch: the chat that runs the worker); never for
+  a merge thread's question, and it is never an approval.
 - A review step's reviewer calls `merge.review` for its own run only (§app.merge-queue/review).
 - Any chat, the project's Setup chat included (§app.project-setup/trust), calls `merge.try` for its
   own project; `merge.setup` and every other user's verb is `forbidden` to it, as to every chat. The
   Overseers' `merge.try` is `forbidden`.
 - Any other chat reads its own project's queue; anything else is `forbidden`.
 
-**Only where the queue serves** (§app.merge-queue/served). Every verb, the operator's too, asks
-the rule first, whichever way it names the project (a project, an entry, a run, a checkout or the
+**Only where the queue serves** (§app.merge-queue/served). Every verb, the operator's too, asks the
+rule first, whichever way it names the project (a project, an entry, a run, a checkout or the
 caller's folder). For a repository not on the Projects list every verb is refused with the error
 `unsupported` and "not a project the merge queue serves: merge it into main from the chat", and
 nothing is recorded or loaded. For a listed project whose merge setup isn't done only `merge.status`
 (its view says it isn't served, §app.merge-queue/view), `merge.setup` (the operator's,
 §app.merge-queue/setup) and `merge.try` (§app.project-setup/trial) are taken; every other verb gets
 that same refusal.
-
-The Land, Land This Commit Again, Cancel, Remove from Queue, Pause, Resume, Accept, Send Back, Land
-Anyway, Start Fresh, Send Answer, Clear, Clear All and Run Trial actions are catalogue commands
-pointing at these verbs (§app/commands).
 
 ## §app.project-services/self-host — When the project is Sova itself
 

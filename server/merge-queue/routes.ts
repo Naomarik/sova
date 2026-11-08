@@ -52,7 +52,7 @@ export interface MergerDeps {
   /** Hand a reviewer's verdict to the review step (review-step.ts deliverReview); false: none waits. */
   deliverReview?: (run: string, v: { verdict: "ok" | "notes" | "blocking"; text?: string }) => boolean;
   /** The thread's question: asked in the owning chat of `entry`'s branch (else held on the tab, one notification). */
-  threadAsk?: (root: string, q: { question: string; entry?: MergeEntry }) => Promise<MergeThreadAsk>;
+  threadAsk?: (root: string, q: { question: string; entry?: MergeEntry; choices?: string[]; decide?: import("./asks").AskDeps["decide"] }) => Promise<MergeThreadAsk>;
   /** A recorded question of `root`'s thread, by id. */
   askOf?: (root: string, id: string) => MergeThreadAsk | undefined;
   /** The user's answer to a question: closed, and handed to the thread. */
@@ -70,7 +70,7 @@ export interface MergerDeps {
   now?: () => number;
 }
 
-const THREAD_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.note", "merge.extend", "merge.resolve", "merge.retry", "merge.ask", "merge.hold", "merge.restart", "merge.test", "merge.names"];
+const THREAD_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.note", "merge.extend", "merge.resolve", "merge.retry", "merge.ask", "merge.hold", "merge.rule", "merge.restart", "merge.test", "merge.names"];
 const REVIEWER_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.review"];
 
 interface Req {
@@ -105,6 +105,10 @@ interface Req {
   requires?: string[];
   dryRun?: boolean;
   action?: string;
+  ruling?: string;
+  choices?: string[];
+  request?: string;
+  drafts?: boolean;
   contents?: Record<string, string>;
 }
 
@@ -140,6 +144,10 @@ const KEYS: Record<keyof Req, "string" | "boolean" | "number" | "strings" | "map
   requires: "strings",
   dryRun: "boolean",
   action: "string",
+  ruling: "string",
+  choices: "strings",
+  request: "string",
+  drafts: "boolean",
   contents: "map",
 };
 
@@ -232,6 +240,32 @@ function result(verb: AnyVerb, root: string | null, ok: boolean, changed: boolea
 /** merge.setup's refusal to every caller but the user's own page: a chat proposes its setup on a branch instead. */
 export const SETUP_IS_THE_USERS = "only the user saves the checks, from their own page: a chat proposes the setup on its branch and runs a trial with merge.try";
 
+/** The operator's route called by a process a chat runs (its `x-sova-caller` key): never the user's act, whatever it
+    asks (§app.access/your-click). Land, the answers, Remove from Queue and Cancel come only from the user's own click in
+    Sova's page or their own word in the branch's chat (typed "land it", read by the worktree tool, not this route). */
+/** merge.respond's refusal to anyone but a branch's chat (the queue then checks it is the chat the request went to). */
+export const RESPOND_IS_THE_CHATS = "only the branch's chat a merge queue request was sent to answers it, with its own tool";
+
+export const CLICK_IS_THE_USERS =
+  "a chat's own scripts never act as the user: landing, answering, removing from the queue, cancelling, pausing and the queue's other acts come only from the user's own click in Sova's page or their own word in the branch's chat. Nothing was done; ask the user";
+
+/** merge.reply from any chat: the user's own next message is the answer, never a chat's relay. */
+export const REPLY_IS_THE_USERS =
+  "no chat answers the merge thread's question, not even by relaying: your user's own next message in this chat is the answer, and Sova sends it with the question. Ask them in your reply and wait; never answer it yourself";
+
+/** The merge queue's acts only the user's own page takes (§app.access/your-click): every verb but the reads and a trial.
+    Routes ask the page check (notPageNorProven) for these, as for `apply`. */
+export const pageOnlyMergeVerb = (verb: string): boolean => isMergeVerb(verb) && !MERGE_READ_VERBS.includes(verb) && verb !== "merge.try";
+
+/** An act on the merge queue from the user's route that isn't their own page: a token in a header (any script, a chat's
+    shell that left its key out), an in-process dispatch. */
+export const PAGE_IS_THE_USERS =
+  "only the user's own click in Sova's page lands, answers, removes from the queue, cancels or pauses: a request that shows the token in a header (a script, a terminal, a chat's shell) never acts as the user here. Nothing was done; ask the user";
+
+/** A card's command (server/transcript-cards.ts) on the merge queue: refused for every act. */
+export const CARD_IS_NOT_THE_USERS =
+  "a card's commands never act as the user on the merge queue: landing, answering, removing from the queue and the queue's other acts come only from Sova's own controls in the page or the user's own word in the branch's chat. Nothing was done";
+
 /** The verbs a project on the Projects list may call before its merge setup is done. */
 const SETUP_VERBS: readonly MergeVerb[] = ["merge.status", "merge.setup", "merge.try"];
 
@@ -260,6 +294,12 @@ async function queueFor(deps: MergerDeps, verb: MergeVerb, req: Req, caller: Cal
     if (!q) throw new MergeFailure("not-found", `no queue entry ${req.entry}`);
     return gated(deps, verb, q.root);
   }
+  // A request of a branch's chat names its queue (merge.respond, merge.rule); one Sova made before any Land has none,
+  // and the caller's own project answers for it below.
+  if (req.request) {
+    const q = await deps.queues.findRequest(req.request);
+    if (q) return gated(deps, verb, q.root);
+  }
   if (req.run) {
     const q = await deps.queues.findRun(req.run);
     if (!q) throw new MergeFailure("not-found", `no merge run ${req.run}`);
@@ -280,6 +320,16 @@ function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, root: stri
   // A chat's script on the operator's route never restarts Sova, runs a branch's tests or writes the names file: the
   // merge thread's own tool or the user's page does.
   if (caller.kind === "operator" && caller.fromChat && (verb === "merge.restart" || verb === "merge.test" || verb === "merge.names")) throw new MergeFailure("forbidden", `${verb} is the merge thread's (its own tool) or the user's page, never a chat's script`);
+  // Any other act from a chat's script on the operator's route: refused (the merge thread and a run's reviewer use their
+  // own tool, a session caller, below). It still reads, and still runs a trial, as any chat on its project may.
+  if (caller.kind === "operator" && caller.fromChat && !MERGE_READ_VERBS.includes(verb) && verb !== "merge.try") throw new MergeFailure("forbidden", CLICK_IS_THE_USERS);
+  // A command a card ran (its view's code or its button's): a chat's or an extension's code, never the user's act here.
+  if (caller.kind === "operator" && caller.fromCard && !MERGE_READ_VERBS.includes(verb)) throw new MergeFailure("forbidden", CARD_IS_NOT_THE_USERS);
+  // Not the user's own page (nor a proven click from another of their computers): never the user's act, whatever it
+  // says of itself. A chat whose shell leaves its key out is caught here, by what it can't show (the page's cookie).
+  if (caller.kind === "operator" && caller.notPage && pageOnlyMergeVerb(verb)) throw new MergeFailure("forbidden", PAGE_IS_THE_USERS);
+  // merge.respond is the branch's chat's own answer to a request: never the user's page, never a script.
+  if (caller.kind === "operator" && verb === "merge.respond") throw new MergeFailure("forbidden", RESPOND_IS_THE_CHATS);
   if (caller.kind === "operator") return;
   const reads = MERGE_READ_VERBS.includes(verb);
   const sid = sessionId(caller);
@@ -288,7 +338,11 @@ function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, root: stri
   if (caller.kind === "session" || caller.kind === "project-overseer" || caller.kind === "assistant") {
     if (caller.root !== root) throw new MergeFailure("forbidden", `this caller acts only on its own project${caller.root ? ` (${caller.root})` : ""}`);
   }
-  if (sid && deps.isThreadChat?.(root, sid) && THREAD_VERBS.includes(verb)) return;
+  if (sid && deps.isThreadChat?.(root, sid) && THREAD_VERBS.includes(verb)) {
+    // The thread acting at all proves it runs: fixes that waited for it are handed to it again (q14).
+    void deps.queues.peek(root)?.then((q) => q.threadActed()).catch(() => {});
+    return;
+  }
   if (reads && caller.kind !== "conform") return;
   // A trial saves and merges nothing: any chat on its own project may run one (the setup chat does); never merge.setup.
   // Never the merge thread or a run's reviewer: neither sets anything up.
@@ -298,13 +352,15 @@ function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, root: stri
     if (caller.kind === "session") return;
     throw new MergeFailure("forbidden", "only the user or a chat on this project runs a trial");
   }
-  // The chat a question was asked in relays the user's answer; nobody else does (the operator may, from the tab).
-  if (verb === "merge.reply") {
-    const ask = req.ask ? deps.askOf?.(root, req.ask) : undefined;
-    if (sid && ask?.askedIn?.session === sid) return;
-    throw new MergeFailure("forbidden", "only the chat the merge thread asked in relays the user's answer");
-  }
+  // No chat relays the user's answer to a thread question, not even the chat it was asked in: Sova takes the user's own
+  // next message there as the answer (server/merge-queue/channel.ts takeHeldNote), so no model can answer for them.
+  if (verb === "merge.reply") throw new MergeFailure("forbidden", REPLY_IS_THE_USERS);
   if (verb === "merge.setup") throw new MergeFailure("forbidden", SETUP_IS_THE_USERS);
+  // A branch's chat answers the requests sent to it (the queue checks it is the one); never the merge thread or a reviewer.
+  if (verb === "merge.respond") {
+    if (sid && caller.kind === "session" && !deps.isThreadChat?.(root, sid) && !deps.isReviewerChat?.(sid)) return;
+    throw new MergeFailure("forbidden", RESPOND_IS_THE_CHATS);
+  }
   if (verb === "merge.add" || verb === "merge.answer" || verb === "merge.cancel" || verb === "merge.pause" || verb === "merge.resume" || verb === "merge.fresh" || verb === "merge.clear")
     throw new MergeFailure("forbidden", "only the user lands, cancels, pauses, answers or sets up the checks: their Land button or their own word in the branch's chat");
   if (verb === "merge.review") throw new MergeFailure("forbidden", "only the run's reviewer posts its review");
@@ -391,12 +447,42 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
         ...(req.commit ? { commit: req.commit } : {}),
         ...(req.contents ? { contents: req.contents } : {}),
         ...(req.note !== undefined ? { note: req.note } : {}),
+        ...(req.text !== undefined ? { text: req.text } : {}),
+        ...(req.choices ? { choices: req.choices } : {}),
+      });
+      return { changed: true, report: { entry: e, view: await viewOf() } };
+    }
+    case "merge.respond": {
+      const sid = sessionId(caller);
+      const id = need(req.request, "request (rq_…)");
+      // A request Sova made before any Land (drafts that don't fit, what blocks a finished branch): no entry holds it.
+      if (!q.requestOf(id)) {
+        const { answerLoose, isLooseRequest } = await import("./answers");
+        if (isLooseRequest(id)) return { changed: true, report: { request: answerLoose(id, sid, { answer: need(req.answer, 'answer ("fixed", "needs-you" or "cant")'), ...(req.text !== undefined ? { text: req.text } : {}) }) } };
+      }
+      const r = await q.respond(id, sid, {
+        answer: need(req.answer, 'answer ("fixed", "needs-you" or "cant")'),
+        ...(req.text !== undefined ? { text: req.text } : {}),
+        ...(req.commit ? { commit: req.commit } : {}),
+        ...(req.drafts ? { drafts: true } : {}),
+        ...(req.choices ? { options: req.choices } : {}),
+      });
+      return { changed: true, report: { entry: r.entry, request: r.request } };
+    }
+    case "merge.rule": {
+      const request = (req as { request?: string }).request;
+      const e = await q.rule(need(req.entry, "entry"), {
+        ruling: need(req.ruling, "ruling"),
+        ...(req.text !== undefined ? { text: req.text } : {}),
+        ...(req.choices ? { choices: req.choices } : {}),
+        ...(request ? { request } : {}),
+        ...(req.note !== undefined ? { note: req.note } : {}),
       });
       return { changed: true, report: { entry: e, view: await viewOf() } };
     }
     case "merge.answer": {
       const a = need(req.answer, "answer");
-      if (!(MERGE_ANSWERS as readonly string[]).includes(a)) throw new MergeFailure("invalid-request", 'answer is "accept", "send-back" or "land-anyway"');
+      if (!(MERGE_ANSWERS as readonly string[]).includes(a)) throw new MergeFailure("invalid-request", 'answer is "accept", "land-anyway", "try-again" or "land"');
       const e = await q.answer(need(req.entry, "entry"), a as MergeAnswer, req.why);
       return { changed: true, report: { entry: e, view: await viewOf() } };
     }
@@ -422,7 +508,9 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
       if (!deps.threadAsk) throw new MergeFailure("unsupported", "nothing here can ask the user for the merge thread");
       const e = req.entry ? q.entry(req.entry) : undefined;
       if (req.entry && !e) throw new MergeFailure("not-found", `no queue entry ${req.entry}`);
-      const ask = await deps.threadAsk(q.root, { question, ...(e ? { entry: e } : {}) });
+      // A question about an entry whose branch chat can take it waits as a decision on that entry's card (al_3 v7).
+      const decide: import("./asks").AskDeps["decide"] = (a) => q.askDecision(e!.id, a);
+      const ask = await deps.threadAsk(q.root, { question, ...(e ? { entry: e, decide } : {}), ...(req.choices ? { choices: req.choices } : {}) });
       return { changed: true, report: { ask } };
     }
     case "merge.reply": {

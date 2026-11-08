@@ -978,7 +978,9 @@ judgement.
   its session, and never rebuilds the list: an open **⋯** menu stays open and the page keeps its
   scroll position and keyboard focus, while a row's text, chips and menu entries still change as
   they arrive, and a menu entry acts on what its row shows when it is chosen.
-- **Merge Branch** is the operator's gesture; the overseer has no tool for it. It merges
+- **Merge Branch** is the operator's gesture; the overseer has no tool for it, and it passes only on
+  the user's own click in Sova's page or a proven click from another of their computers
+  (§app.access/your-click): a script, a chat's shell or an in-process call is refused 403. It merges
   `sova/<name>` into `target` in the project root's checkout, which must have `target` checked
   out, no tracked changes and no merge, rebase or cherry-pick in progress: a fast-forward when
   possible, else a merge commit ("Merge sova/<name>: <title>"). A conflict is aborted and reported,
@@ -992,24 +994,12 @@ judgement.
   (§app.merge-queue/approve) instead of merging it in the project root; once it has an entry the row
   reads its queue state in the chips the composer's modal uses (§chat.composer/worktrees-control),
   with its estimates or reason, and while it is queued, checking or waiting for the user its Land is
-  disabled: "Already in the merge queue.". While it is sent back to its chat (Needs a fix) its Land
-  is disabled too, "Sent back to its chat. Land comes back once its chat fixes it, or land its
-  newest
-  commit now." (§chat.composer/worktrees-control), and beside it the menu offers the re-land item, a
-  new approval of the head this page read (§app.merge-queue/approve), disabled while the session is
-  working. While that head is the sent-back commit it is **Land This Commit Again** ("Approves {sha}
-  again: every check runs from the start."); once the branch moved it is **Land Newest Commit**
-  ("Approves {head}: every check runs from the start."), with what it brings in and why that commit
-  isn't Ready to land after those words. A branch sent
-  back for its spec drafts gets Land back here at the same commit once its drafts changed and fit,
-  as
-  on the other screens, and the re-land item leaves the menu. An entry that no longer needs a
-  fix (approved again later, already in the target, or its branch or folder gone) blocks neither:
-  the re-land item leaves and Land reads as for any branch. After a fix that needed a commit
-  this menu, which reads no readiness, keeps Land off; the branch lands by Land Newest Commit
-  here, or from the Worktrees modal, the session pane, the Merge Queue tab, or "land it" typed in
-  its
-  chat. Remove from Queue isn't in this menu.
+  disabled: "Already in the merge queue.". While it is back with its chat, its Land is disabled too,
+  "Your Land stands: it goes back in line by itself once its chat's fix is checked."
+  (§chat.composer/worktrees-control, §app.merge-queue/standing-approval); this menu offers no
+  re-land item and no send-back. Out of tries, and an entry that no longer stands (removed, already
+  in the target, or its branch or folder gone), read Land as for any branch. Remove from Queue isn't
+  in this menu.
   Drafts changed keeps Land. The queue's refusals are shown under the row as Merge
   Branch's are. A project whose queue isn't set up keeps Merge Branch as above, and its Merge Queue
   tab shows the note "No merge queue settings are set up for this project" with Set Up with a Chat

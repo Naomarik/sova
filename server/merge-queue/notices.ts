@@ -10,7 +10,9 @@ import { type MergeEntry, type MergeRun, newerWords } from "../../shared/merge-q
  */
 
 /** `approved`: Land or a typed "land it" put the branch in line (its chat's card appears). */
-export type MergeNoticeKind = "approved" | "landed" | "needs-fix" | "sent-back" | "drafts-changed" | "explained" | "requested" | "pushed" | "closed" | "removed";
+/** `request`: a request of the branch's chat other than a fix (extra.request: blocked, the thread's other approach or
+ *  its diagnosis), whose text is the request's own. `decision`: a decision waits for the user (entry.decision): its card moves down. */
+export type MergeNoticeKind = "approved" | "landed" | "needs-fix" | "sent-back" | "drafts-changed" | "explained" | "requested" | "pushed" | "closed" | "removed" | "request" | "decision";
 
 const short = (sha: string | undefined) => (sha ?? "").slice(0, 7);
 
@@ -37,19 +39,22 @@ export function noticeText(kind: MergeNoticeKind, e: MergeEntry, extra: { run?: 
           for (const x of f) if (x.message) lines.push(`  ${x.message.split("\n")[0]!.slice(0, 240)}`);
         }
       }
-      if (e.sentBackFor === "drafts")
-        lines.push(`Fix them in your drafts on ${e.branch}: that needs no commit. Once they fit, the user sees Land on ${e.branch} again at this same commit (or Land This Commit Again on its row and card), or they type "land it" in this chat.`);
-      else if (run && run.verdict === "conflict") lines.push(`Merge ${e.target} into ${e.branch}, resolve the conflicts, commit, and ask the user to land it again: Land comes back on its row once your fix is committed and finished.`);
-      else lines.push(`It passes on ${e.target} alone in the same copy, so it is this branch's to fix. Fix it, commit, and ask the user to land it again: Land comes back on its row once your fix is committed and finished.`);
+      // A standing Land (al_3) is never asked for again: its fix goes back in line by itself. Only an entry with no
+      // standing approval (a release's hand-back, or one approved before al_3) needs the user's next Land.
+      const again = e.approval.standing ? "the user's Land stands: once the merge thread checks your fix, it goes back in line by itself" : "it needs the user's Land again once your fix is committed and finished";
+      if (e.sentBackFor === "drafts") lines.push(`Fix them in your drafts on ${e.branch}: that needs no commit. ${again[0]!.toUpperCase()}${again.slice(1)}.`);
+      else if (run && run.verdict === "conflict") lines.push(`Merge ${e.target} into ${e.branch}, resolve the conflicts and commit: ${again}.`);
+      else lines.push(`It passes on ${e.target} alone in the same copy, so it is this branch's to fix. Fix it and commit: ${again}.`);
       return lines.join("\n");
     }
     case "sent-back": {
+      // Send Back is retired (al_3): only an entry sent back before it can still read this, and it has no standing Land.
       const lines = [`The user sent ${e.branch} back: ${e.reason ?? "it needs another look"}.`];
       if (e.conflict) {
         lines.push(`${e.target}'s side: ${e.conflict.ours}`, `This branch's side: ${e.conflict.theirs}`, `Proposed: ${e.conflict.proposal}`);
-        lines.push(`Merge ${e.target} into ${e.branch}, resolve it the way the user wants, and commit: Land comes back on its row once your fix is committed and finished, or the user can land its newest commit from there.`);
-      } else if (e.review?.text) lines.push(`The review: ${e.review.text}`, "Address it and commit: Land comes back on its row once your fix is committed and finished, or the user can land its newest commit from there.");
-      else lines.push("Look at it and commit: Land comes back on its row once your fix is committed and finished, or the user can land its newest commit from there.");
+        lines.push(`Merge ${e.target} into ${e.branch}, resolve it the way the user wants, and commit: it needs the user's Land again once your fix is committed and finished.`);
+      } else if (e.review?.text) lines.push(`The review: ${e.review.text}`, "Address it and commit: it needs the user's Land again once your fix is committed and finished.");
+      else lines.push("Look at it and commit: it needs the user's Land again once your fix is committed and finished.");
       return lines.join("\n");
     }
     case "explained": {
@@ -66,6 +71,10 @@ export function noticeText(kind: MergeNoticeKind, e: MergeEntry, extra: { run?: 
       return `${e.branch}'s request was closed on the host without merging; land it again to open or update it.`;
     case "drafts-changed":
       return `${e.branch}'s spec drafts changed since the user approved it at ${short(e.commit)}, so it waits: the user lands it again once the drafts are as they want them.`;
+    case "request":
+      return e.requests?.[e.requests.length - 1]?.text ?? `${e.branch} is approved, but something still keeps it out of line: ${e.reason ?? "see its card"}.`;
+    case "decision":
+      return `${e.branch} waits for the user's decision: ${e.decision?.question ?? e.reason ?? "see its card"}`;
     case "removed":
       return `The user removed ${e.branch} from the merge queue at ${short(e.commit)}; nothing of the branch was deleted.`;
   }

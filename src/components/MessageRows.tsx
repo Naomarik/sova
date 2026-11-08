@@ -11,6 +11,7 @@ import { ReplyMarkdown } from "./ReplyMarkdown";
 import { PathAttachment } from "./PathAttachment";
 import { ReplyTimingHead } from "./ReplyTiming";
 import { Banner, Icon } from "./ui";
+import { splitHeldNote } from "../../shared/topic-message";
 
 /**
  * The message rows of a transcript (a user's turn, a reply's text, its thinking, a turn's error), drawn
@@ -74,8 +75,11 @@ export function UserTurn(props: {
   const fromExtension = () => (props.fromSession ? isSessionlessSender(props.fromSession.sessionId) : false);
   const author = () =>
     fromExtension() ? (isCardSender(props.fromSession!.sessionId) ? "From a card" : "From an extension") : props.fromSession ? "From a session" : props.overseer ? "Overseer" : props.mergeQueue ? "Merge queue" : (props.sender ?? AUTHOR[props.origin ?? "client"]);
+  // A decision's answer (§chat.merge-queue/decision): the user's own words, and the merge queue's held note that went
+  // with them in the same turn, folded under them, never drawn as the user's.
+  const held = () => (props.fromSession || props.mergeQueue ? null : splitHeldNote(props.text));
   // The model reads the header line; the row shows it as the sender header instead.
-  const text = () => (props.fromSession ? stripSessionHeader(props.text) : props.mergeQueue ? mergeQueueBody(props.text) : props.text);
+  const text = () => (props.fromSession ? stripSessionHeader(props.text) : props.mergeQueue ? mergeQueueBody(props.text) : (held()?.user ?? props.text));
   return (
     <>
     <Show when={props.fromSession}>
@@ -134,6 +138,18 @@ export function UserTurn(props: {
       <For each={props.attachments}>{(a) => <PathAttachment attachment={a} where="in your message" />}</For>
       <Show when={text()}>
         <div class="message-body message-text">{text()}</div>
+      </Show>
+      <Show when={held()}>
+        {(h) => (
+          <details class="disclosure mq-held-sent">
+            <summary class="disclosure-summary">
+              <Icon name="chevron-right" small class="icon-twist" />
+              <Icon name="branch" small />
+              <span class="disclosure-label">{["Merge queue", h().note.branch, "sent with your answer"].filter(Boolean).join(" · ")}</span>
+            </summary>
+            <div class="disclosure-body message-text">{h().note.text}</div>
+          </details>
+        )}
       </Show>
     </article>
     </>

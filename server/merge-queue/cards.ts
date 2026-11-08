@@ -5,6 +5,7 @@ import {
   type MergeCardFailure,
   type MergeCardOutcome,
   type MergeCardRevision,
+  type MergeChatRequest,
   type MergeEntry,
   type MergeQueueView,
   type MergeRun,
@@ -49,7 +50,12 @@ export interface CardsDeps {
   /** The chat's last transcript entry that draws a row (the revision's place); null: none yet. */
   lastEntry?: (session: string) => Promise<string | null>;
   /** Start a turn in the chat with this text (a normal message, followUp); throws when not taken. */
-  wake?: (session: string, text: string) => Promise<void>;
+  /** A request to the branch's chat (wake.ts sendQueueWake: a note on its merge queue chat queue); throws when it can't take one. */
+  wake?: (session: string, text: string, info?: { kind?: string; branch?: string; entry?: string }) => Promise<unknown>;
+  /** Remove from Queue: drop the entry's requests not yet delivered, in every chat (topics.ts dropMergeRequests). */
+  dropRequests?: (entry: string) => void;
+  /** How a request reached its chat: pushed on its chat queue, or the hidden line (ProjectQueue.requestDelivered). */
+  delivered?: (request: string, delivery: "queued" | "fallback-line") => void;
   /** A chat's cards changed. */
   publish?: (session: string, cards: MergeCard[]) => void;
   git?: Git;
@@ -70,6 +76,7 @@ const OUTCOME_OF_STATE: Partial<Record<MergeEntry["state"], MergeCardOutcome>> =
   "review-flagged": "review-flagged",
   unattributed: "unattributed",
   "drafts-changed": "drafts-changed",
+  "needs-user": "decision",
 };
 const LINES_MAX = 50;
 const CARDS_MAX = 200;
@@ -218,7 +225,7 @@ export class MergeCards {
   }
 
   /** An outcome: a new revision at the chat's end, then its hidden line or its wake. Once per (entry, kind, run). */
-  async outcome(kind: MergeCardOutcome | "explained", e: MergeEntry, extra: { run?: MergeRun; root?: string } = {}): Promise<void> {
+  async outcome(kind: MergeCardOutcome | "explained", e: MergeEntry, extra: { run?: MergeRun; root?: string; request?: MergeChatRequest } = {}): Promise<void> {
     if (!e.session) return;
     const session = e.session;
     if (!this.read(session).cards.some((c) => c.entry === e.id)) return; // no card, no back-fill
@@ -231,7 +238,11 @@ export class MergeCards {
       this.publish(rec);
       return;
     }
-    const run = extra.run?.id ?? e.run ?? "";
+    // A decision's revision is once per decision (a second one on the same run is a new question).
+    // A request's outcome is once per request (a second request on the same run, or with none, is a new one).
+    // The same outcome told again without its request (a restart, a view) is keyed by the entry's newest request.
+    const reqId = extra.request?.id ?? (WAKE_KINDS.includes(kind as MergeCardOutcome) && e.state === "with-chat" ? e.requests?.at(-1)?.id : undefined);
+    const run = kind === "decision" && e.decision ? e.decision.id : reqId ? reqId : (extra.run?.id ?? e.run ?? "");
     const key = `${e.id}:${kind}:${run}`;
     if (this.pending.has(key) || this.read(session).done[key]) return this.refresh(e, extra.run);
     // A Send Back is also a needs-fix entry: one revision for it.
@@ -244,39 +255,80 @@ export class MergeCards {
       const head = await this.headOf(root, e.branch);
       const rec = this.read(session);
       if (rec.done[key]) return;
-      const card = rec.cards.find((c) => c.entry === e.id)!;
+      const card = rec.cards.find((c) => c.entry === e.id);
+      if (!card) return; // gone meanwhile (its records were cleared while this waited)
       this.fill(card, e, extra.run);
       setOpt(card, "head", head);
       if (stats) card.stats = stats;
+      // The checked fixes that went in on the user's one Land (al_3 q6), frozen at landing.
+      if (kind === "landed") {
+        const fixes = await this.fixesOf(root, e).catch(() => undefined);
+        setOpt(card, "fixesLanded", fixes?.length ? fixes : undefined);
+      }
       // Remove from Queue: the card's last revision; a later Land of the branch moves the same card on.
-      if (kind === "removed") card.removed = true;
+      if (kind === "removed") {
+        card.removed = true;
+        try {
+          this.deps.dropRequests?.(e.id);
+        } catch (err) {
+          this.deps.log?.(`[merge-queue] ${e.id}'s requests not dropped: ${err instanceof Error ? err.message : err}`);
+        }
+      }
       card.revisions.push(this.revision(card, kind, after, run || undefined));
       rec.done[key] = this.iso();
       let wake: string | null = null;
       if (LINE_KINDS.includes(kind)) rec.lines.push({ key, at: this.iso(), text: lineText(kind as "landed" | "drafts-changed", e, card) });
       if (WAKE_KINDS.includes(kind)) {
-        wake = wakeText(kind === "sent-back" ? "sent-back" : "needs-fix", e, extra.run);
+        // The queue's request (§chat.merge-queue/requests): its own words when it recorded one, else today's notice.
+        wake = extra.request ? requestText(extra.request) : wakeText(kind === "sent-back" ? "sent-back" : "needs-fix", e, extra.run);
         // Pending in the same write as done[key]: a stop before the chat takes it leaves it to become the hidden line.
         rec.wakes = [...(rec.wakes ?? []).filter((w) => w.key !== key), { key, at: this.iso(), text: wake }];
         this.waking.add(key);
       }
       this.write(rec);
       this.publish(rec);
-      if (wake) await this.sendWake(session, key, wake);
+      if (wake) await this.sendWake(session, key, wake, { ...(extra.request ? { id: extra.request.id, kind: extra.request.kind } : { kind }), branch: e.branch, entry: e.id });
     } finally {
       this.pending.delete(key);
     }
   }
 
-  private async sendWake(session: string, key: string, text: string): Promise<void> {
+  /**
+   * A request that is no outcome of its own (what still blocks a branch after Land, the thread's other approach, a
+   * trial's end): sent to the branch's chat once per request id, the card refreshed in place, no new revision. A chat
+   * that can't take notes gets it as the hidden line.
+   */
+  async request(e: MergeEntry, request: MergeChatRequest, run?: MergeRun): Promise<void> {
+    if (!e.session) return;
+    const session = e.session;
+    const key = `${e.id}:request:${request.id}`;
+    if (this.pending.has(key) || this.read(session).done[key]) return;
+    this.pending.add(key);
+    try {
+      const rec = this.read(session);
+      const text = requestText(request);
+      rec.done[key] = this.iso();
+      rec.wakes = [...(rec.wakes ?? []).filter((w) => w.key !== key), { key, at: this.iso(), text }];
+      this.waking.add(key);
+      this.write(rec);
+      await this.refresh(e, run);
+      await this.sendWake(session, key, text, { id: request.id, kind: request.kind, branch: e.branch, entry: e.id });
+    } finally {
+      this.pending.delete(key);
+    }
+  }
+
+  private async sendWake(session: string, key: string, text: string, info: { id?: string; kind?: string; branch?: string; entry?: string }): Promise<void> {
     try {
       if (!this.deps.wake) return this.fallback(session, key, text);
       try {
-        await this.deps.wake(session, text);
+        await this.deps.wake(session, text, info);
         this.clearWake(session, key);
+        if (info.id) this.deps.delivered?.(info.id, "queued");
       } catch (err) {
         this.deps.log?.(`[merge-queue] wake of ${session} not taken (${err instanceof Error ? err.message : err}): it is the hidden line at its next turn`);
         this.fallback(session, key, text);
+        if (info.id) this.deps.delivered?.(info.id, "fallback-line");
       }
     } finally {
       this.waking.delete(key);
@@ -350,8 +402,10 @@ export class MergeCards {
         const progress = view.current && view.current.entry === e.id && e.state === "checking" ? progressOf(view.current) : undefined;
         if (this.fill(card, e, undefined, progress)) changed = true;
         const kind = OUTCOME_OF_STATE[e.state];
-        const run = e.run ?? "";
-        if (kind && !rec.done[`${e.id}:${kind}:${run}`] && !(kind === "needs-fix" && rec.done[`${e.id}:sent-back:${run}`])) outcomes.push(e);
+        const run = kind === "decision" && e.decision ? e.decision.id : (e.run ?? "");
+        // Can't tell whose failure reaches the card only once it is raised to the user (the thread rules first).
+        const unraised = e.state === "unattributed" && !(e.decision && !e.decision.answered);
+        if (kind && !unraised && !rec.done[`${e.id}:${kind}:${run}`] && !(kind === "needs-fix" && rec.done[`${e.id}:sent-back:${run}`])) outcomes.push(e);
       }
       if (changed) {
         this.write(rec);
@@ -382,15 +436,41 @@ export class MergeCards {
     setOpt(card, "request", e.request ? structuredClone(e.request) : undefined);
     setOpt(card, "worktree", e.worktree);
     setOpt(card, "redrafted", e.state === "needs-fix" && e.redrafted ? true : undefined);
-    setOpt(card, "sentBackFor", e.state === "needs-fix" ? e.sentBackFor : undefined);
-    setOpt(card, "settled", e.state === "needs-fix" ? e.settled : undefined);
-    const thread = e.state === "needs-fix" ? e.notes.find((n) => n.kind === "thread") : undefined;
+    // Back with its chat under the standing Land (al_3) shows what went back as a final needs-fix does: why, what
+    // failed, the thread's word, and that nothing is left to fix once git says so.
+    const sentBack = e.state === "needs-fix" || e.state === "with-chat";
+    setOpt(card, "sentBackFor", sentBack ? e.sentBackFor : undefined);
+    setOpt(card, "settled", sentBack ? e.settled : undefined);
+    const thread = sentBack ? e.notes.find((n) => n.kind === "thread") : undefined;
     setOpt(card, "explanation", thread ? { text: thread.text, at: thread.at } : undefined);
-    if (run && e.state === "needs-fix") card.failures = failuresOf(run);
-    else if (e.state !== "needs-fix") delete card.failures;
+    setOpt(card, "decision", e.decision && !e.decision.answered ? structuredClone(e.decision) : undefined);
+    setOpt(card, "standing", e.state === "with-chat" && e.standing ? structuredClone(e.standing) : undefined);
+    setOpt(card, "tries", e.tries && e.state !== "landed" ? structuredClone(e.tries) : undefined);
+    if (run && sentBack) card.failures = failuresOf(run);
+    else if (!sentBack) delete card.failures;
     const changed = JSON.stringify(card) !== before;
     if (changed) card.updatedAt = this.iso();
     return changed;
+  }
+
+  /** The fix commits a standing approval carried that landed (approval.fixes with a commit), with their subjects. */
+  private async fixesOf(root: string, e: MergeEntry): Promise<{ sha: string; subject: string }[]> {
+    const out: { sha: string; subject: string }[] = [];
+    const user = e.approval.userCommit;
+    for (const f of e.approval.fixes ?? []) {
+      if (!f.commit) continue;
+      // Every commit the fix brought past the commit before it (the user's, or the previous fix's).
+      const from = out.length ? out[out.length - 1]!.sha : user;
+      // The branch side only: a merge of the target into the branch lists as its merge commit, never the target's.
+      const r = from ? await this.git(["log", "--reverse", "--first-parent", "--format=%H%x09%s", `${from}..${f.commit}`], root) : null;
+      const lines = r?.code === 0 ? r.stdout.split("\n").filter(Boolean) : [];
+      if (!lines.length) out.push({ sha: f.commit, subject: (await this.git(["log", "-1", "--format=%s", f.commit], root)).stdout.trim() });
+      for (const l of lines) {
+        const [sha, ...s] = l.split("\t");
+        if (sha && !out.some((x) => x.sha === sha)) out.push({ sha, subject: s.join("\t").slice(0, 200) });
+      }
+    }
+    return out;
   }
 
   /** What the branch brought, frozen at landing: from the target before it to the approved commit. */
@@ -437,6 +517,11 @@ export function lineText(kind: "landed" | "drafts-changed", e: MergeEntry, card?
   if (note) parts.push(`Note: ${note.text}`);
   if (e.landed?.pushed === "not-pushed" && e.landed.pushWhy) parts.push(`Not pushed: ${e.landed.pushWhy}.`);
   return parts.join(" ");
+}
+
+/** A recorded request's words as its note says them: the queue's (MERGE_QUEUE_SENT_PREFIX, which the note drops). */
+export function requestText(r: Pick<MergeChatRequest, "text">): string {
+  return `${MERGE_QUEUE_SENT_PREFIX} ${r.text.trim()}`;
 }
 
 /** A wake's text: the queue's (MERGE_QUEUE_SENT_PREFIX), never the user's words. */

@@ -30,7 +30,7 @@ Sova sends **Idle** when the queue has nothing left to check and nothing runs. T
 3. Never retry a failed restart yourself: the next Idle plans again.
 
 ## Asking
-You decide on your own (the method's "On your own"). Ask the user, with `merge.ask` and the entry it is about, only what the branch, its commits and the logs can't settle; the private-names interview is the usual one. Never wait in this chat.
+You decide on your own (the method's "On your own"). Ask the user only what is theirs (the method's "What is the user's"), and only what the branch, its commits and the logs can't settle: a ruling's `needs-user`, or `merge.ask` with the entry it is about (the private-names interview is the usual one). Never wait in this chat.
 
 ## Picks
 The map is `references/blast-radius.json` (rules → check ids of `.sova/project.json`'s merge section: optional ones, or required ones that skip themselves). The method's `scripts/blast-radius.mjs` finds it on its own from the repo root. What each pick costs and when it is worth it: `references/blast-radius.md`. Extend the map in the same branch that adds a new area with its own tests.
@@ -39,8 +39,9 @@ The map is `references/blast-radius.json` (rules → check ids of `.sova/project
 - `shared/commands-ids.json`: ids are append-only; both sides appending different ids is a list extension (keep both, in the order master has them, the branch's after). The same id with two meanings is behaviour differs.
 - `src/app.css`: both sides adding rules to one block is neighbouring edits; two values for one property is behaviour differs.
 - `scripts/test-groups.mjs` triggers lists, `.sova/project.json` checks lists: list extensions.
-- `.sova/spec/**` never conflicts in a landing (drafts are gitignored and become docs in the run); if it does, it's behaviour differs.
-- `pnpm-lock.yaml`: never resolved by hand. Behaviour differs, with the proposal "regenerate the lockfile on the branch after merging master".
+- `.sova/spec/**` never conflicts in a landing (drafts are gitignored and become docs in the run); if it does, the chat fixes it (`chat-fixes`), unless the two sides make one promise say different things: then `needs-user`.
+- `pnpm-lock.yaml`: never resolved by hand, and never the user's: `chat-fixes`, with the diagnosis "merge master and regenerate the lockfile on the branch (`pnpm install`), then commit".
+- Copy in `src/**` (labels, messages, the copy deck) or a default in `shared/**` changed differently on both sides: `needs-user` (what a person sees).
 
 ## Failures: Sova's usual causes
 - Many unrelated tests failing at once with git temp-file errors: the host (`/tmp` out of inodes), not the branch. Sova calls that the machine's; if a run was blamed on the branch anyway, say so in the diagnosis.

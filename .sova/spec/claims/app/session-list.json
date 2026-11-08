@@ -153,7 +153,7 @@
       "§chat.context-window/sidebar-ring"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/Sidebar.tsx",
       "shared/protocol.ts",
@@ -188,9 +188,9 @@
       "server/chat-handle.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-07T12:38Z",
-      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
+      "by": "user",
+      "at": "2026-11-07T16:08Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#92eb7761"
     }
   },
   "§app.session-list/drop-overlay": {

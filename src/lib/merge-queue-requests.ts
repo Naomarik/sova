@@ -168,22 +168,21 @@ export function requestReason(state: RequestState | "landed", p: (ReqFacts & Pic
   if (!f) return `Opened on ${H}. The line moved on.`;
   if (f.state === "merged") return merged;
   if (f.state === "closed") return `Closed on ${H} without merging. Land Again opens it again with what the branch has now.`;
-  if (f.mergeable === "conflicts") return `${H} says it no longer merges cleanly into ${target}. Send it back to its chat to fix.`;
-  if (f.checks === "fail") return `${H}'s own checks failed. Sova's checks passed, so nobody is blamed: look on ${H}, or send it back to its chat.`;
+  if (f.mergeable === "conflicts") return `${H} says it no longer merges cleanly into ${target}. Back with the chat to fix it.`;
+  if (f.checks === "fail") return `${H}'s own checks failed. Sova's checks passed, so nobody is blamed: back with the chat to look at ${H}'s.`;
   if (f.review === "changes-requested") return `A reviewer on ${H} asked for changes.`;
   if (f.review === "approved") return `Approved on ${H}. Merge it there when you're ready.`;
   return `Waiting on ${H}. You or your team merge it there.`;
 }
 
 /** What a request row offers. Every one is a merge verb or a link; none starts a chat turn by itself. */
-export type RequestAction = "open-host" | "send-back" | "land-again" | "review";
+export type RequestAction = "open-host" | "land-again" | "review";
 export function requestActions(state: RequestState | "landed", p: ReqFacts | undefined, o: { newerCommits?: number; reason?: string } = {}): RequestAction[] {
   if (state === "request-review") return requestOnItsWay(state, p) ? [] : ["review"];
   const out: RequestAction[] = [];
   if (p?.url && hostOfReq(p)) out.push("open-host");
   const f = p?.facts;
-  const open = state === "requested" && f?.state !== "merged" && f?.state !== "closed";
-  if (open && (f?.mergeable === "conflicts" || f?.checks === "fail" || f?.review === "changes-requested")) out.push("send-back");
+  // Host checks failing, changes requested and conflicts go back to the chat by themselves: no Send Back to Chat.
   if (state === "closed" || (state === "requested" && f?.state === "closed") || ((state === "requested" || state === "pushed") && o.newerCommits && f?.state !== "merged")) out.push("land-again");
   return out;
 }
@@ -194,8 +193,6 @@ export function requestActionLabel(a: RequestAction, p: Pick<RequestView, "how" 
       const h = p ? hostOfReq(p) : null;
       return `Open on ${h ? HOST_NAME[h] : "the host"}`;
     }
-    case "send-back":
-      return "Send Back to Chat";
     case "land-again":
       return "Land Again";
     case "review":

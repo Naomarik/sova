@@ -195,7 +195,7 @@
   "§design.copy-deck/merge-queue-chats": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "reviewed",
     "about": [
       "§app.merge-queue/chats",
       "§chat.merge-queue/asks",

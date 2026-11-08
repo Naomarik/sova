@@ -4,14 +4,19 @@
 import type { MergeCard, MergeCardRevision } from "../../shared/merge-queue";
 import { newerWords, ordinal } from "../../shared/merge-queue";
 import type { CardInfo } from "../../shared/transcript-cards";
-import { landAgainOf, mins, notesOf, sentence, short } from "./merge-queue";
+import { mins, notesOf, sentence, short } from "./merge-queue";
 import { isRequestState, requestChip } from "./merge-queue-requests";
+import { decisionActions, decisionWords, openDecision, standingWords, type CardDecision, type DecisionAction, type StandingFacts } from "./merge-standing";
+
+/** The al_3 facts a card may carry (shared/merge-queue.ts MergeCard gains them): where the standing approval stands,
+ *  a decision that waits for the user, and the fixes that landed with the user's Land. */
+export type CardAutomation = Partial<Pick<StandingFacts, "standing" | "decision">> & { fixesLanded?: { sha: string; subject: string }[] };
 
 /** The built-in card type the rows carry: drawn by Sova, never a project's or an extension's. */
 export const MERGE_QUEUE_CARD = "sova.merge-queue";
 
 /** The card as the thread draws it: the queue's own. */
-export type QueueCard = MergeCard;
+export type QueueCard = MergeCard & CardAutomation;
 
 /** One row's data: the card as it is now, and the revision this row is. */
 export interface QueueCardRow {
@@ -22,8 +27,13 @@ export interface QueueCardRow {
 export type CardTone = "success" | "warn" | "error" | "info" | "accent" | "neutral";
 
 /** The pill, from a state and place in line; a request's from its host facts when the card has them. */
-export function cardPill(d: Pick<MergeCardRevision, "state" | "position"> & Partial<Pick<MergeCard, "request" | "reason" | "removed">> & { kind?: MergeCardRevision["kind"] }): { label: string; tone: CardTone; live?: boolean } {
+export function cardPill(d: Pick<MergeCardRevision, "state" | "position"> & Partial<Pick<MergeCard, "request" | "reason" | "removed">> & CardAutomation & { kind?: MergeCardRevision["kind"] }): { label: string; tone: CardTone; live?: boolean } {
   if (isRequestState(d.state)) return requestChip(d.state, d.request, d.reason);
+  // A decision that waits for the user names it; a standing approval with its chat reads where it stands.
+  const dec = d.state === "landed" || d.state === "cancelled" ? null : decisionWords(d);
+  if (dec) return { label: dec.label, tone: dec.tone };
+  const st = d.state === "landed" || d.state === "cancelled" ? null : standingWords(d);
+  if (st) return { label: st.label, tone: st.tone };
   switch (d.state) {
     case "queued":
       return { label: d.position ? `Queued · ${ordinal(d.position)}` : "Queued", tone: "info" };
@@ -78,59 +88,59 @@ export function notPushed(c: Pick<MergeCard, "state" | "landed">): string | null
   return `Not pushed: ${/[.!?…]$/.test(tail) ? tail : `${tail}.`}`;
 }
 
-/** "1 newer commit not included", on a landed card (Land Again beside it). Needs a fix: what its re-land brings in
- *  ("2 newer commits included") and why the newest commit isn't Ready to land, when it isn't (landAgainOf). */
-export function cardNewer(c: Pick<MergeCard, "state" | "newerCommits"> & Partial<Pick<MergeCard, "newerRewritten" | "newerBlocked">>): string | null {
-  if (c.state === "landed") return newerWords(c.newerCommits);
-  if (c.state !== "needs-fix") return null;
-  const again = landAgainOf(c);
-  return [again.included, again.blocked].filter(Boolean).join(" · ") || null;
+/** "1 newer commit not included", on a landed card (Land Again beside it). Nowhere else: while the chat fixes it,
+ *  the user's Land stands and carries its checked fixes. */
+export function cardNewer(c: Pick<MergeCard, "state" | "newerCommits">): string | null {
+  return c.state === "landed" ? newerWords(c.newerCommits) : null;
 }
 
-/** A card action's button word: a sent-back card's re-land reads Land Newest Commit once its branch moved on. */
-export function cardActionLabel(c: Pick<MergeCard, "newerCommits"> & Partial<Pick<MergeCard, "newerRewritten">>, a: CardAction): string {
-  return a === "land-this-again" ? landAgainOf(c).label : CARD_ACTION_LABEL[a];
-}
+/** A card action's button word. */
+export const cardActionLabel = (a: CardAction): string => CARD_ACTION_LABEL[a];
 
 export const CARD_ACTION_LABEL: Record<CardAction, string> = {
   cancel: "Cancel",
   accept: "Accept",
   "land-anyway": "Land Anyway",
-  "send-back": "Send Back",
+  "try-again": "Try Again",
   "land-again": "Land Again",
   land: "Land",
-  "land-this-again": "Land This Commit Again",
   remove: "Remove from Queue",
 };
 
 export const cardNotes = (c: Pick<MergeCard, "notes">) => notesOf(c.notes);
 
-/** What the card offers, by state. Every one is a merge verb; none writes into the chat. Needs a fix: Land This Commit
- *  Again (a new approval of the branch's newest commit, every check from the start; Land Newest Commit once the branch
- *  moved on) and Remove from Queue; once its drafts are
- *  fixed (`redrafted`), Land at the same commit in place of the first. Drafts changed: Land (approves the drafts as
- *  they are now). */
-export type CardAction = "cancel" | "accept" | "land-anyway" | "send-back" | "land-again" | "land" | "land-this-again" | "remove";
-export function cardActions(c: Pick<MergeCard, "state" | "newerCommits"> & Partial<Pick<MergeCard, "redrafted" | "settled">>): CardAction[] {
+/** What the card offers. Every one is a merge verb; none writes into the chat. There is no Send Back and no re-land:
+ *  the user's one Land stands while the queue, the merge thread and the chat fix what blocks it (al_3). Remove from
+ *  Queue at every stage of an approval that stands; a decision's own answers (Accept, Land Anyway, Try Again, Land)
+ *  only on a decision; Land Again only on a Landed card for work after landing. */
+export type CardAction = "cancel" | "accept" | "land-anyway" | "try-again" | "land-again" | "land" | "remove";
+export function cardActions(c: Pick<MergeCard, "state" | "newerCommits"> & Partial<Pick<MergeCard, "settled" | "conflict">> & CardAutomation): CardAction[] {
+  if (c.state === "landed") return c.newerCommits ? ["land-again"] : [];
+  if (c.state === "cancelled" || isRequestState(c.state)) return [];
+  const d = openDecision(c);
+  if (d) return decisionActions(d) as DecisionAction[] as CardAction[];
   switch (c.state) {
     case "queued":
-      return ["cancel"];
+      // One name everywhere: Remove from Queue (merge.cancel) takes it off the line.
+      return ["remove"];
     case "needs-fix":
-      // Settled (superseded, already in the target, its branch or folder gone): nothing is left to land or remove.
-      return c.settled ? [] : [c.redrafted ? "land" : "land-this-again", "remove"];
+      // Settled (superseded, already in the target, its branch or folder gone): nothing is left to remove.
+      return c.settled ? [] : ["remove"];
     case "drafts-changed":
-      return ["land"];
+      return ["land", "remove"];
     case "behaviour-differs":
-      return ["accept", "send-back"];
-    case "review-flagged":
+      // Accept only when the merge thread proposed a resolution; otherwise it is answered in the chat.
+      return c.conflict?.proposal ? ["accept", "remove"] : ["remove"];
     case "unattributed":
-      return ["land-anyway", "send-back"];
-    case "landed":
-      return c.newerCommits ? ["land-again"] : [];
+      return ["land-anyway", "try-again", "remove"];
     default:
-      return [];
+      // Checking, a conflict being judged, review findings back with the chat, with its chat, waiting for a fix.
+      return ["remove"];
   }
 }
+
+/** The decision a card waits on, or null. */
+export const cardDecision = (c: CardAutomation): CardDecision | null => openDecision(c);
 
 /** A folded earlier copy's one line, from its own frozen state: "feat/x · Queued 2nd". */
 export const foldedLine = (branch: string, r: Pick<MergeCardRevision, "state" | "position"> & Partial<Pick<MergeCardRevision, "kind">>): string => `${branch} · ${isRequestState(r.state) ? FROZEN_REQUEST[r.state] : cardPill(r).label.replace(" · ", " ")}`;

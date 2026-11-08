@@ -256,27 +256,31 @@ same proposal read again keeps the time it was first listed.
 ## §app.project-runtime/merge — Merge Branch
 
 `POST /api/projects/:pid/runtime/merge {hash}` finishes a proposed run: it runs Merge Branch on the
-run's session (§app.project-overseer/coding-worktrees) with all of its refusals, after one of its own:
-refused 409, merging nothing, when `hash` is no longer the one the branch proposes ("The definition
-changed since it was shown: look again."). For a run whose playbook proposes `deploy`
+run's session (§app.project-overseer/coding-worktrees) with all of its refusals, after one of its
+own: refused 409, merging nothing, when `hash` is no longer the one the branch proposes ("The
+definition changed since it was shown: look again."). For a run whose playbook proposes `deploy`
 (§app.project-runtime/verb-playbooks), `hash` is the recipe's own deploy hash at the branch's tip,
 and the sentence is "The deploy recipe changed since it was shown: look again.". For one that
 proposes `release`, `hash` is the release setup's own: a digest of the branch's `release` section
 together with its release playbook folder's tree at the tip (§app.release/maker), and the sentence
 is "The release setup changed since it was shown: look again.". A Setup chat's proposal is never
 merged here: this route hands it to the Setup chat's own (§app.project-setup/proposal), with its
-rules and refusals. A merge that is
-refused answers 409 with "The merge was refused: {its reason}". With no run proposed it is refused
-409: "No playbook run is proposed." It answers the registry, read again. The Software card shows
-**Merge Branch** while a run is proposed, beside the banner's and the Needs-you row's; each says, on
-a refusal, why under the button.
-Once the project's merge queue is set up (§app/merge-queue), each of these buttons reads **Land**
-and approves the run's branch in the queue (§app.merge-queue/approve) at the tip its proposal was
-read at, instead of merging it, and answers "queued", not "merged"; and the banner reads "Read it, then land it: it's checked on {target} first.". While the branch
-is in the queue, its queue chip takes the button's place. The queue's refusals show under the
-button the same way. A project whose queue isn't set up keeps Merge Branch as above, and "Read it,
-then merge it into {target}.", until it is onboarded (§app.merge-queue/setup). A project whose
-definition doesn't parse counts as set up and shows Land.
+rules and refusals. A merge that is refused answers 409 with "The merge was refused: {its reason}".
+With no run proposed it is refused 409: "No playbook run is proposed." It answers the registry, read
+again. The Software card shows **Merge Branch** while a run is proposed, beside the banner's and the
+Needs-you row's; each says, on a refusal, why under the button. Merge Branch, and its Land below,
+passes only on the user's own click in Sova's page or a proven click from another of their computers
+(§app.access/your-click): a script, a chat's shell, a card's command or an in-process call is
+refused 403, merging nothing, with "Only the user merges a proposed branch…" and, for a chat, "Ask
+them to press Merge Branch or Land.". A Setup chat's proposal handed on from here passes only from
+the page on this computer. Once the project's merge queue is set up (§app/merge-queue), each of
+these buttons reads **Land** and approves the run's branch in the queue (§app.merge-queue/approve)
+at the tip its proposal was read at, instead of merging it, and answers "queued", not "merged"; and
+the banner reads "Read it, then land it: it's checked on {target} first.". While the branch is in
+the queue, its queue chip takes the button's place. The queue's refusals show under the button the
+same way. A project whose queue isn't set up keeps Merge Branch as above, and "Read it, then merge
+it into {target}.", until it is onboarded (§app.merge-queue/setup). A project whose definition
+doesn't parse counts as set up and shows Land.
 
 ## §app.project-runtime/run-progress — The run as it goes
 

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { decisionPush } from "./rulings";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
@@ -12,6 +13,19 @@ import { realGit } from "./guard";
 import { SummarySweep } from "./summary-sweep";
 import { makeScratchCopy } from "./scratch";
 import type { SessionSummary } from "../../shared/protocol";
+
+/** An approval given before al_3 (no standing approval): its hand-back is final (needs-fix), as it was then. The queue
+ *  is paused while the entry's record is made legacy, so its run starts only after. */
+async function legacyAdd(q: Awaited<ReturnType<ReturnType<typeof makeKit>["q"]>>, req: Parameters<Awaited<ReturnType<ReturnType<typeof makeKit>["q"]>>["add"]>[0]) {
+  await q.pause("an approval from before the standing Land");
+  const r = await q.add(req);
+  const e = q.entry(r.entry.id)!;
+  delete e.approval.standing;
+  delete e.approval.userCommit;
+  q.save();
+  await q.resume();
+  return r;
+}
 
 /** Landed, and its push answered (pushed or not). */
 const landed = (k: ReturnType<typeof makeKit>, id: string) =>
@@ -28,7 +42,8 @@ describe("the session list's view", () => {
       const q = await k.q();
       const b = k.repo.branch("feat/bad", { "bad.txt": "x\n" });
       const { entry } = await q.add({ branch: "feat/bad", by: "land-button" });
-      await until(async () => (await k.entry(entry.id)).state === "needs-fix", "sent back");
+      // Back with its chat under the user's standing Land: it reads on the same list, and settles the same way.
+      await until(async () => (await k.entry(entry.id)).state === "with-chat", "back with its chat");
       assert.equal((await q.view()).needsFix[0]?.settled, undefined);
       sh(k.repo.root, "worktree", "remove", "--force", b.path);
       sh(k.repo.root, "branch", "-D", "feat/bad");
@@ -223,14 +238,14 @@ describe("approval", () => {
         assert.deepEqual(entry.approval.drafts?.names, ["old-1"]);
         writeFileSync(join(b.path, ".sova/spec/drafts/old-1/spec/claims/a.md"), "mine, edited\n");
         await q.resume();
-        await until(async () => (await k.entry(entry.id)).state === "drafts-changed", "drafts-changed");
+        await until(async () => (await k.entry(entry.id)).decision?.kind === "drafts-changed", "a Drafts changed decision");
       } finally {
         await k.done();
       }
     });
   });
 
-  test("drafts changed since the approval: the entry waits for a new Land", async () => {
+  test("drafts changed since the approval with no request: the entry waits for the user's decision; its Land takes them as they are now", async () => {
     let hash = "h1";
     const k = makeKit({ deps: { draftsHash: () => ({ hash, names: ["x"] }) } });
     try {
@@ -241,14 +256,15 @@ describe("approval", () => {
       assert.deepEqual(entry.approval.drafts, { hash: "h1", names: ["x"] });
       hash = "h2";
       await q.resume();
-      await until(async () => (await k.entry(entry.id)).state === "drafts-changed", "drafts-changed");
-      assert.equal((await k.entry(entry.id)).reason, "drafts changed since you approved");
+      await until(async () => (await k.entry(entry.id)).state === "needs-user", "waits for the user");
+      const e = await k.entry(entry.id);
+      assert.equal(e.decision?.kind, "drafts-changed");
+      assert.match(e.reason ?? "", /spec drafts changed since your Land/);
       assert.equal(k.run.inputs.length, 0);
-      assert.ok(k.notices.some((n) => n.kind === "drafts-changed"));
-      const again = await q.add({ branch: "feat/a", by: "land-button" });
-      assert.notEqual(again.entry.id, entry.id);
-      assert.equal((await k.entry(entry.id)).state, "cancelled");
-      await landed(k, again.entry.id);
+      assert.equal(k.notices.filter((n) => n.kind === "decision").length, 1, "one notice: the decision");
+      await q.answer(entry.id, "land");
+      assert.deepEqual((await k.entry(entry.id)).approval.drafts, { hash: "h2", names: ["x"] }, "re-pinned as they are now");
+      await landed(k, entry.id);
     } finally {
       await k.done();
     }
@@ -276,7 +292,7 @@ describe("sent back for its drafts", () => {
       k.run.set(() => ({ verdict: "failed", blame: "branch", cause: "drafts", why: "your spec drafts don't fit" }));
       const q = await k.q();
       const b = k.repo.branch("feat/doc", { "b.txt": "b\n" });
-      const { entry } = await q.add({ branch: "feat/doc", by: "land-button", session: "s1" });
+      const { entry } = await legacyAdd(q, { branch: "feat/doc", by: "land-button", session: "s1" });
       await until(async () => (await k.entry(entry.id)).state === "needs-fix", "sent back");
       const e = await k.entry(entry.id);
       assert.equal(e.sentBackFor, "drafts");
@@ -322,7 +338,7 @@ describe("sent back for its drafts", () => {
       k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed" }));
       const q = await k.q();
       const b = k.repo.branch("feat/bad", { "b.txt": "b\n" });
-      const { entry } = await q.add({ branch: "feat/bad", by: "land-button" });
+      const { entry } = await legacyAdd(q, { branch: "feat/bad", by: "land-button" });
       await until(async () => (await k.entry(entry.id)).state === "needs-fix", "sent back");
       assert.equal((await k.entry(entry.id)).sentBackFor, "checks");
       d.hash = "h2";
@@ -341,7 +357,7 @@ describe("sent back for its drafts", () => {
       k.run.set(() => ({ verdict: "failed", blame: "branch", why: "your spec drafts don't fit" }));
       const q = await k.q();
       const b = k.repo.branch("feat/old", { "b.txt": "b\n" });
-      const { entry } = await q.add({ branch: "feat/old", by: "land-button" });
+      const { entry } = await legacyAdd(q, { branch: "feat/old", by: "land-button" });
       await until(async () => (await k.entry(entry.id)).state === "needs-fix", "sent back");
       await q.idle();
       const qf = join(q.store.dir, "queue.json");
@@ -377,17 +393,18 @@ describe("sent back for its drafts", () => {
     }
   });
 
-  test("Remove from Queue: a sent-back entry is cancelled ('removed by you'), its chat told; nothing of the branch is deleted", async () => {
+  test("Remove from Queue: an entry back with its chat is cancelled ('removed by you'), its standing Land ended, its chat told; nothing of the branch is deleted", async () => {
     const k = makeKit();
     try {
       k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed" }));
       const q = await k.q();
       const b = k.repo.branch("feat/gone", { "b.txt": "b\n" });
       const { entry } = await q.add({ branch: "feat/gone", by: "land-button", session: "s1" });
-      await until(async () => (await k.entry(entry.id)).state === "needs-fix", "sent back");
+      await until(async () => (await k.entry(entry.id)).state === "with-chat", "back with its chat");
       const out = await q.cancel(entry.id);
       assert.equal(out.state, "cancelled");
       assert.equal(out.reason, "removed by you");
+      assert.equal(out.standing, undefined, "its standing Land ended with it");
       assert.ok(k.notices.some((n) => n.kind === "removed" && n.session === "s1"), "its chat's card is told");
       assert.ok(existsSync(b.path));
       assert.equal(sh(k.repo.root, "rev-parse", "refs/heads/feat/gone"), b.head);
@@ -499,13 +516,169 @@ describe("failures and blame", () => {
       const ok = await q.add({ branch: "feat/ok", by: "land-button", session: "s-ok" });
       await landed(k, ok.entry.id);
       const e = await k.entry(bad.entry.id);
-      assert.equal(e.state, "needs-fix");
+      assert.equal(e.state, "with-chat", "back with its chat, the user's Land standing");
       assert.equal(e.reason, "unit failed: src/a.test.ts");
+      assert.equal(e.standing?.phase, "with-chat");
       assert.deepEqual(k.notices.filter((n) => n.branch === "feat/bad").map((n) => n.kind), ["needs-fix"]);
+      assert.match(e.requests!.at(-1)!.text, /didn't land \(try 1 of 3\): unit failed: src\/a\.test\.ts/);
+      assert.doesNotMatch(e.requests!.at(-1)!.text, /diagnosis/, "no thread answered: no diagnosis");
       assert.ok(k.thread.some((t) => t.kind === "failed" && t.entry.id === bad.entry.id && t.base === before), "the run's base, for the thread's diff");
       assert.ok(k.thread.some((t) => t.kind === "queued" && t.entry.id === bad.entry.id && t.base === before));
       assert.notEqual(k.repo.head(), before);
       assert.equal(sh(k.repo.root, "rev-parse", `${k.repo.head()}^2`), ok.entry.commit);
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("with a thread, the send-back waits for its diagnosis and carries it; a ruling on an entry not waiting is refused", async () => {
+    const k = makeKit({ threadAnswers: true });
+    try {
+      const q = await k.q();
+      k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed: src/a.test.ts" }));
+      k.repo.branch("feat/bad", { "x.txt": "x\n" });
+      const bad = await q.add({ branch: "feat/bad", by: "land-button", session: "s-bad" });
+      await until(async () => k.thread.some((t) => t.kind === "failed" && t.entry.id === bad.entry.id), "the thread called in");
+      await until(async () => (await k.entry(bad.entry.id)).ruling?.pending, "waiting for the diagnosis");
+      assert.equal((await k.entry(bad.entry.id)).state, "with-chat");
+      assert.deepEqual(k.notices.filter((n) => n.kind === "needs-fix"), [], "no request yet");
+      await assert.rejects(q.rule(bad.entry.id, { ruling: "chat-fixes" }), /give your diagnosis/);
+      await assert.rejects(q.rule(bad.entry.id, { ruling: "overrule" }), /ruling is/);
+      const e = await q.rule(bad.entry.id, { ruling: "chat-fixes", text: "x.txt drops the export a.test.ts imports; export it again" });
+      assert.equal(e.state, "with-chat");
+      assert.equal(e.ruling?.pending, undefined);
+      assert.match(e.requests!.at(-1)!.text, /The merge thread's diagnosis: x\.txt drops the export/);
+      assert.deepEqual(k.notices.filter((n) => n.kind === "needs-fix").length, 1, "one request");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("a thread that gives no diagnosis in time: the request goes without, or with the note it wrote for this failure", async () => {
+    const k = makeKit({ threadAnswers: true, deps: { rulingWaitMs: 60 } });
+    try {
+      const q = await k.q();
+      k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed: src/a.test.ts" }));
+      k.repo.branch("feat/bad", { "x.txt": "x\n" });
+      const bad = await q.add({ branch: "feat/bad", by: "land-button", session: "s-bad" });
+      await until(async () => (await k.entry(bad.entry.id)).ruling?.pending, "waiting for the diagnosis");
+      await q.note(bad.entry.id, "the export of a was removed", "thread");
+      await until(async () => (await k.entry(bad.entry.id)).requests?.length, "sent after the wait");
+      assert.match((await k.entry(bad.entry.id)).requests!.at(-1)!.text, /The merge thread's diagnosis: the export of a was removed/);
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("a send-back waiting for the thread's diagnosis when Sova stops still goes out after the restart", async () => {
+    const k = makeKit({ threadAnswers: true });
+    try {
+      const q = await k.q();
+      k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed: src/a.test.ts" }));
+      k.repo.branch("feat/bad", { "x.txt": "x\n" });
+      const bad = await q.add({ branch: "feat/bad", by: "land-button", session: "s-bad" });
+      await until(async () => (await k.entry(bad.entry.id)).ruling?.pending, "waiting for the diagnosis");
+      await k.queues.stop();
+      const k2 = makeKit({ repo: k.repo, threadAnswers: true, deps: { rulingWaitMs: 50 } });
+      try {
+        await k2.q();
+        await until(async () => (await k2.entry(bad.entry.id)).requests?.length, "sent after the restart");
+        const e = await k2.entry(bad.entry.id);
+        assert.equal(e.ruling?.pending, undefined);
+        assert.match(e.requests!.at(-1)!.text, /unit failed: src\/a\.test\.ts/);
+      } finally {
+        await k2.done();
+      }
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("a decision's held note, once the user answers, is a request the chat answers by its id; a later raise joins the open decision, never replaces it", async () => {
+    const k = makeKit({ threadAnswers: true });
+    try {
+      const q = await k.q();
+      k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed: src/a.test.ts" }));
+      k.repo.branch("feat/bad", { "x.txt": "x\n" });
+      const bad = await q.add({ branch: "feat/bad", by: "land-button", session: "s-bad" });
+      await until(async () => (await k.entry(bad.entry.id)).ruling?.pending, "waiting for the diagnosis");
+      await q.rule(bad.entry.id, { ruling: "chat-fixes", text: "export it again" });
+      const pq = q as unknown as { chatNeedsYou(e: unknown, rq: string, question: string, options: string[]): void; serial<T>(f: () => Promise<T>): Promise<T>; entry(id: string): unknown };
+      const rq1 = (await k.entry(bad.entry.id)).requests!.at(-1)!.id;
+      await pq.serial(async () => pq.chatNeedsYou(pq.entry(bad.entry.id), rq1, "Keep the old label or the new one?", ["Old", "New"]));
+      const d = (await k.entry(bad.entry.id)).decision!;
+      assert.equal(d.raisedBy, "chat");
+      // The thread's own question never replaces the chat's: refused, the chat's question and held note stay.
+      await assert.rejects(q.rule(bad.entry.id, { ruling: "needs-user", text: "Which order?" }), /already waits for the user's decision/);
+      const still = (await k.entry(bad.entry.id)).decision!;
+      assert.equal(still.id, d.id);
+      assert.equal(still.question, "Keep the old label or the new one?");
+      assert.equal(still.raisedBy, "chat");
+      assert.equal(k.notices.filter((n) => n.kind === "decision").length, 1, "one notification");
+      // The user answers in the chat: the held note becomes a request, and the chat answers it by that id.
+      const held = await q.decisionAnswered(bad.entry.id, d.id, "The new one", { session: "s-bad" });
+      assert.equal(held?.request, d.heldNote!.request);
+      const e = await k.entry(bad.entry.id);
+      assert.equal(e.state, "with-chat");
+      const rq = e.requests!.find((r) => r.id === d.heldNote!.request)!;
+      assert.equal(rq.kind, "decision");
+      assert.equal(rq.session, "s-bad");
+      const r = await q.respond(rq.id, "s-bad", { answer: "cant", text: "the new label breaks the layout" });
+      assert.equal(r.request.answer?.kind, "cant");
+      assert.equal(await q.decisionAnswered(bad.entry.id, d.id, "again"), null, "answered once");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("Can't goes to the thread first: one other approach, then the user; a Needs you is a decision nobody overrules", async () => {
+    const k = makeKit({ threadAnswers: true });
+    try {
+      const q = await k.q();
+      k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed: src/a.test.ts" }));
+      k.repo.branch("feat/bad", { "x.txt": "x\n" });
+      const bad = await q.add({ branch: "feat/bad", by: "land-button", session: "s-bad" });
+      await until(async () => (await k.entry(bad.entry.id)).ruling?.pending, "waiting for the diagnosis");
+      await q.rule(bad.entry.id, { ruling: "chat-fixes", text: "export it again" });
+      const pq = q as unknown as { chatCant(e: unknown, rq: string, why: string): void; chatNeedsYou(e: unknown, rq: string, question: string, options: string[]): void; serial<T>(f: () => Promise<T>): Promise<T>; entry(id: string): unknown };
+      const rq1 = (await k.entry(bad.entry.id)).requests!.at(-1)!.id;
+      await pq.serial(async () => pq.chatCant(pq.entry(bad.entry.id), rq1, "the export is gone on master too"));
+      assert.ok(k.thread.some((t) => t.kind === "chat-answer" && t.answer === "cant" && !t.otherTried));
+      assert.equal((await k.entry(bad.entry.id)).ruling?.cant?.request, rq1);
+      await assert.rejects(q.rule(bad.entry.id, { ruling: "try-again" }), /say the other approach/);
+      const other = await q.rule(bad.entry.id, { ruling: "try-again", text: "import it from b instead" });
+      assert.equal(other.requests!.at(-1)!.kind, "other-approach");
+      assert.match(other.requests!.at(-1)!.text, /import it from b instead/);
+      // A second Can't goes straight to the user, "can't be settled without you".
+      const rq2 = other.requests!.at(-1)!.id;
+      await pq.serial(async () => pq.chatCant(pq.entry(bad.entry.id), rq2, "b doesn't have it either"));
+      const d = await k.entry(bad.entry.id);
+      assert.equal(d.state, "needs-user");
+      assert.equal(d.decision?.cantSettle, true);
+      assert.equal(d.decision?.raisedBy, "chat");
+      await assert.rejects(q.rule(bad.entry.id, { ruling: "chat-fixes", text: "just do it" }), /waits for the user's decision/);
+      await assert.rejects(q.retry(bad.entry.id), /waits for the user's decision/);
+      assert.equal(k.notices.filter((n) => n.kind === "decision").length, 1, "one notification");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("merge.retry: an entry back with its chat goes back in line counting a try; out of tries it waits for the user", async () => {
+    const k = makeKit();
+    try {
+      const q = await k.q();
+      k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed: src/a.test.ts" }));
+      k.repo.branch("feat/bad", { "x.txt": "x\n" });
+      const bad = await q.add({ branch: "feat/bad", by: "land-button", session: "s-bad" });
+      await until(async () => (await k.entry(bad.entry.id)).requests?.length, "sent back");
+      assert.equal((await k.entry(bad.entry.id)).tries?.used, 1);
+      await q.retry(bad.entry.id);
+      // The retry counted one; its run fails the same way: the third try is used up and it waits for the user.
+      await until(async () => (await k.entry(bad.entry.id)).state === "needs-user", "out of tries");
+      const e = await k.entry(bad.entry.id);
+      assert.equal(e.decision?.kind, "out-of-tries");
+      await assert.rejects(q.retry(bad.entry.id), /can't be retried/);
     } finally {
       await k.done();
     }
@@ -573,16 +746,35 @@ describe("conflicts", () => {
     k.repo.branch("feat/c", { "a.txt": "one\nTWO-branch\nthree\n" });
     k.repo.commitOn(k.repo.root, { "a.txt": "one\nTWO-master\nthree\n" }, "master side");
   };
+  // A Land on a branch that conflicts already waits for a fix (al_3 q7): a conflict reaches the queue when the target
+  // moves after the Land. Paused while it is approved, then the target moves, then the queue goes on.
+  const conflictingAdd = async (k: ReturnType<typeof makeKit>, q: Awaited<ReturnType<ReturnType<typeof makeKit>["q"]>>, branch = "feat/c", master = "TWO-master") => {
+    k.repo.branch(branch, { "a.txt": `one\nTWO-${branch}\nthree\n` });
+    await q.pause("setting up a conflict");
+    const c = await q.add({ branch, by: "land-button", session: "s1" });
+    k.repo.commitOn(k.repo.root, { "a.txt": `one\n${master}\nthree\n` }, "master side");
+    await q.resume();
+    return c;
+  };
 
-  test("no thread: handed back at once with the files; the line moves on", async () => {
-    const k = makeKit({ threadAnswers: false });
+  test("no thread: the conflict waits for the merge thread, never sent to the chat unjudged; once the thread acts it is handed the conflict", async () => {
+    let up = false;
+    const told: string[] = [];
+    const k = makeKit({ deps: { thread: (ev) => (ev.kind === "conflict" && told.push(ev.entry.id), up) } });
     try {
       const q = await k.q();
-      conflicting(k);
-      const c = await q.add({ branch: "feat/c", by: "land-button", session: "s1" });
-      await until(async () => (await k.entry(c.entry.id)).state === "needs-fix", "handed back");
-      assert.match((await k.entry(c.entry.id)).reason!, /conflicts with master in 1 file: a\.txt.*no merge thread/);
-      assert.deepEqual(k.notices.map((n) => n.kind), ["needs-fix"]);
+      const c = await conflictingAdd(k, q);
+      await until(async () => /waiting for the merge thread/.test((await k.entry(c.entry.id)).reason ?? ""), "waits for the thread");
+      const e = await k.entry(c.entry.id);
+      assert.equal(e.state, "conflict");
+      assert.match(e.reason!, /conflicts with master in 1 file: a\.txt/);
+      assert.equal(e.requests, undefined, "nothing to the chat");
+      assert.ok(!k.notices.some((n) => n.kind === "needs-fix"), "no send-back");
+      up = true;
+      const before = told.length;
+      q.threadActed();
+      await until(() => told.length > before, "handed to the thread once it runs");
+      await until(async () => (await k.entry(c.entry.id)).fix?.told === true, "told");
     } finally {
       await k.done();
     }
@@ -593,8 +785,7 @@ describe("conflicts", () => {
     const k = makeKit({ threadAnswers: true, deps: { sanity: async () => (sane ? { ok: true, files: ["a.txt"] } : { ok: false, why: "it changes b.txt, which didn't conflict", files: ["a.txt"] }) } });
     try {
       const q = await k.q();
-      conflicting(k);
-      const c = await q.add({ branch: "feat/c", by: "land-button", session: "s1" });
+      const c = await conflictingAdd(k, q);
       await until(async () => (await k.entry(c.entry.id)).state === "conflict", "conflict");
       assert.deepEqual((await k.entry(c.entry.id)).conflictFiles, ["a.txt"]);
       assert.ok(k.thread.some((t) => t.kind === "conflict" && t.files?.[0] === "a.txt"));
@@ -621,24 +812,27 @@ describe("conflicts", () => {
     }
   });
 
-  test("behaviour differs: waits for the user; Accept runs the proposal; Send Back hands it back with both sides", async () => {
+  test("behaviour differs (needs-user): one decision with the thread's question; Accept runs the proposal; there is no Send Back", async () => {
     const k = makeKit({ threadAnswers: true, deps: { sanity: async () => ({ ok: true, files: ["a.txt"] }) } });
     try {
       const q = await k.q();
-      conflicting(k);
-      const c = await q.add({ branch: "feat/c", by: "land-button", session: "s1" });
+      const c = await conflictingAdd(k, q);
       await until(async () => (await k.entry(c.entry.id)).state === "conflict", "conflict");
-      const e = await q.resolve(c.entry.id, { verdict: "behaviour-differs", ours: "master returns 2", theirs: "the branch returns 3", proposal: "return 3 behind a flag" });
+      // The old word still reads as needs-user.
+      const e = await q.resolve(c.entry.id, { verdict: "behaviour-differs", ours: "master returns 2", theirs: "the branch returns 3", proposal: "return 3 behind a flag", text: "Return 2 or 3?", choices: ["2", "3", " "] });
       assert.equal(e.state, "behaviour-differs");
+      assert.equal(e.decision?.kind, "behaviour-differs");
+      assert.equal(e.decision?.question, "Return 2 or 3?");
+      assert.deepEqual(e.decision?.choices, ["2", "3"], "empty choices dropped");
+      assert.equal(e.decision?.raisedBy, "merge-thread");
       assert.equal((await q.view()).needsYou[0]!.id, c.entry.id);
       await assert.rejects(q.answer(c.entry.id, "accept"), /no proposed resolution/);
-      await q.answer(c.entry.id, "send-back");
-      const back = await k.entry(c.entry.id);
-      assert.equal(back.state, "needs-fix");
-      assert.deepEqual(k.notices.map((n) => n.kind), ["sent-back"]);
+      await assert.rejects(q.answer(c.entry.id, "send-back" as never), /answer is/);
+      assert.equal(k.notices.length, 0, "nothing goes to the chat until the user answers");
+      // The thread can't overrule the decision it raised: only another needs-user is taken.
+      await assert.rejects(q.rule(c.entry.id, { ruling: "try-again" }), /waits for the user's decision/);
       // Accept on another one with a proposed commit.
-      const k2 = conflicting2(k);
-      const d = await q.add({ branch: k2, by: "land-button" });
+      const d = await conflictingAdd(k, q, "feat/d", "TWO-master-again");
       await until(async () => (await k.entry(d.entry.id)).state === "conflict", "conflict 2");
       const res = resolve(k, k.repo.head(), d.entry.commit, "one\nTWO-proposed\nthree\n");
       await q.resolve(d.entry.id, { verdict: "behaviour-differs", ours: "o", theirs: "t", proposal: "p", commit: res });
@@ -649,31 +843,58 @@ describe("conflicts", () => {
     }
   });
 
-  test("a resolution judged safe that fails a check comes back to the user; the branch isn't blamed", async () => {
-    const k = makeKit({ threadAnswers: true, deps: { sanity: async () => ({ ok: true, files: ["a.txt"] }) } });
+  test("chat-fixes: the conflict goes back to the chat by itself, with the files as they are now and the thread's diagnosis", async () => {
+    const k = makeKit({ threadAnswers: true });
     try {
       const q = await k.q();
-      conflicting(k);
-      k.run.set((input) => (input.resolution ? { verdict: "failed", blame: "resolution", why: "unit failed" } : {}));
-      const c = await q.add({ branch: "feat/c", by: "land-button", session: "s1" });
+      const c = await conflictingAdd(k, q);
       await until(async () => (await k.entry(c.entry.id)).state === "conflict", "conflict");
-      await q.resolve(c.entry.id, { verdict: "no-behaviour-change", ours: "o", theirs: "t", proposal: "p", commit: resolve(k, k.repo.head(), c.entry.commit, "x\n") });
-      await until(async () => (await k.entry(c.entry.id)).state === "behaviour-differs", "back to the user");
-      assert.match((await k.entry(c.entry.id)).reason!, /your branch isn't blamed/);
-      assert.deepEqual(k.notices, []);
+      const e = await q.resolve(c.entry.id, { verdict: "chat-fixes", ours: "master renamed it", theirs: "the branch calls the old name", proposal: "call the new name" });
+      assert.equal(e.state, "with-chat");
+      assert.equal(e.standing?.phase, "with-chat");
+      const rq = e.requests!.at(-1)!;
+      assert.equal(rq.kind, "fix");
+      assert.equal(rq.try, 1);
+      assert.match(rq.text, /conflicts with master in a\.txt/);
+      assert.match(rq.text, /The merge thread's diagnosis: call the new name/);
+      assert.deepEqual(k.notices.map((n) => n.kind), ["needs-fix"], "one request, no button");
     } finally {
       await k.done();
     }
   });
 
-  test("a thread that never judges: the conflict is handed back after the wait", async () => {
-    const k = makeKit({ threadAnswers: true, deps: { conflictWaitMs: 60 } });
+  test("a resolution judged safe that fails a check: the thread rules again; the branch isn't blamed and its chat isn't told", async () => {
+    const k = makeKit({ threadAnswers: true, deps: { sanity: async () => ({ ok: true, files: ["a.txt"] }), conflictWaitMs: 80 } });
     try {
       const q = await k.q();
-      conflicting(k);
-      const c = await q.add({ branch: "feat/c", by: "land-button", session: "s1" });
-      await until(async () => (await k.entry(c.entry.id)).state === "needs-fix", "handed back");
-      assert.match((await k.entry(c.entry.id)).reason!, /didn't judge it in time/);
+      k.run.set((input) => (input.resolution ? { verdict: "failed", blame: "resolution", why: "unit failed" } : {}));
+      const c = await conflictingAdd(k, q);
+      await until(async () => (await k.entry(c.entry.id)).state === "conflict", "conflict");
+      await q.resolve(c.entry.id, { verdict: "no-behaviour-change", ours: "o", theirs: "t", proposal: "p", commit: resolve(k, k.repo.head(), c.entry.commit, "x\n") });
+      await until(async () => k.thread.some((t) => t.kind === "resolution-failed"), "the thread told");
+      const back = await k.entry(c.entry.id);
+      assert.equal(back.state, "conflict", "the thread is ruling again");
+      assert.match(back.reason!, /your branch isn't blamed/);
+      assert.equal(k.notices.length, 0);
+      // It doesn't rule in time: the user decides, never the branch's chat.
+      await until(async () => (await k.entry(c.entry.id)).state === "behaviour-differs", "the user's");
+      assert.equal((await k.entry(c.entry.id)).decision?.kind, "behaviour-differs");
+      assert.equal(k.notices.filter((n) => n.kind === "needs-fix").length, 0);
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("a thread that never judges: after the wait the conflict is handed to the thread again, never to the chat unjudged", async () => {
+    const told: string[] = [];
+    const k = makeKit({ deps: { conflictWaitMs: 60, thread: (ev) => (ev.kind === "conflict" && told.push(ev.entry.id), true) } });
+    try {
+      const q = await k.q();
+      const c = await conflictingAdd(k, q);
+      await until(() => told.length >= 2, "handed to the thread again after the wait");
+      const e = await k.entry(c.entry.id);
+      assert.equal(e.state, "conflict");
+      assert.equal(e.requests, undefined, "nothing to the chat");
     } finally {
       await k.done();
     }
@@ -681,25 +902,25 @@ describe("conflicts", () => {
 });
 
 describe("review", () => {
-  test("blocking: waits for the user; Land Anyway lands the tested tip without a rerun; Send Back hands it back", async () => {
-    const k = makeKit();
+  test("blocking: its findings go back to the chat by themselves; the thread is told; Land Anyway is never offered over a review", async () => {
+    const k = makeKit({ threadAnswers: true });
     try {
       const q = await k.q();
-      k.run.set((input) => (!input.entry.approval.withoutReview ? { verdict: "review-flagged", review: { verdict: "blocking", text: "dead code left in x.ts", commit: "c", at: "t" } } : {}));
+      k.run.set(() => ({ verdict: "review-flagged", review: { verdict: "blocking", text: "dead code left in x.ts", commit: "c", at: "t" } }));
       k.repo.branch("feat/r", { "r.txt": "r\n" });
       const r = await q.add({ branch: "feat/r", by: "land-button", session: "s1" });
-      await until(async () => (await k.entry(r.entry.id)).state === "review-flagged", "flagged");
-      assert.match((await k.entry(r.entry.id)).reason!, /dead code/);
-      const runs = k.run.inputs.length;
-      await q.answer(r.entry.id, "land-anyway");
-      await landed(k, r.entry.id);
-      assert.equal(k.run.inputs.length, runs, "no rerun");
-      assert.ok((await k.entry(r.entry.id)).notes.some((n) => n.kind === "review" && /Landed over the review/.test(n.text)));
-      k.repo.branch("feat/s", { "s.txt": "s\n" });
-      const s = await q.add({ branch: "feat/s", by: "land-button", session: "s2" });
-      await until(async () => (await k.entry(s.entry.id)).state === "review-flagged", "flagged 2");
-      await q.answer(s.entry.id, "send-back");
-      assert.equal((await k.entry(s.entry.id)).state, "needs-fix");
+      await until(async () => (await k.entry(r.entry.id)).state === "with-chat", "back with the chat");
+      const e = await k.entry(r.entry.id);
+      assert.match(e.reason!, /dead code/);
+      assert.match(e.requests!.at(-1)!.text, /review found problems[\s\S]*dead code left in x\.ts/);
+      assert.deepEqual(k.notices.map((n) => n.kind), ["needs-fix"]);
+      assert.ok(k.thread.some((t) => t.kind === "review" && t.findings === "dead code left in x.ts"));
+      await assert.rejects(q.answer(r.entry.id, "land-anyway"), /Land Anyway answers a failure no one can be blamed for/);
+      // The thread may rule a finding the user's.
+      const d = await q.rule(r.entry.id, { ruling: "needs-user", text: "Keep the old setting or drop it?", choices: ["Keep it", "Drop it"] });
+      assert.equal(d.state, "needs-user");
+      assert.equal(d.decision?.raisedBy, "merge-thread");
+      assert.deepEqual(k.notices.map((n) => n.kind), ["needs-fix", "decision"]);
     } finally {
       await k.done();
     }
@@ -944,16 +1165,21 @@ describe("notes and picks", () => {
     }
   });
 
-  test("the thread's note on a handed-back entry reaches the branch's chat", async () => {
+  test("after a send-back, the thread's diagnosis reaches the chat as its own request (merge.rule); a note stays on the card", async () => {
     const k = makeKit();
     try {
       const q = await k.q();
       k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed" }));
       k.repo.branch("feat/a", { "b.txt": "b\n" });
       const { entry } = await q.add({ branch: "feat/a", by: "land-button", session: "s1" });
-      await until(async () => (await k.entry(entry.id)).state === "needs-fix", "needs-fix");
+      await until(async () => (await k.entry(entry.id)).state === "with-chat", "with-chat");
       await q.note(entry.id, "the test expects the old error text", "thread");
-      assert.deepEqual(k.notices.map((n) => n.kind), ["needs-fix", "explained"]);
+      assert.deepEqual(k.notices.map((n) => n.kind), ["needs-fix"], "a note is no request");
+      const e = await q.rule(entry.id, { ruling: "chat-fixes", text: "the test expects the old error text; update it" });
+      assert.deepEqual(k.notices.map((n) => n.kind), ["needs-fix", "needs-fix"]);
+      assert.match(e.requests!.at(-1)!.text, /diagnosis for feat\/a's last request: the test expects/);
+      assert.equal(e.requests!.at(-1)!.try, undefined, "no try counted");
+      assert.equal(e.tries?.used, 1);
     } finally {
       await k.done();
     }
@@ -1318,6 +1544,63 @@ describe("can't tell whose failure", () => {
     }
   });
 
+  test("exactly one notification per decision: none while the thread rules first, one when raised, none for a question joining it", async () => {
+    const sent: { tag: string; title: string }[] = [];
+    const k = makeKit({ threadAnswers: true, deps: { rulingWaitMs: 60, decided: (e) => void sent.push(decisionPush(e, "p1")) } });
+    try {
+      const q = await k.q();
+      k.run.set(() => ({ verdict: "unattributed", why: WHY }));
+      k.repo.branch("feat/a", { "a1.txt": "a\n" });
+      const a = await q.add({ branch: "feat/a", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(a.entry.id)).ruling?.unattributed, "the thread rules first");
+      assert.equal(sent.length, 0, "nothing while the thread rules");
+      await until(async () => (await k.entry(a.entry.id)).decision, "raised");
+      assert.equal(sent.length, 1);
+      assert.equal(sent[0]!.tag, `sova:merge-decision:${a.entry.id}`);
+      assert.equal(sent[0]!.title, "The merge queue needs you · feat/a");
+      const pq = q as unknown as { chatNeedsYou(e: unknown, rq: string, question: string, options: string[]): void; serial<T>(f: () => Promise<T>): Promise<T>; entry(id: string): unknown };
+      await pq.serial(async () => pq.chatNeedsYou(pq.entry(a.entry.id), "rq_x", "Which wording?", []));
+      assert.equal(sent.length, 1, "a question joining the open decision sends none");
+      assert.match((await k.entry(a.entry.id)).decision!.question, /Also, from the branch's chat: Which wording\?/);
+      // A joining decision brings its click-only answers along, so the answer it needs (Land) is never refused.
+      const rq = q as unknown as { raiseDecision(e: unknown, d: unknown): void };
+      await pq.serial(async () => rq.raiseDecision(pq.entry(a.entry.id), { kind: "out-of-tries", question: "Tried 3 times", choices: [], raisedBy: "queue", actions: ["land", "remove"] }));
+      const joined = (await k.entry(a.entry.id)).decision!;
+      assert.deepEqual(joined.actions, ["land-anyway", "try-again", "land", "remove"]);
+      assert.equal(joined.kind, "unattributed", "still the first decision");
+      assert.equal(sent.length, 1, "still one notification");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("the thread rules first: its try-again settles it with no word to the user; no ruling in time raises it, and then only the user settles it", async () => {
+    const k = makeKit({ threadAnswers: true, deps: { rulingWaitMs: 80 } });
+    try {
+      const q = await k.q();
+      let calls = 0;
+      k.run.set(() => (++calls === 1 ? { verdict: "unattributed", why: WHY } : calls === 2 ? {} : { verdict: "unattributed", why: WHY }));
+      k.repo.branch("feat/a", { "a1.txt": "a\n" });
+      const a = await q.add({ branch: "feat/a", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(a.entry.id)).ruling?.unattributed, "the thread rules first");
+      const waiting = await k.entry(a.entry.id);
+      assert.equal(waiting.decision, undefined, "not raised to the user yet");
+      assert.ok(!(await q.view()).needsYou.some((x) => x.id === a.entry.id), "not in Needs you yet");
+      await q.rule(a.entry.id, { ruling: "try-again", text: "the host ran out of temp space" });
+      await landed(k, a.entry.id);
+      assert.equal(k.notices.filter((n) => n.kind === "decision").length, 0, "the user never heard of it");
+      // The next one: no ruling in time, raised to the user; the thread can't settle it after that.
+      k.repo.branch("feat/b", { "b1.txt": "b\n" });
+      const b = await q.add({ branch: "feat/b", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(b.entry.id)).decision?.kind === "unattributed", "raised to the user");
+      await assert.rejects(q.rule(b.entry.id, { ruling: "try-again", text: "flake" }), /already waits for the user's decision/);
+      await assert.rejects(q.rule(b.entry.id, { ruling: "chat-fixes", text: "the branch's" }), /already waits for the user's decision/);
+      assert.equal((await k.entry(b.entry.id)).state, "unattributed");
+    } finally {
+      await k.done();
+    }
+  });
+
   test("Land Anyway onto the target it was tested on lands with no rerun; Send Back hands it back with the reason; Accept is refused", async () => {
     const k = makeKit();
     try {
@@ -1335,11 +1618,14 @@ describe("can't tell whose failure", () => {
       k.repo.branch("feat/b", { "b1.txt": "b\n" });
       const b = await q.add({ branch: "feat/b", by: "land-button", session: "s1" });
       await until(async () => (await k.entry(b.entry.id)).state === "unattributed", "unattributed b");
-      await q.answer(b.entry.id, "send-back");
-      const back = await k.entry(b.entry.id);
-      assert.equal(back.state, "needs-fix");
-      assert.match(back.reason!, /failed on the merge and on master alone, and couldn't say whose failure it is/);
-      assert.deepEqual(k.notices.filter((x) => x.branch === "feat/b").map((x) => x.kind), ["sent-back"]);
+      const ub = await k.entry(b.entry.id);
+      assert.equal(ub.decision?.kind, "unattributed");
+      assert.deepEqual(ub.decision?.actions, ["land-anyway", "try-again"]);
+      assert.deepEqual(k.notices.filter((x) => x.branch === "feat/b" && x.kind !== "approved").map((x) => x.kind), [], "nothing to the chat; the card's revision comes from the view");
+      await q.answer(b.entry.id, "try-again");
+      const again = await k.entry(b.entry.id);
+      assert.equal(again.state === "queued" || again.state === "checking" || again.state === "unattributed", true);
+      assert.equal(again.tries?.used ?? 0, 0, "Try Again uses no try");
     } finally {
       await k.done();
     }
@@ -1739,9 +2025,10 @@ async function poll(q: Q): Promise<void> {
 }
 
 describe("sent back: the tab's Ready list", () => {
-  // al_4: a branch handed back to its chat (needs-fix) is never offered as Ready (and so never Land) at the commit it was
-  // sent back at; once its chat commits a fix, the branch at that newer commit is Ready again.
-  test("a needs-fix branch at its sent-back commit isn't Ready; after a new commit it is", async () => {
+  // al_4: a branch handed back to its chat is never offered as Ready (and so never Land) at the commit it was sent back
+  // at. al_3: under the user's standing Land it isn't offered at a newer commit either: the chat's checked fix puts it
+  // back in line, with no new Land. A legacy hand-back (approved before the standing Land) is Ready again at its fix.
+  test("back with its chat: not Ready at its sent-back commit nor at a new one; a legacy hand-back is Ready at its fix", async () => {
     let t = Date.parse("2026-11-03T00:00:00.000Z");
     const k = makeKit({ deps: { now: () => t } as Partial<QueueDeps> });
     try {
@@ -1749,14 +2036,22 @@ describe("sent back: the tab's Ready list", () => {
       k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed: src/a.test.ts" }));
       const b = k.repo.branch("feat/back", { "x.txt": "x\n" });
       const { entry } = await q.add({ branch: "feat/back", by: "land-button", session: "s1" });
-      await until(async () => (await k.entry(entry.id)).state === "needs-fix", "sent back");
+      await until(async () => (await k.entry(entry.id)).state === "with-chat", "back with its chat");
       let v = await q.view();
       assert.deepEqual(v.needsFix.map((e) => e.branch), ["feat/back"]);
       assert.deepEqual((v.ready ?? []).filter((r) => r.branch === "feat/back"), [], "not Ready at the commit it was sent back at");
-      const fix = k.repo.commitOn(b.path, { "x.txt": "fixed\n" }, "fix");
+      k.repo.commitOn(b.path, { "x.txt": "fixed\n" }, "fix");
       t += 60_000; // past the view's ready cache
       v = await q.view();
-      assert.deepEqual((v.ready ?? []).filter((r) => r.branch === "feat/back").map((r) => r.commit), [fix], "Ready at the fix");
+      assert.deepEqual((v.ready ?? []).filter((r) => r.branch === "feat/back"), [], "its Land stands: no second Land is offered");
+      // An approval from before the standing Land: its hand-back is final, and Land comes back at the fix.
+      const old = k.repo.branch("feat/old-back", { "o.txt": "o\n" });
+      const legacy = await legacyAdd(q, { branch: "feat/old-back", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(legacy.entry.id)).state === "needs-fix", "sent back");
+      const fix = k.repo.commitOn(old.path, { "o.txt": "fixed\n" }, "fix");
+      t += 60_000;
+      v = await q.view();
+      assert.deepEqual((v.ready ?? []).filter((r) => r.branch === "feat/old-back").map((r) => r.commit), [fix], "Ready at the fix");
     } finally {
       await k.done();
     }

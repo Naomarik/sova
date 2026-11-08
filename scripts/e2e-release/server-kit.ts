@@ -11,6 +11,7 @@
  *   await k.stop();
  */
 import { spawn, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { startHermeticServer, type HermeticServer } from "../../server/testing/hermetic-server";
@@ -55,6 +56,9 @@ export interface ReleaseServer {
   stop(): Promise<string[]>;
 }
 
+/** The merge queue's acts (every merge verb but the reads and a trial): the page's, never a script's. */
+const pageVerb = (name: string): boolean => name.startsWith("merge.") && !["merge.status", "merge.logs", "merge.try"].includes(name);
+
 function lineFrom(child: ChildProcess, re: RegExp, ms: number): Promise<RegExpExecArray> {
   return new Promise((ok, fail) => {
     let buf = "";
@@ -95,7 +99,8 @@ export async function startReleaseServer(o: { env?: Record<string, string> } = {
   const http = async (method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<VerbAnswer> => {
     const r = await fetch(hs.base + path, {
       method,
-      headers: { "content-type": "application/json", "x-sova-token": hs.token, ...headers },
+      // A cookie stands for the page (pageVerb below): then no token header, which is a script's mark.
+      headers: { "content-type": "application/json", ...(headers.cookie ? {} : { "x-sova-token": hs.token }), ...headers },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await r.text();
@@ -117,7 +122,10 @@ export async function startReleaseServer(o: { env?: Record<string, string> } = {
       reset: async () => void (await ctl("POST", "/reset")),
     },
     http,
-    verb: (name, body, o = {}) => http("POST", `/api/project-services/${name}`, body, o.callerKey ? { "x-sova-caller": o.callerKey } : {}),
+    // The merge queue's acts pass only for the user's page (§app.access/your-click): this kit stands in for their clicks,
+    // so it sends them as the page does (the install's cookie, server/auth.ts authCookieName). A chat's key wins.
+    verb: (name, body, o = {}) =>
+      http("POST", `/api/project-services/${name}`, body, o.callerKey ? { "x-sova-caller": o.callerKey } : pageVerb(name) ? { cookie: `sova_token_${createHash("sha256").update(resolve(hs.agentDir)).digest("hex").slice(0, 8)}=${hs.token}` } : {}),
     register: async (root, name) => {
       const list = await http("GET", "/api/projects");
       const found = ((list.json.projects ?? []) as { root: string; id: string }[]).find((p) => p.root === root);

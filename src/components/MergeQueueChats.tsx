@@ -4,7 +4,7 @@
 import { createSignal, For, Show } from "solid-js";
 import type { MergeQueueChat, MergeQueueView } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
-import { answerThread, clearQueueChats, startFreshThread } from "../lib/merge-queue-client";
+import { clearQueueChats, startFreshThread } from "../lib/merge-queue-client";
 import { clearableRows, historyRows, historyWords, lastEventWords, memoryWords, reviewersOfRun, reviewerLinkWords, reviewingWords, threadStateChip, type HistoryFilter } from "../lib/merge-queue-chats";
 import { projectSessionHref } from "../lib/projects-route";
 import { type ChatOf, chatHref, useAct } from "./MergeQueueTab";
@@ -32,7 +32,6 @@ export function ReviewRunningButton(props: { projectId: string; view: MergeQueue
 export function MergeThreadCard(props: { projectId: string; view: MergeQueueView; chatOf?: ChatOf; onChanged(): void }) {
   const act = useAct(props.onChanged);
   const [confirm, setConfirm] = createSignal(false);
-  const [answer, setAnswer] = createSignal("");
   const t = () => props.view.thread;
   return (
     <Show
@@ -78,27 +77,12 @@ export function MergeThreadCard(props: { projectId: string; view: MergeQueueView
                   <Show
                     when={a().askedIn}
                     fallback={
-                      <form
-                        class="mq-thread-answer"
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          const text = answer().trim();
-                          if (text) void act.run("answer", () => answerThread(props.view.root, a().id, text), "Sent your answer to the merge thread.").then(() => setAnswer(""));
-                        }}
-                      >
-                        <label class="field-label" for="mq-thread-answer">
-                          Your answer
-                        </label>
-                        <textarea id="mq-thread-answer" class="input" rows={2} value={answer()} onInput={(e) => setAnswer(e.currentTarget.value)} />
-                        <span class="button-row">
-                          <button type="submit" class="button button-sm button-primary" disabled={!answer().trim() || !!act.busy()}>
-                            Send Answer
-                          </button>
-                          <a class="button button-sm button-ghost" href={chatLink(props.projectId, th())}>
-                            Answer in Merge Thread
-                          </a>
-                        </span>
-                      </form>
+                      // No branch chat can carry it: answered in the merge thread's own message box, never a text box here.
+                      <span class="button-row">
+                        <a class="button button-sm button-primary" href={chatLink(props.projectId, th())}>
+                          Answer in Merge Thread
+                        </a>
+                      </span>
                     }
                   >
                     {(where) => (

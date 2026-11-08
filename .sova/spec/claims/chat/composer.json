@@ -226,7 +226,7 @@
   "§chat.composer/land-confirm": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.composer/worktrees-control",
       "§chat.worktrees/pane",
@@ -241,8 +241,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T21:36Z",
-      "source": "pi-session:6295e4a0-38a1-4768-a7a6-2787ccf54172#23af1717"
+      "at": "2026-11-07T17:54Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
     }
   },
   "§chat.composer/memory-status": {
@@ -388,7 +388,7 @@
   "§chat.composer/worktrees-control": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§chat/worktrees",
       "§chat.worktrees/pane",
@@ -407,8 +407,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T19:18Z",
-      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
+      "at": "2026-11-07T17:34Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
     },
     "code": [
       "src/components/WorktreesControl.tsx",
@@ -438,7 +438,8 @@
       "server/spec-drafts-state.ts",
       "src/components/BranchSummary.tsx",
       "shared/protocol.ts",
-      "server/merge-queue/verbs.test.ts"
+      "server/merge-queue/verbs.test.ts",
+      "src/lib/merge-standing.ts"
     ]
   },
   "§chat/composer": {

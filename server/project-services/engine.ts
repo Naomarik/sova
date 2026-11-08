@@ -83,8 +83,9 @@ import { defHashOf } from "./def-hash";
 export type Caller =
   /** `notPage`: a route's caller that isn't the user's own page (a script, a chat's terminal): it never restarts this server.
       `fromChat`: the operator's route called by a process a chat runs (its `x-sova-caller` key): never the operator's
-      acts on a release: a chat's own scripts never act as the operator there. */
-  | { kind: "operator"; confirm?: boolean; notPage?: boolean; fromChat?: true }
+      acts on a release: a chat's own scripts never act as the operator there. `fromCard`: a command a card in the page ran (its code, not Sova's own control):
+      never the user's act on the merge queue. */
+  | { kind: "operator"; confirm?: boolean; notPage?: boolean; fromChat?: true; fromCard?: true }
   /** `approved`: whether the user's click that opened this turn approved `verb` on that copy (§app.overseer/copies).
       `word`: whether the user started this turn (typed or a click), read per call; absent: never. `working`: whether
       the conversation (session id) that started a copy is working now; absent: always (a click is needed). */

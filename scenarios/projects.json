@@ -12,7 +12,7 @@
     { "name": "unarchive it", "sova": ["run", "project.unarchive", "--pid", "{{p.project.id}}"], "json": { "archived": { "$absent": true } } },
     { "name": "no such preview to turn off", "sova": ["run", "project.preview.off", "--id", "pv_missing"], "exit": 3, "stderr": "answered 404" },
     { "name": "no coding sessions' worktrees", "sova": ["run", "project.worktree.list", "--pid", "{{p.project.id}}"], "json": { "sessions": [] } },
-    { "name": "no such coding session to merge", "sova": ["run", "project.worktree.merge", "--pid", "{{p.project.id}}", "--session-id", "no-such-session"], "exit": 3, "json": { "error": "Unknown coding session of this project" } },
+    { "name": "a script never merges a coding session: only the user's own page does", "sova": ["run", "project.worktree.merge", "--pid", "{{p.project.id}}", "--session-id", "no-such-session"], "exit": 2, "json": { "error": { "$match": "^only the user's own click in Sova's page lands" } }, "stderr": "answered 403" },
     { "name": "no kept files", "sova": ["run", "project.files.list", "--pid", "{{p.project.id}}"], "json": { "files": [] } },
     { "name": "an unknown project", "sova": ["run", "project.get", "--pid", "prj_missing0"], "exit": 3, "stderr": "answered 404" }
   ]

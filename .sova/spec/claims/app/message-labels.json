@@ -170,7 +170,9 @@
       "server/chat-manager.ts",
       "server/queue.ts",
       "server/session-offers.ts",
-      "server/merge-queue/wire.ts"
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/queue-standing.test.ts"
     ],
     "agreed": {
       "by": "omar",

@@ -28,8 +28,8 @@ import { resolve } from "node:path";
 import { exitOf } from "../shared/project-contract.ts";
 import { tokenHeaders } from "./sova-token.mjs";
 
-const VALUE = new Set(["project", "ask", "instance", "checkout", "branch", "from", "slot", "services", "lines", "resources", "ref", "select", "endpoint", "days", "link", "url", "target", "commit", "plan", "deploy", "why", "override-tests", "override-dirty", "entry", "run", "step", "note", "chat", "via", "checks", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "takes-min", "requires", "action", "release", "tag", "state", "summary", "detail", "facts"]);
-const FLAG = new Set(["restart", "keep-data", "confirm", "dismiss", "without-specs", "without-review", "none", "dry-run"]);
+const VALUE = new Set(["project", "ask", "instance", "checkout", "branch", "from", "slot", "services", "lines", "resources", "ref", "select", "endpoint", "days", "link", "url", "target", "commit", "plan", "deploy", "why", "override-tests", "override-dirty", "entry", "run", "step", "note", "chat", "via", "checks", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "takes-min", "requires", "action", "request", "ruling", "choices", "release", "tag", "state", "summary", "detail", "facts"]);
+const FLAG = new Set(["restart", "keep-data", "confirm", "dismiss", "without-specs", "without-review", "none", "dry-run", "drafts"]);
 const PATHS = new Set(["project", "checkout"]);
 
 function usage(msg) {
@@ -98,6 +98,10 @@ if (verb.startsWith("merge.")) {
     requires: list(opts.requires),
     dryRun: opts["dry-run"],
     action: opts.action,
+    request: opts.request,
+    drafts: opts.drafts,
+    ruling: opts.ruling,
+    choices: list(opts.choices),
   };
   for (const k of Object.keys(body)) if (body[k] === undefined) delete body[k];
 } else if (verb.startsWith("release.")) {

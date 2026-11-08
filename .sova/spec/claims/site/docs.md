@@ -307,9 +307,12 @@ Which projects have a merge queue and that it is the only way a branch reaches t
 the two ways to land a branch (Land, with its menu, and "land it" typed in the branch's own chat,
 your own words only) and what Land refuses; one branch at a time in approval order; the merge in a
 copy, the checks, the optional review and landing exactly the tested commit, or a pull or merge
-request; the branch's card in its chat; whose failure a red check is and each waiting state (Needs a
-fix, Can't tell whose failure, Conflict and Behaviour differs, Review flagged, Drafts changed) with
-its actions; the Merge Queue tab; the merge thread and the queue's own chats; setting it up and
+request; the branch's card in its chat; whose failure a red check is; that one Land stands while the queue
+sends problems back to the branch's chat by itself and the chat's checked fixes go back in line,
+up to three tries; the requests and the chat's Fixed, Needs you and Can't answers; each decision
+that waits for you (Behaviour differs, a question, Can't tell whose failure, Out of tries, a fix
+that needs your OK, Drafts changed) with its answers, from the card's buttons or the chat's message
+box; the Merge Queue tab; the merge thread and the queue's own chats; setting it up and
 Settings → Merge Queue, linking to its own page (§site.docs/merge-queue-settings); each run's page; the freeze while a release is open. Screenshots of the Merge Queue tab, a run's page and the branch's card in its chat, once captured.
 
 ## §site.docs/merge-queue-settings — Merge queue settings (`/docs/merge-queue-settings/`)

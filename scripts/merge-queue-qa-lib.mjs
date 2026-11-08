@@ -207,11 +207,19 @@ export class SovaUnderTest {
     rmSync(join(this.agent, "auth.json"), { force: true });
   }
 
-  async http(method, path, body) {
+  /** The page's own sign-in, as the browser sends it (server/auth.ts authCookieName): the merge queue's acts pass only
+   *  for the user's page (§app.access/your-click), and this rig stands in for the user's clicks. */
+  pageCookie() {
+    return `sova_token_${createHash("sha256").update(resolve(this.agent)).digest("hex").slice(0, 8)}=${this.token ?? ""}`;
+  }
+
+  async http(method, path, body, { asPage = false } = {}) {
     const t0 = Date.now();
     let r;
+    // As the page: its cookie and no token header (a token in a header is a script's mark).
+    const auth = asPage ? { cookie: this.pageCookie() } : { "x-sova-token": this.token ?? "" };
     try {
-      r = await fetch(this.base + path, { method, headers: { "content-type": "application/json", "x-sova-token": this.token ?? "" }, body: body === undefined ? undefined : JSON.stringify(body) });
+      r = await fetch(this.base + path, { method, headers: { "content-type": "application/json", ...auth }, body: body === undefined ? undefined : JSON.stringify(body) });
     } catch (e) {
       throw new Error(`${method} ${path} failed after ${Date.now() - t0} ms: ${e?.cause?.code ?? ""} ${e?.cause?.message ?? e?.message}`);
     }
@@ -229,7 +237,9 @@ export class SovaUnderTest {
 
   /** One merge verb as the operator (the route the Land button uses). */
   async verb(name, body) {
-    return (await this.http("POST", `/api/project-services/${name}`, body)).json;
+    // The queue's reads go as a script; its acts as the user's page, whose clicks this rig stands in for.
+    const asPage = /^merge\./.test(name) && !["merge.status", "merge.logs", "merge.try"].includes(name);
+    return (await this.http("POST", `/api/project-services/${name}`, body, { asPage })).json;
   }
 
   /** The project's private names for the leak scan, set up as the names interview would (store.ts namesFileOf:

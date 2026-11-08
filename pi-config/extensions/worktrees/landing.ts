@@ -176,6 +176,8 @@ export const SENT_MARKERS: Readonly<Record<string, string>> = {
 	"sova-overseer-sent": "the Overseer",
 	"sova-baton-sent": "a baton participant",
 	"sova-session-sent": "another session",
+	// Beside every batch of notes a chat queue (topic) delivers, the merge queue's requests included.
+	"sova-topic-delivered": "a chat queue",
 };
 
 /**
@@ -200,8 +202,9 @@ export function newestUserMessage(branch: readonly unknown[]): { text: string; s
 }
 
 /** Sova's own messages and other sessions' arrive as user messages too: none of them is the user's typed word (the
- *  merge queue's wakes start "[merge-queue]", an Overseer's brief "[overseer-brief]"). */
-const NOT_TYPED = /^\s*(?:sova:|\[from session |\[schedule |\[merge-queue\]|\[overseer-brief\]|go ahead: land )/i;
+ *  merge queue's wakes start "[merge-queue]", an Overseer's brief "[overseer-brief]", a chat queue's notes "[topic "
+ *  whatever the queue's name or kind, the merge queue's requests among them). By the tag's start, never its sentence. */
+const NOT_TYPED = /^\s*(?:sova:|\[from session |\[schedule |\[topic\s|\[merge-queue\b|\[overseer-brief\]|go ahead: land )/i;
 /** Before the verb: words that make it a question, a condition or a refusal rather than the word to land now. */
 const NOT_NOW = /\b(?:don'?t|dont|do not|never|not|no|should|shall|why|what|how|whether|when|once|after|before|until|if|wait|hold)\b/;
 
@@ -214,8 +217,10 @@ const NOT_NOW = /\b(?:don'?t|dont|do not|never|not|no|should|shall|why|what|how|
  * merge request", "land it as a PR"): `via` names it (a pull request on GitHub, a merge request on GitLab), the same
  * rules applying to its verb. → {withoutSpecs, withoutReview, via?} | null (not a go-ahead).
  */
-export function typedGoAhead(text: string): { withoutSpecs: boolean; withoutReview: boolean; via?: RequestVia } | null {
-	if (typeof text !== "string" || NOT_TYPED.test(text)) return null;
+export function typedGoAhead(message: string): { withoutSpecs: boolean; withoutReview: boolean; via?: RequestVia } | null {
+	if (typeof message !== "string") return null;
+	const text = ownPart(message);
+	if (NOT_TYPED.test(text) || !text.trim()) return null;
 	const line = (text.trim().split("\n")[0] ?? "").toLowerCase();
 	const open = OPEN_REQUEST.exec(line);
 	const verb = /\b(?:land|merge)\b/.exec(line);
@@ -225,6 +230,19 @@ export function typedGoAhead(text: string): { withoutSpecs: boolean; withoutRevi
 	const asked = (open && open.index === at ? open[1] : undefined) ?? (verb ? AS_REQUEST.exec(line.slice(verb.index))?.[1] : undefined);
 	const via: RequestVia | undefined = asked ? (/^(?:pr|pull request)$/.test(asked) ? "github-pr" : "gitlab-mr") : undefined;
 	return { withoutSpecs: /\bwithout (?:its |the |any )?specs?\b/i.test(text), withoutReview: /\b(?:skip(?:ping)? (?:the |its )?review|without (?:the |its |a |any )?review|no review)\b/i.test(text), ...(via ? { via } : {}) };
+}
+
+/** A held note's start (Sova's merge queue): a block that begins with this line, after a blank one. */
+const HELD_NOTE = /^\[merge-queue held note (?:rq|ak)_/;
+/**
+ * The user's own words of a message: all of it, except when the user's answer carries a note the merge queue held for
+ * it, which rides as the message's last block (a blank line, then its "[merge-queue held note …]" line). Nothing from
+ * the first such block on is theirs, whatever it says ("land it", "without specs", "skip review").
+ */
+function ownPart(message: string): string {
+	const lines = message.split(/\r\n|\r|\n/);
+	for (let i = 1; i < lines.length; i++) if (lines[i - 1]!.trim() === "" && HELD_NOTE.test(lines[i]!)) return lines.slice(0, i - 1).join("\n");
+	return message;
 }
 
 /** "open a PR", "create a new merge request", "raise an MR", "put up a pull request": the verb asks for a request. */

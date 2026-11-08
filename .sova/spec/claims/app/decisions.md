@@ -168,7 +168,9 @@ appends (one line each).
   the session's open alignment questions, its subagents working now, whether merge readiness
   says a restart is owed, and the turn's stop reason. Never tool calls, diffs or files.
 - **No card** for a turn that stopped with an error (that is the file's turn error, a code-derived
-  Needs you item), a turn a partner's link message or a topic batch opened, the Overseer's,
+  Needs you item), a turn a partner's link message or a topic batch opened (but for a batch of the
+  merge queue's requests, §chat.merge-queue/requests, whose turn gets its card like a turn the user
+  started, so its outcome can say a fix is finished and its reply can ask the user), the Overseer's,
   workers', baton and archived sessions, and anything the privacy gate stops. Such a turn makes no
   decision call and drops the stored answers of the turn before it.
 - **Retired:** the `stuck` question about a main session's turn and every check of a running
@@ -201,7 +203,8 @@ appends (one line each).
   information it needs before it can go on?"). A session with an **open alignment question**
   (§chat.alignment/session-mark: those already put it in Needs you) shows that instead, and a
   turn a partner's link message (its question is to the partner) or a topic batch
-  (§chat.topics/row) opened gets no card.
+  (§chat.topics/row) opened gets no card, except a batch of the merge queue's requests
+  (§chat.merge-queue/requests), whose reply is asked like any other.
 - **Looks like it asks** is counted in code on the last 1,000 characters of the reply, after the
   closing spec lines (`Also changes:`, `Also updates:`, `Deferred:`, `Plumbing:`, `Spec check override:`) are cut:
   a question mark, or a phrase such as "should I", "shall I", "want me to", "do you want", "would
@@ -218,44 +221,16 @@ appends (one line each).
   three sentences, the last that ends in "?", else the last), redacted and at most 160
   characters, is stored with the answer for the attention digest only; it never reaches the
   session list or the feed.
-- **A restart or merge go is not asked again.** A reply asks for this when its ask kind is
-  `restart-or-merge-go`; a record from before the turn card, which has no kind, when its asking sentence
-  names a server restart, a Land, a merge or a push. The row carries no `asks-you`, and so leaves Needs
-  you, while any of these holds:
-  - the session's merge readiness already says a restart is owed (§chat.worktrees/readiness,
-    `restartPending`): the readiness badge says it;
-  - **the version that reply was about has landed**, in every worktree that counts (below): its branch
-    is merged into its target, whatever uncommitted files the worktree has now, or its newest queue
-    entry (§app.merge-queue/approve) is for that version and landed or pushed;
-  - **that version is in the merge queue**: each such worktree has landed as above or its newest entry
-    is for that version and queued or checking.
-
-  An entry is for that version when it holds the commit the branch had when the reply ended, or was
-  approved after the reply. An older entry is not: a newer commit needs a new Land.
-
-  Only a landed version is **noted on the stored signal** (`signals.json`), when first seen; the note
-  decides from then on: dropping the worktree and restarting Sova don't bring the ask back. A queued
-  version leaves no note: it is read live from the queue's current view, so cancelling the entry, or
-  the entry stopping short of landing, brings the ask back, and after a restart of Sova a queued ask
-  can show briefly until the first background read.
-
-  Every tracked worktree counts, an inherited one too, except an **empty leftover**, the merged badge's
-  own test (§chat.worktrees/readiness): clean with no commit of its own, or removed with none. It holds
-  no ask; one with uncommitted files does. With every worktree empty, or none tracked, only the restart
-  case applies and the ask stays.
-
-  The note belongs to that reply. A newer turn replaces it, so a newer commit with a new ask is
-  judged afresh and stays listed until its version is queued or landed. No model call: code
-  compares the commits, and the turn card's stored kind says what counts as this ask.
-  Every other ask is untouched.
+- **A restart or merge go is not asked again** once that version is queued or landed, or a restart
+  is owed (§app.decisions/merge-go-asks).
 - **Where it came from.** The mark's tooltip ends with its source: "Guessed by {provider}" for a
   decision's answer, named by the provider that actually answered (Jev, or the configured
   model's name), and "From code." for a mark counted in code (open questions, a team gone quiet).
 - It shows while the feature is on and the session is idle, and, unlike the other signals, a look
   does not clear it: opening or viewing the session leaves it, as with open questions. It clears
   when the user answers (a turn runs, and the next turn replaces or drops it), the session is
-  archived, or, for a restart or merge go, while its version is queued and for good once it has landed (above). Dismissing the row
-  takes it out of Needs you until the chat has something new (§app.session-list/needs-you-dismiss)
+  archived, or, for a restart or merge go, while its version is queued and for good once it has
+  landed (§app.decisions/merge-go-asks). Dismissing the row takes it out of Needs you until the chat has something new (§app.session-list/needs-you-dismiss)
   and leaves this mark. An open alignment question that appears later takes its place.
 - It is a guess, so it is **never a blocker**: the attention digest carries it as a **soft decide**
   item (§app.overseer/attention-digest), a quiet mark on the session's row (a chat glyph in muted
@@ -273,6 +248,39 @@ appends (one line each).
   commit, and open alignment questions still take its place. The digest doesn't list it as a soft
   `asks-you` item: the open card is a Needs you item of its own (`offer-waiting`,
   §app.overseer/attention-digest), idle or working.
+
+## §app.decisions/merge-go-asks — A restart or merge go is not asked again
+
+A reply asks for this when its ask kind is `restart-or-merge-go`; a record from before the turn
+card, which has no kind, when its asking sentence names a server restart, a Land, a merge or a push.
+The row carries no `asks-you`, and so leaves Needs you, while any of these holds:
+- the session's merge readiness already says a restart is owed (§chat.worktrees/readiness,
+  `restartPending`): the readiness badge says it;
+- **the version that reply was about has landed**, in every worktree that counts (below): its branch
+  is merged into its target, whatever uncommitted files the worktree has now, or its newest queue
+  entry (§app.merge-queue/approve) is for that version and landed or pushed;
+- **that version is in the merge queue**: each such worktree has landed as above or its newest entry
+  is for that version and queued or checking.
+
+An entry is for that version when it holds the commit the branch had when the reply ended, or was
+approved after the reply, or its standing approval took that commit as a checked fix
+(§app.merge-queue/standing-approval). An older entry is not otherwise: a newer commit that isn't a
+checked fix needs a new Land.
+
+Only a landed version is **noted on the stored signal** (`signals.json`), when first seen; the note
+decides from then on: dropping the worktree and restarting Sova don't bring the ask back. A queued
+version leaves no note: it is read live from the queue's current view, so cancelling the entry, or
+the entry stopping short of landing, brings the ask back, and after a restart of Sova a queued ask
+can show briefly until the first background read.
+
+Every tracked worktree counts, an inherited one too, except an **empty leftover**, the merged
+badge's own test (§chat.worktrees/readiness): clean with no commit of its own, or removed with none.
+It holds no ask; one with uncommitted files does. With every worktree empty, or none tracked, only
+the restart case applies and the ask stays.
+
+The note belongs to that reply. A newer turn replaces it, so a newer commit with a new ask is judged
+afresh and stays listed until its version is queued or landed. No model call: code compares the
+commits, and the turn card's stored kind says what counts as this ask. Every other ask is untouched.
 
 ## §app.decisions/team-stall — A team gone quiet
 

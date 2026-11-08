@@ -113,7 +113,7 @@
           <tr><td class="text-mono"><code>--focus-color</code></td><td><code>#4A43D8</code></td><td>Ring color — the accent, per theme</td></tr>
           </tbody>
         </table></div>
-        <p class="measure"><b>What never animates: decoration.</b> Nothing loops, drifts, or pulses, with two exceptions — the live-run indicator and the skeleton sweep, both of which report that work is happening.</p>
+        <p class="measure"><b>What never animates: decoration.</b> Nothing loops, drifts, or pulses, with two exceptions — the live-run indicator and the skeleton sweep, both of which report that work is happening. The live-run pulse fades opacity 1 → .4 → 1 over 1.6s (<code>run-pulse</code>): deep enough to read as motion, shallow enough that the mark never all but vanishes. The same pulse serves a figure (Sova's worker count): at .4 a numeral stays readable.</p>
         <p class="measure"><b>Under <code>prefers-reduced-motion</code>,</b> <code>tokens.css</code> collapses animation and transition durations to near zero, which stops both exceptions. Nothing is exempt — opacity fades land instantly too — and transforms are not removed, only made instant.</p>
         <p class="measure"><b>The focus ring is <code>:focus-visible</code> only, never removed, and never replaced by a color change alone.</b></p>
       </section>

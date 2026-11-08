@@ -101,11 +101,11 @@
         <div class="do-dont">
           <div class="do">
             <p class="text-eyebrow text-success">Do</p>
-            <ul><li><b>Offer Undo for anything destructive</b> — reversibility is a brand value, not a nicety.</li><li><b>Keep it to one line</b> — a toast is read in passing or not at all.</li><li><b>Anchor toasts above the approval bar at folded width</b> — never cover the decision the user is making.</li></ul>
+            <ul><li><b>Offer Undo for anything destructive</b> — reversibility is a brand value, not a nicety.</li><li><b>Keep it to one line</b> — a toast is read in passing or not at all.</li><li><b>Anchor toasts above the approval bar at folded width</b> — never cover the decision the user is making.</li><li><b>Give a toast with an action longer, and pause it under the pointer or focus</b> — 6s against 3s, resuming with the time left, so reaching Undo never races the clock.</li><li><b>Replace the previous toast of the same kind</b> — the next archive's Undo takes the last one's place, so only the latest shows.</li></ul>
           </div>
           <div class="dont">
             <p class="text-eyebrow text-error">Don't</p>
-            <ul><li><b>Put the only record of an error in a toast</b> — use a banner, which stays.</li><li><b>Stack more than three</b> — the fourth is invisible by the time it arrives.</li><li><b>Auto-dismiss a toast that has an action</b> — the user needs time to reach Undo.</li></ul>
+            <ul><li><b>Put the only record of an error in a toast</b> — use a banner, which stays.</li><li><b>Stack more than three</b> — the fourth is invisible by the time it arrives.</li><li><b>Leave a toast with an action on screen until it is used</b> — three archives became three stuck Undos (Sova overrode the earlier never-auto-dismiss rule for this).</li></ul>
           </div>
         </div>
       </section>

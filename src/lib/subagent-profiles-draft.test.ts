@@ -65,8 +65,8 @@ test("every chosen row needs a model and an effort, whichever section it sits in
   assert.match(profilesProblem(file([members]))!, /members default needs a model and an effort/);
   const teams = validProfile({
     teams: {
-      coordinator: { enabled: true, role: "coordinator", primary: tclaude("opus[1m]", "" as TupleEffort), fallback: null, instructions: "" },
-      monitor: { enabled: true, role: "monitor", primary: tpi("zai/glm-5.3", "low"), fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "" },
+      coordinator: { role: "coordinator", primary: tclaude("opus[1m]", "" as TupleEffort), fallback: null, instructions: "" },
+      monitor: { role: "monitor", primary: tpi("zai/glm-5.3", "low"), fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "" },
       handover: { retireTimeoutMinutes: 10 },
     },
   });
@@ -75,8 +75,8 @@ test("every chosen row needs a model and an effort, whichever section it sits in
 
 test("teams thresholds and role names are checked before the server ever sees them", () => {
   const teams = {
-    coordinator: { enabled: true, role: "coordinator", primary: tclaude("opus[1m]", "medium"), fallback: null, instructions: "" },
-    monitor: { enabled: true, role: "monitor", primary: tpi("zai/glm-5.3", "low"), fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "" },
+    coordinator: { role: "coordinator", primary: tclaude("opus[1m]", "medium"), fallback: null, instructions: "" },
+    monitor: { role: "monitor", primary: tpi("zai/glm-5.3", "low"), fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "" },
     handover: { retireTimeoutMinutes: 10 },
   };
   assert.equal(profilesProblem(file([validProfile({ teams: structuredClone(teams) })])), null, "the defaults themselves pass");

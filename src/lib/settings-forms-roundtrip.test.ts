@@ -58,6 +58,7 @@ after(() => {
 });
 
 const api = await import("./api");
+const { teamsSeed } = await import("./subagent-editor");
 const { gatedForms, resetAllDrafts } = await import("./settings-draft");
 const alignment = await import("./alignment-draft");
 const baton = await import("./baton-settings-draft");
@@ -615,9 +616,9 @@ describe("Subagents: every team number inside a profile", () => {
       : typeof o === "number"
         ? [prefix.slice(0, -1)]
         : [];
-  /** The profile list with profile 0's teams switched on, as the editor's switch seeds them. */
+  /** The profile list with profile 0's teams models chosen, as the editor's Choose Models seeds them. */
   const withTeams = async (): Promise<Json> => {
-    const seed = (await api.getTeamDefaults()).defaults;
+    const seed: Json = teamsSeed(null, (await api.getTeamDefaults()).defaults);
     const d: Json = clone(profiles.profilesDraft.draft());
     // On Claude Code picks: the seed's pi model isn't in this process's registry.
     const claude = { primary: pick("claude-code", "claude-sonnet-5-5", "low"), fallback: null };

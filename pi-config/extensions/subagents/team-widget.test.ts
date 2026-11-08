@@ -21,6 +21,7 @@ import {
 	type TeamWidgetUi,
 } from "./team-widget.ts";
 import { TeamStore, memberState, type MemberState, type TeamMemberView, type TeamView, type WorkerObservation } from "./teams.ts";
+import { DEFAULT_TEAM_DEFAULTS } from "./team-defaults.ts";
 
 // ── fakes ─────────────────────────────────────────────────────────────────
 
@@ -358,7 +359,8 @@ test("attachTeamWidget removes the widget key once every team is torn down", () 
 
 test("store views keep torn-down teams for team_list and /team; only the widget hides them", () => {
 	const store = new TeamStore();
-	const prepared = store.prepareCreate({ name: "comms", objective: "obj", members: [{ role: "lead", prompt: "t" }, { role: "dev", prompt: "t" }] });
+	// Every team has Sova's coordinator; here the first member is it.
+	const prepared = store.prepareCreate({ name: "comms", objective: "obj", members: [{ role: "lead", prompt: "t", duty: "coordinator", orchestrator: true }, { role: "dev", prompt: "t" }], coordination: { defaults: DEFAULT_TEAM_DEFAULTS } });
 	store.commitCreate(prepared, 1, prepared.members.map((m, i) => ({
 		workerId: `ag_0${i + 1}`, role: m.role, ownedPaths: m.ownedPaths, backend: "pi", groupId: "run_01", addedAt: 1,
 	})));
@@ -605,7 +607,8 @@ test("attachTeamWidget passes placement through and themes the factory component
 test("ejected members are hidden like torn-down ones, and counts (which already leave them out) are not reduced twice", () => {
 	const store = new TeamStore();
 	const roles = ["live", "stopped", "gone", "finished", "pruned"];
-	const prepared = store.prepareCreate({ name: "seats", objective: "obj", members: roles.map((role) => ({ role, prompt: "t" })) });
+	// Every team has Sova's coordinator; here the first member ("live") is it.
+	const prepared = store.prepareCreate({ name: "seats", objective: "obj", members: roles.map((role, i) => ({ role, prompt: "t", ...(i === 0 ? { duty: "coordinator" as const, orchestrator: true } : {}) })), coordination: { defaults: DEFAULT_TEAM_DEFAULTS } });
 	store.commitCreate(prepared, 1, prepared.members.map((m, i) => ({
 		workerId: `ag_0${i + 1}`, role: m.role, ownedPaths: m.ownedPaths, backend: "pi", groupId: "run_01", addedAt: 1,
 	})));

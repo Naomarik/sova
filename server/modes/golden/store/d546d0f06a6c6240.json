@@ -19,10 +19,6 @@
   "maxItems": 32,
   "description": "Optional: paths only this member edits. Shown to the team and in team_list; teammates are told to avoid them unless their task says otherwise, so leave out shared files. Advisory; not a lock."
  },
- "orchestrator": {
-  "type": "boolean",
-  "description": "@f5b4c046f896784e"
- },
  "backend": {
   "type": "string",
   "minLength": 1,

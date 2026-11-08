@@ -1,0 +1,1 @@
+"Wait for current tasks, not child process exits. Failed tasks also settle; inspect each error. Timeout/cancellation does not stop workers. A team question or a message from the user ends the wait early: deal with it, then wait again. Output capped at 47,000 bytes/2000 lines with full snapshot path."

@@ -36,12 +36,11 @@ import {
 	assignmentText,
 	bindingSteersLabel,
 	steerPreview,
-	malformedWarning,
 	memberTooling,
 	normalizeLabel,
 	monitorSuccessorTask,
 	pausedTeamsFrom,
-	planTeamDefaults,
+	checkStandingRoles,
 	synthesizedMember,
 	workerSuccessorTask,
 	type AssignmentEntryData,
@@ -67,7 +66,7 @@ import {
 import { InboxStore, MAIN_THREAD, SOVA, closedByOf, hasInboxCaps, isOpen, type InboxItem, type InboxKind, type InboxParty, type SeenTag } from "./inbox.ts";
 import { DeliveryLanes, WakeScheduler, itemLine, steerUntilTaken, type LaneResult } from "./delivery.ts";
 import { TEAM_NOTICE_TYPE, endReason, groupReturns, returnNoticeText } from "./inbox-lifecycle.ts";
-import { describeTeamDefaults, type TeamDefaultsState, type WorkerTuple } from "./team-defaults.ts";
+import { describeTeamDefaults, effectiveTeamDefaults, TEAM_DEFAULT_EFFORTS, type TeamDefaultsNow, type WorkerTuple } from "./team-defaults.ts";
 import { resolveSubagents, restorePick, type ResolvedSubagents } from "./subagent-profiles.ts";
 import {
 	NUDGE_MAX_ACTIVE,
@@ -199,12 +198,6 @@ const TeamMemberSpec = Type.Object(
 		ownedPaths: Type.Optional(
 			Type.Array(Nonempty, { maxItems: MAX_OWNED_PATHS, description: "Optional: paths only this member edits. Shown to the team and in team_list; teammates are told to avoid them unless their task says otherwise, so leave out shared files. Advisory; not a lock." }),
 		),
-		orchestrator: Type.Optional(
-			Type.Boolean({
-				description:
-					"This member coordinates its teammates: it additionally gets team_roster (live sibling states) and team_steer (redirect or follow-up a sibling by role). Sibling-scoped only; it can never spawn, add or stop workers. Requires the pi or claude-code backend. In a team with a coordinator, only the coordinator is the orchestrator: a member that only watches needs no mark.",
-			}),
-		),
 		backend: Type.Optional(Type.String({ minLength: 1, description: "Worker backend; default defaults.backend, else pi." })),
 		model: AgentSpec.properties.model,
 		effort: AgentSpec.properties.effort,
@@ -224,11 +217,9 @@ const TeamDefaultsSpec = Type.Object(
 		model: Type.Optional(Type.String()),
 		effort: Type.Optional(Effort),
 		backendOptions: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
-		coordinator: Type.Optional(Type.Boolean({ description: "false: no coordinator (and no monitor) from team-defaults.json for this team." })),
-		monitor: Type.Optional(Type.Boolean({ description: "false: no monitor from team-defaults.json for this team." })),
 	},
 	{
-		description: "Applied only to members whose backend equals defaults.backend (default pi); member fields win and backendOptions merge shallowly. team_add reuses them. coordinator/monitor: false turn off the team-defaults roles for this team.",
+		description: "Applied only to members whose backend equals defaults.backend (default pi); member fields win and backendOptions merge shallowly. team_add reuses them.",
 	},
 );
 // A union with a string, so a host that checks the declared schema (the Claude Code CLI over MCP) lets a
@@ -283,13 +274,9 @@ export function checkTeamKeys(members: unknown, defaults?: unknown): unknown[] {
 			throw new Error(`${where}: extensions must be a list of extension sources, e.g. ["npm:pi-web-access"].`);
 	});
 	if (defaults === undefined) return list;
-	if (!isPlainObject(defaults)) throw new Error(`defaults must be an object, e.g. {"model": "...", "monitor": false}.`);
+	if (!isPlainObject(defaults)) throw new Error(`defaults must be an object, e.g. {"model": "...", "effort": "high"}.`);
 	const extra = Object.keys(defaults).find((key) => !TEAM_DEFAULT_KEYS.has(key));
-	if (extra) throw new Error(`Unsupported team default ${extra}; defaults accept backend, model, effort, backendOptions, coordinator and monitor.${TEAM_MEMBER_KEYS.has(extra) ? ` Put ${extra} on each member that needs it.` : ""}`);
-	for (const key of ["coordinator", "monitor"] as const) {
-		const value = defaults[key];
-		if (value !== undefined && typeof value !== "boolean") throw new Error(`defaults.${key} must be true or false.`);
-	}
+	if (extra) throw new Error(`Unsupported team default ${extra}; defaults accept ${[...TEAM_DEFAULT_KEYS].join(", ")}.${TEAM_MEMBER_KEYS.has(extra) ? ` Put ${extra} on each member that needs it.` : ""}`);
 	return list;
 }
 const TEAM_CREATE_KEYS = ["name", "objective", "defaults", "members"] as const;
@@ -602,7 +589,7 @@ export function runningLimitRefusal(need: RunningNeed, total: number, liveNow: r
 	const workers = (n: number) => `${n} worker${n === 1 ? "" : "s"}`;
 	const asks =
 		need.kind === "team_create"
-			? `This team needs ${workers(total)} running: the ${need.named} member${need.named === 1 ? "" : "s"} you named${need.added.length ? ` + the ${need.added.join(" and ")} Sova adds from this chat's team defaults` : ""}.`
+			? `This team needs ${workers(total)} running: the ${need.named} member${need.named === 1 ? "" : "s"} you named + the ${need.added.join(" and ")} Sova adds to every team.`
 			: need.kind === "team_add" ? `Adding ${total === 1 ? "this member" : `these ${total} members`} needs ${workers(total)} running.`
 			: need.kind === "successor" ? `The successor of ${need.of} needs 1 worker running.`
 			: need.kind === "resume" ? `Resuming ${need.id} needs 1 worker running.`
@@ -1022,8 +1009,18 @@ export function registerSubagents(
 		}
 		return resolveSubagents(agentDir(), restorePick(branch as never));
 	};
-	/** Team defaults as team_create reads them: the profile's teams section (or the legacy file). */
-	const teamDefaultsNow = (ctx?: ExtensionContext): TeamDefaultsState => subagentsNow(ctx).teams;
+	/** The chat's own model and effort, as a worker tuple (a Claude Code chat's is its claude-code-cli pi model). */
+	const chatTuple = (ctx: ExtensionContext | undefined = activeCtx): WorkerTuple | undefined => {
+		if (!ctx?.model) return undefined;
+		const effort = (TEAM_DEFAULT_EFFORTS as readonly string[]).includes(ctx.thinkingLevel ?? "") ? ctx.thinkingLevel as WorkerTuple["effort"] : undefined;
+		return { backend: "pi", model: `${ctx.model.provider}/${ctx.model.id}`, ...(effort ? { effort } : {}) };
+	};
+	/**
+	 * Team defaults now, always a full value: the profile's teams section (or the legacy file), else
+	 * Sova's built-in values with both roles on the chat's own model (effectiveTeamDefaults).
+	 */
+	const teamDefaultsNow = (ctx: ExtensionContext | undefined = activeCtx, resolved: ResolvedSubagents = subagentsNow(ctx)): TeamDefaultsNow =>
+		effectiveTeamDefaults(resolved.teams, chatTuple(ctx));
 	const timestamps = (a: Worker) => {
 		const out: { startedAt?: number; lastActivity?: number; endedAt?: number } = {};
 		for (const key of ["startedAt", "lastActivity", "endedAt"] as const)
@@ -1313,6 +1310,13 @@ export function registerSubagents(
 	const settleSeq = new Map<string, number>();
 	/** The parent's agent runs in progress (agent_start to agent_end). */
 	let parentLoops = 0;
+	/** Team questions steered into the parent and not read yet: the parent route raises it, each one's
+	 *  message_end lowers it, agent_end clears it. While it is above 0 agent_wait returns. */
+	let questionsQueued = 0;
+	/** Who asked the newest of them, as the wait names it. */
+	let questionFrom = "";
+	/** Messages the user typed while the parent ran (steers from an interactive source) and not read yet; kept like questionsQueued. */
+	let userSteersQueued = 0;
 	/** The newest turn's outcome in the parent's current run. */
 	let lastOutcome: string | undefined;
 	/** Parent completions held while a run or a wait is in progress, oldest first per worker. */
@@ -1997,15 +2001,14 @@ export function registerSubagents(
 	 */
 	const recordWrapUps = (teamId: string, targets: readonly PersistedMember[], outcomes: readonly { workerId: string; ok: boolean }[]) => {
 		const routing = teams.routingCoordinator(teamId, isLiveWorker)?.workerId;
-		const state = teamDefaultsNow();
-		const threshold = state.state === "ok" ? state.value.monitor.contextPct : undefined;
+		const threshold = teamDefaultsNow().value.monitor.contextPct;
 		for (const target of targets) {
 			if (!outcomes.find((o) => o.workerId === target.workerId)?.ok) continue;
 			const worker = agents.find((a) => a.id === target.workerId);
 			const tokens = amount(worker?.usage?.contextTokens);
 			const window = contextWindowOf(worker, target);
 			const pct = contextPct(tokens, window);
-			if (target.workerId === routing && (pct === undefined || threshold === undefined || pct < threshold)) continue;
+			if (target.workerId === routing && (pct === undefined || pct < threshold)) continue;
 			appendTeamEvent(teamId, "wrap-up", target, contextShare(tokens, window));
 		}
 	};
@@ -2037,10 +2040,9 @@ export function registerSubagents(
 	});
 	/** For each of a team's providers that no login can use now, the windows of the login that frees soonest. */
 	const pausingWindows = (teamId: string): UsageWindow[] => {
-		const state = teamDefaultsNow();
-		const usage = state.state === "ok" && state.value.monitor.usage.enabled ? state.value.monitor.usage : undefined;
+		const usage = teamDefaultsNow().value.monitor.usage;
 		const t = teamViews().find((v) => v.id === teamId);
-		if (!usage || !t) return [];
+		if (!usage.enabled || !t) return [];
 		const cache = readUsageCache();
 		return [...new Set(teamProviders(t))].flatMap((p) => blockingWindows(cache, p, usage.pausePct));
 	};
@@ -2048,8 +2050,7 @@ export function registerSubagents(
 	const resumeNoticeRefusal = (teamId: string, now = Date.now()): string | undefined => {
 		const held = pauseHolds.get(teamId);
 		if (!held?.length) return undefined;
-		const state = teamDefaultsNow();
-		const margin = state.state === "ok" ? state.value.monitor.usage.resumeMarginMinutes : 0;
+		const margin = teamDefaultsNow().value.monitor.usage.resumeMarginMinutes;
 		const last = held.reduce((a, w) => (Date.parse(w.resetsAt!) > Date.parse(a.resetsAt!) ? w : a));
 		const from = Date.parse(last.resetsAt!) + margin * 60_000;
 		if (now >= from) return undefined;
@@ -2188,13 +2189,24 @@ export function registerSubagents(
 		return undefined;
 	};
 	const tupleText = (t: WorkerTuple) => `${t.backend}/${t.model}${t.effort ? `/${t.effort}` : ""}`;
-	/** Primary, else fallback; neither → the team is refused, naming both reasons. */
-	const pickTuple = (ctx: ExtensionContext, duty: MemberDuty, role: string, primary: WorkerTuple, fallback: WorkerTuple | null, primaryDenied?: string): { tuple: WorkerTuple; line: string } => {
+	/**
+	 * A standing role's tuple: the primary, else the fallback, else the chat's own model (also what
+	 * `chatsOwn` settings name for both). The chat's own model refused too → refused as a member on it would be.
+	 */
+	const pickTuple = (ctx: ExtensionContext, duty: MemberDuty, role: string, primary: WorkerTuple, fallback: WorkerTuple | null, chatsOwn: boolean, primaryDenied?: string): { tuple: WorkerTuple; line: string } => {
+		const own = (why: string): { tuple: WorkerTuple; line: string } => {
+			const chat = chatTuple(ctx);
+			if (!chat) throw new Error(`Team not created: this chat has no model for its ${duty} (${role}) to run on (${why}).`);
+			const denied = tupleDenial(ctx, chat);
+			if (denied) throw new Error(denied);
+			return { tuple: chat, line: `Sova added the ${duty} "${role}" on ${tupleText(chat)} (this chat's own model; ${why}).` };
+		};
+		if (chatsOwn) return own("the settings name no model for it");
 		const first = primaryDenied ?? tupleDenial(ctx, primary);
-		if (!first) return { tuple: primary, line: `Team defaults: ${duty} ${role} added on ${tupleText(primary)} (primary).` };
+		if (!first) return { tuple: primary, line: `Sova added the ${duty} "${role}" on ${tupleText(primary)} (primary).` };
 		const second = fallback ? tupleDenial(ctx, fallback) : "no fallback is configured";
-		if (fallback && !second) return { tuple: fallback, line: `Team defaults: ${duty} ${role} added on ${tupleText(fallback)} (fallback; primary ${tupleText(primary)} refused: ${first}).` };
-		throw new Error(`Team not created: team defaults require a ${duty} (${role}), but no configured model can run — primary ${tupleText(primary)}: ${first}; fallback${fallback ? ` ${tupleText(fallback)}` : ""}: ${second}. Fix the ${duty} in Sova's Settings, or pass defaults.${duty}: false.`);
+		if (fallback && !second) return { tuple: fallback, line: `Sova added the ${duty} "${role}" on ${tupleText(fallback)} (fallback; primary ${tupleText(primary)} refused: ${first}).` };
+		return own(`primary ${tupleText(primary)}: ${first}; fallback${fallback ? ` ${tupleText(fallback)}` : ""}: ${second}`);
 	};
 
 	/**
@@ -2720,7 +2732,7 @@ export function registerSubagents(
 		legacyText: (workerId: string, item: InboxItem) => {
 			const target = teams.memberInfo(workerId)?.member;
 			const fromMember = item.from.workerId !== "parent" ? teams.memberInfo(item.from.workerId)?.member : undefined;
-			const tag = fromMember ? `${fromMember.role}${fromMember.orchestrator ? ", orchestrator" : ""} (${fromMember.workerId}), ${item.teamId}` : `${item.from.role}, ${item.teamId}`;
+			const tag = fromMember ? `${fromMember.role} (${fromMember.workerId}), ${item.teamId}` : `${item.from.role}, ${item.teamId}`;
 			const head = item.kind === "notice" && fromMember?.duty === "monitor" ? `[Monitor notice — from ${tag}${item.broadcastId ? " to all members" : ""}]`
 				: item.kind === "message" ? `[Team message from ${tag}${item.broadcastId ? " to all members" : ""}]`
 				: item.kind === "question" ? `[Team question from ${tag} — routed to you as coordinator]`
@@ -2953,7 +2965,7 @@ export function registerSubagents(
 			...(t.ejected ? [`${t.ejected} ejected`] : []),
 		].join(" · ") || "no members";
 	const ejectedText = (m: TeamView["members"][number]) => (m.ejectedAt === undefined ? "" : ` · ejected ${ejectedStamp(m.ejectedAt)}`);
-	const dutyMark = (m: { orchestrator?: boolean; duty?: MemberDuty }) => (m.duty ? ` (${m.duty})` : m.orchestrator ? " (orchestrator)" : "");
+	const dutyMark = (m: { duty?: MemberDuty }) => (m.duty ? ` (${m.duty})` : "");
 	/**
 	 * The roster a member sees. Every live member carries its context column; a coordinator or
 	 * monitor also gets the monitor thresholds (team-defaults.json, read now) and the usage windows
@@ -2983,12 +2995,9 @@ export function registerSubagents(
 		if (!t) return `Team ${teamId} is not available.`;
 		const standing: string[] = [];
 		if (viewer?.duty) {
-			const state = teamDefaultsNow();
-			const m = state.state === "ok" ? state.value.monitor : undefined;
-			standing.push(m
-				? `  Thresholds (team defaults, read now): wrap-up at ${m.contextPct}% context · check every ${m.everyMinutes} min · usage ${m.usage.enabled ? `pause when no login of a provider has headroom (a non-weekly window at ${m.usage.pausePct}%, a 7d window at 100%), resume ${m.usage.resumeMarginMinutes} min after the reset` : "not watched"}`
-				: `  Thresholds: team defaults are ${state.state === "absent" ? "absent" : "malformed"} now; keep the thresholds in your assignment.`);
-			standing.push(...usageLines(readUsageCache(), teamProviders(t), m?.usage.enabled ? m.usage.pausePct : undefined));
+			const m = teamDefaultsNow().value.monitor;
+			standing.push(`  Thresholds (team defaults, read now): wrap-up at ${m.contextPct}% context · check every ${m.everyMinutes} min · usage ${m.usage.enabled ? `pause when no login of a provider has headroom (a non-weekly window at ${m.usage.pausePct}%, a 7d window at 100%), resume ${m.usage.resumeMarginMinutes} min after the reset` : "not watched"}`);
+			standing.push(...usageLines(readUsageCache(), teamProviders(t), m.usage.enabled ? m.usage.pausePct : undefined));
 		}
 		if (viewer?.duty === "coordinator") standing.push(...assignmentSection(teamId));
 		return [
@@ -3119,7 +3128,7 @@ export function registerSubagents(
 			return;
 		}
 		const me = info.member;
-		const tag = `${me.role}${me.orchestrator ? ", orchestrator" : ""} (${me.workerId}), ${info.team.id}`;
+		const tag = `${me.role} (${me.workerId}), ${info.team.id}`;
 		try {
 			switch (request.type) {
 				case "message": {
@@ -3189,7 +3198,7 @@ export function registerSubagents(
 					return;
 				}
 				case "steer": {
-					if (!me.orchestrator) throw new Error("Only an orchestrator member can steer teammates; use team_msg, or team_ask to involve the operator.");
+					if (!me.orchestrator) throw new Error("Only the team's coordinator can steer teammates; use team_msg, or team_ask to involve the coordinator.");
 					if (!request.to || !request.message?.trim()) throw new Error("A steer needs one sibling and non-blank instructions.");
 					if (/^(all|\*)$/i.test(request.to)) throw new Error("team_steer addresses one sibling at a time.");
 					const named = resolveRecipient(workerId, request.to);
@@ -3202,14 +3211,14 @@ export function registerSubagents(
 						throw new Error(`Cannot steer: ${reason}`);
 					}
 					const target = where.to;
-					const text = [`[Instruction from orchestrator ${me.role} (${me.workerId}), ${info.team.id}${where.forwardedFrom ? ` — sent to ${where.forwardedFrom.role} (${where.forwardedFrom.workerId}), whom you succeeded` : ""}]`, request.message].join("\n");
+					const text = [`[Instruction from coordinator ${me.role} (${me.workerId}), ${info.team.id}${where.forwardedFrom ? ` — sent to ${where.forwardedFrom.role} (${where.forwardedFrom.workerId}), whom you succeeded` : ""}]`, request.message].join("\n");
 					const accepted = await deliverToMember(target, text, request.mode, "orchestrator", request.mode ?? "steer", { kind: "instruction", from: me.role, fromId: me.workerId, text: request.message });
 					if (!accepted.ok) throw new Error(`Cannot steer ${target.role} (${target.workerId}): ${accepted.reason}`);
 					reply({ ok: true, text: `Accepted or queued for ${target.role} (${target.workerId})${where.forwardedFrom ? ` — ${where.forwardedFrom.role} (${where.forwardedFrom.workerId}) was replaced: forwarded to its successor` : ""}; this is not execution or completion. Verify with team_roster.`, details: { workerId: target.workerId, mode: request.mode ?? "default", ...(where.forwardedFrom ? { forwardedFrom: where.forwardedFrom.workerId } : {}) } });
 					return;
 				}
 				case "roster": {
-					if (!me.orchestrator && me.duty !== "monitor") throw new Error("team_roster is available to orchestrator members only (and to the team's monitor).");
+					if (!me.orchestrator && me.duty !== "monitor") throw new Error("team_roster is available to the team's coordinator and monitor only.");
 					reply({ ok: true, text: rosterText(info.team.id, me) });
 					return;
 				}
@@ -3245,22 +3254,35 @@ export function registerSubagents(
 					} catch {
 						/* Session replacement can invalidate the UI. */
 					}
-					pi.sendMessage(
-						{
-							customType: "team-question",
-							display: true,
-							content: [
-								`[Team question from ${tag} — ${info.team.name}]`,
-								question,
-								"",
-								`Answer with agent_steer { id: "${me.workerId}", message: "<answer>" }; the member continues (or resumes, if idle) from your message. If only the user can decide, ask them and relay their answer the same way.`,
-							].join("\n"),
-						},
-						{ deliverAs: "followUp", triggerTurn: true },
-					);
+					// Counted before the send: pi may read it (message_end) before sendMessage returns, and a count
+					// raised after that would stay up for the rest of the run, stopping every agent_wait in it.
+					// Until it is read it ends any agent_wait.
+					questionsQueued++;
+					const previousFrom = questionFrom;
+					questionFrom = `${me.role} (${me.workerId}) of the team ${info.team.name}`;
+					try {
+						pi.sendMessage(
+							{
+								customType: "team-question",
+								display: true,
+								content: [
+									`[Team question from ${tag} — ${info.team.name}]`,
+									question,
+									"",
+									`Answer with agent_steer { id: "${me.workerId}", message: "<answer>" }; the member continues (or resumes, if idle) from your message. If only the user can decide, ask them and relay their answer the same way.`,
+								].join("\n"),
+							},
+							{ deliverAs: "steer", triggerTurn: true },
+						);
+					} catch (error) {
+						questionsQueued = Math.max(0, questionsQueued - 1);
+						questionFrom = previousFrom;
+						teams.settleAction(action, "failed", error instanceof Error ? error.message : String(error));
+						throw error;
+					}
 					teams.settleAction(action, "accepted-or-queued");
 					scheduleRefresh();
-					reply({ ok: true, text: "Question surfaced to the operator; it starts a parent turn if the parent is idle. The answer arrives as a new message in your session — continue with independent work or end your turn." });
+					reply({ ok: true, text: "Question surfaced to the operator: the main chat reads it after its current step, or at once if it is idle. The answer arrives as a new message in your session — continue with independent work or end your turn." });
 					return;
 				}
 				case "report": {
@@ -3845,7 +3867,7 @@ export function registerSubagents(
 		name: "agent_wait",
 		label: "Wait For Subagents",
 		description:
-			"Wait for current tasks, not child process exits. Failed tasks also settle; inspect each error. Timeout/cancellation does not stop workers. Output capped at 47,000 bytes/2000 lines with full snapshot path.",
+			"Wait for current tasks, not child process exits. Failed tasks also settle; inspect each error. Timeout/cancellation does not stop workers. A team question or a message from the user ends the wait early: deal with it, then wait again. Output capped at 47,000 bytes/2000 lines with full snapshot path.",
 		parameters: Type.Object({
 			ids: Type.Optional(Type.Array(Nonempty, { minItems: 1 })),
 			group: Type.Optional(Nonempty),
@@ -3866,8 +3888,16 @@ export function registerSubagents(
 			const deadline = Date.now() + timeout * 1000;
 			// The returned summaries are the parent's copy of these targets' settles (see onSettled).
 			for (const a of targets) collecting.set(a.id, (collecting.get(a.id) ?? 0) + 1);
+			// A steer waiting for the chat ends the wait, one queued before it started included. A user's
+			// steer counts only while pi still holds a message (an input handler may have taken it).
+			const steeredBy = () =>
+				questionsQueued > 0
+					? `a team question from ${questionFrom}`
+					: userSteersQueued > 0 && ctx.hasPendingMessages()
+						? "a message from the user"
+						: undefined;
 			try {
-				while (!signal?.aborted && Date.now() < deadline && targets.some((a) => !a.isSettled())) {
+				while (!signal?.aborted && Date.now() < deadline && targets.some((a) => !a.isSettled()) && !steeredBy()) {
 					update?.(
 						result(
 							`Waiting: ${targets
@@ -3888,14 +3918,18 @@ export function registerSubagents(
 					});
 				}
 				const outstanding = targets.filter((a) => !a.isSettled());
+				const steer = !signal?.aborted && outstanding.length ? steeredBy() : undefined;
 				const headline = signal?.aborted
 					? "Cancelled wait; workers were not stopped."
-					: outstanding.length
-						? `Timed out; still working: ${outstanding.map((a) => a.id).join(", ")}`
-						: "All requested tasks settled (not necessarily successfully).";
+					: steer
+						? `Stopped waiting early: ${steer} is waiting for you. Deal with it, then go back to waiting (agent_wait); workers were not stopped. Still working: ${outstanding.map((a) => a.id).join(", ")}`
+						: outstanding.length
+							? `Timed out; still working: ${outstanding.map((a) => a.id).join(", ")}`
+							: "All requested tasks settled (not necessarily successfully).";
 				const answer = result([headline, ...targets.map(summary)].join("\n\n"), {
 					cancelled: Boolean(signal?.aborted),
-					timedOut: !signal?.aborted && outstanding.length > 0,
+					timedOut: !signal?.aborted && !steer && outstanding.length > 0,
+					...(steer ? { steered: steer } : {}),
 					waited: targets.map((a) => ({ id: a.id, status: a.status, taskOutcome: a.taskOutcome, error: a.error })),
 				});
 				// A settled target's summary above is its latest settle: that one is reported, never sent again.
@@ -3907,20 +3941,18 @@ export function registerSubagents(
 		},
 	});
 
-	const MEMBER_TOOLS_NOTE =
-		"Members have team_msg/team_inbox/team_ask (messages to teammates are queued in each member's inbox, which it opens and closes item by item; questions arrive here as team-question messages — answer them with agent_steer on that worker ID). An orchestrator member also has team_roster/team_steer over its own team.";
-	/** In a coordinated team the generic question paragraph is wrong: members ask the coordinator. */
+	/** Members ask the coordinator; only it reaches the main thread. */
 	const COORDINATED_TOOLS_NOTE =
-		"Members have team_msg/team_inbox/team_ask, but their team_ask questions go to the coordinator, not to you: only the coordinator's team_ask (a team-question message; answer with agent_steer on its worker ID) and team_report (informational) reach the main thread. The coordinator also has team_roster/team_steer/team_succeed over this team; the monitor has team_roster and wake_nudge.";
+		"Members have team_msg/team_inbox/team_ask, but their team_ask questions go to the coordinator, not to you: only the coordinator's team_ask (a team-question message, read after your current step and ending any agent_wait; answer with agent_steer on its worker ID) and team_report (informational) reach the main thread. The coordinator also has team_roster/team_steer/team_succeed over this team; the monitor has team_roster and wake_nudge.";
 	/** Q6: the main thread cut a team short by stopping its coordinator and monitor while a member still worked. */
 	const KEEP_DUTIES_NOTE =
 		"Do not stop (agent_kill) the coordinator or the monitor while any member is still working: the coordinator routes the team's reports and successions and the monitor watches context and usage. Once no member is working, stopping them is fine.";
 	/** Every limit a team request meets, said before a call (team_create, team_add, the /team planning text). */
 	const TEAM_LIMITS =
-		`Limits: no per-request limit. A team seats ${MAX_TEAM_MEMBERS} members, the coordinator and monitor Sova adds included. This chat runs at most ${MAX_LIVE} workers at once, idle ones and every team member (coordinator and monitor included) counted; a request that would pass either is refused before anything starts, and Sova never stops a worker to make room. members must be a list of member objects (one role each). A member takes role, prompt, ownedPaths, orchestrator, backend, model, effort, tools, systemPrompt, cwd, wake, backendOptions and extensions (e.g. ["npm:pi-web-access"]); count, fork and agentType are refused (one member per role; agent_spawn for fork or agentType). In a team with a coordinator only the coordinator is the orchestrator: a member that only watches needs no orchestrator mark. Only the coordinator hands a member over to a successor (its team_succeed); once no coordinator is live, the main chat can start a replacement with team_succeed.`;
+		`Limits: no per-request limit. A team seats ${MAX_TEAM_MEMBERS} members, the coordinator and monitor Sova adds included. This chat runs at most ${MAX_LIVE} workers at once, idle ones and every team member (coordinator and monitor included) counted; a request that would pass either is refused before anything starts, and Sova never stops a worker to make room. members must be a list of member objects (one role each). A member takes ${MEMBER_KEY_LIST} (extensions e.g. ["npm:pi-web-access"]); count, fork, agentType and any other setting are refused (one member per role; agent_spawn for fork or agentType). Only the coordinator hands a member over to a successor (its team_succeed); once no coordinator is live, the main chat can start a replacement with team_succeed.`;
 	const TEAM_NOTES = [
 		"Declared ownership is advisory, not a lock; members share the filesystem.",
-		MEMBER_TOOLS_NOTE,
+		COORDINATED_TOOLS_NOTE,
 		"Steer or stop members with agent_steer/agent_kill using exact worker IDs; team_list shows roles beside actual status. No member can spawn, add or stop workers.",
 		`A team seats ${MAX_TEAM_MEMBERS} members; team_eject releases an ended member's seat (its role stays taken).`,
 		"Members are session-scoped: reload, session switch or quit stops them; agent_resume brings one back idle, rejoining its team.",
@@ -3954,7 +3986,6 @@ export function registerSubagents(
 	/** The extensions a member was given, without its team tools. */
 	const memberExtensions = (a: Worker): string[] => listedExtensions(a).filter((source) => source !== MEMBER_EXTENSION);
 	const teamSpawnResult = (headline: string, teamId: string, group: AgentGroup, members: readonly PersistedMember[], extra: readonly string[] = []) => {
-		const coordinated = members.some((m) => m.duty === "coordinator") || Boolean(teams.memberInfo(members[0]?.workerId ?? "")?.team.coordination);
 		return result(
 			[
 				headline,
@@ -3963,12 +3994,8 @@ export function registerSubagents(
 				...group.agents.map((a, i) =>
 					`${a.id}  ${members[i].role}${dutyMark(members[i])}  ${a.status}  backend=${a.backend ?? "pi"}  model=${a.model ?? "child default"}  effort=${a.effort ?? "default"}  owns=${members[i].ownedPaths.join(",") || "none declared"}${memberExtensions(a).length ? `  extensions=${memberExtensions(a).join(",")}` : ""}${a.wake ? "" : "  wake=false"}`,
 				),
-				...(coordinated ? TEAM_NOTES.map((note) => (note === MEMBER_TOOLS_NOTE ? COORDINATED_TOOLS_NOTE : note)) : TEAM_NOTES),
-				coordinated
-					? `Coordinated team: only the coordinator reaches you — its completion (once no teammate is working), team_report messages (informational) and team-question messages. Other members report to it; you can simply end this turn. ${KEEP_DUTIES_NOTE}`
-					: group.agents.some((a) => a.wake)
-						? "Each member with wake (the default) starts a turn for you when it settles while you are idle, so you can simply end this turn."
-						: "wake=false: results arrive with your next turn; use agent_wait if you need them sooner.",
+				...TEAM_NOTES,
+				`Only the coordinator reaches you — its completion (once no teammate is working), team_report messages (informational) and team-question messages. Other members report to it; you can simply end this turn. ${KEEP_DUTIES_NOTE}`,
 			].join("\n"),
 			{ teamId, groupId: group.id, members: group.agents.map((a, i) => ({ workerId: a.id, role: members[i].role, backend: a.backend ?? "pi", model: a.model, ...(members[i].orchestrator ? { orchestrator: true } : {}), ...(members[i].duty ? { duty: members[i].duty } : {}) })) },
 		);
@@ -4031,8 +4058,7 @@ export function registerSubagents(
 			throw new Error(`A successor for ${target.role} is already taking over; wait for its team_ready.`);
 		if ([...handovers.values()].some((h) => h.newId === target.workerId)) throw new Error(`${target.role} is itself still taking over; wait for its team_ready first.`);
 		if (!activeCtx) throw new Error("The parent session is not ready; retry shortly.");
-		const state = teamDefaultsNow();
-		const retireMinutes = (state.state === "ok" ? state.value.handover.retireTimeoutMinutes : undefined) ?? 10;
+		const retireMinutes = teamDefaultsNow().value.handover.retireTimeoutMinutes;
 		const note = path.join(teams.memberInfo(me.workerId)!.team.coordination!.handoffDir, `${roleSlug(target.role)}.md`);
 		if (target.duty === "monitor") return (await spawnSuccessor(team, target, me, note, retireMinutes)).text;
 		if (!isLiveWorker(target.workerId)) return (await spawnSuccessor(team, target, me, note, retireMinutes, fs.existsSync(note) ? undefined : `${target.role} had already ended without writing it`)).text;
@@ -4122,8 +4148,8 @@ export function registerSubagents(
 		const old = agents.find((a) => a.id === target.workerId);
 		const launch = old ? launches.get(old) : undefined;
 		const now = subagentsNow();
-		const state = now.teams;
-		const defaults = state.state === "ok" ? state.value : undefined;
+		const standingNow = teamDefaultsNow(activeCtx, now);
+		const defaults = standingNow.value;
 		const role = successorRole(target.role, teams.roles(team.id), MAX_LABEL_CHARS);
 		const model = launch?.model ?? target.model;
 		const monitor = target.duty === "monitor";
@@ -4156,9 +4182,9 @@ export function registerSubagents(
 		input.modelOverride = explicit ?? {};
 		const memberNotes: string[] = [];
 		if (!explicit?.model) {
-			const standing = target.duty && defaults?.[target.duty];
-			if (standing?.enabled) {
-				const pick = pickTuple(activeCtx, target.duty!, role, standing.primary, standing.fallback, fellBackDenial(team.id, target.duty!, standing.primary));
+			const standing = target.duty && defaults[target.duty];
+			if (standing) {
+				const pick = pickTuple(activeCtx, target.duty!, role, standing.primary, standing.fallback, standingNow.chatsOwn, fellBackDenial(team.id, target.duty!, standing.primary));
 				input.backend = pick.tuple.backend;
 				input.model = pick.tuple.model;
 				input.effort = pick.tuple.effort;
@@ -4286,9 +4312,8 @@ export function registerSubagents(
 		}
 		if (origin !== "session") return rearm();
 		if (pendingSuccessions.has(a.id) || [...handovers.values()].some((h) => h.oldId === a.id || h.newId === a.id)) return rearm();
-		const state = subagentsNow().teams;
-		const standing = state.state === "ok" ? state.value[duty] : undefined;
-		if (!standing?.enabled || runningKey(a, info.member) !== tupleKey(standing.primary.backend, standing.primary.model)) return rearm();
+		const standing = teamDefaultsNow().value[duty];
+		if (runningKey(a, info.member) !== tupleKey(standing.primary.backend, standing.primary.model)) return rearm();
 		failedOver.add(a.id);
 		const error = firstErrorLine(a.error);
 		void failover(a, { id: info.team.id, name: info.team.name }, info.member, duty, standing.primary, standing.fallback, { reason, error, out: Boolean(out), backend, model: model ?? standing.primary.model });
@@ -4299,8 +4324,7 @@ export function registerSubagents(
 		if (a.isFinished() || !isLiveWorker(a.id)) return;
 		const state = nudgeState(a.id);
 		if (state.active.size || state.held) return;
-		const cfg = teamDefaultsNow();
-		const every = cfg.state === "ok" ? cfg.value.monitor.everyMinutes : 10;
+		const every = teamDefaultsNow().value.monitor.everyMinutes;
 		const now = Date.now();
 		const id = `n${++state.seq}`;
 		const n: PendingNudge = { id, reason: "next check, scheduled by Sova after a failed check", fireAt: now + every * 60_000, createdAt: now };
@@ -4376,8 +4400,7 @@ export function registerSubagents(
 			if (teams.ejectedAt(a.id) === undefined) ejectMember(team.id, a.id, "system");
 			const note = path.join(coordination.handoffDir, `${roleSlug(target.role)}.md`);
 			const missing = duty === "monitor" ? undefined : `${target.role} stopped when its primary ${primaryText} ${why.reason}, without writing a handover note`;
-			const state = teamDefaultsNow();
-			const retireMinutes = (state.state === "ok" ? state.value.handover.retireTimeoutMinutes : undefined) ?? 10;
+			const retireMinutes = teamDefaultsNow().value.handover.retireTimeoutMinutes;
 			const started = await spawnSuccessor(team, target, target, note, retireMinutes, missing, "system", { primary: primaryText, reason: said });
 			successorId = started.successorId;
 			const successor = agents.find((w) => w.id === successorId);
@@ -4408,17 +4431,16 @@ export function registerSubagents(
 		label: "Create Team",
 		exposure: "model-only",
 		description:
-			"Create a named team of background workers with one unique role each and a shared objective, working in one filesystem. Members (pi or claude-code) get team tools: team_msg (message a teammate by role; queued in its inbox and listed when it wakes), team_inbox (open and close its own items), team_ask (question to its coordinator, or when it has none to you, surfaced as a team-question message that starts your turn when idle; answer with agent_steer). A member with orchestrator: true also gets team_roster and team_steer over its own team only; no member can spawn, add or stop workers. Starts all members through the same path as agent_spawn (validated before any start, rolled back together on failure) and returns exact worker IDs without waiting. Members default to the pi backend unless defaults.backend or the member sets another. " + TEAM_LIMITS,
+			"Create a named team of background workers with one unique role each and a shared objective, working in one filesystem. Members (pi or claude-code) get team tools: team_msg (message a teammate by role; queued in its inbox and listed when it wakes), team_inbox (open and close its own items), team_ask (a question to the team's coordinator; the coordinator's own questions reach you as team-question messages, read after your current step, ending any agent_wait, or starting your turn when idle; answer with agent_steer). Every team gets a coordinator and a monitor from Sova, so name only the workers who do the work: the coordinator (first) routes the team and is the only member that reaches you, and the monitor (last) watches context and usage; each team runs 2 more workers than you name, so small independent jobs are cheaper as separate workers (agent_spawn). Only the coordinator sees teammates' tasks, so say in each member's prompt who it works with and on what. No member can spawn, add or stop workers. Starts all members through the same path as agent_spawn (validated before any start, rolled back together on failure) and returns exact worker IDs without waiting. Members default to the pi backend unless defaults.backend or the member sets another. " + TEAM_LIMITS,
 		promptSnippet: "Create a team of role-based background workers who message each other",
 		promptGuidelines: [
 			"Use team_create when the user asks for a team, or when parts change the same files or interfaces, stack on each other, feed each other findings, or have a checker sending findings straight to builders.",
-			"team_create members share the filesystem and agree shared files and interfaces by message (team_msg). Without a coordinator, each settled member with wake=true starts a parent turn and members ask you questions (team_ask); answer a team-question message with agent_steer on that worker ID.",
-			"Set orchestrator: true on one member (pi or claude-code) when the team should coordinate itself: it can see the roster and steer siblings by role, but never spawn or stop anyone; you keep the authority to add/stop members.",
-			"When this chat's subagent profile (or legacy team-defaults.json) configures standing roles, team_create itself adds a coordinator (your orchestrator member becomes it if you named one) and a monitor; only the coordinator then reaches you (completions, team-report messages that ask for nothing, team-question messages). Pass defaults.coordinator: false or defaults.monitor: false only when the user asks for a team without them. /team defaults shows the file's effect.",
-			"Never stop a coordinated team's coordinator or monitor while any of its members is still working (check team_list), even when the coordinator reports the objective complete; stopping them once no member is working is fine.",
+			"Every team gets a coordinator and a monitor from Sova: name only the members who do the work. Each team runs 2 more workers than you name, so small independent jobs are cheaper as separate workers with agent_spawn. Only the coordinator reaches you (its completion, team-report messages that ask for nothing, team-question messages: answer one with agent_steer on that worker ID); /team defaults shows the models they run on.",
+			"team_create members share the filesystem and agree shared files and interfaces by message (team_msg). A member's team_ask goes to its coordinator, or to you while no coordinator is live. ownedPaths is optional: paths only that member edits, never shared files.",
+			"Never stop a team's coordinator or monitor while any of its members is still working (check team_list), even when the coordinator reports the objective complete; stopping them once no member is working is fine.",
 			"Use team_add to extend a team created in this session and team_list to see roles beside actual worker status; steer and stop members with agent_steer and agent_kill by exact worker ID; team_eject releases an ended member's seat when the team is full.",
 			`Before a large team, check the room: no per-request limit, but a team seats ${MAX_TEAM_MEMBERS} (coordinator and monitor included) and this chat runs at most ${MAX_LIVE} workers at once, idle ones included. Stop idle workers you no longer need with agent_kill first; Sova never stops one for you.`,
-			"If a coordinated team's coordinator (or monitor) has ended while the team still has work, start its replacement with team_succeed { team, role }; while one is live it hands over itself.",
+			"If a team's coordinator (or monitor) has ended while the team still has work, start its replacement with team_succeed { team, role }; while one is live it hands over itself.",
 		],
 		parameters: Type.Object(
 			{
@@ -4434,44 +4456,33 @@ export function registerSubagents(
 			context(ctx);
 			signal?.throwIfAborted();
 			const params = readTeamArgs(raw, TEAM_CREATE_KEYS) as Omit<typeof raw, "members"> & { members: MemberList };
-			// Team defaults (team-defaults.json), read now: a coordinator and a monitor, enforced here.
-			const { coordinator: coordinatorSwitch, monitor: monitorSwitch, ...storeDefaults } = params.defaults ?? {};
+			// Every team gets Sova's coordinator and monitor, on the settings read now (or the chat's own model).
+			const storeDefaults = params.defaults ?? {};
 			const subagentsForTeam = subagentsNow(ctx);
-			const plan = planTeamDefaults(subagentsForTeam.teams, params.members, { coordinator: coordinatorSwitch, monitor: monitorSwitch });
-			const lines = [...(plan.warning ? [plan.warning] : []), plan.standing, ...plan.notes];
+			const standing = teamDefaultsNow(ctx, subagentsForTeam);
+			const { coordinator: c, monitor: m } = standing.value;
+			checkStandingRoles(standing.value, params.members);
+			const lines = standing.warning ? [standing.warning] : [];
 			const members: TeamMemberInput[] = params.members.map((m: TeamMemberInput) => ({ ...m }));
 			lines.push(...applyMembersDefault(ctx, members, storeDefaults, subagentsForTeam));
-			if (plan.existingCoordinator !== undefined) members[plan.existingCoordinator].duty = "coordinator";
-			if (plan.synthesizeCoordinator) {
-				const c = plan.synthesizeCoordinator;
-				const pick = pickTuple(ctx, "coordinator", c.role, c.primary, c.fallback);
-				members.unshift(synthesizedMember("coordinator", c.role, pick.tuple));
-				lines.push(pick.line);
-			}
-			if (plan.synthesizeMonitor) {
-				const m = plan.synthesizeMonitor;
-				const pick = pickTuple(ctx, "monitor", m.role, m.primary, m.fallback);
-				members.push(synthesizedMember("monitor", m.role, pick.tuple));
-				lines.push(pick.line);
-			}
-			const added = [
-				...(plan.synthesizeCoordinator ? [`coordinator "${plan.synthesizeCoordinator.role}"`] : []),
-				...(plan.synthesizeMonitor ? [`monitor "${plan.synthesizeMonitor.role}"`] : []),
-			];
+			const coordinatorPick = pickTuple(ctx, "coordinator", c.role, c.primary, c.fallback, standing.chatsOwn);
+			const monitorPick = pickTuple(ctx, "monitor", m.role, m.primary, m.fallback, standing.chatsOwn);
+			members.unshift(synthesizedMember("coordinator", c.role, coordinatorPick.tuple));
+			members.push(synthesizedMember("monitor", m.role, monitorPick.tuple));
+			lines.push(coordinatorPick.line, monitorPick.line);
+			const added = [`coordinator "${c.role}"`, `monitor "${m.role}"`];
 			if (members.length > MAX_TEAM_MEMBERS)
-				throw new Error(`A team seats ${MAX_TEAM_MEMBERS} members, and this one would have ${members.length}: the ${params.members.length} you named${added.length ? ` + the ${added.join(" and ")} Sova adds from this chat's team defaults` : ""}. Name at most ${MAX_TEAM_MEMBERS - added.length} members; once one ends, team_eject frees its seat for team_add.`);
+				throw new Error(`A team seats ${MAX_TEAM_MEMBERS} members, and this one would have ${members.length}: the ${params.members.length} you named + the ${added.join(" and ")} Sova adds to every team. Name at most ${MAX_TEAM_MEMBERS - added.length} members; once one ends, team_eject frees its seat for team_add.`);
 			const prepared = teams.prepareCreate({
 				name: params.name, objective: params.objective, members,
 				...(Object.keys(storeDefaults).length ? { defaults: storeDefaults } : {}),
-				...(plan.coordination ? { coordination: plan.coordination } : {}),
+				coordination: { defaults: standing.value },
 			});
 			try {
-				if (prepared.coordination) {
-					try {
-						fs.mkdirSync(prepared.coordination.handoffDir, { recursive: true });
-					} catch (error) {
-						lines.push(`Warning: could not create the handover directory ${prepared.coordination.handoffDir}: ${(error as Error).message}`);
-					}
+				try {
+					fs.mkdirSync(prepared.coordination.handoffDir, { recursive: true });
+				} catch (error) {
+					lines.push(`Warning: could not create the handover directory ${prepared.coordination.handoffDir}: ${(error as Error).message}`);
 				}
 				const createdAt = Date.now();
 				let persisted: PersistedMember[] = [];
@@ -4490,7 +4501,7 @@ export function registerSubagents(
 				return teamSpawnResult(
 					`Created ${prepared.teamId} (${prepared.name}) with ${group.agents.length} member(s) in ${group.id}. Task acceptance is asynchronous; inspect status for startup failures.`,
 					prepared.teamId, group, persisted,
-					[...lines, ...(prepared.coordination ? [`Handover notes: ${prepared.coordination.handoffDir}`] : [])],
+					[...lines, `Handover notes: ${prepared.coordination.handoffDir}`],
 				);
 			} finally {
 				prepared.release();
@@ -4501,7 +4512,7 @@ export function registerSubagents(
 		name: "team_add",
 		label: "Add Team Members",
 		description:
-			"Add members (one new unique role each) to a team created in this session, by exact team ID or unique name. New members see the current roster in their header; existing members are not told automatically (team_msg or agent_steer can inform them). orchestrator: true is accepted for pi and claude-code members. Teams restored from history are read-only. Same validation and rollback as agent_spawn; the team's create-time defaults apply. " + TEAM_LIMITS,
+			"Add working members (one new unique role each) to a team created in this session, by exact team ID or unique name. Every team gets a coordinator and a monitor from Sova, which this team already has: name only the workers. Each team runs 2 more workers than you name, so small independent jobs are cheaper as separate workers (agent_spawn). New members see the current roster in their header, and the coordinator is told about each one with its assignment. Teams restored from history are read-only. Same validation and rollback as agent_spawn; the team's create-time defaults apply. " + TEAM_LIMITS,
 		parameters: Type.Object(
 			{ team: Type.String({ minLength: 1, description: "Team ID (team_NN) or unique team name." }), members: TeamMembers },
 			{ additionalProperties: false },
@@ -4513,17 +4524,18 @@ export function registerSubagents(
 			const params = readTeamArgs(raw, TEAM_ADD_KEYS) as Omit<typeof raw, "members"> & { members: MemberList };
 			// Re-read now: a coordinated team's new members get the current standing text; a malformed file is reported.
 			const now = subagentsNow(ctx);
-			const state = now.teams;
+			const standing = teamDefaultsNow(ctx, now);
+			checkStandingRoles(standing.value, params.members);
 			const additions: TeamMemberInput[] = params.members.map((m: TeamMemberInput) => ({ ...m }));
 			const membersLine = applyMembersDefault(ctx, additions, teams.find(params.team).defaults, now);
-			const prepared = teams.prepareAdd(params.team, additions, observeWorker, state.state === "ok" ? state.value : undefined);
+			const prepared = teams.prepareAdd(params.team, additions, observeWorker, standing.value);
 			try {
 				const { group, members } = await addPrepared(ctx, prepared, signal, { kind: "team_add" });
 				const told = await tellCoordinatorOfAdditions(prepared.teamId, members, prepared.members.map((m) => m.task));
 				return teamSpawnResult(
 					`Added ${group.agents.length} member(s) to ${prepared.teamId} (${prepared.name}) in ${group.id}. Task acceptance is asynchronous; inspect status for startup failures.`,
 					prepared.teamId, group, members,
-					[...(state.state === "malformed" ? [malformedWarning(state)] : []), ...membersLine, ...(told ? [told] : [])],
+					[...(standing.warning ? [standing.warning] : []), ...membersLine, ...(told ? [told] : [])],
 				);
 			} finally {
 				prepared.release();
@@ -4578,8 +4590,7 @@ export function registerSubagents(
 				throw new Error(`A handover for ${target.role} (${target.workerId}) is still under way; wait for it to finish.`);
 			const coordination = teams.memberInfo(target.workerId)?.team.coordination;
 			if (!coordination) throw new Error(`${team.id} has no coordinator or monitor to replace.`);
-			const state = teamDefaultsNow();
-			const retireMinutes = (state.state === "ok" ? state.value.handover.retireTimeoutMinutes : undefined) ?? 10;
+			const retireMinutes = teamDefaultsNow().value.handover.retireTimeoutMinutes;
 			const note = path.join(coordination.handoffDir, `${roleSlug(target.role)}.md`);
 			const missing = target.duty === "monitor" || fs.existsSync(note) ? undefined : `${target.role} had already ended without writing it`;
 			const started = await spawnSuccessor(team, target, target, note, retireMinutes, missing, "parent");
@@ -4591,7 +4602,7 @@ export function registerSubagents(
 		name: "team_list",
 		label: "List Teams",
 		description:
-			"List teams with each member's role (orchestrators marked), declared ownership, exact worker ID and actual status, plus recent control actions including member messages, orchestrator steers and operator questions (requested, accepted-or-queued, failed, unknown; never proof of execution). Pruned members and teams from earlier sessions are shown as unavailable with a reason. Output capped at 47,000 bytes/2000 lines with full snapshot path.",
+			"List teams with each member's role (coordinator and monitor marked), declared ownership, exact worker ID and actual status, plus recent control actions including member messages, coordinator steers and operator questions (requested, accepted-or-queued, failed, unknown; never proof of execution). Pruned members and teams from earlier sessions are shown as unavailable with a reason. Output capped at 47,000 bytes/2000 lines with full snapshot path.",
 		parameters: Type.Object({ team: Type.Optional(Type.String({ minLength: 1, description: "Team ID or unique name." })) }, { additionalProperties: false }),
 		async execute(_id, params, _signal, _update, ctx) {
 			context(ctx);
@@ -4607,16 +4618,8 @@ export function registerSubagents(
 				...(t.actions.length ? ["  Recent actions:", ...t.actions.slice(-10).map((a) => `    #${a.seq} ${a.source} ${a.kind} → ${a.workerId} (${a.role}): ${a.state}${a.reason ? ` — ${a.reason}` : ""}`)] : []),
 				...teamInboxLine(t.id, "  "),
 			].join("\n"));
-			// N6: where members' questions go depends on whether the team is coordinated.
-			const coordinatedCount = selected.filter((t) => t.coordinated).length;
-			const toolsNote = coordinatedCount === 0
-				? MEMBER_TOOLS_NOTE
-				: coordinatedCount === selected.length
-					? COORDINATED_TOOLS_NOTE
-					: `Teams without a coordinator: ${MEMBER_TOOLS_NOTE} Coordinated teams: ${COORDINATED_TOOLS_NOTE}`;
-			const notes = TEAM_NOTES.map((note) => (note === MEMBER_TOOLS_NOTE ? toolsNote : note));
 			return result(
-				[retentionNotice(), text.length ? `${text.join("\n\n")}\n\n${notes.join(" ")}` : "No teams in this session or on this branch."].filter(Boolean).join("\n\n"),
+				[retentionNotice(), text.length ? `${text.join("\n\n")}\n\n${TEAM_NOTES.join(" ")}` : "No teams in this session or on this branch."].filter(Boolean).join("\n\n"),
 				{ teams: selected },
 			);
 		},
@@ -4775,7 +4778,7 @@ export function registerSubagents(
 	// (customType "team-plan", displayed) telling the parent agent to plan and
 	// create the team with the team tools. Never a user message: the request
 	// must be visibly extension-origin and must not masquerade as user input.
-	const teamPlanMessage = (objective: string): string =>
+	const teamPlanMessage = (objective: string, ctx: ExtensionContext): string =>
 		[
 			"[Team planning requested by the user with /team]",
 			`Objective: ${objective}`,
@@ -4784,24 +4787,21 @@ export function registerSubagents(
 			"- Use team_create with a short unique name, this objective, and members that each have one explicit unique role, a self-contained prompt and declared ownedPaths for files they don't share (advisory coordination, not a lock). Extend later with team_add; inspect with team_list; steer or stop members with agent_steer/agent_kill by exact worker ID.",
 			"- Obey the team tool descriptions, schemas and limits. All members share one filesystem; ownership does not protect files.",
 			`- ${TEAM_LIMITS}`,
-			"- Members can message teammates with team_msg (this extension delivers it) and ask you questions with team_ask (they arrive as team-question messages; answer with agent_steer on that worker ID). Give one member (pi or claude-code) orchestrator: true if the team should coordinate itself: it can see the roster and steer siblings by role but never spawn or stop anyone. You remain the authority, and each member's final answer is its report.",
-			"- When you present the plan, report the defaults and their cost: members default to the pi backend inheriting the parent model/effort (agent_models resolves exact IDs, including Claude's), and every member with wake=true (the default) starts a parent turn — which costs tokens on the parent model — when it settles. State how many wakes this team will cause, or propose wake: false to batch results into your next turn.",
-			...teamDefaultsPlanLines(),
+			"- Every team gets a coordinator and a monitor from Sova: plan only the members who do the work. Members message teammates with team_msg (this extension delivers it); their reports and team_ask questions go to the coordinator, and only the coordinator reaches you (its completion once no teammate is working, team_report messages, team-question messages: answer with agent_steer on that worker ID). Only the coordinator sees teammates' tasks, so each member's prompt says who it works with and on what. You remain the authority, and each member's final answer is its report.",
+			"- When you present the plan, report the models and their cost: members default to the pi backend inheriting the parent model/effort (agent_models resolves exact IDs, including Claude's), and the team runs 2 more workers than you name (its coordinator and monitor), so small independent jobs are cheaper as separate workers with agent_spawn.",
+			...teamDefaultsPlanLines(ctx),
 			"Do not start the objective's work yourself before the team exists; the /team workspace and team_list show the roster.",
 		].join("\n");
-	/** The planning message's view of team-defaults.json, read now. */
-	const teamDefaultsPlanLines = (): string[] => {
-		const now = subagentsNow();
-		const members = now.members ? [`- Members you don't give a model run on ${now.members.backend}/${now.members.model}/${now.members.effort}; pass a member model to override.`] : [];
-		return [...teamStandingPlanLines(now.teams), ...members];
-	};
-	const teamStandingPlanLines = (state: TeamDefaultsState): string[] => {
-		if (state.state === "absent") return [];
-		if (state.state === "malformed") return [`- Team defaults are off: ${state.file} is malformed (team_create will say so).`];
-		const { coordinator: c, monitor: m } = state.value;
-		if (!c.enabled) return [];
+	/** The planning message's view of the team settings, read now. */
+	const teamDefaultsPlanLines = (ctx: ExtensionContext): string[] => {
+		const now = subagentsNow(ctx);
+		const standing = teamDefaultsNow(ctx, now);
+		const { coordinator: c, monitor: m } = standing.value;
+		const on = (t: WorkerTuple) => (standing.chatsOwn ? `this chat's own model (${tupleText(t)})` : tupleText(t));
 		return [
-			`- Team defaults are on: team_create adds a coordinator "${c.role}" (${c.primary.backend}/${c.primary.model}) unless one member has orchestrator: true (then that member is the coordinator)${m.enabled ? `, and a monitor "${m.role}" (${m.primary.backend}/${m.primary.model}) that watches context and usage` : ""}. Do not plan those roles yourself. Every other member reports to the coordinator, and only the coordinator reaches you. The user can opt out per team (defaults.coordinator: false / defaults.monitor: false). The coordinator and monitor take seats and count toward this chat's ${MAX_LIVE} running workers.`,
+			`- team_create adds the coordinator "${c.role}" on ${on(c.primary)} and the monitor "${m.role}" on ${on(m.primary)}, which watches context and usage. Do not plan those roles yourself, and name no member with either role. They take seats and count toward this chat's ${MAX_LIVE} running workers.`,
+			...(standing.warning ? [`- ${standing.warning}`] : []),
+			...(now.members ? [`- Members you don't give a model run on ${now.members.backend}/${now.members.model}/${now.members.effort}; pass a member model to override.`] : []),
 		];
 	};
 	/** Objective text for a planning message: bounded, control-free (newlines/tabs kept). */
@@ -4835,7 +4835,7 @@ export function registerSubagents(
 			const idle = typeof (ctx as { isIdle?: () => boolean }).isIdle === "function" ? ctx.isIdle() : true;
 			try {
 				pi.sendMessage(
-					{ customType: "team-plan", display: true, content: teamPlanMessage(objective) },
+					{ customType: "team-plan", display: true, content: teamPlanMessage(objective, ctx) },
 					{ deliverAs: "followUp", triggerTurn: true },
 				);
 			} catch (error) {
@@ -5010,17 +5010,32 @@ export function registerSubagents(
 	});
 	pi.on("turn_end", (event) => {
 		lastOutcome = event.outcome;
+		// A queued user message speaks first, alone: a settle released beside it would reach the model
+		// in the same block (a Claude Code chat reads the two as one message from the user).
+		const userPending = event.context?.pendingMessages?.some((m) => m.role === "user");
 		// Context-only settles reach the context after every turn, as a follow-up sent mid-run did.
-		releaseHeld((h) => !h.wake, false);
+		if (!userPending) releaseHeld((h) => !h.wake, false);
 		// Waking settles go out where the run would otherwise stop: these handlers run inside finishTurn,
-		// before pi polls its follow-ups, so they continue this run. A queued user message speaks first.
+		// before pi polls its follow-ups, so they continue this run.
 		const content = (event.message as { content?: unknown }).content;
 		const toolCalls = Array.isArray(content) && content.some((c) => (c as { type?: unknown } | null)?.type === "toolCall");
-		const userPending = event.context?.pendingMessages?.some((m) => m.role === "user");
 		if (!toolCalls && event.outcome === "completed" && !userPending) releaseHeld((h) => h.wake);
+	});
+	// What a waiting steer is (agent_wait's early stop): a team question the parent route sent, and a
+	// message typed during a run, which Sova's composer and pi's TUI both queue as an interactive steer.
+	pi.on("input", (event) => {
+		if (event.source === "interactive" && event.streamingBehavior === "steer") userSteersQueued++;
+		return { action: "continue" };
+	});
+	pi.on("message_end", (event) => {
+		const m = event.message as { role?: string; customType?: string };
+		if (m.role === "custom" && m.customType === "team-question") questionsQueued = Math.max(0, questionsQueued - 1);
+		else if (m.role === "user") userSteersQueued = Math.max(0, userSteersQueued - 1);
 	});
 	pi.on("agent_end", (_event, ctx) => {
 		parentLoops = Math.max(0, parentLoops - 1);
+		questionsQueued = 0;
+		userSteersQueued = 0;
 		// A stopped run never wakes the parent, and leaves nothing queued in pi: context only.
 		const aborted = lastOutcome === "aborted" || Boolean(ctx?.signal?.aborted);
 		releaseHeld(() => true, aborted ? false : undefined);

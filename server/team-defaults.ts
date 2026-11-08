@@ -34,12 +34,9 @@ const toWire = (f: TeamDefaultsFile): TeamDefaults => ({
   handover: { ...f.handover },
 });
 
-/** The built-in values with both members off: what a missing file means, and what the screen starts from. */
+/** The built-in values: what a missing file means, and what the screen starts from. */
 export function teamDefaultsOff(): TeamDefaults {
-  const off = toWire(DEFAULT_TEAM_DEFAULTS);
-  off.coordinator.enabled = false;
-  off.monitor.enabled = false;
-  return off;
+  return toWire(DEFAULT_TEAM_DEFAULTS);
 }
 
 export function teamDefaultsInfo(agentDir = agentRoot()): TeamDefaultsInfo {

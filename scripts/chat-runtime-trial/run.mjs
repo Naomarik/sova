@@ -60,7 +60,7 @@
 //     t18b      kill -9 of the parent mid-run: its crash resume; the worker keeps its process; one
 //               completion
 //     t19       a team across a restart: alpha's team_msg to beta just before it arrives once; a
-//               team_ask reaches the parent once; after a parent reload alpha's inbox keeps beta's message
+//               team_ask reaches the parent once (its coordinator stopped); after a parent reload alpha's inbox keeps beta's message
 //               (closed automatically by then: listed with `limit`, which shows closed items)
 //     t19n      a monitor's wake_nudge set before a parent reload fires once after it (team-defaults.json)
 //     t20       kill -9 of a worker mid-run: the continue once, the run finishes, one completion; a
@@ -1931,6 +1931,7 @@ async function t18b() {
 }
 
 // T19: a team across a restart: alpha's team_msg to beta, made just before the restart, arrives once;
+// with Sova's coordinator stopped (no live coordinator: questions fall back to the main chat),
 // alpha's team_ask reaches the parent once; after a parent reload alpha's inbox still lists beta's
 // earlier message. Beta's message reached alpha as a one-item wake, which showed it in full, and the
 // safety net closed it when that turn ended (§app.teams/inbox-zero), so it is no longer open: the
@@ -1943,7 +1944,6 @@ async function t19() {
   const team = {
     name: "t19",
     objective: "trial team",
-    defaults: { coordinator: false },
     members: [
       { role: "alpha", model: "trial/m1", prompt: '[call bash {"command":"sleep 8; echo ALPHA-READY"}] [call team_msg {"to":"beta","message":"MSG-T19 from alpha"}] [call team_ask {"question":"ASK-T19 from alpha"}]' },
       { role: "beta", model: "trial/m1", prompt: `[call team_msg {"to":"alpha","message":"HELLO-T19 from beta"}] [call bash ${betaBash}]` },
@@ -1953,8 +1953,14 @@ async function t19() {
   const p = { path, s };
   const r = await turn(p, `[call team_create ${JSON.stringify(team)}]`);
   R.check(r.length === 1 && !r[0].message.isError, `t19: team_create answered (${resultText(r[0])})`);
-  const alpha = await workerWith(path, "ALPHA-READY");
-  const beta = await workerWith(path, "BETA-DONE");
+  // Sova's coordinator is ag_01 (this chat's first worker): stopped while alpha still sleeps, so alpha's
+  // team_ask takes the no-live-coordinator path to the parent.
+  const killed = await turn(p, '[call agent_kill {"id":"ag_01"}]');
+  R.check(killed.length === 1 && !killed[0].message.isError, `t19: the coordinator stopped (${resultText(killed[0])})`);
+  // By worker id: the coordinator's header quotes both prompts, so a marker would find its file too.
+  const memberFile = (id, marker) => workerOf(path, (x) => x.parent?.workerId === id && existsSync(x.path) && readFileSync(x.path, "utf8").includes(marker));
+  const alpha = await memberFile("ag_02", "ALPHA-READY");
+  const beta = await memberFile("ag_03", "BETA-DONE");
   if (!R.check(alpha && beta, `t19: both members are worker chats (${workerRecords(path).map((x) => x.parent?.workerId).join(", ")})`)) return;
   const apid = chatPid(alpha.path);
   const bpid = chatPid(beta.path);
@@ -2005,8 +2011,8 @@ async function t19n() {
   // default profile gets the teams setting; when not (t19n alone), the legacy team-defaults.json
   // does, and the seed copies it. Both are put back after.
   const teams = {
-    coordinator: { enabled: true, role: "coordinator", primary: { backend: "pi", model: "trial/m1" }, fallback: null, instructions: "" },
-    monitor: { enabled: true, role: "monitor", primary: { backend: "pi", model: "trial/m1" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: false, pausePct: 90, resumeMarginMinutes: 5 }, instructions: '[call wake_nudge {"action":"schedule","delay":"30s","reason":"NUDGE-T19"}]' },
+    coordinator: { role: "coordinator", primary: { backend: "pi", model: "trial/m1" }, fallback: null, instructions: "" },
+    monitor: { role: "monitor", primary: { backend: "pi", model: "trial/m1" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: false, pausePct: 90, resumeMarginMinutes: 5 }, instructions: '[call wake_nudge {"action":"schedule","delay":"30s","reason":"NUDGE-T19"}]' },
     handover: { retireTimeoutMinutes: 10 },
   };
   const file = join(agent, "subagent-profiles.json");
@@ -3589,8 +3595,8 @@ async function tw6() {
   await wakeBoot();
   const monitorText = '[call team_msg {"to":"coordinator","message":"zai 5h at 95%","notice":"pause"}][call wake_nudge {"action":"schedule","delay":"20s","reason":"NUDGE-TW6"}]';
   const teams = {
-    coordinator: { enabled: true, role: "coordinator", primary: { backend: "pi", model: "trial/m1" }, fallback: null, instructions: "" },
-    monitor: { enabled: true, role: "monitor", primary: { backend: "pi", model: "trial/m1" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: false, pausePct: 90, resumeMarginMinutes: 5 }, instructions: monitorText },
+    coordinator: { role: "coordinator", primary: { backend: "pi", model: "trial/m1" }, fallback: null, instructions: "" },
+    monitor: { role: "monitor", primary: { backend: "pi", model: "trial/m1" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: false, pausePct: 90, resumeMarginMinutes: 5 }, instructions: monitorText },
     handover: { retireTimeoutMinutes: 10 },
   };
   const file = join(agent, "subagent-profiles.json");

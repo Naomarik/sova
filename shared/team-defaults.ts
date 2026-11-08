@@ -5,7 +5,7 @@ import type { DelegateBackendId, WorkerChoice } from "./protocol";
 // screen, never sent between hosts, so a change here must not make hosts refuse each other.
 //
 // GET /api/settings/team                -> TeamDefaultsInfo (~/.pi/agent/team-defaults.json; missing → the built-in
-//                                          defaults with both roles off, `stored: false`; malformed → `error`)
+//                                          defaults, `stored: false`; malformed → `error`)
 // GET /api/settings/team/options        -> DelegateOptions (the same discovery as delegate/options)
 // PUT /api/settings/team TeamDefaults   -> TeamDefaultsSaveResult (replaces the whole file. 400 bad shape, or a
 //                                          CHANGED tuple its backend answered it can't run; unverifiable or
@@ -14,11 +14,10 @@ import type { DelegateBackendId, WorkerChoice } from "./protocol";
 //                                          at team_create / team_add)
 
 /** Team defaults (pi-config/extensions/subagents/team-defaults.ts, ~/.pi/agent/team-defaults.json):
-    the standing coordinator and monitor every new team gets, unless a team opts out
-    (team_create `defaults.coordinator` / `defaults.monitor` false). A missing file means both off.
-    `fallback: null` = none. */
+    the models, names and thresholds of the coordinator and monitor every new team gets. A missing
+    file means both run on the chat's own model with the built-in values. A saved `enabled` is
+    accepted and ignored. `fallback: null` = none. */
 export interface TeamCoordinatorDefaults {
-  enabled: boolean;
   role: string;
   primary: WorkerChoice;
   fallback: WorkerChoice | null;
@@ -26,7 +25,6 @@ export interface TeamCoordinatorDefaults {
 }
 
 export interface TeamMonitorDefaults {
-  enabled: boolean;
   role: string;
   primary: WorkerChoice;
   fallback: WorkerChoice | null;
@@ -48,7 +46,7 @@ export interface TeamDefaults {
 }
 
 /** GET /api/settings/team. `settings` is the file, or — when there is none (`stored: false`) — the
-    built-in defaults with both roles off. `error`: the file exists but can't be read; `settings`
+    built-in defaults. `error`: the file exists but can't be read; `settings`
     is then those same defaults and every save is refused until the file is fixed or removed. */
 export interface TeamDefaultsInfo {
   settings: TeamDefaults;

@@ -1,5 +1,5 @@
 import { createEffect, createResource, createSignal, For, on, Show, untrack, type JSX } from "solid-js";
-import type { SubagentProfile, SubagentProfilesInfo, TeamsSetting } from "../../shared/subagent-profiles";
+import type { SubagentProfile, SubagentProfilesInfo } from "../../shared/subagent-profiles";
 import type { WorkerChoice } from "../../shared/protocol";
 import { getDelegateOptions, getDelegateSettings, getSubagentProfiles, getTeamDefaults, restoreSubagentProfiles } from "../lib/api";
 import { replacedNotice } from "../lib/subagent-replaced";
@@ -13,10 +13,7 @@ import { tildePath } from "../lib/format";
 import { home } from "../lib/ui-state";
 import { clearSettingsSection, settingsSection, subagentSettingsPath } from "../lib/settings-nav";
 import {
-  coordinatorOn,
   delegateSummary,
-  monitorOn,
-  roleProblem,
   sectionProblems,
   reviewerSummary,
   alignmentSummary,
@@ -24,9 +21,10 @@ import {
   ALIGN_STYLE_NAMES,
   ALIGN_EAGERNESS_NAMES,
   specSummary,
+  teamsSeed,
   teamsSummary,
-  withCoordinator,
-  withMonitor,
+  withChosenModels,
+  withDefaultModel,
   type EditorSection,
 } from "../lib/subagent-editor";
 import { Banner, Chip, Icon } from "./ui";
@@ -61,7 +59,7 @@ export function SubagentProfilesSettings() {
   const [options, { refetch: refetchOptions }] = createResource(getDelegateOptions);
   /** Backends' labels/efforts for the worker rows (the old Delegate screen's info). */
   const [rows] = createResource(getDelegateSettings);
-  /** The legacy team defaults, for seeding a profile's coordinator when it has no saved roles. */
+  /** The legacy team defaults, what Choose Models gives a profile that has no saved roles. */
   const [teams] = createResource(getTeamDefaults);
   /** The profile the editor holds. It stays set after Back, so its unsaved edits can be reopened. */
   const [editing, setEditing] = createSignal<string | null>(null);
@@ -184,7 +182,7 @@ export function SubagentProfilesSettings() {
       store.setDraft(copy);
     }
   };
-  /** Replace the edited profile with `fn`'s answer (the teams switches build a whole new profile). */
+  /** Replace the edited profile with `fn`'s answer (Choose Models and Use Default Model build a whole new profile). */
   const replace = (fn: (p: SubagentProfile) => SubagentProfile) => {
     const copy = cloneProfiles(store.draft()!);
     const i = copy.profiles.findIndex((x) => x.id === editing());
@@ -218,15 +216,8 @@ export function SubagentProfilesSettings() {
     copy.default = id;
     store.setDraft(copy);
   };
-  /** What the coordinator switch restores: the profile's saved roles, else the legacy team defaults. */
-  const teamsSeed = (id: string): TeamsSetting | null => {
-    const saved = store.saved()?.profiles.find((x) => x.id === id)?.teams;
-    if (saved) return saved;
-    const t = teams.error ? undefined : teams()?.defaults;
-    // The legacy defaults were born of the same store's parse, so the wire type's wide `string`
-    // effort is really the tuple's union; the next save's parse rechecks it.
-    return t ? (cloneProfiles({ coordinator: t.coordinator, monitor: t.monitor, handover: t.handover }) as TeamsSetting) : null;
-  };
+  /** What Choose Models gives the roles: the profile's saved roles, else the legacy team defaults. */
+  const seedFor = (id: string) => teamsSeed(store.saved()?.profiles.find((x) => x.id === id)?.teams, teams.error ? undefined : teams()?.defaults);
 
   // Accessor args, not values: these factories are invoked once when their <Show> mounts, so a
   // plain `c()` read there would freeze the row on the toggle's first state (the members/spec bug).
@@ -525,22 +516,37 @@ export function SubagentProfilesSettings() {
                 () => teamsSummary(p()),
                 () => (
                   <>
-                    <Show when={coordinatorOn(p())}>
-                      <p class="field-hint settings-delegate-desc">Without a fallback, a team isn't created when a role's primary can't run. With one, a role whose primary runs out of usage during the team moves to it.</p>
+                    <Show
+                      when={p().teams}
+                      fallback={
+                        <div class="button-row">
+                          <button
+                            type="button"
+                            class="button button-sm"
+                            disabled={store.saving() || seedFor(p().id) === null}
+                            onClick={() => replace((x) => withChosenModels(x, seedFor(x.id)))}
+                          >
+                            Choose Models
+                          </button>
+                        </div>
+                      }
+                    >
+                      <p class="field-hint settings-delegate-desc">Without a fallback, a role whose primary can't run uses the chat's own model. With one, a role whose primary runs out of usage during the team moves to it.</p>
+                      <div class="button-row">
+                        <button type="button" class="button button-sm" disabled={store.saving()} onClick={() => replace(withDefaultModel)}>
+                          Use Default Model
+                        </button>
+                      </div>
                     </Show>
                     <For each={["coordinator", "monitor"] as const}>
                       {(role) => {
                         const name = role === "coordinator" ? "Coordinator" : "Monitor";
-                        const on = () => (role === "coordinator" ? coordinatorOn(p()) : monitorOn(p()));
                         const t = () => p().teams;
                         /** The Instructions fold opens itself when the role name goes blank, and stays as the user leaves it. */
                         const [instructionsOpen, setInstructionsOpen] = createSignal(false);
                         createEffect(() => {
                           if (p().teams?.[role].role.trim() === "") setInstructionsOpen(true);
                         });
-                        const canSwitch = () => (role === "coordinator" ? !!p().teams || teamsSeed(p().id) !== null : coordinatorOn(p()));
-                        /** The role's rows show while it's on, or while its fields hold something Save waits for. */
-                        const shows = () => !!t() && (on() || roleProblem(p(), role));
                         const choice = () => ({
                           primary: { ...t()![role].primary, effort: t()![role].primary.effort ?? "" },
                           fallback: t()![role].fallback ? { ...t()![role].fallback!, effort: t()![role].fallback!.effort ?? "" } : null,
@@ -549,17 +555,8 @@ export function SubagentProfilesSettings() {
                         return (
                           <fieldset class="subagent-editor-route">
                             <legend class="subagent-editor-route-name">{name}</legend>
-                            <Show when={shows()}>{fallbackAction(choice, update)}</Show>
-                            <Toggle
-                              switch
-                              class="settings-team-enable"
-                              label={`Add a ${role} to new teams`}
-                              hint={role === "monitor" && !coordinatorOn(p()) ? "The monitor reports to the coordinator, so it needs one." : undefined}
-                              checked={on()}
-                              disabled={store.saving() || !canSwitch()}
-                              onChange={(v) => replace((x) => (role === "coordinator" ? withCoordinator(x, v, teamsSeed(x.id)) : withMonitor(x, v)))}
-                            />
-                            <Show when={shows()}>
+                            <Show when={t()} fallback={<p class="field-hint">Uses the default model</p>}>
+                              {fallbackAction(choice, update)}
                               {pair(role, choice, update)}
                               <Show when={role === "monitor"}>
                                 <div class="subagent-editor-sub">
@@ -624,12 +621,10 @@ export function SubagentProfilesSettings() {
                       }}
                     </For>
                     <Show when={p().teams}>
-                      {(t) => (
-                        <fieldset class="subagent-editor-route">
-                          <legend class="subagent-editor-route-name">Handover</legend>
-                          <div class="settings-team-numbers">{number("retireTimeoutMinutes")}</div>
-                        </fieldset>
-                      )}
+                      <fieldset class="subagent-editor-route">
+                        <legend class="subagent-editor-route-name">Handover</legend>
+                        <div class="settings-team-numbers">{number("retireTimeoutMinutes")}</div>
+                      </fieldset>
                     </Show>
                     <fieldset class="subagent-editor-route subagent-editor-flush">
                       <legend class="subagent-editor-route-name">Members default</legend>

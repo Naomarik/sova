@@ -461,7 +461,7 @@ export interface ResolvedSubagents {
 	reviewer: ReviewerRoute | null;
 	/** The profile's align override (Eagerness, writing style, Visuals); null: the host's mode-align.json (no override, Off, legacy). */
 	alignment: AlignOverride | null;
-	/** Team defaults in the shape team_create reads; `absent` = no standing members. */
+	/** Team defaults in the shape team_create reads; `absent` = the settings name none (both roles on the chat's own model). */
 	teams: TeamDefaultsState;
 	members: WorkerChoice | null;
 	/** Why resolution fell past a step (a dangling pick, an unusable file), for status text. */
@@ -638,15 +638,14 @@ export function profileSlots(profile: SubagentProfile): { label: string; choice:
 export function profileWorkers(profile: SubagentProfile, fallbacks = true): WorkerChoice[] {
 	const primaries: WorkerChoice[] = DELEGATE_PROFILES.map((id) => profile.delegate[id].primary);
 	if (profile.members) primaries.push(profile.members);
-	if (profile.teams?.coordinator.enabled) primaries.push(workerOf(profile.teams.coordinator.primary));
-	if (profile.teams?.coordinator.enabled && profile.teams.monitor.enabled) primaries.push(workerOf(profile.teams.monitor.primary));
+	if (profile.teams) primaries.push(workerOf(profile.teams.coordinator.primary), workerOf(profile.teams.monitor.primary));
 	if (profile.specWriter) primaries.push(profile.specWriter.primary);
 	if (profile.reviewer) primaries.push(profile.reviewer.primary);
 	if (!fallbacks) return primaries;
 	const rest: WorkerChoice[] = [];
 	for (const id of DELEGATE_PROFILES) if (profile.delegate[id].fallback) rest.push(profile.delegate[id].fallback!);
-	if (profile.teams?.coordinator.enabled && profile.teams.coordinator.fallback) rest.push(workerOf(profile.teams.coordinator.fallback));
-	if (profile.teams?.coordinator.enabled && profile.teams.monitor.enabled && profile.teams.monitor.fallback) rest.push(workerOf(profile.teams.monitor.fallback));
+	if (profile.teams?.coordinator.fallback) rest.push(workerOf(profile.teams.coordinator.fallback));
+	if (profile.teams?.monitor.fallback) rest.push(workerOf(profile.teams.monitor.fallback));
 	if (profile.specWriter?.fallback) rest.push(profile.specWriter.fallback);
 	if (profile.reviewer?.fallback) rest.push(profile.reviewer.fallback);
 	return [...primaries, ...rest];

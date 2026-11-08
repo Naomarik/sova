@@ -123,13 +123,15 @@ test("team report cut at 4000: [truncated] is peeled and flagged", () => {
   assert.equal(t?.body, "a".repeat(10));
 });
 
-test("team question: role, orchestrator flag, ids; the answer line for THIS asker is peeled", () => {
+test("team question: role and ids, from today's header or an older one with \", orchestrator\"; the answer line for THIS asker is peeled", () => {
   const answer = 'Answer with agent_steer { id: "ag_01", message: "<answer>" }; the member continues (or resumes, if idle) from your message. If only the user can decide, ask them and relay their answer the same way.';
-  const q = parseTeamMessage("team-question", ["[Team question from coordinator, orchestrator (ag_01), team_01 — e2e-file-test]", "Should c.txt be JSON?", "", answer].join("\n"));
-  assert.deepEqual(q?.team, { kind: "question", role: "coordinator", workerId: "ag_01", teamId: "team_01", teamName: "e2e-file-test", orchestrator: true });
+  const expected = { kind: "question", role: "coordinator", workerId: "ag_01", teamId: "team_01", teamName: "e2e-file-test" };
+  const q = parseTeamMessage("team-question", ["[Team question from coordinator (ag_01), team_01 — e2e-file-test]", "Should c.txt be JSON?", "", answer].join("\n"));
+  assert.deepEqual(q?.team, expected);
   assert.equal(q?.body, "Should c.txt be JSON?");
+  const old = parseTeamMessage("team-question", ["[Team question from coordinator, orchestrator (ag_01), team_01 — e2e-file-test]", "Should c.txt be JSON?", "", answer].join("\n"));
+  assert.deepEqual(old?.team, expected, "an older header still parses, to the same fields");
   const other = parseTeamMessage("team-question", ["[Team question from writer (ag_02), team_01 — e2e]", "Which?", "", answer].join("\n"));
-  assert.equal(other?.team.orchestrator, undefined);
   assert.equal(other?.body, `Which?\n\n${answer}`, "an answer line naming another worker is body");
 });
 

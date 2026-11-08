@@ -126,13 +126,7 @@
    "required": [
     "id"
    ],
-   "properties": {
-    "id": {
-     "type": "string",
-     "pattern": "^ag_\\d+$",
-     "description": "Exact worker ID (ag_NN)."
-    }
-   },
+   "properties": {},
    "additionalProperties": false
   }
  },
@@ -183,10 +177,6 @@
     "id"
    ],
    "properties": {
-    "id": {
-     "type": "string",
-     "minLength": 1
-    },
     "full": {
      "type": "boolean"
     },
@@ -214,10 +204,6 @@
     "message"
    ],
    "properties": {
-    "id": {
-     "type": "string",
-     "minLength": 1
-    },
     "message": {
      "type": "string",
      "minLength": 1
@@ -238,10 +224,6 @@
   "parameters": {
    "type": "object",
    "properties": {
-    "id": {
-     "type": "string",
-     "minLength": 1
-    },
     "group": {
      "type": "string",
      "minLength": 1
@@ -257,7 +239,7 @@
  },
  {
   "name": "agent_wait",
-  "description": "Wait for current tasks, not child process exits. Failed tasks also settle; inspect each error. Timeout/cancellation does not stop workers. Output capped at 47,000 bytes/2000 lines with full snapshot path.",
+  "description": "@37fe184a3c12b987",
   "parameters": {
    "type": "object",
    "properties": {
@@ -284,7 +266,7 @@
  },
  {
   "name": "team_create",
-  "description": "@139fde73f4bd38bd",
+  "description": "@194e2d571f0d54e0",
   "parameters": {
    "type": "object",
    "required": [
@@ -331,17 +313,9 @@
        "patternProperties": {
         "^.*$": {}
        }
-      },
-      "coordinator": {
-       "type": "boolean",
-       "description": "false: no coordinator (and no monitor) from team-defaults.json for this team."
-      },
-      "monitor": {
-       "type": "boolean",
-       "description": "false: no monitor from team-defaults.json for this team."
       }
      },
-     "description": "Applied only to members whose backend equals defaults.backend (default pi); member fields win and backendOptions merge shallowly. team_add reuses them. coordinator/monitor: false turn off the team-defaults roles for this team."
+     "description": "Applied only to members whose backend equals defaults.backend (default pi); member fields win and backendOptions merge shallowly. team_add reuses them."
     },
     "members": {
      "anyOf": [
@@ -353,7 +327,7 @@
          "role",
          "prompt"
         ],
-        "properties": "@a9d9d1a8f769a3f1"
+        "properties": "@d546d0f06a6c6240"
        },
        "minItems": 1
       },
@@ -369,7 +343,7 @@
  },
  {
   "name": "team_add",
-  "description": "@1ea63c286f1a92f3",
+  "description": "@aca4dadb4f8b6e93",
   "parameters": {
    "type": "object",
    "required": [
@@ -392,7 +366,7 @@
          "role",
          "prompt"
         ],
-        "properties": "@a9d9d1a8f769a3f1"
+        "properties": "@d546d0f06a6c6240"
        },
        "minItems": 1
       },
@@ -456,7 +430,7 @@
  },
  {
   "name": "team_list",
-  "description": "@55e65330b92615d4",
+  "description": "@ac21b243ba9d11f2",
   "parameters": {
    "type": "object",
    "properties": {
@@ -499,48 +473,6 @@
    "required": [
     "topic",
     "text"
-   ],
-   "additionalProperties": false
-  }
- },
- {
-  "name": "zoom",
-  "description": "@9fb1f34e406e16f8",
-  "parameters": {
-   "type": "object",
-   "properties": {
-    "id": {
-     "type": "integer",
-     "minimum": 0,
-     "description": "The line's first message id"
-    },
-    "n": {
-     "type": "integer",
-     "minimum": 1,
-     "description": "How many messages the line covers (a power of 2)"
-    }
-   },
-   "required": [
-    "id",
-    "n"
-   ],
-   "additionalProperties": false
-  }
- },
- {
-  "name": "date",
-  "description": "The date and time of message id in the memory view.",
-  "parameters": {
-   "type": "object",
-   "properties": {
-    "id": {
-     "type": "integer",
-     "minimum": 0,
-     "description": "The message id"
-    }
-   },
-   "required": [
-    "id"
    ],
    "additionalProperties": false
   }

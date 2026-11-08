@@ -10,11 +10,12 @@
 //      team-plan message (followUp + triggerTurn); bare /team sends nothing;
 //      session_shutdown clears the widget and disposes workers.
 //
-// --live: additionally runs ONE real, deliberately bounded Claude team member:
+// --live: additionally runs ONE real, deliberately bounded Claude team: one member on
 // haiku, tools: [], effort: low, wake: false, whose whole task is a trivial fixed
-// reply. A claude-code member is a pi worker on the Claude Code provider, so this
-// starts a real pi child with the claude-code extension. This is a paid task and only
-// runs when explicitly requested; everything it touches lives in a temp cwd.
+// reply, plus the coordinator and monitor Sova adds to every team, on the chat's own
+// model (haiku, low, here). A claude-code member is a pi worker on the Claude Code
+// provider, so this starts real pi children with the claude-code extension. These are
+// paid tasks and only run when explicitly requested; everything lives in a temp cwd.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -222,7 +223,8 @@ async function deadline(promise, ms, label) {
 			members: [{ role: "builder", prompt: "Smoke build.", ownedPaths: ["src/smoke"], wake: false }],
 		});
 		assert.equal(created.details.teamId, "team_01");
-		assert.equal(created.details.members.length, 1);
+		// Sova's coordinator first and its monitor last, on the chat's own model.
+		assert.deepEqual(created.details.members.map((m) => [m.role, m.duty]), [["coordinator", "coordinator"], ["builder", undefined], ["monitor", "monitor"]]);
 		assert.ok(appended.some((e) => e.customType === "subagents-team-v1" && e.data.op === "create"));
 
 		// The refresh inside team_create installs the widget (component form, key "team").
@@ -236,7 +238,8 @@ async function deadline(promise, ms, label) {
 		assert.ok(initial.every((l) => visibleWidth(l) === 80), "rows exactly 80 cells");
 
 		// A settle rides the throttled refresh into the same widget component.
-		workers[0].settle();
+		const builder = workers.find((w) => w.name === "builder");
+		builder.settle();
 		await delay(200);
 		const lines = component.render(80).join("\n");
 		assert.match(lines, /1 idle/);
@@ -264,7 +267,7 @@ async function deadline(promise, ms, label) {
 		for (const fn of hooks.get("session_shutdown") ?? []) await fn({}, ctx);
 		assert.equal(widgets.at(-1).key, "team");
 		assert.equal(widgets.at(-1).content, undefined, "shutdown clears the widget");
-		assert.equal(workers[0].disposed, true, "workers disposed at shutdown");
+		assert.ok(workers.length === 3 && workers.every((w) => w.disposed === true), "every worker disposed at shutdown, the coordinator and monitor included");
 		console.log("PASS: team tools, widget refresh/shutdown wiring and /team semantics (offline, no model).");
 	} finally {
 		for (const fn of hooks.get("session_shutdown") ?? []) await Promise.resolve(fn({}, ctx)).catch(() => {});
@@ -273,7 +276,7 @@ async function deadline(promise, ms, label) {
 
 // ── 3. opt-in bounded live team smoke (ONE paid haiku member) ────────────────
 if (!LIVE) {
-	console.log("SKIP: live team smoke deferred (pass --live to run one bounded haiku member: tools [], effort low, wake false).");
+	console.log("SKIP: live team smoke deferred (pass --live to run one bounded haiku member, with its haiku coordinator and monitor).");
 } else {
 	const { registerSubagents } = await jiti.import(path.join(root, "index.ts"));
 	const { registerClaudeCode } = await jiti.import(path.resolve(root, "..", "claude-code", "index.ts"));
@@ -310,16 +313,18 @@ if (!LIVE) {
 	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-team-smoke-live-"));
 	// No UI at all; tools: [] keeps the member from touching anything.
 	// RPC mode (not print) so worker completions take the normal sendMessage path.
+	// The chat's own model is what Sova's coordinator and monitor run on when the settings name none.
+	const chatModel = { provider: "claude-code-cli", id: "claude-haiku-4-5" };
 	const ctx = {
 		cwd,
 		mode: "rpc",
 		hasUI: false,
+		model: chatModel,
+		thinkingLevel: "low",
 		ui: { notify() {}, setStatus() {} },
 		sessionManager: { getEntries: () => [], getBranch: () => [], getSessionFile: () => undefined },
 		modelRegistry: {
-			find() {
-				throw new Error("a claude-code-cli model is registered by the child, never looked up here");
-			},
+			find: (provider, id) => (provider === chatModel.provider && id === chatModel.id ? chatModel : undefined),
 		},
 	};
 	const call = (name, params = {}) => tools.get(name).execute("live", params, undefined, () => {}, ctx);
@@ -333,22 +338,22 @@ if (!LIVE) {
 			defaults: { backend: "claude-code", model: "haiku", effort: "low" },
 			members: [{ role: "echo", prompt: "Reply with exactly TEAM_SMOKE_OK and no other text, then stop.", tools: [], wake: false }],
 		});
-		const memberId = created.details.members[0].workerId;
-		assert.equal(created.details.members[0].model, "claude-code-cli/claude-haiku-4-5");
+		const [coordinatorRow, memberRow, monitorRow] = created.details.members;
+		assert.deepEqual([coordinatorRow.duty, memberRow.role, monitorRow.duty], ["coordinator", "echo", "monitor"]);
+		const memberId = memberRow.workerId;
+		assert.equal(memberRow.model, "claude-code-cli/claude-haiku-4-5");
 		const waited = await deadline(call("agent_wait", { ids: [memberId], timeoutSeconds: 120 }), 150000, "live member settle");
 		assert.equal(waited.details.waited[0].taskOutcome, "success", waited.content[0].text);
 		const transcript = await call("agent_transcript", { id: memberId });
 		assert.match(transcript.content[0].text, /TEAM_SMOKE_OK/);
-		// wake:false must queue the completion without starting a parent turn.
-		const completion = messages.find(([m]) => m.customType === "subagent-complete");
-		assert.ok(completion, "completion message recorded");
-		assert.equal(completion[1].triggerTurn, false);
+		// The member's completion is the coordinator's, never a message to the main chat.
+		assert.equal(messages.some(([m]) => m.customType === "subagent-complete" && m.content.includes(memberId)), false, "the member's completion went to the coordinator");
 		const list = await call("team_list");
 		assert.match(list.content[0].text, /live-smoke/);
-		await call("agent_kill", { id: memberId });
+		for (const row of [memberRow, coordinatorRow, monitorRow]) await call("agent_kill", { id: row.workerId });
 		const listed = await call("team_list");
-		assert.equal(listed.details.teams[0].members[0].processAlive, false, "own worker stopped");
-		console.log("PASS: one bounded live Claude member ran through team_create and was stopped (haiku, tools [], effort low, wake false).");
+		assert.ok(listed.details.teams[0].members.every((m) => m.processAlive === false), "every worker of the team stopped");
+		console.log("PASS: one bounded live Claude team ran through team_create and was stopped (haiku member, tools [], effort low, wake false; haiku coordinator and monitor).");
 	} finally {
 		for (const fn of hooks.get("session_shutdown") ?? []) await Promise.resolve(fn({}, ctx)).catch(() => {});
 		fs.rmSync(cwd, { recursive: true, force: true });

@@ -1,12 +1,14 @@
 ---
 name: fold-ai-dev-design
-description: Use when designing, implementing, modifying, or reviewing this project's
-  interfaces, components, prototypes, product copy, design-system code, or visual assets.
-  Provides visual, voice, accessibility, and implementation guidance.
+description: "Sova's design system. REQUIRED before any change to Sova's UI: editing a .tsx or .css file in src/, writing on-screen text, building a UI prototype, or reviewing a screen."
 user-invocable: true
 ---
 
-**Version.** 1.8.0 · **Locale.** en-US
+**Read all of this file first.** Before your first change to Sova's UI, read this whole file,
+about 550 lines, with the read tool: not a slice with `sed`, `head` or a line range. Then read
+`reference/components/<name>.md` for each component you touch (tabs, list, empty, button…), and
+open its rendered page before writing CSS for it. A slice misses what a green build can't catch: a
+class whose **Ported** cell in **Components** says `no` renders unstyled in the app, with no error.
 
 This file is the design system: how a surface looks, reads and behaves. It says nothing about
 what the product does — the project documentation in `.sova/spec/` owns that, and duplicating
@@ -16,13 +18,56 @@ it here is how the two drift apart.
 `reference/components/` wins. For anything that crosses components, this file wins. When they
 disagree one of them is stale; fix it.
 
-If invoked without other guidance, ask what to build, ask a handful of focused questions, and
-act as an expert designer producing HTML artifacts or production code.
+When someone asks you for design work directly, with no other guidance, ask what to build, ask a
+handful of focused questions, and act as an expert designer producing HTML artifacts or production
+code.
 
-**Start here.** Read **How to use** for the load order and how the app consumes this system, then
-the section for what you are touching — Color, Type, Shape & space and Responsive for layout,
-Components and the matching `reference/components/<name>.md` for a control. Open the rendered page
-before writing CSS for it.
+## Where to look
+
+| If you're touching… | Read, in `reference/` |
+|---|---|
+| A button or split button | `components/button.md` |
+| A status chip, badge or count | `components/chip.md` |
+| A text field, textarea or form row | `components/input.md` |
+| A select or combobox | `components/select.md` |
+| A checkbox, radio or switch | `components/toggle.md` |
+| A card or panel | `components/card.md` |
+| The app bar | `components/appbar.md` |
+| The rail or bottom bar | `components/nav.md` |
+| Tabs | `components/tabs.md` |
+| A breadcrumb | `components/breadcrumb.md` |
+| A banner · a toast | `components/banner.md` · `components/toast.md` |
+| An empty state · a skeleton | `components/empty.md` · `components/skeleton.md` |
+| A list or row · a tree | `components/list.md` · `components/tree.md` |
+| A table · a filter bar | `components/table.md` · `components/filterbar.md` |
+| A meter | `components/meter.md` |
+| A menu, dropdown, ⋯ overflow, popover, modal or sheet | `components/overlay.md` |
+| A tooltip | `components/tooltip.md` |
+| A run timeline · a diff | `components/timeline.md` · `components/diff.md` |
+| An approval bar · a chat thread | `components/approvalbar.md` · `components/chat.md` |
+| Color, contrast, status color | `foundations/colors.md` |
+| Type sizes and weights | `foundations/typography.md` |
+| Spacing · radius · elevation | `foundations/spacing.md` · `foundations/radius.md` · `foundations/shadow.md` |
+| Layout, panes, breakpoints, container queries | `foundations/grid-composition.md` |
+| Focus rings, motion | `foundations/motion.md` |
+| The logo · icons | `brand/logo.md` · `brand/iconography.md` |
+
+**What breaks with no error.** Each of these renders wrong with no error, and a green build won't
+show it:
+
+- **Ported `no` means no rules in the app.** That component's classes render unstyled. Port it into
+  `src/design/base.css` first, and change its cell in **Components** in the same edit.
+- **Every menu, dropdown and ⋯ overflow is a `.popover` of `.popover-item` rows.** Never borrow
+  another component's row class, and never set `align-items` or vertical padding on a menu row: the
+  override wins or loses on source order alone (**Menus & dropdowns**).
+- **A table is always inside a `.table-wrap`**, the box it measures.
+- **Components ask their container, not the window.** A container sized from its content measures
+  0px, and an overlay inside a container covers only that container (**Responsive**).
+- **Consume the semantic tokens, never `--brand-*`.** A component that reads the brand layer stops
+  following the theme.
+- **Inline an icon's SVG.** An `<img>` follows neither `currentColor` nor the theme.
+- **Outside the app, `tokens.css` loads before `fold-ai-dev.css`.** Without it, the components
+  render unstyled.
 
 ## How to use
 

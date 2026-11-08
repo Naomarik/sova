@@ -6,8 +6,6 @@ import { FOUNDATIONS, BRAND } from './content.mjs';
 import { COMPONENTS } from './components.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
-// The version line in SKILL.md is the only record of the version; the site reads it.
-const VERSION = readFileSync(`${ROOT}SKILL.md`, 'utf8').match(/^\*\*Version\.\*\* (\S+)/m)[1];
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 const SYMBOL = (size) =>
@@ -256,7 +254,7 @@ const card = (dir, e) => `      <a class="card card-interactive index-card" href
       </a>`;
 
 const index = page({
-  depth: 1, current: null, title: 'Fold AI Dev', eyebrow: `Design system · v${VERSION} · en-US`,
+  depth: 1, current: null, title: 'Fold AI Dev', eyebrow: 'Design system · en-US',
   purpose: 'The whole system, rendered — 7 foundations, 2 brand topics, and 25 components, in both themes. Use the theme toggle: nothing on these pages knows which theme it is in.',
   body: `      <section class="docs-section" id="foundations">
         <h2 class="docs-h2">Foundations</h2>

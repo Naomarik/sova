@@ -83,7 +83,7 @@ export async function resolveDefaultProfile(cwd?: string | null, rows?: readonly
 }
 
 /** What choosing `row` writes to each older default file (pure): absent = that file is left as it is. */
-export function olderDefaultsOf(row: JoinedProfile): { mode?: ModePatch; model?: string; thinking?: string; subagents: string } {
+export function olderDefaultsOf(row: JoinedProfile): { mode?: ModePatch; model?: string; thinking?: string; subagents?: string } {
   if (row.kind === "off") return { subagents: OFF_ID };
   const s = row.session;
   const mode: ModePatch = {};
@@ -93,7 +93,9 @@ export function olderDefaultsOf(row: JoinedProfile): { mode?: ModePatch; model?:
     ...(mode.mode || mode.minorModes ? { mode } : {}),
     ...(s?.model ? { model: s.model } : {}),
     ...(s?.thinking ? { thinking: s.thinking } : {}),
-    subagents: row.library ? row.library.id : OFF_ID,
+    // Its helpers' id where it has them, "off" where it names Off; a profile with no helpers here (none
+    // linked, or a link whose half isn't on this device) follows the default helpers as they stand.
+    ...(row.library ? { subagents: row.library.id } : s?.subagents === OFF_ID ? { subagents: OFF_ID } : {}),
   };
 }
 
@@ -122,7 +124,7 @@ export function chooseDefaultProfile(row: JoinedProfile, rows: readonly JoinedPr
   const patch = { ...(older.model && older.model !== was.model ? { model: older.model } : {}), ...(older.thinking && older.thinking !== was.thinking ? { thinking: older.thinking } : {}) };
   if (Object.keys(patch).length) saveDefaults(patch);
   const lib = readProfilesDefault(dir);
-  if (!(lib.state === "ok" && lib.value.default === older.subagents)) writeProfilesDefault(dir, { version: 1, default: older.subagents });
+  if (older.subagents && !(lib.state === "ok" && lib.value.default === older.subagents)) writeProfilesDefault(dir, { version: 1, default: older.subagents });
   writeDefaultProfileFile(row.kind === "off" ? OFF_ID : row.id);
   return { key: row.key, id: row.id, name: row.name, chosen: true };
 }

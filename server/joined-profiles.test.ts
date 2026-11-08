@@ -73,9 +73,10 @@ describe("the joined list", () => {
     assert.deepEqual(r.find((x) => x.id === "p")!.alsoUsedBy, ["Alpha", "Beta"]);
   });
 
-  test("a library profile only a project profile links is still listed under yours", () => {
+  test("a library profile only a project profile links is that profile's Models part, not a row of its own", () => {
     const r = rows([], [lib("x", "X")], [session("p", "Proj", { subagents: "x" }, "project")]);
-    assert.ok(r.find((x) => x.key === "library:x" && x.group === "yours"));
+    assert.equal(r.some((x) => x.key === "library:x"), false);
+    assert.equal(r.find((x) => x.id === "p")!.library?.id, "x");
   });
 
   test("a bare id is yours first, then a library-only row, then this project's", () => {
@@ -97,7 +98,7 @@ describe("the joined list", () => {
 
 describe("the default", () => {
   const list = rows(
-    [session("zeta", "Zeta", { subagents: "lib1" }), session("alpha", "Alpha", { subagents: "lib1", mode: "delegate", model: "openai/gpt-5.5", thinking: "high" }), session("bare", "Bare")],
+    [session("zeta", "Zeta", { subagents: "lib1" }), session("alpha", "Alpha", { subagents: "lib1", mode: "delegate", model: "openai/gpt-5.5", thinking: "high" }), session("bare", "Bare"), session("offs", "Offs", { subagents: "off" }), session("gone", "Gone", { subagents: "nope" })],
     [lib("lib1", "Lib one"), lib("solo", "Solo")],
   );
 
@@ -119,7 +120,9 @@ describe("the default", () => {
 
   test("choosing writes to the older files only what the profile sets", () => {
     assert.deepEqual(olderDefaultsOf(list.find((r) => r.id === "alpha")!), { mode: { mode: "delegate" }, model: "openai/gpt-5.5", thinking: "high", subagents: "lib1" });
-    assert.deepEqual(olderDefaultsOf(list.find((r) => r.id === "bare")!), { subagents: "off" }, "a profile with no helpers writes off there and nothing else");
+    assert.deepEqual(olderDefaultsOf(list.find((r) => r.id === "bare")!), {}, "a profile with no helpers leaves the default helpers as they stand");
+    assert.deepEqual(olderDefaultsOf(list.find((r) => r.id === "offs")!), { subagents: "off" }, "a profile naming Off writes off");
+    assert.deepEqual(olderDefaultsOf(list.find((r) => r.id === "gone")!), {}, "a link whose half isn't here writes nothing there");
     assert.deepEqual(olderDefaultsOf(list[0]!), { subagents: "off" }, "Off");
     assert.deepEqual(olderDefaultsOf(list.find((r) => r.key === "library:solo")!), { subagents: "solo" });
   });

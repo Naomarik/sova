@@ -63,6 +63,7 @@ const { acquireChat, disposeAllChats, disposeHeldChat } = await import("./chat-m
 const { canonicalPath } = await import("./paths");
 const { applyProfile, profilesListing } = await import("./session-profile-routes");
 const { saveCurrentFor } = await import("./profile-editor-routes");
+const { startOnDefault } = await import("./default-start");
 const { PROFILE_ENTRY } = await import("../shared/profiles");
 const { addWebSession } = await import("./web-sessions");
 const { markOwned } = await import("./write-guard");
@@ -91,7 +92,7 @@ const defaultsFile = join(stateDir, "defaults.json");
 const yours = { source: "user" as const };
 
 describe("a card's effort and subagents", () => {
-  test("a pick sets the effort and the subagent pick with the entry; Default afterwards pins the device default", async () => {
+  test("a pick sets the effort and the subagent pick with the entry; Off afterwards pins the helpers to off", async () => {
     const path = makeSession();
     await acquireChat(path, true);
     assert.deepEqual(await applyProfile(path, { ...yours, id: "subs" }), { ok: true });
@@ -99,11 +100,11 @@ describe("a card's effort and subagents", () => {
     assert.equal(after.filter((e) => e.customType === PROFILE_ENTRY).length, 1);
     assert.ok(after.some((e) => e.type === "thinking_level_change"), "the card's effort is set");
     assert.equal(pickOf(path), "claude-subs");
-    // Back to Default: picks are newest-wins and can't be cleared, so the device default is pinned.
+    // Back to Off: the agent picks every worker, so the helpers are pinned to off (§chat.subagent-profiles/off).
     assert.deepEqual(await applyProfile(path, null), { ok: true });
-    assert.equal(pickOf(path), "house");
+    assert.equal(pickOf(path), "off");
     assert.equal(picks(path).length, 2);
-    // Default again: nothing more to pin.
+    // Off again: nothing more to pin.
     assert.deepEqual(await applyProfile(path, null), { ok: true });
     assert.equal(picks(path).length, 2);
   });
@@ -120,11 +121,37 @@ describe("a card's effort and subagents", () => {
     }
   });
 
-  test("a session that never had a pick gets none from a pick without subagents", async () => {
+  test("a session that never had a pick gets none from a pick without subagents; Off pins off", async () => {
     const path = makeSession();
     assert.deepEqual(await applyProfile(path, { ...yours, id: "plain" }), { ok: true });
-    assert.deepEqual(await applyProfile(path, null), { ok: true });
     assert.equal(picks(path).length, 0);
+    assert.deepEqual(await applyProfile(path, null), { ok: true });
+    assert.equal(pickOf(path), "off");
+  });
+
+  test("switching back to a profile without subagents pins this computer's default profile's helpers", async () => {
+    const path = makeSession();
+    assert.deepEqual(await applyProfile(path, { ...yours, id: "subs" }), { ok: true });
+    assert.deepEqual(await applyProfile(path, { ...yours, id: "plain" }), { ok: true });
+    assert.equal(pickOf(path), "house", "the saved default helpers, no default chosen yet");
+  });
+
+  test("a library profile no session profile links is picked as Off with its helpers", async () => {
+    const libFile = join(agentDir, "subagent-profiles.json");
+    const before = readFileSync(libFile, "utf8");
+    sp.writeSubagentProfiles(agentDir, { version: 1, profiles: [...(JSON.parse(before) as { profiles: unknown[] }).profiles, sp.legacyProfile(agentDir, "solo", "Solo")] });
+    try {
+      for (const pick of ["library:solo", "solo"]) {
+        const path = makeSession();
+        assert.deepEqual(await applyProfile(path, pick), { ok: true }, pick);
+        assert.deepEqual(entries(path).filter((e) => e.customType === PROFILE_ENTRY).map((e) => (e.data as { profile: unknown }).profile), [null]);
+        assert.equal(pickOf(path), "solo");
+      }
+      const bad = await applyProfile(makeSession(), "library:nope");
+      assert.equal(bad.ok, false);
+    } finally {
+      writeFileSync(libFile, before);
+    }
   });
 
   test("Default after a card that set the model and effort, with no new-session defaults: what a fresh session opens on", async () => {
@@ -363,6 +390,66 @@ describe("Save Current As Profile", () => {
       assert.equal(readFileSync(join(agentDir, "subagent-profiles.json"), "utf8"), libText, "the library half isn't written either");
     } finally {
       writeFileSync(yoursFile, good);
+    }
+  });
+});
+
+describe("a new chat with no profile named starts on this computer's default", () => {
+  // A default that grants a session power and sets minor modes and helpers.
+  const reader = { id: "reader", label: "Reader", grant: ["sessions.read"], minorModes: ["spec"], subagents: "claude-subs" };
+  const withReader = async (extra: Record<string, unknown>, run: () => Promise<void>) => {
+    const before = readFileSync(yoursFile, "utf8");
+    const defFile = join(stateDir, "default-profile.json");
+    writeFileSync(yoursFile, JSON.stringify({ ...YOURS, profiles: [...YOURS.profiles, { ...reader, ...extra }] }, null, 2));
+    writeFileSync(defFile, JSON.stringify({ version: 1, profile: "reader" }));
+    try {
+      await run();
+    } finally {
+      writeFileSync(yoursFile, before);
+      rmSync(defFile, { force: true });
+    }
+  };
+  const profileEntries = (path: string) => entries(path).filter((e) => e.customType === PROFILE_ENTRY).map((e) => (e.data as { profile: { id: string; grant: string[] } | null }).profile);
+
+  test("from your own new chat, the whole default: its entry, its powers and its helpers", async () => {
+    await withReader({}, async () => {
+      const path = makeSession();
+      const r = await startOnDefault(path, cwd, false);
+      assert.deepEqual(r, { ok: true, applied: "whole" });
+      const p = profileEntries(path);
+      assert.deepEqual(p.map((x) => [x?.id, x?.grant]), [["reader", ["sessions.read"]]]);
+      assert.equal(pickOf(path), "claude-subs");
+    });
+  });
+
+  test("an Overseer's start never gets the powers of a default not marked for it: modes and helpers only, no profile entry", async () => {
+    await withReader({}, async () => {
+      const path = makeSession();
+      const r = await startOnDefault(path, cwd, true);
+      assert.deepEqual(r, { ok: true, applied: "models" });
+      assert.deepEqual(profileEntries(path), [], "no entry, so no grants");
+      assert.deepEqual(pinned(path)?.minorModes, ["spec"]);
+      assert.equal(pickOf(path), "claude-subs");
+    });
+  });
+
+  test("an Overseer's start takes the whole default when the profile says the Overseer may start it", async () => {
+    await withReader({ overseerMayStart: true }, async () => {
+      const path = makeSession();
+      assert.deepEqual(await startOnDefault(path, cwd, true), { ok: true, applied: "whole" });
+      assert.deepEqual(profileEntries(path).map((x) => x?.grant), [["sessions.read"]]);
+    });
+  });
+
+  test("Off as the default writes nothing to the new chat", async () => {
+    writeFileSync(join(stateDir, "default-profile.json"), JSON.stringify({ version: 1, profile: "off" }));
+    try {
+      const path = makeSession();
+      const before = readFileSync(path, "utf8");
+      assert.deepEqual(await startOnDefault(path, cwd, false), { ok: true, applied: "none" });
+      assert.equal(readFileSync(path, "utf8"), before);
+    } finally {
+      rmSync(join(stateDir, "default-profile.json"), { force: true });
     }
   });
 });

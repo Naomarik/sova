@@ -41,7 +41,7 @@ type Yours = { version: 1; profiles: Record<string, unknown>[] };
 type Lib = { version: 1; profiles: { id: string; name: string; members: unknown }[] };
 const helpers = (p: { id: string; name: string } & Record<string, unknown>) => {
   const { id: _i, name: _n, ...rest } = p;
-  return rest as never;
+  return rest as Record<string, unknown>;
 };
 const starts = { remove: [], grant: [], singleton: false, limits: DEFAULT_LIMITS, overseerMayStart: false };
 
@@ -86,7 +86,7 @@ describe("saving one of yours", () => {
     const yoursBefore = read(yoursFile);
     const yoursTime = statSync(yoursFile).mtimeMs;
     const house = json<Lib>(libFile).profiles.find((p) => p.id === "house")!;
-    const r2 = await saveMine({ key: "user:house", name: "House", helpers: { ...helpers(house), members: { backend: "pi", model: "zai/glm-5.3", effort: "high" } } }, deps);
+    const r2 = await saveMine({ key: "user:house", name: "House", helpers: { ...helpers(house), members: { backend: "pi", model: "zai/glm-5.3", effort: "high" } } as never }, deps);
     assert.ok(r2.ok, !r2.ok ? r2.error : "");
     assert.deepEqual(json<Lib>(libFile).profiles.find((p) => p.id === "house")!.members, { backend: "pi", model: "zai/glm-5.3", effort: "high" });
     assert.equal(read(yoursFile), yoursBefore);
@@ -109,7 +109,7 @@ describe("saving one of yours", () => {
 
   test("an edit through one profile changes a shared half for each", async () => {
     const shared = json<Lib>(libFile).profiles.find((p) => p.id === "shared")!;
-    assert.ok((await saveMine({ key: "user:a", name: "Alpha", helpers: { ...helpers(shared), members: { backend: "pi", model: "zai/glm-5.3", effort: "low" } } }, deps)).ok);
+    assert.ok((await saveMine({ key: "user:a", name: "Alpha", helpers: { ...helpers(shared), members: { backend: "pi", model: "zai/glm-5.3", effort: "low" } } as never }, deps)).ok);
     const rows = await joinedProfiles();
     assert.deepEqual(rows.find((r) => r.id === "b")!.library?.members, { backend: "pi", model: "zai/glm-5.3", effort: "low" });
     assert.deepEqual(rows.find((r) => r.id === "a")!.alsoUsedBy, ["Beta"]);
@@ -176,8 +176,10 @@ describe("duplicating and deleting", () => {
 
   test("deleting a pair deletes both halves; a library half another profile links stays", async () => {
     await chooseDefaultProfile(pickJoined(await joinedProfiles(), "plain")!, await joinedProfiles());
+    const libBefore = [read(libFile), statSync(libFile).mtimeMs];
     assert.ok((await deleteMine("user:a", deps)).ok);
     assert.equal(json<Yours>(yoursFile).profiles.some((p) => p.id === "a"), false);
+    assert.deepEqual([read(libFile), statSync(libFile).mtimeMs], libBefore, "the shared half's file isn't rewritten");
     assert.ok(json<Lib>(libFile).profiles.some((p) => p.id === "shared"), "Beta still links it");
     assert.ok((await deleteMine("user:b", deps)).ok);
     assert.equal(json<Lib>(libFile).profiles.some((p) => p.id === "shared"), false, "the last linker took it");
@@ -200,15 +202,25 @@ describe("the default", () => {
     assert.deepEqual([d.row.key, d.info.chosen], ["user:night", true]);
   });
 
+  test("a profile with no helpers leaves the saved default helpers as they stand, byte for byte", async () => {
+    const before = [read(libDefaultFile), statSync(libDefaultFile).mtimeMs];
+    const rows = await joinedProfiles();
+    chooseDefaultProfile(pickJoined(rows, "plain")!, rows);
+    assert.deepEqual(json(defaultProfileFile), { version: 1, profile: "plain" });
+    assert.deepEqual([read(libDefaultFile), statSync(libDefaultFile).mtimeMs], before);
+  });
+
   test("Off writes off for the helpers and leaves mode.json and defaults.json byte for byte", async () => {
     const mode = read(modeFile);
     const defaults = read(defaultsFile);
+    const times = [statSync(modeFile).mtimeMs, statSync(defaultsFile).mtimeMs];
     const rows = await joinedProfiles();
     chooseDefaultProfile(pickJoined(rows, "off")!, rows);
     assert.deepEqual(json(defaultProfileFile), { version: 1, profile: "off" });
     assert.equal(json<{ default: string }>(libDefaultFile).default, "off");
     assert.equal(read(modeFile), mode);
     assert.equal(read(defaultsFile), defaults);
+    assert.deepEqual([statSync(modeFile).mtimeMs, statSync(defaultsFile).mtimeMs], times);
   });
 
   test("before one is chosen nothing is written, and no profile's save moves it", async () => {

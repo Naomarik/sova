@@ -102,7 +102,7 @@ import { configureSession } from "./sessions-configure";
 import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
 import { registerProfileSwitchRoutes } from "./profile-switch";
 import { registerProfileEditorRoutes } from "./profile-editor-routes";
-import { resolveDefaultProfile } from "./default-profile";
+import { startOnDefault } from "./default-start";
 import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
 import type { ProfilePick } from "./profile-sources";
 import { CREATE_NO_DEFAULT, createNotNamed, singletonRunningText, THINKING_LEVELS } from "../shared/profiles";
@@ -342,28 +342,17 @@ export function buildApp(deps: AppDeps) {
   /** Create a new empty webapp-owned session in `cwd` (an existing absolute directory) → 201 SessionSummary.
       With `start`, it is made with that profile (§chat.profiles/after-first-message) and, given one, its
       first message is sent; a One at a time profile live elsewhere refuses before anything is made. */
-  async function createWebSession(c: Context, cwd: string, start?: { profile: ProfilePick; prompt?: string; by?: "overseer" | "start"; opening?: { model?: string; thinking?: string } }, subagentProfile?: string, linkMember = false, useDefault = false) {
-    // No profile named: the chat starts on this computer's default (§chat.profiles/default). Off, or a
-    // default with no session half, needs no pick: the older default files it keeps written already are
-    // what a new chat opens on. A default that can't be applied leaves the chat on those.
-    let fromDefault = false;
-    if (!start && useDefault && subagentProfile === undefined && !linkMember) {
-      const d = await resolveDefaultProfile(cwd).catch(() => null);
-      const half = d?.row.session;
-      if (half && d.row.approval !== "needed") (start = { profile: { source: half.source, id: half.id } }), (fromDefault = true);
-    }
+  async function createWebSession(c: Context, cwd: string, start?: { profile: ProfilePick; prompt?: string; by?: "overseer" | "start"; opening?: { model?: string; thinking?: string } }, subagentProfile?: string, linkMember = false, useDefault: false | "user" | "overseer" = false) {
     let pick: ProfilePick | undefined = start?.profile;
     if (start) {
       // Resolved against the new session's own project (§chat.profiles/projects); unapproved refuses.
       const r = await resolveChoice(start.profile, cwd);
-      if (!r.ok && fromDefault) (start = undefined), (pick = undefined);
-      else if (!r.ok) return c.json({ error: r.error, ...(r.approval ? { approval: true } : {}) }, r.approval ? 409 : 400);
-      if (r.ok && r.profile?.singleton) {
+      if (!r.ok) return c.json({ error: r.error, ...(r.approval ? { approval: true } : {}) }, r.approval ? 409 : 400);
+      if (r.profile?.singleton) {
         const holder = singletonHolder(snapshotKey(r.profile), await listSessions());
-        if (holder && fromDefault) (start = undefined), (pick = undefined);
-        else if (holder) return c.json({ error: singletonRunningText(r.profile.label), running: { id: holder.id, path: holder.path, title: holder.title } }, 409);
+        if (holder) return c.json({ error: singletonRunningText(r.profile.label), running: { id: holder.id, path: holder.path, title: holder.title } }, 409);
       }
-      if (r.ok && r.listed && start) pick = { source: r.listed.source, id: r.listed.id };
+      if (r.listed) pick = { source: r.listed.source, id: r.listed.id };
     }
     // A link member session (§mesh.links/tools): its marker is written with the header, so its
     // runtime has the link tools from its first open (any other session gets them only when it joins
@@ -377,15 +366,18 @@ export function buildApp(deps: AppDeps) {
       if (chatHandle(made.path) || (lock && holderAlive(lock))) return c.json({ error: "That session is open in a chat process." }, 409);
       appendToClosedFile(made.path, SUBAGENT_PROFILE, { v: 1, profile: subagentProfile });
     }
+    // No profile named: the chat starts on this computer's default (§chat.profiles/default), as far as
+    // the starter may give it (an Overseer start never gets powers the profile isn't marked for).
+    if (!start && useDefault && subagentProfile === undefined && !linkMember) {
+      const r = await startOnDefault(made.path, cwd, useDefault === "overseer");
+      if (!r.ok) console.warn(`[profiles] ${made.path}: ${r.error}`);
+      return c.json((await getSessionSummary(made.path)) ?? made, 201);
+    }
     if (!start || !pick) return c.json(made, 201);
     // The model and effort it starts on, instead of the new-chat default (the merge queue's reviewer and thread),
     // as the first open; set again after the profile when the open didn't take them.
     if (start.opening) setOpeningChoice(made.path, start.opening);
-    const applied = await applyProfile(made.path, pick, fromDefault ? undefined : (start.by ?? "start"));
-    if (!applied.ok && fromDefault) {
-      console.warn(`[profiles] the default profile wasn't applied to ${made.path}: ${applied.error}`);
-      return c.json((await getSessionSummary(made.path)) ?? made, 201);
-    }
+    const applied = await applyProfile(made.path, pick, start.by ?? "start");
     if (!applied.ok) return c.json({ error: `Created the session, but its profile was not set: ${applied.error}`, session: made }, applied.status);
     // One that can't be used (turned off, not signed in) leaves it on the new-chat default, and the answer says why.
     const opened = start.opening ? await openingTaken(made.path, start.opening) : null;
@@ -466,7 +458,8 @@ export function buildApp(deps: AppDeps) {
     const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
     const cwdError = await validateNewSessionCwd(cwd);
     if (cwdError) return c.json({ error: cwdError }, 400);
-    return createWebSession(c, cwd, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))), subagentProfile, linkMember, true);
+    const byOverseer = !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER));
+    return createWebSession(c, cwd, startOf(body, byOverseer), subagentProfile, linkMember, byOverseer ? "overseer" : "user");
   });
 
   /** POST /api/sessions's optional `profile` (an id or `{source, id}`) and `prompt`: the chip's Run Again, the Overseer. */

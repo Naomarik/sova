@@ -1,7 +1,7 @@
 import { yourClickRefusal } from "./page-only";
 import type { Hono } from "hono";
 import { QUEUE_CHAT_MODE_REFUSAL } from "../shared/merge-queue";
-import { DEFAULT_PROFILE, keyOf, parseMine, THINKING_LEVELS, type ListedProfile, type Profile, type ProfileMine, type ProfilesListing } from "../shared/profiles";
+import { DEFAULT_PROFILE, keyOf, OFF_ID, parseMine, THINKING_LEVELS, type ListedProfile, type Profile, type ProfileMine, type ProfilesListing } from "../shared/profiles";
 import type { SessionSummary } from "../shared/protocol";
 import { acquireChatHandle, chatHandle, type ChatHandle, closeChat, setOpeningChoice, setSingletonCheck } from "./chat-handle";
 import { modelDenial, readModelPolicy } from "./model-policy";
@@ -11,7 +11,7 @@ import { profileModelCount, subagentProfilesInfo } from "./subagent-profiles";
 import { getSessionInsight } from "./insights";
 import { loadSubagentProfiles } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { resolveDefaultProfile } from "./default-profile";
-import { buildJoined } from "./joined-profiles";
+import { buildJoined, joinedProfiles } from "./joined-profiles";
 import { agentRoot } from "./state-root";
 import { resolveSessionPath } from "./paths";
 import { findProfile, profileRefusedWhy, profileSources, readHidden, setHidden } from "./profile-sources";
@@ -60,8 +60,18 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
   // lift their mode lock and put them back in every list. The server's own start applies to a session not yet marked.
   if (s.queueChat) return { ok: false, status: 409, error: QUEUE_CHAT_MODE_REFUSAL };
   if (s.live) return { ok: false, status: 409, error: `It is open in a terminal (pid ${s.live.pid}), so this server must not write to it.` };
-  const r = await resolveChoice(choice, s.cwd);
+  // A library profile no session profile links (§chat.profiles/joined) is picked as Off with its helpers.
+  let libraryPick = libraryPickOf(choice);
+  let r = await resolveChoice(libraryPick ? null : choice, s.cwd);
+  if (!r.ok && typeof choice === "string" && !r.approval) {
+    const row = (await joinedProfiles(s.cwd)).find((x) => x.kind === "library" && x.id === choice);
+    if (row) (libraryPick = { id: row.id, name: row.name }), (r = { ok: true, profile: null });
+  }
   if (!r.ok) return { ok: false, status: r.approval ? 409 : 400, error: r.error, ...(r.approval ? { approval: true as const } : {}) };
+  if (libraryPick) {
+    const why = subagentsUnusable(libraryPick.id);
+    if (why) return { ok: false, status: 400, error: `${libraryPick.name} can't be picked here: ${why}` };
+  }
   if (r.profile?.singleton) {
     const holder = singletonHolder(snapshotKey(r.profile), await listSessions(), path);
     if (holder) return { ok: false, status: 409, error: new SingletonRefusal(r.profile.label, holderOf(holder)).message, running: holderOf(holder) };
@@ -87,15 +97,20 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
   }
   if (next?.thinking && !(THINKING_LEVELS as readonly string[]).includes(next.thinking))
     return { ok: false, status: 400, error: `${next.label} can't be picked here: "${next.thinking}" isn't an effort level.` };
-  // Switching back from a profile that set subagents pins the remembered pick, else the device
-  // default, since a pick can't be cleared; a chat that never had a pick gets none.
+  // Off pins the helpers to off (the agent picks every worker), and a library profile picked alone
+  // pins its own. Switching back from a profile that set subagents, to one that sets none, pins this
+  // computer's default profile's helpers ("off" when it links none), since a pick can't be cleared;
+  // a chat that never had a pick gets none.
   let subagents = next?.subagents;
-  const own = restore?.subagents && !subagentsUnusable(restore.subagents) ? restore.subagents : undefined;
-  if (!subagents && own) subagents = own !== chat.mirror.subagentPick ? own : undefined;
-  else if (!subagents && prev?.subagents && chat.mirror.subagentPick !== undefined) subagents = subagentProfilesInfo().default;
+  if (libraryPick) subagents = libraryPick.id;
+  else if (!next) subagents = OFF_ID;
+  else if (!subagents && prev?.subagents && chat.mirror.subagentPick !== undefined) subagents = (await resolveDefaultProfile(s.cwd)).row.library?.id ?? OFF_ID;
+  if (subagents && subagents === chat.mirror.subagentPick) subagents = undefined;
   if (subagents) {
     const why = (next?.subagents ? subagentsUnusable(next.subagents) : null) ?? (await chat.subagentSwitchRefusal());
-    if (why) return { ok: false, status: 400, error: `${next?.label ?? DEFAULT_PROFILE.label} can't be picked here: ${why}` };
+    // Off still applies in a chat whose helpers can't be pinned (no mode extension): it has none to move.
+    if (why && !next && !libraryPick) subagents = undefined;
+    else if (why) return { ok: false, status: 400, error: `${next?.label ?? libraryPick?.name ?? "Off"} can't be picked here: ${why}` };
   }
   // A profile without a model or effort, after one that set it: back to what a new session opens on
   // (the new-session default when usable, else pi's own; read, never written), by a fresh reopen
@@ -160,7 +175,17 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
   return { ok: true };
 }
 
-/** What a session has now, as My settings remembers it at its first profile pick. */
+/** A library-only pick: `{source: "library", id}` or the joined key "library:<id>". */
+function libraryPickOf(choice: ProfileChoice): { id: string; name: string } | undefined {
+  const id =
+    typeof choice === "string" && choice.startsWith("library:") ? choice.slice("library:".length)
+    : choice && typeof choice === "object" && (choice as { source?: unknown }).source === "library" && typeof (choice as { id?: unknown }).id === "string" ? (choice as { id: string }).id
+    : undefined;
+  if (!id) return undefined;
+  return { id, name: subagentProfilesInfo().profiles.find((p) => p.id === id)?.name ?? id };
+}
+
+/** What a session has now, as Off remembers it at its first profile pick. */
 function mineOf(chat: Pick<ChatHandle, "mirror">): ProfileMine {
   const m = chat.mirror;
   const ref = m.model?.ref;

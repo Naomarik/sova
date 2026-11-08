@@ -10,7 +10,7 @@ import { profileSources, readHidden, type ProfileSources } from "./profile-sourc
  * The one list of profiles (§chat.profiles/joined), built from the two saved lists, which stay as
  * they are: the session profiles (yours, Sova's shipped files and the session's project) and the
  * helper library (`subagent-profiles.json`). A session profile whose `subagents` names a library
- * profile is one row with both parts; a library profile no session profile of yours links is a row
+ * profile is one row with both parts; a library profile no listed session profile links is a row
  * of its own (Models part only); a session profile with no link is a row with no helpers. Nothing
  * is written here.
  */
@@ -93,7 +93,10 @@ export function buildJoined(input: JoinInputs): JoinedProfile[] {
     key: OFF_KEY, id: OFF_ID, kind: "off", group: "builtin", name: "Off", footprint: KEEPS_OWN_MODEL, providers: [], helperRoles: 0,
   };
   const yoursSession = input.sources.yours.map((p) => fromSession(p, "session", "yours"));
-  const linked = new Set(yoursSession.map((r) => r.libraryId).filter((x): x is string => !!x));
+  const shipped = input.sources.builtins.filter((p) => p.id !== DEFAULT_PROFILE_ID).map((p) => fromSession(p, "builtin", "builtin"));
+  const project = input.sources.project.profiles.map((p) => fromSession(p, "project", "project"));
+  // A library profile any listed session profile links (yours, shipped or this project's) is that profile's Models part, never a row of its own.
+  const linked = new Set([...yoursSession, ...shipped, ...project].map((r) => r.libraryId).filter((x): x is string => !!x));
   const libraryOnly: JoinedProfile[] = lib
     .filter((l) => !linked.has(l.id))
     .map((l) => {
@@ -105,8 +108,6 @@ export function buildJoined(input: JoinInputs): JoinedProfile[] {
       };
     });
   const yours = [...yoursSession, ...libraryOnly].sort(byName);
-  const shipped = input.sources.builtins.filter((p) => p.id !== DEFAULT_PROFILE_ID).map((p) => fromSession(p, "builtin", "builtin"));
-  const project = input.sources.project.profiles.map((p) => fromSession(p, "project", "project"));
   const rows = [off, ...yours, ...shipped, ...project];
   // Shared library halves: each linker names the others.
   const linkers = new Map<string, JoinedProfile[]>();

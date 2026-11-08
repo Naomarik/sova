@@ -1,5 +1,5 @@
 import type { Context, Hono } from "hono";
-import { OFF_ID, OFF_KEY, type ProfileSaveRequest } from "../shared/profiles";
+import { OFF_ID, OFF_KEY, type DefaultProfileInfo, type ProfileSaveRequest } from "../shared/profiles";
 import { acquireChatHandle, chatHandle, type ChatHandle } from "./chat-handle";
 import { chooseDefaultProfile, DefaultRefusal, resolveDefaultProfile } from "./default-profile";
 import type { DelegateSources } from "./delegate";
@@ -83,6 +83,25 @@ export async function saveCurrentFor(path: string, label: unknown, sources: Dele
   return saveCurrentAsProfile(label, await chatNow(chat), { sources, cwd: cwd ?? s.cwd });
 }
 
+/**
+ * Make {name} the Default from a chat's mode menu: this chat's profile becomes this computer's
+ * default, and as Save as default did, the chat's strict flag and memory type are saved for new
+ * chats. Throws DefaultRefusal (409) or an Error with the sentence.
+ */
+export async function makeChatDefault(path: string): Promise<DefaultProfileInfo> {
+  const s = await getSessionSummary(path);
+  if (!s) throw new Error("Session file not found");
+  const chat = chatHandle(path) ?? (await acquireChatHandle(path));
+  const key = await chatKey(chat);
+  const now = await chatNow(chat);
+  const rows = await joinedProfiles(s.cwd);
+  const row = pickJoined(rows, key === OFF_ID ? OFF_KEY : key);
+  if (!row) throw new DefaultRefusal("This chat's profile isn't here anymore.");
+  const info = chooseDefaultProfile(row, rows, { strict: now.strict });
+  if (now.memoryType) saveDefaultMemoryType(now.memoryType as Parameters<typeof saveDefaultMemoryType>[0]);
+  return info;
+}
+
 export function registerProfileEditorRoutes(app: Hono, sources: DelegateSources): void {
   app.post("/api/profiles/mine", async (c) => {
     const b = await body(c);
@@ -103,26 +122,20 @@ export function registerProfileEditorRoutes(app: Hono, sources: DelegateSources)
   // profile, and as Save as default did, its strict flag and memory type for new chats).
   app.put("/api/profiles/default", async (c) => {
     const b = await body(c);
-    let cwd = str(b.cwd);
-    let key = str(b.key);
-    let extra: { strict?: boolean } = {};
-    let memoryType: string | undefined;
-    if (b.path !== undefined) {
-      const got = await chatOf(c, b.path);
-      if (got instanceof Response) return got;
-      cwd = got.cwd;
-      key = await chatKey(got.chat);
-      const now = await chatNow(got.chat);
-      extra = { strict: now.strict };
-      memoryType = now.memoryType;
-    }
-    if (!key) return c.json({ error: "Expected {key} or {path}" }, 400);
-    const rows = await joinedProfiles(cwd);
-    const row = pickJoined(rows, key === OFF_ID ? OFF_KEY : key);
-    if (!row) return c.json({ error: "That profile isn't here anymore." }, 404);
+    const cwd = str(b.cwd);
+    const key = str(b.key);
     try {
-      chooseDefaultProfile(row, rows, extra);
-      if (memoryType) saveDefaultMemoryType(memoryType as Parameters<typeof saveDefaultMemoryType>[0]);
+      if (b.path !== undefined) {
+        const path = resolveSessionPath(typeof b.path === "string" ? b.path : null);
+        if (!path) return c.json({ error: "Invalid or missing path" }, 400);
+        await makeChatDefault(path);
+        return c.json(await profilesListing(cwd ?? (await getSessionSummary(path))?.cwd));
+      }
+      if (!key) return c.json({ error: "Expected {key} or {path}" }, 400);
+      const rows = await joinedProfiles(cwd);
+      const row = pickJoined(rows, key === OFF_ID ? OFF_KEY : key);
+      if (!row) return c.json({ error: "That profile isn't here anymore." }, 404);
+      chooseDefaultProfile(row, rows);
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, err instanceof DefaultRefusal ? 409 : 400);
     }

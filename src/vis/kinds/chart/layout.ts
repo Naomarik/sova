@@ -56,7 +56,7 @@ const seriesCount = (spec: ChartSpec) => Math.max(1, spec.series.length);
 const titleOf = (spec: ChartSpec, row: number, s: number, v: number) => `${spec.series[s] ? `${spec.series[s]}, ` : ""}${spec.rows[row]!.label}: ${fmtValue(v, spec.unit)}`;
 const sum = (vals: (number | null)[]) => vals.reduce<number>((a, v) => a + (v ?? 0), 0);
 /** Stacks of shares (`unit: %`, every row adding up to 100): a total over each would only say 100. */
-const wholeStacks = (spec: ChartSpec) => spec.unit === "%" && spec.rows.every((r) => r.values.every((v) => v === null) || Math.abs(sum(r.values) - 100) < 1e-6);
+const wholeStacks = (spec: ChartSpec) => spec.unit === "%" && spec.rows.every((r) => r.values.every((v) => v === null || v === 0) || Math.abs(sum(r.values) - 100) < 1e-6);
 /**
  * A stacked chart's inside labels are judged for the chart as a whole: a segment names its value
  * when it is tall (or long) enough, and only if the widest such label fits the narrowest segment

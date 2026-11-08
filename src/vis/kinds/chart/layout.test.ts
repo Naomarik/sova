@@ -338,6 +338,9 @@ test("chart labels: Stacked with % names no total over its columns (each would s
     assert.deepEqual(over.map((v) => v.text), [], `${at}: totals drawn`);
   }
   assert.ok(n > 10, `${n} share stacks`);
+  // A row of zeros has no shares to total, and doesn't bring the totals back for the other rows.
+  const withEmpty = layoutChart(chart('type: stacked\nunit: %\nseries: a, b\nx 60 40\ny 0 0\nz 25 75'), 560, estimateWidth);
+  assert.deepEqual(withEmpty.values.filter((v) => !v.inside).map((v) => v.text), []);
   // Without %, a stack still names its total.
   const g = layoutChart(chart(SAMPLES.stacked!), 560, estimateWidth);
   assert.ok(g.values.some((v) => !v.inside && v.text === "280"), g.values.map((v) => v.text).join(","));

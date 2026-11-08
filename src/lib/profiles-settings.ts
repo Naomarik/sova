@@ -27,9 +27,10 @@ export interface DraftRow {
   name: string;
   /** null: no session half yet (a library profile no session profile links). */
   starts: Starts | null;
-  /** The chat's own model ref and effort; null = keeps the chat's own. */
+  /** The chat's own model ref and effort; null = keeps the chat's own (an effort: the model's default).
+      "" = no effort chosen yet (Set All To blanked one the new model doesn't take): Save waits. */
   model: string | null;
-  thinking: ThinkingLevel | null;
+  thinking: ThinkingLevel | "" | null;
   /** The helper half it links, a key of `library`; null = no helpers (this computer's default's). */
   lib: string | null;
 }
@@ -220,7 +221,8 @@ export function setAllTo(d: ProfilesDraft, key: string, pick: { backend: Delegat
   const ref = chatRefOf(pick.backend, pick.model);
   const levels = look.levels(ref);
   row.model = ref;
-  if (row.thinking && levels !== null && !levels.includes(row.thinking)) row.thinking = null;
+  // As a helper row's: an effort the new model doesn't take is left blank, and Save waits for one.
+  if (row.thinking && levels !== null && !levels.includes(row.thinking)) row.thinking = "";
   if (row.starts === null) row.starts = plainStarts();
   const h = row.lib ? next.library[row.lib] : undefined;
   if (h) {
@@ -260,7 +262,7 @@ const newKey = () => `new:${Date.now().toString(36)}${(seq++).toString(36)}`;
  */
 export function withNewProfile(
   d: ProfilesDraft,
-  from: { model: string | null; thinking: ThinkingLevel | null; helpers: Helpers | null; starts?: Starts | null; name?: string } | null,
+  from: { model: string | null; thinking: DraftRow["thinking"]; helpers: Helpers | null; starts?: Starts | null; name?: string } | null,
   fallbackHelpers: Helpers | null,
 ): { draft: ProfilesDraft; key: string } {
   const next = clone(d);
@@ -342,6 +344,7 @@ export function profilesDraftFields(d: ProfilesDraft, saved: ProfilesDraft | nul
       { rule: renamed ? PROFILE_LABEL_RULE : PROFILE_READ_RULE, value: row.name },
       { message: nameIssue(d, row.key) },
     ];
+    out.push({ message: row.model && row.thinking === "" ? `${row.name}'s This chat rows each need a model and an effort.` : null });
     if (row.starts?.grant.length) for (const k of LIMIT_KEYS) out.push({ rule: LIMIT_RULES[k], value: (row.starts.limits as unknown as Record<string, unknown>)[k], label: `${row.name}'s ${LIMIT_LABEL[k]}` });
     const h = row.lib ? d.library[row.lib] : undefined;
     if (h && row.lib && !seen.has(row.lib)) {

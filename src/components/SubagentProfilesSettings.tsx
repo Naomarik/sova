@@ -25,6 +25,8 @@ const DELEGATE = [
 ] as const;
 type Route = { primary: WorkerChoice; fallback: WorkerChoice | null };
 
+/** This chat's "Its default" effort: the model's own (no effort saved). */
+const DEFAULT_EFFORT = "default";
 /** A Set All To pick's value: the backend and the model, one select value. */
 const pickValue = (backend: string, model: string) => `${backend}\t${model}`;
 
@@ -44,8 +46,8 @@ export function ProfileModelsPart(props: {
   readOnly: boolean;
   disabled: boolean;
   /** The chat's own model ref and effort (null: keeps the chat's own). */
-  chat: { model: string | null; thinking: ThinkingLevel | null };
-  onChat?(next: { model: string | null; thinking: ThinkingLevel | null }): void;
+  chat: { model: string | null; thinking: ThinkingLevel | "" | null };
+  onChat?(next: { model: string | null; thinking: ThinkingLevel | "" | null }): void;
   /** The library half as a library profile (id and name are the row's), or null: no helpers of its own. */
   profile: SubagentProfile | null;
   change(fn: (p: SubagentProfile) => void): void;
@@ -304,7 +306,7 @@ export function ProfileModelsPart(props: {
           onChange={(v) => {
             const levels = props.models?.find((m) => m.ref === v)?.thinkingLevels;
             const t = props.chat.thinking;
-            props.onChat?.({ model: v || null, thinking: v && t && (!levels || levels.includes(t)) ? t : null });
+            props.onChat?.({ model: v || null, thinking: v && t && (!levels || levels.includes(t)) ? t : v && t !== null && t !== undefined ? "" : null });
           }}
         >
           <option value="" selected={!props.chat.model}>
@@ -328,11 +330,16 @@ export function ProfileModelsPart(props: {
           label="This chat effort"
           hideLabel
           class="profile-model-effort"
-          value={props.chat.thinking ?? ""}
+          value={props.chat.thinking === "" ? "" : (props.chat.thinking ?? DEFAULT_EFFORT)}
           disabled={off() || !props.onChat || !props.chat.model}
-          onChange={(v) => props.onChat?.({ model: props.chat.model, thinking: (v || null) as ThinkingLevel | null })}
+          onChange={(v) => props.onChat?.({ model: props.chat.model, thinking: v === DEFAULT_EFFORT ? null : (v as ThinkingLevel) })}
         >
-          <option value="" selected={!props.chat.thinking}>
+          <Show when={props.chat.thinking === ""}>
+            <option value="" selected disabled>
+              Choose
+            </option>
+          </Show>
+          <option value={DEFAULT_EFFORT} selected={props.chat.thinking === null}>
             Its default
           </option>
           <For each={chatLevels()}>

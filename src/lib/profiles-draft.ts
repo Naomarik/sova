@@ -51,7 +51,7 @@ export function saveRequestOf(d: ProfilesDraft, base: ProfilesDraft, key: string
     changed = true;
   }
   if (before ? row.thinking !== before.thinking : row.thinking !== null) {
-    body.thinking = row.thinking;
+    body.thinking = row.thinking || null; // "" never saves: Save waits for it
     changed = true;
   }
   const h = row.lib ? d.library[row.lib] : undefined;

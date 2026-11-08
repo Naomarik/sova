@@ -111,9 +111,17 @@ test("Set All To: every model row to the pick on its own backend, This chat incl
   assert.equal(h.members, null);
   const chat = next.rows.find((r) => r.key === "user:claude")!;
   assert.equal(chat.model, "openai/gpt-6.1-sol", "This chat moves too");
-  assert.equal(chat.thinking, null, "high isn't on the new model's ladder");
+  assert.equal(chat.thinking, "", "high isn't on the new model's ladder: left blank, as a helper row's is");
   assert.equal(d.library.c!.delegate.planning.primary.model, "claude-opus-5-5", "the draft it was given is untouched");
   assert.notEqual(firstIssue(profilesDraftFields(next, d)), null, "a blanked effort holds Save");
+  // This chat's blank effort holds Save on its own, every helper row complete (§app.settings-dialog/profile-set-all).
+  const onlyChat = setAllTo(d, "user:claude", { backend: "pi", model: "openai/gpt-6.1-sol" }, { efforts: () => null, levels: () => ["off", "low"] });
+  assert.equal(firstIssue(profilesDraftFields(onlyChat, d))?.message, "Claude's This chat rows each need a model and an effort.");
+  const chosen: ProfilesDraft = JSON.parse(JSON.stringify(onlyChat));
+  chosen.rows[0]!.thinking = "low";
+  assert.equal(firstIssue(profilesDraftFields(chosen, d)), null, "choosing an effort clears it");
+  chosen.rows[0]!.thinking = null;
+  assert.equal(firstIssue(profilesDraftFields(chosen, d)), null, "so does Its default (no effort saved)");
   const kept = setAllTo(d, "user:claude", { backend: "claude-code", model: "claude-sonnet-5-5" }, { efforts: () => null, levels: () => null });
   assert.equal(kept.rows[0]!.model, "claude-code-cli/claude-sonnet-5-5", "a Claude Code pick is the chat's claude-code-cli ref");
   assert.equal(kept.rows[0]!.thinking, "high", "a ladder nobody can say keeps the effort");

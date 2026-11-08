@@ -139,4 +139,26 @@ describe("a blocking review goes through the merge thread", () => {
       await k.done();
     }
   });
+
+  test("an entry with no standing approval (a release's, an approval from before it) keeps its review on the entry: no record, no card, it waits for the user", async () => {
+    const { k, events } = reviewKit(() => true);
+    try {
+      k.run.set(() => ({ verdict: "review-flagged", review: blocking(FINDINGS.slice(0, 1)) }));
+      const q = await k.q();
+      k.repo.branch("feat/rv4", { "r.txt": "r\n" });
+      await q.pause("an approval with no standing Land");
+      const { entry } = await q.add({ branch: "feat/rv4", by: "land-button", session: "s1" });
+      const raw = q.entry(entry.id)!;
+      delete raw.approval.standing;
+      q.save();
+      await q.resume();
+      const e = await at(k, entry.id, "review flagged", (x) => x.state === "review-flagged");
+      assert.equal(e.reviews, undefined, "no review record, so no card");
+      assert.equal(e.requests?.length ?? 0, 0);
+      assert.deepEqual(e.review?.findings, FINDINGS.slice(0, 1), "the verdict stays whole on the entry");
+      assert.ok(!events.some((ev) => ev.kind === "review"), "nothing for the thread to hand on");
+    } finally {
+      await k.done();
+    }
+  });
 });

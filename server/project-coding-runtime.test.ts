@@ -333,6 +333,33 @@ describe("a project's coding sessions", async () => {
     }
   });
 
+  test("a standalone project's coding start naming a marked profile with session powers gets its session half whole, by the Overseer (§app.project-overseer/coding-mode)", async () => {
+    const { registerProjectIn } = await import("./projects/spaces");
+    const soloRoot = join(tmp, "solo-profile");
+    mkdirSync(soloRoot, { recursive: true });
+    const solo = (await registerProjectIn("standalone", soloRoot, { name: "Solo Reader", origin: "folder" })).project;
+    mkdirSync(join(agentDir, "sova"), { recursive: true });
+    writeFileSync(join(agentDir, "sova", "session-profiles.json"), JSON.stringify({ version: 1, profiles: [{ id: "reader", label: "Reader", grant: ["sessions.read"], overseerMayStart: true }] }));
+    try {
+      // No auth here: the prompt is accepted and its turn fails (or it is refused), after everything else.
+      const err = await po.codeItem(solo.id, { prompt: "Read around", title: "Reader", profile: "reader", already_agreed: true }, "overseer").then(
+        (r) => (r.notPrompted ? new Error(r.notPrompted) : null),
+        (e: Error) => e,
+      );
+      if (err) assert.doesNotMatch(err.message, /not prompted|profile was not/, err.message);
+      const row = readBuilds(solo.id).find((r) => r.title === "Reader");
+      assert.ok(row?.path, JSON.stringify(readBuilds(solo.id)));
+      const entries = readFileSync(row.path!, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+      const prof = entries.filter((e) => e.type === "custom" && e.customType === "sova-profile").at(-1);
+      assert.deepEqual(prof?.data.profile?.grant, ["sessions.read"], "its powers came with it");
+      assert.equal(prof?.data.profile?.id, "reader");
+      // The same profile in an organization's project is refused before anything.
+      await assert.rejects(po.codeItem(plain.id, { prompt: "p", title: "t", profile: "reader" }, "overseer"), /Reader grants session powers, which an organization's coding sessions never take, so it can't start one\./);
+    } finally {
+      rmSync(join(agentDir, "sova", "session-profiles.json"), { force: true });
+    }
+  });
+
   test("a mode that can't be set sends no prompt; the session stays, listed", async () => {
     // No mode extension in the next runtime: nothing can take the mode.
     const settingsFile = join(agentDir, "settings.json");

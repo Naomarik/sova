@@ -125,12 +125,12 @@ export function withProfileModes(mode: ProjectCodingMode, takes: Pick<CodingTake
  * A checked mode with its named profile looked up (§app.project-overseer/coding-mode): on a start, the profile's modes
  * fill in what the call didn't name; on a switch only its Models part moves. Unknown or unusable: the refusal.
  */
-export async function withNamedProfile<M extends Partial<ProjectCodingMode>>(mode: M, req: Pick<ModeRequest, "mode" | "minor_modes">, cwd: string | null, start: boolean): Promise<{ mode: M; name?: string } | { error: string }> {
+export async function withNamedProfile<M extends Partial<ProjectCodingMode>>(mode: M, req: Pick<ModeRequest, "mode" | "minor_modes">, cwd: string | null, start: boolean, inOrg = false): Promise<{ mode: M; name?: string } | { error: string }> {
   if (mode.profile === undefined) return { mode };
-  const r = await namedCodingProfile(mode.profile, cwd, start);
+  const r = await namedCodingProfile(mode.profile, cwd, start, inOrg);
   if ("error" in r) return r;
   const out = start ? (withProfileModes(mode as unknown as ProjectCodingMode, r.takes, req) as unknown as M) : { ...mode };
-  return { mode: { ...out, profile: r.takes.id }, name: r.takes.name };
+  return { mode: { ...out, profile: r.takes.id, ...(start && r.takes.grants ? { profileStart: r.takes.grants } : {}) }, name: r.takes.name };
 }
 
 /** Why an Overseer may not name this subagent profile (unknown here), or null. */
@@ -246,7 +246,7 @@ export const alreadyAgreedOf = (v: unknown): boolean => v === true;
 
 /** A verb playbook run's mode: its base, with align on beside it (normalized order, never twice). */
 export function playbookRunMode(base: ProjectCodingMode): ProjectCodingMode {
-  const rest = { ...(base.subagentProfile !== undefined ? { subagentProfile: base.subagentProfile } : {}), ...(base.profile !== undefined ? { profile: base.profile } : {}) };
+  const rest = { ...(base.subagentProfile !== undefined ? { subagentProfile: base.subagentProfile } : {}), ...(base.profile !== undefined ? { profile: base.profile } : {}), ...(base.profileStart ? { profileStart: base.profileStart } : {}) };
   if (base.minorModes.includes("align")) return { mode: base.mode, minorModes: [...base.minorModes], ...rest };
   const p = parseModePatch({ minorModes: [...base.minorModes, "align"] });
   return { mode: base.mode, minorModes: "error" in p ? [...base.minorModes, "align"] : (p.minorModes ?? []), ...rest };

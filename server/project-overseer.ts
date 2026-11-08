@@ -727,7 +727,7 @@ function toolHost(rt: Rt): PoToolHost {
     transcript: async (path) => rowsOf(await readBranch(path)),
     async codingMode(req) {
       const c = checkedCodingModeChoice(req);
-      return "error" in c ? c : withNamedProfile(c.mode, req, projectOf(projectId).root, true);
+      return "error" in c ? c : withNamedProfile(c.mode, req, projectOf(projectId).root, true, isPlaced(projectId));
     },
     async codingSwitch(req) {
       const c = codingModeSwitch(req);
@@ -1019,11 +1019,11 @@ export function codingModeNowWords(now = codingModeNow()): string {
 }
 
 /** The Overseer's mode request on a start (POST …/items/code): its mode, or a 400 before anything is taken. */
-async function itemCodeMode(body: ModeRequest, root: string): Promise<ProjectCodingMode | undefined> {
+async function itemCodeMode(body: ModeRequest, root: string, inOrg: boolean): Promise<ProjectCodingMode | undefined> {
   if (body.mode === undefined && body.minor_modes === undefined && body.subagent_profile === undefined && body.profile === undefined) return undefined;
   const c = checkedCodingModeChoice({ ...body, by: "the Overseer" });
   if ("error" in c) throw new OrgError(c.error, 400);
-  const named = await withNamedProfile(c.mode, body, root, true);
+  const named = await withNamedProfile(c.mode, body, root, true, inOrg);
   if ("error" in named) throw new OrgError(named.error, 400);
   return named.mode;
 }
@@ -1649,7 +1649,7 @@ export async function codeItem(projectId: string, body: ItemCodeInput, via?: "ov
   const title = typeof body.title === "string" ? body.title.trim() : "";
   if (!item && (!prompt || !title)) throw new OrgError("Without an item (todo or idea), give both prompt and title.");
   // Checked before anything is taken: an unknown name starts nothing.
-  const mode = await itemCodeMode(body, projectOf(projectId).root);
+  const mode = await itemCodeMode(body, projectOf(projectId).root, isPlaced(projectId));
   // A §gap/… idea whose gap has promoted decisions not built yet: the gap's own build (where its layer says), when
   // that would take it; otherwise a plain coding session linked to the idea.
   const engine = engineOrThrow(projectId);

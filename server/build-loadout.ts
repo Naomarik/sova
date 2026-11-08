@@ -323,6 +323,12 @@ export interface CodingModeApplied {
  * finishes in the old mode) and what the session is on.
  */
 export async function applyCodingMode(path: string, mode: CodingModeSwitch): Promise<CodingModeApplied> {
+  // A named profile with session powers, marked for the Overseer and approved: its session half is written whole,
+  // by the Overseer, before the mode below (which the call may have named over the profile's) is applied and pinned.
+  if (mode.profileStart) {
+    const r = await (await import("./session-profile-routes")).applyProfile(path, { source: mode.profileStart.source as never, id: mode.profileStart.id }, "overseer");
+    if (!r.ok) throw new OrgError(`its profile was not set: ${r.error}`, 409);
+  }
   const chat = await acquireChatHandle(path);
   const patch = { ...(mode.mode ? { mode: mode.mode } : {}), ...(mode.minorModes ? { minorModes: mode.minorModes as never } : {}) };
   if (Object.keys(patch).length || mode.subagentProfile === undefined) {

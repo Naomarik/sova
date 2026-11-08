@@ -56,6 +56,11 @@ const JOINED = [
   { id: "claude", key: "user:claude", kind: "pair", group: "yours", name: "Claude", footprint: "Opus 5.5", providers: ["claude"], helperRoles: 4, libraryId: "house", isDefault: true, session: { ...SESSION, id: "claude", label: "Claude", key: "user:claude", mode: "delegate", minorModes: ["spec"], model: "claude-code-cli/claude-opus-5-5", thinking: "high", subagents: "house" } },
   { id: "big", key: "library:big", kind: "library", group: "yours", name: "Big team", footprint: "GPT", providers: ["openai"], helperRoles: 6, libraryId: "big" },
   { id: "powers", key: "user:powers", kind: "pair", group: "yours", name: "Powers", footprint: "Opus 5.5", providers: ["claude"], helperRoles: 4, libraryId: "house", session: { ...SESSION, id: "powers", label: "Powers", key: "user:powers", remove: ["web"], grant: ["sessions.message"], overseerMayStart: true, subagents: "house" } },
+  { id: "messenger", key: "user:messenger", kind: "pair", group: "yours", name: "Messenger", footprint: "Opus 5.5", providers: ["claude"], helperRoles: 4, libraryId: "house", session: { ...SESSION, id: "messenger", label: "Messenger", key: "user:messenger", grant: ["sessions.read", "sessions.message"], overseerMayStart: true, subagents: "house" } },
+  { id: "unmarked", key: "user:unmarked", kind: "pair", group: "yours", name: "Unmarked", footprint: "Opus 5.5", providers: ["claude"], helperRoles: 0, session: { ...SESSION, id: "unmarked", label: "Unmarked", key: "user:unmarked", grant: ["sessions.read"] } },
+  { id: "pending", key: "project:/proj#pending", kind: "project", group: "project", name: "Pending", footprint: "Opus 5.5", providers: [], helperRoles: 0, approval: "needed", session: { ...SESSION, id: "pending", label: "Pending", key: "project:/proj#pending", source: "project", grant: ["sessions.read"], overseerMayStart: true } },
+  { id: "greeter", key: "user:greeter", kind: "pair", group: "yours", name: "Greeter", footprint: "Opus 5.5", providers: [], helperRoles: 0, session: { ...SESSION, id: "greeter", label: "Greeter", key: "user:greeter", firstMessage: "Hi" } },
+  { id: "solo", key: "user:solo", kind: "pair", group: "yours", name: "Solo", footprint: "Opus 5.5", providers: [], helperRoles: 0, session: { ...SESSION, id: "solo", label: "Solo", key: "user:solo", singleton: true } },
 ] as never as import("../shared/profiles").JoinedProfile[];
 /** What the real host's withNamedProfile does, over JOINED. */
 function namedFake<M extends Partial<ProjectCodingMode>>(mode: M, req: Record<string, unknown>, start: boolean): { mode: M; name?: string } | { error: string } {
@@ -64,8 +69,9 @@ function namedFake<M extends Partial<ProjectCodingMode>>(mode: M, req: Record<st
   if (!row) return { error: `Unknown profile: ${mode.profile}. sova_list_profiles lists them.` };
   const bad = start ? codingStartRefusal(row) : null;
   if (bad) return { error: bad };
-  const out = start ? (withProfileModes(mode as never, codingTakesOf(row), req) as unknown as M) : { ...mode };
-  return { mode: { ...out, profile: row.id }, name: row.name };
+  const takes = codingTakesOf(row);
+  const out = start ? (withProfileModes(mode as never, takes, req) as unknown as M) : { ...mode };
+  return { mode: { ...out, profile: row.id, ...(start && takes.grants ? { profileStart: takes.grants } : {}) }, name: row.name };
 }
 after(() => rmSync(root, { recursive: true, force: true }));
 
@@ -545,7 +551,7 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
     const f = fake({ attended: false, autonomy: "L0" });
     const r = await f.run("sova_list_profiles");
     assert.equal(
-      (r.content[0] as { text: string }).text,
+      (r.content[0] as { text: string }).text.split("\n").slice(0, 4).join("\n"),
       [
         "off: Off · Keeps the chat's own model · sets nothing · needs no mark",
         'claude: Claude · Opus 5.5 · When a Chat Starts + Models · subagent_profile house · not marked "The Overseer may start it" · default',
@@ -555,6 +561,7 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
     );
     const old = await f.run("sova_list_subagent_profiles");
     assert.equal((old.content[0] as { text: string }).text, (r.content[0] as { text: string }).text, "the older name answers the same");
+    assert.match((r.content[0] as { text: string }).text, /^pending: Pending · .* · needs the user's approval$/m);
     assert.equal(TOOL_POWER.sova_list_profiles, "always");
     assert.equal(TOOL_POWER.sova_list_subagent_profiles, "always");
   });
@@ -570,12 +577,23 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
     const lib = fake({ attended: true });
     await lib.run("sova_create_session", { gap: "none", prompt: "p", profile: "big", already_agreed: true });
     assert.deepEqual(lib.modes, [{ mode: "normal", minorModes: ["spec"], profile: "big" }], "a library-only profile: the default's mode, its models");
-    // Grants or removals never reach a coding session, so a profile that has them is refused before anything.
+    // Removals, a first message or One at a time never fit a coding session; powers only with the mark and approval.
     const g = fake({ attended: true, settings: { caps: { ...defaultPoSettings().caps, createPerTurn: 0 } } });
-    await assert.rejects(() => g.run("sova_create_session", { gap: "none", prompt: "p", profile: "powers" }), /Powers changes tools or session powers, which a coding session never takes from a profile\./);
+    for (const [id, name] of [["powers", "Powers"], ["greeter", "Greeter"], ["solo", "Solo"]])
+      await assert.rejects(() => g.run("sova_create_session", { gap: "none", prompt: "p", profile: id }), new RegExp(`Coding sessions need their tools and send their own brief, so ${name} can't start one\\.`), id);
+    await assert.rejects(() => g.run("sova_create_session", { gap: "none", prompt: "p", profile: "unmarked" }), /Unmarked grants session powers and isn't marked "The Overseer may start it", so it can't start a coding session\./);
+    await assert.rejects(() => g.run("sova_create_session", { gap: "none", prompt: "p", profile: "pending" }), /Pending needs the operator's approval in Settings → Profiles first\./);
     await assert.rejects(() => g.run("sova_create_session", { gap: "none", prompt: "p", profile: "nope" }), /Unknown profile: nope\. sova_list_profiles lists them\./);
     await assert.rejects(() => g.run("sova_create_session", { gap: "none", prompt: "p", profile: "claude", subagent_profile: "big" }), /Give profile or subagent_profile, not both/);
     assert.deepEqual([g.calls, g.limited], [[], []], "nothing created, no cap");
+    // Marked and approved: its powers come too, its session half written whole by the Overseer.
+    const m = fake({ attended: true });
+    await m.run("sova_create_session", { gap: "none", prompt: "p", profile: "messenger", already_agreed: true });
+    assert.deepEqual(m.modes, [{ mode: "normal", minorModes: ["spec"], profile: "messenger", profileStart: { source: "user", id: "messenger" } }]);
+    // Without already_agreed, align is added and the profile's start still rides with the mode.
+    const a = fake({ attended: true });
+    await a.run("sova_create_session", { gap: "none", prompt: "p", profile: "messenger" });
+    assert.deepEqual((a.modes[0] as ProjectCodingMode).profileStart, { source: "user", id: "messenger" });
   });
 
   test("profile on sova_send: only its Models part moves (any profile, even one with powers); unknown refused before sending", async () => {

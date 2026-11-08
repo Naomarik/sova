@@ -34,6 +34,8 @@ export interface CodingTakes {
   thinking?: string;
   /** The library id, or "off"; absent: the session follows this computer's default helpers. */
   subagents?: string;
+  /** Its session half, when it grants a session power: a named start writes it whole (by the Overseer). */
+  grants?: { source: string; id: string };
 }
 
 export function codingTakesOf(row: JoinedProfile): CodingTakes {
@@ -46,29 +48,37 @@ export function codingTakesOf(row: JoinedProfile): CodingTakes {
     ...(s?.model ? { model: s.model } : {}),
     ...(s?.thinking ? { thinking: s.thinking } : {}),
     ...(row.kind === "off" ? { subagents: "off" } : row.libraryId ? { subagents: row.libraryId } : {}),
+    ...(s && s.grant.length ? { grants: { source: s.source, id: s.id } } : {}),
   };
 }
 
-/** Why a profile named for a coding session's start can't be its start (null: it can): one that changes tools or
-    session powers, since a coding session takes only a profile's models and modes, and one awaiting approval. */
+/** Why a profile named for a coding session's start can't be its start (null: it can). Its Models part and modes
+    always fit. Tool removals, a first message or One at a time don't: a coding session needs its tools, sends its own
+    brief and is counted by its build. Session powers come only with the mark "The Overseer may start it", which counts
+    for both Overseers' coding starts, and the operator's approval of a project's profile. */
 export function codingStartRefusal(row: JoinedProfile): string | null {
-  if (row.approval === "needed") return `${row.name} needs the operator's approval in Settings → Profiles first.`;
   if (row.unusable) return `${row.name} can't be used here: ${row.unusable}`;
   if (row.linkMissing) return `${row.name} can't be used here: ${row.linkMissing}`;
   const s = row.session;
-  if (s && (s.remove.length || s.grant.length || s.singleton || (s.firstMessage ?? "").trim()))
-    return `${row.name} changes tools or session powers, which a coding session never takes from a profile. Name one that sets only models and modes, or use subagent_profile for its helpers.`;
+  if (!s) return null;
+  if (s.remove.length || s.singleton || (s.firstMessage ?? "").trim()) return `Coding sessions need their tools and send their own brief, so ${row.name} can't start one.`;
+  if (s.grant.length && !s.overseerMayStart) return `${row.name} grants session powers and isn't marked "The Overseer may start it", so it can't start a coding session.`;
+  if (s.grant.length && (row.approval === "needed" || s.approval === "needed")) return `${row.name} needs the operator's approval in Settings → Profiles first.`;
   return null;
 }
+
+/** An organization's sessions never take a profile's session powers (they show no picker, and what they may read
+    and message is the organization's), so a start there naming one that grants them is refused before anything. */
+export const orgPowersRefusal = (name: string) => `${name} grants session powers, which an organization's coding sessions never take, so it can't start one.`;
 
 /**
  * The profile an Overseer names for a coding session in `cwd`, or the refusal sentence, checked before anything is
  * created or sent. `start`: for a start, which takes its modes too, so one that changes tools or powers is refused;
  * a switch of a running session moves only its Models part, which the switch itself checks again.
  */
-export async function namedCodingProfile(id: string, cwd: string | null, start: boolean): Promise<{ takes: CodingTakes } | { error: string }> {
+export async function namedCodingProfile(id: string, cwd: string | null, start: boolean, inOrg = false): Promise<{ takes: CodingTakes } | { error: string }> {
   const row = await findJoined(id, cwd);
   if (!row) return { error: `Unknown profile: ${id}. sova_list_profiles lists them.` };
-  const bad = start ? codingStartRefusal(row) : row.approval === "needed" ? `${row.name} needs the operator's approval in Settings → Profiles first.` : null;
+  const bad = start ? (codingStartRefusal(row) ?? (inOrg && row.session?.grant.length ? orgPowersRefusal(row.name) : null)) : row.approval === "needed" ? `${row.name} needs the operator's approval in Settings → Profiles first.` : null;
   return bad ? { error: bad } : { takes: codingTakesOf(row) };
 }

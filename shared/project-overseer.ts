@@ -223,6 +223,9 @@ export interface ProjectCodingMode {
   /** A profile an Overseer named for that session (a joined profile's id, §chat.profiles/joined): its Models part is
       switched in whole once the session exists (§chat.profiles/switch); its tools and powers never are. */
   profile?: string;
+  /** A start's named profile that grants session powers (marked "The Overseer may start it", approved): its session
+      half, written whole as the session's profile entry, by the Overseer (§app.project-overseer/coding-mode). */
+  profileStart?: { source: string; id: string };
 }
 
 /** A switch an Overseer asks of a running coding session (sova_send): only what it names. */

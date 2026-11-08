@@ -942,7 +942,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
             const checked = checkedCodingModeChoice({ mode: p.mode, minor_modes: p.minor_modes, subagent_profile: p.subagent_profile, profile: p.profile, by: "the Overseer" });
             if ("error" in checked) throw refuse(`${checked.error} No session was started.`);
             // A named profile is looked up here too, so an unknown or unusable one takes no slot and no count.
-            const chose = await withNamedProfile(checked.mode, p, readProject(project.id).root, true);
+            const chose = await withNamedProfile(checked.mode, p, readProject(project.id).root, true, project.orgId !== null);
             if ("error" in chose) throw refuse(`${chose.error} No session was started.`);
             const slot = d.slot();
             if ("refusal" in slot) throw refuse(slot.refusal);

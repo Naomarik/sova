@@ -26,10 +26,10 @@ export interface JoinInputs {
   names?: ReadonlyMap<string, string>;
 }
 
-/** The roles a library profile sets: Delegate's four kinds, the coordinator and monitor, members, spec writer, reviewer. */
+/** The roles a library profile sets: Delegate's four kinds, the coordinator and monitor, spec writer, reviewer. */
 export function helperRoles(lib: SubagentProfile | undefined): number {
   if (!lib) return 0;
-  return 4 + (lib.teams ? 2 : 0) + (lib.members ? 1 : 0) + (lib.specWriter ? 1 : 0) + (lib.reviewer ? 1 : 0);
+  return 4 + (lib.teams ? 2 : 0) + (lib.specWriter ? 1 : 0) + (lib.reviewer ? 1 : 0);
 }
 
 /** The footprint (§chat.profiles/joined): distinct models, the chat's own first, " + ", at most 3 then "+N". */

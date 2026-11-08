@@ -50,7 +50,6 @@ export function profilesFields(d: LibraryDraft): (FieldCheck | { message: string
       name!,
       { message: profileNameIssue(d, p.id) },
       { message: row ? (samePair(row[1], row[2]) ? `${p.name}'s ${row[0]} fallback is its primary; choose another worker, or none.` : `${p.name}'s ${row[0]} rows each need a model and an effort.`) : null },
-      { message: incomplete(p.members) ? `${p.name}'s members default needs a model and an effort.` : null },
       ...boxes,
       { message: roles[0] && roles[0] === roles[1] ? `${p.name}'s coordinator and monitor need different role names.` : null },
     ];

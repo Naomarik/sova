@@ -61,8 +61,9 @@ test("every chosen row needs a model and an effort, whichever section it sits in
   const delegated = validProfile();
   delegated.delegate.complex.primary = claude("", "");
   assert.match(profilesProblem(file([delegated]))!, /model and an effort/);
+  // Members have no row (they follow Delegate's work kinds): a saved incomplete value never holds Save.
   const members = validProfile({ members: { backend: "pi", model: "zai/glm-5.3", effort: "" } });
-  assert.match(profilesProblem(file([members]))!, /members default needs a model and an effort/);
+  assert.equal(profilesProblem(file([members])), null);
   const teams = validProfile({
     teams: {
       coordinator: { role: "coordinator", primary: tclaude("opus[1m]", "" as TupleEffort), fallback: null, instructions: "" },
@@ -111,7 +112,7 @@ test("the editor's worker rows are wired live, never as a mount-time snapshot", 
   const src = readFileSync(new URL("../components/SubagentProfilesSettings.tsx", import.meta.url), "utf8");
   assert.match(src, /const tuple = \(\s*role: string,\s*choice: \(\) => WorkerChoice/, "tuple's choice is a thunk");
   assert.match(src, /const pair = \(role: string, choice: \(\) => \{/, "pair's choice is a thunk");
-  assert.match(src, /\(m\) => tuple\("members", m,/, "members hands over the Show's accessor");
+  assert.doesNotMatch(src, /tuple\("members"|\.members\b|"Members"/, "no Members row, switch or read in the editor");
   assert.match(src, /\(w\) => \([^()]*?<>[\s\S]{0,400}?pair\("spec", w,/, "spec writer hands over the Show's accessor");
   assert.match(src, /\(f\) => \(\s*<>[\s\S]{0,120}?\{tuple\(role, f,/, "pair's fallback row hands over the Show's accessor");
   assert.doesNotMatch(src, /\((\w)\) => (?:tuple|pair)\([^)]*?\1\(\)/, "no callback reads its accessor at mount time");

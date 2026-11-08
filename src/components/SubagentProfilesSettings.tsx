@@ -93,8 +93,7 @@ export function ProfileModelsPart(props: {
     for (const [k] of DELEGATE) if (routeBad(x.delegate[k])) out.add(k);
     if (sectionProblems(x).has("teams")) {
       if (x.teams) for (const r of ["coordinator", "monitor"] as const) if (routeBad(x.teams[r] as Route)) out.add(r);
-      if (incomplete(x.members)) out.add("members");
-      if (!["coordinator", "monitor", "members"].some((k) => out.has(k))) out.add("coordinator");
+      if (!["coordinator", "monitor"].some((k) => out.has(k))) out.add("coordinator");
     }
     if (routeBad(x.specWriter)) out.add("spec");
     if (routeBad(x.reviewer)) out.add("reviewer");
@@ -120,7 +119,7 @@ export function ProfileModelsPart(props: {
   });
 
   // Accessor args, not values: these factories are invoked once when their <Show> mounts, so a
-  // plain `c()` read there would freeze the row on the toggle's first state (the members/spec bug).
+  // plain `c()` read there would freeze the row on the toggle's first state (the spec writer's bug).
   // The thunk reads the draft every time the row's props are read.
   const tuple = (
     role: string,
@@ -545,27 +544,6 @@ export function ProfileModelsPart(props: {
               <h4 class="profile-model-group-head">Teams</h4>
               {teamRow(x, "coordinator")}
               {teamRow(x, "monitor")}
-              {row(
-                "members",
-                "Members",
-                () => compact("Members", "members", () => x().members, (c) => change((y) => (y.members = c)), "On the lead's model"),
-                () => (
-                  <fieldset class="subagent-editor-route subagent-editor-flush">
-                    <legend class="subagent-editor-route-name">Members default</legend>
-                    <Toggle
-                      switch
-                      class="settings-team-enable"
-                      label="Choose a model for ordinary members"
-                      checked={x().members !== null}
-                      disabled={off()}
-                      onChange={(v) => change((y) => (y.members = v ? { backend: "pi", model: "", effort: "" } : null))}
-                    />
-                    <Show when={x().members} fallback={<p class="field-hint">A member nobody gave a model runs on its team lead's model.</p>}>
-                      {(m) => tuple("members", m, () => null, (c) => change((y) => (y.members = c)), "primary", () => true)}
-                    </Show>
-                  </fieldset>
-                ),
-              )}
 
               <h4 class="profile-model-group-head">Review</h4>
               {row(

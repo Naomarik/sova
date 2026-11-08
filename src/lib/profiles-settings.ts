@@ -112,7 +112,6 @@ function helperChoices(h: Helpers): WorkerChoice[] {
   const out: WorkerChoice[] = [];
   for (const k of ["planning", "investigation", "routine", "complex"] as const) if (h.delegate[k]) out.push(h.delegate[k].primary);
   if (h.teams) out.push(h.teams.coordinator.primary as WorkerChoice, h.teams.monitor.primary as WorkerChoice);
-  if (h.members) out.push(h.members);
   if (h.specWriter) out.push(h.specWriter.primary);
   if (h.reviewer) out.push(h.reviewer.primary);
   return out;
@@ -211,8 +210,7 @@ export interface SetAllLookup {
  * Set All To (§app.settings-dialog/profile-set-all): every model row of `key`'s Models part, This
  * chat included, to `pick`, on the model's own backend; each row keeps its effort where the new
  * model takes it and is left blank otherwise (so Save waits, as one row's model change does). A
- * row that holds no model (a spec writer that is off, the members default on the lead's model,
- * the team roles on the default model) stays as it is: it has nothing to change. Fallbacks stay.
+ * row that holds no model (a spec writer that is off, the team roles on the default model) stays as it is: it has nothing to change. Fallbacks stay.
  */
 export function setAllTo(d: ProfilesDraft, key: string, pick: { backend: DelegateBackendId; model: string }, look: SetAllLookup): ProfilesDraft {
   const next = clone(d);
@@ -238,7 +236,6 @@ export function setAllTo(d: ProfilesDraft, key: string, pick: { backend: Delegat
       to(h.teams.coordinator.primary as WorkerChoice);
       to(h.teams.monitor.primary as WorkerChoice);
     }
-    if (h.members) to(h.members);
     if (h.specWriter) to(h.specWriter.primary);
     if (h.reviewer) to(h.reviewer.primary);
   }
@@ -333,7 +330,7 @@ export function nameIssue(d: ProfilesDraft, key: string): string | null {
 /**
  * Every profile's checks in list order: the name (48 characters for a new or renamed one; an older
  * session profile's longer name reads until renamed, §chat.profiles/profile-name), then its library
- * half's rows, members, team boxes and role names, each said once for a shared half.
+ * half's rows, team boxes and role names, each said once for a shared half.
  */
 export function profilesDraftFields(d: ProfilesDraft, saved: ProfilesDraft | null): (FieldCheck | { message: string | null })[] {
   const seen = new Set<string>();

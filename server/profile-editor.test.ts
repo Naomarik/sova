@@ -38,7 +38,7 @@ const deps = { sources };
 const read = (f: string) => readFileSync(f, "utf8");
 const json = <T,>(f: string) => JSON.parse(read(f)) as T;
 type Yours = { version: 1; profiles: Record<string, unknown>[] };
-type Lib = { version: 1; profiles: { id: string; name: string; members: unknown }[] };
+type Lib = { version: 1; profiles: { id: string; name: string; members: unknown; alignment?: unknown }[] };
 const helpers = (p: { id: string; name: string } & Record<string, unknown>) => {
   const { id: _i, name: _n, ...rest } = p;
   return rest as Record<string, unknown>;
@@ -86,9 +86,9 @@ describe("saving one of yours", () => {
     const yoursBefore = read(yoursFile);
     const yoursTime = statSync(yoursFile).mtimeMs;
     const house = json<Lib>(libFile).profiles.find((p) => p.id === "house")!;
-    const r2 = await saveMine({ key: "user:house", name: "House", helpers: { ...helpers(house), members: { backend: "pi", model: "zai/glm-5.3", effort: "high" } } as never }, deps);
+    const r2 = await saveMine({ key: "user:house", name: "House", helpers: { ...helpers(house), alignment: { eagerness: "careful" } } as never }, deps);
     assert.ok(r2.ok, !r2.ok ? r2.error : "");
-    assert.deepEqual(json<Lib>(libFile).profiles.find((p) => p.id === "house")!.members, { backend: "pi", model: "zai/glm-5.3", effort: "high" });
+    assert.deepEqual(json<Lib>(libFile).profiles.find((p) => p.id === "house")!.alignment, { eagerness: "careful" });
     assert.equal(read(yoursFile), yoursBefore);
     assert.equal(statSync(yoursFile).mtimeMs, yoursTime);
     // Saving what is already saved writes nothing at all.
@@ -109,9 +109,9 @@ describe("saving one of yours", () => {
 
   test("an edit through one profile changes a shared half for each", async () => {
     const shared = json<Lib>(libFile).profiles.find((p) => p.id === "shared")!;
-    assert.ok((await saveMine({ key: "user:a", name: "Alpha", helpers: { ...helpers(shared), members: { backend: "pi", model: "zai/glm-5.3", effort: "low" } } as never }, deps)).ok);
+    assert.ok((await saveMine({ key: "user:a", name: "Alpha", helpers: { ...helpers(shared), alignment: { style: "pm" } } as never }, deps)).ok);
     const rows = await joinedProfiles();
-    assert.deepEqual(rows.find((r) => r.id === "b")!.library?.members, { backend: "pi", model: "zai/glm-5.3", effort: "low" });
+    assert.deepEqual(rows.find((r) => r.id === "b")!.library?.alignment, { style: "pm" });
     assert.deepEqual(rows.find((r) => r.id === "a")!.alsoUsedBy, ["Beta"]);
   });
 

@@ -1853,10 +1853,10 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
     // Overseer files (current and history) are never swept by age or as husks: a fresh Overseer
     // is a husk by definition, and its history is pruned by /clear itself (paths mode).
     if (req.mode !== "paths" && (await summarize(path))?.overseer) continue;
-    // The merge queue's own chats are kept until the user clears them from the Merge Queue tab's History
+    // The merge queue's own chats are kept until the user clears them from the Merge Queue tab's Queue chats
     // (`opts.queueChats`, that route's alone): never swept, and refused by an ordinary paths delete.
     if (!opts.queueChats && (await summarize(path))?.queueChat) {
-      if (req.mode === "paths") refusals.push({ path, reason: "That is one of the merge queue's own chats: clear it from the Merge Queue tab's History." });
+      if (req.mode === "paths") refusals.push({ path, reason: "That is one of the merge queue's own chats: clear it from the Merge Queue tab's Queue chats." });
       continue;
     }
     if (live.has(path)) {

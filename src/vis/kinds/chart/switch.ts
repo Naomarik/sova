@@ -36,7 +36,10 @@ export interface ChartViews {
    * `scale: log`.
    */
   logOk: boolean;
-  /** Not already in percent, no value below 0 and something to share (a single series' sum above 0). */
+  /**
+   * Not already in percent, no value below 0 and something to share: a single series' sum above 0
+   * over two rows or more (one row is all of its own whole), any value above 0 with several series.
+   */
   pctOk: boolean;
 }
 
@@ -128,7 +131,7 @@ export function chartViews(spec: ChartSpec): ChartViews {
   const logOk = logWorth(spec);
   if (spec.type === "scatter" || capacity(spec)) return { views: [], model: spec.type, logOk: spec.type === "scatter" && logOk, pctOk: false };
   const single = seriesCount(spec) === 1;
-  const pctOk = !percent(spec) && !vs.some((v) => v < 0) && (single ? vs.reduce((a, v) => a + v, 0) > 0 : vs.some((v) => v > 0));
+  const pctOk = !percent(spec) && !vs.some((v) => v < 0) && (single ? spec.rows.length >= 2 && vs.reduce((a, v) => a + v, 0) > 0 : vs.some((v) => v > 0));
   // The model's own view is always offered: it is what the fence draws.
   const views = VIEW_ORDER.filter((v) => v === spec.type || fits(spec, v));
   return { views, model: spec.type, logOk, pctOk };
@@ -145,7 +148,8 @@ export function appliesIn(spec: ChartSpec, view: ChartType): Record<Toggle, bool
   if (capacity(spec)) return { log: false, sort: false, pct: false };
   return {
     log: (view === "bar" || view === "line") && v.logOk,
-    sort: view === "bar" || view === "stacked" || view === "parts",
+    // One row has no order to change.
+    sort: spec.rows.length >= 2 && (view === "bar" || view === "stacked" || view === "parts"),
     pct: (view === "bar" || view === "stacked" || view === "line") && v.pctOk,
   };
 }

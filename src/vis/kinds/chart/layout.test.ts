@@ -247,6 +247,9 @@ function* everyLayout(): Generator<[string, ChartSpec, ChartLayout]> {
   }
 }
 
+/** Stacks of shares: `unit: %` and every row adding up to 100 (Stacked with % on). */
+const shares = (spec: ChartSpec) => spec.type === "stacked" && spec.unit === "%" && spec.rows.every((r) => Math.abs(r.values.reduce<number>((a, v) => a + (v ?? 0), 0) - 100) < 1e-6);
+
 const BADGE = 9;
 const disc = (b: { x: number; y: number }) => ({ x: b.x - BADGE, y: b.y - BADGE, w: BADGE * 2, h: BADGE * 2 });
 /** How far apart two boxes are (0 when they touch or overlap). */
@@ -286,7 +289,8 @@ test("chart labels, every view at every width: a marked row keeps its value and 
       // Several lines label no points; every other marked bar or point names its value.
       if (lineSeries) continue;
       const own = g.values.filter((v) => v.row === row && !v.inside);
-      const items: number = g.mode === "line" ? g.points.filter((p) => p.row === row).length : spec.type === "stacked" ? 1 : g.bars.filter((b) => b.row === row).length;
+      // A stack of shares (every row 100) has no total to name.
+      const items: number = g.mode === "line" ? g.points.filter((p) => p.row === row).length : spec.type === "stacked" ? (shares(spec) ? 0 : 1) : g.bars.filter((b) => b.row === row).length;
       assert.equal(own.length, items, `${at}: marked row ${row} shows ${own.length} of its ${items} value labels`);
     }
     const shown = new Set(g.values.map((v) => v.row));
@@ -297,7 +301,7 @@ test("chart labels, every view at every width: a marked row keeps its value and 
       if (lineSeries) continue;
       // By its own bar or point: touching (within a few px of) its row's bars, points or labels.
       const mine = [...g.bars.filter((x) => x.row === b.row), ...g.points.filter((p) => p.row === b.row).map((p) => ({ x: p.x - 4, y: p.y - 4, w: 8, h: 8 })), ...g.values.filter((v) => v.row === b.row).map((v) => textBox(v, estimateWidth))];
-      assert.ok(shown.has(b.row), `${at}: badge ${b.row} has no label beside it`);
+      assert.ok(shown.has(b.row) || shares(spec), `${at}: badge ${b.row} has no label beside it`);
       assert.ok(Math.min(...mine.map((m) => apart(d, m))) <= 6, `${at}: badge ${b.row} floats away from its row`);
     }
   }
@@ -323,4 +327,52 @@ test("chart labels: a line chart thins its category labels evenly, keeping its e
   }
   const long = layoutChart(chart(CROWDED.longLine!), 330, estimateWidth);
   assert.ok(long.cats.length >= 2 && long.cats.some((c) => c.row === 0), `${long.cats.map((c) => c.row)}`);
+});
+
+test("chart labels: Stacked with % names no total over its columns (each would say 100)", () => {
+  let n = 0;
+  for (const [at, spec, g] of everyLayout()) {
+    if (!shares(spec)) continue;
+    n++;
+    const over = g.values.filter((v) => !v.inside);
+    assert.deepEqual(over.map((v) => v.text), [], `${at}: totals drawn`);
+  }
+  assert.ok(n > 10, `${n} share stacks`);
+  // Without %, a stack still names its total.
+  const g = layoutChart(chart(SAMPLES.stacked!), 560, estimateWidth);
+  assert.ok(g.values.some((v) => !v.inside && v.text === "280"), g.values.map((v) => v.text).join(","));
+});
+
+test("chart labels: a stacked chart's inside labels are judged once for the chart, so segments of one size all show theirs or none do", () => {
+  const body = 'type: stacked\nseries: input, output\n"Turn 1" 12400 820\n"Turn 2" 18900 1430\n"Turn 3" 21300 960\n"Turn 4" 48700 3120\n"Turn 5" 23800 1210\n"Turn 6" 25100 1880\nmark "Turn 4" "a large file read"';
+  const spec = chart(body);
+  for (const pct of [false, true])
+    for (const W of [260, 300, 324, 390, 560, 720]) {
+      const drawn = drawAs(spec, settle(spec, { view: "stacked", pct }));
+      const g = layoutChart(drawn, W, estimateWidth);
+      const at = `${pct ? "%" : "plain"}@${W} (${g.mode})`;
+      const labelled = (b: (typeof g.bars)[number]) => g.values.some((v) => v.inside && v.row === b.row && Math.abs(v.x - (b.x + b.w / 2)) < 0.5 && Math.abs(v.y - (b.y + b.h / 2)) < 0.5);
+      // Bars as tall (columns) or as long (sideways) as each other get the same answer.
+      const size = (b: (typeof g.bars)[number]) => (g.mode === "hbar" ? b.w : b.h);
+      for (const a of g.bars)
+        for (const b of g.bars) if (Math.abs(size(a) - size(b)) < 1 || (size(a) > size(b) && labelled(b))) assert.ok(labelled(a) || !labelled(b), `${at}: bar ${b.row}/${b.series} named, the same size or larger ${a.row}/${a.series} not`);
+    }
+});
+
+test("chart labels: a value label never sits on a bar, a marked group's included", () => {
+  for (const [at, , g] of everyLayout()) {
+    if (g.mode !== "column") continue;
+    for (const v of g.values) {
+      if (v.inside) continue;
+      const box = textBox(v, estimateWidth);
+      for (const b of g.bars) assert.ok(!overlaps({ x: box.x + 0.5, y: box.y + 1, w: box.w - 1, h: box.h - 2 }, b), `${at}: "${v.text}" sits on bar ${b.row}/${b.series}`);
+    }
+  }
+  // The reported case: Turn 4's narrow output bar at phone width, its "3120" over the marked input bar.
+  const spec = chart('series: input, output\n"Turn 1" 12400 820\n"Turn 2" 18900 1430\n"Turn 3" 21300 960\n"Turn 4" 48700 3120\n"Turn 5" 23800 1210\n"Turn 6" 25100 1880\nmark "Turn 4" "a large file read"');
+  const g = layoutChart(spec, 324, estimateWidth);
+  assert.equal(g.mode, "column");
+  const label = g.values.find((v) => v.text === "3120")!;
+  const input = g.bars.find((b) => b.row === 3 && b.series === 0)!;
+  assert.ok(!overlaps(textBox(label, estimateWidth), input), "3120 sits on the input bar");
 });

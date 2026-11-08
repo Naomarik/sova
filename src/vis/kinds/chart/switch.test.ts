@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { estimateWidth } from "../../core/text";
 import { emphasisMap, emphasisNotes } from "../../core/emphasis";
 import { parseVis } from "../../parse";
 import { MAX_PARTS, type ChartSpec } from "./parse";
@@ -498,4 +500,59 @@ test("chart views: the over-capacity Parts warning shows only in the model's vie
   assert.equal(drawAs(alone, choice({ view: "parts" })).warnings?.length, 1);
   // The model's spec is untouched.
   assert.equal(alone.warnings?.length, 1);
+});
+
+test("chart views: a marked part takes its mark's tone, as in Bar; a tone the row was written with still wins", () => {
+  const s = chart('"Quicksort" 120\n"Merge sort" 150\n"Insertion sort" 2400\n"Bubble sort" 9800\nmark "Bubble sort" warn "quadratic"');
+  for (const sort of [false, true]) {
+    const parts = partsOf(drawAs(s, choice({ view: "parts", sort }))).parts;
+    const bubble = parts.find((p) => p.label === "Bubble sort")!;
+    assert.equal(bubble.color, "vis-chart-toned vis-tone-warn", `sort ${sort}`);
+    // No other part shares its colour: the in-turn palette skips a colour a mark took.
+    assert.ok(parts.every((p) => p === bubble || !/^vis-chart-s1$|tone-warn$/.test(p.color)), parts.map((p) => p.color).join(", "));
+  }
+  // A mark with no tone is the accent's, as in Bar.
+  assert.equal(partsOf(chart("a 1\nb 2\nmark b")).parts[1]!.color, "vis-chart-toned vis-tone-accent");
+  // The row's own tone wins over its mark's.
+  assert.equal(partsOf(chart("a 1 ok\nb 2\nmark a error")).parts[0]!.color, "vis-chart-toned vis-tone-ok");
+});
+
+test("chart toggles: a one-row chart offers no Sort and, with one series, no %; Log still follows the fence", () => {
+  for (const type of ["bar", "line", "parts", "stacked"]) {
+    const one = chart(`type: ${type}\n"Cold start" 840`);
+    assert.deepEqual(offeredToggles(one), [], type);
+    assert.equal(toggleStates(one, settle(one, {})).length, 0, type);
+  }
+  // The model's scale: log stays offered and on.
+  const log = chart('scale: log\n"Cold start" 840');
+  assert.deepEqual(offeredToggles(log), ["log"]);
+  assert.equal(settle(log, modelChoice(log)).log, true);
+  // Several series in one row: % still splits the row into its shares; Sort has nothing to order.
+  const multi = chart("type: stacked\nseries: a, b\nQ1 3 1");
+  assert.deepEqual(offeredToggles(multi), ["pct"]);
+  // Two rows bring both back.
+  assert.deepEqual(offeredToggles(chart('"Cold" 840\n"Warm" 120')), ["sort", "pct"]);
+});
+
+test("chart head: the two-row head starts wherever the widest one-row head would not fit", () => {
+  const css = readFileSync(new URL("../../vis.css", import.meta.url), "utf8");
+  // The container query that trades the inline toggles for the Options menu.
+  const q = /@container vis \(max-width: (\d+)px\) \{[^@]*?\.vis-chart-toggles \{ display: none; \}/.exec(css);
+  assert.ok(q, "no container query hides the inline toggles");
+  const breakAt = Number(q[1]);
+  // The one-row head's sizes, from vis.css and base.css (button-sm: 12px a side, 1.5px borders, 8px icon gap, 16px icon; caption 12.5px; body 14.5px).
+  const w = (t: string) => estimateWidth(t, 12.5);
+  const sum = (xs: number[]) => xs.reduce((a, x) => a + x, 0);
+  const views = sum(["Bar", "Stacked", "Line", "Parts"].map((t) => w(t) + 16)) + 10 + 2; // padding 8 a side; the model's dot and its gap; the outline
+  const toggles = sum(["Log", "Sort", "%"].map((t) => w(t) + 24 + 3)) + 2 * 4;
+  const actions = sum(["Source", "Copy"].map((t) => w(t) + 24 + 3 + 16 + 8));
+  const title = 6 * 14.5; // the title's least width, 6em
+  const widest = 12 + 4 + 3 * 4 + title + views + 4 + toggles + actions;
+  // The estimate runs about 1% under the browser's measure (641px measured): 2% kept.
+  assert.ok(breakAt >= widest * 1.02, `the head breaks at ${breakAt}px; its widest one-row form needs ${widest.toFixed(0)}px`);
+  // Never so wide that a desktop card (880px with the sidebar shut) takes two rows.
+  assert.ok(breakAt < 880, `${breakAt}`);
+  // The controls never shrink; the title never goes under its least width there.
+  assert.match(css, /\.vis-chart-controls \{[^}]*flex: 1 0 auto;/);
+  assert.match(css, /> \.vis-title \{ flex: 0 1 auto; min-width: 6em; \}/);
 });

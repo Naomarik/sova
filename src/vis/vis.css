@@ -76,13 +76,30 @@
 /* A chart's reader controls (kinds/chart/ChartControls.tsx): the segmented view switch right after
    the title, then the Log / Sort / % toggles at the far end beside Source and Copy. Every toggle the
    chart can use is always there (greyed where this view can't use it), so nothing moves when the
-   reader switches views or flips one; at phone width one Options menu holds them. Short words, never icons, so the share build needs none. */
-.vis-head:has(> .vis-chart-controls:not(:empty)) > :is(.vis-title, .vis-eyebrow) { flex: 0 1 auto; }
+   reader switches views or flips one; below the head breakpoint (the container query further
+   down) they take a second row with one Options menu holding the toggles. Short words, never
+   icons, so the share build needs none. The controls never shrink; the title takes what is left
+   and wraps there, never narrower than 6em, three lines at most and then "…" (its full text is its
+   hover title), so a long title never makes the head tall; the eyebrow never wraps. A picture of
+   the card (snapshot.ts hides the controls by an inline display) shows the title whole. */
+.vis-head:has(> .vis-chart-controls:not(:empty)) > .vis-title { flex: 0 1 auto; min-width: 6em; }
+.vis-head:has(> .vis-chart-controls:not(:empty):not([style*="none"])) > .vis-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  /* Its room above and below as margin: padding would show the top of the line cut off. */
+  padding-block: 0;
+  margin-block: var(--space-1);
+}
+.vis-head:has(> .vis-chart-controls:not(:empty)) > .vis-eyebrow { flex: none; white-space: nowrap; }
 .vis-chart-controls { display: flex; align-items: center; gap: var(--space-1); flex: 1 0 auto; }
 .vis-chart-controls:empty { display: none; }
 .vis-chart-toggles { display: flex; align-items: center; gap: var(--space-1); margin-left: auto; }
 .vis-chart-views {
   display: inline-flex;
+  flex: none;
   border: var(--stroke-thin) solid var(--color-border);
   border-radius: var(--r-sm);
   overflow: hidden;
@@ -97,6 +114,7 @@
   background: none;
   font: inherit;
   font-size: var(--fs-caption);
+  white-space: nowrap;
   color: var(--color-ink-2);
   cursor: pointer;
 }
@@ -112,18 +130,38 @@
    a shape as well as a tint. Hover on an unpressed toggle is the ghost's neutral grey, never this. */
 .vis-chart-toggle[aria-pressed="true"],
 .vis-chart-toggle[aria-pressed="true"]:is(:hover, :active) { background: var(--color-accent-tint); border-color: var(--color-accent); color: var(--color-accent); }
-/* Greyed: this view can't use it, and hovering it changes nothing. Off, it fades; set (kept for a
-   view that can), it keeps the whole pressed shape at reduced ink, so set and unset stay apart. */
+/* Greyed: this view can't use it, and hovering it changes nothing. Off, it fades. Set (kept for a
+   view that can), it keeps the accent outline and word, so it still reads as set, but loses the
+   tint and its outline turns dashed and faint: in both themes it is plainly not the active look. */
 .vis-chart-toggle[aria-disabled="true"] { cursor: not-allowed; }
 .vis-chart-toggle[aria-disabled="true"][aria-pressed="false"],
 .vis-chart-toggle[aria-disabled="true"][aria-pressed="false"]:is(:hover, :active) { background: transparent; color: var(--color-ink-muted); opacity: .45; }
-.vis-chart-toggle[aria-disabled="true"][aria-pressed="true"] { opacity: .6; }
+.vis-chart-toggle[aria-disabled="true"][aria-pressed="true"],
+.vis-chart-toggle[aria-disabled="true"][aria-pressed="true"]:is(:hover, :active) {
+  background: transparent;
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+  color: color-mix(in srgb, var(--color-accent) 70%, var(--color-ink-muted));
+}
 
-/* The phone head's Options menu (ChartControls.tsx): hidden above phone width. Its count sits in a
-   slot one digit wide, empty at none, so the trigger never changes width. */
-.vis-chart-more { display: none; margin-left: auto; }
-.button.vis-chart-options { gap: var(--space-1); padding: 0 var(--space-2); }
+/* The narrow head's Options menu (ChartControls.tsx): hidden on the one-row head. Its count sits in
+   a slot one digit wide, empty at none, so the trigger never changes width. */
+.vis-chart-more { display: none; flex: none; margin-left: auto; }
+.button.vis-chart-options { gap: var(--space-1); padding: 0 var(--space-2); white-space: nowrap; }
 .vis-chart-options-count { display: inline-block; min-width: 1ch; font-variant-numeric: tabular-nums; color: var(--color-accent); text-align: start; }
+/* Its chevron, drawn (the share build carries no icon set): a small down-pointing corner. */
+.vis-chart-chevron { flex: none; position: relative; width: 10px; height: 10px; }
+.vis-chart-chevron::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0;
+  width: 6px;
+  height: 6px;
+  border: solid currentColor;
+  border-width: 0 var(--stroke-icon) var(--stroke-icon) 0;
+  transform: rotate(45deg);
+}
 /* In the top layer, placed under its trigger by ChartControls.tsx (the UA centres a popover). */
 .vis-chart-menu {
   position: fixed;
@@ -149,19 +187,35 @@
   transform: rotate(45deg);
 }
 
-/* At phone width the head keeps the title and trades the button words for their icons; a chart's
-   controls take a second row under it, exactly a touch target tall: the view switch, then the
-   Options menu in place of the inline toggles. */
+/* The two-row chart head, whenever the card is narrower than the widest one-row head needs (four
+   views, three toggles, Source and Copy: 554px measured, plus a title at its 6em least, 641px;
+   20px kept for font metrics). Row one: the title (two lines at most, then
+   "…"; the eyebrow on one) with Source and Copy; row two: the view switch, then the Options menu in
+   place of the inline toggles. Every chart breaks at the same width, whatever its controls, so a
+   head never changes shape when the reader switches views or flips a toggle. */
+@container vis (max-width: 660px) {
+  .vis-head:has(> .vis-chart-controls:not(:empty)) { flex-wrap: wrap; row-gap: 0; }
+  /* Too narrow even for the views and Options side by side (a card under about 290px): Options
+     goes under the views, still at the right. */
+  .vis-head > .vis-chart-controls { order: 1; flex: 1 0 100%; min-width: 0; flex-wrap: wrap; }
+  .vis-head:has(> .vis-chart-controls:not(:empty)) > :is(.vis-title, .vis-eyebrow) { flex: 1 1 0; min-width: 0; }
+  .vis-head:has(> .vis-chart-controls:not(:empty)) > .vis-eyebrow { overflow: hidden; text-overflow: ellipsis; }
+  .vis-head:has(> .vis-chart-controls:not(:empty):not([style*="none"])) > .vis-title { -webkit-line-clamp: 2; line-clamp: 2; }
+  .vis-chart-toggles { display: none; }
+  .vis-chart-more { display: block; }
+}
+
+/* At phone width the head trades the button words for their icons, and the chart's second row is
+   exactly a touch target tall. */
 @container vis (max-width: 420px) {
   .vis-action { font-size: 0; gap: 0; min-width: var(--control-sm); justify-content: center; }
   .vis-body { padding: var(--space-2); }
-  .vis-head:has(> .vis-chart-controls:not(:empty)) { flex-wrap: wrap; row-gap: 0; }
-  .vis-head > .vis-chart-controls { order: 1; flex: 1 0 100%; }
-  .vis-head:has(> .vis-chart-controls:not(:empty)) > :is(.vis-title, .vis-eyebrow) { flex: 1; }
   .vis-chart-view { min-height: calc(var(--tap-min) - 2 * var(--stroke-thin)); }
-  .vis-chart-toggles { display: none; }
-  .vis-chart-more { display: block; }
   .button.vis-chart-options { min-height: var(--tap-min); }
+}
+@container vis (max-width: 340px) {
+  .vis-chart-view { padding: 0 var(--space-1); }
+  .button.vis-chart-options { padding: 0 var(--space-1); }
 }
 
 /* ---- Placeholder states in markdown ------------------------------------------------------ */

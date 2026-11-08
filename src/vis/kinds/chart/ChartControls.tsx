@@ -44,9 +44,9 @@ const TOGGLE: Record<Toggle, { label: string; row: string; title: string }> = {
  * it keeps its Tab stop, a press does nothing, and its hint is its title and its description (a
  * hidden span beside the button, so it isn't read as part of its name too).
  *
- * At phone width (the figure's container query in vis.css) the toggles give way to one Options
- * menu holding the same three, with a count of those set on its trigger; both are always in the
- * page and CSS shows one. The caller leaves them out while Source shows.
+ * On a card too narrow for the one-row head (the figure's container query in vis.css) the toggles
+ * give way to one Options menu holding the same three, with a count of those set and a chevron on
+ * its trigger; both are always in the page and CSS shows one. The caller leaves them out while Source shows.
  */
 export function ChartControls(props: { state: ChartState }) {
   const st = props.state;
@@ -138,7 +138,7 @@ const EDGE = 8;
 const GAP = 4;
 
 /**
- * The phone head's one menu of Log, Sort and %: `.popover` rows that are checkboxes (a tick when
+ * The narrow head's one menu of Log, Sort and %: `.popover` rows that are checkboxes (a tick when
  * set; one this view can't use greyed with its hint, keeping its tick when set). A toggle keeps it
  * open. It is a `popover="auto"`, so it sits in the top layer (the figure's `overflow: hidden`
  * can't clip it) and an outside tap or Escape closes it; focus then returns to the trigger. The
@@ -155,7 +155,7 @@ function OptionsMenu(props: { toggles: ToggleState[]; uid: string; flip: (t: Tog
 
   const place = () => {
     if (!isOpen()) return;
-    // The trigger hidden (the figure grew past phone width): the menu goes with it.
+    // The trigger hidden (the figure grew to the one-row head): the menu goes with it.
     if (!trigger.getClientRects().length) return menu.hidePopover();
     const r = trigger.getBoundingClientRect();
     const box = menu.getBoundingClientRect();
@@ -233,6 +233,7 @@ function OptionsMenu(props: { toggles: ToggleState[]; uid: string; flip: (t: Tog
         <span class="vis-chart-options-count" aria-hidden="true">
           {count() || ""}
         </span>
+        <span class="vis-chart-chevron" aria-hidden="true" />
       </button>
       <div ref={menu} id={menuId} class="popover vis-chart-menu" popover="auto" role="menu" aria-label="Chart options">
         <For each={props.toggles.map((t) => t.toggle)}>

@@ -55,6 +55,14 @@ const markedRows = (spec: ChartSpec) => new Map((spec.emphasis ?? []).map((e) =>
 const seriesCount = (spec: ChartSpec) => Math.max(1, spec.series.length);
 const titleOf = (spec: ChartSpec, row: number, s: number, v: number) => `${spec.series[s] ? `${spec.series[s]}, ` : ""}${spec.rows[row]!.label}: ${fmtValue(v, spec.unit)}`;
 const sum = (vals: (number | null)[]) => vals.reduce<number>((a, v) => a + (v ?? 0), 0);
+/** Stacks of shares (`unit: %`, every row adding up to 100): a total over each would only say 100. */
+const wholeStacks = (spec: ChartSpec) => spec.unit === "%" && spec.rows.every((r) => r.values.every((v) => v === null) || Math.abs(sum(r.values) - 100) < 1e-6);
+/**
+ * A stacked chart's inside labels are judged for the chart as a whole: a segment names its value
+ * when it is tall (or long) enough, and only if the widest such label fits the narrowest segment
+ * room it gets, so segments of one size all show theirs or none do.
+ */
+const insideText = (spec: ChartSpec) => spec.rows.flatMap((r) => (r.values.filter((x) => x !== null).length > 1 ? r.values.filter((v): v is number => v !== null).map(valueLabel) : []));
 
 /** The mode a chart draws in at width W: bars go sideways when their labels can't sit under them. */
 export function chartMode(spec: ChartSpec, W: number, measure: Measure): ChartMode {
@@ -292,6 +300,9 @@ function layoutColumnsAt(spec: ChartSpec, W: number, measure: Measure, mode: "co
   if (mode === "column") {
     const bw = Math.min(stacked ? 56 : 44, (band * (n > 1 ? 0.8 : 0.66)) / n);
     const valueFits = (text: string) => measure(text, FONT.value) <= Math.min(band - 4, bw + 24);
+    // Every stacked column is bw wide: the widest inside label decides for all of them.
+    const insideOk = stacked && Math.max(0, ...insideText(spec).map((t) => measure(t, FONT.value))) <= bw - 6;
+    const totals = stacked && !wholeStacks(spec);
     const wanted: (Wanted & { fits: boolean })[] = [];
     spec.rows.forEach((row, i) => {
       const gx = cx(i) - (bw * n) / 2;
@@ -310,7 +321,7 @@ function layoutColumnsAt(spec: ChartSpec, W: number, measure: Measure, mode: "co
         const text = valueLabel(v);
         if (stacked) {
           // A segment names its own value when there's room inside it.
-          if (bar.h >= 15 && measure(text, FONT.value) <= bar.w - 6 && row.values.filter((x) => x !== null).length > 1) out.values.push({ row: i, x: bar.x + bar.w / 2, y: bar.y + bar.h / 2, text, anchor: "middle", inside: true });
+          if (insideOk && bar.h >= 15 && row.values.filter((x) => x !== null).length > 1) out.values.push({ row: i, x: bar.x + bar.w / 2, y: bar.y + bar.h / 2, text, anchor: "middle", inside: true });
         } else {
           // Side by side in a group, a label needs its own bar's width (and a gap); alone, its band.
           const fits = n > 1 ? measure(text, FONT.value) + VALUE_GAP <= bw : valueFits(text);
@@ -319,11 +330,19 @@ function layoutColumnsAt(spec: ChartSpec, W: number, measure: Measure, mode: "co
           wanted.push({ row: i, x: bar.x + bar.w / 2, y: below ? bar.y + bar.h + 8 : v < 0 ? zero - 7 : bar.y - 7, text, anchor: "middle", marked: marks.has(i), down: below, fits });
         }
       });
-      if (stacked) {
+      if (totals) {
         const text = valueLabel(sum(row.values));
         wanted.push({ row: i, x: cx(i), y: topY - 7, text, anchor: "middle", marked: marks.has(i), down: false, fits: valueFits(text) });
       }
     });
+    // A marked group's label wider than its own bar would sit on the bar beside it: it goes over
+    // the group's tallest bar instead (settleValues stacks it clear of the others there).
+    if (n > 1)
+      for (const w of wanted) {
+        if (!w.marked || w.fits || w.down) continue;
+        const group = out.bars.filter((b) => b.row === w.row);
+        w.y = Math.min(w.y, Math.min(...group.map((b) => b.y)) - 7);
+      }
     // A group's labels are all drawn or, for the whole chart, none are (a marked row keeps its own).
     const all = stacked || n === 1 ? true : rows * n <= 24 && wanted.every((w) => w.fits);
     const settled = settleValues(
@@ -399,8 +418,11 @@ function layoutHBars(spec: ChartSpec, W: number, measure: Measure): ChartLayout 
   const labelMax = Math.round(W * 0.36);
   const labels = spec.rows.map((r) => wrap(r.label, labelMax, 2, FONT.hcat, measure));
   const labelW = Math.ceil(Math.min(labelMax, Math.max(...labels.map((l) => Math.max(...l.map((s) => measure(s, FONT.hcat)))))));
-  const texts = spec.rows.flatMap((r) => (stacked ? [valueLabel(sum(r.values))] : r.values.map((v) => (v === null ? "" : valueLabel(v)))));
-  const valueRoom = Math.ceil(Math.max(...texts.map((t) => measure(t, FONT.value)))) + 8;
+  const totals = stacked && !wholeStacks(spec);
+  const texts = spec.rows.flatMap((r) => (stacked ? (totals ? [valueLabel(sum(r.values))] : []) : r.values.map((v) => (v === null ? "" : valueLabel(v)))));
+  // A segment names its value when the widest inside label would fit it: one length, one answer.
+  const insideW = stacked ? Math.max(0, ...insideText(spec).map((t) => measure(t, FONT.value))) : 0;
+  const valueRoom = Math.ceil(Math.max(0, ...texts.map((t) => measure(t, FONT.value)))) + 8;
   const anyNeg = spec.rows.some((r) => r.values.some((v) => v !== null && v < 0));
   const badgeRoom = [...marks.values()].some((e) => e.n) ? BADGE_R * 2 + 4 : 0;
   const x0 = 8 + labelW + 10 + (anyNeg ? valueRoom : 0);
@@ -433,11 +455,11 @@ function layoutHBars(spec: ChartSpec, W: number, measure: Measure): ChartLayout 
       lo = Math.min(lo, bar.x);
       if (stacked) {
         const text = valueLabel(v);
-        if (measure(text, FONT.value) <= bar.w - 8 && row.values.filter((x) => x !== null).length > 1) out.values.push({ row: i, x: bar.x + bar.w / 2, y: by + barH / 2, text, anchor: "middle", inside: true });
+        if (insideW <= bar.w - 8 && row.values.filter((x) => x !== null).length > 1) out.values.push({ row: i, x: bar.x + bar.w / 2, y: by + barH / 2, text, anchor: "middle", inside: true });
       } else if (v < 0) out.values.push({ row: i, x: bar.x - 5, y: by + barH / 2, text: valueLabel(v), anchor: "end" });
       else out.values.push({ row: i, x: bar.x + bar.w + 5, y: by + barH / 2, text: valueLabel(v), anchor: "start" });
     });
-    if (stacked) out.values.push({ row: i, x: end + 5, y: y + rowH / 2, text: valueLabel(sum(row.values)), anchor: "start" });
+    if (totals) out.values.push({ row: i, x: end + 5, y: y + rowH / 2, text: valueLabel(sum(row.values)), anchor: "start" });
     if (e?.n) {
       const texts = out.values.filter((t) => t.row === i && !t.inside && t.anchor === "start");
       const right = Math.max(end, ...texts.map((t) => t.x + measure(t.text, FONT.value)));

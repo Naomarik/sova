@@ -56,7 +56,10 @@ export function Figure(props: { kind: string; spec: VisBase; view: Component<Vie
     <figure class={`vis vis-kind-${props.kind}`} aria-label={label()}>
       <div class="vis-head">
         <Show when={s().title} fallback={<span class="vis-eyebrow">{entry().label}</span>}>
-          <span class="vis-title">{s().title}</span>
+          {/* A chart's head may cut a long title to its lines: the whole of it on hover. */}
+          <span class="vis-title" title={props.kind === "chart" ? s().title : undefined}>
+            {s().title}
+          </span>
         </Show>
         {props.actions}
       </div>

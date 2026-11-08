@@ -2,8 +2,8 @@
 // Fixed waits a change adds to tests: every setTimeout / sleep / delay with a literal over 2000 ms on a
 // line added to a test file since the merge base with --base (committed or not, and new untracked test
 // files whole). Tests wait on the event that ends a window; a fixed wait over 2 s is only for proving an
-// absence, with a comment naming the event that bounds it (agents/testing/overview.md, "Writing tests:
-// wait on conditions"). This lists them so a person can check; it never fails a change. Builtins only.
+// absence, with a comment naming the event that bounds it (agents/testing/overview.md, "Writing
+// tests"). This lists them so a person can check; it never fails a change. Builtins only.
 //
 //   node scripts/fixed-wait-scan.mjs --base <rev> [--json]
 //

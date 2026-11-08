@@ -104,8 +104,8 @@
 .vis-chart-view:hover { background: var(--color-sunken); color: var(--color-ink); }
 .vis-chart-view[aria-checked="true"] { background: color-mix(in srgb, var(--color-accent-tint) 60%, transparent); color: var(--color-accent); }
 .vis-chart-view:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-width) * -1); }
-/* The model's own view: a small neutral dot, titled "As drawn by the reply" (its name is the hidden
-   "(as drawn)"). Never the accent: beside the selected view it would read as a second selection. */
+/* The model's own view: a small neutral dot; the button's title "As drawn by the reply" says it in
+   words (and is its description). Never the accent: beside the selected view it would read as a second selection. */
 .vis-chart-model-dot { flex: none; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--color-ink-muted); }
 .vis-chart-toggle { flex: none; font-variant-numeric: tabular-nums; }
 /* Pressed: tinted, with an accent outline (the ghost button's transparent border), so it reads from

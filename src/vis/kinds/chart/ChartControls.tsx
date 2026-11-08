@@ -84,9 +84,9 @@ export function ChartControls(props: { state: ChartState }) {
                   onKeyDown={(e) => onKey(e, i())}
                 >
                   {VIEW_LABEL[v]}
+                  {/* The title alone says it: on hover, and once as the description (a hidden "(as drawn)" in the name would read it twice). */}
                   <Show when={v === model}>
                     <span class="vis-chart-model-dot" aria-hidden="true" />
-                    <span class="visually-hidden"> (as drawn)</span>
                   </Show>
                 </button>
               );

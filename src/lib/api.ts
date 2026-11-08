@@ -731,9 +731,6 @@ export const updateProfileFromChat = (path: string, cwd?: string | null) =>
 /** Cancel Switch: drop the switch waiting for the reply to end. */
 export const cancelProfileSwitch = (path: string, host?: string | null) =>
   request<{ cancelled: boolean; state: ChatProfileState }>(hostUrl(host, `/api/sessions/profile-switch?path=${encodeURIComponent(path)}`), { method: "DELETE" });
-/** This chat's profile now (the `chat_profile` message's state). */
-export const getProfileSwitch = (path: string, host?: string | null) =>
-  request<ChatProfileState>(hostUrl(host, `/api/sessions/profile-switch?path=${encodeURIComponent(path)}`), { cache: "no-store" });
 /** Make a joined profile (its key, or "off") this computer's default; with `path` and no key, that chat's
     profile, the chat's strict flag and memory type saved with it. Answers the fresh listing. */
 export const putDefaultProfile = (body: { key?: string; path?: string; cwd?: string | null }) =>

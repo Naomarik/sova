@@ -172,6 +172,7 @@ import { HistoryItems, holdReaderAcrossSwap, LiveEntries, StartError, ThreadScro
 import { type ReplyPlace, useReplyAdditions } from "../lib/reply-place";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { ProfileSwitchLine } from "./ProfileSwitchLine";
+import { setChatProfileOf } from "../lib/chat-profile-state";
 import { failureHasRow } from "../lib/subagent-limit";
 import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
@@ -542,7 +543,12 @@ export function ChatView(props: {
   /** The socket's `profile` message (§chat.profiles/applying); null until one arrives. */
   const [profileInfo, setProfileInfo] = createSignal<ChatProfileInfo | null>(null);
   /** Which profile this chat is on now, "(edited)", and a switch waiting for the reply (§chat.profiles/switch). */
-  const [chatProfile, setChatProfile] = createSignal<ChatProfileState | null>(null);
+  const [chatProfile, setChatProfileHere] = createSignal<ChatProfileState | null>(null);
+  /** This view's copy, and the one the thread's usage-limit row reads by path. */
+  const setChatProfile = (s: ChatProfileState | null) => {
+    setChatProfileHere(s);
+    setChatProfileOf(props.path, s);
+  };
   /** Picks applied here: the setup card reads again at once, ahead of a chat socket still in its reconnect wait. */
   const [profilePicks, setProfilePicks] = createSignal(0);
   /** A One at a time race at Send (§chat.profiles/singleton): the session that has it. */

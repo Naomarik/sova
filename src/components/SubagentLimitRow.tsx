@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import type { JoinedProfile } from "../../shared/profiles";
-import { fetchProfiles, getProfileSwitch, switchProfile } from "../lib/api";
+import { fetchProfiles, switchProfile } from "../lib/api";
+import { chatProfileOf } from "../lib/chat-profile-state";
 import { modelLabel } from "../lib/format";
 import { limitLine, limitOffers, switchRefused } from "../lib/profile-switch";
 import { exhaustedProvider, providerLabel } from "../lib/subagent-limit";
@@ -28,7 +29,8 @@ export function SubagentLimitRow(props: { path: string; message: string; provide
   const provider = () => exhaustedProvider(props.message, props.provider);
   // Your profiles are what it offers, so the listing needs no folder.
   const [listing, { refetch }] = createResource(provider, () => fetchProfiles(null, host()));
-  const [chat, { refetch: refetchChat }] = createResource(provider, () => getProfileSwitch(props.path, host()).catch(() => null));
+  /** The chat's own profile state (its `chat_profile` message), for "(edited)" and its current profile. */
+  const chat = () => chatProfileOf(props.path);
   // A row mounted before the view holds its chat gets "Open the chat first" from a read; retry
   // a few times, then rest on the link.
   createEffect(() => {
@@ -62,7 +64,6 @@ export function SubagentLimitRow(props: { path: string; message: string; provide
     try {
       await switchProfile(props.path, r.id, host());
       setSwitched(r.name);
-      void refetchChat();
     } catch (err) {
       const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
       const refused = switchRefused(r.name, why);

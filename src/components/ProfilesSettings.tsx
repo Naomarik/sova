@@ -353,64 +353,68 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
           </div>
 
           <div class="profiles-editor-pane">
-            <Show when={current()} keyed>
-              {(c) => (
+            <Show when={current()?.key} keyed>
+              {(key) => {
+                // Remounted only when another profile is picked: an edit keeps its open rows and focus.
+                const c = () => (current()?.key === key ? current()! : allRows().find((r) => r.key === key)!);
+                return (
                 <ProfileEditor
-                  r={c}
+                  r={c()}
                   part={part()}
                   setPart={setPart}
                   focusSpec={focusSpec()}
                   onSpecFocused={() => setFocusSpec(false)}
                   draft={draft()!}
-                  draftRow={row(c.key)}
-                  libProfile={libProfile(c.key)}
-                  busy={busy() === c.key}
+                  draftRow={row(c().key)}
+                  libProfile={libProfile(c().key)}
+                  busy={busy() === c().key}
                   saving={store.saving()}
                   actionError={actionError()}
                   cwd={props.cwd}
                   wire={wire()}
                   rows={rows.error ? undefined : rows()}
                   options={optionsReady()}
-                  teamsSeed={teamsSeed(c.wire?.library?.teams, teams.error ? undefined : teams()?.defaults)}
+                  teamsSeed={teamsSeed(c().wire?.library?.teams, teams.error ? undefined : teams()?.defaults)}
                   template={template()}
-                  onName={(v) => editRow(c.key, (r) => (r.name = v))}
-                  onStarts={(s) => editRow(c.key, (r) => (r.starts = s))}
+                  onName={(v) => editRow(c().key, (r) => (r.name = v))}
+                  onStarts={(s) => editRow(c().key, (r) => (r.starts = s))}
                   onChat={(next) =>
-                    editRow(c.key, (r) => {
+                    editRow(c().key, (r) => {
                       r.model = next.model;
                       r.thinking = next.thinking;
                       if (!r.starts) r.starts = plainStarts();
                     })
                   }
-                  changeLib={(fn) => changeLib(c.key, fn)}
+                  changeLib={(fn) => changeLib(c().key, fn)}
                   onChooseHelpers={() =>
                     edit((d) => {
-                      const r = d.rows.find((x) => x.key === c.key);
+                      const r = d.rows.find((x) => x.key === c().key);
                       const t = template();
                       if (!r || !t) return;
-                      const lib = `new:${c.key}`;
+                      const lib = `new:${c().key}`;
                       d.library[lib] = clone(t);
                       r.lib = lib;
                     })
                   }
                   onSetAll={(pick) =>
                     store.setDraft(
-                      setAllTo(draft()!, c.key, pick, {
+                      setAllTo(draft()!, c().key, pick, {
                         efforts: (b, m) => modelEfforts(optionsReady(), b, m),
                         levels: (ref) => modelList()?.find((x) => x.ref === ref)?.thinkingLevels ?? null,
                       }),
                     )
                   }
-                  onMakeDefault={() => makeDefault(c.key)}
-                  onDuplicate={() => duplicate(c.key)}
-                  onDelete={() => remove(c.key)}
-                  onHide={(hidden) => void act(c.key, () => setProfileHidden(c.key, hidden, props.cwd), `Couldn't change ${c.name}.`)}
+                  onMakeDefault={() => makeDefault(c().key)}
+                  onDuplicate={() => duplicate(c().key)}
+                  onDelete={() => remove(c().key)}
+                  onHide={(hidden) => void act(c().key, () => setProfileHidden(c().key, hidden, props.cwd), `Couldn't change ${c().name}.`)}
                   onApprove={() => {
-                    const s = c.wire?.session;
-                    if (s && props.cwd) void act(c.key, () => approveProfile(props.cwd!, { id: s.id, grant: s.grant, overseerMayStart: s.overseerMayStart }), `Couldn't approve ${c.name}.`);
+                    const s = c().wire?.session;
+                    if (s && props.cwd) void act(c().key, () => approveProfile(props.cwd!, { id: s.id, grant: s.grant, overseerMayStart: s.overseerMayStart }), `Couldn't approve ${c().name}.`);
                   }}
                 />
-              )}
+              );
+              }}
             </Show>
           </div>
         </div>

@@ -656,7 +656,7 @@ the menu the main part stands alone with both rounded ends.</p>` },
     donts: [['Put row actions behind hover','a phone has no hover, so they do not exist there'],
             ['Let the title wrap to three lines','truncate; the detail pane has the full text'],
             ['Use a list where a table is right','if you need aligned columns, use the table'],
-            ['Fill a box inside a tappable row with `--color-sunken`','that is the row\'s hover fill, so the box vanishes on hover']],
+            ['Leave a `--color-sunken` box inside a tappable row sunken on hover','that is the row\'s hover fill, so the box vanishes; give it the surface then']],
   },
   {
     slug: 'tree', title: 'Tree',

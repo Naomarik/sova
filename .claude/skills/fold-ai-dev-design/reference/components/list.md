@@ -49,4 +49,4 @@ Rendered: `site/components/list.html#anatomy`
 - **DON'T** Put row actions behind hover — a phone has no hover, so they do not exist there.
 - **DON'T** Let the title wrap to three lines — truncate; the detail pane has the full text.
 - **DON'T** Use a list where a table is right — if you need aligned columns, use the table.
-- **DON'T** Fill a box inside a tappable row with `--color-sunken` — that is the row's hover fill, so the box vanishes on hover.
+- **DON'T** Leave a `--color-sunken` box inside a tappable row sunken on hover — that is the row's hover fill, so the box vanishes; give it the surface then.

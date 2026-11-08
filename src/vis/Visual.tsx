@@ -1,6 +1,8 @@
 import { Show, createSignal, lazy, type Component } from "solid-js";
 import { highlight } from "../lib/markdown";
-import { announce, copyText } from "../lib/ui-state";
+import { copyCard } from "./copy";
+import { COPY_LABEL, copyWhat } from "./copy-plan";
+import type { FrameSpec } from "./kinds/frame/parse";
 import type { VisBase } from "./core/grammar";
 import { Figure } from "./Figure";
 import { ChartControls, createChartState } from "./kinds/chart/ChartControls";
@@ -29,6 +31,8 @@ export function viewFor(kind: string): Component<ViewProps<VisBase>> {
 export function Visual(props: { kind: string; spec: VisBase; fence: string; body: string }) {
   const [source, setSource] = createSignal(false);
   const entry = KINDS[props.kind]!;
+  // Copy follows the card: a picture of the drawing, or the fence while Source is open (copy-plan.ts).
+  const copy = () => copyWhat({ sourceOpen: source(), kind: props.kind });
   // A drawing's props never change (a new fence is a new drawing), so the chart's state is made once.
   const chart = props.kind === "chart" ? createChartState(props.spec as ChartSpec, fenceKey(props.fence)) : null;
   return (
@@ -50,9 +54,8 @@ export function Visual(props: { kind: string; spec: VisBase; fence: string; body
           <button
             class="button button-sm button-ghost vis-action"
             type="button"
-            onClick={async () => {
-              if (await copyText(props.fence, "Copied the visual's source.")) announce("Copied the visual's source.");
-            }}
+            aria-label={COPY_LABEL[copy()]}
+            onClick={(e) => copyCard(e.currentTarget, { what: copy(), fence: props.fence, label: props.spec.title ?? props.spec.caption ?? entry.label, svgSource: props.kind === "svg" ? (props.spec as FrameSpec).source : undefined })}
           >
             <span class="icon icon-sm" style={{ "--icon": "url(/icons/copy.svg)" }} aria-hidden="true" />
             Copy

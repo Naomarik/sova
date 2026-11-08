@@ -66,7 +66,7 @@ export function Lightbox() {
         </button>
       </div>
       <div class="lightbox-stage">
-        <Show when={current()}>{(img) => <img class="lightbox-img" src={img().src} alt={img().alt} />}</Show>
+        <Show when={current()}>{(img) => <img class="lightbox-img" src={img().src} alt={img().alt} style={img().width ? { width: `${img().width}px` } : undefined} />}</Show>
         <Show when={count() > 1}>
           <button type="button" class="button button-icon lightbox-prev" aria-label="Previous Image" onClick={() => step(-1)}>
             <Icon name="chevron-left" />

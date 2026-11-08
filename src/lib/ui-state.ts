@@ -270,7 +270,7 @@ export async function copyText(text: string, done: string): Promise<boolean> {
 
 export interface LightboxState {
   /** One row's images; the caption is each image's alt. */
-  images: { src: string; alt: string }[];
+  images: { src: string; alt: string; width?: number }[];
   index: number;
   /** The thumbnail that opened it, focused again on close. */
   opener: HTMLElement | null;

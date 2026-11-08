@@ -733,7 +733,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 }
 /* A section heading's own action (Reset to Defaults), and the hint that goes with it. */
 .settings-head-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; justify-content: flex-end; }
-.settings-modal .settings-tabs { overflow-y: auto; }
+.settings-modal .settings-tabs { overflow-y: auto; position: relative; }
 @media (max-width: 767px) {
   /* Folded, the modal is a sheet pinned to the bottom edge and base.css caps it at 85dvh. Same
      rule, same reason: one height, whichever tab is open. */

@@ -38,7 +38,7 @@ Rendered: `site/components/tabs.html#anatomy`
 - **DO** Put the active tab in the URL — `?tab=chats` survives reload and can be shared.
 - **DO** Use `role="tab"` and `aria-selected` — the underline alone is invisible to a screen reader.
 - **DO** Let the strip scroll horizontally — truncating tab labels hides what the tabs are.
-- **DO** Leave the edge fade to `.tabs` — an edge fades only while tabs are hidden past it, with no script. It is the one sanctioned exception to "No gradients": an alpha mask that fades content at an overflowing edge and paints no color.
+- **DO** Leave the edge fade to `.tabs` — an edge fades only while tabs are hidden past it, with no script. A browser without scroll timelines (Firefox) fades from `data-overflow-start` and `data-overflow-end`, set on every strip by one shared script (Sova: `src/lib/tabs-overflow.ts`). It is the one sanctioned exception to "No gradients": an alpha mask that fades content at an overflowing edge and paints no color.
 - **DO** Give a panel with nothing focusable `tabindex="0"` — Tab from the strip then reaches what the empty tab says.
 - **DON'T** Use tabs to submit or act — tabs change what you see, never what exists.
 - **DON'T** Nest tab strips — the second level is a segmented control or a filter.

@@ -10,6 +10,7 @@ import { applyStoredTheme, clearTheme, clearTypography, setTextSize } from "./li
 import { applyStoredSpine } from "./lib/spine";
 import { guardDelegatedEvents } from "./lib/release-control";
 import { installWireStamp } from "./lib/wire-stamp";
+import { installTabsOverflow } from "./lib/tabs-overflow";
 import "./sw-register";
 
 /**
@@ -56,6 +57,8 @@ history.scrollRestoration = "manual";
 // Before any event is handled: Solid's event delegation would otherwise leave an event, and
 // through its path a closed view, alive for the page's life (lib/release-control).
 installWireStamp();
+// Every `.tabs` strip's edge fade where the browser has no scroll timelines (lib/tabs-overflow.ts).
+installTabsOverflow();
 guardDelegatedEvents(window, Object.getOwnPropertyDescriptor(Event.prototype, "currentTarget")!.get!);
 
 // A `sova open` link's `#t=<token>` comes off the address bar before the app reads its own `#/…`

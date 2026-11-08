@@ -23,9 +23,9 @@ export const editedName = (name: string, edited: boolean): string => (edited ? `
 /** The line above the composer while a switch waits for the reply to end. */
 export function switchWaitingLine(name: string, helpers: number, setsModel: boolean): string {
   const moved = [...(setsModel ? ["this chat's model"] : []), ...(helpers > 0 ? [`its ${helpers} helper${helpers === 1 ? "" : "s"}`] : []), "alignment settings"];
-  if (moved.length === 1) return `Switching to ${name} when this reply ends. Moves its alignment settings. Tools and modes stay.`;
+  if (moved.length === 1) return `Switching to ${name} when this chat is free. Moves its alignment settings. Tools and modes stay.`;
   const list = moved.length === 3 ? `${moved[0]}, ${moved[1]}, and ${moved[2]}` : `${moved[0]} and ${moved[1]}`;
-  return `Switching to ${name} when this reply ends. Moves ${list}. Tools and modes stay.`;
+  return `Switching to ${name} when this chat is free. Moves ${list}. Tools and modes stay.`;
 }
 
 /** The line above the composer once a switch applied (also announced). */

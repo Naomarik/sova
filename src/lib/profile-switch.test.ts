@@ -6,10 +6,10 @@ const row = (key: string, providers: string[], extra: Partial<SwitchRow> = {}): 
 const OFF = row("off", [], { kind: "off", group: "builtin", name: "Off" });
 
 test("the waiting line names the chat's model only when the profile sets one", () => {
-  assert.equal(switchWaitingLine("OpenAI", 9, true), "Switching to OpenAI when this reply ends. Moves this chat's model, its 9 helpers, and alignment settings. Tools and modes stay.");
-  assert.equal(switchWaitingLine("Ollama", 1, false), "Switching to Ollama when this reply ends. Moves its 1 helper and alignment settings. Tools and modes stay.");
-  assert.equal(switchWaitingLine("Plain", 0, true), "Switching to Plain when this reply ends. Moves this chat's model and alignment settings. Tools and modes stay.", "never \"its 0 helpers\"");
-  assert.equal(switchWaitingLine("Plain", 0, false), "Switching to Plain when this reply ends. Moves its alignment settings. Tools and modes stay.");
+  assert.equal(switchWaitingLine("OpenAI", 9, true), "Switching to OpenAI when this chat is free. Moves this chat's model, its 9 helpers, and alignment settings. Tools and modes stay.");
+  assert.equal(switchWaitingLine("Ollama", 1, false), "Switching to Ollama when this chat is free. Moves its 1 helper and alignment settings. Tools and modes stay.");
+  assert.equal(switchWaitingLine("Plain", 0, true), "Switching to Plain when this chat is free. Moves this chat's model and alignment settings. Tools and modes stay.", "never \"its 0 helpers\"");
+  assert.equal(switchWaitingLine("Plain", 0, false), "Switching to Plain when this chat is free. Moves its alignment settings. Tools and modes stay.");
 });
 
 test("switched, refused, edited and limit wording", () => {

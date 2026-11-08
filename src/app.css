@@ -702,8 +702,12 @@ html, body { overflow: clip; overscroll-behavior: none; }
    dialog that fits it and a tall one doesn't get a dialog with a field floating in space. */
 .settings-modal {
   /* Tall enough for the Models tab's provider list without a scrollbar on a laptop. */
-  --settings-height: 640px;
+  --settings-height: 880px;
   height: min(var(--settings-height), calc(100dvh - var(--space-8)));
+}
+/* Unfolded, a wide window gets a wide dialog: Profiles sets a list beside an editor. Still a modal. */
+@media (min-width: 768px) {
+  .settings-modal.modal-wide { width: min(1120px, calc(100vw - var(--space-8))); }
 }
 /* base.css floors the body at 320px so the rail always has room. On a short viewport that floor
    plus the head and foot is taller than the dialog, and the foot's Close button goes under the

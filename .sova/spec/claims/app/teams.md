@@ -4,7 +4,9 @@
 Teams are the subagents extension's coordinated worker groups (`team_create`, `team_add`,
 `team_list`, `team_eject`, `team_succeed`; `pi-config/extensions/subagents/`): one unique role per member,
 declared advisory ownership, and a roster persisted in the parent session as
-`subagents-team-v1` custom entries. Sova reads that roster (§app.insights/team-cards,
+`subagents-team-v1` custom entries. Every team gets Sova's coordinator and monitor
+(§teams/defaults), and a team question for the chat ends an `agent_wait` early
+(§app.teams/wait-steer). Sova reads that roster (§app.insights/team-cards,
 §app.subagents-pane/worker-rows); the extension owns every rule below.
 
 ## §app.teams/requests — How team and helper requests are read
@@ -27,21 +29,25 @@ This covers `team_create`, `team_add` and `agent_spawn`.
 - **A shared prompt.** A `prompt` beside `agents` is every agent's prompt only when no agent has
   its own; otherwise the call is refused.
 - **Never guessed.** A missing role, task, team name or objective is refused, never filled in.
-- **What a member takes.** A member takes `role`, `prompt`, `ownedPaths`, `orchestrator`,
-  `backend`, `model`, `effort`, `tools`, `systemPrompt`, `cwd`, `wake`, `backendOptions` and
+- **What a member takes.** A member takes `role`, `prompt`, `ownedPaths`, `backend`, `model`, `effort`, `tools`, `systemPrompt`, `cwd`, `wake`, `backendOptions` and
   `extensions`. Its `extensions` follow `agent_spawn`'s rules (a path, or an installed `npm:` or
   `git:` source; never the subagents extension itself) and load beside its team tools. `count`,
   `fork`, `agentType` and any unknown setting are refused, naming the setting and how to get what
   it asks for (one member per role; `agent_spawn` for `fork` or `agentType`); nothing is dropped
-  silently. `defaults` takes `backend`, `model`, `effort`, `backendOptions`, `coordinator` and
-  `monitor`; any other key is refused, naming it.
+  silently; `orchestrator` is one of those unknown settings: no member is marked as the lead
+  (§teams.defaults/coordinator). `defaults` takes `backend`, `model`, `effort` and
+  `backendOptions`; any other key, `coordinator` and `monitor` included, is refused, naming it.
 - **Sova's words.** These refusals are plain sentences of Sova's own that name the setting, given
   before the tool's schema check, never the schema's "schema is false" or "must be object".
 - **Said up front.** The descriptions of `team_create`, `team_add` and `agent_spawn`, and the
   `/team` planning text, state every limit before a call: no per-request limit; 24 running workers
   per chat, idle ones and a team's coordinator and monitor included; 24 seats per team; members
   must be a list; which member settings are refused; and that only the coordinator hands a member
-  over to a successor, or the main chat once no coordinator is live.
+  over to a successor, or the main chat once no coordinator is live. `team_create`'s and
+  `team_add`'s descriptions and the planning text also say that every team gets a coordinator and
+  a monitor from Sova, so the chat names only the members who do the work; that each team runs 2
+  more workers than it names; and that small independent jobs are cheaper as separate workers
+  (`agent_spawn`).
 
 ## §app.teams/running-limit — The running-workers limit and its refusal
 
@@ -53,7 +59,7 @@ This covers `team_create`, `team_add` and `agent_spawn`.
 - **The refusal.** It says how many workers the request needs, how many are live, how many more
   fit and how many to stop with `agent_kill`, and names each idle worker (ID and name) as the
   first to stop, or says none is idle. The count is worded for the caller: `team_create` names the
-  members asked for and the coordinator or monitor Sova adds; `team_add` and `agent_spawn` count
+  members asked for and the coordinator and monitor Sova adds; `team_add` and `agent_spawn` count
   only the members or agents they start; a successor or a resume counts its one worker.
 
 ## §app.teams/seats — Seats, team_eject and restore
@@ -103,12 +109,16 @@ is.
 
 - **Returned.** While the parent's agent run is in progress, a settle routed to the parent is
   held rather than sent. If an `agent_wait` in that run returns the worker still settled (all
-  settled, timed out or cancelled), its text carries that settle's summary, so the held message
+  settled, timed out, cancelled or stopped by a steer, §app.teams/wait-steer), its text carries that settle's summary, so the held message
   is dropped, whether the worker settled before or during the wait. The toast, the worker's
   record and its status are unchanged.
 - **Timing.** A held settle no wait returned is sent where the run would otherwise stop, with its
   wake. It continues the same run, as before. A `wake: false` settle reaches the context at the
-  next turn end, as before. A settle while the parent is idle is sent at once.
+  next turn end, except that when a message from the user is waiting at that turn end, the user's
+  message goes first and the settle stays held until a later turn end, so a chat's typed message
+  never arrives together with a held worker update; it is held, never lost. A team report that
+  lands at the same moment as the user's message can still reach a Claude Code chat merged with it
+  in one block. A settle while the parent is idle is sent at once.
 - **Stopped.** If the run is aborted, held settles go into the transcript without starting a turn.
 - **Not returned.** If the worker started a new task before the wait returned (a queued steer),
   the held settle is sent as before, with its wake, where the run would stop. Overlapping waits on one worker release it only
@@ -116,6 +126,21 @@ is.
 - **Only the parent's copy.** A team member's completion routed to its coordinator
   (§teams.defaults/routing) still reaches the coordinator; only a `subagent-complete` to the
   parent is ever held.
+
+## §app.teams/wait-steer — A steer ends agent_wait early
+
+- **What stops it.** An `agent_wait` stops as soon as a steer reaches the chat: a team question
+  (a `team-question`, §teams.defaults/routing) or a message the user sends while the chat works,
+  as a steer (one queued as a follow-up for after the reply does not). A wait started while one
+  is still unread stops at once. A team report
+  (`team-report`) does not stop it, and neither does a member's question routed to its
+  coordinator.
+- **What it says.** Its result says the wait stopped early, who the steer came from (the
+  asking member, by role and worker ID, and its team; or the user), which workers are still
+  working, and to deal with it and then go back to waiting, beside what
+  the workers had done by then.
+- **The workers go on.** Nothing is stopped or cancelled. Anything they finish afterwards reaches
+  the chat as usual, the same way as after a wait times out (§app.teams/wait-completion).
 
 ## §app.teams/inbox — Each member's inbox: queued, never refused or lost
 

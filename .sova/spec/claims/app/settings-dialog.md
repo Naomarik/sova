@@ -960,7 +960,7 @@ after the other fields, and only when the pick differs from the stored one.
 
 Every switch, checkbox and radio in Settings is a label row: the native input hidden inside it, so
 the label's text and its control are one target, at least 44px tall. A row that leads with its
-control and reads left to right (Subagents' **Add a coordinator/monitor to new teams**, **Pause the
+control and reads left to right (Subagents' **Pause the
 team**, members-default and spec-writer switches, Summaries' **Fallback** switch, the Decisions switches and radios, Overseer proactivity radios, and the Typography text sizes) is only as
 wide as its text and control: a click on the empty row beside it does nothing. A row that spreads
 its text and switch across the panel (General's **Summary line**, Mesh's

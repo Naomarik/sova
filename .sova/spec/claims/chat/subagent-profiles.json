@@ -28,9 +28,9 @@
       "server/sync/docs.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T00:54Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
+      "by": "user",
+      "at": "2026-11-08T08:01Z",
+      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
     }
   },
   "§chat.subagent-profiles/limit-row": {
@@ -99,8 +99,15 @@
     "code": [
       "pi-config/extensions/subagents/subagent-profiles.ts",
       "pi-config/extensions/mode/prompt.ts",
-      "pi-config/extensions/mode/tests/smoke.mjs"
-    ]
+      "pi-config/extensions/mode/tests/smoke.mjs",
+      "pi-config/extensions/subagents/team-defaults.ts",
+      "pi-config/extensions/subagents/teams.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-08T08:01Z",
+      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
+    }
   },
   "§chat.subagent-profiles/overseer": {
     "kind": "behavior",
@@ -163,8 +170,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T06:59Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+      "at": "2026-11-08T08:01Z",
+      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
     }
   },
   "§chat.subagent-profiles/settings": {
@@ -188,9 +195,9 @@
       "src/components/form/index.tsx"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T00:54Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
+      "by": "user",
+      "at": "2026-11-08T08:01Z",
+      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
     }
   },
   "§chat/subagent-profiles": {
@@ -205,6 +212,11 @@
       "§chat/profiles",
       "§teams/defaults",
       "§mesh.sync/profile-library"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-08T08:01Z",
+      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
+    }
   }
 }

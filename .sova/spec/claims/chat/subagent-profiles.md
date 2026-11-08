@@ -9,8 +9,9 @@ four screens. A profile holds:
 - **Delegate routing**: a worker (backend · model · effort, plus an optional fallback) for each of
   Delegate's four **work kinds** — Planning & specs, Investigation, Routine implementation and
   Complex implementation — the shape `mode-delegate.json` has (§app.settings-dialog/modes).
-- **Teams**: the standing coordinator and monitor every new team gets, with their thresholds and
-  handover timeout (the shape of `team-defaults.json`, §teams.defaults/file), or none; and a
+- **Teams**: the models of the coordinator and monitor every new team gets, with their thresholds
+  and handover timeout (the shape of `team-defaults.json`, §teams.defaults/file), or none, when both
+  run on the chat's own model; and a
   **members default**, the model a team member runs on when nobody named one
   (§chat.subagent-profiles/members-default), or none.
 - **Spec writer**: the worker that writes spec drafts while spec is on (the shape of
@@ -33,7 +34,8 @@ says so for a day and can put the previous library back (§chat.subagent-profile
   and Sova's server all read both through that module.
 - **Shape (version 1).** The library is `{version: 1, profiles: [{id, name, delegate, teams,
   members, specWriter}]}`. `delegate` is the four work kinds' `{primary, fallback}`; `teams` is
-  `{coordinator, monitor, handover}` as in `team-defaults.json`, or `null` (no standing members);
+  `{coordinator, monitor, handover}` as in `team-defaults.json`, or `null` (no models chosen: both
+  standing members run on the chat's own model, §teams.defaults/file);
   `members` is one worker or `null`; `specWriter` is `{primary, fallback}` or `null`. A profile
   may also carry an optional `reviewer` (`{primary, fallback}` or `null`), the adversarial
   reviewer's route (§chat.alignment-review/route): a profile without the key parses as before, and
@@ -80,8 +82,8 @@ edited, renamed or deleted. It configures nothing, so the agent picks every mode
 
 - In Delegate the prompt still asks the agent to delegate, and still names the four work kinds,
   but carries no worker line for them: the agent chooses each worker's backend, model and effort.
-- Teams get no standing coordinator or monitor and no members default, exactly as with no
-  `team-defaults.json` today.
+- Teams still get Sova's coordinator and monitor, on the chat's own model with Sova's built-in
+  values (§teams.defaults/file), and no members default.
 - No spec writer: the session writes the spec itself.
 
 ## §chat.subagent-profiles/resolution — Which profile a chat uses
@@ -115,7 +117,8 @@ edited, renamed or deleted. It configures nothing, so the agent picks every mode
   running team adds members and starts successors under the chat's current profile. A worker
   already running keeps the model it was started with. Successors preserve explicit member and
   per-call model choices, recorded separately from resolved models in the team's member records;
-  otherwise standing duties use the current profile's configured tuple and ordinary successors
+  otherwise standing duties use the current profile's configured tuple (the chat's own model where
+  it names none) and ordinary successors
   use its members default. With no applicable current default they retain the predecessor's tuple.
 
 ## §chat.subagent-profiles/members-default — Members default
@@ -186,16 +189,20 @@ profile in its mode menu; new chats start on the default."
   - **Delegate routing**, open when the editor opens; its summary is the routes' distinct primary
     models and how many fallbacks are set ("fable · opus · 1 fallback"). The four work kinds
     are compact rows (§app.settings-dialog/modes), each with Add Fallback or Remove Fallback.
-  - **Teams**; its summary names the standing roles and the members default ("Coordinator +
-    monitor · members on opus"; "No standing roles · members on the lead's model"). **Coordinator**
-    and **Monitor** each have one switch and, while on, their worker row and fallback, and an
-    **Instructions** fold holding the role name and the role's extra instructions: a role name is
+  - **Teams**; its summary names the standing roles' models and the members default
+    ("Coordinator on opus · monitor on deepseek-v4.1-flash · members on opus"; "Coordinator +
+    monitor on the default model · members on the lead's model"). It always shows the
+    **Coordinator** and the **Monitor**; there is no switch to leave either out of new teams. A
+    profile that never chose models for them (`teams: null`) shows "Uses the default model" for
+    both, and **Choose Models**, which gives both roles their worker rows, seeded from the profile's
+    last saved roles, else the legacy team defaults. Once chosen, each role has its worker row and fallback and an
+    **Instructions** fold holding the role name and the role's extra instructions, and **Use
+    Default Model** puts both back on the chat's own model (`teams: null`). A role name is
     1 to 64 characters after trimming, never cut ("Name the role.", "Coordinator role name can be
     at most 64 characters."), and instructions at most 4,000, with a count "{n} / 4,000", kept
-    whole and red past it ("Coordinator instructions can be at most 4,000 characters."). Turning the
-    coordinator off stores no standing roles (`teams: null`); turning it on again restores the
-    profile's saved roles, else the legacy team defaults. The monitor reports to the coordinator, so
-    its switch waits for one. The monitor's own settings sit under it: wrap-up context %, check
+    whole and red past it ("Coordinator instructions can be at most 4,000 characters."). The
+    saved model choices are kept; the editor never writes `coordinator.enabled` or
+    `monitor.enabled`. Once chosen, the monitor's own settings sit under it: wrap-up context %, check
     interval, and the pause near a usage limit with its resume margin. The retire timeout is a
     **Handover** line under both roles. These five are number boxes, each hint under its box, that
     keep what was typed (§app.settings-dialog/number-boxes): Wrap-up context % and Pause usage % are
@@ -212,8 +219,7 @@ profile in its mode menu; new chats start on the default."
     override; its summary is "Host default" or what it overrides ("Careful · Project manager ·
     visuals on"). "Use host default" stores no field, and all three on it store no `alignment` at
     all.
-  A section holding something Save waits for opens itself, and a role whose fields need fixing
-  shows them even while switched off. The mode menu's spec gear opens the chat's profile with Spec
+  A section holding something Save waits for opens itself. The mode menu's spec gear opens the chat's profile with Spec
   writer open and in view. Rows, validation and save rules are §app.settings-dialog/modes': choices
   from discovery, a changed worker its backend can't run is refused, one that can't be checked or
   that the policy denies saves with a note. The dialog's Save Changes saves the library; unsaved

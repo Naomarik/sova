@@ -77,18 +77,22 @@ start and the limits of 24 running workers per chat and 24 seats per team; how m
 (`team_msg`, `team_inbox`, `team_ask`) with examples of members settling things between themselves;
 the inbox (idle members woken, busy ones never interrupted, urgent items at the next step, questions
 waiting for an answer, a replaced member's messages going to its successor, inbox zero and the
-safety net, open items returned to their senders, nothing lost to a restart); the coordinator (from
-the subagent profile's Teams section; sees every assignment and the roster, steers by role, answers
-members' questions, the one voice back to the user's chat with `team_report` and `team_ask`, its own
-result starting a turn only once no member works, successors and handover notes, a team with no live
-coordinator reporting to the chat directly, and none under Off); the monitor (context wrap-up, the
+safety net, open items returned to their senders, nothing lost to a restart); the coordinator and
+the monitor every team gets from Sova (the chat names only the members who do the work, so a team
+runs 2 more workers than it names and small independent jobs are cheaper as separate workers; their
+models from the subagent profile's Teams section, else the chat's own model, Off included); the
+coordinator (sees every assignment and the roster, steers by role, answers members' questions, the
+one voice back to the user's chat with `team_report` and `team_ask`, its questions reaching a
+working chat after its current step and ending an `agent_wait`, its own result starting a turn only
+once no member works, successors and handover notes, a team with no live coordinator reporting to
+the chat directly); the monitor (context wrap-up, the
 usage pause and resume with an early resume refused, no checks while the team is idle); watching a
 team (the composer's count, the Session detail pane's member rows, the Inbox tab, read-only, and
 the Agents page's team chips).
 
 ## §site.docs/subagent-profiles — Subagent profiles (`/docs/subagent-profiles/`)
 
-What a subagent profile holds (its alignment override included), how a chat picks one, editing them in Settings, switching a chat's
+What a subagent profile holds (its alignment override included; its Teams section chooses the models of the coordinator and monitor every team gets, else they run on the chat's own model), how a chat picks one, editing them in Settings, switching a chat's
 profile after a usage limit, and Off. A profile never turns on a project mode. The page sits in
 the Features group, not under Modes: a profile is not a mode.
 

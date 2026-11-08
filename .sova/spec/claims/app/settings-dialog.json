@@ -504,7 +504,12 @@
     "code": [
       "src/design/base.css",
       "src/components/SubagentProfilesSettings.tsx"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-08T08:01Z",
+      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
+    }
   },
   "§app.settings-dialog/voice": {
     "kind": "behavior",

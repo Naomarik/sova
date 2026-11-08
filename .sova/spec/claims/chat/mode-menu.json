@@ -12,7 +12,7 @@
       "§app.project-assistant/feature-chats"
     ],
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/mode/minor.ts",
@@ -25,8 +25,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-07T01:25Z",
-      "source": "pi-session:01a1b2d6-bea7-73d4-9fe9-b82dc23ae834#541da9cc"
+      "at": "2026-11-08T08:01Z",
+      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
     }
   },
   "§chat.mode-menu/how-a-switch-reaches-the-chat": {

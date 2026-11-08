@@ -36,8 +36,9 @@ have a team build it starts one with a shared objective, one role per member and
 files. One feature follows, laid out as the features above: **Team inbox**, saying a message to a
 busy teammate waits in its inbox instead of failing, an urgent one reaches it at its next step and
 an idle one wakes it within seconds, that members close what they handle, and that the side pane
-shows each member's inbox beside its transcript; its limit says the coordinator and monitor come
-from the subagent profile's Teams section, that Off gives a team neither, and that file ownership
+shows each member's inbox beside its transcript; its limit says every team gets a coordinator and a monitor, on the
+models the subagent profile's Teams section names or else the chat's own, which is 2 more workers
+than the chat names, and that file ownership
 is a plan, not a lock; it links to the Teams and Delegate docs. Its visual is an illustration, not
 a capture: a frame built from the site's mock-up styles with a team's roster (a coordinator, three
 members each owning a folder, a monitor) beside messages between them (a question and its answer

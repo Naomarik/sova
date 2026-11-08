@@ -1,14 +1,16 @@
 # §teams/defaults — Team defaults
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-A team created with `team_create` (pi-config's subagents extension, in the TUI or in a runtime
-Sova hosts) can get two standing members from its parent chat's effective subagent profile
-(§chat.subagent-profiles/resolution), instead of from the calling model's arguments: a **coordinator** that does no implementation and is the only member that talks to the
+Every team created with `team_create` (pi-config's subagents extension, in the TUI or in a
+runtime Sova hosts) gets two standing members from Sova, never from the calling model's
+arguments: a **coordinator** that does no implementation and is the only member that talks to the
 main thread, and a **monitor** that watches the team's context and provider usage on a timer.
-Settings → Subagents edits these choices together with a members default; it is their only
-editor (§chat.subagent-profiles/settings). Nothing here depends on Sova running.
-`team-defaults.json` remains the legacy seeding/fallback input. Off configures neither standing
-role nor members default; it does not remove workers already running.
+Nothing turns either off. The parent chat's effective subagent profile
+(§chat.subagent-profiles/resolution) chooses their models, thresholds and names; Settings →
+Subagents edits these choices together with a members default, and is their only editor
+(§chat.subagent-profiles/settings). Where no settings name a model for them, both run on the
+chat's own model. Nothing here depends on Sova running. `team-defaults.json` remains the legacy
+seeding/fallback input.
 
 ## §teams.defaults/file — The file, and what absent or malformed means
 
@@ -19,7 +21,9 @@ role nor members default; it does not remove workers already running.
   later team actions. Explicit member/call tuple choices are stored separately for succession.
 - **Shape (version 1).** `coordinator {enabled, role, primary, fallback, instructions}`,
   `monitor {enabled, role, primary, fallback, contextPct, everyMinutes, usage {enabled, pausePct,
-  resumeMarginMinutes}, instructions}`, `handover {retireTimeoutMinutes}`. A worker tuple is
+  resumeMarginMinutes}, instructions}`, `handover {retireTimeoutMinutes}`. `coordinator.enabled`
+  and `monitor.enabled` must be booleans when present and are otherwise ignored: they turn nothing
+  off, and nothing writes them. `monitor.usage.enabled` is the usage pause's switch. A worker tuple is
   `{backend, model, effort?}`; `fallback` is a tuple or `null`. A key the file leaves out takes
   the built-in default (coordinator `claude-code`/`claude-opus-5-5`/`medium`, monitor
   `pi`/`ollama-cloud/deepseek-v4.1-flash` with fallback `claude-code`/`claude-sonnet-5-5`/`low`,
@@ -37,11 +41,16 @@ role nor members default; it does not remove workers already running.
   to a coordinator or monitor (the monitor's thresholds), at `team_succeed` (the retire timeout),
   and for `/team defaults` and `/team <objective>` planning. A change applies to the next of these, never to a member already
   running.
-- **No effective teams section = off.** Off or a profile with `teams: null` adds no coordinator
-  or monitor. Only when resolution uses the legacy files does an absent `team-defaults.json`
-  determine this; an absent library seeds from the legacy values first.
-- **Malformed legacy defaults = off, visibly.** When resolution falls to a malformed legacy
-  file, the team is created as if that file were absent, and the
+- **No effective teams section = the chat's own model.** Off, a profile with `teams: null`, and,
+  when resolution uses the legacy files, an absent `team-defaults.json` (an absent library seeds
+  from the legacy values first) still give a team its coordinator and monitor. Both run on the
+  parent chat's own model and effort, with no fallback, and with Sova's built-in role names,
+  thresholds, check interval, usage pause and retire timeout. Every reader above reads those
+  built-ins, so the usage pause, the roster's thresholds, a monitor's successor, the retire
+  timeout, the check interval, `/team defaults` and `/team <objective>` planning work exactly as
+  in a configured setup.
+- **Malformed legacy defaults = the chat's own model, visibly.** When resolution falls to a
+  malformed legacy file, the team is created as if that file were absent, and the
   `team_create`/`team_add` result carries a warning line naming the file and its errors. The
   extension never writes, repairs or overwrites the file.
 - **One reader.** `pi-config/extensions/subagents/team-defaults.ts` holds the types, the
@@ -50,31 +59,26 @@ role nor members default; it does not remove workers already running.
 
 ## §teams.defaults/coordinator — The coordinator is enforced in code
 
-- **When.** At `team_create`, when the chat's effective teams section is valid,
-  `coordinator.enabled` is true and the call
-  does not pass `defaults.coordinator: false` (the per-team escape hatch; `defaults.coordinator`
-  and `defaults.monitor` must be booleans, anything else is refused before any worker starts).
-- **An orchestrator the caller named is the coordinator.** If exactly one member has
-  `orchestrator: true`, it becomes the team's coordinator and nothing is synthesized. More than one
-  orchestrator in a coordinated team is refused, at `team_create` and at a `team_add` to a team
-  that has a coordinator, and never turned into a plain member silently. The refusal says that
-  only the coordinator is the orchestrator, that it hands a member (itself included) over to a
-  successor with `team_succeed`, that a member that only watches the team needs no orchestrator
-  mark, and that the main chat can start a replacement coordinator once none is live
-  (§teams.defaults/handover).
-- **Otherwise one is synthesized**: a member with role `coordinator.role`, `orchestrator: true`,
-  on the first tuple that passes the same checks a spawn applies — the backend is loaded, the
-  model policy (`model-policy.json`, subagent dimension included) allows it, and the pi model is
-  in the session's registry or the backend's own validation accepts it. The primary is tried, then
-  the fallback; a primary that ran out of usage within the hour fails the checks
-  (§teams.defaults/runtime-fallback), and a coordinator whose primary fails at runtime moves to
-  the fallback there. If neither passes, **the team is not created**: the error names both tuples and
-  their reasons, and suggests fixing Settings or passing `defaults.coordinator: false`. A caller
-  member that takes the coordinator's role without being the orchestrator is refused the same way.
-- **What the result says.** One line per synthesized member: role, backend/model/effort, and
-  whether it is the primary or the fallback (with the primary's denial). One line names the
-  standing roles Sova added to the team (or that it added none) and each one turned off, and by
-  what: the chat's settings, or the call's `defaults.coordinator` / `defaults.monitor: false`.
+- **When.** At every `team_create`. No setting, call option or missing or broken settings state
+  leaves it out.
+- **Members the chat names just build.** Every member a `team_create` or `team_add` names is a
+  working member; none is ever made the coordinator, and there is no way to mark one as the lead:
+  a member's `orchestrator` and the call's `defaults.coordinator` and `defaults.monitor` are
+  refused as unknown settings (§app.teams/requests). A member the chat names with the
+  coordinator's or the monitor's role is refused before any worker starts, saying the role is
+  Sova's and to give the member another.
+- **Sova starts it**: a member with role `coordinator.role` on the first tuple that passes the
+  same checks a spawn applies — the backend is loaded, the model policy (`model-policy.json`,
+  subagent dimension included) allows it, and the pi model is in the session's registry or the
+  backend's own validation accepts it. The primary is tried, then the fallback; a primary that ran
+  out of usage within the hour fails the checks (§teams.defaults/runtime-fallback), and a
+  coordinator whose primary fails at runtime moves to the fallback there. When neither passes, or
+  the settings name no model (§teams.defaults/file), it runs on the chat's own model and effort.
+  Only when the model policy refuses the chat's own model too is **the team not created**,
+  refused as its members on that model would be.
+- **What the result says.** One line per member Sova added: role, backend/model/effort, and
+  whether it is the primary, the fallback (with the primary's denial), or the chat's own model
+  (because the settings name none, or with both tuples' denials).
 - **It does no implementation.** Its header says so: it routes and unblocks the work the main
   thread assigned, verifies and reports, and never edits files itself. It keeps
   `team_roster`/`team_steer` and gains `team_report` and `team_succeed`; it still cannot add or
@@ -113,14 +117,16 @@ role nor members default; it does not remove workers already running.
   declines only if the member has already completed its assigned task. On a monitor `pause` it
   has the working teammates wrap up and reports the pause to the main thread with `team_report`;
   on `resume` it restarts them and reports the resume the same way.
-- **Scope.** A team's coordination is fixed at `team_create`. `team_add` never retrofits a
-  coordinator onto an uncoordinated team; members added to a coordinated team are routed like the
-  others. There is no per-call limit: a synthesized coordinator and monitor count only toward the
-  chat's running limit (§app.teams/running-limit), whose refusal names them.
+- **Scope.** Members added with `team_add` are routed like the others. A team that has no
+  coordinator, one made before every team got one and brought back by resuming its members,
+  takes no new members: `team_add` is refused, saying to create a new team. There is no per-call
+  limit: the coordinator and monitor count only toward the chat's running limit
+  (§app.teams/running-limit), whose refusal names them, so each team runs 2 more workers than the
+  chat names.
 
 ## §teams.defaults/routing — Only the coordinator talks to the main thread
 
-In a coordinated team the **routing coordinator** is the newest live member with the coordinator
+In a team the **routing coordinator** is the newest live member with the coordinator
 duty (a successor takes over from its predecessor the moment it starts).
 
 - **Wake.** Every member except the coordinator is spawned with `wake: false`.
@@ -141,18 +147,20 @@ duty (a successor takes over from its predecessor the moment it starts).
   parent turn only when no other member (the monitor aside) is working — an interim "waiting on
   the builder" does not wake the parent; a quiescent team does.
 - **No live coordinator.** If the team's coordinator has ended and no successor is live, routing
-  falls back to the parent: completions and questions reach it in the main chat's own queue, as
-  before, and a completion then
-  starts a parent turn despite `wake: false`, so the team is never silently orphaned.
+  falls back to the parent: completions and questions reach it in the main chat's own queue, and
+  a completion then starts a parent turn despite `wake: false`, so the team is never silently
+  orphaned.
+- **A question for the main chat** (the coordinator's `team_ask`, or any member's while no
+  coordinator is live) is a `team-question` that reaches a working chat after its current step,
+  not after its final answer; an idle chat gets it as a new turn at once. The asker is told it
+  reaches the chat after its current step.
 - **Headers.** Each non-coordinator member's header names the coordinator role and says its final
   answer and its questions go there, not to the operator.
-- **What `team_create` and `team_list` tell the caller.** For a coordinated team neither carries
-  the generic "questions arrive here as team-question messages" paragraph: they say members'
-  `team_ask` questions go to the coordinator, and only the coordinator's `team_ask` (a
-  `team-question`) and `team_report` reach the main thread. A `team_list` covering coordinated and
-  uncoordinated teams gives both paragraphs, each labelled with the teams it applies to.
-- **Keep the standing members while work runs.** The `team_create` result for a coordinated team,
-  its `team_list` entry and the tool's guidelines tell the main thread not to stop (`agent_kill`)
+- **What `team_create` and `team_list` tell the caller.** They say members' `team_ask` questions
+  go to the coordinator, and only the coordinator's `team_ask` (a `team-question`) and
+  `team_report` reach the main thread.
+- **Keep the standing members while work runs.** The `team_create` result, a team's `team_list`
+  entry and the tool's guidelines tell the main thread not to stop (`agent_kill`)
   the coordinator or the monitor while any member is still working — even when the coordinator
   reports the objective complete — and that stopping them once no member is working is fine.
 
@@ -170,12 +178,12 @@ has the tool; the parent refuses it from anyone else. Each report is a team acti
 
 ## §teams.defaults/monitor — A monitor member on a timer
 
-- **When.** In a coordinated team whose chat's effective teams section has `monitor.enabled` and whose `team_create` did not
-  pass `defaults.monitor: false`. It is synthesized with role `monitor.role` on the first tuple
-  that passes the spawn checks (primary, then fallback; a primary that ran out of usage within the
-  hour fails them); if neither passes, the team is not created. An uncoordinated team gets no
-  monitor, and the result says why. A monitor whose primary fails at runtime moves to the
-  fallback, or is stopped when none can run, and a failed check that doesn't move it has its next
+- **When.** At every `team_create`, beside the coordinator, and nothing leaves it out. Sova
+  starts it with role `monitor.role` on the first tuple that passes the spawn checks (primary,
+  then fallback; a primary that ran out of usage within the hour fails them); when neither passes,
+  or the settings name no model, it runs on the chat's own model and effort, and the result says
+  so, as for the coordinator (§teams.defaults/coordinator). A monitor whose primary fails at
+  runtime moves to the fallback, or is stopped when none can run, and a failed check that doesn't move it has its next
   check scheduled by the parent (§teams.defaults/runtime-fallback).
 - **Tools.** `team_msg` (with an optional `notice`: `wrap-up`, `pause` or `resume`), `team_inbox`,
   `team_roster` (read-only) and **`wake_nudge`**, through the member extension (a claude-code monitor is a pi worker on
@@ -285,7 +293,7 @@ min`), and once the team has any item, `team_roster` and `team_list` end with on
   `<session>` is the parent session's id (reduced to `[A-Za-z0-9._-]`; a session without an id uses
   a key unique to that parent process) and the role is reduced to `[A-Za-z0-9._-]`. Team IDs
   restart at `team_01` in every parent session, so the session id is what keeps two sessions'
-  notes apart. The directory is created with the coordinated team; every member's header but the
+  notes apart. The directory is created with the team; every member's header but the
   monitor's names its own path. The monitor has no file tools and no note.
 - **`team_succeed { role }`** — the routing coordinator's tool for any member, and the main
   chat's (below) for a coordinator or monitor only. It starts the successor of that
@@ -294,7 +302,8 @@ min`), and once the team has any item, `team_roster` and `team_list` end with on
   wins), with the same tools, system prompt, cwd, backend options, extensions, ownership and duty.
   Its backend/model/effort follow the chat's current profile at successor spawn, except that
   explicit member or per-call choices remain binding. A standing duty uses its current configured
-  tuple: the primary, else the fallback, where a primary marked out of usage counts as refused and a
+  tuple: the primary, else the fallback, else the chat's own model (also when the settings name
+  none), where a primary marked out of usage counts as refused and a
   team whose duty already moved to its fallback keeps it (§teams.defaults/runtime-fallback); an ordinary successor uses the current members default when applicable. With no usable
   applicable default it keeps the predecessor's tuple, and a denied default is reported as such
   (§chat.subagent-profiles/members-default). Running predecessors do not change model.
@@ -410,14 +419,15 @@ again while the team runs, not only when a coordinator or monitor starts.
   logged in · Please run /login") or with "Claude usage limit reached" / "Claude sign-in failed";
   each is out of usage. One classifier decides this, shared with the provider-limits gate
   (§app.provider-limits/rate-limit).
-- **When it switches.** A member with the coordinator or monitor duty, in a coordinated team of
-  this session, whose turn ends with a failed task (an error; a stop or abort is not one) moves to
+- **When it switches.** A member with the coordinator or monitor duty, in a team of this
+  session, whose turn ends with a failed task (an error; a stop or abort is not one) moves to
   its fallback **at once** when the failure is out of usage, and otherwise when it is its **3rd
   failed turn in a row** (a turn that succeeds starts the count again). A single rate limit or
   blip keeps today's path: its failure is routed as before. It switches only once per member, only
   while that member runs its role's current primary (the backend and model the chat's profile names
   now), and never while a handover involving it is pending; otherwise its failures are routed as
-  before.
+  before. Where the settings name no model, the role's primary is the chat's own model and it has
+  no fallback.
 - **The switch.** The team's duty is recorded as moved to its fallback, and an out-of-usage
   primary is also marked out for the chat (below); the member is stopped and its seat
   released (the persisted `eject` op, source `system`) before its successor is added, so a team
@@ -462,8 +472,10 @@ again while the team runs, not only when a coordinator or monitor starts.
 
 ## §teams.defaults/command — `/team defaults`
 
-`/team defaults` prints the parent chat's effective defaults now — both roles, their tuples,
-thresholds and the retire timeout — with profile/file provenance. Off or a profile with no teams
-section says it configures nothing/none, never claims a missing legacy file. Legacy resolution
-still says `off (no file)` with the path, or the malformed reason. It starts no turn and changes
-no pick or default; like other profile readers, its first read may seed an absent library.
+`/team defaults` prints the parent chat's effective defaults now — both roles, the model each
+will use (its primary and fallback, or the chat's own model, named, where the settings name
+none), thresholds and the retire timeout — with profile/file provenance. It never says a role is
+off. Off or a profile with no teams section says the roles use the chat's own model with Sova's
+built-in values, and never claims a missing legacy file. Legacy resolution says when there is no
+file, with the path, or gives the malformed reason. It starts no turn and changes no pick or
+default; like other profile readers, its first read may seed an absent library.

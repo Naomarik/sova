@@ -817,19 +817,21 @@ choose between a team (`team_create`) and separate workers (`agent_spawn`):
   interfaces, stack on each other, feed each other findings, or have a checker sending findings
   straight to builders. `agent_spawn`'s says to use it for one focused job, or a batch of focused
   jobs that don't depend on each other.
-  `team_create`'s own text says members share the filesystem and agree shared files and interfaces
-  by message; a member's `team_ask` goes to its coordinator, or to the chat when there is none;
-  without a coordinator, a settled member starts a parent turn; `ownedPaths` is optional, paths only
-  that member edits, never shared files; and only a coordinator sees teammates' tasks, so a member's
-  prompt says who it works with and on what.
+  `team_create`'s own text says every team gets a coordinator and a monitor from Sova, so the chat
+  names only the members who do the work, and each team runs 2 more workers than it names, so small
+  independent jobs are cheaper as separate workers; members share the filesystem and agree shared
+  files and interfaces by message; a member's `team_ask` goes to its coordinator, or to the chat
+  while no coordinator is live; `ownedPaths` is optional, paths only that member edits, never
+  shared files; and only the coordinator sees teammates' tasks, so a member's prompt says who it
+  works with and on what.
 - **Plan steps.** What asks an agent for a plan's steps never asks for them in order; it asks which
   can run at the same time. That holds for an alignment's approach steps (§chat.alignment/document),
   in the `align` tool, its import file and the align block, and for a feature chat's plan
   (§app.project-assistant/feature-chats).
 - **The docs say the same.** The Delegate and Teams pages (§site.docs/delegate, §site.docs/teams)
   give these reasons for a team, and the Delegate page says the agent splits work first.
-- **Teams themselves don't change.** A team still gets the standing coordinator and monitor its
-  chat's subagent profile configures (§teams/defaults), and the limits of 24 running workers per
+- **Teams themselves.** Every team gets Sova's coordinator and monitor, on the models the chat's
+  subagent profile names or else the chat's own (§teams/defaults), and the limits of 24 running workers per
   chat and 24 seats per team still hold (§app.teams/running-limit, §app.teams/seats).
 
 ## §chat.mode-menu/typed-commands — Mode commands typed in a chat

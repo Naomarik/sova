@@ -573,7 +573,9 @@ function row(s: SessionSummary, now = Date.now()): string {
   return `- ${parts.join(" · ")}${gist ? `\n  ${cut(gist, 160)}` : ""}`;
 }
 
-export const SETTINGS_TABS = ["general", "models", "subagents", "overseer", "summaries", "themes", "experimental"] as const;
+export const SETTINGS_TABS = ["general", "models", "profiles", "overseer", "summaries", "themes", "experimental"] as const;
+/** The retired Subagents tab: its screen is Profiles' Models part, so an older prompt naming it opens Profiles. */
+const RETIRED_TABS: Readonly<Record<string, (typeof SETTINGS_TABS)[number]>> = { subagents: "profiles" };
 
 // ---- the tools ---------------------------------------------------------------------------------
 
@@ -771,7 +773,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
     if (p.page === "overseer") return { href: "#/overseer", label: "Open the Overseer" };
     if (p.page === "orgs") return { href: "#/orgs", label: "Open Organizations" };
     if (p.page === "settings") {
-      const tab = p.settings_tab ?? "general";
+      const tab = RETIRED_TABS[p.settings_tab ?? ""] ?? p.settings_tab ?? "general";
       if (!(SETTINGS_TABS as readonly string[]).includes(tab)) throw new Refusal(`settings_tab must be one of ${SETTINGS_TABS.join(", ")}.`);
       return { href: `settings:${tab}`, label: `Open Settings → ${tab[0]!.toUpperCase()}${tab.slice(1)}` };
     }

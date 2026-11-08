@@ -416,7 +416,7 @@ test("library: a fresh device's starter yields to the mesh's real library, which
     await converge([flow!, zen!]);
     assert.equal(flow!.read(LIB), real, "the real library is never replaced by a starter");
     assert.equal(zen!.read(LIB), real, "the fresh device takes the real library whole, its starter dropped");
-    // The starter it had is kept, and Settings → Subagents says so.
+    // The starter it had is kept, and Settings → Profiles says so.
     const notice = replacedNotice(zen!.agentDir)!;
     assert.equal(notice.by, "Device A", "flow is host a here");
     assert.deepEqual(notice.changes, { added: ["Fast", "Deep", "Cheap"], changed: [], removed: ["My setup"] });

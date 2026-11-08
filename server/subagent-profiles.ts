@@ -43,7 +43,7 @@ export function profileModelCount(info: Pick<SubagentProfilesInfo, "settings">, 
   return p ? new Set(profileWorkers(p, false).map((w) => workerModelName(w.model))).size : 0;
 }
 
-/** How long Settings → Subagents offers a kept library back (§chat.subagent-profiles/replaced). */
+/** How long Settings → Profiles offers a kept library back (§chat.subagent-profiles/replaced). */
 export const REPLACED_NOTICE_MS = 24 * 60 * 60_000;
 const stateDirOf = (dir: string) => join(dir, "sova");
 

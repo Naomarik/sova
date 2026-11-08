@@ -10,7 +10,7 @@ import type { AlignDocInfo, AlignReviewEntryInfo, AlignReviewPhaseInfo } from ".
 
 /**
  * Whether adversarial review is saved on (Settings → Alignment, `alignment.review`). Off until
- * something sets it. It gates the Reviewer row in Settings → Subagents; the card follows each chat's
+ * something sets it. It gates the Reviewer row in Settings → Profiles; the card follows each chat's
  * own flag (the hello's `alignReview`) and falls back to this only where no chat says one.
  */
 const [adversarialReview, setAdversarialReview] = createSignal(false);

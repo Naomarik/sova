@@ -1180,7 +1180,7 @@ export function buildApp(deps: AppDeps) {
   });
 
   // Legacy Delegate routing (mode-delegate.json): which worker each kind of Delegate work goes to.
-  // Sova's UI no longer PUTs it (Settings → Subagents edits routing per profile); it seeds the profile
+  // Sova's UI no longer PUTs it (Settings → Profiles edits routing per profile); it seeds the profile
   // library and is its fallback. The file is the mode extension's; every Delegate session re-reads it
   // at its next turn boundary.
   const delegateSources: DelegateSources = {
@@ -1215,7 +1215,7 @@ export function buildApp(deps: AppDeps) {
     const result = restoreReplacedProfiles(file);
     return c.json(result, "error" in result ? 400 : 200);
   });
-  // This device's default (Make Default in Settings → Subagents): writes subagent-profiles-default.json only.
+  // This device's default (Make Default in Settings → Profiles): writes subagent-profiles-default.json only.
   app.put("/api/settings/subagents/default", async (c) => {
     const body: unknown = await c.req.json().catch(() => null);
     const id = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>).default : undefined;
@@ -1244,7 +1244,7 @@ export function buildApp(deps: AppDeps) {
   });
 
   // Legacy spec writer (mode-spec.json): which worker writes the spec while the spec minor mode is on.
-  // Sova's UI no longer PUTs it (Settings → Subagents edits it per profile); it seeds the profile
+  // Sova's UI no longer PUTs it (Settings → Profiles edits it per profile); it seeds the profile
   // library and is its fallback. The file is the mode extension's; every session with spec on re-reads it at its next turn boundary, in either
   // major mode. Discovery and the save check are Delegate's.
   // The memory minor mode (§chat/memory): the Session pane's outline, Settings → Memory, the Overseer's switch.
@@ -1270,7 +1270,7 @@ export function buildApp(deps: AppDeps) {
   });
 
   // Legacy team defaults (team-defaults.json): the coordinator and monitor every new team gets.
-  // Sova's UI only reads it now (Settings → Subagents seeds a profile's roles from it); the file is the
+  // Sova's UI only reads it now (Settings → Profiles seeds a profile's roles from it); the file is the
   // subagents extension's, read when a team is created, so a save applies to teams created after it.
   // Discovery and the save check are Delegate's; a file that can't be read is never overwritten (409).
   app.get("/api/settings/team", (c) => c.json(teamDefaultsInfo()));

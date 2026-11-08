@@ -564,7 +564,7 @@ a routing kept there would vanish on the next `/mode default`:
 - `fallback: null` means none. A missing file reads as the defaults; a slot that
   doesn't parse takes its default; an unknown `version` reads as all defaults.
 - Edit it by hand. Sova no longer writes it: Delegate routing is edited per
-  subagent profile in Settings → Subagents, and this file only seeds that
+  profile in Settings → Profiles (its Models part), and this file only seeds that
   library and is its fallback. Nothing in this extension writes it.
 
 **Global, read at every turn boundary, never snapshotted.** The file is shared
@@ -721,7 +721,7 @@ independent of Delegate:
 - Tuples are exactly Delegate's (`WorkerChoice`, `parseChoice`), and the file
   is its own for the same reason `mode-delegate.json` is. Edit it by hand;
   Sova no longer writes it (the spec writer is edited per subagent profile in
-  Settings → Subagents; this file only seeds that library and is its
+  Settings → Profiles (its Models part); this file only seeds that library and is its
   fallback). Nothing in this extension writes it.
 - **Global, read at every turn boundary, never snapshotted.** A session with
   spec on re-reads it (one `stat`) in `before_agent_start`; with spec off it is

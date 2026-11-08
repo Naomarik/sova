@@ -4,7 +4,7 @@ import { profilesProblem } from "./subagent-profiles-draft";
 import { claudeModelName } from "./format";
 
 /**
- * Settings → Subagents' editor, the parts that are rules rather than markup: each collapsible
+ * Settings → Profiles' editor, the parts that are rules rather than markup: each collapsible
  * section's one-line summary, which sections hold something Save waits for, and how Choose Models
  * and Use Default Model map onto the stored `teams` shape.
  */

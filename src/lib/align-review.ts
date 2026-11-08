@@ -98,4 +98,4 @@ export function reviewFoot(doc: Pick<AlignDocInfo, "phase" | "review">): { kind:
 export const planReviewRunning = (doc: Pick<AlignDocInfo, "review">): boolean => doc.review?.plan?.state === "running";
 /** Under a review button: what a review is. */
 export const REVIEW_ABOUT = "An independent reviewer reads it and reports problems. It can't change code or run anything.";
-export const NO_REVIEWER = "No reviewer is set for this chat's subagent profile (Settings → Subagents → Reviewer).";
+export const NO_REVIEWER = "No reviewer is set for this chat's profile (Settings → Profiles → Reviewer).";

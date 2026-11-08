@@ -100,6 +100,7 @@ import { isExplanationId, listExplanations, readExplanationPage } from "./explan
 import { switchMode } from "./mode";
 import { configureSession } from "./sessions-configure";
 import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
+import { registerProfileSwitchRoutes } from "./profile-switch";
 import { registerProfileEditorRoutes } from "./profile-editor-routes";
 import { resolveDefaultProfile } from "./default-profile";
 import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
@@ -335,6 +336,7 @@ export function buildApp(deps: AppDeps) {
     return c.json(body);
   });
   registerProfileRoutes(app);
+  registerProfileSwitchRoutes(app);
   registerTimeSpentRoutes(app);
 
   /** Create a new empty webapp-owned session in `cwd` (an existing absolute directory) → 201 SessionSummary.

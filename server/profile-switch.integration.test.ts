@@ -1,0 +1,245 @@
+// Run: pnpm test:int -- server/profile-switch.integration.test.ts. A chat's mid-chat switch of its whole
+// Models part (§chat.profiles/switch, /edited, §chat.subagent-profiles/limit-row), in real pi runtimes in
+// this process with the scripted model: checked first and all or nothing; while a reply runs it waits for
+// the reply's end and then moves the model and the helper pick together; Cancel Switch leaves both; a
+// composer pick afterwards reads "(edited)" and a failed turn names the model it actually ran.
+// A throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { after, describe, test } from "node:test";
+import type { ChatServerMessage } from "../shared/protocol";
+import type { ChatProfileState } from "../shared/profile-switch";
+import { ScriptedModel, scriptedModelsJson } from "./harness/pi/testing/scripted-model";
+import { piSession } from "./harness/pi/testing/handle";
+
+for (const k of Object.keys(process.env)) if (/_API_KEY$|_AUTH_TOKEN$/.test(k)) delete process.env[k];
+const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-profile-switch-")));
+process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
+process.env.PI_CODING_AGENT_DIR = agentDir;
+writeFileSync(join(agentDir, "models.json"), JSON.stringify(scriptedModelsJson()));
+// The mode extension by its real path: the helper pick is its entry, and a chat without a mode owner can't switch.
+writeFileSync(
+  join(agentDir, "settings.json"),
+  JSON.stringify({ defaultProvider: "scripted", defaultModel: "scripted", retry: { enabled: false }, extensions: [resolve(dirname(fileURLToPath(import.meta.url)), "../pi-config/extensions/mode")] }),
+);
+// Settings → Models turns zai off: a profile on a zai model is refused before anything is written.
+writeFileSync(join(agentDir, "model-policy.json"), JSON.stringify({ version: 1, disabledProviders: ["zai"], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }));
+writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "test" }, openai: { type: "api_key", key: "test" } }));
+const sessionsDir = join(agentDir, "sessions", "--tmp-switch--");
+mkdirSync(sessionsDir, { recursive: true });
+mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
+const cwd = join(agentDir, "cwd");
+mkdirSync(cwd, { recursive: true });
+
+await import("./testing/in-process-chats"); // chats open in this process
+const sp = await import("../pi-config/extensions/subagents/subagent-profiles.ts");
+sp.writeSubagentProfiles(agentDir, { version: 1, profiles: [sp.legacyProfile(agentDir, "house", "House"), sp.legacyProfile(agentDir, "gpt-subs", "GPT helpers")] });
+sp.writeProfilesDefault(agentDir, { version: 1, default: "house" });
+const stateDir = join(agentDir, "sova");
+mkdirSync(stateDir, { recursive: true });
+// Yours: a pair on OpenAI (its own model and effort, helpers "gpt-subs"), and one on a model the policy turns off.
+writeFileSync(
+  join(stateDir, "session-profiles.json"),
+  JSON.stringify({
+    version: 1,
+    profiles: [
+      { id: "fast", label: "Fast", model: "openai/gpt-5.5", thinking: "high", subagents: "gpt-subs" },
+      { id: "glm", label: "GLM", model: "zai/glm-5.3", subagents: "gpt-subs" },
+    ],
+  }),
+);
+
+const { acquireChat, disposeAllChats } = await import("./chat-manager");
+const { canonicalPath } = await import("./paths");
+const { markOwned } = await import("./write-guard");
+const { addWebSession } = await import("./web-sessions");
+const { switchChatProfile, switchTargetOf, cancelChatProfileSwitch } = await import("./profile-switch");
+const { CHAT_PROFILE_ENTRY } = await import("../shared/profile-switch");
+
+after(async () => {
+  await disposeAllChats();
+});
+
+async function until(cond: () => boolean, what: string, ms = 10_000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
+let n = 0;
+async function openChat() {
+  const id = `0199cccc-0000-7000-8000-${String(++n).padStart(12, "0")}`;
+  const path = canonicalPath(join(sessionsDir, `2026-11-08T00-00-${String(n).padStart(2, "0")}-000Z_${id}.jsonl`));
+  writeFileSync(path, JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-11-08T00:00:00.000Z", cwd }) + "\n");
+  markOwned(path);
+  addWebSession(id);
+  const chat = await acquireChat(path, true);
+  const model = new ScriptedModel().attach(piSession(chat));
+  const heard: ChatServerMessage[] = [];
+  chat.attach({ send: (m: ChatServerMessage) => heard.push(m) } as never);
+  const profileMessages = () => heard.filter((m): m is Extract<ChatServerMessage, { type: "chat_profile" }> => m.type === "chat_profile").map((m) => m.state as ChatProfileState);
+  return { path, chat, model, heard, profileMessages };
+}
+const fileOf = (path: string) => readFileSync(path, "utf8");
+const switchEntries = (path: string) => fileOf(path).trim().split("\n").map((l) => JSON.parse(l)).filter((e) => e.customType === CHAT_PROFILE_ENTRY);
+
+describe("a profile switch, all at once (§chat.profiles/switch)", () => {
+  test("resolves a joined profile into the chat's model, effort and helpers", async () => {
+    const t = await switchTargetOf("fast", cwd);
+    assert.ok(!("error" in t), JSON.stringify(t));
+    assert.equal(t.model, "openai/gpt-5.5");
+    assert.equal(t.thinking, "high");
+    assert.equal(t.subagents, "gpt-subs");
+    assert.ok(t.helpers > 0);
+    assert.deepEqual(await switchTargetOf("off", cwd), { id: "off", key: "sova:default", name: "Off", subagents: "off", helpers: 0 });
+    const unknown = await switchTargetOf("nope", cwd);
+    assert.ok("error" in unknown && unknown.status === 404);
+  });
+
+  test("idle: model, effort and helper pick move together, and the chat remembers the profile", async () => {
+    const { path, chat, profileMessages } = await openChat();
+    assert.equal(chat.harness.model()?.ref, "scripted/scripted");
+    const r = await switchChatProfile(path, "fast");
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.equal(r.applies, "now");
+    assert.equal(chat.harness.model()?.ref, "openai/gpt-5.5");
+    assert.equal(chat.harness.thinking(), "high");
+    assert.equal(chat.subagentPick, "gpt-subs");
+    assert.equal(r.state.current.id, "fast");
+    assert.equal(r.state.current.edited, false);
+    assert.equal(r.state.applied?.name, "Fast");
+    assert.equal(switchEntries(path).length, 1);
+    assert.ok(profileMessages().some((s) => s.current.id === "fast" && s.applied?.name === "Fast"));
+  });
+
+  test("a switch during a reply waits for its end, then the model and the helper pick both name the new profile", async () => {
+    const { path, chat, model, profileMessages } = await openChat();
+    const release = model.hold();
+    const run = chat.prompt("hi").catch(() => undefined); // resolves once the held reply ends
+    await until(() => chat.harness.isRunning() && model.calls.length === 1, "the reply to start");
+    const r = await switchChatProfile(path, "fast");
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.equal(r.applies, "after-turn");
+    assert.deepEqual(r.state.pending, { id: "fast", key: r.state.pending?.key, name: "Fast", helpers: r.state.pending!.helpers, setsModel: true });
+    // Nothing moved yet: the running reply keeps the old model and helpers.
+    assert.equal(chat.harness.model()?.ref, "scripted/scripted");
+    assert.equal(chat.subagentPick, undefined);
+    assert.equal(switchEntries(path).length, 0);
+    release();
+    await run;
+    await until(() => chat.harness.model()?.ref === "openai/gpt-5.5", "the held switch to apply");
+    assert.equal(chat.subagentPick, "gpt-subs");
+    assert.equal(chat.harness.thinking(), "high");
+    const state = chat.chatProfileState();
+    assert.equal(state.pending, undefined);
+    assert.equal(state.current.id, "fast");
+    assert.equal(state.applied?.name, "Fast");
+    assert.ok(profileMessages().some((s) => s.applied?.name === "Fast" && !s.pending));
+  });
+
+  test("a denied model leaves the model and the helpers as they are and writes nothing", async () => {
+    const { path, chat } = await openChat();
+    const before = fileOf(path);
+    const r = await switchChatProfile(path, "glm");
+    assert.equal(r.ok, false);
+    assert.ok(!r.ok && r.status === 400 && r.name === "GLM", JSON.stringify(r));
+    assert.equal(chat.harness.model()?.ref, "scripted/scripted");
+    assert.equal(chat.subagentPick, undefined);
+    assert.equal(fileOf(path), before, "the session file is untouched");
+  });
+
+  test("a model this computer can't find is refused the same way, idle or at the reply's end", async () => {
+    const { path, chat, model } = await openChat();
+    const before = fileOf(path);
+    const r = await chat.switchProfile({ id: "x", name: "X", model: "nowhere/none", subagents: "gpt-subs", helpers: 1 });
+    assert.deepEqual(r, { ok: false, status: 400, error: "No credentials here for nowhere/none." });
+    assert.equal(fileOf(path), before);
+    // Held, then its turn-end check fails: nothing switches and the chat says why.
+    const release = model.hold();
+    const run = chat.prompt("hi").catch(() => undefined);
+    await until(() => chat.harness.isRunning(), "the reply to start");
+    const ok = await chat.switchProfile({ id: "fast", name: "Fast", model: "openai/gpt-5.5", subagents: "gpt-subs", helpers: 1 });
+    assert.ok(ok.ok && ok.applies === "after-turn");
+    writeFileSync(join(agentDir, "model-policy.json"), JSON.stringify({ version: 1, disabledProviders: ["zai", "openai"], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }));
+    try {
+      release();
+      await run;
+      await until(() => chat.chatProfileState().failed !== undefined, "the re-check to fail");
+      assert.equal(chat.chatProfileState().failed?.name, "Fast");
+      assert.equal(chat.harness.model()?.ref, "scripted/scripted");
+      assert.equal(chat.subagentPick, undefined);
+      assert.equal(switchEntries(path).length, 0);
+    } finally {
+      writeFileSync(join(agentDir, "model-policy.json"), JSON.stringify({ version: 1, disabledProviders: ["zai"], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }));
+    }
+  });
+
+  test("Cancel Switch drops the waiting switch: the model and the helpers stay", async () => {
+    const { path, chat, model } = await openChat();
+    const release = model.hold();
+    const run = chat.prompt("hi").catch(() => undefined);
+    await until(() => chat.harness.isRunning(), "the reply to start");
+    const r = await switchChatProfile(path, "fast");
+    assert.ok(r.ok && r.applies === "after-turn");
+    const c = await cancelChatProfileSwitch(path);
+    assert.equal(c?.cancelled, true);
+    assert.equal(c?.state.pending, undefined);
+    release();
+    await run;
+    // A second reply ends too: any held switch would have applied at the first one's end.
+    await chat.prompt("again");
+    await until(() => model.calls.length === 2 && !chat.harness.isRunning(), "a second reply");
+    assert.equal(chat.harness.model()?.ref, "scripted/scripted");
+    assert.equal(chat.subagentPick, undefined);
+    assert.equal(switchEntries(path).length, 0);
+  });
+
+  test("a composer pick after a switch reads (edited); the profile's model again clears it; a failed turn names the model it ran", async () => {
+    const { path, chat, model } = await openChat();
+    assert.ok((await switchChatProfile(path, "fast")).ok);
+    await chat.setModelRef("anthropic/claude-opus-4-6", { save: true });
+    let s = chat.chatProfileState();
+    assert.equal(s.current.id, "fast");
+    assert.equal(s.current.edited, true);
+    assert.equal(s.current.model, "anthropic/claude-opus-4-6");
+    assert.equal(chat.subagentPick, "gpt-subs", "a composer pick changes no helper");
+    // The limit row judges what runs: the failed turn's model, never the profile's.
+    model.reply({ error: "429 rate_limit_error: usage limit reached" });
+    await chat.prompt("hi").catch(() => undefined);
+    await until(() => !chat.harness.isRunning() && model.calls.length >= 1, "the failed reply");
+    const branch = chat.harness.branch();
+    const failed = [...branch].reverse().find((e) => e.kind === "assistant") as { model?: string; provider?: string; stop?: string } | undefined;
+    assert.equal(failed?.stop, "error");
+    assert.equal(`${failed?.provider}`, "anthropic");
+    // The row the limit row reads (§chat.subagent-profiles/limit-row) carries that model, not the profile's.
+    assert.equal(failed?.model, "claude-opus-4-6");
+    // Picking the profile's model again clears it.
+    await chat.setModelRef("openai/gpt-5.5");
+    s = chat.chatProfileState();
+    assert.equal(s.current.edited, false);
+    // So does picking the profile again, after another hand pick: it puts back its model and effort.
+    await chat.setModelRef("anthropic/claude-opus-4-6");
+    chat.setThinking("low");
+    const again = await switchChatProfile(path, "fast");
+    assert.ok(again.ok && again.applies === "now");
+    assert.equal(chat.harness.model()?.ref, "openai/gpt-5.5");
+    assert.equal(chat.harness.thinking(), "high");
+    assert.equal(chat.chatProfileState().current.edited, false);
+  });
+
+  test("Off moves only the helpers: the chat keeps its own model", async () => {
+    const { path, chat } = await openChat();
+    assert.ok((await switchChatProfile(path, "fast")).ok);
+    const r = await switchChatProfile(path, "off");
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.equal(chat.harness.model()?.ref, "openai/gpt-5.5");
+    assert.equal(chat.subagentPick, "off");
+    assert.equal(r.state.current.id, "off");
+    assert.equal(r.state.current.edited, false);
+  });
+});

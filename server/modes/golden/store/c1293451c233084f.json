@@ -52,6 +52,73 @@
   }
  },
  {
+  "name": "edit",
+  "description": "@b5267b50ea0f1f04",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "path",
+    "edits"
+   ],
+   "properties": {
+    "path": {
+     "type": "string",
+     "description": "Path to the file to edit (relative or absolute)"
+    },
+    "edits": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "required": [
+       "oldText",
+       "newText"
+      ],
+      "properties": {
+       "oldText": {
+        "type": "string",
+        "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+       },
+       "newText": {
+        "type": "string",
+        "description": "Replacement text for this targeted edit."
+       }
+      }
+     },
+     "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+    }
+   }
+  },
+  "constrainedSampling": {
+   "type": "json_schema",
+   "strict": "prefer"
+  }
+ },
+ {
+  "name": "write",
+  "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "path",
+    "content"
+   ],
+   "properties": {
+    "path": {
+     "type": "string",
+     "description": "Path to the file to write (relative or absolute)"
+    },
+    "content": {
+     "type": "string",
+     "description": "Content to write to the file"
+    }
+   }
+  },
+  "constrainedSampling": {
+   "type": "json_schema",
+   "strict": "prefer"
+  }
+ },
+ {
   "name": "agent_resume",
   "description": "@9b561521c66f37e1",
   "parameters": {
@@ -190,7 +257,7 @@
  },
  {
   "name": "agent_wait",
-  "description": "Wait for current tasks, not child process exits. Failed tasks also settle; inspect each error. Timeout/cancellation does not stop workers. Output capped at 47,000 bytes/2000 lines with full snapshot path.",
+  "description": "@37fe184a3c12b987",
   "parameters": {
    "type": "object",
    "properties": {
@@ -217,7 +284,7 @@
  },
  {
   "name": "team_create",
-  "description": "@139fde73f4bd38bd",
+  "description": "@194e2d571f0d54e0",
   "parameters": {
    "type": "object",
    "required": [
@@ -264,17 +331,9 @@
        "patternProperties": {
         "^.*$": {}
        }
-      },
-      "coordinator": {
-       "type": "boolean",
-       "description": "false: no coordinator (and no monitor) from team-defaults.json for this team."
-      },
-      "monitor": {
-       "type": "boolean",
-       "description": "false: no monitor from team-defaults.json for this team."
       }
      },
-     "description": "Applied only to members whose backend equals defaults.backend (default pi); member fields win and backendOptions merge shallowly. team_add reuses them. coordinator/monitor: false turn off the team-defaults roles for this team."
+     "description": "Applied only to members whose backend equals defaults.backend (default pi); member fields win and backendOptions merge shallowly. team_add reuses them."
     },
     "members": {
      "anyOf": [
@@ -286,7 +345,7 @@
          "role",
          "prompt"
         ],
-        "properties": "@a9d9d1a8f769a3f1"
+        "properties": "@d546d0f06a6c6240"
        },
        "minItems": 1
       },
@@ -302,7 +361,7 @@
  },
  {
   "name": "team_add",
-  "description": "@1ea63c286f1a92f3",
+  "description": "@aca4dadb4f8b6e93",
   "parameters": {
    "type": "object",
    "required": [
@@ -325,7 +384,7 @@
          "role",
          "prompt"
         ],
-        "properties": "@a9d9d1a8f769a3f1"
+        "properties": "@d546d0f06a6c6240"
        },
        "minItems": 1
       },
@@ -389,7 +448,7 @@
  },
  {
   "name": "team_list",
-  "description": "@55e65330b92615d4",
+  "description": "@ac21b243ba9d11f2",
   "parameters": {
    "type": "object",
    "properties": {

@@ -7,7 +7,7 @@ import * as path from "node:path";
 import { roleSlug } from "./coordination.ts";
 import type { MemberDuty } from "./mailbox.ts";
 import type { AgentStatus, TaskOutcome } from "./runner.ts";
-import type { CoordinatorDefaults, MonitorDefaults, TeamDefaultsFile, TeamDefaultsState, WorkerTuple } from "./team-defaults.ts";
+import type { MonitorDefaults, TeamDefaultsFile, WorkerTuple } from "./team-defaults.ts";
 
 export const TEAM_ENTRY_TYPE = "subagents-team-v1";
 /** Durable team events (handover, retire, wrap-up, pause, resume); Sova parses them. */
@@ -42,7 +42,7 @@ export interface TeamMemberInput {
 	role: string;
 	prompt: string;
 	ownedPaths?: string[];
-	/** Coordinates its siblings with team_roster/team_steer; pi backend only. Never spawns. */
+	/** Set by the manager only: Sova's coordinator (and its successors) gets team_roster/team_steer. */
 	orchestrator?: boolean;
 	backend?: string;
 	model?: string;
@@ -303,14 +303,14 @@ const ownership = (paths: readonly string[]) => (paths.length ? paths.join(", ")
  */
 export type MemberTooling = "pi" | "none";
 export const memberTooling = (backend: string): MemberTooling => (backend === "pi" || backend === "claude-code" ? "pi" : "none");
-export interface HeaderMember { role: string; ownedPaths: readonly string[]; orchestrator?: boolean; duty?: MemberDuty; successorOf?: string; task?: string; steers?: readonly string[] }
+export interface HeaderMember { role: string; ownedPaths: readonly string[]; duty?: MemberDuty; successorOf?: string; task?: string; steers?: readonly string[] }
 /** What a coordinated team's headers need: who coordinates, where notes go, the standing instructions. */
 export interface CoordinationHeader {
 	coordinatorRole: string;
 	/** Absolute handover-note path for a role. */
 	handoff(role: string): string;
 	/** Team defaults as read for this header (the coordinator's and monitor's standing instructions). */
-	defaults?: TeamDefaultsFile;
+	defaults: TeamDefaultsFile;
 }
 
 const OWNERSHIP_LINE =
@@ -321,8 +321,6 @@ const MSG_TOOL =
 /** The inbox-zero norm every member's header carries (§app.teams/inbox-zero). */
 export const INBOX_NORM =
 	"Your inbox works the same way: a wake lists your items by id, kind, sender and subject; open one with team_inbox open <ids> to read it. Handle each item and close it in the same step as the work: a team_msg reply with replyTo set to the item closes it; otherwise team_inbox done <ids> with a short note on what you did. End each turn with nothing you have handled left open.";
-const COMMON_TOOLS =
-	`${MSG_TOOL} ${INBOX_NORM} team_ask sends a question to the operator (the parent session and its user); the answer arrives later as a new message in your session, so keep working on what does not depend on it or end your turn.`;
 const COORDINATED_TOOLS =
 	`${MSG_TOOL} ${INBOX_NORM} team_ask sends a question to your team's coordinator; the answer arrives later in your inbox, so keep working on what does not depend on it or end your turn.`;
 /** A long final answer is cut in the parent's completion message and in a Claude parent's history; a file survives both. */
@@ -360,26 +358,24 @@ const assignmentLines = (m: { role: string; task?: string; steers?: readonly str
 	...(m.steers?.length ? [`${indent}${bindingSteersLabel(m.role)}`, ...m.steers.map((t) => `${indent}> ${steerPreview(t)}`)] : []),
 ];
 
-function coordinationLines(member: HeaderMember, tooling: MemberTooling, coordination?: CoordinationHeader): string[] {
-	const handoff = coordination ? `Your handover note path: ${coordination.handoff(member.role)}.` : "";
+function coordinationLines(member: HeaderMember, tooling: MemberTooling, coordination: CoordinationHeader): string[] {
+	const handoff = `Your handover note path: ${coordination.handoff(member.role)}.`;
 	// A monitor has no file tools: it hands over by team_msg, never through a note.
-	const successor = member.successorOf && coordination
+	const successor = member.successorOf
 		? [member.duty === "monitor"
 			? `You succeed the monitor ${member.successorOf}. It has no handover note: it briefs you over team_msg. Ask ${member.successorOf} with team_msg for what you need (pending checks, notices it sent, whether a usage pause is in force). Once you have taken over, call team_ready: ${member.successorOf} is then retired with its pending nudges, and you continue the standing instruction.`
 			: `You succeed ${member.successorOf}, whose context is running out. Start from its handover note at ${coordination.handoff(member.successorOf)}: continue from the state it records, do not redo steps it marks done, and verify them cheaply (ls, a quick grep, the tail of a file) instead of re-reading large inputs. If anything is unclear or missing, ask ${member.successorOf} with team_msg (at least once when in doubt) before you call team_ready, which retires it. Once you have taken over, call team_ready and continue its work. Its assignment and the main thread's instructions to it, quoted in your task, are yours now and binding.`]
 		: [];
 	if (tooling === "none") {
 		return [
-			coordination
-				? `Messages from teammates or the coordinator ${coordination.coordinatorRole} can arrive as new instructions in your session. You have no tool to reply directly, so put anything meant for them in your final answer; it is delivered to the coordinator.`
-				: "Messages from teammates, an orchestrator or the parent session can arrive as new instructions in your session. You have no tool to reply to teammates directly, so put anything meant for them in your final answer; the parent session coordinates, and your final answer is your report.",
+			`Messages from teammates or the coordinator ${coordination.coordinatorRole} can arrive as new instructions in your session. You have no tool to reply directly, so put anything meant for them in your final answer; it is delivered to the coordinator.`,
 		];
 	}
-	if (member.duty === "monitor" && coordination?.defaults) {
+	if (member.duty === "monitor") {
 		return [...monitorStanding(coordination.defaults.monitor, coordination.coordinatorRole), ...successor];
 	}
-	if (member.duty === "coordinator" && coordination) {
-		const extra = coordination.defaults?.coordinator.instructions;
+	if (member.duty === "coordinator") {
+		const extra = coordination.defaults.coordinator.instructions;
 		return [
 			"You are this team's coordinator. You do no implementation yourself: never edit project files or do the objective's work; route and unblock the work the main thread assigned, check results, and keep the team moving.",
 			"The main thread (the parent session) assigns the work: each teammate's assigned task is listed above under its role, and team_roster lists them with the main thread's later instructions. Never invent tasks, never reassign or cancel a teammate's assigned work, and never tell a teammate that its task was not assigned: the main thread's steers and follow-ups to a member are legitimate assignments you must not countermand. You never tell a member that work from the main thread is not its work, and that includes the instructions a successor inherited from its predecessor, which are the successor's assignment; check team_roster before you tell a member what not to do. Direct a teammate only where its assignment leaves a gap or it is blocked; if the objective seems to need work nobody was given, ask the operator with team_ask.",
@@ -392,23 +388,11 @@ function coordinationLines(member: HeaderMember, tooling: MemberTooling, coordin
 			...successor,
 		];
 	}
-	if (member.orchestrator) {
-		return [
-			`You are this team's orchestrator: coordinate your teammates toward the objective. team_roster shows their live state and ownership; team_steer sends instructions to one teammate by role (mode followUp queues after their current task, redirect replaces it). ${COMMON_TOOLS}`,
-			`${NO_SPAWN} Acceptance of a steer or message is not execution: verify with team_roster. Your final answer is your report of the team's outcome.`,
-		];
-	}
-	if (coordination) {
-		return [
-			`Team tools: ${COORDINATED_TOOLS}`,
-			`This team has a coordinator, ${coordination.coordinatorRole}: report to it, not to the operator. Your final answer and your team_ask questions are delivered to the coordinator. ${handoff} If you are told to wrap up (your context is running high), finish the step you are in, write a handover note there (state, decisions, open work, files touched) and end your turn.`,
-			`${NO_SPAWN} Your final answer is your report.`,
-			...successor,
-		];
-	}
 	return [
-		`Team tools: ${COMMON_TOOLS}`,
+		`Team tools: ${COORDINATED_TOOLS}`,
+		`This team has a coordinator, ${coordination.coordinatorRole}: report to it, not to the operator. Your final answer and your team_ask questions are delivered to the coordinator. ${handoff} If you are told to wrap up (your context is running high), finish the step you are in, write a handover note there (state, decisions, open work, files touched) and end your turn.`,
 		`${NO_SPAWN} Your final answer is your report.`,
+		...successor,
 	];
 }
 
@@ -424,12 +408,12 @@ export function composeMemberPrompt(
 	others: readonly HeaderMember[],
 	task: string,
 	joining: "creation" | "addition",
-	tooling: MemberTooling = "none",
-	coordination?: CoordinationHeader,
+	tooling: MemberTooling,
+	coordination: CoordinationHeader,
 ): string {
-	const mark = (m: HeaderMember) => (m.duty ? ` (${m.duty})` : m.orchestrator ? " (orchestrator)" : "");
+	const mark = (m: HeaderMember) => (m.duty ? ` (${m.duty})` : "");
 	// Only the coordinator is shown its teammates' assignments: it routes that work.
-	const assigned = (o: HeaderMember) => (member.duty === "coordinator" && coordination && !o.duty ? assignmentLines(o, "  ") : []);
+	const assigned = (o: HeaderMember) => (member.duty === "coordinator" && !o.duty ? assignmentLines(o, "  ") : []);
 	return [
 		"[Team assignment from the parent Pi session]",
 		`Team: ${team.name} (${team.id})`,
@@ -447,70 +431,16 @@ export function composeMemberPrompt(
 	].join("\n");
 }
 
-/** What team_create does with team-defaults.json for one request; index.ts picks the tuples. */
-export interface TeamDefaultsPlan {
-	/** Lines for the team_create result (why a role was or was not added). */
-	notes: string[];
-	/** A malformed file: defaults are off for this team, visibly. */
-	warning?: string;
-	/** Set when the team will have a coordinator. */
-	coordination?: { defaults: TeamDefaultsFile };
-	/** The caller's own orchestrator, which becomes the coordinator. */
-	existingCoordinator?: number;
-	synthesizeCoordinator?: CoordinatorDefaults;
-	synthesizeMonitor?: MonitorDefaults;
-	/** The team_create result's one line naming the standing roles Sova adds and each one turned off, and by what. */
-	standing: string;
-}
-
-export const malformedWarning = (state: { file: string; errors: string[] }): string =>
-	`Warning: team defaults are OFF for this team — ${state.file} is malformed (${state.errors.join("; ")}). Fix it in Sova's Settings; it is never overwritten here.`;
-
 /**
- * Pure: whether this team_create gets a coordinator and a monitor. Absent file: nothing. Malformed:
- * nothing plus a warning. `escape` is the call's defaults.coordinator / defaults.monitor (false
- * turns the role off for this team). The caller's single orchestrator becomes the coordinator;
- * two orchestrators, or a caller member on a synthesized role's name, are refused.
+ * Pure: the coordinator and monitor every team_create adds are Sova's, so a member the chat names
+ * with either role is refused before any worker starts.
  */
-export function planTeamDefaults(state: TeamDefaultsState, members: readonly TeamMemberInput[], escape: { coordinator?: boolean; monitor?: boolean } = {}): TeamDefaultsPlan {
-	if (state.state === "absent") return { notes: [], standing: "Standing roles: none; this chat's subagent settings give teams no coordinator or monitor." };
-	if (state.state === "malformed") return { notes: [], warning: malformedWarning(state), standing: "Standing roles: none; this chat's team defaults are malformed (see the warning)." };
-	const d = state.value;
-	if (!d.coordinator.enabled) return { notes: [`Team defaults: coordinator off in ${state.file}; no coordinator or monitor.`], standing: "Standing roles: none; the coordinator, and with it the monitor, is off in this chat's subagent settings." };
-	if (escape.coordinator === false) return { notes: ["Team defaults: coordinator turned off for this team (defaults.coordinator: false); no coordinator or monitor."], standing: "Standing roles: none; the coordinator and monitor are off for this team (defaults.coordinator: false)." };
+export function checkStandingRoles(d: TeamDefaultsFile, members: readonly TeamMemberInput[]): void {
 	const key = (role: string) => normalizeLabel(role).toLowerCase();
-	const orchestrators = members.flatMap((m, i) => (m.orchestrator === true ? [i] : []));
-	if (orchestrators.length > 1)
-		throw new Error(`Team defaults give this team one coordinator, and only the coordinator is a team's orchestrator, so at most one member may have orchestrator: true (got ${orchestrators.map((i) => members[i].role).join(", ")}). Mark only the member that should coordinate: it becomes the coordinator, and hands members (itself included) over to successors with team_succeed. A member that only watches or reports needs no orchestrator mark. Pass defaults.coordinator: false for a team without a coordinator.`);
-	const plan: TeamDefaultsPlan = { notes: [], coordination: { defaults: d }, standing: "" };
-	const reserve = (role: string, what: string) => {
-		const clash = members.find((m, i) => typeof m.role === "string" && key(m.role) === key(role) && i !== plan.existingCoordinator);
-		if (clash) throw new Error(`Role ${normalizeLabel(clash.role)} is the team-defaults ${what}'s role (${normalizeLabel(role)}); rename that member, or pass defaults.${what}: false.`);
-	};
-	let coordinatorPart: string;
-	if (orchestrators.length === 1) {
-		plan.existingCoordinator = orchestrators[0];
-		plan.notes.push(`Team defaults: orchestrator ${normalizeLabel(members[orchestrators[0]].role)} is this team's coordinator.`);
-		coordinatorPart = `coordinator: your orchestrator ${normalizeLabel(members[orchestrators[0]].role)} (none added)`;
-	} else {
-		reserve(d.coordinator.role, "coordinator");
-		plan.synthesizeCoordinator = d.coordinator;
-		coordinatorPart = `coordinator: "${d.coordinator.role}", added by Sova`;
+	for (const [duty, role] of [["coordinator", d.coordinator.role], ["monitor", d.monitor.role]] as const) {
+		const clash = members.find((m) => typeof m.role === "string" && key(m.role) === key(role));
+		if (clash) throw new Error(`Role ${normalizeLabel(clash.role)} is the role of the ${duty} Sova adds to every team (${normalizeLabel(role)}); give that member another role.`);
 	}
-	let monitorPart: string;
-	if (!d.monitor.enabled) {
-		plan.notes.push(`Team defaults: monitor off in ${state.file}.`);
-		monitorPart = "monitor: off in this chat's subagent settings";
-	} else if (escape.monitor === false) {
-		plan.notes.push("Team defaults: monitor turned off for this team (defaults.monitor: false).");
-		monitorPart = "monitor: off for this team (defaults.monitor: false)";
-	} else {
-		reserve(d.monitor.role, "monitor");
-		plan.synthesizeMonitor = d.monitor;
-		monitorPart = `monitor: "${d.monitor.role}", added by Sova`;
-	}
-	plan.standing = `Standing roles — ${coordinatorPart}; ${monitorPart}.`;
-	return plan;
 }
 
 export const COORDINATOR_TASK =
@@ -685,7 +615,7 @@ export interface PreparedCreate {
 	name: string;
 	objective: string;
 	defaults?: TeamDefaults;
-	coordination?: TeamCoordination;
+	coordination: TeamCoordination;
 	members: PreparedMember[];
 	release(): void;
 }
@@ -724,19 +654,19 @@ const copyMember = (m: PersistedMember): PersistedMember => ({
 	...(m.successorOf ? { successorOf: m.successorOf } : {}),
 	...(m.modelOverride ? { modelOverride: { ...m.modelOverride } } : {}),
 });
-function coordinationHeader(coordination: { handoffDir: string; defaults?: TeamDefaultsFile }, coordinatorRole: string): CoordinationHeader {
+function coordinationHeader(coordination: { handoffDir: string; defaults: TeamDefaultsFile }, coordinatorRole: string): CoordinationHeader {
 	return {
 		coordinatorRole,
 		handoff: (role) => path.join(coordination.handoffDir, `${roleSlug(role)}.md`),
-		...(coordination.defaults ? { defaults: coordination.defaults } : {}),
+		defaults: coordination.defaults,
 	};
 }
-/** A checked member as the spawn path needs it: everyone but the coordinator is wake:false in a coordinated team. */
+/** A checked member as the spawn path needs it: everyone but the coordinator is wake:false. */
 function prepared(
 	m: { role: string; ownedPaths: string[]; orchestrator: boolean; duty?: MemberDuty; successorOf?: string; successorOfId?: string; task: string; input: TeamMemberInput },
-	coordinatedTeam: boolean, prompt: string, defaults: TeamDefaults | undefined,
+	prompt: string, defaults: TeamDefaults | undefined,
 ): PreparedMember {
-	const routed = coordinatedTeam && m.duty !== "coordinator";
+	const routed = m.duty !== "coordinator";
 	const spec = resolveMemberSpec(routed ? { ...m.input, wake: false } : m.input, m.role, prompt, defaults);
 	return {
 		role: m.role, ownedPaths: m.ownedPaths, orchestrator: m.orchestrator, coordinated: routed, spec, task: m.task,
@@ -924,10 +854,7 @@ export class TeamStore {
 			if (taken.has(key)) throw new Error(`Role ${role} already exists in this team (or is being added concurrently); roles are unique per team.`);
 			seen.add(key);
 			if (typeof input.prompt !== "string" || !input.prompt.trim()) throw new Error(`Task for ${role} must not be blank.`);
-			if (input.orchestrator !== undefined && typeof input.orchestrator !== "boolean") throw new Error(`orchestrator for ${role} must be a boolean.`);
 			const orchestrator = input.orchestrator === true;
-			if (orchestrator && memberTooling(memberBackend(input, defaults)) === "none")
-				throw new Error(`Orchestrator ${role} must use the pi or claude-code backend: team_roster/team_steer are team member tools that a ${memberBackend(input, defaults)} worker cannot load.`);
 			if ((input.duty === "coordinator" || input.duty === "monitor") && memberTooling(memberBackend(input, defaults)) === "none")
 				throw new Error(`The team's ${input.duty} ${role} must use the pi or claude-code backend.`);
 			return {
@@ -939,7 +866,7 @@ export class TeamStore {
 	}
 
 	/** Validate and reserve a new team. Call release() in finally, whether or not it committed. */
-	prepareCreate(input: { name: string; objective: string; defaults?: TeamDefaults; members: TeamMemberInput[]; coordination?: { defaults?: TeamDefaultsFile } }): PreparedCreate {
+	prepareCreate(input: { name: string; objective: string; defaults?: TeamDefaults; members: TeamMemberInput[]; coordination: { defaults: TeamDefaultsFile } }): PreparedCreate {
 		const name = checkLabel("name", input.name);
 		if (TEAM_ID.test(name)) throw new Error(`Team name ${name} looks like a team ID; choose a descriptive name.`);
 		const objective = checkObjective(input.objective);
@@ -952,14 +879,13 @@ export class TeamStore {
 		if (checked.length > MAX_TEAM_MEMBERS)
 			throw new Error(`A team seats ${MAX_TEAM_MEMBERS} members, and this one would have ${checked.length}, any coordinator and monitor included. Create it with fewer members.`);
 		const coordinators = checked.filter((m) => m.duty === "coordinator");
-		if (input.coordination && coordinators.length !== 1) throw new Error("A coordinated team needs exactly one coordinator.");
-		if (!input.coordination && checked.some((m) => m.duty)) throw new Error("Only a coordinated team has a coordinator or monitor.");
+		if (coordinators.length !== 1) throw new Error("A team needs exactly one coordinator.");
 		const teamId = `team_${String(++this.counter).padStart(2, "0")}`;
 		const team = { id: teamId, name, objective };
-		const coordination = input.coordination ? { handoffDir: this.handoffDir(teamId) } : undefined;
-		const header = coordination ? coordinationHeader({ ...coordination, defaults: input.coordination?.defaults }, coordinators[0].role) : undefined;
+		const coordination = { handoffDir: this.handoffDir(teamId) };
+		const header = coordinationHeader({ ...coordination, defaults: input.coordination.defaults }, coordinators[0]!.role);
 		const members = checked.map((m): PreparedMember => prepared(
-			m, header !== undefined,
+			m,
 			composeMemberPrompt(team, m, checked.filter((o) => o !== m), m.input.prompt, "creation", memberTooling(memberBackend(m.input, input.defaults)), header),
 			input.defaults,
 		));
@@ -967,8 +893,7 @@ export class TeamStore {
 		this.pendingTeams++;
 		let released = false;
 		return {
-			teamId, name, objective, defaults: input.defaults, members,
-			...(coordination ? { coordination } : {}),
+			teamId, name, objective, defaults: input.defaults, members, coordination,
 			release: () => {
 				if (released) return;
 				released = true;
@@ -984,7 +909,7 @@ export class TeamStore {
 	 * among retained workers) only names the ejectable members in the cap error.
 	 * `teamDefaults` (read now) supplies a coordinated team's current standing text.
 	 */
-	prepareAdd(ref: string, members: TeamMemberInput[], observe?: (workerId: string) => WorkerObservation | undefined, teamDefaults?: TeamDefaultsFile): PreparedAdd {
+	prepareAdd(ref: string, members: TeamMemberInput[], observe: ((workerId: string) => WorkerObservation | undefined) | undefined, teamDefaults: TeamDefaultsFile): PreparedAdd {
 		const team = this.find(ref);
 		if (team.origin === "history") throw new Error(historyRefusal(team));
 		const pending = this.pendingRoles.get(team.id) ?? new Set<string>();
@@ -999,26 +924,12 @@ export class TeamStore {
 					: "No member has ended; stop one with agent_kill, then release its seat with team_eject."),
 			);
 		}
-		if (!team.coordination && checked.some((m) => m.duty)) throw new Error(`Team ${team.id} has no coordinator; only a coordinated team has a coordinator or monitor.`);
-		const second = team.coordination ? checked.find((m) => m.orchestrator && m.duty !== "coordinator") : undefined;
-		if (second) {
-			const isLive = (workerId: string) => BUSY_STATES.has(memberState(observe?.(workerId)));
-			const live = this.routingCoordinatorRecord(team, isLive);
-			const newest = this.routingCoordinatorRecord(team);
-			throw new Error([
-				`Team ${team.id} has a coordinator${newest ? `, ${newest.role} (${newest.workerId})` : ""}, and only the coordinator is a team's orchestrator: ${second.role} can't join with orchestrator: true.`,
-				"The coordinator hands a member, itself included, over to a successor with its own team_succeed step.",
-				`A member that only watches or reports needs no orchestrator mark: add ${second.role} without it.`,
-				live
-					? `The coordinator ${live.role} (${live.workerId}) is live, so it hands over itself; tell it with agent_steer if it should.`
-					: `No coordinator is live now: the main chat can start a replacement with team_succeed { team: "${team.id}", role: "${newest?.role ?? "coordinator"}" }.`,
-			].join(" "));
-		}
-		const existing = team.members.filter((m) => m.ejectedAt === undefined).map((m): HeaderMember => ({ role: m.role, ownedPaths: m.ownedPaths, orchestrator: m.orchestrator === true, ...(m.duty ? { duty: m.duty } : {}), ...(m.task ? { task: m.task } : {}), ...(m.steers?.length ? { steers: [...m.steers] } : {}) }));
+		const existing = team.members.filter((m) => m.ejectedAt === undefined).map((m): HeaderMember => ({ role: m.role, ownedPaths: m.ownedPaths, ...(m.duty ? { duty: m.duty } : {}), ...(m.task ? { task: m.task } : {}), ...(m.steers?.length ? { steers: [...m.steers] } : {}) }));
 		const coordinatorRole = checked.find((m) => m.duty === "coordinator" && m.successorOf)?.role ?? this.routingCoordinatorRecord(team)?.role;
-		const header = team.coordination && coordinatorRole ? coordinationHeader({ ...team.coordination, defaults: teamDefaults }, coordinatorRole) : undefined;
+		if (!team.coordination || !coordinatorRole) throw new Error(`Team ${team.id} has no coordinator; create a new team with team_create.`);
+		const header = coordinationHeader({ ...team.coordination, defaults: teamDefaults }, coordinatorRole);
 		const composed = checked.map((m): PreparedMember => prepared(
-			m, team.coordination !== undefined,
+			m,
 			composeMemberPrompt(team, m, [...existing, ...checked.filter((o) => o !== m)], m.input.prompt, "addition", memberTooling(memberBackend(m.input, team.defaults)), header),
 			team.defaults,
 		));
@@ -1052,7 +963,7 @@ export class TeamStore {
 	commitCreate(prepared: PreparedCreate, createdAt: number, members: PersistedMember[]): void {
 		this.session.push({
 			id: prepared.teamId, name: prepared.name, objective: prepared.objective, createdAt, origin: "session",
-			defaults: prepared.defaults, ...(prepared.coordination ? { coordination: { ...prepared.coordination } } : {}),
+			defaults: prepared.defaults, coordination: { ...prepared.coordination },
 			members: members.map((m, i) => ({ ...m, ownedPaths: [...m.ownedPaths], task: prepared.members[i]?.task })), actions: [],
 		});
 	}
@@ -1140,8 +1051,8 @@ export class TeamStore {
 
 	/**
 	 * The routing coordinator of a session team: the newest member with the coordinator duty that
-	 * `isLive` accepts (a successor takes over the moment it starts). Undefined for an
-	 * uncoordinated team, or when no coordinator is live.
+	 * `isLive` accepts (a successor takes over the moment it starts). Undefined when no
+	 * coordinator is live.
 	 */
 	routingCoordinator(teamId: string, isLive: (workerId: string) => boolean): PersistedMember | undefined {
 		const team = this.session.find((t) => t.id === teamId);
@@ -1171,8 +1082,7 @@ export class TeamStore {
 			const routing = this.routingCoordinatorRecord(team, isLive);
 			throw new Error(`${found.role} is not ${team.id}'s coordinator or monitor: the main chat replaces only those, once none is live. ${
 				routing ? `The coordinator ${routing.role} (${routing.workerId}) succeeds other members with its own team_succeed step; tell it with agent_steer if ${found.role} needs a successor.`
-				: team.coordination ? `No coordinator is live: replace the coordinator first, and it can then succeed ${found.role}.`
-				: `${team.id} has no coordinator; to carry on ${found.role}'s work, add a member with team_add.`}`);
+				: `No coordinator is live: replace the coordinator first, and it can then succeed ${found.role}.`}`);
 		}
 		const sameDuty = team.members.filter((m) => m.duty === found.duty && m.ejectedAt === undefined);
 		const live = sameDuty.find((m) => isLive(m.workerId));

@@ -635,7 +635,7 @@ export interface ReportInfo {
 
 /** A coordinated team's message to the operator, parsed from its header:
     `[Team report from coordinator <role> (<ag_NN>), <team_NN> — <team name>[ · milestone|concern]]` or
-    `[Team question from <role>[, orchestrator] (<ag_NN>), <team_NN> — <team name>]`.
+    `[Team question from <role> (<ag_NN>), <team_NN> — <team name>]`.
     Informational (report) or answered by the main thread (question); never an input of its own. */
 export interface TeamMessageInfo {
   kind: "report" | "question";
@@ -643,8 +643,6 @@ export interface TeamMessageInfo {
   workerId: string; // "ag_01"
   teamId: string; // "team_01"
   teamName: string;
-  /** Question only: the asker is its team's orchestrator (a coordinator always is). */
-  orchestrator?: boolean;
   /** Report only: the header's ` · <kind>` suffix, else a leading "Milestone:" / "Concern:" line
       (removed from `body`); absent when neither says. */
   label?: "milestone" | "concern";

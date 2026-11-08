@@ -42,8 +42,15 @@ default reads as Off; an unusable library falls to the legacy files.
   library's mesh registration; the default file is deliberately absent), `server/chat-manager.ts` (the pick entry
   helpers and `saveModeDefault`), and `shared/subagent-profiles.ts` (types only).
 
-**Team defaults.** `team-defaults.json` is the legacy standing coordinator and monitor every new team gets
-(absent = off). It seeds Settings → Subagents' Teams section and is read here at team creation.
+**Team defaults.** Every `team_create` team gets Sova's coordinator and monitor; nothing turns either off and no
+member the chat names is the lead (`orchestrator` and `defaults.coordinator`/`defaults.monitor` are refused as
+unknown keys). `team-defaults.json` is the legacy input for their models and thresholds. It seeds Settings →
+Subagents' Teams section and is read here at team creation. One resolver, `teamDefaultsNow`, always returns a full
+value: where the settings name no model (Off, `teams: null`, an absent or malformed legacy file, the last with a
+warning) both roles run on the chat's own model and effort with the built-in thresholds, so every reader (usage
+pause, roster thresholds, a successor's standing text, retire timeout, planning) works the same. `enabled` on
+`coordinator`/`monitor` is an accepted key whose value is ignored and never written; `monitor.usage.enabled` is the
+real usage-pause switch.
 `team-defaults.ts` (builtins only: types, defaults, strict parse, reader, atomic writer) is imported by
 `server/team-defaults.ts`.
 

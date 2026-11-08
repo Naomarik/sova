@@ -177,7 +177,7 @@ test("manager: team members carry teamId and role in their registry spec", async
 	h.start();
 	await h.call("team_create", { name: "alpha", objective: "ship", members: [{ role: "lead", prompt: "lead it" }, { role: "dev", prompt: "build it" }] });
 	const teams = h.appended.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE).map((e) => e.data.team);
-	assert.deepEqual(teams.map((t: any) => [t.teamId, t.role]), [["team_01", "lead"], ["team_01", "dev"]]);
+	assert.deepEqual(teams.map((t: any) => [t.teamId, t.role]), [["team_01", "coordinator"], ["team_01", "lead"], ["team_01", "dev"], ["team_01", "monitor"]], "Sova's coordinator first, its monitor last");
 	await h.close();
 });
 

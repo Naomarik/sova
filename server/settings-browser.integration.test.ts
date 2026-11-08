@@ -212,8 +212,7 @@ describe("Settings in a browser: edit, save, reload, invalid, reset", { timeout:
     await open("subagents", edit);
     await edit().click();
     await dialog().locator("summary", { hasText: "Teams" }).first().click();
-    await setSwitch("Add a coordinator to new teams", true);
-    await setSwitch("Add a monitor to new teams", true);
+    await dialog().getByRole("button", { name: "Choose Models" }).click();
     const pct = box("#subagents-my-setup-contextPct");
     await pct.waitFor({ timeout: 15_000 });
     for (const f of ["contextPct", "everyMinutes"]) await keepsFocus(box(`#subagents-my-setup-${f}`), `Teams' ${f}`);

@@ -13,9 +13,9 @@ writer. A profile names the model for each of them:
 - **Delegate routing**: a worker (backend · model · effort, plus an optional fallback) for each of
   Delegate's 4 work kinds: Planning & specs, Investigation, Routine implementation and Complex
   implementation. See [Delegate](/docs/modes/delegate/).
-- **Teams**: the standing **coordinator** and **monitor** every new team gets, with the monitor's
-  settings and the handover timeout, or none. Also a **members default**: the model a team member
-  runs on when nobody named one.
+- **Teams**: the models of the **coordinator** and **monitor** every new team gets from Sova, with
+  the monitor's settings and the handover timeout, or none, when both run on the chat's own model.
+  Also a **members default**: the model a team member runs on when nobody named one.
 - **Spec writer**: the worker that writes spec drafts while [spec](/docs/modes/spec/) is on, or
   none, when the session writes the spec itself.
 - **Reviewer**: the worker that reviews alignments, only while
@@ -37,7 +37,8 @@ It configures nothing, so the agent picks every model:
 
 - In Delegate, the agent still delegates and still sorts the work into the 4 kinds, but chooses
   each worker's backend, model and effort itself.
-- Teams get no standing coordinator or monitor, and no members default.
+- Teams still get their coordinator and monitor, on the chat's own model with Sova's built-in
+  settings, and no members default.
 - There is no spec writer: the session writes the spec itself.
 
 ## Which profile a chat uses
@@ -103,7 +104,7 @@ Each section says once what happens without a fallback:
 | Section | Without a fallback, when the primary can't run |
 |---|---|
 | Delegate routing | The agent asks you which model to use. |
-| Teams | The team isn't created. With one, a coordinator or monitor whose primary runs out of usage while the team runs moves to it. |
+| Teams | The coordinator or monitor runs on the chat's own model, and the team's start says so. With one, a coordinator or monitor whose primary runs out of usage while the team runs moves to it. |
 | Spec writer | The session writes the spec itself. |
 | Reviewer | The review is recorded incomplete. |
 

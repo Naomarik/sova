@@ -8,6 +8,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -957,8 +958,8 @@ function harness(bus = eventBus()) {
 			workers.push(worker);
 			return worker;
 		},
-		// No team-defaults.json: these teams behave as without the file.
-		{ agentDir: path.join(os.tmpdir(), "subagents-tests-absent-agent-dir") },
+		// A fresh agent dir with no team-defaults.json: Sova's coordinator and monitor run on the chat's own model.
+		{ agentDir: fs.mkdtempSync(path.join(os.tmpdir(), "subagents-tests-agent-")) },
 	);
 	return {
 		bus,
@@ -1115,11 +1116,13 @@ test("integration: follow-up and redirect editors reach the exact member, record
 			titles.push(title);
 			return "keep going";
 		};
-		// Focus starts on the members pane; the first member (builder) is selected.
+		// Focus starts on the members pane on the first member, Sova's coordinator; builder is next.
+		overlay.view.handleInput("j");
+		await new Promise((r) => setTimeout(r, 0));
 		overlay.view.handleInput("f");
 		await new Promise((r) => setTimeout(r, 10));
-		assert.deepEqual(titles, ["Follow up: builder (ag_01)"]);
-		assert.deepEqual(h.workers[0].lastSteer, { message: "keep going", mode: "followUp" });
+		assert.deepEqual(titles, ["Follow up: builder (ag_02)"]);
+		assert.deepEqual(h.workers[1].lastSteer, { message: "keep going", mode: "followUp" });
 		assert.deepEqual(overlay.visibility, [true, false], "workspace hidden while composing, restored after");
 		assert.equal(overlay.focusCount(), 1);
 		// The action is recorded honestly: accepted-or-queued, never "executed".
@@ -1137,15 +1140,15 @@ test("integration: follow-up and redirect editors reach the exact member, record
 		await new Promise((r) => setTimeout(r, 0));
 		overlay.view.handleInput("r");
 		await new Promise((r) => setTimeout(r, 10));
-		assert.deepEqual(titles[1], "Redirect: reviewer (ag_02) — interrupts current task");
-		assert.deepEqual(h.workers[1].lastSteer, { message: "keep going", mode: "redirect" });
+		assert.deepEqual(titles[1], "Redirect: reviewer (ag_03) — interrupts current task");
+		assert.deepEqual(h.workers[2].lastSteer, { message: "keep going", mode: "redirect" });
 		list = await h.call("team_list");
 		assert.equal(list.details.teams[0].actions[1].kind, "redirect");
 		// Cancelled editor: nothing is delivered or recorded.
 		h.ctx.ui.editor = async () => undefined;
 		overlay.view.handleInput("f");
 		await new Promise((r) => setTimeout(r, 10));
-		assert.equal(h.workers[1].steerCount, 1, "cancel reached nothing");
+		assert.equal(h.workers[2].steerCount, 1, "cancel reached nothing");
 		assert.equal((await h.call("team_list")).details.teams[0].actions.length, 2, "cancelled editors record no action");
 		overlay.done(null);
 		await opened;
@@ -1191,13 +1194,15 @@ test("integration: double-x stops exactly the selected member through the shared
 		});
 		const overlay = overlayOf(h.ctx);
 		const opened = h.commands.get("team").handler("", h.ctx);
+		overlay.view.handleInput("j"); // builder, after Sova's coordinator
+		await new Promise((r) => setTimeout(r, 0));
 		overlay.view.handleInput("x");
 		await new Promise((r) => setTimeout(r, 10));
-		assert.equal(h.workers[0].status, "running", "single x only arms");
+		assert.equal(h.workers[1].status, "running", "single x only arms");
 		overlay.view.handleInput("x");
 		await new Promise((r) => setTimeout(r, 20));
-		assert.equal(h.workers[0].status, "killed");
-		assert.equal(h.workers[1].status, "running", "the other member is untouched");
+		assert.equal(h.workers[1].status, "killed");
+		assert.deepEqual([h.workers[0].status, h.workers[2].status, h.workers[3].status], ["running", "running", "running"], "every other member is untouched");
 		const list = await h.call("team_list");
 		const actions = list.details.teams[0].actions;
 		assert.equal(actions.length, 1);
@@ -1205,8 +1210,7 @@ test("integration: double-x stops exactly the selected member through the shared
 		assert.equal(actions[0].source, "user");
 		assert.equal(actions[0].state, "accepted-or-queued");
 		// The stopped member is no longer steerable/stoppable in the workspace.
-		overlay.view.handleInput("k"); // builder still selected (only moved if user moves)
-		overlay.view.handleInput("j");
+		overlay.view.handleInput("j"); // builder still selected (only moved if user moves): reviewer is next
 		assert.ok(overlay.view.render(120)[0]!.includes("reviewer"), "selection still works after the stop");
 		overlay.done(null);
 		await opened;
@@ -1238,7 +1242,7 @@ test("integration: pruned members render with last known status through live tea
 	captureOverlay(h.ctx);
 	try {
 		await h.call("team_create", { name: "ops", objective: "obj", members: [{ role: "worker", prompt: "p", wake: false }] });
-		const member = h.workers[0];
+		const member = h.workers[1]; // after Sova's coordinator
 		member.error = "boom";
 		member.exit("error");
 		for (let i = 0; i < 55; i++) {
@@ -1247,8 +1251,9 @@ test("integration: pruned members render with last known status through live tea
 		}
 		const overlay = overlayOf(h.ctx);
 		const opened = h.commands.get("team").handler("", h.ctx);
+		overlay.view.handleInput("j"); // the worker, after Sova's coordinator
 		const text = overlay.view.render(140).map((l: string) => l.replace(/\s+$/, "")).join("\n");
-		assert.ok(text.includes("worker ag_01"), "exact worker ID still shown");
+		assert.ok(text.includes("worker ag_02"), "exact worker ID still shown");
 		assert.ok(text.includes("— unavailable"), "member is unavailable");
 		assert.ok(text.includes("Removed from the manager by finished-worker retention"), "pruned reason shown");
 		assert.ok(text.includes("Last known: error"), "last known status shown");
@@ -1259,7 +1264,7 @@ test("integration: pruned members render with last known status through live tea
 		assert.equal(h.notices.filter((n) => n[1] === "error").length, 0, "no steer attempted for a pruned member");
 		overlay.done(null);
 		await opened;
-		await assert.rejects(h.call("agent_steer", { id: "ag_01", message: "late" }), /unavailable/);
+		await assert.rejects(h.call("agent_steer", { id: "ag_02", message: "late" }), /unavailable/);
 	} finally { await h.close(); }
 });
 

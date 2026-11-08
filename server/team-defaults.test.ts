@@ -39,23 +39,18 @@ const sources = (over: Partial<DelegateSources> = {}): DelegateSources => ({
 const glm: WorkerChoice = { backend: "pi", model: "zai/glm-5.3", effort: "high" };
 const sonnet: WorkerChoice = { backend: "claude-code", model: "claude-sonnet-5-5", effort: "medium" };
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
-/** The pinned defaults with both members on, as a save body. */
+/** The pinned defaults, as a save body. */
 const on = (): TeamDefaults => copy(DEFAULT_TEAM_DEFAULTS as TeamDefaults);
 
 describe("GET /api/settings/team", () => {
-  test("no file: the built-in values with both members off, not stored, and nothing written", () => {
+  test("no file: the built-in values, not stored, and nothing written", () => {
     const dir = agentDir();
     const info = teamDefaultsInfo(dir);
     assert.equal(info.stored, false);
     assert.equal(info.error, undefined);
-    assert.equal(info.settings.coordinator.enabled, false);
-    assert.equal(info.settings.monitor.enabled, false);
-    // Only the two switches differ from the built-in values.
-    const off = on();
-    off.coordinator.enabled = false;
-    off.monitor.enabled = false;
-    assert.deepEqual(info.settings, off);
+    assert.deepEqual(info.settings, on());
     assert.deepEqual(info.settings, teamDefaultsOff());
+    assert.equal("enabled" in info.settings.coordinator || "enabled" in info.settings.monitor, false, "no role switch");
     assert.deepEqual(info.defaults, on());
     assert.deepEqual(info.backends.map((b) => b.id), ["pi", "claude-code"]);
     assert.equal(info.file, join(dir, "team-defaults.json"));
@@ -65,9 +60,8 @@ describe("GET /api/settings/team", () => {
   test("the pinned built-in values", () => {
     assert.deepEqual(DEFAULT_TEAM_DEFAULTS, {
       version: 1,
-      coordinator: { enabled: true, role: "coordinator", primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" }, fallback: null, instructions: "" },
+      coordinator: { role: "coordinator", primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" }, fallback: null, instructions: "" },
       monitor: {
-        enabled: true,
         role: "monitor",
         primary: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" },
         fallback: { backend: "claude-code", model: "claude-sonnet-5-5", effort: "low" },
@@ -172,14 +166,17 @@ describe("PUT /api/settings/team", () => {
     assert.match((result.body as { error: string }).error, /^Monitor fallback: zai\/not-a-model isn't offered by pi/);
   });
 
-  test("a member that is off is still checked: its rows are what turning it on restores", async () => {
+  test("a saved enabled: false turns nothing off: the role is still checked, and the key is not written back", async () => {
     const dir = agentDir();
-    const body = on();
-    body.monitor.enabled = false;
-    body.monitor.primary = { backend: "claude-code", model: "claude-sonnet-4-6", effort: "xhigh" };
-    const result = await saveTeamDefaults(body, sources(), dir);
-    assert.equal(result.status, 400);
-    assert.match((result.body as { error: string }).error, /^Monitor primary:/);
+    const bad = { ...on(), monitor: { ...on().monitor, enabled: false, primary: { backend: "claude-code", model: "claude-sonnet-4-6", effort: "xhigh" } } } as TeamDefaults;
+    const refused = await saveTeamDefaults(bad, sources(), dir);
+    assert.equal(refused.status, 400);
+    assert.match((refused.body as { error: string }).error, /^Monitor primary:/);
+    const ok = { ...on(), coordinator: { ...on().coordinator, enabled: false }, monitor: { ...on().monitor, enabled: false } } as TeamDefaults;
+    const saved = await saveTeamDefaults(ok, sources(), dir);
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    const written = JSON.parse(readFileSync(teamDefaultsFile(dir), "utf8"));
+    assert.equal("enabled" in written.coordinator || "enabled" in written.monitor, false);
   });
 
   test("policy: a model off for subagents, or off altogether, saves with a warning per row", async () => {

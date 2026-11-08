@@ -43,11 +43,14 @@ function eventBus() {
 /** A path that is never created: the user's real ~/.pi/agent model policy must not decide what a
  *  test sees. Tests about the policy pass their own file (see the policy tests below). */
 const NO_POLICY_FILE = path.join(os.tmpdir(), "subagents-tests-absent-policy.json");
-/** Likewise the agent dir: no team-defaults.json there, so teams behave as without the file. */
-const NO_AGENT_DIR = path.join(os.tmpdir(), "subagents-tests-absent-agent-dir");
+/** Likewise the agent dir: a fresh one per harness, with no team-defaults.json, so every team's coordinator
+ *  (ag_01, first) and monitor (last) run on the chat's own model. Never one shared path: every team writes
+ *  its handover notes there and the first read seeds a profile library there, which later tests would read. */
+const freshAgentDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "subagents-tests-agent-"));
 
 function harness(bus = eventBus(), options: SubagentsOptions = {}) {
-	options = { policyFile: NO_POLICY_FILE, agentDir: NO_AGENT_DIR, ...options };
+	const ownAgentDir = options.agentDir === undefined ? freshAgentDir() : undefined;
+	options = { policyFile: NO_POLICY_FILE, agentDir: ownAgentDir, ...options };
 	const tools = new Map<string, any>();
 	const commands = new Map<string, any>();
 	const events = new Map<string, any>();
@@ -150,7 +153,10 @@ function harness(bus = eventBus(), options: SubagentsOptions = {}) {
 			tools.get(name).execute("test", params, signal, (partial: any) => updates.push(partial), ctx),
 		event: (name: string, data: any) => events.get(name)?.(data, ctx),
 		start: () => events.get("session_start")({}, ctx),
-		close: () => events.get("session_shutdown")({}, ctx),
+		close: async () => {
+			await events.get("session_shutdown")({}, ctx);
+			if (ownAgentDir) fs.rmSync(ownAgentDir, { recursive: true, force: true });
+		},
 	};
 }
 
@@ -449,7 +455,7 @@ test("a claude-code team member is a pi worker on the Claude Code provider: its 
 			defaults: { backend: "claude-code" },
 			members: [{ role: "builder", prompt: "build", tools: ["Read", "Glob", "bash"], effort: "xhigh" }],
 		});
-		const w = h.workers[0];
+		const w = h.workers[1]; // after Sova's coordinator
 		assert.equal(w.backend, "pi");
 		assert.equal(w.model, "claude-code-cli/claude-sonnet-5-5");
 		assert.equal(w.effort, "xhigh");
@@ -1284,7 +1290,7 @@ async function realSession() {
 					};
 					workers.push(worker);
 					return worker;
-				}, { policyFile: NO_POLICY_FILE, agentDir: NO_AGENT_DIR });
+				}, { policyFile: NO_POLICY_FILE, agentDir: freshAgentDir() });
 				pi.on("agent_start", () => { order.push("agent_start"); });
 				pi.on("agent_end", () => { order.push("agent_end"); });
 				pi.on("agent_settled", () => { order.push("agent_settled"); });
@@ -2001,11 +2007,14 @@ test("team_create composes headers before backend validation, commits membership
 		});
 		assert.equal(r.details.teamId, "team_01");
 		assert.equal(r.details.groupId, "run_01");
+		// Sova's coordinator first and its monitor last, on the chat's own model (no settings name one).
 		assert.deepEqual(r.details.members, [
-			{ workerId: "ag_01", role: "builder", backend: "native-cli", model: "claude-opus-5-5" },
-			{ workerId: "ag_02", role: "reviewer", backend: "pi", model: "test/model" },
+			{ workerId: "ag_01", role: "coordinator", backend: "pi", model: "test/model", orchestrator: true, duty: "coordinator" },
+			{ workerId: "ag_02", role: "builder", backend: "native-cli", model: "claude-opus-5-5" },
+			{ workerId: "ag_03", role: "reviewer", backend: "pi", model: "test/model" },
+			{ workerId: "ag_04", role: "monitor", backend: "pi", model: "test/model", duty: "monitor" },
 		]);
-		assert.match(r.content[0].text, /Created team_01 \(Alpha\) with 2 member\(s\) in run_01/);
+		assert.match(r.content[0].text, /Created team_01 \(Alpha\) with 4 member\(s\) in run_01/);
 		assert.match(r.content[0].text, /advisory, not a lock/);
 		// The composed header reached the backend before its validation ran.
 		assert.equal(validated.length, 1);
@@ -2016,11 +2025,13 @@ test("team_create composes headers before backend validation, commits membership
 			"Your role: builder",
 			"Your declared ownership: src/api",
 			"Other members at team creation:",
+			"- coordinator (coordinator): none declared",
 			"- reviewer: none declared",
+			"- monitor (monitor): none declared",
 		].join("\n")));
 		assert.ok(validated[0].endsWith("[Your task]\nImplement it."));
 		// The pi member never inherits Claude defaults; roles are worker names.
-		const reviewer = h.workers[0];
+		const reviewer = h.workers[1];
 		assert.equal(reviewer.name, "reviewer");
 		assert.equal(reviewer.wake, false);
 		assert.equal(reviewer.model, "test/model");
@@ -2044,22 +2055,22 @@ test("team_create composes headers before backend validation, commits membership
 		);
 		assert.deepEqual(
 			teamEntries[0].data.members.map((m: any) => [m.workerId, m.role, m.backend, m.model, m.groupId, m.ownedPaths]),
-			[["ag_01", "builder", "native-cli", "claude-opus-5-5", "run_01", ["src/api"]], ["ag_02", "reviewer", "pi", "test/model", "run_01", []]],
+			[["ag_01", "coordinator", "pi", "test/model", "run_01", []], ["ag_02", "builder", "native-cli", "claude-opus-5-5", "run_01", ["src/api"]], ["ag_03", "reviewer", "pi", "test/model", "run_01", []], ["ag_04", "monitor", "pi", "test/model", "run_01", []]],
 		);
 		assert.equal(h.appended.findIndex((e) => e.customType === "subagents-counters-v2") > -1, true);
 		assert.ok(h.appended.findIndex((e) => e.customType === "subagents-counters-v2") < h.appended.indexOf(teamEntries[0]));
 		// Team members' snapshot rows add only teamId (still version 1); solo workers omit it.
-		const committed = snapshots.find((s: any) => s.workers.length === 2);
-		assert.deepEqual(committed.workers.map((w: any) => w.teamId), ["team_01", "team_01"], "first published rows already carry teamId");
+		const committed = snapshots.find((s: any) => s.workers.length === 4);
+		assert.deepEqual(committed.workers.map((w: any) => w.teamId), ["team_01", "team_01", "team_01", "team_01"], "first published rows already carry teamId");
 		await h.call("agent_spawn", { prompt: "plain", wake: false });
 		h.bus.emit("subagents:workers-request", { version: 1 });
 		assert.equal(snapshots.at(-1).version, 1);
 		const rows = snapshots.at(-1).workers;
 		const byId = (id: string) => rows.find((w: any) => w.id === id);
-		assert.ok(!("teamId" in byId("ag_03")));
-		for (const id of ["ag_01", "ag_02"]) {
+		assert.ok(!("teamId" in byId("ag_05")));
+		for (const id of ["ag_02", "ag_03"]) {
 			assert.equal(byId(id).teamId, "team_01");
-			assert.deepEqual(Object.keys(byId(id)).filter((k) => k !== "teamId").sort(), Object.keys(byId("ag_03")).sort(), `snapshot row for ${id} has the plain-worker shape plus teamId`);
+			assert.deepEqual(Object.keys(byId(id)).filter((k) => k !== "teamId").sort(), Object.keys(byId("ag_05")).sort(), `snapshot row for ${id} has the plain-worker shape plus teamId`);
 			assert.ok(!("role" in byId(id)) && !("ownedPaths" in byId(id)) && !("team" in byId(id)));
 		}
 	} finally { offSnapshots(); await h.close(); }
@@ -2097,8 +2108,9 @@ test("team_create rejects cleanly: no team, no entry, no worker; reserved IDs ar
 			members: [{ role: "one", prompt: "a" }, { role: "two", prompt: "b" }],
 		}), /factory failed for second member/);
 		assert.equal(created.length, 1);
-		assert.equal(created[0].id, "ag_01");
+		assert.equal(created[0].id, "ag_02", "after Sova's coordinator, which started first");
 		assert.equal(created[0].status, "killed");
+		assert.deepEqual(h.workers.map((w: any) => [w.id, w.status]), [["ag_01", "killed"]], "the coordinator is rolled back too");
 		assert.equal(h.appended.filter((e) => e.customType === "subagents-team-v1").length, 0);
 		assert.match((await h.call("team_list")).content[0].text, /No teams/);
 		assert.equal((await h.call("agent_list")).details.agents.length, 0);
@@ -2107,15 +2119,15 @@ test("team_create rejects cleanly: no team, no entry, no worker; reserved IDs ar
 		// failure reserved team_01, the rolled-back Doomed reserved team_02.
 		const next = await h.call("team_create", { name: "Next", objective: "o", members: [{ role: "solo", prompt: "p" }] });
 		assert.equal(next.details.teamId, "team_03");
-		assert.equal(next.details.members[0].workerId, "ag_03");
-		// The shared live cap applies to team batches before any worker starts.
-		await h.call("agent_spawn", { prompt: "slot", count: 20 });
-		assert.equal(h.workers.length, 21);
+		assert.deepEqual(next.details.members.map((m: any) => m.workerId), ["ag_04", "ag_05", "ag_06"], "Doomed consumed ag_01-ag_03");
+		// The shared live cap applies to team batches before any worker starts, Sova's two roles counted.
+		await h.call("agent_spawn", { prompt: "slot", count: 18 });
+		assert.equal(h.workers.length, 22, "the rolled-back coordinator, Next's three, 18 slots");
 		await assert.rejects(h.call("team_create", {
 			name: "Over", objective: "o",
 			members: Array.from({ length: 4 }, (_, i) => ({ role: `m${i}`, prompt: "p" })),
-		}), /^Error: This team needs 4 workers running: the 4 members you named\. A chat runs at most 24 workers at once .*; 21 are live now, so 3 more fit\. Stop 1 with agent_kill first/);
-		assert.equal(h.workers.length, 21);
+		}), /^Error: This team needs 6 workers running: the 4 members you named \+ the coordinator "coordinator" and monitor "monitor" Sova adds[^.]*\. A chat runs at most 24 workers at once .*; 21 are live now, so 3 more fit\. Stop 3 with agent_kill first/);
+		assert.equal(h.workers.length, 22);
 	} finally { await h.close(); }
 });
 
@@ -2133,23 +2145,23 @@ test("team_add extends a session team in another run, reuses defaults and persis
 		assert.equal(add.details.teamId, "team_01");
 		assert.equal(add.details.groupId, "run_02", "teams span independent run groups");
 		assert.match(add.content[0].text, /Added 1 member\(s\) to team_01 \(Core\) in run_02/);
-		assert.deepEqual(add.details.members, [{ workerId: "ag_02", role: "docs", backend: "native-cli", model: "claude-opus-5-5" }]);
+		assert.deepEqual(add.details.members, [{ workerId: "ag_04", role: "docs", backend: "native-cli", model: "claude-opus-5-5" }], "after the coordinator, lead and monitor");
 		// The joiner's header lists the create-time roster; existing members are never rewritten.
-		assert.match(created[1].task, /Other members when you joined:\n- lead: none declared/);
+		assert.match(created[1].task, /Other members when you joined:\n- coordinator \(coordinator\): none declared\n- lead: none declared\n- monitor \(monitor\): none declared/);
 		assert.match(created[1].task, /Your declared ownership: docs\//);
 		assert.doesNotMatch(created[0].task, /docs/);
 		const adds = h.appended.filter((e) => e.customType === "subagents-team-v1" && e.data.op === "add");
 		assert.equal(adds.length, 1);
 		assert.equal(adds[0].data.teamId, "team_01");
-		assert.deepEqual(adds[0].data.members.map((m: any) => [m.workerId, m.role, m.groupId]), [["ag_02", "docs", "run_02"]]);
+		assert.deepEqual(adds[0].data.members.map((m: any) => [m.workerId, m.role, m.groupId]), [["ag_04", "docs", "run_02"]]);
 		// Roles stay unique against committed members; nothing starts on rejection.
 		await assert.rejects(h.call("team_add", { team: "team_01", members: [{ role: " DOCS ", prompt: "again" }] }), /already exists in this team/);
 		assert.equal(created.length, 2);
 		await assert.rejects(h.call("team_add", { team: "team_09", members: [{ role: "x", prompt: "p" }] }), /No such team: team_09/);
 		const list = await h.call("team_list", { team: "team_01" });
-		assert.match(list.content[0].text, /team_01 — Core \[this session\] · 2 working/);
-		assert.match(list.content[0].text, /ag_01 lead \[native-cli\] working \(running\) · context — · owns: none declared/);
-		assert.match(list.content[0].text, /ag_02 docs \[native-cli\] working \(running\) · context — · owns: docs\//);
+		assert.match(list.content[0].text, /team_01 — Core \[this session\] · 4 working/);
+		assert.match(list.content[0].text, /ag_02 lead \[native-cli\] working \(running\) · context — · owns: none declared/);
+		assert.match(list.content[0].text, /ag_04 docs \[native-cli\] working \(running\) · context — · owns: docs\//);
 		assert.deepEqual(list.details.teams.map((t: any) => t.id), ["team_01"]);
 	} finally { await h.close(); }
 });
@@ -2186,7 +2198,7 @@ test("team history restores read-only from the active branch; counters reserve a
 		const created = await h.call("team_create", { name: "Fresh", objective: "now", members: [{ role: "solo", prompt: "p" }] });
 		assert.equal(created.details.teamId, "team_07");
 		assert.equal(created.details.groupId, "run_03");
-		assert.equal(created.details.members[0].workerId, "ag_04");
+		assert.deepEqual(created.details.members.map((m: any) => m.workerId), ["ag_04", "ag_05", "ag_06"]);
 		list = await h.call("team_list");
 		assert.match(list.content[0].text, /team_04 — Old \[history, read-only but team_eject\]/);
 		assert.match(list.content[0].text, /team_07 — Fresh \[this session\]/);
@@ -2208,8 +2220,7 @@ test("team history restores read-only from the active branch; counters reserve a
 		assert.match(list.content[0].text, /team_07 — Fresh/, "a live team ID is never shadowed by history");
 		assert.doesNotMatch(list.content[0].text, /Shadow/);
 		assert.doesNotMatch(list.content[0].text, /team_04/, "teams from the abandoned branch disappear");
-		assert.equal(h.workers.length, 1);
-		assert.equal(h.workers[0].status, "running");
+		assert.deepEqual(h.workers.map((w: any) => [w.name, w.status]), [["coordinator", "running"], ["solo", "running"], ["monitor", "running"]]);
 		// Filtering accepts names, lists one team, and rejects the unknown.
 		assert.deepEqual((await h.call("team_list", { team: "fresh" })).details.teams.map((t: any) => t.id), ["team_07"]);
 		await assert.rejects(h.call("team_list", { team: "missing" }), /No such team: missing/);
@@ -2220,14 +2231,14 @@ test("team_list records bounded control actions and reports pruned members with 
 	const h = harness();
 	try {
 		await h.call("team_create", { name: "Ops", objective: "obj", members: [{ role: "worker", prompt: "p", wake: false }] });
-		const member = h.workers[0];
-		await h.call("agent_steer", { id: "ag_01", message: "keep going", mode: "followUp" });
+		const member = h.workers[1]; // after Sova's coordinator
+		await h.call("agent_steer", { id: "ag_02", message: "keep going", mode: "followUp" });
 		let list = await h.call("team_list");
-		assert.match(list.content[0].text, /#1 parent followUp → ag_01 \(worker\): accepted-or-queued/);
+		assert.match(list.content[0].text, /#1 parent followUp → ag_02 \(worker\): accepted-or-queued/);
 		assert.equal(list.details.teams[0].actions[0].preview, "keep going");
 		// Steering a non-member records nothing.
 		await h.call("agent_spawn", { prompt: "plain", wake: false });
-		await h.call("agent_steer", { id: "ag_02", message: "not a member" });
+		await h.call("agent_steer", { id: "ag_04", message: "not a member" });
 		assert.equal((await h.call("team_list")).details.teams[0].actions.length, 1);
 		// Retention eviction leaves the member unavailable with its last observed state.
 		member.settle("boom", "error");
@@ -2236,17 +2247,17 @@ test("team_list records bounded control actions and reports pruned members with 
 			h.workers.at(-1).settle(undefined, "done");
 		}
 		list = await h.call("team_list");
-		const view = list.details.teams[0].members[0];
+		const view = list.details.teams[0].members[1];
 		assert.equal(view.available, false);
 		assert.equal(view.availability, "pruned");
 		assert.equal(view.state, "unavailable");
 		assert.equal(view.status, "error");
 		assert.equal(view.reason, "Removed from the manager by finished-worker retention; last known status shown.");
-		assert.match(list.content[0].text, /team_01 — Ops \[this session\] · 1 unavailable/);
-		assert.match(list.content[0].text, /ag_01 worker \[pi\] unavailable \(error\)/);
+		assert.match(list.content[0].text, /team_01 — Ops \[this session\] · 2 working · 1 unavailable/);
+		assert.match(list.content[0].text, /ag_02 worker \[pi\] unavailable \(error\)/);
 		assert.match(list.content[0].text, /error: boom/);
 		// Exact pruned IDs stay unavailable to control tools too.
-		await assert.rejects(h.call("agent_steer", { id: "ag_01", message: "late" }), /unavailable/);
+		await assert.rejects(h.call("agent_steer", { id: "ag_02", message: "late" }), /unavailable/);
 	} finally { await h.close(); }
 });
 
@@ -2319,10 +2330,13 @@ test("/team <objective> while streaming queues the identical followUp and says s
 		assert.match(message.content, /declared ownedPaths for files they don't share \(advisory/);
 		assert.match(message.content, /Obey the team tool descriptions, schemas and limits/);
 		assert.match(message.content, /team_msg .* team_ask/);
-		assert.match(message.content, /orchestrator: true/);
-		assert.match(message.content, /never spawn or stop anyone/);
-		assert.match(message.content, /wake=true \(the default\) starts a parent turn/);
+		assert.match(message.content, /You remain the authority, and each member's final answer is its report/);
 		assert.match(message.content, /default to the pi backend inheriting the parent model\/effort/);
+		// Every team gets Sova's coordinator and monitor: the chat plans only the workers, and is told the cost.
+		assert.match(message.content, /Every team gets a coordinator and a monitor from Sova: plan only the members who do the work\./);
+		assert.match(message.content, /the team runs 2 more workers than you name \(its coordinator and monitor\), so small independent jobs are cheaper as separate workers with agent_spawn/);
+		assert.match(message.content, /team_create adds the coordinator "coordinator" on this chat's own model \(pi\/test\/model\/high\) and the monitor "monitor" on this chat's own model \(pi\/test\/model\/high\)/);
+		assert.doesNotMatch(message.content, /orchestrator|\boff\b|wake=true|defaults\.(coordinator|monitor)/, "no lead mark, no way to leave a role out");
 		assert.match(h.notices.at(-1)[0], /busy; team planning was queued as a follow-up/);
 		assert.equal(h.notices.at(-1)[1], "info");
 		assert.equal(h.userMessages.length, 0, "never a user turn");
@@ -2365,7 +2379,7 @@ test("team widget installs on refresh with fresh detached views, follows member 
 			objective: "Ship it",
 			members: [{ role: "builder", prompt: "build", ownedPaths: ["src/api"], wake: false }],
 		});
-		const memberId = created.details.members[0].workerId;
+		const memberId = created.details.members[1].workerId; // after Sova's coordinator
 		const member = () => h.workers.find((w: any) => w.id === memberId);
 		assert.equal(widgetCalls.length, 1);
 		assert.equal(widgetCalls[0].key, "team");
@@ -2374,7 +2388,7 @@ test("team widget installs on refresh with fresh detached views, follows member 
 		assert.equal(components.length, 1);
 		const widget = components[0];
 		const first = widget.render(100);
-		assert.ok(first.some((l: string) => l.includes("◆ Ops (team_01)") && l.includes("1 working")), first.join("\n"));
+		assert.ok(first.some((l: string) => l.includes("◆ Ops (team_01)") && l.includes("3 working")), first.join("\n"));
 		assert.ok(first.some((l: string) => l.includes(`● builder [pi] ${memberId} · working`) && l.includes("owns: src/api")), first.join("\n"));
 		assert.ok(first.at(-1).includes("session-scoped teams"), "legend row");
 		assert.ok(first.every((l: string) => visibleWidth(l) === 100), "every row exactly 100 cells");
@@ -2388,16 +2402,16 @@ test("team widget installs on refresh with fresh detached views, follows member 
 		assert.equal(widgetCalls.length, 1, "updates never reinstall the widget");
 		const last = pushed.at(-1)[0];
 		assert.equal(last.id, "team_01");
-		assert.equal(last.members[0].workerId, memberId);
-		assert.equal(last.members[0].state, "idle", "failure-aware member state follows the worker");
+		assert.equal(last.members[1].workerId, memberId);
+		assert.equal(last.members[1].state, "idle", "failure-aware member state follows the worker");
 		assert.ok(pushed.every((v, i) => i === 0 || v !== pushed[i - 1]), "every push is a fresh array");
 		// Detached: mutating a pushed view corrupts neither the store nor the widget.
 		last.name = "MUTATED";
-		last.members[0].role = "MUTATED";
+		last.members[1].role = "MUTATED";
 		last.members.length = 0;
 		member().change();
 		await new Promise((r) => setTimeout(r, 200));
-		assert.equal(pushed.at(-1)[0].members[0].role, "builder");
+		assert.equal(pushed.at(-1)[0].members[1].role, "builder");
 		const listed = await h.call("team_list");
 		assert.match(listed.content[0].text, new RegExp(`${memberId} builder`));
 		const rendered = widget.render(100).join("\n");
@@ -2476,68 +2490,68 @@ test("team members get a parent-issued identity, private mailbox and only the me
 	const h = teamHarness();
 	const created: any[] = [];
 	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
-	h.bus.emit(BACKEND_REGISTER_EVENT, { ...fakeBackend(created), id: "other" });
 	try {
+		// No member the chat names is the lead: orchestrator is an unknown setting.
 		await assert.rejects(
-			h.call("team_create", { name: "Bad", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true, backend: "other" }] }),
-			/must use the pi or claude-code backend/,
+			h.call("team_create", { name: "Bad", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true }] }),
+			/^Error: members\[0\] \(lead\): unknown setting "orchestrator"\. A member takes role, prompt, ownedPaths, backend, model, effort, /,
 		);
 		assert.equal(h.workers.length + created.length, 0);
 		const r = await h.call("team_create", {
 			name: "Crew", objective: "Ship", members: [
-				{ role: "lead", prompt: "coordinate", orchestrator: true, tools: ["read"] },
+				{ role: "lead", prompt: "lead the work", tools: ["read"] },
 				{ role: "dev", prompt: "build", ownedPaths: ["src"] },
 				{ role: "writer", prompt: "document", backend: "claude-code" },
 			],
 		});
-		assert.match(r.content[0].text, /ag_01  lead \(orchestrator\)  running/);
-		assert.match(r.content[0].text, /team_msg\/team_inbox\/team_ask/);
-		assert.deepEqual(r.details.members.map((m: any) => [m.workerId, m.orchestrator]), [["ag_01", true], ["ag_02", undefined], ["ag_03", undefined]]);
-		const lead = h.workers.find((w: any) => w.id === "ag_01");
-		const dev = h.workers.find((w: any) => w.id === "ag_02");
+		assert.match(r.content[0].text, /ag_02  lead  running/);
+		assert.doesNotMatch(r.content[0].text, /\(orchestrator\)/);
+		// Only Sova's coordinator (ag_01) carries the orchestrator field.
+		assert.deepEqual(r.details.members.map((m: any) => [m.workerId, m.orchestrator]), [["ag_01", true], ["ag_02", undefined], ["ag_03", undefined], ["ag_04", undefined], ["ag_05", undefined]]);
+		const lead = h.workers.find((w: any) => w.id === "ag_02");
+		const dev = h.workers.find((w: any) => w.id === "ag_03");
 		assert.deepEqual(lead.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, MEMBER_EXTENSION], "the marker, then member.ts, never the manager");
 		assert.deepEqual(lead.tools, ["read"], "the built-in allowlist is unchanged; the runner restricts by exclusion when extensions are present");
-		const me = h.memberOf("ag_01")!;
-		assert.deepEqual({ ...me, dir: undefined }, { version: 1, teamId: "team_01", teamName: "Crew", workerId: "ag_01", role: "lead", orchestrator: true, dir: undefined });
-		assert.equal(me.dir, path.join(h.root, "team_01", "ag_01"));
+		const me = h.memberOf("ag_02")!;
+		assert.deepEqual({ ...me, dir: undefined }, { version: 1, teamId: "team_01", teamName: "Crew", workerId: "ag_02", role: "lead", orchestrator: false, coordinated: true, dir: undefined });
+		assert.equal(me.dir, path.join(h.root, "team_01", "ag_02"));
 		assert.ok(fs.statSync(memberPaths(me.dir).requests).isDirectory() && fs.statSync(memberPaths(me.dir).responses).isDirectory());
-		assert.equal(h.memberOf("ag_02")!.orchestrator, false);
+		assert.equal(h.memberOf("ag_01")!.orchestrator, true, "Sova's coordinator");
 		// A Claude member is a pi worker on the Claude Code provider: the member extension, the identity in its env.
 		assert.equal(created.length, 0, "no native Claude process");
-		const claude = h.workers.find((w: any) => w.id === "ag_03");
+		const claude = h.workers.find((w: any) => w.id === "ag_04");
 		assert.equal(claude.model, "claude-code-cli/claude-sonnet-5-5");
 		assert.deepEqual(claude.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, MEMBER_EXTENSION, CLAUDE_CODE_EXTENSION]);
 		assert.equal(claude.mcpServers, undefined);
-		const writer = h.memberOf("ag_03")!;
-		assert.deepEqual({ ...writer, dir: undefined }, { version: 1, teamId: "team_01", teamName: "Crew", workerId: "ag_03", role: "writer", orchestrator: false, dir: undefined });
-		assert.equal(writer.dir, path.join(h.root, "team_01", "ag_03"));
+		const writer = h.memberOf("ag_04")!;
+		assert.deepEqual({ ...writer, dir: undefined }, { version: 1, teamId: "team_01", teamName: "Crew", workerId: "ag_04", role: "writer", orchestrator: false, coordinated: true, dir: undefined });
+		assert.equal(writer.dir, path.join(h.root, "team_01", "ag_04"));
 		assert.ok(fs.statSync(memberPaths(writer.dir).requests).isDirectory(), "a Claude member has a mailbox too");
 		assert.match(claude.task, /Team tools: team_msg/);
 		assert.doesNotMatch(claude.task, /mcp__team__|no tool to reply/);
 		assert.match(dev.task, /Team tools: team_msg/);
 		assert.equal(dev.mcpServers, undefined, "pi members load member.ts instead");
-		// Persisted with the flag; team_list marks the orchestrator.
+		// Persisted: only the coordinator has the field; team_list marks duties, never an orchestrator.
 		const entry = h.appended.find((e) => e.customType === "subagents-team-v1");
-		assert.deepEqual(entry.data.members.map((m: any) => m.orchestrator), [true, undefined, undefined]);
-		assert.match((await h.call("team_list")).content[0].text, /ag_01 lead \(orchestrator\) \[pi\]/);
+		assert.deepEqual(entry.data.members.map((m: any) => m.orchestrator), [true, undefined, undefined, undefined, undefined]);
+		const list = (await h.call("team_list")).content[0].text;
+		assert.match(list, /ag_01 coordinator \(coordinator\) \[pi\]/);
+		assert.match(list, /ag_02 lead \[pi\]/);
+		assert.doesNotMatch(list, /orchestrator/);
 		// The user-facing extensions option still refuses the member file, and ad hoc workers never get an identity.
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", extensions: [MEMBER_EXTENSION] }), /do not nest/);
 		await h.call("agent_spawn", { prompt: "plain", wake: false });
 		assert.equal(h.workers.at(-1).env, undefined);
 		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION]);
+		// team_add refuses orchestrator the same way, and a newcomer's header marks no lead.
 		await assert.rejects(
-			h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "t", orchestrator: true, backend: "other" }] }),
-			/must use the pi or claude-code backend/,
+			h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "t", orchestrator: true }] }),
+			/^Error: members\[0\] \(boss\): unknown setting "orchestrator"/,
 		);
 		await h.call("team_add", { team: "Crew", members: [{ role: "qa", prompt: "test" }] });
-		assert.equal(h.memberOf("ag_05")!.role, "qa");
-		assert.match(h.workers.find((w: any) => w.id === "ag_05").task, /- lead \(orchestrator\): none declared/);
-		// A Claude orchestrator is accepted; its identity carries the flag and its header names the sibling powers.
-		await h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "t", orchestrator: true, backend: "claude-code" }] });
-		const boss = h.memberOf("ag_06")!;
-		assert.deepEqual([boss.workerId, boss.role, boss.orchestrator], ["ag_06", "boss", true]);
-		assert.match(h.workers.at(-1).task, /You are this team's orchestrator/);
-		assert.match((await h.call("team_list")).content[0].text, /ag_06 boss \(orchestrator\) \[pi\]/, "recorded as the pi worker it is");
+		assert.equal(h.memberOf("ag_07")!.role, "qa");
+		assert.match(h.workers.find((w: any) => w.id === "ag_07").task, /- lead: none declared/);
+		assert.doesNotMatch(h.workers.find((w: any) => w.id === "ag_07").task, /\(orchestrator\)/);
 	} finally { await h.cleanup(); }
 });
 
@@ -2548,19 +2562,19 @@ test("member messages are queued as inbox items: answered at once, listed when a
 	try {
 		await h.call("team_create", {
 			name: "Crew", objective: "Ship", members: [
-				{ role: "lead", prompt: "coordinate", orchestrator: true },
+				{ role: "lead", prompt: "lead the work" },
 				{ role: "dev", prompt: "build" },
 				{ role: "writer", prompt: "document", backend: "claude-code" },
 			],
 		});
-		const dev = h.workers.find((w: any) => w.id === "ag_02");
-		const lead = h.workers.find((w: any) => w.id === "ag_01");
-		const writerWorker = h.workers.find((w: any) => w.id === "ag_03");
-		const leadDir = h.memberOf("ag_01")!.dir;
+		const dev = h.workers.find((w: any) => w.id === "ag_03");
+		const lead = h.workers.find((w: any) => w.id === "ag_02");
+		const writerWorker = h.workers.find((w: any) => w.id === "ag_04");
+		const leadDir = h.memberOf("ag_02")!.dir;
 		// dev → lead by role (normalized): stored and answered at once; lead is busy, so nothing interrupts it.
-		const one = await h.ask("ag_02", { type: "message", to: " LEAD ", message: "API is ready" });
+		const one = await h.ask("ag_03", { type: "message", to: " LEAD ", message: "API is ready" });
 		assert.equal(one.ok, true);
-		assert.equal(one.text, "Queued for lead (ag_01): item i_1");
+		assert.equal(one.text, "Queued for lead (ag_02): item i_1");
 		assert.deepEqual(itemRows(leadDir), [["i_1", "message", "dev", "new"]]);
 		await pause(60);
 		assert.equal(lead.steerCount, 0, "a busy member is never interrupted for a normal item");
@@ -2574,15 +2588,15 @@ test("member messages are queued as inbox items: answered at once, listed when a
 		assert.deepEqual(readInbox(leadDir), [], "no legacy copy for a member on inbox-aware code");
 		// lead → the Claude member (a pi worker) by ID while it is idle: items gathered for the debounce, then one list.
 		writerWorker.settle();
-		const writerDir = h.memberOf("ag_03")!.dir;
-		assert.equal((await h.ask("ag_01", { type: "message", to: "ag_03", message: "Document the API" })).text, "Queued for writer (ag_03): item i_2");
-		assert.equal((await h.ask("ag_01", { type: "message", to: "writer", subject: "Docs", message: "Second\nline" })).text, "Queued for writer (ag_03): item i_3");
+		const writerDir = h.memberOf("ag_04")!.dir;
+		assert.equal((await h.ask("ag_02", { type: "message", to: "ag_04", message: "Document the API" })).text, "Queued for writer (ag_04): item i_4");
+		assert.equal((await h.ask("ag_02", { type: "message", to: "writer", subject: "Docs", message: "Second\nline" })).text, "Queued for writer (ag_04): item i_5");
 		await waitFor(() => writerWorker.steerCount === 1, "one list for both items");
 		assert.equal(writerWorker.lastSteer.message, [
 			"[Team inbox: 2 new — team_inbox open <ids> to read, done <ids> to mark addressed]",
-			"- i_2 message from lead — Document the API",
-			"- i_3 message from lead — Docs",
-			"[Open your inbox first: team_inbox open i_2 i_3 — other tools are refused until you open one]",
+			"- i_4 message from lead — Document the API",
+			"- i_5 message from lead — Docs",
+			"[Open your inbox first: team_inbox open i_4 i_5 — other tools are refused until you open one]",
 			INBOX_FOOT,
 		].join("\n"), "two items: subjects only (a member must open an item to see it); the wake starts its turn, so it is gated");
 		assert.deepEqual(itemRows(writerDir).map((r) => r[3]), ["new", "new"], "listed is not opened");
@@ -2590,50 +2604,54 @@ test("member messages are queued as inbox items: answered at once, listed when a
 		await pause(60);
 		assert.equal(writerWorker.steerCount, 1, "one wake for the gathered items");
 		// The Claude member answers through the same mailbox: sender identity comes from its directory.
-		const back = await h.ask("ag_03", { type: "message", to: "lead", message: "Done", urgent: true });
-		assert.equal(back.text, "Queued for lead (ag_01): item i_4");
+		const back = await h.ask("ag_04", { type: "message", to: "lead", message: "Done", urgent: true });
+		assert.equal(back.text, "Queued for lead (ag_02): item i_6");
 		// lead is busy (the first list started a turn): an urgent item reaches it at its next step.
 		await waitFor(() => lead.steerCount === 2, "the urgent item at lead's next step");
 		assert.equal(lead.lastSteer.mode, undefined, "a mid-turn steer");
-		assert.match(lead.lastSteer.message, /^\[Team inbox: 1 new \(1 urgent\) — .*\]\n! i_4 message from writer — Done\n/);
+		assert.match(lead.lastSteer.message, /^\[Team inbox: 1 new \(1 urgent\) — .*\]\n! i_6 message from writer — Done\n/);
 		// Broadcast: one copy per live member, never the sender; a stopped member is named, not a failure.
 		writerWorker.status = "killed";
-		const all = await h.ask("ag_02", { type: "message", to: "all", message: "sync" });
+		const all = await h.ask("ag_03", { type: "message", to: "all", message: "sync" });
 		assert.equal(all.ok, true);
-		assert.equal(all.text, "Queued for lead (ag_01): item i_5\nskipped (stopped): writer (ag_03)");
-		assert.deepEqual((all.details as any).skipped, ["ag_03"]);
+		assert.equal(all.text, "Queued for coordinator (ag_01): item i_7\nQueued for lead (ag_02): item i_8\nQueued for monitor (ag_05): item i_9\nskipped (stopped): writer (ag_04)", "Sova's coordinator and monitor are live members too");
+		assert.deepEqual((all.details as any).skipped, ["ag_04"]);
 		assert.equal(dev.steerCount, 0, "a broadcast never loops back to the sender");
 		// A direct message to a stopped member with no successor is refused, naming how it comes back.
-		const stopped = await h.ask("ag_02", { type: "message", to: "writer", message: "hello?" });
+		const stopped = await h.ask("ag_03", { type: "message", to: "writer", message: "hello?" });
 		assert.equal(stopped.ok, false);
-		assert.match(stopped.text, /writer \(ag_03\) has stopped \(killed\) and has no live successor\. agent_resume \{ id: "ag_03" \} in the main chat brings it back/);
+		assert.match(stopped.text, /writer \(ag_04\) has stopped \(killed\) and has no live successor\. agent_resume \{ id: "ag_04" \} in the main chat brings it back/);
 		// Scope errors are answered, never stored.
-		for (const [to, pattern] of [["dev", /cannot address yourself/], ["ag_02", /cannot address yourself/], ["ghost", /No member with role ghost in team_01\. Known roles: lead, writer\./], ["ag_42", /not a member of team_01/]] as const) {
-			const bad = await h.ask("ag_02", { type: "message", to, message: "x" });
+		for (const [to, pattern] of [["dev", /cannot address yourself/], ["ag_03", /cannot address yourself/], ["ghost", /No member with role ghost in team_01\. Known roles: coordinator, lead, writer, monitor\./], ["ag_43", /not a member of team_01/]] as const) {
+			const bad = await h.ask("ag_03", { type: "message", to, message: "x" });
 			assert.equal(bad.ok, false);
 			assert.match(bad.text, pattern);
 		}
-		assert.equal((await h.ask("ag_02", { type: "message", to: "lead", message: "  " })).ok, false);
-		assert.equal((await h.ask("ag_02", { type: "message", to: "lead", message: "x", replyTo: "i_99" })).ok, false, "replyTo must name an existing item");
+		assert.equal((await h.ask("ag_03", { type: "message", to: "lead", message: "  " })).ok, false);
+		assert.equal((await h.ask("ag_03", { type: "message", to: "lead", message: "x", replyTo: "i_99" })).ok, false, "replyTo must name an existing item");
 		assert.equal(readMemberItems(leadDir).length, 3, "nothing refused was stored");
 		// Records: recipient-keyed actions with source member and kind message, queued with their item.
 		const listed = await h.call("team_list");
 		const actions = listed.details.teams[0].actions;
 		assert.deepEqual(actions.map((a: any) => [a.source, a.kind, a.workerId, a.state]), [
+			["member", "message", "ag_02", "accepted-or-queued"],
+			["member", "report", "ag_01", "accepted-or-queued"],
+			["member", "report", "ag_01", "accepted-or-queued"],
+			["member", "message", "ag_04", "accepted-or-queued"],
+			["member", "message", "ag_04", "accepted-or-queued"],
+			["member", "message", "ag_02", "accepted-or-queued"],
 			["member", "message", "ag_01", "accepted-or-queued"],
-			["member", "message", "ag_03", "accepted-or-queued"],
-			["member", "message", "ag_03", "accepted-or-queued"],
-			["member", "message", "ag_01", "accepted-or-queued"],
-			["member", "message", "ag_01", "accepted-or-queued"],
-			["member", "message", "ag_03", "failed"],
-		]);
-		assert.match(listed.content[0].text, /#1 member message → ag_01 \(lead\): accepted-or-queued — queued as i_1/);
+			["member", "message", "ag_02", "accepted-or-queued"],
+			["member", "message", "ag_05", "accepted-or-queued"],
+			["member", "message", "ag_04", "failed"],
+		], "lead's and the writer's turn ends are reports to Sova's coordinator");
+		assert.match(listed.content[0].text, /#1 member message → ag_02 \(lead\): accepted-or-queued — queued as i_1/);
 		// A finished sender and a forged directory are refused; malformed files are dropped silently.
 		dev.status = "done";
-		const dead = await h.ask("ag_02", { type: "message", to: "lead", message: "late" });
+		const dead = await h.ask("ag_03", { type: "message", to: "lead", message: "late" });
 		assert.equal(dead.ok, false);
 		assert.match(dead.text, /not a live member/);
-		const forged = path.join(h.root, "team_01", "ag_77");
+		const forged = path.join(h.root, "team_01", "ag_78");
 		fs.mkdirSync(memberPaths(forged).requests, { recursive: true });
 		fs.mkdirSync(memberPaths(forged).responses, { recursive: true });
 		const forgedId = requestId();
@@ -2652,50 +2670,52 @@ test("a member whose turn ends with items waiting: its completion reports that t
 	const h = teamHarness();
 	try {
 		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "alpha", prompt: "ask" }, { role: "beta", prompt: "talk" }] });
-		const alpha = h.workers.find((w: any) => w.id === "ag_01");
+		const alpha = h.workers.find((w: any) => w.id === "ag_02");
 		// beta writes to the busy alpha: the item waits for alpha's turn end.
-		assert.equal((await h.ask("ag_02", { type: "message", to: "alpha", message: "HELLO from beta" })).ok, true);
+		assert.equal((await h.ask("ag_03", { type: "message", to: "alpha", message: "HELLO from beta" })).ok, true);
 		alpha.transcript.push({ kind: "tool", toolName: "team_ask", text: '{"question":"ASK-MARK"}' });
 		h.messages.length = 0;
 		alpha.output = "ALPHA-FINAL";
 		alpha.settle();
 		await waitFor(() => alpha.steerCount === 1, "the list at the end of alpha's turn");
-		const done = h.messages.filter(([m]: any[]) => m.customType === "subagent-complete").map(([m]: any[]) => m.content as string);
-		assert.equal(done.length, 1, "one completion for the turn that ended");
-		assert.match(done[0], /^### ag_01 \(alpha\) — waiting\n[\s\S]*ALPHA-FINAL/, "the settle as it was: waiting, with its final answer");
-		assert.doesNotMatch(done[0], /Still working|ASK-MARK/, "never the next run's activity");
+		// Its completion is a report to Sova's coordinator (ag_01), never a message to the main chat.
+		const reports = () => readMemberItems(h.memberOf("ag_01")!.dir).filter((i) => i.kind === "report").map((i) => i.body);
+		await waitFor(() => reports().length === 1, "alpha's report to the coordinator");
+		assert.match(reports()[0], /^\[Team report from alpha \(ag_02\), team_01: finished — routed to you as coordinator\]\n### ag_02 \(alpha\) — waiting\n[\s\S]*ALPHA-FINAL\n\[Left open: i_1 message from beta \(unopened\)\]$/, "the settle as it was: waiting, with its final answer");
+		assert.doesNotMatch(reports()[0], /Still working|ASK-MARK/, "never the next run's activity");
+		assert.equal(h.messages.filter(([m]: any[]) => m.customType === "subagent-complete").length, 0);
 	} finally { await h.cleanup(); }
 });
 
-test("orchestrator powers are sibling-scoped: roster and steer for orchestrators only, never spawn or kill", async () => {
+test("the coordinator's powers are sibling-scoped: roster and steer for Sova's coordinator only, never spawn or kill", async () => {
 	const h = teamHarness();
 	try {
 		await h.call("team_create", {
 			name: "Crew", objective: "Ship", members: [
-				{ role: "lead", prompt: "coordinate", orchestrator: true },
 				{ role: "dev", prompt: "build", ownedPaths: ["src"] },
 			],
 		});
 		await h.call("team_create", { name: "Other", objective: "Elsewhere", members: [{ role: "solo", prompt: "alone" }] });
+		// Crew: coordinator ag_01, dev ag_02, monitor ag_03; Other: coordinator ag_04, solo ag_05, monitor ag_06.
 		const dev = h.workers.find((w: any) => w.id === "ag_02");
-		const solo = h.workers.find((w: any) => w.id === "ag_03");
-		// Non-orchestrators are refused before any lookup.
-		const refusedSteer = await h.ask("ag_02", { type: "steer", to: "lead", message: "do it" });
+		const solo = h.workers.find((w: any) => w.id === "ag_05");
+		// Members the chat names are refused before any lookup.
+		const refusedSteer = await h.ask("ag_02", { type: "steer", to: "coordinator", message: "do it" });
 		assert.equal(refusedSteer.ok, false);
-		assert.match(refusedSteer.text, /Only an orchestrator member can steer/);
-		assert.match((await h.ask("ag_02", { type: "roster" })).text, /orchestrator members only/);
-		// The orchestrator steers a sibling with the requested mode; the record names the orchestrator source.
+		assert.match(refusedSteer.text, /^Only the team's coordinator can steer teammates; use team_msg, or team_ask to involve the coordinator\.$/);
+		assert.match((await h.ask("ag_02", { type: "roster" })).text, /^team_roster is available to the team's coordinator and monitor only\.$/);
+		// Sova's coordinator steers a sibling with the requested mode; the record names the orchestrator source.
 		const steered = await h.ask("ag_01", { type: "steer", to: "dev", message: "Run the tests first.", mode: "followUp" });
 		assert.equal(steered.ok, true);
 		assert.match(steered.text, /Accepted or queued for dev \(ag_02\); this is not execution/);
-		assert.deepEqual([dev.lastSteer.mode, dev.lastSteer.message], ["followUp", "[Instruction from orchestrator lead (ag_01), team_01]\nRun the tests first."]);
+		assert.deepEqual([dev.lastSteer.mode, dev.lastSteer.message], ["followUp", "[Instruction from coordinator coordinator (ag_01), team_01]\nRun the tests first."]);
 		await waitFor(() => readMemberItems(h.memberOf("ag_02")!.dir).length === 1, "the instruction's history copy");
-		assert.deepEqual(readMemberItems(h.memberOf("ag_02")!.dir).map((i) => [i.kind, i.from.role, i.status, i.body]), [["instruction", "lead", "read", "Run the tests first."]], "an instruction copy: history, never open");
+		assert.deepEqual(readMemberItems(h.memberOf("ag_02")!.dir).map((i) => [i.kind, i.from.role, i.status, i.body]), [["instruction", "coordinator", "read", "Run the tests first."]], "an instruction copy: history, never open");
 		const plain = await h.ask("ag_01", { type: "steer", to: "ag_02", message: "Now fix lint." });
 		assert.equal(plain.ok, true);
 		assert.equal(dev.lastSteer.mode, undefined);
 		// Never itself, never "all", never another team.
-		for (const [to, pattern] of [["lead", /cannot address yourself/], ["all", /one sibling at a time/], ["solo", /No member with role solo/], ["ag_03", /not a member of team_01/]] as const) {
+		for (const [to, pattern] of [["coordinator", /cannot address yourself/], ["all", /one sibling at a time/], ["solo", /No member with role solo/], ["ag_05", /not a member of team_01/]] as const) {
 			const bad = await h.ask("ag_01", { type: "steer", to, message: "x" });
 			assert.equal(bad.ok, false, to);
 			assert.match(bad.text, pattern);
@@ -2704,8 +2724,10 @@ test("orchestrator powers are sibling-scoped: roster and steer for orchestrators
 		// Roster: own team only, tool availability per backend, honest action states.
 		const roster = await h.ask("ag_01", { type: "roster" });
 		assert.equal(roster.ok, true);
-		assert.match(roster.text, /^team_01 — Crew · 2 working\nObjective: Ship\n  ag_01 lead \(orchestrator\) \[pi, has team tools\] working \(running\) · context — · owns: none declared\n  ag_02 dev \[pi, has team tools\] working \(running\) · context — · owns: src\n  Recent actions:\n    #1 orchestrator followUp → ag_02 \(dev\): accepted-or-queued/);
-		assert.doesNotMatch(roster.text, /Other|solo|ag_03/);
+		assert.match(roster.text, /^team_01 — Crew · 3 working\nObjective: Ship\n/);
+		assert.match(roster.text, /\n  ag_01 coordinator \(coordinator\) \[pi, has team tools\] working \(running\) · context — · owns: none declared\n  ag_02 dev \[pi, has team tools\] working \(running\) · context — · owns: src\n  ag_03 monitor \(monitor\) \[pi, has team tools\] working \(running\)/);
+		assert.match(roster.text, /Recent actions:\n    #1 orchestrator followUp → ag_02 \(dev\): accepted-or-queued/);
+		assert.doesNotMatch(roster.text, /Other|solo|ag_05/);
 		assert.match(roster.text, /accepted-or-queued never means executed/);
 		// A stopping sibling cannot be steered; the failure is reported, not hidden.
 		dev.status = "killed";
@@ -2717,38 +2739,55 @@ test("orchestrator powers are sibling-scoped: roster and steer for orchestrators
 	} finally { await h.cleanup(); }
 });
 
-test("team_ask surfaces a team-question message that starts an idle parent turn and points at agent_steer", async () => {
+test("team_ask surfaces a team-question message that starts an idle parent turn and points at agent_steer: the coordinator's, and a member's once no coordinator is live", async () => {
 	const h = teamHarness();
 	try {
 		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build", wake: false }] });
+		const [coordinator, dev] = h.workers;
 		const before = h.messages.length;
+		// Sova's coordinator (ag_01) is the member whose questions reach the main chat.
 		const asked = await h.ask("ag_01", { type: "question", message: "Postgres or SQLite?" });
 		assert.equal(asked.ok, true);
-		assert.match(asked.text, /surfaced to the operator.*starts a parent turn if the parent is idle.*continue with independent work or end your turn/);
+		assert.match(asked.text, /surfaced to the operator: the main chat reads it after its current step, or at once if it is idle.*continue with independent work or end your turn/);
 		assert.equal(h.messages.length, before + 1);
 		const [message, delivery] = h.messages.at(-1);
-		assert.deepEqual(delivery, { deliverAs: "followUp", triggerTurn: true }, "questions always wake an idle parent, even for wake:false members");
+		assert.deepEqual(delivery, { deliverAs: "steer", triggerTurn: true }, "questions are steered in, and always wake an idle parent");
 		assert.equal(message.customType, "team-question");
 		assert.equal(message.display, true);
 		assert.equal(message.content, [
-			"[Team question from dev (ag_01), team_01 — Crew]",
+			"[Team question from coordinator (ag_01), team_01 — Crew]",
 			"Postgres or SQLite?",
 			"",
 			"Answer with agent_steer { id: \"ag_01\", message: \"<answer>\" }; the member continues (or resumes, if idle) from your message. If only the user can decide, ask them and relay their answer the same way.",
 		].join("\n"));
-		assert.deepEqual(h.notices.at(-1), ["Team question from dev (ag_01).", "info"]);
+		assert.deepEqual(h.notices.at(-1), ["Team question from coordinator (ag_01).", "info"]);
 		const actions = (await h.call("team_list")).details.teams[0].actions;
 		assert.deepEqual(actions.map((a: any) => [a.source, a.kind, a.workerId, a.state, a.preview]), [["member", "question", "ag_01", "accepted-or-queued", "Postgres or SQLite?"]]);
 		// The relay is the ordinary steer path.
 		await h.call("agent_steer", { id: "ag_01", message: "SQLite." });
-		assert.equal(h.workers[0].lastSteer.message, "SQLite.");
+		assert.equal(coordinator.lastSteer.message, "SQLite.");
 		assert.equal((await h.ask("ag_01", { type: "question", message: " " })).ok, false);
+		// While the coordinator is live, a member's question is the coordinator's, never the main chat's.
+		const routed = await h.ask("ag_02", { type: "question", message: "Which port?" });
+		assert.match(routed.text, /^Question queued for your coordinator coordinator \(ag_01\): item i_1\./);
+		assert.equal(h.messages.length, before + 1);
+		// The coordinator ends with no successor: the member's next question reaches the main chat the same way.
+		coordinator.exit();
+		const orphan = await h.ask("ag_02", { type: "question", message: "Anyone there?" });
+		assert.equal(orphan.ok, true);
+		assert.equal(h.messages.length, before + 2);
+		const [fallback, fallbackDelivery] = h.messages.at(-1);
+		assert.deepEqual(fallbackDelivery, { deliverAs: "steer", triggerTurn: true });
+		assert.equal(fallback.customType, "team-question");
+		assert.match(fallback.content, /^\[Team question from dev \(ag_02\), team_01 — Crew\]\nAnyone there\?\n\nAnswer with agent_steer \{ id: "ag_02"/);
+		await h.call("agent_steer", { id: "ag_02", message: "Yes." });
+		assert.equal(dev.lastSteer.message, "Yes.");
 		// Without an interactive parent the member is told to report instead.
 		h.ctx.mode = "print";
-		const offline = await h.ask("ag_01", { type: "question", message: "anyone?" });
+		const offline = await h.ask("ag_02", { type: "question", message: "anyone?" });
 		assert.equal(offline.ok, false);
 		assert.match(offline.text, /cannot be reached from this parent session mode/);
-		assert.equal(h.messages.length, before + 1);
+		assert.equal(h.messages.length, before + 2);
 	} finally { await h.cleanup(); }
 });
 
@@ -2821,19 +2860,21 @@ test("a remote session's workers run on the target: pi and claude-code workers l
 		assert.equal(claude.systemPrompt, "be terse");
 		assert.equal(claude.mcpServers, undefined);
 
-		// A team member of a remote session gets both extensions, on either backend.
-		await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true }, { role: "writer", prompt: "w", backend: "claude-code" }] });
-		const lead = h.workers.find((w: any) => w.id === "ag_03");
-		assert.deepEqual(lead.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION, MEMBER_EXTENSION]);
-		assert.deepEqual(lead.flags, { target: "box" });
-		const writer = h.workers.find((w: any) => w.id === "ag_04");
+		// A team member of a remote session gets both extensions, on either backend; Sova's coordinator and monitor too.
+		await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "lead", prompt: "t" }, { role: "writer", prompt: "w", backend: "claude-code" }] });
+		for (const id of ["ag_03", "ag_04", "ag_06"]) {
+			const member = h.workers.find((w: any) => w.id === id);
+			assert.deepEqual(member.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION, MEMBER_EXTENSION], id);
+			assert.deepEqual(member.flags, { target: "box" }, id);
+		}
+		const writer = h.workers.find((w: any) => w.id === "ag_05");
 		assert.deepEqual(writer.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, REMOTE_EXTENSION, MEMBER_EXTENSION, CLAUDE_CODE_EXTENSION]);
 		assert.ok(decodeMemberContext(writer.env[MEMBER_ENV]));
 
 		// A cwd the parent cannot resolve, and a backend without remote tooling, are refused before any worker starts.
 		await assert.rejects(h.call("agent_spawn", { prompt: "t", cwd: "~/x" }), /absolute path on the target/);
 		await assert.rejects(h.call("agent_spawn", { prompt: "t", backend: "other" }), /cannot run workers of a remote session/);
-		assert.equal(h.workers.length + created.length, 4);
+		assert.equal(h.workers.length + created.length, 6);
 		assert.equal(created.length, 0);
 	} finally {
 		await h.close();
@@ -2905,9 +2946,9 @@ test("worker session marker: every pi worker loads worker-mark.ts first; another
 		const given = await h.call("agent_spawn", { prompt: "given", extensions: ["extensions/btw"] });
 		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, btw], "a worker with its own extensions");
 		assert.ok(given.content[0].text.split("\n").some((line: string) => line.includes(`  extensions=${btw}`) && !line.includes("worker-mark")), "only the user's extensions are listed");
-		await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true }, { role: "writer", prompt: "w", backend: "native-cli" }] });
-		const member = h.workers.at(-1);
-		assert.deepEqual(member.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, MEMBER_EXTENSION], "a team member");
+		await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "lead", prompt: "t" }, { role: "writer", prompt: "w", backend: "native-cli" }] });
+		for (const role of ["coordinator", "lead", "monitor"])
+			assert.deepEqual(h.workers.find((w: any) => w.name === role).extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, MEMBER_EXTENSION], `a team member: ${role}`);
 		await h.call("agent_spawn", { prompt: "claude", backend: "native-cli" });
 		assert.equal(created.length, 2);
 		for (const other of created) assert.equal(other.extensions.length, 0, "another backend's workers are untouched");
@@ -3197,18 +3238,18 @@ test("sandbox on: every worker is checked by the extension first, and its refusa
 test("team_eject: parent-only, refuses occupied members, persists the op, frees a seat, and ejected members drop out of messaging", async () => {
 	const h = teamHarness();
 	try {
-		// Members and orchestrators never get the tool.
+		// Members and the coordinator never get the tool.
 		const { MEMBER_TOOLS, ORCHESTRATOR_TOOLS } = await import("./member.ts");
 		for (const list of [MEMBER_TOOLS, ORCHESTRATOR_TOOLS]) assert.ok(!(list as readonly string[]).includes("team_eject"));
 		assert.ok(h.tools.has("team_eject"));
 		await h.call("team_create", {
 			name: "Crew", objective: "Ship", members: [
-				{ role: "lead", prompt: "coordinate", orchestrator: true, wake: false },
 				{ role: "dev", prompt: "build", wake: false },
 				{ role: "writer", prompt: "document", wake: false },
 			],
 		});
-		const [lead, dev, writer] = ["ag_01", "ag_02", "ag_03"].map((id) => h.workers.find((w: any) => w.id === id));
+		// Sova's coordinator ag_01, dev ag_02, writer ag_03, its monitor ag_04.
+		const [coordinator, dev, writer] = ["ag_01", "ag_02", "ag_03"].map((id) => h.workers.find((w: any) => w.id === id));
 		// Occupied members are refused with the agent_kill hint; nothing is persisted.
 		await assert.rejects(h.call("team_eject", { team: "Crew", member: "dev" }), /dev \(ag_02\) is still working; stop it with agent_kill first/);
 		dev.settle(undefined, "waiting");
@@ -3219,46 +3260,46 @@ test("team_eject: parent-only, refuses occupied members, persists the op, frees 
 
 		await h.call("agent_kill", { id: "ag_02" });
 		const out = await h.call("team_eject", { team: "crew", member: " DEV " });
-		assert.match(out.content[0].text, /^Ejected ag_02 \(dev\) from team_01 at \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\. 2 of 24 seats taken; the role dev stays reserved\.$/);
+		assert.match(out.content[0].text, /^Ejected ag_02 \(dev\) from team_01 at \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\. 3 of 24 seats taken; the role dev stays reserved\.$/);
 		const ops = h.appended.filter((e) => e.customType === "subagents-team-v1" && e.data.op === "eject");
 		assert.deepEqual(ops.map((e) => ({ ...e.data, at: typeof e.data.at })), [{ version: 1, op: "eject", teamId: "team_01", workerId: "ag_02", at: "number" }]);
 		assert.equal(out.details.ejectedAt, ops[0].data.at);
 		await assert.rejects(h.call("team_eject", { team: "Crew", member: "ag_02" }), /already ejected/);
 
 		const list = await h.call("team_list", { team: "Crew" });
-		assert.match(list.content[0].text, /team_01 — Crew \[this session\] · 2 working · 1 ejected\n/);
+		assert.match(list.content[0].text, /team_01 — Crew \[this session\] · 3 working · 1 ejected\n/);
 		assert.match(list.content[0].text, /ag_02 dev \[pi\] stopped \(killed\) · context — · owns: none declared · ejected \d{4}-[^\n]*Z\n/);
 		assert.match(list.content[0].text, /#\d+ parent eject → ag_02 \(dev\): accepted-or-queued/);
 		assert.equal(list.details.teams[0].members[1].ejectedAt, ops[0].data.at);
 		assert.equal(list.details.teams[0].actions.filter((a: any) => a.kind === "eject").length, 1);
 		const roster = await h.ask("ag_01", { type: "roster" });
-		assert.match(roster.text, /^team_01 — Crew · 2 working · 1 ejected\n/);
+		assert.match(roster.text, /^team_01 — Crew · 3 working · 1 ejected\n/);
 		assert.match(roster.text, /ag_02 dev \[pi, has team tools\] stopped \(killed\) · context — · owns: none declared · ejected /);
 
 		// Broadcast skips the ejected member (no failed delivery); a direct message says it was ejected.
 		const all = await h.ask("ag_01", { type: "message", to: "all", message: "sync" });
-		assert.equal(all.text, "Queued for writer (ag_03): item i_1\nskipped (stopped): dev (ag_02, ejected)", "an ejected member is skipped, never a failure");
+		assert.equal(all.text, "Queued for writer (ag_03): item i_2\nQueued for monitor (ag_04): item i_3\nskipped (stopped): dev (ag_02, ejected)", "an ejected member is skipped, never a failure (i_1 is dev's report to the coordinator)");
 		for (const request of [{ type: "message", to: "dev", message: "x" }, { type: "steer", to: "ag_02", message: "x" }] as const) {
 			const direct = await h.ask("ag_01", request);
 			assert.equal(direct.ok, false);
 			assert.match(direct.text, /dev \(ag_02\) was ejected from team_01 at .*; it no longer receives team messages/);
 		}
-		assert.deepEqual(itemRows(h.memberOf("ag_03")!.dir), [["i_1", "message", "lead", "new"]], "queued for the busy writer; nothing for dev");
+		assert.deepEqual(itemRows(h.memberOf("ag_03")!.dir), [["i_2", "message", "coordinator", "new"]], "queued for the busy writer; nothing for dev");
 		// An ejected member cannot be resumed back into a seat.
 		await assert.rejects(h.call("agent_resume", { id: "ag_02" }), /Cannot resume ag_02: it was ejected from its team/);
 
 		// Fill every seat with finished members; the cap names the ejectable ones; an eject lets the next one in.
-		lead.settle(undefined, "done");
+		coordinator.settle(undefined, "done");
 		writer.settle(undefined, "done");
 		for (let batch = 0; batch < 3; batch++) {
-			const count = batch < 2 ? 8 : 6;
+			const count = batch < 2 ? 8 : 5;
 			await h.call("team_add", { team: "Crew", members: Array.from({ length: count }, (_, i) => ({ role: `r${batch}-${i}`, prompt: "p", wake: false })) });
 			for (const w of h.workers.slice(-count)) w.settle(undefined, "done");
 		}
 		assert.equal((await h.call("team_list", { team: "Crew" })).details.teams[0].members.length, 25, "24 seated plus one ejected");
 		const refused = await h.call("team_add", { team: "Crew", members: [{ role: "late", prompt: "p" }] }).then(() => "", (e: Error) => e.message);
 		assert.match(refused, /would exceed 24 members/);
-		assert.match(refused, /Ended members you can release with team_eject: ag_01 \(lead\), ag_03 \(writer\), ag_04 \(r0-0\)/);
+		assert.match(refused, /Ended members you can release with team_eject: ag_01 \(coordinator\), ag_03 \(writer\), ag_05 \(r0-0\)/);
 		assert.doesNotMatch(refused, /ag_02/, "an already-ejected member is not offered again");
 		await h.call("team_eject", { team: "Crew", member: "r0-0" });
 		const added = await h.call("team_add", { team: "Crew", members: [{ role: "late", prompt: "p", wake: false }] });
@@ -3331,27 +3372,98 @@ function coordinatedHarness(file?: unknown, opts: { claude?: boolean; sessionId?
 	};
 }
 
-test("team defaults: no file changes nothing; a malformed file turns them off visibly and is never rewritten", async () => {
+/** Both standing roles on the harness chat's own model (pi/test/model, effort high), as team_create says it. */
+const CHATS_OWN = (duty: string) => new RegExp(`^Sova added the ${duty} "${duty}" on pi/test/model/high \\(this chat's own model; the settings name no model for it\\)\\.$`, "m");
+/** A team created under `h` gets Sova's coordinator first and its monitor last, both on the chat's own model. */
+async function assertBothOnChatsOwn(h: ReturnType<typeof coordinatedHarness>, what: string) {
+	const r = await h.call("team_create", { name: "Plain", objective: "o", members: [{ role: "dev", prompt: "p" }] });
+	const text = r.content[0].text;
+	assert.match(text, CHATS_OWN("coordinator"), what);
+	assert.match(text, CHATS_OWN("monitor"), what);
+	assert.deepEqual(r.details.members.map((m: any) => [m.workerId, m.role, m.duty, m.backend, m.model]), [
+		["ag_01", "coordinator", "coordinator", "pi", "test/model"], ["ag_02", "dev", undefined, "pi", "test/model"], ["ag_03", "monitor", "monitor", "pi", "test/model"],
+	], what);
+	assert.deepEqual(h.workers.map((w: any) => [w.effort, w.wake]), [["high", true], ["high", false], ["high", false]], `${what}: only the coordinator wakes the parent`);
+	assert.equal(h.memberOf("ag_02")!.coordinated, true, what);
+	assert.ok(fs.statSync(h.handoffs()).isDirectory(), `${what}: the handover directory exists`);
+	// Sova's built-in values ride the standing instruction: the monitor's header has the thresholds.
+	assert.match(h.worker("ag_03").task, /at or over 60% of its context window: team_msg it with notice "wrap-up"/, what);
+	assert.match(h.worker("ag_03").task, /wake_nudge schedule delay "10m"/, what);
+	return text;
+}
+
+test("every team gets both standing roles on the chat's own model where the settings name none: no file, a malformed file (with its warning), Off, teams: null", async () => {
 	const none = coordinatedHarness();
 	try {
-		const r = await none.call("team_create", { name: "Plain", objective: "o", members: [{ role: "dev", prompt: "p" }] });
-		assert.doesNotMatch(r.content[0].text, /Team defaults/);
-		assert.match(r.content[0].text, /Standing roles: none; this chat's subagent settings give teams no coordinator or monitor\./);
-		assert.equal(none.workers.length, 1);
-		assert.equal(none.workers[0].wake, true);
-		assert.equal(none.memberOf("ag_01")!.coordinated, undefined);
-		assert.equal(fs.existsSync(path.join(none.agentDir, "sova")), false, "no handover directory for an uncoordinated team");
+		const text = await assertBothOnChatsOwn(none, "no file");
+		assert.doesNotMatch(text, /Warning|malformed|Standing roles|\boff\b/i);
 	} finally { await none.cleanup(); }
 	const bad = '{"version":1,"monitor":{"contextPct":"sixty"}}';
 	const h = coordinatedHarness(bad);
 	try {
-		const r = await h.call("team_create", { name: "Plain", objective: "o", members: [{ role: "dev", prompt: "p" }] });
-		assert.match(r.content[0].text, /^Created team_01 \(Plain\).*\nWarning: team defaults are OFF for this team — .*team-defaults\.json is malformed \(monitor\.contextPct: must be a number from 1 to 100\)/);
-		assert.equal(h.workers.length + h.created.length, 1, "no coordinator or monitor");
-		assert.equal(h.workers[0].wake, true);
+		const text = await assertBothOnChatsOwn(h, "a malformed file");
+		assert.match(text, /^Created team_01 \(Plain\).*\nWarning: .*team-defaults\.json is malformed \(monitor\.contextPct: must be a number from 1 to 100\), so this team's coordinator and monitor run on this chat's own model with Sova's built-in values\. Fix it in Sova's Settings; it is never overwritten here\./);
 		const added = await h.call("team_add", { team: "Plain", members: [{ role: "qa", prompt: "p" }] });
-		assert.match(added.content[0].text, /Warning: team defaults are OFF/);
+		assert.match(added.content[0].text, /Warning: .*is malformed/);
+		assert.equal(h.worker("ag_04").wake, false, "a member added later is routed to the coordinator too");
 		assert.equal(fs.readFileSync(path.join(h.agentDir, "team-defaults.json"), "utf8"), bad, "never overwritten");
+	} finally { await h.cleanup(); }
+	// Off, picked in the chat, even with a legacy file that names models: the chat's own model.
+	const off = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		off.ctx.sessionManager.getBranch = () => [{ type: "custom", customType: "subagent-profile", data: { v: 1, profile: "off" } }];
+		await assertBothOnChatsOwn(off, "Off");
+	} finally { await off.cleanup(); }
+	// A profile whose Teams section is null: the same.
+	const nul = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await nul.commands.get("team").handler("defaults", nul.ctx); // seeds the library from the legacy file
+		const libPath = path.join(nul.agentDir, "subagent-profiles.json");
+		const lib = JSON.parse(fs.readFileSync(libPath, "utf8"));
+		assert.ok(lib.profiles[0].teams, "seeded with the legacy roles");
+		lib.profiles[0].teams = null;
+		fs.writeFileSync(libPath, JSON.stringify(lib));
+		await assertBothOnChatsOwn(nul, "teams: null");
+	} finally { await nul.cleanup(); }
+});
+
+test("a saved coordinator.enabled / monitor.enabled false turns nothing off: both roles start on the named models", async () => {
+	const h = coordinatedHarness({ ...DEFAULTS_FILE, coordinator: { ...DEFAULTS_FILE.coordinator, enabled: false }, monitor: { ...DEFAULTS_FILE.monitor, enabled: false } });
+	try {
+		const r = await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "dev", prompt: "p" }] });
+		assert.match(r.content[0].text, /^Sova added the coordinator "coordinator" on claude-code\/claude-opus-5-5\/medium \(primary\)\.$/m);
+		assert.match(r.content[0].text, /^Sova added the monitor "monitor" on claude-code\/claude-haiku-4-5\/medium \(primary\)\.$/m);
+		assert.deepEqual(r.details.members.map((m: any) => m.duty), ["coordinator", undefined, "monitor"]);
+		assert.doesNotMatch(r.content[0].text, /\boff\b|Warning/);
+	} finally { await h.cleanup(); }
+});
+
+test("team_create refuses a lead mark and per-call standing-role options as unknown settings, before anything starts", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		await assert.rejects(h.call("team_create", { name: "Led", objective: "o", members: [{ role: "lead", prompt: "lead", orchestrator: true }, { role: "dev", prompt: "p" }] }),
+			/^Error: members\[0\] \(lead\): unknown setting "orchestrator"\. A member takes role, prompt, ownedPaths, backend, model, effort, tools, mcpServers, systemPrompt, cwd, wake, backendOptions, extensions\.$/);
+		await assert.rejects(h.call("team_create", { name: "Led", objective: "o", members: [{ role: "lead", prompt: "lead", orchestrator: false }] }), /unknown setting "orchestrator"/, "false is refused too: there is no such setting");
+		for (const key of ["coordinator", "monitor"])
+			for (const value of [false, true])
+				await assert.rejects(h.call("team_create", { name: "X", objective: "o", defaults: { [key]: value }, members: [{ role: "dev", prompt: "p" }] }),
+					new RegExp(`^Error: Unsupported team default ${key}; defaults accept backend, model, effort, backendOptions\\.$`));
+		await assert.rejects(h.call("team_create", { name: "Clash", objective: "o", members: [{ role: "Coordinator", prompt: "p" }] }),
+			/^Error: Role Coordinator is the role of the coordinator Sova adds to every team \(coordinator\); give that member another role\.$/);
+		await assert.rejects(h.call("team_create", { name: "Clash2", objective: "o", members: [{ role: "monitor", prompt: "p" }] }), /the role of the monitor Sova adds to every team \(monitor\)/);
+		assert.equal(h.workers.length + h.created.length, 0, "refused before anything starts");
+		assert.equal(h.appended.filter((e) => e.customType === "subagents-team-v1").length, 0);
+		// The same for team_add, on a team that exists.
+		await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "dev", prompt: "p" }] });
+		const started = h.workers.length + h.created.length;
+		await assert.rejects(h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "t", orchestrator: true }] }), /^Error: members\[0\] \(boss\): unknown setting "orchestrator"/);
+		await assert.rejects(h.call("team_add", { team: "Crew", members: [{ role: "MONITOR", prompt: "t" }] }), /the role of the monitor Sova adds to every team/);
+		assert.equal(h.workers.length + h.created.length, started);
+		// No per-call limit: 10 named members start with the coordinator and monitor Sova adds.
+		const big = await h.call("team_create", { name: "Big", objective: "o", members: Array.from({ length: 10 }, (_, i) => ({ role: `m${i}`, prompt: "p" })) });
+		assert.equal(big.details.members.length, 12);
+		assert.deepEqual(big.details.members.filter((m: any) => m.duty).map((m: any) => m.duty), ["coordinator", "monitor"]);
+		assert.equal(h.workers.length + h.created.length, started + 12);
 	} finally { await h.cleanup(); }
 });
 
@@ -3360,14 +3472,14 @@ test("team defaults synthesize a coordinator and a monitor in code, with role he
 	try {
 		const r = await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build", ownedPaths: ["src"] }, { role: "writer", prompt: "docs", backend: "claude-code", model: "claude-sonnet-5-5" }] });
 		const text = r.content[0].text;
-		assert.match(text, /Team defaults: coordinator coordinator added on claude-code\/claude-opus-5-5\/medium \(primary\)\./);
-		assert.match(text, /Team defaults: monitor monitor added on claude-code\/claude-haiku-4-5\/medium \(primary\)\./);
+		assert.match(text, /^Sova added the coordinator "coordinator" on claude-code\/claude-opus-5-5\/medium \(primary\)\.$/m);
+		assert.match(text, /^Sova added the monitor "monitor" on claude-code\/claude-haiku-4-5\/medium \(primary\)\.$/m);
 		const handoffs = path.join(h.agentDir, "sova", "teams", SESSION_ID, "team_01", "handoffs");
 		assert.match(text, new RegExp(`Handover notes: ${handoffs.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
 		assert.ok(fs.statSync(handoffs).isDirectory());
 		assert.match(text, /ag_01 {2}coordinator \(coordinator\) {2}running {2}backend=pi {2}model=claude-code-cli\/claude-opus-5-5 {2}effort=medium/);
 		assert.match(text, /ag_04 {2}monitor \(monitor\) .* wake=false/);
-		assert.match(text, /Coordinated team: only the coordinator reaches you/);
+		assert.match(text, /\nOnly the coordinator reaches you — /);
 		assert.deepEqual(r.details.members.map((m: any) => [m.workerId, m.role, m.duty]), [["ag_01", "coordinator", "coordinator"], ["ag_02", "dev", undefined], ["ag_03", "writer", undefined], ["ag_04", "monitor", "monitor"]]);
 		const entry = h.appended.find((e) => e.customType === "subagents-team-v1");
 		assert.deepEqual(entry.data.members.map((m: any) => [m.role, m.duty, m.orchestrator]), [["coordinator", "coordinator", true], ["dev", undefined, undefined], ["writer", undefined, undefined], ["monitor", "monitor", undefined]]);
@@ -3398,43 +3510,39 @@ test("team defaults synthesize a coordinator and a monitor in code, with role he
 		assert.match(list, /Coordinated \(team defaults\)/);
 		assert.match(list, /ag_01 coordinator \(coordinator\) \[pi\]/);
 		assert.match(list, /ag_04 monitor \(monitor\) \[pi\]/);
-		// team_add into a coordinated team: routed and wake:false; another orchestrator is refused.
+		// team_add: routed and wake:false.
 		await h.call("team_add", { team: "Crew", members: [{ role: "qa", prompt: "test", wake: true }] });
 		assert.equal(h.worker("ag_05").wake, false);
 		assert.equal(h.memberOf("ag_05")!.coordinated, true);
 		assert.match(h.worker("ag_05").task, /This team has a coordinator, coordinator/);
-		await assert.rejects(h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "t", orchestrator: true }] }), /^Error: Team team_01 has a coordinator, coordinator \(ag_01\), and only the coordinator is a team's orchestrator: boss can't join with orchestrator: true\. The coordinator hands a member, itself included, over to a successor with its own team_succeed step\. A member that only watches or reports needs no orchestrator mark: add boss without it\. The coordinator coordinator \(ag_01\) is live, so it hands over itself/);
+		// (A lead mark on team_add is refused as an unknown setting: see the refusal test above.)
 	} finally { await h.cleanup(); }
 });
 
-test("team defaults pick the fallback when the primary cannot run, and refuse the team when neither can", async () => {
+test("team defaults pick the fallback when the primary cannot run, else the chat's own model with a note; only a chat model the policy refuses refuses the team", async () => {
 	const withFallback = { ...DEFAULTS_FILE, coordinator: { ...DEFAULTS_FILE.coordinator, primary: { backend: "claude-code", model: "zai/glm-5.3" }, fallback: { backend: "pi", model: "test/model", effort: "high" } } };
 	const h = coordinatedHarness(withFallback);
 	try {
 		const r = await h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "dev", prompt: "p" }] });
-		assert.match(r.content[0].text, /coordinator coordinator added on pi\/test\/model\/high \(fallback; primary claude-code\/zai\/glm-5\.3 refused: Claude model must be a Claude model ID/);
+		assert.match(r.content[0].text, /^Sova added the coordinator "coordinator" on pi\/test\/model\/high \(fallback; primary claude-code\/zai\/glm-5\.3 refused: Claude model must be a Claude model ID/m);
 		assert.equal(h.worker("ag_01").backend, "pi");
 		assert.equal(h.memberOf("ag_01")!.duty, "coordinator");
 	} finally { await h.cleanup(); }
+	// Both tuples refused: the role runs on the chat's own model, and the result names both denials.
 	const neither = { ...withFallback, coordinator: { ...withFallback.coordinator, fallback: { backend: "pi", model: "nope/x" } } };
 	const n = coordinatedHarness(neither);
 	try {
-		await assert.rejects(
-			n.call("team_create", { name: "Crew", objective: "o", members: [{ role: "dev", prompt: "p" }] }),
-			/Team not created: team defaults require a coordinator \(coordinator\), but no configured model can run — primary claude-code\/zai\/glm-5\.3: Claude model must be a Claude model ID.*; fallback pi\/nope\/x: unknown model nope\/x .*defaults\.coordinator: false/,
-		);
-		assert.equal(n.workers.length + n.created.length, 0, "nothing started");
-		assert.equal(n.appended.filter((e) => e.customType === "subagents-team-v1").length, 0, "nothing recorded");
-		const ok = await n.call("team_create", { name: "Crew", objective: "o", defaults: { coordinator: false }, members: [{ role: "dev", prompt: "p" }] });
-		assert.match(ok.content[0].text, /^Created team_01 \(Crew\)/, "the name was never reserved; the escape hatch creates it plainly");
-		assert.match(ok.content[0].text, /coordinator turned off for this team \(defaults\.coordinator: false\); no coordinator or monitor/);
-		assert.equal(n.workers[0].wake, true);
+		const r = await n.call("team_create", { name: "Crew", objective: "o", members: [{ role: "dev", prompt: "p" }] });
+		assert.match(r.content[0].text, /^Sova added the coordinator "coordinator" on pi\/test\/model\/high \(this chat's own model; primary claude-code\/zai\/glm-5\.3: Claude model must be a Claude model ID[^;]*; fallback pi\/nope\/x: unknown model nope\/x[^)]*\)\.$/m);
+		assert.match(r.content[0].text, /^Sova added the monitor "monitor" on claude-code\/claude-haiku-4-5\/medium \(primary\)\.$/m, "the other role is untouched");
+		assert.deepEqual([n.worker("ag_01").backend, n.worker("ag_01").model, n.worker("ag_01").effort, n.memberOf("ag_01")!.duty], ["pi", "test/model", "high", "coordinator"]);
+		assert.doesNotMatch(r.content[0].text, /defaults\.coordinator|: false|Team not created/);
 	} finally { await n.cleanup(); }
 	// claude-code is built in: a harness with no registered backend still runs the Claude defaults.
 	const noBackend = coordinatedHarness(DEFAULTS_FILE, { claude: false });
 	try {
 		const r = await noBackend.call("team_create", { name: "Crew", objective: "o", members: [{ role: "dev", prompt: "p" }] });
-		assert.match(r.content[0].text, /coordinator coordinator added on claude-code\/claude-opus-5-5\/medium \(primary\)/);
+		assert.match(r.content[0].text, /Sova added the coordinator "coordinator" on claude-code\/claude-opus-5-5\/medium \(primary\)/);
 	} finally { await noBackend.cleanup(); }
 	// The model policy is a denial like any other.
 	const policyDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-td-policy-"));
@@ -3443,9 +3551,24 @@ test("team defaults pick the fallback when the primary cannot run, and refuse th
 	const p = coordinatedHarness({ ...DEFAULTS_FILE, monitor: { ...DEFAULTS_FILE.monitor, fallback: { backend: "pi", model: "test/model" } } });
 	try {
 		const r2 = await registerAgain(p, policyFile);
-		assert.match(r2, /monitor monitor added on pi\/test\/model \(fallback; primary claude-code\/claude-haiku-4-5\/medium refused: .*claude-haiku-4-5/);
-	} finally { await p.cleanup(); fs.rmSync(policyDir, { recursive: true, force: true }); }
+		assert.match(r2, /Sova added the monitor "monitor" on pi\/test\/model \(fallback; primary claude-code\/claude-haiku-4-5\/medium refused: .*claude-haiku-4-5/);
+	} finally { await p.cleanup(); }
+	// The policy refuses the chat's own model too: the team is refused as members on that model would be.
+	fs.writeFileSync(policyFile, JSON.stringify({ version: 1, disabledProviders: [], disabledModels: ["test/model"] }));
+	const own = coordinatedHarness();
+	try {
+		const refused = await registerAgain(own, policyFile).then(() => "", (e: Error) => e.message);
+		assert.match(refused, /test\/model/, "the policy's own denial of the chat's model");
+		assert.doesNotMatch(refused, /Sova added/);
+		assert.equal(own.appended.filter((e) => e.customType === "subagents-team-v1").length, 0);
+		const member = await (async () => {
+			const m = harness(eventBus(), { mailboxRoot: path.join(own.root, "mail3"), agentDir: own.agentDir, policyFile, setTimer: (() => ({})) as any });
+			try { return await m.call("agent_spawn", { prompt: "p" }).then(() => "", (e: Error) => e.message); } finally { await m.close(); }
+		})();
+		assert.ok(member && refused.includes(member.replace(/^Error: /, "").split("\n")[0]), `refused with a member's own denial: ${member} / ${refused}`);
+	} finally { await own.cleanup(); fs.rmSync(policyDir, { recursive: true, force: true }); }
 });
+
 /** A second manager on the same agent dir with a policy file: returns its team_create text. */
 async function registerAgain(p: ReturnType<typeof coordinatedHarness>, policyFile: string): Promise<string> {
 	const h = harness(eventBus(), { mailboxRoot: path.join(p.root, "mail2"), mailboxPollMs: 10, agentDir: p.agentDir, policyFile, setTimer: (() => ({})) as any });
@@ -3454,34 +3577,6 @@ async function registerAgain(p: ReturnType<typeof coordinatedHarness>, policyFil
 		return (await h.call("team_create", { name: "Policy", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
 	} finally { await h.close(); }
 }
-
-test("team defaults: the caller's orchestrator is the coordinator; conflicts are refused; no per-call limit; monitor escape hatch", async () => {
-	const h = coordinatedHarness(DEFAULTS_FILE);
-	try {
-		const r = await h.call("team_create", { name: "Led", objective: "o", members: [{ role: "lead", prompt: "lead", orchestrator: true }, { role: "dev", prompt: "p" }] });
-		assert.match(r.content[0].text, /Team defaults: orchestrator lead is this team's coordinator\./);
-		assert.doesNotMatch(r.content[0].text, /coordinator coordinator added/);
-		assert.deepEqual(r.details.members.map((m: any) => [m.role, m.duty]), [["lead", "coordinator"], ["dev", undefined], ["monitor", "monitor"]]);
-		assert.deepEqual([h.worker("ag_01").wake, h.worker("ag_02").wake], [true, false]);
-		await assert.rejects(h.call("team_create", { name: "Two", objective: "o", members: [{ role: "a", prompt: "p", orchestrator: true }, { role: "b", prompt: "p", orchestrator: true }] }), /at most one member may have orchestrator: true \(got a, b\)/);
-		await assert.rejects(h.call("team_create", { name: "Clash", objective: "o", members: [{ role: "Coordinator", prompt: "p" }] }), /Role Coordinator is the team-defaults coordinator's role \(coordinator\); rename that member, or pass defaults\.coordinator: false/);
-		await assert.rejects(h.call("team_create", { name: "Clash2", objective: "o", members: [{ role: "monitor", prompt: "p" }] }), /team-defaults monitor's role/);
-		// No per-call limit: 10 named members start with the coordinator and monitor Sova adds.
-		const before = h.workers.length + h.created.length;
-		const big = await h.call("team_create", { name: "Big", objective: "o", members: Array.from({ length: 10 }, (_, i) => ({ role: `m${i}`, prompt: "p" })) });
-		assert.equal(big.details.members.length, 12);
-		assert.deepEqual(big.details.members.filter((m: any) => m.duty).map((m: any) => m.duty), ["coordinator", "monitor"]);
-		assert.equal(h.workers.length + h.created.length, before + 12);
-		assert.match(big.content[0].text, /Standing roles — coordinator: "coordinator", added by Sova; monitor: "monitor", added by Sova\./);
-		const noMonitor = await h.call("team_create", { name: "Quiet", objective: "o", defaults: { monitor: false }, members: [{ role: "dev", prompt: "p" }] });
-		assert.match(noMonitor.content[0].text, /monitor turned off for this team \(defaults\.monitor: false\)/);
-		assert.match(noMonitor.content[0].text, /Standing roles — coordinator: "coordinator", added by Sova; monitor: off for this team \(defaults\.monitor: false\)\./);
-		assert.deepEqual(noMonitor.details.members.map((m: any) => m.role), ["coordinator", "dev"]);
-		const workers = h.workers.length + h.created.length;
-		await assert.rejects(h.call("team_create", { name: "X", objective: "o", defaults: { coordinator: "no" }, members: [{ role: "dev", prompt: "p" }] }), /^Error: defaults\.coordinator must be true or false\.$/);
-		assert.equal(h.workers.length + h.created.length, workers, "refused before anything starts");
-	} finally { await h.cleanup(); }
-});
 
 test("routing: a member's report to the coordinator names the jobs it still runs", async () => {
 	const { JOBS_DIR_ENV, writeJob } = await import("./job-store.ts");
@@ -3928,6 +4023,45 @@ test("N7: with main-thread follow-ups queued on the old member, its successor st
 	} finally { await h.cleanup(); }
 });
 
+test("with no Teams settings (a profile that configures none) every reader uses Sova's built-in values: the roster's thresholds, the usage pause, a monitor's successor's standing instruction", async () => {
+	const h = coordinatedHarness(); // no legacy file: the seeded profile's Teams section is null
+	try {
+		await h.commands.get("team").handler("defaults", h.ctx);
+		assert.equal(JSON.parse(fs.readFileSync(path.join(h.agentDir, "subagent-profiles.json"), "utf8")).profiles[0].teams, null, "the settings name no Teams section");
+		fs.mkdirSync(path.join(h.agentDir, "cache"));
+		const reset = new Date(Math.ceil((Date.now() + 3 * 3600_000) / 1000) * 1000).toISOString();
+		fs.writeFileSync(path.join(h.agentDir, "cache", "usage-status.json"), JSON.stringify({
+			fetchedAt: Date.now(), nextFetchAt: Date.now(), errors: {}, claude: { state: "ok", limits: [{ label: "5h", pct: 92, resetsAt: reset }] },
+		}));
+		// A member on Claude, so the team spends from a provider the cache reads.
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build", backend: "claude-code" }] });
+		const coordinator = h.worker("ag_01");
+		// The roster gives the coordinator and the monitor the built-in thresholds, never "absent".
+		for (const id of ["ag_01", "ag_03"]) {
+			const roster = (await h.ask(id, { type: "roster" })).text;
+			assert.match(roster, /Thresholds \(team defaults, read now\): wrap-up at 60% context · check every 10 min · usage pause when no login of a provider has headroom \(a non-weekly window at 90%, a 7d window at 100%\), resume 5 min after the reset/, id);
+			assert.ok(roster.includes(`claude 5h: 92%, resets ${reset} — AT/OVER the 90% pause threshold`), roster);
+			assert.doesNotMatch(roster, /absent|keep the thresholds in your assignment/i, id);
+		}
+		// The usage pause fires: the pause holds the claude window, so an early resume is refused.
+		assert.equal((await h.ask("ag_03", { type: "message", to: "coordinator", message: "claude 5h at 92%", notice: "pause" })).ok, true);
+		await waitFor(() => coordinator.lastSteer?.message.includes("PAUSE:"), "the pause notice listed");
+		const early = await h.ask("ag_03", { type: "message", to: "coordinator", message: "resume", notice: "resume" });
+		assert.equal(early.ok, false);
+		assert.match(early.text, new RegExp(`^Resume refused: claude 5h paused this team and resets at ${esc(reset)}; resume is allowed from .* \\(the reset plus 5 min\\)`));
+		// A monitor's successor keeps the standing instruction, with the built-in thresholds.
+		const r = await h.ask("ag_01", { type: "succeed", to: "monitor" });
+		assert.equal(r.ok, true, r.text);
+		await waitFor(() => h.worker("ag_04"), "the monitor's successor");
+		const next = h.worker("ag_04");
+		assert.equal(next.name, "monitor-2");
+		assert.deepEqual([h.memberOf("ag_04")!.duty, next.model, next.effort], ["monitor", "test/model", "high"], "still on the chat's own model");
+		assert.match(next.task, /at or over 60% of its context window: team_msg it with notice "wrap-up"/);
+		assert.match(next.task, /wake_nudge schedule delay "10m" and end your turn/);
+		assert.match(next.task, /plus 5 min/);
+	} finally { await h.cleanup(); }
+});
+
 test("N9: a resume notice is refused until the pausing window's reset plus the resume margin", async () => {
 	const h = coordinatedHarness(DEFAULTS_FILE);
 	try {
@@ -4134,17 +4268,12 @@ test("the coordinator sees every teammate's assignment: in its header, in team_r
 		assert.match(text, /their team_ask questions go to the coordinator, not to you: only the coordinator's team_ask .* and team_report \(informational\) reach the main thread/);
 		// Q6: never stop the coordinator or the monitor while a member works.
 		assert.match(text, /Do not stop \(agent_kill\) the coordinator or the monitor while any member is still working: .* Once no member is working, stopping them is fine\./);
-		assert.ok(h.tools.get("team_create").promptGuidelines.some((g: string) => /Never stop a coordinated team's coordinator or monitor while any of its members is still working/.test(g)));
+		assert.ok(h.tools.get("team_create").promptGuidelines.some((g: string) => /Never stop a team's coordinator or monitor while any of its members is still working/.test(g)));
 		// N6: team_list says the same, not "questions arrive here".
 		const listed = (await h.call("team_list")).content[0].text;
 		assert.doesNotMatch(listed, /questions arrive here/);
 		assert.match(listed, /their team_ask questions go to the coordinator, not to you/);
 		assert.match(listed, /Coordinated \(team defaults\): members report to the coordinator; only it reaches you\. Do not stop \(agent_kill\) the coordinator or the monitor while any member is still working/);
-		const plain = coordinatedHarness();
-		try {
-			assert.match((await plain.call("team_create", { name: "Plain", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text, /questions arrive here as team-question messages/, "an uncoordinated team keeps the generic paragraph");
-			assert.match((await plain.call("team_list")).content[0].text, /questions arrive here as team-question messages/);
-		} finally { await plain.cleanup(); }
 		const coordinator = h.worker("ag_01"), dev = h.worker("ag_02"), monitor = h.worker("ag_04");
 		// B1: the header quotes each teammate's task; long ones are cut with a marker.
 		assert.match(coordinator.task, /- dev: src\n {2}Assigned task \(from the main thread\):\n {2}\| Write c\.txt with the parser notes\.\n- writer: none declared\n {2}Assigned task \(from the main thread\):\n {2}\| Write the docs\.\n {2}| d{1484}\n {2}\| \[… 516 more chars; ask writer with team_msg for the rest\]\n- monitor \(monitor\): none declared\n/);
@@ -4359,12 +4488,22 @@ test("members default: member's own model, then the call's, then the profile's; 
 	} finally { await h.cleanup(); }
 });
 
-test("/team defaults prints the effective defaults, off, or the malformed reason, and sends nothing", async () => {
-	for (const [file, expected] of [[undefined, /^Team defaults: off \(the subagent profile "My setup" configures none\)/], ["{", /is malformed[\s\S]*not valid JSON/], [DEFAULTS_FILE, /^Team defaults \(.*subagent-profiles\.json \(subagent profile "My setup"\)\):\n {2}Coordinator: on — role "coordinator"/]] as const) {
+test("/team defaults prints both roles and the model each uses (named, or the chat's own), with the malformed reason, never 'off', and sends nothing", async () => {
+	const ownModel = /\n {2}Every team gets this coordinator and monitor from Sova; the chat names only the workers\.\n {2}Coordinator: role "coordinator", this chat's own model \(pi · test\/model · high\)\n {2}Monitor: role "monitor", this chat's own model \(pi · test\/model · high\)\n {4}every 10 min · wrap-up at 60% context · usage pause at 90%, resume 5 min after reset\n/;
+	const offPick = [{ type: "custom", customType: "subagent-profile", data: { v: 1, profile: "off" } }];
+	for (const [file, branch, expected] of [
+		[undefined, undefined, [/^Team defaults: the subagent profile "My setup" configures none, so both roles use this chat's own model with Sova's built-in values:/, ownModel]],
+		["{", undefined, [/is malformed[\s\S]*not valid JSON/, ownModel]],
+		[DEFAULTS_FILE, offPick, [/^Team defaults: [^\n]*Off[^\n]*, so both roles use this chat's own model with Sova's built-in values:/, ownModel]],
+		[DEFAULTS_FILE, undefined, [/^Team defaults \(.*subagent-profiles\.json \(subagent profile "My setup"\)\):\n {2}Every team gets this coordinator and monitor from Sova/, /\n {2}Coordinator: role "coordinator", primary claude-code · claude-opus-5-5 · medium, fallback none\n {2}Monitor: role "monitor", primary claude-code · claude-haiku-4-5 · medium, fallback none\n/]],
+	] as const) {
 		const h = coordinatedHarness(file);
+		if (branch) h.ctx.sessionManager.getBranch = () => branch;
 		try {
 			await h.commands.get("team").handler("defaults", h.ctx);
-			assert.match(h.notices.at(-1)[0], expected);
+			const text = h.notices.at(-1)[0];
+			for (const re of expected) assert.match(text, re);
+			assert.doesNotMatch(text, /\boff\b|no file at/, "never says a role is off, nor claims a missing legacy file for a profile");
 			assert.equal(h.messages.length, 0);
 			assert.equal(h.workers.length, 0);
 		} finally { await h.cleanup(); }
@@ -4372,7 +4511,7 @@ test("/team defaults prints the effective defaults, off, or the malformed reason
 	const h = coordinatedHarness(DEFAULTS_FILE);
 	try {
 		await h.commands.get("team").handler("ship the parser", h.ctx);
-		assert.match(h.messages[0][0].content, /- Team defaults are on: team_create adds a coordinator "coordinator" \(claude-code\/claude-opus-5-5\)[\s\S]*a monitor "monitor"/);
+		assert.match(h.messages[0][0].content, /- team_create adds the coordinator "coordinator" on claude-code\/claude-opus-5-5\/medium and the monitor "monitor" on claude-code\/claude-haiku-4-5\/medium, which watches context and usage\. Do not plan those roles yourself, and name no member with either role\./);
 	} finally { await h.cleanup(); }
 });
 
@@ -4627,7 +4766,8 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 			{ role: "a", prompt: "p", backend: "claude-code", model: "claude-sonnet-5-5" },
 			{ role: "b", prompt: "p", backend: "pi" },
 		] });
-		const [a, b] = h.workers.slice(-2);
+		const [a, b, monitor] = ["a", "b", "monitor"].map((role) => h.workers.find((w: any) => w.name === role));
+		assert.ok(!monitor.extensions.includes(SPEC_WORKER_EXTENSION), "Sova's monitor writes nothing: no census hook");
 		assert.ok(a.systemPrompt.endsWith(brief), "a claude member");
 		assert.deepEqual(a.extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, SPEC_WORKER_EXTENSION, MEMBER_EXTENSION, CLAUDE_CODE_EXTENSION]);
 		assert.ok(b.systemPrompt.endsWith(brief), "a pi member");
@@ -4825,13 +4965,13 @@ test("through pi's own argument check: members and agents as JSON strings are re
 		assert.equal(r.length, 9);
 		for (const one of r) assert.doesNotMatch(one.text, /schema is false|must be object|must be array/, "never pi's schema words");
 		assert.equal(r[0].isError, false, r[0].text);
-		assert.match(r[0].text, /^Created team_01 \(Text\) with 2 member\(s\)/);
+		assert.match(r[0].text, /^Created team_01 \(Text\) with 4 member\(s\)/, "the two named and Sova's coordinator and monitor");
 		assert.equal(r[1].isError, true);
 		assert.match(r[1].text, /^members\[0\] \(a\): count is not a member setting; a member is one role\. Add one member per role instead/);
 		assert.equal(r[2].isError, true);
-		assert.match(r[2].text, /^members\[0\] \(a\): unknown setting "colour"\. A member takes role, prompt, ownedPaths, orchestrator, backend, model, effort, tools, mcpServers, systemPrompt, cwd, wake, backendOptions, extensions\.$/);
+		assert.match(r[2].text, /^members\[0\] \(a\): unknown setting "colour"\. A member takes role, prompt, ownedPaths, backend, model, effort, tools, mcpServers, systemPrompt, cwd, wake, backendOptions, extensions\.$/);
 		assert.equal(r[3].isError, true);
-		assert.match(r[3].text, /^Unsupported team default tools; defaults accept backend, model, effort, backendOptions, coordinator and monitor\. Put tools on each member that needs it\.$/);
+		assert.match(r[3].text, /^Unsupported team default tools; defaults accept backend, model, effort, backendOptions\. Put tools on each member that needs it\.$/);
 		assert.equal(r[4].isError, true);
 		assert.match(r[4].text, /^members must be a list of member objects, \[\{"role": "\.\.\.", "prompt": "\.\.\."\}, \.\.\.\], even for one member\.$/);
 		assert.equal(r[5].isError, false, r[5].text);
@@ -4839,11 +4979,11 @@ test("through pi's own argument check: members and agents as JSON strings are re
 		assert.match(r[6].text, /^effort is set beside agents and differently in agents\[0\]: set it in one place/);
 		assert.equal(r[7].isError, false, r[7].text);
 		assert.equal(r[8].isError, false, r[8].text);
-		// Team Text (2), the shared-settings pair, the JSON-string agent, the shared-prompt pair; nothing for the refusals.
-		assert.equal(s.workers.length, 7);
-		assert.deepEqual(s.workers.slice(2, 4).map((w: any) => [w.task, w.effort, w.tools]), [["x", "low", ["read"]], ["y", "low", ["read"]]]);
-		assert.equal(s.workers[4].task, "z");
-		assert.deepEqual(s.workers.slice(5).map((w: any) => w.task), ["shared", "shared"]);
+		// Team Text (2 named + coordinator + monitor), the shared-settings pair, the JSON-string agent, the shared-prompt pair; nothing for the refusals.
+		assert.equal(s.workers.length, 9);
+		assert.deepEqual(s.workers.slice(4, 6).map((w: any) => [w.task, w.effort, w.tools]), [["x", "low", ["read"]], ["y", "low", ["read"]]]);
+		assert.equal(s.workers[6].task, "z");
+		assert.deepEqual(s.workers.slice(7).map((w: any) => w.task), ["shared", "shared"]);
 	} finally { await s.close(); }
 });
 
@@ -4884,8 +5024,8 @@ test("lenient reads stay intent-preserving: every conflict and every missing rol
 		await h.call("agent_spawn", { agents: [{ prompt: "x", effort: "low" }, { prompt: "y" }], effort: "low", wake: false });
 		assert.deepEqual(h.workers.map((w) => [w.task, w.effort, w.wake]), [["x", "low", false], ["y", "low", false]]);
 		const team = await h.call("team_create", { name: "Text", objective: "o", members: JSON.stringify([{ role: "a", prompt: "pa", ownedPaths: ["src"] }]) });
-		assert.equal(team.details.members.length, 1);
-		assert.match(team.content[0].text, /ag_03 {2}a {2}running .*owns=src/);
+		assert.deepEqual(team.details.members.map((m: any) => m.role), ["coordinator", "a", "monitor"]);
+		assert.match(team.content[0].text, /ag_04 {2}a {2}running .*owns=src/);
 	} finally { await h.close(); }
 });
 
@@ -4897,7 +5037,7 @@ test("running limit: 24 per chat, idle workers included; the refusal names the n
 		h.worker("ag_02").settle();
 		const tail = "Stop 1 with agent_kill first, then retry. Idle (waiting) workers you could stop: ag_01 (agent-1), ag_02 (agent-2). Sova stops nothing itself.";
 		await assert.rejects(h.call("team_create", { name: "Crew", objective: "o", members: [{ role: "a", prompt: "p" }, { role: "b", prompt: "p" }, { role: "c", prompt: "p" }] }), (err: Error) => {
-			assert.equal(err.message, `This team needs 5 workers running: the 3 members you named + the coordinator "coordinator" and monitor "monitor" Sova adds from this chat's team defaults. A chat runs at most 24 workers at once (idle ones, and a team's coordinator and monitor, count); 20 are live now, so 4 more fit. ${tail}`);
+			assert.equal(err.message, `This team needs 5 workers running: the 3 members you named + the coordinator "coordinator" and monitor "monitor" Sova adds to every team. A chat runs at most 24 workers at once (idle ones, and a team's coordinator and monitor, count); 20 are live now, so 4 more fit. ${tail}`);
 			return true;
 		});
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", count: 5 }), (err: Error) => {
@@ -4926,7 +5066,7 @@ test("seats: team_create past 24 members, the standing roles included, is refuse
 	try {
 		await assert.rejects(
 			h.call("team_create", { name: "Huge", objective: "o", members: Array.from({ length: 23 }, (_, i) => ({ role: `m${i}`, prompt: "p" })) }),
-			/^Error: A team seats 24 members, and this one would have 25: the 23 you named \+ the coordinator "coordinator" and monitor "monitor" Sova adds from this chat's team defaults\. Name at most 22 members/,
+			/^Error: A team seats 24 members, and this one would have 25: the 23 you named \+ the coordinator "coordinator" and monitor "monitor" Sova adds to every team\. Name at most 22 members; once one ends, team_eject frees its seat for team_add\.$/,
 		);
 		assert.equal(h.workers.length + h.created.length, 0);
 		const full = await h.call("team_create", { name: "Full", objective: "o", members: Array.from({ length: 22 }, (_, i) => ({ role: `m${i}`, prompt: "p" })) });
@@ -4941,14 +5081,15 @@ test("team members take extensions by agent_spawn's rules, beside their team too
 		const ext = path.join(dir, "web.ts");
 		fs.writeFileSync(ext, "export default () => {};\n");
 		const r = await h.call("team_create", { name: "Web", objective: "o", members: [{ role: "researcher", prompt: "p", extensions: [ext] }, { role: "plain", prompt: "p" }] });
-		assert.ok(h.workers[0].extensions.includes(MEMBER_EXTENSION), "still its team tools");
-		assert.ok(h.workers[0].extensions.includes(ext), "and the extension it was given");
-		assert.ok(!h.workers[1].extensions.includes(ext));
-		assert.match(r.content[0].text, new RegExp(`ag_01 {2}researcher .*extensions=${esc(ext)}`));
+		const [coordinator, researcher, plain, monitor] = h.workers;
+		assert.ok(researcher.extensions.includes(MEMBER_EXTENSION), "still its team tools");
+		assert.ok(researcher.extensions.includes(ext), "and the extension it was given");
+		for (const other of [coordinator, plain, monitor]) assert.ok(!other.extensions.includes(ext), `${other.name} only has its own`);
+		assert.match(r.content[0].text, new RegExp(`ag_02 {2}researcher .*extensions=${esc(ext)}`));
 		const self = path.join(path.dirname(new URL(import.meta.url).pathname), "index.ts");
 		await assert.rejects(h.call("team_add", { team: "Web", members: [{ role: "nested", prompt: "p", extensions: [self] }] }), /do not nest/);
 		await assert.rejects(h.call("team_add", { team: "Web", members: [{ role: "uninstalled", prompt: "p", extensions: ["npm:definitely-not-installed-xyz"] }] }), /isn't installed/);
-		assert.equal(h.workers.length, 2);
+		assert.equal(h.workers.length, 4);
 	} finally { await h.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -4960,10 +5101,7 @@ test("the main chat's team_succeed replaces an ended coordinator or monitor, onl
 		await assert.rejects(h.call("team_succeed", { team: "Crew", role: "coordinator" }), /^Error: coordinator \(ag_01\) is team_01's live coordinator\. A live coordinator hands over itself with its own team_succeed step \(tell it with agent_steer if it should\), so two coordinators are never live at once\./);
 		await assert.rejects(h.call("team_succeed", { team: "Crew", role: "dev" }), /^Error: dev is not team_01's coordinator or monitor: the main chat replaces only those, once none is live\. The coordinator coordinator \(ag_01\) succeeds other members/);
 		await assert.rejects(h.call("team_succeed", { team: "Crew", role: "monitor" }), /monitor \(ag_03\) is team_01's live monitor/);
-		// A second orchestrator is refused while the coordinator is live, saying how a handover works.
-		await assert.rejects(h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "p", orchestrator: true }] }), /only the coordinator is a team's orchestrator[\s\S]*A member that only watches or reports needs no orchestrator mark[\s\S]*The coordinator coordinator \(ag_01\) is live, so it hands over itself/);
 		coordinator.exit();
-		await assert.rejects(h.call("team_add", { team: "Crew", members: [{ role: "boss", prompt: "p", orchestrator: true }] }), /No coordinator is live now: the main chat can start a replacement with team_succeed \{ team: "team_01", role: "coordinator" \}\.$/);
 		const r = await h.call("team_succeed", { team: "team_01", role: "coordinator" });
 		assert.match(r.content[0].text, /^Started coordinator-2 \(ag_04\) to succeed coordinator \(ag_01\) on pi\/claude-code-cli\/claude-opus-5-5\/medium\. coordinator has already ended; the successor works from the handover note\. The note may be missing \(coordinator had already ended without writing it\); the successor was told so\. It routes team_01 from now on: members report to it, and only it reaches you\.$/);
 		const successor = h.worker("ag_04");
@@ -5000,7 +5138,12 @@ test("every limit is said up front: team_create, team_add and agent_spawn descri
 			assert.match(d, /A team seats 24 members, the coordinator and monitor Sova adds included/, name);
 			assert.match(d, /This chat runs at most 24 workers at once, idle ones and every team member \(coordinator and monitor included\) counted/, name);
 			assert.match(d, /members must be a list of member objects/, name);
-			assert.match(d, /count, fork and agentType are refused/, name);
+			assert.match(d, /count, fork, agentType and any other setting are refused/, name);
+			// Every team gets Sova's coordinator and monitor: the chat names only the workers, and is told the cost.
+			assert.match(d, /Every team gets a coordinator and a monitor from Sova/, name);
+			assert.match(d, /2 more workers than/, name);
+			assert.match(d, /small independent jobs are cheaper as separate workers/, name);
+			assert.doesNotMatch(d, /orchestrator|defaults\.(coordinator|monitor)|\boff\b/, `${name}: no lead mark and no way to leave a role out`);
 			assert.match(d, /Only the coordinator hands a member over to a successor \(its team_succeed\); once no coordinator is live, the main chat can start a replacement with team_succeed\./, name);
 		}
 		const spawn = h.tools.get("agent_spawn");
@@ -5043,16 +5186,16 @@ test("the declared schema lets members and agents be a list or a string (as a ho
 test("team_inbox is served by the parent, the inbox's only writer: list, open, done, sent; a mark racing a new delivery keeps the new item", async () => {
 	const h = teamHarness();
 	try {
-		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "lead", prompt: "coordinate", orchestrator: true }, { role: "dev", prompt: "build" }] });
-		const leadDir = h.memberOf("ag_01")!.dir, devDir = h.memberOf("ag_02")!.dir;
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const leadDir = h.memberOf("ag_01")!.dir /* Sova's coordinator */, devDir = h.memberOf("ag_02")!.dir;
 		await h.ask("ag_01", { type: "message", to: "dev", subject: "Task 1", message: "Write the parser." });
 		await h.ask("ag_01", { type: "message", to: "dev", message: "FYI\nthe schema moved." });
 		const list = await h.ask("ag_02", { type: "inbox" });
 		assert.equal(list.ok, true);
-		assert.match(list.text, /^2 open items:\n- i_1 \[new\] message from lead — Task 1 \(\d\d:\d\d:\d\d\)\n- i_2 \[new\] message from lead — FYI \(\d\d:\d\d:\d\d\)\nteam_inbox open <ids>/);
+		assert.match(list.text, /^2 open items:\n- i_1 \[new\] message from coordinator — Task 1 \(\d\d:\d\d:\d\d\)\n- i_2 \[new\] message from coordinator — FYI \(\d\d:\d\d:\d\d\)\nteam_inbox open <ids>/);
 		const opened = await h.ask("ag_02", { type: "inbox", action: "open", ids: ["i_1"] });
-		assert.match(opened.text, /^i_1 message from lead \(ag_01\) · [^\n]+ · read\nSubject: Task 1\nWrite the parser\.\n\n\(2 open left\)$/, "open ends with the count of open items left");
-		// The race: dev marks both addressed while lead's next message is being delivered, in the same poll.
+		assert.match(opened.text, /^i_1 message from coordinator \(ag_01\) · [^\n]+ · read\nSubject: Task 1\nWrite the parser\.\n\n\(2 open left\)$/, "open ends with the count of open items left");
+		// The race: dev marks both addressed while the coordinator's next message is being delivered, in the same poll.
 		const doneId = requestId(), msgId = requestId();
 		writeRequest(devDir, { version: 1, id: doneId, at: Date.now(), type: "inbox", action: "done", ids: ["i_1", "i_2"], note: "handled" });
 		writeRequest(leadDir, { version: 1, id: msgId, at: Date.now(), type: "message", to: "dev", message: "A new task" });
@@ -5070,7 +5213,7 @@ test("team_inbox is served by the parent, the inbox's only writer: list, open, d
 		const bad = await h.ask("ag_02", { type: "inbox", action: "done", ids: ["i_9"] });
 		assert.equal(bad.ok, false);
 		assert.match(bad.text, /No item i_9/);
-		assert.equal((await h.ask("ag_01", { type: "inbox", action: "done", ids: ["i_3"] })).ok, false, "lead cannot mark dev's item");
+		assert.equal((await h.ask("ag_01", { type: "inbox", action: "done", ids: ["i_3"] })).ok, false, "the coordinator cannot mark dev's item");
 		// The roster carries each member's open count; over 50, the queued answer says so.
 		assert.match((await h.ask("ag_01", { type: "roster" })).text, /ag_02 dev \[pi, has team tools\] working \(running\) · context — · 1 open item · owns/);
 		let last = "";
@@ -5426,7 +5569,7 @@ test("inbox zero: the roster shows each member's unanswered question and its wai
 test("inbox zero: a seen item the member did not close closes automatically when its turn ends; a reply closes any item; needsReply is a question that waits", async () => {
 	const h = teamHarness();
 	try {
-		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "lead", prompt: "coordinate", orchestrator: true }, { role: "dev", prompt: "build" }] });
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] /* after Sova's coordinator, ag_01 */ });
 		const dev = h.workers.find((w: any) => w.id === "ag_02");
 		const devDir = h.memberOf("ag_02")!.dir;
 		const idOf = (r: { text: string }) => /item (i_\w+)/.exec(r.text)![1];
@@ -5440,13 +5583,13 @@ test("inbox zero: a seen item the member did not close closes automatically when
 		dev.settle();
 		await waitFor(() => dev.steerCount === 1, "the wake for what still waits");
 		const wake = dev.lastSteer.message;
-		assert.match(wake, new RegExp(`^\\[Team inbox: 2 new — [^\\n]*\\]\\n- ${ask} message from lead — Ping me when the parser builds\\n- ${q} question from lead — Which port\\?\\n`), "subjects only");
+		assert.match(wake, new RegExp(`^\\[Team inbox: 2 new — [^\\n]*\\]\\n- ${ask} message from coordinator — Ping me when the parser builds\\n- ${q} question from coordinator — Which port\\?\\n`), "subjects only");
 		assert.match(wake, new RegExp(`\\[Open your inbox first: team_inbox open ${ask} ${q} `), "an idle member's turn starts with the gate");
 		assert.deepEqual([item(fyi).status, item(fyi).closedBy, item(fyi).note], ["addressed", "auto", "closed automatically: seen, not closed by dev"]);
 		assert.doesNotMatch(wake, /Still open/);
 		// The member works its next turn: it opens both, answers one with replyTo, leaves the question.
 		await h.ask("ag_02", { type: "inbox", action: "open", ids: [ask, q] });
-		const reply = await h.ask("ag_02", { type: "message", to: "lead", message: "It builds.", replyTo: ask });
+		const reply = await h.ask("ag_02", { type: "message", to: "coordinator", message: "It builds.", replyTo: ask });
 		assert.equal(reply.ok, true, reply.text);
 		assert.deepEqual([item(ask).status, item(ask).closedBy], ["addressed", "reply"], "a reply closes any item, not only a question");
 		assert.match(item(ask).note!, /^answered in i_\w+$/);
@@ -5500,7 +5643,7 @@ test("runtime fallback: a monitor out of its monthly Ollama usage moves to its f
 	const h = fallbackHarness();
 	try {
 		const created = await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
-		assert.match(created.content[0].text, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/);
+		assert.match(created.content[0].text, /Sova added the monitor "monitor" on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/);
 		const monitor = h.worker("ag_03");
 		assert.equal(monitor.model, "ollama-cloud/deepseek-v4.1-flash");
 		failTurn(monitor, OLLAMA_MONTHLY);
@@ -5661,7 +5804,7 @@ test("runtime fallback: the out primary survives a reload; new teams, the member
 	try {
 		await r.start();
 		const created = (await r.call("team_create", { name: "Next", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
-		assert.match(created, /monitor monitor added on claude-code\/claude-sonnet-5-5\/low \(fallback; primary pi\/ollama-cloud\/deepseek-v4\.1-flash\/low refused: it ran out at runtime .* ago \(hit its monthly usage limit\); it is tried again from /);
+		assert.match(created, /Sova added the monitor "monitor" on claude-code\/claude-sonnet-5-5\/low \(fallback; primary pi\/ollama-cloud\/deepseek-v4\.1-flash\/low refused: it ran out at runtime .* ago \(hit its monthly usage limit\); it is tried again from /);
 		// The members default is a tuple check too.
 		await r.commands.get("team").handler("defaults", r.ctx);
 		const libPath = path.join(r.agentDir, "subagent-profiles.json");
@@ -5680,7 +5823,7 @@ test("runtime fallback: the out primary survives a reload; new teams, the member
 	try {
 		await later.start();
 		const created = (await later.call("team_create", { name: "Later", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
-		assert.match(created, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/, "after the hour the primary is tried again");
+		assert.match(created, /Sova added the monitor "monitor" on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/, "after the hour the primary is tried again");
 	} finally { await later.cleanup(); }
 });
 
@@ -5697,7 +5840,7 @@ test("runtime fallback: a streak of failures that aren't about usage never marks
 		await waitFor(() => monitor.status === "killed", "the monitor stopped after 3 failures");
 		assert.deepEqual(deadEntries(h), [], "no chat-wide mark");
 		const next = (await h.call("team_create", { name: "Next", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
-		assert.match(next, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/);
+		assert.match(next, /Sova added the monitor "monitor" on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/);
 	} finally { await h.cleanup(); }
 	// With a fallback: the streak switches this team only; a new team starts on the primary.
 	const f = fallbackHarness();
@@ -5709,7 +5852,7 @@ test("runtime fallback: a streak of failures that aren't about usage never marks
 		assert.equal(f.worker("ag_04").model, "claude-code-cli/claude-sonnet-5-5", "this team moved to its fallback");
 		assert.deepEqual(deadEntries(f), [], "no chat-wide mark");
 		const next = (await f.call("team_create", { name: "Next", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
-		assert.match(next, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/);
+		assert.match(next, /Sova added the monitor "monitor" on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/);
 		// This team stays on its fallback: the monitor's replacement skips the primary.
 		f.worker("ag_04").exit();
 		const replaced = (await f.call("team_succeed", { team: "Crew", role: "monitor-2" })).content[0].text;
@@ -5726,7 +5869,7 @@ test("runtime fallback: once the hour is over a new team retries the primary, wh
 		await waitFor(() => h.worker("ag_04"), "the switch");
 		Date.now = () => realNow() + 61 * 60_000;
 		const next = (await h.call("team_create", { name: "Next", objective: "o", members: [{ role: "dev", prompt: "p" }] })).content[0].text;
-		assert.match(next, /monitor monitor added on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/, "the mark expired");
+		assert.match(next, /Sova added the monitor "monitor" on pi\/ollama-cloud\/deepseek-v4\.1-flash\/low \(primary\)/, "the mark expired");
 		h.worker("ag_04").exit();
 		const replaced = (await h.call("team_succeed", { team: "Crew", role: "monitor-2" })).content[0].text;
 		assert.match(replaced, /^Started monitor-3 \(ag_\d+\) to succeed monitor-2 \(ag_04\) on pi\/claude-code-cli\/claude-sonnet-5-5\/low/, "the switched team keeps its fallback");

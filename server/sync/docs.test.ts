@@ -651,3 +651,16 @@ test("kept copies: a replaced settings document is kept (newest 10); a replaced 
     stopAll([a!, b!]);
   }
 });
+
+test("a profile's two halves sync as the two documents they always were, and the default files never sync (§mesh.sync/profile-documents)", () => {
+  const specs = settingsDocs("/a", "/a/sova");
+  const byPath = new Map(specs.map((s) => [s.path, s]));
+  // The session half only with peers granted sessions (it carries first messages); the library with every settings peer, per profile.
+  assert.deepEqual(byPath.get("/a/sova/session-profiles.json")?.needs, ["sessions"]);
+  assert.equal(byPath.get("/a/subagent-profiles.json")?.needs, undefined);
+  assert.equal(byPath.get("/a/subagent-profiles.json")?.merge, "profiles");
+  // This computer's default profile, and the per-device default helpers, are its own.
+  assert.equal(byPath.has("/a/sova/default-profile.json"), false);
+  assert.equal(byPath.has("/a/subagent-profiles-default.json"), false);
+  assert.equal(specs.some((s) => /default-profile|subagent-profiles-default/.test(s.path)), false);
+});

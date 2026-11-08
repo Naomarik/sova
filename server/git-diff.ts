@@ -205,12 +205,14 @@ export function scopeFromQuery(q: (name: string) => string | undefined, all: (na
     const project = q("project");
     const entry = q("entry");
     const branch = q("branch");
+    const review = q("review");
     if (!project || project.length > 4096 || /[\x00-\x1f\x7f]/.test(project)) throw new DiffError("Invalid ?project= (a project id)");
-    if (!!entry === !!branch) throw new DiffError("Name exactly one of ?entry= (a queue entry) or ?branch=");
+    if ([entry, branch, review].filter(Boolean).length !== 1) throw new DiffError("Name exactly one of ?entry= (a queue entry), ?branch= or ?review=");
+    if (review && !/^[\w-]{1,64}:[\w-]{1,64}$/.test(review)) throw new DiffError("Invalid ?review= (a review record id)");
     if (entry && !/^[\w-]{1,64}$/.test(entry)) throw new DiffError("Invalid ?entry= (a queue entry id)");
     if (branch && (branch.length > 255 || branch.startsWith("-") || !/^[\w./+@-]+$/.test(branch) || branch.includes(".."))) throw new DiffError("Invalid ?branch= (a branch name)");
     const paths = pathsFromQuery(all("paths"));
-    return { kind, project, ...(entry ? { entry } : { branch: branch! }), ...(paths ? { paths } : {}) };
+    return { kind, project, ...(entry ? { entry } : review ? { review } : { branch: branch! }), ...(paths ? { paths } : {}) };
   }
   if (!sessionPath) throw new DiffError("Missing ?session= (a session path)");
   if (!path) throw new DiffError("Missing ?path=");
@@ -277,7 +279,10 @@ export type QueueSubject =
   /** An entry in or through the line, not landed: its pinned commit. */
   | { kind: "entry"; root: string; target: string; branch: string; commit: string }
   /** A landed entry: the target before it (`from`) to the landing commit. */
-  | { kind: "landed"; root: string; target: string; branch: string; sha: string; from: string };
+  | { kind: "landed"; root: string; target: string; branch: string; sha: string; from: string }
+  /** A blocking review's record while its commit is kept: the commit the reviewer read against the target it was
+   *  merged onto (once it is gone, queueSubjectOf answers the branch as it is now instead). */
+  | { kind: "reviewed"; root: string; target: string; branch: string; tip: string; base: string };
 
 /** What a session file names: folders it knows, its tracked worktrees (for baseBranch) and its
     merge cards (the only merges a merge scope may name). */
@@ -346,12 +351,12 @@ export interface DiffDeps {
   /** ORIGINS_DEADLINE_MS, smaller for tests. */
   originsDeadlineMs?: number;
   /** A queue scope's subject, from the merge queue's records; null: no such project, entry or ready branch. */
-  queueSubject?: (project: string, sel: { entry?: string; branch?: string }) => Promise<QueueSubject | null>;
+  queueSubject?: (project: string, sel: { entry?: string; branch?: string; review?: string }) => Promise<QueueSubject | null>;
   /** The branch the project holding repository `top` lands into (its merge queue's target); null: none known. */
   landingTarget?: (top: string) => Promise<string | null>;
 }
 
-async function queueSubjectOf(project: string, sel: { entry?: string; branch?: string }): Promise<QueueSubject | null> {
+async function queueSubjectOf(project: string, sel: { entry?: string; branch?: string; review?: string }): Promise<QueueSubject | null> {
   return (await import("./merge-queue/wire")).queueSubjectOf(project, sel);
 }
 async function landingTargetOf(top: string): Promise<string | null> {
@@ -553,11 +558,17 @@ export class GitDiffs {
 
   /** A queue scope: both sides from the queue's records, never a ref from the client. */
   private async resolveQueue(scope: Extract<DiffScope, { kind: "queue" }>): Promise<Resolved> {
-    const subject = await this.queueSubjectFn(scope.project, { ...(scope.entry ? { entry: scope.entry } : {}), ...(scope.branch ? { branch: scope.branch } : {}) }).catch((err) => {
+    const subject = await this.queueSubjectFn(scope.project, { ...(scope.entry ? { entry: scope.entry } : {}), ...(scope.branch ? { branch: scope.branch } : {}), ...(scope.review ? { review: scope.review } : {}) }).catch((err) => {
       if (err instanceof DiffError) throw err;
       return null;
     });
-    if (!subject) throw new DiffError(scope.entry ? "No such entry in that project's merge queue" : "That branch is not checked out in a worktree of that project", 404);
+    if (!subject) throw new DiffError(scope.review ? "No such review in that project's merge queue" : scope.entry ? "No such entry in that project's merge queue" : "That branch is not checked out in a worktree of that project", 404);
+    if (subject.kind === "reviewed") {
+      const top = canonical(subject.root);
+      if (!(await isDir(top))) throw new DiffError("That folder does not exist", 404);
+      const [oid, from] = [await this.commitOid(top, subject.tip), await this.commitOid(top, subject.base)];
+      return { scope, top, base: { label: `${subject.target} at ${from.slice(0, 7)}`, oid: from, treeish: from }, head: { label: `${subject.branch} as reviewed (${oid.slice(0, 7)})`, oid, treeish: oid } };
+    }
     if (subject.kind === "landed") {
       const top = canonical(subject.root);
       if (!(await isDir(top))) throw new DiffError("That folder does not exist", 404);

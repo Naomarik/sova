@@ -380,6 +380,12 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
 function cardEstimate(card: CardInfo): number {
   // The merge queue's own card (Sova draws it): a head, a facts line, a note or two and its buttons.
   if (card.type === "sova.merge-queue") return card.state === "superseded" ? 40 : 150;
+  // A blocking review's card: a head, its summary, a row per finding, the state line and its links.
+  if (card.type === "sova.merge-review") {
+    if (card.state === "superseded") return 40;
+    const n = (card.data as { review?: { findings?: unknown[] } } | null)?.review?.findings?.length ?? 1;
+    return 160 + 56 * n;
+  }
   if (card.draws === "view") return (card.view?.height ?? 160) + (card.by.kind === "agent" ? 0 : 24) + (card.answer ? 28 : 0);
   const c = checkCardData(card.draws, card.data);
   return (c.ok ? dataCardHeight(card.draws, c.data) : 56) + (card.by.kind === "agent" ? 0 : 24) + (card.answer ? 28 : 0);

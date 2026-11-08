@@ -169,7 +169,6 @@
    "general": "appearance",
    "models": "models",
    "accounts": "models",
-   "subagents": "workers",
    "alignment": "modes",
    "profiles": "profiles",
    "overseer": "overseers",

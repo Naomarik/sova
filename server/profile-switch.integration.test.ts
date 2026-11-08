@@ -271,18 +271,14 @@ describe("a profile switch, all at once (§chat.profiles/switch)", () => {
     assert.equal(chat.chatProfileState().applied, said, "no new line");
   });
 
-  test("a profile without helpers takes the default's: a chat with no pick keeps following the default; one with a pick is pinned to it", async () => {
+  test("a profile without helpers pins this computer's default profile's helpers", async () => {
     const free = await openChat();
     const r = await switchChatProfile(free.path, "solo");
     assert.ok(r.ok, JSON.stringify(r));
     assert.equal(free.chat.harness.model()?.ref, "openai/gpt-5.5");
-    assert.equal(free.chat.subagentPick, undefined, "no pick: it follows this computer's default");
-    assert.equal(free.chat.subagentProfileInfo().current.id, "house");
-    const pinned = await openChat();
-    assert.ok((await switchChatProfile(pinned.path, "fast")).ok);
-    assert.ok((await switchChatProfile(pinned.path, "solo")).ok);
-    assert.equal(pinned.chat.subagentPick, "house", "a pick can't be cleared, so the default is pinned");
-    assert.equal(pinned.chat.chatProfileState().current.id, "solo");
+    // No default-profile.json yet: the default is the saved default subagent profile's row ("house", library-only).
+    assert.equal(free.chat.subagentPick, "house");
+    assert.equal(free.chat.chatProfileState().current.id, "solo");
   });
 
   test("all or nothing: when a write after the model fails, the model and effort are put back", async () => {

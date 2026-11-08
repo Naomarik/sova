@@ -17,7 +17,7 @@ const OFF_TARGET: ProfileSwitchTarget = { id: "off", key: "sova:default", name: 
 
 /**
  * The switch a joined profile makes, for a chat in `cwd`: its This chat model and effort (absent: the chat
- * keeps its own) and its helpers (absent: this computer's default's helpers), or why it can't be used.
+ * keeps its own) and its helpers (none of its own: this computer's default profile's), or why it can't be used.
  */
 export async function switchTargetOf(idOrKey: string, cwd: string): Promise<ProfileSwitchTarget | { status: 400 | 404; error: string; name?: string }> {
   if (idOrKey === "off" || idOrKey === "sova:default") return OFF_TARGET;
@@ -27,20 +27,21 @@ export async function switchTargetOf(idOrKey: string, cwd: string): Promise<Prof
   const name = row.name;
   if (row.approval === "needed") return { status: 400, error: "Approve it in Settings first.", name };
   if (row.linkMissing) return { status: 400, error: row.linkMissing, name };
-  // A profile with no helpers gives the chat this computer's default helpers: no pick of its own, so a
-  // chat that follows the default keeps following it (the chat pins the default only over a pick it has).
+  // A profile with no helpers gives the chat this computer's default profile's helpers, pinned ("off" when the
+  // default is Off or links none), as a pick on the empty screen does (§chat.profiles/applying).
   const helpersOf = row.libraryId ? row : (await resolveDefaultProfile(cwd)).row;
-  const subagents = row.libraryId;
-  const model = row.session?.model ?? undefined;
-  const thinking = row.session?.thinking;
+  const subagents = row.libraryId ?? helpersOf.library?.id ?? "off";
+  const { session: starts } = row;
+  const model = starts?.model ?? undefined;
+  const thinking = starts?.thinking;
   return {
     id: row.id,
     key: row.key,
     name,
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),
-    ...(subagents ? { subagents } : {}),
-    helpers: helpersOf.libraryId && helpersOf.libraryId !== "off" ? helpersOf.helperRoles : 0,
+    subagents,
+    helpers: subagents === "off" ? 0 : helpersOf.helperRoles,
   };
 }
 

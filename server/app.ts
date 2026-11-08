@@ -101,7 +101,7 @@ import { switchMode } from "./mode";
 import { configureSession } from "./sessions-configure";
 import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
 import { registerProfileSwitchRoutes } from "./profile-switch";
-import { registerProfileEditorRoutes } from "./profile-editor-routes";
+import { makeChatDefault, registerProfileEditorRoutes } from "./profile-editor-routes";
 import { startOnDefault } from "./default-start";
 import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
 import type { ProfilePick } from "./profile-sources";
@@ -1445,10 +1445,19 @@ export function buildApp(deps: AppDeps) {
     if (request.kind === "saveDefault") {
       // A chat's own mode is what is saved, so there has to be a chat: no path is a 400, not a write
       // of whatever the file already says.
-      if (path === null) return c.json({ error: "saveDefault needs ?path=: it saves that chat's own mode" }, 400);
-      const got = await chatFor(path);
-      if ("error" in got) return c.json({ error: got.error }, got.status);
-      return modeRefusal(c, () => got.chat.saveModeDefault());
+      if (path === null) return c.json({ error: "saveDefault needs ?path=: it saves that chat's own profile" }, 400);
+      const summary = await getSessionSummary(path);
+      if (!summary) return c.json({ error: "Session file not found" }, 404);
+      if (summary.overseer) return c.json({ error: "The Overseer is always in normal mode." }, 409);
+      if (summary.projectOverseer || summary.baton || summary.org || summary.workerSession || summary.queueChat) return c.json({ error: "This chat's profile can't be the default." }, 409);
+      // Make {name} the Default (§chat.profiles/default): this chat's profile becomes this computer's
+      // default, with its strict flag and memory type; the older default files are kept written.
+      try {
+        const defaultProfile = await makeChatDefault(path);
+        return c.json({ ...modeInfo(readMode()), defaultProfile });
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 409);
+      }
     }
     if (request.kind === "approveHooks") {
       // Hooks run with no one watching, so only you approve them, here (§chat.mode-menu/project-mode-hooks).

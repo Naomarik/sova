@@ -7,7 +7,7 @@ import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type C
 import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORKER_HOST_EVENT, type WorkerHostAnnouncement } from "../pi-config/extensions/subagents/worker-host.ts";
 import { prepareOwnerArea } from "../shared/decisions";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
-import { CHAT_PROFILE_ENTRY, normalizeChatProfile, type ChatProfileEntryData, type ChatProfileState, type ProfileSwitchResult, type ProfileSwitchTarget } from "../shared/profile-switch";
+import { type ChatProfileEntryData, type ChatProfileState, type ProfileSwitchResult, type ProfileSwitchTarget } from "../shared/profile-switch";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
 import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, ProjectModeApproval, ProjectModeApprovalNeeded, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, ShellRefusal, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
@@ -118,7 +118,7 @@ import { JOB_CARDS_ENV } from "./background-jobs";
 const JOB_CARDS_EXTENSION = fileURLToPath(new URL("../pi-config/extensions/wake-nudge.ts", import.meta.url));
 import { TOUR_TOOLS } from "../shared/tour";
 import { tourTools } from "./tours/tools";
-import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, PROFILE_ENTRY, searchToolsFor, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
+import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, searchToolsFor, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { QUEUE_OPEN_TOOL, queuePushExtension, topicStore } from "./topics";
@@ -2703,23 +2703,22 @@ class ChatSession {
   /** The profile the branch names: the newest of a switch's hidden entry and the profile entry the chat started
       with (one that picked no profile is Off); undefined when it names none. */
   private profileOnBranch(): { id: string; key?: string; name: string; model?: string; thinking?: string } | undefined {
-    const branch = this.extensionBranch();
-    for (let i = branch.length - 1; i >= 0; i--) {
-      const e = branch[i]!;
-      if (e.type !== "custom") continue;
-      if (e.customType === CHAT_PROFILE_ENTRY) {
-        const d = normalizeChatProfile(e.data);
-        if (d) return { id: d.id, ...(d.key ? { key: d.key } : {}), name: d.name, ...(d.model ? { model: d.model } : {}), ...(d.thinking ? { thinking: d.thinking } : {}) };
-      } else if (e.customType === PROFILE_ENTRY) {
-        const data = e.data as ProfileEntryData | undefined;
-        if (!data || data.v !== 1) continue;
-        const p = data.profile;
-        if (p === null) return OFF_ON;
-        if (p && typeof p.id === "string") return { id: p.id, key: keyOf(p), name: p.label, ...(p.model ? { model: p.model } : {}), ...(p.thinking ? { thinking: p.thinking } : {}) };
-      }
+    const view = this.harness.state.branch();
+    const named = view.latest(CHAT_PROFILE);
+    const started = view.latest(PROFILE);
+    if (!named && !started) return undefined;
+    // The newer of the two on the branch wins (a pick on the empty screen after a switch, or the reverse).
+    const at = new Map(this.harness.branch().map((e, i) => [e.id, i]));
+    const pos = (r: { id: EntryId | null } | null) => (r?.id ? (at.get(r.id) ?? -1) : -1);
+    if (named && (!started || pos(named) >= pos(started))) {
+      const d = named.data;
+      return { id: d.id, ...(d.key ? { key: d.key } : {}), name: d.name, ...(d.model ? { model: d.model } : {}), ...(d.thinking ? { thinking: d.thinking } : {}) };
     }
-    return undefined;
+    const p = started!.data.profile;
+    if (!p) return OFF_ON; // a pick of no profile: Off
+    return { id: p.id, key: keyOf(p), name: p.label, ...(p.model ? { model: p.model } : {}), ...(p.thinking ? { thinking: p.thinking } : {}) };
   }
+
 
   /** What the menu, the thread's line and the limit row read (the `chat_profile` message). */
   chatProfileState(): ChatProfileState {

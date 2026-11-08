@@ -5,7 +5,8 @@
  * server and the client; imports only the pure form rules.
  */
 import { check } from "./form-rules";
-import { PROFILE_LABEL_RULE } from "./profile-limits";
+import { PROFILE_READ_RULE } from "./profile-limits";
+import type { SubagentProfile } from "./subagent-profiles";
 
 /** Removable capabilities, in the order every list shows them. */
 export const REMOVABLE = ["shell", "edit", "workers", "web", "worktrees", "timers", "mcp"] as const;
@@ -191,8 +192,103 @@ export interface ProfilesListing {
   /** This device's subagent profiles ("off" first), for the cards' captions. `models`: how many
       distinct primary models it names (0 for "off"); absent from an older server. */
   subagents?: { id: string; name: string; footprint: string; models?: number }[];
+  /** The one list (§chat.profiles/joined): Off first, then Yours by name, Built in, This project.
+      Absent from an older server. */
+  joined?: JoinedProfile[];
+  /** This computer's default profile (§chat.profiles/default). */
+  defaultProfile?: DefaultProfileInfo;
+  /** The helper library's file, and why it can't be read. */
+  library?: { file: string; error?: string };
+  /** What a New Profile's helpers start from when Off is open (the legacy files' setup). */
+  template?: Omit<SubagentProfile, "id" | "name">;
   error?: string;
 }
+
+/** The row kinds of the joined list (§chat.profiles/joined). */
+export type JoinedKind = "off" | "pair" | "session" | "library" | "builtin" | "project";
+
+/** One profile of the joined list: a session profile and the library profile it links, as one. */
+export interface JoinedProfile {
+  /** Unique in the list: "sova:default" (Off), "user:<id>" (pair or unlinked session profile),
+      "library:<id>" (a library profile no session profile links), "project:<root>#<id>", "sova:<id>". */
+  key: string;
+  /** What the Overseer and the default file take: "off", the session profile's id, or the library id. */
+  id: string;
+  kind: JoinedKind;
+  group: "yours" | "project" | "builtin";
+  name: string;
+  /** The When a Chat Starts half and the chat's own model and effort; absent for Off and library-only. */
+  session?: ListedProfile;
+  /** The library id this profile's Models part is: the session half's link, or the row's own. */
+  libraryId?: string;
+  /** The helper half; absent when unlinked, or when the link names a profile this device lacks. */
+  library?: SubagentProfile;
+  /** Why the helper rows are empty though the session half links some (the library half isn't here). */
+  linkMissing?: string;
+  /** The names of the other profiles that link the same library half. */
+  alsoUsedBy?: string[];
+  /** The distinct models of the Models part, the chat's own first: "Opus 5.5 + gpt-6.1-sol". */
+  footprint: string;
+  /** Every provider its models spend, both parts, fallbacks included ("claude" for Claude Code); [] for Off. */
+  providers: string[];
+  /** How many helper roles its library half sets (the {n} in "its {n} helpers"). */
+  helperRoles: number;
+  isDefault?: true;
+  hidden?: true;
+  unusable?: string;
+  approval?: "needed" | "approved";
+  running?: { id: string; path: string; title: string };
+}
+
+/** This computer's default profile, as the listing shows it (§chat.profiles/default). */
+export interface DefaultProfileInfo {
+  /** The joined row's key ("sova:default" for Off). */
+  key: string;
+  /** The row's id ("off" for Off). */
+  id: string;
+  name: string;
+  /** false: no default-profile.json yet, so it is read from the older default files. */
+  chosen: boolean;
+  /** Why it reads as Off (a default naming no profile here). */
+  note?: string;
+}
+
+/** Off's footprint (§chat.profiles/joined), and a library-only profile's This chat row. */
+export const KEEPS_OWN_MODEL = "Keeps the chat's own model";
+/** Off's key and id in the joined list. */
+export const OFF_KEY = "sova:default";
+export const OFF_ID = "off";
+
+/** The When a Chat Starts part as the editor saves it (POST /api/profiles/mine). */
+export interface ProfileStarts {
+  icon?: ProfileIcon;
+  description?: string;
+  remove: Removable[];
+  grant: Grantable[];
+  singleton: boolean;
+  limits: ProfileLimits;
+  mode?: "normal" | "delegate";
+  minorModes?: ProfileMinorMode[];
+  firstMessage?: string;
+  overseerMayStart: boolean;
+}
+
+/** POST /api/profiles/mine: save one of yours, both halves (a field left out stays as it is). */
+export interface ProfileSaveRequest {
+  cwd?: string;
+  /** The joined row's key; absent: a new profile. */
+  key?: string;
+  name: string;
+  starts?: ProfileStarts;
+  /** The chat's own model and effort; null clears it. */
+  model?: string | null;
+  thinking?: ThinkingLevel | null;
+  /** The helper half: a library profile without its id and name. */
+  helpers?: Omit<SubagentProfile, "id" | "name">;
+}
+
+/** What every /api/profiles/mine* and /api/profiles/default write answers. */
+export type ProfileWriteAnswer = ProfilesListing & { savedKey?: string };
 
 /** The profile a session keeps: the whole profile plus where it came from. */
 export type SnapshotProfile = Profile & { source?: ProfileSource; project?: string; projectName?: string; builtin?: boolean; custom?: boolean };
@@ -358,7 +454,7 @@ export function parseProfile(raw: unknown): Profile | { error: string } {
   if (!o || typeof o !== "object") return { error: "A profile must be an object." };
   const id = typeof o.id === "string" ? o.id.trim() : "";
   if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(id)) return { error: `Profile id "${id}" is not valid (lowercase letters, digits and dashes).` };
-  const named = check(PROFILE_LABEL_RULE, typeof o.label === "string" ? o.label : "");
+  const named = check(PROFILE_READ_RULE, typeof o.label === "string" ? o.label : "");
   if (!named.ok) return { error: named.message };
   const label = named.value as string;
   const caps = normalizeCaps(Array.isArray(o.remove) ? (o.remove as string[]) : [], Array.isArray(o.grant) ? (o.grant as string[]) : []);

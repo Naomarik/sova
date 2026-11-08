@@ -61,7 +61,8 @@ writeFileSync(modeFile, MODE_DEFAULT);
 const { restoreActive, MODE_ENTRY_TYPE } = await import("../pi-config/extensions/mode/state.ts");
 const { acquireChat, disposeAllChats, disposeHeldChat } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
-const { applyProfile, profilesListing, saveCurrentProfile } = await import("./session-profile-routes");
+const { applyProfile, profilesListing } = await import("./session-profile-routes");
+const { saveCurrentFor } = await import("./profile-editor-routes");
 const { PROFILE_ENTRY } = await import("../shared/profiles");
 const { addWebSession } = await import("./web-sessions");
 const { markOwned } = await import("./write-guard");
@@ -313,39 +314,53 @@ describe("My settings comes back as you left it (§chat.profiles/applying)", () 
 });
 
 describe("Save Current As Profile", () => {
-  test("adds the session's effort and own subagent pick to yours, keeping the others exactly as written", async () => {
+  // No model list here: every worker is "not verified", a warning, never a refusal.
+  const sources = { piModels: async () => { throw new Error("offline"); }, claudeModels: async () => { throw new Error("offline"); }, policy: () => ({ version: 1 as const, disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }) };
+  const library = () => (JSON.parse(readFileSync(join(agentDir, "subagent-profiles.json"), "utf8")) as { profiles: { id: string; name: string }[] }).profiles;
+
+  test("adds the session's effort and a copy of its helpers to yours, both halves linked, keeping the others exactly as written", async () => {
     const path = makeSession();
     assert.deepEqual(await applyProfile(path, { ...yours, id: "subs" }), { ok: true });
     const before = JSON.parse(readFileSync(yoursFile, "utf8")) as typeof YOURS;
-    const r = await saveCurrentProfile(path, "My Claude");
+    const libBefore = library();
+    const r = await saveCurrentFor(path, "My Claude", sources);
     assert.ok(r.ok, !r.ok ? r.error : "");
     const file = JSON.parse(readFileSync(yoursFile, "utf8")) as { version: number; profiles: Record<string, unknown>[] };
     assert.deepEqual(file.profiles.slice(0, -1), before.profiles, "the others untouched");
     const added = file.profiles.at(-1)!;
-    assert.deepEqual({ id: added.id, label: added.label, icon: added.icon, subagents: added.subagents }, { id: "my-claude", label: "My Claude", icon: "wrench", subagents: "claude-subs" });
+    assert.deepEqual({ id: added.id, label: added.label, icon: added.icon, subagents: added.subagents }, { id: "my-claude", label: "My Claude", icon: "wrench", subagents: "my-claude" });
     assert.ok(typeof added.thinking === "string");
-    assert.ok(r.ok && r.listing.yours.some((p) => p.id === "my-claude"));
+    // The helpers are a copy of the chat's ("claude-subs"), under the profile's name; the library's others are kept.
+    const lib = library();
+    assert.deepEqual(lib.slice(0, -1), libBefore);
+    const copy = lib.at(-1)!;
+    assert.deepEqual({ id: copy.id, name: copy.name }, { id: "my-claude", name: "My Claude" });
+    const source = libBefore.find((l) => l.id === "claude-subs")!;
+    assert.deepEqual({ ...copy, id: source.id, name: source.name }, source);
     // A name already yours is refused, and nothing is written.
     const text = readFileSync(yoursFile, "utf8");
-    const dup = await saveCurrentProfile(path, "my claude");
+    const dup = await saveCurrentFor(path, "my claude", sources);
     assert.deepEqual(dup.ok ? null : dup.error, `You already have a profile named "my claude". Pick another name.`);
     assert.equal(readFileSync(yoursFile, "utf8"), text);
   });
 
-  test("a session with no pick of its own saves no subagents; a malformed file is refused and never overwritten", async () => {
+  test("a session on the device default copies the default's helpers; a malformed file is refused and never overwritten", async () => {
     const path = makeSession();
-    const r = await saveCurrentProfile(path, "Follows default");
+    const r = await saveCurrentFor(path, "Follows default", sources);
     assert.ok(r.ok, !r.ok ? r.error : "");
     const added = (JSON.parse(readFileSync(yoursFile, "utf8")) as { profiles: Record<string, unknown>[] }).profiles.at(-1)!;
     assert.equal(added.label, "Follows default");
-    assert.equal("subagents" in added, false);
+    assert.equal(added.subagents, "follows-default");
+    assert.equal(library().at(-1)!.name, "Follows default");
     const good = readFileSync(yoursFile, "utf8");
+    const libText = readFileSync(join(agentDir, "subagent-profiles.json"), "utf8");
     writeFileSync(yoursFile, "{ not json");
     try {
-      const bad = await saveCurrentProfile(path, "Another");
+      const bad = await saveCurrentFor(path, "Another", sources);
       assert.equal(bad.ok, false);
       assert.match(!bad.ok ? bad.error : "", /can't be read .* so nothing was saved/);
       assert.equal(readFileSync(yoursFile, "utf8"), "{ not json");
+      assert.equal(readFileSync(join(agentDir, "subagent-profiles.json"), "utf8"), libText, "the library half isn't written either");
     } finally {
       writeFileSync(yoursFile, good);
     }

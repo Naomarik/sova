@@ -258,7 +258,11 @@ export function ProfileModelsPart(props: {
     <div class="profile-model-row" classList={{ "is-open": !!more && isOpen(key) }} id={`${props.idPrefix}-row-${key}`}>
       <Show
         when={more}
-        fallback={<span class="profile-model-label">{label}</span>}
+        fallback={
+          <span class="profile-model-label">
+            <span class="profile-model-label-text">{label}</span>
+          </span>
+        }
       >
         <button
           type="button"
@@ -268,7 +272,7 @@ export function ProfileModelsPart(props: {
           onClick={() => setOpen(key, !isOpen(key))}
         >
           <Icon name="chevron-right" small class="icon-twist" />
-          {label}
+          <span class="profile-model-label-text">{label}</span>
         </button>
       </Show>
       <Show when={!more || !isOpen(key)}>
@@ -342,8 +346,15 @@ export function ProfileModelsPart(props: {
       </>
     ));
 
+  /** Set All To's models: Claude Code's by name first, then pi's by id (less pi's own copy of the Claude Code provider). */
   const setAllOptions = () =>
-    (props.options?.backends ?? []).flatMap((b) => (b.models ?? []).filter((m) => !m.denied).map((m) => ({ value: pickValue(b.id, m.id), label: b.id === "claude-code" ? `${m.name} · ${b.label}` : m.id })));
+    [...(props.options?.backends ?? [])]
+      .sort((a, b) => (a.id === "claude-code" ? -1 : b.id === "claude-code" ? 1 : 0))
+      .flatMap((b) =>
+        (b.models ?? [])
+          .filter((m) => !m.denied && !(b.id === "pi" && m.id.startsWith(`${CLAUDE_PROVIDER}/`)))
+          .map((m) => ({ value: pickValue(b.id, m.id), label: b.id === "claude-code" ? m.name : m.id })),
+      );
 
   const delegateRows = (x: () => SubagentProfile) => (
     <For each={DELEGATE}>

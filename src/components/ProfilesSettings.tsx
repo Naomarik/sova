@@ -10,7 +10,7 @@ import { claudeDriftNotes, modelEfforts } from "../lib/delegate-form";
 import { replacedNotice } from "../lib/subagent-replaced";
 import { teamsSeed } from "../lib/subagent-editor";
 import { clearProfilesRequest, clearSettingsSection, profilesRequest, settingsSection, subagentSettingsPath, type ProfilesPart } from "../lib/settings-nav";
-import { profilesDraft as store, profilesListing, setProfilesCwd, takeListing } from "../lib/profiles-draft";
+import { lastSavedKeys, profilesDraft as store, profilesListing, setProfilesCwd, takeListing } from "../lib/profiles-draft";
 import {
   alsoUsedBy,
   helpersOf,
@@ -78,6 +78,13 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
   const [busy, setBusy] = createSignal<string | null>(null);
   const [actionError, setActionError] = createSignal<string | null>(null);
 
+  // A new profile, once saved, keeps its editor open under its saved key.
+  createEffect(
+    on(lastSavedKeys, (keys) => {
+      const to = keys.get(untrack(picked) ?? "");
+      if (to) setPicked(to);
+    }),
+  );
   const allRows = (): ListRow[] => (groups() ? [...groups()!.yours, ...groups()!.project, ...groups()!.builtin] : []);
   /** The open profile: the one picked, else the one asked for, else the chat's, else the default, else Off. */
   const current = (): ListRow | undefined => {

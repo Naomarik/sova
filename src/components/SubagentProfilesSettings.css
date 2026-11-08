@@ -154,9 +154,12 @@ div.subagent-editor-flush { display: flex; flex-direction: column; gap: var(--sp
   gap: var(--space-5);
   align-items: start;
 }
-@container profiles-settings (min-width: 35rem) {
-  .profiles-layout { grid-template-columns: minmax(0, 13rem) minmax(0, 1fr); }
+/* Settings' panel is about 516px of content on a desktop: the list takes 11rem beside the editor, as
+   the approved screens do. A phone's sheet (or any narrower panel) puts the editor under the list. */
+@container profiles-settings (min-width: 30rem) {
+  .profiles-layout { grid-template-columns: minmax(0, 11rem) minmax(0, 1fr); gap: var(--space-4); }
 }
+.profiles-editor-pane { container: profiles-editor / inline-size; min-width: 0; }
 .profiles-list-pane { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
 .profiles-list-pane > .profiles-group-head { margin: var(--space-3) 0 var(--space-1); }
 .profiles-picks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -213,26 +216,31 @@ div.subagent-editor-flush { display: flex; flex-direction: column; gap: var(--sp
 /* Label, model, effort: the model takes the room, the effort is sized to "medium". */
 .profile-model-row {
   display: grid;
-  grid-template-columns: 7.5rem minmax(0, 1fr);
+  grid-template-columns: 6.5rem minmax(0, 1fr);
   align-items: center;
   column-gap: var(--space-2);
   row-gap: var(--space-2);
   min-width: 0;
 }
+.profile-model-label .icon { flex: none; }
 .profile-model-row.is-open { padding: var(--space-2) 0 var(--space-3); }
 .profile-model-label {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
   min-height: var(--control-sm);
+  font-size: var(--fs-caption);
   color: var(--color-ink-2);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  hyphens: auto;
 }
+.profile-model-label-text { min-width: 0; font-size: var(--fs-caption); overflow-wrap: break-word; hyphens: auto; }
 .profile-model-toggle {
   padding: 0;
   border: 0;
   background: transparent;
-  font: inherit;
+  font-family: inherit;
+  line-height: inherit;
   text-align: start;
   cursor: pointer;
 }
@@ -242,10 +250,10 @@ div.subagent-editor-flush { display: flex; flex-direction: column; gap: var(--sp
 .profile-model-toggle[aria-expanded="true"] .icon-twist { transform: rotate(90deg); }
 /* A label with no fold keeps the chevron's room, so every row's selects line up. */
 span.profile-model-label { padding-inline-start: calc(var(--icon-sm, 16px) + var(--space-1)); }
-.profile-model-line { display: grid; grid-template-columns: minmax(0, 1fr) 6.5rem; gap: var(--space-2); align-items: center; min-width: 0; }
+.profile-model-line { display: grid; grid-template-columns: minmax(0, 1fr) 6rem; gap: var(--space-2); align-items: center; min-width: 0; }
 .profile-model-line > .profile-model-none { grid-column: 1 / -1; color: var(--color-ink-muted); }
 .profile-model-line > .profile-model-wide { grid-column: 1 / -1; max-width: 16rem; }
-.profile-model-line .select { text-overflow: ellipsis; padding-right: var(--space-5); }
+.profile-model-line .select { text-overflow: ellipsis; padding-left: var(--space-2); padding-right: var(--space-5); }
 .profile-model-line .select-caret { right: var(--space-2); }
 .profile-model-more { grid-column: 1 / -1; display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
 
@@ -254,7 +262,7 @@ span.profile-model-label { padding-inline-start: calc(var(--icon-sm, 16px) + var
 .profiles-starts-checks { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
 .profiles-limits { grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); }
 
-/* A phone's panel: the label takes its own line over the model and effort. */
-@container profiles-settings (max-width: 30rem) {
+/* A narrow editor: the label takes its own line over the model and effort. */
+@container profiles-editor (max-width: 17rem) {
   .profile-model-row { grid-template-columns: minmax(0, 1fr); }
 }

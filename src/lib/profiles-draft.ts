@@ -16,6 +16,9 @@ import { canonical, draftOf, isNewKey, profilesDraftFields, typedDraft, type Pro
 /** The last listing the server answered (a load, a save, an Approve or a Hide): the list's project and built-in rows. */
 const [listing, setListingSignal] = createSignal<ProfilesListing | null>(null);
 export const profilesListing = listing;
+/** Each new profile's saved key, by the draft key it had, from the last save (the editor keeps it open). */
+const [savedKeys, setSavedKeys] = createSignal<ReadonlyMap<string, string>>(new Map());
+export const lastSavedKeys = savedKeys;
 /** The open session's folder, whose project's profiles are listed: every write names it, so the answer lists them too. */
 let cwd: string | null = null;
 export const setProfilesCwd = (next: string | null): void => {
@@ -104,6 +107,7 @@ export const profilesDraft = createDraftStore<ProfilesDraft, ProfilesDraft, Prof
         profilesDraft.setDraft(remapped(draft, keys, saved));
         profilesDraft.refreshSaved(saved);
         setListingSignal(last);
+        setSavedKeys(new Map(keys));
         throw new SaveFailed(`Some profiles were saved, then this failed: ${message(err)}`, true);
       }
     };
@@ -126,6 +130,7 @@ export const profilesDraft = createDraftStore<ProfilesDraft, ProfilesDraft, Prof
     if (!last) throw new Error("Nothing to save"); // unreachable: same() gates the write
     const answer: ProfilesListing = last;
     setListingSignal(answer);
+    setSavedKeys(keys);
     return { saved: savedOfListing(answer), warnings: (answer as ProfileWriteAnswer & { warnings?: string[] }).warnings ?? [], result: answer };
   },
   onReset: () => setListingSignal(null),

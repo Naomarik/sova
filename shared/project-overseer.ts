@@ -220,6 +220,9 @@ export interface ProjectCodingMode {
   /** Canonical order (the mode extension's MINOR_MODES): any of align, spec, vis. */
   minorModes: string[];
   subagentProfile?: string;
+  /** A profile an Overseer named for that session (a joined profile's id, §chat.profiles/joined): its Models part is
+      switched in whole once the session exists (§chat.profiles/switch); its tools and powers never are. */
+  profile?: string;
 }
 
 /** A switch an Overseer asks of a running coding session (sova_send): only what it names. */
@@ -231,6 +234,9 @@ export interface CodingModeNow {
   mode: ProjectCodingMode["mode"];
   minorModes: string[];
   subagents: { id: string; name: string } | null;
+  /** This computer's default profile, the one a coding session started now is on (Off: `{id: "off", name: "Off"}`);
+      absent from an older server. */
+  profile?: { id: string; name: string };
 }
 
 /** A mode as people read it: `normal · spec · visuals` (`vis` said as "visuals"). */
@@ -475,6 +481,8 @@ export interface ItemCodeInput {
   mode?: string;
   minor_modes?: string[];
   subagent_profile?: string;
+  /** A profile of this computer's (its models, helpers and modes; never its tools or powers). */
+  profile?: string;
   /** The global Overseer's call only (§app.project-overseer/confirm-brief): `true` when the operator already said they
       want this built; absent, the session first asks them to confirm the brief. The page's start never sends it. */
   already_agreed?: boolean;

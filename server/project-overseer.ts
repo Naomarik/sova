@@ -40,8 +40,10 @@ import type { HEntry, ToolSpec } from "../shared/harness";
 import { shuttingDown } from "./wrapup-recovery";
 import { listModels } from "./models";
 import { workingSubagents } from "./live";
-import { alreadyAgreedOf, checkedCodingModeChoice, codingModeSwitch, confirmBriefPrompt, describeCodingMode, hostDefaultMode, PLAYBOOK_RUN_KINDS, playbookRunMode, profileRefusal, type ModeRequest } from "./project-coding-mode";
+import { alreadyAgreedOf, checkedCodingModeChoice, codingModeSwitch, confirmBriefPrompt, describeCodingMode, hostDefaultMode, PLAYBOOK_RUN_KINDS, playbookRunMode, profileRefusal, withNamedProfile, defaultProfileName, type ModeRequest } from "./project-coding-mode";
 import { subagentProfilesInfo } from "./subagent-profiles";
+import { codingDefaultProfile, codingTakesOf, type CodingTakes } from "./coding-default-profile";
+import { joinedProfiles } from "./joined-profiles";
 import { baseAbilities } from "./gathering-abilities";
 import { gitRootOf, readWorktree, removalHold, withRemoveAnyway } from "./project-worktrees";
 import { removeAnywayOf } from "./worktree-leftovers";
@@ -723,14 +725,21 @@ function toolHost(rt: Rt): PoToolHost {
     contributed: (wrap) => contributedTools({ ...partCtx(rt, paths), ...wrap }),
     sessions: () => listSessions(),
     transcript: async (path) => rowsOf(await readBranch(path)),
-    codingMode: (req) => checkedCodingModeChoice(req),
-    codingSwitch(req) {
+    async codingMode(req) {
+      const c = checkedCodingModeChoice(req);
+      return "error" in c ? c : withNamedProfile(c.mode, req, projectOf(projectId).root, true);
+    },
+    async codingSwitch(req) {
       const c = codingModeSwitch(req);
       if ("error" in c) return c;
       const bad = profileRefusal(c.mode?.subagentProfile);
-      return bad ? { error: bad } : c;
+      if (bad) return { error: bad };
+      if (!c.mode) return c;
+      return withNamedProfile(c.mode, req, projectOf(projectId).root, false);
     },
     subagentProfiles: () => subagentProfilesInfo(),
+    profiles: async () => joinedProfiles(projectOf(projectId).root),
+    defaultProfileName: () => defaultProfileName(),
     playbookWaiting: (sessionId) => operatorAnswersWaiting(projectId, sessionId),
     async createCoding(input) {
       const { gap, ...rest } = input;
@@ -957,27 +966,40 @@ export function sessionChoice(
   input: { model?: string; thinking?: string },
   settings: Pick<ProjectOverseerSettings, "model" | "thinking" | "codingModel" | "codingThinking" | "gatheringModel" | "gatheringThinking">,
   running: { model: string | null; thinking: string | null },
+  /** A coding session's profile (this computer's default, or one an Overseer named): its This chat model and
+      effort, after the project's coding model and before the overseer's own (§app.project-overseer/coding-mode). */
+  profile: { model?: string | null; thinking?: string | null } = {},
 ): { model: string | null; thinking: string | null } {
   const own = kind === "coding" ? { model: settings.codingModel, thinking: settings.codingThinking } : { model: settings.gatheringModel, thinking: settings.gatheringThinking };
+  const prof = kind === "coding" ? profile : {};
   return {
-    model: input.model?.trim() || own.model || settings.model || running.model || loadDefaults().model || null,
-    thinking: input.thinking?.trim() || own.thinking || settings.thinking || running.thinking || loadDefaults().thinking || null,
+    model: input.model?.trim() || own.model || prof.model || settings.model || running.model || loadDefaults().model || null,
+    thinking: input.thinking?.trim() || own.thinking || prof.thinking || settings.thinking || running.thinking || loadDefaults().thinking || null,
   };
 }
-export const codingChoice = (input: { model?: string; thinking?: string }, settings: Parameters<typeof sessionChoice>[2], running: Parameters<typeof sessionChoice>[3]) =>
-  sessionChoice("coding", input, settings, running);
+export const codingChoice = (input: { model?: string; thinking?: string }, settings: Parameters<typeof sessionChoice>[2], running: Parameters<typeof sessionChoice>[3], profile: Parameters<typeof sessionChoice>[4] = {}) =>
+  sessionChoice("coding", input, settings, running, profile);
+
+/** This computer's default profile as a coding session takes it, or nothing when it can't be read (§app.project-overseer/coding-mode). */
+function defaultTakes(): CodingTakes | null {
+  try {
+    return codingTakesOf(codingDefaultProfile());
+  } catch {
+    return null;
+  }
+}
 
 /**
  * What a build started without them gets (F20: the item statechart's own L3 build names no mode, model or thinking):
- * this computer's default mode (no subagent profile picked) and the project's coding model, as Start coding gives them.
+ * this computer's default profile (its mode, and its model where the project names no coding model), as Start coding gives them.
  */
 export async function buildDefaults(projectId: string): Promise<{ mode: ProjectCodingMode; model: string | null; thinking: string | null }> {
   const settings = readPoSettings(projectOverseerPaths(projectId));
-  return { mode: hostDefaultMode(), ...codingChoice({}, settings, await overseerRunning(projectId)) };
+  return { mode: hostDefaultMode(), ...codingChoice({}, settings, await overseerRunning(projectId), defaultTakes() ?? {}) };
 }
 
-/** What a coding session started now gets (§app.project-overseer/coding-mode): this computer's default mode, and
-    its default subagent profile (a start picks none). */
+/** What a coding session started now gets (§app.project-overseer/coding-mode): this computer's default profile, its
+    mode, and its helpers (a start picks none, so it follows the default's). */
 export function codingModeNow(): CodingModeNow {
   const m = hostDefaultMode();
   let subagents: CodingModeNow["subagents"] = null;
@@ -987,20 +1009,23 @@ export function codingModeNow(): CodingModeNow {
   } catch {
     // An unreadable library: no profile to name.
   }
-  return { mode: m.mode, minorModes: m.minorModes, subagents };
+  const def = defaultTakes();
+  return { mode: m.mode, minorModes: m.minorModes, subagents, profile: def ? { id: def.id, name: def.name } : { id: "off", name: "Off" } };
 }
 
-/** The prompt's words for it: "normal · spec, subagent profile Balanced (this computer's defaults)". */
+/** The prompt's words for it: "on Claude, in normal · spec (this computer's default profile)". */
 export function codingModeNowWords(now = codingModeNow()): string {
-  return `${describeCodingMode(now)}${now.subagents ? `, subagent profile ${now.subagents.name}` : ""} (this computer's default${now.subagents ? "s" : ""})`;
+  return `on ${now.profile?.name ?? "Off"}, in ${describeCodingMode(now)} (this computer's default profile)`;
 }
 
 /** The Overseer's mode request on a start (POST …/items/code): its mode, or a 400 before anything is taken. */
-function itemCodeMode(body: ModeRequest): ProjectCodingMode | undefined {
-  if (body.mode === undefined && body.minor_modes === undefined && body.subagent_profile === undefined) return undefined;
+async function itemCodeMode(body: ModeRequest, root: string): Promise<ProjectCodingMode | undefined> {
+  if (body.mode === undefined && body.minor_modes === undefined && body.subagent_profile === undefined && body.profile === undefined) return undefined;
   const c = checkedCodingModeChoice({ ...body, by: "the Overseer" });
   if ("error" in c) throw new OrgError(c.error, 400);
-  return c.mode;
+  const named = await withNamedProfile(c.mode, body, root, true);
+  if ("error" in named) throw new OrgError(named.error, 400);
+  return named.mode;
 }
 
 /** The model and thinking a session people talk to gets (a contributing layer's gathering sessions). */
@@ -1108,7 +1133,9 @@ async function startCodingSession(
   const prompt = asked.prompt;
   const sessionId = newBuildSessionId();
   const title = input.title?.trim() ? cleanSessionTitle(input.title) : null;
-  const choice = codingChoice(input, settings, await overseerRunning(projectId));
+  // The profile it starts on: the one an Overseer named (its models), else this computer's default's, after the
+  // project's own coding model (§app.project-overseer/coding-mode).
+  const choice = codingChoice(input, settings, await overseerRunning(projectId), input.mode?.profile ? {} : (defaultTakes() ?? {}));
   // The title store first: the worktree's branch is named after a title given.
   if (title) setSessionTitle(sessionId, title);
   // A Build from a conversation's draft: its worktree gets the draft when it is cut (server/draft-carry.ts).
@@ -1622,7 +1649,7 @@ export async function codeItem(projectId: string, body: ItemCodeInput, via?: "ov
   const title = typeof body.title === "string" ? body.title.trim() : "";
   if (!item && (!prompt || !title)) throw new OrgError("Without an item (todo or idea), give both prompt and title.");
   // Checked before anything is taken: an unknown name starts nothing.
-  const mode = itemCodeMode(body);
+  const mode = await itemCodeMode(body, projectOf(projectId).root);
   // A §gap/… idea whose gap has promoted decisions not built yet: the gap's own build (where its layer says), when
   // that would take it; otherwise a plain coding session linked to the idea.
   const engine = engineOrThrow(projectId);

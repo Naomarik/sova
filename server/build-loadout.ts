@@ -331,7 +331,14 @@ export async function applyCodingMode(path: string, mode: CodingModeSwitch): Pro
       throw new OrgError(plan === "unsupported" ? "the mode extension is not loaded in it" : "it is open in another writer (a terminal, or a process Sova doesn't know)", 409);
     if (!(await chat.pinMode())) throw new OrgError("its mode entry could not be written", 409);
   }
-  const profile = mode.subagentProfile !== undefined ? (await chat.switchSubagentProfile(mode.subagentProfile)).current.name : (await chat.subagentProfileInfo()).current.name;
+  // A named profile switches its whole Models part, checked first, all or nothing (§chat.profiles/switch); never its
+  // tools or powers. `subagent_profile`: only the helpers.
+  let profile: string | null;
+  if (mode.profile !== undefined) {
+    const r = await (await import("./profile-switch")).switchChatProfile(path, mode.profile);
+    if (!r.ok) throw new OrgError(`its profile was not switched: ${r.error}`, r.status === 404 ? 400 : 409);
+    profile = (r.applies === "after-turn" ? r.state.pending?.name : r.state.current.name) ?? mode.profile;
+  } else profile = mode.subagentProfile !== undefined ? (await chat.switchSubagentProfile(mode.subagentProfile)).current.name : (await chat.subagentProfileInfo()).current.name;
   const now = chat.mirror.mode;
   return { applies: chat.mirror.running ? "after-turn" : "now", mode: { mode: now.mode, minorModes: [...now.minorModes] }, profile: profile ?? null };
 }

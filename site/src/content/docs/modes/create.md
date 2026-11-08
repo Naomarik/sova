@@ -23,7 +23,7 @@ doing the work itself.
 
 Create has no settings of its own. The Subagents picker and every profile are Delegate's, and
 moving a chat between Delegate and Create keeps its subagent profile. **Configure Create**, the gear
-on Create's row, opens the same Settings → Subagents as Delegate's gear. The [strict](/docs/modes/#strict)
+on Create's row, opens the same Settings → Profiles as Delegate's gear. The [strict](/docs/modes/#strict)
 flag does the same in both: while it's on, the chat has no `edit` or `write` tool. `bash` and every other
 tool stay, so a chat can still write a file with `bash`.
 

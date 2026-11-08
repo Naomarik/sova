@@ -44,12 +44,12 @@ the legend. Until Sova knows the chat's mode it shows the sliders icon alone.
 Press it to open the menu. It has these groups:
 
 - **Major mode**: normal, delegate and create, each with its one-line description. Picking one switches
-  the chat and keeps the menu open. Delegate's row has a gear, **Configure Delegate**, that opens Settings → Subagents without
+  the chat and keeps the menu open. Delegate's row has a gear, **Configure Delegate**, that opens Settings → Profiles without
   switching anything, so you can set Delegate up before you turn it on. Create's row has the same
   gear, **Configure Create**, since Create shares Delegate's settings. A gathering chat has no Create row.
 - **Minor modes**: align, spec, vis and memory, each with its description. Toggling one
   keeps the menu open, so you can set several. Spec's row has a gear too, **Configure Spec**, that
-  opens Settings → Subagents at its spec writer section. Memory is the last row, listed only in a
+  opens Settings → Profiles at its spec writer section. Memory is the last row, listed only in a
   chat whose runtime can run it; its row has a chevron, **Memory type**, that opens a panel to
   choose the chat's [memory type](#memory).
 - **This project · {name}**, only in a chat whose project has [project modes](/docs/modes/project-modes/):
@@ -61,8 +61,8 @@ Press it to open the menu. It has these groups:
   offers project modes, in every project. They work exactly like project modes, and one approval
   holds in every project. One with the same id as a project's mode replaces it in that chat, and its
   row says so.
-- **Subagents**: one row, **Subagents · {profile}**, that opens the picker for this chat's
-  [subagent profile](/docs/subagent-profiles/).
+- **Profile**: one row, **Profile · {name}**, that opens the picker for this chat's
+  [profile](/docs/subagent-profiles/).
 
 The menu's foot reads `strict: off` (or `on`), then "A switch here is this chat's own. New sessions
 start from the default." Beside it is the **Save as default** button.

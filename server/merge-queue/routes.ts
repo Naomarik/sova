@@ -151,12 +151,12 @@ const KEYS: Record<keyof Req, "string" | "boolean" | "number" | "strings" | "map
   contents: "map",
 };
 
-/** A string key's length limit. `text` carries a whole review (merge.review), whose own format bounds it below this
- *  (review-verdict.ts REVIEW_TEXT_LIMIT); every other text a verb takes is shorter. */
+/** A string key's length limit. merge.review's `text` carries a whole review, whose own format bounds it below this
+ *  (review-verdict.ts REVIEW_TEXT_LIMIT); every other text, of every other verb, is shorter. */
 const STRING_MAX = 4000;
-const stringMax = (k: string) => (k === "text" ? REVIEW_TEXT_LIMIT : STRING_MAX);
 
-function parse(body: unknown): Req {
+function parse(body: unknown, verb = ""): Req {
+  const stringMax = (k: string) => (verb === "merge.review" && k === "text" ? REVIEW_TEXT_LIMIT : STRING_MAX);
   if (body === undefined || body === null) return {};
   if (typeof body !== "object" || Array.isArray(body)) throw new MergeFailure("invalid-request", "the body is a JSON object");
   const out: Record<string, unknown> = {};
@@ -193,7 +193,7 @@ export function merger(deps: MergerDeps): (verb: string, body: unknown, caller: 
     let report: MergeReport | undefined;
     try {
       if (!isMergeVerb(verb)) throw new MergeFailure("invalid-request", `unknown verb "${verb}"`);
-      const req = parse(body);
+      const req = parse(body, verb);
       const got = await queueFor(deps, verb, req, caller);
       if ("bare" in got) {
         // A listed project with no merge setup: its status is read from Git alone, no queue made (a4).

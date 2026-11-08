@@ -99,6 +99,24 @@ const REQUESTS_KEPT = 30;
 /** entry.fix.request while a conflict waits for the merge thread (no request of the chat's is involved). */
 const CONFLICT_WAIT = "conflict";
 /** The states Remove from Queue ends as "removed by you" under a standing approval (out of line, waiting on someone). */
+/** A merge thread's note on a blocking review: short, and never the findings again (Sova sends them as written). */
+export const REVIEW_NOTE_MAX = 500;
+function reviewNoteOk(r: { summary: string; findings: { text: string }[] }, note: string): void {
+  if (!note) return;
+  const said = "the findings already go to the chat as the reviewer wrote them; add only what they don't say";
+  if (note.length > REVIEW_NOTE_MAX) throw new MergeFailure("invalid-request", `a note on a review is at most ${REVIEW_NOTE_MAX} characters: ${said}`);
+  const flat = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
+  const n = flat(note);
+  // Any 40 characters of the summary or a finding, repeated: refused (a short finding may still be named by its words).
+  const repeats = [r.summary, ...r.findings.map((f) => f.text)].some((t) => {
+    const f = flat(t);
+    if (f.length < 40) return false;
+    for (let i = 0; i + 40 <= f.length; i += 20) if (n.includes(f.slice(i, i + 40))) return true;
+    return false;
+  });
+  if (repeats) throw new MergeFailure("invalid-request", `the note repeats the review: ${said}`);
+}
+
 /** Blocking reviews kept per entry (each its own card); the tries bound them well below this. */
 const REVIEWS_KEPT = 10;
 /** Why a run stopped before its review, one line (the review card's Stopped). */
@@ -1588,6 +1606,7 @@ export class ProjectQueue {
           // A blocking review is handed on with no text (Sova sends the reviewer's words); its text is the thread's note.
           const review = e.ruling?.pending?.cause === "review" ? openReview(e) : undefined;
           const later = !e.ruling?.pending && e.state === "with-chat" && e.sentBackFor === "review" ? openReview(e) : undefined;
+          if (review || later) reviewNoteOk(review ?? later!, text);
           if (review) {
             const p = e.ruling!.pending!;
             this.sendBack(e, { cause: "review", why: p.why, ...(p.run ? { runId: p.run } : {}), ...(p.review ? { review: p.review } : {}), ...(text ? { diagnosis: text } : {}) });

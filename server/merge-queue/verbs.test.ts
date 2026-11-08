@@ -165,6 +165,8 @@ describe("the verbs and who may call them", () => {
       assert.equal(delivered.at(-1)!.text, longest);
       assert.equal(delivered.at(-1)!.findings!.length, MAX_FINDINGS);
       assert.match((await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "blocking", text: "x".repeat(REVIEW_TEXT_LIMIT + 1) }, session(reviewer))).error!.message, /at most \d+ characters/);
+      // Only merge.review's text is that long: every other verb's stays at 4000.
+      assert.match((await call("merge.rule", { entry: id, ruling: "chat-fixes", text: "x".repeat(4001) }, t)).error!.message, /"text" must be at most 4000 characters/);
       // merge.rule is the thread's alone; a ruling on an entry in line is refused for what it is, not for who asks.
       assert.equal((await call("merge.rule", { entry: id, ruling: "needs-user", text: "Which wording?" }, session("someone"))).error!.code, "forbidden");
       assert.equal((await call("merge.rule", { entry: id, ruling: "chat-fixes", text: "d" }, t)).error!.code, "invalid-request");

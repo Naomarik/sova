@@ -42,6 +42,10 @@ describe("a blocking review goes through the merge thread", () => {
       const told = events.find((ev) => ev.kind === "review")!;
       for (const f of FINDINGS) assert.ok(told.findings!.includes(f.text), "the thread gets the whole report");
 
+      // The note never carries the findings again, and stays short; refused, nothing goes.
+      await assert.rejects(q.rule(entry.id, { ruling: "chat-fixes", text: `Restating for clarity:\n${told.findings}`.slice(0, 480) }), /repeats the review: the findings already go to the chat/);
+      await assert.rejects(q.rule(entry.id, { ruling: "chat-fixes", text: "n".repeat(501) }), /at most 500 characters/);
+      assert.equal((await k.entry(entry.id)).requests?.length ?? 0, 0);
       await q.rule(entry.id, { ruling: "chat-fixes", text: "Start with the missing tests." });
       e = await k.entry(entry.id);
       const rq = e.requests!.at(-1)!;

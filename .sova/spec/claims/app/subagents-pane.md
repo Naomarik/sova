@@ -263,7 +263,10 @@ In a narrow pane the tabs tighten, then the strip scrolls sideways,
 and the selected tab is scrolled into view (to the nearest edge) when the pane opens and whenever
 the tab changes, so a tab a door opened is never off-screen at 375px. An edge with tabs past it
 fades to show there are more: the right while tabs run past it, the left once scrolled from the
-start, and neither when all the tabs fit.
+start, and neither when all the tabs fit. The fade is every tab strip's own, with no script of the
+pane's (§design/deviations): drawn from the strip's own scroll where the browser can, and in a
+browser that can't (Firefox) from one shared script that marks which edges have tabs past them, so
+it fades the same, and only then, everywhere.
 
 ## §app.subagents-pane/time-spent — Time Spent: what the tab shows
 

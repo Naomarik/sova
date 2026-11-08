@@ -29,7 +29,7 @@
   "§chat.images/lightbox": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "reviewed",
     "code": [
       "src/components/Lightbox.tsx",
       "src/design/base.css",

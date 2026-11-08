@@ -28,7 +28,10 @@ helps:
 - it picks tests the change could break;
 - it judges conflicts (§app.merge-queue/conflicts), in a scratch copy Sova makes for it and removes
   (§app.merge-queue/resolve-copy);
-- it explains failures, in the entry's note.
+- it explains failures, in the entry's note;
+- it hands a blocking review's report on to the branch's chat, which Sova keeps whole, one record
+  per review, and sends in the reviewer's own words (§app.merge-queue/review-report,
+  §app.merge-queue/send-back).
 
 It acts only through the merge verbs (§app.project-services/merge-verbs). Sova starts every run by
 itself, and a missing or slow thread never delays a landing.
@@ -282,7 +285,7 @@ no wait for the user, unless it needs the user (§app.merge-queue/needs-user). T
 meanwhile (§app.merge-queue/standing-approval).
 
 **What goes back.** A failure proven the branch's (§app.merge-queue/blame); a conflict the merge
-thread rules the chat should fix (§app.merge-queue/conflicts); the review's findings, flagged or not
+thread rules the chat should fix (§app.merge-queue/conflicts); a blocking review's whole report
 (§app.merge-queue/review); spec drafts that don't fit at landing (§app.merge-queue/run); a setup or
 install failure that is the branch's; on a project that lands on its host, host checks failing,
 changes requested and conflicts on the host (§app.merge-queue/requests); and, before a
@@ -295,7 +298,27 @@ merge thread's diagnosis when it has one (what it thinks went wrong and what to 
 than was asked. A failure's request waits for that diagnosis at most 5 minutes, then goes without
 it; with no merge thread to call in, it goes at once. A diagnosis that comes after the request went
 is sent as a request of its own and counts no try. The thread's note on the landing alone never
-reaches the chat. A conflict's request names the conflict as it is on the newest target at that
+reaches the chat.
+
+**A blocking review goes through the merge thread.** Its whole report goes to the merge thread first
+(§chat.merge-queue/thread), and the request waits for the thread to hand it on, the same at most 5
+minutes as a diagnosis, then goes by itself without a note; with no merge thread to call in, it goes
+at once. Sova writes the request from the saved record of that review, never from the thread's
+words: the reviewer's summary and every finding exactly as written, then the thread's note when it
+gives one ("Merge thread: …"), so the thread spends nothing repeating the findings and can't drop or
+soften one. A later note is a further `merge.rule` chat-fixes with its text while the entry is back
+with the chat: it is kept on that review's record, shows on its card, and reaches the chat as a
+short request of its own ("The merge thread adds a note on the review of {branch} at {sha}: …"),
+counting no try. `merge.note` stays the landing note and never reaches the chat; a review that
+waited out its 5 minutes goes without one. When the merge thread asks the user before handing the
+report on, nothing goes to the chat until the user answers; their answer then goes to the chat with
+the report Sova writes from the same record ("The review's findings, as the reviewer wrote them:",
+then the report and the thread's note), and the review's card is Fixing again. A review whose try
+would run out (the last try, or the same findings twice) waits for the user at once, with nothing
+handed on. The chat shows the review's own card (§chat.merge-queue/review-card), and the queue card
+reads "Back with the chat · try {n} of 3 · Review found {k} issues".
+
+A conflict's request names the conflict as it is on the newest target at that
 moment, never a conflict text from an earlier run or an older target.
 
 **Never what isn't the branch's.** A flaky test, a failure the target shares, a test check broken on
@@ -758,7 +781,7 @@ retry pushes what was held.
 Each entry may carry **notes**: short free text about what is worth knowing after it lands. The
 merge thread's note is one text of at most 300 characters, for example "changes server code;
 Sova restarts itself once the queue is idle", or "regenerated the lockfile". Sova adds its own beside it:
-- the review's notes;
+- the review's notes, each whole (§app.merge-queue/review);
 - flaky tests;
 - tests already failing on the target;
 - a test check broken on the target, with its flag line (§app.merge-queue/blame);
@@ -771,7 +794,13 @@ Sova restarts itself once the queue is idle", or "regenerated the lockfile". Sov
   clears it. A note may be written before or after the landing.
 - **On a send-back.** The thread's diagnosis of an entry sent back to its chat is added to that
   entry's queue card (§chat.merge-queue/card-states) and goes with the request
-  (§app.merge-queue/send-back); its note on the landing alone never reaches the chat.
+  (§app.merge-queue/send-back); its note on a blocking review shows after the findings on that
+  review's card instead (§chat.merge-queue/review-card) and reaches the chat in the same words; that
+  note is its `merge.rule` chat-fixes text, never `merge.note`. Its note on the landing alone never
+  reaches the chat, a blocking review's included.
+- **Review notes, in full.** The branch's Landed card shows a notes-only review's findings whole, as
+  a folded list (§chat.merge-queue/chat-card), and the chat's model is told them quietly in its
+  hidden line, starting no turn (§chat.merge-queue/chat-turns).
 - **Where it shows.** On the landed row in the Merge Queue view, the composer's worktrees control,
   the session pane's Worktrees rows, on the branch's Landed queue card, and in the hidden line its
   chat's model reads (§chat.merge-queue/chat-turns).
@@ -829,13 +858,16 @@ reviewer chat stays readable from its run and the tab's History until the user c
 
 **Its verdict.**
 - **ok** — no findings.
-- **notes** — findings, attached to the landing.
-- **blocking** — the entry doesn't land: its findings go back to its chat by itself
-  (§app.merge-queue/send-back), as a request with each finding, and the card reads **Back with the
-  chat** with them. Once the chat's fix is checked, the entry goes back in line and is reviewed
-  again (§app.merge-queue/standing-approval). The merge thread is told of every blocking verdict
-  and may rule that a finding needs the user (§app.merge-queue/needs-user); only then does it wait
-  for the user, as a decision. Land Anyway is never offered over a review.
+- **notes** — findings, attached to the landing: whole on the Landed card, and told quietly to the
+  chat's model (§app.merge-queue/note). They never go to the chat to work on.
+- **blocking** — the entry doesn't land. Its whole report goes to the merge thread first, which
+  hands it to the branch's chat; Sova delivers the reviewer's own words, every finding as written,
+  as a request (§app.merge-queue/send-back). The chat shows a **Review found issues** card for that
+  review (§chat.merge-queue/review-card), and the queue card reads **Back with the chat** and points
+  to it. Once the chat's fix is checked, the entry goes back in line and is reviewed again
+  (§app.merge-queue/standing-approval). The merge thread may add a note and may rule that a finding
+  needs the user (§app.merge-queue/needs-user); only then does it wait for the user, as a decision.
+  It can't remove, rewrite or soften a finding. Land Anyway is never offered over a review.
 
 **When the reviewer fails.** A reviewer that errs or passes its 20-minute limit is retried once,
 after 60 seconds, then the queue pauses. No chat is told. The branch is never blamed for it.
@@ -843,9 +875,7 @@ after 60 seconds, then the queue pauses. No chat is told. The branch is never bl
 **Skipping it.** "Land without review" (or "land it, skip review") skips it for that approval
 only.
 
-Where the queue shortens the reviewer's text (the review step's detail and a flagged run's reason, to
-200 characters; a review note, to 300), a cut text ends in "…"; the whole verdict is in the review
-step's log.
+Each review's report is kept whole, one record per review (§app.merge-queue/review-report).
 
 A verdict holds at most 10 findings, each of a kind: dead code, duplication, hack, missing test,
 naming, or other. The kit is never a registered skill: it has no `SKILL.md`, and it is in no skills
@@ -853,10 +883,35 @@ folder or pi setting.
 
 Sova's own first kit is simple: an ordinary code review that the branch adds no tech debt (dead
 code, duplication, hacks or workarounds left in, missing tests for new behaviour, unclear names).
+It also judges the diff against the project's testing principles (the testing guide's "Writing
+tests" section): a clear break is blocking, a judgement call is a note. That is the reviewer's
+judgement alone; nothing checks it mechanically.
 
 The kit can be read, never edited, from Settings → Merge Queue (**Open Folder**,
 §app.merge-queue/settings), as it is on the target. Review on or off is a setting saved there
 (§app.merge-queue/settings-save).
+
+## §app.merge-queue/review-report — A review's whole report, kept
+
+The queue keeps each review's report whole (§app.merge-queue/review): the reviewer's summary and
+every finding (its kind, file and line, and text), never cut, one saved record per review, so a
+later review of the same entry never overwrites an earlier one. The review card
+(§chat.merge-queue/review-card), the chat's request (§app.merge-queue/send-back), the Landed card's
+notes (§app.merge-queue/note) and the review step's log all hold every finding, read from that
+record.
+
+Only a one-line form is short: the review step's detail line and a flagged run's reason (200
+characters), and a review note's line on the queue view's and Worktrees rows (300); a cut one ends in
+"…".
+
+Each record also keeps the merge thread's note on that review, the try it counted, the commit the
+reviewer read and the target it was merged onto, so a finding's file opens on the lines it names,
+and its card's state, so the review card follows its own review whatever later runs of the entry do.
+A run sent back for anything else (a failed check, drafts, a conflict) leaves the last review's
+record and findings as they were. An entry keeps its newest 10 such records. A blocking review on
+an entry with no standing approval (a release's) is kept as its verdict only, with no record. Two
+reviews count as the same findings twice when they name the same findings, whatever their order or
+the case and spacing of their words (§app.merge-queue/tries).
 
 ## §app.merge-queue/conflicts — When the branch conflicts with the target
 

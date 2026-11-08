@@ -727,7 +727,9 @@ answering the one result shape with its own `merge` key (§app.project-services/
   choices for the user; `behaviour-differs` is taken as the old word for it), the files, both sides
   and the proposal in plain words; `chat-fixes` and `needs-user` carry no contents and are refused
   with them), `merge.rule` (an entry, its
-  ruling and the text: `chat-fixes` with its diagnosis, `try-again`, also its other approach after a
+  ruling and the text: `chat-fixes` with its diagnosis (on a blocking review, optional: the
+  thread's note, §chat.merge-queue/thread-powers, §app.merge-queue/send-back), `try-again`, also its
+  other approach after a
   "Can't", or `needs-user` with the question and at most 4 choices, on a failure, a blocking review
   or a "Can't", §app.merge-queue/needs-user; and, naming the request, `checked` or `beyond` for a
   fix, with what it changes beyond the request, §app.merge-queue/standing-approval), `merge.retry`
@@ -740,7 +742,7 @@ answering the one result shape with its own `merge` key (§app.project-services/
   it answers the hold now: §app.merge-queue/empty). Each but `merge.hold`, which names no entry,
   takes an optional `note`, recorded on the entry.
 - **The review step's**: `merge.review` (a run, its verdict `ok`, `notes` or `blocking`, and the
-  reviewer's text).
+  reviewer's text, whole up to the longest its format allows).
 - **The branch's chat's**: `merge.respond` (a request by its id, `rq_…`, and the answer: `fixed`
   with what changed, a commit, drafts or both; `needs-you` with the question and its `choices`; or
   `cant` with why: §chat.merge-queue/answers).

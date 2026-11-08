@@ -9,6 +9,8 @@ import type { Caller } from "../project-services/engine";
 import { ingestOnce } from "./ingest";
 import { noticeText } from "./notices";
 import { merger } from "./routes";
+import type { ReviewAnswer } from "./review-step";
+import { FINDING_MAX, MAX_FINDINGS, PATH_MAX, REVIEW_TEXT_LIMIT, SUMMARY_MAX } from "./review-verdict";
 import { makeKit, makeRepo, sh, until } from "./testing/queue-kit";
 
 const op: Caller = { kind: "operator" };
@@ -63,16 +65,17 @@ describe("the verbs and who may call them", () => {
     const k = makeKit();
     const thread = "thread-1";
     const reviewer = "reviewer-1";
+    const delivered: ReviewAnswer[] = [];
     const call = merger({
       queues: k.queues,
       served: { isListed: () => true, served: async () => true, bareView: async () => { throw new Error("every root here is served"); } },
       rootOf: async (p) => (p.startsWith(k.repo.scratch) ? k.repo.root : null),
       isThreadChat: (root, sid) => root === k.repo.root && sid === thread,
       reviewerOf: (run) => (run === "mr_0rev" ? reviewer : null),
-      deliverReview: (run) => run === "mr_0rev",
+      deliverReview: (run, v) => (delivered.push(v), run === "mr_0rev"),
     });
     const session = (id: string, root: string | null = k.repo.root): Caller => ({ kind: "session", id, root, own: [] });
-    return { k, call, thread, reviewer, session };
+    return { k, call, thread, reviewer, session, delivered };
   };
 
   test("the operator lands, cancels, pauses and answers; results are verb results with the merge key", async () => {
@@ -132,7 +135,7 @@ describe("the verbs and who may call them", () => {
   });
 
   test("the merge thread notes, extends, resolves and retries, never adds, cancels or answers; the reviewer only reviews its run", async () => {
-    const { k, call, thread, reviewer, session } = setup();
+    const { k, call, thread, reviewer, session, delivered } = setup();
     try {
       const q = await k.q();
       await q.pause("hold");
@@ -155,6 +158,15 @@ describe("the verbs and who may call them", () => {
       assert.match(bare.error!.message, /needs at least one finding/);
       const kind = await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "blocking", text: "Bad.\n- [style] a.ts:3: tabs" }, session(reviewer));
       assert.match(kind.error!.message, /kind must be one of/);
+      // The longest review the format allows passes the verb whole (ten findings of the longest text, with long paths).
+      const longest = ["S".repeat(SUMMARY_MAX), ...Array.from({ length: MAX_FINDINGS }, (_, i) => `- [missing-test] ${`d${i}/`.padEnd(PATH_MAX - 6, "p")}.ts:9999: ${"t".repeat(FINDING_MAX)}`)].join("\n");
+      const big = await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "blocking", text: longest }, session(reviewer));
+      assert.equal(big.ok, true, JSON.stringify(big.error));
+      assert.equal(delivered.at(-1)!.text, longest);
+      assert.equal(delivered.at(-1)!.findings!.length, MAX_FINDINGS);
+      assert.match((await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "blocking", text: "x".repeat(REVIEW_TEXT_LIMIT + 1) }, session(reviewer))).error!.message, /at most \d+ characters/);
+      // Only merge.review's text is that long: every other verb's stays at 4000.
+      assert.match((await call("merge.rule", { entry: id, ruling: "chat-fixes", text: "x".repeat(4001) }, t)).error!.message, /"text" must be at most 4000 characters/);
       // merge.rule is the thread's alone; a ruling on an entry in line is refused for what it is, not for who asks.
       assert.equal((await call("merge.rule", { entry: id, ruling: "needs-user", text: "Which wording?" }, session("someone"))).error!.code, "forbidden");
       assert.equal((await call("merge.rule", { entry: id, ruling: "chat-fixes", text: "d" }, t)).error!.code, "invalid-request");

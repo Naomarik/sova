@@ -66,7 +66,12 @@
       "src/components/ReviewChanges.tsx",
       "src/components/WorktreesModal.tsx",
       "src/components/MergeQueueTab.tsx",
-      "server/merge-queue-ui.integration.test.ts"
+      "server/merge-queue-ui.integration.test.ts",
+      "src/components/MergeReviewCard.tsx",
+      "server/git-diff.ts",
+      "server/git-diff.test.ts",
+      "server/merge-queue/wire.ts",
+      "shared/protocol.ts"
     ],
     "agreed": {
       "by": "user",

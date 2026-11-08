@@ -80,12 +80,14 @@
       "server/merge-queue/wire.ts",
       "shared/merge-queue.ts",
       "src/lib/merge-standing.ts",
-      "src/lib/merge-standing.test.ts"
+      "src/lib/merge-standing.test.ts",
+      "src/lib/merge-review-card.test.ts",
+      "src/lib/merge-review-card.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-07T16:57Z",
-      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
+      "at": "2026-11-08T16:24Z",
+      "source": "pi-session:01a1b862-ad81-7407-83a5-0f6d7690b353#e02f04cc"
     }
   },
   "§chat.merge-queue/chat-card": {
@@ -129,7 +131,12 @@
       "server/git-diff.test.ts",
       "server/commands-fuzz.test.ts",
       "server/merge-queue/notices.ts",
-      "server/merge-card-page.integration.test.ts"
+      "server/merge-card-page.integration.test.ts",
+      "src/lib/merge-review-card.test.ts",
+      "src/components/WatchView.tsx",
+      "src/lib/outside-card-rows.ts",
+      "src/lib/review-jump.ts",
+      "src/lib/review-jump.test.ts"
     ],
     "agreed": {
       "by": "user",
@@ -170,12 +177,13 @@
       "server/worker-sessions.test.ts",
       "server/sessions-index.ts",
       "server/merge-queue/asks.ts",
-      "server/merge-queue/asks.test.ts"
+      "server/merge-queue/asks.test.ts",
+      "server/merge-queue/review-record.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-07T18:26Z",
-      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
+      "at": "2026-11-08T16:24Z",
+      "source": "pi-session:01a1b862-ad81-7407-83a5-0f6d7690b353#e02f04cc"
     }
   },
   "§chat.merge-queue/decision": {
@@ -250,8 +258,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-07T17:12Z",
-      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
+      "at": "2026-11-08T16:24Z",
+      "source": "pi-session:01a1b862-ad81-7407-83a5-0f6d7690b353#e02f04cc"
     },
     "code": [
       "server/merge-queue/channel.ts",
@@ -265,8 +273,70 @@
       "server/merge-readiness.ts",
       "server/merge-queue/requests-channel.test.ts",
       "server/merge-queue-requests.integration.test.ts",
-      "server/merge-queue/wake.test.ts"
+      "server/merge-queue/wake.test.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/review-record.ts",
+      "server/merge-queue/rulings.ts",
+      "server/merge-queue/queue-review.test.ts"
     ]
+  },
+  "§chat.merge-queue/review-card": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/review",
+      "§app.merge-queue/send-back",
+      "§app.merge-queue/standing-approval",
+      "§app.merge-queue/tries",
+      "§app.merge-queue/needs-user",
+      "§app.merge-queue/chats",
+      "§chat.merge-queue/chat-card",
+      "§chat.merge-queue/requests",
+      "§chat.merge-queue/chat-turns",
+      "§chat.merge-queue/decision",
+      "§chat.merge-queue/thread",
+      "§chat.transcript-cards/placement",
+      "§chat.transcript-cards/built-ins",
+      "§chat.changes/entry",
+      "§app.notifications/delivery",
+      "§app.merge-queue/review-report"
+    ],
+    "code": [
+      "src/lib/merge-review-card.ts",
+      "src/lib/merge-review-card.test.ts",
+      "src/components/MergeReviewCard.tsx",
+      "src/lib/merge-cards.ts",
+      "src/lib/merge-queue-client.ts",
+      "src/lib/api.ts",
+      "src/components/TranscriptCard.tsx",
+      "src/lib/transcript-kinds.ts",
+      "src/app.css",
+      "server/merge-queue/cards.ts",
+      "server/merge-queue/cards.test.ts",
+      "server/merge-queue/review-record.ts",
+      "server/merge-queue/review-record.test.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/routes.ts",
+      "shared/merge-queue.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/queue-review.test.ts",
+      "server/git-diff.ts",
+      "server/git-diff.test.ts",
+      "shared/protocol.ts",
+      "src/components/WatchView.tsx",
+      "src/lib/outside-card-rows.ts",
+      "src/components/ChatView.tsx",
+      "src/lib/review-jump.ts",
+      "src/lib/review-jump.test.ts",
+      "src/lib/merge-queue-card.ts",
+      "src/components/MergeQueueCard.tsx"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-08T16:24Z",
+      "source": "pi-session:01a1b862-ad81-7407-83a5-0f6d7690b353#e02f04cc"
+    }
   },
   "§chat.merge-queue/sova-restart": {
     "kind": "behavior",
@@ -322,8 +392,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-07T23:34Z",
-      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#bbc66d7f"
+      "at": "2026-11-08T16:24Z",
+      "source": "pi-session:01a1b862-ad81-7407-83a5-0f6d7690b353#e02f04cc"
     },
     "code": [
       "server/merge-queue/thread.ts",
@@ -352,7 +422,9 @@
       "server/merge-queue/wire.ts",
       "server/merge-queue/scratch.ts",
       "playbooks/merge-queue/references/fixes.md",
-      "server/merge-queue/names-verb.ts"
+      "server/merge-queue/names-verb.ts",
+      "server/merge-queue/queue-review.test.ts",
+      "server/merge-queue/queue.ts"
     ]
   },
   "§chat.merge-queue/thread-life": {
@@ -407,7 +479,10 @@
       "server/merge-queue/thread.test.ts",
       "server/merge-queue/rulings.ts",
       "server/merge-queue/restart.ts",
-      "server/merge-queue/names-verb.ts"
+      "server/merge-queue/names-verb.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/queue-review.test.ts",
+      "playbooks/merge-queue/references/failures.md"
     ],
     "agreed": {
       "by": "user",

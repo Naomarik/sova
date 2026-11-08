@@ -294,11 +294,26 @@ export interface ConflictJudgement {
   at: string;
 }
 
+/** A finding's kinds (server/merge-queue/review-verdict.ts checks them; the page draws each as a word). */
+export const REVIEW_KINDS = ["dead-code", "duplication", "hack", "missing-test", "naming", "other"] as const;
+export type ReviewKind = (typeof REVIEW_KINDS)[number];
+/** One finding of a review, as the reviewer wrote it. */
+export interface ReviewFinding {
+  kind: ReviewKind;
+  file?: string;
+  line?: number;
+  text: string;
+}
+
 /** The review step's verdict on one commit (merge.review, or the review step's own result). */
 export interface ReviewVerdict {
   verdict: "ok" | "notes" | "blocking";
-  /** notes / blocking: what the reviewer says, short. */
+  /** notes / blocking: what the reviewer says, whole (its summary, then one line per finding). */
   text?: string;
+  /** The reviewer's summary line, whole. */
+  summary?: string;
+  /** Every finding, in the reviewer's order, whole. */
+  findings?: ReviewFinding[];
   /** The merge commit it reviewed. */
   commit: string;
   at: string;
@@ -358,6 +373,8 @@ export interface MergeEntry {
   conflictFiles?: string[];
   conflict?: ConflictJudgement;
   review?: ReviewVerdict;
+  /** Each review that blocked it, oldest first, each whole and never overwritten (§app.merge-queue/review-report). */
+  reviews?: MergeReviewRecord[];
   /** Can't tell whose failure (state `unattributed`): each check that failed on the merge and on the target alone and
    *  named no failures; its log is merge.logs {run, step}. */
   unclear?: MergeUnclear[];
@@ -422,6 +439,38 @@ export interface MergeEntry {
   updatedAt: string;
 }
 export type MergeSettled = "superseded" | "merged" | "gone";
+
+/** Where one blocking review's card stands (§chat.merge-queue/review-card). */
+export type ReviewCardState = "with-thread" | "fixing" | "re-reviewing" | "stopped" | "passed" | "waiting" | "removed";
+
+/** One review that blocked an entry, kept whole on the entry (§app.merge-queue/review-report): its card, its request
+ *  and its log line all read it. */
+export interface MergeReviewRecord {
+  /** `${entry}:${run}`, stable. */
+  id: string;
+  /** The run that reviewed it. */
+  run: string;
+  /** The branch's commit that was reviewed (the entry's pinned commit then). */
+  commit: string;
+  /** The commit the reviewer read (the merge copy's tip: the merge, its drafts made official) and the target commit it
+   *  was merged onto. */
+  tip: string;
+  base: string;
+  summary: string;
+  findings: ReviewFinding[];
+  /** The standing approval's try its send-back counted (0: none counted yet). */
+  try: number;
+  of: number;
+  /** The merge thread's note on this review (merge.rule chat-fixes text). */
+  note?: { text: string; at: string };
+  state: ReviewCardState;
+  /** stopped: what sent it back before a new review ran, one line. */
+  stoppedFor?: string;
+  /** The request that carried it to the chat, once it went. */
+  request?: string;
+  at: string;
+  updatedAt: string;
+}
 /** Why an entry was sent back: its spec drafts didn't fit (`drafts`), a check failed with it (`checks`), a conflict
  *  nobody judged (`conflict`), the user's Send Back (`user`), or the host refused its publication (`host`). Only
  *  `drafts` can be fixed with no commit. */
@@ -916,6 +965,41 @@ export interface MergeCardsFeed {
   type: "merge_cards";
   session: string;
   cards: MergeCard[];
+  /** That chat's review cards, all of them (absent from an older server). */
+  reviews?: ReviewCard[];
+}
+
+/** A blocking review's own card (kind `sova.merge-review`, §chat.merge-queue/review-card), in the chat its request goes
+ *  to. Drawn from the entry's review record; a newer card of the same entry folds the older ones. */
+export interface ReviewCard {
+  /** `${entry}:${run}`: the record's id. */
+  id: string;
+  entry: string;
+  /** The chat it stands in. */
+  session: string;
+  project: string;
+  root: string;
+  branch: string;
+  target: string;
+  /** The branch's commit that was reviewed. */
+  commit: string;
+  /** The run that reviewed it (See Run). */
+  run: string;
+  try: number;
+  of: number;
+  summary: string;
+  findings: ReviewFinding[];
+  note?: { text: string; at: string };
+  state: ReviewCardState;
+  stoppedFor?: string;
+  /** That review's reviewer chat (Open Reviewer Chat); cleared: deleted since. */
+  reviewer?: { session?: string; path?: string; cleared?: true };
+  /** What the reviewer read; kept false: the tip is gone, so a file opens on the branch now ("lines may have moved"). */
+  reviewed: { base: string; tip: string; kept: boolean };
+  at: string;
+  /** The chat's last transcript entry when it was raised (as MergeCardRevision.after). */
+  after?: string | null;
+  updatedAt: string;
 }
 
 // ---- a branch's card in the chat that built it ---------------------------------------------------
@@ -994,6 +1078,8 @@ export interface MergeCard {
   failures?: MergeCardFailure[];
   /** Needs a fix: the merge thread's later diagnosis (its note), added to the same card in place. */
   explanation?: { text: string; at: string };
+  /** Back with the chat for a review: its review card ("Review found {count} issues", which jumps there). */
+  reviewFound?: { card: string; session: string; path?: string; count: number };
   /** A decision waiting for the user (the entry's `decision`, unanswered): the card shows its question, choices and held note. */
   decision?: MergeDecision;
   /** Back with its chat under the user's standing Land: where it stands (the entry's `standing`). */

@@ -30,7 +30,7 @@ import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCar
 import { createOfferControls, OfferContext, OfferTray } from "./OfferCard";
 import { CardContext, createCardControls } from "../lib/card-controls";
 import { cardPicksLabel, cardPicksMessage } from "../lib/card-picks";
-import { outsideCardRowId, placeOutsideCards } from "../lib/transcript-placement";
+import { createOutsideCardRows } from "../lib/outside-card-rows";
 import { createMergeCards } from "../lib/merge-cards";
 import type { OfferCard } from "../../shared/session-offers";
 import { SettingsCardContext } from "./SettingsChangeCard";
@@ -1826,39 +1826,8 @@ export function ChatView(props: {
     return ask && ask.onTab && !ask.answered ? ask : null;
   });
   const heldNotes = () => [...(heldDecision() ? [heldComposerLine(heldDecision()!.branch)] : []), ...(threadAsk() ? [heldAskLine(threadAsk()!.question)] : [])];
-  const outsideById = createMemo(() => new Map(outsideCards().map((c) => [c.id, c] as const)));
-  /** Each outside card's row, one object for its life: the thread keys its rows by object, so a fresh
-      one per update (a merge card's every step) drew the card anew, at its estimate for a frame, and
-      the rows above it jumped. The row reads its card as it is now, by id (as CardContext.card does). */
-  const outsideRows = new Map<string, TranscriptItem>();
-  const outsideRow = (first: CardInfo): TranscriptItem => {
-    const id = outsideCardRowId(first.id);
-    let row = outsideRows.get(id);
-    if (!row) {
-      let last = first;
-      const now = () => (last = outsideById().get(first.id) ?? last);
-      row = {
-        id,
-        kind: "card",
-        get at() {
-          return now().at;
-        },
-        get card() {
-          return now();
-        },
-      };
-      outsideRows.set(id, row);
-    }
-    return row;
-  };
   /** The thread's rows with the cards raised from outside the chat placed where they were raised (lib/transcript-placement). */
-  const threadItems = createMemo(() => {
-    const list = items();
-    const outside = outsideCards();
-    const ids = new Set(outside.map((c) => outsideCardRowId(c.id)));
-    for (const id of outsideRows.keys()) if (!ids.has(id)) outsideRows.delete(id);
-    return list && outside.length ? placeOutsideCards(list, outside, outsideRow) : list;
-  });
+  const threadItems = createOutsideCardRows(items, outsideCards);
   /** Show in Chat for an offer card (§chat.composer/waiting-dialog): its `offer` call's row (the
       jump's highlight included), else the card where it stands (the tray at the thread's end). */
   const jumpToOffer = (card: OfferCard) => {

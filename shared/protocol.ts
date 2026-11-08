@@ -5423,8 +5423,10 @@ export type DiffScope = (
       brought in (the target before it to the landing commit). `branch`: a branch checked out in a
       worktree of that project's main checkout (never the checkout itself), its tip against its
       merge-base with the target, its uncommitted files included and marked as the worktree
-      scope's `uncommitted` does. Exactly one of the two. */
-  | { kind: "queue"; project: string; entry?: string; branch?: string; sessionPath?: undefined }
+      scope's `uncommitted` does. `review`: a blocking review's record (`${entry}:${run}`), the
+      commit its reviewer read against the target it was merged onto; once that commit is no longer
+      kept, the branch as it is now against its merge-base with the target. Exactly one of the three. */
+  | { kind: "queue"; project: string; entry?: string; branch?: string; review?: string; sessionPath?: undefined }
   /** One commit against its first parent (a root commit: against the empty tree). `sha` is hex,
       4–64 chars, resolved to a commit in that repository; a merge card's sha, typically. */
   | { kind: "commit"; sessionPath: string; repoPath: string; sha: string }
@@ -5443,6 +5445,7 @@ export function diffScopeQuery(s: DiffScope): string {
     const out = new URLSearchParams({ kind: s.kind, project: s.project });
     if (s.entry) out.set("entry", s.entry);
     if (s.branch) out.set("branch", s.branch);
+    if (s.review) out.set("review", s.review);
     for (const p of s.paths ?? []) out.append("paths", p);
     return out.toString();
   }

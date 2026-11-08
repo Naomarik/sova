@@ -67,7 +67,11 @@
       "src/components/Thread.tsx",
       "src/lib/transcript-builtins-dom.test.ts",
       "src/lib/transcript-builtins-dom.snapshot.json",
-      "src/lib/transcript-kinds-rule.test.ts"
+      "src/lib/transcript-kinds-rule.test.ts",
+      "src/components/MergeReviewCard.tsx",
+      "src/components/TranscriptCard.tsx",
+      "src/lib/transcript-kinds.ts",
+      "src/lib/merge-review-card.ts"
     ]
   },
   "§chat.transcript-cards/card-tool": {

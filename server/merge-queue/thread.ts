@@ -62,8 +62,8 @@ export type ThreadEvent =
   | { kind: "failed"; entry: ThreadEntry; run: string; summary?: string; base?: string }
   /** Can't tell whose failure: a check failed on the merge and on the target alone; the user is asked meanwhile. */
   | { kind: "unattributed"; entry: ThreadEntry; run: string; summary?: string; base?: string }
-  /** The review said blocking: its findings went back to the branch's chat by themselves. */
-  | { kind: "review"; entry: ThreadEntry; run: string; findings: string; base?: string }
+  /** The review said blocking: its whole report, which waits for the thread to hand it to the branch's chat. */
+  | { kind: "review"; entry: ThreadEntry; run: string; findings: string; waits?: "out-of-tries" | "same-twice"; base?: string }
   /** A resolution the thread judged safe failed a check: the branch isn't blamed; it rules again. */
   | { kind: "resolution-failed"; entry: ThreadEntry; run: string; files: string[]; summary?: string; base?: string; scratch?: string; scratchError?: string }
   /** The branch's spec drafts changed since the user's Land. */
@@ -304,10 +304,20 @@ function eventBody(ev: ThreadEvent): string {
     }
     case "review": {
       const e = ev.entry;
+      if (ev.waits) {
+        return [
+          `Review flagged: entry ${e.id} · ${e.branch} at ${short(e.commit)}, run ${ev.run}. It waits for the user (${ev.waits === "same-twice" ? "the same findings as the review before" : "out of tries"}): nothing goes to the branch's chat and nothing is needed from you. Its whole report, for your context:`,
+          ev.findings,
+          "End your turn.",
+        ].join("\n");
+      }
       return [
-        `Review flagged: entry ${e.id} · ${e.branch} at ${short(e.commit)}, run ${ev.run}. Its findings went back to the branch's chat by themselves:`,
+        `Review flagged: entry ${e.id} · ${e.branch} at ${short(e.commit)}, run ${ev.run}. Its whole report, as the reviewer wrote it:`,
         ev.findings,
-        `If a finding can't be fixed without a decision that is the user's, rule merge.rule {entry: "${e.id}", ruling: "needs-user", text: <the question>, choices: [..]}. Otherwise nothing is needed: end your turn.`,
+        `Hand it to the branch's chat, in one call, within a few minutes (it waits for you, then goes by itself without a note):`,
+        `- merge.rule {entry: "${e.id}", ruling: "chat-fixes"} — Sova sends the reviewer's words as written; never retype, shorten or soften a finding. Add text: <your note> only when you have something the findings don't say (it shows after them as "Merge thread: …"); or`,
+        `- merge.rule {entry: "${e.id}", ruling: "needs-user", text: <the question>, choices: [..]} when a finding can't be fixed without a decision that is the user's.`,
+        `A note later, while the branch is back with its chat: merge.rule {entry: "${e.id}", ruling: "chat-fixes", text: <note>} (it counts no try). merge.note stays the landing note and never reaches the chat.`,
         NEEDS_USER_LINE,
       ].join("\n");
     }

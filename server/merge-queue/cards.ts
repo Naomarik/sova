@@ -10,10 +10,12 @@ import {
   type MergeQueueView,
   type MergeRun,
   newerWords,
+  type ReviewCard,
 } from "../../shared/merge-queue";
 import { MERGE_QUEUE_SENT_PREFIX } from "../../shared/senders";
 import { countBetween, type Git, realGit } from "./guard";
 import { type MergeNoticeKind, noticeText } from "./notices";
+import { reviewNotesLine } from "./review-record";
 
 /**
  * A branch's card in the chat that built it (a Sova built-in card, kind `sova.merge-queue`): one per branch, raised
@@ -39,6 +41,8 @@ interface CardsRecord {
   done: Record<string, string>;
   /** Hidden lines for the model's next turn. */
   lines: CardLine[];
+  /** The review cards standing in this chat (§chat.merge-queue/review-card), oldest first. */
+  reviews?: ReviewCard[];
   /** Wakes written with their outcome and not yet taken by the chat. One no process is sending any more (Sova stopped
    *  between the write and the send) becomes the hidden line; it is never sent again, so it can never be a second turn. */
   wakes?: CardLine[];
@@ -56,8 +60,12 @@ export interface CardsDeps {
   dropRequests?: (entry: string) => void;
   /** How a request reached its chat: pushed on its chat queue, or the hidden line (ProjectQueue.requestDelivered). */
   delivered?: (request: string, delivery: "queued" | "fallback-line") => void;
-  /** A chat's cards changed. */
-  publish?: (session: string, cards: MergeCard[]) => void;
+  /** A chat's cards changed (its review cards with them). */
+  publish?: (session: string, cards: MergeCard[], reviews?: ReviewCard[]) => void;
+  /** The chat a branch chat's requests go to: itself, or for a worker the chat that runs it (wake.ts); null: none known. */
+  homeOf?: (session: string) => Promise<{ id: string; path: string } | null>;
+  /** The reviewer chat of a run (chats.ts), for Open Reviewer Chat. */
+  reviewerOf?: (root: string, run: string) => { session: string; path: string; cleared?: true } | undefined;
   git?: Git;
   now?: () => number;
   log?: (line: string) => void;
@@ -80,6 +88,10 @@ const OUTCOME_OF_STATE: Partial<Record<MergeEntry["state"], MergeCardOutcome>> =
 };
 const LINES_MAX = 50;
 const CARDS_MAX = 200;
+const REVIEW_CARDS_MAX = 100;
+const KEPT_TTL_MS = 10_000;
+/** A review card's states that the queue card points to ("Review found {k} issues"). */
+const POINTED: readonly ReviewCard["state"][] = ["with-thread", "fixing", "waiting"];
 const short = (sha: string | undefined) => (sha ?? "").slice(0, 7);
 
 export class MergeCards {
@@ -88,6 +100,10 @@ export class MergeCards {
   private readonly pending = new Set<string>();
   /** Wakes this process is sending now (their record's `wakes` entry is theirs, not stale). */
   private readonly waking = new Set<string>();
+  /** Each entry's review cards' chat, as last found (the queue card's pointer names it). */
+  private readonly homes = new Map<string, { id: string; path?: string }>();
+  /** Recent readings of whether a reviewed commit is kept. */
+  private readonly kept = new Map<string, { kept: boolean; at: number }>();
 
   constructor(private readonly deps: CardsDeps) {
     this.git = deps.git ?? realGit;
@@ -106,7 +122,7 @@ export class MergeCards {
     if (existsSync(f)) {
       try {
         const r = JSON.parse(readFileSync(f, "utf8")) as CardsRecord;
-        if (Array.isArray(r.cards)) return { session, cards: r.cards, done: r.done ?? {}, lines: r.lines ?? [], ...(r.wakes?.length ? { wakes: r.wakes } : {}) };
+        if (Array.isArray(r.cards)) return { session, cards: r.cards, done: r.done ?? {}, lines: r.lines ?? [], ...(r.wakes?.length ? { wakes: r.wakes } : {}), ...(r.reviews?.length ? { reviews: r.reviews } : {}) };
       } catch (err) {
         this.deps.log?.(`[merge-queue] cards of ${session} unreadable (${err instanceof Error ? err.message : err}); starting over`);
       }
@@ -118,6 +134,7 @@ export class MergeCards {
     mkdirSync(this.deps.dir, { recursive: true });
     if (rec.cards.length > CARDS_MAX) rec.cards = rec.cards.slice(-CARDS_MAX);
     if (rec.lines.length > LINES_MAX) rec.lines = rec.lines.slice(-LINES_MAX);
+    if (rec.reviews && rec.reviews.length > REVIEW_CARDS_MAX) rec.reviews = rec.reviews.slice(-REVIEW_CARDS_MAX);
     const f = this.file(rec.session);
     const tmp = `${f}.tmp-${process.pid}`;
     writeFileSync(tmp, `${JSON.stringify(rec, null, 1)}\n`);
@@ -126,7 +143,7 @@ export class MergeCards {
 
   private publish(rec: CardsRecord): void {
     try {
-      this.deps.publish?.(rec.session, rec.cards);
+      this.deps.publish?.(rec.session, rec.cards, rec.reviews ?? []);
     } catch (err) {
       this.deps.log?.(`[merge-queue] cards publish: ${err instanceof Error ? err.message : err}`);
     }
@@ -135,6 +152,104 @@ export class MergeCards {
   /** A chat's cards, oldest first. */
   cardsOf(session: string): MergeCard[] {
     return this.read(session).cards;
+  }
+
+  /** A chat's review cards, oldest first, as last revised. */
+  reviewsOf(session: string): ReviewCard[] {
+    return this.read(session).reviews ?? [];
+  }
+
+  /** A chat's review cards as the page reads them: whether each reviewed commit is still kept is read now (a commit
+   *  goes at a gc, with no queue event, and a finished entry's card is never revised again), cached briefly. */
+  async reviewsRead(session: string): Promise<ReviewCard[]> {
+    const list = this.reviewsOf(session);
+    const out: ReviewCard[] = [];
+    for (const c of list) {
+      const kept = (await this.commitKept(c.root, c.reviewed.tip)) && (await this.commitKept(c.root, c.reviewed.base));
+      out.push(kept === c.reviewed.kept ? c : { ...c, reviewed: { ...c.reviewed, kept } });
+    }
+    return out;
+  }
+
+  /**
+   * The entry's review records as cards (§chat.merge-queue/review-card), each in the chat its request goes to: a new
+   * one at that chat's end (once per record, keyed by its id), the rest revised in place from their records.
+   */
+  async reviews(e: MergeEntry, root: string): Promise<void> {
+    if (!e.session || !e.reviews?.length) return;
+    const found = (await this.deps.homeOf?.(e.session).catch(() => null)) ?? null;
+    const home = found?.id ?? e.session;
+    this.homes.set(e.id, found ?? { id: home });
+    const kept = new Map<string, boolean>();
+    for (const r of e.reviews) kept.set(r.tip, (await this.commitKept(root, r.tip)) && (await this.commitKept(root, r.base)));
+    const pre = this.read(home);
+    const fresh = e.reviews.filter((r) => !pre.reviews?.some((c) => c.id === r.id) && !this.pending.has(`review:${r.id}`));
+    for (const r of fresh) this.pending.add(`review:${r.id}`);
+    try {
+      const after = fresh.length ? await this.place(home) : undefined;
+      const rec = this.read(home);
+      let changed = false;
+      for (const r of e.reviews) {
+        const reviewer = this.deps.reviewerOf?.(root, r.run);
+        const card: ReviewCard = {
+          id: r.id,
+          entry: e.id,
+          session: home,
+          project: e.project,
+          root,
+          branch: e.branch,
+          target: e.target,
+          commit: r.commit,
+          run: r.run,
+          try: r.try,
+          of: r.of,
+          summary: r.summary,
+          findings: structuredClone(r.findings),
+          ...(r.note ? { note: { ...r.note } } : {}),
+          state: r.state,
+          ...(r.stoppedFor ? { stoppedFor: r.stoppedFor } : {}),
+          ...(reviewer ? { reviewer: { session: reviewer.session, path: reviewer.path, ...(reviewer.cleared ? { cleared: true as const } : {}) } } : {}),
+          reviewed: { base: r.base, tip: r.tip, kept: kept.get(r.tip) ?? false },
+          at: r.at,
+          updatedAt: r.updatedAt,
+        };
+        const list = (rec.reviews ??= []);
+        const i = list.findIndex((c) => c.id === r.id);
+        if (i < 0) {
+          if (!fresh.includes(r)) continue; // raised by another call meanwhile
+          list.push({ ...card, ...(after !== undefined ? { after } : {}) });
+          changed = true;
+          continue;
+        }
+        const old = list[i]!;
+        const next = { ...card, ...(old.after !== undefined ? { after: old.after } : {}) };
+        const { updatedAt: _a, ...a } = old;
+        const { updatedAt: _b, ...b } = next;
+        if (JSON.stringify(a) === JSON.stringify(b)) continue;
+        list[i] = next;
+        changed = true;
+      }
+      if (changed) {
+        this.write(rec);
+        this.publish(rec);
+      }
+    } finally {
+      for (const r of fresh) this.pending.delete(`review:${r.id}`);
+    }
+  }
+
+  /** The commit is still in the project's repository (a finding's lines are read against it); a reading is reused for
+   *  KEPT_TTL_MS, so a chat's reads never run git per card each time. */
+  private async commitKept(root: string, sha: string): Promise<boolean> {
+    const key = `${root}\0${sha}`;
+    const now = this.deps.now?.() ?? Date.now();
+    const hit = this.kept.get(key);
+    if (hit && now - hit.at < KEPT_TTL_MS) return hit.kept;
+    const r = await this.git(["cat-file", "-e", `${sha}^{commit}`], root).catch(() => null);
+    const kept = !!r && r.code === 0;
+    if (this.kept.size > 500) this.kept.clear();
+    this.kept.set(key, { kept, at: now });
+    return kept;
   }
 
   /** The hidden lines given after `since` (the chat's last card note), once each; null: none. */
@@ -228,6 +343,9 @@ export class MergeCards {
   async outcome(kind: MergeCardOutcome | "explained", e: MergeEntry, extra: { run?: MergeRun; root?: string; request?: MergeChatRequest } = {}): Promise<void> {
     if (!e.session) return;
     const session = e.session;
+    // Its review card first: the request's folded row comes below it (§chat.merge-queue/review-card).
+    const rootOf = extra.root ?? this.read(session).cards.find((c) => c.entry === e.id)?.root;
+    if (rootOf) await this.reviews(e, rootOf).catch((err) => this.deps.log?.(`[merge-queue] review cards of ${e.id}: ${err instanceof Error ? err.message : err}`));
     if (!this.read(session).cards.some((c) => c.entry === e.id)) return; // no card, no back-fill
     if (kind === "explained") {
       // The merge thread's explanation joins the same card, in place.
@@ -301,6 +419,8 @@ export class MergeCards {
   async request(e: MergeEntry, request: MergeChatRequest, run?: MergeRun): Promise<void> {
     if (!e.session) return;
     const session = e.session;
+    const rootOf = this.read(session).cards.find((c) => c.entry === e.id)?.root;
+    if (rootOf) await this.reviews(e, rootOf).catch(() => undefined);
     const key = `${e.id}:request:${request.id}`;
     if (this.pending.has(key) || this.read(session).done[key]) return;
     this.pending.add(key);
@@ -387,6 +507,7 @@ export class MergeCards {
     }
     for (const [session, list] of bySession) {
       this.settleStaleWakes(session);
+      for (const e of list) if (e.reviews?.length) await this.reviews(e, view.root).catch((err) => this.deps.log?.(`[merge-queue] review cards of ${e.id}: ${err instanceof Error ? err.message : err}`));
       const heads = new Map<string, string | undefined>();
       for (const e of list) if (!heads.has(e.branch)) heads.set(e.branch, await this.headOf(view.root, e.branch));
       const rec = this.read(session);
@@ -446,8 +567,13 @@ export class MergeCards {
     setOpt(card, "decision", e.decision && !e.decision.answered ? structuredClone(e.decision) : undefined);
     setOpt(card, "standing", e.state === "with-chat" && e.standing ? structuredClone(e.standing) : undefined);
     setOpt(card, "tries", e.tries && e.state !== "landed" ? structuredClone(e.tries) : undefined);
-    if (run && sentBack) card.failures = failuresOf(run);
+    // A blocking review's findings are on its own card: the queue card points there and lists no Review failure.
+    const review = e.reviews?.at(-1);
+    const pointed = review && POINTED.includes(review.state) && (e.state === "with-chat" || e.state === "needs-user") ? review : undefined;
+    setOpt(card, "reviewFound", pointed ? { card: pointed.id, session: this.homes.get(e.id)?.id ?? e.session ?? card.session, ...(this.homes.get(e.id)?.path ? { path: this.homes.get(e.id)!.path } : {}), count: pointed.findings.length } : undefined);
+    if (run && sentBack) card.failures = failuresOf(run, !!pointed);
     else if (!sentBack) delete card.failures;
+    else if (pointed && card.failures) card.failures = card.failures.filter((f) => !f.step.startsWith("review"));
     const changed = JSON.stringify(card) !== before;
     if (changed) card.updatedAt = this.iso();
     return changed;
@@ -493,9 +619,9 @@ function progressOf(run: MergeRun): { done: number; total: number } | undefined 
   return { done: run.steps.filter((s) => s.result === "passed" || s.result === "failed" || s.result === "skipped").length, total: run.steps.length };
 }
 
-function failuresOf(run: MergeRun): MergeCardFailure[] {
+function failuresOf(run: MergeRun, withoutReview = false): MergeCardFailure[] {
   return run.steps
-    .filter((s) => s.result === "failed")
+    .filter((s) => s.result === "failed" && !(withoutReview && s.kind === "review"))
     .slice(0, 6)
     .map((s) => {
       const tests = (s.failures ?? [])
@@ -515,6 +641,9 @@ export function lineText(kind: "landed" | "drafts-changed", e: MergeEntry, card?
   if (newer) parts.push(`${newer[0]!.toUpperCase()}${newer.slice(1)}.`);
   const note = e.notes.find((n) => n.kind === "thread" || n.kind === "operator");
   if (note) parts.push(`Note: ${note.text}`);
+  // A notes-only review, whole: told quietly, starting no turn (§chat.merge-queue/chat-turns).
+  const notes = reviewNotesLine(e.review);
+  if (notes) parts.push(notes);
   if (e.landed?.pushed === "not-pushed" && e.landed.pushWhy) parts.push(`Not pushed: ${e.landed.pushWhy}.`);
   return parts.join(" ");
 }

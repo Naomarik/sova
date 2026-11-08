@@ -91,6 +91,9 @@ export async function saveCurrentFor(path: string, label: unknown, sources: Dele
 export async function makeChatDefault(path: string): Promise<DefaultProfileInfo> {
   const s = await getSessionSummary(path);
   if (!s) throw new Error("Session file not found");
+  // A chat that takes no profile (the Overseer, a project overseer, a baton, an organization's,
+  // a worker's, the merge queue's) has none to make the default; it would read as Off.
+  if (s.overseer || s.projectOverseer || s.baton || s.org || s.workerSession || s.queueChat) throw new DefaultRefusal("This chat has no profile to make the default.");
   const chat = chatHandle(path) ?? (await acquireChatHandle(path));
   const key = await chatKey(chat);
   const now = await chatNow(chat);

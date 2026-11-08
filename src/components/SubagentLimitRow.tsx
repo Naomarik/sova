@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show, untrack } from "solid-js";
 import type { JoinedProfile } from "../../shared/profiles";
 import { fetchProfiles, switchProfile } from "../lib/api";
 import { chatProfileOf } from "../lib/chat-profile-state";
@@ -24,9 +24,26 @@ import { Banner } from "./ui";
  * never appears for an auth, network or policy error, and never guesses a worker's from this
  * chat's model.
  */
+/** The newest limit row of each chat, by path: a retried limit draws one error row per try, and
+    only the last one carries the limit row, so it never reads as a duplicate. */
+const newest = new Map<string, ReturnType<typeof createSignal<number>>>();
+let mounted = 0;
+const newestOf = (path: string) => {
+  let s = newest.get(path);
+  if (!s) newest.set(path, (s = createSignal(0)));
+  return s;
+};
+
 export function SubagentLimitRow(props: { path: string; message: string; provider?: string; model?: string }) {
   const host = useHostScope();
-  const provider = () => exhaustedProvider(props.message, props.provider);
+  const limited = () => exhaustedProvider(props.message, props.provider);
+  // Each row that names a limit takes the next number when it mounts; rows mount in thread order.
+  const [latest, setLatest] = untrack(() => newestOf(props.path));
+  let mine = 0;
+  createEffect(() => {
+    if (limited() && !mine) setLatest((mine = ++mounted));
+  });
+  const provider = () => (limited() && latest() === mine ? limited() : null);
   // Your profiles are what it offers, so the listing needs no folder.
   const [listing, { refetch }] = createResource(provider, () => fetchProfiles(null, host()));
   /** The chat's own profile state (its `chat_profile` message), for "(edited)" and its current profile. */

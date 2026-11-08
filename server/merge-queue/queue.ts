@@ -1803,15 +1803,15 @@ export class ProjectQueue {
     const fingerprint = p.counted?.fingerprint ?? this.failurePrint(p, run, rec?.findings);
     // Re-armed after a restart (recover): counted already, never twice.
     const t = p.counted ? { tries: p.counted.tries, max: p.counted.max } : this.countTry(e, fingerprint);
+    if (rec) {
+      rec.try = t.tries;
+      rec.of = t.max;
+    }
     if ("out" in t && t.out) {
       this.clearRulingTimer(e.id);
       if (e.ruling) delete e.ruling.pending;
       this.outOfTries(e, t.out === "same-twice" ? `Failed the same way twice: ${p.why}` : `Tried ${t.tries} times: ${p.why}`);
       return;
-    }
-    if (rec) {
-      rec.try = t.tries;
-      rec.of = t.max;
     }
     p = { ...p, counted: { tries: t.tries, max: t.max, fingerprint } };
     e.ruling = { ...(e.ruling ?? {}), pending: p };
@@ -2122,6 +2122,13 @@ export class ProjectQueue {
    * this was the last try, or the run failed the same way as the one before it (`fingerprint`, rulings.ts). Callers
    * count only runs whose failure is the branch's (never a void run, a machine failure, or one nobody can be blamed for).
    */
+  /** Whether a try counted now with `fingerprint` would run out (countTry's rule, changing nothing). */
+  private triesOut(e: Entry, fingerprint: string): "out-of-tries" | "same-twice" | undefined {
+    const t = e.tries ?? { used: 0, max: MERGE_TRIES, fingerprints: [] };
+    if (t.fingerprints.length > 0 && t.fingerprints[t.fingerprints.length - 1] === fingerprint) return "same-twice";
+    return t.used + 1 >= t.max ? "out-of-tries" : undefined;
+  }
+
   countTry(e: Entry, fingerprint?: string): { tries: number; max: number; out?: "out-of-tries" | "same-twice" } {
     const t = e.tries ?? { used: 0, max: MERGE_TRIES, fingerprints: [] };
     const same = !!fingerprint && t.fingerprints.length > 0 && t.fingerprints[t.fingerprints.length - 1] === fingerprint;
@@ -3453,9 +3460,16 @@ export class ProjectQueue {
           e.reviews = [...(e.reviews ?? []), rec].slice(-REVIEWS_KEPT);
           const why = `the review flagged it: ${rec.summary.slice(0, 160) || "see its findings"}`;
           const report = reportText(rec);
-          const asked = this.wake("review", e, run.id, { findings: report });
-          if (asked) this.awaitDiagnosis(e, { cause: "review", why, run: run.id, review: report, at: this.iso() });
-          else this.sendBack(e, { cause: "review", why, runId: run.id, review: report });
+          // Its try would run out (the last one, or the same findings twice): it waits for the user, nothing to hand on.
+          const waits = this.triesOut(e, this.failurePrint({ cause: "review", why, review: report }, run, rec.findings));
+          if (waits) {
+            this.sendBack(e, { cause: "review", why, runId: run.id, review: report });
+            this.wake("review", e, run.id, { findings: report, waits });
+          } else {
+            const asked = this.wake("review", e, run.id, { findings: report });
+            if (asked) this.awaitDiagnosis(e, { cause: "review", why, run: run.id, review: report, at: this.iso() });
+            else this.sendBack(e, { cause: "review", why, runId: run.id, review: report });
+          }
           this.kickSoon();
           return;
         }

@@ -81,14 +81,19 @@ describe("a blocking review goes through the merge thread", () => {
     }
   });
 
-  test("with no merge thread it goes at once; the same findings again stop for the user with a card of its own, the first left as it was", async () => {
-    const { k } = reviewKit((ev) => ev.kind === "fix");
+  for (const thread of [false, true])
+  test(`${thread ? "with" : "with no"} merge thread: ${thread ? "handed on" : "it goes at once"}; the same findings again stop for the user with a card of its own, the first left as it was`, async () => {
+    const { k, events } = reviewKit((ev) => ev.kind === "fix" || (thread && ev.kind === "review" && !ev.waits));
     try {
       k.run.set(() => ({ verdict: "review-flagged", review: blocking(FINDINGS.slice(0, 2)) }));
       const q = await k.q();
       const b = k.repo.branch("feat/rv2", { "r.txt": "r\n" });
       const { entry } = await q.add({ branch: "feat/rv2", by: "land-button", session: "s1" });
-      let e = await at(k, entry.id, "sent at once", (x) => !!x.requests?.length);
+      if (thread) {
+        await at(k, entry.id, "with the thread", (x) => x.reviews?.length === 1);
+        await q.rule(entry.id, { ruling: "chat-fixes" });
+      }
+      let e = await at(k, entry.id, "sent", (x) => !!x.requests?.length);
       assert.equal(newest(e).state, "fixing");
       assert.doesNotMatch(e.requests![0]!.text, /Merge thread:/, "no note without a thread");
       const fix = k.repo.commitOn(b.path, { "r.txt": "fixed\n" }, "try");
@@ -100,6 +105,8 @@ describe("a blocking review goes through the merge thread", () => {
       assert.equal(e.reviews!.length, 2, "a card per review");
       assert.equal(e.reviews![0]!.state, "re-reviewing", "the earlier review's record is left as it was");
       assert.equal(newest(e).state, "waiting");
+      assert.deepEqual({ try: newest(e).try, of: newest(e).of }, { try: 2, of: 3 }, "the try that run counted");
+      assert.equal(events.filter((ev) => ev.kind === "review").at(-1)!.waits, "same-twice", "the thread is told it waits for the user");
     } finally {
       await k.done();
     }

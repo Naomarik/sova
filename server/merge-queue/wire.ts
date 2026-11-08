@@ -723,7 +723,7 @@ export async function startMergeQueue(
       case "unattributed":
         return { kind: "unattributed", entry, run, ...why, ...base };
       case "review":
-        return { kind: "review", entry, run, findings: ev.findings ?? "", ...base };
+        return { kind: "review", entry, run, findings: ev.findings ?? "", ...(ev.waits ? { waits: ev.waits } : {}), ...base };
       case "resolution-failed":
         return { kind: "resolution-failed", entry, run, files: ev.files ?? [], ...why, ...base, ...(ev.scratch ? { scratch: ev.scratch } : {}), ...(ev.scratchError ? { scratchError: ev.scratchError } : {}) };
       case "drafts-changed":

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { SessionContextView } from "../../shared/protocol";
 import {
+  skillChip,
   clockOf,
   contextHeadline,
   contextLayout,
@@ -141,6 +142,14 @@ describe("a part's row and reading", () => {
     assert.equal(partOpens(get("conversation:replies")), false);
   });
 
+  test("a skill's chip tells a full read from a skim: Read only for all of it, the count for part, Not read yet for none", () => {
+    assert.deepEqual(skillChip({ read: true }), { word: "Read", done: true });
+    assert.deepEqual(skillChip({ read: false, linesRead: 140, lines: 510 }), { word: "Read 140 of 510 lines", done: false });
+    assert.deepEqual(skillChip({ read: false, linesRead: 1 }), { word: "Read 1 line", done: false });
+    assert.deepEqual(skillChip({ read: false }), { word: "Not read yet", done: false });
+    assert.deepEqual(skillChip({}), { word: "Not read yet", done: false });
+  });
+
   test("short lines: a file's folder and Loaded, a skill's description and Read or Not read yet, a count's words", () => {
     assert.deepEqual(partMeta(get("instructions:file:/p/AGENTS.md")), { chip: { word: "Loaded", done: true }, text: "This chat's folder" });
     assert.deepEqual(partMeta(get("instructions:file:/h/AGENTS.md")), { chip: { word: "Loaded", done: true }, text: "Your home folder" });
@@ -182,7 +191,7 @@ describe("the server's read", () => {
       state: "ok", cwd: "/p", window: 1000, total: 10, prompt: true, conversation: 5, checkedAt: 0,
       instructions: [{ id: "x", label: "AGENTS.md", tokens: 3, path: "/p/AGENTS.md" }],
       mode: { id: "x", label: "Mode", tokens: 2, text: "m" },
-      rules: [], skills: [{ id: "skill:pdf", label: "pdf", detail: "Read PDFs.", path: "/s/pdf/SKILL.md", tokens: 9, read: false }], tools: [{ id: "read", label: "read", tokens: 4, text: "{}" }],
+      rules: [], skills: [{ id: "skill:pdf", label: "pdf", detail: "Read PDFs.", path: "/s/pdf/SKILL.md", tokens: 9, read: false, linesRead: 40, lines: 80 }], tools: [{ id: "read", label: "read", tokens: 4, text: "{}" }],
       nested: [{ path: "api/AGENTS.md", abs: "/p/api/AGENTS.md", folder: "api", tokens: 1, loaded: false }],
       talk: { user: { count: 2, tokens: 3 }, replies: { count: 1, tokens: 2 }, toolResults: { count: 0, tokens: 0 }, other: { count: 0, tokens: 0 }, summary: { text: "S", tokens: 1, at: "2026-01-01T00:00:00Z" } },
     };
@@ -190,7 +199,7 @@ describe("the server's read", () => {
     assert.deepEqual(ps.map((p) => p.group), ["instructions", "subfolder", "mode", "skills", "tools", "conversation", "conversation", "conversation"]);
     assert.equal(new Set(ps.map((p) => p.id)).size, ps.length);
     assert.deepEqual(ps[1], { id: "subfolder:/p/api/AGENTS.md", group: "subfolder", label: "api/AGENTS.md", tokens: 1, path: "/p/api/AGENTS.md", folder: "api", loaded: false });
-    assert.deepEqual(ps[3], { id: "skills:skill:pdf", group: "skills", label: "pdf", tokens: 9, path: "/s/pdf/SKILL.md", detail: "Read PDFs.", read: false });
+    assert.deepEqual(ps[3], { id: "skills:skill:pdf", group: "skills", label: "pdf", tokens: 9, path: "/s/pdf/SKILL.md", detail: "Read PDFs.", read: false, linesRead: 40, lines: 80 });
     assert.deepEqual(ps.slice(5).map((p) => [p.label, p.count, p.tokens, p.text]), [["Replies", 1, 2, undefined], ["Your messages", 2, 3, undefined], ["Compaction summary", undefined, 1, "S"]]);
     assert.deepEqual(flatParts({ ...v, talk: undefined }).filter((p) => p.group === "conversation"), []);
   });

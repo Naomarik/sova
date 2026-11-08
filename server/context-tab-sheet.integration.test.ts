@@ -2,7 +2,7 @@
 // served from a scratch build with every request answered here (no server, no network). Every top line is a
 // group that opens one sheet over the tab, the same way whatever it holds; a part reads inside the sheet;
 // Escape and Back go back one level and focus returns to the row it came from, and the pane stays open; each
-// file is listed once, the ones not yet loaded last; skills say Read or Not read yet; Conversation opens to
+// file is listed once, the ones not yet loaded last; skills say Read, Read n of m lines, or Not read yet; Conversation opens to
 // its counts and the kept summary, with no transcript button; a failed read is a toast and the sheet stays. At 390, 880 and 1440 px,
 // every row is a 44px target and nothing scrolls sideways.
 // CTX_UI_SHOTS=<dir> also saves screenshots of each step, light and dark, at each width.
@@ -81,6 +81,7 @@ const VIEW: SessionContextView = {
   skills: [
     { id: "skill:design", label: "fold-ai-dev-design", detail: "Designing this project's interfaces and copy.", path: "/w/skills/design/SKILL.md", tokens: 380, read: true },
     { id: "skill:playwright", label: "playwright", detail: "Browser automation through CDP.", path: "/w/skills/playwright/SKILL.md", tokens: 300, read: false },
+    { id: "skill:spec", label: "spec-writing", detail: "Writing and agreeing the product's spec drafts.", path: "/w/skills/spec/SKILL.md", tokens: 320, read: false, linesRead: 140, lines: 510 },
   ],
   tools: TOOLS.map((name, i) => ({ id: `tool:${name}`, label: name, text: JSON.stringify({ name, description: `The ${name} tool.`, parameters: { type: "object" } }, null, 2), tokens: 300 + i * 40 })),
   conversation: 60_012,
@@ -271,11 +272,13 @@ for (const width of [390, 880, 1440]) {
       await page.locator(".context-crumb", { hasText: "Context" }).click();
       await page.locator(".context-sheet").waitFor({ state: "detached" });
 
-      // Skills: description and Read or Not read yet; a skill's note says what its size counts.
+      // Skills: description and Read, Read n of m lines, or Not read yet; a skill's note says what its size counts.
       await page.locator('[data-ctx-key="line:skills"]').click();
       const skills = await page.locator(".context-sheet .context-row").allInnerTexts();
-      assert.match(skills[0]!, /fold-ai-dev-design[\s\S]*Read[\s\S]*Designing this project's interfaces and copy\./);
-      assert.match(skills[1]!, /playwright[\s\S]*Not read yet[\s\S]*Browser automation through CDP\./);
+      const row = (name: string) => skills.find((t) => t.startsWith(`${name}\n`)) ?? "";
+      assert.match(row("fold-ai-dev-design"), /^fold-ai-dev-design\nRead\nDesigning this project's interfaces and copy\./);
+      assert.match(row("playwright"), /^playwright\nNot read yet\nBrowser automation through CDP\./);
+      assert.match(row("spec-writing"), /^spec-writing\nRead 140 of 510 lines\nWriting and agreeing the product's spec drafts\./);
       await shot(page, `${width}-light-5-skills`);
       await page.locator('[data-ctx-key="part:skills:skill:design"]').click();
       await page.locator(".context-sheet .md-viewer-doc").waitFor();

@@ -1717,9 +1717,14 @@ export interface SessionContextPart {
   tokens: number;
   path?: string;
   text?: string;
-  /** Skills only: the agent loaded the skill (read its SKILL.md, or it was invoked) since the latest
-      compaction, so its text is in the window now. */
+  /** Skills only: the agent loaded the whole skill (read all of its SKILL.md as it is now, or it was
+      invoked) since the latest compaction, so its text is in the window now. */
   read?: boolean;
+  /** Skills only, when the agent loaded part of its SKILL.md: how many of its lines (a union of every
+      read since the latest compaction), and `lines`, the file's length now. Absent when it read none or
+      all; `lines` is absent too when the file couldn't be measured. */
+  linesRead?: number;
+  lines?: number;
 }
 
 /** One kind of message in the conversation since the latest compaction: how many, and ≈ their tokens. */

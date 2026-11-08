@@ -24,8 +24,10 @@ export interface ContextPart {
   /** Subfolder files: the folder, relative to cwd, and whether it is in the window now. */
   folder?: string;
   loaded?: boolean;
-  /** Skills: loaded since the latest compaction. */
+  /** Skills: all of it loaded since the latest compaction; else how many of its SKILL.md's `lines` did. */
   read?: boolean;
+  linesRead?: number;
+  lines?: number;
   /** Conversation counts: how many messages of that kind. */
   count?: number;
   /** The compaction summary: when that compaction ran (ISO). */
@@ -35,7 +37,10 @@ export interface ContextPart {
 /** The server's read as one list of parts, in the order the window is built (ids prefixed by
     group, so two groups never collide). Conversation counts of 0 are left out. Pure. */
 export function flatParts(v: Extract<SessionContextView, { state: "ok" }>): ContextPart[] {
-  const of = (group: ContextPartGroup, ps: readonly { id: string; label: string; tokens: number; path?: string; text?: string; detail?: string; read?: boolean }[]): ContextPart[] =>
+  const of = (
+    group: ContextPartGroup,
+    ps: readonly { id: string; label: string; tokens: number; path?: string; text?: string; detail?: string; read?: boolean; linesRead?: number; lines?: number }[],
+  ): ContextPart[] =>
     ps.map((p) => ({
       id: `${group}:${p.id}`,
       group,
@@ -45,6 +50,8 @@ export function flatParts(v: Extract<SessionContextView, { state: "ok" }>): Cont
       ...(p.text !== undefined ? { text: p.text } : {}),
       ...(p.detail ? { detail: p.detail } : {}),
       ...(p.read !== undefined ? { read: p.read } : {}),
+      ...(p.linesRead ? { linesRead: p.linesRead } : {}),
+      ...(p.linesRead && p.lines ? { lines: p.lines } : {}),
     }));
   const t = v.talk;
   const tallies: ContextPart[] = t
@@ -231,7 +238,14 @@ export function clockOf(iso: string | undefined): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-/** A part's short line: a chip (Loaded, Read, Not read yet) and the words beside it. Pure. */
+/** A skill's chip: Read only for the whole SKILL.md, the count when part of it loaded, else Not read yet. Pure. */
+export function skillChip(p: Pick<ContextPart, "read" | "linesRead" | "lines">): { word: string; done: boolean } {
+  if (p.read) return { word: "Read", done: true };
+  if (p.linesRead) return { word: p.lines ? `Read ${p.linesRead} of ${p.lines} lines` : `Read ${counted(p.linesRead, "line", "lines")}`, done: false };
+  return { word: "Not read yet", done: false };
+}
+
+/** A part's short line: a chip (Loaded, Read, Read n of m lines, Not read yet) and the words beside it. Pure. */
 export function partMeta(p: ContextPart): { chip?: { word: string; done: boolean }; text: string } {
   switch (p.group) {
     case "instructions":
@@ -239,7 +253,7 @@ export function partMeta(p: ContextPart): { chip?: { word: string; done: boolean
     case "subfolder":
       return p.loaded ? { chip: { word: "Loaded", done: true }, text: fileFolder(p) } : { text: fileFolder(p) };
     case "skills":
-      return { chip: p.read ? { word: "Read", done: true } : { word: "Not read yet", done: false }, text: p.detail ?? "" };
+      return { chip: skillChip(p), text: p.detail ?? "" };
     case "conversation": {
       if (p.id === "conversation:summary") {
         const at = clockOf(p.at);

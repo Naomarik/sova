@@ -81,6 +81,16 @@ export function remapped(d: ProfilesDraft, keys: ReadonlyMap<string, string>, sa
   return next;
 }
 
+/**
+ * The library writer's notes that are about what this save touched. It checks the whole library on
+ * every write and names each slot "{profile}: {slot}", so a note about a profile nobody edited (a
+ * model with no credentials here) isn't this save's to report.
+ */
+export function notesFor(notes: readonly string[], touched: ReadonlySet<string>): string[] {
+  const names = [...touched].filter(Boolean);
+  return notes.filter((n) => names.some((name) => n.includes(`${name}: `)));
+}
+
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
 
 export const profilesDraft = createDraftStore<ProfilesDraft, ProfilesDraft, ProfilesListing>({
@@ -93,11 +103,14 @@ export const profilesDraft = createDraftStore<ProfilesDraft, ProfilesDraft, Prof
     const d = typedDraft(draft);
     let last: ProfileWriteAnswer | null = null;
     let wrote = false;
+    const notes: string[] = [];
+    const touched = new Set<string>();
     const keys = new Map<string, string>();
     const step = async (fn: () => Promise<ProfileWriteAnswer>) => {
       try {
         last = await fn();
         wrote = true;
+        for (const n of (last as ProfileWriteAnswer & { warnings?: string[] }).warnings ?? []) if (!notes.includes(n)) notes.push(n);
         return last;
       } catch (err) {
         if (!wrote || !last) throw err;
@@ -119,6 +132,9 @@ export const profilesDraft = createDraftStore<ProfilesDraft, ProfilesDraft, Prof
     for (const r of d.rows) {
       const body = saveRequestOf(d, base, r.key, sent);
       if (!body) continue;
+      touched.add(r.name);
+      const before = base.rows.find((x) => x.key === r.key);
+      if (before) touched.add(before.name);
       const answer = await step(() => saveMyProfile(body));
       if (isNewKey(r.key) && answer.savedKey) keys.set(r.key, answer.savedKey);
     }
@@ -131,7 +147,7 @@ export const profilesDraft = createDraftStore<ProfilesDraft, ProfilesDraft, Prof
     const answer: ProfilesListing = last;
     setListingSignal(answer);
     setSavedKeys(keys);
-    return { saved: savedOfListing(answer), warnings: (answer as ProfileWriteAnswer & { warnings?: string[] }).warnings ?? [], result: answer };
+    return { saved: savedOfListing(answer), warnings: notesFor(notes, touched), result: answer };
   },
   onReset: () => setListingSignal(null),
 });

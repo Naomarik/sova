@@ -300,11 +300,11 @@ export const getSubagentProfiles = (path?: string, host?: string | null) => requ
 export const putSubagentProfiles = (settings: SubagentProfilesFile, host?: string | null) => request<SubagentProfilesInfo>(hostUrl(host, "/api/settings/subagents"), { method: "PUT", body: JSON.stringify(settings) });
 /** Restore Previous Library: put the kept copy back as a new edit (§chat.subagent-profiles/replaced). */
 export const restoreSubagentProfiles = (file: string, host?: string | null) => request<SubagentProfilesInfo>(hostUrl(host, "/api/settings/subagents/restore"), { method: "POST", body: JSON.stringify({ file }) });
-/** This device's default (never synced): Make Default in Settings → Subagents writes it alone, always locally. */
+/** This device's default (never synced): Make Default in Settings → Profiles writes it alone, always locally. */
 export const putSubagentProfileDefault = (id: string) => request<SubagentProfilesInfo>("/api/settings/subagents/default", { method: "PUT", body: JSON.stringify({ default: id }) });
 export const pickSubagentProfile = (path: string, profile: string, host?: string | null) => request<SubagentProfilesInfo>(hostUrl(host, `/api/subagents?path=${encodeURIComponent(path)}`), { method: "POST", body: JSON.stringify({ profile }) });
 
-/** Delegate mode's routing (legacy file; Settings → Subagents edits routing per profile): which worker each kind of work goes to. */
+/** Delegate mode's routing (legacy file; Settings → Profiles edits routing per profile): which worker each kind of work goes to. */
 export const getDelegateSettings = () => request<DelegateSettingsInfo>("/api/settings/delegate");
 
 /** What each worker backend offers. Slow the first time (it asks the Claude Code CLI; cached 60s);
@@ -315,7 +315,7 @@ export const getDelegateOptions = () => request<DelegateOptions>("/api/settings/
 export const putDelegateSettings = (settings: DelegateSettings) =>
   request<DelegateSaveResult>("/api/settings/delegate", { method: "PUT", body: JSON.stringify(settings) });
 
-/** The spec writer (legacy file; Settings → Subagents edits it per profile): which worker writes draft claims and evidence while spec is on. */
+/** The spec writer (legacy file; Settings → Profiles edits it per profile): which worker writes draft claims and evidence while spec is on. */
 export const getSpecSettings = () => request<SpecSettingsInfo>("/api/settings/spec");
 
 /** What each worker backend offers for the writer: the same discovery as Delegate's. */
@@ -325,7 +325,7 @@ export const getSpecOptions = () => request<DelegateOptions>("/api/settings/spec
 export const putSpecSettings = (settings: SpecSettings) =>
   request<SpecSaveResult>("/api/settings/spec", { method: "PUT", body: JSON.stringify(settings) });
 
-/** Team defaults (legacy file, read to seed Settings → Subagents): the coordinator and monitor every new team gets. */
+/** Team defaults (legacy file, read to seed Settings → Profiles): the coordinator and monitor every new team gets. */
 export const getTeamDefaults = () => request<TeamDefaultsInfo>("/api/settings/team");
 
 /** Settings → Accounts: this host's Claude logins in order, their standing, and the add-login flow. */

@@ -303,7 +303,9 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
         <Banner tone="warn" title="Couldn't check which models are offered." body="Your saved choices stay, marked not verified." action={<RetryButton label="Check Again" onClick={() => void refetchOptions()} />} />
       </Show>
       <Show when={store.error()}>{(e) => <Banner tone="error" title="Couldn't save profiles." body={sentence(e().message)} />}</Show>
-      <For each={store.warnings()}>{(w) => <Banner tone="warn" title="Saved, with notes." body={sentence(w)} />}</For>
+      <Show when={store.warnings().length > 0}>
+        <Banner tone="warn" title="Saved, with notes." body={store.warnings().map(sentence).join(" ")} />
+      </Show>
 
       <Show when={draft() && groups()}>
         <div class="profiles-layout">

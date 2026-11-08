@@ -195,3 +195,10 @@ test("a limit box's typed text saves as its number", () => {
   (x.rows[0]!.starts!.limits as unknown as Record<string, unknown>).hops = "7";
   assert.equal(typedDraft(x).rows[0]!.starts!.limits.hops, 7);
 });
+
+test("a save's notes are the profiles it touched, one banner's worth; a note about another profile isn't this save's", async () => {
+  const { notesFor } = await import("./profiles-draft");
+  const notes = ["OpenAI: Planning primary: gpt-6.1-sol isn't offered by pi", "Claude: Routine fallback: not verified", "Not verified, because pi couldn't list its models: Claude: Planning, Ollama: Routine"];
+  assert.deepEqual(notesFor(notes, new Set(["Claude"])), [notes[1], notes[2]]);
+  assert.deepEqual(notesFor(notes, new Set(["Tester"])), []);
+});

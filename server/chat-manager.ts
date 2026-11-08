@@ -2793,6 +2793,15 @@ class ChatSession {
   async switchProfile(t: ProfileSwitchTarget): Promise<({ ok: true } & ProfileSwitchResult) | { ok: false; status: 400 | 409; error: string }> {
     const checked = await this.checkProfileSwitch(t);
     if (!checked.ok) return checked;
+    // Back to the profile it is on, unedited: nothing to wait for, and no line, busy or not. A different
+    // switch that was waiting is dropped: the chat stays as it is.
+    if (this.switchChangesNothing(t)) {
+      if (this.pendingSwitch) {
+        this.pendingSwitch = null;
+        this.broadcastChatProfile();
+      }
+      return { ok: true, applies: "now", state: this.chatProfileState() };
+    }
     if (this.harness.isRunning() || this.isCompacting()) {
       this.pendingSwitch = t;
       this.switchOutcome = {};
@@ -2817,17 +2826,28 @@ class ChatSession {
    * Write the switch, all of it, between turns: model, effort, helper pick, then the hidden entry naming
    * the profile. The model goes first: if pi refuses it, nothing else was written.
    */
+  /** The helper pick a switch writes: its own helpers; without any, the default's, pinned only when the chat
+      already has a pick (a pick can't be cleared); a chat with none keeps following the default. */
+  private switchPickOf(t: ProfileSwitchTarget): string | undefined {
+    return t.subagents ?? (this.subagentPick !== undefined ? this.subagentProfileInfo().default : undefined);
+  }
+
+  /** The chat's own profile again, unedited, with the helpers it already has: a switch that changes nothing. */
+  private switchChangesNothing(t: ProfileSwitchTarget): boolean {
+    const on = this.chatProfileOn();
+    const ref = this.harness.model()?.ref;
+    const edited = !!on.model && !!ref && ref !== on.model;
+    const pick = this.switchPickOf(t);
+    return on.id === t.id && !edited && (pick === undefined || pick === this.subagentPick);
+  }
+
   private async applyProfileSwitch(t: ProfileSwitchTarget, model: HarnessModel | undefined): Promise<{ ok: true } | { ok: false; status: 409; error: string }> {
     if (this.harness.isRunning()) return { ok: false, status: 409, error: "A reply started; try again when it ends." };
     const on = this.chatProfileOn();
     const was = { model: this.harness.model(), thinking: this.harness.thinking() };
-    const edited = !!on.model && !!was.model && was.model.ref !== on.model;
-    // The helper pick it writes: its own helpers; without any, the default's, pinned only when the chat already
-    // has a pick (a pick can't be cleared); a chat with none keeps following the default.
-    const pick = t.subagents ?? (this.subagentPick !== undefined ? this.subagentProfileInfo().default : undefined);
-    const samePick = pick === undefined || pick === this.subagentPick;
+    const pick = this.switchPickOf(t);
     // The same profile again while it isn't edited changes nothing, and says nothing.
-    if (on.id === t.id && !edited && samePick) return { ok: true };
+    if (this.switchChangesNothing(t)) return { ok: true };
     this.flushDeferredAppends();
     try {
       if (model && model.ref !== was.model?.ref) await this.harness.setModel(model);

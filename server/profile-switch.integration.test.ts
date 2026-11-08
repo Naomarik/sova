@@ -384,4 +384,24 @@ describe("a profile switch, all at once (§chat.profiles/switch)", () => {
     assert.equal(chat.harness.model()?.ref, "openai/gpt-5.5");
     assert.equal(model.calls.length, 0, "no prompt was sent");
   });
+  test("the chat's own unedited profile while it is busy: no waiting switch, no line, and a waiting one is dropped", async () => {
+    const { path, chat, model } = await openChat();
+    assert.ok((await switchChatProfile(path, "fast")).ok);
+    const counts = written(path);
+    const release = model.hold();
+    const run = chat.prompt("hi").catch(() => undefined);
+    await until(() => chat.harness.isRunning() && model.calls.length === 1, "the reply to start");
+    const same = await switchChatProfile(path, "fast");
+    assert.ok(same.ok && same.applies === "now", JSON.stringify(same));
+    assert.equal(same.state.pending, undefined, "no waiting line");
+    // Another switch waits; picking the current profile again drops it.
+    const other = await switchChatProfile(path, "solo");
+    assert.ok(other.ok && other.applies === "after-turn");
+    const back = await switchChatProfile(path, "fast");
+    assert.ok(back.ok && back.applies === "now" && !back.state.pending, JSON.stringify(back));
+    release();
+    await run;
+    assert.equal(chat.chatProfileState().current.id, "fast");
+    assert.deepEqual(written(path), counts, "nothing written at the reply's end");
+  });
 });

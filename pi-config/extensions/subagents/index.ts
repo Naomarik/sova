@@ -2256,10 +2256,12 @@ export function registerSubagents(
 		| { denied: string } => {
 		const route = delegate.profiles[kind];
 		const primary = choiceTuple(route.primary);
-		const first = tupleDenial(ctx, primary);
+		// A denial is a sentence of its own; spliced into a line it loses its final period.
+		const clause = (why: string | undefined) => why?.replace(/\.\s*$/, "");
+		const first = clause(tupleDenial(ctx, primary));
 		if (!first) return { tuple: primary, how: "primary" };
 		const fallback = route.fallback ? choiceTuple(route.fallback) : null;
-		const second = fallback ? tupleDenial(ctx, fallback) : "no fallback is set";
+		const second = fallback ? clause(tupleDenial(ctx, fallback)) : "no fallback is set";
 		if (fallback && !second) return { tuple: fallback, how: `fallback; primary ${tupleText(primary)} can't run: ${first}` };
 		return { denied: `primary ${tupleText(primary)}: ${first}; fallback${fallback ? ` ${tupleText(fallback)}` : ""}: ${second}` };
 	};
@@ -4442,7 +4444,7 @@ export function registerSubagents(
 				toMainChatNotice(text);
 				toastWarning(`${title} stopped: ${primaryText} ${why.reason}.`);
 			} else {
-				const text = `${title} ${member.role} (${member.workerId}) in ${team.id} can't run: its primary ${primaryText} ${said}, and ${reasonLine}. It keeps running and fails each turn until its model has usage again. To replace it: set a fallback in Settings → Subagents → Teams, stop it with agent_kill { id: "${member.workerId}" }, then start its successor with team_succeed { team: "${team.id}", role: "${member.role}" }.`;
+				const text = `${title} ${member.role} (${member.workerId}) in ${team.id} can't run: its primary ${primaryText} ${said}, and ${reasonLine}. It keeps running and fails each turn until its model has usage again. To replace it: set a fallback in Settings → Profiles, in the profile's Models part, Teams, stop it with agent_kill { id: "${member.workerId}" }, then start its successor with team_succeed { team: "${team.id}", role: "${member.role}" }.`;
 				teams.settleAction(teams.recordAction(member.workerId, "handover", "system", text), "failed", reasonLine);
 				toMainChatNotice(text);
 				toastWarning(`${title} can't run: ${primaryText} ${why.reason}.`);

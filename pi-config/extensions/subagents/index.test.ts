@@ -3386,7 +3386,7 @@ async function assertItem(h: { memberOf(id: string): { dir: string } | undefined
 	}
 	return found!;
 }
-function coordinatedHarness(file?: unknown, opts: { claude?: boolean; sessionId?: string } = {}) {
+function coordinatedHarness(file?: unknown, opts: { claude?: boolean; sessionId?: string; policyFile?: string } = {}) {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-team-defaults-"));
 	const agentDir = path.join(root, "agent");
 	fs.mkdirSync(agentDir);
@@ -3397,6 +3397,7 @@ function coordinatedHarness(file?: unknown, opts: { claude?: boolean; sessionId?
 	const timers: { fn: () => void; ms: number }[] = [];
 	const h = harness(eventBus(), {
 		mailboxRoot: path.join(root, "mail"), mailboxPollMs: 10, agentDir, inboxDebounceMs: 30, inboxRetryMs: [30, 60],
+		...(opts.policyFile ? { policyFile: opts.policyFile } : {}),
 		setTimer: (fn, ms) => { const t = { fn, ms }; timers.push(t); return t as any; },
 	});
 	h.ctx.sessionManager.getSessionId = () => opts.sessionId ?? SESSION_ID;
@@ -3623,7 +3624,7 @@ test("team defaults pick the fallback when the primary cannot run, else the chat
 			const m = harness(eventBus(), { mailboxRoot: path.join(own.root, "mail3"), agentDir: own.agentDir, policyFile, setTimer: (() => ({})) as any });
 			try { return await m.call("agent_spawn", { prompt: "p" }).then(() => "", (e: Error) => e.message); } finally { await m.close(); }
 		})();
-		assert.ok(member && refused.includes(member.replace(/^Error: /, "").split("\n")[0]), `refused with a member's own denial: ${member} / ${refused}`);
+		assert.ok(member && refused.includes(member.replace(/^Error: /, "").split("\n")[0].replace(/\.$/, "")), `refused with a member's own denial: ${member} / ${refused}`);
 	} finally { await own.cleanup(); fs.rmSync(policyDir, { recursive: true, force: true }); }
 });
 
@@ -4475,8 +4476,8 @@ const KIND_ROUTES = {
 	complex: { primary: { backend: "pi", model: "test/deep", effort: "xhigh" }, fallback: null },
 };
 /** A coordinated harness on "My setup" with KIND_ROUTES (or `routes`), whose registry knows every test/* model but test/nope. */
-async function kindsHarness(routes: Record<string, unknown> = {}) {
-	const h = coordinatedHarness(DEFAULTS_FILE);
+async function kindsHarness(routes: Record<string, unknown> = {}, policyFile?: string) {
+	const h = coordinatedHarness(DEFAULTS_FILE, policyFile ? { policyFile } : {});
 	h.ctx.modelRegistry.find = (p: string, m: string) => (p === "test" && m !== "nope" ? { provider: p, id: m } : undefined);
 	await h.commands.get("team").handler("defaults", h.ctx); // a first read seeds the library
 	const libPath = path.join(h.agentDir, "subagent-profiles.json");
@@ -4538,6 +4539,22 @@ test("member kinds: a kind whose primary can't run uses its fallback and says so
 		assert.equal(h.workers.length, before, "no worker started, the coordinator and monitor included");
 		assert.equal(h.appended.filter((e) => e.customType === "subagents-team-v1").length, 1, "only the first team was recorded");
 	} finally { await h.cleanup(); }
+});
+
+test("member kinds: a denial the model settings word as a sentence reads as one clause in the member's line, never \".;\"", async () => {
+	const policyDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-kind-policy-"));
+	const policyFile = path.join(policyDir, "policy.json");
+	fs.writeFileSync(policyFile, JSON.stringify({ version: 1, disabledProviders: [], disabledModels: ["test/fast"] }));
+	const h = await kindsHarness({}, policyFile);
+	try {
+		const created = (await h.callRaw("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build", kind: "routine" }] })).content[0].text;
+		const line = created.split("\n").find((l: string) => l.startsWith("dev: "));
+		assert.match(line, /^dev: Routine implementation on pi\/test\/model\/medium \(fallback; primary pi\/test\/fast\/low can't run: [^\n]*agent_models lists the allowed ones; subagent profile "My setup"\)\.$/);
+		assert.doesNotMatch(created, /\.;/);
+		h.setRoutes({ complex: { primary: { backend: "pi", model: "test/fast", effort: "high" }, fallback: null } });
+		const refused = await h.callRaw("team_add", { team: "Crew", members: [{ role: "hard", prompt: "p", kind: "complex" }] }).then(() => "", (e: Error) => e.message);
+		assert.match(refused, /^Members not added: hard's kind Complex implementation can't run here \(primary pi\/test\/fast\/high: [^\n]*agent_models lists the allowed ones; fallback: no fallback is set\)\. Ask the user/);
+	} finally { await h.cleanup(); fs.rmSync(policyDir, { recursive: true, force: true }); }
 });
 
 test("member kinds: under any profile but Off a member with neither a kind nor a model is refused before anything starts; under Off it runs on the chat's model", async () => {

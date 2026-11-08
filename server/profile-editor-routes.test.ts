@@ -19,6 +19,7 @@ writeFileSync(join(stateDir, "session-profiles.json"), JSON.stringify({ version:
 writeFileSync(join(agentDir, "mode.json"), JSON.stringify({ version: 1, mode: "normal", strict: false, minorModes: [] }));
 
 const { registerProfileRoutes } = await import("./session-profile-routes");
+const { DEFAULT_LIMITS, PROFILE_ENTRY } = await import("../shared/profiles");
 const { registerProfileEditorRoutes } = await import("./profile-editor-routes");
 import type { ProfileWriteAnswer } from "../shared/profiles";
 
@@ -65,6 +66,25 @@ describe("the profile routes", () => {
     const off = await call("PUT", "/api/profiles/default", { key: "off" });
     assert.equal(off.body.defaultProfile?.key, "sova:default");
     assert.equal((await call("POST", "/api/profiles/mine/delete", { key: "library:solo" })).status, 200);
+  });
+
+  test("Make Default from a chat that takes no profile (here the merge queue's thread) is refused, and nothing is written", async () => {
+    const dir = join(agentDir, "sessions", "--tmp-routes--");
+    mkdirSync(dir, { recursive: true });
+    const id = "0199cccc-0000-7000-8000-000000000001";
+    const path = join(dir, `2026-11-08T00-00-00-000Z_${id}.jsonl`);
+    const thread = { id: "merge-thread", label: "Merge thread", icon: "branch", description: "", remove: [], grant: [], singleton: false, limits: DEFAULT_LIMITS, overseerMayStart: false, source: "sova" };
+    writeFileSync(path, [
+      { type: "session", version: 3, id, timestamp: "2026-11-08T00:00:00.000Z", cwd: agentDir },
+      { type: "custom", customType: PROFILE_ENTRY, data: { v: 1, profile: thread }, id: "e1", parentId: null, timestamp: "2026-11-08T00:00:01.000Z" },
+    ].map((l) => JSON.stringify(l)).join("\n") + "\n");
+    const defFile = join(stateDir, "default-profile.json");
+    const before = readFileSync(defFile, "utf8");
+    const libDefault = readFileSync(join(agentDir, "subagent-profiles-default.json"), "utf8");
+    const r = await call("PUT", "/api/profiles/default", { path });
+    assert.deepEqual([r.status, r.body.error], [409, "This chat has no profile to make the default."]);
+    assert.equal(readFileSync(defFile, "utf8"), before);
+    assert.equal(readFileSync(join(agentDir, "subagent-profiles-default.json"), "utf8"), libDefault);
   });
 
   test("Duplicate answers the copy's key", async () => {

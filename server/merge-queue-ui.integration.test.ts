@@ -888,8 +888,8 @@ for (const width of [1280, 390]) {
       assert.equal(await hashOf(page), `#/projects/${PID}/merge-queue/landed`);
       assert.match(await words(panel), new RegExp(NOTE.replace(/[.;]/g, "\\$&")));
       await showTab(page, "Queue chats");
-      // An empty tab: the live fact, then the absence; its panel takes focus, so Tab from the strip reaches the line.
-      assert.equal((await words(panel)).trim(), "1 being checked, 2 waiting. No queue chat yet.");
+      // An empty tab: the live fact, then what shows there; its panel takes focus, so Tab from the strip reaches the line.
+      assert.equal((await words(panel)).trim(), "1 being checked, 2 waiting. Each chat the queue starts shows here.");
       assert.equal(await panel.getAttribute("tabindex"), "0");
       await strip.getByRole("tab", { selected: true }).focus();
       await page.keyboard.press("Tab");
@@ -1377,7 +1377,7 @@ for (const width of [1280, 390]) {
       await l.ctx.close();
     });
 
-    test("an empty queue: Waiting is a plain line; each empty tab says the live fact first; a typed …/ready opens Ready to land", async () => {
+    test("an empty queue: Waiting is a plain line; each empty tab says the live fact, then what shows there; a typed …/ready opens Ready to land", async () => {
       const view = viewOf({ current: undefined, checking: [], waiting: [], needsYou: [], needsFix: [], recent: [], ready: [] });
       const o = await open(width, `#/projects/${PID}/merge-queue/ready`, { view });
       const { page } = o;
@@ -1393,11 +1393,11 @@ for (const width of [1280, 390]) {
       assert.equal(await tab.getByText(/A branch joins when you press Land/).count(), 0);
       const panel = tab.locator(".mq-tabpanel");
       for (const [label, line] of [
-        ["Ready to land", "The queue is idle. Nothing is ready to land."],
-        ["Needs you", "The queue is idle. Nothing needs you."],
-        ["With its chat", "The queue is idle. Nothing is with its chat."],
-        ["Landed", "The queue is idle. Nothing has landed through the queue yet."],
-        ["Queue chats", "The queue is idle. No queue chat yet."],
+        ["Ready to land", "The queue is idle. A finished branch shows here until you land it."],
+        ["Needs you", "The queue is idle. A branch shows here when it needs your decision."],
+        ["With its chat", "The queue is idle. A branch shows here while its chat fixes what the queue sent back."],
+        ["Landed", "The queue is idle. Each landing shows here."],
+        ["Queue chats", "The queue is idle. Each chat the queue starts shows here."],
       ] as const) {
         if (label !== "Ready to land") await showTab(page, label);
         assert.equal((await words(panel)).trim(), line, label);

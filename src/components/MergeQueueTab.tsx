@@ -455,8 +455,8 @@ function scrollerOf(el: HTMLElement): HTMLElement | null {
 }
 
 /**
- * The live fact an empty tab's line starts with (the design system's empty state: the fact, then the absence): what
- * the queue is doing now.
+ * The live fact an empty tab's line starts with (the design system's empty state: the fact, then what will show
+ * there): what the queue is doing now.
  */
 export function queueFact(v: MergeQueueView): string {
   const n = v.waiting.length;
@@ -517,7 +517,7 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
         return ready().length;
       },
       get empty() {
-        return `${queueFact(v())} Nothing is ready to land.`;
+        return `${queueFact(v())} A finished branch shows here until you land it.`;
       },
       panel: () => (
         <ul class="list mq-list">
@@ -538,7 +538,7 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
         return needsCount();
       },
       get empty() {
-        return `${queueFact(v())} Nothing needs you.`;
+        return `${queueFact(v())} A branch shows here when it needs your decision.`;
       },
       panel: () => (
         <ul class="list mq-list">
@@ -565,7 +565,7 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
         return withItsChat(v()).length;
       },
       get empty() {
-        return `${queueFact(v())} Nothing is with its chat.`;
+        return `${queueFact(v())} A branch shows here while its chat fixes what the queue sent back.`;
       },
       panel: () => (
         <ul class="list mq-list">
@@ -586,7 +586,7 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
             return (v().waitingOnHost ?? []).length;
           },
           get empty() {
-            return `${queueFact(v())} Nothing is waiting on ${hostOf(v()) ?? "the host"}.`;
+            return `${queueFact(v())} A branch shows here while its request waits on ${hostOf(v()) ?? "the host"}.`;
           },
           panel: () => (
             <ul class="list mq-list" aria-label={`Waiting on ${hostOf(v()) ?? "the host"}`}>
@@ -606,7 +606,7 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
         return v().recent.length;
       },
       get empty() {
-        return `${queueFact(v())} Nothing has landed through the queue yet.`;
+        return `${queueFact(v())} Each landing shows here.`;
       },
       panel: () => (
         <ul class="list mq-list">
@@ -624,7 +624,7 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
         return (v().chats ?? []).length;
       },
       get empty() {
-        return `${queueFact(v())} No queue chat yet.`;
+        return `${queueFact(v())} Each chat the queue starts shows here.`;
       },
       panel: () => <QueueHistory projectId={projectId} view={v()} onChanged={onChanged} />,
     },

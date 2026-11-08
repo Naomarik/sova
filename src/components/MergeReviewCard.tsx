@@ -1,7 +1,8 @@
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onMount, Show } from "solid-js";
 import type { ReviewCard as Review, ReviewFinding } from "../../shared/merge-queue";
 import type { CardInfo } from "../../shared/transcript-cards";
 import { transcriptRoot } from "../lib/jump";
+import { takeReviewJump } from "../lib/review-jump";
 import { findingPlace, foldedReviewLine, kindWord, reviewCardLabel, reviewHead, reviewRowOf, reviewStateLine, TIP_GONE_LINE } from "../lib/merge-review-card";
 import { mergeRunHref, projectSessionHref } from "../lib/projects-route";
 import { toast } from "../lib/ui-state";
@@ -53,8 +54,18 @@ function Body(props: { review: Review; readOnly?: boolean }) {
     if (el) el.scrollIntoView({ block: "center", behavior: "instant" });
     else toast("That card isn't in the transcript on screen.");
   };
+  let el: HTMLDivElement | undefined;
+  // Followed from a queue card in another chat: land on this card's top and focus it, as the same-chat jump does.
+  onMount(() => {
+    if (props.readOnly || !el || !takeReviewJump(r().id)) return;
+    const land = el;
+    requestAnimationFrame(() => {
+      land.scrollIntoView({ block: "start", behavior: "instant" });
+      land.focus({ preventScroll: true });
+    });
+  });
   return (
-    <div class="card mq-review-card" tabindex="-1" role="group" aria-label={reviewCardLabel(r())} data-state={r().state} data-branch={r().branch}>
+    <div ref={el} class="card mq-review-card" tabindex="-1" role="group" aria-label={reviewCardLabel(r())} data-state={r().state} data-branch={r().branch}>
       <div class="mq-review-head">
         <span class="icon icon-sm" style={{ "--icon": "url(/icons/alert-circle.svg)" }} aria-hidden="true" />
         <span class="mq-review-title">Review found issues</span>

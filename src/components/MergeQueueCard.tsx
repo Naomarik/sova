@@ -4,6 +4,7 @@ import { clockTime, tildePath } from "../lib/format";
 import { cardActionLabel, cardActions, cardDecision, cardFacts, cardLabel, cardNewer, cardNotes, cardPill, cardSha, foldedLine, isNewest, notPushed, queueRowOf, reviewNotes, reviewPointer, type CardAction, type QueueCard, type QueueCardRow } from "../lib/merge-queue-card";
 import { findingPlace, kindWord, reviewRowCardId } from "../lib/merge-review-card";
 import { ensureRendered, transcriptRoot } from "../lib/jump";
+import { leaveReviewJump } from "../lib/review-jump";
 import { outsideCardRowId } from "../lib/transcript-placement";
 import { HELD_NOTE_LINE, STANDING_LINE, standingWords } from "../lib/merge-standing";
 import { CardContext } from "../lib/card-controls";
@@ -78,7 +79,7 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
     const p = pointer();
     if (!p) return;
     // Its card stands in this chat: land on it; in another chat (a worker's branch), the link opens that chat.
-    if (p.session !== d().session && p.path) return;
+    if (p.session !== d().session && p.path) return leaveReviewJump(p.id);
     e.preventDefault();
     // By the card's own id: an outside card's row id shares its "card:" prefix with every other outside card's.
     const root = transcriptRoot(session?.path);

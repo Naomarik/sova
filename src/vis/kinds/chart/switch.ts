@@ -30,7 +30,11 @@ export interface ChartViews {
   views: ChartView[];
   /** The model's view (the fence's `type:`). */
   model: ChartType;
-  /** Every value above 0, gaps aside (scatter: every x and y). */
+  /**
+   * Log is worth offering: every value above 0, gaps aside, and the largest at least 10 times the
+   * smallest (a scatter: every x and y above 0, and x or y spans that); always when the model wrote
+   * `scale: log`.
+   */
   logOk: boolean;
   /** Not already in percent, no value below 0 and something to share (a single series' sum above 0). */
   pctOk: boolean;
@@ -43,6 +47,58 @@ const capacity = (spec: ChartSpec) => spec.type === "parts" && spec.of !== undef
 /** Values already in percent (`unit: %`, or rows written `12%`): % would only rescale them. */
 const percent = (spec: ChartSpec) => !!spec.percent || /^(%|percent|pct)$/i.test(spec.unit?.trim() ?? "");
 
+/** The largest at least this many times the smallest: a range wide enough for Log to help. */
+export const LOG_SPAN = 10;
+const spans = (vs: number[]) => vs.length > 0 && vs.every((v) => v > 0) && Math.max(...vs) >= LOG_SPAN * Math.min(...vs);
+
+function logWorth(spec: ChartSpec): boolean {
+  if (spec.scale === "log") return true;
+  if (spec.type !== "scatter") return spans(values(spec));
+  const axis = (i: number) => spec.rows.map((r) => r.values[i]).filter((v): v is number => v !== null && v !== undefined);
+  const xs = axis(0);
+  const ys = axis(1);
+  const positive = [...xs, ...ys].every((v) => v > 0);
+  return positive && (spans(xs) || spans(ys));
+}
+
+const MONTH = "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?";
+const WEEKDAY = "mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?";
+/** One word of a label that reads as a point in an order: a date, time, year, number, month or weekday, quarter, week. */
+const ORDERED_WORD = new RegExp(
+  "^(?:" +
+    [
+      `(?:${MONTH})\\.?(?:[-/']\\d{1,4})?`, // Jan, Sept., Jan-2024, Jan'24
+      `(?:${WEEKDAY})\\.?`, // Mon, Tuesday
+      "\\d{1,4}(?:[-/.]\\d{1,2}){1,2}(?:t\\d{1,2}(?::\\d{2}){1,2}z?)?", // 2024-01-05, 01/05, 5.1.24, 2024-01-05T10:00
+      "\\d{1,2}(?::\\d{2}){1,2}(?:[ap]\\.?m\\.?)?|\\d{1,2}[ap]\\.?m\\.?|[ap]\\.?m\\.?", // 10:30, 9am, 10:30 pm
+      "(?:fy|cy)?'?\\d{2,4}", // 2024, FY24, '24
+      "[<>≤≥~]?[-+]?\\d[\\d,_]*(?:\\.\\d+)?[a-zµ%]{0,3}\\+?(?:[-–][-+]?\\d[\\d,_]*(?:\\.\\d+)?[a-zµ%]{0,3})?", // 12, 1.5k, 64GB, 100+, 0-10
+      "\\d{1,2}(?:st|nd|rd|th)", // 5th
+      "(?:\\d{2,4}[-/]?)?[qh][1-4](?:[-/']?\\d{2,4})?", // Q1, 2024-Q1, Q1'24, H2
+      "(?:\\d{4}-)?(?:w|wk)\\d{1,2}", // W43, 2024-W43
+    ].join("|") +
+    ")$",
+  "i",
+);
+/** A word then a number (`Turn 1`, `Step 2`, `v3`, `Build #42`): the word, lower-cased; else null. */
+const wordNumber = (label: string): string | null => {
+  const m = /^(.*?\p{L}.*?)[\s#_-]*\d+(?:\.\d+)*$/u.exec(label.trim());
+  return m ? m[1]!.trim().toLowerCase() : null;
+};
+
+/**
+ * Rows that read as an order, so a Line between them means something: every label a date, time,
+ * year, number, month or weekday name, quarter (Q1) or week (W43), or every label one shared word
+ * plus a number (Turn 1, Step 2, v3). Regions, folders, test tiers or phone models aren't.
+ */
+export function orderedLabels(labels: readonly string[]): boolean {
+  if (labels.length === 0) return false;
+  const words = (l: string) => l.trim().split(/[\s,]+/).filter(Boolean);
+  if (labels.every((l) => words(l).length > 0 && words(l).every((w) => ORDERED_WORD.test(w)))) return true;
+  const prefixes = labels.map(wordNumber);
+  return prefixes.every((p) => p !== null && p === prefixes[0]);
+}
+
 function fits(spec: ChartSpec, view: ChartView): boolean {
   const vs = values(spec);
   const neg = vs.some((v) => v < 0);
@@ -50,20 +106,21 @@ function fits(spec: ChartSpec, view: ChartView): boolean {
     case "bar":
       return true;
     case "line":
-      return spec.rows.length >= 2;
+      return spec.rows.length >= 2 && orderedLabels(spec.rows.map((r) => r.label));
     case "stacked":
       return spec.series.length >= 2 && !neg;
     case "parts": {
       const gaps = spec.rows.some((r) => r.values.some((v) => v === null));
       const sum = vs.reduce((a, v) => a + v, 0);
-      return seriesCount(spec) === 1 && spec.rows.length >= 2 && spec.rows.length <= MAX_PARTS && !gaps && !neg && sum > 0;
+      // Numbers already in percent aren't parts of a whole Parts could add up.
+      return !percent(spec) && seriesCount(spec) === 1 && spec.rows.length >= 2 && spec.rows.length <= MAX_PARTS && !gaps && !neg && sum > 0;
     }
   }
 }
 
 export function chartViews(spec: ChartSpec): ChartViews {
   const vs = values(spec);
-  const logOk = vs.length > 0 && vs.every((v) => v > 0);
+  const logOk = logWorth(spec);
   if (spec.type === "scatter" || capacity(spec)) return { views: [], model: spec.type, logOk: spec.type === "scatter" && logOk, pctOk: false };
   const single = seriesCount(spec) === 1;
   const pctOk = !percent(spec) && !vs.some((v) => v < 0) && (single ? vs.reduce((a, v) => a + v, 0) > 0 : vs.some((v) => v > 0));
@@ -191,23 +248,43 @@ export const isModel = (spec: ChartSpec, choice: ChartChoice): boolean => {
   return c.view === m.view && c.log === m.log && !c.sort && !c.pct;
 };
 
-/** The row order Sort draws: largest first (a row's total with several series), ties in source order, gaps last. */
-export function sortOrder(spec: ChartSpec): number[] {
-  const key = (r: ChartRow) => (r.values.every((v) => v === null) ? -Infinity : r.values.reduce<number>((a, v) => a + (v ?? 0), 0));
+/**
+ * The row order Sort draws, by what is drawn: largest first, ties in source order, gaps last.
+ * Without % a row ranks by its value (its total with several series). With % (`pct`) and one
+ * series that is its share, the same order; with several every row sums to 100, so a row ranks
+ * by its first series' share of it.
+ */
+export function sortOrder(spec: ChartSpec, pct = false): number[] {
+  const total = (r: ChartRow) => r.values.reduce<number>((a, v) => a + (v ?? 0), 0);
+  const share = (r: ChartRow) => (total(r) > 0 ? (r.values[0] ?? 0) / total(r) : 0);
+  const byShare = pct && seriesCount(spec) > 1;
+  const key = (r: ChartRow) => (r.values.every((v) => v === null) ? -Infinity : byShare ? share(r) : total(r));
   return spec.rows.map((r, i) => ({ i, k: key(r) })).sort((a, b) => b.k - a.k || a.i - b.i).map((x) => x.i);
 }
 
 const TONE_OF_SERIES: Tone[] = ["accent", "warn", "ok", "error", "info", "muted"];
 const clean = (v: number) => Number(v.toPrecision(12));
 
-/** The spec a choice draws: the model's spec as another type, with its rows sorted or as shares. */
+/** Parts past `of:`, drawn without it: a warning about Parts, so only the model's Parts view lists it. */
+const OVER_CAPACITY = /drawn without of:$/;
+
+/**
+ * The spec a choice draws: the model's spec as another type, with its rows sorted or as shares.
+ * Rows written like `12%` set no unit; every view draws them with their % sign.
+ */
 export function drawAs(spec: ChartSpec, choice: ChartChoice): ChartSpec {
   const c = settle(spec, choice);
   if (spec.type === "scatter") return c.log === (spec.scale === "log") ? spec : { ...spec, scale: c.log ? "log" : "linear" };
-  if (capacity(spec)) return spec;
+  const written = spec.percent && spec.unit === undefined ? { unit: "%" } : {};
+  if (capacity(spec)) return spec.percent && spec.unit === undefined ? { ...spec, ...written } : spec;
   const view = c.view as ChartView;
   const on = inEffect(spec, c);
-  const out: ChartSpec = { ...spec, type: view, scale: on.log ? "log" : "linear", rows: spec.rows.map((r) => ({ ...r, values: [...r.values] })) };
+  const out: ChartSpec = { ...spec, ...written, type: view, scale: on.log ? "log" : "linear", rows: spec.rows.map((r) => ({ ...r, values: [...r.values] })) };
+  if (view !== spec.type && spec.warnings) {
+    const kept = spec.warnings.filter((w) => !OVER_CAPACITY.test(w.message));
+    if (kept.length) out.warnings = kept;
+    else delete out.warnings;
+  }
   if (view === "parts") {
     out.series = [];
     // Parts colour untoned rows in turn: under Sort each keeps the colour it has in source order.
@@ -229,7 +306,7 @@ export function drawAs(spec: ChartSpec, choice: ChartChoice): ChartSpec {
     out.unit = "%";
   }
   if (on.sort) {
-    const order = sortOrder(spec);
+    const order = sortOrder(spec, on.pct);
     out.rows = order.map((i) => out.rows[i]!);
     const at = new Map(order.map((from, to) => [String(from), String(to)]));
     if (spec.emphasis) out.emphasis = spec.emphasis.map((e): Emphasis => ({ ...e, key: at.get(e.key) ?? e.key }));

@@ -4,7 +4,7 @@ import { emphasisMap, emphasisNotes } from "../../core/emphasis";
 import { parseVis } from "../../parse";
 import { MAX_PARTS, type ChartSpec } from "./parse";
 import { partsOf } from "./parts";
-import { appliesIn, chartViews, drawAs, inEffect, isModel, modelChoice, offeredToggles, pickView, settle, shownToggles, sortOrder, toggle, toggleStates, VIEW_ORDER, type ChartChoice, type ChartView, type Toggle } from "./switch";
+import { appliesIn, chartViews, drawAs, inEffect, isModel, modelChoice, offeredToggles, orderedLabels, pickView, settle, shownToggles, sortOrder, toggle, toggleStates, VIEW_ORDER, type ChartChoice, type ChartView, type Toggle } from "./switch";
 
 const parse = (body: string) => parseVis("chart", body);
 const chart = (body: string) => {
@@ -19,18 +19,20 @@ const rows = (n: number, v: (i: number) => string = (i) => String(i + 1)) => Arr
 
 /** Bodies without `type:`: each test sets the type it reads them as. */
 const BODIES: Record<string, string> = {
-  one: "a 5\nb 3\nc 9\nmark b warn \"low\"",
-  oneRow: "a 5",
-  neg: "a 5\nb -3\nc 9",
-  gap: "a 5\nb -\nc 9",
-  zero: "a 0\nb 0\nc 0",
+  one: "Jan 5\nFeb 3\nMar 90\nmark Feb warn \"low\"",
+  oneRow: "Jan 5",
+  neg: "Jan 5\nFeb -3\nMar 9",
+  gap: "Jan 5\nFeb -\nMar 9",
+  zero: "Jan 0\nFeb 0\nMar 0",
   thirteen: rows(13),
   twelve: rows(12),
-  multi: "series: x, y\na 1 2\nb 3 4\nc 0 9\nmark c \"big\"",
-  multiGap: "series: x, y\na 1 -\nb 3 4",
-  multiNeg: "series: x, y\na 1 -2\nb 3 4",
-  multiOneRow: "series: x, y\na 1 2",
+  multi: "series: x, y\nQ1 1 2\nQ2 3 4\nQ3 0 9\nmark Q3 \"big\"",
+  multiGap: "series: x, y\nQ1 1 -\nQ2 3 4",
+  multiNeg: "series: x, y\nQ1 1 -2\nQ2 3 4",
+  multiOneRow: "series: x, y\nQ1 1 2",
   tones: "a 5 ok\nb 3\nc 9 error\nd 4",
+  regions: "us-east 5\neu-west 3\nap-south 9",
+  percent: "Jan 12%\nFeb 30%\nMar 45%",
 };
 
 test("chart views: what each kind of chart offers", () => {
@@ -46,19 +48,28 @@ test("chart views: what each kind of chart offers", () => {
     multiGap: ["bar", "stacked", "line"],
     multiNeg: ["bar", "line"],
     multiOneRow: ["bar", "stacked"],
-    tones: ["bar", "line", "parts"],
+    // Rows that don't read as an order get no Line.
+    tones: ["bar", "parts"],
+    regions: ["bar", "parts"],
+    // Numbers already in percent get no Parts.
+    percent: ["bar", "line"],
   };
   for (const [name, body] of Object.entries(BODIES)) assert.deepEqual(views(body), expect[name], name);
   // A scatter and a capacity parts chart offer no switch.
   assert.deepEqual(views("type: scatter\na 1 2\nb 3 4"), []);
   assert.deepEqual(views("type: parts\nof: 100\na 30\nb 20"), []);
   // Parts past their capacity draw without of:, and then switch as a one-series chart does.
-  const over = chart("type: parts\nof: 10\na 30\nb 20");
+  const over = chart("type: parts\nof: 10\nStep 1 30\nStep 2 20");
   assert.equal(over.of, undefined);
   assert.deepEqual(chartViews(over).views, ["bar", "line", "parts"]);
   // The model's own view is always one of them, even where it alone would not fit.
   assert.deepEqual(views("type: line\na 5"), ["bar", "line"]);
-  assert.deepEqual(views("type: stacked\na 5\nb 6"), ["bar", "stacked", "line", "parts"]);
+  assert.deepEqual(views("type: line\nus-east 5\neu-west 3"), ["bar", "line", "parts"], "the model's Line on unordered rows");
+  assert.deepEqual(views("type: parts\na 12%\nb 30%"), ["bar", "parts"], "the model's Parts on percents");
+  assert.deepEqual(views("unit: %\na 12\nb 30"), ["bar"]);
+  assert.deepEqual(views("unit: pct\na 12\nb 30"), ["bar"]);
+  assert.deepEqual(views("unit: ms\na 12\nb 30"), ["bar", "parts"]);
+  assert.deepEqual(views("type: stacked\nJan 5\nFeb 6"), ["bar", "stacked", "line", "parts"]);
   assert.equal(MAX_PARTS, 12);
 });
 
@@ -87,7 +98,7 @@ test("chart views: the views offered draw what the parser draws for that type (c
 });
 
 test("chart views: Log shows on Bar and Line when every value is above 0, starts on from scale: log, and is kept across views", () => {
-  const log = chart("scale: log\nseries: x, y\na 1 10\nb 100 1000");
+  const log = chart("scale: log\nseries: x, y\nQ1 1 10\nQ2 100 1000");
   const c = modelChoice(log);
   assert.equal(c.log, true);
   assert.deepEqual(shownToggles(log, c), { log: true, sort: true, pct: false });
@@ -99,23 +110,46 @@ test("chart views: Log shows on Bar and Line when every value is above 0, starts
   const back = pickView(log, stacked, "line");
   assert.equal(drawAs(log, back).scale, "log", "applies again on return");
   // Not with a zero, a negative; gaps are fine.
-  assert.equal(shownToggles(chart("a 0\nb 3"), choice({ view: "bar" })).log, false);
-  assert.equal(shownToggles(chart("a -1\nb 3"), choice({ view: "bar" })).log, false);
-  assert.equal(shownToggles(chart("a -\nb 3"), choice({ view: "bar" })).log, true);
+  assert.equal(shownToggles(chart("a 0\nb 30"), choice({ view: "bar" })).log, false);
+  assert.equal(shownToggles(chart("a -1\nb 30"), choice({ view: "bar" })).log, false);
+  assert.equal(shownToggles(chart("a -\nb 3\nc 30"), choice({ view: "bar" })).log, true);
+  // Only where the numbers span a wide range: the largest at least 10 times the smallest.
+  const logOk = (body: string) => chartViews(chart(body)).logOk;
+  const SPAN: [string, boolean][] = [
+    ["a 5\nb 3\nc 9", false],
+    ["a 1\nb 9.9", false],
+    ["a 1\nb 10", true],
+    ["a 2\nb 3\nc 2000", true],
+    ["a -\nb 3\nc 29", false],
+    ["a 5", false],
+    ["series: x, y\na 1 2\nb 3 4", false],
+    ["series: x, y\na 1 2\nb 3 40", true],
+    ["series: x, y\na 1 -\nb 3 40", true],
+    // The model's scale: log is always offered.
+    ["scale: log\na 5\nb 6", true],
+  ];
+  for (const [body, want] of SPAN) assert.equal(logOk(body), want, body);
+  assert.deepEqual(offeredToggles(chart("scale: log\na 5\nb 6")), ["log", "sort", "pct"]);
+  assert.deepEqual(offeredToggles(chart("a 5\nb 6")), ["sort", "pct"]);
   // Parts never shows it.
   assert.equal(shownToggles(chart(BODIES.one!), choice({ view: "parts" })).log, false);
   // A Log restored where it can't apply is dropped.
   assert.equal(settle(chart("a 0\nb 3"), choice({ view: "bar", log: true })).log, false);
 });
 
-test("chart views: a scatter shows Log only when every x and y is above 0, and no views", () => {
-  const s = chart("type: scatter\na 1 2\nb 3 4");
+test("chart views: a scatter shows Log only when every x and y is above 0 and x or y spans a wide range, and no views", () => {
+  const s = chart("type: scatter\na 1 2\nb 30 4");
   assert.deepEqual(shownToggles(s, modelChoice(s)), { log: true, sort: false, pct: false });
   const on = toggle(s, modelChoice(s), "log");
   assert.equal(drawAs(s, on).scale, "log");
   assert.equal(drawAs(s, on).type, "scatter");
-  assert.equal(shownToggles(chart("type: scatter\na 0 2\nb 3 4"), choice({ view: "scatter" })).log, false);
-  assert.equal(shownToggles(chart("type: scatter\na 1 -2\nb 3 4"), choice({ view: "scatter" })).log, false);
+  assert.equal(shownToggles(chart("type: scatter\na 0 2\nb 30 4"), choice({ view: "scatter" })).log, false);
+  assert.equal(shownToggles(chart("type: scatter\na 1 -2\nb 30 4"), choice({ view: "scatter" })).log, false);
+  const logOk = (body: string) => chartViews(chart(`type: scatter\n${body}`)).logOk;
+  assert.equal(logOk("a 1 2\nb 3 4"), false, "neither axis spans");
+  assert.equal(logOk("a 1 2\nb 3 40"), true, "y spans");
+  assert.equal(logOk("a 1 2\nb 10 3"), true, "x spans");
+  assert.equal(chartViews(chart("type: scatter\nscale: log\na 1 2\nb 3 4")).logOk, true, "the model's scale: log");
   assert.equal(settle(s, choice({ view: "bar" })).view, "scatter");
 });
 
@@ -139,7 +173,7 @@ test("chart views: % and Log exclude each other while in effect; Sort and % stay
   const line = pickView(s, c, "line");
   assert.deepEqual(line, choice({ view: "line", sort: true, pct: true, recent: "pct" }), "Sort kept on Line");
   assert.deepEqual(inEffect(s, line), { log: false, sort: false, pct: true });
-  assert.deepEqual(drawAs(s, line).rows.map((r) => r.label), ["a", "b", "c"], "Line draws in source order");
+  assert.deepEqual(drawAs(s, line).rows.map((r) => r.label), ["Jan", "Feb", "Mar"], "Line draws in source order");
   assert.equal(toggle(s, line, "sort"), line, "a kept Sort can't flip where greyed");
   const parts = pickView(s, c, "parts");
   assert.deepEqual(parts, choice({ view: "parts", sort: true, pct: true, recent: "pct" }), "% kept on Parts");
@@ -156,7 +190,7 @@ test("chart views: % and Log exclude each other while in effect; Sort and % stay
   assert.equal(shownToggles(chart(BODIES.zero!), choice({ view: "bar" })).pct, false);
   assert.equal(shownToggles(chart(BODIES.multiGap!), choice({ view: "stacked" })).pct, true);
   // No % where the values already are percents: `unit: %`, or rows written `12%`.
-  for (const body of ["unit: %\na 12\nb 30", "a 12%\nb 30%", "unit: percent\na 12\nb 30", "series: x, y\na 12% 4%\nb 30% 9%"]) {
+  for (const body of ["unit: %\na 12\nb 30", "a 12%\nb 30%", "unit: percent\na 12\nb 30", "unit: pct\na 12\nb 30", "series: x, y\na 12% 4%\nb 30% 9%"]) {
     const c = chart(body);
     assert.equal(chartViews(c).pctOk, false, body);
     for (const view of chartViews(c).views) assert.equal(shownToggles(c, choice({ view })).pct, false, `${body} as ${view}`);
@@ -175,7 +209,7 @@ test("chart views: % is each value's share: of the sum with one series, of its r
   assert.equal(one.unit, "%");
   const total = one.rows.reduce((a, r) => a + r.values[0]!, 0);
   assert.ok(Math.abs(total - 100) < 1e-9, `${total}`);
-  assert.ok(Math.abs(one.rows[0]!.values[0]! - (5 / 17) * 100) < 1e-9);
+  assert.ok(Math.abs(one.rows[0]!.values[0]! - (5 / 98) * 100) < 1e-9);
   for (const view of ["bar", "stacked", "line"] as const) {
     const m = drawAs(chart(BODIES.multiGap!), choice({ view, pct: true }));
     for (const r of m.rows) assert.ok(Math.abs(r.values.reduce<number>((a, v) => a + (v ?? 0), 0) - 100) < 1e-9, `${view} ${r.label}`);
@@ -229,7 +263,15 @@ test("chart toggles: the head's set is fixed per chart, greyed where this choice
     const r = parse(`type: ${t}\n${body}`);
     if (r.ok) specs.push([`${t}/${name}`, r.spec as ChartSpec]);
   }
-  specs.push(["scatter", chart("type: scatter\na 1 2\nb 3 4")], ["capacity", chart("type: parts\nof: 100\na 30\nb 20")], ["pct", chart("unit: %\na 30\nb 20")]);
+  specs.push(
+    ["scatter", chart("type: scatter\na 1 2\nb 30 4")],
+    ["scatter narrow", chart("type: scatter\na 1 2\nb 3 4")],
+    ["capacity", chart("type: parts\nof: 100\na 30\nb 20")],
+    ["pct", chart("unit: %\na 30\nb 20")],
+    ["pct wide", chart("unit: %\nJan 3\nFeb 30")],
+    ["percent rows", chart("Jan 3%\nFeb 30%")],
+    ["log narrow", chart("scale: log\na 5\nb 6")],
+  );
   for (const [name, spec] of specs) {
     const offered = offeredToggles(spec);
     const views: ChartChoice["view"][] = chartViews(spec).views.length ? chartViews(spec).views : [spec.type];
@@ -278,11 +320,13 @@ test("chart toggles: the head's set is fixed per chart, greyed where this choice
 });
 
 test("chart toggles: what each chart offers, and the greyed hints", () => {
-  const one = chart("a 5\nb 3\nc 9");
+  const one = chart("Jan 5\nFeb 3\nMar 90");
   assert.deepEqual(offeredToggles(one), ["log", "sort", "pct"]);
-  assert.deepEqual(offeredToggles(chart("a 5\nb -3\nc 9")), ["sort"]);
-  assert.deepEqual(offeredToggles(chart("unit: %\na 30\nb 20")), ["log", "sort"]);
-  assert.deepEqual(offeredToggles(chart("type: scatter\na 1 2\nb 3 4")), ["log"]);
+  assert.deepEqual(offeredToggles(chart("a 5\nb -3\nc 90")), ["sort"]);
+  assert.deepEqual(offeredToggles(chart("unit: %\na 3\nb 30")), ["log", "sort"]);
+  assert.deepEqual(offeredToggles(chart("unit: %\na 30\nb 20")), ["sort"]);
+  assert.deepEqual(offeredToggles(chart("type: scatter\na 1 2\nb 30 4")), ["log"]);
+  assert.deepEqual(offeredToggles(chart("type: scatter\na 1 2\nb 3 4")), []);
   assert.deepEqual(offeredToggles(chart("type: parts\nof: 100\na 30\nb 20")), []);
   const hint = (c: ChartChoice) => Object.fromEntries(toggleStates(one, c).map((s) => [s.toggle, s.hint ?? null]));
   assert.deepEqual(hint(choice({ view: "bar" })), { log: null, sort: null, pct: null });
@@ -303,7 +347,7 @@ test("chart toggles: what each chart offers, and the greyed hints", () => {
 });
 
 test("chart toggles: Log kept through Stacked leaves % free; turned on there, the newer of the two wins back on Bar", () => {
-  const m = chart("series: x, y\na 1 2\nb 3 4");
+  const m = chart("series: x, y\nQ1 1 2\nQ2 30 4");
   let c = toggle(m, choice({ view: "bar" }), "log");
   c = pickView(m, c, "stacked");
   const st = (x: ChartChoice) => Object.fromEntries(toggleStates(m, x).map((s) => [s.toggle, [s.enabled, s.on, s.hint ?? null]]));
@@ -324,4 +368,119 @@ test("chart toggles: Log kept through Stacked leaves % free; turned on there, th
   const off = toggle(m, c, "pct");
   assert.deepEqual(off, choice({ view: "stacked", log: true }));
   assert.equal(drawAs(m, pickView(m, off, "line")).scale, "log");
+});
+
+test("chart views: Line is offered only for rows that read as an order", () => {
+  const ORDERED: string[][] = [
+    ["2024-01-05", "2024-01-06", "2024-01-07"],
+    ["01/05", "01/06"],
+    ["2024-01-05T10:00", "2024-01-05T11:00"],
+    ["2024-01-05 10:00", "2024-01-05 11:00"],
+    ["10:30", "11:00", "11:30"],
+    ["9am", "10am", "11 am", "12 pm"],
+    ["2022", "2023", "2024"],
+    ["FY23", "FY24"],
+    ["1", "2", "4", "8"],
+    ["0.5", "1.5k", "64GB"],
+    ["0-10", "10-20", "20+"],
+    ["Jan", "Feb", "March"],
+    ["Jan 2024", "Feb 2024"],
+    ["Sep 24", "Oct 24"],
+    ["5 Jan", "6 Jan"],
+    ["Jan 5, 2024", "Jan 6, 2024"],
+    ["Mon", "Tue", "Wednesday"],
+    ["Q1", "Q2", "Q3", "Q4"],
+    ["Q1 2024", "2024-Q2", "Q3'24"],
+    ["H1", "H2"],
+    ["W43", "W44", "2024-W45"],
+    ["Turn 1", "Turn 2", "Turn 10"],
+    ["Step 1", "step 2"],
+    ["v3", "v4", "v5"],
+    ["v1.2", "v1.10"],
+    ["Build #41", "Build #42"],
+    ["Week 43", "Week 44"],
+    ["iPhone 15", "iPhone 16"],
+  ];
+  const NOT: string[][] = [
+    ["iPhone 16", "Pixel 9"],
+    ["Turn 1", "Step 2"],
+    ["us-east", "eu-west", "ap-south"],
+    ["src", "tests", "docs"],
+    ["unit", "integration", "e2e"],
+    ["a", "b", "c"],
+    ["Model 3", "Model Y"],
+    ["v3", "v4", "beta"],
+    ["Marketing", "Sales"],
+    ["Mayo", "Junee"],
+    ["Galaxy S24", "Pixel 9"],
+    ["Jan", "Other"],
+    ["Merge sort", "Quicksort"],
+    [],
+  ];
+  for (const ls of ORDERED) assert.equal(orderedLabels(ls), true, ls.join(" / "));
+  for (const ls of NOT) assert.equal(orderedLabels(ls), false, ls.join(" / "));
+  // As a chart offers it.
+  assert.ok(views("Turn 1 5\nTurn 2 3\nTurn 3 9").includes("line"));
+  assert.ok(!views('"iPhone 16" 5\n"Pixel 9" 3').includes("line"));
+  assert.ok(!views("unit 120\nintegration 40\ne2e 9").includes("line"));
+  // The model's own Line is always offered.
+  assert.ok(views("type: line\nunit 120\nintegration 40\ne2e 9").includes("line"));
+});
+
+test("chart views: rows written like 92% keep their % sign in every view, the model's included", () => {
+  const s = chart("Jan 92%\nFeb 88%\nMar 95%");
+  assert.equal(s.unit, undefined, "the parser sets no unit");
+  for (const view of chartViews(s).views) {
+    assert.equal(drawAs(s, choice({ view })).unit, "%", view);
+    assert.equal(drawAs(s, choice({ view, sort: true })).unit, "%", `${view} sorted`);
+  }
+  assert.equal(drawAs(s, modelChoice(s)).unit, "%");
+  // The model's Parts, and a capacity parts chart.
+  assert.equal(drawAs(chart("type: parts\na 12%\nb 30%"), choice({ view: "parts" })).unit, "%");
+  assert.equal(drawAs(chart("type: parts\nof: 100\na 12%\nb 30%"), choice({ view: "parts" })).unit, "%");
+  // A unit the model wrote stays.
+  assert.equal(drawAs(chart("unit: pts\nJan 12%\nFeb 30%"), choice({ view: "bar" })).unit, "pts");
+  assert.equal(drawAs(chart("Jan 12\nFeb 30"), choice({ view: "bar" })).unit, undefined);
+});
+
+test("chart views: Sort ranks by what is drawn; with % on several series by the first series' share", () => {
+  // One series: shares keep the values' order.
+  const one = chart("a 5\nb 9\nc 1\nd 9");
+  assert.deepEqual(sortOrder(one, true), sortOrder(one));
+  assert.deepEqual(drawAs(one, choice({ view: "bar", sort: true, pct: true })).rows.map((r) => r.label), ["b", "d", "a", "c"]);
+  // Several: by totals without %, by the first series' share with it.
+  const m = chart("series: x, y\na 1 9\nb 6 4\nc 30 70\nd 3 1\ne 6 4");
+  assert.deepEqual(sortOrder(m).map((i) => m.rows[i]!.label), ["c", "a", "b", "e", "d"], "ties keep source order");
+  assert.deepEqual(sortOrder(m, true).map((i) => m.rows[i]!.label), ["d", "b", "e", "c", "a"], "ties keep source order with % too");
+  for (const view of ["bar", "stacked"] as const) {
+    const d = drawAs(m, choice({ view, sort: true, pct: true }));
+    assert.deepEqual(d.rows.map((r) => r.label), ["d", "b", "e", "c", "a"], view);
+    const firsts = d.rows.map((r) => r.values[0]!);
+    assert.deepEqual([...firsts].sort((x, y) => y - x), firsts, `${view}: the drawn first shares fall`);
+  }
+  // A row with no values last; a gap in the first series ranks as none of it; an all-zero row as 0.
+  const g = chart("series: x, y\na - -\nb - 4\nc 1 1\nd 0 0");
+  assert.deepEqual(sortOrder(g, true).map((i) => g.rows[i]!.label), ["c", "b", "d", "a"]);
+  // Marks follow their rows under % too.
+  const mk = chart('series: x, y\na 1 9\nb 3 1\nmark a "small"');
+  assert.equal(emphasisMap(drawAs(mk, choice({ view: "stacked", sort: true, pct: true }))).get("1")?.note, "small");
+});
+
+test("chart views: the over-capacity Parts warning shows only in the model's view", () => {
+  const over = chart("type: parts\nof: 10\nStep 1 30\nStep 2 20\nmark Step 9 \"x\"");
+  const msgs = (spec: ChartSpec) => (spec.warnings ?? []).map((w) => w.message);
+  assert.ok(msgs(over).some((m) => /drawn without of:$/.test(m)));
+  assert.ok(msgs(over).length >= 2, "another warning to keep");
+  assert.deepEqual(msgs(drawAs(over, choice({ view: "parts" }))), msgs(over));
+  assert.deepEqual(msgs(drawAs(over, choice({ view: "parts", sort: true }))), msgs(over));
+  for (const view of ["bar", "line"] as const) {
+    const drawn = msgs(drawAs(over, choice({ view })));
+    assert.deepEqual(drawn, msgs(over).filter((m) => !/drawn without of:$/.test(m)), view);
+  }
+  // Its only warning: other views carry none.
+  const alone = chart("type: parts\nof: 10\nStep 1 30\nStep 2 20");
+  assert.equal(drawAs(alone, choice({ view: "bar" })).warnings, undefined);
+  assert.equal(drawAs(alone, choice({ view: "parts" })).warnings?.length, 1);
+  // The model's spec is untouched.
+  assert.equal(alone.warnings?.length, 1);
 });

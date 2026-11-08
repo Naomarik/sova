@@ -71,5 +71,7 @@ test("Update {name}: only yours, only while something it saves differs", () => {
   assert.equal(updateOffered(yours, { profile: same, chat: { model: null, thinking: null, mode: null, minorModes: null } }), false, "unknown is never a difference");
   assert.equal(updateOffered(row("p", ["zai"], { group: "project" }), { profile: same, chat: { ...same, mode: "normal" } }), false, "a project's file");
   assert.equal(updateOffered(OFF, { profile: undefined, chat: same }), false, "never Off");
-  assert.equal(updateOffered(row("lib", ["zai"], { kind: "library" }), { profile: undefined, chat: same }), true, "a library-only row gets its session half");
+  assert.equal(updateOffered(yours, { profile: { model: same.model, thinking: same.thinking }, chat: { ...same, mode: "normal", minorModes: [] } }), false, "a mode the profile leaves unset is no difference");
+  assert.equal(updateOffered(yours, { profile: { minorModes: [] }, chat: { ...same, minorModes: ["align"] } }), true, "[] is set: no add-ons");
+  assert.equal(updateOffered(row("lib", ["zai"], { kind: "library" }), { profile: undefined, chat: same }), false, "a library-only row sets none of them");
 });

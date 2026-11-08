@@ -92,15 +92,15 @@ export interface UpdateSides {
 
 /**
  * Whether Update {name} is offered (§chat.subagent-profiles/menu): only for one of your profiles,
- * while this chat's model, effort, mode or add-on modes differ from what it saves. Unknown on the
- * chat's side (its mode or model not arrived) is never a difference. A library-only row (no session
- * half) differs on anything the chat has, since an update creates its session half.
+ * while this chat's model, effort, mode or add-on modes differ from what the profile sets. A field
+ * the profile leaves unset keeps the chat's own, so it is no difference; unknown on the chat's side
+ * (its mode or model not arrived) is none either.
  */
 export function updateOffered(row: Pick<SwitchRow, "kind" | "group" | "unusable"> | null | undefined, s: UpdateSides): boolean {
   if (!row || row.group !== "yours" || row.kind === "off" || row.unusable) return false;
   const p = s.profile ?? {};
   const c = s.chat;
-  const differs = (a: string | null | undefined, b: string | null | undefined) => !!b && (a ?? null) !== b;
-  const minors = (a: readonly string[] | null | undefined, b: readonly string[] | null | undefined) => !!b && (!a || a.length !== b.length || a.some((m) => !b.includes(m)));
+  const differs = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a !== b;
+  const minors = (a: readonly string[] | null | undefined, b: readonly string[] | null | undefined) => !!a && !!b && (a.length !== b.length || a.some((m) => !b.includes(m)));
   return differs(p.model, c.model) || differs(p.thinking, c.thinking) || differs(p.mode, c.mode) || minors(p.minorModes, c.minorModes);
 }

@@ -277,7 +277,7 @@ describe("the snapshot a session keeps", () => {
     assert.ok(r.ok && r.profile);
     assert.equal(r.ok && r.profile?.label, "Read-only reviewer, edited");
     const fromMine = await resolveChoice({ remove: ["web"], grant: [] });
-    assert.equal(fromMine.ok && fromMine.profile?.label, "Custom", "one made from My settings");
+    assert.equal(fromMine.ok && fromMine.profile?.label, "Off, edited", "one made from Off");
     assert.deepEqual(r.ok && r.profile?.remove, ["workers", "web"]);
     const none = await resolveChoice({ remove: [], grant: [] });
     assert.ok(none.ok && none.profile === null);

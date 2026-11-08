@@ -61,12 +61,17 @@ export function Lightbox() {
             {(lightbox()?.index ?? 0) + 1} / {count()}
           </span>
         </Show>
+        <Show when={current()?.download}>
+          <a class="button button-ghost" href={current()!.src} download={current()!.download}>
+            Save Image
+          </a>
+        </Show>
         <button ref={closeButton} type="button" class="button button-icon button-ghost" aria-label="Close Image" autofocus onClick={() => dialog.close()}>
           <Icon name="close" />
         </button>
       </div>
       <div class="lightbox-stage">
-        <Show when={current()}>{(img) => <img class="lightbox-img" src={img().src} alt={img().alt} />}</Show>
+        <Show when={current()}>{(img) => <img class="lightbox-img" src={img().src} alt={img().alt} style={img().width ? { width: `${img().width}px` } : undefined} />}</Show>
         <Show when={count() > 1}>
           <button type="button" class="button button-icon lightbox-prev" aria-label="Previous Image" onClick={() => step(-1)}>
             <Icon name="chevron-left" />

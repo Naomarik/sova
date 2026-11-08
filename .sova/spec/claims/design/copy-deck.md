@@ -307,7 +307,7 @@ words, in the composer, the session pane, the chat's queue cards and the project
 | Path chip, gone | · No longer on disk (`title`: "{path} · No longer on disk. Select to copy the path.") · on copy: Copied path. |
 | Tool card section label (paths) | Attachments · {n} |
 | Lightbox counter | {i} / {n} |
-| Lightbox buttons | Close Image · Previous Image · Next Image |
+| Lightbox buttons | Close Image · Previous Image · Next Image · a drawing's picture only: Save Image |
 
 ## §design.copy-deck/model-menu — Model menu
 

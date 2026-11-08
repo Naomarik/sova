@@ -269,8 +269,9 @@ export async function copyText(text: string, done: string): Promise<boolean> {
 }
 
 export interface LightboxState {
-  /** One row's images; the caption is each image's alt. */
-  images: { src: string; alt: string }[];
+  /** One row's images; the caption is each image's alt. `width`: shown at that CSS width (a picture
+      drawn at twice its size); `download`: a file name, and the viewer offers Save Image. */
+  images: { src: string; alt: string; width?: number; download?: string }[];
   index: number;
   /** The thumbnail that opened it, focused again on close. */
   opener: HTMLElement | null;

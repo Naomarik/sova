@@ -193,6 +193,12 @@ export interface DesignCaps {
   concurrent: number;
 }
 
+/** The main chat's tool whose result anchors a Design card. */
+export const DESIGN_TOOL = "design";
+
+/** What a `design` result's details say when it put a card in the chat. */
+export const isDesignCardDetails = (v: unknown): v is { designCard: { runId: string } } => typeof (v as { designCard?: { runId?: unknown } } | null | undefined)?.designCard?.runId === "string";
+
 /** A batch: 6 by default, ask above 12, stop at 24 (q2). */
 export const DESIGN_BATCH_DEFAULT = 6;
 export const DESIGN_ASK_ABOVE = 12;

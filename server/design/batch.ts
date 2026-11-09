@@ -8,7 +8,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { WorkerHost, WorkerSpec, WorkerStart, WorkerState } from "../../shared/chat-runtime";
 import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_CONCURRENT, type DesignNote, type DesignRecord, type DesignRun, type DesignSetup, type DesignVersion } from "../../shared/design";
 import { designSessionPrompt } from "../../pi-config/extensions/mode/design-guide.ts";
-import { workerProviderLoad, workerSessionDir } from "../harness/pi/worker-session";
+import { claudeCodeProviderLoad, sessionDirName } from "../../pi-config/extensions/subagents/worker-load.ts";
 import { SESSIONS_DIR } from "../paths";
 import { readBranch } from "../harness/pi/reader";
 import { agentRoot } from "../state-root";
@@ -73,7 +73,7 @@ export const designCount = (setup: DesignSetup): number => {
 // ---- starting -----------------------------------------------------------------------------------
 
 function specFor(parent: DesignParent, d: Pick<DesignRecord, "label" | "direction" | "model" | "route" | "vision">, cwd: string, reference: "none" | "screenshot" | "description"): WorkerSpec {
-  const loaded = workerProviderLoad(d.model, [WORKER_MARK]);
+  const loaded = claudeCodeProviderLoad(d.model, [WORKER_MARK], undefined);
   return {
     kind: "design",
     parent: { sessionId: parent.sessionId, path: parent.path, workerId: workerIdOf(d.label) },
@@ -83,7 +83,7 @@ function specFor(parent: DesignParent, d: Pick<DesignRecord, "label" | "directio
     // No file tools and no shell: a design session has only the design tools the server gives it.
     builtins: [],
     extensions: loaded.extensions,
-    flags: loaded.flags,
+    flags: loaded.flags ?? {},
     appendSystemPrompt: designSessionPrompt({ label: d.label, direction: d.direction, reference, delivery: d.route }),
     env: {},
     agentDir: null,
@@ -204,7 +204,7 @@ async function startSession(parent: DesignParent, label: string, seed?: { text: 
     const ref = await workers(parent).start({
       key: `design:${sid}:${label}:${st.attempt}`,
       spec: specFor(parent, d, cwd, reference),
-      session: { new: { dir: workerSessionDir(SESSIONS_DIR, cwd) } },
+      session: { new: { dir: join(SESSIONS_DIR, sessionDirName(cwd)) } },
       task: first.text,
       ...(first.images?.length ? { images: first.images } : {}),
     });

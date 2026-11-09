@@ -2,7 +2,7 @@
 // and `design` (put up a Setup card, read the coordinator's card or one page, pass words on). A design
 // session's: `design_stream` (the page, whole or as edits) and `design_hand_in` (it is done).
 import type { ToolResult, ToolSpec } from "../../shared/harness";
-import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, isDesignLabel, type DesignNote } from "../../shared/design";
+import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_TOOL, isDesignLabel, type DesignNote } from "../../shared/design";
 import { DESIGN_PAGE_END, DESIGN_PAGE_START, DESIGN_GUIDE_TOPICS, designGuide } from "../../pi-config/extensions/mode/design-guide.ts";
 import { coordinatorCard, tellCoordinator } from "./coordinator";
 import { createRun } from "./setup";
@@ -11,8 +11,8 @@ import { livePage } from "./live";
 import { designOf, pendingPage, readPage, viewOf } from "./store";
 import { pageInReply } from "./stream-decode";
 
+export { DESIGN_TOOL };
 export const DESIGN_GUIDE_TOOL = "design_guide";
-export const DESIGN_TOOL = "design";
 export const DESIGN_STREAM_TOOL = "design_stream";
 export const DESIGN_HAND_IN_TOOL = "design_hand_in";
 /** The main chat's tools: active only while Design mode is on. */

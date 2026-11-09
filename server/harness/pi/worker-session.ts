@@ -9,17 +9,6 @@ import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { copyForFork } from "../../../pi-config/extensions/subagents/fork/copy.ts";
 import type { WorkerSession } from "../../../shared/chat-runtime";
-import { sessionDirName } from "../../../pi-config/extensions/subagents/chat-worker.ts";
-import { claudeCodeProviderLoad } from "../../../pi-config/extensions/subagents/runner.ts";
-
-/** What a worker on `model` needs loaded so that model's provider exists in it (a Claude Code model's extension). */
-export function workerProviderLoad(model: string, extensions: string[]): { extensions: string[]; flags: Record<string, string | true> } {
-  const out = claudeCodeProviderLoad(model, extensions, undefined);
-  return { extensions: out.extensions, flags: out.flags ?? {} };
-}
-
-/** pi's session folder for a cwd, under `root`. */
-export const workerSessionDir = (root: string, cwd: string): string => join(root, sessionDirName(cwd));
 
 export interface WorkerSessionFile {
   path: string;

@@ -16,7 +16,8 @@ import { writeOverride } from "./merge-queue/strategy";
 import { computeBranches, computeReadiness, configureReadiness } from "./merge-readiness";
 import { branchLeft } from "./nothing-left";
 import { treeBucket } from "./overseer-roundup";
-import { worktreeInsights } from "./worktrees";
+import { execGit, worktreeInsights } from "./worktrees";
+import { goneTreeState } from "./removed-worktrees";
 import { rowKeyOf, type RowKeyInput } from "../src/lib/merge-queue";
 import { treeMerge } from "../src/lib/agents-board";
 import type { MergeEntry } from "../shared/merge-queue";
@@ -558,6 +559,44 @@ describe("every reader, one answer", () => {
     });
   }
 
+  // Whichever branch the queue lands on is the one a draft is proved against, whatever master or main hold.
+  for (const target of ["master", "develop"]) {
+    test(`a draft that matches ${target}, the target, with no receipt: proved, for every reader`, async () => {
+      const { fx, h } = await setup({ target });
+      await fx.withSpec();
+      if (target !== "master") git(fx.project, ["branch", "main", git(fx.project, ["rev-list", "--max-parents=0", fx.target])]);
+      const { b } = await landNew(fx, h, "plain-code", { "pc.txt": "p\n" });
+      const carrier = fx.branch("carrier", { "c.txt": "c\n" });
+      fx.draft(carrier.checkout, "twin-draft");
+      await land(h, carrier.branch);
+      fx.draft(b.checkout, "twin-draft");
+      assertAgree("matches the target, not main", "nothing", await readAll(fx, h, b));
+    });
+  }
+
+  test("a draft that matches main but not develop, the target: unproved, for every reader", async () => {
+    const { fx, h } = await setup({ target: "develop" });
+    await fx.withSpec();
+    const { b } = await landNew(fx, h, "plain-code", { "pc.txt": "p\n" });
+    const before = fx.head();
+    const carrier = fx.branch("carrier", { "c.txt": "c\n" });
+    fx.draft(carrier.checkout, "twin-draft");
+    await land(h, carrier.branch);
+    // main keeps that landing; the target goes back, so nothing on it ever held the draft.
+    git(fx.project, ["branch", "main", fx.head()]);
+    git(fx.project, ["reset", "-q", "--hard", before]);
+    git(fx.project, ["push", "-qf", "origin", fx.target]);
+    fx.draft(b.checkout, "twin-draft");
+    assertAgree("matches main, not the target", "drafts", await readAll(fx, h, b));
+  });
+
+  test("a commit on main but not on develop, the target: work, for every reader", async () => {
+    const { fx, h } = await setup({ target: "develop" });
+    const b = fx.branch("only-main", { "om.txt": "m\n" });
+    git(fx.project, ["branch", "main", b.commit]);
+    assertAgree("on main, not the target", "work", await readAll(fx, h, b));
+  });
+
   test("a head that read nothing left by content keeps that answer once the target moves and the same merge conflicts", async () => {
     const { fx, h } = await setup();
     // A squash the queue never heard of: on the target by content only.
@@ -611,6 +650,30 @@ describe("every reader, one answer", () => {
     assert.equal((view.ready ?? []).some((r) => r.branch === b.branch), false);
     assert.equal((await h.tryAdd({ branch: b.branch })).ok, false);
     assert.ok(existsSync(join(b.checkout, "node_modules/a.js")), "and nothing touched it");
+  });
+
+  test("a branch on the target by content through a merge driver that prints: a gone folder reads as the live one did", async () => {
+    const { fx, h } = await setup();
+    git(fx.project, ["config", "merge.noisy.driver", "echo noise-from-the-driver; exit 0"]);
+    fx.moveTargetOutside({ ".gitattributes": "noisy.txt merge=noisy\n", "noisy.txt": "base\n" });
+    const b = fx.branch("noisy", { "noisy.txt": "the branch's\n" });
+    fx.moveTargetOutside({ "noisy.txt": "the target's\n" });
+    assert.equal(git(fx.project, ["merge-tree", "--write-tree", "--no-messages", fx.target, b.branch]).split("\n")[0], "noise-from-the-driver", "the driver really prints");
+    assertAgree("while the folder is there", "nothing", await readAll(fx, h, b));
+    rmSync(b.checkout, { recursive: true, force: true });
+    git(fx.project, ["worktree", "prune"]);
+    assert.equal((await chatReading(fx, b))?.state, "merged", "gone, it reads as it did");
+  });
+
+  test("a gone folder's trial merge failing is can't tell, never unmerged", async () => {
+    const { fx } = await setup();
+    const b = fx.branch("trial-fails", { "t.txt": "t\n" });
+    const base = git(fx.project, ["rev-list", "--max-parents=0", fx.target]);
+    fx.moveTargetOutside({ "m.txt": "m\n" });
+    rmSync(b.checkout, { recursive: true, force: true });
+    git(fx.project, ["worktree", "prune"]);
+    const failing: typeof execGit = (args, opts) => (args.includes("merge-tree") ? Promise.resolve({ code: 128, stdout: "", stderr: "fatal: no\n" }) : execGit(args, opts));
+    assert.equal(await goneTreeState({ path: b.checkout, branch: b.branch, base }, [fx.project], { git: failing }), null);
   });
 
   test("a folder gone, its branch kept, a leftover merge that now conflicts: Landed · cleaned up, by the same answer a live folder reads", async () => {

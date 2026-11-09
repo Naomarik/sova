@@ -180,6 +180,8 @@ function world(fo: ConstructorParameters<typeof Fixture>[0] = {}): World {
     markLedger: (m, patch) => markLedger(m, patch, ledgerFile),
     removed: async () => {},
     now: () => now.t,
+    // This suite is about what a removal may touch: every project in it deletes branches, except where a test says otherwise.
+    deleteBranches: () => true,
     pendingFile: () => pendingPath,
     firstPassFile: () => firstPassPath,
     testChatsAside: () => asideDir,

@@ -42,6 +42,7 @@ export function plainRetireDeps(o: { project: string; target: string; state: str
     markLedger: (m, patch) => markLedger(m, patch, ledgerFile),
     removed: async () => {},
     now: () => later,
+    deleteBranches: () => true,
     pendingFile: () => join(o.state, "retire-pending.json"),
   };
 }

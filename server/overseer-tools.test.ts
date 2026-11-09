@@ -813,6 +813,7 @@ describe("sandbox on sova_set_session and sova_create_session (§app.overseer/to
       request: async (path: string, init?: RequestInit) => {
         const body = init?.body ? JSON.parse(String(init.body)) : undefined;
         calls.push({ path, body });
+        if (path === "/api/settings/subagents") return Response.json({ profiles: [{ id: "off" }] });
         if (path === "/api/sessions") {
           states.set("new", "subagents");
           return Response.json(summary("new"), { status: 201 });
@@ -853,6 +854,12 @@ describe("sandbox on sova_set_session and sova_create_session (§app.overseer/to
     const sandboxCalls = () => calls.filter((c) => c.path.startsWith("/api/sandbox"));
     return { run, calls, sandboxCalls, states };
   }
+
+  test("a Models-only profile is asked for as helpers alone, so the route starts it as it starts named helpers", async () => {
+    const h = harness();
+    assert.doesNotMatch(await h.run("sova_create_session", { cwd: "/w", profile: "off" }), /^ERROR/);
+    assert.deepEqual(h.calls.find((c) => c.path === "/api/sessions")?.body, { cwd: "/w", subagent_profile: "off" });
+  });
 
   test("raising runs like any act; the result names the state and what running subagents keep", async () => {
     const h = harness();

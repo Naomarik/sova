@@ -5,12 +5,16 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import { piSession } from "./harness/pi/testing/handle";
 
 const dir = mkdtempSync(join(tmpdir(), "sova-fork-routes-"));
 process.env.PI_CODING_AGENT_DIR = dir;
+// The mode extension owns the helper pick and the pinned modes; two providers, so a default can name a model a fresh chat isn't on.
+writeFileSync(join(dir, "settings.json"), JSON.stringify({ extensions: [resolve(dirname(fileURLToPath(import.meta.url)), "../pi-config/extensions/mode")] }));
+writeFileSync(join(dir, "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "test" }, openai: { type: "api_key", key: "test" } }));
 await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { buildApp } = await import("./app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
@@ -227,4 +231,38 @@ test("create route: a session made with a subagent profile opens at once, its pi
   const { path } = (await res.json()) as { path: string };
   assert.match(readFileSync(path, "utf8"), /"profile":"off"/, "the pick is on file");
   assert.equal(recentForeignWriteAgeSec(path), null);
+});
+
+test("create route: an Overseer's start naming only helpers follows the default, with the named helpers and only the grants it may have", async () => {
+  const sp = await import("../pi-config/extensions/subagents/subagent-profiles.ts");
+  const { OVERSEER_SENDER_HEADER, senderSecret } = await import("./overseer-sender");
+  const { PROFILE_ENTRY } = await import("../shared/profiles");
+  const { acquireChatHandle } = await import("./chat-handle");
+  (await import("./overseer-store")).writeOverseerState({ version: 1, current: "overseer-chat", history: [] }); // the sender mark counts only while an Overseer exists
+  sp.writeSubagentProfiles(dir, { version: 1, profiles: [sp.legacyProfile(dir, "theirs", "Default's helpers"), sp.legacyProfile(dir, "named", "Named helpers")] });
+  const state = join(dir, "sova");
+  mkdirSync(state, { recursive: true });
+  writeFileSync(join(state, "default-profile.json"), JSON.stringify({ version: 1, profile: "reader" }));
+  const reader = { id: "reader", label: "Reader", model: "openai/gpt-5.5", thinking: "high", mode: "delegate", minorModes: ["spec"], grant: ["sessions.read"], subagents: "theirs" };
+  const overseer = { [OVERSEER_SENDER_HEADER]: senderSecret() };
+  const start = async (headers: Record<string, string>) => {
+    const res = await app.request("/api/sessions", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ cwd: dir, subagent_profile: "named" }) });
+    assert.equal(res.status, 201);
+    const { path } = (await res.json()) as { path: string };
+    const grants = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((e) => e.customType === PROFILE_ENTRY).map((e) => e.data.profile.grant);
+    const { mirror } = await acquireChatHandle(path);
+    return { path, grants, on: [mirror.model?.ref, mirror.thinking, mirror.mode.mode, mirror.mode.minorModes, mirror.subagentPick] };
+  };
+  const defaultsAndNamed = ["openai/gpt-5.5", "high", "delegate", ["spec"], "named"];
+  for (const [marks, grants] of [[{}, []], [{ overseerMayStart: true }, [["sessions.read"]]]] as const) {
+    writeFileSync(join(state, "session-profiles.json"), JSON.stringify({ version: 1, profiles: [{ ...reader, ...marks }] }));
+    const made = await start(overseer);
+    assert.deepEqual(made.on, defaultsAndNamed, `marks ${JSON.stringify(marks)}`);
+    assert.deepEqual(made.grants, grants, "powers only when the profile is marked for an Overseer");
+  }
+  // A person's call naming helpers stays off the default, as it was.
+  const person = await start({});
+  assert.equal(person.grants.length, 0);
+  assert.notDeepEqual(person.on.slice(0, 4), defaultsAndNamed.slice(0, 4));
+  assert.equal(person.on[4], "named");
 });

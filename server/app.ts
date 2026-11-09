@@ -369,8 +369,9 @@ export function buildApp(deps: AppDeps) {
     }
     // No profile named: the chat starts on this computer's default (§chat.profiles/default), as far as
     // the starter may give it (an Overseer start never gets powers the profile isn't marked for).
-    if (!start && useDefault && subagentProfile === undefined && !linkMember) {
-      const r = await startOnDefault(made.path, cwd, useDefault === "overseer");
+    // Helpers named alone stay the chat's pick over the default's.
+    if (!start && useDefault && !linkMember) {
+      const r = await startOnDefault(made.path, cwd, useDefault === "overseer", subagentProfile);
       if (!r.ok) console.warn(`[profiles] ${made.path}: ${r.error}`);
       return c.json((await getSessionSummary(made.path)) ?? made, 201);
     }
@@ -460,7 +461,9 @@ export function buildApp(deps: AppDeps) {
     const cwdError = await validateNewSessionCwd(cwd);
     if (cwdError) return c.json({ error: cwdError }, 400);
     const byOverseer = !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER));
-    return createWebSession(c, cwd, startOf(body, byOverseer), subagentProfile, linkMember, byOverseer ? "overseer" : "user");
+    // With helpers named, only an Overseer's start follows the default; any other starter's stays off it.
+    const useDefault = byOverseer ? "overseer" : subagentProfile === undefined ? "user" : false;
+    return createWebSession(c, cwd, startOf(body, byOverseer), subagentProfile, linkMember, useDefault);
   });
 
   /** POST /api/sessions's optional `profile` (an id or `{source, id}`) and `prompt`: the chip's Run Again, the Overseer. */

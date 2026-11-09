@@ -15,16 +15,23 @@ import { applyProfile } from "./session-profile-routes";
  * profile isn't marked for: a default that isn't capability-neutral and lacks "Overseer may start"
  * (or still needs approval) gives such a chat only its modes, its model and effort and its helpers,
  * with no profile entry. The same holds when its One at a time is live elsewhere.
+ *
+ * `helpers`: the subagent pick the start named, already on file: it stays the chat's pick whatever
+ * the default's helpers are.
  */
-export async function startOnDefault(path: string, cwd: string, byOverseer: boolean): Promise<{ ok: true; applied: "none" | "whole" | "models" } | { ok: false; error: string }> {
+export async function startOnDefault(path: string, cwd: string, byOverseer: boolean, helpers?: string): Promise<{ ok: true; applied: "none" | "whole" | "models" } | { ok: false; error: string }> {
   const d = await resolveDefaultProfile(cwd).catch(() => null);
   const half = d?.row.session;
   if (!d || !half) return { ok: true, applied: "none" };
   const whole = !byOverseer || isCapabilityNeutral(half) || (half.overseerMayStart && half.approval !== "needed");
   if (whole && half.approval !== "needed") {
     const r = await applyProfile(path, { source: half.source, id: half.id }, byOverseer ? "overseer" : undefined);
-    if (r.ok) return { ok: true, applied: "whole" };
-    if (!r.running) return { ok: false, error: `the default profile wasn't applied: ${r.error}` };
+    if (r.ok || !r.running) {
+      // Also after a partly applied default, which may have moved the helpers before it failed.
+      const repin = helpers === undefined ? null : await acquireChatHandle(path).then((chat) => chat.switchSubagentProfile(helpers)).then(() => null, (e) => String(e));
+      if (!r.ok) return { ok: false, error: `the default profile wasn't applied: ${r.error}` };
+      return repin ? { ok: false, error: `the named helpers weren't kept: ${repin}` } : { ok: true, applied: "whole" };
+    }
   }
   // Its modes, model and effort, and helpers only.
   const failed: string[] = [];
@@ -40,7 +47,7 @@ export async function startOnDefault(path: string, cwd: string, byOverseer: bool
       else await chat.setModel(half.model).catch((e) => failed.push(`model (${String(e)})`));
     }
     if (half.thinking) await chat.setThinking(half.thinking).catch((e) => failed.push(`effort (${String(e)})`));
-    if (d.row.library) await chat.switchSubagentProfile(d.row.library.id).catch((e) => failed.push(`helpers (${String(e)})`));
+    if (d.row.library && helpers === undefined) await chat.switchSubagentProfile(d.row.library.id).catch((e) => failed.push(`helpers (${String(e)})`));
   } catch (err) {
     return { ok: false, error: `the default profile's models weren't applied: ${err instanceof Error ? err.message : String(err)}` };
   }

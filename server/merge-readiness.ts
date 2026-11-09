@@ -987,10 +987,7 @@ export async function computeBranches(s: Pick<SessionSummary, "id">, facts: Pick
     trees.map(async (t): Promise<BranchReading> => {
       const exists = existsSync(t.path);
       const shared = sharedWith(t, s.id);
-      const found = t.status === "active" && exists && deps.mergedInto ? await mergedByStamp(t).catch(() => undefined) : undefined;
-      // Where the queue lands on another branch, being in master or main says nothing about landing (§chat.worktrees/nothing-left).
-      const landsOn = found ? queueTargetOfTree(t.path) : null;
-      const merged = found && landsOn && found.target !== landsOn && (found.target === "master" || found.target === "main") ? undefined : found;
+      const merged = t.status === "active" && exists && deps.mergedInto ? await mergedByStamp(t).catch(() => undefined) : undefined;
       const q = exists && deps.branchFields ? await deps.branchFields(t.path, t.branch).catch(() => null) : null;
       // The shared answer, read as readiness reads it, for a row no readiness of this chat's covers too.
       const st = exists ? await deps.insights.treeStatus(t.path).catch(() => null) : null;

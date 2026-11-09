@@ -19,6 +19,7 @@ import { treeBucket } from "./overseer-roundup";
 import { setOfferDeps, showOffer } from "./session-offers";
 import { execGit, worktreeInsights } from "./worktrees";
 import { goneTreeState } from "./removed-worktrees";
+import { getSessionInsight } from "./insights";
 import { rowKeyOf, type RowKeyInput } from "../src/lib/merge-queue";
 import { treeMerge } from "../src/lib/agents-board";
 import type { MergeEntry } from "../shared/merge-queue";
@@ -75,6 +76,19 @@ const SUMMARY = (fx: Fixture, b: B) => ({ id: SESSION, path: join(fx.state, `${S
 async function chatReading(fx: Fixture, b: B): Promise<WorktreeReadiness | undefined> {
   const r = await computeReadiness(SUMMARY(fx, b), { trees: [trackedBy(fx, b)], merges: [] } as unknown as Parameters<typeof computeReadiness>[1], () => false, true);
   return r?.trees.find((t) => t.path === b.checkout);
+}
+
+/** The tree as the Session tab reads it, through the real session insight on a real session file. */
+let tabFiles = 0;
+async function sessionTabRow(fx: Fixture, b: B) {
+  const path = join(fx.state, `session-tab-${++tabFiles}.jsonl`);
+  const lines = [
+    { type: "session", version: 3, id: SESSION, timestamp: "2026-10-04T10:00:00.000Z", cwd: b.checkout },
+    { type: "custom", customType: "worktrees", id: "e1", parentId: null, timestamp: "2026-10-04T10:00:01.000Z", data: { version: 1, trees: [{ ...trackedBy(fx, b), how: "created", at: 1 }] } },
+  ];
+  writeFileSync(path, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
+  const rows = (await getSessionInsight(path)).worktrees ?? [];
+  return { rows, row: rows.find((r) => r.path === b.checkout) };
 }
 
 /** The tree as the session's branch rows (the composer's control) read it. */
@@ -628,6 +642,10 @@ describe("every reader, one answer", () => {
     const { fx, h } = await setup({ target: "develop" });
     const b = fx.branch("only-main", { "om.txt": "m\n" });
     git(fx.project, ["branch", "main", b.commit]);
+    const tab = (await sessionTabRow(fx, b)).row;
+    assert.ok(tab, "the Session tab lists it");
+    assert.equal(tab.mergedInto, undefined, "the Session tab doesn't read Merged off main");
+    assert.equal((await branchRow(fx, b))?.mergedInto, undefined, "nor do the branch rows, by the same rule");
     assertAgree("on main, not the target", "work", await readAll(fx, h, b));
     // A gone folder follows the branch it lands on, as the live row did: on main isn't landed.
     const onTarget = fx.branch("on-develop", { "od.txt": "d\n" });
@@ -669,6 +687,7 @@ describe("every reader, one answer", () => {
       const b = { branch: git(fx.project, ["symbolic-ref", "--short", "HEAD"]), checkout: fx.project, commit: git(fx.project, ["rev-parse", "HEAD"]) };
       assert.equal(await chatReading(fx, b), undefined, "readiness drops the row at read");
       assert.equal(await branchRow(fx, b), undefined, "the session's branch rows too");
+      assert.deepEqual((await sessionTabRow(fx, b)).rows, [], "and the Session tab");
       (h.queue() as unknown as { readyCache: unknown }).readyCache = null;
       assert.equal(((await h.view()).ready ?? []).some((r) => r.branch === b.branch), false, "and the Ready list");
       if (shape === "on the target") assert.equal((await h.tryAdd({ branch: fx.target })).ok, false, "and Land");

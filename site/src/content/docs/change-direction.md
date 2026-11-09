@@ -74,7 +74,7 @@ Shell mode is in every chat with its own agent and folder: ordinary and Claude C
 The left of the composer's foot shows the model's short name, such as `Opus 5.5`, after a small ring whose fill and letter show the thinking level (L, M, H, X, a bolt for max; no ring when the model has no levels). Hover it for the full model, provider and level. Press it, then **Model**, or press `Ctrl+P` (`⌘P` on a Mac). Pick a provider, then a model, or type to search across them. The star on a model row (or `Ctrl+F`) adds it to Favorites at the top of the list without choosing it. The same menu holds the **Thinking** levels for the current model, each with its ring, under a line that spells out the choice in full, such as "glm-5.3 · zai · high".
 
 - **Between turns.** A switch waits until the running turn finishes: "Model changes wait until this turn finishes."
-- **It's this session's.** Once a session has your first message, a pick changes only that session. A model or thinking level you pick in a brand-new session becomes the default for new sessions.
+- **It's this session's.** Once a session has your first message, a pick changes only that session. That holds in a brand-new session too: new chats start on the model of this computer's [default profile](/docs/subagent-profiles/).
 - **Only models you allow.** A model turned off in Settings → Models isn't listed.
 
 When the switch lands, Sova says "Model changed to {model}." If it fails, a banner says why and that you're still on the previous model.

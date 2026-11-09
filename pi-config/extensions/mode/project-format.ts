@@ -26,7 +26,7 @@ export function isProjectModeId(value: unknown): value is string {
  * The built-in minor mode names, as pi-config/extensions/mode/minor.ts's MINOR_MODES (a test keeps them equal).
  * A project folder with one of these names is a problem row ("clash"), never an override of the built-in.
  */
-export const BUILTIN_MINOR_NAMES: readonly string[] = ["align", "spec", "vis", "memory"];
+export const BUILTIN_MINOR_NAMES: readonly string[] = ["align", "spec", "vis", "memory", "design"];
 
 /**
  * Most modes a worker carries: built-in worker modes plus project modes with `workers: yes`

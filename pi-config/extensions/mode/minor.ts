@@ -3,11 +3,12 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { AlignEagerness, AlignStyle } from "./align-settings.ts";
+import { DESIGN_INSTRUCTIONS } from "./design-guide.ts";
 
-export type MinorMode = "align" | "spec" | "vis" | "memory";
+export type MinorMode = "align" | "spec" | "vis" | "memory" | "design";
 
 /** Registry order: the canonical order for state, status, and prompt composition. */
-export const MINOR_MODES: readonly MinorMode[] = ["align", "spec", "vis", "memory"];
+export const MINOR_MODES: readonly MinorMode[] = ["align", "spec", "vis", "memory", "design"];
 
 export function isMinorMode(value: unknown): value is MinorMode {
 	return typeof value === "string" && (MINOR_MODES as readonly string[]).includes(value);
@@ -18,6 +19,7 @@ export const MINOR_DESCRIPTIONS: Record<MinorMode, string> = {
 	spec: "Scope work from the project's .sova/spec documentation, propose changes in drafts, and promote them once implemented",
 	vis: "Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose",
 	memory: "Endless chat: the model works from a summary of the whole chat and opens any part of it word for word",
+	design: "Send one-page prototypes out to hidden design sessions on several models, drawn live in the chat",
 };
 
 /**
@@ -32,6 +34,7 @@ export const MINOR_WORKER: Record<MinorMode, boolean> = {
 	spec: true,
 	vis: false,
 	memory: false,
+	design: false,
 };
 
 /**
@@ -47,6 +50,7 @@ export const MINOR_SURFACES: Record<MinorMode, "everywhere" | "web"> = {
 	spec: "everywhere",
 	vis: "everywhere",
 	memory: "web",
+	design: "web",
 };
 
 /** The minor modes only Sova's menu turns on, in registry order. */
@@ -99,6 +103,7 @@ export const MINOR_PROMPTLESS: Record<MinorMode, boolean> = {
 	vis: false,
 	// Its guide rides its own view message (Sova's memory engine), never the mode section or a note.
 	memory: true,
+	design: false,
 };
 
 /** The minor modes of `minorModes` that carry a prompt block, in their order. */
@@ -297,6 +302,7 @@ const MINOR_INSTRUCTIONS: Record<MinorMode, string> = {
 	vis: VIS_INSTRUCTIONS,
 	// Promptless (MINOR_PROMPTLESS): never composed.
 	memory: "",
+	design: DESIGN_INSTRUCTIONS,
 };
 
 /** One minor mode's block; align's carries its style and Visuals paragraphs (buildAlignPrompt). */

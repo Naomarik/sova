@@ -368,7 +368,8 @@
    "align": "modes",
    "spec": "modes",
    "vis": "modes",
-   "memory": "modes"
+   "memory": "modes",
+   "design": "modes"
   },
   "place": {
    "reply": "extensions",

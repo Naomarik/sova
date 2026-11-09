@@ -42,7 +42,7 @@ found so far (pi 1.0.3).
   (`server/harness/pi/testing/handle.ts`). (§app.harness/session)
 - **Every reach into pi's internals is a quirk** in `server/harness/pi/QUIRKS.md` (typed rows:
   `quirks.ts`): a monkey-patch, private read, error text, ordering or internal API, each with its sites
-  and a canary (`P1`…`P40`, `T1`) in `contract.test.ts`. On a pin bump or a TUI pi upgrade, run the
+  and a canary (`P1`…`P42`, `T1`) in `contract.test.ts`. On a pin bump or a TUI pi upgrade, run the
   canaries against that pi (command below); a failing canary is a triage by its row, never a test edit.
   `quirks-meta.test.ts` fails on a private cast, method-table cast or SDK-member assignment no row
   names. A new reach adds its row, canary and sites in the same change.

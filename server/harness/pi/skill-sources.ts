@@ -1,6 +1,6 @@
 // Where a chat's skills come from, pi's half (§chat/skill-sources; the plain work is server/skill-sources.ts):
 // the Claude folders added to a loader's options, a dropped skill rescued, and one skills folder read by
-// pi's own rules. All of it pi's public API, leaning on what quirks P40 and P41 hold.
+// pi's own rules. All of it pi's public API, leaning on what quirks P41 and P42 hold.
 import { readFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { createSyntheticSourceInfo, loadSkillsFromDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
@@ -69,7 +69,7 @@ export function withRescued(base: { skills: PiSkill[]; diagnostics: PiResourceDi
 
 /** `loader` with Claude's skill folders for `cwd` added after pi's own places, and dropped skills rescued
     before any override of its own. A loader with noSkills stays as it is: pi loads additional paths even
-    then (quirk P41). */
+    then (quirk P42). */
 export function withSkillSources(cwd: string, loader: PiLoaderOptions): PiLoaderOptions {
   if (loader.noSkills) return loader;
   const own = loader.skillsOverride;

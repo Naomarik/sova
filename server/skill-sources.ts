@@ -122,7 +122,7 @@ export function skillCommand(text: string): { name: string; args: string } | nul
   return name ? { name, args: space < 0 ? "" : text.slice(space + 1).trim() } : null;
 }
 
-/** The user message `/skill:name` becomes, in pi's own form (server/skills.ts reads it back; quirk P40). */
+/** The user message `/skill:name` becomes, in pi's own form (server/skills.ts reads it back; quirk P41). */
 export function expandedSkill(s: { name: string; filePath: string; skillDir: string; body: string; args: string }): string {
   const block = `<skill name="${s.name}" location="${s.filePath}">\nReferences are relative to ${s.skillDir}.\n\n${s.body}\n</skill>`;
   return s.args ? `${block}\n\n${s.args}` : block;

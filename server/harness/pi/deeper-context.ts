@@ -3,7 +3,7 @@
 // write's tool_result it appends the instruction files and skills of the folders the call touched that the
 // branch hasn't got yet. Its `input` hook expands `/skill:name` where pi's own expansion can't: a subfolder's
 // skill (no list of pi's has it), a rescued one (pi's parser throws on it), and Claude's placeholders
-// (quirk P40, §chat.subfolder-skills/command, §chat.skill-sources/arguments).
+// (quirk P41, §chat.subfolder-skills/command, §chat.skill-sources/arguments).
 import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { blocksToAttach, loadedInstructions, LOADING_TOOLS } from "../../deeper-context";

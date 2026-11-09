@@ -13,7 +13,7 @@ import { canonical, isWithin } from "../pi-config/extensions/worktrees/state.ts"
 import type { Git } from "../pi-config/extensions/worktrees/git.ts";
 import { Fixture, git } from "./merge-queue/testing/repo";
 import { chatUses, classifyRepo, configureCleanup, pidAlive, scanProcesses, type ChatFacts, type ChatUse, type ProcFacts, type TreeRecord } from "./worktree-cleanup";
-import { leftoverCandidates, removeFinished, retireFiles, retirePass, retirementAllowed, restoreRetired, bringBack, retireNow, setRealRetireDeps, startWorktreeRetirer, type RetireDeps, type CopyFacts, type PassResult } from "./worktree-retire";
+import { leftoverCandidates, removeFinished, retireFiles, retirePass, retireTree, retirementAllowed, restoreRetired, bringBack, retireNow, setRealRetireDeps, startWorktreeRetirer, type RetireDeps, type CopyFacts, type PassResult } from "./worktree-retire";
 import { archiveWorktrees } from "./archive-worktrees";
 import { DEFAULT_CAPS } from "./overseer-store";
 import { overseerTools, TurnLimits, type OverseerToolHost } from "./overseer-tools";
@@ -3287,5 +3287,76 @@ describe("what a broken copy showed nothing else proved", () => {
     const r = await bringBack(w.deps, path);
     assert.equal(r.state, "failed", JSON.stringify(r));
     assert.ok(git(w.fx.project, ["branch", "--list", "main"]).includes("main"));
+  });
+});
+
+// ---------------------------------------------------------------- an edit git has been told not to look at
+
+describe("an edit hidden from git status", () => {
+  for (const flag of ["--skip-worktree", "--assume-unchanged"])
+    test(`${flag} on a landed branch: retireTree holds for its files, and the edit survives`, async () => {
+      const w = world();
+      const b = finished(w, "hidden");
+      const f = join(b.checkout, "README.md");
+      const was = readFileSync(f, "utf8");
+      git(b.checkout, ["update-index", flag, "README.md"]);
+      writeFileSync(f, `${was}an edit only here\n`);
+      assert.equal(git(b.checkout, ["status", "--porcelain"]), "", "the control: git status really doesn't show it, so it can't be what holds");
+      const before = snapshot(w, b.checkout, { pins: "ignore" });
+      const r = await retireTree(w.deps, w.fx.project, b.checkout);
+      assert.equal(r.state, "held", JSON.stringify(r));
+      assert.equal(r.state === "held" && r.row.kind, "files", JSON.stringify(r));
+      assert.equal(readFileSync(f, "utf8"), `${was}an edit only here\n`, "the edit survives");
+      assert.deepEqual(snapshot(w, b.checkout, { pins: "ignore" }), before, "nothing else changed");
+      git(b.checkout, ["update-index", flag.replace("--", "--no-"), "README.md"]);
+      writeFileSync(f, was);
+      assert.deepEqual(retiredPaths(await w.pass()), [b.checkout], "the flag was the reason: cleared, it goes");
+    });
+});
+
+describe("a drafts folder only the proof can clear", () => {
+  test("a dot-folder under drafts: the proof never names it, so a finished tree holds, with the note kept", async () => {
+    const w = world();
+    await w.fx.withSpec();
+    const b = finished(w, "dotdraft");
+    put(b.checkout, ".sova/spec/drafts/.old/note.md", "only here\n");
+    const r = await retireTree(w.deps, w.fx.project, b.checkout);
+    assert.equal(r.state, "held", JSON.stringify(r));
+    assert.equal(readFileSync(join(b.checkout, ".sova/spec/drafts/.old/note.md"), "utf8"), "only here\n");
+  });
+
+  // The classifier and the proof read at different moments: a draft whose proof fails by the time it's asked must not go on the classifier's word.
+  for (const [name, say] of [
+    ["the proof names it unproved", async () => ["provedraft"]],
+    ["the proof can't be read", async () => { throw new Error("no answer"); }],
+  ] as [string, () => Promise<string[]>][])
+    test(`the classifier saw nothing left, but ${name} right before the removal: held, the draft kept`, async () => {
+      const w = world();
+      await w.fx.withSpec();
+      const b = w.fx.branch("provedraft", { "e.txt": "e\n" });
+      w.fx.draft(b.checkout, "provedraft");
+      w.deps.draftsUnproved = say;
+      w.deps.classify = (root, only) => classifyRepo(root, { git: execGit, withQueueMade: true, left: async (o) => ({ ...(await branchLeft(o)), drafts: [], whole: "nothing", codeOnly: "nothing", nothingLeft: true }), ...(only ? { only } : {}) });
+      git(w.fx.project, ["merge", "-q", "--no-ff", "--no-edit", b.branch]);
+      const r = await retireTree(w.deps, w.fx.project, b.checkout);
+      assert.equal(r.state, "held", JSON.stringify(r));
+      assert.equal(r.state === "held" && r.row.kind, "drafts", JSON.stringify(r));
+      assert.ok(existsSync(join(b.checkout, ".sova/spec/drafts/provedraft/draft.json")));
+    });
+
+  test("the control: a draft the queue landed, proved by the same reading, goes with the folder", async () => {
+    const w = world();
+    await w.fx.withSpec();
+    const b = w.fx.branch("provedraft", { "e.txt": "e\n" });
+    w.fx.draft(b.checkout, "provedraft");
+    const draftJson = join(b.checkout, ".sova/spec/drafts/provedraft/draft.json");
+    const drafts = w.deps.draftsUnproved;
+    // Stands in for the shared proof, which tests elsewhere pin (landed-branch-agreement): only the reading of this file is at issue.
+    w.deps.draftsUnproved = async (main, folder, branch) => (existsSync(draftJson) ? [] : drafts(main, folder, branch));
+    w.deps.classify = (root, only) => classifyRepo(root, { git: execGit, withQueueMade: true, left: async (o) => ({ ...(await branchLeft(o)), drafts: [], whole: "nothing", codeOnly: "nothing", nothingLeft: true }), ...(only ? { only } : {}) });
+    git(w.fx.project, ["merge", "-q", "--no-ff", "--no-edit", b.branch]);
+    const r = await retireTree(w.deps, w.fx.project, b.checkout);
+    assert.equal(r.state, "retired", JSON.stringify(r));
+    assert.equal(existsSync(b.checkout), false);
   });
 });

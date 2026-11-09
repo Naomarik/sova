@@ -4,7 +4,7 @@
 // Broken on purpose in a private copy: retireTree called retireBranch whatever the setting said, and "off keeps the branch"
 // failed on the missing branch (not on a wording), so the off path can't delete one unnoticed.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, afterEach, describe, test } from "node:test";
 import type { Git } from "../pi-config/extensions/worktrees/git.ts";
@@ -77,6 +77,7 @@ function world(o: { seam?: RetireDeps["deleteBranches"]; fixture?: ConstructorPa
     removed: async () => {},
     now: () => later,
     pendingFile: () => join(fx.state, "retire-pending.json"),
+    queueMade: async (p) => queueMade.has(p),
     ...(o.seam ? { deleteBranches: o.seam } : {}),
   };
   return { fx, d, writes, queueMade, records };
@@ -171,17 +172,42 @@ describe("off", () => {
     assert.equal(branchAt(w, c.branch), "", "the same wake-up does delete one with no branchKept");
   });
 
-  test("a leftover folder keeps its branch the same way, with the same record", async () => {
-    const w = world({ seam: OFF });
-    const b = finished(w, "leftkept");
+  /** A folder left behind, its branch still there and finished, named by a chat's record. */
+  const leftover = (w: World, name: string) => {
+    const b = finished(w, name);
     git(w.fx.project, ["worktree", "remove", "--force", b.checkout]);
     mkdirSync(join(b.checkout, "node_modules"), { recursive: true });
     writeFileSync(join(b.checkout, "node_modules/a.js"), "x\n");
     w.records.push({ path: b.checkout, branch: b.branch, base: git(w.fx.project, ["rev-list", "--max-parents=0", w.fx.target]), session: "s" });
-    await retirePass(w.d);
-    assert.equal(existsSync(b.checkout), false, "the folder went");
-    assert.equal(branchAt(w, b.branch), b.commit);
-    assert.equal(lastEntry(w).branchKept, true);
+    return b;
+  };
+
+  // The case that proves the queue's exception doesn't widen deletion. A seam that can't answer isn't proof.
+  for (const [name, seam] of [["no proof of who made it", undefined], ["a seam that throws", async () => { throw new Error("?"); }]] as const)
+    test(`an ordinary leftover keeps its branch and records it, with the setting off: ${name}`, async () => {
+      const w = world({ seam: OFF });
+      if (seam) w.d.queueMade = seam;
+      const b = leftover(w, "leftkept");
+      await retirePass(w.d);
+      assert.equal(existsSync(b.checkout), false, "the folder went");
+      assert.equal(branchAt(w, b.branch), b.commit);
+      assert.equal(lastEntry(w).branchKept, true);
+    });
+
+  test("a leftover the queue made loses its branch with the setting off, by the queue's seam or by its ledger entry", async () => {
+    const byEntry = world({ seam: OFF });
+    const seamed = world({ seam: OFF });
+    const a = leftover(seamed, "resolve-mq_seam");
+    seamed.queueMade.add(a.checkout);
+    const b = leftover(byEntry, "resolve-mq_entry");
+    byEntry.d.appendLedger([{ v: 1, path: b.checkout, branch: b.branch, commonDir: byEntry.d.ledger().at(-1)?.commonDir ?? realpathSync(join(byEntry.fx.project, ".git")), tip: b.commit, merged: "leftover", branchDeleted: false, at: 1, retired: true, pinned: true, queueMade: true }]);
+    for (const [w, x] of [[seamed, a], [byEntry, b]] as const) {
+      await retirePass(w.d);
+      assert.equal(existsSync(x.checkout), false, "the folder went");
+      assert.equal(branchAt(w, x.branch), "", "its branch went too, whatever the setting");
+      assert.notEqual(lastEntry(w).branchKept, true);
+      assert.equal(git(w.fx.project, ["rev-parse", `refs/sova/retired/${x.commit}`]), x.commit, "still pinned");
+    }
   });
 
   test("the merge queue's own copies always lose their branch; a branch of yours with a name like one follows the setting", async () => {

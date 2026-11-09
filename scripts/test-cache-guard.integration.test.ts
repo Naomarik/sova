@@ -18,7 +18,7 @@ after(() => rmSync(base, { recursive: true, force: true }));
 const IMPORT_RE = /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)["'`](\.{1,2}\/[^"'`$]+)["'`]/g;
 /** The runner, its preloads and the stand-in claude, with every file they import by relative path. */
 function runnerFiles(): string[] {
-  const start = ["scripts/run-tests.mjs", "scripts/test-tier-guard.mjs", "pi-config/extensions/claude-code/tests/hermetic-env.mjs", "scripts/fake-claude.mjs"];
+  const start = ["scripts/run-tests.mjs", "scripts/test-tier-guard.mjs", "pi-config/extensions/claude-code/tests/hermetic-env.mjs", "scripts/fake-claude.mjs", "shared/retire-lab.json" /* scripts/test-groups.mjs reads it, which no import shows */];
   const seen = new Set(start);
   const todo = [...start];
   while (todo.length) {

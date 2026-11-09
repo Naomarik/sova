@@ -96,6 +96,16 @@ test("a model learned after this process warmed up starts a worker, with the tab
   assert.equal(registered?.contextWindow, 777_000, "the table's window: an unknown id would be 200,000");
 });
 
+test("a table model Sova doesn't offer, typed by hand, runs as an unknown id: no effort control, a 200,000 window", async () => {
+  // Claude Code's table gives this one efforts and a 1M window; the store above doesn't hold it.
+  const id = "claude-mythos-5-1";
+  await startsOn(id);
+  const registered = (await getModelRuntime()).getModel("claude-code-cli", id);
+  assert.equal(registered?.reasoning, false, "no efforts");
+  assert.equal(registered?.thinkingLevelMap, undefined);
+  assert.equal(registered?.contextWindow, 200_000);
+});
+
 test("a built-in model still starts a worker (the control)", async () => {
   await startsOn("claude-haiku-5-5");
 });

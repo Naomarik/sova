@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Sh
 import type { DesignRecord } from "../../shared/design";
 import { versionLabel } from "../lib/design-frame";
 import { designPageText, type DesignStore } from "../lib/design-store";
-import { coordinatorOf, designCanRefine, designLatest, designMeta, parentsLine, QUICK_PROMPTS, STATUS_WORD } from "../lib/design-ui";
+import { coordinatorOf, designCanRefine, designIsBusy, designLatest, designMeta, designStatusWord, parentsLine, QUICK_PROMPTS } from "../lib/design-ui";
 import { designStatusTone, DesignTile, designGrid, type DesignOpenTarget } from "./DesignCard";
 import { DesignCoordinatorPanel, DesignDeliveryLine, designKey, DesignMessageBox } from "./DesignCoordinator";
 import { DesignSealedFrame, DesignStreamFrame } from "./DesignFrame";
@@ -97,7 +97,7 @@ function PageFrame(props: { d: DesignRecord; version: number; store: DesignStore
     <div class="design-open-frame">
       <Show when={props.d.live && props.version === 0}>
         <div inert class="design-frame-layer">
-          <DesignStreamFrame text={props.store.live(props.d.label)?.text ?? ""} title={title()} />
+          <DesignStreamFrame text={props.store.live(props.d.label)?.text ?? ""} title={title()} thinking={props.d.thinking} />
         </div>
       </Show>
       <Show when={html() !== null}>
@@ -173,8 +173,8 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
                 {designMeta(x())}
                 <Show when={x().parents.length}> · {parentsLine(x().parents)}</Show>
               </span>
-              <Chip tone={designStatusTone(x())} live={x().status === "writing"}>
-                {STATUS_WORD[x().status]}
+              <Chip tone={designStatusTone(x())} live={designIsBusy(x())}>
+                {designStatusWord(x())}
               </Chip>
               <Show when={x().versions.length > 1}>
                 <Select class="design-open-version" label="Version" hideLabel value={String(version())} options={x().versions.map((v) => ({ value: String(v.n), label: versionLabel(x().label, v.n) }))} onChange={(v) => setPick(Number(v))} />

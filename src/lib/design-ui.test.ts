@@ -4,7 +4,7 @@ import type { TranscriptItem } from "../../shared/protocol";
 import type { DesignRecord, DesignSetup } from "../../shared/design";
 import type { LiveTool } from "./live";
 import { designFold, liveDesignCalls, newestDesignRows, normalizeDesignCard } from "./design-rows";
-import { batchLine, briefTitle, designGroups, designMeta, moveCoordinator, parentsLine, setupBlocked, setupCount, setupSummary, statusCounts, toggleDirection, toggleGroup, toggleModel } from "./design-ui";
+import { batchLine, briefTitle, designGroups, designIsBusy, designMeta, designStatusWord, moveCoordinator, parentsLine, setupBlocked, setupCount, setupSummary, statusCounts, toggleDirection, toggleGroup, toggleModel } from "./design-ui";
 
 const caps = { batchDefault: 6, askAbove: 12, batchMax: 24, concurrent: 6 };
 const m = (ref: string, design = true, coordinator = false) => ({ ref, name: ref, design, coordinator, vision: true, route: "tool" as const });
@@ -68,6 +68,19 @@ test("the card's status line counts what there is, and nothing there isn't", () 
   assert.equal(statusCounts([rec("A", "ready"), rec("B", "ready"), rec("C", "writing"), rec("D", "failed")]), "2 ready · 1 writing · 1 failed");
   assert.equal(statusCounts([]), "0 designs");
   assert.equal(batchLine([rec("A", "ready", "M", "a"), rec("B", "ready", "H", "b")]), "2 designs · 2 directions · 2 models");
+});
+
+test("a design's chip says what its session is doing", () => {
+  const word = (over: Partial<DesignRecord>) => designStatusWord({ ...rec("A", "ready"), ...over });
+  assert.equal(word({}), "Ready");
+  assert.equal(word({ status: "writing" }), "Writing");
+  assert.equal(word({ status: "writing", thinking: true }), "Thinking");
+  assert.equal(word({ workerState: "working" }), "Working", "a refine with no page yet");
+  assert.equal(word({ status: "failed" }), "Failed");
+  assert.equal(word({ workerState: "working", delivery: { state: "queued", key: "k", at: "" } }), "Queued", "a queued message says so first");
+  assert.equal(designIsBusy({ ...rec("A", "ready"), workerState: "working" }), true);
+  assert.equal(designIsBusy(rec("A", "ready")), false);
+  assert.equal(designIsBusy(rec("A", "queued")), false);
 });
 
 test("a design's line names its model, its tokens as far as known, and its cost", () => {

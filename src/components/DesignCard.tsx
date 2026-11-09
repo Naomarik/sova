@@ -11,8 +11,10 @@ import {
   designCanOpen,
   designCanRefine,
   designGroups,
+  designIsBusy,
   designLatest,
   designMeta,
+  designStatusWord,
   moveCoordinator,
   parentsLine,
   setupBlocked,
@@ -45,6 +47,7 @@ export const CAPS_FALLBACK: DesignCaps = { batchDefault: DESIGN_BATCH_DEFAULT, a
 export type DesignOpenTarget = { kind: "design"; label: string } | { kind: "coordinator" };
 
 export function designStatusTone(d: DesignRecord): "success" | "accent" | "error" | undefined {
+  if (d.status === "ready" && d.workerState === "working") return "accent";
   return d.status === "ready" ? "success" : d.status === "writing" ? "accent" : d.status === "failed" ? "error" : undefined;
 }
 
@@ -435,7 +438,7 @@ export function DesignThumb(props: { d: DesignRecord; store: DesignStore; cacheK
             </div>
           </Show>
           <Show when={writing() || props.d.status === "writing" || (html() !== null && !drawn() && live())}>
-            <DesignStreamFrame text={live()?.text ?? ""} title={title()} />
+            <DesignStreamFrame text={live()?.text ?? ""} title={title()} thinking={props.d.thinking} />
           </Show>
         </Show>
       </DesignScale>
@@ -475,9 +478,9 @@ export function DesignTile(props: { d: DesignRecord; store: DesignStore; cacheKe
         <div class="design-tile-title">
           <span class="design-tile-label">{props.d.label}</span>
           <span class="design-tile-direction">{props.d.direction}</span>
-          <Show when={props.d.delivery?.state === "queued"} fallback={<Chip tone={designStatusTone(props.d)} live={props.d.status === "writing"}>{STATUS_WORD[props.d.status]}</Chip>}>
-            <Chip tone="accent">Queued</Chip>
-          </Show>
+          <Chip tone={props.d.delivery?.state === "queued" ? "accent" : designStatusTone(props.d)} live={designIsBusy(props.d) && props.d.delivery?.state !== "queued"}>
+            {designStatusWord(props.d)}
+          </Chip>
         </div>
         <p class="text-caption text-muted design-tile-meta">
           {meta()}

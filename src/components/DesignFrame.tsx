@@ -82,7 +82,7 @@ export function DesignSealedFrame(props: { html: string; motion: boolean; title:
  * frames swapped on load, so each redraw replaces a finished picture and never blanks the card.
  * Before its first style block closes a page shows nothing, so that wait reads as progress instead.
  */
-export function DesignStreamFrame(props: { text: string; title: string }) {
+export function DesignStreamFrame(props: { text: string; title: string; thinking?: boolean }) {
   let a!: HTMLIFrameElement;
   let b!: HTMLIFrameElement;
   const [front, setFront] = createSignal<"a" | "b">("a");
@@ -130,7 +130,7 @@ export function DesignStreamFrame(props: { text: string; title: string }) {
       </Show>
       <Show when={!drawable()}>
         <div class="design-frame-note" role="status">
-          {props.text ? `Writing styles · about ${tokensOfText(props.text.length).toLocaleString("en-US")} tokens` : "Starting the page"}
+          {props.text ? `Writing styles · about ${tokensOfText(props.text.length).toLocaleString("en-US")} tokens` : props.thinking ? "Thinking about the page" : "Starting the page"}
         </div>
       </Show>
     </>

@@ -93,6 +93,17 @@ export function briefTitle(brief: string): string {
 
 export const STATUS_WORD: Record<DesignStatus, string> = { queued: "Queued", writing: "Writing", ready: "Ready", failed: "Failed" };
 
+/** The word on a design's chip: what its session is doing now, which can be more than its page's status. */
+export function designStatusWord(d: DesignRecord): string {
+  if (d.delivery?.state === "queued") return "Queued";
+  if (d.status === "writing" && d.thinking) return "Thinking";
+  if (d.status === "ready" && d.workerState === "working") return "Working";
+  return STATUS_WORD[d.status];
+}
+
+/** Whether that word stands for work going on (the chip's live dot). */
+export const designIsBusy = (d: DesignRecord): boolean => d.status === "writing" || (d.status === "ready" && d.workerState === "working");
+
 /** "2 ready · 1 writing · 3 queued", omitting what there are none of; failed counted last. */
 export function statusCounts(designs: readonly DesignRecord[]): string {
   const of = (s: DesignStatus) => designs.filter((d) => d.status === s).length;

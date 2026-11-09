@@ -10,6 +10,7 @@ import { DEFAULT_TEAM_DEFAULTS, writeTeamDefaults } from "./team-defaults.ts";
 import {
 	footprint,
 	idFor,
+	legacyProfile,
 	loadSubagentProfiles,
 	OFF_PROFILE_ID,
 	parseProfilesDefault,
@@ -71,26 +72,49 @@ test("parse: a valid file round-trips; every error is collected, not the first",
 		assert.ok(errors.includes(want), `missing ${want} in\n${errors}`);
 });
 
-test("the retired members key: present with any value or absent, it parses and is ignored; the writer keeps members: null for older readers", () => {
+test("the retired members key: what an older build wrote reads as that build reads it and is written back; absent reads null; nothing routes from it", () => {
 	const raw = (members: unknown) => {
 		const p: Record<string, unknown> = { ...profile("a", "A") };
 		if (members === undefined) delete p.members;
 		else p.members = members;
 		return { version: 1, profiles: [p] };
 	};
-	for (const members of [claude("claude-sonnet-5-5"), { backend: "pi", model: "no-slash", effort: "" }, null, undefined]) {
+	const cases: [unknown, unknown][] = [
+		[pi("zai/glm-5.3"), pi("zai/glm-5.3")],
+		[claude("claude-sonnet-5-5"), claude("claude-sonnet-5-5")],
+		[claude("opus[1m]"), claude("claude-opus-5-5")], // an older build reads its catalog id, and hashes that
+		[null, null],
+		[undefined, null],
+	];
+	for (const [members, read] of cases) {
+		const label = JSON.stringify(members) ?? "absent";
 		const parsed = parseSubagentProfiles(raw(members));
-		assert.ok(parsed.ok, `members ${JSON.stringify(members)}: ${!parsed.ok && parsed.errors.join("; ")}`);
-		assert.equal(parsed.value.profiles[0]!.members, null, "a saved members default is never read");
+		assert.ok(parsed.ok, `${label}: ${!parsed.ok && parsed.errors.join("; ")}`);
+		assert.deepEqual(parsed.value.profiles[0]!.members, read, label);
+		const dir = tempDir();
+		writeSubagentProfiles(dir, parsed.value);
+		const [onDisk] = JSON.parse(fs.readFileSync(subagentProfilesPath(dir), "utf8")).profiles;
+		assert.ok("members" in onDisk, `${label}: every profile carries the key an older reader requires`);
+		assert.deepEqual(onDisk.members, read, `${label}: written back`);
+		const again = readSubagentProfiles(dir);
+		assert.deepEqual(again.state === "ok" && again.value.profiles[0]!.members, read, `${label}: round-trips`);
 	}
-	// Written, every profile carries the key as null: the shape a reader that requires it (an older Sova) parses.
+	// A value an older build refuses would be refused there as soon as this host sent it.
+	const refused = parseSubagentProfiles(raw({ backend: "pi", model: "no-slash", effort: "low" }));
+	assert.ok(!refused.ok && refused.errors.some((e) => e.startsWith("profiles[0].members:")));
+	// A new profile writes null.
+	const fresh = tempDir();
+	writeSubagentProfiles(fresh, { version: 1, profiles: [legacyProfile(fresh, "n", "N")] });
+	assert.equal(JSON.parse(fs.readFileSync(subagentProfilesPath(fresh), "utf8")).profiles[0].members, null);
+	// …and nothing resolves, counts or shows from a saved value.
 	const dir = tempDir();
-	writeSubagentProfiles(dir, raw(claude("claude-sonnet-5-5")));
-	writeSubagentProfiles(dir, { version: 1, profiles: [...(raw(undefined).profiles), { ...profile("b", "B"), members: pi("zai/glm-5.3") }] });
-	const onDisk = JSON.parse(fs.readFileSync(subagentProfilesPath(dir), "utf8"));
-	assert.deepEqual(onDisk.profiles.map((p: Record<string, unknown>) => ["members" in p, p.members]), [[true, null], [true, null]]);
-	// …and nothing resolves from it.
+	const base = profile("b", "B");
+	const held = { ...base, members: pi("zai/members-only") };
+	writeSubagentProfiles(dir, { version: 1, profiles: [held] });
 	assert.equal("members" in resolveSubagents(dir, "b"), false);
+	assert.equal(footprint(held), footprint(base));
+	assert.deepEqual(profileProviders(held), profileProviders(base));
+	assert.deepEqual(profileSlots(held), profileSlots(base));
 });
 
 test("parse: the library has no artificial profile count limit", () => {

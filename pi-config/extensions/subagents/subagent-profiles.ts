@@ -21,6 +21,7 @@ import {
 	DELEGATE_PROFILE_INFO,
 	DELEGATE_PROFILES,
 	loadDelegate,
+	parseChoice,
 	parseDelegate,
 	type DelegateProfile,
 	type DelegateProfileId,
@@ -69,10 +70,11 @@ export interface SubagentProfile {
 	/** null: no standing coordinator or monitor. */
 	teams: TeamsSetting | null;
 	/**
-	 * Retired: members run on their work kind's route (Delegate's four). Always null as parsed and
-	 * written; the key stays in the file because older readers require it. Any saved value is ignored.
+	 * Retired: members run on their work kind's route (Delegate's four), and nothing reads this. Older
+	 * builds still do: they require the key and stamp each profile with a hash that includes the
+	 * value, so it is read as they read it and written back. Absent reads as null; a new profile writes null.
 	 */
-	members: null;
+	members: WorkerChoice | null;
 	/** null: the session writes the spec itself. */
 	specWriter: SpecWriter | null;
 	/**
@@ -166,7 +168,12 @@ function parseProfile(at: string, raw: unknown, errors: string[]): SubagentProfi
 			else teams = { coordinator: parsed.value.coordinator, monitor: parsed.value.monitor, handover: parsed.value.handover };
 		}
 	}
-	// `members` (the retired members default): accepted present or absent, its value ignored.
+	let members: WorkerChoice | null = null;
+	if (raw.members !== null && raw.members !== undefined) {
+		const parsed = parseChoice(raw.members);
+		if ("error" in parsed) errors.push(`${at}.members: ${parsed.error} (or null for none)`);
+		else members = parsed;
+	}
 	let specWriter: SpecWriter | null = null;
 	if (raw.specWriter !== null) {
 		const parsed = parseSpec({ version: 1, writer: raw.specWriter });
@@ -192,7 +199,7 @@ function parseProfile(at: string, raw: unknown, errors: string[]): SubagentProfi
 		name: raw.name as string,
 		delegate: delegate.profiles,
 		teams,
-		members: null,
+		members,
 		specWriter,
 		...(reviewer === undefined ? {} : { reviewer }),
 		...(alignment === undefined ? {} : { alignment }),

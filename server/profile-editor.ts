@@ -179,18 +179,20 @@ export async function saveMine(req: ProfileSaveRequest, deps: EditorDeps): Promi
   if (!row) {
     // A new profile: both halves, linked, under one id.
     libId = idFor(name, ids);
-    library.profiles.push({ id: libId, name, ...clone(req.helpers ?? helpersOf(legacyProfile(dir))) } as SubagentProfile);
+    library.profiles.push({ id: libId, name, ...clone(req.helpers ?? helpersOf(legacyProfile(dir))), members: null } as SubagentProfile);
     libChanged = true;
   } else if (libId && libIndex() >= 0) {
     const i = libIndex();
     const cur = library.profiles[i]!;
-    if (req.helpers && !same(helpersOf(cur), req.helpers)) (library.profiles[i] = { id: cur.id, name: cur.name, ...clone(req.helpers) } as SubagentProfile), (libChanged = true);
+    // The retired Members value is no part of an edit: it stays what the library holds.
+    const edited = req.helpers && { ...clone(req.helpers), members: cur.members };
+    if (edited && !same(helpersOf(cur), edited)) (library.profiles[i] = { id: cur.id, name: cur.name, ...edited } as SubagentProfile), (libChanged = true);
     // One name for both halves; a half another profile shares keeps its own.
     if (renamed && !row.alsoUsedBy?.length && library.profiles[i]!.name !== name) (library.profiles[i] = { ...library.profiles[i]!, name }), (libChanged = true);
   } else if (req.helpers) {
     // Its helpers weren't here (a link whose half hasn't arrived) or it had none: the half is made now, linked.
     if (!libId || ids.has(libId)) libId = idFor(name, ids);
-    library.profiles.push({ id: libId, name, ...clone(req.helpers) } as SubagentProfile);
+    library.profiles.push({ id: libId, name, ...clone(req.helpers), members: null } as SubagentProfile);
     libChanged = true;
   }
   // The session half.
@@ -250,7 +252,7 @@ export async function duplicateMine(key: unknown, deps: EditorDeps): Promise<Edi
   const ids = takenIds(rows, lib.value);
   const id = idFor(name, ids);
   const library = lib.value;
-  if (row.library) library.profiles.push({ ...clone(row.library), id, name });
+  if (row.library) library.profiles.push({ ...clone(row.library), id, name, members: null });
   const src = row.session;
   const session: Plan["session"] = src
     ? (list) => [...list, { ...rawOf(src), id, label: name, ...(row.library ? { subagents: id } : {}) }]
@@ -324,7 +326,7 @@ export async function saveCurrentAsProfile(label: unknown, now: ChatNow, deps: E
   if (now.helpers && now.helpers !== OFF_ID && !source) return fail(409, lib.ok ? `Its helpers ("${now.helpers}") aren't in this device's library.` : lib.error);
   const ids = library ? takenIds(rows, library) : new Set([DEFAULT_PROFILE_ID, ...rows.map((r) => r.id)]);
   const id = idFor(name, ids);
-  if (source && library) library.profiles.push({ ...clone(source), id, name });
+  if (source && library) library.profiles.push({ ...clone(source), id, name, members: null });
   const fresh: Raw = { id, label: name, icon: "wrench" };
   if (now.model) fresh.model = now.model;
   if (now.thinking && (THINKING_LEVELS as readonly string[]).includes(now.thinking)) fresh.thinking = now.thinking;

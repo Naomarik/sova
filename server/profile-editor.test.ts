@@ -155,6 +155,35 @@ describe("saving one of yours", () => {
   });
 });
 
+describe("a saved Members value (retired, kept for older hosts)", () => {
+  const value = { backend: "pi", model: "zai/glm-5.3", effort: "low" };
+  const lib = (id: string) => json<Lib>(libFile).profiles.find((p) => p.id === id)!;
+  beforeEach(() => {
+    const house = sp.legacyProfile(agentDir, "house", "House");
+    sp.writeSubagentProfiles(agentDir, { version: 1, profiles: [{ ...house, members: value as never }, sp.legacyProfile(agentDir, "shared", "Shared")] });
+  });
+
+  test("an edit keeps it, whatever the sent helpers say; a rename too", async () => {
+    const { members: _m, ...sent } = helpers(lib("house"));
+    for (const helpersSent of [{ ...helpers(lib("house")), alignment: { style: "pm" } }, { ...sent, alignment: { style: "simplified" } }, { ...sent, members: null, alignment: { eagerness: "careful" } }]) {
+      const r = await saveMine({ key: "user:house", name: "House", helpers: helpersSent as never }, deps);
+      assert.ok(r.ok, !r.ok ? r.error : "");
+      assert.equal(lib("house").alignment !== undefined, true);
+      assert.deepEqual(lib("house").members, value);
+    }
+    assert.ok((await saveMine({ key: "user:house", name: "Home" }, deps)).ok);
+    assert.deepEqual(lib("house").members, value);
+  });
+
+  test("a new profile, a Duplicate and Save Current As Profile each write null; the original keeps its value", async () => {
+    assert.ok((await saveMine({ name: "Fresh", helpers: helpers(lib("house")) as never }, deps)).ok);
+    assert.ok((await duplicateMine("user:house", deps)).ok);
+    assert.ok((await saveCurrentAsProfile("From chat", { helpers: "house" }, deps)).ok);
+    for (const id of ["fresh", "house-copy", "from-chat"]) assert.equal(lib(id).members, null, id);
+    assert.deepEqual(lib("house").members, value);
+  });
+});
+
 describe("duplicating and deleting", () => {
   test("Duplicate copies both halves under new ids, linked, as {name} copy", async () => {
     const r = await duplicateMine("user:house", deps);

@@ -266,7 +266,7 @@ export function withNewProfile(
   const key = newKey();
   const helpers = from?.helpers ?? fallbackHelpers;
   const lib = helpers ? key : null;
-  if (lib && helpers) next.library[lib] = clone(helpers);
+  if (lib && helpers) next.library[lib] = { ...clone(helpers), members: null };
   next.rows.push({ key, name: newProfileName(d, from?.name ?? "New profile"), starts: from?.starts ? clone(from.starts) : plainStarts(), model: from?.model ?? null, thinking: from?.thinking ?? null, lib });
   return { draft: next, key };
 }

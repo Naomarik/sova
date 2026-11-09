@@ -6,12 +6,12 @@ import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { ModelFavorites } from "../../pi-config/extensions/command-palette/favorites.ts";
-import { delegateDefaults } from "../../pi-config/extensions/mode/delegate.ts";
+import { delegateDefaults, parseChoice } from "../../pi-config/extensions/mode/delegate.ts";
 import { specDefaults } from "../../pi-config/extensions/mode/spec.ts";
-import { loadSubagentProfiles, readSubagentProfiles, writeSubagentProfiles, type SubagentProfile } from "../../pi-config/extensions/subagents/subagent-profiles.ts";
+import { loadSubagentProfiles, parseSubagentProfiles, readSubagentProfiles, writeSubagentProfiles, type SubagentProfile } from "../../pi-config/extensions/subagents/subagent-profiles.ts";
 import { compareDocs, DocSync, settingsDocs, themeDoc, validFavorites, type DocManifest, type DocMeta, type DocPeer, type DocPush, type DocReply } from "./docs";
 import { listKept, LIBRARY_KEY } from "./kept";
-import { libraryText } from "./profile-merge";
+import { libraryText, profileHash, remoteItems } from "./profile-merge";
 import { replacedNotice, restoreReplacedProfiles } from "../subagent-profiles";
 
 const root = mkdtempSync(join(tmpdir(), "sova-doc-sync-"));
@@ -529,6 +529,133 @@ test("library: two edits to one profile resolve newest-wins for that profile onl
     stopAll([a!, b!]);
   }
 });
+
+/** The profiles as a build still using the Members default parses `text`: the value read by its own tuple rule. */
+const olderProfiles = (text: string): SubagentProfile[] => {
+  const parsed = parseSubagentProfiles(text);
+  assert.ok(parsed.ok, "the library parses");
+  const raw = (JSON.parse(text) as { profiles: { members: unknown }[] }).profiles;
+  return parsed.value.profiles.map((p, i) => ({ ...p, members: raw[i]!.members === null ? null : (parseChoice(raw[i]!.members) as never) }));
+};
+const olderStamps = (meta: DocMeta, text: string): DocMeta => {
+  const items = { ...meta.items };
+  for (const p of olderProfiles(text)) if (items[p.id]) items[p.id] = { ...items[p.id]!, hash: profileHash(p) };
+  return { ...meta, items };
+};
+const withMembers = (p: SubagentProfile, members: unknown): SubagentProfile => ({ ...p, members: members as never });
+/** Make `o` an older-rule peer of `a`: everything `a` hears from it is stamped by the older rule. Counts library pulls and pushes both ways. */
+function asOlderPeer(a: Host, o: Host, traffic: { pulls: number; pushes: number }) {
+  const fromA = a.peerTo.bind(a);
+  const fromO = o.peerTo.bind(o);
+  a.peerTo = (t) => {
+    const p = fromA(t);
+    return {
+      ...p,
+      manifest: async () => {
+        const r = await p.manifest();
+        const m = r.docs[LIBRARY_KEY];
+        return m?.items ? { ...r, docs: { ...r.docs, [LIBRARY_KEY]: olderStamps(m, o.read(LIB)!) } } : r;
+      },
+      doc: async (key) => {
+        const d = await p.doc(key);
+        if (key !== LIBRARY_KEY) return d;
+        traffic.pulls++;
+        return { ...d, meta: olderStamps(d.meta, d.content!) };
+      },
+      push: async (body) => {
+        if (body.docs[LIBRARY_KEY]) traffic.pushes++;
+        return p.push(body);
+      },
+    };
+  };
+  o.peerTo = (t) => {
+    const p = fromO(t);
+    return {
+      ...p,
+      doc: async (key) => {
+        if (key === LIBRARY_KEY) traffic.pulls++;
+        return p.doc(key);
+      },
+      push: async (body) => {
+        const d = body.docs[LIBRARY_KEY];
+        if (!d) return p.push(body);
+        traffic.pushes++;
+        return p.push({ ...body, docs: { ...body.docs, [LIBRARY_KEY]: { ...d, meta: olderStamps(d.meta, d.content!) } } });
+      },
+    };
+  };
+}
+
+// The tie-break of compareItems orders by hash, so a Members value must be tried on each side of its
+// profile's hash with no value, whichever way a disagreement between the two would fall.
+const membersFixtures = (): { why: string; members: unknown }[] => {
+  const none = profileHash(prof("x", "X", "zai/one"));
+  const value = (n: number) => ({ backend: "pi", model: `zai/m${n}`, effort: "low" });
+  const on = (below: boolean) => {
+    for (let n = 0; ; n++) if (profileHash(withMembers(prof("x", "X", "zai/one"), value(n))) < none === below) return value(n);
+  };
+  return [
+    { why: "hashes below the value-less profile", members: on(true) },
+    { why: "hashes above the value-less profile", members: on(false) },
+    // An older build reads this as its catalog id, and stamps that: the file's own text would hash differently.
+    { why: "an old Claude id", members: { backend: "claude-code", model: "opus[1m]", effort: "high" } },
+  ];
+};
+
+for (const { why, members } of membersFixtures()) {
+  test(`library: an older peer's Members value (${why}) passes through: its edits arrive, nothing churns, what we send it agrees`, async () => {
+    const [a, o] = mesh(2);
+    const traffic = { pulls: 0, pushes: 0 };
+    asOlderPeer(a!, o!, traffic);
+    const write = async (h: Host, profiles: SubagentProfile[]) => {
+      await tick();
+      const text = libraryText(profiles);
+      h.write(LIB, text);
+      h.sync.observe();
+      return text;
+    };
+    const quiet = async () => {
+      traffic.pulls = 0;
+      traffic.pushes = 0;
+      for (let r = 0; r < 3; r++) await converge([a!, o!]);
+      assert.deepEqual(traffic, { pulls: 0, pushes: 0 }, "three rounds move nothing");
+    };
+    const agrees = (expectExact?: string) => {
+      const d = a!.sync.doc(LIBRARY_KEY)!;
+      if (expectExact !== undefined) assert.equal(d.content, expectExact, "the peer's file, byte for byte");
+      assert.notEqual(remoteItems(d.meta, olderProfiles(d.content!)), null, "an older build accepts our stamps");
+      return d.content!;
+    };
+    const x = (model: string) => withMembers(prof("x", "X", model), members);
+    await startAll([a!, o!]);
+    try {
+      await write(o!, [x("zai/one"), prof("y", "Y")]);
+      await converge([a!, o!]);
+      // The exact take: an edit there arrives here, and both files stay what the older build wrote.
+      const edited = await write(o!, [x("zai/two"), prof("y", "Y")]);
+      await converge([a!, o!]);
+      assert.equal(a!.read(LIB), edited, "the older peer's edit is accepted here");
+      assert.equal(o!.read(LIB), edited);
+      agrees(edited);
+      await quiet();
+      assert.equal(o!.read(LIB), edited, "the older peer's file is byte-identical");
+
+      // The merge's own text: each side has something the other lacks.
+      await write(a!, [...olderProfiles(a!.read(LIB)!), prof("z", "Z")]);
+      await write(o!, [x("zai/two"), prof("y", "Y", "zai/y-edit")]);
+      await converge([a!, o!]);
+      const merged = agrees();
+      const onDisk = (JSON.parse(merged) as { profiles: { id: string; members: unknown; specWriter: { primary: { model: string } } | null }[] }).profiles;
+      assert.deepEqual(onDisk.map((p) => p.id).sort(), ["x", "y", "z"]);
+      assert.deepEqual(onDisk.find((p) => p.id === "x")!.members, parseChoice(members), "the merged file keeps the value");
+      assert.equal(onDisk.find((p) => p.id === "y")!.specWriter?.primary.model, "zai/y-edit");
+      assert.equal(o!.read(LIB), merged, "the older peer takes the union");
+      await quiet();
+    } finally {
+      stopAll([a!, o!]);
+    }
+  });
+}
 
 /** A peer on an older build: whole documents, newest edit wins, no per-profile stamps. */
 class OldPeer implements DocPeer {

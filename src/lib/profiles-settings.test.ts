@@ -166,6 +166,14 @@ test("New Profile: under Yours, named New profile, the source's models, both hal
   const copy = dup.draft.rows.at(-1)!;
   assert.equal(copy.name, "Twin copy");
   assert.notEqual(copy.lib, "c");
+  // A saved Members value stays with its profile and never goes to a new one.
+  const held: ProfilesDraft = JSON.parse(JSON.stringify(d));
+  held.library.c!.members = w("pi", "zai/glm-5.3", "low") as never;
+  const heldDup = withDuplicate(held, "user:twin", null);
+  assert.equal(heldDup.draft.library[heldDup.draft.rows.at(-1)!.lib!]!.members, null, "a Duplicate holds none");
+  const heldNew = withNewProfile(held, { model: null, thinking: null, helpers: held.library.c! }, null);
+  assert.equal(heldNew.draft.library[heldNew.draft.rows.at(-1)!.lib!]!.members, null, "nor does a New Profile copied from it");
+  assert.deepEqual(heldDup.draft.library.c!.members, w("pi", "zai/glm-5.3", "low"), "the original keeps it");
 });
 
 test("Delete: refused for the default; a library half another profile links stays, the last one's goes", () => {

@@ -7,7 +7,7 @@ import type {
   DelegateSettingsInfo,
   WorkerChoice,
 } from "../../shared/protocol";
-import { canonicalClaudeId, claudeModel } from "./format";
+import { canonicalClaudeId, claudeModel, claudeModelName } from "./format";
 
 /**
  * Worker-row form rules (first Delegate's, now Settings → Profiles' and others'). Pure, so the
@@ -135,7 +135,7 @@ export function modelSelectOptions(options: DelegateOptions | undefined, choice:
       const listedAs = findListedModel(models, choice.backend, choice.model)!;
       listed.unshift({ value: choice.model, label: choice.backend === "claude-code" ? listedAs.name : choice.model, title: choice.model });
     }
-    else listed.unshift({ value: choice.model, label: `${choice.model} — ${models === null || sessionScoped(options, choice) || unlistedClaudeAlias(choice) ? "not verified" : "not offered"}` });
+    else listed.unshift({ value: choice.model, label: `${(choice.backend === "claude-code" && claudeModelName(choice.model)) || choice.model} — ${models === null || sessionScoped(options, choice) || unlistedClaudeAlias(choice) ? "not verified" : "not offered"}`, ...((choice.backend === "claude-code" && claudeModelName(choice.model)) ? { title: choice.model } : {}) });
   return listed;
 }
 

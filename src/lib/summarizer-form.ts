@@ -9,6 +9,7 @@
 // a skip that never happens.
 
 import type { DelegateOptions, SummarizerBackend, SummarizerChoice, SummarizerSettings } from "../../shared/protocol";
+import { claudeModelName } from "./format";
 import { findListedModel } from "./delegate-form";
 import type { ModelPolicy } from "./model-policy";
 
@@ -94,7 +95,7 @@ export function summarizerModelOptions(
   const listedAs = models ? findListedModel(models, choice.backend, choice.model) : undefined;
   if (choice.model && !out.some((o) => o.value === choice.model))
     if (listedAs) out.unshift({ value: choice.model, label: claude ? listedAs.name : choice.model, title: choice.model });
-    else out.unshift({ value: choice.model, label: `${choice.model} — ${unverified(options, choice) ? "not verified" : "not offered"}` });
+    else out.unshift({ value: choice.model, label: `${(claude && claudeModelName(choice.model)) || choice.model} — ${unverified(options, choice) ? "not verified" : "not offered"}`, ...(claude && claudeModelName(choice.model) ? { title: choice.model } : {}) });
   return out;
 }
 

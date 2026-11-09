@@ -132,6 +132,8 @@ export const QUIET_MS = 10 * 60_000;
 /** What the one use rule asks of a chat. */
 export interface ChatInUseFacts {
   name: string;
+  /** Its summary couldn't be read: who knows what it's doing. */
+  unknown?: boolean;
   running: boolean;
   tui: boolean;
   workers: number;
@@ -144,6 +146,7 @@ export interface ChatInUseFacts {
  * itself: a quiet chat's next message brings it back. A sandbox on is asked apart, since on the platforms it matters it holds rather than waits.
  */
 export function chatInUse(u: ChatInUseFacts, now: number): string | null {
+  if (u.unknown) return `Chat ${u.name} couldn't be read.`;
   if (u.tui) return `Chat ${u.name} is open in a TUI.`;
   if (u.running) return `Chat ${u.name} is running.`;
   if (u.workers > 0) return `Chat ${u.name} has workers.`;

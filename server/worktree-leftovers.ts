@@ -38,7 +38,7 @@ const REBUILDABLE_DIRS = new Set([
   ".ruff_cache",
   ".gradle",
 ]);
-const rebuildableDir = (name: string): boolean => REBUILDABLE_DIRS.has(name) || /^dist-[^/]+$/.test(name);
+export const rebuildableDir = (name: string): boolean => REBUILDABLE_DIRS.has(name) || /^dist-[^/]+$/.test(name);
 /** Rebuildable files wherever they are. */
 const rebuildableFile = (name: string): boolean => name === ".DS_Store" || name.endsWith(".tsbuildinfo") || name.endsWith(".pyc");
 /** The spec tools' own review folders: copies of what they review, never the only copy of work. Drafts need proof. */
@@ -440,7 +440,20 @@ async function folderListing(top: string, main: string, git: GitRunner): Promise
   return { untracked, ignored };
 }
 
-/** Which of `files` (absolute) the repository has, by content: hashed unfiltered, as a filtered file would read as new. */
+/** Blobs some ref reaches: what outlives git's own tidy-up (a dangling blob doesn't). Kept briefly: a stale answer here can only be a hold. */
+const reachable = new Map<string, { at: number; blobs: Set<string> }>();
+export async function reachableBlobs(git: GitRunner, main: string): Promise<Set<string>> {
+  const now = Date.now();
+  const hit = reachable.get(main);
+  if (hit && now - hit.at < 60_000) return hit.blobs;
+  const r = await git(["rev-list", "--objects", "--no-object-names", "--all"], { cwd: main });
+  // A list that couldn't be read says nothing is reachable, which holds.
+  const blobs = new Set(r.code === 0 ? r.stdout.split("\n").filter(Boolean) : []);
+  reachable.set(main, { at: now, blobs });
+  return blobs;
+}
+
+/** Which of `files` (absolute) the repository has, by content, and some ref reaches: hashed unfiltered, as a filtered file would read as new. */
 async function inGit(git: GitRunner, main: string, files: readonly string[]): Promise<Set<string>> {
   const known = new Set<string>();
   if (!files.length) return known;
@@ -453,7 +466,7 @@ async function inGit(git: GitRunner, main: string, files: readonly string[]): Pr
     const oids = hashed.stdout.trim().split("\n");
     if (oids.length !== batch.length) throw new Unreadable("git hash-object: its answer didn't match the files asked about");
     for (let j = 0; j < batch.length; j++) {
-      if (blobs.has(oids[j]!) || (await git(["cat-file", "-e", `${oids[j]}^{blob}`], { cwd: main })).code === 0) known.add(batch[j]!);
+      if (blobs.has(oids[j]!) || (await reachableBlobs(git, main)).has(oids[j]!)) known.add(batch[j]!);
     }
   }
   return known;

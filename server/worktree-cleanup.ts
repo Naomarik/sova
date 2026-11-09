@@ -84,6 +84,8 @@ export interface ChatUse {
   /** Workers it holds, idle ones too. */
   workers: number;
   sandbox: boolean;
+  /** Its summary couldn't be read: nobody can say it's quiet. */
+  unknown?: true;
   /** Its session file's last write, ms. */
   lastActiveAt: number;
 }
@@ -521,6 +523,8 @@ export async function chatUses(paths: readonly string[], exclude?: string): Prom
       tracks: r.tracks.map((w) => w.path),
       archived: !!s?.archived,
       running: !!s && runningNow(s),
+      // No summary: a doubt isn't quiet.
+      ...(s ? {} : { unknown: true as const }),
       tui: !!s?.live,
       workers: s?.workers?.total ?? s?.live?.workers?.total ?? 0,
       sandbox,

@@ -89,10 +89,7 @@ export interface ProjectGlanceQueue {
     /** How long its run takes, estimated (ms), or null. */
     takesMs: number | null;
     steps: GlanceRunStep[];
-    checks: { id: string; label: string   /** Worktrees retirement took and holds here (§chat.worktrees/retirement). Absent at 0. */
-  retired?: number;
-  held?: number;
-}[];
+    checks: { id: string; label: string }[];
     /** It is the release's own entry. */
     release?: true;
   };
@@ -124,6 +121,9 @@ export interface ProjectGlance {
   /** Own memory now (bytes): its chats' (with their workers and tools) and its running copies' (the main checkout's included). */
   memory: { chatsBytes: number; copiesBytes: number };
   release: ProjectGlanceRelease | null;
+  /** Worktrees retirement took and holds here (§chat.worktrees/retirement). Absent at 0. */
+  retired?: number;
+  held?: number;
 }
 
 export interface ProjectGlanceList {

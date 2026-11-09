@@ -3788,6 +3788,9 @@ export interface SessionHiddenWorkers {
   total: number;
 }
 
+/** Which project a branch belongs to and where it merges (§chat.worktrees/place). */
+export type BranchPlace = import("./merge-queue").BranchPlace;
+
 /** One tracked worktree as the Session tab shows it. */
 export interface SessionWorktreeInfo {
   /** Canonical top level. */
@@ -3835,6 +3838,9 @@ export interface SessionWorktreeInfo {
       "Ready to land" and "Landing specs" key on it, never on `mergeProject` being missing. Absent: the repo merges
       plainly (the chat merges it into main). Additive. */
   mergeServed?: true;
+  /** Which project it belongs to and where it merges (§chat.worktrees/place), on every row, a deleted folder's too.
+      Additive. */
+  place?: BranchPlace;
 }
 
 // ---------------------------------------------------------------------------
@@ -5136,6 +5142,8 @@ export interface SessionBranchRow {
   mergeServed?: true;
   /** Its project's merge setup as the ready row words it (SessionWorktreeInfo.mergeProject, cut). */
   mergeProject?: Pick<import("./merge-queue").WorktreeMergeProject, "target" | "checks" | "invalid">;
+  /** Its place, for "{branch} in {place}" (§chat.worktrees/place). Additive. */
+  place?: BranchPlace;
 }
 
 /** A branch's merge queue entry as the session list carries it: its state (never a precomputed key, so a new state

@@ -1625,6 +1625,18 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .wt-queue-row { align-items: flex-start; flex-wrap: wrap; row-gap: var(--space-2); }
 .wt-queue-row > .list-main { flex: 1 1 16rem; min-width: 0; }
 .wt-queue-row .list-title { font-weight: var(--fw-medium); white-space: normal; overflow-wrap: anywhere; }
+/* A branch's place: a whole-line button that wraps, at the 44px touch target; it unfolds to the folder under it. */
+.branch-place { min-width: 0; }
+.branch-place-line { display: inline-flex; align-items: center; gap: var(--space-1); max-width: 100%; min-height: var(--tap-min); padding: 0; border: 0; background: none; color: var(--color-ink-2); text-align: start; cursor: pointer; }
+.branch-place-line:hover { color: var(--color-ink); }
+.branch-place-line:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.branch-place-line .icon { flex: none; }
+.branch-place-words { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.branch-place-fold { display: grid; justify-items: start; gap: var(--space-1); margin-bottom: var(--space-1); padding-inline-start: 20px; }
+.branch-place-fold[hidden] { display: none; }
+/* Copy Folder lines up with the facts: a ghost button gives back its own side padding. */
+.branch-place-fold > .button-ghost { margin-inline-start: calc(-1 * var(--space-3)); }
+.branch-place-fact { margin: 0; max-width: 100%; overflow-wrap: anywhere; color: var(--color-ink-2); }
 .wt-queue-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); margin-top: var(--space-1); }
 .wt-queue-reason,
 .wt-queue-note,
@@ -1657,7 +1669,8 @@ html, body { overflow: clip; overscroll-behavior: none; }
 /* The foot: the queue's one line on the left (muted), View Merge Queue a small link on the right. */
 .wt-queue-foot { justify-content: space-between; }
 .wt-queue-intro { margin: 0; min-width: 0; color: var(--color-ink-muted); }
-.wt-queue-foot-link { flex: none; margin-inline-start: auto; display: inline-flex; align-items: center; min-height: var(--tap-min); }
+.wt-queue-foot-links { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0 var(--space-3); margin-inline-start: auto; min-width: 0; }
+.wt-queue-foot-link { display: inline-flex; align-items: center; min-height: var(--tap-min); }
 .wt-queue-paused { margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--status-warn-bg); color: var(--color-ink); }
 
 /* The tab. */

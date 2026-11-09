@@ -132,6 +132,7 @@ export function worktreeQueueInfo(view: MergeQueueView, branch: string): Worktre
   return {
     id: e.id,
     project: view.project,
+    target: e.target,
     state: e.state,
     ...(e.position ? { position: e.position } : {}),
     commit: e.commit,

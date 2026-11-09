@@ -58,6 +58,7 @@ test("the branches are every non-dropped tree, own and inherited, read as the ch
       fieldsAsked.push(path);
       return { root, fields: { mergeServed: true, mergeProject: { target: "master", checks: "declared" }, ...(branch === "feat/own" ? { queue: { state: "queued", commit: "a".repeat(40), position: 1 } } : {}) } };
     },
+    branchPlace: async (p) => ({ label: `place of ${p === gone ? "gone" : "live"}` }),
     queueNow: () => now,
   });
   const path = sessionFile([
@@ -85,6 +86,8 @@ test("the branches are every non-dropped tree, own and inherited, read as the ch
   assert.equal(p!.sharedWith, PARENT, "inherited: from the chat it was forked from");
   assert.deepEqual(p!.mergedInto, { target: "master", sha: "c".repeat(40) }, "git's merged answer, as the chat's row has it");
   assert.equal(g!.exists, false);
+  assert.equal(g!.place?.label, "place of gone", "a deleted folder keeps its place");
+  assert.equal(o!.place?.label, "place of live");
   assert.equal(m!.status, "merged");
   assert.deepEqual(fieldsAsked.sort(), [inherited, own].sort(), "queue fields only where the folder exists, as describeWorktrees asks");
   // The session's readiness holds its own trees only: the inherited one has none, in the chat too.

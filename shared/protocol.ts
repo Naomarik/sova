@@ -3209,15 +3209,64 @@ export type WorktreesSummary =
       /** Empty leftovers: a branch with no commit of its own. */
       empty: number;
       unmerged: number;
+      /** Worktrees retirement holds in this repository, with a reason (§chat.worktrees/retirement). Absent at 0. */
+      held?: number;
+      /** Worktrees it retired here in the last 7 days. Absent at 0. */
+      retired?: number;
+      /** Why retirement doesn't run here (RetirementView.offFor). Absent: it runs. */
+      offFor?: "install" | "test" | "setting" | "unknown";
     };
-/** POST /api/worktrees/cleanup's body: `dryRun` previews; `expect` removes exactly those paths
-    that are still removable; `force` is Remove Anyway for one kept tree, with the digest of the
-    listing the user confirmed (exactly one of the three). */
-export interface WorktreeCleanupRequest {
+
+/** One branch retirement took (§chat.worktrees/retirement). */
+export interface RetiredRow {
   path: string;
-  dryRun?: boolean;
-  expect?: string[];
-  force?: { path: string; digest: string };
+  branch: string;
+  /** Its last commit, pinned; empty for a folder whose branch was already gone. */
+  tip: string;
+  merged: "ancestor" | "content" | "leftover" | "empty";
+  /** ms. */
+  at: number;
+  branchDeleted: boolean;
+  /** Restore can put it back. */
+  restorable: boolean;
+}
+
+/** One worktree retirement can't take, and why (the Held list). */
+export interface HeldRow {
+  path: string;
+  branch?: string;
+  session?: { id: string; path?: string; title?: string };
+  /** A sentence. */
+  reason: string;
+  /** "drafts": its row is also under Ready to land, where Land lands just the drafts. */
+  kind: "drafts" | "files" | "process" | "other";
+}
+
+/** GET /api/worktrees/retirement?root=<main checkout>[&all=1], and MergeQueueView.retirement: read with no git. */
+export interface RetirementView {
+  /** Newest first: the newest 20, or every one with all=1. */
+  retired: RetiredRow[];
+  retiredTotal: number;
+  held: HeldRow[];
+  /** How many only wait until quiet. */
+  waiting: number;
+  /** Their reasons, for the line's hover. */
+  waitingWhy?: string;
+  /** Cleanup couldn't start for this project: its lock looks taken by {who} ("Sova, process 123"). The tab leads with one line; it isn't a row and isn't counted. */
+  lockTaken?: string;
+  /** The service doesn't run here: the sentence to show. Absent: it runs. */
+  off?: string;
+  /** Why: "install", an install on a PI_CODING_AGENT_DIR of its own, where worktrees go only by Remove Worktree or
+      archiving; "test", a test copy of Sova; "setting", SOVA_RETIRE=off; "unknown", Sova couldn't tell. */
+  offFor?: "install" | "test" | "setting" | "unknown";
+}
+
+/** POST /api/worktrees/restore's body. 200 {ok: true, path, branch}; 409 {error}, shown under the row. */
+export interface WorktreeRestoreRequest {
+  root: string;
+  path: string;
+  branch: string;
+  tip: string;
 }
 /** What Remove Anyway would delete from a tree kept only for what it holds: paths relative to the
     tree's top, each list its first 500 entries, `counts` the exact totals, `digest` the whole list's. */
@@ -3233,40 +3282,11 @@ export interface WorktreeRemoveAnyway {
   counts: { uncommitted: number; ignored: number; nested: number; rebuildable: number };
   digest: string;
 }
-/** A worktree that goes (dry run) or went: how it is merged, and whether its branch is deleted. */
-export interface WorktreeCleanupRemoved {
-  path: string;
-  branch?: string;
-  kind: "ancestor" | "content" | "empty";
-  branchDeleted: boolean;
-}
 /** POST /api/projects/:pid/overseer/worktrees/remove {dryRun: true}: why Remove Worktree keeps a coding
     session's folder (null: it may go), and, when what it holds is the reason, what Remove Anyway would delete. */
 export interface CodingWorktreeHold {
   reason: string | null;
   removeAnyway?: WorktreeRemoveAnyway;
-}
-/** A worktree that stays, and the one reason why. */
-export interface WorktreeCleanupKept {
-  path: string;
-  branch?: string;
-  reason: string;
-  /** Dry run only: present when what it holds is the only reason it stays (§chat.worktrees/cleanup). */
-  removeAnyway?: WorktreeRemoveAnyway;
-}
-/** The dry run's answer. */
-export interface WorktreeCleanupPlan {
-  repo: string;
-  mainBranch?: string;
-  /** The server's home folder, so the dialog shows paths with `~`. */
-  home?: string;
-  remove: WorktreeCleanupRemoved[];
-  keep: WorktreeCleanupKept[];
-}
-/** A removal's answer, per expected path (other trees are never touched). */
-export interface WorktreeCleanupResult {
-  removed: WorktreeCleanupRemoved[];
-  kept: WorktreeCleanupKept[];
 }
 
 /** POST /api/workers/resume's answer: the worker as the runtime now lists it. */
@@ -5134,6 +5154,8 @@ export interface SessionBranchRow {
   /** The shared answer (WorktreeReadiness.left), for a row no readiness of this chat's covers too. */
   left?: "nothing" | "drafts";
   draftsLeft?: number;
+  /** The row offers Remove (POST /api/worktrees/remove): retirement is off for this install and nothing is left. Absent everywhere else. */
+  removable?: true;
 }
 
 /** A branch's merge queue entry as the session list carries it: its state (never a precomputed key, so a new state
@@ -5147,6 +5169,10 @@ export type SessionBranchQueue = import("./merge-queue").BranchQueueFacts;
 export interface CwdFallback {
   original: string;
   cwd: string;
+  /** The folder retired (§chat.worktrees/retirement): a message brings it back, fresh from `target`. */
+  retired?: { branch: string; target: string };
+  /** The folder is still there: what a retirement's stopped delete left, not yet proved safe to delete (§chat.worktrees/retirement). */
+  held?: true;
 }
 
 /** "removed": the worktree's folder is gone and its work isn't known merged (§chat.worktrees/readiness). */
@@ -5182,6 +5208,8 @@ export interface WorktreeReadiness {
   left?: "nothing" | "drafts";
   /** left "drafts": how many. */
   draftsLeft?: number;
+  /** The row offers Remove (POST /api/worktrees/remove): retirement is off for this install and nothing is left. Absent everywhere else. */
+  removable?: true;
 }
 
 /** A worktree whose work is finished at its head commit (§chat.worktrees/ready-to-land). */

@@ -701,6 +701,8 @@ export interface MergeQueueView {
   release?: MergeReleaseHold;
   /** Every setting the queue uses, where each is kept, and the saves the Settings tab may make. */
   settings?: import("./merge-queue-settings").MergeQueueSettings;
+  /** What retirement did and holds in this project (§chat.worktrees/retirement). Additive. */
+  retirement?: import("./protocol").RetirementView;
   at: string;
 }
 

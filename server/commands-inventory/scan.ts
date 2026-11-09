@@ -55,6 +55,8 @@ const exactly = (routes: readonly RouteKey[]) => (m: string, p: string) => route
 
 /** The page's own requests in the core areas: what a view, the composer or a link card asks to draw itself. */
 export const PAGE_PLUMBING: readonly RouteKey[] = [
+  // One release only (§chat.worktrees/cleanup): an open page's post gets a plain answer, and nothing is removed.
+  "POST /api/worktrees/cleanup",
   "GET /api/attachment", "DELETE /api/attachment", "POST /api/upload", "GET /api/transcript/tool",
   "GET /api/links/:id/thread", "POST /api/links/:id/seen", "GET /api/targets/:name/folders", "GET /api/explanations",
   // Settings → Extensions drawing itself: no action, and no catalogue entry.

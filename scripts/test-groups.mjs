@@ -7,6 +7,7 @@
 // trigger, "never" not at all (a release runs every group: plain `pnpm test:int`). Every file in no
 // group is the everyday set, which every landing runs. A changed test file triggers only the group
 // it belongs to (editing a unit test next to an area isn't a change to that area).
+import { readFileSync } from "node:fs";
 
 /** What changes how every test runs: the testing guide's front-matter `watches`. */
 const TEST_SETUP = [
@@ -27,7 +28,19 @@ const TEST_SETUP = [
 const PACKAGES = ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "mise.toml"];
 const SELF = ["scripts/test-groups.mjs"];
 
+/** The code that retires and removes worktrees: one list with the Land gate on it (server/merge-queue/rehearsal.ts). */
+const RETIRE_LAB = JSON.parse(readFileSync(new URL("../shared/retire-lab.json", import.meta.url), "utf8")).triggers;
+
 export const GROUPS = [
+  {
+    name: "retire-lab",
+    title: "Automatic cleanup",
+    // Retirement's scenarios on made-up state: the same ones the rehearsal runs on a copy of the real state, which the queue never reads.
+    files: ["server/worktree-retire-*.integration.test.ts"],
+    except: [],
+    landing: "triggered",
+    triggers: [...RETIRE_LAB, ...PACKAGES, ...TEST_SETUP, ...SELF],
+  },
   {
     name: "trial",
     title: "Chat processes",

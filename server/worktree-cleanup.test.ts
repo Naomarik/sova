@@ -90,18 +90,12 @@ before(() => {
   tracker("idl", wt("idle"));
   mkdirSync(join(wt("liverec"), ".agent", "sessions", "live"), { recursive: true });
   writeFileSync(join(wt("liverec"), ".agent", "sessions", "live", `p${process.pid}-x.json`), JSON.stringify({ session: { pid: process.pid } }));
-  // The real /proc scan, taken once and shared (a scan reads every fd of every process this user has,
-  // seconds each on a busy host), plus a process inside wt-proc as the scan reads one: a real child
-  // whose cwd is there is worktree-cleanup.integration.test.ts.
-  let scan: ReturnType<typeof c.scanProcesses> | null = null;
   c.configureCleanup({
     queueMade: async (p) => queueMadeTrees.has(p),
-    processes: () => (scan ??= c.scanProcesses().then((ps) => [...ps, { pid: process.ppid, command: "sleep", paths: [wt("proc")] }])),
     summary: async (p) => sessions.find((s) => s.path === p) ?? null,
     sessionFiles: async () => [...new Set([...sessions.map((s) => s.path), join(root, "sessions", "01a1026f-c64e-70a4.jsonl"), HOME_SESSION()])],
     readBranch: async (p) => (reads.branch.push(p), branches.get(p) ?? []),
     readFile: async (p) => (reads.file.push(p), readFileSync(p)),
-    ledger: (e) => { ledger.push(...e); },
     now: () => 1000,
   });
 });
@@ -158,7 +152,8 @@ test("a worktree a merge queue chat made itself (old style, no mark) is never li
   try {
     const repo = await c.classifyRepo(other);
     assert.ok(repo);
-    assert.deepEqual(repo.trees.map((t) => [t.path, t.class]), [[mine, "merged"]], "only the user's merged worktree is offered");
+    assert.deepEqual(repo.trees.map((t) => [t.path, t.class]), [[mine, "merged"]], "only the user's merged worktree is listed");
+    assert.deepEqual((await c.classifyRepo(other, { withQueueMade: true }))?.trees.map((t) => t.path).sort(), [made, mine].sort(), "retirement still sees it");
   } finally {
     queueMadeTrees.delete(made);
   }
@@ -176,94 +171,53 @@ test("the count covers every linked worktree in git's list, and a session with n
   assert.deepEqual(await c.worktreesSummary(join(root, "sessions", "remote.jsonl")), { state: "none" });
 });
 
-test("the dry run names what goes and why the rest stays", async () => {
-  const plan = await c.cleanupPlan(HOME_SESSION());
-  assert.ok(plan);
-  const goes = new Map(plan.remove.map((r) => [r.path, r]));
-  const stays = new Map(plan.keep.map((k) => [k.path, k.reason]));
-  for (const n of ["merged", "squash", "empty", "gone", "idle", "changed"]) assert.ok(goes.has(wt(n)), `${n} should go: ${stays.get(wt(n))}`);
-  assert.deepEqual(goes.get(wt("squash")), { path: wt("squash"), branch: "feat/squash", kind: "content", branchDeleted: false });
-  assert.equal(goes.get(wt("merged"))?.branchDeleted, true);
-  assert.equal(stays.get(wt("unmerged")), "Not merged into master.");
-  assert.equal(stays.get(wt("dirty")), "1 uncommitted file: notes.md.");
-  assert.equal(stays.get(wt("locked")), "Locked.");
-  assert.equal(stays.get(wt("cwd")), "Session 01a1026f's folder is inside it.", "an unlisted new session's folder counts too");
-  assert.equal(stays.get(wt("live-tui")), "Session “session tui” tracks it and is open in a TUI.");
-  assert.equal(stays.get(wt("running")), "Session “session run” tracks it and is running.");
-  assert.equal(stays.get(wt("sandboxed")), "Session “session sbx” tracks it and has its sandbox on.");
-  assert.match(stays.get(wt("proc")) ?? "", /^A running process is inside it: sleep \(\d+\)\.$/);
-  assert.equal(stays.get(wt("liverec")), `A live session under its .agent: ${process.pid}.`);
-  // A dry run touches nothing.
-  for (const n of ["merged", "squash", "empty", "idle"]) assert.ok(existsSync(wt(n)));
+test("who uses a tree: a folder inside it, or tracking it as active, unlisted new sessions included", async () => {
+  const paths = ["cwd", "live-tui", "running", "sandboxed", "idle", "merged"].map(wt);
+  const { uses, unreadable } = await c.chatUses(paths);
+  assert.deepEqual(unreadable, []);
+  const of = (p: string) => uses.filter((u) => u.inside.includes(p) || u.tracks.includes(p));
+  assert.equal(of(wt("cwd"))[0]?.name, "01a1026f", "an unlisted new session's folder counts too");
+  assert.equal(of(wt("cwd"))[0]?.inside[0], wt("cwd"));
+  assert.equal(of(wt("live-tui"))[0]?.tui, true);
+  assert.equal(of(wt("running"))[0]?.running, true);
+  assert.equal(of(wt("sandboxed"))[0]?.sandbox, true);
+  assert.deepEqual(of(wt("idle")).map((u) => [u.running, u.tui, u.sandbox, u.workers]), [[false, false, false, 0]]);
+  assert.deepEqual(of(wt("merged")), [], "nobody uses it");
 });
 
-test("a second dry run reads no unchanged session file; a changed one is read again, alone, with the same answer", async () => {
+test("a second read of the chats reads no unchanged session file; a changed one is read again, alone, with the same answer", async () => {
+  const paths = ["sandboxed", "idle", "cwd"].map(wt);
   c.resetCleanup();
   reads.file.length = 0;
   reads.branch.length = 0;
-  const first = await c.cleanupPlan(HOME_SESSION());
+  const first = await c.chatUses(paths);
   const onDisk = [...new Set([...sessions.map((s) => s.path), join(root, "sessions", "01a1026f-c64e-70a4.jsonl"), HOME_SESSION()])].filter((p) => existsSync(p));
-  assert.deepEqual([...reads.file].sort(), onDisk.sort(), "a cold run reads every session file on disk once");
+  assert.deepEqual([...reads.file].sort(), onDisk.sort(), "a cold read reads every session file on disk once");
   assert.equal(new Set(reads.file).size, reads.file.length, "each at most once");
   reads.file.length = 0;
   reads.branch.length = 0;
-  const second = await c.cleanupPlan(HOME_SESSION());
+  const second = await c.chatUses(paths);
   assert.deepEqual(reads.file, [], "no unchanged file is read");
-  assert.deepEqual(reads.branch, [], "no unchanged file is parsed");
-  assert.deepEqual(second, first, "the same refusals and removals");
-  // One file changes: only it is read again, and only it is parsed (it holds a `worktrees` entry).
+  assert.deepEqual(second, first, "the same answer");
   const changed = sessions.find((s) => s.id === "sbx")!.path;
   appendFileSync(changed, "\n");
-  const third = await c.cleanupPlan(HOME_SESSION());
+  await c.chatUses(paths);
   assert.deepEqual(reads.file, [changed]);
-  assert.deepEqual(reads.branch, [changed]);
-  assert.deepEqual(third, first);
-  // A file with no `worktrees` entry that changes is read, never parsed.
-  reads.file.length = 0;
-  reads.branch.length = 0;
-  appendFileSync(HOME_SESSION(), "\n");
-  await c.cleanupPlan(HOME_SESSION());
-  assert.deepEqual([reads.file, reads.branch], [[HOME_SESSION()], []]);
 });
 
-test("a removal acts only on the expected paths still removable, with git's own remove and branch -d", async () => {
-  const plan = await c.cleanupPlan(HOME_SESSION());
-  assert.ok(plan);
-  // Changed after the preview: an untracked file appears; the tree stays, with the new reason.
-  writeFileSync(join(wt("changed"), "late.txt"), "late\n");
-  const expect = plan.remove.map((r) => r.path).filter((p) => p !== wt("idle"));
-  ledger = [];
-  const r = await c.cleanupRemove(HOME_SESSION(), [...expect, join(root, "not-a-worktree")]);
-  assert.ok(r && r !== "busy");
-  const removed = new Map(r.removed.map((x) => [x.path, x]));
-  const kept = new Map(r.kept.map((k) => [k.path, k.reason]));
-  for (const n of ["merged", "squash", "empty", "gone"]) {
-    assert.ok(removed.has(wt(n)), `${n}: ${kept.get(wt(n))}`);
-    assert.equal(existsSync(wt(n)), false);
-  }
-  assert.equal(kept.get(wt("changed")), "Changed since the preview: 1 uncommitted file: late.txt.");
-  assert.equal(kept.get(join(root, "not-a-worktree")), "No longer in git's worktree list.");
-  assert.ok(existsSync(wt("idle")), "a tree not in `expect` is never touched");
-  assert.ok(existsSync(join(wt("changed"), "late.txt")));
-  // Branches: deleted when an ancestor of master (merged, empty, gone); a content merge keeps its ref.
-  const heads = git(main, "for-each-ref", "--format=%(refname:short)", "refs/heads").split("\n");
-  for (const b of ["feat/merged", "feat/empty", "feat/gone"]) assert.ok(!heads.includes(b), `${b} should be deleted`);
-  assert.ok(heads.includes("feat/squash"), "a content-merged branch is kept");
-  assert.equal(removed.get(wt("squash"))?.branchDeleted, false);
-  assert.equal(removed.get(wt("merged"))?.branchDeleted, true);
-  // The ledger has one entry per removal.
-  assert.deepEqual(ledger.map((e) => [e.path, e.merged, e.branchDeleted]).sort(), [
-    [wt("empty"), "empty", true],
-    [wt("gone"), "ancestor", true],
-    [wt("merged"), "ancestor", true],
-    [wt("squash"), "content", false],
-  ].sort());
-  // git's list no longer has them; the rest stay listed.
-  const listed = git(main, "worktree", "list", "--porcelain");
-  assert.ok(!listed.includes(`worktree ${wt("merged")}\n`) && listed.includes(`worktree ${wt("idle")}\n`));
-  // The count was dropped and reads the new list.
-  const s = await c.worktreesSummary(HOME_SESSION());
-  assert.equal(s.state === "ok" && s.total, 11);
+test("a session file that can't be read is named, and a session list that can't be read throws: nobody looks unused for that", async () => {
+  const file = join(root, "sessions", "unreadable.jsonl");
+  writeFileSync(file, "{}\n");
+  sessions.push(summary("unr", file));
+  const realRead = (p: string) => (p === file ? Promise.reject(Object.assign(new Error("no"), { code: "EACCES" })) : Promise.resolve(readFileSync(p)));
+  c.resetCleanup();
+  c.configureCleanup({ summary: async (p) => sessions.find((s) => s.path === p) ?? null, sessionFiles: async () => sessions.map((s) => s.path), readBranch: async (p) => branches.get(p) ?? [], readFile: realRead, now: () => 1000 });
+  assert.deepEqual((await c.chatUses([wt("idle")])).unreadable, [file]);
+  c.configureCleanup({ summary: async () => null, sessionFiles: () => Promise.reject(new Error("sessions unreadable")), readBranch: async () => [], now: () => 1000 });
+  await assert.rejects(c.chatUses([wt("idle")]), /sessions unreadable/);
+  sessions.pop();
+  c.resetCleanup();
+  c.configureCleanup({ queueMade: async (p) => queueMadeTrees.has(p), summary: async (p) => sessions.find((s) => s.path === p) ?? null, sessionFiles: async () => [...new Set([...sessions.map((s) => s.path), join(root, "sessions", "01a1026f-c64e-70a4.jsonl"), HOME_SESSION()])], readBranch: async (p) => (reads.branch.push(p), branches.get(p) ?? []), readFile: async (p) => (reads.file.push(p), readFileSync(p)), now: () => 1000 });
 });
 
 test("readiness's gone-folder reader: git first (ancestry, content, or unmerged), the ledger for a deleted branch, else unknown", async () => {

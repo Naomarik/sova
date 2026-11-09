@@ -19,6 +19,7 @@ import { onBranchLanded } from "./nothing-left";
 import { onReadinessMoved } from "./merge-readiness";
 import { realRetireDeps, type Retirer, startWorktreeRetirer } from "./worktree-retire";
 import { firstPassSummary } from "./worktree-retire-notes";
+import { onProcessEnded } from "./worktree-retire-gate";
 import { reconcileProjectServices } from "./project-services/routes";
 import { checkQueueViews, mergeQueues, startMergeQueue, stopMergeQueue } from "./merge-queue/wire";
 import { startProjectOverseerLoop } from "./project-overseer";
@@ -203,7 +204,7 @@ function startRetirement(): Retirer {
       await chatsReady();
       return mergeQueues() !== null;
     },
-    subscribe: (wake) => [onBranchLanded(() => wake("landed")), onReadinessMoved(() => wake("readiness")), onAgentSettled(() => wake("idle"))],
+    subscribe: (wake) => [onBranchLanded(() => wake("landed")), onReadinessMoved(() => wake("readiness")), onAgentSettled(() => wake("idle")), onProcessEnded((why) => wake(why))],
   });
 }
 

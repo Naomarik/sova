@@ -1012,7 +1012,7 @@ test("a tree the cleanup service removes (§chat.worktrees/cleanup) reads 'Lande
   servedReset();
   c.resetCleanup();
   r.configureReadiness({ asksUser: () => undefined });
-  c.configureCleanup({ summary: async () => row, sessionFiles: async () => [path], readBranch: async () => entries.slice(1), processes: async () => [] });
+  c.configureCleanup({ summary: async () => row, sessionFiles: async () => [path], readBranch: async () => entries.slice(1) });
   try {
     r.readinessOverlay(row);
     await r.readinessIdle();
@@ -1020,9 +1020,10 @@ test("a tree the cleanup service removes (§chat.worktrees/cleanup) reads 'Lande
     assert.equal(r.treeReadinessOf(path, b)?.state, "ready");
     assert.equal(r.treeReadinessOf(path, a)?.left, "nothing", "the shared answer on the row");
 
-    const res = await c.cleanupRemove(path, [a]);
-    assert.ok(res && res !== "busy");
-    assert.deepEqual(res.removed.map((x) => x.path), [a]);
+    // The session archived its own tree: the service removes it at once, the archived chat counting for nothing.
+    const { retireNow, realRetireDeps } = await import("./worktree-retire");
+    const res = await retireNow(main, a, path, { ...realRetireDeps(), processes: async () => [], copies: { of: () => null, teardown: async () => undefined }, openEntry: () => null, pendingFile: () => join(root, "retire-pending.json"), firstPassFile: () => join(root, "retire-first-pass.json"), testChatsAside: () => join(root, "retired-test-chats"), realChatsDir: () => join(root, "sessions") });
+    assert.equal(res.state, "retired", JSON.stringify(res));
 
     assert.equal(r.treeReadinessOf(path, a)?.reason, "Landed · cleaned up", "the very first look");
     assert.equal(r.readinessOverlay(row)?.trees.find((t) => t.path === a)?.reason, "Landed · cleaned up", "the session list too");

@@ -252,7 +252,10 @@
     "project.verb.merge.test",
     "project.verb.merge.names",
     "project.verb.merge.rule",
-    "project.verb.merge.respond"
+    "project.verb.merge.respond",
+    "session.worktree.retirement",
+    "session.worktree.restore",
+    "session.worktree.remove"
   ],
   "retired": [
     "settings.agents.get",

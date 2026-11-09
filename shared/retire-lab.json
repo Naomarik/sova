@@ -1,0 +1,16 @@
+{
+  "group": "retire-lab",
+  "note": "The code that retires and removes worktrees: a change here runs the retire-lab test group at a landing, and waits for a rehearsal before Land (§app.merge-queue/approve).",
+  "triggers": [
+    "server/worktree-retire*",
+    "server/worktree-remove*",
+    "server/worktree-cleanup*",
+    "server/worktree-leftovers*",
+    "server/removed-worktrees*",
+    "server/archive-worktrees*",
+    "server/own-folder-guard*",
+    "server/nothing-left*",
+    "server/project-services/checkout-teardown*",
+    "shared/retire-lab.json"
+  ]
+}

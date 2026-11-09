@@ -20,6 +20,7 @@ process.on("exit", () => {
 
 const { archiveWorktrees } = await import("./archive-worktrees");
 const { configureCleanup } = await import("./worktree-cleanup");
+const { realRetireDeps, retireNow } = await import("./worktree-retire");
 const { overseerTools, TurnLimits } = await import("./overseer-tools");
 const { DEFAULT_CAPS } = await import("./overseer-store");
 
@@ -76,7 +77,7 @@ describe("sova_archive with worktrees: remove", () => {
     add("s3", "Three", repo, entryOf([tree("watched", "s3", base)]));
     add("s4", "Four", repo, [...entryOf([tree("watched", "s4", base)]), { type: "custom", customType: "sandbox", data: { version: 1, on: true, level: "workspace-write", backend: "linux-bwrap", enforcement: "full" } }]);
     add("s5", "Five", join(wt("home"), "sub"), entryOf([tree("home", "s5", base)]));
-    configureCleanup({ summary: async (p) => Object.values(sessions).find((x) => x.path === p) ?? null, sessionFiles: async () => Object.values(sessions).map((x) => x.path), readBranch: async (p) => branches[p] ?? [], processes: async () => [], ledger: () => {} });
+    configureCleanup({ summary: async (p) => Object.values(sessions).find((x) => x.path === p) ?? null, sessionFiles: async () => Object.values(sessions).map((x) => x.path), readBranch: async (p) => branches[p] ?? [] });
     const archived: string[] = [];
     const host = {
       request: async (_path: string, init?: RequestInit) => {
@@ -112,7 +113,7 @@ describe("sova_archive with worktrees: remove", () => {
     const h = harness();
     const out = await h.call({ sessions: ["s1", "s2"], worktrees: "remove" });
     assert.deepEqual(h.archived, ["s1.jsonl"], "s2 is still refused, s1 goes");
-    assert.match(out, /- \[One\]\(sova:\/\/s\/s1\): archived\n {2}- worktree .*wt-merged: removed; branch feat\/merged deleted \(merged\)\n {2}- worktree .*wt-open \(feat\/open\): kept, not merged into master\n {2}- worktree .*wt-theirs \(feat\/theirs\): left, it belongs to session s0/);
+    assert.match(out, /- \[One\]\(sova:\/\/s\/s1\): archived\n {2}- worktree .*wt-merged: removed; branch feat\/merged deleted \(nothing left, its last commit kept\)\n {2}- worktree .*wt-open \(feat\/open\): kept, it has work to land\n {2}- worktree .*wt-theirs \(feat\/theirs\): left, it belongs to session s0/);
     assert.match(out, /- s2: refused — uncommitted changes/);
     assert.ok(!existsSync(wt("merged")), "the merged worktree is gone");
     assert.ok(existsSync(wt("open")), "an unmerged worktree is kept, as the Clean Up Merged button keeps it");
@@ -126,10 +127,11 @@ describe("sova_archive with worktrees: remove", () => {
     const out = await h.call({ sessions: ["s3", "s5"], worktrees: "remove" });
     assert.deepEqual(h.archived, ["s3.jsonl", "s5.jsonl"]);
     // Another session with its sandbox on tracks it: kept, with the service's reason.
-    assert.match(out, /worktree .*wt-watched \(feat\/watched\): kept, session “Four” tracks it and has its sandbox on/);
+    // Its sandbox holds it only where a missing root isn't proved (§chat.worktrees/sandbox); on Linux it's the quiet rule that keeps it.
+    assert.match(out, process.platform === "linux" ? /worktree .*wt-watched \(feat\/watched\): kept, chat “Four” was active/ : /worktree .*wt-watched \(feat\/watched\): kept, chat “Four” has its sandbox on/);
     assert.ok(existsSync(wt("watched")) && branchExists("feat/watched"));
     // The archived session's own folder is inside its tree: that alone doesn't keep it.
-    assert.match(out, /worktree .*wt-home: removed; branch feat\/home deleted \(merged\)/);
+    assert.match(out, /worktree .*wt-home: removed; branch feat\/home deleted \(nothing left, its last commit kept\)/);
     assert.ok(!existsSync(wt("home")));
   });
 
@@ -142,6 +144,22 @@ describe("sova_archive with worktrees: remove", () => {
   });
 });
 
+/** The service, with a copy registered on each of `copies` until a teardown takes it. */
+const withCopies = (copies: Set<string>, teardown: (path: string) => Promise<void>): import("./archive-worktrees").RetireOne => (dir, path, exclude) =>
+  retireNow(dir, path, exclude, {
+    ...realRetireDeps(),
+    processes: async () => [],
+    openEntry: () => null,
+    pendingFile: () => join(top, "retire-pending.json"),
+    copies: {
+      of: (p) => (copies.has(p) ? { id: "c", shareLink: false, ownRun: false } : null),
+      teardown: async (p) => {
+        await teardown(p);
+        copies.delete(p);
+      },
+    },
+  });
+
 describe("a worktree's running copy is torn down first (§app.overseer/tools)", () => {
   test("its copy goes before the worktree; a copy that can't be torn down keeps the worktree, saying why", async () => {
     for (const name of ["copy-ok", "copy-fail"]) git(repo, "worktree", "add", "-q", "-b", `feat/${name}`, wt(name), base);
@@ -149,17 +167,38 @@ describe("a worktree's running copy is torn down first (§app.overseer/tools)", 
     const w = archiveWorktrees(
       async () => entryOf([tree("copy-ok", "s9", base), tree("copy-fail", "s9", base)]),
       undefined,
-      async (path) => {
-        if (path === wt("copy-fail")) throw new Error("Its running copy could not be torn down: busy: another verb is running on this instance");
+      withCopies(new Set([wt("copy-ok"), wt("copy-fail")]), async (path) => {
+        if (path === wt("copy-fail")) throw new Error("busy: another verb is running on this instance");
         assert.ok(existsSync(path), "torn down while its worktree is still there");
         torn.push(path);
-      },
+      }),
     );
     const lines = await w.remove(await w.plan({ id: "s9", path: "/s/s9.jsonl" }));
     assert.deepEqual(torn, [wt("copy-ok")]);
     assert.match(lines[0]!, /wt-copy-ok: removed/);
-    assert.equal(lines[1], `  - worktree ${wt("copy-fail")} (feat/copy-fail): kept, its running copy could not be torn down: busy: another verb is running on this instance`);
+    assert.equal(lines[1], `  - worktree ${wt("copy-fail")} (feat/copy-fail): kept, its test copy couldn't be stopped: busy: another verb is running on this instance`);
     assert.ok(!existsSync(wt("copy-ok")) && existsSync(wt("copy-fail")));
+  });
+});
+
+describe("a test copy keeps a worktree outside its own test data (§app.overseer/tools)", () => {
+  const refuseAll: import("./archive-worktrees").RemovalRefusal = () => "this is a test copy of Sova, and that worktree isn't in its own test data";
+  test("the session's archived, the worktree and branch stay, the answer says so, and even a dirty one can't stop the archive", async () => {
+    git(repo, "worktree", "add", "-q", "-b", "feat/outside", wt("outside"), base);
+    writeFileSync(join(wt("outside"), "uncommitted.txt"), "x\n");
+    const torn: string[] = [];
+    const w = archiveWorktrees(async () => entryOf([tree("outside", "s7", base)]), undefined, withCopies(new Set(), async (p) => void torn.push(p)), refuseAll);
+    const plan = await w.plan({ id: "s7", path: "/s/s7.jsonl" });
+    assert.deepEqual(plan.dirty, [], "nothing refuses the session whole");
+    assert.deepEqual(await w.remove(plan), [`  - worktree ${wt("outside")} (feat/outside): kept, this is a test copy of Sova, and that worktree isn't in its own test data`]);
+    assert.ok(existsSync(wt("outside")) && branchExists("feat/outside"));
+    assert.deepEqual(torn, []);
+  });
+  test("git can't name its repository: the refusal is asked with nothing to go on", async () => {
+    const asked: (string | null)[] = [];
+    const w = archiveWorktrees(async () => entryOf([tree("nowhere", "s6", base)]), async () => ({ code: 128, stdout: "", stderr: "fatal" }), withCopies(new Set(), async () => undefined), (_p, cd) => (asked.push(cd), "kept"));
+    await w.remove({ session: { id: "s6", path: "/s/s6.jsonl" }, own: [tree("nowhere", "s6", base)], inherited: [], dirty: [] } as never, top);
+    assert.deepEqual(asked, [null]);
   });
 });
 
@@ -170,10 +209,10 @@ describe("the cleanup's checks come before the teardown (§app.overseer/tools)",
     git(wt("copy-keep"), "add", "k.txt");
     git(wt("copy-keep"), "commit", "-q", "-m", "keep");
     const torn: string[] = [];
-    const w = archiveWorktrees(async () => entryOf([tree("copy-keep", "s8", base)]), undefined, async (path) => { torn.push(path); });
+    const w = archiveWorktrees(async () => entryOf([tree("copy-keep", "s8", base)]), undefined, withCopies(new Set([wt("copy-keep")]), async (path) => { torn.push(path); }));
     const lines = await w.remove(await w.plan({ id: "s8", path: "/s/s8.jsonl" }));
     assert.deepEqual(torn, [], "an unmerged worktree's copy is left running");
-    assert.equal(lines[0], `  - worktree ${wt("copy-keep")} (feat/copy-keep): kept, not merged into master`);
+    assert.equal(lines[0], `  - worktree ${wt("copy-keep")} (feat/copy-keep): kept, it has work to land`);
     assert.ok(existsSync(wt("copy-keep")));
   });
 });

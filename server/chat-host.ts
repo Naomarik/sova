@@ -4,6 +4,7 @@
 // its router (setChatRouter), so ws.ts and every caller of acquireChatHandle/chatHandle/chatHandles
 // reach a chat the same way wherever it runs.
 import { bringBackForChat, needsBringBack } from "./worktree-retire-notes";
+import { processEnded } from "./worktree-retire-gate";
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -395,6 +396,7 @@ export class ChatHostRouter {
       }
     },
     exit: (h, cause) => {
+      processEnded("chat");
       const id = h.mirror.sessionId;
       this.sup.expectExit(id, cause);
       // A reload's replacement takes the handle over (rollout's open); anything else is done.

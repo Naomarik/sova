@@ -1,4 +1,5 @@
 import { removeTree } from "../worktree-remove";
+import { processEnded } from "../worktree-retire-gate";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
@@ -2092,6 +2093,8 @@ export class ProjectEngine {
     const rec = run.rec;
     const gone = (run as Run & { tornDown?: InstanceRecord }).tornDown;
     const changed = run.steps.some((s) => s.result === "done" && s.kind !== "check" && s.kind !== "ready" && s.kind !== "test");
+    // A copy stopped: what it held may be free now (§chat.worktrees/retirement).
+    if (changed && (run.verb === "down" || run.verb === "teardown")) processEnded("copy");
     // Only doctor's checks decide `ok`; status carries the supervisor's as a note.
     const checksOk = run.verb !== "doctor" || !run.extra.checks || run.extra.checks.every((c) => c.ok);
     return ordered({

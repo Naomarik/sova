@@ -5203,6 +5203,8 @@ export interface WorktreeReadiness {
   noCommits?: true;
   /** Ready to land at its head commit, or Landing specs (§chat.worktrees/ready-to-land). Absent otherwise. */
   landing?: WorktreeLanding;
+  /** This worktree changes automatic cleanup and no rehearsal passed at its head today: Land reads Rehearsal needed, disabled (§app.merge-queue/approve). */
+  rehearsal?: true;
   /** The shared answer (§chat.worktrees/nothing-left): "nothing" left to land, or only spec "drafts" not proved landed.
       Absent: work is left, or it can't tell. */
   left?: "nothing" | "drafts";

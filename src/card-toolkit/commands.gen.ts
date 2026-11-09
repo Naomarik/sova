@@ -50,6 +50,9 @@ export type CommandId =
   | "session.title.shorten"
   | "session.worktree.summary"
   | "session.worktree.cleanup"
+  | "session.worktree.retirement"
+  | "session.worktree.remove"
+  | "session.worktree.restore"
   | "session.diff.summary"
   | "session.job.list"
   | "session.job.stop"
@@ -573,19 +576,38 @@ export interface CommandParams {
     /** Only say which would be renamed */
     "dry-run"?: boolean;
   };
-  /** How many worktrees of a session's repository are merged and could be cleaned up. (only looks; needs the card's owner trusted) */
+  /** How many worktrees a session's repository has, how many are held and how many retired. (only looks; needs the card's owner trusted) */
   "session.worktree.summary": {
     /** The session, by id or by path */
     "session"?: string;
   };
-  /** Remove the merged worktrees of a session's repository: --dry-run lists them, then --expect names exactly the paths to remove. Never forced. (changes something; needs the card's owner trusted) */
+  /** The status of a session's repository's worktrees. Finished ones retire by themselves. (only looks; needs the card's owner trusted) */
   "session.worktree.cleanup": {
     /** The session, by id or by path */
     "session"?: string;
-    /** Only list what would be removed */
-    "dry-run"?: boolean;
-    /** The absolute worktree paths to remove, as the dry run listed them */
-    "expect"?: string[];
+  };
+  /** What retirement took and holds in a project: its branches, reasons and how many only wait. (only looks; needs the card's owner trusted) */
+  "session.worktree.retirement": {
+    /** The project's main checkout */
+    "root": string;
+    /** 1: every retired branch, not just the newest 20 */
+    "all"?: string;
+  };
+  /** Remove one worktree with nothing left to land, on an install where automatic cleanup is off. Refused everywhere else. (changes something; needs the card's owner trusted) */
+  "session.worktree.remove": {
+    /** The worktree's folder */
+    "path": string;
+  };
+  /** Put a retired branch back at its last commit and its folder at its old place. (changes something; needs the card's owner trusted) */
+  "session.worktree.restore": {
+    /** The project's main checkout */
+    "root": string;
+    /** The worktree's old folder */
+    "path": string;
+    /** The branch's name */
+    "branch": string;
+    /** Its recorded last commit */
+    "tip": string;
   };
   /** The files a session's worktree, commit, merge or dirty folder changed, as the changes viewer lists them. (only looks; needs the card's owner trusted) */
   "session.diff.summary": {
@@ -4426,7 +4448,10 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "session.title.auto": "changes",
   "session.title.shorten": "changes",
   "session.worktree.summary": "looks",
-  "session.worktree.cleanup": "changes",
+  "session.worktree.cleanup": "looks",
+  "session.worktree.retirement": "looks",
+  "session.worktree.remove": "changes",
+  "session.worktree.restore": "changes",
   "session.diff.summary": "looks",
   "session.job.list": "looks",
   "session.job.stop": "changes",

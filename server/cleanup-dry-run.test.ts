@@ -70,36 +70,22 @@ describe("POST /api/sessions/cleanup", () => {
   });
 });
 
+describe("POST /api/worktrees/remove", () => {
+  test("a test server refuses with a sentence and touches nothing; a bad path is refused for itself", async () => {
+    const [status, body] = await post("/api/worktrees/remove", { path: agentDir });
+    assert.equal(status, 409);
+    assert.match((body as { error: string }).error, /Remove is only for an install where automatic cleanup is off\. Nothing was removed\./);
+    assert.ok(existsSync(agentDir));
+    assert.deepEqual(await post("/api/worktrees/remove", { path: 7 }), [400, { error: "path must be a string" }]);
+  });
+});
+
 describe("POST /api/worktrees/cleanup", () => {
-  test('dryRun "true" is refused with a sentence before any removal, and the session file stays', async () => {
+  test("for one release a page still open gets a plain answer, and nothing is removed", async () => {
     const path = sessionFile();
-    assert.deepEqual(await post("/api/worktrees/cleanup", { path, dryRun: "true", expect: ["/nowhere/worktree"] }), [400, { error: "dryRun must be true or false" }]);
-    assert.deepEqual(await post("/api/worktrees/cleanup", { path, dryRun: "true" }), [400, { error: "dryRun must be true or false" }]);
+    const [status, body] = await post("/api/worktrees/cleanup", { path, expect: ["/nowhere/worktree"] });
+    assert.equal(status, 200);
+    assert.deepEqual(body, { removed: [], kept: [], message: "Sova retires finished worktrees on its own now. Nothing was removed." });
     assert.ok(existsSync(path));
-    // A real dryRun reaches the plan: this session's folder is no repository here.
-    assert.equal((await post("/api/worktrees/cleanup", { path, dryRun: true }))[0], 409);
-  });
-
-  test("Remove Anyway: a malformed force is a 400, and a request that isn't the user's page is refused with where to click", async () => {
-    const path = sessionFile();
-    const bad = [400, { error: "force must be {path: absolute path, digest}, sent alone" }];
-    assert.deepEqual(await post("/api/worktrees/cleanup", { path, force: { path: "rel", digest: "abcdef0123" } }), bad);
-    assert.deepEqual(await post("/api/worktrees/cleanup", { path, force: { path: "/w", digest: "not hex!" } }), bad);
-    assert.deepEqual(await post("/api/worktrees/cleanup", { path, force: { path: "/w", digest: "abcdef0123" }, expect: ["/w"] }), bad);
-    // No socket and no page cookie: a script, refused before anything is read or deleted.
-    const [status, body] = await post("/api/worktrees/cleanup", { path, force: { path: "/w", digest: "abcdef0123" } });
-    assert.equal(status, 403);
-    assert.equal(body.yourClick, true);
-    assert.match(body.error!, /Ask them to press Remove Anyway in Clean Up Merged\. Nothing was deleted\./);
-  });
-
-  test("the project page's Remove Anyway: a digest from anything but the user's page is refused, and dryRun with a digest is a 400", async () => {
-    const url = "/api/projects/p-none/overseer/worktrees/remove";
-    const [s400, b400] = await post(url, { sessionId: "s", dryRun: true, digest: "abcdef0123" });
-    assert.equal(s400, 400, JSON.stringify(b400));
-    const [status, body] = await post(url, { sessionId: "s", digest: "abcdef0123" });
-    assert.equal(status, 403, JSON.stringify(body));
-    assert.equal(body.yourClick, true);
-    assert.match(body.error!, /Ask them to press Remove Anyway on the project page\. Nothing was deleted\./);
   });
 });

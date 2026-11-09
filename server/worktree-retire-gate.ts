@@ -68,6 +68,17 @@ export function serverKind(env: NodeJS.ProcessEnv = process.env, o: WhichFacts =
   return "install";
 }
 
+type WakeListener = (reason: string) => void;
+const wakeListeners = new Set<WakeListener>();
+/** A process Sova started ended, a chat's or a test copy's: what may have held a folder is gone (§chat.worktrees/retirement). → unsubscribe. */
+export function onProcessEnded(fn: WakeListener): () => void {
+  wakeListeners.add(fn);
+  return () => wakeListeners.delete(fn);
+}
+export function processEnded(reason: string): void {
+  for (const fn of wakeListeners) fn(reason);
+}
+
 export type Gate = { on: true } | { on: false; why: string; offFor: "install" | "test" | "setting" | "unknown" };
 
 /**

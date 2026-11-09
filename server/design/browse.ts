@@ -246,9 +246,10 @@ export async function designBrowse(parent: BrowseParent, raw: unknown, deps: Des
       const now = await contextOf(parent);
       if (JSON.stringify(now) !== JSON.stringify(context)) throw new TourCaptureFailure({ message: "The chat's sandbox scope changed during this look.", guidance: "Look again under the chat's current restrictions." });
     });
-    const account = !req.signIn && siteOrigin ? stores.accounts.forOrigin(siteOrigin) : null;
+    // A managed copy is always reached at 127.0.0.1, whichever loopback name the address used.
+    const ownOrigin = isCopy ? `http://127.0.0.1:${url.port}` : url.origin;
+    const account = !req.signIn ? stores.accounts.forOrigin(ownOrigin) : null;
     const signInOrigins = req.signIn ? tourSignInOrigins(req.signIn, url.origin) : [];
-    let targetOrigin: string | null = null;
     const contacts = new Set<string>();
     try {
       const result = await (deps.run ?? runTourAttempt)({
@@ -282,8 +283,7 @@ export async function designBrowse(parent: BrowseParent, raw: unknown, deps: Des
           : {}),
         beforeContact: async (origin: string) => {
           await guard();
-          targetOrigin ??= origin; // the attempt checks its own source first
-          if ((isCopy && origin === targetOrigin) || named(origin) || (req.signIn && signInOrigins.includes(origin))) {
+          if ((isCopy && origin === ownOrigin) || named(origin) || (req.signIn && signInOrigins.includes(origin))) {
             contacts.add(origin);
             if (contacts.size > 64) throw new TourCaptureFailure({ message: "This page contacts too many different sites.", guidance: "Tell the user; a site this large can't be looked at here." });
             return;

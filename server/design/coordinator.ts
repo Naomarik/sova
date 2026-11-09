@@ -34,6 +34,9 @@ export interface CoordinatorState {
   parentPath: string;
   chatId: string;
   sessionFile: string;
+  cwd: string;
+  /** How many times its session has been started again after it ended for good. */
+  revived: number;
   model: string;
   vision: boolean;
   runId: string;
@@ -111,6 +114,12 @@ function ports(): CoordinatorPorts {
   return realPorts;
 }
 
+/** A coordinator's loadout: no file tools and no shell, so everything it may do is one of its served tools. */
+export function realCoordinatorSpec(parent: BrowseParent, cwd: string, model: string, systemPrompt: string): WorkerSpec {
+  const loaded = claudeCodeProviderLoad(model, [], undefined);
+  return { kind: "design-coordinator", parent: { sessionId: parent.sessionId, path: parent.path, workerId: "design-coordinator" }, cwd, model, thinking: null, builtins: [], extensions: loaded.extensions, flags: loaded.flags ?? {}, appendSystemPrompt: systemPrompt, env: {}, agentDir: null, lowered: true };
+}
+
 const realPorts: CoordinatorPorts = {
   workers(parent) {
     if (!registry) throw new Error("The design coordinator needs Sova's chat runtime.");
@@ -134,24 +143,7 @@ const realPorts: CoordinatorPorts = {
   deliverDesign: (parent, label, a) => deliverDesign(parent, label, a),
   lookAtDesign,
   systemPrompt: () => DESIGN_COORDINATOR_PROMPT,
-  specFor(parent, cwd, model, systemPrompt) {
-    const loaded = claudeCodeProviderLoad(model, [], undefined);
-    return {
-      kind: "design-coordinator",
-      parent: { sessionId: parent.sessionId, path: parent.path, workerId: "design-coordinator" },
-      cwd,
-      model,
-      thinking: null,
-      // No file tools and no shell: everything it may do is one of its served tools.
-      builtins: [],
-      extensions: loaded.extensions,
-      flags: loaded.flags ?? {},
-      appendSystemPrompt: systemPrompt,
-      env: {},
-      agentDir: null,
-      lowered: true,
-    };
-  },
+  specFor: realCoordinatorSpec,
   sessionDir: (cwd) => join(SESSIONS_DIR, sessionDirName(cwd)),
   browse: designBrowse,
   stores: (sessionId) => browseStores(sessionId),
@@ -265,20 +257,40 @@ function noteNamed(st: CoordinatorState, text: string): void {
 // ---- waking it -----------------------------------------------------------------------------------
 
 /** Deliver a message, carrying the notes that piled up. A message opens a new turn, so its launch count starts over. */
-async function wake(st: CoordinatorState, text: string, key: string): Promise<{ queued: boolean }> {
+async function wake(st: CoordinatorState, text: string, key: string, sameTurn = false): Promise<{ queued: boolean }> {
   const notes = st.notes;
   const body = notes.length ? `Since your last turn:\n${notes.join("\n")}\n\n${text}` : text;
   st.notes = [];
-  st.newThisTurn = 0;
-  st.spendOk = false;
+  if (!sameTurn) {
+    st.newThisTurn = 0;
+    st.spendOk = false;
+  }
   save(st);
   try {
+    if (ports().workers({ sessionId: st.sessionId, path: st.parentPath }).state(st.chatId) === "ended") {
+      await revive(st, body, key);
+      return { queued: false };
+    }
     return await ports().workers({ sessionId: st.sessionId, path: st.parentPath }).send(st.chatId, { text: body, delivery: "followUp", key });
   } catch (err) {
     st.notes = [...notes, ...st.notes];
     save(st);
     throw err;
   }
+}
+
+/** Its session ended for good: a fresh one starts from what is known (its card and the designs' metadata), never from a page. */
+async function revive(st: CoordinatorState, text: string, key: string): Promise<void> {
+  const p = ports();
+  const parent = { sessionId: st.sessionId, path: st.parentPath };
+  const task = [`Your earlier session in this chat ended, so you are starting again. Your card said:\n${st.card || "(nothing yet)"}`, `The designs so far:\n${JSON.stringify(p.designsFor(st.sessionId).map(metadata))}`, text].join("\n\n");
+  const ref = await p.workers(parent).start({ key: `${st.sessionId}:design-coordinator:revive:${++st.revived}:${key}`, spec: p.specFor(parent, st.cwd, st.model, p.systemPrompt()), session: { new: { dir: p.sessionDir(st.cwd) } }, task });
+  following.get(st.chatId)?.();
+  following.delete(st.chatId);
+  st.chatId = ref.chatId;
+  st.sessionFile = ref.sessionFile;
+  publish(st);
+  follow(st);
 }
 
 /** A design's hand-in, as a line of context: metadata only, and it wakes nothing. */
@@ -322,7 +334,7 @@ export async function startCoordinator(parent: BrowseParent, run: DesignRun, cwd
   const key = `${parent.sessionId}:design-coordinator:${run.id}`;
   const ref = await p.workers(parent).start({ key, spec: p.specFor(parent, cwd, choice.ref, p.systemPrompt()), session: { new: { dir: p.sessionDir(cwd) } }, task: firstMessage(run) });
   const st: CoordinatorState = {
-    v: 1, sessionId: parent.sessionId, parentPath: parent.path, chatId: ref.chatId, sessionFile: ref.sessionFile, model: choice.ref, vision: choice.vision, runId: run.id,
+    v: 1, sessionId: parent.sessionId, parentPath: parent.path, chatId: ref.chatId, sessionFile: ref.sessionFile, cwd, revived: known?.revived ?? 0, model: choice.ref, vision: choice.vision, runId: run.id,
     revision: known?.revision ?? 0, card: known?.card ?? "", revisions: known?.revisions ?? [], named: known?.named ?? [], ask: null, grant: null, shots: known?.shots ?? [], confirmed: null, browsed: false, notes: [], newThisTurn: 0, spendOk: false, shotSeq: known?.shotSeq ?? 0,
   };
   noteNamed(st, run.setup.brief);
@@ -403,15 +415,8 @@ export async function answerCoordinator(parent: BrowseParent, id: string, answer
     case "spend":
       st.spendOk = yes;
       publish(st);
-      // `wake` starts a new count, so this send keeps the count and the yes the user just gave.
-      {
-        const count = st.newThisTurn, ok = st.spendOk;
-        await say(yes ? "The user allowed more designs this turn, up to the limit. Carry on." : "The user declined more designs. Stop here.");
-        st.newThisTurn = count;
-        st.spendOk = ok;
-        save(st);
-      }
-      return;
+      // This turn's count and the yes the user just gave both stand: the answer continues the same launch.
+      return void (await wake(st, yes ? "The user allowed more designs this turn, up to the limit. Carry on." : "The user declined more designs. Stop here.", key, true));
     case "sign-in":
     case "test-account": {
       const a = typeof answer === "object" ? answer : null;
@@ -419,7 +424,9 @@ export async function answerCoordinator(parent: BrowseParent, id: string, answer
         if (a.username && a.password) ports().saveTestAccount(ask.origin, a.username, a.password);
       } else if (a) {
         if (a.username && a.password) signIns.setLogin(parent.sessionId, DESIGN_BROWSE_TOUR_ID, ask.origin, { ...(a.account ? { account: a.account } : {}), username: a.username, password: a.password });
-        if (a.code) signIns.setCredentials(parent.sessionId, DESIGN_BROWSE_TOUR_ID, { [ask.origin]: { username: "", password: "", code: a.code } });
+        // A one-time code goes with the login it follows; on its own it would blank that login.
+        const held = signIns.login(parent.sessionId, DESIGN_BROWSE_TOUR_ID, ask.origin);
+        if (a.code && held) signIns.setCredentials(parent.sessionId, DESIGN_BROWSE_TOUR_ID, { [ask.origin]: { ...held, code: a.code } });
       }
       publish(st);
       return void (await say(a ? `The user answered the sign-in for ${ask.origin}. Look again.` : `The user didn't sign in to ${ask.origin}. Don't open it.`));
@@ -528,7 +535,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       const run = runOf(parent.sessionId, st.runId);
       if (!run) return refuse("this run is gone.");
       if (run.phase !== "researching" && run.phase !== "confirm") return refuse("this run has already launched.");
-      const needsConfirm = st.browsed || st.named.length > 0 || refs.length > 0;
+      const needsConfirm = st.browsed || originsIn(run.setup.brief).length > 0 || refs.length > 0;
       if (needsConfirm && !st.confirmed) return refuse("you are working from an existing screen, so the user confirms it first: show it with design_confirm and wait.");
       if (refs.some((r) => !st.confirmed?.includes(r))) return refuse("references must be picture ids the user approved with Design This Screen.");
       const limit = launchProblem(run);
@@ -688,7 +695,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
           const out: unknown[] = [];
           for (const project of roots) {
             const r = await p().verbs("status", { project }, caller);
-            out.push(r.error ? { project, error: r.error.message } : { project, instances: r.instances ?? [] });
+            out.push(r.error ? { project, error: r.error.message } : { project, instances: slimCopies(r.instances) });
           }
           return say(JSON.stringify(out, null, 1));
         }
@@ -711,6 +718,19 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
   );
 
   return [status, launch, confirm, browse, send, create, card, verbs];
+}
+
+/** What a coordinator needs of a project's copies: which is running, and the addresses to open. */
+function slimCopies(v: unknown): unknown[] {
+  if (!Array.isArray(v)) return [];
+  return v.map((raw) => {
+    const i = raw as { instance?: string; slot?: number; branch?: string | null; state?: string; services?: { name?: string; state?: string; ports?: Record<string, number> }[] };
+    return {
+      instance: i.instance, slot: i.slot, branch: i.branch ?? null, state: i.state,
+      main: i.slot === 0,
+      addresses: (i.services ?? []).flatMap((s) => (s.state === "ready" ? Object.values(s.ports ?? {}).map((p) => `http://127.0.0.1:${p}`) : [])),
+    };
+  });
 }
 
 /** The real project verbs, for the ports. */

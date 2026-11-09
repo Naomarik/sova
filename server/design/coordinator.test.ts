@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
 import type { DesignModelChoice, DesignRecord, DesignRun } from "../../shared/design";
+import type { ToolSpec } from "../../shared/harness";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-coordinator-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -18,6 +19,7 @@ let log: { sends: { text: string; key: string }[]; launches: unknown[]; news: un
 type Outcome = Awaited<ReturnType<typeof import("./browse").designBrowse>>;
 let nextBrowse: Outcome;
 let workerState: "running" | "idle" | "ended";
+let lastTask = "";
 
 const model = (ref: string, over: Partial<DesignModelChoice> = {}): DesignModelChoice => ({ ref, name: ref, design: true, coordinator: false, vision: true, route: "tool", ...over });
 const runWith = (designers: number, directions: number, over: Partial<DesignRun> = {}): DesignRun => ({
@@ -33,7 +35,7 @@ beforeEach(() => {
   nextBrowse = { kind: "pictures", url: "/settings", origin: "http://127.0.0.1:4810", outline: "OUTLINE", signedIn: false, shots: [{ size: "desktop", png: PNG, viewport: { w: 1440, h: 960 } }] };
   setCoordinatorPorts({
     workers: () => ({
-      start: async () => ({ chatId: "worker-1", sessionFile: "/w.jsonl" }),
+      start: async (req) => ((lastTask = req.task ?? ""), { chatId: "worker-1", sessionFile: "/w.jsonl" }),
       send: async (_c, i) => (log.sends.push(i), { queued: false }),
       state: () => workerState,
       watch: () => () => {},
@@ -173,15 +175,17 @@ test("an unapproved site asks on the card, and a yes is what approves it", async
 
 test("only the user's own words vouch for an address: a message does, a pass-on from the main chat doesn't", async () => {
   await started(runWith(2, 3));
-  const stores = await import("./coordinator");
-  const named = (o: string) => {
-    const f = JSON.parse(require("node:fs").readFileSync(join(agentDir, "design", parent.sessionId, "coordinator.json"), "utf8")) as { named: string[] };
-    return f.named.includes(o) && !!stores;
-  };
+  const named = (o: string) => (JSON.parse(readFileSync(join(agentDir, "design", parent.sessionId, "coordinator.json"), "utf8")) as { named: string[] }).named.includes(o);
   await tellCoordinator(parent, "see https://from-main.test/a", "k1");
   assert.equal(named("https://from-main.test"), false);
   await messageCoordinator(parent, "see https://from-me.test/a", "k2");
   assert.equal(named("https://from-me.test"), true);
+});
+
+test("a call that didn't come from the page delivers, but vouches for nothing", async () => {
+  await started(runWith(2, 3));
+  await messageCoordinator(parent, "see https://script.test/a", "k5", false);
+  assert.equal(JSON.parse(readFileSync(join(agentDir, "design", parent.sessionId, "coordinator.json"), "utf8")).named.includes("https://script.test"), false);
 });
 
 test("addresses in a person's text are found exactly", () => {
@@ -253,13 +257,36 @@ test("the card is replaced whole, with a new revision, and has a size limit", as
   refused(await t.coordinator_card({ text: "x".repeat(20_001) }));
 });
 
-test("a worker that has ended is started again for a new run; while alive the same one takes it", async () => {
+test("while alive the same session takes a new run", async () => {
   const first = runWith(2, 3);
   await started(first);
   const second = runWith(2, 3);
   changeDesigns(parent.sessionId, (s) => void s.runs.push(second));
   await startCoordinator(parent, second, "/cwd");
   assert.match(log.sends.at(-1)!.text, /A landing page/);
+});
+
+test("a session that ended for good is started again from its card and the designs' metadata, never a page", async () => {
+  const t = await started(runWith(2, 3));
+  await t.coordinator_card({ text: "Three made so far." });
+  workerState = "ended";
+  await messageCoordinator(parent, "make it darker", "k-revive");
+  assert.equal(log.sends.length, 0);
+  assert.match(lastTask, /Three made so far\./);
+  assert.match(lastTask, /"label":"A"/);
+  assert.match(lastTask, /make it darker$/);
+});
+
+test("a brief from an earlier run that named an address doesn't hold up a later new idea", async () => {
+  const first = runWith(2, 3);
+  first.setup.brief = "Redesign https://example.test/x";
+  await started(first);
+  const second = runWith(2, 3);
+  changeDesigns(parent.sessionId, (s) => void s.runs.push(second));
+  await startCoordinator(parent, second, "/cwd");
+  const t = Object.fromEntries(coordinatorTools(parent.sessionId).map((x) => [x.name, x])) as Record<string, ToolSpec>;
+  await t.design_launch!.execute("c", { briefFinal: "x" }, undefined, undefined, undefined as never);
+  assert.equal(log.launches.length, 1);
 });
 
 test("a sign-in answer never reaches the session's text", async () => {
@@ -282,4 +309,16 @@ test("the card's yes is the person's: a chat's key or the token in a header is r
       assert.equal(r.status, 403, JSON.stringify(headers));
     }
   }
+});
+
+test("a coordinator's process is served its tools and no others, and has no built-in tools at all", async () => {
+  const { workerServed } = await import("../chat-host");
+  const decls = workerServed({ kind: "design-coordinator", parent: { sessionId: "p", path: "/p.jsonl", workerId: "design-coordinator" } }, "/w.jsonl");
+  assert.deepEqual(decls.map((d) => d.name).sort(), ["coordinator_card", "design_browse", "design_confirm", "design_launch", "design_new", "design_send", "design_status", "project_verbs"]);
+  // After a restart its mirror names only the parent's id: the same tools come back.
+  assert.equal(workerServed({ kind: "design-coordinator", parentSessionId: "p" }, "/w2.jsonl").length, decls.length);
+  const spec = (await import("./coordinator")).realCoordinatorSpec({ sessionId: "p", path: "/p.jsonl" }, "/cwd", "zai/glm-5.3-flash", "P");
+  assert.deepEqual(spec.builtins, []);
+  assert.equal(spec.kind, "design-coordinator");
+  assert.equal(spec.appendSystemPrompt, "P");
 });

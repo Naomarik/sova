@@ -28,7 +28,7 @@ looked. No credentials are copied into configuration.
 
 Use `agent_models` with `backend: "claude-code"`. The models are Sova's own Claude catalog
 (`catalog.ts`): one entry per real model, by the CLI's catalog id (`claude-opus-5-5`,
-`claude-sonnet-5-5`, `claude-fable-5-1`, `claude-haiku-5-5`) and name ("Opus 5.5"), with its
+`claude-sonnet-5-5`, `claude-fable-5-2`, `claude-haiku-5-5`) and name ("Opus 5.5"), with its
 window, output cap and efforts. No aliases and no `[1m]` forms: an old id typed into `agent_spawn`
 or `team_create` (`opus[1m]`, `claude-opus-5-5[1m]`) quietly runs as its catalog id, and an id the
 catalog doesn't know still runs, with a note. Every `--model` is a catalog id; an old id from a file (`opus[1m]`) is read through the

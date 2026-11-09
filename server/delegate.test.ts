@@ -38,7 +38,7 @@ describe("GET /api/settings/delegate", () => {
     const info = delegateInfo(join(dir, "absent.json"));
     assert.deepEqual(info.settings, info.defaults);
     assert.deepEqual(info.defaults.profiles.planning, {
-      primary: { backend: "claude-code", model: "claude-fable-5-1", effort: "medium" },
+      primary: { backend: "claude-code", model: "claude-fable-5-2", effort: "medium" },
       fallback: { backend: "claude-code", model: "claude-opus-5-5", effort: "high" },
     });
     assert.deepEqual(info.defaults.profiles.investigation.primary, { backend: "claude-code", model: "claude-opus-5-5", effort: "low" });
@@ -169,10 +169,10 @@ describe("PUT /api/settings/delegate", () => {
 
   test("a policy-denied tuple saves with a warning (spawn enforces, Delegate discloses)", async () => {
     const f = file();
-    const policy: ModelPolicy = { ...EMPTY, subagentDisabledModels: ["claude-code/claude-fable-5-1"] };
+    const policy: ModelPolicy = { ...EMPTY, subagentDisabledModels: ["claude-code/claude-fable-5-2"] };
     const result = await saveDelegateSettings(defaults(), sources({ policy: () => policy }), f);
     assert.ok(!("error" in result));
-    assert.deepEqual(result.warnings, ["Planning & specs primary: claude-fable-5-1 is off for subagents in Settings → Models; Delegate uses the fallback or asks"]);
+    assert.deepEqual(result.warnings, ["Planning & specs primary: claude-fable-5-2 is off for subagents in Settings → Models; Delegate uses the fallback or asks"]);
   });
 
   test("an untouched slot never blocks a save, even when the catalog doesn't know its model", async () => {

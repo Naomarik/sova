@@ -49,7 +49,7 @@ test("defaults: fable planning, opus implementation, and a conservative Investig
 	assert.deepEqual(Object.keys(d.profiles), [...DELEGATE_PROFILES]);
 	assert.deepEqual(DELEGATE_PROFILES, ["planning", "investigation", "routine", "complex"]);
 	assert.deepEqual(d.profiles.planning, {
-		primary: { backend: "claude-code", model: "claude-fable-5-1", effort: "medium" },
+		primary: { backend: "claude-code", model: "claude-fable-5-2", effort: "medium" },
 		fallback: { backend: "claude-code", model: "claude-opus-5-5", effort: "high" },
 	});
 	assert.deepEqual(d.profiles.routine, { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "low" }, fallback: null });

@@ -14,6 +14,7 @@
  * claude-haiku-4-5-20251001 with result contextWindow 200,000 and maxOutputTokens 32,000;
  * `--model claude-sonnet-5-5` reports 1,000,000 and 128,000. On 2.1.295 (2026-10-09),
  * `--model claude-haiku-5-5` answers as claude-haiku-5-5 with 1,000,000 and 128,000.
+ * Fable 5.2 (and Fable 5.1 turning previous) comes from the table in claude 2.1.321.
  * This table is the starting point and what a machine without Claude Code gets; what Claude Code's
  * own table adds arrives through `mergeClaudeCatalog`, and every lookup below reads the merged view.
  */
@@ -59,7 +60,7 @@ const model = (m: Omit<ClaudeModel, "apiIds" | "priceKey"> & { apiIds?: readonly
 export const CLAUDE_MODELS: readonly ClaudeModel[] = Object.freeze([
 	model({ id: "claude-opus-5-5", family: "opus", version: "5.5", name: "Opus 5.5", window: CLAUDE_1M_WINDOW, maxOutput: 128_000, efforts: ALL_EFFORTS, status: "current", released: "2026-09-21T18:00:00Z" }),
 	model({ id: "claude-sonnet-5-5", family: "sonnet", version: "5.5", name: "Sonnet 5.5", window: CLAUDE_1M_WINDOW, maxOutput: 128_000, efforts: ALL_EFFORTS, status: "current", released: "2026-10-01T18:00:00Z" }),
-	model({ id: "claude-fable-5-1", family: "fable", version: "5.1", name: "Fable 5.1", window: CLAUDE_1M_WINDOW, maxOutput: 64_000, efforts: ALL_EFFORTS, status: "current" }),
+	model({ id: "claude-fable-5-2", family: "fable", version: "5.2", name: "Fable 5.2", window: CLAUDE_1M_WINDOW, maxOutput: 128_000, efforts: ALL_EFFORTS, status: "current" }),
 	model({ id: "claude-haiku-5-5", family: "haiku", version: "5.5", name: "Haiku 5.5", window: CLAUDE_1M_WINDOW, maxOutput: 128_000, efforts: ALL_EFFORTS, status: "current", released: "2026-10-07T00:00:00Z" }),
 	model({ id: "claude-opus-5", family: "opus", version: "5", name: "Opus 5", window: CLAUDE_1M_WINDOW, maxOutput: 64_000, efforts: ALL_EFFORTS, status: "previous" }),
 	model({ id: "claude-opus-4-8", family: "opus", version: "4.8", name: "Opus 4.8", window: CLAUDE_1M_WINDOW, maxOutput: 64_000, efforts: ALL_EFFORTS, status: "previous" }),
@@ -67,6 +68,7 @@ export const CLAUDE_MODELS: readonly ClaudeModel[] = Object.freeze([
 	model({ id: "claude-opus-4-6", family: "opus", version: "4.6", name: "Opus 4.6", window: CLAUDE_DEFAULT_WINDOW, maxOutput: 64_000, efforts: NO_XHIGH, status: "previous" }),
 	model({ id: "claude-sonnet-5", family: "sonnet", version: "5", name: "Sonnet 5", window: CLAUDE_1M_WINDOW, maxOutput: 64_000, efforts: ALL_EFFORTS, status: "previous" }),
 	model({ id: "claude-sonnet-4-6", family: "sonnet", version: "4.6", name: "Sonnet 4.6", window: CLAUDE_DEFAULT_WINDOW, maxOutput: 32_000, efforts: NO_XHIGH, status: "previous" }),
+	model({ id: "claude-fable-5-1", family: "fable", version: "5.1", name: "Fable 5.1", window: CLAUDE_1M_WINDOW, maxOutput: 64_000, efforts: ALL_EFFORTS, status: "previous" }),
 	model({ id: "claude-fable-5", family: "fable", version: "5", name: "Fable 5", window: CLAUDE_1M_WINDOW, maxOutput: 64_000, efforts: ALL_EFFORTS, status: "previous" }),
 	model({ id: "claude-haiku-4-5", apiIds: ["claude-haiku-4-5-20251001"], family: "haiku", version: "4.5", name: "Haiku 4.5", window: CLAUDE_DEFAULT_WINDOW, maxOutput: 32_000, efforts: [], status: "previous" }),
 ]);

@@ -1,7 +1,7 @@
 import { createSignal, For, Show, useContext } from "solid-js";
 import type { CardInfo } from "../../shared/transcript-cards";
 import { clockTime, tildePath } from "../lib/format";
-import { cardActionLabel, cardActions, cardDecision, cardFacts, cardLabel, cardNewer, cardNotes, cardPill, cardSha, foldedLine, isNewest, notPushed, queueRowOf, reviewNotes, reviewPointer, type CardAction, type QueueCard, type QueueCardRow } from "../lib/merge-queue-card";
+import { cardActionLabel, cardActions, cardDecision, cardFacts, cardLabel, cardNewer, cardNotes, cardPill, cardPlaceRow, cardSha, foldedLine, isNewest, notPushed, queueRowOf, reviewNotes, reviewPointer, type CardAction, type QueueCard, type QueueCardRow } from "../lib/merge-queue-card";
 import { findingPlace, kindWord, reviewRowCardId } from "../lib/merge-review-card";
 import { ensureRendered, transcriptRoot } from "../lib/jump";
 import { leaveReviewJump } from "../lib/review-jump";
@@ -16,6 +16,7 @@ import { announce, home, toast } from "../lib/ui-state";
 import { ChangesDialog, useChangesSession } from "./ChangesViewer";
 import { CardErrorBox } from "./TranscriptKind";
 import { Icon } from "./ui";
+import { BranchPlaceLine } from "./BranchPlaceLine";
 import { UnclearChecks } from "./WorktreesModal";
 import { unattributedWhy } from "../lib/merge-queue";
 import { isRequestState } from "../lib/merge-queue-requests";
@@ -171,6 +172,7 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
           </button>
         </Show>
       </div>
+      <BranchPlaceLine row={cardPlaceRow(d())} />
       <Show when={facts().length || d().landed}>
         <p class="worktree-merge-numbers text-caption">
           <For each={facts()}>

@@ -39,9 +39,9 @@ export interface CopyLimitView {
   source: "machine" | "file";
   /** The main checkout's file's own value, or null: that file is missing or invalid (4 applies). */
   file: number | null;
-  /** The project's copies besides the main checkout's and conformance's. */
+  /** The project's copies in its usable slots, besides the main checkout's and conformance's. */
   copies: number;
-  /** Those of them that run (wanting a service running). */
+  /** The copy limit's own count of running copies (wanting a service running), a record outside the usable slots included. */
   running: number;
   /** "{n} running, {k} over the limit of {cap}: …" while more run than the limit allows, else null. */
   over: string | null;
@@ -49,6 +49,8 @@ export interface CopyLimitView {
   usable: number;
   /** One sentence per slot of 1 to 16 it can't ("Slot 14 is unavailable: its ports overlap slot 10's."). */
   unavailable: string[];
+  /** The usable places by standing, the project card's rule (§app.projects/home-glance). `free` absent: other programs were not checked. */
+  places: { stopped: number; elsewhere: number; free?: number };
   /** Per copy, the larger of conformance's two scratch copies' readings; null: none measured. */
   estimate: { steadyBytes: number; peakBytes: number; source: "current" | "older"; at: string } | null;
   /** This machine's memory now, or null when it can't be read. */

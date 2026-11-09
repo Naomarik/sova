@@ -33,7 +33,7 @@ function gate<T>() {
 }
 
 /** A form whose writes the test records, and fails when told to. */
-function form(label: string, opts: { tab?: "models" | "subagents" | "overseer" | "mesh"; problem?: (d: Doc) => string | null; fail?: () => Error | null } = {}) {
+function form(label: string, opts: { tab?: "models" | "profiles" | "overseer" | "mesh"; problem?: (d: Doc) => string | null; fail?: () => Error | null } = {}) {
   const writes: Doc[] = [];
   const store = createDraftStore<Doc, Doc>({
     tab: opts.tab ?? "models",
@@ -55,7 +55,7 @@ function form(label: string, opts: { tab?: "models" | "subagents" | "overseer" |
 test("Save writes every dirty form on every tab, and only those; each then reads as saved", async () => {
   resetAllDrafts();
   const models = form("Test Models", { tab: "models" });
-  const delegate = form("Test Delegate", { tab: "subagents" });
+  const delegate = form("Test Delegate", { tab: "profiles" });
   const clean = form("Test Clean", { tab: "mesh" });
   models.store.setDraft({ v: 2 });
   delegate.store.setDraft({ v: 99 });
@@ -101,8 +101,8 @@ test("a failed save leaves the others saved; the failure stays with its form unt
   resetAllDrafts();
   let failNext = true;
   const models = form("Test Models");
-  const delegate = form("Test Delegate", { tab: "subagents", fail: () => (failNext ? new Error("Server said no.") : null) });
-  const spec = form("Test Spec", { tab: "subagents", fail: () => (failNext ? new SaveFailed("Notes conflict", true) : null) });
+  const delegate = form("Test Delegate", { tab: "profiles", fail: () => (failNext ? new Error("Server said no.") : null) });
+  const spec = form("Test Spec", { tab: "profiles", fail: () => (failNext ? new SaveFailed("Notes conflict", true) : null) });
   models.store.setDraft({ v: 2 });
   delegate.store.setDraft({ v: 3 });
   spec.store.setDraft({ v: 4 });
@@ -213,7 +213,7 @@ test("the footer's status line: saving, then why Save waits, then a failure, the
 
 const choice = (model = "m", effort = "high") => ({ backend: "pi" as const, model, effort });
 
-test("Subagents' problem is null exactly when every worker row is complete and no fallback is its primary", () => {
+test("Profiles' problem is null exactly when every worker row is complete and no fallback is its primary", () => {
   const full = (model: string, effort = "medium") => ({ backend: "claude-code" as const, model, effort });
   const lib: LibraryDraft = {
     version: 1 as const,
@@ -237,7 +237,7 @@ test("Subagents' problem is null exactly when every worker row is complete and n
   assert.equal(profilesProblem(lib), null);
   const bad = structuredClone(lib);
   bad.profiles[0]!.delegate.planning.primary = full("");
-  assert.match(profilesProblem(bad)!, /^Subagents: My setup's Delegate rows each need a model and an effort\.$/);
+  assert.match(profilesProblem(bad)!, /^Profiles: My setup's Delegate rows each need a model and an effort\.$/);
   const conflict = structuredClone(lib);
   conflict.profiles[0]!.delegate.routine.fallback = full("opus[1m]", "low");
   assert.match(profilesProblem(conflict)!, /fallback is its primary/);

@@ -423,7 +423,7 @@ export async function projectView(projectId: string, items = false, now = Date.n
       `Level: chosen ${s.autonomy} (${AUTONOMY_MEANING[s.autonomy]}); in force ${info.effective.autonomy}${info.effective.reason ? ` (${info.effective.reason})` : ""}`,
       `Watching: ${s.watch ? "on" : "off"}, at most one look every ${s.watchGapMin} min${s.soonLookSec === null ? "" : `, or ${s.soonLookSec} s after something to see soon`}${info.usage.pending.length ? ` · ${plural(info.usage.pending.length, "reason")} waiting` : ""}`,
       `Models: its own ${s.model ?? "the default"} (thinking ${s.thinking ?? "default"}); coding ${s.codingModel ?? "its own"} (${s.codingThinking ?? "its own"}); gathering ${s.gatheringModel ?? "its own"} (${s.gatheringThinking ?? "its own"})`,
-      `A coding session started now gets ${codingModeWords(info.codingModeNow)}${info.codingModeNow.subagents ? `, subagent profile ${info.codingModeNow.subagents.name}` : ""} (this computer's default${info.codingModeNow.subagents ? "s" : ""})`,
+      `A coding session started now is on ${info.codingModeNow.profile?.name ?? info.codingModeNow.subagents?.name ?? "Off"}, in ${codingModeWords(info.codingModeNow)} (this computer's default profile)`,
       `Extra instructions: ${s.extraSystemPrompt.trim() ? `"${cut(s.extraSystemPrompt, 600)}" (${s.extraSystemPrompt.length} characters)` : "(none)"}`,
       `Each message you send allows: ${allowance("message")}`,
       `On its own today: ${allowance("today")}; looks ${info.usage.unattendedToday} of ${s.caps.unattendedPerDay ?? "no limit"}`,

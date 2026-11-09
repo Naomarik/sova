@@ -259,7 +259,7 @@ test("a worker started from a project chat starts on the project's login", async
 
 test("a team member starts on the project's login", async () => {
   // Sova adds its coordinator and monitor on the parent's own model (trial/m1); the member named here is the Claude one.
-  const team = { name: "login-team", objective: "login check", members: [{ role: "alpha", backend: "claude-code", prompt: "hello member" }] };
+  const team = { name: "login-team", objective: "login check", members: [{ role: "alpha", backend: "claude-code", kind: "routine", prompt: "hello member" }] };
   const parent = await sendIn(beta, TRIAL_MODEL, `[call team_create ${JSON.stringify(team)}]`);
   // ag_01 is the coordinator; the Claude member is ag_02.
   const m = await childLogin(parent, (r) => r.kind === "worker" && r.parent?.workerId === "ag_02", "hello member");

@@ -101,7 +101,7 @@ describe("the model", () => {
   test("Sova ships no listed profile file: only Default (My settings) is built in; its system profiles are never listed", async () => {
     const src = await profileSources(null);
     assert.deepEqual(src.builtins.map((p) => p.key), ["sova:default"]);
-    assert.equal(src.builtins[0]!.label, "My settings");
+    assert.equal(src.builtins[0]!.label, "Off");
     assert.deepEqual(src.problems, [], "a profiles/ folder with no profile files lists none, and is no problem");
     // The merge queue's thread and reviewer, and the release chat: found only by an explicit Sova pick, never by a bare
     // id, never in a list.
@@ -277,7 +277,7 @@ describe("the snapshot a session keeps", () => {
     assert.ok(r.ok && r.profile);
     assert.equal(r.ok && r.profile?.label, "Read-only reviewer, edited");
     const fromMine = await resolveChoice({ remove: ["web"], grant: [] });
-    assert.equal(fromMine.ok && fromMine.profile?.label, "Custom", "one made from My settings");
+    assert.equal(fromMine.ok && fromMine.profile?.label, "Off, edited", "one made from Off");
     assert.deepEqual(r.ok && r.profile?.remove, ["workers", "web"]);
     const none = await resolveChoice({ remove: [], grant: [] });
     assert.ok(none.ok && none.profile === null);

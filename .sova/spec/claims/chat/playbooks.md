@@ -308,6 +308,13 @@ ack, and the same restore on refusal as any other message.
 - **Typed text is never silently dropped, and never crosses playbooks.** It is kept per
   playbook when the dialog closes, and moved to the draft when the chat view goes away.
 
+## §chat.playbooks/brandmaker-install-needs-no-registration — Brandmaker installs a brand skill where pi finds it
+
+Brandmaker's optional install phase copies the finished brand skill to
+`<project>/.agents/skills/<brand>-design-skill/`. pi discovers that folder by itself, so the phase
+has no registration step: it adds nothing to the project's `.pi/settings.json` to make the skill
+reachable.
+
 ## §chat.playbooks/classes — Classes
 
 | Need | Classes |

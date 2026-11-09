@@ -13,7 +13,8 @@ import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact"
 import { logAction, NOTES_MAX, readNotes, writeNotes } from "./overseer-store";
 import { addTodo, readTodos, removeTodo, TodoError, updateTodo } from "./overseer-todos";
 import { renderTranscript, sessionRef } from "./session-guards";
-import { ALREADY_AGREED_PARAM, alignDropRefusal, alreadyAgreedOf, confirmBriefWords, describeCodingMode, overseerStartMode, profileName, type ModeRequest } from "./project-coding-mode";
+import { ALREADY_AGREED_PARAM, alignDropRefusal, alreadyAgreedOf, confirmBriefWords, describeCodingMode, overseerStartMode, profileName, startProfileWords, type ModeRequest } from "./project-coding-mode";
+import { profileLine, type JoinedRow } from "./overseer-profiles";
 import { OrgError } from "./org-error";
 import { statechartInfo, statechartVersions } from "./statecharts";
 import type { ProjectOverseerPaths } from "./project-overseer-store";
@@ -86,11 +87,15 @@ export interface PoToolHost {
   transcript(path: string): Promise<TranscriptItem[]>;
   /** The mode a coding session gets for this request (what it names over this computer's default; any
       mode, no ceiling), or the refusal for an unknown name or profile. Nothing is created or counted. */
-  codingMode(req: ModeRequest): { mode: ProjectCodingMode } | { error: string };
+  codingMode(req: ModeRequest): { mode: ProjectCodingMode; name?: string } | { error: string } | Promise<{ mode: ProjectCodingMode; name?: string } | { error: string }>;
   /** The switch a request asks of a running session (only what it names; null: nothing), or the refusal. */
-  codingSwitch(req: ModeRequest): { mode: CodingModeSwitch | null } | { error: string };
-  /** This computer's subagent profiles (sova_list_subagent_profiles; the default's name in a start's result). */
+  codingSwitch(req: ModeRequest): { mode: CodingModeSwitch | null; name?: string } | { error: string } | Promise<{ mode: CodingModeSwitch | null; name?: string } | { error: string }>;
+  /** This computer's subagent profiles (the default's name in a start's result). */
   subagentProfiles(): SubagentProfilesInfo;
+  /** This computer's profiles as the project's sessions see them (sova_list_profiles, §chat.profiles/joined). */
+  profiles(): Promise<JoinedRow[]>;
+  /** The name of this computer's default profile, the one a coding session started with none named is on. */
+  defaultProfileName(): string;
   /** A session whose alignment questions are the operator's alone (a verb playbook's run, or one an Overseer started asking
       the operator to confirm the brief, §app.project-overseer/confirm-brief) waiting on them, or null (any other session, or not waiting). */
   playbookWaiting(sessionId: string): Promise<{ title: string; questions: number } | null>;
@@ -166,6 +171,7 @@ const PLAIN_POWER: Record<string, ToolPower> = {
   sova_project: "always",
   sova_list_sessions: "always",
   sova_read_session: "always",
+  sova_list_profiles: "always",
   sova_list_subagent_profiles: "always",
   sova_todos: "operator",
   sova_note: "always",
@@ -439,6 +445,12 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
   /** The project's gaps, when another layer tracks them: then a coding session names its gap. */
   const gaps = host.gaps();
 
+  /** sova_list_profiles, and its older name: this computer's profiles, as the project's sessions see them. */
+  const listProfiles = async () => {
+    const rows = await host.profiles();
+    return { content: text(rows.map(profileLine).join("\n")), details: { profiles: rows.map((r) => ({ id: r.id, name: r.name, kind: r.kind, ...(r.libraryId ? { libraryId: r.libraryId } : {}), ...(r.isDefault ? { isDefault: true } : {}) })) } };
+  };
+
   const tools: Tool[] = [
     // ---- reads -------------------------------------------------------------------------------
     {
@@ -485,16 +497,20 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       }),
     },
     {
-      name: "sova_list_subagent_profiles",
-      label: "List subagent profiles",
-      description: "List this computer's subagent setups (Off, each profile's id, name and worker footprint, the default marked), for subagent_profile on sova_create_session and sova_send.",
-      promptSnippet: "list this computer's subagent profiles",
+      name: "sova_list_profiles",
+      label: "List profiles",
+      description:
+        "List this computer's profiles (Off, each one's id, name, footprint, its parts, the library id subagent_profile takes when it differs, the default marked), for profile and subagent_profile on sova_create_session and sova_send.",
+      promptSnippet: "list this computer's profiles",
       parameters: obj({}),
-      execute: read(async () => {
-        const info = host.subagentProfiles();
-        const lines = info.profiles.map((p) => `${p.id}: ${p.name} · ${p.footprint}${info.default === p.id ? " · default" : ""}`);
-        return { content: text(info.error ? `Subagent profiles can't be read: ${info.error}` : lines.join("\n")), details: { default: info.default, count: info.profiles.length } };
-      }),
+      execute: read(listProfiles),
+    },
+    {
+      name: "sova_list_subagent_profiles",
+      label: "List profiles",
+      description: "The same list as sova_list_profiles (its older name).",
+      parameters: obj({}),
+      execute: read(listProfiles),
     },
     {
       name: "sova_list_sessions",
@@ -759,7 +775,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       // Its card reads the recorded result (EAGER_TOOLS): never a call another tool made.
       exposure: "model-only",
       description:
-        "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, align is turned on in its mode (whatever minor_modes says) and its first turn asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
+        "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts on this computer's default profile unless you name others: `mode`, `minor_modes`, `profile` (its models, helpers and modes; never its tools or powers) and `subagent_profile` (only its helpers) take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, align is turned on in its mode (whatever minor_modes says) and its first turn asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
       promptSnippet: "start a coding session in the project with a first prompt",
       parameters: obj(
         {
@@ -770,7 +786,8 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           thinking: str("off | minimal | low | medium | high | xhigh"),
           mode: str("normal | delegate. Omitted: this computer's default."),
           minor_modes: { type: "array", items: { type: "string" }, description: 'The minor modes on, the whole set: any of align, spec, vis, e.g. ["spec"]; [] turns them all off. Omitted: this computer\'s default.' },
-          subagent_profile: str("A subagent profile id or off (sova_list_subagent_profiles), for this session only. Omitted: this computer's default profile."),
+          profile: str("A profile id or off (sova_list_profiles), for this session only: its models, helpers and modes; never its tools or powers. Omitted: this computer's default profile."),
+          subagent_profile: str("A subagent profile id or off (sova_list_subagent_profiles), for this session only: only its helpers."),
           already_agreed: { type: "boolean", description: ALREADY_AGREED_PARAM },
           ...(gaps
             ? { gap: str(gaps.param), decisions: strs("With a gap: the promoted, not yet built decisions it builds (DecisionRow ids); omitted: all of them.") }
@@ -780,7 +797,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       ),
       execute: act("sova_create_session", async (q) => {
         // The mode is checked first: a refusal creates nothing and takes no cap.
-        const m = host.codingMode({ mode: q.mode, minor_modes: q.minor_modes, subagent_profile: q.subagent_profile });
+        const m = await host.codingMode({ mode: q.mode, minor_modes: q.minor_modes, subagent_profile: q.subagent_profile, profile: q.profile });
         if ("error" in m) throw new Refusal(`${m.error} No session was created.`);
         const root = host.project().root;
         // A relative folder is relative to the project root ("app" → <root>/app); ".." still escapes and is refused below.
@@ -801,9 +818,8 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         const said = link({ id: made.id, title: q.title ? String(q.title) : cut(q.prompt, 60) });
         // Created and listed, but its first prompt was never sent: a failure the model must see.
         if (made.notPrompted) throw new Error(`${made.notPrompted} ${said} is in ${where}; send the prompt with sova_send once its mode is set.`);
-        const profile = profileName(host.subagentProfiles(), runs.subagentProfile);
         return {
-          content: text(`Started ${said} in ${where}, mode ${describeCodingMode(runs)}${profile ? `, subagent profile ${profile}` : ""}.${confirmBriefWords(!!made.confirmBrief, alreadyAgreed)}`),
+          content: text(`Started ${said} in ${where}, mode ${describeCodingMode(runs)}${startProfileWords(runs, m.name, host.defaultProfileName(), runs.subagentProfile !== undefined ? profileName(host.subagentProfiles(), runs.subagentProfile) : null)}.${confirmBriefWords(!!made.confirmBrief, alreadyAgreed)}`),
           details: { ...made, mode: runs, note },
         };
       }),
@@ -812,7 +828,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       name: "sova_send",
       label: "Send to coding session",
       description:
-        "Send a message to one of the project's coding sessions (never a gathering session: people answer those). `mode`, `minor_modes` and `subagent_profile` change what they name of its mode and profile first, any mode (mid-turn, the change applies after the running turn). Never answer a session's alignment questions: they are the operator's; a verb playbook's run waiting on them is refused. Counts against your prompt cap.",
+        "Send a message to one of the project's coding sessions (never a gathering session: people answer those). `mode`, `minor_modes`, `profile` (its whole Models part: model, helpers, alignment settings) and `subagent_profile` (only its helpers) change what they name of its mode and profile first, any mode (mid-turn, the change applies after the running turn). Never answer a session's alignment questions: they are the operator's; a verb playbook's run waiting on them is refused. Counts against your prompt cap.",
       promptSnippet: "send a message to a coding session in the project (optionally changing its mode or subagent profile)",
       parameters: obj(
         {
@@ -820,13 +836,14 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           text: str("The message."),
           mode: str("normal | delegate: change its mode first."),
           minor_modes: { type: "array", items: { type: "string" }, description: 'Its minor modes on, the whole set, first: any of align, spec, vis, e.g. ["spec"]; [] turns them all off.' },
-          subagent_profile: str("Change its subagent profile first: an id or off (sova_list_subagent_profiles)."),
+          profile: str("Switch it to a profile first: an id or off (sova_list_profiles). Moves its model, helpers and alignment settings at once; its tools, powers and modes stay."),
+          subagent_profile: str("Change only its helpers first: a subagent profile id or off (sova_list_subagent_profiles)."),
         },
         ["session", "text"],
       ),
       execute: act("sova_send", async (q) => {
         // Checked before anything else: a refused mode or profile sends nothing and takes no cap.
-        const m = host.codingSwitch({ mode: q.mode, minor_modes: q.minor_modes, subagent_profile: q.subagent_profile });
+        const m = await host.codingSwitch({ mode: q.mode, minor_modes: q.minor_modes, subagent_profile: q.subagent_profile, profile: q.profile });
         if ("error" in m) throw new Refusal(`${m.error} Nothing was sent.`);
         const id = sessionRef(q.session);
         const { coding, otherIds } = await scoped();
@@ -844,7 +861,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         const r = await host.send(s.id, typeof q.text === "string" ? q.text : "", mode);
         if ("held" in r) return { content: text(heldText(`the message to ${link(s)}`, r.held)), details: { id: s.id, held: r.held.id } };
         const modeSaid = r.modeNow
-          ? ` It now runs ${describeCodingMode(r.modeNow)}${r.profile ? `, subagent profile ${r.profile}` : ""}${r.modeApplies === "after-turn" ? " (from after its running turn)" : ""}.`
+          ? ` It now runs ${describeCodingMode(r.modeNow)}${r.profile ? `, ${mode?.profile !== undefined ? "profile" : "subagent profile"} ${r.profile}` : ""}${r.modeApplies === "after-turn" ? " (from after its running turn)" : ""}.`
           : "";
         return { content: text(`${r.queued ? `Queued in ${link(s)} behind its running turn.` : `Sent to ${link(s)}.`}${modeSaid}`), details: { id: s.id, queued: r.queued, ...(mode ? { mode } : {}) } };
       }),

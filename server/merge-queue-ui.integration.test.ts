@@ -754,13 +754,122 @@ for (const width of [1280, 390]) {
       await rowActionsSized(modal, "Set Up Queue");
       assert.equal(await modal.getByRole("button", { name: "Land feat/other", exact: true }).count(), 0);
       // Listed, not set up: it merges plainly (al_1 a5).
-      assert.match(await words(modal.locator('[data-branch="feat/other"]')), /Ready to merge.*Say “land it” in the chat to merge it into main[.]/);
+      assert.match(await words(modal.locator('[data-branch="feat/other"]')), /Ready to merge.*Say “land it” in the chat to merge it into master[.]/);
       await noRestartOrLive(o.page, ".wt-queue-modal");
       await o.ctx.close();
     });
 
+    test("a branch's place: each row says its project and target, unfolds to its folder, and several projects are each named", async () => {
+      const long = "/home/u/.worktrees/a-really-long-worktree-folder-name-that-has-to-wrap-on-a-phone/and/some/more/of/it/feat-other";
+      const tools = { ...mergeProject, id: "prj_tools", root: "/w/tools", target: "main", how: "github-pr" as const };
+      const rows = [
+        wt("feat/composer-drafts", { place: { label: "sova", root: ROOT_DIR, target: "master" }, mergeProject: { ...mergeProject, paused: "you paused it" }, mergeOwner: { session: "s1", path: PATH, title: "Composer drafts survive reload" } }),
+        wt("feat/other", { path: long, place: { label: "Tools", root: "/w/tools", target: "main" }, mergeProject: tools }),
+        wt("feat/done", { status: "merged", merge: { target: "feat/parent", sha: sha("e"), how: "tool", at: T0 }, place: { label: "sova", root: ROOT_DIR, target: "master" } }),
+        wt("feat/plain", { mergeProject: undefined, place: { label: "~/code/a-repository-off-the-projects-list-with-a-long-name", root: "/w/code/x", target: "trunk" } }),
+      ];
+      // A session under a real home, so paths are written from it (the app infers $HOME from its first listed session).
+      const homed = { ...SESSION, id: "s-home", path: "/home/u/.pi/agent/sessions/s-home.jsonl", title: "Homed", lastActiveAt: iso(1) } as SessionSummary;
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { rows, sessions: [homed, SESSION] });
+      const { page } = o;
+      const hash = await page.evaluate(() => location.hash);
+      // What bubbles past the line (a clickable row or card above it would act on it), and what Copy Folder hands the clipboard.
+      await page.evaluate(() => {
+        const w = window as unknown as { placeEscaped: number; placeCopied: string[] };
+        w.placeEscaped = 0;
+        w.placeCopied = [];
+        window.addEventListener("click", (e) => { if ((e.target as Element).closest?.(".branch-place")) w.placeEscaped++; });
+        Object.defineProperty(navigator, "clipboard", { value: { writeText: async (t: string) => void w.placeCopied.push(t) }, configurable: true });
+      });
+      const escaped = () => page.evaluate(() => (window as unknown as { placeEscaped: number }).placeEscaped);
+      await page.getByRole("button", { name: /^Worktrees: / }).click({ timeout: 20_000 });
+      const modal = page.getByRole("dialog", { name: "Worktrees" });
+      await modal.waitFor();
+      const line = (branch: string) => modal.locator(`[data-branch="${branch}"] .branch-place-line`);
+      const tap = (l: Locator) => (width < 768 ? l.tap() : l.click());
+      assert.equal(await words(line("feat/composer-drafts")), "sova · merges into master");
+      assert.equal(await words(line("feat/other")), "Tools · merges into main");
+      assert.equal(await words(line("feat/done")), "sova · merged into feat/parent");
+      assert.match(await words(modal), /sova's queue is paused: you paused it\./);
+      assert.match(await words(modal.locator('[data-branch="feat/plain"]')), /merge it into trunk\./);
+      assert.deepEqual(await modal.locator(".wt-queue-foot-link").allTextContents(), ["View sova's Merge Queue", "View Tools's Merge Queue"]);
+      assert.equal(await modal.locator(".wt-queue-foot-link").nth(1).getAttribute("href"), "#/projects/prj_tools/merge-queue");
+      await shot(page, `${width}-place-modal-folded`);
+      // The 44px target, a real button, closed at first.
+      const box = await line("feat/other").boundingBox();
+      assert.ok(box && box.height >= 44, `the line is ${box?.height}px tall`);
+      assert.equal(await line("feat/other").getAttribute("aria-expanded"), "false");
+      // It wraps; it never cuts off.
+      const plainWords = modal.locator('[data-branch="feat/plain"] .branch-place-words');
+      assert.equal(await plainWords.evaluate((el) => getComputedStyle(el).textOverflow), "clip");
+      assert.equal(await plainWords.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), true, "no line runs past its box");
+      if (width < 768) assert.ok((await plainWords.boundingBox())!.height > 22, "the long place wraps onto a second line at phone width");
+      // By keyboard: Enter unfolds, Space folds, and the focus stays on the line.
+      await line("feat/composer-drafts").focus();
+      await page.keyboard.press("Enter");
+      assert.equal(await line("feat/composer-drafts").getAttribute("aria-expanded"), "true", "Enter unfolds");
+      // Copy Folder is the next stop, and the keyboard works it too.
+      await page.keyboard.press("Tab");
+      assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), "Copy Folder");
+      await page.keyboard.press("Enter");
+      await until("the keyboard copied the folder", async () => (await page.evaluate(() => (window as unknown as { placeCopied: string[] }).placeCopied.length)) === 1);
+      await page.keyboard.press("Shift+Tab");
+      await page.keyboard.press("Space");
+      assert.equal(await line("feat/composer-drafts").getAttribute("aria-expanded"), "false", "Space folds");
+      // A tap unfolds it in place and goes nowhere.
+      await tap(line("feat/other"));
+      assert.equal(await line("feat/other").getAttribute("aria-expanded"), "true");
+      const fold = modal.locator('[data-branch="feat/other"] .branch-place-fold');
+      const longFromHome = long.replace("/home/u", "~");
+      assert.equal((await words(fold.locator(".branch-place-fact").first())).replace(/\s+/g, " ").trim(), `Branch folder: ${longFromHome}`);
+      assert.match(await words(fold), /Merges into: main of \/w\/tools/);
+      // Copy Folder hands over the real folder, not the words on screen.
+      await tap(fold.getByRole("button", { name: "Copy Folder" }));
+      await until("the folder was copied", async () => (await page.evaluate(() => (window as unknown as { placeCopied: string[] }).placeCopied.length)) === 2);
+      assert.deepEqual(await page.evaluate(() => (window as unknown as { placeCopied: string[] }).placeCopied), ["/w/.worktrees/sova-composer-drafts", long]);
+      assert.equal(await escaped(), 0, "no click on the line or Copy Folder bubbles past it");
+      assert.equal(await page.evaluate(() => location.hash), hash, "unfolding and copying don't navigate");
+      assert.equal(await modal.count(), 1, "the modal stays open");
+      await tap(line("feat/done"));
+      assert.match(await words(modal.locator('[data-branch="feat/done"] .branch-place-fold')), /Merged into: feat\/parent of \/w\/sova/);
+      assert.equal(await escaped(), 0);
+      await noSideScroll(page);
+      await shot(page, `${width}-place-modal-unfolded`);
+      // Land's confirm names the place, and a GitHub project's ending.
+      await modal.getByRole("button", { name: "Land feat/other", exact: true }).click();
+      assert.match(await words(modal.locator('[data-branch="feat/other"] .wt-queue-confirm')), /3 commits go to Tools's merge queue; a pull request opens on GitHub once checks pass\./);
+      await shot(page, `${width}-place-land-confirm`);
+      await modal.getByRole("button", { name: "Not Yet" }).click();
+      await page.keyboard.press("Escape");
+      // The pane: the same rows and one link per project, and no paused line of its own.
+      await page.getByRole("button", { name: "Session details" }).first().click();
+      const section = page.locator("section", { has: page.getByRole("heading", { name: "Worktrees" }) }).last();
+      await section.locator(".wt-queue-row").first().waitFor({ timeout: 10_000 });
+      assert.equal(await words(section.locator('[data-branch="feat/other"] .branch-place-line')), "Tools · merges into main");
+      const paneLine = section.locator('[data-branch="feat/other"] .branch-place-line');
+      await paneLine.focus();
+      await page.keyboard.press("Space");
+      assert.equal(await paneLine.getAttribute("aria-expanded"), "true", "Space unfolds in the pane");
+      await page.keyboard.press("Enter");
+      assert.equal(await paneLine.getAttribute("aria-expanded"), "false", "Enter folds in the pane");
+      await tap(paneLine);
+      assert.ok((await paneLine.boundingBox())!.height >= 44, "the pane's line is a 44px target");
+      const paneFold = section.locator('[data-branch="feat/other"] .branch-place-fold');
+      assert.match(await words(paneFold), /Copy Folder/);
+      await tap(paneFold.getByRole("button", { name: "Copy Folder" }));
+      await until("the pane copied it", async () => (await page.evaluate(() => (window as unknown as { placeCopied: string[] }).placeCopied.length)) === 3);
+      assert.equal(await page.evaluate(() => (window as unknown as { placeCopied: string[] }).placeCopied[2]), long);
+      assert.equal(await escaped(), 0, "the pane's clicks stay in the line too");
+      assert.equal(await page.evaluate(() => location.hash), hash);
+      assert.deepEqual((await section.getByRole("link", { name: /Merge Queue$/ }).allTextContents()).map((t) => t.trim()), ["View sova's Merge Queue", "View Tools's Merge Queue"]);
+      assert.doesNotMatch(await words(section), /queue is paused/);
+      await noSideScroll(page);
+      await shot(page, `${width}-place-pane-unfolded`);
+      await o.ctx.close();
+    });
+
     test("a repo off the Projects list (no mergeProject, no mergeServed): no Land, no Ready to land, no Set Up Queue; it reads Ready to merge", async () => {
-      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { rows: [wt("feat/build", { mergeProject: undefined })] });
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { rows: [wt("feat/build", { mergeProject: undefined, place: { label: "~/code/build", root: "/w/code/build", target: "main" } })] });
       await o.page.getByRole("button", { name: /^Worktrees: / }).click({ timeout: 20_000 });
       const modal = o.page.getByRole("dialog", { name: "Worktrees" });
       await modal.waitFor();

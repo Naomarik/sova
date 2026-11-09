@@ -119,6 +119,7 @@ refusal says where to click.
 | Trusting a project's or an extension's cards | **Trust {name}'s Cards** on the card |
 | Adding, approving or changing an extension | Settings → Extensions |
 | Restarting or updating Sova | **Restart Sova** and the update controls in Settings → General, or Apply on the Sova project's Branches tab |
+| The merge queue's Land, a decision's answers, Cancel and Remove from Queue | Those buttons in Sova's page, or your own words in the branch's chat |
 
 Only the widening closes. Turning a power off, raising a sandbox, turning a mode off, turning on a mode at
 a version already approved and turning a card owner's trust off stay open to scripts.

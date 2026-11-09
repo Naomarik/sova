@@ -106,7 +106,7 @@ describe("/ws/chat", () => {
   test("without ?tail=1: today's messages, a whole hello, no history", async () => {
     const got = await frames(`/ws/chat?${q}`, (g) => types(g).includes("claude_login"));
     await new Promise((r) => setTimeout(r, 100)); // nothing else is on its way
-    assert.deepEqual(types(got), ["hello", "commands", "queue", "mode", "claude_login"]);
+    assert.deepEqual(types(got), ["hello", "commands", "queue", "mode", "chat_profile", "claude_login"]);
     const hello = JSON.parse(got[0]!);
     assert.deepEqual(Object.keys(hello), ["type", "items", "isStreaming", "isCompacting", "model", "thinking", "context", "alignReview"]);
     assert.deepEqual(hello.items, whole);
@@ -118,7 +118,7 @@ describe("/ws/chat", () => {
     const got = await frames(`/ws/chat?${q}&tail=1`, (g) => g.length > 0 && JSON.parse(g.at(-1)!).left === 0);
     const t = types(got);
     const firstHistory = t.indexOf("history");
-    assert.deepEqual(t.slice(0, firstHistory), ["hello", "commands", "queue", "mode", "claude_login"]);
+    assert.deepEqual(t.slice(0, firstHistory), ["hello", "commands", "queue", "mode", "chat_profile", "claude_login"]);
     assert.ok(t.slice(firstHistory).every((x) => x === "history"));
     const hello = JSON.parse(got[0]!);
     assert.ok(hello.older > 0 && hello.items.length < whole.length);

@@ -7,14 +7,14 @@ The older files `mode-delegate.json`, `mode-spec.json` and `team-defaults.json` 
 
 ## Subagent profiles
 
-- Change: one named set of every model a chat's workers use: Delegate's four kinds of work, each with a fallback; a team's coordinator, monitor and members default; the spec writer; the reviewer; and optionally the chat's alignment settings.
+- Change: one named set of every model a chat's workers use: Delegate's four kinds of work, each with a fallback; a team's coordinator and monitor; the spec writer; the reviewer; and optionally the chat's alignment settings. A team's working members run on Delegate's kinds: each member named with a work kind (planning, investigation, routine or complex) runs on that kind's model from the chat's profile, or its fallback; a model named for a member wins.
 - Lives: `<agent dir>/subagent-profiles.json`. Don't write the file yourself: one mistake sends every chat to the older files.
 - Approves: the person, by Apply or Save Changes.
-- By: Card or Screen. Card `workers.profiles`, holding the whole library: read it with `get`, change one profile, keep the rest. Screen: Settings → Subagents, New Profile, Duplicate, or the mode menu's Save Current as Profile, which saves what the chat uses now and isn't offered on Off.
+- By: Card or Screen. Card `workers.profiles`, holding the whole library: read it with `get`, change one profile, keep the rest. Screen: Settings → Profiles, a profile's Models part, or New Profile or Duplicate there, or the mode menu's Save Current as Profile, which saves what the chat uses now and isn't offered on Off.
 - Live: next turn and next team action. A running worker keeps its model. Each profile reaches their other computers with sync on.
-- Check: its row in Settings → Subagents shows the models it routes to.
+- Check: its row in Settings → Profiles shows the models it routes to.
 
-Each profile in the library is `{id, name, delegate, teams, members, specWriter, reviewer, alignment}`. `delegate` holds `planning`, `investigation`, `routine` and `complex`. Each of those, and `specWriter` and `reviewer`, is `{primary, fallback}`. Each of those is a worker, `{"backend": "claude-code", "model": "claude-haiku-5-5", "effort": "low"}`, or for `fallback`, `null`; on the `pi` backend `model` is `provider/model`. `members` is a worker or `null`. `specWriter` and `reviewer` are `null` for none, and `teams` for no standing coordinator and monitor. To change one role, read the library with `get`, change that key on the profile, and leave the rest as it was.
+Each profile in the library is `{id, name, delegate, teams, members, specWriter, reviewer, alignment}`. `delegate` holds `planning`, `investigation`, `routine` and `complex`. Each of those, and `specWriter` and `reviewer`, is `{primary, fallback}`. Each of those is a worker, `{"backend": "claude-code", "model": "claude-haiku-5-5", "effort": "low"}`, or for `fallback`, `null`; on the `pi` backend `model` is `provider/model`. `members` is retired: Sova writes it as `null` and ignores any value in it. Keep the key (an older Sova needs it to read the file) and never leave it out. `specWriter` and `reviewer` are `null` for none, and `teams` for no standing coordinator and monitor. To change one role, read the library with `get`, change that key on the profile, and leave the rest as it was.
 
 The reviewer is the worker that does adversarial review: a read-only check of the plan and the diff of risky work in align chats. It runs only while Adversarial review is on under Settings → Alignment (`modes`), so a reviewer set while that's off does nothing yet: say so.
 
@@ -23,9 +23,9 @@ The reviewer is the worker that does adversarial review: a read-only check of th
 - Change: the profile for one chat, or this computer's default for chats that haven't picked one.
 - Lives: the chat itself; the default is in `<agent dir>/subagent-profiles-default.json`.
 - Approves: the person, by choosing.
-- By: Card or Screen. One chat: the mode menu's Subagents row. The default: card `workers.default-profile`, or Make Default in Settings → Subagents.
+- By: Card or Screen. One chat: the mode menu's Profile row. The default: card `workers.default-profile`, or Make Default on its editor in Settings → Profiles.
 - Live: next turn and next team action. The default doesn't spread: each computer keeps its own.
-- Check: the mode menu's Subagents row names it.
+- Check: the mode menu's Profile row names it.
 
 ## Which models workers may use
 

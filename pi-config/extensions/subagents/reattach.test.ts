@@ -13,6 +13,7 @@ import { registerSubagents } from "./index.ts";
 import { FakeWorkerHost } from "./tests/fake-worker-host.ts";
 import { NO_WORKER_HOST } from "./worker-host.ts";
 import { WORKER_MANIFEST_ENTRY_TYPE } from "./registry.ts";
+import { profileOff } from "./tests/profile-off.ts";
 
 const NO_POLICY_FILE = path.join(os.tmpdir(), "subagents-tests-absent-policy.json");
 const OWNER = { sessionId: "owner-1", path: "/sessions/owner-1.jsonl" };
@@ -38,6 +39,7 @@ function sessionFile() {
 }
 
 function manager(file: ReturnType<typeof sessionFile>, host: FakeWorkerHost | null, agentDir: string) {
+	profileOff(agentDir);
 	const bus = eventBus();
 	if (host) host.announceOn(bus);
 	const tools = new Map<string, any>();

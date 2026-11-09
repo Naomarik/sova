@@ -293,7 +293,8 @@
       "§chat.changes/entry",
       "§chat.composer/land-confirm",
       "§app.merge-queue/branch-summary",
-      "§chat.worktrees/pane-queue"
+      "§chat.worktrees/pane-queue",
+      "§chat.worktrees/place"
     ],
     "authority": "accepted",
     "evidence": "reviewed",
@@ -318,12 +319,14 @@
       "src/lib/merge-queue-sent-back.test.ts",
       "shared/merge-queue.ts",
       "server/merge-queue/view.ts",
-      "src/components/BranchSummary.tsx"
+      "src/components/BranchSummary.tsx",
+      "src/lib/branch-place.ts",
+      "src/components/BranchPlaceLine.tsx"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-07T16:57Z",
-      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
+      "by": "the user (al_2 go)",
+      "at": "2026-11-09T10:27Z",
+      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#b9a60247"
     }
   },
   "§chat.worktrees/pane-queue": {
@@ -357,6 +360,44 @@
       "by": "user",
       "at": "2026-11-07T16:57Z",
       "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
+    }
+  },
+  "§chat.worktrees/place": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§chat/worktrees",
+      "§chat.worktrees/entry",
+      "§chat.worktrees/tool",
+      "§chat.worktrees/merged-state",
+      "§app.merge-queue/served",
+      "§app.session-list/needs-you"
+    ],
+    "code": [
+      "shared/protocol.ts",
+      "shared/merge-queue.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/served.ts",
+      "server/worktrees-state.ts",
+      "src/lib/branch-place.ts",
+      "src/components/WorktreesModal.tsx",
+      "src/components/SessionDetails.tsx",
+      "src/components/MergeQueueCard.tsx",
+      "src/app.css",
+      "src/components/BranchPlaceLine.tsx",
+      "server/merge-queue/place.ts",
+      "server/merge-queue/place.test.ts",
+      "src/lib/branch-place.test.ts",
+      "shared/tell-apart.ts",
+      "server/merge-queue/view.ts",
+      "server/merge-queue/wire.integration.test.ts",
+      "src/lib/worktrees-served.test.ts"
+    ],
+    "agreed": {
+      "by": "the user (al_2 go)",
+      "at": "2026-11-09T10:27Z",
+      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#b9a60247"
     }
   },
   "§chat.worktrees/readiness": {

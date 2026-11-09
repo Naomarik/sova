@@ -968,7 +968,8 @@
       "server/search-tools-fake.ts",
       "shared/project-overseer.ts",
       "server/project-coding-mode.ts",
-      "server/overseer-prompt.md"
+      "server/overseer-prompt.md",
+      "server/coding-default-profile.ts"
     ],
     "requires": [
       "§app.project-overseer/identity",
@@ -1224,7 +1225,9 @@
       "server/overseer-roundup.test.ts",
       "server/overseer-runtime.test.ts",
       "server/overseer-roundup-git.ts",
-      "server/sessions-index.ts"
+      "server/sessions-index.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/place.ts"
     ],
     "requires": [
       "§app.overseer/tools",
@@ -1233,12 +1236,13 @@
       "§chat.worktrees/cleanup",
       "§chat.alignment/session-mark",
       "§app.overseer/session-truth",
-      "§app.project-overseer/coding-worktrees"
+      "§app.project-overseer/coding-worktrees",
+      "§chat.worktrees/place"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-25T22:33Z",
-      "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+      "by": "the user (al_2 go)",
+      "at": "2026-11-09T10:27Z",
+      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#b9a60247"
     },
     "evidence": "verified"
   },
@@ -1482,7 +1486,7 @@
   "§app.overseer/tools": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "server/overseer-tools.ts",
       "server/overseer-deny.ts",
@@ -1521,7 +1525,10 @@
       "server/project-previews.ts",
       "server/overseer-pair-tools.ts",
       "server/overseer-pair-tools.test.ts",
-      "server/harness/pi/golden/special-model-view.json"
+      "server/harness/pi/golden/special-model-view.json",
+      "server/overseer-profiles.ts",
+      "server/session-profiles-runtime.test.ts",
+      "server/default-start.ts"
     ],
     "requires": [
       "§app.overseer/caps",
@@ -1532,9 +1539,9 @@
       "§chat.create-mode/per-chat-only"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-06T21:52Z",
-      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
+      "by": "naomarik",
+      "at": "2026-11-09T01:20Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#b97414c4"
     }
   },
   "§app.overseer/transcript-window": {

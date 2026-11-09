@@ -10,6 +10,7 @@ import { DEFAULT_TEAM_DEFAULTS, writeTeamDefaults } from "./team-defaults.ts";
 import {
 	footprint,
 	idFor,
+	legacyProfile,
 	loadSubagentProfiles,
 	OFF_PROFILE_ID,
 	parseProfilesDefault,
@@ -52,7 +53,7 @@ test("subagent-profiles.ts imports only node built-ins and builtins-only sibling
 });
 
 test("parse: a valid file round-trips; every error is collected, not the first", () => {
-	const ok = parseSubagentProfiles(JSON.stringify(file([profile("a", "A", { members: claude("claude-sonnet-5-5") })])));
+	const ok = parseSubagentProfiles(JSON.stringify(file([profile("a", "A")])));
 	assert.equal(ok.ok, true);
 	const bad = parseSubagentProfiles({
 		version: 2,
@@ -60,15 +61,60 @@ test("parse: a valid file round-trips; every error is collected, not the first",
 		extra: 1,
 		profiles: [
 			profile("off", "Off"),
-			{ ...profile("b", "B"), members: { backend: "pi", model: "no-slash", effort: "low" } },
+			{ ...profile("b", "B"), teams: 1 },
 			profile("c", "C"),
 			profile("c", "c"),
 		],
 	});
 	assert.equal(bad.ok, false);
 	const errors = (bad as { errors: string[] }).errors.join("\n");
-	for (const want of ["version: must be 1", "extra: unknown key", "default: the default is this device's own", "profiles[0].id", "profiles[0].name", "profiles[1].members", 'the id "c" is used twice', 'the name "c" is used twice'])
+	for (const want of ["version: must be 1", "extra: unknown key", "default: the default is this device's own", "profiles[0].id", "profiles[0].name", "profiles[1].teams", 'the id "c" is used twice', 'the name "c" is used twice'])
 		assert.ok(errors.includes(want), `missing ${want} in\n${errors}`);
+});
+
+test("the retired members key: what an older build wrote reads as that build reads it and is written back; absent reads null; nothing routes from it", () => {
+	const raw = (members: unknown) => {
+		const p: Record<string, unknown> = { ...profile("a", "A") };
+		if (members === undefined) delete p.members;
+		else p.members = members;
+		return { version: 1, profiles: [p] };
+	};
+	const cases: [unknown, unknown][] = [
+		[pi("zai/glm-5.3"), pi("zai/glm-5.3")],
+		[claude("claude-sonnet-5-5"), claude("claude-sonnet-5-5")],
+		[claude("opus[1m]"), claude("claude-opus-5-5")], // an older build reads its catalog id, and hashes that
+		[null, null],
+		[undefined, null],
+	];
+	for (const [members, read] of cases) {
+		const label = JSON.stringify(members) ?? "absent";
+		const parsed = parseSubagentProfiles(raw(members));
+		assert.ok(parsed.ok, `${label}: ${!parsed.ok && parsed.errors.join("; ")}`);
+		assert.deepEqual(parsed.value.profiles[0]!.members, read, label);
+		const dir = tempDir();
+		writeSubagentProfiles(dir, parsed.value);
+		const [onDisk] = JSON.parse(fs.readFileSync(subagentProfilesPath(dir), "utf8")).profiles;
+		assert.ok("members" in onDisk, `${label}: every profile carries the key an older reader requires`);
+		assert.deepEqual(onDisk.members, read, `${label}: written back`);
+		const again = readSubagentProfiles(dir);
+		assert.deepEqual(again.state === "ok" && again.value.profiles[0]!.members, read, `${label}: round-trips`);
+	}
+	// A value an older build refuses would be refused there as soon as this host sent it.
+	const refused = parseSubagentProfiles(raw({ backend: "pi", model: "no-slash", effort: "low" }));
+	assert.ok(!refused.ok && refused.errors.some((e) => e.startsWith("profiles[0].members:")));
+	// A new profile writes null.
+	const fresh = tempDir();
+	writeSubagentProfiles(fresh, { version: 1, profiles: [legacyProfile(fresh, "n", "N")] });
+	assert.equal(JSON.parse(fs.readFileSync(subagentProfilesPath(fresh), "utf8")).profiles[0].members, null);
+	// …and nothing resolves, counts or shows from a saved value.
+	const dir = tempDir();
+	const base = profile("b", "B");
+	const held = { ...base, members: pi("zai/members-only") };
+	writeSubagentProfiles(dir, { version: 1, profiles: [held] });
+	assert.equal("members" in resolveSubagents(dir, "b"), false);
+	assert.equal(footprint(held), footprint(base));
+	assert.deepEqual(profileProviders(held), profileProviders(base));
+	assert.deepEqual(profileSlots(held), profileSlots(base));
 });
 
 test("parse: the library has no artificial profile count limit", () => {
@@ -182,7 +228,7 @@ test("pick: the newest valid entry on the branch wins; unknown shapes are skippe
 test("resolution order: the chat's pick, then this device's default, then the legacy files", () => {
 	const dir = tempDir();
 	fs.writeFileSync(path.join(dir, "mode-delegate.json"), JSON.stringify({ version: 1, profiles: { routine: { primary: pi("legacy/model"), fallback: null } } }));
-	const a = profile("a", "A", { members: claude("claude-sonnet-5-5") });
+	const a = profile("a", "A");
 	const b = profile("b", "B", { delegate: { ...delegateDefaults().profiles, routine: { primary: pi("zai/glm-5.3"), fallback: null } } });
 	writeSubagentProfiles(dir, file([a, b]));
 	writeProfilesDefault(dir, { version: 1, default: "a" });
@@ -192,7 +238,6 @@ test("resolution order: the chat's pick, then this device's default, then the le
 	const followed = resolveSubagents(dir, undefined);
 	assert.equal(followed.source, "default");
 	assert.equal(followed.id, "a");
-	assert.deepEqual(followed.members, claude("claude-sonnet-5-5"));
 	const dangling = resolveSubagents(dir, "gone");
 	assert.equal(dangling.id, "a", "a pick naming a deleted profile follows the default");
 	assert.match(dangling.note ?? "", /no longer exists/);
@@ -206,21 +251,19 @@ test("resolution order: the chat's pick, then this device's default, then the le
 	const legacy = resolveSubagents(dir, "b");
 	assert.equal(legacy.source, "legacy");
 	assert.equal(legacy.delegate?.profiles.routine.primary.model, "legacy/model");
-	assert.equal(legacy.members, null);
 	assert.match(legacy.note ?? "", /malformed/);
 });
 
-test("Off configures nothing: no routing, no team members, no members default, no spec writer", () => {
+test("Off configures nothing: no routing, no team members, no spec writer", () => {
 	const dir = tempDir();
 	writeTeamDefaults(dir, DEFAULT_TEAM_DEFAULTS);
-	writeSubagentProfiles(dir, file([profile("a", "A", { members: claude("claude-sonnet-5-5"), specWriter: { primary: claude("claude-opus-5-5"), fallback: null } })]));
+	writeSubagentProfiles(dir, file([profile("a", "A", { specWriter: { primary: claude("claude-opus-5-5"), fallback: null } })]));
 	writeProfilesDefault(dir, { version: 1, default: OFF_PROFILE_ID });
 	for (const r of [resolveSubagents(dir, undefined), resolveSubagents(dir, OFF_PROFILE_ID)]) {
 		assert.equal(r.id, OFF_PROFILE_ID);
 		assert.equal(r.delegate, null);
 		assert.equal(r.teams.state, "absent", "a team-defaults.json beside it is not read under Off");
 		assert.match(r.teams.state === "absent" ? (r.teams.note ?? "") : "", /configures nothing/);
-		assert.equal(r.members, null);
 		assert.equal(r.spec.writer, null);
 	}
 	assert.equal(resolveSubagents(dir, OFF_PROFILE_ID).source, "pick");
@@ -246,12 +289,13 @@ test("profileSlots enumerates every slot — a disabled coordinator and monitor 
 		monitor: { ...DEFAULT_TEAM_DEFAULTS.monitor, enabled: false },
 		handover: { retireTimeoutMinutes: 10 },
 	};
-	const p = profile("a", "A", { teams, members: claude("claude-sonnet-5-5"), specWriter: { primary: claude("claude-opus-5-5"), fallback: pi("zai/glm-5.3") } });
+	const p = profile("a", "A", { teams, specWriter: { primary: claude("claude-opus-5-5"), fallback: pi("zai/glm-5.3") } });
 	const slots = profileSlots(p);
 	const labels = slots.map((s) => s.label);
-	for (const want of ["Planning & specs primary", "Planning & specs fallback", "Members default", "Coordinator primary", "Monitor primary", "Spec writer primary", "Spec writer fallback"])
+	for (const want of ["Planning & specs primary", "Planning & specs fallback", "Coordinator primary", "Monitor primary", "Spec writer primary", "Spec writer fallback"])
 		assert.ok(labels.includes(want), `missing ${want} in ${labels.join(", ")}`);
 	assert.equal(profileSlots(profile("b", "B")).some((s) => s.label.startsWith("Coordinator")), false, "teams: null declares no teams slots at all");
+	assert.equal(labels.some((l) => /member/i.test(l)), false, "no members slot: members run on their kind's route");
 });
 
 test("footprints and providers", () => {
@@ -261,8 +305,8 @@ test("footprints and providers", () => {
 	assert.equal(shortModel("claude-fable-5-1"), "Fable 5.1");
 	assert.equal(shortModel("zai/glm-5.3"), "glm-5.3");
 	assert.equal(shortModel("claude-code-cli/claude-sonnet-4-6"), "Sonnet 4.6");
-	const p = profile("a", "A", { members: claude("claude-sonnet-5-5"), specWriter: { primary: pi("zai/glm-5.3"), fallback: null } });
-	assert.equal(footprint(p), "Fable 5.1 · Opus 5.5 · Sonnet 5.5 · +1");
+	const p = profile("a", "A", { specWriter: { primary: pi("zai/glm-5.3"), fallback: null } });
+	assert.equal(footprint(p), "Fable 5.1 · Opus 5.5 · glm-5.3");
 	assert.deepEqual(profileProviders(p).sort(), ["claude", "zai"]);
 	assert.deepEqual(profileProviders(profile("z", "Z", { delegate: Object.fromEntries(Object.entries(delegateDefaults().profiles).map(([k]) => [k, { primary: pi("zai/glm-5.3"), fallback: null }])) as SubagentProfile["delegate"] })), ["zai"]);
 });

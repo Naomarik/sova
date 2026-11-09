@@ -100,6 +100,9 @@ import { isExplanationId, listExplanations, readExplanationPage } from "./explan
 import { switchMode } from "./mode";
 import { configureSession } from "./sessions-configure";
 import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
+import { registerProfileSwitchRoutes } from "./profile-switch";
+import { makeChatDefault, registerProfileEditorRoutes } from "./profile-editor-routes";
+import { startOnDefault } from "./default-start";
 import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
 import type { ProfilePick } from "./profile-sources";
 import { CREATE_NO_DEFAULT, createNotNamed, singletonRunningText, THINKING_LEVELS } from "../shared/profiles";
@@ -333,12 +336,13 @@ export function buildApp(deps: AppDeps) {
     return c.json(body);
   });
   registerProfileRoutes(app);
+  registerProfileSwitchRoutes(app);
   registerTimeSpentRoutes(app);
 
   /** Create a new empty webapp-owned session in `cwd` (an existing absolute directory) → 201 SessionSummary.
       With `start`, it is made with that profile (§chat.profiles/after-first-message) and, given one, its
       first message is sent; a One at a time profile live elsewhere refuses before anything is made. */
-  async function createWebSession(c: Context, cwd: string, start?: { profile: ProfilePick; prompt?: string; by?: "overseer" | "start"; opening?: { model?: string; thinking?: string } }, subagentProfile?: string, linkMember = false) {
+  async function createWebSession(c: Context, cwd: string, start?: { profile: ProfilePick; prompt?: string; by?: "overseer" | "start"; opening?: { model?: string; thinking?: string } }, subagentProfile?: string, linkMember = false, useDefault: false | "user" | "overseer" = false) {
     let pick: ProfilePick | undefined = start?.profile;
     if (start) {
       // Resolved against the new session's own project (§chat.profiles/projects); unapproved refuses.
@@ -361,6 +365,16 @@ export function buildApp(deps: AppDeps) {
       const lock = readLock(made.path);
       if (chatHandle(made.path) || (lock && holderAlive(lock))) return c.json({ error: "That session is open in a chat process." }, 409);
       appendToClosedFile(made.path, SUBAGENT_PROFILE, { v: 1, profile: subagentProfile });
+      markOwned(made.path); // this append's fresh mtime is ours too, or the first open refuses it as a foreign write
+    }
+    // No profile named: the chat starts on this computer's default (§chat.profiles/default), as far as
+    // the starter may give it (an Overseer start never gets powers the profile isn't marked for).
+    // Helpers named alone stay the chat's pick over the default's.
+    if (!start && useDefault && !linkMember) {
+      const r = await startOnDefault(made.path, cwd, useDefault === "overseer", subagentProfile);
+      if (!r.ok) console.warn(`[profiles] ${made.path}: ${r.error}`);
+      const summary = (await getSessionSummary(made.path)) ?? made;
+      return c.json(r.ok ? summary : { ...summary, defaultNotApplied: r.error }, 201);
     }
     if (!start || !pick) return c.json(made, 201);
     // The model and effort it starts on, instead of the new-chat default (the merge queue's reviewer and thread),
@@ -433,7 +447,13 @@ export function buildApp(deps: AppDeps) {
     if (body.model !== undefined && (typeof body.model !== "string" || !/^[^/\s]+\/\S+$/.test(body.model) || body.model.length > 200)) return c.json({ error: 'model is "provider/model"' }, 400);
     if (body.thinking !== undefined && !(THINKING_LEVELS as readonly unknown[]).includes(body.thinking)) return c.json({ error: `thinking is one of ${THINKING_LEVELS.join(", ")}` }, 400);
     if ((body.model !== undefined || body.thinking !== undefined) && body.profile === undefined) return c.json({ error: "model and thinking come with a profile" }, 400);
+    if (body.byOverseer !== undefined && typeof body.byOverseer !== "boolean") return c.json({ error: "byOverseer must be true or false" }, 400);
     const linkMember = body.link === true;
+    const byOverseer = !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER));
+    // An Overseer's start: this host's own (the sender header), or another host's, which can only say so in the
+    // body (the header never crosses hosts). The mark only narrows what the default gives, so a peer may send it.
+    // With helpers named, any other starter's stays off the default.
+    const useDefault = byOverseer || body.byOverseer === true ? "overseer" : subagentProfile === undefined ? "user" : false;
     if (body.target !== undefined) {
       if (!isTargetName(body.target)) return c.json({ error: "target must be a target name" }, 400);
       const remoteCwd = normalizeRemotePath(typeof body.remoteCwd === "string" ? body.remoteCwd.trim() : "");
@@ -442,12 +462,12 @@ export function buildApp(deps: AppDeps) {
       if (!target) return c.json({ error: `Unknown target: ${body.target}` }, 404);
       const dir = targetDir(body.target, remoteCwd);
       mkdirSync(dir, { recursive: true });
-      return createWebSession(c, dir, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))), subagentProfile, linkMember);
+      return createWebSession(c, dir, startOf(body, byOverseer), subagentProfile, linkMember, useDefault);
     }
     const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
     const cwdError = await validateNewSessionCwd(cwd);
     if (cwdError) return c.json({ error: cwdError }, 400);
-    return createWebSession(c, cwd, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))), subagentProfile, linkMember);
+    return createWebSession(c, cwd, startOf(body, byOverseer), subagentProfile, linkMember, useDefault);
   });
 
   /** POST /api/sessions's optional `profile` (an id or `{source, id}`) and `prompt`: the chip's Run Again, the Overseer. */
@@ -1168,7 +1188,7 @@ export function buildApp(deps: AppDeps) {
   });
 
   // Legacy Delegate routing (mode-delegate.json): which worker each kind of Delegate work goes to.
-  // Sova's UI no longer PUTs it (Settings → Subagents edits routing per profile); it seeds the profile
+  // Sova's UI no longer PUTs it (Settings → Profiles edits routing per profile); it seeds the profile
   // library and is its fallback. The file is the mode extension's; every Delegate session re-reads it
   // at its next turn boundary.
   const delegateSources: DelegateSources = {
@@ -1177,6 +1197,8 @@ export function buildApp(deps: AppDeps) {
     policy: () => readModelPolicy(),
   };
   setSovaSettingsDeps({ sources: delegateSources, titlesChanged: () => autoTitleSweep.reschedule() });
+  // Settings → Profiles' writes and the default (§chat.profiles/joined, /default).
+  registerProfileEditorRoutes(app, delegateSources);
   app.get("/api/settings/delegate", (c) => c.json(delegateInfo()));
   app.get("/api/settings/delegate/options", async (c) => c.json(await delegateOptions(delegateSources)));
   app.get("/api/settings/subagents", async (c) => {
@@ -1201,7 +1223,7 @@ export function buildApp(deps: AppDeps) {
     const result = restoreReplacedProfiles(file);
     return c.json(result, "error" in result ? 400 : 200);
   });
-  // This device's default (Make Default in Settings → Subagents): writes subagent-profiles-default.json only.
+  // This device's default (Make Default in Settings → Profiles): writes subagent-profiles-default.json only.
   app.put("/api/settings/subagents/default", async (c) => {
     const body: unknown = await c.req.json().catch(() => null);
     const id = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>).default : undefined;
@@ -1230,7 +1252,7 @@ export function buildApp(deps: AppDeps) {
   });
 
   // Legacy spec writer (mode-spec.json): which worker writes the spec while the spec minor mode is on.
-  // Sova's UI no longer PUTs it (Settings → Subagents edits it per profile); it seeds the profile
+  // Sova's UI no longer PUTs it (Settings → Profiles edits it per profile); it seeds the profile
   // library and is its fallback. The file is the mode extension's; every session with spec on re-reads it at its next turn boundary, in either
   // major mode. Discovery and the save check are Delegate's.
   // The memory minor mode (§chat/memory): the Session pane's outline, Settings → Memory, the Overseer's switch.
@@ -1256,7 +1278,7 @@ export function buildApp(deps: AppDeps) {
   });
 
   // Legacy team defaults (team-defaults.json): the coordinator and monitor every new team gets.
-  // Sova's UI only reads it now (Settings → Subagents seeds a profile's roles from it); the file is the
+  // Sova's UI only reads it now (Settings → Profiles seeds a profile's roles from it); the file is the
   // subagents extension's, read when a team is created, so a save applies to teams created after it.
   // Discovery and the save check are Delegate's; a file that can't be read is never overwritten (409).
   app.get("/api/settings/team", (c) => c.json(teamDefaultsInfo()));
@@ -1431,10 +1453,19 @@ export function buildApp(deps: AppDeps) {
     if (request.kind === "saveDefault") {
       // A chat's own mode is what is saved, so there has to be a chat: no path is a 400, not a write
       // of whatever the file already says.
-      if (path === null) return c.json({ error: "saveDefault needs ?path=: it saves that chat's own mode" }, 400);
-      const got = await chatFor(path);
-      if ("error" in got) return c.json({ error: got.error }, got.status);
-      return modeRefusal(c, () => got.chat.saveModeDefault());
+      if (path === null) return c.json({ error: "saveDefault needs ?path=: it saves that chat's own profile" }, 400);
+      const summary = await getSessionSummary(path);
+      if (!summary) return c.json({ error: "Session file not found" }, 404);
+      if (summary.overseer) return c.json({ error: "The Overseer is always in normal mode." }, 409);
+      if (summary.projectOverseer || summary.baton || summary.workerSession || summary.queueChat || (summary.org && summary.org.kind !== "coding")) return c.json({ error: "This chat's profile can't be the default." }, 409);
+      // Make {name} the Default (§chat.profiles/default): this chat's profile becomes this computer's
+      // default, with its strict flag and memory type; the older default files are kept written.
+      try {
+        const defaultProfile = await makeChatDefault(path);
+        return c.json({ ...modeInfo(readMode()), defaultProfile });
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 409);
+      }
     }
     if (request.kind === "approveHooks") {
       // Hooks run with no one watching, so only you approve them, here (§chat.mode-menu/project-mode-hooks).

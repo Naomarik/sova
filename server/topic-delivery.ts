@@ -248,7 +248,7 @@ export class TopicDelivery {
     const of = rec.pairing ? s.pairOfTopic(topic) : null;
     const pair = of ? { partner: now[now.length - 1]!.from.title, reply: of.dir === "toA" ? of.pair.b.topic : of.pair.a.topic } : undefined;
     // The merge queue's topic: its own framing, each note naming its request (§chat.merge-queue/requests).
-    const notes = now.map((it) => ({ id: it.id, from: it.from, at: it.at, text: it.text, ...(rec.mergeQueue && it.request ? { request: { id: it.request.id, ...(it.request.branch ? { branch: it.request.branch } : {}) } } : {}) }));
+    const notes = now.map((it) => ({ id: it.id, from: it.from, at: it.at, text: it.text, ...(rec.mergeQueue && it.request ? { request: { id: it.request.id, ...(it.request.branch ? { branch: it.request.branch } : {}), ...(it.request.place ? { place: it.request.place } : {}) } } : {}) }));
     const text = formatTopicBatch({ topic, batch, notes, ...(pair ? { pair } : {}), ...(rec.mergeQueue ? { mergeQueue: true as const, landStands: now.some((it) => !!it.request?.entry) } : {}) });
     const ids = now.map((it) => it.id);
     const entered = () => {

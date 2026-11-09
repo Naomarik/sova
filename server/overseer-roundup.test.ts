@@ -76,6 +76,34 @@ const toolOut = (text: string, at = NOW - 4_900_000) => ({ type: "message", time
 // ---- the roundup --------------------------------------------------------------------------------
 
 describe("sova_outstanding (§app.overseer/roundup)", () => {
+  test("a row that shows a branch names its place: readiness's, a launch worktree's and a Can't confirm one; no place known keeps the bare branch", () => {
+    const s = summary("p1", { readiness: readiness([tree({ path: "/wt/a", branch: "feat/a", conflicts: 7 }), tree({ path: "/wt/b", branch: "feat/b", state: "in-progress", why: "worktree folder gone" }), tree({ path: "/wt/none", branch: "feat/none", conflicts: 1 })]) });
+    const git = { landed: new Set(), named: new Map([["x", "y"]]), namedOnMain: new Map(), uncommitted: new Map(), launch: new Map([[s.path, { bucket: "lost", branch: "sova/l-abcdef", text: "branch sova/l-abcdef and its worktree are gone; newest commit" }]]), launchLanded: 0, unfinished: new Set(), launchMostly: 0, launchSettled: new Set(), onMain: new Set() } as never;
+    const places: Record<string, string> = { "/wt/a": "AmalMoney", "/wt/b": "~/code/tools", [s.cwd]: "Notes · work/notes" };
+    const out = ru.renderRoundup({ sessions: [s], digest: null, reading: () => ({ known: true, at: NOW, value: s.readiness! }), covers: () => true, ledger: [], git, since: NOW - 14 * DAY, sinceGiven: false, now: NOW, link: (x) => x.id, where: () => "~", state: () => "idle", place: (p) => places[p] });
+    assert.match(out.text, /feat\/a in AmalMoney conflicts 7 files/);
+    assert.match(out.text, /feat\/b in ~\/code\/tools/);
+    assert.match(out.text, /branch sova\/l-abcdef in Notes · work\/notes and its worktree are gone/);
+    assert.match(out.text, /feat\/none conflicts 1 file/, "no place known: the bare branch");
+  });
+
+  test("every launch row's text names its place right after the branch", () => {
+    const rows = [
+      ["built", "sova/x-abcdef 4 commits not on master"],
+      ["uncommitted", "sova/x-abcdef 3 uncommitted files, no commits"],
+      ["at-risk", "sova/x-abcdef: folder gone, branch keeps 2 commits not on master"],
+      ["unconfirmed", "sova/x-abcdef (master names it in s1000000)"],
+      ["unconfirmed", "sova/x-abcdef (folder and branch gone; no commit of it found)"],
+      ["lost", "branch sova/x-abcdef and its worktree are gone; newest commit"],
+    ] as const;
+    for (const [bucket, text] of rows) {
+      const s = summary("l1", {});
+      const git = { landed: new Set(), named: new Map(), namedOnMain: new Map(), uncommitted: new Map(), launch: new Map([[s.path, { bucket, branch: "sova/x-abcdef", text }]]), launchLanded: 0, unfinished: new Set(), launchMostly: 0, launchSettled: new Set(), onMain: new Set() } as never;
+      const out = ru.renderRoundup({ sessions: [s], digest: null, reading: () => ({ known: true, at: NOW }), covers: () => true, ledger: [], git, since: NOW - 14 * DAY, sinceGiven: false, now: NOW, link: (x) => x.id, where: () => "~", state: () => "idle", place: () => "AmalMoney" });
+      assert.ok(out.text.includes(text.replace("sova/x-abcdef", "sova/x-abcdef in AmalMoney")), `${bucket}: ${out.text}`);
+    }
+  });
+
   test("an empty readiness cache never hides an archived session's unmerged worktree: it is Not checked yet, never omitted or fine", async () => {
     const archived = summary("arch", { archived: true, lastActiveAt: iso(NOW - 3 * DAY) });
     const host = hostOf([archived], { readiness: { settle: async () => {}, reading: () => ({ known: false }), covers: () => true } });

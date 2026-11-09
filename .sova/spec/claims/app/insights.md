@@ -3,7 +3,7 @@
 
 What the user's pi extensions publish, read-only except for one cache: subscription usage, provider-reported credits and activity
 (usage-status), which this server also keeps fresh itself (§app.insights/usage-refresh), teams and
-subagents (subagents + sessions live records), the LLM calls in flight and their output-token ring
+subagents (from the subagents + sessions live records), the LLM calls in flight and their output-token ring
 (the server's own count with its chat processes' reports, and each connected host's own count,
 §app.insights/llm-inflight, §app.insights/token-velocity), and
 per-session summaries (topic-outline, compaction). Data shapes are `UsageInsight`, `AgentsInsight`, and `SessionInsight` in

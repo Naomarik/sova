@@ -6,12 +6,17 @@
       "§app.settings-dialog/modes"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/SubagentProfilesSettings.tsx",
       "src/components/SubagentProfilesSettings.css",
       "src/components/WorkerSlotRow.tsx"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-08T22:15Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
+    }
   },
   "§chat.subagent-profiles/file": {
     "kind": "behavior",
@@ -25,18 +30,19 @@
       "server/sync/docs.ts",
       "shared/subagent-profiles.ts",
       "pi-config/extensions/mode/align-settings.ts",
-      "server/sync/docs.test.ts"
+      "server/sync/docs.test.ts",
+      "server/default-profile.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-08T08:01Z",
-      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
+      "by": "naomarik",
+      "at": "2026-11-09T02:46Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#95cb1e08"
     }
   },
   "§chat.subagent-profiles/limit-row": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "code": [
       "src/components/SubagentLimitRow.tsx",
       "src/components/ChatView.tsx",
@@ -48,27 +54,17 @@
       "server/turn-error.test.ts",
       "shared/protocol.ts",
       "src/lib/error-feed.ts",
-      "src/lib/error-feed.test.ts"
+      "src/lib/error-feed.test.ts",
+      "server/chat-manager.ts",
+      "server/profile-switch.ts",
+      "server/profile-switch.integration.test.ts",
+      "src/lib/profile-switch.ts",
+      "src/lib/chat-profile-state.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-19T21:14Z",
-      "source": "pi-session:398db362-660a-4f63-967c-d28758e5179f#fb5aff13"
-    }
-  },
-  "§chat.subagent-profiles/members-default": {
-    "kind": "behavior",
-    "authority": "accepted",
-    "evidence": "verified",
-    "code": [
-      "pi-config/extensions/subagents/index.ts",
-      "pi-config/extensions/subagents/index.test.ts",
-      "pi-config/extensions/subagents/teams.ts"
-    ],
-    "agreed": {
-      "by": "user (Omar)",
-      "at": "2026-10-23T22:19Z",
-      "source": "pi-session:74251d15-e6e2-46d5-8c62-d3d1a0187849#ce30380d"
+      "at": "2026-11-08T19:45Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
     }
   },
   "§chat.subagent-profiles/menu": {
@@ -81,15 +77,20 @@
       "src/lib/mode-menu.ts",
       "src/lib/mode-menu.test.ts",
       "src/design/base.css",
-      "server/chat-manager.ts"
+      "server/chat-manager.ts",
+      "server/subagent-profiles.ts",
+      "server/profile-switch.ts",
+      "server/profile-editor.ts",
+      "server/profile-editor-routes.ts",
+      "src/lib/profile-switch.ts"
     ],
     "requires": [
       "§chat.create-mode/delegate-parity"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T06:59Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+      "by": "naomarik",
+      "at": "2026-11-08T19:45Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
     }
   },
   "§chat.subagent-profiles/off": {
@@ -101,12 +102,17 @@
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/mode/tests/smoke.mjs",
       "pi-config/extensions/subagents/team-defaults.ts",
-      "pi-config/extensions/subagents/teams.ts"
+      "pi-config/extensions/subagents/teams.ts",
+      "src/components/ProfilePicker.tsx",
+      "src/components/ProfileGrid.tsx",
+      "src/components/ProfilesSettings.tsx",
+      "src/lib/profiles.ts",
+      "server/session-profile-cards.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-08T08:01Z",
-      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
+      "by": "naomarik",
+      "at": "2026-11-08T22:15Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
     }
   },
   "§chat.subagent-profiles/overseer": {
@@ -119,8 +125,21 @@
       "server/index.ts",
       "server/app.ts",
       "server/sessions-configure.ts",
-      "server/sessions-configure.test.ts"
-    ]
+      "server/sessions-configure.test.ts",
+      "server/project-overseer-tools.ts",
+      "server/project-coding-mode.ts",
+      "server/overseer-profiles.ts",
+      "server/session-profiles-runtime.test.ts",
+      "server/project-overseer-tools.test.ts",
+      "server/overseer-org-tools.ts",
+      "server/chat-manager.ts",
+      "server/default-start.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-09T00:59Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#b05c9a88"
+    }
   },
   "§chat.subagent-profiles/replaced": {
     "kind": "behavior",
@@ -129,7 +148,7 @@
       "§mesh.sync/kept-copies"
     ],
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "unreviewed",
     "code": [
       "src/components/SubagentProfilesSettings.tsx",
       "src/lib/subagent-replaced.ts",
@@ -138,11 +157,13 @@
       "server/app.ts",
       "shared/subagent-profiles.ts",
       "src/lib/api.ts",
-      "server/sync/docs.test.ts"
+      "server/sync/docs.test.ts",
+      "src/components/ProfilesSettings.tsx"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-11T18:49Z"
+      "at": "2026-11-08T19:45Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
     }
   },
   "§chat.subagent-profiles/resolution": {
@@ -169,9 +190,9 @@
       "pi-config/extensions/mode/align-settings.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-08T08:01Z",
-      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
+      "by": "naomarik",
+      "at": "2026-11-08T22:15Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
     }
   },
   "§chat.subagent-profiles/settings": {
@@ -192,12 +213,17 @@
       "src/components/WorkerSlotRow.tsx",
       "shared/subagent-limits.ts",
       "shared/subagent-profile-checks.ts",
-      "src/components/form/index.tsx"
+      "src/components/form/index.tsx",
+      "src/components/ProfilesSettings.tsx",
+      "src/lib/profiles-draft.ts",
+      "src/lib/profiles-settings.ts",
+      "src/lib/settings-forms-roundtrip.test.ts",
+      "server/settings-browser.integration.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-08T08:01Z",
-      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
+      "by": "naomarik",
+      "at": "2026-11-08T22:15Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
     }
   },
   "§chat/subagent-profiles": {
@@ -206,7 +232,8 @@
     "evidence": "reviewed",
     "code": [
       "shared/subagent-profiles.ts",
-      "pi-config/extensions/subagents/subagent-profiles.ts"
+      "pi-config/extensions/subagents/subagent-profiles.ts",
+      "server/joined-profiles.ts"
     ],
     "notOwned": [
       "§chat/profiles",
@@ -214,9 +241,9 @@
       "§mesh.sync/profile-library"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-08T08:01Z",
-      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
+      "by": "naomarik",
+      "at": "2026-11-09T01:18Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#b97414c4"
     }
   }
 }

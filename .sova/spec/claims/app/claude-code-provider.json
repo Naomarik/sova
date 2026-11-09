@@ -73,7 +73,7 @@
       "§app.claude-code-provider/catalog"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/claude-code/catalog.ts",
       "server/delegate.ts",

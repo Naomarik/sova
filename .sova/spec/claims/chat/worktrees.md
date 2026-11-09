@@ -309,8 +309,9 @@ dropped and merged ones included. When the branch tracks none the section stays,
 "This session tracks no worktrees." While the insight's first load is out the section shows its
 heading over a placeholder line as tall as that sentence (most sessions track none), never the
 sentence itself. A row is the modal's row (§chat.composer/worktrees-control): the title of the chat
-that owns the branch, as a link, then the branch, then "archived" when that chat is archived; it
-names no worktree folder. Under its facts it shows the branch's summary once written
+that owns the branch, as a link, then the branch, then "archived" when that chat is archived; that
+line names no worktree folder. Under it comes the branch's place line, which unfolds to its folder
+(§chat.worktrees/place). Under its facts it shows the branch's summary once written
 (§app.merge-queue/branch-summary). It carries a status chip — Active, Dropped, or Merged with "into
 <target> at <sha>" — plus, when true, `.agent`, the number of this session's workers with a live
 process inside it, and "Shared with session <id>" linking the session it was inherited from. An
@@ -337,10 +338,12 @@ own (§chat.worktrees/pane-queue).
 
 **In a repository the merge queue doesn't serve** (§app.merge-queue/served) a row never reads Ready,
 Landing specs or a queue state and offers no Land: a ready branch reads Ready to merge, and its line
-ends "Say “land it” in the chat to merge it into main.". A project on the Projects list whose merge
+ends "Say “land it” in the chat to merge it into {target}.", with the repository's real target
+(§chat.worktrees/place). A project on the Projects list whose merge
 setup isn't done keeps **Set Up Queue** on such a row, which opens its Merge Queue tab
 (§app.merge-queue/setup). The section's **View Merge Queue** shows, as the modal's Merge Queue link
-does, only for a repository on the Projects list (§chat.composer/worktrees-control). The pane, the
+does, only for a repository on the Projects list, and, as there, one link per project when the chat's
+branches are in several (§chat.composer/worktrees-control). The pane, the
 composer's control and the Merge Queue view read the same state and stay in sync; nothing in the
 section shows live state or offers a restart. Under the facts, one visible muted line gives the
 reason, so a phone gets it without hover: the readiness's `reason` ("Ready to merge · checks passed
@@ -375,6 +378,60 @@ so (§chat.composer/worktrees-control); the row keeps Review Changes and its wor
 chips. A row's Review Changes, first among its actions, is the modal's own button: the branch as it
 is now against the branch it lands on, its uncommitted files included and marked as uncommitted; a
 merged branch shows what its landing or merge brought in (§chat.changes/entry).
+
+## §chat.worktrees/place — A branch's place
+
+A chat can hold branches of several projects, so every branch row in a chat says, by one rule, which
+project the branch belongs to and where it merges. Every row has it, not only another project's.
+
+**The place line.** On the composer's Worktrees modal rows (§chat.composer/worktrees-control), the
+session pane's Worktrees rows (§chat.worktrees/pane) and the chat's queue card
+(§chat.merge-queue/chat-card), one line under the branch reads `{place} · merges into {target}`: for
+example "AmalMoney · merges into master", "~/code/tools · merges into main". It wraps rather than
+cutting off.
+
+**`{place}`** is the project's name when the branch's repository is on the Projects list and not
+archived; otherwise that repository's main folder, written from home (`~/...`).
+- An archived project, a repository not on the list, or a project with a blank name: the folder.
+- Two projects with the same name: the name plus just enough of the folder to tell them apart, as
+  Needs you does ("Notes · work/notes", §app.session-list/needs-you).
+- A branch whose folder is deleted: the project's name if Sova can still work it out, else the folder
+  as last recorded. The row keeps its Removed or Cleaned up state (§chat.worktrees/pane).
+- A branch of a session on a remote target: `{target}:{folder}`, its folder there, never matched on
+  this computer's list, and its paths aren't written from this computer's home.
+
+A project's name wins over a folder because Land follows the branch's own folder, so the name always
+agrees with where Land goes.
+
+**`{target}`** is the branch the queue lands on in a repository the merge queue serves
+(§app.merge-queue/served). In any other repository it is what the `worktree` tool merges into
+(§chat.worktrees/tool): master when the repository has master, else main.
+
+**The clause changes with the branch.**
+- A merged branch says where it actually went, " · merged into {recorded target}", which can differ
+  from the project's usual target. A landed branch reads the same, and so does a branch git found
+  already merged (§chat.worktrees/merged-state), with the target git found it in.
+- A dropped branch has no clause: the line is `{place}` alone.
+- When the target can't be known the clause is left out rather than guessed, and a line that would
+  name it says less: "Say “land it” in the chat to merge it."
+
+**The exact folder is one tap away.** The line is a button with `aria-expanded`: tapping it, clicking
+it or pressing it by keyboard unfolds, under it, `Branch folder: {~/path}`, `Merges into: {target} of
+{~/main folder}` and a **Copy Folder** button, which copies the branch's folder. Hover is never the
+only way to reach the folder; the row's existing folder hover may stay. The second line follows the
+clause above: a merged branch's reads `Merged into: {recorded target} of {~/main folder}`, a line
+with no clause has no second line, and with no main folder known it names the target alone.
+
+**Beside a branch's name.** Where one line names a branch and says something about it, the place goes
+right after the branch, in one form: `{branch} in {place}`. The merge queue's requests in the
+transcript (§chat.merge-queue/requests), the "not sent yet" note above the message box
+(§chat.merge-queue/decision), the hover of a sidebar session row's branch status
+(§app.session-list/content-rules "Row line 3") and the Overseer's roundup rows that show a branch
+(§app.overseer/roundup) use it. With no place known (a card written before the line, a read that
+failed) such a line names the branch alone.
+
+**Left alone.** Pages inside one project (the Merge Queue tab's rows, run pages, the Branches tab)
+show no place line, and old merged cards in a chat's history stay as they were.
 
 ## §chat.worktrees/readiness — Is it ready to merge, and what did a merge leave
 

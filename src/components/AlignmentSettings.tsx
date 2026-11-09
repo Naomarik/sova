@@ -87,7 +87,7 @@ export function AlignmentSettings() {
         />
       </fieldset>
 
-      <p class="field-hint settings-delegate-desc">A subagent profile can set its own eagerness, writing style and visuals (Settings → Subagents).</p>
+      <p class="field-hint settings-delegate-desc">A profile can set its own eagerness, writing style and visuals (Settings → Profiles, its Models part).</p>
 
       <Show when={stored.error}>
         <Banner tone="error" title="Couldn't read the alignment settings." body="Nothing was changed." />

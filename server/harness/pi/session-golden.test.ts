@@ -676,7 +676,8 @@ test("S14: set_model and set_thinking idle (flush first, the synthesized thinkin
   trace.step("release the reply");
   release();
   await idle(chat);
-  // The pristine session's picks became the new-session defaults; later scenarios open on the default.
+  // A composer pick never becomes a default, not even in a pristine chat (§chat.model-menu/saved-default):
+  // the new-session defaults stay as they were.
   trace.got("new-session defaults", loadDefaults());
   rmSync(join(stateRoot(), "defaults.json"), { force: true });
   chat.detach(a);

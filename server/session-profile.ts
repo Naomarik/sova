@@ -92,7 +92,7 @@ export async function resolveChoice(choice: ProfileChoice, cwd?: string | null):
   const caps = normalizeCaps(board.remove, board.grant);
   if (!caps.remove.length && !caps.grant.length) return { ok: true, profile: null };
   const from: Profile = (isPick(board.from) ? await findProfile(board.from, cwd) : null) ?? DEFAULT_PROFILE;
-  const label = from.id === DEFAULT_PROFILE_ID ? "Custom" : `${from.label}, edited`;
+  const label = `${from.id === DEFAULT_PROFILE_ID ? "Off" : from.label}, edited`;
   const custom: Profile & { custom: true } = {
     id: "custom",
     label,

@@ -183,7 +183,7 @@
       "§chat/subagent-profiles",
       "§chat.subagent-profiles/off",
       "§chat.subagent-profiles/resolution",
-      "§chat.subagent-profiles/members-default",
+      "§teams.defaults/member-kinds",
       "§teams/defaults",
       "§app/teams",
       "§app/subagents-pane",
@@ -789,7 +789,7 @@
       "§chat.subagent-profiles/file",
       "§chat.subagent-profiles/off",
       "§chat.subagent-profiles/resolution",
-      "§chat.subagent-profiles/members-default",
+      "§teams.defaults/member-kinds",
       "§chat.subagent-profiles/menu",
       "§chat.subagent-profiles/settings",
       "§chat.subagent-profiles/editor-rows",
@@ -807,9 +807,9 @@
       "site/src/content/docs/subagent-profiles.md"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-08T08:01Z",
-      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
+      "by": "naomarik",
+      "at": "2026-11-08T19:46Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
     }
   },
   "§site.docs/teams": {
@@ -844,9 +844,9 @@
       "site/src/content/docs/index.md"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-08T08:01Z",
-      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
+      "by": "naomarik",
+      "at": "2026-11-08T22:16Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
     }
   },
   "§site.docs/themes": {

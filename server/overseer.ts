@@ -658,6 +658,7 @@ const host: OverseerToolHost = {
   readiness: { settle: settleReadiness, reading: readinessReading, covers: readinessCovers, parked: readinessParked },
   ledger: () => readLedger(),
   roundupGit: new RoundupGit(),
+  branchPlace: async (path) => (await (await import("./merge-queue/wire")).branchPlaceRead(path))?.label,
   serverStart: PROCESS_START_MS,
   held(path) {
     const chat = chatHandle(path)?.mirror;

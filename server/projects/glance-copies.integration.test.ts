@@ -34,10 +34,11 @@ const deps = (x: Partial<GlanceDeps>): GlanceDeps => ({
   sameRoot: (a, b) => a === b,
   queueOf: () => ({ state: "unserved" }),
   releaseOf: () => undefined,
-  definitionOf: () => ({ adoptedUnit: null, adoptedService: null }),
+  definitionOf: () => ({ adoptedUnit: null, adoptedService: null, def: null }),
   capOf: () => 4,
-  instances: [{ id: "c1", project: "/w/a", slot: 1, createdBy: "operator", desired: { web: "running" } }],
+  instances: [{ id: "c1", project: "/w/a", slot: 1, createdBy: "operator", desired: { web: "running" }, ports: {} }],
   shared: [],
+  listeningPorts: new Set(),
   unitOf,
   // The server's own wiring (gatherGlance): the unit's cgroup.procs, each pid's own memory.
   unitPids: (u) => unitCgroupPids(u, manager) ?? [],

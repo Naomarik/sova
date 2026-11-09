@@ -6,6 +6,7 @@ import { MEMORY_CODING_REFUSAL } from "../shared/memory";
 import { createNotNamed, type CreateNamer } from "../shared/profiles";
 import type { SubagentProfilesInfo } from "../shared/subagent-profiles";
 import { requireSubagentProfile, subagentProfilesInfo } from "./subagent-profiles";
+import { codingDefaultProfile, namedCodingProfile, type CodingTakes } from "./coding-default-profile";
 
 /**
  * The mode a project's coding sessions run in (§app.project-overseer/coding-mode). A project has no
@@ -54,6 +55,8 @@ export interface ModeRequest {
   mode?: unknown;
   minor_modes?: unknown;
   subagent_profile?: unknown;
+  /** A profile of this computer's (sova_list_profiles): its models, helpers and, on a start, its modes. */
+  profile?: unknown;
   /** Who asks, for the words of a refusal; absent: a project overseer. */
   by?: CreateNamer;
 }
@@ -61,7 +64,13 @@ export interface ModeRequest {
 const named = (v: unknown) => v !== undefined && v !== null && v !== "";
 
 /** The profile a request names, or a sentence when it is not a string; the library check is the caller's. */
-function profileOf(req: ModeRequest): { subagentProfile?: string } | { error: string } {
+function profileOf(req: ModeRequest): { subagentProfile?: string; profile?: string } | { error: string } {
+  if (named(req.profile)) {
+    if (typeof req.profile !== "string" || !req.profile.trim()) return { error: "profile must be a profile id (or off)." };
+    // A profile brings its own helpers: naming both would leave one of them unused.
+    if (named(req.subagent_profile)) return { error: "Give profile or subagent_profile, not both: a profile brings its own helpers." };
+    return { profile: req.profile.trim() };
+  }
   if (!named(req.subagent_profile)) return {};
   if (typeof req.subagent_profile !== "string") return { error: "subagent_profile must be a profile id (or off)." };
   return { subagentProfile: req.subagent_profile.trim() };
@@ -93,9 +102,35 @@ export function codingModeChoice(req: ModeRequest, base: ProjectCodingMode): { m
     mode: {
       mode: asked.mode ?? base.mode,
       minorModes: asked.minorModes ?? [...base.minorModes],
-      ...(asked.subagentProfile !== undefined ? { subagentProfile: asked.subagentProfile } : base.subagentProfile !== undefined ? { subagentProfile: base.subagentProfile } : {}),
+      ...(asked.profile !== undefined ? { profile: asked.profile } : asked.subagentProfile !== undefined ? { subagentProfile: asked.subagentProfile } : base.subagentProfile !== undefined ? { subagentProfile: base.subagentProfile } : {}),
     },
   };
+}
+
+/**
+ * A start's mode once its named profile is known (§app.project-overseer/coding-mode): what the call names stays
+ * (`mode`, `minor_modes`), what it doesn't comes from the profile where it sets it, the rest from the base. Pure.
+ */
+export function withProfileModes(mode: ProjectCodingMode, takes: Pick<CodingTakes, "mode" | "minorModes">, req: Pick<ModeRequest, "mode" | "minor_modes">): ProjectCodingMode {
+  const out = { ...mode };
+  if (!named(req.mode) && takes.mode) out.mode = takes.mode;
+  if ((req.minor_modes === undefined || req.minor_modes === null) && takes.minorModes) {
+    const p = parseModePatch({ minorModes: takes.minorModes.filter((m) => (CODING_MINOR_MODES as readonly string[]).includes(m)) });
+    out.minorModes = "error" in p ? [] : (p.minorModes ?? []);
+  }
+  return out;
+}
+
+/**
+ * A checked mode with its named profile looked up (§app.project-overseer/coding-mode): on a start, the profile's modes
+ * fill in what the call didn't name; on a switch only its Models part moves. Unknown or unusable: the refusal.
+ */
+export async function withNamedProfile<M extends Partial<ProjectCodingMode>>(mode: M, req: Pick<ModeRequest, "mode" | "minor_modes">, cwd: string | null, start: boolean, inOrg = false): Promise<{ mode: M; name?: string } | { error: string }> {
+  if (mode.profile === undefined) return { mode };
+  const r = await namedCodingProfile(mode.profile, cwd, start, inOrg);
+  if ("error" in r) return r;
+  const out = start ? (withProfileModes(mode as unknown as ProjectCodingMode, r.takes, req) as unknown as M) : { ...mode };
+  return { mode: { ...out, profile: r.takes.id, ...(start && r.takes.grants ? { profileStart: r.takes.grants } : {}) }, name: r.takes.name };
 }
 
 /** Why an Overseer may not name this subagent profile (unknown here), or null. */
@@ -114,6 +149,22 @@ export function profileRefusal(id: string | undefined): string | null {
 export function profileName(info: Pick<SubagentProfilesInfo, "profiles" | "current">, id?: string): string | null {
   if (id === undefined) return info.current.id ? info.current.name : null;
   return info.profiles.find((p) => p.id === id)?.name ?? id;
+}
+
+/** ", profile {name}" for a start's result: the profile it named, else this computer's default profile, with
+    `subagent_profile`'s helpers when it named those instead. */
+export function startProfileWords(mode: Pick<ProjectCodingMode, "profile" | "subagentProfile">, named: string | undefined, defaultName: string, helpers?: string | null): string {
+  if (mode.profile !== undefined) return `, profile ${named ?? mode.profile}`;
+  return `, profile ${defaultName}${mode.subagentProfile !== undefined ? ` with subagent profile ${helpers ?? mode.subagentProfile}` : ""}`;
+}
+
+/** This computer's default profile's name, as a coding session started now is on it ("Off" when it can't be read). */
+export function defaultProfileName(): string {
+  try {
+    return codingDefaultProfile().name;
+  } catch {
+    return "Off";
+  }
 }
 
 /** ", subagent profile {name}" for a start's result ("" when no profile can be named). */
@@ -195,14 +246,14 @@ export const alreadyAgreedOf = (v: unknown): boolean => v === true;
 
 /** A verb playbook run's mode: its base, with align on beside it (normalized order, never twice). */
 export function playbookRunMode(base: ProjectCodingMode): ProjectCodingMode {
-  const rest = base.subagentProfile !== undefined ? { subagentProfile: base.subagentProfile } : {};
+  const rest = { ...(base.subagentProfile !== undefined ? { subagentProfile: base.subagentProfile } : {}), ...(base.profile !== undefined ? { profile: base.profile } : {}), ...(base.profileStart ? { profileStart: base.profileStart } : {}) };
   if (base.minorModes.includes("align")) return { mode: base.mode, minorModes: [...base.minorModes], ...rest };
   const p = parseModePatch({ minorModes: [...base.minorModes, "align"] });
   return { mode: base.mode, minorModes: "error" in p ? [...base.minorModes, "align"] : (p.minorModes ?? []), ...rest };
 }
 
 export const sameCodingMode = (a: ProjectCodingMode, b: ProjectCodingMode): boolean =>
-  a.mode === b.mode && a.minorModes.length === b.minorModes.length && a.minorModes.every((m, i) => b.minorModes[i] === m) && a.subagentProfile === b.subagentProfile;
+  a.mode === b.mode && a.minorModes.length === b.minorModes.length && a.minorModes.every((m, i) => b.minorModes[i] === m) && a.subagentProfile === b.subagentProfile && a.profile === b.profile;
 
 /** A mode as people read it: `normal · spec · visuals`. */
 export const describeCodingMode = (m: { mode: string; minorModes: string[] }): string => codingModeWords(m);

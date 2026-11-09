@@ -66,8 +66,8 @@ export interface TopicItem {
   at: string;
   from: { sessionId: string; title: string };
   text: string;
-  /** A merge queue request's id, branch and entry (§chat.merge-queue/requests). */
-  request?: { id: string; branch?: string; entry?: string; kind?: string };
+  /** A merge queue request's id, branch, its place's words and entry (§chat.merge-queue/requests). */
+  request?: { id: string; branch?: string; place?: string; entry?: string; kind?: string };
 }
 
 type Line =

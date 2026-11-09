@@ -107,7 +107,10 @@ export async function describeWorktrees(
         runningWorkers: alive.filter((c) => isWithin(c, root)).length,
       };
       // Its merge queue entry and project (server/merge-queue/wire.ts); nothing while the queue isn't started.
-      if (exists) Object.assign(row, await (await import("./merge-queue/wire")).worktreeQueueOf(t.path, t.branch));
+      const wire = await import("./merge-queue/wire");
+      if (exists) Object.assign(row, await wire.worktreeQueueOf(t.path, t.branch));
+      const place = await wire.worktreePlaceOf(t.path).catch(() => undefined);
+      if (place) row.place = place;
       return row;
     }),
   );

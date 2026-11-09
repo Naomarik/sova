@@ -12,7 +12,7 @@
 //
 // Env: SOVA_E2E_PORT (default 4810) when 4810 is held by another worktree's server and this one
 // runs the same command on another port; SOVA_E2E_SHOTS, a folder for the footer screenshots.
-// The playwright skill needs its node_modules (`npm ci` in .claude/skills/playwright/scripts, or a
+// The playwright skill needs its node_modules (`npm ci` in .agents/skills/playwright/scripts, or a
 // symlink to another checkout's).
 
 import { execFileSync } from "node:child_process";
@@ -26,7 +26,7 @@ const AGENT = join(ROOT, ".agent");
 const PORT = Number(process.env.SOVA_E2E_PORT ?? 4810);
 const BASE = `http://127.0.0.1:${PORT}`;
 const SHOTS = process.env.SOVA_E2E_SHOTS ?? null;
-const SKILL = join(ROOT, ".claude/skills/playwright/scripts");
+const SKILL = join(ROOT, ".agents/skills/playwright/scripts");
 
 let passed = 0;
 const failures = [];
@@ -106,9 +106,9 @@ try {
     await ready.waitFor({ state: "visible", timeout: 20000 });
   };
   const hostInput = dialog.locator("#mesh-host-label");
-  /** The first profile's Edit in Settings → Subagents (the library is seeded on first read). */
-  const subagentEdit = dialog.locator('[id^="subagents-edit-"]').first();
-  const profileName = dialog.locator("#subagents-name");
+  /** The first of your profiles in Settings → Profiles' list (the library is seeded on first read). */
+  const firstMine = dialog.locator('ul[aria-label="Yours"] .profiles-pick').first();
+  const profileName = dialog.locator("#profile-name");
   const neverTui =dialog.getByRole("checkbox", { name: "Never send TUI sessions" });
   /** A switch's input is drawn by its label (the box is visual only): click the label to move it. */
   const setSwitch = async (input, on) => {
@@ -124,6 +124,25 @@ try {
       throw new Error(`footer status: expected ${JSON.stringify(text)}, got ${JSON.stringify((await status.textContent())?.trim())}`);
     }
   };
+  const gear = page.getByRole("button", { name: "Settings", exact: true }).first();
+  const reopen = async () => {
+    await gear.click();
+    await dialog.waitFor({ state: "visible" });
+  };
+  /** Cancel closes at once: a hold, or anything else that keeps the dialog up, fails the wait. */
+  const cancelCloses = async () => {
+    await footButton("Cancel").click();
+    await dialog.waitFor({ state: "hidden", timeout: 5000 });
+  };
+  /** A panel's fields are disabled until its settings are read: the value once they have been. */
+  const readValue = async (input) => {
+    await input.and(page.locator(":enabled")).waitFor({ timeout: 20000 });
+    return input.inputValue();
+  };
+  const readChecked = async (input) => {
+    await input.and(page.locator(":enabled")).waitFor({ state: "attached", timeout: 20000 });
+    return input.isChecked();
+  };
   const shot = async (name, locator = dialog) => {
     if (!SHOTS) return;
     mkdirSync(SHOTS, { recursive: true });
@@ -135,8 +154,7 @@ try {
       mkdirSync(SHOTS, { recursive: true });
       await page.screenshot({ path: join(SHOTS, `FAIL-${name.slice(0, 20).replace(/[^a-z0-9]+/gi, "-")}.png`) });
     };
-  await page.getByRole("button", { name: "Settings", exact: true }).first().click();
-  await dialog.waitFor({ state: "visible" });
+  await reopen();
 
   const decisionsFile = (await api("/api/settings/decisions")).file;
   const tuiOnDisk = () => (existsSync(decisionsFile) ? readJson(decisionsFile).neverSendTui : (null));
@@ -150,21 +168,23 @@ try {
     ["General", dialog.locator("#recent-count")],
     ["Models", dialog.locator(".model-policy-list")],
     ["Accounts", dialog.locator("#settings-accounts-title")],
-    ["Subagents", subagentEdit],
-    ["Alignment", dialog.locator("#align-review-hint")],
-    ["Profiles", dialog.locator("#profiles-title")],
+    ["MCP Servers", dialog.locator("#settings-mcp-title")],
+    ["Extensions", dialog.locator("#settings-ext-title")],
+    ["Alignment", panel.getByText("How the align mode plans with you.", { exact: true })],
+    ["Profiles", firstMine],
     ["Overseer", dialog.locator(".overseer-advanced")],
     ["Notifications", dialog.locator("#settings-push-title")],
     ["Decisions", dialog.locator("#decisions-exclusions")],
     ["Summaries", dialog.locator("#settings-summaries-title")],
     ["Memory", dialog.locator("#settings-memory-title")],
     ["Organizations", dialog.locator("#settings-orgs-title")],
-    ["Themes", dialog.getByRole("radiogroup", { name: "Theme", exact: true })],
+    ["Merge Queue", dialog.locator("#settings-mq-title")],
+    ["Themes", dialog.getByRole("radiogroup", { name: "Dark theme", exact: true })],
     ["Mesh", hostInput],
     ["Public links", dialog.locator("#settings-public-links-title")],
     ["Outreach", dialog.locator("#outreach-heading")],
     ["Voice", dialog.locator("#voice-settings-title")],
-    ["Experimental", panel.getByText("No experimental features right now.", { exact: true })],
+    ["Experimental", panel.getByText("Sova runs chat modes", { exact: true })],
   ];
 
   await check("the rail's tabs are exactly the tabs this script visits, in the same order", async () => {
@@ -195,14 +215,14 @@ try {
   const label0 = (await api("/api/mesh/settings")).hostLabel;
   const label1 = `e2e-${Date.now().toString(36)}`;
 
-  await check("dirty: edits on 2 tabs; the footer names both and reads Discard Changes · Save Changes · Cancel", async () => {
+  await check("dirty: edits on 2 tabs; the footer names both and reads Save Changes · Cancel", async () => {
     await openTab("Decisions", dialog.locator("#decisions-exclusions"));
     await setSwitch(neverTui, !tui0);
     await openTab("Mesh", hostInput);
     await hostInput.fill(label1);
     await waitStatus("Unsaved: Decisions, Mesh");
     const names = await foot.getByRole("button").allTextContents();
-    eq(names.map((n) => n.trim()), ["Discard Changes", "Save Changes", "Cancel"], "footer buttons, left to right");
+    eq(names.map((n) => n.trim()), ["Save Changes", "Cancel"], "footer buttons, left to right");
     assert(await footButton("Save Changes").isEnabled(), "Save Changes is enabled");
     await shot("footer-dirty", foot);
     await shot("dialog-dirty-mesh");
@@ -232,20 +252,24 @@ try {
     eq(await tab("General").getAttribute("aria-selected"), "true", "stayed on General");
   });
 
-  await check("Discard reverts every tab, and writes nothing", async () => {
+  await check("Cancel from a third tab closes at once, reverts every tab, and writes nothing", async () => {
     await openTab("Decisions", dialog.locator("#decisions-exclusions"));
     await setSwitch(neverTui, tui0);
     await openTab("Mesh", hostInput);
     await hostInput.fill(`${label1}-x`);
+    await openTab("General", dialog.locator("#recent-count"));
     await waitStatus("Unsaved: Decisions, Mesh");
-    await footButton("Discard Changes").click();
+    await cancelCloses();
+    await reopen();
     await waitStatus("");
-    eq(await hostInput.inputValue(), label1, "Mesh name");
+    eq(await footButton("Close").count(), 1, "Close");
+    eq(await footButton("Save Changes").count(), 0, "Save Changes");
+    await openTab("Mesh", hostInput);
+    eq(await readValue(hostInput), label1, "Mesh name");
     await openTab("Decisions", dialog.locator("#decisions-exclusions"));
-    eq(await neverTui.isChecked(), !tui0, "Decisions switch");
+    eq(await readChecked(neverTui), !tui0, "Decisions switch");
     eq(tuiOnDisk(), !tui0, "decisions file unchanged");
     eq(meshLabelOnDisk(), label1, "mesh file unchanged");
-    eq(await footButton("Close").count(), 1, "Close");
   });
 
   await check("an invalid form disables Save, and the footer names it", async () => {
@@ -255,12 +279,15 @@ try {
     await hostInput.fill("  ");
     await waitStatus("Mesh: This host needs a name.");
     assert(await footButton("Save Changes").isDisabled(), "Save Changes is disabled");
-    eq(await dialog.locator("#mesh-host-label-hint.field-error").count(), 1, "the field says it inline too");
+    eq(await dialog.locator("#mesh-host-label-error.field-error").allTextContents(), ["This host needs a name."], "the field says it inline too");
     await shot("footer-invalid", foot);
     await hostInput.fill(label1);
     await waitStatus("Unsaved: Decisions");
     assert(await footButton("Save Changes").isEnabled(), "Save Changes is enabled again");
-    await footButton("Discard Changes").click();
+    await cancelCloses();
+    eq(tuiOnDisk(), !tui0, "decisions file unchanged");
+    eq(meshLabelOnDisk(), label1, "mesh file unchanged");
+    await reopen();
     await waitStatus("");
   });
 
@@ -295,71 +322,111 @@ try {
     eq(tuiOnDisk(), tui0, "the retry is written");
   });
 
-  await check("Subagents' profile editor: an edit is a draft until the footer saves it, and Discard brings the saved value back", async () => {
-    await openTab("Subagents", subagentEdit);
-    // Read the profile's id first: the editor replaces the list, Edit included.
-    const id = (await subagentEdit.getAttribute("id")).slice("subagents-edit-".length);
-    await subagentEdit.click();
+  await check("Profiles' editor: an edit is a draft until the footer saves it, and Cancel brings the saved value back", async () => {
+    await openTab("Profiles", firstMine);
+    const shown = (await firstMine.locator(".profiles-pick-title").textContent()).trim();
+    await firstMine.click();
     await profileName.waitFor({ state: "visible", timeout: 20000 });
-    const info = await api("/api/settings/subagents");
-    const nameOnDisk = () => readJson(info.file).profiles.find((p) => p.id === id)?.name;
+    eq(await profileName.inputValue(), shown, "the picked profile is in the editor");
+    // Where its name is saved: the session half's label in your file, else the library profile's name.
+    const listing = await api("/api/profiles");
+    const row = listing.joined.find((x) => x.group === "yours" && x.name === shown);
+    assert(row, `${shown} is one of yours in GET /api/profiles`);
+    const nameOnDisk = row.session
+      ? () => readJson(listing.yoursFile).profiles.find((p) => p.id === row.session.id)?.label
+      : () => readJson(listing.library.file).profiles.find((p) => p.id === row.libraryId)?.name;
+    const file = row.session ? listing.yoursFile : listing.library.file;
     // Not what an earlier run saved: the edit must make the form dirty.
     const custom = `E2E ${Date.now().toString(36)}`;
     await profileName.fill(custom);
-    await waitStatus("Unsaved: Subagents");
+    await waitStatus("Unsaved: Profiles");
     await footButton("Save Changes").click();
-    await waitStatus("Saved Subagents.");
-    eq(nameOnDisk(), custom, `the profile's name in ${info.file}`);
+    await waitStatus("Saved Profiles.");
+    eq(nameOnDisk(), custom, `the profile's name in ${file}`);
     await profileName.fill(`${custom} x`);
-    await waitStatus("Unsaved: Subagents");
+    await waitStatus("Unsaved: Profiles");
     eq(nameOnDisk(), custom, "the file is unchanged");
-    await footButton("Discard Changes").click();
+    await cancelCloses();
+    eq(nameOnDisk(), custom, "Cancel leaves the file as saved");
+    await reopen();
     await waitStatus("");
-    eq(await profileName.inputValue(), custom, "Discard brings the saved value back");
+    await openTab("Profiles", firstMine);
+    const titles = dialog.locator('ul[aria-label="Yours"] .profiles-pick-title');
+    assert(!(await titles.allTextContents()).some((t) => t.trim() === `${custom} x`), "the cancelled name is not in the list");
+    await dialog.locator('ul[aria-label="Yours"] .profiles-pick').filter({ has: page.locator(".profiles-pick-title", { hasText: new RegExp(`^\\s*${custom}\\s*$`) }) }).click();
+    await profileName.waitFor({ state: "visible", timeout: 20000 });
+    eq(await profileName.inputValue(), custom, "Cancel brings the saved value back");
+    await waitStatus("");
+    eq(nameOnDisk(), custom, "reading it wrote nothing");
   });
 
-  await check("Cancel with unsaved edits holds the close and asks", async () => {
+  await check("Esc and the scrim with unsaved edits hold the close and ask; Keep Editing keeps the edit, Discard and Close drops it", async () => {
+    const saved = meshLabelOnDisk();
+    const held = `${label1}-held`;
+    const hold = dialog.locator(".settings-close-held");
+    const asked = async () => {
+      await hold.getByText("Your Mesh changes aren't saved.", { exact: true }).waitFor({ state: "visible", timeout: 5000 });
+      eq(await hold.getByText("Save them, or discard them and close.", { exact: true }).count(), 1, "what the hold says to do");
+      assert(await dialog.isVisible(), "the dialog stays open");
+      eq(await tab("Mesh").getAttribute("aria-selected"), "true", "it brings the edit's tab forward");
+    };
     await openTab("Mesh", hostInput);
-    await hostInput.fill(`${label1}-cancel`);
+    await hostInput.fill(held);
+    await waitStatus("Unsaved: Mesh");
+
     await openTab("General", dialog.locator("#recent-count"));
-    await footButton("Cancel").click();
-    await dialog.getByText("Your Mesh changes aren't saved.").waitFor({ state: "visible", timeout: 5000 });
-    assert(await dialog.isVisible(), "the dialog stays open");
-    eq(await tab("Mesh").getAttribute("aria-selected"), "true", "it brings the edit's tab forward");
+    await tab("General").focus();
+    await page.keyboard.press("Escape");
+    await asked();
     await shot("dialog-close-held");
-    await dialog.getByRole("button", { name: "Keep Editing" }).click();
-    await footButton("Discard Changes").click();
+    await hold.getByRole("button", { name: "Keep Editing", exact: true }).click();
+    await hold.waitFor({ state: "hidden", timeout: 5000 });
+    assert(await dialog.isVisible(), "Keep Editing leaves the dialog open");
+    await waitStatus("Unsaved: Mesh");
+    eq(await hostInput.inputValue(), held, "Keep Editing keeps the edit");
+    eq(meshLabelOnDisk(), saved, "the hold wrote nothing");
+
+    await openTab("General", dialog.locator("#recent-count"));
+    await page.locator(".scrim:has(+ .settings-modal)").click({ position: { x: 4, y: 4 } });
+    await asked();
+    await hold.getByRole("button", { name: "Discard and Close", exact: true }).click();
+    await dialog.waitFor({ state: "hidden", timeout: 5000 });
+    eq(meshLabelOnDisk(), saved, "Discard and Close wrote nothing");
+
+    await reopen();
     await waitStatus("");
+    await openTab("Mesh", hostInput);
+    eq(await readValue(hostInput), saved, "the edit is gone after reopening");
     await footButton("Close").click();
     await dialog.waitFor({ state: "hidden", timeout: 5000 });
   });
 
-  await check("folded (390px): status and Cancel share a line, Discard · Save the next; every button inside the sheet", async () => {
+  await check("folded (390px): status and Cancel share a line, Save Changes the next at the trailing edge; every button inside the sheet", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     assert((await page.evaluate(() => innerWidth)) === 390, "viewport width 390");
     // Folded, the gear lives in the foot bar's sheet (§app.insights/sidebar-foot-phone).
     await page.locator(".sidebar-footbar").click();
     await page.getByRole("dialog", { name: /^Hosts, usage/ }).getByRole("button", { name: "Settings", exact: true }).click();
     await dialog.waitFor({ state: "visible" });
+    const saved = meshLabelOnDisk();
     await openTab("Mesh", hostInput);
     await hostInput.fill(`${label1}-phone`);
     await waitStatus("Unsaved: Mesh");
     const box = await foot.boundingBox();
     const at = {};
-    for (const name of ["Discard Changes", "Save Changes", "Cancel"]) {
+    for (const name of ["Save Changes", "Cancel"]) {
       const b = await footButton(name).boundingBox();
       assert(b && box && b.x >= box.x && b.x + b.width <= box.x + box.width + 0.5, `${name} fits the footer`);
       assert(b.height >= 44, `${name} is a 44px target (${b.height}px)`);
       at[name] = b;
     }
     const line = await status.boundingBox();
-    const middle = (b) => Math.round(b.y + b.height / 2);
-    eq(middle(at["Discard Changes"]), middle(at["Save Changes"]), "Discard and Save share a row");
-    assert(at["Cancel"].y + at["Cancel"].height <= at["Save Changes"].y, "Cancel is on the line above them");
+    assert(at["Cancel"].y + at["Cancel"].height <= at["Save Changes"].y, "Cancel is on the line above Save Changes");
     assert(line.y < at["Cancel"].y + at["Cancel"].height && line.y + line.height > at["Cancel"].y, "the status shares Cancel's line");
     assert(Math.abs(at["Save Changes"].x + at["Save Changes"].width - (box.x + box.width - 16)) < 1, "Save sits at the trailing edge");
     await shot("footer-dirty-folded", foot);
-    await footButton("Discard Changes").click();
+    await cancelCloses();
+    eq(meshLabelOnDisk(), saved, "Cancel wrote nothing");
   });
 } finally {
   try {

@@ -403,7 +403,7 @@ function which(bin) {
 }
 
 function localFacts() {
-  const skill = path.join(SOVA_ROOT, ".claude", "skills", "playwright");
+  const skill = path.join(SOVA_ROOT, ".agents", "skills", "playwright");
   const skillOk = fs.existsSync(path.join(skill, "SKILL.md"));
   const scripts = path.join(skill, "scripts");
   return {
@@ -606,7 +606,7 @@ function isDanglingLink(full) {
 console.log(`${dry ? "Dry run for" : "Generated from"} ${BRAND_REL} (${brand.name}) in ${ROOT}`);
 for (const line of report) console.log(`  ${line}`);
 const local = JSON.parse(outputs.get(`${OUT}/local.json`).toString("utf8"));
-if (!local.playwrightSkill) console.log(`warning: no Playwright skill at ${path.join(SOVA_ROOT, ".claude/skills/playwright")}; the screenshot, video, logo and site checks need it.`);
+if (!local.playwrightSkill) console.log(`warning: no Playwright skill at ${path.join(SOVA_ROOT, ".agents/skills/playwright")}; the screenshot, video, logo and site checks need it.`);
 else if (!local.playwrightInstalled) console.log(`warning: Playwright is not installed in ${local.playwrightScripts}; run \`npm ci\` there before the browser steps.`);
 for (const theme of ["light", "dark"])
   for (const [label, fg, bg] of contrastPairs(brand.visual.palette[theme])) {

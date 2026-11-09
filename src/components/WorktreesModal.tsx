@@ -10,6 +10,8 @@ import { ActionMenu } from "./ActionMenu";
 import type { LandHow, MergeUnclear } from "../../shared/merge-queue";
 import { Icon, trapFocus } from "./ui";
 import { canReviewChanges } from "../lib/worktrees";
+import { placeOf, queueLinksOf } from "../lib/branch-place";
+import { BranchPlaceLine } from "./BranchPlaceLine";
 import { ReviewChangesButton } from "./ReviewChanges";
 import { paneScopedId, usePaneScope } from "../lib/pane-scope";
 
@@ -122,8 +124,8 @@ export function createLandConfirm() {
 export type LandConfirm = ReturnType<typeof createLandConfirm>;
 
 /** The open confirm, if any, for a row whose Land runs `onLand`. */
-export function LandConfirms(props: { confirm: LandConfirm; branch: string; ahead?: number; target?: string; how?: LandHow; drafts?: number; busy: boolean; onLand(o?: LandOptions): void }) {
-  const words = () => landConfirmWords(props.branch, props.ahead, props.target, props.how, props.drafts);
+export function LandConfirms(props: { confirm: LandConfirm; branch: string; ahead?: number; target?: string; how?: LandHow; place?: string; drafts?: number; busy: boolean; onLand(o?: LandOptions): void }) {
+  const words = () => landConfirmWords(props.branch, props.ahead, props.target, props.how, props.place, props.drafts);
   return (
     <Switch>
       <Match when={props.confirm.ask() === "land"}>
@@ -183,12 +185,6 @@ export function UnclearChecks(props: { projectId?: string; unclear?: MergeUnclea
   );
 }
 
-/** "View Merge Queue": the worktree's project's Merge Queue tab. */
-export const queueHrefOf = (rows: QueueWorktree[]): string | null => {
-  const id = rows.map(projectIdOf).find(Boolean);
-  return id ? projectTabHref(id, "merge-queue") : null;
-};
-
 /**
  * One worktree in the queue's words, with its one action (§ the composer modal and the session pane
  * draw the same rows from the same state, so they always agree): Land on a ready one, which asks first (its ▾
@@ -199,7 +195,6 @@ export const queueHrefOf = (rows: QueueWorktree[]): string | null => {
  */
 export function WorktreeQueueRow(props: {
   worktree: QueueWorktree;
-  showPath?: boolean;
   onChanged?(): void;
   /** More chips after the state (the pane's: workers, .agent). */
   chips?: JSX.Element;
@@ -282,6 +277,7 @@ export function WorktreeQueueRow(props: {
             </p>
           )}
         </Show>
+        <BranchPlaceLine row={w()} />
         <div class="wt-queue-facts">
           <QueueChip row={row()} />
           <Show when={row().detail}>{(d) => <span class="text-caption text-mono">{d()}</span>}</Show>
@@ -354,7 +350,7 @@ export function WorktreeQueueRow(props: {
         <Show when={error()}>{(m) => <p class="list-meta wt-queue-error" role="alert">{m()}</p>}</Show>
       </div>
       {/* A confirm replaces the row's actions while it is open. */}
-      <LandConfirms confirm={confirm} branch={w().branch} ahead={w().mergeStats?.ahead} target={w().mergeProject?.target} drafts={onlyDrafts()} busy={busy()} onLand={doLand} />
+      <LandConfirms confirm={confirm} branch={w().branch} ahead={w().mergeStats?.ahead} target={w().mergeProject?.target} how={w().mergeProject?.how} place={placeOf(w())} drafts={onlyDrafts()} busy={busy()} onLand={doLand} />
       <Show when={!confirm.ask()}>
       <div class="wt-queue-act">
         <Show when={props.review && canReviewChanges(w())}>
@@ -419,10 +415,10 @@ export function WorktreeQueueRow(props: {
 }
 
 /** The rows, in the order the chat tracks them. */
-export function WorktreeQueueList(props: { rows: QueueWorktree[]; showPath?: boolean; onChanged?(): void; review?: { sessionPath: string; cwd?: string }; onAnswerInChat?(): void }) {
+export function WorktreeQueueList(props: { rows: QueueWorktree[]; onChanged?(): void; review?: { sessionPath: string; cwd?: string }; onAnswerInChat?(): void }) {
   return (
     <ul class="list wt-queue-list">
-      <For each={props.rows}>{(w) => <WorktreeQueueRow worktree={w} showPath={props.showPath} onChanged={props.onChanged} review={props.review} onAnswerInChat={props.onAnswerInChat} />}</For>
+      <For each={props.rows}>{(w) => <WorktreeQueueRow worktree={w} onChanged={props.onChanged} review={props.review} onAnswerInChat={props.onAnswerInChat} />}</For>
     </ul>
   );
 }
@@ -432,7 +428,7 @@ export function WorktreesModal(props: { title: string; rows: QueueWorktree[]; on
   const summary = () => rowsSummary(props.rows.map((w) => queueRow(w)));
   /** The queue's intro and paused line: only where some row's repo is one the queue serves. */
   const head = () => modalHead(props.rows);
-  const href = () => queueHrefOf(props.rows);
+  const links = () => queueLinksOf(props.rows);
   // Escape closes it wherever focus is (an action's button goes busy and can drop focus to the page),
   // unless a menu inside is open (the key is that menu's: it closes itself) or the changes viewer is open over it
   // (the key closes the viewer, and this stays).
@@ -465,19 +461,23 @@ export function WorktreesModal(props: { title: string; rows: QueueWorktree[]; on
           </button>
         </div>
         <div class="modal-body">
-          <Show when={head().paused}>{(t) => <p class="text-caption wt-queue-paused">{t()}</p>}</Show>
+          <For each={head().paused}>{(t) => <p class="text-caption wt-queue-paused">{t}</p>}</For>
           <WorktreeQueueList rows={props.rows} onChanged={props.onChanged} review={props.review} onAnswerInChat={props.onClose} />
         </div>
         {/* The queue's one line on the left, its link on the right; the head's ✕ closes. */}
-        <Show when={head().intro || href()}>
+        <Show when={head().intro || links().length}>
           <div class="modal-foot wt-queue-foot">
             <Show when={head().intro}>{(t) => <p class="text-caption wt-queue-intro">{t()}</p>}</Show>
-            <Show when={href()}>
-              {(h) => (
-                <a class="wt-queue-foot-link text-caption" href={h()} onClick={() => props.onClose()}>
-                  View Merge Queue
-                </a>
-              )}
+            <Show when={links().length}>
+              <div class="wt-queue-foot-links">
+                <For each={links()}>
+                  {(l) => (
+                    <a class="wt-queue-foot-link text-caption" href={l.href} onClick={() => props.onClose()}>
+                      {l.label}
+                    </a>
+                  )}
+                </For>
+              </div>
             </Show>
           </div>
         </Show>

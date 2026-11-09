@@ -8,7 +8,8 @@
       "src/components/SessionView.tsx",
       "src/components/Sidebar.tsx",
       "src/components/Thread.tsx",
-      "src/lib/profile-start.ts"
+      "src/lib/profile-start.ts",
+      "src/components/ChatView.tsx"
     ],
     "requires": [
       "§chat.profiles/model",
@@ -17,7 +18,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-12T12:35Z"
+      "at": "2026-11-08T19:45Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
     }
   },
   "§chat.profiles/applying": {
@@ -30,7 +32,11 @@
       "server/index.ts",
       "server/app.ts",
       "server/session-profiles-runtime.test.ts",
-      "server/session-profile-cards.test.ts"
+      "server/session-profile-cards.test.ts",
+      "server/default-profile.ts",
+      "server/joined-profiles.ts",
+      "src/components/ProfilePicker.tsx",
+      "shared/profiles.ts"
     ],
     "requires": [
       "§chat.profiles/model",
@@ -38,7 +44,43 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-11T08:41Z"
+      "at": "2026-11-08T19:45Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+    }
+  },
+  "§chat.profiles/default": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.profiles/joined",
+      "§chat.subagent-profiles/file",
+      "§chat.model-menu/saved-default"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/session-profile-routes.ts",
+      "server/subagent-profiles.ts",
+      "server/mode-state.ts",
+      "server/web-defaults.ts",
+      "server/chat-manager.ts",
+      "src/components/ProfilePicker.tsx",
+      "src/components/ProfileGrid.tsx",
+      "server/default-profile.ts",
+      "server/default-start.ts",
+      "server/profile-editor-routes.ts",
+      "server/app.ts",
+      "server/joined-profiles.test.ts",
+      "server/profile-editor.test.ts",
+      "server/session-profile-cards.test.ts",
+      "src/components/ModeMenu.tsx",
+      "src/lib/profiles.ts",
+      "src/lib/api.ts",
+      "server/project-coding-runtime.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-09T01:20Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#b97414c4"
     }
   },
   "§chat.profiles/delivery": {
@@ -61,9 +103,31 @@
       "§app.overseer/sent-marker"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-07T16:09Z",
-      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#92eb7761"
+      "by": "the user (al_2 go)",
+      "at": "2026-11-09T10:27Z",
+      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#b9a60247"
+    }
+  },
+  "§chat.profiles/edited": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.profiles/switch"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/ModeMenu.tsx",
+      "src/lib/mode-menu.ts",
+      "server/chat-manager.ts",
+      "shared/profile-switch.ts",
+      "server/profile-switch.integration.test.ts",
+      "src/lib/profile-switch.ts",
+      "src/lib/profile-switch.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-08T19:45Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
     }
   },
   "§chat.profiles/enforcement": {
@@ -83,6 +147,41 @@
       "by": "naomarik",
       "at": "2026-11-07T15:30Z",
       "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
+    }
+  },
+  "§chat.profiles/joined": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.profiles/projects",
+      "§chat.subagent-profiles/file"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/session-profile-routes.ts",
+      "server/subagent-profiles.ts",
+      "server/profiles-store.ts",
+      "shared/profiles.ts",
+      "shared/subagent-profiles.ts",
+      "src/lib/profiles.ts",
+      "server/joined-profiles.ts",
+      "server/joined-profiles.test.ts",
+      "server/profile-editor.ts",
+      "server/profile-editor.test.ts",
+      "server/profile-editor-routes.ts",
+      "server/profile-editor-routes.test.ts",
+      "server/models.ts",
+      "server/overseer-profiles.ts",
+      "server/app.ts",
+      "src/lib/api.ts",
+      "src/lib/profiles-draft.ts",
+      "src/lib/profiles-settings.ts",
+      "src/lib/profile-joined-cards.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-09T01:52Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#6db59de1"
     }
   },
   "§chat.profiles/limits": {
@@ -140,9 +239,31 @@
       "§chat.create-mode/per-chat-only"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-05T11:12Z",
-      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#b0d1af6b"
+      "by": "naomarik",
+      "at": "2026-11-08T19:45Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+    }
+  },
+  "§chat.profiles/older-devices": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.profiles/joined",
+      "§chat.profiles/default"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/profiles.ts",
+      "server/profiles-store.ts",
+      "pi-config/extensions/subagents/subagent-profiles.ts",
+      "server/profile-editor.ts",
+      "server/default-profile.ts",
+      "server/profile-editor.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-09T01:18Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#b97414c4"
     }
   },
   "§chat.profiles/picker": {
@@ -169,16 +290,19 @@
       "src/lib/name-fit.ts",
       "src/lib/name-fit.test.ts",
       "src/components/fold-fit.ts",
-      "src/components/form/index.tsx"
+      "src/components/form/index.tsx",
+      "server/profile-editor.ts",
+      "server/profile-editor-routes.ts",
+      "src/lib/profile-joined-cards.test.ts"
     ],
     "requires": [
       "§chat.profiles/model",
       "§chat.transcript/setup-card"
     ],
     "agreed": {
-      "by": "omar (user)",
-      "at": "2026-10-27T20:04Z",
-      "source": "pi-session:1ae40f4c-6da9-448a-b26b-9a1e99076f16#4df15dba"
+      "by": "naomarik",
+      "at": "2026-11-08T19:45Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
     }
   },
   "§chat.profiles/playbook": {
@@ -199,18 +323,27 @@
   "§chat.profiles/profile-name": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "code": [
       "shared/profile-limits.ts",
       "shared/profiles.ts",
       "server/profiles-store.ts",
       "src/components/ProfilePicker.tsx",
-      "src/components/form/index.tsx"
+      "src/components/form/index.tsx",
+      "server/profile-editor.ts",
+      "server/profile-editor.test.ts",
+      "server/settings-limits-parity.test.ts",
+      "src/lib/profiles-settings.ts"
     ],
     "requires": [
       "§chat.profiles/picker",
       "§design.forms/limits"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-08T19:45Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+    }
   },
   "§chat.profiles/projects": {
     "kind": "behavior",
@@ -229,15 +362,19 @@
       "profiles/system/merge-reviewer.json",
       "server/merge-queue/playbooks.test.ts",
       "server/session-profile-routes.ts",
-      "server/merge-queue/thread-modes.test.ts"
+      "server/merge-queue/thread-modes.test.ts",
+      "server/profile-editor.ts",
+      "server/profile-editor.test.ts",
+      "server/session-profile.ts",
+      "server/session-profiles-runtime.test.ts"
     ],
     "requires": [
       "§chat.profiles/model"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-07T15:21Z",
-      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
+      "at": "2026-11-08T19:45Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
     }
   },
   "§chat.profiles/session-tools": {
@@ -282,6 +419,46 @@
       "source": "pi-session:1ae40f4c-6da9-448a-b26b-9a1e99076f16#db36b4af"
     }
   },
+  "§chat.profiles/switch": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.subagent-profiles/resolution",
+      "§chat.mode-menu/how-a-switch-reaches-the-chat",
+      "§chat/model-menu"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/chat-manager.ts",
+      "server/subagent-profiles.ts",
+      "src/components/ModeMenu.tsx",
+      "src/lib/mode-menu.ts",
+      "src/lib/api.ts",
+      "src/components/Thread.tsx",
+      "src/components/ChatView.tsx",
+      "server/profile-switch.ts",
+      "shared/profile-switch.ts",
+      "server/harness/state-kinds.ts",
+      "shared/chat-runtime.ts",
+      "server/chat-handle.ts",
+      "server/chat-runtime/methods.ts",
+      "server/profile-switch.integration.test.ts",
+      "server/chat-runtime/trial-s6-profile-switch.integration.test.ts",
+      "src/components/ProfileSwitchLine.tsx",
+      "src/lib/chat-profile-state.ts",
+      "src/lib/profile-switch.ts",
+      "src/lib/profile-switch.test.ts",
+      "src/app.css",
+      "shared/protocol.ts",
+      "server/build-loadout.ts",
+      "server/overseer-tools.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-08T19:45Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+    }
+  },
   "§chat.profiles/trust": {
     "kind": "behavior",
     "authority": "accepted",
@@ -293,29 +470,36 @@
       "src/components/ProfilePicker.tsx",
       "server/session-profiles.test.ts",
       "src/components/ProfilesSettings.tsx",
-      "src/lib/api.ts"
+      "src/lib/api.ts",
+      "shared/profiles.ts"
     ],
     "requires": [
       "§chat.profiles/projects",
       "§app.access/your-click"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T06:59Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+      "by": "naomarik",
+      "at": "2026-11-08T19:45Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
     }
   },
   "§chat/profiles": {
     "kind": "surface",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
-      "shared/profiles.ts"
+      "shared/profiles.ts",
+      "server/joined-profiles.ts"
     ],
     "notOwned": [
       "§chat/subagent-profiles",
       "§app.settings-dialog/profiles",
       "§chat/playbooks"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-08T22:16Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
+    }
   }
 }

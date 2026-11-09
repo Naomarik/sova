@@ -1,5 +1,5 @@
 /**
- * Settings → Subagents' limits, read by the editor (src/lib/subagent-profiles-draft.ts) and by the
+ * Settings → Profiles' limits, read by the editor (src/lib/subagent-profiles-draft.ts) and by the
  * save (server/subagent-profiles.ts, before the library's own parse), so both refuse in the same
  * words (shared/form-rules.ts). The numbers are the subagents extension's (team-defaults.ts).
  */

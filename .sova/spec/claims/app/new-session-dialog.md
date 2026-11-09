@@ -355,8 +355,8 @@ branch, so the tab asks for nothing that names anything.
   inside it, that project is selected (the deepest root wins); otherwise none is, and Create Session
   stays `aria-disabled` until one is. Preselecting chooses a row, never the opening tab.
 - **Nothing else.** No Title, no model, thinking or mode picker, no prompt, and no line naming the
-  model or mode: the session starts on the project's coding model and thinking, in this computer's
-  default mode and subagent profile (§app.project-overseer/coding-mode), changed afterwards in the
+  model or mode: the session starts on the project's coding model and thinking, on this computer's
+  default profile (§app.project-overseer/coding-mode), changed afterwards in the
   composer's menus. The one text is
   the field hint.
 - **Submitting** posts `POST /api/projects/:pid/overseer/coding` with exactly `{worktree:

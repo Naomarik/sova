@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 576 |
-| Routes a catalogue entry points at | 182 |
-| Catalogue entries | 252 |
+| Routes registered | 583 |
+| Routes a catalogue entry points at | 184 |
+| Catalogue entries | 254 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -27,7 +27,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Trust grants | 25 |
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
-| Class: Left as is, by choice | 261 |
+| Class: Left as is, by choice | 266 |
 | Class: Page plumbing | 14 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
@@ -35,7 +35,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Pending (not yet a command) | 23 |
 | Chat socket frame types | 14 |
 | Document/window keydown listeners | 11 |
-| Hand-written tool specs | 132 |
+| Hand-written tool specs | 134 |
 
 ## Catalogue entries
 
@@ -53,6 +53,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.configure` | Configure Session | changes | `POST /api/sessions/configure` | sessions |
 | `session.mode.get` | Show Session Mode | looks | `GET /api/mode` | sessions |
 | `session.mode.set` | Switch Session Mode | changes | `POST /api/mode` | sessions |
+| `session.profile.switch` | Switch Session Profile | changes | `POST /api/sessions/profile-switch` | sessions |
+| `session.profile.switch.cancel` | Cancel Profile Switch | changes | `DELETE /api/sessions/profile-switch` | sessions |
 | `session.send` | Send Message | changes | `POST /api/sessions/prompt` | sessions |
 | `session.fork` | Fork Session | changes | `POST /api/sessions/fork` | sessions |
 | `session.draft.get` | Show Draft | looks | `GET /api/sessions/draft` | sessions |
@@ -490,7 +492,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `ALL /*` | full |
 | `ALL /api/*` | full |
 
-### Left as is, by choice (261)
+### Left as is, by choice (266)
 
 Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inventory/scan.ts`). A route there that a catalogue entry points at stays a command; the rest are not pending, and a new route there needs no entry.
 
@@ -644,8 +646,13 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/previews/:id/extend` | admin |
 | `GET /api/profiles` | sessions |
 | `POST /api/profiles/approve` | admin |
+| `PUT /api/profiles/default` | admin |
 | `POST /api/profiles/hidden` | admin |
+| `POST /api/profiles/mine` | admin |
+| `POST /api/profiles/mine/delete` | admin |
+| `POST /api/profiles/mine/duplicate` | admin |
 | `POST /api/profiles/save-current` | admin |
+| `POST /api/profiles/update-from-chat` | admin |
 | `GET /api/provider-limits/waiting` | sessions |
 | `GET /api/public-links` | sessions |
 | `PUT /api/public-links` | admin |
@@ -955,6 +962,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/sessions/pairs` | sessions | `session.pairs.list` |
 | `POST /api/sessions/pairs/resume` | sessions | `session.pairs.resume` |
 | `POST /api/sessions/pairs/unpair` | sessions | `session.pairs.unpair` |
+| `DELETE /api/sessions/profile-switch` | sessions | `session.profile.switch.cancel` |
+| `POST /api/sessions/profile-switch` | sessions | `session.profile.switch` |
 | `POST /api/sessions/prompt` | sessions | `session.send` |
 | `GET /api/sessions/shell-output` | sessions | `session.shell.output` |
 | `POST /api/sessions/shorten-titles` | sessions | `session.title.shorten` |
@@ -1048,11 +1057,11 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/overseer-org-tools.ts` | 10 | `sova_orgs`, `sova_org_person`, `sova_projects`, `sova_org_project`, `sova_org`, `sova_roster`, `sova_owner`, `sova_project_decisions`, `sova_gather`, `sova_project_overseer` |
 | `server/overseer-pair-tools.ts` | 1 | `sova_pair` |
 | `server/overseer-todo-tools.ts` | 2 | `sova_todos`, `sova_todo` |
-| `server/overseer-tools.ts` | 23 | `sova_attention`, `sova_list_sessions`, `sova_outstanding`, `sova_search_sessions`, `sova_session`, `sova_public_links`, `sova_alignment`, `sova_read_session`, `sova_list_groups`, `sova_list_targets`, `sova_list_models`, `sova_list_subagent_profiles`, `sova_list_folders`, `sova_create_session`, `sova_send`, `sova_set_session`, `sova_archive`, `sova_group`, `sova_answer_dialog`, `sova_navigate`, `sova_note`, `sova_org_history`, `<computed: SPEC_LOOKUP_TOOL>` |
+| `server/overseer-tools.ts` | 24 | `sova_attention`, `sova_list_sessions`, `sova_outstanding`, `sova_search_sessions`, `sova_session`, `sova_public_links`, `sova_alignment`, `sova_read_session`, `sova_list_groups`, `sova_list_targets`, `sova_list_models`, `sova_list_profiles`, `sova_list_subagent_profiles`, `sova_list_folders`, `sova_create_session`, `sova_send`, `sova_set_session`, `sova_archive`, `sova_group`, `sova_answer_dialog`, `sova_navigate`, `sova_note`, `sova_org_history`, `<computed: SPEC_LOOKUP_TOOL>` |
 | `server/overseer-whatsapp.ts` | 1 | `sova_whatsapp` |
 | `server/playbook-tools.ts` | 1 | `<computed: PLAYBOOK_READ_TOOL>` |
 | `server/project-assistant-tools.ts` | 7 | `report_issue`, `start_fix`, `deploy`, `owner_versions`, `start_version`, `start_feature_chat`, `requirement_agree` |
-| `server/project-overseer-tools.ts` | 18 | `sova_project`, `sova_list_subagent_profiles`, `sova_list_sessions`, `sova_read_session`, `sova_todos`, `sova_note`, `sova_idea`, `sova_previews`, `sova_preview`, `sova_create_session`, `sova_send`, `sova_files`, `sova_pipeline`, `sova_hold`, `sova_correct`, `sova_set_state`, `sova_settings`, `sova_todo` |
+| `server/project-overseer-tools.ts` | 19 | `sova_project`, `sova_list_profiles`, `sova_list_subagent_profiles`, `sova_list_sessions`, `sova_read_session`, `sova_todos`, `sova_note`, `sova_idea`, `sova_previews`, `sova_preview`, `sova_create_session`, `sova_send`, `sova_files`, `sova_pipeline`, `sova_hold`, `sova_correct`, `sova_set_state`, `sova_settings`, `sova_todo` |
 | `server/project-services/tools.ts` | 4 | `<computed: o.name>`, `project_verbs`, `sova_project_verbs`, `sova_project_verbs` |
 | `server/session-offers-tool.ts` | 1 | `<computed: OFFER_TOOL>` |
 | `server/session-powers.ts` | 4 | `session_list`, `session_detail`, `session_read`, `session_send` |

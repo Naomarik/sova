@@ -427,6 +427,91 @@ describe("session_send between sessions (§chat.profiles/session-tools, /deliver
   });
 });
 
+describe("the Overseer and the one profile id (§chat.subagent-profiles/overseer): permission-neutral", () => {
+  const w = (model: string) => ({ backend: "pi", model, effort: "high" });
+  const LIB = { id: "gpt-crew", name: "GPT crew", delegate: { planning: { primary: w("openai-codex/gpt-6.1-sol"), fallback: null }, investigation: { primary: w("openai-codex/gpt-6.1-sol"), fallback: null }, routine: { primary: w("zai/glm-5.3"), fallback: null }, complex: { primary: w("openai-codex/gpt-6.1-sol"), fallback: null } }, teams: null, members: null, specWriter: null };
+  const CHAT = { id: "chat1", path: "/s/chat1.jsonl", title: "A chat", cwd, archived: false } as SessionSummary;
+  function harness(answer: (path: string) => Response | undefined = () => undefined) {
+    const requests: string[] = [];
+    const host = {
+      request: async (path: string, init?: RequestInit) => {
+        requests.push(`${init?.method ?? "GET"} ${path} ${init?.body ?? ""}`);
+        const own = answer(path);
+        if (own) return own;
+        if (path.startsWith("/api/sessions/prompt")) return Response.json({ queued: false, kind: "prompt" });
+        if (path.startsWith("/api/settings/subagents")) return Response.json({ profiles: [{ id: "off", name: "Off", footprint: "x" }, { id: "gpt-crew", name: "GPT crew", footprint: "y" }], default: "off" });
+        if (path.startsWith("/api/subagents")) return Response.json({ ok: true });
+        return Response.json({ id: "new", path: "/s/new.jsonl", title: "Untitled", cwd }, { status: 201 });
+      },
+      overseerId: () => "ov",
+      confirmed: () => null,
+      caps: () => DEFAULT_CAPS,
+      sessions: async () => [CHAT],
+      session: async (id: string) => (id === CHAT.id ? CHAT : null),
+      started: () => {},
+      open: async () => {},
+      runningStarted: () => 0,
+      counted: () => false,
+      attended: () => true,
+    } as unknown as Parameters<typeof overseerTools>[0];
+    const tools = overseerTools(host, new TurnLimits());
+    const run = (name: string, p: Record<string, unknown>) => tools.find((t) => t.name === name)!.execute("tc", p as never, undefined, undefined, undefined as never);
+    return { run, requests };
+  }
+
+  test("sova_create_session: a profile with only a Models part needs no mark: it starts as Off with that profile's helpers", async () => {
+    mkdirSync(join(agentDir, "sova"), { recursive: true });
+    writeFileSync(join(agentDir, "subagent-profiles.json"), JSON.stringify({ version: 1, profiles: [LIB] }));
+    const h = harness();
+    const r = await h.run("sova_create_session", { cwd, profile: "gpt-crew" });
+    const create = h.requests.find((x) => x.startsWith("POST /api/sessions "))!;
+    assert.match(create, /"subagent_profile":"gpt-crew"/, "its helpers are the session's pick");
+    assert.doesNotMatch(create, /"profile":/, "no session profile: no When a Chat Starts part, so no tool or power changes");
+    assert.match((r.content[0] as { text: string }).text, /Profile: GPT crew, its models and helpers \(this session only\)\./);
+    // A saved profile with powers and no mark is still refused, as before: the id names its session half.
+    writeFileSync(join(agentDir, "sova", "session-profiles.json"), JSON.stringify({ version: 1, profiles: [{ id: "spec-auditor", label: "Spec auditor", icon: "eye", remove: ["edit"], grant: ["sessions.read"], subagents: "gpt-crew", overseerMayStart: false }] }));
+    const g = harness();
+    await assert.rejects(g.run("sova_create_session", { cwd, profile: "spec-auditor" }), /isn't marked "The Overseer may start it"/);
+    await assert.rejects(g.run("sova_create_session", { cwd, profile: "gpt-crew", subagent_profile: "off" }), /Give profile or subagent_profile, not both/);
+    assert.deepEqual(g.requests, [], "refused before anything is asked or created");
+  });
+
+  test("sova_set_session: profile switches the whole Models part through the switch route; refusals change nothing", async () => {
+    const h = harness((path) => (path.startsWith("/api/sessions/profile-switch") ? Response.json({ applies: "after-turn", state: { current: { id: "off", name: "Off", edited: false }, pending: { id: "gpt-crew", name: "GPT crew", helpers: 4, setsModel: false } } }) : undefined));
+    const r = await h.run("sova_set_session", { session: "chat1", profile: "gpt-crew" });
+    assert.deepEqual(h.requests.filter((x) => x.includes("profile-switch")), [`POST /api/sessions/profile-switch?path=${encodeURIComponent("/s/chat1.jsonl")} {"profile":"gpt-crew"}`]);
+    assert.match((r.content[0] as { text: string }).text, /profile GPT crew when its reply ends/);
+    // All or nothing: a refused switch (no credentials) changes nothing else either, a title included.
+    const refused = harness((path) => (path.startsWith("/api/sessions/profile-switch") ? Response.json({ error: "No credentials here for gpt-6.1-sol.", name: "GPT crew" }, { status: 400 }) : undefined));
+    await assert.rejects(refused.run("sova_set_session", { session: "chat1", profile: "gpt-crew", title: "New name" }), /Couldn't switch to GPT crew: No credentials here for gpt-6.1-sol\. Nothing was changed\./);
+    assert.equal(refused.requests.filter((x) => x.includes("/api/sessions/title")).length, 0, "the title wasn't changed before the refused switch");
+    const unknown = harness((path) => (path.startsWith("/api/sessions/profile-switch") ? Response.json({ error: "Unknown profile: nope" }, { status: 404 }) : undefined));
+    await assert.rejects(unknown.run("sova_set_session", { session: "chat1", profile: "nope" }), /Unknown profile: nope\. sova_list_profiles lists them\./);
+    // A profile switch carries its own model and helpers: naming another beside it is refused before anything.
+    const both = harness();
+    for (const extra of [{ model: "a/b" }, { thinking: "high" }, { subagent_profile: "off" }])
+      await assert.rejects(both.run("sova_set_session", { session: "chat1", profile: "gpt-crew", ...extra }), /Give profile alone/, JSON.stringify(extra));
+    assert.equal(both.requests.length, 0);
+  });
+
+  test("sova_list_profiles and its older name answer the same joined list, from the route", async () => {
+    const joined = [
+      { id: "off", kind: "off", name: "Off", footprint: "Keeps the chat's own model", isDefault: true },
+      { id: "claude", kind: "pair", name: "Claude", footprint: "Opus 5.5", libraryId: "claude-lib", session: { overseerMayStart: false } },
+      { id: "gpt-crew", kind: "library", name: "GPT crew", footprint: "gpt-6.1-sol", libraryId: "gpt-crew" },
+    ];
+    const h = harness((path) => (path.startsWith("/api/profiles") ? Response.json({ joined }) : undefined));
+    const a = ((await h.run("sova_list_profiles", {})).content[0] as { text: string }).text;
+    const b = ((await h.run("sova_list_subagent_profiles", {})).content[0] as { text: string }).text;
+    assert.equal(a, b);
+    assert.equal(a.split("\n")[1], 'claude: Claude · Opus 5.5 · When a Chat Starts + Models · subagent_profile claude-lib · not marked "The Overseer may start it"');
+    assert.match(a, /^off: Off · .* · default$/m);
+    // An older peer with no joined list: its library, Models part only.
+    const old = harness((path) => (path.startsWith("/api/profiles") ? Response.json({ profiles: [] }) : undefined));
+    assert.match(((await old.run("sova_list_profiles", {})).content[0] as { text: string }).text, /^gpt-crew: GPT crew · y · Models part only · needs no mark$/m);
+  });
+});
+
 describe("the Overseer may start only profiles marked for it (§app.overseer/tools)", () => {
   function harness(sessions: SessionSummary[]) {
     const requests: string[] = [];
@@ -455,7 +540,7 @@ describe("the Overseer may start only profiles marked for it (§app.overseer/too
     writeFileSync(join(agentDir, "sova", "session-profiles.json"), JSON.stringify({ version: 1, profiles: [{ id: "spec-auditor", label: "Spec auditor", icon: "eye", remove: ["edit"], grant: ["sessions.read"], overseerMayStart: false }] }));
     const h = harness([]);
     await assert.rejects(h.call({ cwd, profile: "spec-auditor" }), /isn't marked "The Overseer may start it"/);
-    await assert.rejects(h.call({ cwd, profile: "nope" }), /No profile "nope"/);
+    await assert.rejects(h.call({ cwd, profile: "nope" }), /Unknown profile: nope\. sova_list_profiles lists them\. No session was created\./);
     // A project profile the user hasn't approved: refused the same way, before anything or any cap.
     const fresh = join(agentDir, "fresh-overseer");
     mkdirSync(join(fresh, ".sova", "profiles"), { recursive: true });

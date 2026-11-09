@@ -323,6 +323,12 @@ export interface CodingModeApplied {
  * finishes in the old mode) and what the session is on.
  */
 export async function applyCodingMode(path: string, mode: CodingModeSwitch): Promise<CodingModeApplied> {
+  // A named profile with session powers, marked for the Overseer and approved: its session half is written whole,
+  // by the Overseer, before the mode below (which the call may have named over the profile's) is applied and pinned.
+  if (mode.profileStart) {
+    const r = await (await import("./session-profile-routes")).applyProfile(path, { source: mode.profileStart.source as never, id: mode.profileStart.id }, "overseer");
+    if (!r.ok) throw new OrgError(`its profile was not set: ${r.error}`, 409);
+  }
   const chat = await acquireChatHandle(path);
   const patch = { ...(mode.mode ? { mode: mode.mode } : {}), ...(mode.minorModes ? { minorModes: mode.minorModes as never } : {}) };
   if (Object.keys(patch).length || mode.subagentProfile === undefined) {
@@ -331,7 +337,14 @@ export async function applyCodingMode(path: string, mode: CodingModeSwitch): Pro
       throw new OrgError(plan === "unsupported" ? "the mode extension is not loaded in it" : "it is open in another writer (a terminal, or a process Sova doesn't know)", 409);
     if (!(await chat.pinMode())) throw new OrgError("its mode entry could not be written", 409);
   }
-  const profile = mode.subagentProfile !== undefined ? (await chat.switchSubagentProfile(mode.subagentProfile)).current.name : (await chat.subagentProfileInfo()).current.name;
+  // A named profile switches its whole Models part, checked first, all or nothing (§chat.profiles/switch); never its
+  // tools or powers. `subagent_profile`: only the helpers.
+  let profile: string | null;
+  if (mode.profile !== undefined) {
+    const r = await (await import("./profile-switch")).switchChatProfile(path, mode.profile);
+    if (!r.ok) throw new OrgError(`its profile was not switched: ${r.error}`, r.status === 404 ? 400 : 409);
+    profile = (r.applies === "after-turn" ? r.state.pending?.name : r.state.current.name) ?? mode.profile;
+  } else profile = mode.subagentProfile !== undefined ? (await chat.switchSubagentProfile(mode.subagentProfile)).current.name : (await chat.subagentProfileInfo()).current.name;
   const now = chat.mirror.mode;
   return { applies: chat.mirror.running ? "after-turn" : "now", mode: { mode: now.mode, minorModes: [...now.minorModes] }, profile: profile ?? null };
 }

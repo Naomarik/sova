@@ -142,7 +142,7 @@ test("card, feature on: body lines everywhere; the foot only on the answerable n
     // Reviewer None: disabled with the reason.
     const none = draw(d, answer({ current: () => d, reviewBlocked: () => NO_REVIEWER }));
     assert.match(none, /aria-disabled="true"[^>]*title="No reviewer is set/);
-    assert.match(none, /<span class="align-doc-foot-hint">No reviewer is set for this chat's subagent profile/, "the reason beside it");
+    assert.match(none, /<span class="align-doc-foot-hint">No reviewer is set for this chat's profile \(Settings → Profiles/, "the reason beside it");
     // Running: the card holds to its header and one status line; nothing to read, tick or press.
     const open = doc({ questions: [{ ...d.questions[0]!, decision: undefined }], review: { plan: entry("running", { model: "pi · sol · high" }) } });
     for (const running of [draw(open, answer({ current: () => open })), draw(open)]) {

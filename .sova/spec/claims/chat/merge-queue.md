@@ -309,7 +309,9 @@ follow card does (§chat.transcript-cards/placement):
 
 **What it shows.** Every revision has the branch icon, the state pill in the same words as the
 composer's modal, "{branch} into {target}", the short commit (the landed one once it lands, else the
-approved one), the worktree's path, and **View Merge Queue**. While queued it says "starts in ~N min
+approved one), the worktree's path, the branch's place line, which unfolds to its folder
+(§chat.worktrees/place), and **View Merge Queue**. A card or earlier copy written before Sova had
+that line stays as it was: none is added to it. While queued it says "starts in ~N min
 · takes ~N min" and offers **Remove from Queue**; while checking, "Checking · 4 of 7 steps".
 - **Landed** looks like the Merged card a chat's own merge gets (§chat.worktrees/merge-card): a
   LANDED pill, "{branch} into {target} {sha}", "{n} commits · +{a} −{d} · {time}" (counted at the
@@ -599,7 +601,8 @@ disagree.
   a "Can't" (§app.merge-queue/needs-user), and the held note of a decision once the user answers it
   (§chat.merge-queue/decision). Landed, Drafts changed and a refused typed "land it" stay hidden
   lines (§chat.merge-queue/chat-turns).
-- **Each request has an id** (`rq_…`) and names its branch and its entry; the chat's answer names
+- **Each request has an id** (`rq_…`) and names its branch, that branch's place
+  (§chat.worktrees/place) and its entry; the chat's answer names
   that id (§chat.merge-queue/answers).
 - **Framed as requests, the user first.** A batch of them tells the model they are requests from
   Sova's merge queue it may act on, with its own user first (§chat.topics/delivery). They are never
@@ -614,8 +617,9 @@ disagree.
   message; once a request is waiting for that chat, the card reads "Paused: you stopped the chat"
   (§chat.merge-queue/chat-card). Remove from Queue still ends the entry, and drops its requests not
   yet delivered.
-- **In the transcript** a batch shows as one folded row, "Merge queue · {branch} · {n} requests",
-  with a branch icon, opening to each request (§chat.topics/row). It is never a "You" bubble and
+- **In the transcript** a batch shows as one folded row, "Merge queue · {branch} in {place} · {n}
+  requests" (§chat.worktrees/place), with a branch icon, opening to each request, which names its
+  branch the same way (§chat.topics/row). It is never a "You" bubble and
   never counted among the user's inputs.
 - **Read like a turn the user started, for attention.** A merge queue batch's turn gets a turn
   outcome and its reply is checked for a question to the user (§app.decisions/attention-signals,
@@ -668,8 +672,8 @@ Merge Queue tab's Needs you (§app.merge-queue/view) and in the landing bar
 - **Choices fill the message box.** A choice button adds its words to the chat's message box and
   puts focus there, where the user may change them; nothing is sent until the user sends.
 - **The message box says it is waiting for the user's answer.** While a decision's note is held, the
-  composer shows it above the message box ("Merge queue · {branch} · not sent yet: your answer goes
-  with it"), so the user knows their own answer is wanted there.
+  composer shows it above the message box ("Merge queue · {branch} in {place} · not sent yet: your
+  answer goes with it", §chat.worktrees/place), so the user knows their own answer is wanted there.
 - **One turn.** When the user sends, their answer and the held note reach the chat together, as one
   message: the user's message as their own words, then the note, marked as the merge queue's held
   note, never the user's (§chat.topics/delivery). Sent while the chat is working, they go together

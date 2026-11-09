@@ -557,7 +557,7 @@
   "§app/claude-logins": {
     "kind": "surface",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/claude-code/accounts.ts",
       "pi-config/extensions/claude-code/README.md"

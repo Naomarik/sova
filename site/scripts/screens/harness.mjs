@@ -176,7 +176,7 @@ export async function startServer(root, { node = false } = {}) {
 
 // ---- the browser ------------------------------------------------------------------------------
 
-const SKILL = resolve(REPO, ".claude/skills/playwright/scripts");
+const SKILL = resolve(REPO, ".agents/skills/playwright/scripts");
 
 /** The playwright skill's isolated browser (start-browser.sh), and playwright from its own
     node_modules, refused when that resolves outside this worktree. Where start-browser.sh can't

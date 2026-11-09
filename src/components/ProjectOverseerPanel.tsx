@@ -863,7 +863,7 @@ function GatheringAbilitiesField(props: { info: ProjectOverseerInfo; onSave(set:
 /**
  * What coding sessions start in (§app.project-overseer/coding-mode): read-only. A project has no mode of
  * its own: unnamed, a coding session starts in this computer's default mode and subagent profile, which
- * Save as default in any chat's mode menu changes.
+ * Make Default in Settings → Profiles changes.
  */
 function CodingMode(props: { info: ProjectOverseerInfo }) {
   const hint = () => codingModeHint(props.info.codingModeNow);

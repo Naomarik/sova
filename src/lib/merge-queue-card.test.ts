@@ -1,7 +1,8 @@
 // The merge queue's card in a branch's chat: its words, its actions, its rows and their folding.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cardActionLabel, cardActions, cardDecision, cardFacts, cardPill, foldedLine, isNewest, notPushed, queueCardRows, queueRowOf, cardNewer, type QueueCard } from "./merge-queue-card";
+import { cardActionLabel, cardActions, cardDecision, cardFacts, cardPill, foldedLine, isNewest, notPushed, queueCardRows, queueRowOf, cardNewer, cardPlaceRow, mergeQueueBatchLabel, type QueueCard } from "./merge-queue-card";
+import { placeFold, placeLine } from "./branch-place";
 
 const SHA = "a".repeat(40);
 const card = (x: Partial<QueueCard> = {}): QueueCard => ({
@@ -144,4 +145,24 @@ test("Land Again only for real work the server counted, never once the entry set
   assert.deepEqual(cardActions({ state: "landed", newerCommits: 1 }), ["land-again"]);
   assert.deepEqual(cardActions({ state: "landed" }), []);
   assert.deepEqual(cardActions({ state: "landed", newerCommits: 1, settled: "gone" as never }), []);
+});
+
+test("the card's place line: its target while in line, merged once landed, none on a card from before", () => {
+  const place = { label: "AmalMoney", root: "/w/sova" };
+  assert.equal(placeLine(cardPlaceRow(card({ place }))), "AmalMoney · merges into master");
+  assert.equal(placeLine(cardPlaceRow(card({ place, state: "landed" }))), "AmalMoney · merged into master");
+  assert.equal(placeLine(cardPlaceRow(card())), undefined);
+  assert.deepEqual(placeFold(cardPlaceRow(card({ place, worktree: "/w/x" })), "/w").lines, [
+    { label: "Branch folder", value: "~/x" },
+    { label: "Merges into", value: "master of ~/sova" },
+  ]);
+});
+
+test("the batch row names its one branch in its place, or counts several", () => {
+  const note = (branch: string, place?: string) => ({ id: "qi", from: { sessionId: "merge-queue", title: "Merge queue" }, at: "", text: "t", request: { id: "rq", branch, ...(place ? { place } : {}) } });
+  const label = (...notes: ReturnType<typeof note>[]) => mergeQueueBatchLabel({ topic: "t", batch: "b", notes, mergeQueue: true });
+  assert.equal(label(note("feat/x", "AmalMoney")), "Merge queue · feat/x in AmalMoney · 1 request");
+  assert.equal(label(note("feat/x"), note("feat/x", "~/code/tools")), "Merge queue · feat/x in ~/code/tools · 2 requests");
+  assert.equal(label(note("feat/x")), "Merge queue · feat/x · 1 request");
+  assert.equal(label(note("feat/x", "A"), note("feat/y", "B")), "Merge queue · 2 branches · 2 requests");
 });

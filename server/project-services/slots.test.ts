@@ -26,6 +26,7 @@ import { readRegistry } from "./store";
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-slots-agent-"));
 
 const op: Caller = { kind: "operator" };
+const NEXT_ACTION = /Tear down a copy this session made; otherwise ask the user to free a place with Teardown on the Branches tab\.$/;
 const roots: string[] = [];
 
 after(() => {
@@ -250,7 +251,26 @@ test("every slot of 1 to 16 blocked with room under the limit: slots-blocked, na
   assert.match(m, /slot 1 needs port 36001, which pid 4001 \(\/app1\) is listening on/);
   assert.match(m, /slot 16 needs port 36016, which pid 4016 is listening on/);
   assert.doesNotMatch(m, /slot 17/);
+  assert.match(m, NEXT_ACTION);
   assert.equal(readRegistry().instances.filter((i) => i.project === project).length, 0, "nothing was made");
+});
+
+test("slots-blocked names each copy holding a place, running or stopped, then what to do; other holders by port", async () => {
+  const BASE = 36_500;
+  const { project, host, engine } = fixture(defOf(2, BASE));
+  ok(await engine.run("up", { project, branch: "sova/up", slot: 1 }, op));
+  ok(await engine.run("create", { project, branch: "sova/made", slot: 2 }, op));
+  for (let slot = 3; slot <= 16; slot++) host.listen(BASE + slot, 4_000 + slot, `/app${slot}`);
+  const r = await engine.run("create", { project, branch: "sova/a" }, op);
+  assert.equal(r.error?.code, "slots-blocked", JSON.stringify(r.error));
+  const m = r.error!.message;
+  assert.ok(m.includes("the project's copies hold: slot 1 (sova/up, running), slot 2 (sova/made, stopped)"), m);
+  assert.match(m, /slot 3 needs port 36503, which pid 4003 \(\/app3\) is listening on/);
+  assert.match(m, NEXT_ACTION);
+  const asked = await engine.run("create", { project, branch: "sova/b", slot: 1 }, op);
+  assert.equal(asked.error?.code, "slots-blocked", JSON.stringify(asked.error));
+  assert.ok(asked.error!.message.includes("slot 1 (sova/up, running), slot 2 (sova/made, stopped)"), asked.error!.message);
+  assert.match(asked.error!.message, NEXT_ACTION);
 });
 
 test("a bare create/up from the main checkout names the session's tracked worktrees; without any it stays forbidden", async () => {

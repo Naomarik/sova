@@ -19,7 +19,7 @@ What it draws on, all in this repository:
   with the same shape of SVG candidates, a self-contained comparison sheet and a CDP check, but
   the constants (paths, the 4-candidate count, the 32 grid, Sova's colors) are read from the
   round's `candidates.json` and the project's `brand.json`.
-- **The browser:** `.claude/skills/playwright/`. The generated scripts borrow its Playwright
+- **The browser:** `.agents/skills/playwright/`. The generated scripts borrow its Playwright
   install (recorded per machine in `.sova/marketing/local.json`) rather than adding one to the
   project.
 

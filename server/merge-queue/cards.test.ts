@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { scratchRoot } from "../test-scratch";
 import { join } from "node:path";
 import { describe, test } from "node:test";
@@ -30,7 +30,7 @@ const landed = (k: ReturnType<typeof makeKit>, id: string) =>
   }, `${id} landed`);
 
 /** A kit whose queue raises real cards: notify → cards, publish → sync; `last` is the chat's last transcript entry. */
-function cardKit(o: { deps?: Partial<QueueDeps>; threadAnswers?: boolean; wakeFails?: boolean; wakeHangs?: boolean; wake?: (session: string, text: string) => Promise<unknown>; homeOf?: (session: string) => Promise<{ id: string; path: string } | null> } = {}) {
+function cardKit(o: { placed?: () => string; deps?: Partial<QueueDeps>; threadAnswers?: boolean; wakeFails?: boolean; wakeHangs?: boolean; wake?: (session: string, text: string) => Promise<unknown>; homeOf?: (session: string) => Promise<{ id: string; path: string } | null> } = {}) {
   const chat = { last: "e1" as string | null };
   const wakes: { session: string; text: string; info?: { id?: string; kind?: string; branch?: string; entry?: string } }[] = [];
   const published: { session: string; cards: MergeCard[] }[] = [];
@@ -68,6 +68,7 @@ function cardKit(o: { deps?: Partial<QueueDeps>; threadAnswers?: boolean; wakeFa
       },
       publish: (session, list) => published.push({ session, cards: list }),
       ...(o.homeOf ? { homeOf: o.homeOf } : {}),
+      ...(o.placed ? { placeOf: (root: string, target: string) => ({ label: o.placed!(), root, target }) } : {}),
     });
   cards = make();
   return {
@@ -89,6 +90,38 @@ function cardKit(o: { deps?: Partial<QueueDeps>; threadAnswers?: boolean; wakeFa
 }
 
 describe("a branch's card in its own chat", () => {
+  test("a card names its branch's place and follows a rename; its requests name it too; a card from before the line never gets one", async () => {
+    let name = "AmalMoney";
+    const t = cardKit({ placed: () => name });
+    try {
+      const q = await t.k.q();
+      await q.pause("hold");
+      t.k.repo.branch("feat/a", { "a.txt": "a\n" });
+      t.k.repo.branch("feat/old", { "o.txt": "o\n" });
+      const { entry } = await q.add({ branch: "feat/a", by: "land-button", session: "s1" });
+      const old = await q.add({ branch: "feat/old", by: "land-button", session: "s1" });
+      await t.settle();
+      const card = () => t.cards.cardsOf("s1").find((c) => c.entry === entry.id)!;
+      assert.deepEqual(card().place, { label: "AmalMoney", root: card().root, target: card().target });
+      // A card as an older Sova wrote it.
+      const file = join(t.k.repo.state, "merge-queue", "cards", "s1.json");
+      const rec = JSON.parse(readFileSync(file, "utf8")) as { cards: MergeCard[] };
+      delete rec.cards.find((c) => c.entry === old.entry.id)!.place;
+      writeFileSync(file, JSON.stringify(rec));
+      name = "Renamed";
+      await q.note(entry.id, "any change", "operator");
+      await q.note(old.entry.id, "any change", "operator");
+      await t.settle();
+      await t.cards.sync(await q.view());
+      assert.equal(card().place?.label, "Renamed");
+      assert.equal(t.cards.cardsOf("s1").find((c) => c.entry === old.entry.id)!.place, undefined);
+      await t.cards.request(old.entry, { id: "rq_aaaaaaaaaaaa", kind: "blocked", entry: old.entry.id, branch: "feat/old", text: "x", at: "" });
+      assert.equal(t.wakes.at(-1)!.info && (t.wakes.at(-1)!.info as { place?: string }).place, "Renamed", "the request still names it");
+    } finally {
+      await t.k.done();
+    }
+  });
+
   test("Land raises one card at the chat's end; queued and checking revise it in place; Landed is a new revision lower down, with one hidden line and no turn", async () => {
     const t = cardKit();
     try {

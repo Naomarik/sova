@@ -143,7 +143,7 @@ test("the review kit is never a registered skill: not under a skills folder, not
   const kit = join(REPO, ".sova", "playbooks", "review");
   assert.ok(existsSync(join(kit, "PLAYBOOK.md")) && existsSync(join(kit, "references", "checklist.md")));
   assert.ok(!existsSync(join(kit, "SKILL.md")), "a SKILL.md would make it loadable as a skill");
-  for (const dir of [".claude/skills", ".pi/skills", "pi-config/skills"]) {
+  for (const dir of [".agents/skills", ".pi/skills", "pi-config/skills"]) {
     const d = join(REPO, dir);
     if (!existsSync(d)) continue;
     for (const name of readdirSync(d)) assert.ok(!/review/i.test(name) || !readFileSync(join(d, name, "SKILL.md"), "utf8").includes("Review kit"), `${dir}/${name} carries the review kit`);

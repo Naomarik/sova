@@ -1,5 +1,3 @@
-import type { SubagentProfilesInfo } from "../../shared/subagent-profiles";
-
 /** Usage-limit wording, and only that: auth, network and policy failures are never a usage limit,
     and a bare "429" doesn't even say whose it is. The first three alternatives are the claude-code
     transport's own limit classifier (its LIMIT_TEXT) verbatim, so a real Claude limit the row
@@ -52,17 +50,6 @@ export function exhaustedProvider(message: string, turnProvider?: string | null)
 export function failureHasRow(entries: readonly { kind: string; error?: string }[], message: string): boolean {
   const clean = (t: string) => t.replace(/\.$/, "");
   return entries.some((e) => e.kind === "assistant" && e.error !== undefined && clean(e.error) === clean(message));
-}
-
-/**
- * The one-tap alternative: the first profile in list order
- * whose workers — fallbacks included (`providers` counts them) — never spend the exhausted
- * provider. Never Off (it promises no provider choice) and never the chat's current profile.
- */
-export function limitAlternative(info: SubagentProfilesInfo, provider: string) {
-  return info.profiles.find(
-    (p) => p.id !== "off" && p.id !== info.current.id && p.providers.length > 0 && !p.providers.includes(provider),
-  );
 }
 
 /** A provider id the way the row says it. */

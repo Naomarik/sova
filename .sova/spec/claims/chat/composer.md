@@ -857,14 +857,16 @@ Escape closes that first).
 
 **The Worktrees modal** is titled "Worktrees", with the chat's title and a summary under it ("2 ready
 · 1 queued · 1 landed"), and the header's ✕, which closes it. The body explains nothing about Land;
-while a served row's queue is paused, one line says so with its why, and that Land still takes the
-approval. Then comes one row per worktree
+while a served row's queue is paused, one line says so, naming its project (one line for each paused
+project), with its why, and that Land still takes the approval. Then comes one row per worktree
 (dropped ones left out):
 - first, the title of the chat that owns the branch (§app.merge-queue/owner), a link to that chat,
   then the branch in small mono, then an "archived" tag when that chat is archived (a row whose
-  chat isn't known leads with its branch); the row names no worktree folder and carries no "Chat"
-  label;
-- on the line under it, its state, in the one vocabulary the pane and the Merge Queue view also use: **Ready** (with its
+  chat isn't known leads with its branch); that line names no worktree folder and the row carries no
+  "Chat" label;
+- on the line under it, the branch's place line, which unfolds to its folder
+  (§chat.worktrees/place);
+- on the line under that, its state, in the one vocabulary the pane and the Merge Queue view also use: **Ready** (with its
   short commit) · **Uncommitted** ("{n} files not committed", and to commit it in its chat) · **No
   commits yet** · **Queued · 2nd** (with "starts in ~N min · takes ~N min") · **Checking** ·
   **Conflict** · **Behaviour differs** (the target's side, the branch's side, the question and the
@@ -932,7 +934,8 @@ Land, Remove from Queue and every answer on a row count only as the user's own c
 
 **In a repository the merge queue doesn't serve** (§app.merge-queue/served) no row reads Ready,
 Landing specs or a queue state, and none offers Land: a ready branch reads **Ready to merge**, with
-"Say “land it” in the chat to merge it into main.". Such a row counts as ready all the same:
+"Say “land it” in the chat to merge it into {target}.", with the repository's real target
+(§chat.worktrees/place). Such a row counts as ready all the same:
 the control reads "1 ready" with its success dot, and the summary says so.
 
 **Land asks once** (§chat.composer/land-confirm): a row's Land queues nothing until its confirmation's
@@ -959,9 +962,10 @@ stays right-aligned.
 The modal has no Close button in its footer (the header's ✕ closes it). The footer holds, on the
 left, one line, "Land queues a branch; it lands as the commit that was tested.", shown only when a
 row's repository is one the merge queue serves, and, on the right, **View Merge Queue**, which
-opens the project's Merge Queue view (§app.merge-queue/view). View Merge Queue shows only when a
-row's repository is a project on the Projects list, set up or not; in a repository that isn't on
-the list it is left out. With neither, the modal has no footer.
+opens the project's Merge Queue view (§app.merge-queue/view). It is one link per project: when the
+chat's rows are in one project it reads as here, and with several each is named for its project,
+"View {project}'s Merge Queue". A link shows only for a row's repository that is a project on the
+Projects list, set up or not; a repository that isn't on the list gets none. With neither, the modal has no footer.
 
 The actions are the merge verbs (§app.project-services/merge-verbs). Land sends the commit the row
 showed, so a branch that moved meanwhile lands what the user saw (§app.merge-queue/approve). After one, the row is read again
@@ -977,11 +981,14 @@ Everywhere Land appears (the composer's Worktrees modal, §chat.composer/worktre
 session pane's Worktrees rows, §chat.worktrees/pane, and the Merge Queue tab, §app.merge-queue/view)
 the button reads **Land**, a compact button with its ▾ menu as a narrow tab beside it, and pressing
 it queues nothing: it replaces the row's actions with a confirmation, right-aligned under the row:
-"Land {branch}?", then "{n} commits go to the merge queue; {target} moves once checks pass.", with
-**Not Yet** on the left and **Land {n} Commits** rightmost. One commit reads "1 commit goes" and
-**Land 1 Commit**; a row whose count isn't known reads "Its commits go" and **Land Branch**. A
-project that lands by pull request, merge request or pushing the branch
-(§app.merge-queue/strategies) ends the line with what happens instead: "a pull request opens on
+"Land {branch}?", then, from a chat's rows (the modal and the pane), "{n} commits go to {project}'s
+merge queue; {target} moves once checks pass.", {project} being the branch's place
+(§chat.worktrees/place); on the project's own Merge Queue tab, "{n} commits go to the merge queue;
+{target} moves once checks pass.". Under it, **Not Yet** on the left and **Land {n} Commits**
+rightmost. One commit reads "1 commit goes" and **Land 1 Commit**; a row whose count isn't known
+reads "Its commits go" and **Land Branch**. A project that lands by pull request, merge request or
+pushing the branch (§app.merge-queue/strategies) ends the line with what happens instead, on a
+chat's rows and on the Merge Queue tab alike: "a pull request opens on
 GitHub once checks pass.", "a merge request opens on GitLab once checks pass.", "the branch is
 pushed once checks pass.". The confirmation's action takes focus when it opens. Only Land {n}
 Commits approves the branch, at the commit the row showed. Not Yet, or Escape, puts the row's

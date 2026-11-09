@@ -278,8 +278,8 @@ the model that answered, marked ⚠ with the same `title`, never merged into eit
 ## §app.claude-code-provider/catalog-drift — The CLI's model list only notifies
 
 The `claude` initialize model list (an initialize-only call, cached 60 s, no model request) is read
-only to notice drift, never to build a list. Settings → Subagents shows one quiet note under its
-intro when the list names a model the catalog doesn't know ("Claude Code offers {name}
+only to notice drift, never to build a list. Settings → Profiles (which took the place of Settings →
+Subagents) shows one quiet note under its Models part's first line when the list names a model the catalog doesn't know ("Claude Code offers {name}
 ({id}), which Sova's catalog doesn't know yet.") or resolves a family's alias to another model than
 the catalog's current one ("Claude Code now runs {family} as {id}; Sova's catalog still says
 {current}."). Nothing changes when the list omits a catalog model or can't be read.

@@ -3,6 +3,7 @@
 // failed", "Waiting for the merge thread", "Paused: you stopped the chat", "Approved · waiting for a fix"), the chat's
 // answer ("Fixed: commit a1b2c3d"), and a decision that waits for the user (its question, its choices that fill the
 // message box, the queue's held note "not sent yet", and the answers that act at once). Pure words: no Solid, no DOM.
+import { branchInPlace } from "./branch-place";
 import type { MergeChatAnswer, MergeDecision, MergeDecisionAction, MergeStanding } from "../../shared/merge-queue";
 
 const short = (sha: string): string => sha.slice(0, 7);
@@ -107,17 +108,17 @@ export function decisionWords(f: Partial<Pick<StandingFacts, "decision">>): { la
 export const HELD_NOTE_LINE = "Not sent yet: your answer goes with it";
 
 /** The composer's line while a decision's note is held (§chat.merge-queue/decision). */
-export const heldComposerLine = (branch: string): string => `Merge queue · ${branch} · not sent yet: your answer goes with it`;
+export const heldComposerLine = (branch: string, place?: string): string => `Merge queue · ${branchInPlace(branch, place)} · not sent yet: your answer goes with it`;
 
 /** The merge thread's own chat, while its question waits on the user there (§chat.merge-queue/asks). */
 export const heldAskLine = (question: string): string => `Merge thread asks: ${question.trim()} · not sent yet: your answer goes with it`;
 
 /** The decision a typed message answers, among a chat's cards: the one a choice was picked from while it still waits,
  *  else the newest that holds a note (what the server attaches when a message names none). */
-export function heldDecisionOf(cards: readonly { branch: string; decision?: CardDecision | null }[], picked?: string): { branch: string; id: string } | null {
-  const held = cards.map((c) => ({ branch: c.branch, d: openDecision(c) })).filter((x) => x.d?.heldNote);
+export function heldDecisionOf(cards: readonly { branch: string; place?: { label: string }; decision?: CardDecision | null }[], picked?: string): { branch: string; place?: string; id: string } | null {
+  const held = cards.map((c) => ({ branch: c.branch, place: c.place?.label, d: openDecision(c) })).filter((x) => x.d?.heldNote);
   const chosen = (picked && held.find((x) => x.d!.id === picked)) || [...held].sort((a, b) => Date.parse(b.d!.at) - Date.parse(a.d!.at))[0];
-  return chosen ? { branch: chosen.branch, id: chosen.d!.id } : null;
+  return chosen ? { branch: chosen.branch, ...(chosen.place ? { place: chosen.place } : {}), id: chosen.d!.id } : null;
 }
 
 /** A decision answered in words (it has choices or a held note): answered in the chat's message box. */

@@ -386,16 +386,18 @@ for (const width of [390, 1440]) {
 // Skills offered reads as Instruction files does, with one deliberate difference: a skill not read yet is
 // already in the window, so its section says nothing of not counting and its size stays in the total.
 const PLAYWRIGHT_DOC = "/w/skills/playwright/SKILL.md";
+/** The fixture with no partly read skill, for the two-way split of Read and Not read yet. */
+const READ_OR_NOT: SessionContextView = { ...VIEW, skills: VIEW.skills!.filter((s) => !s.linesRead) };
 const SKILL_FILES = { [PLAYWRIGHT_DOC]: "---\nname: playwright\n---\n# Playwright\n\nBrowser automation." };
 const eyebrow = (page: Page) => page.locator(".context-sheet .context-sheet-eyebrow");
 
 for (const width of [390, 1440]) {
   test(`at ${width}px: the strip has no Skills tab, and Skills offered lists what was read, then Not read yet`, async () => {
     const errors: string[] = [];
-    const page = await open(width, "light", { files: SKILL_FILES, errors });
+    const page = await open(width, "light", { view: READ_OR_NOT, files: SKILL_FILES, errors });
     try {
       const tabs = await page.locator("#session-pane .session-tabs [role=tab]").allInnerTexts();
-      assert.deepEqual(tabs.map((t) => t.trim()), ["Session", "Timeline", "Agents", "Usage", "Context", "Sharing", "Explain"]);
+      assert.deepEqual(tabs.map((t) => t.trim()), ["Session", "Timeline", "Agents", "Usage", "Time Spent", "Context", "Sharing", "Explain"]);
       assert.equal(await page.locator("#session-tab-skills").count(), 0);
 
       // The group's own row is as it was: its count, and every skill in its size.
@@ -445,7 +447,7 @@ for (const width of [390, 1440]) {
   });
 
   test(`at ${width}px: with one group of skills, only that group shows`, async () => {
-    const allAs = (read: boolean): SessionContextView => ({ ...VIEW, skills: VIEW.skills!.map((s) => ({ ...s, read })) });
+    const allAs = (read: boolean): SessionContextView => ({ ...READ_OR_NOT, skills: READ_OR_NOT.skills!.map((s) => ({ ...s, read })) });
     const none = await open(width, "light", { view: allAs(false), files: SKILL_FILES });
     try {
       await none.locator('[data-ctx-key="line:skills"]').click();

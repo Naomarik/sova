@@ -243,7 +243,8 @@ export function groupSheet(line: Pick<ContextLine, "kind" | "meta" | "parts" | "
     const above = line.parts.slice(0, from);
     const parts = line.parts.slice(from, end);
     const not = line.parts.slice(end);
-    const sub = [`${above.length} read`, ...(parts.length ? [`${parts.length} not read yet`] : []), ...(not.length ? [`${not.length} not offered yet`] : [])].join(" · ");
+    const partly = above.filter((p) => !p.read && p.linesRead).length;
+    const sub = [`${above.length - partly} read`, ...(partly ? [`${partly} partly read`] : []), ...(parts.length ? [`${parts.length} not read yet`] : []), ...(not.length ? [`${not.length} not offered yet`] : [])].join(" · ");
     return {
       sub,
       above,

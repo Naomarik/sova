@@ -89,6 +89,7 @@ describe("the Context tab's groups", () => {
       const line = layoutOf(skill("unread", 900, false), partly("part"), skill("whole", 100, true)).lines.find((x) => x.kind === "skills")!;
       assert.deepEqual(line.parts.map((p) => p.label), ["whole", "part", "unread"]);
       assert.equal(line.notReadFrom, 2);
+      assert.equal(groupSheet(line).sub, "1 read · 1 partly read · 1 not read yet");
       for (const p of [partly("a"), partly("b", { manualOnly: true }), partly("c", { offered: false, folder: "pkg" })]) {
         const meta = partMeta(p);
         assert.equal(meta.chip?.word, "Partly read");

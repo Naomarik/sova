@@ -640,9 +640,12 @@ for (const { why, members } of membersFixtures()) {
       await quiet();
       assert.equal(o!.read(LIB), edited, "the older peer's file is byte-identical");
 
-      // The merge's own text: each side has something the other lacks.
+      // The merge's own text: each side has something the other lacks. Apart while they edit: a's own
+      // debounced push could otherwise bring z to o first, and o's list, without z, would then delete it.
+      a!.online = o!.online = false;
       await write(a!, [...olderProfiles(a!.read(LIB)!), prof("z", "Z")]);
       await write(o!, [x("zai/two"), prof("y", "Y", "zai/y-edit")]);
+      a!.online = o!.online = true;
       await converge([a!, o!]);
       const merged = agrees();
       const onDisk = (JSON.parse(merged) as { profiles: { id: string; members: unknown; specWriter: { primary: { model: string } } | null }[] }).profiles;

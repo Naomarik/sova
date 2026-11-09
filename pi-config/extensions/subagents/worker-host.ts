@@ -7,8 +7,8 @@
  * server.
  */
 
-/** What kind of worker chat: an agent_spawn/team worker, or a hidden chat. */
-export type WorkerKind = "worker" | "explain" | "handoff" | "btw";
+/** What kind of worker chat: an agent_spawn/team worker, a hidden chat, or a design session Sova's server starts. */
+export type WorkerKind = "worker" | "explain" | "handoff" | "btw" | "design" | "design-coordinator";
 
 /** A worker chat's whole loadout, as data. The parent computed it; nobody here interprets policy. */
 export interface WorkerSpec {
@@ -59,6 +59,8 @@ export interface WorkerStart {
 	session: WorkerSession;
 	/** The first prompt; null for a resume (it comes up idle). */
 	task: string | null;
+	/** Images sent with the first prompt (a design session's reference screenshots). */
+	images?: { type: "image"; data: string; mimeType: string }[];
 }
 
 export interface WorkerRef {
@@ -126,6 +128,8 @@ export interface WorkerState {
 	/** The last settled run: its key (`<send key>#<n>`, n counting this process's settles), the entry
 	    id of its final assistant message when known, its outcome, error. */
 	lastSettled: { key: string; entryId?: string; outcome: "success" | "error" | "aborted"; error?: string } | null;
+	/** Why the stream guard stopped its last turn, in plain words, if it did. */
+	trip?: string;
 	queue: { steering: string[]; followUp: string[] };
 	/** Its process's feed names the send key of each user message (`sendKey` on its message_start and
 	    message_end) and tells a keyed send whose message never ran (`{type: "send_dropped", sendKey}`,

@@ -43,6 +43,7 @@ import { registerConversationDraftRoutes } from "./conversation-draft-routes";
 import { registerVoiceRoutes } from "./voice/service";
 import { registerSessionShareRoutes } from "./session-shares-routes";
 import { mountTourRoutes } from "./tour-routes";
+import { mountDesignRoutes } from "./design/routes";
 import { ensureTourToolRuntime, setTourNeedsYou, setTourResumed } from "./tours/runtime";
 import { setTourSignInWaits, tourResumedNotifier, tourSignInNotifier } from "./tours/sign-in-notice";
 import { registerSessionForkRoutes } from "./session-fork-routes";
@@ -544,6 +545,7 @@ export function buildApp(deps: AppDeps) {
   // §app/session-share). The recipients' routes are the share listener's (server/share/session-routes.ts).
   registerSessionShareRoutes(app);
   mountTourRoutes(app);
+  mountDesignRoutes(app);
   // A tour recording waiting for a sign-in marks its chat as needing you and tells its agent once, through
   // Sova's own prompt, so a chat Sova can't write to gets only the mark (§app.tours/sites). No secret goes either way.
   // The notice is held while the chat is busy (never queued behind its turn) and dropped once that wait has ended.

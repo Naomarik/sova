@@ -1,5 +1,6 @@
 import type { HarnessSession } from "../shared/harness";
 import type { SpecialKind } from "./chat-handle";
+import { DESIGN_OUTPUT_CHARS } from "../shared/design";
 
 /**
  * The runaway-stream guard (§chat.transcript/runaway-stream): every hosted runtime's turn is
@@ -42,7 +43,7 @@ export interface StreamCaps {
 const K = 1024;
 const COMMON = { whitespaceRunChars: 8 * K, starvedMs: 750, starvedMinArgChars: 128 * K } as const;
 /** The caps by runtime kind. Baton sessions (share links, the wrap-up) and both overseers run unattended. */
-const CAPS: Record<"baton" | "overseer" | "project-overseer" | "project-assistant" | "chat", StreamCaps> = {
+const CAPS: Record<StreamKind, StreamCaps> = {
   baton: { ...COMMON, toolArgChars: 64 * K, outputChars: 256 * K, runWallMs: 10 * 60_000 },
   overseer: { ...COMMON, toolArgChars: 64 * K, outputChars: null, runWallMs: 10 * 60_000 },
   // Its conversation lives in the org's workspace repo, cloned to every host: one reply can't grow past what reads back.
@@ -50,6 +51,10 @@ const CAPS: Record<"baton" | "overseer" | "project-overseer" | "project-assistan
   // The org owner's Project Assistant: an outsider's reply, like a baton's, in the org's workspace repo.
   "project-assistant": { ...COMMON, toolArgChars: 64 * K, outputChars: 256 * K, runWallMs: 10 * 60_000 },
   chat: { ...COMMON, toolArgChars: K * K, outputChars: null, runWallMs: null },
+  // A design session's page budget: 32K tokens at four characters each (t30). Models and providers ignore an
+  // output cap, so this is where it holds. Page, thinking and reply count together, and a page written in the
+  // reply (q15) is held to it as one written through the tool is.
+  design: { ...COMMON, toolArgChars: DESIGN_OUTPUT_CHARS, outputChars: DESIGN_OUTPUT_CHARS, runWallMs: null },
 };
 
 let override: Partial<StreamCaps> | null = null;
@@ -58,7 +63,9 @@ export function setStreamCapsForTest(caps: Partial<StreamCaps> | null): void {
   override = caps;
 }
 
-export function capsFor(kind: SpecialKind | null): StreamCaps {
+export type StreamKind = SpecialKind | "chat" | "design";
+
+export function capsFor(kind: StreamKind | null): StreamCaps {
   const base = CAPS[kind ?? "chat"];
   return override ? { ...base, ...override } : base;
 }

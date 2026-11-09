@@ -4,6 +4,7 @@
  */
 import type { CommandEntry, CommandParam } from "./types.ts";
 import { CHAT_ENTRIES } from "./chat.ts";
+import { DESIGN_ENTRIES } from "./design.ts";
 
 const orgId: CommandParam = { type: "string", description: "The organization's id", in: "path", required: true };
 const requestId: CommandParam = { type: "string", description: "The owner request's id (or_…)", in: "path", required: true };
@@ -746,4 +747,5 @@ export const OTHER_ENTRIES: CommandEntry[] = [
   ...ORG_VERSION_SUMMARY_ENTRIES,
   ...ORG_CLAUDE_LOGIN_ENTRIES,
   ...CHAT_ENTRIES,
+  ...DESIGN_ENTRIES,
 ];

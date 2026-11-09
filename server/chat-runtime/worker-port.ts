@@ -11,6 +11,8 @@ import type { Link } from "./link";
 
 /** The protocol that carries worker chats and the worker host. */
 export const WORKER_PROTO = 3;
+/** The first protocol that takes a design session's `design.live` frames. */
+export const DESIGN_PROTO = 4;
 
 type Op = FrameOf<"wk">["op"];
 

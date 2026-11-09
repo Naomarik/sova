@@ -38,8 +38,10 @@ import type { ChatClientMessage, SessionInsight, SessionSummary, TranscriptItem 
     chats only.
     3 (al_3 stage 4): worker chats (`open.worker`, the `feed` and `feedSince`), a parent chat's worker
     host over its link (`wk*`), the mirror's `worker` and `llm`. A proto-2 peer refuses `open.worker`
-    ("needs protocol 3") and runs its own workers as before. */
-export const CHAT_WIRE_PROTO = 3;
+    ("needs protocol 3") and runs its own workers as before.
+    4 (design mode): `design.live`, a design session's page as it is written. Additive: a proto-3
+    server ignores it and the card shows the page when it is finished. */
+export const CHAT_WIRE_PROTO = 4;
 export const CHAT_WIRE_MIN_PROTO = 1;
 /** A frame above this is a protocol error: the link closes. */
 export const FRAME_MAX_BYTES = 64 * 1024 * 1024;
@@ -351,6 +353,11 @@ export type ChatRequestWire = { t: "reload.request"; auto: boolean };
     wire-1 frame its panes get, numbered per process. */
 export type WorkerFeedWire = { t: "feed"; cursor: WorkerCursor; event: unknown };
 
+/** A design session's page while it is written (proto 4), runtime → server: slices
+    coalesced to a few a second, never the raw deltas. `gen` numbers the page within the process; `at`
+    is where in it `text` starts, 0 after a link came back. */
+export type DesignLiveWire = { t: "design.live"; gen: number; at: number; text: string };
+
 /**
  * A parent chat's worker host over its link (proto 3). Ops are idempotent (keys on start and send;
  * stop and abort repeat harmlessly), so the runtime sends an unanswered `wk` again at the next
@@ -380,6 +387,7 @@ export type ChatWireFrame =
   | ChatRequestWire
   | ChatBootWire
   | WorkerFeedWire
+  | DesignLiveWire
   | WorkerHostWire;
 
 export type ChatWireType = ChatWireFrame["t"];

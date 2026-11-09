@@ -71,6 +71,7 @@ import { stateView } from "./harness/state-view";
 import { playbookHost } from "./playbook-host";
 import { projectEngine } from "./project-services/routes";
 import { sessionInstanceNote, sessionVerbsTool } from "./project-services/tools";
+import { coordinatorTools } from "./design/coordinator";
 import { agentRoot, stateRoot } from "./state-root";
 import { backgroundJobTool, realRequestDeps, type JobsHere, type ToolOwner } from "./background-jobs-request";
 import { jobsEnv } from "./background-jobs";
@@ -80,6 +81,7 @@ import { readWorkerNice } from "./process-priority";
 import { queueOpenTool, queuePushTool } from "./topics";
 import type { PowersSend } from "./session-powers";
 import { tourTools } from "./tours/tools";
+import { designLabelOf, mainDesignTools, sessionDesignTools } from "./design/tools";
 import { sessionOfferTools } from "./session-offers-tool";
 import { offerNoteFor } from "./session-offers";
 import { sessionCardTools } from "./transcript-cards-tool";
@@ -709,6 +711,8 @@ export async function fileSnapshot(path: string, w: Partial<ServerToolCtxWire> &
     (its pi session name, often none), used only when the session's display title can't be read. */
 export function servedToolsFor(chatId: ChatId, sessionId: string, known: () => string | undefined, powers = false, plain = !powers): ServerToolDecl[] {
   const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title: () => senderTitle(chatId, known) }), ...tourTools(sessionId, chatId), jobTool({ path: chatId })];
+  // Declared for a plain chat only; its extension keeps them active only while Design mode is on.
+  if (plain) specs.push(...mainDesignTools(() => ({ sessionId, path: chatId }), () => chatHandle(chatId)?.mirror.cwd ?? ""));
   // Declared for a plain chat only: a special kind's own tool of this name (a project overseer's) must keep answering.
   // Its extension keeps it active only in Create (§chat.create-mode/settings-cards).
   if (plain) specs.push(createSettingsTool({ sessionId, mode: () => chatHandle(chatId)?.mirror.mode.mode, cwd: () => chatHandle(chatId)?.mirror.cwd ?? "" }));
@@ -732,6 +736,13 @@ export function servedWorkerTools(chatId: ChatId, spec?: Pick<WorkerSpec, "flags
   return specs.map(declOfTool);
 }
 
+/** A chat's design coordinator's tools, hosted here. Its chat comes from its record, never from the model. */
+export function servedCoordinatorTools(chatId: ChatId, parentSessionId: string): ServerToolDecl[] {
+  const specs = coordinatorTools(parentSessionId);
+  serveTools(chatId, specs);
+  return specs.map(declOfTool);
+}
+
 /**
  * Every server-hosted tool of a chat this server opens or adopts: servedToolsFor's, then, for an
  * ordinary chat (no special kind but a powers profile), its `offer` tool when its snapshot names any
@@ -745,6 +756,15 @@ export async function servedToolsForChat(chatId: ChatId, sessionId: string, know
   if (!extra.length) return decls;
   serveTools(chatId, extra);
   return [...decls, ...extra.map(declOfTool)];
+}
+
+/** A design session's tools (`design_stream`, `design_hand_in`), hosted here for the design it was started for. */
+export function servedDesignSessionTools(chatId: ChatId, spec: Pick<WorkerSpec, "parent">): ServerToolDecl[] {
+  const label = designLabelOf(spec.parent.workerId);
+  if (!label) return [];
+  const specs = sessionDesignTools({ sessionId: spec.parent.sessionId, path: spec.parent.path }, label);
+  serveTools(chatId, specs);
+  return specs.map(declOfTool);
 }
 
 /** `background_job` for one chat: jobs are kept where chats run in systemd units and wakes are on. */

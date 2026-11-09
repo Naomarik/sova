@@ -14,6 +14,7 @@ import { isDirectLocal } from "./compression";
 import { acquireChatHandle, ArchivedError, BusyError, ConfigError, type ChatClient } from "./chat-handle";
 import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
 import { resolveSessionPath } from "./paths";
+import { onDesignNews } from "./design/live";
 import { trackViewer } from "./seen";
 import { nudgeMarks, sessionFeed } from "./session-feed";
 import { llmInflight } from "./llm-inflight";
@@ -296,9 +297,12 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   }
   // A pane on screen hears its chat's cards change at once (§chat.transcript-cards/answering); a script's socket doesn't ask.
   const offCards = viewer ? onCardNews((e) => e.id === id && client.send({ type: "cards_changed" })) : null;
+  // The same pane hears its chat's designs as they are written.
+  const offDesigns = viewer ? onDesignNews((n) => n.sessionId === id && client.send({ type: "event", v: 2, event: n.event })) : null;
   ws.on("close", () => {
     gone = true;
     offCards?.();
+    offDesigns?.();
     if (viewer) trackViewer(id, -1);
     if (chat) stayToHear();
   });

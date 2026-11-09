@@ -46,6 +46,8 @@ export interface RemoteHooks {
   linkLive?(sessionId: string): boolean;
   /** A worker chat's feed frame (proto 3). */
   feed?(h: RemoteChatHandle, f: FrameOf<"feed">): void;
+  /** A design session's page, as it is written (proto 4). */
+  designLive?(h: RemoteChatHandle, f: FrameOf<"design.live">): void;
   /** A parent chat's worker host asks (proto 3): an op, a watch, an unwatch. */
   worker?(h: RemoteChatHandle, f: FrameOf<"wk"> | FrameOf<"wk.watch"> | FrameOf<"wk.unwatch">): void;
 }
@@ -203,6 +205,7 @@ export class RemoteChatHandle extends ChatHandle {
     for (const t of REQUEST_FRAMES) on(t, (f) => this.request(link, f));
     on("reload.request", (f) => this.hooks.reload?.(this, f.auto));
     on("feed", (f) => this.hooks.feed?.(this, f));
+    on("design.live", (f) => this.hooks.designLive?.(this, f));
     on("wk", (f) => this.hooks.worker?.(this, f));
     on("wk.watch", (f) => this.hooks.worker?.(this, f));
     on("wk.unwatch", (f) => this.hooks.worker?.(this, f));

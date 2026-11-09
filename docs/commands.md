@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 583 |
-| Routes a catalogue entry points at | 184 |
-| Catalogue entries | 254 |
+| Routes registered | 596 |
+| Routes a catalogue entry points at | 193 |
+| Catalogue entries | 263 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -28,14 +28,14 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
 | Class: Left as is, by choice | 266 |
-| Class: Page plumbing | 14 |
+| Class: Page plumbing | 16 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
-| Class: Approvals and grants | 5 |
+| Class: Approvals and grants | 7 |
 | Pending (not yet a command) | 23 |
 | Chat socket frame types | 14 |
 | Document/window keydown listeners | 11 |
-| Hand-written tool specs | 134 |
+| Hand-written tool specs | 146 |
 
 ## Catalogue entries
 
@@ -295,6 +295,15 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `chat.shell.list` | List Commands | looks | `POST /api/chat/action` | sessions |
 | `chat.shell.stop` | Stop Command | changes | `POST /api/chat/action` | sessions |
 | `chat.mode-command` | Run Mode Command | changes | `POST /api/mode/command` | full |
+| `design.list` | List Designs | looks | `GET /api/design` | full |
+| `design.page` | Read Design Page | looks | `GET /api/design/:label/page` | full |
+| `design.setup.set` | Change Design Setup | changes | `PATCH /api/design/runs/:run/setup` | full |
+| `design.start` | Start Design Coordinator | changes | `POST /api/design/runs/:run/start` | full |
+| `design.message` | Message a Design | changes | `POST /api/design/:label/message` | full |
+| `design.refine` | Refine a Design | changes | `POST /api/design/:label/refine` | full |
+| `design.retry` | Retry a Design | changes | `POST /api/design/:label/retry` | full |
+| `design.coordinator.message` | Message the Design Coordinator | changes | `POST /api/design/coordinator/message` | full |
+| `design.delete` | Delete a Design | changes | `DELETE /api/design/:label` | full |
 
 ## Pending routes
 
@@ -765,7 +774,7 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/voice/transcribe` | admin |
 | `POST /api/voice/warm` | admin |
 
-### Page plumbing (14)
+### Page plumbing (16)
 
 Requests a view, the composer or a link card makes to draw itself (attachments and uploads, a tool row's contents, a link's thread and seen mark, the remote folder picker's listing, the explanations feed, the empty list's folder name, a project's icon picture). Exactly these routes (`PAGE_PLUMBING`).
 
@@ -773,6 +782,8 @@ Requests a view, the composer or a link card makes to draw itself (attachments a
 | --- | --- |
 | `DELETE /api/attachment` | sessions |
 | `GET /api/attachment` | sessions |
+| `GET /api/design/:label/live` | full |
+| `GET /api/design/shots/:file` | full |
 | `GET /api/explanations` | sessions |
 | `GET /api/extensions/:id/log` | full |
 | `GET /api/extensions/installed` | full |
@@ -803,12 +814,14 @@ A list that prints live preview links, which open a project's port to whoever ho
 | --- | --- |
 | `GET /api/projects/:pid/previews` | sessions |
 
-### Approvals and grants (5)
+### Approvals and grants (7)
 
 Approving a schedule or a draft spec, the Overseer's permits and their revoke: any chat can run catalogue actions with the operator's token, so none of these is one. Exactly these routes (`GRANTS`).
 
 | Route | Mesh need |
 | --- | --- |
+| `POST /api/design/coordinator/answer` | full |
+| `POST /api/design/runs/:run/confirm` | full |
 | `GET /api/overseer/autonomy` | sessions |
 | `POST /api/overseer/autonomy/revoke` | admin |
 | `POST /api/projects/:pid/draft-specs/:sid/approve` | full |
@@ -824,6 +837,15 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/audit` | full | `audit.list` |
 | `POST /api/chat/action` | sessions | `chat.compact`, `chat.queue.remove`, `chat.regenerate`, `chat.reload-code`, `chat.rewind`, `chat.shell.list`, `chat.shell.stop`, `chat.stop` |
 | `GET /api/cwds` | sessions | `cwds.list` |
+| `GET /api/design` | full | `design.list` |
+| `DELETE /api/design/:label` | full | `design.delete` |
+| `POST /api/design/:label/message` | full | `design.message` |
+| `GET /api/design/:label/page` | full | `design.page` |
+| `POST /api/design/:label/refine` | full | `design.refine` |
+| `POST /api/design/:label/retry` | full | `design.retry` |
+| `POST /api/design/coordinator/message` | full | `design.coordinator.message` |
+| `PATCH /api/design/runs/:run/setup` | full | `design.setup.set` |
+| `POST /api/design/runs/:run/start` | full | `design.start` |
 | `GET /api/diff/summary` | sessions | `session.diff.summary` |
 | `GET /api/draft-specs` | full | `draft-spec.list` |
 | `GET /api/extensions` | sessions | `extensions.list` |
@@ -1044,6 +1066,8 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/conversation-draft-routes.ts` | 3 | `sova_draft_specs`, `sova_draft_approve`, `sova_draft_build` |
 | `server/conversation-draft-tools.ts` | 3 | `requirement_drop`, `requirements_summary`, `requirements_confirm` |
 | `server/create-settings-tool.ts` | 1 | `sova_settings` |
+| `server/design/coordinator.ts` | 8 | `design_status`, `design_launch`, `design_confirm`, `design_browse`, `design_send`, `design_new`, `coordinator_card`, `project_verbs` |
+| `server/design/tools.ts` | 4 | `design_guide`, `design`, `design_stream`, `design_hand_in` |
 | `server/feature-chat-align.ts` | 1 | `align` |
 | `server/harness/pi/session.ts` | 1 | `<computed: t.name>` |
 | `server/memory/tools.ts` | 2 | `<computed: MEMORY_ZOOM_TOOL>`, `<computed: MEMORY_DATE_TOOL>` |

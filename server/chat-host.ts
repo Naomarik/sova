@@ -31,6 +31,8 @@ import {
   recordConfigFailure,
   adoptSpecial,
   servedToolsForChat,
+  servedCoordinatorTools,
+  servedDesignSessionTools,
   servedWorkerTools,
   setChatRouter,
   setWorkerHostSource,
@@ -61,7 +63,9 @@ import {
 import { holderAlive, readLock, releaseLockOf } from "./chat-runtime/writer-lock";
 import { chatBun, NO_BUN, NO_BUN_CHATS } from "./chat-runtime/bun";
 import { WORKER_PROTO } from "./chat-runtime/worker-port";
+import { installDesignHost, onLiveFrame, reattachDesigns } from "./design/batch";
 import { type WakeOwner, type WorkerProcesses, type WorkerRecord, WorkerRegistry } from "./chat-workers";
+import { installCoordinatorRegistry, reattachCoordinators } from "./design/coordinator";
 import { WAKE_DIR_ENV, WAKE_WORKER_ENV } from "../pi-config/extensions/subagents/wake-store.ts";
 import { wakeDir, wakesOn } from "./wake-keeper";
 import { jobCardsEnv, jobsEnv } from "./background-jobs";
@@ -122,7 +126,12 @@ export function chatHostHealth(): { driver: ChatHost["driver"] | "starting"; bun
 const log = (line: string) => console.log(`[chat-host] ${line}`);
 
 /** What a worker chat is served (§app.project-services/callers): a worker's or team member's project_verbs; a hidden chat, nothing. */
-export function workerServed(worker: { kind: string; flags?: WorkerSpec["flags"]; parent?: WorkerSpec["parent"] }, path: string): ServerToolDecl[] {
+export function workerServed(worker: { kind: string; flags?: WorkerSpec["flags"]; parent?: WorkerSpec["parent"]; parentSessionId?: string }, path: string): ServerToolDecl[] {
+  if (worker.kind === "design-coordinator") {
+    const parent = worker.parent?.sessionId ?? worker.parentSessionId;
+    return parent ? servedCoordinatorTools(path, parent) : [];
+  }
+  if (worker.kind === "design") return worker.parent ? servedDesignSessionTools(path, { parent: worker.parent }) : [];
   return worker.kind === "worker" ? servedWorkerTools(path, worker.flags && worker.parent ? { flags: worker.flags, parent: worker.parent } : undefined) : [];
 }
 
@@ -287,6 +296,23 @@ export class ChatHostRouter {
       stop: (rec) => this.stopWorker(rec),
     };
     this.workers = new WorkerRegistry(procs, deps.workersDir ? { dir: deps.workersDir } : {});
+    installCoordinatorRegistry({
+      workers: (parent) => this.workers.bind(parent),
+      status: (chatId) => {
+        const rec = this.workers.record(chatId);
+        if (!rec) return undefined;
+        if (rec.state === "ended") return "ended";
+        const m = this.get(rec.path)?.mirror;
+        return m?.running || m?.starting || m?.compacting ? "running" : "idle";
+      },
+    });
+    installDesignHost({
+      workers: (parent) => this.workers.bind(parent),
+      owner: (chatId) => {
+        const r = this.workers.record(chatId);
+        return r ? { parent: { sessionId: r.parent.sessionId, path: r.parent.path }, workerId: r.parent.workerId } : undefined;
+      },
+    });
     this.rollout = new Rollout<Link>({
       supervisor: this.sup,
       waitReady: linkWaitReady({ epoch, build, settings: this.settings }),
@@ -406,6 +432,7 @@ export class ChatHostRouter {
     },
     linkLive: (id) => meshLinks.inLiveLink(id),
     feed: (h, f) => this.workers.onFeed(h, f),
+    designLive: (h, f) => onLiveFrame(h.mirror.sessionId, f),
     worker: (h, f) => this.workers.serve(h, f),
   };
 
@@ -579,6 +606,8 @@ export class ChatHostRouter {
       found(each);
       await Promise.all(each.values());
       this.workers.settleBoot();
+      reattachDesigns();
+      reattachCoordinators();
       // Resumes the last server had not sent when it stopped: a chat it took back runs on (its marker is a live run's).
       const back = new Set(adopted.map((rec) => rec.chatId));
       for (const { sessionId, marker } of pendingResumes()) if (!back.has(sessionId) && !this.workers.has(sessionId)) this.resume(sessionId, marker);

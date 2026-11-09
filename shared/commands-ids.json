@@ -254,7 +254,16 @@
     "project.verb.merge.rule",
     "project.verb.merge.respond",
     "session.profile.switch",
-    "session.profile.switch.cancel"
+    "session.profile.switch.cancel",
+    "design.list",
+    "design.page",
+    "design.setup.set",
+    "design.start",
+    "design.message",
+    "design.refine",
+    "design.retry",
+    "design.delete",
+    "design.coordinator.message"
   ],
   "retired": [
     "settings.agents.get",

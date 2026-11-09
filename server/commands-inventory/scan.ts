@@ -55,6 +55,7 @@ const exactly = (routes: readonly RouteKey[]) => (m: string, p: string) => route
 
 /** The page's own requests in the core areas: what a view, the composer or a link card asks to draw itself. */
 export const PAGE_PLUMBING: readonly RouteKey[] = [
+  "GET /api/design/:label/live", "GET /api/design/shots/:file",
   "GET /api/attachment", "DELETE /api/attachment", "POST /api/upload", "GET /api/transcript/tool",
   "GET /api/links/:id/thread", "POST /api/links/:id/seen", "GET /api/targets/:name/folders", "GET /api/explanations",
   // Settings → Extensions drawing itself: no action, and no catalogue entry.
@@ -71,6 +72,8 @@ export const CAPABILITY_LINKS: readonly RouteKey[] = ["GET /api/projects/:pid/pr
 export const GRANTS: readonly RouteKey[] = [
   "POST /api/schedules/approve", "POST /api/schedules/revoke", "GET /api/overseer/autonomy", "POST /api/overseer/autonomy/revoke",
   "POST /api/projects/:pid/draft-specs/:sid/approve",
+  // A coordinator's questions: a yes launches, starts a copy or opens a site. Only the person's own click.
+  "POST /api/design/runs/:run/confirm", "POST /api/design/coordinator/answer",
 ];
 
 export const ROUTE_CLASSES: readonly RouteClass[] = [

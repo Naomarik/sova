@@ -20,7 +20,7 @@ function AnywayList(props: { label: string; rows: string[]; total: number }) {
 
 /**
  * What Remove Anyway deletes from a kept worktree (§chat.worktrees/leftovers): the sentence, then each kind with its
- * exact total. Shared by the Clean Up Merged dialog and the project page's Remove Worktree.
+ * exact total. The project page's Remove Worktree shows it.
  */
 export function RemoveAnywayListing(props: { listing: WorktreeRemoveAnyway; home: string | null }) {
   const a = () => props.listing;

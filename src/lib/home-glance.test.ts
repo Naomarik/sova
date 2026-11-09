@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ProjectGlance, ProjectGlanceQueue, ProjectGlanceRelease } from "../../shared/projects";
-import { cardRuntime, DASH, memoryBar, MIN_BAR_PART, READING, releaseRow } from "./home-glance";
+import { cardRuntime, DASH, memoryBar, MIN_BAR_PART, READING, releaseRow, retirementWords } from "./home-glance";
 
 const GB = 1e9;
 const glance = (x: Partial<ProjectGlance> = {}): ProjectGlance => ({ projectId: "prj_a", merge: "unserved", queue: null, slots: { running: 0, cap: 4 }, memory: { chatsBytes: 0, copiesBytes: 0 }, release: null, ...x });
@@ -140,4 +140,12 @@ test("memory row: the hover text names both parts, a zero part as 0 MB; one figu
   assert.deepEqual(only.memory.bar, { chats: 0, slots: 1 });
   const both = cardRuntime(glance({ memory: { chatsBytes: 1.5 * GB, copiesBytes: 2.7 * GB } }), NOW);
   assert.deepEqual([both.memory.bar, both.memory.parts, both.memory.text], [{ chats: 0.357, slots: 0.643 }, "Chats 1.5 GB · Running slots 2.7 GB", "4.2 GB"]);
+});
+
+test("the card's retirement line: retired then held, either left out at 0, nothing at all with neither", () => {
+  assert.equal(retirementWords({}), null);
+  assert.equal(retirementWords({ retired: 0, held: 0 }), null);
+  assert.equal(retirementWords({ retired: 4 }), "4 retired");
+  assert.equal(retirementWords({ held: 2 }), "2 held");
+  assert.equal(retirementWords({ retired: 4, held: 2 }), "4 retired · 2 held");
 });

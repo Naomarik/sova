@@ -114,6 +114,10 @@ export function openFailureView(summary: OpenFailureSession | undefined, error: 
 export interface CwdFallbackInfo {
   original: string;
   cwd: string;
+  /** Its worktree retired (§chat.worktrees/retirement): a message brings it back. */
+  retired?: { branch: string; target: string };
+  /** Files stayed in its folder after the worktree retired, not yet proved safe to delete. */
+  held?: true;
 }
 
 /**
@@ -121,6 +125,16 @@ export interface CwdFallbackInfo {
  * the stored folder by name, where the chat runs now, and that nothing in the session file changed.
  */
 export function cwdFallbackView(f: CwdFallbackInfo): { title: string; body: string } {
+  if (f.held)
+    return {
+      title: "This session's worktree is being cleaned up",
+      body: `This session's worktree was retired, but files stayed in ${f.original}, so this chat runs in your home folder, ${f.cwd}, for now. Once Sova has proved those files safe to delete, a message brings the worktree back.`,
+    };
+  if (f.retired)
+    return {
+      title: "This session's worktree was retired",
+      body: `This session's worktree was retired after ${f.retired.branch} landed. Send a message to bring it back, fresh from ${f.retired.target}.`,
+    };
   return {
     title: "This session's folder is gone",
     body:

@@ -83,6 +83,8 @@ export interface CardRuntime {
   /** The Runtime caption's right side: "2.4 GB", "idle", "no project setup", or "" before the first glance. */
   caption: string;
   ready: ReadyRow;
+  /** "{retired} retired · {held} held", either left out at 0; null with neither. */
+  retirement: string | null;
   /** null: "—" (no project file, or not read yet). */
   slots: SlotsRow | null;
   memory: MemoryRow;
@@ -94,6 +96,7 @@ export interface CardRuntime {
 const UNREAD: CardRuntime = {
   caption: "",
   ready: { count: DASH, link: false, inLine: null, dot: false, muted: true },
+  retirement: null,
   slots: null,
   memory: { text: DASH, bar: null, parts: null, muted: true },
   hasSetup: false,
@@ -177,6 +180,12 @@ export function releaseRow(r: ProjectGlanceRelease): ProgressRow {
   };
 }
 
+/** What retirement did, on the card: nothing while it did nothing. */
+export function retirementWords(g: Partial<Pick<ProjectGlance, "retired" | "held">>): string | null {
+  const parts = [g.retired ? `${g.retired} retired` : "", g.held ? `${g.held} held` : ""].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+}
+
 /** A card's Runtime rows and progress zone from its glance; `undefined` (not read yet, or the read failed) reads "—". */
 export function cardRuntime(g: ProjectGlance | undefined, now: number): CardRuntime {
   if (!g) return UNREAD;
@@ -197,5 +206,5 @@ export function cardRuntime(g: ProjectGlance | undefined, now: number): CardRunt
     muted: total === 0,
   };
   const progress = [q ? landingRow(q, now) : null, q ? frozenRow(q) : null, g.release ? releaseRow(g.release) : null].filter((r): r is ProgressRow => !!r);
-  return { caption: !g.slots ? "no project setup" : total > 0 ? bytesWord(total) : "idle", ready, slots, memory, hasSetup: !!g.slots, progress };
+  return { caption: !g.slots ? "no project setup" : total > 0 ? bytesWord(total) : "idle", ready, retirement: retirementWords(g), slots, memory, hasSetup: !!g.slots, progress };
 }

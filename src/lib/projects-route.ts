@@ -18,7 +18,7 @@ export type ProjectTab = (typeof PROJECT_TABS)[number];
  * `…/merge-queue`. A run opened from a tab keeps that tab's word before its id, so Back to Queue returns there. The
  * words are fixed and carry no `_`, so none is ever a run's id (`mr_…`). A new tab adds its word here.
  */
-export const QUEUE_TABS = ["ready", "needs-you", "with-its-chat", "waiting-on-host", "landed", "queue-chats"] as const;
+export const QUEUE_TABS = ["ready", "needs-you", "with-its-chat", "waiting-on-host", "held", "landed", "queue-chats"] as const;
 export type QueueTab = (typeof QUEUE_TABS)[number];
 const QUEUE_TAB_WORDS: readonly string[] = QUEUE_TABS.slice(1);
 const isQueueTab = (s: string): s is QueueTab => (QUEUE_TABS as readonly string[]).includes(s);

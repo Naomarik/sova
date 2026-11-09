@@ -234,6 +234,14 @@ export function OverviewProjects(props: {
                           <span class="overview-project-card-cap-note text-num">{rt().caption}</span>
                         </p>
                         <ReadyToMerge ready={rt().ready} href={tab("merge-queue")} />
+                        <Show when={rt().retirement}>
+                          {(words) => (
+                            <a class="overview-project-card-row overview-project-card-link" href={tab("merge-queue")}>
+                              <span class="overview-project-card-key overview-project-card-muted text-num">{words()}</span>
+                              <Icon name="chevron-right" small class="overview-project-card-chev" />
+                            </a>
+                          )}
+                        </Show>
                         <RuntimeRow href={rt().slots ? tab("branches") : undefined} label="Running slots">
                           <Show when={rt().slots} fallback={<span class="overview-project-card-val overview-project-card-muted">{DASH}</span>}>
                             {(sl) => (

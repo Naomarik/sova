@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { anywayBody, anywayMore, branchFate, confirmBody, confirmTitle, doneText, doneTitle, offersCleanup, removeLabel, showsLine, summaryLine } from "./worktree-cleanup.ts";
+import { anywayBody, anywayMore, lockLine, showsLine, summaryLine } from "./worktree-cleanup.ts";
 
 const ok = (total: number, merged: number, empty: number) => ({ state: "ok" as const, repo: "/r", total, merged, empty, unmerged: total - merged - empty });
 
@@ -11,38 +11,21 @@ test("the line shows only for a repository with a linked worktree", () => {
   assert.equal(showsLine(ok(1, 0, 0)), true);
 });
 
-test("the line counts every linked worktree, and says empty leftovers only when there are some", () => {
-  assert.equal(summaryLine(ok(1, 0, 0)), "1 worktree · 0 merged");
-  assert.equal(summaryLine(ok(265, 227, 0)), "265 worktrees · 227 merged");
-  assert.equal(summaryLine(ok(264, 227, 18)), "264 worktrees · 227 merged · 18 empty");
+test("the line counts every linked worktree, with held and retired only when there are some", () => {
+  assert.equal(summaryLine(ok(1, 0, 0)), "1 worktree");
+  assert.equal(summaryLine(ok(265, 227, 0)), "265 worktrees");
+  assert.equal(summaryLine({ ...ok(160, 3, 0), held: 12 }), "160 worktrees · 12 held");
+  assert.equal(summaryLine({ ...ok(160, 3, 0), held: 12, retired: 4 }), "160 worktrees · 12 held · 4 retired");
+  assert.equal(summaryLine({ ...ok(2, 0, 0), retired: 1 }), "2 worktrees · 1 retired");
 });
 
-test("the button is offered while a merged or empty tree exists", () => {
-  assert.equal(offersCleanup(ok(3, 0, 0)), false);
-  assert.equal(offersCleanup(ok(3, 0, 1)), true);
-  assert.equal(offersCleanup(ok(3, 2, 0)), true);
+test("the line says retirement is off only on an install with an agent directory of its own", () => {
+  assert.equal(summaryLine({ ...ok(2, 0, 0), offFor: "install" }), "2 worktrees · automatic cleanup is off for this install");
+  for (const offFor of ["test", "setting", "unknown"] as const) assert.equal(summaryLine({ ...ok(2, 0, 0), offFor }), "2 worktrees");
 });
 
-test("the dialog's words follow the dry run's count", () => {
-  assert.equal(confirmTitle(1), "Remove 1 merged worktree?");
-  assert.equal(confirmTitle(4), "Remove 4 merged worktrees?");
-  assert.equal(confirmTitle(0), "Nothing to remove right now.");
-  assert.equal(removeLabel(1), "Remove 1 Worktree");
-  assert.equal(removeLabel(12), "Remove 12 Worktrees");
-  assert.match(confirmBody(2, "master"), /in master is deleted too/);
-  assert.equal(confirmBody(0, "master"), "Every worktree here stays, for the reasons below.");
-});
-
-test("a going branch says whether it is deleted", () => {
-  assert.equal(branchFate({ path: "/a", branch: "feat/a", kind: "ancestor", branchDeleted: true }), "feat/a · branch deleted");
-  assert.equal(branchFate({ path: "/b", branch: "feat/b", kind: "content", branchDeleted: false }), "feat/b · branch kept, merged by content");
-  assert.equal(branchFate({ path: "/c", kind: "empty", branchDeleted: false }), "");
-});
-
-test("the result reads removed, then kept", () => {
-  assert.equal(doneTitle(3, 2), "Removed 3 · kept 2");
-  assert.equal(doneText(1, 0), "Removed 1 worktree. Kept 0.");
-  assert.equal(doneText(0, 5), "Removed 0 worktrees. Kept 5.");
+test("a taken lock names who holds it, and says it retries", () => {
+  assert.equal(lockLine("Sova, process 123"), "Cleanup couldn't start here: its lock looks taken (Sova, process 123). It tries again at the next wake-up.");
 });
 
 test("Remove Anyway's listing says what goes that git can't bring back, and how many a cut list leaves out", () => {

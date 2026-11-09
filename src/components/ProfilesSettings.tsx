@@ -2,12 +2,12 @@ import { createEffect, createMemo, createResource, createSignal, For, on, onMoun
 import { CAPABILITY_LABEL, GRANTABLE, LIMIT_KEYS, OFF_KEY, PROFILE_MINOR_MODES, powersText, REMOVABLE, type Grantable, type ProfileProblem, type ProfileSource, type Removable } from "../../shared/profiles";
 import type { SubagentProfile } from "../../shared/subagent-profiles";
 import { PROFILE_LABEL_RULE } from "../../shared/profile-limits";
-import { approveProfile, fetchProfiles, getDelegateOptions, getDelegateSettings, getSubagentProfiles, getTeamDefaults, restoreSubagentProfiles, setProfileHidden } from "../lib/api";
+import { approveProfile, fetchProfiles, getDelegateSettings, getSubagentProfiles, getTeamDefaults, restoreSubagentProfiles, setProfileHidden } from "../lib/api";
 import { tildePath } from "../lib/format";
 import { home, toast } from "../lib/ui-state";
 import { loadModels, modelList } from "../lib/models";
 import { modelEfforts } from "../lib/delegate-form";
-import { claudeCatalogChanges } from "../lib/claude-catalog";
+import { liveDelegateOptions } from "../lib/claude-catalog";
 import { replacedNotice } from "../lib/subagent-replaced";
 import { teamsSeed } from "../lib/subagent-editor";
 import { clearProfilesRequest, clearSettingsSection, profilesRequest, settingsSection, subagentSettingsPath, type ProfilesPart } from "../lib/settings-nav";
@@ -53,7 +53,7 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
   setProfilesCwd(props.cwd);
   const [listing, { refetch }] = createResource(() => props.cwd ?? "", (cwd) => fetchProfiles(cwd || null));
   const [library, { refetch: refetchLibrary }] = createResource(() => getSubagentProfiles(subagentSettingsPath()));
-  const [options, { refetch: refetchOptions }] = createResource(claudeCatalogChanges, () => getDelegateOptions());
+  const [options, { refetch: refetchOptions }] = liveDelegateOptions();
   const [rows] = createResource(getDelegateSettings);
   const [teams] = createResource(getTeamDefaults);
   onMount(() => {

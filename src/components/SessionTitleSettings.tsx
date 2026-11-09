@@ -1,6 +1,7 @@
 import { createEffect, createResource, createSignal, on, Show } from "solid-js";
 import type { SessionTitleSettingsInfo } from "../../shared/protocol";
-import { getDelegateOptions, getSessionTitleSettings, shortenSessionTitles } from "../lib/api";
+import { getSessionTitleSettings, shortenSessionTitles } from "../lib/api";
+import { liveDelegateOptions } from "../lib/claude-catalog";
 import { shortenCountLine, shortenDoneLine, shorteningLabel } from "../lib/auto-title";
 import { fallbackFor, type DraftChoice, type Slot } from "../lib/delegate-form";
 import { tildePath } from "../lib/format";
@@ -28,7 +29,7 @@ import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
  */
 export function SessionTitleSettingsSection() {
   const [info, { mutate: setInfo, refetch: refetchInfo }] = createResource(getSessionTitleSettings);
-  const [options, { refetch: refetchOptions }] = createResource(getDelegateOptions);
+  const [options, { refetch: refetchOptions }] = liveDelegateOptions();
   const loaded = (): SessionTitleSettingsInfo | undefined => (info.error ? undefined : info());
   const known = () => (options.state === "ready" ? withoutSubagentMarks(options()) : undefined);
 

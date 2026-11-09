@@ -1,6 +1,7 @@
 import { createEffect, createResource, For, on, Show } from "solid-js";
 import type { DelegateOptions, SummarizerBackend, SummarizerSettingsInfo } from "../../shared/protocol";
-import { getDelegateOptions, getSummarizerSettings } from "../lib/api";
+import { getSummarizerSettings } from "../lib/api";
+import { liveDelegateOptions } from "../lib/claude-catalog";
 import { tildePath } from "../lib/format";
 import { ensureModelPolicy, type ModelPolicy } from "../lib/model-policy";
 import {
@@ -40,7 +41,7 @@ const BACKENDS: SummarizerBackend[] = ["claude-code", "pi"];
  */
 export function SummarizerSettingsSection() {
   const [info, { mutate: setInfo, refetch: refetchInfo }] = createResource(getSummarizerSettings);
-  const [options, { refetch: refetchOptions }] = createResource(getDelegateOptions);
+  const [options, { refetch: refetchOptions }] = liveDelegateOptions();
   // The global half of the policy is what the extension obeys (lib/summarizer-form.ts). A policy
   // that can't be read warns about nothing rather than blocking the screen.
   const [policy] = createResource(() => ensureModelPolicy().catch(() => null));

@@ -7,6 +7,7 @@ import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/project
 import { announce, home, toast } from "../lib/ui-state";
 import { removeWorktree } from "../lib/api";
 import { tildePath } from "../lib/format";
+import { removeConfirmLine } from "../lib/worktree-cleanup";
 import { BranchSummaryView } from "./BranchSummary";
 import { ActionMenu } from "./ActionMenu";
 import type { LandHow, MergeUnclear } from "../../shared/merge-queue";
@@ -375,7 +376,7 @@ export function WorktreeQueueRow(props: {
         <LandConfirmBox
           label={`Remove ${w().branch}`}
           title={`Remove ${w().branch}?`}
-          line={`The folder ${tildePath(w().path, home())} and its branch go away. Its last commit stays, and Restore brings them back.`}
+          line={removeConfirmLine(tildePath(w().path, home()), !!row().removeKeepsBranch)}
           cancel="Cancel"
           confirm="Remove Worktree"
           destructive

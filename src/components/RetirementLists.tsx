@@ -2,7 +2,7 @@ import { createSignal, For, Show } from "solid-js";
 import type { HeldRow, RetiredRow, RetirementView } from "../../shared/protocol";
 import { fetchRetirement, restoreWorktree } from "../lib/api";
 import { relativeTime } from "../lib/format";
-import { lockLine } from "../lib/worktree-cleanup";
+import { branchFateWords, lockLine } from "../lib/worktree-cleanup";
 import { announce, toast } from "../lib/ui-state";
 import { RowHead, type ChatOf } from "./MergeQueueTab";
 
@@ -138,7 +138,7 @@ function RetiredItem(props: { root: string; row: RetiredRow; onRestored(): void 
         <p class="list-title mq-head-line">
           <span class="mq-branch text-mono">{r().branch}</span>
         </p>
-        <p class="list-meta">Retired {relativeTime(r().at)}</p>
+        <p class="list-meta">Retired {relativeTime(r().at)}{branchFateWords(r()) ? ` · ${branchFateWords(r())}` : ""}</p>
         <Show when={refused()}>{(m) => <p class="list-meta mq-retired-refused" role="alert">{m()}</p>}</Show>
       </div>
       <Show when={r().restorable}>

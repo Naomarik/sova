@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { anywayBody, anywayMore, lockLine, showsLine, summaryLine } from "./worktree-cleanup.ts";
+import { anywayBody, anywayMore, branchFateWords, lockLine, removeConfirmLine, showsLine, summaryLine } from "./worktree-cleanup.ts";
 
 const ok = (total: number, merged: number, empty: number) => ({ state: "ok" as const, repo: "/r", total, merged, empty, unmerged: total - merged - empty });
 
@@ -26,6 +26,17 @@ test("the line says retirement is off only on an install with an agent directory
 
 test("a taken lock names who holds it, and says it retries", () => {
   assert.equal(lockLine("Sova, process 123"), "Cleanup couldn't start here: its lock looks taken (Sova, process 123). It tries again at the next wake-up.");
+});
+
+test("a retired row says what became of its branch", () => {
+  assert.equal(branchFateWords({ branchDeleted: true }), "branch deleted");
+  assert.equal(branchFateWords({ branchDeleted: false, branchKept: true }), "branch kept");
+  assert.equal(branchFateWords({ branchDeleted: false }), null, "git kept it, or an old record: neither is what the setting did");
+});
+
+test("Remove Worktree's confirm follows the project's setting: the branch goes only where it's on", () => {
+  assert.equal(removeConfirmLine("~/w/x", false), "The folder ~/w/x and its branch go away. Its last commit stays, and Restore brings them back.");
+  assert.equal(removeConfirmLine("~/w/x", true), "The folder ~/w/x goes away and its branch stays. Restore brings the folder back.");
 });
 
 test("Remove Anyway's listing says what goes that git can't bring back, and how many a cut list leaves out", () => {

@@ -562,6 +562,12 @@ test("Remove Worktree only where the server offers it, with no rule of the row's
   for (const w of [wt({ readiness: nothing, mergeServed: true }), wt({ readiness: { ...ready, landing: { state: "ready", commit: SHA } }, mergeServed: true }), wt({ exists: false, gone: "merged" })]) assert.equal(rowButtons(queueRow(w), "prj_1").includes("Remove Worktree"), false);
 });
 
+test("a row says when Remove Worktree keeps the branch, only as the server says", () => {
+  assert.equal(queueRow(wt({ readiness: { ...ready, removeKeepsBranch: true } })).removeKeepsBranch, true);
+  assert.equal(queueRow(wt({ removeKeepsBranch: true })).removeKeepsBranch, true);
+  assert.equal(queueRow(wt({ readiness: ready })).removeKeepsBranch, undefined);
+});
+
 test("Rehearsal needed says what Land waits for, at the branch's short commit", () => {
   assert.equal(rehearsalWhy("a1b2c3d4e5f6"), "This branch changes automatic cleanup. Land opens once a rehearsal has passed at a1b2c3d on a copy of your state taken today.");
   assert.match(rehearsalWhy(undefined), /passed at its newest commit on a copy/);

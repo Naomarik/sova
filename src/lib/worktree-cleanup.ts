@@ -23,6 +23,13 @@ export function summaryLine(s: Counted): string {
 /** The Held tab's leading line when this project's cleanup lock looks taken: not a row, not counted. */
 export const lockLine = (who: string): string => `Cleanup couldn't start here: its lock looks taken (${who}). It tries again at the next wake-up.`;
 
+/** What became of a retired row's branch, for the end of its Retired line. Neither known (git refused, an old record): nothing. */
+export const branchFateWords = (r: { branchDeleted: boolean; branchKept?: true }): string | null => (r.branchKept ? "branch kept" : r.branchDeleted ? "branch deleted" : null);
+
+/** Remove Worktree's confirm, by what the project's setting will do with the branch. */
+export const removeConfirmLine = (path: string, keepsBranch: boolean): string =>
+  keepsBranch ? `The folder ${path} goes away and its branch stays. Restore brings the folder back.` : `The folder ${path} and its branch go away. Its last commit stays, and Restore brings them back.`;
+
 // ---- Remove Anyway (§chat.worktrees/cleanup): a tree kept only for what it holds ----------------
 
 /** The listing's first sentence: what goes that git can't bring back. */

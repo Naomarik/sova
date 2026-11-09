@@ -110,6 +110,8 @@ export interface QueueRow {
   run?: string;
   /** Remove Worktree beside the action: the server offers it (an install that retires nothing, nothing left). */
   removable?: true;
+  /** Removing keeps the branch: the project's Delete branches when cleaning up is off, or unreadable. */
+  removeKeepsBranch?: true;
 }
 
 /** The label a note's kind reads with. */
@@ -141,7 +143,7 @@ export type RowQueueFacts = Pick<WorktreeQueueInfo, "state" | "commit"> & Partia
 export type QueueRowInput = Pick<SessionWorktreeInfo, "status" | "exists" | "readiness" | "branch"> &
   // mergeServed: the repo is one the merge queue serves (listed, merge setup done): only then does a row offer Land.
   Partial<Pick<SessionWorktreeInfo, "merge" | "mergedInto" | "gone" | "mergeStats" | "mergeServed">> &
-  Partial<Pick<WorktreeReadiness, "left" | "draftsLeft" | "removable">> & {
+  Partial<Pick<WorktreeReadiness, "left" | "draftsLeft" | "removable" | "removeKeepsBranch">> & {
     queue?: RowQueueFacts;
     mergeProject?: Pick<MergeProjectInfo, "target" | "checks"> & Partial<MergeProjectInfo>;
   };
@@ -373,7 +375,7 @@ export const rowKeyOf = (w: RowKeyInput): RowKey => entryKeyOf(w) ?? treeKeyOf(w
 
 /** The words for one worktree, from its tracked state, its readiness and its queue entry. */
 export function queueRow(w: QueueRowInput): QueueRow {
-  const r = { ...queueRowOf(w), ...(w.readiness?.removable || w.removable ? { removable: true as const } : {}) };
+  const r = { ...queueRowOf(w), ...(w.readiness?.removable || w.removable ? { removable: true as const } : {}), ...(w.readiness?.removeKeepsBranch || w.removeKeepsBranch ? { removeKeepsBranch: true as const } : {}) };
   if (!SIZED.includes(r.key)) return r;
   const size = sizeWords(w.mergeStats);
   const when = headWhen(w.mergeStats?.headAt);

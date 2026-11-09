@@ -92,11 +92,10 @@ test("from each real table: only what is newer in a current family comes in", as
     await w.start().checkNow();
     w.load();
     const table = t.rows.map(idOf);
-    for (const id of offered()) assert.ok(seedIds.has(id) || id === "claude-fable-5-2", `${t.version}: ${id} is not one Sova should add`);
-    assert.equal(offered().includes("claude-fable-5-2"), seedIds.has("claude-fable-5-2") || table.includes("claude-fable-5-2"), t.version);
+    const notInTable = [...seedIds].filter((id) => !table.includes(id));
+    assert.deepEqual([...offered()].sort(), [...seedIds].filter((id) => table.includes(id)).sort(), `${t.version}: the built-in models this table lists, and nothing it adds`);
     assert.deepEqual(offered().filter((id) => /mythos|^claude-\d/.test(id)), [], `${t.version}: no Mythos, no old-order models`);
-    assert.ok(claudeOffer().length >= CLAUDE_MODELS.length, `${t.version}: nothing shrank the list on a full table`);
-    assert.equal(w.file().dropped, undefined, `${t.version}: every built-in model is in this table`);
+    assert.deepEqual([...(w.file().dropped ?? [])].sort(), notInTable.sort(), `${t.version}: only the built-in models it doesn't list left`);
   }
 });
 
@@ -125,6 +124,7 @@ test("each real table's rows agree with the built-in list", () => {
     if (!p.ok) throw new Error(`${t.version}: ${p.reason}`);
     for (const seed of CLAUDE_MODELS) {
       const row: ClaudeTableRow | undefined = p.table.rows.find((x) => x.id === seed.id);
+      if (!row && seed.id === "claude-fable-5-2" && t !== newest) continue; // newer than this Claude Code
       assert.ok(row, `${t.version}: ${seed.id}`);
       assert.deepEqual([row.window, row.maxOutput, row.efforts], [seed.window, seed.maxOutput, [...seed.efforts]], `${t.version}: ${seed.id}`);
     }

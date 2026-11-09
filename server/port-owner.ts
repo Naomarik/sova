@@ -17,21 +17,26 @@ const LOOPBACK_OR_ANY = new Set(["00000000", "00000000000000000000000000000000",
 /** The first 96 bits of an IPv4-mapped IPv6 address (::ffff:a.b.c.d) as /proc writes them. */
 const V4_MAPPED = "0000000000000000FFFF0000";
 
-/** The socket inodes listening on `port` whose address the preview can reach (loopback or any), from /proc/net/tcp{,6} text. Pure. */
-export function listeningInodes(tables: string[], port: number): Set<string> {
-  const out = new Set<string>();
-  const hexPort = port.toString(16).toUpperCase().padStart(4, "0");
+/** Each listening socket whose address the preview can reach (loopback or any), from /proc/net/tcp{,6} text. */
+function* reachableListeners(tables: string[]): Generator<{ hexPort: string; inode: string }> {
   for (const table of tables)
     for (const line of table.split("\n").slice(1)) {
       const f = line.trim().split(/\s+/);
       if (f.length < 10) continue;
       const [addr, p] = (f[1] ?? "").split(":");
-      if (p !== hexPort || f[3] !== LISTEN || !addr) continue;
+      if (!p || f[3] !== LISTEN || !addr) continue;
       // 127.x.x.x is little-endian in /proc: its last byte pair is 7F. A dual-stack socket (a JVM's, bound to
       // "localhost") shows it IPv4-mapped in tcp6: ::ffff:127.x.x.x, or ::ffff:0.0.0.0 for any.
       const v4 = addr.length === 32 && addr.startsWith(V4_MAPPED) ? addr.slice(24) : addr;
-      if (LOOPBACK_OR_ANY.has(v4) || (v4.length === 8 && v4.endsWith("7F"))) out.add(f[9]!);
+      if (LOOPBACK_OR_ANY.has(v4) || (v4.length === 8 && v4.endsWith("7F"))) yield { hexPort: p, inode: f[9]! };
     }
+}
+
+/** The socket inodes listening on `port` whose address the preview can reach (loopback or any), from /proc/net/tcp{,6} text. Pure. */
+export function listeningInodes(tables: string[], port: number): Set<string> {
+  const out = new Set<string>();
+  const hexPort = port.toString(16).toUpperCase().padStart(4, "0");
+  for (const l of reachableListeners(tables)) if (l.hexPort === hexPort) out.add(l.inode);
   return out;
 }
 
@@ -86,4 +91,17 @@ export function portOwner(port: number, fs: ProcFs = realFs, platform: NodeJS.Pl
   }
   // Someone listens, but not a process this user may read.
   return "unknown";
+}
+
+/**
+ * Every port with a listener `portOwner` would see, from one look at the kernel's tables; null when the host has none
+ * (not Linux, or no /proc): nothing is spawned for it, the caller reports other programs as not checked.
+ */
+export function listeningPortTable(fs: Pick<ProcFs, "read"> = realFs, platform: NodeJS.Platform = process.platform): Set<number> | null {
+  if (platform !== "linux") return null;
+  const tables = ["/proc/net/tcp", "/proc/net/tcp6"].map((p) => fs.read(p)).filter((t): t is string => t !== null);
+  if (!tables.length) return null;
+  const out = new Set<number>();
+  for (const l of reachableListeners(tables)) out.add(Number.parseInt(l.hexPort, 16));
+  return out;
 }

@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ProjectGlance, ProjectGlanceQueue, ProjectGlanceRelease } from "../../shared/projects";
+import { overLimitSentence } from "../../shared/project-slots";
 import { cardRuntime, DASH, memoryBar, MIN_BAR_PART, READING, releaseRow } from "./home-glance";
 
 const GB = 1e9;
-const glance = (x: Partial<ProjectGlance> = {}): ProjectGlance => ({ projectId: "prj_a", merge: "unserved", queue: null, slots: { running: 0, cap: 4 }, memory: { chatsBytes: 0, copiesBytes: 0 }, release: null, ...x });
+type Copies = NonNullable<ProjectGlance["slots"]>;
+/** Four usable places under a limit of 4; `running` also fills that many places unless `runningPlaces` says; the rest are free. */
+const copies = (x: Partial<Copies> = {}): Copies => {
+  const held = { running: 0, cap: 4, usable: 4, stopped: 0, elsewhere: 0, ...x };
+  const runningPlaces = x.runningPlaces ?? held.running;
+  return { ...held, runningPlaces, free: x.free === undefined ? held.usable - runningPlaces - held.stopped - held.elsewhere : x.free };
+};
+const glance = (x: Partial<ProjectGlance> = {}): ProjectGlance => ({ projectId: "prj_a", merge: "unserved", queue: null, slots: copies(), memory: { chatsBytes: 0, copiesBytes: 0 }, release: null, ...x });
 const queue = (x: Partial<ProjectGlanceQueue> = {}): ProjectGlanceQueue => ({ ready: 0, inLine: 0, waiting: 0, target: "master", at: "2026-11-05T12:00:00.000Z", ...x });
 const NOW = Date.parse("2026-11-05T12:10:00.000Z");
 
@@ -17,10 +25,11 @@ test("before the first glance (or while it fails) the runtime rows read — and 
   assert.deepEqual(r.progress, []);
 });
 
-test("zero wording: Ready 0, slots 0 of 4 with 4 dark pips, memory 0 MB idle, caption idle", () => {
+test("zero wording: Ready 0, copies 0 running with 4 free pips, memory 0 MB idle, caption idle", () => {
   const r = cardRuntime(glance({ merge: "served", queue: queue() }), NOW);
   assert.deepEqual(r.ready, { count: "0", link: true, inLine: null, dot: false, muted: true });
-  assert.deepEqual(r.slots, { pips: [false, false, false, false], text: "0 of 4", muted: true });
+  assert.deepEqual(r.slots!.pips, ["free", "free", "free", "free"]);
+  assert.deepEqual([r.slots!.text, r.slots!.muted], ["0 running", true]);
   assert.deepEqual({ text: r.memory.text, muted: r.memory.muted }, { text: "0 MB idle", muted: true });
   assert.equal(r.caption, "idle");
   assert.equal(r.hasSetup, true);
@@ -45,13 +54,62 @@ test("a project with no project file: slots —, caption no project setup, memor
 });
 
 test("memory: chats plus copies in one figure, the bar the full-width mix of the two", () => {
-  const r = cardRuntime(glance({ slots: { running: 3, cap: 12 }, memory: { chatsBytes: 1.6 * GB, copiesBytes: 0.8 * GB } }), NOW);
+  const r = cardRuntime(glance({ slots: copies({ running: 3, cap: 12, usable: 16 }), memory: { chatsBytes: 1.6 * GB, copiesBytes: 0.8 * GB } }), NOW);
   assert.equal(r.memory.text, "2.4 GB");
   assert.equal(r.caption, "2.4 GB");
   assert.deepEqual(r.memory.bar, { chats: 0.667, slots: 0.333 }, "two thirds chats, one third slots, the whole bar");
-  assert.equal(r.memory.parts, "Chats 1.6 GB · Running slots 800 MB");
-  assert.equal(r.slots!.text, "3 of 12");
-  assert.equal(r.slots!.pips.filter(Boolean).length, 3);
+  assert.equal(r.memory.parts, "Chats 1.6 GB · Copies 800 MB");
+});
+
+const row = (c: Copies) => cardRuntime(glance({ slots: c }), NOW).slots!;
+const GROUP_ORDER = ["running", "stopped", "elsewhere", "free", "unchecked"];
+const ELSEWHERE_WORDS = "Used elsewhere: another program has the ports these places need, so a new copy can't go there. Stopping this project's copies won't free them.";
+
+test("copies: one pip per usable place, grouped running, stopped, elsewhere, free, whatever the mix", () => {
+  for (const [running, stopped, elsewhere] of [[0, 0, 0], [1, 2, 3], [16, 0, 0], [0, 16, 0], [0, 0, 16], [5, 0, 11]] as const) {
+    const free = 16 - running - stopped - elsewhere;
+    const { pips } = row(copies({ running, cap: 16, usable: 16, stopped, elsewhere }));
+    assert.equal(pips.length, 16);
+    assert.deepEqual([running, stopped, elsewhere, free], ["running", "stopped", "elsewhere", "free"].map((l) => pips.filter((p) => p === l).length));
+    const ranks = pips.map((p) => GROUP_ORDER.indexOf(p));
+    assert.deepEqual(ranks, [...ranks].sort((a, b) => a - b));
+  }
+});
+
+test("copies: a project with fewer usable places draws only those", () => {
+  const r = row(copies({ running: 1, usable: 9, cap: 12 }));
+  assert.equal(r.pips.length, 9);
+  assert.equal(r.pips.filter((p) => p === "free").length, 8);
+});
+
+test("the figure reads at limit exactly once the count reaches the limit, and the count is the limit's, not the pips'", () => {
+  assert.equal(row(copies({ running: 3 })).text, "3 running");
+  assert.equal(row(copies({ running: 4 })).text, "4 at limit");
+  const beyondPlaces = row(copies({ running: 5, runningPlaces: 4 }));
+  assert.equal(beyondPlaces.text, "5 at limit", "a running record outside the usable slots still counts");
+  assert.equal(beyondPlaces.pips.filter((p) => p === "running").length, 4, "and draws no pip");
+  assert.ok(beyondPlaces.title.startsWith("5 running,"), "the hover gives the limit's count too");
+  assert.equal(row(copies({ running: 1 })).muted, false);
+});
+
+test("the figure says at limit exactly when the copy limit's own rule refuses a start", () => {
+  for (let cap = 1; cap <= 16; cap++) {
+    for (let running = 0; running <= cap + 2; running++) {
+      assert.equal(row(copies({ running, cap, usable: 16, runningPlaces: Math.min(running, 16) })).text.endsWith("at limit"), overLimitSentence(running, cap) !== null, `${running} of ${cap}`);
+    }
+  }
+});
+
+test("hover: the counts and the limit, the used-elsewhere sentences only while a place is used elsewhere", () => {
+  assert.equal(row(copies({ running: 1, usable: 16, cap: 12, stopped: 2 })).title, "1 running, 2 stopped but holding a place, 0 used elsewhere, 13 free. Up to 12 can run at once.");
+  assert.equal(row(copies({ running: 1, usable: 16, cap: 12, elsewhere: 3 })).title, `1 running, 0 stopped but holding a place, 3 used elsewhere, 12 free. Up to 12 can run at once. ${ELSEWHERE_WORDS}`);
+});
+
+test("not checked: no free pip, no free count, and it says so; other Sova copies still count as used elsewhere", () => {
+  const r = row(copies({ running: 1, usable: 8, stopped: 1, elsewhere: 2, free: null }));
+  assert.deepEqual(r.pips, ["running", "stopped", "elsewhere", "elsewhere", "unchecked", "unchecked", "unchecked", "unchecked"]);
+  assert.equal(r.title, `1 running, 1 stopped but holding a place, 2 used elsewhere. Up to 4 can run at once. ${ELSEWHERE_WORDS} Other programs were not checked.`);
+  assert.equal(row(copies({ usable: 2, free: null })).title, "0 running, 0 stopped but holding a place, 0 used elsewhere. Up to 4 can run at once. Other programs were not checked.");
 });
 
 test("landing: step n of m (the meter's segments), time left, the meter, and who waits", () => {
@@ -135,9 +193,9 @@ test("memory bar: the mix fills the whole bar; a small nonzero part keeps MIN_BA
 
 test("memory row: the hover text names both parts, a zero part as 0 MB; one figure, the total", () => {
   const only = cardRuntime(glance({ memory: { chatsBytes: 0, copiesBytes: 2.7 * GB } }), NOW);
-  assert.equal(only.memory.parts, "Chats 0 MB · Running slots 2.7 GB");
+  assert.equal(only.memory.parts, "Chats 0 MB · Copies 2.7 GB");
   assert.equal(only.memory.text, "2.7 GB", "one figure, the total");
   assert.deepEqual(only.memory.bar, { chats: 0, slots: 1 });
   const both = cardRuntime(glance({ memory: { chatsBytes: 1.5 * GB, copiesBytes: 2.7 * GB } }), NOW);
-  assert.deepEqual([both.memory.bar, both.memory.parts, both.memory.text], [{ chats: 0.357, slots: 0.643 }, "Chats 1.5 GB · Running slots 2.7 GB", "4.2 GB"]);
+  assert.deepEqual([both.memory.bar, both.memory.parts, both.memory.text], [{ chats: 0.357, slots: 0.643 }, "Chats 1.5 GB · Copies 2.7 GB", "4.2 GB"]);
 });

@@ -6,7 +6,7 @@
 // - every hold then clears its reason and must retire on the next pass, so the hold was that reason and no other.
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess, type StdioOptions } from "node:child_process";
-import { utimesSync, chmodSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, utimesSync, chmodSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { after, afterEach, before, describe, test } from "node:test";
 import { canonical, isWithin } from "../pi-config/extensions/worktrees/state.ts";
@@ -91,6 +91,10 @@ interface World {
   pass(): Promise<PassResult>;
   record(path: string, branch: string): void;
 }
+
+/** The repository's own ledger names this folder, so it's proved this repository's: what a chat's record alone can't do for its branch. */
+const provedOurs = (w: World, path: string, branch: string, tip = "") =>
+  w.deps.appendLedger([{ v: 1, path, branch, commonDir: canonical(join(w.fx.project, ".git")), tip, merged: "ancestor", branchDeleted: !tip, at: 1, retired: true, ...(tip ? { pinned: true as const } : {}) }]);
 
 /** A chat that holds nothing, overridden per case: idle an hour, with no workers and no TUI. */
 const quietChat = (w: World, cwd: string | null, over: Partial<Chat> = {}): Chat => ({
@@ -911,6 +915,7 @@ describe("a pin precedes every branch delete", () => {
     git(w.fx.project, ["worktree", "remove", "--force", b.checkout]);
     mkdirSync(join(b.checkout, "node_modules"), { recursive: true });
     writeFileSync(join(b.checkout, "node_modules/a.js"), "x\n");
+    provedOurs(w, b.checkout, b.branch, b.commit);
     w.record(b.checkout, b.branch);
     const order: string[] = [];
     w.hooks.push((args, _c, phase) => {
@@ -1574,6 +1579,7 @@ describe("a leftover folder", () => {
   test("a quiet chat's folder in it: it goes, the branch goes, and that chat's next message brings it back", async () => {
     const w = world();
     const p = leftover(w, "lchat");
+    provedOurs(w, p, "feat/lchat", git(w.fx.project, ["rev-parse", w.fx.target]));
     w.chats.push(quietChat(w, p));
     await w.pass();
     assert.equal(existsSync(p), false, "having a folder there isn't using it");
@@ -1587,6 +1593,7 @@ describe("a leftover folder", () => {
     const w = world();
     const tracked = readFileSync(join(w.fx.project, "README.md"), "utf8");
     const p = leftover(w, "larchived", { "README.md": tracked, "node_modules/a.js": "x\n" });
+    provedOurs(w, p, "feat/larchived", git(w.fx.project, ["rev-parse", w.fx.target]));
     const chat = quietChat(w, p, { archived: true, lastActiveAt: w.now.t - 11 * MIN });
     w.chats.push(chat);
     const r = await w.pass();
@@ -1609,6 +1616,7 @@ describe("a leftover folder", () => {
     const b = finished(w, "lbranch");
     git(w.fx.project, ["worktree", "remove", "--force", b.checkout]);
     mkdirSync(b.checkout);
+    provedOurs(w, b.checkout, b.branch, b.commit);
     w.record(b.checkout, b.branch);
     w.chats.push(quietChat(w, b.checkout, { archived: true }));
     const tip = git(w.fx.project, ["rev-parse", b.branch]);
@@ -1625,12 +1633,13 @@ describe("a leftover folder", () => {
   test("a stop right after the delete still records it, so the chat comes back", async () => {
     const w = world();
     const p = leftover(w, "lstop");
+    provedOurs(w, p, "feat/lstop", git(w.fx.project, ["rev-parse", w.fx.target]));
     w.chats.push(quietChat(w, p));
     const append = w.deps.appendLedger;
     w.deps.appendLedger = () => { throw new Error("stopped here"); };
     await w.pass();
     assert.equal(existsSync(p), false);
-    assert.equal(w.ledger().length, 0, "the stop came first");
+    assert.equal(w.ledger().filter((e) => e.path === p && e.merged === "leftover").length, 0, "the stop came first");
     w.deps.appendLedger = append;
     await w.pass();
     assert.equal(w.ledger().at(-1)?.path, p, "read back by the next wake-up");
@@ -3258,6 +3267,7 @@ describe("what a broken copy showed nothing else proved", () => {
     const b = finished(w, "lnopin");
     git(w.fx.project, ["worktree", "remove", "--force", b.checkout]);
     put(b.checkout, "node_modules/a.js", "x\n");
+    provedOurs(w, b.checkout, b.branch, b.commit);
     w.record(b.checkout, b.branch);
     const real = w.deps.gitWrite;
     w.deps.gitWrite = async (args, cwd) => (isPin(args) ? { code: 1, stdout: "", stderr: "fatal: no" } : real(args, cwd));
@@ -3360,5 +3370,268 @@ describe("a drafts folder only the proof can clear", () => {
     const r = await retireTree(w.deps, w.fx.project, b.checkout);
     assert.equal(r.state, "retired", JSON.stringify(r));
     assert.equal(existsSync(b.checkout), false);
+  });
+});
+
+// ---------------------------------------------------------------- the first pass's report
+
+type ReportRow = { path: string; branch?: string; reason?: string; [k: string]: unknown };
+type Groups = Record<string, ReportRow[]>;
+const reportOf = (w: World) => JSON.parse(readFileSync(w.firstPassPath, "utf8")) as { done?: boolean; list: { path: string; branch: string }[]; groups: Groups; repos: Record<string, Groups> };
+/** Everywhere a path is placed, in every repository of the report: a count over one repository can't see it placed twice. */
+const placedIn = (w: World, path: string) => {
+  const r = reportOf(w);
+  const inRepos = Object.entries(r.repos ?? {}).flatMap(([repo, groups]) => Object.entries(groups).flatMap(([group, rows]) => rows.filter((x) => x.path === path).map((x) => ({ repo, group, reason: x.reason }))));
+  const inGroups = Object.entries(r.groups).flatMap(([group, rows]) => rows.filter((x) => x.path === path).map(() => group));
+  assert.deepEqual([...inGroups].sort(), inRepos.map((x) => x.group).sort(), "the report's two views of it agree");
+  return inRepos;
+};
+
+describe("a repository with the same history as another", () => {
+  /** A copy of the project sharing its history, as `cp -a` makes one. */
+  const sibling = (w: World, name = "demo-old") => {
+    const sib = join(w.fx.parent, name);
+    cpSync(w.fx.project, sib, { recursive: true, verbatimSymlinks: true });
+    return sib;
+  };
+  /** A repository sharing nothing with the project: the control. */
+  const unrelated = (w: World) => {
+    const other = join(w.fx.parent, "demo-other");
+    mkdirSync(other, { recursive: true });
+    git(other, ["init", "-q", "-b", "master"]);
+    writeFileSync(join(other, "a.txt"), "another project\n");
+    git(other, ["add", "a.txt"]);
+    git(other, ["commit", "-q", "-m", "first of another project"]);
+    return other;
+  };
+  const inBothOrders = (name: string, body: (first: (w: World, b: string) => void) => Promise<void>) => {
+    for (const [order, list] of [["the owner first", (w: World, o: string) => [w.fx.project, o]], ["the other first", (w: World, o: string) => [o, w.fx.project]]] as const)
+      test(`${name} (${order})`, () => body((w, other) => (w.deps.repos = () => list(w, other))));
+  };
+
+  // Both spellings of the copy: which repository's path sorts first decides who could claim a doubt, so a copy that sorts first must be the one to skip it.
+  for (const [what, make] of [["a copy with the same history", sibling], ["a copy with the same history, sorting before its owner", (w: World) => sibling(w, "0-demo")], ["the control, a repository with no shared history", unrelated]] as const) {
+    inBothOrders(`${what}: a live worktree with work of its own lands in its owner's group only`, async (setRepos) => {
+      const w = world();
+      const other = make(w);
+      const b = w.fx.branch("feat", { "w.txt": "work\n" });
+      w.record(b.checkout, b.branch);
+      setRepos(w, other);
+      const before = snapshot(w, b.checkout);
+      await w.pass();
+      assert.deepEqual(snapshot(w, b.checkout), before, "nothing of it changed");
+      assert.deepEqual(placedIn(w, b.checkout).map((x) => [x.repo, x.group]), [[w.fx.project, "hasWork"]], JSON.stringify(placedIn(w, b.checkout)));
+      assert.ok(!placedIn(w, b.checkout).some((x) => /\.git/.test(x.reason ?? "")), "and never as something left behind holding a .git");
+    });
+
+    inBothOrders(`${what}: a finished worktree retires, once, and only its owner reports it`, async (setRepos) => {
+      const w = world();
+      const other = make(w);
+      const b = finished(w, "done");
+      w.record(b.checkout, b.branch);
+      setRepos(w, other);
+      await w.pass();
+      assert.deepEqual(placedIn(w, b.checkout).map((x) => [x.repo, x.group]), [[w.fx.project, "retired"]], JSON.stringify(placedIn(w, b.checkout)));
+      assert.equal(existsSync(b.checkout), false);
+      assert.equal(w.ledger().filter((e) => e.path === b.checkout).length, 1);
+    });
+  }
+
+  inBothOrders("a folder with no .git, on a record two repositories could both own: a doubt holds or skips, and removes nothing", async (setRepos) => {
+    const w = world();
+    const other = sibling(w);
+    const p = join(w.fx.parent, ".worktrees", "demo-left");
+    put(p, "node_modules/a.js", "x\n");
+    w.record(p, "feat/gone");
+    setRepos(w, other);
+    const before = filesOf(p);
+    await w.pass();
+    assert.deepEqual(filesOf(p), before, "the folder stays, every file");
+    assert.equal(w.ledger().filter((e) => e.path === p).length, 0, "no removal recorded");
+    const places = placedIn(w, p);
+    assert.deepEqual(places.map((x) => x.group), ["held"], `one repository holds it, the other skips it: ${JSON.stringify(places)}`);
+    const row = reportOf(w).repos[places[0]!.repo]!.held!.find((x) => x.path === p)!;
+    assert.equal(row.branch, undefined, "with no branch: it may mean something else in either");
+    assert.match(places[0]!.reason ?? "", /shares this one's history/);
+  });
+
+  inBothOrders("a same-named branch of the other repository's: the record isn't that repository's, so that branch and its commit stay", async (setRepos) => {
+    const w = world();
+    const other = sibling(w);
+    const b = finished(w, "same");
+    // The copy's own branch of that name: its own commit, on its own target, so it reads as finished to it.
+    git(other, ["checkout", "-q", "-b", b.branch]);
+    writeFileSync(join(other, "own.txt"), "the copy's own work\n");
+    git(other, ["add", "own.txt"]);
+    git(other, ["commit", "-q", "-m", "the copy's own commit"]);
+    git(other, ["checkout", "-q", w.fx.target]);
+    git(other, ["merge", "-q", "--no-ff", "--no-edit", b.branch]);
+    const ownCommit = git(other, ["rev-parse", b.branch]);
+    assert.notEqual(ownCommit, b.commit);
+    git(w.fx.project, ["worktree", "remove", "--force", b.checkout]);
+    put(b.checkout, "node_modules/a.js", "x\n");
+    w.record(b.checkout, b.branch);
+    setRepos(w, other);
+    const before = filesOf(b.checkout);
+    await w.pass();
+    assert.equal(git(other, ["rev-parse", b.branch]), ownCommit, "its branch stays at its commit");
+    assert.equal(git(other, ["cat-file", "-t", ownCommit]), "commit");
+    assert.deepEqual(filesOf(b.checkout), before, "and with two possible owners the folder isn't anyone's to delete");
+    assert.equal(git(w.fx.project, ["rev-parse", b.branch]), b.commit, "the project's own branch stays too");
+    assert.equal(w.ledger().filter((e) => e.path === b.checkout).length, 0);
+  });
+
+  describe("a leftover with no .git that only a chat's record names", () => {
+    const left = (w: World, name: string) => {
+      const b = finished(w, name);
+      git(w.fx.project, ["worktree", "remove", "--force", b.checkout]);
+      put(b.checkout, "node_modules/a.js", "x\n");
+      return b;
+    };
+
+    test("the folder goes, but no branch of that name is touched, even with one repository able to own it and the setting on", async () => {
+      const w = world();
+      const other = unrelated(w);
+      const b = left(w, "recordonly");
+      w.record(b.checkout, b.branch);
+      w.deps.repos = () => [other, w.fx.project];
+      const before = git(w.fx.project, ["for-each-ref", "refs/heads"]);
+      await w.pass();
+      assert.equal(existsSync(b.checkout), false, "the folder goes");
+      assert.equal(git(w.fx.project, ["for-each-ref", "refs/heads"]), before, "every branch stays where it was");
+      assert.deepEqual(w.writes.filter((x) => deletesBranch(x.args)).map((x) => x.args.join(" ")), [], "no delete was sent");
+      assert.equal(w.ledger().at(-1)!.tip, "", "and the ledger records no last commit for it, so nothing later treats that branch as this folder's");
+    });
+
+    test("its chat's next message doesn't attach to that branch: the branch is left where it was", async () => {
+      const w = world();
+      const b = left(w, "recordchat");
+      w.record(b.checkout, b.branch);
+      await w.pass();
+      const r = await bringBack(w.deps, b.checkout);
+      assert.deepEqual(w.writes.filter((x) => verbOf(x.args)[0] === "worktree" && verbOf(x.args)[1] === "add" && !x.args.includes("-b")).map((x) => x.args.join(" ")), [], `no folder comes back on a branch it never proved: ${JSON.stringify(r)}`);
+      assert.equal(git(w.fx.project, ["rev-parse", b.branch]), b.commit, "the same-named branch didn't move");
+    });
+
+    test("that removal's ledger line isn't evidence later: the same folder left again doesn't take the branch either", async () => {
+      const w = world();
+      const b = left(w, "relic");
+      w.record(b.checkout, b.branch);
+      await w.pass();
+      assert.equal(git(w.fx.project, ["rev-parse", b.branch]), b.commit, "the control: the first removal left it");
+      put(b.checkout, "node_modules/b.js", "again\n");
+      await w.pass();
+      assert.equal(existsSync(b.checkout), false, "the folder goes again");
+      assert.equal(git(w.fx.project, ["rev-parse", b.branch]), b.commit, "and the branch still stays");
+    });
+
+    test("the control: the same leftover, proved this repository's by its own ledger entry, does lose its branch with the setting on", async () => {
+      const w = world();
+      const other = unrelated(w);
+      const b = left(w, "proved");
+      provedOurs(w, b.checkout, b.branch, b.commit);
+      w.record(b.checkout, b.branch);
+      w.deps.repos = () => [other, w.fx.project];
+      await w.pass();
+      assert.equal(existsSync(b.checkout), false);
+      assert.equal(git(w.fx.project, ["branch", "--list", b.branch]), "", "so the rule above can't pass by never deleting");
+      assert.equal(git(w.fx.project, ["rev-parse", `refs/sova/retired/${b.commit}`]), b.commit);
+    });
+  });
+});
+
+describe("a restart in the middle of the first pass", () => {
+  const child = join(import.meta.dirname, "worktree-retire-kill.integration.fixture.ts");
+  /** Three finished trees (each with what the report lists), one holding work, one with commits of its own. */
+  function setup() {
+    const w = world();
+    const gone = ["alpha", "bravo", "charlie"].map((n) => {
+      const b = finished(w, n);
+      excluded(b, ".agent");
+      put(b.checkout, ".agent/auth.json", "{}\n");
+      return b;
+    });
+    const held = finished(w, "held");
+    writeFileSync(join(held.checkout, "wip.txt"), "only here\n");
+    const work = w.fx.branch("work", { "w.txt": "w\n" });
+    return { w, gone, held, work };
+  }
+  /** A real process, killed by SIGKILL right after the nth removal is recorded. */
+  const killedAfter = async (w: World, n: number) => {
+    const c = spawn(process.execPath, [child, w.fx.project, w.fx.target, w.fx.state, `after-ledger-${n}`], { stdio: "ignore" });
+    children.push(c);
+    await until(() => c.exitCode !== null || c.signalCode !== null, "the child to stop");
+    assert.equal(c.signalCode, "SIGKILL", "it died where the test said, not by finishing");
+  };
+  /** The report with what changes between two equal worlds taken out: their temp roots, and each commit's hash. */
+  const comparable = (w: World) => {
+    const r = reportOf(w);
+    const clean = (v: unknown): unknown => JSON.parse(JSON.stringify(v, (k, x) => (k === "tip" ? undefined : typeof x === "string" ? x.replaceAll(w.fx.root, "<root>") : x)));
+    const sorted = (rows: ReportRow[]) => [...rows].sort((a, b) => a.path.localeCompare(b.path));
+    return { groups: Object.fromEntries(Object.entries(r.groups).map(([k, rows]) => [k, clean(sorted(rows))])), repos: Object.keys(r.repos).length, listed: clean([...r.list].map((x) => x.path).sort()) };
+  };
+  const unbroken = async () => {
+    const { w } = setup();
+    await w.pass();
+    return comparable(w);
+  };
+  const eachInOneGroup = (w: World, paths: readonly string[]) => {
+    for (const p of paths) assert.equal(placedIn(w, p).length, 1, `${p}: ${JSON.stringify(placedIn(w, p))}`);
+  };
+
+  for (const n of [1, 2])
+    test(`stopped right after removal ${n} of 3 is recorded: the report matches an uninterrupted pass, each tree in one group, what went listed`, async () => {
+      const want = await unbroken();
+      const { w, gone, held, work } = setup();
+      await killedAfter(w, n);
+      assert.ok(w.ledger().length >= n, "the removal really was recorded before the stop");
+      await w.pass();
+      assert.deepEqual(comparable(w), want);
+      eachInOneGroup(w, [...gone.map((b) => b.checkout), held.checkout, work.checkout]);
+      const retired = reportOf(w).groups.retired!;
+      assert.deepEqual(retired.map((x) => x.path).sort(), gone.map((b) => b.checkout).sort());
+      for (const row of retired) assert.ok(JSON.stringify(row.testCopy ?? {}).includes("auth.json"), `what went from ${row.path} is listed: ${JSON.stringify(row)}`);
+    });
+
+  test("stopped between two repositories: the report over both matches an uninterrupted pass", async () => {
+    const twoRepos = () => {
+      const { w, gone } = setup();
+      const other = join(w.fx.parent, "demo-other");
+      mkdirSync(other, { recursive: true });
+      git(other, ["init", "-q", "-b", "master"]);
+      writeFileSync(join(other, "a.txt"), "another project\n");
+      git(other, ["add", "a.txt"]);
+      git(other, ["commit", "-q", "-m", "first"]);
+      const otherTree = join(w.fx.parent, ".worktrees", "demo-other-x");
+      git(other, ["worktree", "add", "-q", "-b", "feat/x", otherTree]);
+      writeFileSync(join(otherTree, "x.txt"), "x\n");
+      git(otherTree, ["add", "x.txt"]);
+      git(otherTree, ["commit", "-q", "-m", "x"]);
+      git(other, ["merge", "-q", "--no-ff", "--no-edit", "feat/x"]);
+      w.deps.repos = () => [w.fx.project, other];
+      return { w, gone, other, otherTree };
+    };
+    const base = twoRepos();
+    await base.w.pass();
+    const want = comparable(base.w);
+    const { w, gone, other, otherTree } = twoRepos();
+    // A kill after every removal of the first repository is recorded: its report isn't written, and the second is yet to be read.
+    const c = spawn(process.execPath, [child, w.fx.project, w.fx.target, w.fx.state, "after-ledger-3", other], { stdio: "ignore" });
+    children.push(c);
+    await until(() => c.exitCode !== null || c.signalCode !== null, "the child to stop");
+    assert.equal(c.signalCode, "SIGKILL", "it died where the test said");
+    await w.pass();
+    assert.deepEqual(comparable(w), want);
+    eachInOneGroup(w, [...gone.map((b) => b.checkout), otherTree]);
+  });
+
+  test("stopped twice in a row: the report still matches", async () => {
+    const want = await unbroken();
+    const { w, gone, held, work } = setup();
+    await killedAfter(w, 1);
+    await killedAfter(w, 1);
+    await w.pass();
+    assert.deepEqual(comparable(w), want);
+    eachInOneGroup(w, [...gone.map((b) => b.checkout), held.checkout, work.checkout]);
   });
 });

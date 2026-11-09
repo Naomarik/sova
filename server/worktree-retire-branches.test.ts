@@ -188,6 +188,8 @@ describe("off", () => {
       const w = world({ seam: OFF });
       if (seam) w.d.queueMade = seam;
       const b = leftover(w, "leftkept");
+      // Proved this repository's: a folder only a chat's record names never touches a branch at all (safety suite).
+      w.d.appendLedger([{ v: 1, path: b.checkout, branch: b.branch, commonDir: realpathSync(join(w.fx.project, ".git")), tip: b.commit, merged: "leftover", branchDeleted: false, at: 1, retired: true, pinned: true }]);
       await retirePass(w.d);
       assert.equal(existsSync(b.checkout), false, "the folder went");
       assert.equal(branchAt(w, b.branch), b.commit);

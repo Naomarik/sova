@@ -1,5 +1,5 @@
 // Runs a real retirement pass and kills itself at the step named: the restart-in-the-middle cases, with no chance for a
-// finally to run. argv: <project> <target> <state> <after-pin | before-remove | after-remove | before-branch-delete>.
+// finally to run. argv: <project> <target> <state> <after-pin | before-remove | after-remove | before-branch-delete | after-ledger-<n>>.
 import type { Git } from "../pi-config/extensions/worktrees/git.ts";
 import { retirePass } from "./worktree-retire";
 import { plainRetireDeps } from "./worktree-retire-deps.integration.fixture";
@@ -12,6 +12,9 @@ const verb = (args: readonly string[]): string[] => {
   return a;
 };
 const d = plainRetireDeps({ project, target, state });
+// A sixth argument: more repositories after the project, for a stop between two of them.
+const more = process.argv[6]?.split(",") ?? [];
+if (more.length) d.repos = () => [project, ...more];
 const write = d.gitWrite;
 d.gitWrite = (async (args, cwd) => {
   const a = verb(args).filter((x) => x !== "--");
@@ -28,4 +31,14 @@ d.gitRemove = (async (args, cwd) => {
   if (at === "after-remove") die();
   return r;
 }) as Git;
+// `after-ledger-<n>`: killed right after the nth removal is recorded in the ledger, as a restart mid first pass is.
+const nth = /^after-ledger-(\d+)$/.exec(at)?.[1];
+if (nth) {
+  const append = d.appendLedger;
+  let seen = 0;
+  d.appendLedger = (entries) => {
+    append(entries);
+    if (++seen === Number(nth)) die();
+  };
+}
 await retirePass(d);

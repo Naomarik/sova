@@ -80,12 +80,14 @@
       "server/overseer-runtime.test.ts",
       "server/overseer-prompt.md",
       "server/overseer-org-view.ts",
-      "server/app.ts"
+      "server/app.ts",
+      "server/coding-default-profile.ts",
+      "server/project-overseer.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-06T22:14Z",
-      "source": "pi-session:b406e4de-b015-4dbb-b201-14ab20b5da44#2b9be4c7"
+      "by": "naomarik",
+      "at": "2026-11-08T19:46Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
     }
   },
   "§app.project-overseer/coding-worktrees": {
@@ -914,7 +916,8 @@
       "server/project-services/engine.ts",
       "server/overseer-whatsapp-part.ts",
       "server/overseer-whatsapp.ts",
-      "server/projects/contributions.ts"
+      "server/projects/contributions.ts",
+      "server/overseer-profiles.ts"
     ],
     "requires": [
       "§app.baton/goal-and-loadout",

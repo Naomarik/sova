@@ -8,13 +8,13 @@ the session stays behind, closed by the scrim, Esc, or its Close button (Cancel 
 is unsaved, which discards it, §app.settings-dialog/save-bar). A number box in a form that waits
 for Save keeps whatever you type in it, red until it is valid (§app.settings-dialog/number-boxes).
 
-The rail is the structure: each settings screen is one tab — General, Models, Accounts, MCP Servers, Extensions, Subagents,
-Alignment, Profiles, Overseer, Notifications, Decisions, Summaries, Memory, Organizations, Merge Queue, Themes, Mesh, Public links, Outreach, Voice, Experimental.
+The rail is the structure: each settings screen is one tab — General, Models, Accounts, MCP Servers, Extensions,
+Alignment, Profiles, Overseer, Notifications, Decisions, Summaries, Memory, Organizations, Merge Queue, Themes, Mesh, Public links, Outreach, Voice, Experimental. An older Sova's rail has Extensions, Subagents, Alignment there.
 Merge Queue shows one project's queue settings at a time (§app.merge-queue/settings): a project's
 **Queue Settings** opens it on that project, and its picker switches project.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
-(§chat/mode-menu) opens Subagents directly, and nothing else about the chat changes. Which tab is open lives in
+(§chat/mode-menu) opens Profiles directly, on that chat's profile at its Models part, and nothing else about the chat changes. Which tab is open lives in
 `src/lib/settings-nav.ts`, so a control deep in a pane can open it without a callback chain. The
 active tab is the only filled thing in the rail — an accent tint, never an accent label, because
 §design/ground-rules spends accent on the primary, live, and focus — and the rail carries no fill of its own, so
@@ -25,8 +25,9 @@ active tab keeps its tint.
 ## §app.settings-dialog/one-height — One height
 
 **The dialog is the same height whichever tab is open.** Its height comes from the viewport —
-`min(640px, 100dvh - --space-8)`, and `85dvh` in the folded sheet — not from the panel's content,
-and the panel scrolls inside it (`.settings-panel`, `overflow-y: auto`).
+`min(880px, 100dvh - --space-8)`, and `85dvh` in the folded sheet — not from the panel's content,
+and the panel scrolls inside it (`.settings-panel`, `overflow-y: auto`). Unfolded, its width is
+`min(1120px, 100vw - --space-8)`, so a wide window gets a bigger dialog that is still a modal.
 
 This is a correction, and the bug names the rule: while the height followed the content, Themes
 filled the viewport and Experimental came in at a few hundred pixels, so switching between them
@@ -164,12 +165,14 @@ read, an error banner offers Retry and touches nothing.
 
 ## §app.settings-dialog/modes — Worker rows
 
-There is no Modes or Teams tab: Delegate routing, the spec writer and the standing team roles are
-edited only in **Subagents**, and major and minor modes are chosen in each chat's mode menu. No
-settings screen edits a legacy file.
+There is no Modes, Teams or Subagents tab: Delegate routing, the spec writer and the standing team
+roles are edited only in the **Models** part of a profile's editor in **Profiles**
+(§app.settings-dialog/profile-editor), and a chat's major and minor modes are chosen in its mode
+menu. No settings screen edits a legacy file.
 
-The **Subagents** tab edits named setups (§chat.subagent-profiles/settings): Delegate routing,
-team roles and thresholds, members default, and spec writer. The worker-row rules below apply
+The Models part edits each profile's helpers (§chat.subagent-profiles/settings): Delegate routing,
+team roles and thresholds, and spec writer (no default model for members: they follow their work kinds,
+§teams.defaults/member-kinds). The worker-row rules below apply
 there; the chat's profile resolves the routing, not a global editor (§chat.subagent-profiles/resolution).
 
 Delegate routes four kinds of work, in this order: **Planning & specs** (non-editing design,
@@ -223,7 +226,7 @@ Where they sit and how they are labelled is §chat.subagent-profiles/editor-rows
   and missing section. There is no Delegate or Teams Reset to Defaults button.
 - **Unsaved edits are kept, and never dropped silently.** The draft lives outside the tab
   (`src/lib/subagent-profiles-draft.ts`), so switching tabs keeps it. Closing over unsaved edits
-  returns to Subagents and holds with **Your Subagents changes aren't saved.** "Save them, or
+  returns to Profiles and holds with **Your Profiles changes aren't saved.** "Save them, or
   discard them and close." [Keep Editing] [Discard and Close]. A closed dialog forgets the draft;
   reopening starts from what's saved. The save replaces the whole library; a changed device
   default is written separately, and a failure after the library save reports the partial write. The server
@@ -235,7 +238,7 @@ Where they sit and how they are labelled is §chat.subagent-profiles/editor-rows
 The library is `<agent dir>/subagent-profiles.json`, shared with pi in the terminal. A saved edit
 reaches every chat on that profile from its next turn or team action; running workers and the
 main model keep their models. `<agent dir>/subagent-profiles-default.json` is this device's own
-choice and never syncs. Legacy `mode-delegate.json`, `mode-spec.json` and `team-defaults.json`
+choice, written when this computer's default profile is chosen (§chat.profiles/default), and never syncs. Legacy `mode-delegate.json`, `mode-spec.json` and `team-defaults.json`
 remain for seeding and fallback, not as second editors.
 
 Built-in legacy Delegate values, used when seeding, each the catalog's current model of its family
@@ -380,10 +383,10 @@ from each chat's next summary.
   comes sooner." Under both: "Applies from each chat's next message (UniiChat) or next compaction.
   Nothing is deleted: making it bigger keeps finer detail from now on, and older lines stay
   merged." The sizes wait for Save with the summarizer, in the same "Memory" draft.
-- The default memory type new chats start from is the mode menu's Save as default
+- The default memory type new chats start from is saved by the mode menu's Make {name} the Default
   (§chat.mode-menu/memory-panel); a save here keeps it. The footnote says so under the file's
   path ("Stored in ~/….json. The memory type new chats start from is saved from a chat's mode
-  menu, with Save as default.").
+  menu, with Make Default.").
 
 ## §app.settings-dialog/themes — Themes
 
@@ -512,7 +515,7 @@ offers Retry and the built-in themes list anyway — the app's own themes don't 
 
 ## §app.settings-dialog/alignment — Alignment
 
-The tab after Subagents, and the align mode's settings (§chat/alignment). It opens with one line:
+The tab after Extensions, and the align mode's settings (§chat/alignment). It opens with one line:
 "How the align mode plans with you." Four groups follow, staged and saved with the dialog's Save
 Changes like every gated form (§app.settings-dialog/save-bar):
 
@@ -535,35 +538,101 @@ Changes like every gated form (§app.settings-dialog/save-bar):
   and the diff of risky work, at most once each per alignment. Applies to sessions you start after
   saving." (§chat.alignment-review/flag)
 
-Under the groups one line says "A subagent profile can set its own eagerness, writing style and
-visuals (Settings → Subagents)." Eagerness, Style and Visuals are stored in `<agent
+Under the groups one line says "A profile can set its own eagerness, writing style and visuals, in
+its Models part (Settings → Profiles)." (It named Settings → Subagents before that tab went.) Eagerness, Style and Visuals are stored in `<agent
 dir>/mode-align.json` (§chat.alignment/settings-file), Review in Sova's settings; one Save writes
 both, and a failure of either keeps the form's draft and shows the save-failed banner at its end.
 The defaults are Eager, Project manager, Visuals off and Review off.
 
 ## §app.settings-dialog/profiles — Profiles
 
-The tab after Alignment: every profile a session in the open session's folder can use
-(§chat.profiles/projects), read-only. It opens with one line: "Profiles are files. Ask an agent to
-add or change one, or edit {path}." `{path}` is the project's `.sova/profiles/` folder (else your
-`session-profiles.json`), and a **File Format** link opens `docs/profiles.md`. Nothing here
-writes a profile; the one profile Sova writes is a new one of yours, from Save Current As Profile on
-a new session's screen (§chat.profiles/picker), and it is listed under Yours like any other.
+The tab after Alignment, and the one place profiles are listed and edited: every profile a chat in
+the open session's folder can use (§chat.profiles/joined), both parts. It replaces the Subagents tab,
+which this Sova no longer has (§chat.subagent-profiles/settings). The tab is a list beside an editor:
+the list on the left, the picked profile's editor on the right (§app.settings-dialog/profile-editor);
+on a narrow panel (under 480px of the tab's width) the editor sits under the list.
 
-- **The list** holds real profiles only: **Yours**, then **This project ({name})**, then **Built
-  in** only while Sova ships a profile file or one of them can't be read (it ships none today).
-  There is no Default row: the picker's My settings is no profile, and exists only on the new
-  session screen. Each row has the profile's icon and label, its source badge, its summary line of
-  what it changes ("reads and messages sessions · no edit files · One at a time", then its mode and
-  minor modes when it sets them, "· delegate · align, spec, vis", or "· no minor modes" for `[]`;
-  "Nothing changed" when it changes none of these), the playbook it links ("Runs {title}", or "Runs "{id}", not found here"), and its file's
-  path. Without a session folder, This project says "Open a session to see its project's profiles."
+- **The list** starts with **New Profile**, then three groups: **Yours**, **This project ({name})**,
+  and **Built in**, which holds Off (§chat.subagent-profiles/off; it changes none of a chat's
+  settings, and it stands where the new chat screen's My settings card was) and any profile file Sova
+  ships (it ships none today). The system profiles are never listed. Each row is the profile's name
+  over its footprint ("Opus 5.5 + GPT-6.1 Sol", §chat.profiles/joined): its models only, never its
+  modes (delegate, align, spec) or tools (Edit files, say), and no source badge, since the group a row sits under says
+  where it comes from. The default row carries a **Default** chip (this computer's default,
+  §chat.profiles/default); a project profile that needs your approval (§chat.profiles/trust), one
+  that reads and messages sessions say, carries **Needs approval**, gone once approved; and one
+  hidden from the pickers carries **Hidden** once hidden.
+  Clicking a row opens it in the editor; the picked row is tinted. A long name or footprint wraps and
+  is never cut short. Without a session folder, This project says "Open a session to see its
+  project's profiles."
+- **New Profile** adds a profile under Yours, named "New profile", starting from the models of the
+  profile open in the editor (this computer's default's when Off is), and opens it on its Models part. It is saved
+  with the dialog's Save Changes, both halves, linked.
 - **Problems.** A file that couldn't be read is its own row under its group, with a **Can't be
-  read** badge, its path and the exact error, so a mistake made by hand or by an agent shows here.
-- **Approve** on a project profile that needs approval (§chat.profiles/trust), beside a line naming
-  the powers it asks for; once approved the row says "Approved".
-- **Hide From Picker** on every profile (**Show In Picker** and a **Hidden** badge once
-  hidden). Hiding and approving save at once; nothing here goes through the dialog's footer.
+  read** badge, its path and the exact error, so a mistake made by hand or by an agent shows here. A
+  malformed Yours file lists none of yours and is never overwritten.
+- **Project profiles** are files in the project: to change one, you or an agent edit {path}
+  (`{path}`: its file in the project's `.sova/profiles/` folder, else none: a project without that
+  folder has no profiles of its own). Here they are read-only, with **Approve Profile** while they need it
+  (§app.settings-dialog/profile-editor); the one kind of profile Sova writes here is yours.
+- **The file format** is `docs/profiles.md`. Nothing here writes a project's file. **File Format**
+  in the tab's foot opens it, beside where yours are stored (`session-profiles.json` and
+  `subagent-profiles.json`).
+- There is no line for a playbook a profile links ("Runs {title}", as the old tab had): a profile
+  runs no playbook (§chat.profiles/playbook).
+
+## §app.settings-dialog/profile-editor — A profile's editor: two parts
+
+The editor's head is the profile's name field ("Profile name", §chat.profiles/profile-name) and, on
+the right, a **Default** chip while it is this computer's default, else **Make Default**
+(§chat.profiles/default). Under it, two tabs: **Models** and **When a Chat Starts**.
+
+- **Models** opens first, with the line "A chat can switch to these any time." Then **Set All To**
+  (§app.settings-dialog/profile-set-all) and one compact row per role, its label, a model and an
+  effort, in four groups: **This chat** (the chat's own model and effort), **Delegate** (Planning,
+  Investigation, Routine, Complex), **Teams** (Coordinator and Monitor; no Members row, §teams.defaults/member-kinds) and **Review** (Spec
+  writer, Reviewer, the reviewer only while adversarial review is switched on), then **Alignment**
+  (Eagerness, Writing style, Visuals). Each row expands, in place, to the rest of today's controls
+  for it, so nothing is lost: its backend and fallback, and for the coordinator and monitor their
+  instructions, thresholds and handover, with the same rules (§chat.subagent-profiles/settings,
+  §chat.subagent-profiles/editor-rows); the handover's retire timeout sits in the Coordinator's
+  row. A row holding something Save waits for opens itself. When
+  the profile's library half is shared (§chat.profiles/joined), the part says "Also used by {name}"
+  ("{name} and {name}", "{name} and {n} others") under its line, since an edit changes each.
+- **When a Chat Starts** opens with the line "Mode and add-ons are where a chat begins; you can
+  still change them in its mode menu. Tools and powers lock at the first message." Then **Mode**
+  (normal or Delegate; never Create, §chat.create-mode/per-chat-only), **Add-ons** (Align, Spec,
+  Visuals; never Memory, §chat.memory/where), **Tools** (one toggle per removable capability, "on"
+  kept: Shell, Edit files, Workers & teams, Web, Worktrees, Timers, MCP Servers, with the workers
+  rule of §chat.profiles/enforcement), **Session powers** (Reads and
+  messages sessions, and its wider powers, with their limits), **One at a time**, the first message,
+  and whether the Overseer may start it, each with the rules of the file it saves to
+  (§chat.profiles/model). Mode also offers **This computer's default**, and Add-ons **Use Default
+  Add-Ons**, each leaving that field unset, so a chat on the profile starts with this computer's
+  default mode or add-ons.
+- **Saving** is the dialog's Save Changes (§app.settings-dialog/save-bar), which writes each half
+  that changed through its own writer (§chat.profiles/joined); unsaved edits hold a close. A change
+  to When a Chat Starts reaches new chats only; one to Models reaches every chat on that profile from
+  its next turn or team action. Make Default saves with it.
+- **Also for yours:** **Duplicate**, **Delete** (refused for the default: "Make another profile the
+  default first."; a shared library half stays for the profiles still linking it, §chat.profiles/joined) and **Hide From Picker** (**Show In Picker** once hidden, saved at once).
+- **A project's profile** shows every field read-only, its name included, and a warn notice: "This
+  profile is a file in the project, so an agent or you change it there." followed by what it asks
+  for ("It asks to read and message sessions."), and, while it needs your approval
+  (§chat.profiles/trust), **Approve Profile**, which saves at once and only from your own click;
+  once approved the notice keeps its first sentence. Make Default and Hide From Picker stay offered.
+- **Off** shows only its name, Make Default (or the Default chip) and "Built in. A chat keeps its own
+  model and modes, and the agent picks every worker." (§chat.subagent-profiles/off).
+
+## §app.settings-dialog/profile-set-all — Set All To
+
+At the top of a profile's Models part, **Set All To**, one select ("Pick a model" until used),
+changes every model row of the Models part, This chat included, to the model picked, and keeps each
+row's effort where the new model takes it; where it doesn't, that row's effort is left blank and
+holds Save, as changing one row's model does (§app.settings-dialog/modes). It picks the model's own
+backend for each row. It is an edit like any other: nothing is written until Save Changes, Cancel
+undoes it, and each row can still be changed on its own afterwards. A project's profile and Off
+don't offer it.
 
 ## §app.settings-dialog/overseer — Overseer
 
@@ -768,8 +837,8 @@ Folders box or the tab writes nothing.
 
 ## §app.settings-dialog/save-bar — One Save in the footer, one close-hold
 
-Every Settings tab that writes a file on the server is Save-gated: **Models**, **Subagents**
-(the library and this device's default), **Overseer**, **Notifications** (the **Phone Notifications** form), **Decisions**, **Summaries**, **Memory**, **Organizations**,
+Every Settings tab that writes a file on the server is Save-gated: **Models**, **Profiles**
+(both halves and the default), **Overseer**, **Notifications** (the **Phone Notifications** form), **Decisions**, **Summaries**, **Memory**, **Organizations**,
 **Mesh**, **Alignment** and **Experimental**, and on General the **Updates** form (§app/updates). A change on them is staged, never written as it is made. No form has a Save or
 Discard button of its own: saving is the dialog's. Merge Queue (below), MCP Servers (§app.mcp/settings-tab) and Extensions (§app.settings-dialog/extensions) are the tabs that save on their own.
 
@@ -786,10 +855,10 @@ Discard button of its own: saving is the dialog's. Merge Queue (below), MCP Serv
   without asking.
 - **Save waits for every dirty form to be valid.** While any is incomplete or invalid, Save
   Changes is disabled and the status line, in error, names the first such form and what it needs
-  ("Subagents: My setup's Delegate rows each need a model and an effort.", "Mesh: This host needs a name."). The form's own fields
+  ("Profiles: My setup's Delegate rows each need a model and an effort.", "Mesh: This host needs a name."). The form's own fields
   still say it inline. A form with no unsaved changes never holds Save.
 - **The status line** says, first match wins: **Saving…**; why Save waits; a failed save ("Saved
-  Models; Subagents failed.", or "Subagents failed." when nothing else was written); what is unsaved
+  Models; Profiles failed.", or "Profiles failed." when nothing else was written); what is unsaved
   ("Unsaved: Models, Decisions", form names in rail order); what the last save wrote ("Saved
   Models and Decisions."); or nothing. The outcome of a save is announced to screen readers in the
   same words.
@@ -896,7 +965,7 @@ Cancel and a save replace the text. The boxes are text fields with a numeric key
 (`inputmode="numeric"`), never `type="number"`, whose browsers empty or alter what a half-typed
 value holds. They are Models' requests at once per provider, Organizations' message limit, photo
 and file limits, Overseer's nine limits, Session titles' two minute fields, Public links' ports,
-Subagents' team numbers (where "1.", "1e" and "-" are no number either) and Merge
+Profiles' team numbers (where "1.", "1e" and "-" are no number either) and Merge
 Queue's check time limits.
 
 **Merge Queue's time limits** keep to the same rule with the tab's own save
@@ -960,8 +1029,8 @@ after the other fields, and only when the pick differs from the stored one.
 
 Every switch, checkbox and radio in Settings is a label row: the native input hidden inside it, so
 the label's text and its control are one target, at least 44px tall. A row that leads with its
-control and reads left to right (Subagents' **Pause the
-team**, members-default and spec-writer switches, Summaries' **Fallback** switch, the Decisions switches and radios, Overseer proactivity radios, and the Typography text sizes) is only as
+control and reads left to right (Profiles' **Pause the
+team** and spec-writer switches, Summaries' **Fallback** switch, the Decisions switches and radios, Overseer proactivity radios, and the Typography text sizes) is only as
 wide as its text and control: a click on the empty row beside it does nothing. A row that spreads
 its text and switch across the panel (General's **Summary line**, Mesh's
 sync rows, the Models policy switches) keeps the whole row as its target.

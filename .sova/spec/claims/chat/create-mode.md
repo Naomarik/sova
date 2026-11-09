@@ -19,9 +19,9 @@ A chat in Create works as a chat in Delegate does, and adds what it knows about 
   and the same instruction that the chat orchestrates and checks instead of doing the work itself
   (§chat.mode-menu/delegate-teams). Create's own instructions come after Delegate's and change none
   of them.
-- **One set of settings.** The Subagents picker and every profile are Delegate's
+- **One set of settings.** The Profile picker and every profile's Models part are Delegate's
   (§chat/subagent-profiles). Create adds no Settings tab, no file and no profile field. Moving a chat
-  between Delegate and Create keeps its subagent profile.
+  between Delegate and Create keeps its profile.
 - **Strict.** The strict flag does in Create what it does in Delegate (§chat.mode-menu/strict): while
   it is on, the chat has no `edit` or `write` tool. `bash` stays, so a chat can still write a file with
   it, and Create's instructions say nothing about that.
@@ -283,9 +283,9 @@ with the menu's refusals (§chat.create-mode/where-offered). A terminal refuses 
 A script can still switch a chat, by `POST /api/mode` or a chat socket of its own. No
 default and no other chat's starter can name it.
 
-- **Save as Default** in a Create chat saves the chat's last normal or Delegate choice, with its
-  strict flag, minor modes and subagent profile (§chat.mode-menu/menu). A chat that has been in no
-  other mode saves normal.
+- **Update {name}** in a Create chat saves the chat's last normal or Delegate choice, with its
+  minor modes, into its profile (§chat.mode-menu/menu); **Make {name} the Default** makes its profile
+  the default, never Create, and saves the chat's strict flag; minor modes come from the profile. A chat that has been in no other mode saves normal.
 - **Each of these refuses, and none falls back:** a default naming Create in `POST /api/mode` with no
   `?path=`; a profile whose `mode` is `create` (the file doesn't parse, with the reason); a playbook
   or schedule through such a profile; an automation's `settings.mode`; the Overseer's

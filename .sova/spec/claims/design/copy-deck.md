@@ -342,7 +342,7 @@ words, in the composer, the session pane, the chat's queue cards and the project
 |---|---|
 | Trigger (composer foot, right end) | icons: the major mode's (normal: sliders), one per minor mode on, a letter in a rounded square per project mode on; folded where the foot is too tight for them (§chat.mode-menu/trigger): the first icon, then +{n}, the other modes' count (+3); then the chevron; words beside them only at a composer 620px or wider: {mode} · {minor} · {project mode} …, or "Mode" before this chat's state arrives (`aria-label`/`title`, always: "Mode: {label}", plus ", applies after this turn" when pending) |
 | Menu `aria-label` | Mode |
-| Group labels | Major mode · Minor modes · This project · {name} ("This project" with no name; only with project modes) · Your modes (only with personal modes, §chat.mode-menu/personal-modes) · Subagents |
+| Group labels | Major mode · Minor modes · This project · {name} ("This project" with no name; only with project modes) · Your modes (only with personal modes, §chat.mode-menu/personal-modes) · Profile |
 | Personal mode row | as a project mode's row and states; a personal mode that replaces a project mode of its id adds to its state line: Replaces this project's {id}. · its approval panel's lead reads {id} comes from your modes folder. in place of {id} comes from {project}'s files. |
 | Project mode row (§chat.mode-menu/project-modes) | {id} (mono) / its `MODE.md` `description`; the state line under it: broken: Can't turn on: {problem} · removed: Removed from the project. This chat keeps it until you turn it off. · changed: Changed since you turned it on. Turn it off and on to load the changes. · on, files broken now: Its files have a problem now: {problem}. This chat keeps the version it turned on. · needs approval: Asks before turning on: it runs {n} tool(s). (with commands or hooks, what it runs: it runs 1 tool, 1 command and 1 hook.) · on, tools changed since approval: Its tools changed since you approved them, so they won't run. Turn it off and on to approve them again. · on, hooks waiting for you (§chat.mode-menu/project-mode-hooks): Hooks need your approval. Its tools and commands run; its hooks wait for you. · on, hooks over their budget: Hooks paused: a hook ran 10 times in 10 minutes. |
 | Trigger with project modes | {mode} · {built-in minors} · {project modes}, e.g. delegate · spec · deploy-notes |
@@ -358,20 +358,21 @@ words, in the composer, the session pane, the chat's queue cards and the project
 | Typed: anything else | Usage: /mode [normal\|delegate\|strict on\|strict off\|subagents <profile>\|{minor} [on\|off] …\|<project mode> [on\|off]\|project:<project mode> [on\|off]] · for `/align`: Usage: /align on\|off |
 | Worker turning a project mode on | a worker gets its project modes from the session that started it |
 | Mode rows | each row's name follows its icon, the same icon the trigger uses (the menu is the trigger's legend) |
-| Subagents row / Delegate detail | subagents icon (branching nodes) · Subagents · {name} / Profile: {name} |
-| Subagent picker | Back · Subagent profiles · Search subagent profiles · Manage Profiles… · Save Current as Profile |
+| Profile row / Delegate detail | subagents icon (branching nodes) · Profile · {name} / Profile: {name} — while the chat's model was changed by hand: {name} (edited) (§chat.profiles/edited) |
+| Profile picker | Back · Profiles · Search profiles · Off, then each profile: {name} / {footprint} (Off: Keeps the chat's own model) · a project profile needing approval, disabled: Approve it in Settings first · Manage Profiles… · Save Current as Profile |
 | Descriptions | from pi-config `MODE_DESCRIPTIONS` (state.ts): normal: Pi as usual · delegate: Orchestrate: route planning, investigation and implementation to workers by profile · create: Configure and extend Sova: everything Delegate does, plus every way to make Sova yours. · minors, from pi-config `MINOR_DESCRIPTIONS` (minor.ts): align: Align with the user on what to build (architecture, UX, scope) before building · spec: Scope work from the project's .sova/spec documentation, propose changes in drafts, and promote them once implemented · vis: Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose · memory (§chat.mode-menu/memory-panel): the chosen type's row description, from `MEMORY_TYPE_INFO` (shared/memory.ts), not `MINOR_DESCRIPTIONS`: UniiChat: Endless chat: the model works from a summary of the whole chat and opens any part of it word for word · Zoomable compaction: Compaction the model can undo: when the chat compacts, older turns become summary lines it can open word for word; while memory is on, the detail line under it: UniiChat — by Victor Taelin · Zoomable compaction — Sova |
-| Delegate gear | icon only; `aria-label`/`title`: Configure Delegate (opens Settings → Subagents; switches nothing) |
-| Create gear | icon only; `aria-label`/`title`: Configure Create (opens Settings → Subagents; switches nothing) |
-| Spec gear | icon only; `aria-label`/`title`: Configure Spec (opens Settings → Subagents at its spec-writer section; switches nothing) |
+| Delegate gear | icon only; `aria-label`/`title`: Configure Delegate (opens Settings → Profiles on this chat's profile, at its Models part; switches nothing) |
+| Create gear | icon only; `aria-label`/`title`: Configure Create (opens Settings → Profiles on this chat's profile, at its Models part; switches nothing) |
+| Spec gear | icon only; `aria-label`/`title`: Configure Spec (opens Settings → Profiles on this chat's profile, at its spec writer's row; switches nothing) |
 | Memory type chevron | icon only; `aria-label`/`title`: Memory type (opens the Memory type panel: Back · title: Memory type · Type: {type} · {by} / its description (no design link and no size: Settings → Memory holds each type's Summary size) · foot: This chat only. Kept while memory is off. · refused pick: **Couldn't change memory.** {reason}. Your memory choice is unchanged.) |
-| Foot | strict: {on\|off} · A switch here is this chat's own. New sessions start from the default. |
-| Foot in Create | strict: {on\|off} · Create is chosen in each chat, so no default holds it. Save as default saves {mode · strict · minors}. |
+| Foot | strict: {on\|off} · A switch here is this chat's own. New chats start from the default profile. |
+| Foot in Create | strict: {on\|off} · Create is chosen in each chat, so no profile starts in it. Update {name} saves {mode · minors}. |
 | Create row, a chat that can do less (also under the setup card while the chat is in Create; both when both apply) | With its sandbox On, this chat can't write files on this computer, reach Sova's commands, or run project tools. · On a remote machine, this chat can't use project modes or cards. |
-| Save button | `Save as default` · while the save is in flight: `Saving…` · when this chat's mode, strict flag, minors, subagent profile and (where the chat has one) memory type match the saved defaults: ✓ `Already the default` (`aria-disabled`). The visible label is the accessible name |
-| Save button `title` | New sessions will start from {mode · strict · minors}. · already: New sessions already start from {mode · strict · minors}. · this chat's mode not arrived: Make this chat's mode the default for new sessions. (already: New sessions already start from the default mode.) — `strict` named only when on |
+| Default button | `Make {name} the Default` · while the save is in flight: `Saving…` · when this chat's profile is this computer's default: ✓ `Already the default` (`aria-disabled`). The visible label is the accessible name |
+| Older button | Save as default (an older Sova's): title New sessions will start from {mode · strict · minors}. · already (when this chat's mode, strict flag, minors and subagent profile match): New sessions already start from {mode · strict · minors}. · announced: Default saved: {mode · strict · minors} · Subagents: {name}. · its foot in Create: Save as default saves {mode · strict · minors}. |
+| Default button `title` | New chats will start on {name}. · already: New chats already start on {name}. · this chat's profile not arrived: Make this chat's profile the default for new chats. |
 | Save failed | **Couldn't save the default.** {reason}. The server reason states which default was written on a partial failure; no blanket "Nothing was saved" suffix contradicts it |
-| Saved (announcement) | Default saved: {mode · strict · minors} · Subagents: {name}. New sessions start here. — unknown halves omitted |
+| Saved (announcement) | Default: {name}. New chats start here. · Updated {name}. |
 | Pending | **Applies after this turn.** This turn keeps the old mode, and so do messages queued during it. Your next message follows the new one. |
 | Can't switch | **This chat can't switch.** This chat can't switch: the mode extension isn't loaded here, or another program wrote this session. |
 | Switch failed | **Couldn't switch the mode.** {reason}. Your mode is unchanged. |
@@ -623,18 +624,19 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Free | a local model: It runs on this device, so it costs nothing. · otherwise: It costs nothing, so there is no cost split. |
 | Partly priced | `{n}` tokens had no price: the dollars split the priced calls, the token counts cover every call. (1: 1 token …) |
 
-## §design.copy-deck/settings-modes-delegate — Settings · Subagents worker rows (§app/settings-dialog)
+## §design.copy-deck/settings-modes-delegate — Settings · Profiles: the Models part's worker rows (§app/settings-dialog)
 
 | Where | Copy |
 |---|---|
-| Tab / section title | Subagents / Subagent profiles |
-| Intro | Which models your subagents use. A chat picks a profile in its mode menu; new chats start on the default. |
-| Editor head | ‹ Subagent profiles (back to the list) · Profile name · {saved footprint} or Not saved yet |
-| Editor sections (collapsible, summary when closed) | Delegate routing — {distinct primary models} · {n} fallback(s) / no fallbacks · Teams — Coordinator on {model} · monitor on {model} / Coordinator + monitor on the default model · members on {model} / members on the lead's model · Spec writer — {model}[ · 1 fallback] / Off · the session writes it · Reviewer — {model}[ · 1 fallback] / Off · no review |
+| Tab / part | Profiles / Models (beside When a Chat Starts) |
+| On an older Sova | Tab / section title: Subagents / Subagent profiles · Editor head: ‹ Subagent profiles · Profile name · {saved footprint} or Not saved yet · footer: Subagents: {name}'s Delegate rows each need a model and an effort. · Subagents: a Members row whose default needs a model and an effort, in that row's own words · Footnote: Stored in `<agent dir>/subagent-profiles.json`, shared with pi in the terminal. |
+| Models part lede | A chat can switch to these any time. |
+| Editor head | Profile name · Default (chip) or [Make Default] · tabs: Models · When a Chat Starts |
+| Editor sections (collapsible, summary when closed) | Delegate routing — {distinct primary models} · {n} fallback(s) / no fallbacks · Teams — Coordinator on {model} · monitor on {model} / Coordinator + monitor on the default model · members on {model} / members on the lead's model (both an older Sova's only) · Spec writer — {model}[ · 1 fallback] / Off · the session writes it · Reviewer — {model}[ · 1 fallback] / Off · no review |
 | Work-kind legends | Planning & specs · Investigation · Routine implementation · Complex implementation |
 | Row labels | Primary (only while a fallback is set) · Fallback · [Add Fallback] · [Remove Fallback] on the route's head line · Backend · Model · Effort, the selects' accessible names, not shown |
 | Section ledes (no fallback, said once) | Delegate: Without a fallback, the agent asks you which model to use when a route's primary can't run. · Teams: Without a fallback, a role whose primary can't run uses the chat's own model. With one, a role whose primary runs out of usage during the team moves to it. · Spec writer: Without a fallback, the session writes the spec itself when the writer can't run. · Reviewer: Without a fallback, the review is recorded incomplete when the reviewer can't run. |
-| Teams | Coordinator and Monitor, always shown · with no models chosen, each: Uses the default model · [Choose Models] · once chosen: [Use Default Model] · Instructions fold: Instructions — {role name} · extra instructions set / no extra instructions; Role name; {Role} instructions, hint "Added to the {role}'s standing instructions in every new team." · Handover: Retire timeout (minutes) · Members default: Choose a model for ordinary members, off hint "A member nobody gave a model runs on its team lead's model." (the lead is the session that created the team, its members' parent: the "parent session's model" of §chat.subagent-profiles/members-default; the closed summary's "members on the lead's model" means the same) |
+| Teams | Coordinator and Monitor, always shown · with no models chosen, each: Uses the default model · [Choose Models] · once chosen: [Use Default Model] · Instructions fold: Instructions — {role name} · extra instructions set / no extra instructions; Role name; {Role} instructions, hint "Added to the {role}'s standing instructions in every new team." · Handover: Retire timeout (minutes) · no Members row: members run on their work kinds' models (§teams.defaults/member-kinds); an older Sova's Members row, for its old default: Choose a model for ordinary members, off hint "A member nobody gave a model runs on its team lead's model." |
 | Spec writer | Use a spec writer while spec is on · off hint: The session writes the spec itself. |
 | Reviewer (only while adversarial review is on) | Review alignments with a reviewer · off hint: No review. |
 | Select placeholders | Choose a model (Checking… while asking) · Choose |
@@ -643,18 +645,38 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Checking | Checking which models each backend offers… |
 | Backend can't list | Stored choices remain in their rows as not verified; a save's notes name the affected slots and reason |
 | Options request failed (banner-warn) | **Couldn't check which models are offered.** Your saved choices stay, marked not verified. [Check Again] |
-| Load failed (banner-error) | **Couldn't load subagent profiles.** {reason}. Your library is unchanged. [Try Again] |
-| Save failed (banner-error) | **Couldn't save subagent profiles.** {server reason}. A library saved before the device-default write failed is reported as partial |
+| Load failed (banner-error) | **Couldn't load profiles.** {reason}. Your profiles are unchanged. [Try Again] |
+| Save failed (banner-error) | **Couldn't save profiles.** {server reason}. A half saved before the other's write failed is reported as partial |
 | Saved with notes (banner-warn) | **Saved, with notes.** {warnings as sentences}: "Not verified, because {backend} couldn't list its models ({reason}): {slot}, {slot}…" once per backend, then one per other slot |
-| Close held (banner-warn, above the dialog foot) | **Your Subagents changes aren't saved.** Save them, or discard them and close. [Keep Editing] [Discard and Close] — every Save-gated tab shares it, naming each form with unsaved changes ("Your Models and Decisions changes aren't saved.", §app.settings-dialog/save-bar) |
+| Close held (banner-warn, above the dialog foot) | **Your Profiles changes aren't saved.** Save them, or discard them and close. [Keep Editing] [Discard and Close] — every Save-gated tab shares it, naming each form with unsaved changes ("Your Models and Decisions changes aren't saved.", §app.settings-dialog/save-bar) |
 | Section heading button (small, ghost) | Reset to Defaults — Summaries only; it fills the draft and saves nothing |
 | Dialog footer (every tab) | {status line} · Save Changes (Saving…) · Cancel (discards and closes) — with nothing unsaved: {status line} · Close. The one Save for every Save-gated form on every tab (§app.settings-dialog/save-bar) |
 | Footer status line (first match; the outcome of a save is also announced in the same words) | Saving… · {why Save waits} · Saved {forms}; {forms} failed. · {forms} failed. · Unsaved: {Form}, {Form} · Saved {forms}. · (nothing) — {forms} joined with commas and "and", "Unsaved:" with commas only |
-| Why Save waits (footer status, error; Save Changes disabled) | Subagents: {name}'s {section} rows each need a model and an effort. · Subagents: {name}'s {section} fallback is its primary; choose another worker, or none. · Subagents: {name}'s members default needs a model and an effort. · Subagents: {a name, role, instructions or team box's sentence} (§chat.subagent-profiles/settings) · Subagents: {name}'s coordinator and monitor need different role names. Other forms retain their own problem sentences (§app.settings-dialog/save-bar) |
+| Why Save waits (footer status, error; Save Changes disabled) | Profiles: {name}'s {section} rows each need a model and an effort. · Profiles: {name}'s {section} fallback is its primary; choose another worker, or none. · Profiles: {a name, role, instructions or team box's sentence} (§chat.subagent-profiles/settings, §chat.profiles/profile-name) · Profiles: {name}'s coordinator and monitor need different role names. Other forms retain their own problem sentences (§app.settings-dialog/save-bar) |
 | Discarded (announced only) | Discarded your {forms} changes. |
 | Changed by another device (banner-info, list only, §chat.subagent-profiles/replaced) | **Replaced by {device}'s copy at {stamp}.** or **{device}'s copy added {names} at {stamp}.** {Added {names}; changed {names}; removed {names}.} Your previous library is kept on this device. [Restore Previous Library] (Restoring… while it runs) |
 | Restore failed (banner-error) | **Couldn't restore your previous library.** {reason}. Your library is unchanged. |
-| Footnote | Stored in `<agent dir>/subagent-profiles.json`, shared with pi in the terminal. |
+| Footnote | Stored in `session-profiles.json` and `<agent dir>/subagent-profiles.json`. [File Format] |
+
+## §design.copy-deck/profiles — Profiles: the list, the editor and a switch (§chat/profiles, §app.settings-dialog/profiles)
+
+| Where | Copy |
+|---|---|
+| Update button (only while this chat's model, effort, mode or add-ons differ from its profile, and the profile is yours) | `Update {name}` · `title`: Save this chat's model and modes into {name}. · while saving: `Saving…` · failed: **Couldn't update {name}.** {reason}. The profile is unchanged. |
+| Profile switch waiting (info line in the thread, above the composer, §chat.profiles/switch) | Switching to {name} when this chat is free. Moves this chat's model, its {n} helpers, and alignment settings. Tools and modes stay. [Cancel Switch] |
+| Profile switched (success line in the thread, above the composer; also announced) | This chat and its helpers are on {name}. |
+| Limit row (§chat.subagent-profiles/limit-row) | {model} is at its usage limit. · only when the reset time is known: It resets in {time}. · up to 2: [Switch This Chat to {profile}] · with none, in place of the buttons: [Manage Profiles] (opens Settings → Profiles) · after a switch, the thread's success line (above) |
+| Shared helpers (§chat.profiles/joined) | Also used by {name} · Also used by {name} and {name} · Also used by {name} and {n} others |
+| Profile switch refused (banner-error) | **Couldn't switch to {name}.** {reason}. This chat's model and helpers are unchanged. |
+| Set All To (§app.settings-dialog/profile-set-all) | Set All To · Pick a model |
+| Models rows | This chat · Delegate: Planning · Investigation · Routine · Complex · Teams: Coordinator · Monitor · Review: Spec writer · Reviewer — each a model and an effort (`aria-label`: {row} model / {row} effort) |
+| When a Chat Starts lede | Mode and add-ons are where a chat begins; you can still change them in its mode menu. Tools and powers lock at the first message. |
+| When a Chat Starts labels | Mode · Add-ons: Align · Spec · Visuals · Tools · Session powers: Reads and messages sessions · One at a time |
+| A project's profile (banner-warn) | This profile is a file in the project, so an agent or you change it there. {It asks to read and message sessions.} [Approve Profile] |
+| Off's editor | Built in. A chat keeps its own model and modes, and the agent picks every worker. |
+| List | [New Profile] · groups: Yours · This project ({name}) · Built in · each row: {name} / {footprint}, chips Default · Needs approval · Hidden |
+| New chat line (§chat.profiles/default) | New chat in {project}. The default is already picked. · outside a project: New chat. The default is already picked. |
+| Edited (§chat.profiles/edited) | {name} (edited) |
 
 ## §design.copy-deck/settings-decisions — Settings · Decisions (§app.settings-dialog/decisions)
 
@@ -838,12 +860,12 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | Style hint | Reaches open chats at their next message. |
 | Visuals switch · hint | Draw when it helps · The align mode draws a wireframe or a flow on the alignment card when a picture explains faster than words. Applies to sessions you start after saving. |
 | Review switch · hint | Adversarial review · In align sessions, a read-only reviewer checks the plan and the diff of risky work, at most once each per alignment. Applies to sessions you start after saving. |
-| Profiles line | A subagent profile can set its own eagerness, writing style and visuals (Settings → Subagents). |
+| Profiles line | A profile can set its own eagerness, writing style and visuals, in its Models part (Settings → Profiles). |
 | Load failed (banner-error) | **Couldn't read the alignment settings.** Nothing was changed. |
 | Save failed (banner-error at the form's end; the draft stays) | **Couldn't save the change.** {reason}. Your saved setting is unchanged. |
 | Card meta mark | · Project manager style · · Simplified style · · Technical style (none on an older card that recorded no style) |
 | Card section | Technical notes · {n} |
-| Subagents profile control | Alignment · Eagerness: Use host default · Eager · Careful — Writing style: Use host default · Project manager · Simplified · Technical — Visuals: Use host default · On · Off |
+| Profile Models part control (was the Subagents profile control) | Alignment · Eagerness: Use host default · Eager · Careful — Writing style: Use host default · Project manager · Simplified · Technical — Visuals: Use host default · On · Off |
 
 ## §design.copy-deck/settings-themes — Settings · Themes (§app/settings-dialog)
 
@@ -1035,8 +1057,8 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 
 | Where | Copy |
 |---|---|
-| Mode line (read-only, beside the coding sessions' model and thinking) | label `Coding sessions' mode` · no picker · hint (`.field-hint`): "Coding sessions start in {mode}, with the {profile} subagent profile: this computer's defaults. Save as default in any chat's mode menu changes them." · with no default profile: "Coding sessions start in {mode}: this computer's default mode. Save as default in any chat's mode menu changes it." — `{mode}` in mono, the mode ids in lower case joined by " · " (`vis` said as "visuals") |
-| …a PATCH naming `codingMode` (400) | "Projects have no coding mode: coding sessions start in this computer's default mode. Save as default in a chat's mode menu changes it." |
+| Mode line (read-only, beside the coding sessions' model and thinking) | label `Coding sessions' mode` · no picker · hint (`.field-hint`): "Coding sessions start on {profile}, in {mode}: this computer's default profile. Make Default in Settings → Profiles changes it." (an older Sova: "…, with the {profile} subagent profile: …") · with Off as the default: "Coding sessions start on Off, in {mode}: this computer's default mode. Make Default in Settings → Profiles changes it." — `{mode}` in mono, the mode ids in lower case joined by " · " (`vis` said as "visuals") |
+| …a PATCH naming `codingMode` (400) | "Projects have no coding mode: coding sessions start on this computer's default profile. Make Default in Settings → Profiles, or in a chat's mode menu, changes it." |
 | List heading | `Coding sessions` — replaces "Sessions it started" for coding rows; gathering sessions and offers keep their own list |
 | Row | the title (a link on this host) · meta: "Started by the overseer", "Started by you" or "Started by you, via the Overseer" · `working` / `idle` · {relative time} · then the branch in mono: `sova/{name}` · not on this host: `sova/{name}` · "on another host" |
 | Above the list, when the project can't have worktrees | "Coding sessions run in the project root: {reason}" — `{reason}` one of "it isn't a Git repository." · "the repository has no commits yet." · "its checkout is on a detached HEAD." |
@@ -1055,7 +1077,7 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | New Coding Session | `New Coding Session` (secondary, terminal icon) on the `Coding sessions` heading · toast as Start Coding Session's, then the session opens · mode not set (`.field-error` under the heading): "Started, but its mode could not be set. Set it from the chat's mode menu before you send." · refused (`.field-error`): "{reason} No session was started." |
 | Start Coding Session (toast) | "Coding session started on sova/{name}." · in the root: "Coding session started in the project root." · mode not set (`.field-error`): "Started, but not prompted: its mode could not be set. Open it and send the message yourself." · no worktree (`.field-error`): "No session was started: its worktree could not be made ({git's first line})." |
 | Promote (Decisions tab, after a promotion) | "Promoted {n}. Committed {short sha} on {branch}." · skipped: the reason as §app.requirements/promotion-commit words it ("Not committed: …") · no Git: no second sentence |
-| Overseer tool refusals (the model reads them; the activity list shows them) | "Unknown mode {x}: use normal or delegate." · "Unknown minor mode {x}: use align, spec or vis." · "Unknown subagent profile: {x}. sova_list_subagent_profiles lists them." · "It waits on the operator's alignment answers; align stays on until they answer." · "{run title} is waiting on the operator's answers to its alignment questions. Tell the operator; never answer them. Nothing was sent." · "Its worktree was removed, so it has no folder to work in." |
+| Overseer tool refusals (the model reads them; the activity list shows them) | "Unknown mode {x}: use normal or delegate." · "Unknown minor mode {x}: use align, spec or vis." · "Unknown profile: {x}. sova_list_profiles lists them." · "Unknown subagent profile: {x}. sova_list_subagent_profiles lists them." · "It waits on the operator's alignment answers; align stays on until they answer." · "{run title} is waiting on the operator's answers to its alignment questions. Tell the operator; never answer them. Nothing was sent." · "Its worktree was removed, so it has no folder to work in." |
 
 ## §design.copy-deck/gathering-abilities — What a gathering session can do (§app.baton/abilities, §app.baton/read-link)
 

@@ -286,6 +286,22 @@
     "authority": "accepted",
     "evidence": "reviewed"
   },
+  "§design.copy-deck/profiles": {
+    "kind": "note",
+    "about": [
+      "§chat/profiles",
+      "§app.settings-dialog/profiles"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/ProfilesSettings.tsx",
+      "src/components/ModeMenu.tsx",
+      "src/components/ProfilePicker.tsx",
+      "src/lib/profiles-settings.ts",
+      "src/components/ProfileSwitchLine.tsx"
+    ]
+  },
   "§design.copy-deck/project-coding": {
     "kind": "note",
     "authority": "accepted",

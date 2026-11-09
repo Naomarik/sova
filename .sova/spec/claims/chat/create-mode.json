@@ -100,11 +100,12 @@
       "§chat.mode-menu/minor-toggle-keeps-prompt"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/mode/index.ts",
-      "pi-config/extensions/mode/delegate.ts"
+      "pi-config/extensions/mode/delegate.ts",
+      "src/components/ModeMenu.tsx"
     ],
     "agreed": {
       "by": "user",
@@ -226,9 +227,9 @@
       "server/sessions-configure.ts",
       "shared/settings-reference.ts",
       "server/create-mode-refusals.test.ts",
-      "src/lib/mode-save.ts",
       "server/create-mode-chat.test.ts",
-      "pi-config/extensions/mode/create-mode.test.ts"
+      "pi-config/extensions/mode/create-mode.test.ts",
+      "src/lib/mode-menu.ts"
     ],
     "agreed": {
       "by": "naomarik",

@@ -51,9 +51,10 @@ session's opening prompt here, so a peer granted settings but not sessions excha
 settings document but never this one, in either direction. It still reaches that peer through a
 third host that grants it both.
 
-## §mesh.sync/profile-library — The subagent profile library merges per profile
+## §mesh.sync/profile-library — The helper library merges per profile
 
-The subagent profile library (`subagent-profiles.json`, §chat.subagent-profiles/file) syncs profile
+The helper library (the subagent profile library, `subagent-profiles.json`, §chat.subagent-profiles/file), the saved form of
+every profile's helpers and alignment settings (§chat.profiles/joined), syncs profile
 by profile, not as one file. Each host keeps in its own sync state (`<state dir>/doc-sync.json`;
 never in the library, whose shape stays what every reader parses) one date per profile id: when
 this host first saw that profile's content, and on which host it was made. Hosts exchange those
@@ -75,9 +76,34 @@ dates with the library, and each merges what it receives into its own:
   edit keeps it and the other is renamed with " (2)" (" (3)", …), as a new edit.
 - **Checked like any document.** The merged library is checked with its own strict parser before
   it is written, and written as every other document is (§mesh.sync/categories).
+- **A saved Members value is part of the profile.** The retired `members` field
+  (§chat.subagent-profiles/file) is kept and written back unchanged, so every build hashes a profile
+  the same way. Changing the value is an ordinary edit, dated and synced like any other.
 - **Older hosts.** A host on an older build exchanges the whole file. What it sends is merged by
   union, each of its profiles dated by its whole file's date, and nothing it lacks is deleted. A
   merge that adds to what it sent is dated as a new edit, so that host takes the union back whole.
+
+## §mesh.sync/profile-documents — A profile's two halves sync as two documents
+
+A profile is saved as two halves (§chat.profiles/joined), and they sync as the two documents they
+always were, each with the permission it always needed. No document carries the joined profile.
+
+- **Session profiles** (Yours, `sova/session-profiles.json`: the When a Chat Starts part, its first
+  messages and Overseer-start flags, and the chat's own model and effort) sync only with a peer
+  granted sessions, as one whole document, newest edit wins (§mesh.sync/categories). A first message
+  runs as a chat's opening prompt, so a peer that may not touch your sessions never gets one.
+- **The helper library** (`subagent-profiles.json`: the helpers and alignment settings) syncs with
+  every settings peer, profile by profile, with kept copies (§mesh.sync/profile-library,
+  §mesh.sync/kept-copies).
+- **A peer with settings but not sessions** gets the helpers and none of your session profiles: there
+  each of those profiles lists as a library profile no session profile links to, with its helpers
+  and no This chat row, until it gets the session half.
+- **A link to a library profile a host doesn't have** (the library half hasn't arrived, or was
+  deleted) leaves the profile listed on that host with its helper rows empty, and its card says why
+  as the picker does (§chat.profiles/picker); nothing is written to repair it.
+- **The default never syncs.** This computer's default profile, and the older default files it keeps
+  written, stay with each computer (§chat.profiles/default); `mode.json` and `defaults.json` sync as
+  settings as before.
 
 ## §mesh.sync/kept-copies — A replaced settings document is kept
 
@@ -86,7 +112,7 @@ that host first keeps the version it had: under `<state dir>/sync-kept/`, one fo
 each kept copy with when it was replaced, which host's copy replaced it, and for the subagent
 profile library which profiles were added, changed and removed (by name). Each document keeps its
 newest 10; the 11th removes the oldest. Kept copies never sync, and a host's own edits keep nothing.
-Settings → Subagents offers the newest kept library back (§chat.subagent-profiles/replaced).
+Settings → Profiles offers the newest kept library back (§chat.subagent-profiles/replaced).
 
 ## §mesh.sync/logins — Logins
 

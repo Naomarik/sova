@@ -29,7 +29,8 @@ for word. The entries are:
   to clear it (§app.project-assistant/models; mesh `admin`).
   `settings.delegate.get` and `settings.spec.get` read the legacy files (`mode-delegate.json`,
   `mode-spec.json`) that seed the subagent profile library and are its fallback, not what
-  Settings → Subagents shows; nothing on the catalogue writes them.
+  Settings → Profiles shows (that is the library `settings.subagents.get` reads, the one an older Sova's Settings → Subagents shows); nothing on the
+  catalogue writes them.
 - **Notifications:** `push.test` sends the Send Test notification to every registered device.
 - **An organization's Claude login:** `org.claude-login.get` and `org.claude-login.set` (mesh
   `admin`), the login its projects' new chats start on (§app.claude-logins/project-login).

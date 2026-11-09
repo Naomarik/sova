@@ -431,9 +431,9 @@ user row.
   lists its active ones too, under "Previews"), `sova_send_status` (below), `sova_whatsapp` status
   (its WhatsApp sender's state; its `start`, of a stopped or failed sender, in the operator's turns
   only, §app.outreach/overseer-sender), `sova_history` (its
-  project's history, §app.org-history/readers), `sova_list_subagent_profiles` (this computer's
-  subagent profiles: Off and each profile's id, name and worker footprint, the default marked, for
-  `subagent_profile`, §app.project-overseer/coding-mode), `spec_lookup {op, words?, ref?, more?}` (its own project's spec on the main line, full view, §app.spec-lookup/tool).
+  project's history, §app.org-history/readers), `sova_list_profiles` (this computer's
+  profiles: Off and each profile's id, name and footprint, the default marked, for `profile` and
+  `subagent_profile`, §app.project-overseer/coding-mode; `sova_list_subagent_profiles` is its other name), `spec_lookup {op, words?, ref?, more?}` (its own project's spec on the main line, full view, §app.spec-lookup/tool).
 - **Whether a message arrived.** `sova_send_status {person?, limit?, hours?}` (read) lists the
   project's WhatsApp sends from the send log (§app.outreach/log), newest first: each send's id,
   the person's name, what went (a gathering link, a preview, a note), who sent it (you, the
@@ -513,12 +513,12 @@ user row.
   §app.project-overseer/previews). `promote`: `sova_promote`. `roster`:
   `sova_roster` approve/decline (history records the overseer as the writer; its read is always allowed).
   `codingStart`: `sova_create_session` (the root or a folder inside it, with a first prompt, an optional `mode`,
-  `minor_modes`, `subagent_profile` and `already_agreed`, §app.project-overseer/confirm-brief; in its own worktree, §app.project-overseer/coding-worktrees). `codingPrompt`: `sova_send` (its
+  `minor_modes`, `profile`, `subagent_profile` and `already_agreed`, §app.project-overseer/confirm-brief; in its own worktree, §app.project-overseer/coding-worktrees). `codingPrompt`: `sova_send` (its
   project's coding sessions only, and an ordinary session whose folder is inside the project root,
   which is the project's own act: counted as a prompt, held like one; never a
-  gathering session; an optional `mode`, `minor_modes` and `subagent_profile` too). Both take any
-  mode but Create, any minor modes and any subagent profile; only Create, unknown names and the alignment refusals are
-  refused (§app.project-overseer/coding-mode).
+  gathering session; an optional `mode`, `minor_modes`, `profile` and `subagent_profile` too). Both take any
+  mode but Create, any minor modes and any profile; only Create, unknown names, a start's profile that
+  changes tools or powers, and the alignment refusals are refused (§app.project-overseer/coding-mode).
   `copiesRun`: `sova_project_verbs` create, up, apply, test and conform; `copiesReset`: its reset and
   teardown (always: its `down`, `revoke`, status, logs and doctor; `share`: its `share`, held; above).
   `onboard`: its `onboard {why}`, the project's `verbs/onboard`
@@ -745,12 +745,18 @@ user row.
 - **No project mode.** A project has no coding-mode setting: the project page has no picker for
   it, and `overseer.json` holds none (an older file's `codingMode` is ignored, and dropped at the
   file's next write). A `PATCH …/overseer` naming `codingMode`, `null` included, is refused (400)
-  and writes nothing: "Projects have no coding mode: coding sessions start in this computer's
-  default mode. Save as default in a chat's mode menu changes it."
-- **Unnamed, this computer's default.** A coding session started with no mode named starts in this
-  computer's default mode (`mode.json`, the default every new session starts from, read when the
-  session starts), with no subagent profile picked, so it runs on this computer's default profile.
-  That covers the operator's Start Coding Session and New Coding Session, New Session's Project tab
+  and writes nothing: "Projects have no coding mode: coding sessions start on this computer's
+  default profile. Make Default in Settings → Profiles, or in a chat's mode menu, changes it."
+- **Unnamed, this computer's default.** A coding session started with no profile or mode named
+  starts on this computer's default profile (§chat.profiles/default, read when the session starts),
+  with no other profile picked,
+  as a new chat does: its mode and add-on modes and its helpers, and the chat's own model and
+  effort where the project names no coding model and thinking (a project's coding model and thinking,
+  where set, stay the session's own model; the default's come before the overseer's own model). It
+  takes what the three older defaults gave a coding session and no more: never the profile's tool
+  removals, session powers, One at a time or first message, so a computer's default never widens what
+  a session an Overseer starts can do. With Off as the default it starts in the default mode
+  `mode.json` holds, as every new session starts under Off, with its helpers on Off. That covers the operator's Start Coding Session and New Coding Session, New Session's Project tab
   (§app/new-session-dialog), a Build from a conversation's draft (§app.requirements/draft-approval), an
   Overseer's start that names none, and a build a gap's statechart
   starts by itself with `codingStart` On (§app.project-overseer/drive), which also gets the project's coding model,
@@ -764,7 +770,7 @@ user row.
   the chat's mode menu before you send." Neither has a mode picker; the chat's own mode menu can
   switch it afterwards, like any chat.
 - **Spec is a minor mode like the others.** A project coding session has the `spec` minor mode only
-  when this computer's saved default, an Overseer's `minor_modes` or someone's switch in that chat
+  when this computer's default profile, an Overseer's `minor_modes` or someone's switch in that chat
   puts it on; a start adds nothing. A computer that never saved a default starts its coding sessions
   without spec, the same as any other new chat there. The chat's mode menu, a typed `/mode` and
   either Overseer can turn spec on or off in a running coding session, and none of them is refused
@@ -773,33 +779,53 @@ user row.
   notes. Its workers follow it (§chat.mode-menu/workers).
 - **What the page says.** The project page's Settings tab keeps a read-only "Coding sessions'
   mode" line beside the coding sessions' model and thinking, naming what a session started now
-  gets and how to change it: "Coding sessions start in {mode}, with the {profile} subagent profile:
-  this computer's defaults. Save as default in any chat's mode menu changes them." (with no default
-  profile: "Coding sessions start in {mode}: this computer's default mode. Save as default in any
-  chat's mode menu changes it."), `{mode}` in mono: the mode and its minor modes joined by " · ",
+  gets and how to change it: "Coding sessions start on {profile}, in {mode}: this computer's default
+  profile. Make Default in Settings → Profiles changes it." (with Off as the default: "Coding
+  sessions start on Off, in {mode}: this computer's default mode. Make Default in Settings → Profiles
+  changes it."), `{mode}` in mono: the mode and its minor modes joined by " · ",
   `vis` said as "visuals". `GET …/overseer` answers it as `codingModeNow` `{mode, minorModes,
-  subagents: {id, name} | null}`, and the overseer's prompt names it.
+  subagents: {id, name} | null}`, with the default profile's `{id, name}` as `profile`, and the
+  overseer's prompt names it.
 - **Any mode but Create, for both Overseers.** The project overseer's `sova_create_session` and `sova_send`,
   and the Overseer's `sova_project_overseer` `code` (§app.overseer/org-project-overseers), take
   `mode` (`normal` or `delegate`), `minor_modes` (the whole set on: any of `align`, `spec`, `vis`,
-  never `memory` (§chat.memory/where); `[]` turns them all off) and `subagent_profile` (an id in this computer's subagent
-  profiles, or `off`; the project overseer's `sova_list_subagent_profiles` lists them). There is no
+  never `memory` (§chat.memory/where); `[]` turns them all off), `profile` (a profile of this
+  computer's, as `sova_list_profiles` lists them, §chat.subagent-profiles/overseer) and, as before,
+  `subagent_profile` (a library id or `off`: only the helpers; `sova_list_subagent_profiles` is the
+  list's other name; a call gives `profile`, `subagent_profile` or neither). There is no
   ceiling but Create, which only a chat picks for itself
   (§chat.create-mode/per-chat-only): any other mode, any minor modes and any
   profile are taken. On a start, what the call names
-  replaces that part of this computer's default and the rest is the default's, except that a start
+  replaces that part of this computer's default profile and the rest is the default's, except that a start
   without `already_agreed` also gets align on (§app.project-overseer/confirm-brief); a named profile is
-  picked for that session only. Only an unknown name is refused: "Unknown mode {x}: use normal or
-  delegate.", "Unknown minor mode {x}: use align, spec or vis.", "Unknown subagent
-  profile: {x}. sova_list_subagent_profiles lists them." Each refusal happens before anything
+  picked for that session only, never as the default. On a start its Models part and its mode and
+  add-ons (where the call names none) always apply, its model, effort and helpers all at once
+  (§chat.profiles/switch). A start naming a profile that removes tools, has a first message or is One
+  at a time is refused, because a coding session needs its tools, sends its own brief and is counted by
+  its build ("Coding sessions need their tools and send their own brief, so {name} can't start one.").
+  A profile that grants session powers starts one only when marked "The Overseer may start it", a mark
+  that counts for both Overseers' coding starts ("{name} grants session powers and isn't marked "The
+  Overseer may start it", so it can't start a coding session."), and, from a project's files, approved
+  ("{name} needs the operator's approval in Settings → Profiles first."); then its session half is
+  written whole as the session's profile, by the Overseer, before the first prompt. In an
+  organization's project its coding sessions never take a profile's session powers, so such a start is
+  refused before anything ("{name} grants session powers, which an organization's coding sessions never
+  take, so it can't start one."); their Models part still switches. `profile` and
+  `subagent_profile` together are refused ("Give profile or subagent_profile, not both: a profile brings its own
+  helpers."). Otherwise only an unknown name is refused: "Unknown mode {x}: use normal or
+  delegate.", "Unknown minor mode {x}: use align, spec or vis.", "Unknown profile: {x}.
+  sova_list_profiles lists them.", "Unknown subagent profile: {x}. sova_list_subagent_profiles lists
+  them." Each refusal happens before anything
   else: no session is created, nothing is sent, and no cap or counter is taken, attended or not.
-  The reply names the mode and the subagent profile the session started with ("…, mode delegate ·
-  visuals, subagent profile Big team."). Both prompts say Delegate suits large, multi-part work.
+  The reply names the mode and the profile the session started with ("…, mode delegate ·
+  visuals, profile Big team."; with only `subagent_profile`: "…, profile Claude with subagent profile
+  Big team."). Both prompts say Delegate suits large, multi-part work.
   Both starts also take `already_agreed` (§app.project-overseer/confirm-brief).
 - **`sova_send` with a mode** switches only what it names (the session keeps the rest of its own
-  mode and its profile), pins the mode and picks a named profile for that session, then sends the
+  mode and its profile), pins the mode and switches to a named profile for that session (its Models
+  part, all at once, §chat.profiles/switch; `subagent_profile`, only its helpers), then sends the
   text. Mid-turn, the change applies from the session's next turn, and the result says so. The
-  result says what the session now runs ("It now runs normal · spec, subagent profile House.").
+  result says what the session now runs ("It now runs normal · spec, profile House.").
   A terminal-owned session is refused, as today.
 - **Alignment questions are the operator's.** Neither Overseer answers them, and both prompts say
   so. A message either Overseer sends into a session on this host is marked as an Overseer's
@@ -1288,7 +1314,7 @@ judgement.
   `{path, sessionId, worktree?, note?, modeNotSet?}` (404 for an unknown project). It starts the
   same kind of session Start Coding Session does: in its own worktree and branch
   (§app.project-overseer/coding-worktrees; `sova/coding-<hex>` with no title), on the project's
-  coding model and thinking, in this computer's default mode with no subagent profile picked, pinned
+  coding model and thinking, on this computer's default profile with no other profile picked, pinned
   (§app.project-overseer/coding-mode), recorded as an `operator-coding` row (listed under Coding
   sessions as "Started by you", in the sidebar's Builds and the Cost card, never counted by the
   overseer's caps). It links no to-do or idea.

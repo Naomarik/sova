@@ -29,14 +29,14 @@ This covers `team_create`, `team_add` and `agent_spawn`.
 - **A shared prompt.** A `prompt` beside `agents` is every agent's prompt only when no agent has
   its own; otherwise the call is refused.
 - **Never guessed.** A missing role, task, team name or objective is refused, never filled in.
-- **What a member takes.** A member takes `role`, `prompt`, `ownedPaths`, `backend`, `model`, `effort`, `tools`, `systemPrompt`, `cwd`, `wake`, `backendOptions` and
+- **What a member takes.** A member takes `role`, `prompt`, `kind` (§teams.defaults/member-kinds), `ownedPaths`, `backend`, `model`, `effort`, `tools`, `systemPrompt`, `cwd`, `wake`, `backendOptions` and
   `extensions`. Its `extensions` follow `agent_spawn`'s rules (a path, or an installed `npm:` or
   `git:` source; never the subagents extension itself) and load beside its team tools. `count`,
   `fork`, `agentType` and any unknown setting are refused, naming the setting and how to get what
   it asks for (one member per role; `agent_spawn` for `fork` or `agentType`); nothing is dropped
   silently; `orchestrator` is one of those unknown settings: no member is marked as the lead
   (§teams.defaults/coordinator). `defaults` takes `backend`, `model`, `effort` and
-  `backendOptions`; any other key, `coordinator` and `monitor` included, is refused, naming it.
+  `backendOptions`; any other key, `kind`, `coordinator` and `monitor` included, is refused, naming it.
 - **Sova's words.** These refusals are plain sentences of Sova's own that name the setting, given
   before the tool's schema check, never the schema's "schema is false" or "must be object".
 - **Said up front.** The descriptions of `team_create`, `team_add` and `agent_spawn`, and the

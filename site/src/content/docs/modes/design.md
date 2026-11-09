@@ -34,8 +34,8 @@ through the chat.
   and one model holds it at a time. It can coordinate without designing.
 - **Directions**: pick from 20.
 
-A batch is models times directions: 6 by default. Above 12 Sova shows an estimate before anything is
-spent, and a batch stops at 24. Models you've barred for workers in Settings don't appear.
+A batch is models times directions: 6 by default. Above 12 in one launch Sova shows an estimate before
+anything is spent, and a launch stops at 24. Models you've barred for workers in Settings don't appear.
 
 Press **Start Coordinator**. A new idea launches at once. If the brief is about a screen you already
 have, the coordinator finds it first, in a running copy of your project or at an address you gave it,

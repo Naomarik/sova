@@ -12,7 +12,7 @@ Models the user has barred for workers in Settings never appear, whatever you as
 
 What the card does after that is not yours to manage:
 
-- The default is 6 designs: 2 models across 3 directions. Above 12 the user sees an estimate before anything is spent, and a run stops at 24.
+- The default is 6 designs: 2 models across 3 directions. Above 12 in one launch the user sees an estimate before anything is spent, and a launch stops at 24.
 - Each model on the card has its own Coordinator checkbox, and one model holds it at a time. It can coordinate without designing.
 - Start Coordinator hands everything to the coordinator session. Nothing the user does on the card reaches you, and no turn of yours is needed to launch.
 

@@ -81,7 +81,7 @@ export function writePending(p: PendingFile, file = pendingFile()): void {
 const NEWEST_SHOWN = 20;
 const DAY_MS = 86_400_000;
 
-const rowOf = (e: RemovedWorktree): RetiredRow => ({ path: e.path, branch: e.branch, tip: e.tip, merged: e.merged, at: e.at, branchDeleted: e.branchDeleted, restorable: !!e.pinned && !!e.tip });
+const rowOf = (e: RemovedWorktree): RetiredRow => ({ path: e.path, branch: e.branch, tip: e.tip, merged: e.merged, at: e.at, branchDeleted: e.branchDeleted, ...(e.branchKept ? { branchKept: true as const } : {}), restorable: !!e.pinned && !!e.tip });
 
 const reportOf = (pending: PendingFile, main: string): RepoReport | undefined => Object.values(pending.repos).find((r) => r.main === main);
 

@@ -54,6 +54,8 @@ export interface MergeSettingsChange {
   checks?: Record<string, { timeoutSec?: number; rerun?: boolean; optional?: boolean }>;
   /** Reuse passes from identical code (`merge.reuse`; true removes the key, the default). */
   reuse?: boolean;
+  /** Automatic cleanup deletes the branch too (`merge.deleteBranches`; false removes the key, the default). */
+  deleteBranches?: boolean;
 }
 
 /** Sova's fixed values: shown, never changed here. */
@@ -88,6 +90,8 @@ export interface MergeQueueSettings {
   checks: { mode: "declared" | "test-command" | "none" | "unset"; list: MergeCheckSetting[] };
   /** Checks may reuse passes from identical code (`merge.reuse` isn't false). Absent: on. */
   reuse?: boolean;
+  /** Automatic cleanup deletes a landed branch as well as its folder (`merge.deleteBranches`). Absent: off. */
+  deleteBranches?: boolean;
   setup: { steps: { id: string; label?: string }[] };
   install?: { inputs: string[]; timeoutSec: number };
   review: {

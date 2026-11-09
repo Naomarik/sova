@@ -92,6 +92,7 @@ export function buildSettings(a: SettingsInput): MergeQueueSettings {
     landing: { target: a.target, push: typeof m?.push === "boolean" ? m.push : null, names: { ...a.names } },
     checks: { mode: a.checks, list },
     reuse: m?.reuse !== false,
+    deleteBranches: m?.deleteBranches === true,
     setup: { steps: (a.def?.setup ?? []).map((s) => ({ id: s.id })) },
     ...(m?.install ? { install: { inputs: [...m.install.inputs], timeoutSec: m.install.timeout } } : {}),
     review: {

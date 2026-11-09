@@ -3227,6 +3227,8 @@ export interface RetiredRow {
   /** ms. */
   at: number;
   branchDeleted: boolean;
+  /** The project keeps branches, and this one stayed (§chat.worktrees/retirement). */
+  branchKept?: true;
   /** Restore can put it back. */
   restorable: boolean;
 }
@@ -5156,6 +5158,8 @@ export interface SessionBranchRow {
   draftsLeft?: number;
   /** The row offers Remove (POST /api/worktrees/remove): retirement is off for this install and nothing is left. Absent everywhere else. */
   removable?: true;
+  /** With `removable`: this project keeps branches, so its confirm says the branch stays. */
+  removeKeepsBranch?: true;
 }
 
 /** A branch's merge queue entry as the session list carries it: its state (never a precomputed key, so a new state
@@ -5212,6 +5216,8 @@ export interface WorktreeReadiness {
   draftsLeft?: number;
   /** The row offers Remove (POST /api/worktrees/remove): retirement is off for this install and nothing is left. Absent everywhere else. */
   removable?: true;
+  /** With `removable`: this project keeps branches, so its confirm says the branch stays. */
+  removeKeepsBranch?: true;
 }
 
 /** A worktree whose work is finished at its head commit (§chat.worktrees/ready-to-land). */

@@ -307,6 +307,7 @@
    "merge.land": "landing",
    "merge.request": "landing",
    "merge.reuse": "landing",
+   "merge.deleteBranches": "landing",
    "mergeCheck.id": "landing",
    "mergeCheck.label": "landing",
    "mergeCheck.run": "landing",

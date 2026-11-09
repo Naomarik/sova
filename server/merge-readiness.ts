@@ -729,6 +729,14 @@ export function servedReader(rootOf: (dir: string) => Promise<string | null>, se
   };
 }
 
+/** The row's Remove, offered only where retirement is off for the install: whether it is, and whether its confirm says the branch stays. */
+async function removeFieldsOf(path: string): Promise<{ removable?: true; removeKeepsBranch?: true }> {
+  if (!removeOffered("nothing")) return {};
+  // A setting that can't be read keeps the branch, as a removal would read it.
+  const keeps = await (await import("./worktree-retire")).keepsBranchAt(path).catch(() => true);
+  return { removable: true, ...(keeps ? { removeKeepsBranch: true as const } : {}) };
+}
+
 const readinessListeners = new Set<(sessionPath: string) => void>();
 /** Told when a chat's readiness reading changes (one of the wake-ups of §chat.worktrees/retirement). → unsubscribe. */
 export function onReadinessMoved(fn: (sessionPath: string) => void): () => void {
@@ -924,7 +932,7 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
       ...(hasNoCommits(tf) ? { noCommits: true as const } : {}),
       ...(landing ? { landing } : {}),
       ...(rehearsal ? { rehearsal: true as const } : {}),
-      ...(tf.readable && (tf.merged || hasNoCommits(tf)) ? (unofficial?.length ? { left: "drafts" as const, draftsLeft: unofficial.length } : { left: "nothing" as const, ...(removeOffered("nothing") ? { removable: true as const } : {}) }) : {}),
+      ...(tf.readable && (tf.merged || hasNoCommits(tf)) ? (unofficial?.length ? { left: "drafts" as const, draftsLeft: unofficial.length } : { left: "nothing" as const, ...(await removeFieldsOf(t.path)) }) : {}),
     });
   }
   const cards = facts.merges;
@@ -1014,7 +1022,7 @@ export async function computeBranches(s: Pick<SessionSummary, "id">, facts: Pick
         ...(shared ? { sharedWith: shared } : {}),
         ...(merged ? { mergedInto: merged } : {}),
         ...(q?.fields ?? {}),
-        ...(noneLeft ? (undrafted?.length ? { left: "drafts" as const, draftsLeft: undrafted.length } : { left: "nothing" as const, ...(removeOffered("nothing") ? { removable: true as const } : {}) }) : {}),
+        ...(noneLeft ? (undrafted?.length ? { left: "drafts" as const, draftsLeft: undrafted.length } : { left: "nothing" as const, ...(await removeFieldsOf(t.path)) }) : {}),
       };
       return q?.root ? { row, root: q.root } : { row };
     }),

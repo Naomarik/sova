@@ -18,7 +18,7 @@ export class SettingsEditError extends Error {}
 /** How it lands, in a commit message's words. */
 const LAND_WORDS: Record<LandHow, string> = { local: "merging locally", "github-pr": "pull request on GitHub", "gitlab-mr": "merge request on GitLab", "push-branch": "pushing the branch only" };
 
-const EDITABLE = new Set(["push", "review", "checks", "land", "reuse"]);
+const EDITABLE = new Set(["push", "review", "checks", "land", "reuse", "deleteBranches"]);
 
 /** The kit folder `review: on` sets back. */
 export const REVIEW_KIT_DIR = ".sova/playbooks/review";
@@ -162,6 +162,8 @@ export function applyToData(raw: Record<string, unknown>, c: MergeSettingsChange
   else if (c.land !== undefined) merge.land = c.land;
   if (c.reuse === true) delete merge.reuse;
   else if (c.reuse === false) merge.reuse = false;
+  if (c.deleteBranches === false) delete merge.deleteBranches;
+  else if (c.deleteBranches === true) merge.deleteBranches = true;
   if (c.checks) {
     const list = merge.checks as Record<string, unknown>[];
     for (const [id, ch] of Object.entries(c.checks)) {
@@ -184,6 +186,7 @@ export function changeWords(c: MergeSettingsChange): string {
   if (c.review !== undefined) parts.push(`review ${c.review ? "on" : "off"}`);
   if (c.land !== undefined) parts.push(`lands by ${LAND_WORDS[c.land]}`);
   if (c.reuse !== undefined) parts.push(`reuse passes from identical code ${c.reuse ? "on" : "off"}`);
+  if (c.deleteBranches !== undefined) parts.push(`delete branches ${c.deleteBranches ? "on" : "off"}`);
   for (const [id, ch] of Object.entries(c.checks ?? {})) {
     const w: string[] = [];
     if (ch.timeoutSec !== undefined) w.push(`${Math.round(ch.timeoutSec / 60)} min`);
@@ -196,13 +199,13 @@ export function changeWords(c: MergeSettingsChange): string {
 
 /** Whether the change asks for nothing. Pure. */
 export const isEmptyChange = (c: MergeSettingsChange): boolean =>
-  c.push === undefined && c.review === undefined && c.land === undefined && c.reuse === undefined && !Object.values(c.checks ?? {}).some((x) => x.timeoutSec !== undefined || x.rerun !== undefined || x.optional !== undefined);
+  c.push === undefined && c.review === undefined && c.land === undefined && c.reuse === undefined && c.deleteBranches === undefined && !Object.values(c.checks ?? {}).some((x) => x.timeoutSec !== undefined || x.rerun !== undefined || x.optional !== undefined);
 
 /** A change from a request body, checked. Pure. */
 export function parseChange(v: unknown): MergeSettingsChange {
   if (!v || typeof v !== "object" || Array.isArray(v)) throw new SettingsEditError("changes is an object: {push?, review?, checks?}");
   const o = v as Record<string, unknown>;
-  for (const k of Object.keys(o)) if (!EDITABLE.has(k)) throw new SettingsEditError(`"${k}" can't be changed here (push, review, land, reuse and each check's timeout, rerun and optional can)`);
+  for (const k of Object.keys(o)) if (!EDITABLE.has(k)) throw new SettingsEditError(`"${k}" can't be changed here (push, review, land, reuse, deleteBranches and each check's timeout, rerun and optional can)`);
   const out: MergeSettingsChange = {};
   if (o.push !== undefined) {
     if (typeof o.push !== "boolean") throw new SettingsEditError("push is true or false");
@@ -215,6 +218,10 @@ export function parseChange(v: unknown): MergeSettingsChange {
   if (o.reuse !== undefined) {
     if (typeof o.reuse !== "boolean") throw new SettingsEditError("reuse is true or false");
     out.reuse = o.reuse;
+  }
+  if (o.deleteBranches !== undefined) {
+    if (typeof o.deleteBranches !== "boolean") throw new SettingsEditError("deleteBranches is true or false");
+    out.deleteBranches = o.deleteBranches;
   }
   if (o.land !== undefined) {
     if (!isLandHow(o.land)) throw new SettingsEditError('land is "local", "github-pr", "gitlab-mr" or "push-branch"');
@@ -298,6 +305,7 @@ export function editSettingsText(text: string, c: MergeSettingsChange, opts: { k
     if (c.review === true) m.push(`"review": ${JSON.stringify(REVIEW_KIT_DIR)}`);
     if (c.land !== undefined && c.land !== "local") m.push(`"land": ${JSON.stringify(c.land)}`);
     if (c.reuse === false) m.push(`"reuse": false`);
+    if (c.deleteBranches === true) m.push(`"deleteBranches": true`);
     if (m.length) out = splice(out, setMember(out, obj(out, []), "merge", `{${m.join(", ")}}`));
   } else {
     if (find(root, "merge")!.value.t !== "obj") throw new SettingsEditError("the merge section isn't an object");
@@ -308,6 +316,8 @@ export function editSettingsText(text: string, c: MergeSettingsChange, opts: { k
     else if (c.land !== undefined) out = splice(out, setMember(out, obj(out, ["merge"]), "land", JSON.stringify(c.land)));
     if (c.reuse === true) out = splice(out, removeMember(out, obj(out, ["merge"]), "reuse"));
     else if (c.reuse === false) out = splice(out, setMember(out, obj(out, ["merge"]), "reuse", "false"));
+    if (c.deleteBranches === false) out = splice(out, removeMember(out, obj(out, ["merge"]), "deleteBranches"));
+    else if (c.deleteBranches === true) out = splice(out, setMember(out, obj(out, ["merge"]), "deleteBranches", "true"));
     for (const id of ids) {
       const ch = c.checks![id]!;
       const at = ["merge", "checks", { check: id }];
@@ -324,7 +334,7 @@ export function editSettingsText(text: string, c: MergeSettingsChange, opts: { k
   } catch {
     throw new SettingsEditError("the edit didn't leave valid JSON");
   }
-  const want = hasMerge || c.push !== undefined || c.review === true || (c.land !== undefined && c.land !== "local") || c.reuse === false ? applyToData(raw, c) : raw;
+  const want = hasMerge || c.push !== undefined || c.review === true || (c.land !== undefined && c.land !== "local") || c.reuse === false || c.deleteBranches === true ? applyToData(raw, c) : raw;
   if (!isDeepStrictEqual(after, want)) throw new SettingsEditError("the edit didn't come out as asked");
   try {
     parseDefinition(out);

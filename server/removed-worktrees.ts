@@ -37,6 +37,8 @@ export interface RemovedWorktree {
   restoredAt?: number;
   /** A message brought the folder back at this time, fresh from the target. */
   backAt?: number;
+  /** The project keeps branches (§chat.worktrees/retirement): the branch stayed, and nothing later deletes it. */
+  branchKept?: true;
   /** Test chats moved to `<state root>/retired-test-chats/<folder>/` before it went. */
   keptChats?: number;
 }
@@ -227,6 +229,12 @@ async function readGoneState(t: Pick<TrackedWorktree, "path" | "branch" | "base"
     const tip = await git(["rev-parse", "--verify", "-q", `refs/heads/${t.branch}^{commit}`], { cwd });
     if (tip.code !== 0) break; // its branch is gone here: only the ledger can tell
     const sha = tip.stdout.trim();
+    // The branch the setting kept, still where it retired: what its landing said stands, however the target has moved.
+    const kept = [...ledger()].reverse().find((e) => e.path === t.path && e.branch === t.branch);
+    if (kept?.branchKept && kept.tip === sha && !kept.backAt && !kept.restoredAt) {
+      value = kept.merged === "empty" ? "empty" : "merged";
+      break;
+    }
     if (sha === t.base) {
       value = "empty";
       break;

@@ -113,11 +113,11 @@ describe("sova_archive with worktrees: remove", () => {
     const h = harness();
     const out = await h.call({ sessions: ["s1", "s2"], worktrees: "remove" });
     assert.deepEqual(h.archived, ["s1.jsonl"], "s2 is still refused, s1 goes");
-    assert.match(out, /- \[One\]\(sova:\/\/s\/s1\): archived\n {2}- worktree .*wt-merged: removed; branch feat\/merged deleted \(nothing left, its last commit kept\)\n {2}- worktree .*wt-open \(feat\/open\): kept, it has work to land\n {2}- worktree .*wt-theirs \(feat\/theirs\): left, it belongs to session s0/);
+    assert.match(out, /- \[One\]\(sova:\/\/s\/s1\): archived\n {2}- worktree .*wt-merged: removed; branch feat\/merged kept\n {2}- worktree .*wt-open \(feat\/open\): kept, it has work to land\n {2}- worktree .*wt-theirs \(feat\/theirs\): left, it belongs to session s0/);
     assert.match(out, /- s2: refused — uncommitted changes/);
     assert.ok(!existsSync(wt("merged")), "the merged worktree is gone");
     assert.ok(existsSync(wt("open")), "an unmerged worktree is kept, as the Clean Up Merged button keeps it");
-    assert.ok(!branchExists("feat/merged"), "merged branch deleted");
+    assert.ok(branchExists("feat/merged"), "this project has no definition, so it keeps its branches");
     assert.ok(branchExists("feat/open"), "unmerged branch keeps its commits");
     assert.ok(existsSync(wt("theirs")) && existsSync(wt("dirty")), "inherited and other sessions' trees untouched");
   });
@@ -131,7 +131,7 @@ describe("sova_archive with worktrees: remove", () => {
     assert.match(out, process.platform === "linux" ? /worktree .*wt-watched \(feat\/watched\): kept, chat “Four” was active/ : /worktree .*wt-watched \(feat\/watched\): kept, chat “Four” has its sandbox on/);
     assert.ok(existsSync(wt("watched")) && branchExists("feat/watched"));
     // The archived session's own folder is inside its tree: that alone doesn't keep it.
-    assert.match(out, /worktree .*wt-home: removed; branch feat\/home deleted \(nothing left, its last commit kept\)/);
+    assert.match(out, /worktree .*wt-home: removed; branch feat\/home kept/);
     assert.ok(!existsSync(wt("home")));
   });
 

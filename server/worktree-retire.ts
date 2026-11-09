@@ -15,6 +15,7 @@ import { dirname, join } from "node:path";
 import { canonical, isWithin } from "../pi-config/extensions/worktrees/state.ts";
 import { type Git, runGit } from "../pi-config/extensions/worktrees/git.ts";
 import type { HeldRow } from "../shared/protocol";
+import { CONTRACT_FILE, parseDefinition } from "../shared/project-contract";
 import { openQueueEntry } from "./nothing-left";
 import { registeredCopyOf } from "./project-services/checkout-teardown";
 import { draftNamesIn } from "./spec-drafts-state";
@@ -155,6 +156,8 @@ export interface RetireDeps {
   pendingFile(): string;
   /** After the first pass: post its summary. False or a throw: it wasn't posted, so the next pass asks again with the same summary. */
   firstPassDone?(summary: PassResult): Promise<boolean | void> | boolean | void;
+  /** Whether this project deletes branches when cleaning up. Absent: read from its definition at the target's head (`deleteBranchesOn`). A doubt is false. */
+  deleteBranches?(main: string): Promise<boolean> | boolean;
   /** `<state root>/retire-first-pass.json`: beside the pending file unless named. */
   firstPassFile?(): string;
   /** `<state root>/retired-test-chats`: beside the pending file unless named. */
@@ -163,6 +166,30 @@ export interface RetireDeps {
   realChatsDir?(): string;
   /** The sandbox's rule reads it: a missing root is proved only on Linux. */
   platform?(): NodeJS.Platform;
+}
+
+/** `merge.deleteBranches` in a definition's text: true only in a definition that parses and says so. Pure. */
+export function definitionDeletesBranches(text: string): boolean {
+  try {
+    return parseDefinition(text).merge?.deleteBranches === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether cleanup deletes this repository's landed branches (§chat.worktrees/retirement): the project's definition at the
+ * target's head, read right before a removal. Missing or unreadable is off: a project with no definition keeps its branches.
+ */
+async function deleteBranchesOn(d: RetireDeps, repo: Pick<RepoTrees, "main" | "target">): Promise<boolean> {
+  try {
+    if (d.deleteBranches) return (await d.deleteBranches(repo.main)) === true;
+    if (!repo.target) return false;
+    const r = await d.git(["show", `${repo.target.oid}:${CONTRACT_FILE}`], { cwd: repo.main });
+    return r.code === 0 && definitionDeletesBranches(r.stdout);
+  } catch {
+    return false;
+  }
 }
 
 const besidePending = (d: Pick<RetireDeps, "pendingFile">, name: string): string => join(dirname(d.pendingFile()), name);
@@ -475,6 +502,8 @@ export interface RetiredRowOut {
   finished?: true;
   /** One of the merge queue's own chats made it: the report's group of its own. */
   queueMade?: true;
+  /** The project keeps branches, and this one stayed. */
+  branchKept?: true;
   /** What went with it, and what moved aside, for the first pass's report. */
   went?: { rebuildable: string[]; testCopy?: TestCopyLeft };
 }
@@ -589,7 +618,10 @@ export async function retireTree(d: RetireDeps, root: string, path: string, o: {
       const moved = keepTestChats(asideOf(d), path, kept);
       if (moved) return { state: "held", row: heldRow(t, { kind: "files", why: moved }) };
     }
-    const entry = (branchDeleted: boolean, extra: Partial<RemovedWorktree> = {}): RemovedWorktree => ({ v: 1, path, branch, commonDir: repo.commonDir, tip, merged: t.class === "empty" ? "empty" : t.merged ?? "ancestor", branchDeleted, at: d.now(), retired: true, pinned: true, ...(repo.target ? { target: repo.target.name } : {}), ...(t.queueMade ? { queueMade: true as const } : {}), ...(kept.length ? { keptChats: kept.length } : {}), ...extra });
+    // Settled before anything goes, and recorded with it: a stop in between can't turn a kept branch into a deleted one.
+    // The queue's own copies always lose theirs: they aren't anyone's.
+    const keepBranch = !t.queueMade && !(await deleteBranchesOn(d, repo));
+    const entry = (branchDeleted: boolean, extra: Partial<RemovedWorktree> = {}): RemovedWorktree => ({ v: 1, path, branch, commonDir: repo.commonDir, tip, merged: t.class === "empty" ? "empty" : t.merged ?? "ancestor", branchDeleted, at: d.now(), retired: true, pinned: true, ...(repo.target ? { target: repo.target.name } : {}), ...(t.queueMade ? { queueMade: true as const } : {}), ...(kept.length ? { keptChats: kept.length } : {}), ...(keepBranch ? { branchKept: true as const } : {}), ...extra });
     // Said before the removal: a stop in the middle can't leave a branch that nothing records (finishIntents).
     noteIntent(d, entry(false));
     const out = await removeTree({ path, main: repo.main, git: d.gitWrite, remove: d.gitRemove, proof: async () => (await proofOf(d, repo.main, path, branch, o.exclude)).why });
@@ -607,11 +639,11 @@ export async function retireTree(d: RetireDeps, root: string, path: string, o: {
     const line = entry(false);
     d.appendLedger([line]);
     dropIntent(d, path);
-    const del = await retireBranch(d.gitWrite, repo.main, { branch, tip, onMain: t.ancestor });
+    const del = keepBranch ? { deleted: false } : await retireBranch(d.gitWrite, repo.main, { branch, tip, onMain: t.ancestor });
     if (del.deleted) d.markLedger((x) => x.commonDir === line.commonDir && x.path === line.path && x.at === line.at && x.tip === line.tip, { branchDeleted: true });
     forgetSummary(repo.commonDir);
     await d.removed([path]).catch((err: Error) => console.warn(`[retire] readiness: ${err.message}`));
-    return { state: "retired", row: { path, branch, tip, merged: t.class === "empty" ? "empty" : t.merged ?? "ancestor", branchDeleted: del.deleted, ...(out.finished ? { finished: true as const } : {}), ...(t.queueMade ? { queueMade: true as const } : {}), ...(left ? { went: { rebuildable: left.rebuildable, ...(left.testCopy ? { testCopy: left.testCopy } : {}) } } : {}) } };
+    return { state: "retired", row: { path, branch, tip, merged: t.class === "empty" ? "empty" : t.merged ?? "ancestor", branchDeleted: del.deleted, ...(keepBranch ? { branchKept: true as const } : {}), ...(out.finished ? { finished: true as const } : {}), ...(t.queueMade ? { queueMade: true as const } : {}), ...(left ? { went: { rebuildable: left.rebuildable, ...(left.testCopy ? { testCopy: left.testCopy } : {}) } } : {}) } };
   } finally {
     if (claimed) unclaim(repo.commonDir, path);
   }
@@ -677,7 +709,8 @@ async function retireLeftover(d: RetireDeps, repo: RepoTrees, c: { path: string;
     }
   }
   const keptChats = left?.testCopy?.keepAside.length ?? 0;
-  const line: RemovedWorktree = { v: 1, path: c.path, branch: branch ?? "", commonDir: repo.commonDir, tip, merged: "leftover", branchDeleted: !tip, at: d.now(), retired: true, ...(tip ? { pinned: true as const } : {}), ...(keptChats ? { keptChats } : {}) };
+  const keepBranch = !!tip && !(await deleteBranchesOn(d, repo));
+  const line: RemovedWorktree = { v: 1, path: c.path, branch: branch ?? "", commonDir: repo.commonDir, tip, merged: "leftover", branchDeleted: !tip, at: d.now(), retired: true, ...(tip ? { pinned: true as const } : {}), ...(keptChats ? { keptChats } : {}), ...(keepBranch ? { branchKept: true as const } : {}) };
   // A chat in this folder finds it again through the ledger: a stop right after the delete mustn't leave that unsaid (finishIntents).
   noteIntent(d, line);
   const failed = deleteProvedFolder(c.path);
@@ -688,12 +721,12 @@ async function retireLeftover(d: RetireDeps, repo: RepoTrees, c: { path: string;
   d.appendLedger([line]);
   dropIntent(d, c.path);
   let branchDeleted = !tip;
-  if (tip) {
+  if (tip && !keepBranch) {
     const del = await retireBranch(d.gitWrite, repo.main, { branch: branch!, tip, onMain: (await d.git(["merge-base", "--is-ancestor", tip, repo.mainBranch ?? "HEAD"], { cwd: repo.main })).code === 0 });
     branchDeleted = del.deleted;
     if (del.deleted) d.markLedger((x) => x.commonDir === line.commonDir && x.path === line.path && x.at === line.at && x.tip === line.tip, { branchDeleted: true });
   }
-  const row: RetiredRowOut = { path: c.path, branch: branch ?? "", tip, merged: "leftover", branchDeleted, ...(left ? { went: { rebuildable: left.rebuildable, ...(left.testCopy ? { testCopy: left.testCopy } : {}) } } : {}) };
+  const row: RetiredRowOut = { path: c.path, branch: branch ?? "", tip, merged: "leftover", branchDeleted, ...(keepBranch ? { branchKept: true as const } : {}), ...(left ? { went: { rebuildable: left.rebuildable, ...(left.testCopy ? { testCopy: left.testCopy } : {}) } } : {}) };
   forgetSummary(repo.commonDir);
   return { state: "retired", row };
   } finally {
@@ -748,7 +781,7 @@ async function finishBranches(d: RetireDeps, repo: RepoTrees): Promise<void> {
   const ledger = d.ledger();
   const protectedBranches = await protectedOf(d, repo);
   for (const e of ledger) {
-    if (e.commonDir !== repo.commonDir || !e.retired || e.branchDeleted || !e.tip || !e.branch || e.restoredAt || e.backAt || protectedBranches.has(e.branch)) continue;
+    if (e.commonDir !== repo.commonDir || !e.retired || e.branchDeleted || !e.tip || !e.branch || e.restoredAt || e.backAt || e.branchKept || protectedBranches.has(e.branch)) continue;
     if (lexists(e.path)) continue;
     // A partial delete whose folder has since gone is finished like any other, unless something newer speaks for this path.
     if (e.partial && [...ledger].reverse().find((x) => x.path === e.path) !== e) continue;
@@ -987,6 +1020,11 @@ async function mainOfCommonDir(git: GitRunner, commonDir: string): Promise<strin
   return first ? first.slice(9) : null;
 }
 
+/** Whether the branch of that name is still the one the setting kept: its recorded last commit is in it. A doubt is no. */
+async function onKeptLine(d: RetireDeps, main: string, e: RemovedWorktree): Promise<boolean> {
+  return (await d.git(["merge-base", "--is-ancestor", e.tip, `refs/heads/${e.branch}`], { cwd: main })).code === 0;
+}
+
 export type RestoreResult = { ok: true; path: string; branch: string } | { ok: false; error: string };
 
 /**
@@ -1002,9 +1040,11 @@ export async function restoreRetired(d: RetireDeps, o: { root: string; path: str
   if (!e.tip) return { ok: false, error: "Sova has no last commit recorded for it." };
   const known = await d.git(["cat-file", "-e", `${e.tip}^{commit}`], { cwd: repo.main });
   if (known.code !== 0) return { ok: false, error: `Its last commit ${e.tip.slice(0, 7)} isn't in this repository any more.` };
-  if ((await d.git(["rev-parse", "--verify", "-q", `refs/heads/${e.branch}`], { cwd: repo.main })).code === 0) return { ok: false, error: `${e.branch} already exists. Nothing was changed.` };
+  const there = (await d.git(["rev-parse", "--verify", "-q", `refs/heads/${e.branch}`], { cwd: repo.main })).code === 0;
+  // A branch the setting kept stands as it is. One deleted that exists again isn't it: only the kept line, moved or not, counts.
+  if (there && !(e.branchKept && (await onKeptLine(d, repo.main, e)))) return { ok: false, error: `${e.branch} already exists. Nothing was changed.` };
   if (lexists(e.path)) return { ok: false, error: `${e.path} already exists. Nothing was changed.` };
-  const add = await d.gitWrite(["worktree", "add", "-b", e.branch, "--", e.path, e.tip], repo.main);
+  const add = await d.gitWrite(there ? ["worktree", "add", "--", e.path, e.branch] : ["worktree", "add", "-b", e.branch, "--", e.path, e.tip], repo.main);
   if (add.code !== 0) return { ok: false, error: (add.stderr || add.stdout).trim().split("\n")[0] || "Git refused." };
   d.markLedger((x) => x === e || (x.commonDir === e.commonDir && x.path === e.path && x.tip === e.tip && x.at === e.at), { restoredAt: d.now() });
   forgetSummary(repo.commonDir);
@@ -1048,7 +1088,20 @@ async function bringBackOf(d: RetireDeps, e: RemovedWorktree): Promise<BringBack
   if (!main) return failed("Its repository is gone.");
   const repo = await d.classify(main, []);
   if (!repo?.target) return failed("Its repository has no branch to start from.");
-  if ((await d.git(["rev-parse", "--verify", "-q", `refs/heads/${e.branch}`], { cwd: main })).code === 0) {
+  const here = (await d.git(["rev-parse", "--verify", "-q", `refs/heads/${e.branch}^{commit}`], { cwd: main }));
+  if (here.code === 0 && e.branchKept && (await onKeptLine(d, main, e))) {
+    // Kept by the setting: the folder comes back on it as it stands, never moved.
+    const add = await d.gitWrite(["worktree", "add", "--", e.path, e.branch], main);
+    if (add.code !== 0) return failed(`Git refused: ${(add.stderr || add.stdout).trim().split("\n")[0]}`);
+    d.markLedger((x) => x.commonDir === e.commonDir && x.path === e.path && x.at === e.at, { backAt: d.now() });
+    forgetSummary(repo.commonDir);
+    await d.removed([e.path]).catch(() => undefined);
+    const setupFailed = d.setup ? await d.setup(e.path).catch((err: Error) => err.message) : null;
+    const sha = here.stdout.trim().slice(0, 7);
+    const line = `Your worktree was retired after ${e.branch} landed. It's back at ${e.path}, on ${e.branch} as it was at ${sha}. It may be behind ${repo.target.name}.${setupFailed ? ` Its setup failed: ${setupFailed.split("\n")[0]}` : ""}`;
+    return { state: "back", path: e.path, branch: e.branch, target: repo.target.name, sha, line };
+  }
+  if (here.code === 0) {
     // Still at the commit it retired at, because its delete hasn't finished: that's the stop finishing, not someone else's branch.
     const at = await d.git(["rev-parse", "--verify", "-q", `refs/heads/${e.branch}^{commit}`], { cwd: main });
     const ours = !e.branchDeleted && at.stdout.trim() === e.tip && !(await protectedOf(d, repo)).has(e.branch);
@@ -1138,6 +1191,13 @@ export function realRetireDeps(): RetireDeps {
 /** Tests: use these instead of the real wiring (archive's, Remove Worktree's proof). */
 export function setRealRetireDeps(d: RetireDeps | null): void {
   real = d;
+}
+
+/** Whether a removal in this folder's repository would keep the branch (a row's confirm). A repository it can't read: yes. */
+export async function keepsBranchAt(path: string, d: RetireDeps = realRetireDeps()): Promise<boolean> {
+  const dir = [path, ...besideGone(path)].find((x) => existsSync(x));
+  const repo = dir ? await d.classify(dir, []) : null;
+  return !repo || !(await deleteBranchesOn(d, repo));
 }
 
 /** Why what a partial delete left may not be finished, or null: Remove Worktree's and teardown's proof. */

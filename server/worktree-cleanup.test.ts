@@ -281,6 +281,24 @@ test("own git children: only a direct child of this process whose program is git
   for (const [line, parent] of [["7 (git) S 42 7 7", 42], ["7 (a b) (c)) R 8 7", 8], ["", NaN]] as const) assert.deepEqual(c.statParent(line), parent, line);
 });
 
+test("a process that exits while it is being read isn't running; one still there whose comm or stat can't be read still holds", async () => {
+  const err = (code: string) => Object.assign(new Error(code), { code });
+  // One process in /w/tree, reading fine until the file a case names, which fails with that case's error.
+  const scan = (failing: "comm" | "stat", code: string) =>
+    c.scanProcesses("linux", undefined, {
+      readdir: async (p) => (p === "/proc" ? ["4242"] : []),
+      readlink: async () => "/w/tree",
+      readFile: async (p) => {
+        if (p.endsWith(`/${failing}`)) throw err(code);
+        return p.endsWith("/comm") ? "git\n" : `4242 (git) S 1 4242 4242`;
+      },
+    });
+  for (const failing of ["comm", "stat"] as const) {
+    for (const code of ["ENOENT", "ESRCH"]) assert.deepEqual(await scan(failing, code), [], `${failing} ${code}: it has exited, so nothing is running there`);
+    for (const code of ["EACCES", "EIO"]) assert.deepEqual((await scan(failing, code)).map((p) => [p.pid, p.paths]), [[4242, ["/w/tree"]]], `${failing} ${code}: still there and unreadable, so it holds`);
+  }
+});
+
 test("readers of one gone tree share a read while it runs; the next read after its lifetime asks git again", async () => {
   resetRemovedWorktrees();
   let calls = 0;

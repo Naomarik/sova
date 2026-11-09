@@ -145,13 +145,21 @@ export interface CleanupDeps {
   now: () => number;
 }
 
+/** The reads of /proc a scan makes; tests stand in for them to stop a process at an exact point. */
+export interface ProcReads {
+  readdir(path: string): Promise<string[]>;
+  readlink(path: string): Promise<string>;
+  readFile(path: string): Promise<string>;
+}
+const realProc: ProcReads = { readdir: (p) => readdir(p), readlink: (p) => readlink(p), readFile: (p) => readFile(p, "utf8") };
+
 /**
  * The live processes and the paths they hold: /proc/<pid>/cwd and /proc/<pid>/fd/* of every process
  * this user can read on Linux; elsewhere (macOS) `lsof` of this user's processes. This server and its
  * own git children (`ownGitChild`) are left out. When `lsof` can't answer, one `unreadable` entry: a
  * tree is kept, never assumed free.
  */
-export async function scanProcesses(platform: NodeJS.Platform = process.platform, lsof: () => Promise<{ code: number; stdout: string; stderr: string }> = runLsof): Promise<ProcFacts[]> {
+export async function scanProcesses(platform: NodeJS.Platform = process.platform, lsof: () => Promise<{ code: number; stdout: string; stderr: string }> = runLsof, proc: ProcReads = realProc): Promise<ProcFacts[]> {
   if (platform !== "linux") {
     const r = await lsof();
     if (r.code !== 0) return [{ pid: 0, command: "lsof", paths: [], unreadable: `Its processes couldn't be read (lsof: ${r.stderr.trim().split("\n")[0] || `exit ${r.code}`}), so it is kept.` }];
@@ -159,7 +167,7 @@ export async function scanProcesses(platform: NodeJS.Platform = process.platform
   }
   let pids: string[];
   try {
-    pids = (await readdir("/proc")).filter((d) => /^\d+$/.test(d));
+    pids = (await proc.readdir("/proc")).filter((d) => /^\d+$/.test(d));
   } catch (err) {
     return [{ pid: 0, command: "proc", paths: [], unreadable: `Its processes couldn't be read (/proc: ${(err as NodeJS.ErrnoException).code ?? "error"}), so it is kept.` }];
   }
@@ -169,16 +177,20 @@ export async function scanProcesses(platform: NodeJS.Platform = process.platform
       const pid = Number(p);
       if (pid === process.pid) return;
       const paths: string[] = [];
-      const cwd = await readlink(`/proc/${p}/cwd`).catch(() => null);
+      const cwd = await proc.readlink(`/proc/${p}/cwd`).catch(() => null);
       if (cwd) paths.push(cwd);
-      const fds = await readdir(`/proc/${p}/fd`).catch(() => [] as string[]);
+      const fds = await proc.readdir(`/proc/${p}/fd`).catch(() => [] as string[]);
       for (const fd of fds) {
-        const target = await readlink(`/proc/${p}/fd/${fd}`).catch(() => null);
+        const target = await proc.readlink(`/proc/${p}/fd/${fd}`).catch(() => null);
         if (target?.startsWith("/")) paths.push(target.replace(/ \(deleted\)$/, ""));
       }
       if (!paths.length) return;
-      const command = (await readFile(`/proc/${p}/comm`, "utf8").catch(() => "")).trim() || "process";
-      const parent = statParent(await readFile(`/proc/${p}/stat`, "utf8").catch(() => ""));
+      // Null: it exited while being read, so nothing is running. Any other failure leaves "" and a process that still holds.
+      const read = (name: string): Promise<string | null> => proc.readFile(`/proc/${p}/${name}`).catch((err: NodeJS.ErrnoException) => (err.code === "ENOENT" || err.code === "ESRCH" ? null : ""));
+      const [comm, stat] = [await read("comm"), await read("stat")];
+      if (comm === null || stat === null) return;
+      const command = comm.trim() || "process";
+      const parent = statParent(stat);
       if (ownGitChild(command, parent)) return;
       out.push({ pid, command, paths });
     }),

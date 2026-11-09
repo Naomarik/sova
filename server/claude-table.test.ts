@@ -286,6 +286,29 @@ test("a latest value that is an old-order id brings nothing in and takes nothing
   for (const m of CLAUDE_MODELS) assert.ok(offered().includes(m.id), m.id);
 });
 
+test("a latest value that isn't a plain row: read as its row, or the table counts as unread", async () => {
+  for (const [form, value] of [["dated", `${FABLE_NEXT}-20270101`], ["[1m]", `${FABLE_NEXT}[1m]`]] as const) {
+    const w = world(parsed([...newest.rows, rowFor(FABLE_NEXT)], latestOf({ fable: value })));
+    await w.start().checkNow();
+    w.load();
+    assert.ok(offered().includes(FABLE_NEXT), `${form}: its row is adopted`);
+    assert.deepEqual(offered().filter((id) => id !== FABLE_NEXT && id.startsWith(FABLE_NEXT)), [], `${form}: never the written form`);
+    mergeClaudeCatalog({ models: [] });
+  }
+  for (const [what, value] of [["a dated form of no row", "claude-fable-10-20270101"], ["no row and no standard id", "claude-nova"]] as const) {
+    const w = world(withNext());
+    await w.start().checkNow();
+    w.load();
+    const list = offered();
+    w.update(parsed(newest.rows, latestOf({ fable: value })));
+    await w.start().checkNow();
+    w.load();
+    assert.deepEqual(offered(), list, `${what}: the last good list`);
+    assert.equal(claudeTableStatus(w.root).readable, false, `${what}: counted as unread`);
+    mergeClaudeCatalog({ models: [] });
+  }
+});
+
 test("a table model Sova doesn't offer, typed by hand, counts as unknown", async () => {
   const w = world(parsed(newest.rows, newest.latestPerFamily));
   await w.start().checkNow();

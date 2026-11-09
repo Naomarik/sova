@@ -131,7 +131,7 @@ export type TreeBucket = "land" | "specs" | "ready" | "built" | "at-risk" | "unc
     "leftover" is a merged worktree left with uncommitted files: counted, never listed. */
 export function treeBucket(t: WorktreeReadiness): TreeBucket | null {
   // The shared answer (§chat.worktrees/nothing-left): only unproved drafts left is Landing specs; nothing left, none.
-  if (t.left === "drafts" && t.merged) return "specs";
+  if (t.left === "drafts") return "specs";
   if (t.state === "ready" || t.state === "waiting-approval") return t.landing ? (t.landing.state === "ready" ? "land" : "specs") : "ready";
   if (t.state === "removed") {
     if (t.why === "not merged") return "at-risk";

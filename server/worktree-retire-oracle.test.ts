@@ -556,6 +556,7 @@ test("the world, run to quiet, stopped at every removal: nothing lost, everythin
 
   // A pass after quiet changes nothing: files, report, branches.
   const before = { files: [...inventory(w)].map(([p, f]) => [p, f.sha]).sort(), report: readFileSync(join(w.fx.state, "retire-first-pass.json"), "utf8"), refs: refsOf(w) };
+  clock.t += 11 * MIN; // a later wake-up, as the server's next pass is
   await retirePass(depsOf(w, records, clock, null));
   assert.deepEqual({ files: [...inventory(w)].map(([p, f]) => [p, f.sha]).sort(), report: readFileSync(join(w.fx.state, "retire-first-pass.json"), "utf8"), refs: refsOf(w) }, before, "a pass after quiet changes nothing");
 

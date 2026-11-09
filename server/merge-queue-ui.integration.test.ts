@@ -124,7 +124,11 @@ const ALL_ROWS = [
     queue: qi({ id: "me_b", state: "behaviour-differs", conflict: { files: ["src/a.ts"], verdict: "behaviour-differs", ours: "Master retries the save twice.", theirs: "The branch never retries.", proposal: "Keep master's retry.", at: iso(3) } }),
   }),
   wt("feat/hack", { queue: qi({ id: "me_r", state: "needs-user", decision: DECISION } as Partial<WorktreeQueueInfo>) }),
-  wt("feat/composer-hints", { queue: qi({ id: "me_l", state: "landed", landed: { sha: sha("b"), from: sha("a"), at: iso(30), pushed: "pushed" }, notes: [{ kind: "thread", text: NOTE, at: iso(29) }] }) }),
+  // Landed, with nothing left on the branch: the shared answer says so. A reading of real work would bring its own state back.
+  wt("feat/composer-hints", {
+    queue: qi({ id: "me_l", state: "landed", landed: { sha: sha("b"), from: sha("a"), at: iso(30), pushed: "pushed" }, notes: [{ kind: "thread", text: NOTE, at: iso(29) }] }),
+    readiness: { path: "", branch: "feat/composer-hints", state: "merged", merged: true, left: "nothing" },
+  }),
 ];
 const READY_ROWS = [ALL_ROWS[0]!, ALL_ROWS[1]!, ALL_ROWS[2]!, ALL_ROWS[7]!];
 

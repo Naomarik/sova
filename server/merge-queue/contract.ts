@@ -13,6 +13,9 @@ import type { Blame, CheckPick, MergeEntry, MergeNote, ReviewVerdict, RunStep } 
 export interface RunInput {
   /** mr_… */
   runId: string;
+  /** Every commit the queue has recorded landing for this branch. The run skips its merge for a commit exactly on this
+      list, or one the merge copy finds on the base (§app.merge-queue/run); absent on a resolved conflict's run. */
+  landingPins?: readonly string[];
   entry: MergeEntry;
   project: {
     id: string;
@@ -88,7 +91,9 @@ export type RunOutcomeVerdict =
    *  the check. Never auto-landed, never handed back, and the queue doesn't pause: it waits for the user. */
   | "unattributed"
   /** Aborted (signal), or a timeout of the run as a whole: nothing blamed, run again. */
-  | "void";
+  | "void"
+  /** Changes neither code nor specs (§app.merge-queue/run): no check ran, the target doesn't move, nothing is blamed. */
+  | "nothing";
 
 export interface RunOutcome {
   verdict: RunOutcomeVerdict;

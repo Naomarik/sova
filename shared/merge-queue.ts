@@ -41,6 +41,10 @@ export const ENTRY_FINAL: readonly MergeEntryState[] = ["landed", "cancelled", "
 /** On the host: open there, followed by the queue; neither in line nor final. */
 export const ENTRY_ON_HOST: readonly MergeEntryState[] = ["requested"];
 /** States that hold a place in the line (one live entry per branch at a time). */
+/** Does a branch have anything of its own left to land (§chat.worktrees/nothing-left)? "unknown": git couldn't say, or
+ *  the histories don't connect; it is never read as nothing. */
+export type LeftAnswer = "nothing" | "work" | "unknown";
+
 export const ENTRY_OPEN: readonly MergeEntryState[] = ["queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "with-chat", "needs-user"];
 
 // ---- al_3: the standing approval, the chat's requests and answers (§app.merge-queue/standing-approval,
@@ -812,6 +816,12 @@ export interface MergeReady {
   /** When the branch last changed: its head's committer date (ISO 8601, `git log -1 --format=%cI`), when read.
    *  Additive. */
   headAt?: string;
+  /** Its code has nothing left to land: only this many spec drafts not proved landed, which Land lands alone
+   *  (§chat.worktrees/nothing-left). Additive. */
+  draftsOnly?: number;
+  /** The shared answer for this branch (§chat.worktrees/nothing-left): whole counts its drafts, code counts commits
+   *  alone. A Ready row's whole is only ever "work" or "unknown". Additive. */
+  left?: { whole: LeftAnswer; code: LeftAnswer };
 }
 
 /** SessionWorktreeInfo.mergeStats: the branch against the target, for the row's "N commits · +a −r". */
@@ -1022,8 +1032,8 @@ export interface ReviewCard {
 // ---- a branch's card in the chat that built it ---------------------------------------------------
 
 /** An outcome that moves the card to the bottom of the chat as a new revision. */
-export type MergeCardOutcome = "landed" | "needs-fix" | "conflict" | "behaviour-differs" | "review-flagged" | "unattributed" | "drafts-changed" | "sent-back" | "requested" | "pushed" | "closed" | "removed" | "decision";
-export const MERGE_CARD_OUTCOMES: readonly MergeCardOutcome[] = ["landed", "needs-fix", "conflict", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "sent-back", "requested", "pushed", "closed", "removed", "decision"];
+export type MergeCardOutcome = "landed" | "needs-fix" | "conflict" | "behaviour-differs" | "review-flagged" | "unattributed" | "drafts-changed" | "sent-back" | "requested" | "pushed" | "closed" | "removed" | "decision" | "nothing-to-land";
+export const MERGE_CARD_OUTCOMES: readonly MergeCardOutcome[] = ["landed", "needs-fix", "conflict", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "sent-back", "requested", "pushed", "closed", "removed", "decision", "nothing-to-land"];
 
 /**
  * One copy of the card at its own point in the chat. The newest revision draws the whole card (the card's live data);

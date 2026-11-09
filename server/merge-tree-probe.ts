@@ -40,6 +40,12 @@ export function parseDrivers(stdout: string): { name: string; command: string }[
   return out;
 }
 
+/** The merged tree's id in `merge-tree --write-tree`'s stdout, or "": it follows whatever a merge driver printed there,
+    which git passes through first, so it is never simply the first line. */
+export function mergeTreeOid(stdout: string): string {
+  return stdout.split("\n").map((l) => l.trim()).filter((l) => /^[0-9a-f]{40,64}$/.test(l)).at(-1) ?? "";
+}
+
 export interface TrialMerge {
   /** The checkout's top folder: its .gitattributes are read, and drivers run from here, as git would. */
   top: string;

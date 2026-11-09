@@ -996,3 +996,10 @@ describe("round 6: asks deeper in the reply, gone branches whose named commits a
     assert.doesNotMatch(prompt, /Answer only the sections asked about/);
   });
 });
+
+test("treeBucket reads the shared answer: only unproved drafts left is Landing specs; nothing left is listed nowhere; a folder git can't read isn't built work", async () => {
+  const { treeBucket } = await import("./overseer-roundup");
+  assert.equal(treeBucket({ path: "/w", branch: "feat/d", state: "merged", merged: true, left: "drafts", draftsLeft: 2 }), "specs");
+  assert.equal(treeBucket({ path: "/w", branch: "feat/n", state: "merged", merged: true, left: "nothing" }), null);
+  assert.equal(treeBucket({ path: "/w", branch: "feat/g", state: "in-progress", why: r.UNREADABLE }), "unconfirmed");
+});

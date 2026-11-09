@@ -2,17 +2,153 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MergeEntry, MergeRun, RunStep, WorktreeQueueInfo } from "../../shared/merge-queue";
-import { entryLandBlock, SENT_BACK_LINE, stillSentBack, rowButtons, attribution, clock, controlWords, mins, notesOf, pausedTitle, pushedWords, queueRow, queueStateChip, rowsSummary, runProgress, sourceTag, stepCounts, stepDetail, stepMark, stepTime, tildeIn, verdictChip, waitingHead, type QueueRowInput } from "./merge-queue";
+import type { WorktreeReadiness } from "../../shared/protocol";
+import { landConfirmWords, readyFactsWords, readyRowChip, type RowKey, type Tone, entryLandBlock, SENT_BACK_LINE, stillSentBack, rowButtons, attribution, clock, controlWords, mins, notesOf, pausedTitle, pushedWords, queueRow, queueStateChip, rowsSummary, runProgress, sourceTag, stepCounts, stepDetail, stepMark, stepTime, tildeIn, verdictChip, waitingHead, type QueueRowInput } from "./merge-queue";
 
 const SHA = "a".repeat(40);
 const wt = (x: Partial<QueueRowInput> = {}): QueueRowInput => ({ status: "active", exists: true, branch: "feat/x", readiness: undefined, ...x });
 const q = (x: Partial<WorktreeQueueInfo>): WorktreeQueueInfo => ({ id: "me_1", state: "queued", commit: SHA, notes: [], project: "prj_1", ...x }) as WorktreeQueueInfo;
 const ready = { path: "/w", branch: "feat/x", state: "ready" as const };
 
-test("a clean worktree with commits, in a repo the queue serves, reads Ready, with Land", () => {
-  const r = queueRow(wt({ readiness: ready, mergeServed: true }));
-  assert.equal(r.label, "Ready");
-  assert.equal(r.action, "land");
+test("Ready only when truly Ready to land; real work says its true state and keeps Land", () => {
+  const finished = queueRow(wt({ readiness: { ...ready, landing: { state: "ready", commit: SHA } }, mergeServed: true }));
+  assert.deepEqual([finished.key, finished.label, finished.action], ["ready", "Ready", "land"]);
+  const cases: [Partial<WorktreeReadiness>, RowKey, string, Tone][] = [
+    [{ state: "ready" }, "ready-to-merge", "Ready to merge", "success"],
+    [{ state: "waiting-approval" }, "waiting-ok", "Waiting for your OK", "success"],
+    [{ state: "in-progress", conflicts: 17, reason: "Conflicts with master · 17 files" }, "conflicting", "Conflicts with master", "warn"],
+    [{ state: "in-progress", reason: "In progress · working now" }, "in-progress", "In progress", "neutral"],
+    [{ state: "blocked", reason: "Blocked · 2 open questions" }, "blocked", "Blocked", "warn"],
+    [{ state: "ready", landing: { state: "specs", commit: SHA } }, "landing-specs", "Landing specs", "info"],
+  ];
+  for (const [reading, key, label, tone] of cases) {
+    const r = queueRow(wt({ readiness: { ...ready, ...reading }, mergeServed: true }));
+    assert.deepEqual([r.key, r.label, r.tone, r.action], [key, label, tone, "land"], label);
+    assert.equal(r.reason, reading.reason);
+    assert.notEqual(r.label, "Ready");
+    // Only a truly ready row counts in "{n} ready".
+    assert.notEqual(controlWords([r])!.text, "1 ready");
+  }
+  assert.equal(controlWords([finished])!.text, "1 ready");
+});
+
+test("no reading never reads Ready: it says so; it keeps Land only where the queue serves the repo", () => {
+  const served = queueRow(wt({ readiness: undefined, mergeServed: true }));
+  assert.deepEqual([served.key, served.label, served.tone, served.action], ["no-reading", "No reading", "neutral", "land"]);
+  const plain = queueRow(wt({ readiness: undefined }));
+  assert.deepEqual([plain.key, plain.action], ["no-reading", "none"]);
+});
+
+test("a repo the queue doesn't serve: real work says its true state and offers nothing", () => {
+  const r = queueRow(wt({ readiness: { ...ready, state: "in-progress", conflicts: 2, reason: "Conflicts with main · 2 files" } }));
+  assert.deepEqual([r.label, r.action], ["Conflicts with main", "none"]);
+  assert.equal(queueRow(wt({ readiness: { ...ready, state: "blocked" } })).label, "Blocked");
+});
+
+test("Landed only while nothing is left: however old, a catch-up merge changes nothing, a real commit brings Land back", () => {
+  const landed = q({ state: "landed", landed: { sha: SHA, at: "2026-01-01T00:00:00Z" } as WorktreeQueueInfo["landed"] });
+  // Nothing left, with the entry in the window or out of it.
+  const reading = { ...ready, state: "merged" as const, merged: true as const, left: "nothing" as const };
+  const inWindow = queueRow(wt({ readiness: reading, queue: landed, mergeServed: true }));
+  assert.deepEqual([inWindow.key, inWindow.label, inWindow.action, inWindow.newer], ["landed", "Landed", "none", undefined]);
+  const outOfWindow = queueRow(wt({ readiness: reading, mergeServed: true }));
+  assert.deepEqual([outOfWindow.key, outOfWindow.action], ["merged", "none"]);
+  // A branch whose reading says nothing left, though the reading's own state hasn't caught up (a turn running).
+  assert.equal(queueRow(wt({ readiness: { ...ready, state: "in-progress", left: "nothing" }, mergeServed: true })).key, "merged");
+  // A real new commit: its own reading, Land, and the line saying what the landing left out.
+  const again = queueRow(wt({ readiness: { ...ready, landing: { state: "ready", commit: "b".repeat(40) } }, queue: { ...landed, newerCommits: 1 }, mergeServed: true }));
+  assert.deepEqual([again.key, again.label, again.action, again.newer], ["ready", "Ready", "land", "1 newer commit not included"]);
+  const conflict = queueRow(wt({ readiness: { ...ready, state: "in-progress", conflicts: 1, reason: "Conflicts with master · 1 file" }, queue: { ...landed, newerCommits: 2 }, mergeServed: true }));
+  assert.deepEqual([conflict.key, conflict.action, conflict.newer], ["conflicting", "land", "2 newer commits not included"]);
+  // An entry with no reading of the branch (the Overseer's row): it did land; real commits past it keep Land.
+  assert.deepEqual(((x) => [x.key, x.action, x.newer])(queueRow(wt({ queue: { ...landed, newerCommits: 1 }, mergeServed: true }))), ["landed", "land", "1 newer commit not included"]);
+  assert.deepEqual(((x) => [x.key, x.action])(queueRow(wt({ queue: landed, mergeServed: true }))), ["landed", "none"]);
+});
+
+test("after retirement: Landed · cleaned up, with no Land; one with no commits reads Removed", () => {
+  const landed = q({ state: "landed", landed: { sha: SHA, at: "2026-01-01T00:00:00Z" } as WorktreeQueueInfo["landed"], newerCommits: 3 });
+  for (const w of [wt({ exists: false, gone: "merged", queue: landed, mergeServed: true }), wt({ exists: false, gone: "merged", mergeServed: true }), wt({ exists: false, readiness: { ...ready, state: "merged", merged: true, reason: "Landed · cleaned up" }, mergeServed: true })]) {
+    const r = queueRow(w);
+    assert.deepEqual([r.key, r.label, r.action, r.newer], ["cleaned-up", "Landed · cleaned up", "none", undefined]);
+    assert.deepEqual(rowButtons(r, "prj_1"), []);
+  }
+  const empty = queueRow(wt({ exists: false, gone: "empty", readiness: { ...ready, state: "removed", reason: "Removed · no commits" } }));
+  assert.deepEqual([empty.key, empty.label], ["removed", "Removed"]);
+});
+
+test("only drafts left: Drafts to land, with Land, even once git reads it merged or an entry says Landed", () => {
+  const reading = { ...ready, state: "merged" as const, merged: true as const, left: "drafts" as const, draftsLeft: 2 };
+  for (const x of [{}, { queue: q({ state: "landed" }) }, { mergedInto: { target: "master", sha: SHA } }]) {
+    const r = queueRow(wt({ readiness: reading, mergeServed: true, ...x }));
+    assert.deepEqual([r.key, r.label, r.tone, r.action], ["drafts-to-land", "Drafts to land", "info", "land"]);
+    assert.equal(r.reason, "Code landed · 2 spec drafts not landed");
+  }
+  assert.equal(queueRow(wt({ readiness: { ...reading, draftsLeft: 1 }, mergeServed: true })).reason, "Code landed · 1 spec draft not landed");
+  // A session list row carries the answer itself.
+  assert.equal(queueRow(wt({ left: "drafts", draftsLeft: 1, mergeServed: true })).key, "drafts-to-land");
+  assert.equal(queueRow(wt({ left: "nothing", mergeServed: true })).key, "merged");
+  // A branch that never had a commit reads that, never Landed or Merged.
+  assert.equal(queueRow(wt({ readiness: { ...ready, noCommits: true, left: "nothing" }, mergeServed: true })).key, "no-commits");
+});
+
+test("Land's confirm: only drafts left says the drafts, not commits", () => {
+  assert.deepEqual(landConfirmWords("feat/x", 0, "master", undefined, undefined, 2), { title: "Land feat/x?", line: "2 spec drafts go to the merge queue; master moves once checks pass.", confirm: "Land 2 Drafts" });
+  assert.equal(landConfirmWords("feat/x", 1, "master", undefined, undefined, 1).confirm, "Land 1 Draft");
+  assert.equal(landConfirmWords("feat/x", 1, "master", undefined, undefined, 1).line, "1 spec draft goes to the merge queue; master moves once checks pass.");
+  assert.equal(landConfirmWords("feat/x", 3, "master").confirm, "Land 3 Commits");
+});
+
+test("the tab's row with only drafts left says the drafts where the commits would be", () => {
+  assert.equal(readyFactsWords({ ahead: 1, draftsOnly: 2 }), "2 spec drafts");
+  assert.equal(readyFactsWords({ ahead: 1, draftsOnly: 1 }), "1 spec draft");
+  assert.equal(readyRowChip({ branch: "feat/x", worktree: "/w", draftsOnly: 2 }, undefined).label, "Drafts to land");
+});
+
+test("every row state a branch can read, and whether it offers Land", () => {
+  const landing = (state: "ready" | "specs") => ({ state, commit: SHA });
+  const cases: [string, Partial<QueueRowInput>, RowKey, boolean][] = [
+    ["truly ready", { readiness: { ...ready, landing: landing("ready") } }, "ready", true],
+    ["ready to merge", { readiness: ready }, "ready-to-merge", true],
+    ["its specs don't fit", { readiness: { ...ready, landing: landing("specs") } }, "landing-specs", true],
+    ["no reading", {}, "no-reading", true],
+    ["Git can't read it: an unknown answer keeps Land", { readiness: { ...ready, state: "in-progress", reason: "Git can't read this worktree" } }, "in-progress", true],
+    ["drafts only", { readiness: { ...ready, state: "merged", merged: true, left: "drafts", draftsLeft: 1 } }, "drafts-to-land", true],
+    ["uncommitted", { readiness: { ...ready, state: "in-progress", dirtyCount: 3 } }, "uncommitted", false],
+    ["no commits", { readiness: { ...ready, state: "in-progress", noCommits: true, left: "nothing" } }, "no-commits", false],
+    ["stale", { readiness: { ...ready, state: "stale", merged: true, left: "nothing" } }, "stale", false],
+    ["nothing left, no entry", { readiness: { ...ready, state: "merged", merged: true, left: "nothing" } }, "merged", false],
+    ["folder with no working branch, work landed", { exists: true, gone: "merged", readiness: { ...ready, state: "merged", merged: true, reason: "Landed · cleaned up" } }, "cleaned-up", false],
+    ["folder gone, not merged", { exists: false, gone: "unmerged" }, "removed", false],
+  ];
+  for (const [name, x, key, land] of cases) {
+    const r = queueRow(wt({ mergeServed: true, ...x }));
+    assert.equal(r.key, key, name);
+    assert.equal(rowButtons(r, "prj_1").includes("Land"), land, name);
+  }
+});
+
+test("a landed entry whose branch has real work, or an unknown answer, reads the branch and keeps Land", () => {
+  const landed = q({ state: "landed", landed: { sha: SHA, at: "2026-01-01T00:00:00Z" } as WorktreeQueueInfo["landed"] });
+  const unknown = queueRow(wt({ readiness: { ...ready, state: "in-progress", reason: "Git can't read this worktree" }, queue: landed, mergeServed: true }));
+  assert.deepEqual([unknown.key, unknown.action], ["in-progress", "land"]);
+  assert.equal(unknown.reason, "Git can't read this worktree");
+});
+
+test("a repo the queue doesn't serve: a ready branch counts as ready and reads Ready to merge, with no Land", () => {
+  const r = queueRow(wt({ readiness: ready }));
+  assert.deepEqual([r.key, r.label, r.action], ["ready", "Ready to merge", "none"]);
+  assert.equal(controlWords([r])!.text, "1 ready");
+});
+
+test("only drafts left: the row shows the drafts, never the commits' size", () => {
+  const r = queueRow(wt({ readiness: { ...ready, state: "merged", merged: true, left: "drafts", draftsLeft: 2 }, mergeServed: true, mergeStats: { ahead: 1, added: 0, removed: 0 } as never }));
+  assert.equal(r.size, undefined);
+  assert.equal(r.reason, "Code landed · 2 spec drafts not landed");
+});
+
+test("Ready list: a chat's lagging Merged is never said on a row with something left", () => {
+  const chip = readyRowChip({ branch: "feat/x", worktree: "/w", session: "s1" }, [{ ...ready, state: "merged", merged: true }] as never);
+  assert.deepEqual([chip.label, chip.tone], ["No reading", "neutral"]);
 });
 
 test("uncommitted files: Uncommitted, no Land, says how many", () => {

@@ -23,7 +23,8 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { dirname } from "node:path";
+import { statSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { createWorktree, defaultTarget, forkPoint, GitError, type Git, inspectWorktree, landedStats, listWorktrees, mergeWorktree, type MergeProbe, probeMerge, runGit } from "./git.ts";
 import { landingFile, newestUserMessage, recordGoAhead, typedGoAhead } from "./landing.ts";
 import { servedFile, servedKey, servedRoot } from "./served.ts";
@@ -55,6 +56,15 @@ const SANDBOX_DISCOVER_EVENT = "sandbox:discover";
 /** remote/workers.ts: a session on a target runs its tools there; worktrees are local only. */
 const REMOTE_SESSION_EVENT = "remote:session";
 const REMOTE_DISCOVER_EVENT = "remote:discover";
+
+/** A linked worktree's `.git` is a file; a main checkout's is a directory. */
+function isMainCheckout(path: string): boolean {
+	try {
+		return statSync(join(path, ".git")).isDirectory();
+	} catch {
+		return false;
+	}
+}
 
 const Action = StringEnum(["create", "attach", "detach", "merge", "land", "list"] as const);
 
@@ -309,6 +319,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 					case "attach": {
 						if (!params.path) throw new Error("attach needs a path.");
 						const f = await inspectWorktree(git, canonical(expand(params.path, ctx.cwd)));
+						if (isMainCheckout(f.path)) throw new Error("That folder is the project's main checkout, not a worktree. Nothing was attached.");
 						const current = set?.trees.find((t) => t.path === f.path);
 						if (current?.status === "active") return done(`${f.path} is already tracked.\n${listing()}`);
 						await approve(ctx, "Attach a worktree?", `Track ${f.path} (${f.branch}) as one of this session's worktrees.`);
@@ -366,7 +377,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 						}
 						recordGoAhead({ branch: f.branch, commit: f.head, ...(sessionId ? { session: sessionId } : {}), at: new Date(now()).toISOString(), by: "owner-chat", ...(word.withoutSpecs ? { withoutSpecs: true as const } : {}), ...(word.withoutReview ? { withoutReview: true as const } : {}), ...(word.via ? { via: word.via } : {}) }, goAheadFile());
 						return done(
-							`Queued ${f.branch} at ${shortSha(f.head)} to land${asked ? " as a request on origin's host (a merge request on GitLab, a pull request on GitHub)" : ""}${word.withoutSpecs ? ", without its specs" : ""}${word.withoutReview ? ", without review" : ""}. Sova's merge queue merges it onto the newest master in its own copy, runs the checks and lands exactly that commit; it tells this chat when it lands or if it needs a fix. Tell the user it is queued; nothing else is needed from them. A newer commit on ${f.branch} isn't included unless they land it again.`,
+							`Queued ${f.branch} at ${shortSha(f.head)} to land${asked ? " as a request on origin's host (a merge request on GitLab, a pull request on GitHub)" : ""}${word.withoutSpecs ? ", without its specs" : ""}${word.withoutReview ? ", without review" : ""}. Sova's merge queue merges it onto the newest master in its own copy, runs the checks and lands exactly that commit; it tells this chat when it lands or if it needs a fix. Tell the user it is queued; nothing else is needed from them. A newer commit on ${f.branch} isn't included unless they land it again. Leave it alone until it lands: don't merge ${main ?? "its target"} into it. The queue handles any conflict and asks for any fix it needs. Real new commits are fine: they stay on the branch as new work for a later Land.`,
 							{ landing: { branch: f.branch, commit: f.head, withoutSpecs: word.withoutSpecs, withoutReview: word.withoutReview, ...(word.via ? { via: word.via } : {}) }, trees: set?.trees ?? [] },
 						);
 					}

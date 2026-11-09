@@ -138,9 +138,19 @@ const TABLE: { name: string; branches: Branch[]; says: string; keys: RowKey[] }[
   { name: "merged: recorded, by git, by readiness", branches: [{ branch: "a", status: "merged" }, { branch: "b", mergedInto: true }, { branch: "c", readiness: merged }], says: "3 worktrees", keys: ["merged", "merged", "merged"] },
   { name: "removed", branches: [{ branch: "a", exists: false }], says: "1 worktree", keys: ["removed"] },
   { name: "dropped ones are left out", branches: [{ branch: "a", status: "dropped" }, { branch: "b", readiness: ready }], says: "1 ready", keys: ["ready"] },
-  // Inherited (a fork): the chat has no readiness for one, so with nothing else said it reads ready there.
-  { name: "an inherited tree", branches: [{ branch: "a", inherited: true }], says: "1 ready", keys: ["ready"] },
-  { name: "an inherited tree, uncommitted in its own chat: still ready here", branches: [{ branch: "a", inherited: true, readiness: { state: "in-progress", dirtyCount: 3 } }], says: "1 ready", keys: ["ready"] },
+  // Inherited (a fork): the chat has no readiness for one, so it says it has no reading, never Ready.
+  { name: "an inherited tree", branches: [{ branch: "a", inherited: true }], says: "1 worktree", keys: ["no-reading"] },
+  { name: "an inherited tree, uncommitted in its own chat: no reading here", branches: [{ branch: "a", inherited: true, readiness: { state: "in-progress", dirtyCount: 3 } }], says: "1 worktree", keys: ["no-reading"] },
+  // Real work that isn't ready: each its true state, none of them counted as ready.
+  { name: "finished, not called ready to land", branches: [{ branch: "a", readiness: { state: "ready" } }], says: "1 worktree", keys: ["ready-to-merge"] },
+  { name: "waiting for your OK", branches: [{ branch: "a", readiness: { state: "waiting-approval" } }], says: "1 worktree", keys: ["waiting-ok"] },
+  { name: "its specs don't fit", branches: [{ branch: "a", readiness: { state: "ready", landing: { state: "specs", commit: SHA } } }], says: "1 worktree", keys: ["landing-specs"] },
+  { name: "conflicts with its target", branches: [{ branch: "a", readiness: { state: "in-progress", conflicts: 2, reason: "Conflicts with main · 2 files" } }], says: "1 worktree", keys: ["conflicting"] },
+  { name: "being worked on", branches: [{ branch: "a", readiness: { state: "in-progress", reason: "In progress · working now" } }], says: "1 worktree", keys: ["in-progress"] },
+  { name: "waiting on answers", branches: [{ branch: "a", readiness: { state: "blocked", reason: "Blocked · 2 open questions" } }], says: "1 worktree", keys: ["blocked"] },
+  { name: "merged, with uncommitted changes and no count", branches: [{ branch: "a", readiness: { state: "stale" } }], says: "1 worktree", keys: ["stale"] },
+  { name: "only drafts left", branches: [{ branch: "a", readiness: { state: "merged", merged: true, left: "drafts", draftsLeft: 2 } }], says: "1 worktree", keys: ["drafts-to-land"] },
+  { name: "landed and retired", branches: [{ branch: "a", exists: false, queue: { state: "landed" } }], says: "1 worktree", keys: ["cleaned-up"] },
   { name: "an inherited tree being checked", branches: [{ branch: "a", inherited: true, queue: { state: "checking" } }, { branch: "b", readiness: { state: "in-progress", dirtyCount: 1 } }], says: "1 checking", keys: ["checking", "uncommitted"] },
   { name: "an inherited tree git finds merged", branches: [{ branch: "a", inherited: true, mergedInto: true }, { branch: "b", readiness: merged }], says: "2 worktrees", keys: ["merged", "merged"] },
   { name: "an inherited tree sent back, beside an own ready one", branches: [{ branch: "a", inherited: true, queue: { state: "needs-fix" } }, { branch: "b", readiness: ready }], says: "1 needs a fix", keys: ["needs-fix", "ready"] },
@@ -166,6 +176,16 @@ test("the table reaches every key a row can have", () => {
     uncommitted: true,
     "no-commits": true,
     ready: true,
+    "ready-to-merge": true,
+    "waiting-ok": true,
+    "landing-specs": true,
+    conflicting: true,
+    "in-progress": true,
+    blocked: true,
+    stale: true,
+    "no-reading": true,
+    "drafts-to-land": true,
+    "cleaned-up": true,
     queued: true,
     checking: true,
     conflict: true,
@@ -233,4 +253,10 @@ test("every mark is still: the row's one moving thing is its Busy dot", () => {
   const rules = [...css.matchAll(/([^{}]*session-branch-status[^{}]*)\{([^}]*)\}/g)];
   assert.ok(rules.length >= 6, "the status rules are found");
   for (const [, sel, body] of rules) assert.doesNotMatch(body!, /animation|transition/, sel!.trim());
+});
+
+test("a branch's line says the chip's word once, whether or not its reason opens with it", () => {
+  assert.equal(branchLine("a", { label: "Ready to merge", reason: "Ready to merge · checks passed" }), "a: Ready to merge · checks passed");
+  assert.equal(branchLine("a", { label: "Blocked", reason: "Blocked" }), "a: Blocked");
+  assert.equal(branchLine("a", { label: "Needs a fix", reason: "Unit tests failed" }), "a: Needs a fix · Unit tests failed");
 });

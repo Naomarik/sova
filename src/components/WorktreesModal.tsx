@@ -39,22 +39,27 @@ export function QueueChip(props: { row: Pick<QueueRow, "label" | "tone" | "live"
 
 /** Land and its ▾: Land asks first (onAsk opens the row's confirm); the ▾ holds Land Without Review (only with a
     review kit), which lands at once, and Land Without Its Specs…, which asks first. */
-export function LandSplit(props: { branch: string; review: boolean; busy: boolean; onAsk(): void; onLand(o?: LandOptions): void; onWithoutSpecs(): void }) {
+export function LandSplit(props: { branch: string; review: boolean; busy: boolean; onAsk(): void; onLand(o?: LandOptions): void; onWithoutSpecs(): void; draftsOnly?: boolean }) {
   return (
     <div class="button-split wt-queue-split">
       <button type="button" class="button button-sm wt-queue-land" data-land="" aria-label={`Land ${props.branch}`} disabled={props.busy} aria-busy={props.busy ? "true" : undefined} onClick={() => props.onAsk()}>
         Land
       </button>
+      {/* Only drafts left: Land lands just them, so the ▾ has nothing to offer without a review kit. */}
+      <Show when={props.review || !props.draftsOnly}>
       <ActionMenu label={`More ways to land ${props.branch}`} title="More ways to land" icon="chevron-down" ghost={false} menuName={`Land ${props.branch}`} returnFocus>
         {(menu) => (
           <>
             <Show when={props.review}>
               <menu.Item label="Land Without Review" aria={`Land ${props.branch} without review`} description="Skips the review step for this merge only." onRun={() => props.onLand({ withoutReview: true })} />
             </Show>
-            <menu.Item label="Land Without Its Specs…" aria={`Land ${props.branch} without its specs`} description="Its spec drafts stay drafts." onRun={() => props.onWithoutSpecs()} />
+            <Show when={!props.draftsOnly}>
+              <menu.Item label="Land Without Its Specs…" aria={`Land ${props.branch} without its specs`} description="Its spec drafts stay drafts." onRun={() => props.onWithoutSpecs()} />
+            </Show>
           </>
         )}
       </ActionMenu>
+      </Show>
     </div>
   );
 }
@@ -119,8 +124,8 @@ export function createLandConfirm() {
 export type LandConfirm = ReturnType<typeof createLandConfirm>;
 
 /** The open confirm, if any, for a row whose Land runs `onLand`. */
-export function LandConfirms(props: { confirm: LandConfirm; branch: string; ahead?: number; target?: string; how?: LandHow; place?: string; busy: boolean; onLand(o?: LandOptions): void }) {
-  const words = () => landConfirmWords(props.branch, props.ahead, props.target, props.how, props.place);
+export function LandConfirms(props: { confirm: LandConfirm; branch: string; ahead?: number; target?: string; how?: LandHow; place?: string; drafts?: number; busy: boolean; onLand(o?: LandOptions): void }) {
+  const words = () => landConfirmWords(props.branch, props.ahead, props.target, props.how, props.place, props.drafts);
   return (
     <Switch>
       <Match when={props.confirm.ask() === "land"}>
@@ -208,6 +213,8 @@ export function WorktreeQueueRow(props: {
     queueMicrotask(() => document.getElementById(paneScopedId(scope, "composer-input"))?.focus());
   };
   const row = () => queueRow(w());
+  /** Only spec drafts left: Land lands just them. */
+  const onlyDrafts = () => (row().key === "drafts-to-land" ? (w().readiness?.draftsLeft ?? 1) : undefined);
   const projectId = () => projectIdOf(w());
   const buttons = () => rowButtons(row(), projectId());
   const entry = () => w().queue;
@@ -343,7 +350,7 @@ export function WorktreeQueueRow(props: {
         <Show when={error()}>{(m) => <p class="list-meta wt-queue-error" role="alert">{m()}</p>}</Show>
       </div>
       {/* A confirm replaces the row's actions while it is open. */}
-      <LandConfirms confirm={confirm} branch={w().branch} ahead={w().mergeStats?.ahead} target={w().mergeProject?.target} how={w().mergeProject?.how} place={placeOf(w())} busy={busy()} onLand={doLand} />
+      <LandConfirms confirm={confirm} branch={w().branch} ahead={w().mergeStats?.ahead} target={w().mergeProject?.target} how={w().mergeProject?.how} place={placeOf(w())} drafts={onlyDrafts()} busy={busy()} onLand={doLand} />
       <Show when={!confirm.ask()}>
       <div class="wt-queue-act">
         <Show when={props.review && canReviewChanges(w())}>
@@ -361,7 +368,7 @@ export function WorktreeQueueRow(props: {
           </button>
         </Show>
         <Show when={buttons().includes("Land") && !row().decision}>
-          <LandSplit branch={w().branch} review={review()} busy={busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} />
+          <LandSplit branch={w().branch} review={review()} busy={busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!onlyDrafts()} />
         </Show>
         <Show when={buttons().includes("Set Up Queue")}>
           <a class="button button-sm" href={projectTabHref(projectId()!, "merge-queue")} title="This project's merge queue isn't set up yet.">

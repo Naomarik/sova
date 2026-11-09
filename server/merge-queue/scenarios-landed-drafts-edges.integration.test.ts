@@ -23,7 +23,7 @@ const ancestor = async (commit: string, ref: string, cwd: string) => {
     return false;
   }
 };
-const LOST = /spec drafts? didn't make it/;
+const LOST = /spec drafts? not landed/;
 type DraftJson = { promotions: unknown[]; landed?: { commit: string; hash: string; target: string } };
 const draftFile = (checkout: string, name: string) => join(checkout, ".sova/spec/drafts", name, "draft.json");
 const draftJson = (checkout: string, name: string) => JSON.parse(readFileSync(draftFile(checkout, name), "utf8")) as DraftJson;

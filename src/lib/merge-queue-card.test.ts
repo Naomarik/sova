@@ -141,6 +141,12 @@ test("newer commits are said only on a landed card: while its chat fixes it, the
   assert.equal(cardActionLabel("try-again"), "Try Again");
 });
 
+test("Land Again only for real work the server counted, never once the entry settled", () => {
+  assert.deepEqual(cardActions({ state: "landed", newerCommits: 1 }), ["land-again"]);
+  assert.deepEqual(cardActions({ state: "landed" }), []);
+  assert.deepEqual(cardActions({ state: "landed", newerCommits: 1, settled: "gone" as never }), []);
+});
+
 test("the card's place line: its target while in line, merged once landed, none on a card from before", () => {
   const place = { label: "AmalMoney", root: "/w/sova" };
   assert.equal(placeLine(cardPlaceRow(card({ place }))), "AmalMoney · merges into master");

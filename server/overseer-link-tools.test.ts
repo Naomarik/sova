@@ -333,7 +333,7 @@ describe("sova_create_session with host", () => {
     // Without it, no create says link: an ordinary session.
     const plain = harness({ peerRoutes: ok });
     await plain.run("sova_create_session", { host: "vps", cwd: "/srv/app" });
-    assert.deepEqual(plain.remote[0]!.body, { cwd: "/srv/app" });
+    assert.deepEqual(plain.remote[0]!.body, { cwd: "/srv/app", byOverseer: true });
   });
 
   test("the tools tell the Overseer that any existing session can be linked, and that link: true is the cheaper way for one it creates only to link", async () => {

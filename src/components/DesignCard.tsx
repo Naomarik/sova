@@ -160,6 +160,14 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
     }
   };
   const groups = () => designGroups(draft().models);
+  // Rows are keyed by name, so a click keeps its row (and the keyboard focus on it).
+  const groupIds = () => groups().map((g) => g.id);
+  // What the main chat picked comes first; the order is set once, so a row never jumps as it's ticked.
+  const modelOrder = untrack(() => [...draft().models].sort((a, b) => Number(b.design || b.coordinator) - Number(a.design || a.coordinator)).map((m) => m.ref));
+  const modelRefs = () => {
+    const known = new Set(draft().models.map((m) => m.ref));
+    return [...modelOrder.filter((r) => known.has(r)), ...draft().models.map((m) => m.ref).filter((r) => !modelOrder.includes(r))];
+  };
   return (
     <>
       <div class="card-head">
@@ -174,67 +182,76 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
         <div class="stack-2">
           <h4 class="design-setup-label">Models</h4>
           <div class="design-setup-groups" role="group" aria-label="Model groups">
-            <For each={groups()}>
-              {(g) => (
-                <label class="toggle design-toggle-inline">
-                  <input
-                    type="checkbox"
-                    checked={g.on === g.count}
-                    ref={(el) => createEffect(() => (el.indeterminate = g.on > 0 && g.on < g.count))}
-                    onChange={(e) => change(toggleGroup(draft(), g.id, e.currentTarget.checked))}
-                  />
-                  <span class="toggle-box" />
-                  <span>{g.name}</span>
-                </label>
-              )}
+            <For each={groupIds()}>
+              {(id) => {
+                const g = () => groups().find((x) => x.id === id)!;
+                return (
+                  <label class="toggle design-toggle-inline">
+                    <input
+                      type="checkbox"
+                      checked={g().on === g().count}
+                      ref={(el) => createEffect(() => (el.indeterminate = g().on > 0 && g().on < g().count))}
+                      onChange={(e) => change(toggleGroup(draft(), id, e.currentTarget.checked))}
+                    />
+                    <span class="toggle-box" />
+                    <span>{g().name}</span>
+                  </label>
+                );
+              }}
             </For>
           </div>
           <ul class="list design-model-list" aria-label="Models">
-            <For each={draft().models}>
-              {(m) => (
-                <li class="design-model-row">
-                  <span class="design-model-name">
-                    {m.name}
-                    <Show when={!m.vision}>
-                      <span class="text-muted design-model-note" title="This model can't read images. It works from a text outline of the page.">
-                        {" "}
-                        · text only
-                      </span>
-                    </Show>
-                  </span>
-                  <label class="toggle toggle-switch design-model-toggle">
-                    <span>Design</span>
-                    <input type="checkbox" checked={m.design} onChange={(e) => change(toggleModel(draft(), m.ref, e.currentTarget.checked))} />
-                    <span class="toggle-box" />
-                  </label>
-                  <label class="toggle design-model-toggle" title="1 model coordinates the team. It can coordinate without designing.">
-                    <span>Coordinator</span>
-                    <input
-                      type="checkbox"
-                      checked={m.coordinator}
-                      onChange={(e) => {
-                        e.currentTarget.checked = true;
-                        change(moveCoordinator(draft(), m.ref));
-                      }}
-                    />
-                    <span class="toggle-box" />
-                  </label>
-                </li>
-              )}
+            <For each={modelRefs()}>
+              {(ref) => {
+                const m = () => draft().models.find((x) => x.ref === ref)!;
+                return (
+                  <li class="design-model-row">
+                    <span class="design-model-name">
+                      {m().name}
+                      <Show when={!m().vision}>
+                        <span class="text-muted design-model-note" title="This model can't read images. It works from a text outline of the page.">
+                          {" "}
+                          · text only
+                        </span>
+                      </Show>
+                    </span>
+                    <label class="toggle toggle-switch design-model-toggle">
+                      <span>Design</span>
+                      <input type="checkbox" checked={m().design} onChange={(e) => change(toggleModel(draft(), ref, e.currentTarget.checked))} />
+                      <span class="toggle-box" />
+                    </label>
+                    <label class="toggle design-model-toggle" title="1 model coordinates the team. It can coordinate without designing.">
+                      <span>Coordinator</span>
+                      <input
+                        type="checkbox"
+                        checked={m().coordinator}
+                        onChange={(e) => {
+                          e.currentTarget.checked = true;
+                          change(moveCoordinator(draft(), ref));
+                        }}
+                      />
+                      <span class="toggle-box" />
+                    </label>
+                  </li>
+                );
+              }}
             </For>
           </ul>
         </div>
         <div class="stack-2">
           <h4 class="design-setup-label">Directions</h4>
           <div class="design-directions">
-            <For each={draft().directions}>
-              {(d) => (
-                <label class="toggle design-toggle-inline">
-                  <input type="checkbox" checked={d.on} onChange={(e) => change(toggleDirection(draft(), d.name, e.currentTarget.checked))} />
-                  <span class="toggle-box" />
-                  <span>{d.name}</span>
-                </label>
-              )}
+            <For each={draft().directions.map((d) => d.name)}>
+              {(name) => {
+                const d = () => draft().directions.find((x) => x.name === name)!;
+                return (
+                  <label class="toggle design-toggle-inline">
+                    <input type="checkbox" checked={d().on} onChange={(e) => change(toggleDirection(draft(), name, e.currentTarget.checked))} />
+                    <span class="toggle-box" />
+                    <span>{name}</span>
+                  </label>
+                );
+              }}
             </For>
           </div>
         </div>
@@ -440,7 +457,7 @@ export function DesignThumb(props: { d: DesignRecord; store: DesignStore; cacheK
               <DesignSealedFrame html={html()!} motion={false} title={title()} onDrawn={() => setDrawn(true)} />
             </div>
           </Show>
-          <Show when={writing() || (html() !== null && !drawn() && live())}>
+          <Show when={writing() || props.d.status === "writing" || (html() !== null && !drawn() && live())}>
             <DesignStreamFrame text={live()?.text ?? ""} title={title()} />
           </Show>
         </Show>

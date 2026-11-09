@@ -130,7 +130,7 @@ export function DesignStreamFrame(props: { text: string; title: string }) {
       </Show>
       <Show when={!drawable()}>
         <div class="design-frame-note" role="status">
-          Writing styles · about {tokensOfText(props.text.length).toLocaleString("en-US")} tokens
+          {props.text ? `Writing styles · about ${tokensOfText(props.text.length).toLocaleString("en-US")} tokens` : "Starting the page"}
         </div>
       </Show>
     </>

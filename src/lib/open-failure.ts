@@ -8,6 +8,7 @@
 // Anything else it refuses with (an older server's wording) is shown
 // verbatim with the same way back.
 
+import type { CwdFallback } from "../../shared/protocol";
 import { remotePlaceOf, type TargetInfo } from "./remote-session";
 
 export type OpenFailureKind =
@@ -111,14 +112,7 @@ export function openFailureView(summary: OpenFailureSession | undefined, error: 
 }
 
 /** A chat running in the home folder because its stored local folder is gone (hello `cwdFallback`). */
-export interface CwdFallbackInfo {
-  original: string;
-  cwd: string;
-  /** Its worktree retired (§chat.worktrees/retirement): a message brings it back. */
-  retired?: { branch: string; target: string; kept?: true };
-  /** Files stayed in its folder after the worktree retired, not yet proved safe to delete. */
-  held?: true;
-}
+export type CwdFallbackInfo = CwdFallback;
 
 /**
  * The warning while a chat runs in the home folder instead of its own (§app.shell/missing-folder-home):

@@ -84,6 +84,18 @@ describe("the Context tab's groups", () => {
       assert.equal(line.notLoadedFrom, -1, "nothing here is left out of the total");
     });
 
+    test("a partly read skill sits after the read ones, never under Not read yet; manual-only and not-offered skills keep Partly read", () => {
+      const partly = (name: string, more: Partial<ContextPart> = {}): ContextPart => ({ ...skill(name, 300, false), linesRead: 140, lines: 555, ...more });
+      const line = layoutOf(skill("unread", 900, false), partly("part"), skill("whole", 100, true)).lines.find((x) => x.kind === "skills")!;
+      assert.deepEqual(line.parts.map((p) => p.label), ["whole", "part", "unread"]);
+      assert.equal(line.notReadFrom, 2);
+      for (const p of [partly("a"), partly("b", { manualOnly: true }), partly("c", { offered: false, folder: "pkg" })]) {
+        const meta = partMeta(p);
+        assert.equal(meta.chip?.word, "Partly read");
+        assert.equal(meta.beside, "140 of 555 lines");
+      }
+    });
+
     test("a skill not read yet stays in the line's size, its count and Other, exactly as if it were read", () => {
       const skills = [skill("a", 1_500, true), skill("b", 500, false)];
       const mixed = layoutOf(...skills);

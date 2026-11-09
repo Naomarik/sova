@@ -28,7 +28,7 @@ A project mode **never turns itself on**. It is on only when someone turned it o
 from its mode menu or a typed `/mode`, or [the Overseer](/docs/overseer/), whose approval covers its tools and
 commands but not its hooks, or a script or a chat's agent, which turn on only a version already
 approved. An extension can't turn one on. A mode file has no way to say
-"on by default". Save as default never saves a project mode, and neither a profile, an automation,
+"on by default". **Make {name} the Default** never saves a project mode, and neither a profile, an automation,
 nor a project's coding session can turn one on.
 
 ## Where Sova looks

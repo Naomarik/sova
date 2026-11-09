@@ -1,7 +1,7 @@
 {
   "families": {
     "overseer": {
-      "bytes": 94821,
+      "bytes": 94853,
       "tools": [
         {
           "name": "sova_attention",
@@ -554,7 +554,7 @@
               },
               "worktrees": {
                 "type": "string",
-                "description": "With \"remove\" (archiving only): after archiving each session, also remove its own git worktrees that have nothing left to land or no commits of their own: the folder, then the branch, its last commit kept and restorable. One that has work to land or anything using it is kept, with the reason. A session with uncommitted changes in one is refused whole. On a test copy of Sova, a worktree outside its own test data is kept, and says so, and it can't refuse the session. Omit to leave worktrees alone.",
+                "description": "With \"remove\" (archiving only): after archiving each session, also remove its own git worktrees that have nothing left to land or no commits of their own: the folder, then the branch if its project deletes branches, its last commit kept and restorable. One that has work to land or anything using it is kept, with the reason. A session with uncommitted changes in one is refused whole. On a test copy of Sova, a worktree outside its own test data is kept, and says so, and it can't refuse the session. Omit to leave worktrees alone.",
                 "enum": [
                   "remove"
                 ]
@@ -2957,7 +2957,7 @@
       ]
     },
     "overseer+copies": {
-      "bytes": 100606,
+      "bytes": 100638,
       "tools": [
         {
           "name": "sova_attention",
@@ -3510,7 +3510,7 @@
               },
               "worktrees": {
                 "type": "string",
-                "description": "With \"remove\" (archiving only): after archiving each session, also remove its own git worktrees that have nothing left to land or no commits of their own: the folder, then the branch, its last commit kept and restorable. One that has work to land or anything using it is kept, with the reason. A session with uncommitted changes in one is refused whole. On a test copy of Sova, a worktree outside its own test data is kept, and says so, and it can't refuse the session. Omit to leave worktrees alone.",
+                "description": "With \"remove\" (archiving only): after archiving each session, also remove its own git worktrees that have nothing left to land or no commits of their own: the folder, then the branch if its project deletes branches, its last commit kept and restorable. One that has work to land or anything using it is kept, with the reason. A session with uncommitted changes in one is refused whole. On a test copy of Sova, a worktree outside its own test data is kept, and says so, and it can't refuse the session. Omit to leave worktrees alone.",
                 "enum": [
                   "remove"
                 ]

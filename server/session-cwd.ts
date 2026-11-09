@@ -1,6 +1,7 @@
 // Where a stored session opens when its local working directory is gone (§app.shell/missing-folder-home).
 // Pure apart from the one stat: what a folder is now, and the note the agent is given.
-import { statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import type { CwdFallback } from "../shared/protocol";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
 import { heldPartialEntry, readLedger, retiredEntryCovering, type RemovedWorktree } from "./removed-worktrees";
@@ -29,9 +30,22 @@ export function probeFolder(dir: string): FolderProbe {
  * A fallback's facts for the banner, when the stored folder is in a retired worktree nothing has brought
  * back. Reads the ledger only: viewing never brings a folder back (§chat.worktrees/retirement).
  */
-export function retiredFallbackFacts(original: string, ledger: () => readonly RemovedWorktree[] = readLedger): CwdFallback["retired"] | undefined {
+export function retiredFallbackFacts(original: string, ledger: () => readonly RemovedWorktree[] = readLedger, branchThere: (commonDir: string, branch: string) => boolean = refThere): CwdFallback["retired"] | undefined {
   const e = retiredEntryCovering(ledger(), canonical(original));
-  return e ? { branch: e.branch, target: e.target ?? "master" } : undefined;
+  if (!e) return undefined;
+  // A kept branch deleted since comes back fresh, so it reads as deleted.
+  return { branch: e.branch, target: e.target ?? "master", ...(e.branchKept && branchThere(e.commonDir, e.branch) ? { kept: true as const } : {}) };
+}
+
+/** Whether a branch's ref exists, from git's own files: this runs at an open, with no process to spare. A doubt reads as no. */
+function refThere(commonDir: string, branch: string): boolean {
+  const ref = `refs/heads/${branch}`;
+  if (existsSync(join(commonDir, ref))) return true;
+  try {
+    return readFileSync(join(commonDir, "packed-refs"), "utf8").split("\n").some((l) => l.endsWith(` ${ref}`));
+  } catch {
+    return false;
+  }
 }
 
 /** Whether a folder that's there is what's left of a retired worktree, still held: a chat opens in the home folder instead. */
@@ -47,7 +61,7 @@ export function cwdFallbackNote(f: CwdFallback): string {
     f.held
       ? `This session was started in ${f.original}. Its worktree was retired, but files stayed in that folder and Sova hasn't proved them safe to delete, so nothing runs there for now. Once it has, a message brings the worktree back, fresh from its target.`
       : f.retired
-      ? `This session was started in ${f.original}. Its worktree was retired after ${f.retired.branch} landed, so that folder doesn't exist right now. Your next message brings it back, fresh from ${f.retired.target}.`
+      ? `This session was started in ${f.original}. Its worktree was retired after ${f.retired.branch} landed, so that folder doesn't exist right now. Your next message brings it back, ${f.retired.kept ? `on ${f.retired.branch} as it was. It may be behind ${f.retired.target}.` : `fresh from ${f.retired.target}.`}`
       : `This session was started in ${f.original}, and that folder no longer exists on this machine (it was deleted or moved).`,
     `The session now runs in the home folder, ${f.cwd}: that is your working directory, and every tool runs there.`,
     `Earlier messages in this conversation describe files, a repository and a state in ${f.original} that may no longer exist.`,

@@ -156,6 +156,8 @@ export interface RetireDeps {
   pendingFile(): string;
   /** After the first pass: post its summary. False or a throw: it wasn't posted, so the next pass asks again with the same summary. */
   firstPassDone?(summary: PassResult): Promise<boolean | void> | boolean | void;
+  /** One of the merge queue's own chats made this folder, by who made it: a leftover with no worktree left to classify. Absent or a doubt: not proved. */
+  queueMade?(path: string): Promise<boolean> | boolean;
   /** Whether this project deletes branches when cleaning up. Absent: read from its definition at the target's head (`deleteBranchesOn`). A doubt is false. */
   deleteBranches?(main: string): Promise<boolean> | boolean;
   /** `<state root>/retire-first-pass.json`: beside the pending file unless named. */
@@ -689,7 +691,18 @@ export async function leftoverCandidates(d: Pick<RetireDeps, "git" | "ledger">, 
   return [...out.values()];
 }
 
-async function retireLeftover(d: RetireDeps, repo: RepoTrees, c: { path: string; branch?: string }): Promise<TreeOutcome> {
+/** Whether a leftover folder is proved one of the queue's own: the ledger says so, or the queue's chats' records do. A doubt is no. */
+async function leftoverQueueMade(d: RetireDeps, repo: Pick<RepoTrees, "commonDir">, c: { path: string; branch?: string }): Promise<boolean> {
+  const e = [...d.ledger()].reverse().find((x) => x.commonDir === repo.commonDir && x.path === c.path);
+  if (e?.queueMade && (!c.branch || e.branch === c.branch)) return true;
+  try {
+    return (await d.queueMade?.(c.path)) === true;
+  } catch {
+    return false;
+  }
+}
+
+async function retireLeftover(d: RetireDeps, repo: RepoTrees, c: { path: string; branch?: string }, madeByQueue: boolean): Promise<TreeOutcome> {
   const { why, left } = await turnIn(repo.commonDir, async () => {
     const p = await proofOf(d, repo.main, c.path, c.branch);
     if (p.why === null) claim(repo.commonDir, c.path);
@@ -709,8 +722,8 @@ async function retireLeftover(d: RetireDeps, repo: RepoTrees, c: { path: string;
     }
   }
   const keptChats = left?.testCopy?.keepAside.length ?? 0;
-  const keepBranch = !!tip && !(await deleteBranchesOn(d, repo));
-  const line: RemovedWorktree = { v: 1, path: c.path, branch: branch ?? "", commonDir: repo.commonDir, tip, merged: "leftover", branchDeleted: !tip, at: d.now(), retired: true, ...(tip ? { pinned: true as const } : {}), ...(keptChats ? { keptChats } : {}), ...(keepBranch ? { branchKept: true as const } : {}) };
+  const keepBranch = !!tip && !madeByQueue && !(await deleteBranchesOn(d, repo));
+  const line: RemovedWorktree = { v: 1, path: c.path, branch: branch ?? "", commonDir: repo.commonDir, tip, merged: "leftover", branchDeleted: !tip, at: d.now(), retired: true, ...(tip ? { pinned: true as const } : {}), ...(keptChats ? { keptChats } : {}), ...(keepBranch ? { branchKept: true as const } : {}), ...(madeByQueue ? { queueMade: true as const } : {}) };
   // A chat in this folder finds it again through the ledger: a stop right after the delete mustn't leave that unsaid (finishIntents).
   noteIntent(d, line);
   const failed = deleteProvedFolder(c.path);
@@ -726,7 +739,7 @@ async function retireLeftover(d: RetireDeps, repo: RepoTrees, c: { path: string;
     branchDeleted = del.deleted;
     if (del.deleted) d.markLedger((x) => x.commonDir === line.commonDir && x.path === line.path && x.at === line.at && x.tip === line.tip, { branchDeleted: true });
   }
-  const row: RetiredRowOut = { path: c.path, branch: branch ?? "", tip, merged: "leftover", branchDeleted, ...(keepBranch ? { branchKept: true as const } : {}), ...(left ? { went: { rebuildable: left.rebuildable, ...(left.testCopy ? { testCopy: left.testCopy } : {}) } } : {}) };
+  const row: RetiredRowOut = { path: c.path, branch: branch ?? "", tip, merged: "leftover", branchDeleted, ...(keepBranch ? { branchKept: true as const } : {}), ...(madeByQueue ? { queueMade: true as const } : {}), ...(left ? { went: { rebuildable: left.rebuildable, ...(left.testCopy ? { testCopy: left.testCopy } : {}) } } : {}) };
   forgetSummary(repo.commonDir);
   return { state: "retired", row };
   } finally {
@@ -915,11 +928,12 @@ async function passRepo(d: RetireDeps, root: string, records: readonly TreeRecor
     await finishBranches(d, repo);
     const leftovers = await leftoverCandidates(d, repo, records);
     await pool(leftovers, CONCURRENCY, async (c) => {
-      const r = await retireLeftover(d, repo, c).catch((err: Error): TreeOutcome => ({ state: "held", row: heldRow(c, { kind: "other", why: `It failed: ${err.message.split("\n")[0]}` }) }));
+      const own = await leftoverQueueMade(d, repo, c);
+      const r = await retireLeftover(d, repo, c, own).catch((err: Error): TreeOutcome => ({ state: "held", row: heldRow(c, { kind: "other", why: `It failed: ${err.message.split("\n")[0]}` }) }));
       if (r.state === "retired") {
         out.retired.push(r.row);
         out.leftovers.push(c.path);
-      } else if (r.state === "held") out.held.push(r.row);
+      } else if (r.state === "held") (own ? out.queueOwn.push({ path: c.path, ...(c.branch ? { branch: c.branch } : {}) }) : out.held.push(r.row));
     });
     report();
     if (firstPass) {
@@ -1184,6 +1198,7 @@ export function realRetireDeps(): RetireDeps {
     testChatsAside: () => join(stateRoot(), "retired-test-chats"),
     realChatsDir: () => join(agentRoot(), "sessions"),
     platform: () => process.platform,
+    queueMade: async (path) => (await import("./merge-queue/wire")).worktreeQueueMade(path),
   };
   return real;
 }

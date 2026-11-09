@@ -5173,8 +5173,8 @@ export type SessionBranchQueue = import("./merge-queue").BranchQueueFacts;
 export interface CwdFallback {
   original: string;
   cwd: string;
-  /** The folder retired (§chat.worktrees/retirement): a message brings it back, fresh from `target`. */
-  retired?: { branch: string; target: string };
+  /** The folder retired (§chat.worktrees/retirement): a message brings it back, fresh from `target`, or with `kept` on its branch as it was. */
+  retired?: { branch: string; target: string; kept?: true };
   /** The folder is still there: what a retirement's stopped delete left, not yet proved safe to delete (§chat.worktrees/retirement). */
   held?: true;
 }

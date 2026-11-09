@@ -7,7 +7,7 @@ import * as path from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import type { ChildProcess } from "node:child_process";
 import {
-	applyResultUsage, buildClaudeArgv, buildDiscoveryArgv, ClaudePrivateFiles, ClaudeTransport, claudeEnv,
+	applyResultUsage, buildClaudeArgv, ClaudePrivateFiles, ClaudeTransport, claudeEnv,
 	contextTokensFrom, DEFAULT_CLAUDE_TOOLS, isMessageStart, isUncorrelatedResult, mcpServerFailure, NO_ATTRIBUTION, SOVA_FIXED_SETTINGS,
 	parseCanUseTool, permissionDenialsFrom, resultError, resultMatches, textBlocksText, textDelta,
 	validEnv, validMcpServers, type ClaudeStreamEvent, type ClaudeTransportHooks, type ClaudeUsage,
@@ -254,17 +254,6 @@ test("argv validation fails closed, in the order a launcher must report it", () 
 	assert.deepEqual(argvFor({ env: { "BAD NAME": "v" } }), { error: "Invalid env: names must be [A-Za-z_][A-Za-z0-9_]*, values strings" });
 	// mcpServers is checked before env, so a launcher never reports the second first.
 	assert.deepEqual(argvFor({ mcpServers: { "bad name": {} }, env: { "BAD NAME": "v" } }).error, "Invalid mcpServers: names must be [A-Za-z0-9_-], commands/args/env plain strings");
-});
-
-test("discovery argv asks only for initialize: no tools, settings or prompts", () => {
-	const args = buildDiscoveryArgv();
-	assert.equal(args[args.indexOf("--tools") + 1], "");
-	assert.equal(args[args.indexOf("--setting-sources") + 1], "");
-	assert.deepEqual(JSON.parse(args[args.indexOf("--settings") + 1]), SOVA_FIXED_SETTINGS, "only the fixed settings: auto-memory off");
-	assert.equal(args[args.indexOf("--permission-mode") + 1], "dontAsk");
-	assert.equal(args[args.indexOf("--permission-prompts") + 1], "none");
-	assert.ok(args.includes("--strict-mcp-config"));
-	assert.ok(!args.includes("--replay-user-messages"), "discovery never sends a user message");
 });
 
 // ---------------------------------------------------------------------------

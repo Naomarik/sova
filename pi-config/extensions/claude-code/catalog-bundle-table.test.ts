@@ -114,14 +114,17 @@ test("a table with most built-in ids is whole, and just under the floor isn't", 
 test("a field renamed across the whole table is no data; one row lacking it takes the default", () => {
 	const noCaps = REAL.rows.map((x) => x.replace(/,?capabilities:\[[^\]]*\]/, ""));
 	const noOutput = REAL.rows.map((x) => x.replace(/,?max_output_tokens:\{[^}]*\}/, ""));
+	const noContext = REAL.rows.map((x) => x.replace(/,?context:\{[^}]*\}/, ""));
 	const reason = (rows: string[]) => {
 		const p = parseClaudeTable(programText(rows, REAL.latestPerFamily));
 		return p.ok ? "parsed" : p.reason;
 	};
 	assert.match(reason(noCaps), /capabilities/);
 	assert.match(reason(noOutput), /output cap/);
+	assert.match(reason(noContext), /a context/);
 	assert.deepEqual(one("").efforts, []);
 	assert.equal(one("").maxOutput, 64_000);
+	assert.equal(one("").window, 200_000);
 });
 
 // ---- what Sova takes

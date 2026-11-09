@@ -42,6 +42,7 @@ const NUMBER = "(\\d+(?:\\.\\d+)?(?:e\\d+)?)";
 const WINDOW = new RegExp(`(?:^|,)window:${NUMBER}`);
 const MAX_OUTPUT = new RegExp(`max_output_tokens:\\{default:${NUMBER}`);
 const CAPABILITIES = /[,{]capabilities:\[/;
+const CONTEXT = /[,{]context:\{([^{}]*)\}/;
 const ROW_START = /\{id:"(claude-[a-z0-9-]+)",family:"([a-z]+)",display_name:"([^"]+)"/g;
 
 /** The balanced `{…}` at `from`, strings respected; undefined when it doesn't close within MAX_ROW. */
@@ -79,7 +80,7 @@ function effortsOf(row: string): string[] {
 
 function rowOf(m: RegExpMatchArray, row: string): ClaudeTableRow | string {
 	const id = m[1]!;
-	const context = /[,{]context:\{([^{}]*)\}/.exec(row)?.[1];
+	const context = CONTEXT.exec(row)?.[1];
 	let window = CLAUDE_DEFAULT_WINDOW;
 	if (context !== undefined) {
 		const stated = WINDOW.exec(context);
@@ -114,6 +115,7 @@ export function parseClaudeTable(text: string): ClaudeTableParse {
 	const rows = new Map<string, ClaudeTableRow>();
 	let anyCapabilities = false;
 	let anyOutputCap = false;
+	let anyContext = false;
 	for (const m of text.matchAll(ROW_START)) {
 		if (rows.has(m[1]!)) continue;
 		const object = objectAt(text, m.index);
@@ -123,11 +125,13 @@ export function parseClaudeTable(text: string): ClaudeTableParse {
 		rows.set(row.id, row);
 		anyCapabilities ||= CAPABILITIES.test(object);
 		anyOutputCap ||= MAX_OUTPUT.test(object);
+		anyContext ||= CONTEXT.test(object);
 	}
 	if (!rows.size) return { ok: false, reason: "no model rows found" };
 	// One row may lack either; a whole table lacking one means the field was renamed.
 	if (!anyCapabilities) return { ok: false, reason: "no row has a capabilities list" };
 	if (!anyOutputCap) return { ok: false, reason: "no row has an output cap" };
+	if (!anyContext) return { ok: false, reason: "no row has a context" };
 	const body = /latest_per_family:\{([^{}]*)\}/.exec(text)?.[1] ?? "";
 	const latest: Record<string, string> = {};
 	for (const m of body.matchAll(/(\w+):"([^"]+)"/g)) {

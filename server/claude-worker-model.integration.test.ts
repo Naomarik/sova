@@ -31,7 +31,7 @@ const project = join(root, "project");
 mkdirSync(project, { recursive: true });
 
 await import("./testing/in-process-chats");
-const { acquireChat, disposeAllChats, disposeHeldChat, setWorkerSpec, warmChatRuntime } = await import("./chat-manager");
+const { acquireChat, disposeAllChats, disposeHeldChat, getModelRuntime, setWorkerSpec, warmChatRuntime } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 
 before(async () => {
@@ -84,6 +84,16 @@ async function startsOn(id: string): Promise<void> {
 
 test("a shape-valid id Sova doesn't know starts a worker on that model", async () => {
   await startsOn("claude-nova-1-2");
+});
+
+test("a model learned after this process warmed up starts a worker, with the table's limits", async () => {
+  const id = "claude-fable-9-1";
+  // After the warm-up, as a real one is: Sova's server writes the store, the chat process follows it.
+  writeFileSync(join(agentDir, "sova", "claude-models.json"), JSON.stringify({ v: 1, models: [{ id, window: 777_000, maxOutput: 9_000, efforts: ["low"] }], latest: { fable: id } }));
+  await startsOn(id);
+  const registered = (await getModelRuntime()).getModel("claude-code-cli", id);
+  assert.equal(registered?.name, "Fable 9.1", "named by the rule");
+  assert.equal(registered?.contextWindow, 777_000, "the table's window: an unknown id would be 200,000");
 });
 
 test("a built-in model still starts a worker (the control)", async () => {

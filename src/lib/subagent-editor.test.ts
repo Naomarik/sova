@@ -63,7 +63,7 @@ test("each closed section's summary says what is inside", () => {
 });
 
 test("a summary names a model the way the list's footprint does", () => {
-  for (const [id, short] of ([["opus[1m]", "Opus 5.5"], ["claude-fable-5-1[1m]", "Fable 5.1"], ["claude-sonnet-4-6", "Sonnet 4.6"], ["claude-code-cli/claude-haiku-4-5", "Haiku 4.5"], ["claude-opus-6", "claude-opus-6"], ["zai/glm-5.3", "glm-5.3"], ["ollama-cloud/deepseek-v4.1-flash", "deepseek-v4.1-flash"]] as [string, string][]))
+  for (const [id, short] of ([["opus[1m]", "Opus 5.5"], ["claude-fable-5-1[1m]", "Fable 5.1"], ["claude-sonnet-4-6", "Sonnet 4.6"], ["claude-code-cli/claude-haiku-4-5", "Haiku 4.5"], ["claude-opus-6", "Opus 6"], ["zai/glm-5.3", "glm-5.3"], ["ollama-cloud/deepseek-v4.1-flash", "deepseek-v4.1-flash"]] as [string, string][]))
     assert.equal(footprintModel(id), short, id);
   // The copy is the extension's rule: pin the two bodies together so neither drifts alone.
   const ext = readFileSync(new URL("../../pi-config/extensions/subagents/subagent-profiles.ts", import.meta.url), "utf8");

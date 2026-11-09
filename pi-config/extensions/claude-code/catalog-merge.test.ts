@@ -37,7 +37,7 @@ test("a merged model is known everywhere, its identity from the rule and its lim
 	assert.equal(claudeContextWindow(FABLE_NEXT.id), CLAUDE_DEFAULT_WINDOW);
 	assert.ok(unverifiedClaudeNote(FABLE_NEXT.id));
 
-	assert.equal(mergeClaudeCatalog({ models: [FABLE_NEXT], latest: { fable: FABLE_NEXT.id } }), true);
+	assert.equal(mergeClaudeCatalog({ models: [FABLE_NEXT] }), true);
 
 	assert.ok(ids().includes(FABLE_NEXT.id));
 	assert.deepEqual(
@@ -72,7 +72,7 @@ test("a built-in entry the table lists without a field takes the same defaults a
 });
 
 test("the same data merged again changes nothing, and each merge replaces the last", () => {
-	const data: ClaudeCatalogData = { models: [FABLE_NEXT], latest: { fable: FABLE_NEXT.id } };
+	const data: ClaudeCatalogData = { models: [FABLE_NEXT] };
 	assert.equal(mergeClaudeCatalog(data), true);
 	const once = JSON.stringify(claudeOffer());
 	assert.equal(mergeClaudeCatalog(JSON.parse(JSON.stringify(data))), false, "unchanged data reports no change");
@@ -82,19 +82,20 @@ test("the same data merged again changes nothing, and each merge replaces the la
 	assert.equal(mergeClaudeCatalog({ models: [] }), false);
 });
 
-test("current first, each family newest first, a new family after the known ones", () => {
-	mergeClaudeCatalog({ models: [NOVA, FABLE_NEXT, { id: "claude-opus-4-9" }], latest: { fable: FABLE_NEXT.id, nova: NOVA.id }, tested: [FABLE_NEXT.id, NOVA.id] });
+test("each family's newest offered comes first, known families before new ones, then the rest newest first", () => {
+	mergeClaudeCatalog({ models: [NOVA, FABLE_NEXT, { id: "claude-opus-4-9" }], tested: [NOVA.id] });
 	const offer = claudeOffer();
-	const firstPrevious = offer.findIndex((m) => m.status === "previous");
-	assert.ok(firstPrevious > 0);
-	assert.ok(offer.slice(firstPrevious).every((m) => m.status === "previous"), "no current entry after a previous one");
-	assert.deepEqual(offer.filter((m) => m.status === "current").map((m) => m.family), ["opus", "sonnet", "fable", "haiku", "nova"]);
-	const v = (s: string) => s.split(".").map(Number);
-	for (const family of new Set(offer.map((m) => m.family))) {
-		const versions = offer.filter((m) => m.family === family && m.status === "previous").map((m) => v(m.version));
-		for (let i = 1; i < versions.length; i++) assert.ok(versions[i - 1]![0]! > versions[i]![0]! || (versions[i - 1]![0] === versions[i]![0] && (versions[i - 1]![1] ?? 0) > (versions[i]![1] ?? 0)), `${family} newest first`);
+	const families = [...new Set(CLAUDE_MODELS.map((m) => m.family)), "nova"];
+	const heads = offer.slice(0, families.length);
+	assert.deepEqual(heads.map((m) => m.family), families);
+	assert.equal(heads.find((m) => m.family === "fable")?.id, FABLE_NEXT.id, "the newest, though it hasn't passed");
+	assert.equal(claudeModel(FABLE_NEXT.id)?.status, "previous", "and it isn't its family's current entry");
+	const rest = offer.slice(families.length);
+	for (const family of families) {
+		const versions = rest.filter((m) => m.family === family).map((m) => m.version);
+		for (let i = 1; i < versions.length; i++) assert.ok(compareClaudeVersions(versions[i - 1]!, versions[i]!) > 0, `${family}: ${versions.join(", ")}`);
 	}
-	assert.equal(offer.filter((m) => m.family === "fable" && m.status === "current").length, 1, "one current per family");
+	assert.equal(offer.filter((m) => m.status === "current" && m.family === "fable").length, 1, "one current per family");
 });
 
 test("a dropped model leaves the offer and nothing else", () => {
@@ -112,38 +113,38 @@ test("a dropped model leaves the offer and nothing else", () => {
 	assert.equal(claudeContextWindow("claude-opus-4-6"), CLAUDE_DEFAULT_WINDOW);
 });
 
-test("a family's current entry is its newest offered entry that is built in or passed, whatever the table calls latest", () => {
+test("a family's current entry is its newest offered entry that is built in or passed", () => {
 	const [a, b] = ["claude-fable-9-1", "claude-fable-9-2"];
 	const seedFables = CLAUDE_MODELS.filter((m) => m.family === "fable").map((m) => m.id);
 	const subsets = <T,>(xs: T[]): T[][] => xs.reduce<T[][]>((all, x) => [...all, ...all.map((s) => [...s, x])], [[]]);
 	const newest = (xs: string[]) => [...xs].sort((x, y) => compareClaudeVersions(parseClaudeId(y)!.version, parseClaudeId(x)!.version))[0];
 	let seen = 0;
-	for (const dropped of subsets([seedFables[0]!, a, b])) for (const tested of subsets([a, b])) for (const latest of [undefined, { fable: a }, { fable: b }]) {
-		mergeClaudeCatalog({ models: [{ id: a }, { id: b }], dropped, tested, ...(latest ? { latest } : {}) });
+	for (const dropped of subsets([seedFables[0]!, a, b])) for (const tested of subsets([a, b])) {
+		mergeClaudeCatalog({ models: [{ id: a }, { id: b }], dropped, tested });
 		const offered = [...seedFables, a, b].filter((id) => !dropped.includes(id));
 		const expected = newest(offered.filter((id) => seedFables.includes(id) || tested.includes(id)))!;
-		const label = JSON.stringify({ dropped, tested, latest });
+		const label = JSON.stringify({ dropped, tested });
 		assert.equal(latestClaude("fable").id, expected, label);
 		assert.deepEqual(claudeOffer().filter((m) => m.family === "fable" && m.status === "current").map((m) => m.id), [expected], label);
 		seen++;
 	}
-	assert.equal(seen, 8 * 4 * 3, "every combination ran");
+	assert.equal(seen, 8 * 4, "every combination ran");
 });
 
 test("until it passes, the newest in the picker and the default are different models", () => {
-	mergeClaudeCatalog({ models: [FABLE_NEXT], latest: { fable: FABLE_NEXT.id } });
+	mergeClaudeCatalog({ models: [FABLE_NEXT] });
 	assert.ok(ids().includes(FABLE_NEXT.id), "in the picker at once");
 	assert.equal(latestClaude("fable").id, seedFable().id);
 });
 
 test("a brand-new family: offered and named at once, no default until tested", () => {
-	mergeClaudeCatalog({ models: [NOVA], latest: { nova: NOVA.id } });
+	mergeClaudeCatalog({ models: [NOVA] });
 	assert.ok(ids().includes(NOVA.id));
 	assert.equal(claudeModel(NOVA.id)?.name, "Nova 1.2");
 	assert.equal(claudeModel(NOVA.id)?.status, "previous", "nothing built in or passed: no current entry yet");
 	assert.equal(claudeContextWindow(NOVA.id), 500_000);
 	assert.equal(latestClaude("nova"), undefined);
-	mergeClaudeCatalog({ models: [NOVA], latest: { nova: NOVA.id }, tested: [NOVA.id] });
+	mergeClaudeCatalog({ models: [NOVA], tested: [NOVA.id] });
 	assert.equal(latestClaude("nova")?.id, NOVA.id);
 	assert.equal(claudeModel(NOVA.id)?.status, "current");
 });
@@ -153,7 +154,7 @@ test("a name never depends on what the list holds", () => {
 	const names = () => known.map((id) => [claudeName(id), parseClaudeId(id)]);
 	const before = names();
 	assert.deepEqual(before.map(([n]) => typeof n), known.map(() => "string"), "every one has a name to compare");
-	for (const data of [{ models: [FABLE_NEXT, NOVA] }, { models: [FABLE_NEXT], dropped: [FABLE_NEXT.id, "claude-opus-4-6"] }, { models: [], latest: { fable: "claude-fable-5" } }, { models: [{ id: "claude-nova-1-2", apiIds: ["claude-opus-6"] }] }, { models: [] }] as ClaudeCatalogData[]) {
+	for (const data of [{ models: [FABLE_NEXT, NOVA] }, { models: [FABLE_NEXT], dropped: [FABLE_NEXT.id, "claude-opus-4-6"] }, { models: [] }, { models: [{ id: "claude-nova-1-2", apiIds: ["claude-opus-6"] }] }, { models: [] }] as ClaudeCatalogData[]) {
 		mergeClaudeCatalog(data);
 		assert.deepEqual(names(), before, JSON.stringify(data));
 		assert.deepEqual(names(), before, "and again on the next ask");
@@ -162,7 +163,7 @@ test("a name never depends on what the list holds", () => {
 
 test("what old files hold keeps its meaning after a newer Fable arrives", () => {
 	const before = claudeName("fable");
-	mergeClaudeCatalog({ models: [FABLE_NEXT], latest: { fable: FABLE_NEXT.id }, tested: [FABLE_NEXT.id] });
+	mergeClaudeCatalog({ models: [FABLE_NEXT], tested: [FABLE_NEXT.id] });
 	assert.equal(claudeName("fable"), before);
 	assert.equal(resolveClaude("fable")?.id, "claude-fable-5-1");
 });

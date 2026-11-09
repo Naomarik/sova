@@ -8,7 +8,6 @@ import {
 	claudeByAnswer,
 	claudeCliId,
 	claudeContextWindow,
-	claudeDrift,
 	claudeModel,
 	claudeName,
 	claudeOffer,
@@ -94,18 +93,4 @@ test("windows: the catalog's; an unknown id 1M only with [1m]", () => {
 test("an id the catalog doesn't know is only noted", () => {
 	assert.equal(unverifiedClaudeNote("claude-opus-6"), "Not verified: claude-opus-6 is not in Sova's Claude catalog. It will still be used.");
 	assert.equal(unverifiedClaudeNote("claude-opus-5-5"), undefined);
-});
-
-test("drift: the CLI's list only notifies, by its resolved models", () => {
-	// claude 2.1.295's initialize list: no drift.
-	const today = [
-		{ id: "default", resolvedModel: "claude-opus-5-5" }, { id: "opus", resolvedModel: "claude-opus-5-5" }, { id: "fable", resolvedModel: "claude-fable-5-1" },
-		{ id: "sonnet", resolvedModel: "claude-sonnet-5-5" }, { id: "haiku", resolvedModel: "claude-haiku-5-5" },
-		{ id: "claude-sonnet-5" }, { id: "claude-opus-5" }, { id: "claude-fable-5" }, { id: "claude-opus-4-8" }, { id: "claude-opus-4-7" }, { id: "claude-opus-4-6" }, { id: "claude-sonnet-4-6" },
-	];
-	assert.deepEqual(claudeDrift(today), { unknown: [], moved: [] });
-	assert.deepEqual(claudeDrift([{ id: "haiku", resolvedModel: "claude-haiku-4-5-20251001" }]).moved, [{ family: "haiku", id: "claude-haiku-4-5-20251001", current: "claude-haiku-5-5" }], "2.1.289's haiku is no longer the current one");
-	assert.deepEqual(claudeDrift([...today, { id: "claude-opus-6", name: "Opus 6" }]).unknown, [{ id: "claude-opus-6", name: "Opus 6" }]);
-	assert.deepEqual(claudeDrift([{ id: "opus", resolvedModel: "claude-opus-6" }]).moved, [{ family: "opus", id: "claude-opus-6", current: "claude-opus-5-5" }]);
-	assert.equal(resolveClaude("claude-opus-6"), undefined, "drift never adds to the catalog");
 });

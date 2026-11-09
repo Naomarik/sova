@@ -113,6 +113,20 @@ export interface ProcFacts {
   unreadable?: string;
 }
 
+/**
+ * A git this server started itself and is waiting on: its direct child, and the program is git. The server reads the trees it
+ * is about to judge all the time (a chat's summary starts a readiness read, in that chat's folder, while a pass asks what is
+ * running there), and those reads end by themselves. Neither fact alone is proof: a git a chat, a terminal or anything else
+ * started has another parent, and any other child of this server is another program.
+ */
+export const ownGitChild = (command: string, parent: number, self: number = process.pid): boolean => command === "git" && parent === self;
+
+/** The parent pid in a /proc/<pid>/stat line; the command before it may hold spaces and parentheses. NaN: it can't be read, so nothing is proved. */
+export function statParent(stat: string): number {
+  const after = stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/);
+  return Number(after[1]);
+}
+
 export interface CleanupDeps {
   /** Reads (no optional locks, short timeout). */
   git: GitRunner;
@@ -133,8 +147,9 @@ export interface CleanupDeps {
 
 /**
  * The live processes and the paths they hold: /proc/<pid>/cwd and /proc/<pid>/fd/* of every process
- * this user can read on Linux; elsewhere (macOS) `lsof` of this user's processes. When `lsof` can't
- * answer, one `unreadable` entry: a tree is kept, never assumed free.
+ * this user can read on Linux; elsewhere (macOS) `lsof` of this user's processes. This server and its
+ * own git children (`ownGitChild`) are left out. When `lsof` can't answer, one `unreadable` entry: a
+ * tree is kept, never assumed free.
  */
 export async function scanProcesses(platform: NodeJS.Platform = process.platform, lsof: () => Promise<{ code: number; stdout: string; stderr: string }> = runLsof): Promise<ProcFacts[]> {
   if (platform !== "linux") {
@@ -163,6 +178,8 @@ export async function scanProcesses(platform: NodeJS.Platform = process.platform
       }
       if (!paths.length) return;
       const command = (await readFile(`/proc/${p}/comm`, "utf8").catch(() => "")).trim() || "process";
+      const parent = statParent(await readFile(`/proc/${p}/stat`, "utf8").catch(() => ""));
+      if (ownGitChild(command, parent)) return;
       out.push({ pid, command, paths });
     }),
   );
@@ -171,24 +188,26 @@ export async function scanProcesses(platform: NodeJS.Platform = process.platform
 
 const runLsof = () =>
   new Promise<{ code: number; stdout: string; stderr: string }>((done) =>
-    execFile("lsof", ["-nP", "-w", "-u", String(process.getuid?.() ?? ""), "-Fpcn"], { timeout: 30_000, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, LC_ALL: "C" } }, (err, stdout, stderr) =>
+    execFile("lsof", ["-nP", "-w", "-u", String(process.getuid?.() ?? ""), "-FpRcn"], { timeout: 30_000, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, LC_ALL: "C" } }, (err, stdout, stderr) =>
       done({ code: err ? (typeof err.code === "number" ? err.code : 127) : 0, stdout: String(stdout ?? ""), stderr: String(stderr ?? "") || (err && typeof err.code !== "number" ? err.message : "") }),
     ),
   );
 
-/** `lsof -Fpcn` output (`p<pid>`, `c<command>`, `f<fd>`, `n<name>` lines) → each process's cwd and open files, `self` left out (pure, for tests). */
+/** `lsof -FpRcn` output (`p<pid>`, `R<parent>`, `c<command>`, `f<fd>`, `n<name>` lines) → each process's cwd and open files, `self` and its own git children left out (pure, for tests). */
 export function parseLsof(text: string, self: number): ProcFacts[] {
   const out: ProcFacts[] = [];
+  const parents = new Map<ProcFacts, number>();
   let cur: ProcFacts | null = null;
   for (const line of text.split("\n")) {
     const v = line.slice(1);
     if (line[0] === "p") {
       cur = { pid: Number(v), command: "process", paths: [] };
       if (cur.pid !== self) out.push(cur);
-    } else if (cur && line[0] === "c") cur.command = v || "process";
+    } else if (cur && line[0] === "R") parents.set(cur, Number(v));
+    else if (cur && line[0] === "c") cur.command = v || "process";
     else if (cur && line[0] === "n" && v.startsWith("/")) cur.paths.push(v.replace(/ \(deleted\)$/, ""));
   }
-  return out.filter((p) => p.paths.length);
+  return out.filter((p) => p.paths.length && !ownGitChild(p.command, parents.get(p) ?? NaN, self));
 }
 
 export function pidAlive(pid: number): boolean {

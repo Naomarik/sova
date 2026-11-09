@@ -272,6 +272,15 @@ test("off Linux the processes come from lsof: cwd and open files per pid, this p
   assert.match(failed[0]!.unreadable!, /couldn't be read \(lsof: lsof: WARNING: can't stat\(\)\), so it is kept/);
 });
 
+test("own git children: only a direct child of this process whose program is git, read from lsof's fields and /proc's", () => {
+  const self = 999;
+  for (const [command, parent, own] of [["git", self, true], ["git", 1, false], ["git", NaN, false], ["sh", self, false], ["node", self, false]] as const) assert.equal(c.ownGitChild(command, parent, self), own, `${command} under ${parent}`);
+  const proc = (pid: number, parent: number, cmd: string) => [`p${pid}`, `R${parent}`, `c${cmd}`, "fcwd", "n/w/tree"];
+  const text = [...proc(10, self, "git"), ...proc(11, 42, "git"), ...proc(12, self, "bash")].join("\n");
+  assert.deepEqual(c.parseLsof(text, self).map((p) => p.pid), [11, 12]);
+  for (const [line, parent] of [["7 (git) S 42 7 7", 42], ["7 (a b) (c)) R 8 7", 8], ["", NaN]] as const) assert.deepEqual(c.statParent(line), parent, line);
+});
+
 test("readers of one gone tree share a read while it runs; the next read after its lifetime asks git again", async () => {
   resetRemovedWorktrees();
   let calls = 0;

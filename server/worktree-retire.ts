@@ -24,7 +24,7 @@ import { agentRoot, stateRoot } from "./state-root";
 import { type Gate, retirementAllowed } from "./worktree-retire-gate";
 
 export { type Gate, retirementAllowed };
-import { chatInUse, QUIET_MS, type LeftoverInput, type LeftoverProof, leftoverProof, deleteProvedFolder, gitPointer, keepTestChats, liveRecordPid, longGit, pinRef, pinTip, removeTree, retireBranch } from "./worktree-remove";
+import { chatInUse, type CutOffKind, QUIET_MS, type LeftoverInput, type LeftoverProof, leftoverProof, deleteProvedFolder, finishCutOff, gitPointer, keepTestChats, liveRecordPid, longGit, pinRef, pinTip, removeTree, retireBranch } from "./worktree-remove";
 import { type FinishedFacts, type Leftovers, leftovers, leftoversReason, reachableBlobs, rebuildableDir, RECORDING, type TestCopyLeft, unreadableLeftovers } from "./worktree-leftovers";
 import { appendLedger, besideGone, markLedger, readLedger, type RemovedWorktree, retiredEntryCovering } from "./removed-worktrees";
 import { scratchCopiesIn } from "./merge-queue/scratch";
@@ -225,6 +225,8 @@ export interface JudgeFacts {
   ignoreProcesses?: boolean;
 }
 
+export const NO_DOT_GIT = "Git still lists it, but its folder has no working .git, and no removal of Sova's explains that, so nothing was touched. To keep it, run git worktree repair <path> from the main checkout; to drop it, delete the folder yourself.";
+
 const sessionOfUse = (u: ChatUse): HeldRow["session"] => ({ ...(u.id ? { id: u.id } : { id: "" }), path: u.path, title: u.name });
 
 /**
@@ -239,6 +241,8 @@ export async function judge(d: Pick<RetireDeps, "git" | "copies" | "openEntry" |
     if (t.drafts?.length && t.why === "Its spec drafts aren't proved landed.") return { do: "hold", kind: "drafts", why: `${t.drafts.length} spec draft${t.drafts.length === 1 ? "" : "s"} not proved landed` };
     return { do: "skip" };
   }
+  // Git calls it prunable and its folder is there: a stop of Sova's own was finished or held by finishIntents, so this one is nobody's Sova knows of.
+  if (t.gone && lexists(t.path)) return { do: "hold", kind: "other", why: NO_DOT_GIT };
   if (t.locked) return { do: "hold", kind: "other", why: "Locked." };
   if (t.nested?.length) return { do: "hold", kind: "files", why: `Another worktree is inside it: ${t.nested[0]}.` };
   const now = d.now();
@@ -543,7 +547,7 @@ async function protectedOf(d: Pick<RetireDeps, "git">, repo: RepoTrees): Promise
  *
  * A proof that holds has its test chats moved aside, and that move failing is a refusal: what follows it is the delete.
  */
-async function proofOf(d: RetireDeps, main: string, path: string, branch: string | undefined, exclude?: string): Promise<LeftoverProof> {
+async function proofOf(d: RetireDeps, main: string, path: string, branch: string | undefined, exclude?: string, cutOff?: CutOffKind): Promise<LeftoverProof> {
   const [procs, chats] = await Promise.all([d.processes(), d.chats([path], exclude)]);
   if (chats.unreadable.length) return { why: "A chat's file couldn't be read." };
   const entry = branch ? d.openEntry(main, branch) : null;
@@ -562,6 +566,7 @@ async function proofOf(d: RetireDeps, main: string, path: string, branch: string
     git: d.gitWrite,
     finished: finishedFacts(d, main, path),
     sandboxHolds: sandboxHolds(d),
+    ...(cutOff ? { cutOff } : {}),
   };
   const proof = await leftoverProof(input);
   if (proof.why !== null) return proof;
@@ -631,11 +636,14 @@ export async function retireTree(d: RetireDeps, root: string, path: string, o: {
     const intent = entry(false);
     o.going?.(intent, left);
     noteIntent(d, intent);
-    const out = await removeTree({ path, main: repo.main, git: d.gitWrite, remove: d.gitRemove, proof: async () => (await proofOf(d, repo.main, path, branch, o.exclude)).why });
+    // The note above is the intent: a stop this removal sees for itself may finish where the note may.
+    const out = await removeTree({ path, main: repo.main, git: d.gitWrite, remove: d.gitRemove, proof: async (cut) => (await proofOf(d, repo.main, path, branch, o.exclude, cut && "intent")).why });
     if (out.state === "refused") {
       dropIntent(d, path);
       return { state: "held", row: heldRow(t, { kind: "other", why: out.reason }) };
     }
+    // Still on git's list: no leftover pass will find it, so the note stays for the next pass's finishIntents.
+    if (out.state === "held" && out.stillListed) return { state: "held", row: heldRow(t, { kind: "files", why: out.reason }) };
     if (out.state === "held") {
       // Git has forgotten it: the leftover pass finds it again through this entry.
       d.appendLedger([entry(false, { partial: true })]);
@@ -851,20 +859,65 @@ function dropIntent(d: Pick<RetireDeps, "pendingFile">, path: string): void {
   writeIntents(d, readIntents(d).filter((x) => x.path !== path));
 }
 
+/** What a stop's finishing did to trees git still listed: nothing else this pass should read them as. */
+interface CutOffs {
+  finished: RemovedWorktree[];
+  held: { entry: RemovedWorktree; row: HeldRow }[];
+}
+
 /**
- * A removal a stop cut off, read back by what git and the disk say now. Never authority: still listed, nothing
+ * A removal a stop cut off, read back by what git and the disk say now. Still listed with `.git` in place, nothing
  * happened and the normal rule decides again; gone, it did happen, and now it's recorded, so the branch can finish;
  * forgotten by git with files left, it's a partial delete for the leftover pass and its proof.
+ *
+ * Still listed with `.git` gone (or the folder gone), git died inside the delete, and every retry would only hear "validation
+ * failed": only the note says what happened. The note must be for this exact path at this very commit and branch; what is
+ * left goes under the leftover proof, and one registration is dropped. A note that can't be finished stays for the next pass.
  */
-async function finishIntents(d: RetireDeps, repo: RepoTrees): Promise<void> {
+async function finishIntents(d: RetireDeps, repo: RepoTrees): Promise<CutOffs> {
+  const out: CutOffs = { finished: [], held: [] };
   for (const e of readIntents(d)) {
     if (e.commonDir !== repo.commonDir) continue;
     const list = await d.git(["worktree", "list", "--porcelain"], { cwd: repo.main });
     if (list.code !== 0) continue;
-    const listed = list.stdout.split("\n").some((l) => l === `worktree ${e.path}`);
-    if (!listed && !d.ledger().some((x) => x.path === e.path && x.at === e.at)) d.appendLedger([{ ...e, ...(lexists(e.path) ? { partial: true as const } : {}) }]);
+    const row = parseWorktreeList(list.stdout).find((w) => w.path === e.path);
+    if (row && (!lexists(e.path) || !lexists(join(e.path, ".git")))) {
+      const held = (kind: HeldRow["kind"], why: string): void => void out.held.push({ entry: e, row: heldRow(e, { kind, why }) });
+      if (row.locked) {
+        held("other", "A stop cut its removal short, and it is locked now. Unlock it and the next pass finishes it.");
+        continue;
+      }
+      if (row.branch !== e.branch || row.head !== e.tip) {
+        held("other", "A stop cut its removal short, and its branch has moved since, so nothing more was done. Look at what is left in the folder, and delete it yourself if nothing there matters.");
+        continue;
+      }
+      if (!(await pinTip(d.gitWrite, repo.main, e.tip))) {
+        held("other", "A stop cut its removal short, and its last commit couldn't be pinned.");
+        continue;
+      }
+      const done = await finishCutOff({ path: e.path, main: repo.main, git: d.gitWrite, remove: d.gitRemove, kind: "intent", stopped: "A stop cut its removal short.", proof: async (cut) => (await proofOf(d, repo.main, e.path, e.branch, undefined, cut)).why });
+      if (done.state !== "removed") {
+        held("files", done.reason);
+        continue;
+      }
+      if (!d.ledger().some((x) => x.path === e.path && x.at === e.at)) d.appendLedger([e]);
+      dropIntent(d, e.path);
+      forgetSummary(repo.commonDir);
+      await d.removed([e.path]).catch((err: Error) => console.warn(`[retire] readiness: ${err.message}`));
+      out.finished.push(e);
+      continue;
+    }
+    if (!row && !d.ledger().some((x) => x.path === e.path && x.at === e.at)) d.appendLedger([{ ...e, ...(lexists(e.path) ? { partial: true as const } : {}) }]);
     dropIntent(d, e.path);
   }
+  return out;
+}
+
+/** What the first pass noted went from a folder, read before any of it did: what a stop or a later read can't say any more. */
+function notedWent(pending: PendingFile, path: string, tip: string): RetiredRowOut["went"] | undefined {
+  const g = pending.firstPass?.going?.[path];
+  if (!g || g.tip !== tip || !g.rebuildable) return undefined;
+  return { rebuildable: g.rebuildable, ...(g.testCopy ? { testCopy: g.testCopy as TestCopyLeft } : {}) };
 }
 
 /**
@@ -976,9 +1029,22 @@ async function passRepo(d: RetireDeps, root: string, records: readonly TreeRecor
   try {
     const out: PassRepo = { repo: repo.main, retired: [], held: [], waiting: [], leftovers: [], hasWork: [], queueOwn: [] };
     // First: what a stop left half done. A partial entry the removal itself finished by proof isn't one any more once the folder's gone.
-    await finishIntents(d, repo);
+    const cutOffs = await finishIntents(d, repo);
     await finishBranches(d, repo);
-    const { go, held, waiting, hasWork, queueOwn } = await judgeRepo(d, repo);
+    // Read from the ledger after the branches ran: the row says what became of its branch, as an unbroken removal's does.
+    const ledgerNow = d.ledger();
+    for (const e of cutOffs.finished) {
+      const line = [...ledgerNow].reverse().find((x) => x.commonDir === e.commonDir && x.path === e.path && x.at === e.at) ?? e;
+      const went = notedWent(pending, e.path, e.tip);
+      out.retired.push({ path: e.path, branch: e.branch, tip: e.tip, merged: e.merged, branchDeleted: line.branchDeleted, finished: true, ...(e.branchKept ? { branchKept: true as const } : {}), ...(e.queueMade ? { queueMade: true as const } : {}), ...(went ? { went } : {}) });
+    }
+    for (const h of cutOffs.held) {
+      if (h.entry.queueMade) out.queueOwn.push({ path: h.entry.path, ...(h.entry.branch ? { branch: h.entry.branch } : {}) });
+      else out.held.push(h.row);
+    }
+    // Those are answered: judged again here they would be a second row, and a retry git can only refuse.
+    const answered = new Set([...cutOffs.finished.map((e) => e.path), ...cutOffs.held.map((h) => h.entry.path)]);
+    const { go, held, waiting, hasWork, queueOwn } = await judgeRepo(d, { ...repo, trees: repo.trees.filter((t) => !answered.has(t.path)) });
     out.held.push(...held);
     out.waiting.push(...waiting);
     out.hasWork.push(...hasWork);
@@ -1002,15 +1068,20 @@ async function passRepo(d: RetireDeps, root: string, records: readonly TreeRecor
     // Written before each removal starts, so a stop anywhere after it loses neither the row nor what went.
     const going: NoteGoing | undefined = firstPass
       ? (e, left) => {
-          pending.firstPass = { ...pending.firstPass!, going: { ...pending.firstPass?.going, [e.path]: { main: repo.main, tip: e.tip, at: e.at, ...(left ? { rebuildable: left.rebuildable, ...(left.testCopy ? { testCopy: left.testCopy } : {}) } : {}) } } };
+          // A stop's retry reads a folder that already lost or moved things: what the first attempt noted is what really went.
+          const earlier = notedWent(pending, e.path, e.tip);
+          const went = earlier ?? (left ? { rebuildable: left.rebuildable, ...(left.testCopy ? { testCopy: left.testCopy } : {}) } : {});
+          pending.firstPass = { ...pending.firstPass!, going: { ...pending.firstPass?.going, [e.path]: { main: repo.main, tip: e.tip, at: e.at, ...went } } };
           writePending(pending, d.pendingFile());
         }
       : undefined;
     await pool(go, CONCURRENCY, async (t) => {
       // A failure on one tree holds that tree. The next pass reads everything again.
       const r = await retireTree(d, root, t.path, { expectHead: t.head!, ...(going ? { going } : {}) }).catch((err: Error): TreeOutcome => ({ state: "held", row: heldRow(t, { kind: "other", why: `It failed: ${err.message.split("\n")[0]}` }) }));
-      if (r.state === "retired") out.retired.push(r.row);
-      else if (t.queueMade) out.queueOwn.push({ path: t.path, ...(t.branch ? { branch: t.branch } : {}) });
+      if (r.state === "retired") {
+        const went = notedWent(pending, r.row.path, r.row.tip);
+        out.retired.push(went ? { ...r.row, went } : r.row);
+      } else if (t.queueMade) out.queueOwn.push({ path: t.path, ...(t.branch ? { branch: t.branch } : {}) });
       else if (r.state === "held") out.held.push(r.row);
       else if (r.state === "waiting") out.waiting.push(r.row);
     });
@@ -1333,8 +1404,9 @@ export async function keepsBranchAt(path: string, d: RetireDeps = realRetireDeps
 }
 
 /** Why what a partial delete left may not be finished, or null: Remove Worktree's and teardown's proof. */
-export async function leftoverProofHere(path: string, main: string, branch?: string): Promise<string | null> {
-  return (await proofOf(realRetireDeps(), main, path, branch)).why;
+export async function leftoverProofHere(path: string, main: string, branch?: string, cut?: CutOffKind): Promise<string | null> {
+  // No note of this service's stands behind these callers: a cut-off folder has to be inside the worktrees location as well.
+  return (await proofOf(realRetireDeps(), main, path, branch, undefined, cut && "listed")).why;
 }
 
 /** Archive (§app.overseer/tools): one tree through the same service, at once, the archived chat counting for nothing. */

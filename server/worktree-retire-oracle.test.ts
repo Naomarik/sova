@@ -7,20 +7,24 @@
 //   3. every worktree is in exactly one group, across every repository in the report;
 //   4. a pass stopped at each removal in turn ends with the same report and files as an unbroken one;
 //   5. a pass after quiet changes nothing, and no pass after the first changes the closed report;
-//   6. a world needing more than one wake-up is run until quiet, the way the server does.
+//   6. a world needing more than one wake-up is run until quiet, the way the server does;
+//   7. a removal cut off with git still listing it is finished under the proof when Sova's intent names it, and is left alone when not;
+//   8. only this process's own git children are looked through when asking what is running in a folder.
 // The kinds in `letGo` are this file's own reading of §chat.worktrees/leftovers, written from the spec, not from the code.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { after, test } from "node:test";
+import { type ChildProcess, spawn } from "node:child_process";
 import { canonical, isWithin } from "../pi-config/extensions/worktrees/state.ts";
 import type { Git } from "../pi-config/extensions/worktrees/git.ts";
 import { Fixture, git } from "./merge-queue/testing/repo";
 import { branchLeft } from "./nothing-left";
 import { appendLedger, markLedger, readLedger, type RemovedWorktree } from "./removed-worktrees";
-import { classifyRepo, pidAlive, type ChatUse } from "./worktree-cleanup";
+import { classifyRepo, pidAlive, type ChatUse, type ProcFacts, scanProcesses } from "./worktree-cleanup";
 import { retirePass, type RetireDeps } from "./worktree-retire";
+import { removeTree } from "./worktree-remove";
 import { execGit } from "./worktrees";
 
 const MIN = 60_000;
@@ -43,6 +47,25 @@ interface WorldData {
   /** Trees whose chat runs until this time. */
   busyUntil: Map<string, number>;
   start: number;
+  /** The projects a pass goes over, when not the three of the big world. */
+  repos?: string[];
+  /** What's running, when not nothing. */
+  processes?: () => Promise<ProcFacts[]>;
+  /** Removals git stops part way through while this process lives on (the time limit, a kill of git alone). */
+  cutNow?: Map<string, CutPoint>;
+}
+
+/** How far `git worktree remove` got before it died, its registration still in git's list. */
+type CutPoint = "before any file" | ".git gone" | "half the files gone" | "half gone, .git left";
+
+/** What the kill leaves. Every other file, by name, is as good as git's own order (the directory's) for what stays. */
+function cutFolder(t: string, point: CutPoint): void {
+  if (point === "before any file") return;
+  if (point !== "half gone, .git left") rmSync(join(t, ".git"), { force: true });
+  if (point === ".git gone") return;
+  const files = new Map<string, { sha: string; blob: string; link: boolean }>();
+  walkFiles(t, files);
+  [...files.keys()].sort().forEach((f, i) => i % 2 === 0 && rmSync(f, { force: true }));
 }
 
 const put = (dir: string, rel: string, data: string | Buffer) => {
@@ -190,6 +213,8 @@ interface Stop {
   at: number;
   seen: number;
   dead: boolean;
+  /** Or dies inside the removal of this folder, git having got this far. */
+  cut?: { tree: string; point: CutPoint };
 }
 
 function depsOf(w: WorldData, records: ReturnType<typeof leftovers>, clock: Clock, stop: Stop | null): RetireDeps {
@@ -208,10 +233,24 @@ function depsOf(w: WorldData, records: ReturnType<typeof leftovers>, clock: Cloc
   const stateFile = (name: string) => (dead() ? join(state, "dead-process", name) : join(state, name));
   return {
     allowed: () => ({ on: true }),
-    repos: () => [w.main, w.sibling, w.other],
+    repos: () => w.repos ?? [w.main, w.sibling, w.other],
     git: execGit,
     gitWrite: realGit,
-    gitRemove: realGit,
+    gitRemove: async (args, cwd) => {
+      const path = args[args.length - 1]!;
+      if (args[1] === "remove" && stop?.cut && !stop.dead && basename(path) === stop.cut.tree) {
+        cutFolder(path, stop.cut.point);
+        stop.dead = true;
+        throw new Error("killed inside git worktree remove");
+      }
+      const live = args[1] === "remove" ? w.cutNow?.get(path) : undefined;
+      if (live) {
+        w.cutNow!.delete(path);
+        cutFolder(path, live);
+        return { code: 137, stdout: "", stderr: "Killed" };
+      }
+      return realGit(args, cwd);
+    },
     classify: (root, only) => {
       alive("classify");
       return classifyRepo(root, {
@@ -238,7 +277,7 @@ function depsOf(w: WorldData, records: ReturnType<typeof leftovers>, clock: Cloc
     records: async () => ({ records, unreadable: [] }),
     processes: async () => {
       alive("processes");
-      return [];
+      return w.processes ? w.processes() : [];
     },
     alive: pidAlive,
     openEntry: () => null,
@@ -575,5 +614,238 @@ test("the world, run to quiet, stopped at every removal: nothing lost, everythin
     assert.equal(branchesOf(w), keptBefore, `stopped at removal ${k}: kept branches stay`);
     assert.deepEqual(norm(w, r), want.report, `stopped at removal ${k}: the report matches an unbroken run`);
     assert.deepEqual({ files: [...after].map(([p, f]) => [p.replaceAll(w.root, "<root>"), f.sha]).sort(), refs: refsOf(w) }, { files: want.files, refs: want.refs }, `stopped at removal ${k}: the files and branches match`);
+  }
+
+  // Killed inside git, at each point its own delete can stop, in the tree that has the most kinds of file: the same end as no stop at all.
+  for (const point of ["before any file", ".git gone", "half the files gone"] as CutPoint[]) {
+    restore();
+    const c = { t: w.start };
+    const stop: Stop = { at: -1, seen: 0, dead: false, cut: { tree: "demo-testcopy", point } };
+    await untilQuiet(w, records, c, stop);
+    assert.ok(stop.dead, `${point}: the run really reached that removal`);
+    rmSync(join(w.fx.state, "dead-process"), { recursive: true, force: true });
+    await untilQuiet(w, records, c, null);
+    const after = inventory(w);
+    const r = reportOf(w);
+    const tree = join(w.fx.parent, ".worktrees", "demo-testcopy");
+    assertOracle(`killed in git, ${point}`, judgeRun(w, pre, after, reachable, r, ledgerOf(w)));
+    assert.deepEqual(norm(w, r), want.report, `killed in git, ${point}: the report matches an unbroken run`);
+    assert.deepEqual({ files: [...after].map(([p, f]) => [p.replaceAll(w.root, "<root>"), f.sha]).sort(), refs: refsOf(w) }, { files: want.files, refs: want.refs }, `killed in git, ${point}: the files and branches match`);
+    assert.equal(ledgerOf(w).filter((e) => e.path === tree && e.retired && !e.partial).length, 1, `killed in git, ${point}: one plain ledger entry`);
+  }
+});
+
+// --- a removal cut off, one world per pass ------------------------------------------------------
+
+interface CutCase {
+  name: string;
+  /** Inside `.worktrees`, or a linked worktree anywhere else git has one. */
+  outside?: boolean;
+  point: CutPoint | "folder gone";
+  /** Sova's own note that it was removing this very folder. */
+  intent?: boolean;
+  /** A file nothing else has. */
+  unique?: boolean;
+  /** The branch moved after the note. */
+  moved?: boolean;
+  /** The setting kept this branch when the removal began. */
+  kept?: boolean;
+  /** Something is running in it. */
+  busy?: boolean;
+  /** Stopped with this process alive, so the removal itself finds it. */
+  live?: boolean;
+  want: "retired" | "held";
+}
+
+const CUTS: CutCase[] = [
+  { name: "gitgone-intent", point: ".git gone", intent: true, want: "retired" },
+  { name: "half-intent", point: "half the files gone", intent: true, want: "retired" },
+  { name: "gitgone-out", outside: true, point: ".git gone", intent: true, want: "retired" },
+  { name: "half-out", outside: true, point: "half the files gone", intent: true, want: "retired" },
+  { name: "folder-gone", point: "folder gone", intent: true, want: "retired" },
+  { name: "kept-branch", point: ".git gone", intent: true, kept: true, want: "retired" },
+  { name: "live-half", point: "half the files gone", live: true, want: "retired" },
+  { name: "live-out", outside: true, point: ".git gone", live: true, want: "retired" },
+  { name: "gitgone-nointent", point: ".git gone", want: "held" },
+  { name: "half-nointent", point: "half the files gone", want: "held" },
+  { name: "out-nointent", outside: true, point: ".git gone", want: "held" },
+  { name: "unique-intent", point: ".git gone", intent: true, unique: true, want: "held" },
+  { name: "unique-out", outside: true, point: "half the files gone", intent: true, unique: true, want: "held" },
+  { name: "unique-live", point: ".git gone", live: true, unique: true, want: "held" },
+  { name: "moved-branch", point: ".git gone", intent: true, moved: true, want: "held" },
+  { name: "busy-inside", point: ".git gone", intent: true, busy: true, want: "held" },
+  { name: "git-still-there", point: "half gone, .git left", intent: true, want: "held" },
+];
+
+test("a removal cut off with git still listing the folder: finished only under the proof and Sova's own note, one registration dropped", { timeout: 60_000 }, async () => {
+  const fx = new Fixture({ remote: false });
+  const main = fx.project;
+  for (const p of ["node_modules/", ".agent/"]) exclude(main, p);
+  const w: WorldData = { fx, root: fx.root, main, sibling: join(fx.parent, "no-sibling"), other: join(fx.parent, "no-other"), places: [], proved: new Set(), queueMade: new Set(), fresh: [], busyUntil: new Map(), start: Date.now() + 60 * MIN, repos: [main], cutNow: new Map() };
+  worlds.push(w);
+  const commonDir = canonical(join(main, ".git"));
+  const held = new Map<string, ProcFacts>();
+  w.processes = async () => [...held.values()];
+
+  const paths = new Map<CutCase, string>();
+  const tips = new Map<CutCase, string>();
+  const intents: RemovedWorktree[] = [];
+  for (const c of CUTS) {
+    const t = c.outside ? join(fx.parent, "elsewhere", "hash", `wf_${c.name}`, "alignment") : join(fx.parent, ".worktrees", `demo-${c.name}`);
+    mkdirSync(dirname(t), { recursive: true });
+    git(main, ["worktree", "add", "-q", "-b", `feat/${c.name}`, t, "master"]);
+    for (const f of ["a", "b", "c", "d"]) put(t, `${c.name}-${f}.txt`, `${f}\n`);
+    git(t, ["add", "-A"]);
+    git(t, ["commit", "-q", "-m", c.name]);
+    git(main, ["merge", "-q", "--no-ff", "--no-edit", `feat/${c.name}`]);
+    put(t, "node_modules/dep/i.js", "// dependency\n");
+    paths.set(c, t);
+    tips.set(c, git(t, ["rev-parse", "HEAD"]));
+    w.places.push(t);
+  }
+  for (const c of CUTS) {
+    const t = paths.get(c)!;
+    if (c.intent) intents.push({ v: 1, path: t, branch: `feat/${c.name}`, commonDir, tip: tips.get(c)!, merged: "ancestor", branchDeleted: false, at: w.start - 5 * MIN, retired: true, pinned: true, ...(c.kept ? { branchKept: true as const } : {}) });
+    if (c.unique) put(t, "only-here.txt", "not anywhere else\n");
+    if (c.live) {
+      w.cutNow!.set(t, c.point as CutPoint);
+      continue;
+    }
+    if (c.moved) {
+      git(t, ["commit", "-q", "--allow-empty", "-m", "after the note"]);
+    }
+    if (c.point === "folder gone") rmSync(t, { recursive: true, force: true });
+    else cutFolder(t, c.point);
+    if (c.busy) held.set(c.name, { pid: 4242, command: "vim", paths: [t] });
+  }
+  mkdirSync(fx.state, { recursive: true });
+  writeFileSync(join(fx.state, "retire-pending.json.intents"), JSON.stringify(intents));
+  const records: ReturnType<typeof leftovers> = [];
+  const before = inventory(w);
+  const listedBefore = git(main, ["worktree", "list", "--porcelain"]).split("\n").filter((l) => l.startsWith("worktree ")).map((l) => l.slice(9));
+  const fileOf = (t: string, m: Inventory) => [...m].filter(([p]) => p === t || p.startsWith(`${t}/`)).map(([p, f]) => [p, f.sha]).sort();
+
+  const clock = { t: w.start };
+  await retirePass(depsOf(w, records, clock, null));
+  const report = reportOf(w);
+  const after = inventory(w);
+  const listedAfter = new Set(git(main, ["worktree", "list", "--porcelain"]).split("\n").filter((l) => l.startsWith("worktree ")).map((l) => l.slice(9)));
+  const groupsOfPath = (t: string) => Object.entries(report.groups).filter(([, rows]) => rows.some((r) => r.path === t)).map(([g]) => g);
+  for (const c of CUTS) {
+    const t = paths.get(c)!;
+    const entries = ledgerOf(w).filter((e) => e.path === t);
+    if (c.want === "retired") {
+      assert.equal(existsSync(t), false, `${c.name}: the folder is gone`);
+      assert.equal(listedAfter.has(t), false, `${c.name}: git no longer lists it`);
+      assert.equal(entries.filter((e) => e.retired && !e.partial).length, 1, `${c.name}: one plain ledger entry, as an unbroken removal writes`);
+      assert.deepEqual(groupsOfPath(t), ["retired"], `${c.name}: in the retired group only`);
+      assert.equal(git(main, ["rev-parse", "--verify", "-q", `refs/sova/retired/${tips.get(c)!}`]), tips.get(c)!, `${c.name}: its last commit is pinned`);
+      const branch = git(main, ["for-each-ref", `refs/heads/feat/${c.name}`]);
+      if (c.kept) {
+        assert.notEqual(branch, "", `${c.name}: the setting kept its branch`);
+        assert.equal(entries[0]!.branchKept, true, `${c.name}: the ledger says it was kept`);
+      } else assert.equal(branch, "", `${c.name}: its branch went, the setting being on`);
+    } else {
+      assert.equal(listedAfter.has(t), true, `${c.name}: git still lists it`);
+      assert.deepEqual(entries, [], `${c.name}: nothing says it went`);
+      assert.deepEqual(groupsOfPath(t), ["held"], `${c.name}: in the held group only`);
+      assert.deepEqual(fileOf(t, after), c.live ? fileOf(t, after) : fileOf(t, before), `${c.name}: not one file touched`);
+      assert.notEqual(git(main, ["for-each-ref", `refs/heads/feat/${c.name}`]), "", `${c.name}: its branch stays`);
+      const reason = report.groups.held!.find((r) => r.path === t)!.reason!;
+      assert.ok(reason.length > 20, `${c.name}: a reason a person can act on: ${reason}`);
+      if (c.unique) assert.match(reason, /only-here\.txt/, `${c.name}: names the file that keeps it`);
+      if (!c.intent && !c.live) assert.match(reason, /git worktree repair/, `${c.name}: says how to keep it, and no retry came near it: ${reason}`);
+    }
+    if (c.unique) assert.ok(existsSync(join(t, "only-here.txt")), `${c.name}: the unique file is there`);
+  }
+  // A repo-wide prune would have forgotten every held row above; this says it in one line.
+  assert.deepEqual([...listedAfter].sort(), listedBefore.filter((p) => !CUTS.some((c) => c.want === "retired" && paths.get(c) === p)).sort(), "only the finished ones left git's list");
+  assert.ok(report.done, "the first pass closed");
+
+  // No pass and no caller finishes one with no note: this very step, handed a proof that always says yes, still leaves it to git's refusal.
+  const noNote = paths.get(CUTS.find((c) => c.name === "gitgone-nointent")!)!;
+  const refused = await removeTree({ path: noNote, main, git: (args, cwd) => execGit(args, { cwd }).then((r) => ({ code: r.code ?? 1, stdout: r.stdout, stderr: r.stderr })), proof: async () => null });
+  assert.equal(refused.state, "refused", "a .git already gone when the removal started is git's to refuse");
+  assert.deepEqual(fileOf(noNote, inventory(w)), fileOf(noNote, before), "and nothing was touched");
+
+  // Doubts clear, and the row isn't stuck; the ones with no note stay exactly as they are.
+  for (const c of CUTS) {
+    if (c.unique) rmSync(join(paths.get(c)!, "only-here.txt"));
+    if (c.busy) held.clear();
+  }
+  clock.t += 11 * MIN;
+  await retirePass(depsOf(w, records, clock, null));
+  for (const c of CUTS.filter((x) => x.want === "held")) {
+    const t = paths.get(c)!;
+    const clears = c.unique || c.busy;
+    assert.equal(existsSync(t), !clears, `${c.name}: ${clears ? "the doubt cleared, so the next pass finished it" : "still there"}`);
+    if (clears) assert.equal(ledgerOf(w).filter((e) => e.path === t && e.retired && !e.partial).length, 1, `${c.name}: one ledger entry`);
+  }
+});
+
+// --- what is running in a folder ----------------------------------------------------------------
+
+/** Until a child's own git is what's running in its pid: between fork and exec it is still this program. */
+async function untilGit(pid: number): Promise<void> {
+  for (let i = 0; i < 400; i++) {
+    try {
+      if (readFileSync(`/proc/${pid}/comm`, "utf8").trim() === "git") return;
+    } catch {
+      // not there yet
+    }
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  assert.fail(`git never started in pid ${pid}`);
+}
+
+test("what's running in a folder: this process's own git child doesn't hold it, a git it didn't start does", { timeout: 60_000, skip: process.platform !== "linux" }, async () => {
+  const fx = new Fixture({ remote: false });
+  const main = fx.project;
+  const w: WorldData = { fx, root: fx.root, main, sibling: join(fx.parent, "no-sibling"), other: join(fx.parent, "no-other"), places: [], proved: new Set(), queueMade: new Set(), fresh: [], busyUntil: new Map(), start: Date.now() + 60 * MIN, repos: [main], processes: () => scanProcesses() };
+  worlds.push(w);
+  const tree = (name: string): string => {
+    const t = join(fx.parent, ".worktrees", `demo-${name}`);
+    git(main, ["worktree", "add", "-q", "-b", `feat/${name}`, t, "master"]);
+    put(t, `${name}.txt`, "x\n");
+    git(t, ["add", "-A"]);
+    git(t, ["commit", "-q", "-m", name]);
+    git(main, ["merge", "-q", "--no-ff", "--no-edit", `feat/${name}`]);
+    w.places.push(t);
+    return t;
+  };
+  const mineIn = tree("own-child");
+  const theirsIn = tree("not-a-child");
+  // `cat-file --batch` waits on its stdin: a git that stays until this test lets go of it.
+  const kids: ChildProcess[] = [];
+  const run = (args: string[], cwd: string): ChildProcess => {
+    const c = spawn("git", args, { cwd, stdio: ["pipe", "ignore", "ignore"] });
+    kids.push(c);
+    return c;
+  };
+  try {
+    const mine = run(["cat-file", "--batch"], mineIn);
+    await untilGit(mine.pid!);
+    // Started by git, not by this process: its parent is that git, whatever it's called.
+    const wrapper = run(["-c", "alias.stay=!exec git cat-file --batch", "stay"], theirsIn);
+    await untilGit(wrapper.pid!);
+    const theirs = await (async () => {
+      for (let i = 0; i < 400; i++) {
+        const found = (await scanProcesses()).find((p) => p.pid !== wrapper.pid && p.pid !== mine.pid && p.command === "git" && p.paths.some((x) => isWithin(x, canonical(theirsIn))));
+        if (found) return found;
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      assert.fail("the git nobody here started never appeared");
+    })();
+    await retirePass(depsOf(w, [], { t: w.start }, null));
+    const report = reportOf(w);
+    assert.equal(existsSync(mineIn), false, "its own git child didn't keep the folder");
+    assert.deepEqual(report.groups.retired!.map((r) => r.path), [mineIn], "and it reads as retired");
+    assert.ok(existsSync(theirsIn), "the other git kept its folder");
+    assert.match(report.groups.held!.find((r) => r.path === theirsIn)!.reason!, new RegExp(`A process is running in it: git \\(${theirs.pid}\\)`), "the held row names the git that isn't this process's");
+  } finally {
+    for (const k of kids) {
+      k.stdin?.end();
+      k.kill();
+    }
   }
 });

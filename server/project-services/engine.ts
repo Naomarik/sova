@@ -1817,7 +1817,7 @@ export class ProjectEngine {
         const why = leftoversReason(held);
         if (why) return { result: "skipped", detail: `kept ${rec.checkout}: ${why}` };
         // The one removal step (§chat.worktrees/cleanup). A copy's teardown always keeps the branch.
-        const r = await removeTree({ path: rec.checkout, main: rec.project, git: this.git, proof: async () => (await import("../worktree-retire")).leftoverProofHere(rec.checkout, rec.project, rec.branch ?? undefined) });
+        const r = await removeTree({ path: rec.checkout, main: rec.project, git: this.git, proof: async (cut) => (await import("../worktree-retire")).leftoverProofHere(rec.checkout, rec.project, rec.branch ?? undefined, cut) });
         if (r.state === "removed") return { result: "done", detail: `removed ${rec.checkout}${r.finished ? " (git stopped part way; what was left was proved safe and finished)" : ""} (branch ${rec.branch} kept)` };
         return { result: "skipped", detail: r.state === "held" ? `git forgot ${rec.checkout} but files stayed: ${r.reason}` : `kept ${rec.checkout}: ${r.reason}` };
       });

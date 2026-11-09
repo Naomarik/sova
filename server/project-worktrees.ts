@@ -337,7 +337,7 @@ async function removedOr(w: WorktreeRecord, root: string, git: Git, force: boole
     git,
     ...(git === runGit ? { remove: longGit } : {}),
     force,
-    proof: async () => (await import("./worktree-retire")).leftoverProofHere(w.path, root, w.branch),
+    proof: async (cut) => (await import("./worktree-retire")).leftoverProofHere(w.path, root, w.branch, cut),
   });
   if (out.state === "refused") throw new WorktreeRefusal(`Nothing was removed: ${out.reason}`);
   if (out.state === "held") throw new WorktreeRefusal(`Git forgot the worktree, but its folder couldn't be finished: ${out.reason}`);

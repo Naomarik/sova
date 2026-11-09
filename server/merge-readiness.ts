@@ -20,7 +20,7 @@ import { blockedNoteText, checkFailureOf, type DocsPreview, docsNudgeText, type 
 import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
 import { WORKTREES } from "./harness/state-kinds";
-import { DIRTY_TTL_MS, execGit, gitInputsStamp, gitRefsStamp, type GitRunner, linkedCheckoutOf, worktreeInsights, type WorktreeInsights } from "./worktrees";
+import { DIRTY_TTL_MS, execGit, gitInputsStamp, gitRefsStamp, type GitRunner, linkedCheckoutOf, queueTargetOfTree, worktreeInsights, type WorktreeInsights } from "./worktrees";
 import { goneTreeState, type GoneState } from "./removed-worktrees";
 import { sessionsChanged } from "./list-generation";
 import { opTrack } from "./stall-recorder";
@@ -669,7 +669,7 @@ const defaultDeps = (): ReadinessDeps => ({
   treeStamp: (dir, together) => worktreeInsights.quietStamp(dir, together),
   inputsStamp: gitInputsStamp,
   finished: finishedOf,
-  drafts: (dir) => draftsLeft(dir, ancestorVia(execGit), draftProofVia(execGit)),
+  drafts: (dir) => draftsLeft(dir, ancestorVia(execGit), draftProofVia(execGit, queueTargetOfTree)),
   approvedAt: (path, branch, head) => {
     const root = linkedCheckoutOf(path);
     return !!root && !!queueReadingAt(root)?.approvedAt(branch, head);
@@ -936,7 +936,7 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
   const r = sessionReadinessOf(trees, { ...(newest ? { lastMerge: { at: newest.at, branch: newest.branch } } : {}), restartPending, pushPending, followUp }, lastReplyAt);
   if (!r || !newest) return r;
   // The branch status line (§chat.worktrees/readiness): code only, for the newest merge.
-  const drafts = newest.path && existsSync(newest.path) ? (await draftsLeft(newest.path, ancestorVia(deps.git), draftProofVia(deps.git)))?.length : undefined;
+  const drafts = newest.path && existsSync(newest.path) ? (await draftsLeft(newest.path, ancestorVia(deps.git), draftProofVia(deps.git, queueTargetOfTree)))?.length : undefined;
   const status: BranchStatus = {
     branch: newest.branch,
     commit: newest.sha.slice(0, 7),
@@ -987,7 +987,10 @@ export async function computeBranches(s: Pick<SessionSummary, "id">, facts: Pick
     trees.map(async (t): Promise<BranchReading> => {
       const exists = existsSync(t.path);
       const shared = sharedWith(t, s.id);
-      const merged = t.status === "active" && exists && deps.mergedInto ? await mergedByStamp(t).catch(() => undefined) : undefined;
+      const found = t.status === "active" && exists && deps.mergedInto ? await mergedByStamp(t).catch(() => undefined) : undefined;
+      // Where the queue lands on another branch, being in master or main says nothing about landing (§chat.worktrees/nothing-left).
+      const landsOn = found ? queueTargetOfTree(t.path) : null;
+      const merged = found && landsOn && found.target !== landsOn && (found.target === "master" || found.target === "main") ? undefined : found;
       const q = exists && deps.branchFields ? await deps.branchFields(t.path, t.branch).catch(() => null) : null;
       // The shared answer, read as readiness reads it, for a row no readiness of this chat's covers too.
       const st = exists ? await deps.insights.treeStatus(t.path).catch(() => null) : null;

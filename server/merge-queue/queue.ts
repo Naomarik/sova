@@ -371,6 +371,7 @@ export class ProjectQueue {
   async load(): Promise<void> {
     registerQueueReading(this.root, {
       landings: (branch) => this.landingsOf(branch),
+      target: () => this.q?.target ?? null,
       // In line, checking or waiting for the user, or landed: never Approved · waiting for a fix or back with its chat,
       // which still get their requests (§chat.worktrees/blocks-landing).
       approvedAt: (branch, head) => !!this.q?.entries.some((x) => x.branch === branch && x.commit === head && x.state !== "with-chat" && (ENTRY_OPEN.includes(x.state) || x.state === "landed" || x.state === "requested" || x.state === "pushed")),

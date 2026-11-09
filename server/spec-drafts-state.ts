@@ -307,15 +307,18 @@ const MAX_LANDINGS = 3;
  * A draft is proved landed when it matches the target now, or matches the target at the commit that landed it: the
  * commit whose subject says it landed that draft, or the branch's own tip on the target (§chat.worktrees/nothing-left).
  * A draft edited since matches none. Only the drafts' own files and the spec at those commits are read: no spec tool.
- * Each answer stands while the drafts folder, the head and the target stay put. Default target: master, else main.
+ * Each answer stands while the drafts folder, the head and the target stay put. `target` is the branch it lands on, or
+ * how to name it for a folder; none named or none there: master, else main.
  */
-export function draftProofVia(git: ProofGit, target?: { name: string; oid: string }): DraftProof {
+export function draftProofVia(git: ProofGit, target?: { name: string; oid: string } | ((dir: string) => string | null)): DraftProof {
   return async (dir, names) => {
     const proved = new Set<string>();
     if (!names.length) return proved;
-    const refs = target ? null : await git(["for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/master", "refs/heads/main"], { cwd: dir });
+    const fixed = typeof target === "object" ? target : null;
+    const landsOn = typeof target === "function" ? target(dir) : null;
+    const refs = fixed ? null : await git(["for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/master", "refs/heads/main", ...(landsOn ? [`refs/heads/${landsOn}`] : [])], { cwd: dir });
     const lines = refs?.code === 0 ? refs.stdout.split("\n").map((l) => l.split(" ")) : [];
-    const oid = target?.oid ?? (lines.find((l) => l[0] === "refs/heads/master") ?? lines.find((l) => l[0] === "refs/heads/main"))?.[1];
+    const oid = fixed?.oid ?? ((landsOn ? lines.find((l) => l[0] === `refs/heads/${landsOn}`) : undefined) ?? lines.find((l) => l[0] === "refs/heads/master") ?? lines.find((l) => l[0] === "refs/heads/main"))?.[1];
     const head = oid ? (await git(["rev-parse", "HEAD"], { cwd: dir })).stdout.trim() : "";
     if (!oid || !head) return proved;
     const key = `${oid}\0${head}\0${names.join(",")}\0${draftsStamp(dir)}`;

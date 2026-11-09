@@ -39,6 +39,7 @@ import { projectRootOf } from "./project-root";
 import { runFingerprint, runsApproved } from "./session-offers-trust";
 import { stateRoot } from "./state-root";
 import { draftProofVia, draftsLeft } from "./spec-drafts-state";
+import { queueTargetOfTree } from "./worktrees";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
 
 /**
@@ -422,7 +423,7 @@ const CONDITION_WORDS: Record<OfferCondition, string> = {
 
 /** The folder's drafts not promoted, as the Worktrees row counts them (§chat.worktrees/readiness). */
 const offeredDrafts = (folder: string): Promise<string[] | undefined> =>
-  draftsLeft(folder, async (commit, ref, cwd) => (await deps.git(["merge-base", "--is-ancestor", commit, ref], cwd).catch(() => ({ code: 1 }))).code === 0, draftProofVia((args, o) => deps.git([...args], o.cwd)));
+  draftsLeft(folder, async (commit, ref, cwd) => (await deps.git(["merge-base", "--is-ancestor", commit, ref], cwd).catch(() => ({ code: 1 }))).code === 0, draftProofVia((args, o) => deps.git([...args], o.cwd), queueTargetOfTree));
 
 /** The trees a condition reads: the one the offer is shown for, else every tree of the session. */
 type TreesOf = () => Promise<NonNullable<SessionSummary["readiness"]>["trees"]>;

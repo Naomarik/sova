@@ -59,6 +59,8 @@ export const NO_LANDINGS: LandingRecords = { pins: [], landed: [] };
 /** What a loaded queue answers, from all its entries: no view, no window. */
 export interface QueueReading {
   landings(branch: string): LandingRecords;
+  /** The branch this queue lands on, once known. */
+  target?(): string | null;
   /** The user approved exactly this commit, and that approval is in line, checking, waiting or landed (not with its chat). */
   approvedAt(branch: string, head: string): boolean;
 }
@@ -85,6 +87,11 @@ export function registerQueueReading(root: string, reading: QueueReading): () =>
 export function queueReadingAt(rootOrCommonDir: string): QueueReading | null {
   const p = canonicalOf(rootOrCommonDir);
   return readers.get(p) ?? (basename(p) === ".git" ? readers.get(dirname(p)) : undefined) ?? null;
+}
+
+/** The branch a repository's queue lands on, by its main checkout or git common dir; null: no queue here, or not known yet. */
+export function queueTargetAt(rootOrCommonDir: string): string | null {
+  return queueReadingAt(rootOrCommonDir)?.target?.() ?? null;
 }
 
 export function landingRecordsAt(rootOrCommonDir: string, branch: string | undefined): LandingRecords {

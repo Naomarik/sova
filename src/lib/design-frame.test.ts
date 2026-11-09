@@ -1,0 +1,73 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { DESIGN_PAGE_CSP, DESIGN_SHELL_ATTRS, DESIGN_STREAM_ATTRS, DESIGN_STREAM_CSP, designHasStyles, designPageDoc, designShellDoc, designStreamDoc, fromDesignFrame, versionLabel } from "./design-frame";
+
+const directives = (csp: string) => new Map(csp.split("; ").map((d) => [d.split(" ")[0], d.split(" ").slice(1)] as const));
+
+test("a page's network is Google Fonts and its own data, in every state of a page", () => {
+  for (const csp of [DESIGN_PAGE_CSP, DESIGN_STREAM_CSP]) {
+    const d = directives(csp);
+    assert.deepEqual(d.get("default-src"), ["'none'"]);
+    assert.deepEqual(d.get("connect-src"), ["'none'"]);
+    assert.deepEqual(d.get("frame-src"), ["'none'"]);
+    assert.deepEqual(d.get("form-action"), ["'none'"]);
+    assert.deepEqual(d.get("base-uri"), ["'none'"]);
+    assert.ok(d.get("font-src")!.includes("https://fonts.gstatic.com"));
+    assert.ok(d.get("style-src")!.includes("https://fonts.googleapis.com"));
+    assert.ok(!d.get("img-src")!.some((s) => s.startsWith("http")), "no image from the web");
+  }
+  assert.equal(directives(DESIGN_STREAM_CSP).get("script-src"), undefined, "no scripts while it is written");
+});
+
+test("the policy and the seal come before anything the page wrote", () => {
+  const page = "<!doctype html><html><head><script>window.X=1</script></head><body>hi</body></html>";
+  const doc = designPageDoc(page, { motion: true });
+  const csp = doc.indexOf("Content-Security-Policy");
+  const rtc = doc.indexOf("RTC");
+  const mine = doc.indexOf("window.X");
+  assert.ok(csp >= 0 && rtc > csp && mine > rtc);
+  assert.ok(doc.indexOf("MutationObserver") < mine, "its child frames are watched from before it runs");
+});
+
+test("a grid card holds motion and the full view runs it", () => {
+  const held = designPageDoc("x", { motion: false });
+  const running = designPageDoc("x", { motion: true });
+  assert.match(held, /animation-duration:0s/);
+  assert.match(held, /requestAnimationFrame/);
+  assert.doesNotMatch(running, /animation-duration:0s/);
+  assert.doesNotMatch(running, /requestAnimationFrame/);
+});
+
+test("the streaming document runs nothing and the empty sandbox says so", () => {
+  assert.equal(DESIGN_STREAM_ATTRS.sandbox, "");
+  assert.equal(DESIGN_SHELL_ATTRS.sandbox, "allow-scripts");
+  assert.ok(designStreamDoc("<p>so far").endsWith("<p>so far"));
+  assert.doesNotMatch(designStreamDoc("<p>"), /<script/);
+});
+
+test("the shell escapes the page so a closing script tag in it can't end the shell's own script", () => {
+  const doc = designShellDoc("a</script><b>");
+  assert.equal(doc.indexOf("</script>"), doc.lastIndexOf("</script>"), "only the shell's own closing tag");
+});
+
+test("a page draws once its first style block closes, whatever its case", () => {
+  assert.equal(designHasStyles("<style>a{}"), false);
+  assert.equal(designHasStyles("<style>a{}</style>"), true);
+  assert.equal(designHasStyles("<STYLE>a{}</STYLE >"), true);
+});
+
+test("a shell's word counts only from this frame's own shell", () => {
+  const shell = {};
+  const data = { "sova-design-frame": 1, op: "left" };
+  assert.equal(fromDesignFrame({ source: shell, data }, shell), "left");
+  assert.equal(fromDesignFrame({ source: {}, data }, shell), null, "another frame");
+  assert.equal(fromDesignFrame({ source: shell, data: { op: "left" } }, shell), null, "no tag");
+  assert.equal(fromDesignFrame({ source: shell, data: { "sova-design-frame": 1, op: "other" } }, shell), null, "no such word");
+  assert.equal(fromDesignFrame({ source: null, data }, null), null, "no shell yet");
+});
+
+test("versions are named by label, with the first unnumbered", () => {
+  assert.equal(versionLabel("A", 1), "A");
+  assert.equal(versionLabel("A", 2), "A2");
+  assert.equal(versionLabel("AB", 3), "AB3");
+});

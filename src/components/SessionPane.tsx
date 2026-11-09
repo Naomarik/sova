@@ -20,6 +20,7 @@ import { createSessionSpend, SessionUsageTab } from "./SessionUsage";
 import { type AgentsView, SubagentPane } from "./SubagentPane";
 import { TimeSpentTab } from "./TimeSpent";
 import { Chip, Icon } from "./ui";
+import { DesignGallery } from "./DesignGallery";
 import { trackSessionPane } from "../lib/time-spent";
 
 /** The open session's insight, loaded once in App.tsx for the head, the strip and this pane. */
@@ -34,7 +35,7 @@ export interface PaneInsight {
   changed: number;
 }
 
-export type TabId = "session" | "timeline" | "agents" | "usage" | "time" | "context" | "sharing" | "skills" | "explain";
+export type TabId = "session" | "timeline" | "agents" | "usage" | "time" | "context" | "sharing" | "skills" | "gallery";
 const TABS: readonly { id: TabId; label: string }[] = [
   { id: "session", label: "Session" },
   { id: "timeline", label: "Timeline" },
@@ -44,15 +45,17 @@ const TABS: readonly { id: TabId; label: string }[] = [
   { id: "context", label: "Context" },
   { id: "sharing", label: "Sharing" },
   { id: "skills", label: "Skills" },
-  { id: "explain", label: "Explain" },
+  { id: "gallery", label: "Gallery" },
 ];
 const isTab = (id: string | null): id is TabId => TABS.some((t) => t.id === id);
+/** A pane kept on the tab's old name opens on Gallery. */
+const keptTab = (id: string | null) => (id === "explain" ? "gallery" : id);
 
 /**
  * The session detail pane: a head, a tab strip, and one tab's panel. Session is what the session
  * is (SessionDetails); Timeline is the session's one time axis; Agents is the subagents pane it grew
  * out of; Usage is what the session has spent (SessionUsage); Time Spent is where your time and the agent's went (TimeSpent); Context is what fills its window now (ContextTab); Sharing is its share links, with a
- * viewing-now badge on the tab; Skills says which skills loaded and when, here and in each worker; Explain lists this session's /explain pages. The tab is kept per
+ * viewing-now badge on the tab; Skills says which skills loaded and when, here and in each worker; Gallery shows this chat's prototypes above its /explain pages. The tab is kept per
  * session path; with none kept, it opens on Agents while a worker is working, else on Session —
  * never on Usage, which its tab and the head's token chip open, or on Time Spent. Read-only throughout, except the
  * Timeline's rewind, which goes through the chat.
@@ -122,7 +125,7 @@ export function SessionPane(props: {
   // the reader when the last worker finished.
   const fallback: TabId = untrack(working) > 0 ? "agents" : "session";
   const tab = (): TabId => {
-    const kept = activeTab(props.path);
+    const kept = keptTab(activeTab(props.path));
     return isTab(kept) ? kept : fallback;
   };
 
@@ -135,7 +138,7 @@ export function SessionPane(props: {
 
   const tabEls: HTMLButtonElement[] = [];
   // The strip scrolls sideways in a narrow pane: keep the tab showing, on open and on every change,
-  // so a tab a door opened (Explain, Usage) is never off the end of the strip.
+  // so a tab a door opened (Gallery, Usage) is never off the end of the strip.
   createEffect(() => tabEls[TABS.findIndex((t) => t.id === tab())]?.scrollIntoView({ inline: "nearest", block: "nearest" }));
   let aside!: HTMLElement;
   onMount(() =>
@@ -298,8 +301,8 @@ export function SessionPane(props: {
               }}
             />
           </Match>
-          <Match when={tab() === "explain"}>
-            <ExplainTab insight={props.insight} now={props.now} />
+          <Match when={tab() === "gallery"}>
+            <GalleryTab path={props.path} insight={props.insight} now={props.now} />
           </Match>
         </Switch>
       </div>
@@ -347,16 +350,18 @@ function SessionTab(props: {
   );
 }
 
-// ---- Explain ----------------------------------------------------------------------------------
+// ---- Gallery ----------------------------------------------------------------------------------
 
 /**
  * This session's /explain pages, newest first, as text rows: the Explanations page (from the
  * insight strip) owns thumbnails, and both open the same page through `explainHref`. Read off the shared insight.
  */
-function ExplainTab(props: { insight: PaneInsight; now: number }) {
+function GalleryTab(props: { path: string; insight: PaneInsight; now: number }) {
   const items = () => newestFirst(props.insight.data?.explanations ?? []);
   return (
     <div class="session-panel-scroll" tabindex="0">
+      <DesignGallery path={props.path} />
+      <h3 class="text-eyebrow gallery-explanations">Explanations</h3>
       <Show
         when={items().length > 0}
         fallback={

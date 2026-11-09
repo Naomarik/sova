@@ -26,6 +26,7 @@ import { replyHovers } from "../lib/perf";
 import { LiveRowsContext, ThreadRowsContext, useLiveRows, type LiveRows, type ThreadRows } from "./thread-rows";
 import { TurnError } from "./MessageRows";
 import { liveTourCalls, newestTourRows, tourFold, tourLine } from "../lib/tour-rows";
+import { designFold, liveDesignCalls, newestDesignRows } from "../lib/design-rows";
 import { normalizeShowChangesDetails } from "../../pi-config/extensions/show-changes/details";
 import { normalizeOfferDetails } from "../../shared/session-offers";
 import { normalizeCardDetails as normalizeRaisedCard } from "../../shared/transcript-cards";
@@ -203,6 +204,8 @@ export function HistoryItems(props: {
   /** Tours this streaming run already finished a call for: their settled card reads as a line until
       the refetch, since the live call draws the card (§app.tours/one-card). */
   liveTourIds?: ReadonlySet<string>;
+  /** Design runs this streaming turn finished a call for: their settled card reads as a tool row until the refetch. */
+  liveDesignRuns?: ReadonlySet<string>;
 }) {
   /**
    * The items the thread may render: the settings-change rows are dropped before anything else,
@@ -245,10 +248,13 @@ export function HistoryItems(props: {
   const tourCards = createMemo(() => newestTourRows(props.items, props.liveTourIds));
   /** The full card, for the call that draws it. */
   const tourCardOf = (item: TranscriptItem) => (tourCards().has(item.id) ? tours().rows.get(item.id) : undefined);
+  const designs = createMemo(() => designFold(props.items));
+  const designCards = createMemo(() => newestDesignRows(props.items, props.liveDesignRuns));
+  const designCardOf = (item: TranscriptItem) => (designCards().has(item.id) ? designs().rows.get(item.id) : undefined);
   /** The profile row shows once a message is on the branch (§chat.profiles/after-first-message). */
   const hasUserRow = createMemo(() => props.items.some((it) => it.kind === "user"));
   /** What a row's kind may ask of the whole list when it matches (lib/transcript-kinds.ts). */
-  const kinds: KindContext = { hasUserRow, tourCard: tourCardOf, showChanges: showChangesOf, offer: offerOf, settings: settingsOf, card: cardOf, hasCall: (id) => calls().has(id) };
+  const kinds: KindContext = { hasUserRow, tourCard: tourCardOf, designCard: designCardOf, showChanges: showChangesOf, offer: offerOf, settings: settingsOf, card: cardOf, hasCall: (id) => calls().has(id) };
   // Every row stands where it was raised (§chat.transcript-cards/placement): nothing moves to the end.
   const renderable = createMemo(() =>
     props.items.filter((it) => !isChangeRow(it) && !wrapupRows().has(it.id) && !(it.kind === "tool-call" && it.toolCallId && alignCalls().has(it.toolCallId))),
@@ -653,7 +659,7 @@ export function LiveEntries(props: {
     }
     // A call is a step unless its kind keeps it out, by the settled rows' own rule (`outsideWork`):
     // a call whose kind keeps it out never joins the run only to leave it at the handover.
-    const ctx = { tool: (id: string) => props.live.tools[id], tourCall: (id: string) => liveTourCalls(props.live.tools).get(id) };
+    const ctx = { tool: (id: string) => props.live.tools[id], tourCall: (id: string) => liveTourCalls(props.live.tools).get(id), designCall: (id: string) => liveDesignCalls(props.live.tools).get(id) };
     const working = blocks.map((b) => {
       if (b?.type === "thinking") return true;
       if (b?.type !== "toolCall") return false;
@@ -688,6 +694,7 @@ export function LiveEntries(props: {
     live: () => props.live,
     tool: (callId) => props.live.tools[callId],
     tourCall: (tourId) => liveTourCalls(props.live.tools).get(tourId),
+    designCall: (runId) => liveDesignCalls(props.live.tools).get(runId),
     names: () => props.names,
     limitPath: () => props.limitPath,
     get queueActions() {

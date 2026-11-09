@@ -884,7 +884,7 @@ const watchUrl = (s: TranscriptSource, host: string | null): string =>
  * One worker's session, tailed read-only (like WatchView, without a composer or head). The
  * socket closes when the selection changes or the pane closes.
  */
-function WorkerTranscript(props: {
+export function WorkerTranscript(props: {
   source: TranscriptSource; host: string | null; name: string; author: string; streaming: boolean;
   /** The session whose Agents tab this is in: reading it counts there. */
   parent?: string;

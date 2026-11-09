@@ -705,6 +705,38 @@ describe("Land reads the same answer, and never moves the target for nothing", (
     assertAgree("after", "nothing", await readAll(fx, h, b));
   });
 
+  test("drafts only on a host's squash, a trial of the pin conflicting: the merge is never tried, and the target moves by the spec commit alone", async () => {
+    const { fx, h, b } = await squashed({ leftover: false, rewrite: true });
+    await fx.withSpec();
+    fx.draft(b.checkout, "squash-draft");
+    const before = fx.head();
+    const e = await h.add({ branch: b.branch });
+    const done = await h.waitEntry(e.id, settled);
+    assert.equal(done.state, "landed", `${done.state}: ${done.reason ?? ""}`);
+    assert.equal(git(fx.project, ["rev-list", "--count", `${before}..${fx.head()}`]), "1", "one commit");
+    assert.ok(onlySpecFiles(fx, before, fx.head()), "of spec files alone");
+  });
+
+  test("the target took the code and the draft while it waited: the docs step finds nothing, and the target doesn't move", async () => {
+    const { fx, h } = await setup();
+    await fx.withSpec();
+    const files = { "twin.txt": "same\n" };
+    const first = fx.branch("twin-a", files);
+    const second = fx.branch("twin-b", files);
+    for (const c of [first, second]) fx.draft(c.checkout, "twin");
+    await h.pause("both in line, in this order");
+    const [a, z] = [await h.add({ branch: first.branch }), await h.add({ branch: second.branch })];
+    await h.resume();
+    assert.equal((await h.waitEntry(a.id, settled)).state, "landed");
+    const [head, origin, mark] = [fx.head(), fx.originHead(), fx.calls().length];
+    const done = await h.waitEntry(z.id, settled);
+    assert.equal(done.state, "cancelled", `${done.state}: ${done.reason ?? ""}`);
+    assert.equal(done.reason, NOTHING_TO_LAND(fx.target));
+    assert.equal(fx.head(), head, "the target didn't move");
+    assert.equal(fx.originHead(), origin, "nothing pushed");
+    assert.equal(fx.callsSince(mark).filter((c) => c.script === "unit").length, 0, "no check ran");
+  });
+
   test("a merge carrying real edits, every commit of it on the target by the time it runs: it is merged, not skipped, and reads Landed only once it has", async () => {
     const { fx, h } = await setup();
     const b = fx.branch("edits", { "e.txt": "e\n" });

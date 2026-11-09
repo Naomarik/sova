@@ -251,3 +251,9 @@ test("every mark is still: the row's one moving thing is its Busy dot", () => {
   assert.ok(rules.length >= 6, "the status rules are found");
   for (const [, sel, body] of rules) assert.doesNotMatch(body!, /animation|transition/, sel!.trim());
 });
+
+test("a branch's line says the chip's word once, whether or not its reason opens with it", () => {
+  assert.equal(branchLine("a", { label: "Ready to merge", reason: "Ready to merge · checks passed" }), "a: Ready to merge · checks passed");
+  assert.equal(branchLine("a", { label: "Blocked", reason: "Blocked" }), "a: Blocked");
+  assert.equal(branchLine("a", { label: "Needs a fix", reason: "Unit tests failed" }), "a: Needs a fix · Unit tests failed");
+});

@@ -121,8 +121,8 @@ export function readinessReason(w: Pick<SessionWorktreeInfo, "readiness">): stri
 /** A row offers Review Changes (§chat.changes/entry): an active worktree whose folder is there,
     unless its readiness says the branch has no commit of its own (the fact behind "no commits
     yet"). Commits that cancel out keep it; until readiness is read it shows. */
-export function canReviewChanges(w: Pick<SessionWorktreeInfo, "status" | "exists" | "readiness">): boolean {
-  return w.status === "active" && w.exists && !w.readiness?.noCommits;
+export function canReviewChanges(w: Pick<SessionWorktreeInfo, "status" | "exists" | "readiness"> & Partial<Pick<SessionWorktreeInfo, "gone">>): boolean {
+  return w.status === "active" && w.exists && !w.gone && !w.readiness?.noCommits;
 }
 
 /** The Session tab's line for a branch that tracks none: the section stays, and says so. */

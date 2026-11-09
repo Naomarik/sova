@@ -87,3 +87,8 @@ test("Ready to land and Landing specs (§chat.worktrees/ready-to-land): the chip
   // Without a landing, unchanged.
   assert.equal(readinessChip({ readiness: { path: "/w", branch: "feat/x", state: "ready" } })?.label, "Ready to merge");
 });
+
+test("a folder with no working branch offers no Review Changes: there is nothing there to compare", () => {
+  assert.equal(canReviewChanges({ status: "active", exists: true, gone: "merged", readiness: undefined }), false);
+  assert.equal(canReviewChanges({ status: "active", exists: true, readiness: undefined }), true);
+});

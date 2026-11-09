@@ -38,7 +38,9 @@ export interface RowBranchStatus {
 
 /** One branch in the Worktrees window's words: "feat/login: Needs a fix · <reason>". */
 export const branchLine = (branch: string, r: Pick<QueueRow, "label" | "reason">): string => {
-  const reason = r.reason?.replace(/\s*\n\s*/g, " · ").trim();
+  const whole = r.reason?.replace(/\s*\n\s*/g, " · ").trim();
+  // A readiness reason often opens with the chip's own word ("Ready to merge · checks passed"): said once.
+  const reason = whole?.startsWith(`${r.label} · `) ? whole.slice(r.label.length + 3) : whole === r.label ? undefined : whole;
   return `${branch}: ${r.label}${reason ? ` · ${reason}` : ""}`;
 };
 

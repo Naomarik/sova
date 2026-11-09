@@ -32,10 +32,10 @@ const FACTS = new Set(["run.start", "user.entered", "user.end", "run.settled"]);
 /** How often the ticks handled are acknowledged, at most. */
 const RUN_ACK_MS = 200;
 
-/** What the server does with what a chat process tells it, beyond the handle itself. */
 /** The commands that start work in a chat's folder. */
 const STARTS_WORK: ReadonlySet<ChatMethod> = new Set<ChatMethod>(["send", "deliverToAgent", "deliverTopicBatch", "resumeWorker"]);
 
+/** What the server does with what a chat process tells it, beyond the handle itself. */
 export interface RemoteHooks {
   /** Before a message or a worker's start reaches the chat: its retired folder comes back, if it has one (server/worktree-retire-notes.ts). Never throws, and reading a chat never gets here. */
   beforeMessage?(h: RemoteChatHandle): Promise<void>;

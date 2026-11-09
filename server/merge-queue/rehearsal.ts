@@ -1,7 +1,8 @@
 // The gate on a change to automatic cleanup (§app.merge-queue/approve): a branch of Sova's own repository that changes
 // the code retiring and removing worktrees lands only once a rehearsal passed at exactly that commit, on a private copy
 // of the user's real state taken the same day. The rehearsal runs outside the queue, started by the user; this only reads
-// its record, `<state root>/retire-rehearsals.json`. A record that can't be read is no pass.
+// its record, `<state root>/retire-rehearsals.json`. A record that can't be read is no pass. A person writes the pass with
+// `node scripts/retire-rehearsal/run.mjs record <full commit>`, on branch feat/retire-rehearsal until that lands.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import labJson from "../../shared/retire-lab.json";
@@ -54,7 +55,6 @@ export const REHEARSAL_NEEDED = "Rehearsal needed";
 export const rehearsalRefusal = (branch: string, commit: string): string =>
   `Rehearsal needed: ${branch} changes automatic cleanup and has no passing rehearsal at ${commit.slice(0, 7)} on a copy of your state taken today. Nothing was queued.`;
 
-/** The paths `commit` changes since the point it forked from `head`; null: git couldn't say, and a doubt is a change. */
 type DiffGit = (args: string[], cwd: string) => Promise<{ code: number; stdout: string }>;
 
 /** Which commits change cleanup's code, by branch tip and the target it forked from: a commit's own files don't change. */

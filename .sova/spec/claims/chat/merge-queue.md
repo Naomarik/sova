@@ -299,7 +299,8 @@ follow card does (§chat.transcript-cards/placement):
   rebuilt, so the chat never shifts.
 - **A new revision at the bottom** only for **Landed** and for a **decision** that waits for the
   user (§chat.merge-queue/decision: Behaviour differs, Needs you, Can't tell whose failure, Out of
-  tries, a fix that needs your OK, Drafts changed), and for Removed, and on the host Request ready,
+  tries, a fix that needs your OK, Drafts changed), and for Removed, for Cancelled when a run finds
+  nothing to land, and on the host Request ready,
   Requested, Pushed and Closed. A request's host state changes in place. A conflict the merge thread
   is still judging, and everything sent back to the chat, stays in place. The newest revision is the
   full card; each earlier one folds to one line ("feat/x · Queued 2nd · earlier copy") that opens to
@@ -321,8 +322,9 @@ that line stays as it was: none is added to it. While queued it says "starts in 
   card, §chat.merge-queue/review-card), the
   reason once when the push didn't happen ("Push held: {why}." when the queue's reason already says
   it is held, else "Not pushed: {why}.", or "Not pushed: this project doesn't push from the
-  queue."), and "1 newer commit not included" with **Land Again** when the branch moved past the
-  approval. **Review Changes** opens the changes viewer on exactly what landed: from the target
+  queue."), and "1 newer commit not included" with **Land Again** only when the branch's commits past
+  the approval hold real work (§app.merge-queue/after-approval): a catch-up merge on top says nothing
+  and offers nothing. **Review Changes** opens the changes viewer on exactly what landed: from the target
   before the landing to the landed commit, in the project's repository, even once the worktree is
   removed (§chat.changes/entry). When checked fix commits landed after the user's Land (never a
   rewritten one), the card lists them ("Fixes that landed with your Land:", each commit's short id
@@ -357,7 +359,7 @@ Beside Queued, Checking and Landed (§chat.merge-queue/chat-card), the card read
   §app.merge-queue/requests); then a **Landed** revision once the host merged it ("Merged on GitHub.
   Sova checked it merged with {target}; GitHub's merge is final."), or "Closed on GitHub" with
   **Land Again**. Push branch only ends at **Pushed**. Land Again also shows on an open request or a
-  pushed branch once the branch has newer commits.
+  pushed branch once the branch has newer commits that hold real work.
 - **Back with the chat** (in place) gives the reason with **See Why**, "try {n} of 3" (none for a
   conflict that was already there at the Land, which costs no try), and lists the failing checks
   ("Unit tests · 1 failed") with their failing tests and a link to each log, or the conflicting
@@ -383,6 +385,9 @@ Beside Queued, Checking and Landed (§chat.merge-queue/chat-card), the card read
 - **Drafts changed** is a decision (§chat.merge-queue/decision), offering **Land** (a new approval
   of the card's commit for the drafts as they are now, §app.merge-queue/after-approval) and Remove
   from Queue.
+- **Cancelled**, after a run that finds nothing to land (§app.merge-queue/run): the **Cancelled** pill,
+  with "Nothing to land: everything on this branch is already on {target}." as its reason, and no action.
+
 - **Removed**, after Remove from Queue: a final revision with the **Removed** pill and the reason
   "removed by you", and no queue action; approving the branch again later moves the card on as a new
   "approved" revision.
@@ -488,6 +493,12 @@ the queue turns down for that reason, said as below.
 - **The host's news doesn't start a turn.** A request opened, its host state changing, merged,
   closed, or a branch pushed: each is a hidden line, as Landed is. Host checks failing, changes
   requested and conflicts on the host are sent back by themselves, as requests (below).
+- **An approval doesn't start a turn.** The chat's model reads one hidden line at its next turn, in
+  the same block as Landed below, and a typed "land it" also reads it in `worktree land`'s answer:
+  "{branch} at {sha} is in line to land on {target}. Leave it alone until it lands: don't merge {target}
+  into it. The queue handles any conflict and asks for any fix it needs. Real new commits are fine: they
+  stay on the branch as new work for a later Land."
+
 - **Landed and Drafts changed don't start a turn.** The chat's model reads one hidden line at its
   next turn, in a block of the chat's card note (so chats started before this shipped get it too).
   The block's first line is "From Sova's merge queue (not the user's words; nothing to answer):",
@@ -523,6 +534,9 @@ the queue turns down for that reason, said as below.
   worker and the branch ("For your worker "{title}" …" before the queue's own words). When no chat
   that runs it is known, or that chat can't take them, the fact becomes the hidden line in the
   worker's own chat instead, so nothing is lost and nothing is sent twice.
+- **A run that finds nothing to land starts nothing**: its card says so (§chat.merge-queue/chat-card),
+  with no turn and no hidden line.
+
 - **Waiting for the user starts nothing by itself.** A decision (§chat.merge-queue/decision) asks
   the user on the card: its note to the chat is held, "not sent yet", and starts no turn and leaves
   no hidden line. When the user sends their answer from the message box, that one turn carries their
@@ -531,7 +545,9 @@ the queue turns down for that reason, said as below.
 - **A question from the merge thread** is a decision, once per question (§chat.merge-queue/asks):
   its note is held until the user answers, and says their own message is the answer, which Sova
   passes to the merge thread: nothing for the chat to relay.
-- **A typed "land it" the queue refuses** is told to the model the same way, as a hidden line. In a
+- **A typed "land it" the queue refuses** is told to the model the same way, as a hidden line, though
+  `worktree land` had answered that it was queued: "{branch} at {sha} couldn't be queued to land: Nothing
+  to land: everything on this branch is already on {target}." for a branch with nothing left. In a
   repository the queue doesn't serve (a chat still on code from before that rule records such a
   go-ahead), the line is "{branch} at {sha} couldn't be queued to land: not a project the merge
   queue serves: merge it into main from the chat.", so the chat, once reloaded, merges it itself.

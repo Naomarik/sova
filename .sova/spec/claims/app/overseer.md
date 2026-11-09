@@ -612,6 +612,12 @@ sessions are left out, and the coverage line counts them as skipped.
   shown, nor "archived" on a Can't confirm merged row. A session is in as many sections as apply,
   once in each. Every row is listed, except in Can't confirm merged and Not checked yet: at most
   40 rows each, then "and {n} more".
+- **Nothing left is listed nowhere.** A worktree with nothing left (§chat.worktrees/nothing-left), a
+  catch-up merge on top included and whatever it conflicts with now, is in none of the merge sections,
+  by the same answer the rows read; one with only unproved drafts left, a branch with no commits
+included, is under Landing specs. The reads
+  below settle only what that answer leaves open.
+
 - **Sections**, in this order, each only when it has rows:
   - **Lost (on no branch)**: a session's own launch worktree (below) whose folder and branch are
     gone while a commit its transcript names is on no branch and not on the main branch: "branch

@@ -597,7 +597,7 @@
   "§design.copy-deck/worktree-cleanup": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "about": [
       "§chat.transcript/empty-worktrees",
       "§chat.worktrees/cleanup",

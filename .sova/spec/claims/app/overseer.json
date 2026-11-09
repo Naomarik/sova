@@ -1227,7 +1227,8 @@
       "server/overseer-roundup-git.ts",
       "server/sessions-index.ts",
       "server/merge-queue/wire.ts",
-      "server/merge-queue/place.ts"
+      "server/merge-queue/place.ts",
+      "server/landed-branch-agreement.integration.test.ts"
     ],
     "requires": [
       "§app.overseer/tools",
@@ -1237,14 +1238,15 @@
       "§chat.alignment/session-mark",
       "§app.overseer/session-truth",
       "§app.project-overseer/coding-worktrees",
-      "§chat.worktrees/place"
+      "§chat.worktrees/place",
+      "§chat.worktrees/nothing-left"
     ],
     "agreed": {
-      "by": "the user (al_2 go)",
-      "at": "2026-11-09T10:27Z",
-      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#b9a60247"
+      "by": "naomarik",
+      "at": "2026-11-09T15:52Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#02c2fa31"
     },
-    "evidence": "verified"
+    "evidence": "reviewed"
   },
   "§app.overseer/run-note": {
     "kind": "behavior",

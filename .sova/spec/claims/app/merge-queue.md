@@ -111,7 +111,8 @@ release`, without review (§app.release/checks).
 - The commit the screen showed: the row's head on the project page, in the composer's modal and in
   the pane, or a proposed run's reviewed tip; for a typed "land it", the head at that moment. A
   commit that isn't on the branch is refused ("{sha} isn't on {branch}"); a branch that has moved
-  past it lands the shown commit, with "{n} newer commits not included".
+  past it lands the shown commit, with "{n} newer commits not included" when those commits hold real
+  work (§app.merge-queue/after-approval).
 - How it lands, as it is in effect at that moment (§app.merge-queue/strategies), so a settings
   change made after the approval never redirects it.
 - A hash of the branch's own spec drafts (the files under each draft's `spec/`, as
@@ -134,9 +135,22 @@ nothing blocks the approved commit and its drafts, Sova puts it in line by itsel
 commit, with no new Land. A new commit becomes the one that goes in line only as a fix the chat
 answered with, under the fix rules of §app.merge-queue/standing-approval.
 
+**Real work keeps Land, whatever it reads.** Land is taken on a branch with something left
+(§chat.worktrees/nothing-left) whatever its row says: a conflict, a chat still working, questions still
+open. The row says that true state beside Land (§chat.composer/worktrees-control), and the approval goes
+on as any other does.
+
 **What it refuses**, with the reason and nothing queued:
+- a branch with nothing left and no draft to land (§chat.worktrees/nothing-left), by Land, typed words
+  or `merge.add`: "Nothing to land: everything on this branch is already on {target}." ({target} is the project's: "… already on master." where it lands on
+  master.) No check runs, nothing reaches the target and no entry or other record is made. It comes
+  first: only what is about the project and not the branch comes before it (the target branch itself,
+  a repository the queue doesn't serve, an invalid or unset definition), so such a branch is never told
+  to run a trial, or that it is a scratch copy or has uncommitted files or a temporary commit. A branch
+  whose only leftovers are spec drafts is not refused: its approval lands just the drafts
+  (§app.merge-queue/run), and an approval of it without its specs is refused with the same sentence. Such
+  an approval keeps the temporary-commit refusal below. An answer of unknown is not nothing, and isn't refused here;
 - a branch with uncommitted files;
-- a branch with nothing ahead of the target;
 - a branch with a temporary commit subject;
 - the queue's own scratch copy (§app.merge-queue/resolve-copy);
 - the target branch itself;
@@ -180,9 +194,12 @@ fix commits and draft fixes the branch's chat makes while working the queue's re
 merge thread confirms each changes only what was asked; nothing else.
 - **A new commit that isn't a checked fix** (work the user asked for meanwhile, or anything the
   merge thread doesn't confirm) doesn't change the entry. The approved commit, with any checked
-  fixes, lands, and the row says "1 newer commit not included" (or "{n} newer commits"), counting
-  the branch's own first-parent commits past it, none the target already has. After the landing,
-  **Land Again** on the Landed card and rows lands that later work.
+  fixes, lands, and the row says "1 newer commit not included" (or "{n} newer commits") only for real
+  work: it counts the branch's own first-parent commits past it that aren't merges, none the target
+  already has, so a catch-up merge counts for nothing and adds no line. After the landing, **Land
+  Again** on the Landed card and rows lands that later work, and shows only when there is some. The
+  chat is told at approval to leave the branch alone until it lands: real new commits stay allowed and
+  read as new work (§chat.merge-queue/chat-turns).
 - **Drafts edited after approval** (the branch's own drafts no longer match the pinned hash; an edit
   to any other draft in its worktree doesn't count): when the chat only made them fit, answering
   Fixed to the queue's request, and the merge thread confirms it, Sova re-pins the approval's drafts
@@ -258,7 +275,7 @@ changed promise, or an edit the user made, is never a fix: it waits for the user
 
 **Back in line by itself.** Once a checked fix arrives, Sova re-reads the branch before it puts the
 entry back: its newest commit must be free of the things Land refuses (uncommitted files, a
-temporary commit subject, nothing ahead) and of what Ready to land checks itself that the queue
+temporary commit subject, nothing to land) and of what Ready to land checks itself that the queue
 can't settle (the chat's own failing check run, drafts that don't fit;
 §chat.worktrees/ready-to-land). A conflict with the target never holds a fix out of line: its run's
 conflict path takes it (§app.merge-queue/conflicts). When it is, the entry goes back in line at that
@@ -415,7 +432,7 @@ own folder, so a failure at any step, the first included, has its log.
 2. **Merge.** The approved commit is merged onto the target's commit as a merge commit, or the merge
    thread's resolution is used. Git's recorded resolutions (rerere) are never used here, whatever
    the user's git config says. A conflict goes to the merge thread's judgement
-   (§app.merge-queue/conflicts).
+   (§app.merge-queue/conflicts). A branch landing just its drafts may skip this step (below).
 3. **Setup.** The project's setup steps (the definition's `setup`, §app.project-services/contract)
    run on the merged tree, so a branch that breaks setup is caught. Their results are reused while
    their argv and inputs are unchanged.
@@ -447,6 +464,22 @@ own folder, so a failure at any step, the first included, has its log.
 Under Merge locally nothing is committed after the checks: the commit that lands is the commit that
 was tested, docs included. On the host the merge with the target is only tested: what is published
 is the branch with its docs commit (§app.merge-queue/publish).
+
+**A branch landing just its drafts** moves the target only by its spec commit. Whether its code is
+already there the run decides from git, in the merge copy, never from a row's label: when the approved
+commit is an ancestor of the target's commit, or is exactly a landing the queue has recorded for that
+branch, the merge step is skipped ("{target} already has what {sha} holds"), so a leftover merge that
+would conflict is never tried, and only drafts not proved landed are carried. Otherwise it merges as
+usual, and a conflict goes to the merge thread. A merge that leaves the tree equal to the target's while
+carrying drafts is discarded before the docs step, so the target moves by the spec commit alone; one
+carrying none stops below. A release's entry and a resolved conflict always run the merge and never
+discard it.
+
+**A landing that changes nothing stops here.** A run whose tree is the same as the target's changes
+neither code nor specs. It stops there, whatever let it through: right after the merge with no drafts
+to land, before setup, or after the docs step. No check or review runs, the target never moves and
+nothing is published. The entry ends cancelled with "Nothing to land: everything on this branch is already on {target}.", not sent back and with nothing blamed, and its card says the same
+(§chat.merge-queue/chat-card).
 
 **One at a time.** A project's queue checks one entry at a time. The next waiting entry starts once
 the previous one has landed, been sent back to its chat, waits for the user, been pushed, or has its
@@ -729,7 +762,8 @@ already marked, and without `--write` only says what it would do.
 
 **After a landing**, the entry reads **Landed**, with its commit and its note
 (§app.merge-queue/note). In the branch's chat its queue card moves down as **Landed**, with the
-note, "1 newer commit not included" and Land Again when the branch moved past the approval, and "Not
+note, "1 newer commit not included" and Land Again only when the branch's newer commits hold real
+work (a catch-up merge isn't that), and "Not
 pushed: {why}" when the push didn't happen (§chat.merge-queue/chat-card). The landing starts no turn
 there: the chat's model reads one hidden line about it at its next turn
 (§chat.merge-queue/chat-turns).
@@ -1018,10 +1052,16 @@ branch was switched to in it:
 - on Clean Up Merged, in its counts or its lists, even once its folder is gone
   (§chat.worktrees/cleanup).
 
+An old branch a merge thread made to fix a conflict, whether or not it counts as a scratch copy below,
+has nothing of its own left (every commit it has but a merge is on the target), so it is off the Ready
+to land list by that answer alone (§chat.worktrees/nothing-left). It stays where it is: nothing here
+removes it.
+
 An approval of one, by Land, typed words or `merge.add`, naming its branch or its folder, is
 refused with nothing queued: "{branch} is a scratch copy the merge queue made to resolve a
 conflict, not work of yours to land: land the branch it was made for instead"
-(§app.merge-queue/approve). That refusal comes before the setup branch's trial gate
+(§app.merge-queue/approve). One on a branch with nothing left is refused as nothing to land first,
+whether named by its branch or its folder. That refusal comes before the setup branch's trial gate
 (§app.project-setup/land-gate), so a copy that changes the project's setup is never told to run a
 trial; a branch of yours with the same change still is.
 
@@ -1259,10 +1299,11 @@ scrolled into view, clear of that fade.
 
 The tabs' rows:
 
-- **Ready to land**: the project's worktree branches with commits the target hasn't, a
-  clean tree, none of the queue's scratch copies (§app.merge-queue/resolve-copy), a head that
-  isn't a temporary commit, and no standing approval (in line, checking, with its chat or waiting
-  for the user) and no landing at that commit (a branch removed from the queue shows here again;
+- **Ready to land**: the project's worktree branches with something left to land
+  (§chat.worktrees/nothing-left), a clean tree, none of the queue's scratch copies
+  (§app.merge-queue/resolve-copy), a head that isn't a temporary commit, and no standing approval (in
+  line, checking, with its chat or waiting for the user) and no landing at that commit (a row with only
+  drafts left is listed whatever its head's subject says, and though it landed at that commit; a branch removed from the queue shows here again;
   the list is read at most every 15 seconds, so that row may take that long to appear). Land on a
   row whose chip says it is blocked for something its chat can fix approves it as **Approved ·
   waiting for a fix** (§app.merge-queue/approve).
@@ -1278,13 +1319,16 @@ The tabs' rows:
   chat's),
   with its reason as its hover: **Ready to land** or **Ready to merge** or **Waiting for your OK**
   (success), **Landing specs** (info, or warn when it can't land them), **In progress** (neutral),
-  **Conflicts with {target}** or **Blocked** or **Stale** (warn), **Merged** (success). A branch
+  **Conflicts with {target}** or **Blocked** or **Stale** (warn), **Drafts to land** (info). A branch
   with
   no known chat shows a neutral **No chat**; one whose chat holds no reading of it (the chat works
   in
   it without tracking it, or isn't among the chats Sova lists) a neutral **No reading**. The chip
-  only reports: the row stays on this list, and Land and its menu are offered as before, whatever it
-  says.
+  reports the branch's true state and the list doesn't wait on it. This list is wider than Ready
+  (§chat.worktrees/ready-to-land): a row of real work stays on it, with Land and its menu, whatever the
+  chip says, and only having nothing left takes a branch off it and out of every count that reads it. A
+  row with only drafts left says "{n} spec drafts" where the commits would be, and its menu has no Land
+  Without Its Specs….
   Land here asks once as the modal's does, its confirmation right-aligned under the row
   (§chat.composer/land-confirm), and only Land {n} Commits queues the branch.
   Land there names no chat: the queue records the branch's owner by the same rule the row shows
@@ -2102,7 +2146,7 @@ folder holds the docs commit, so that is all the draft tool's own rule needs
 (§tools.spec/draft-official): a draft reads official however the host merges the request, squash
 included, and whether or not the local target has caught up. A record the landing gave
 `authority: "accepted"` needs this: without the entries it differs from the draft's, and the merged
-row would say its drafts didn't make it (§chat.worktrees/readiness).
+row would say its drafts didn't land (§chat.worktrees/readiness).
 
 **Pushed as a fast-forward, never forced.** A branch on `origin` that has commits the published one
 lacks (someone pushed to it on the host) is refused with the reason, never overwritten, and nothing
@@ -2193,7 +2237,7 @@ worktree stays yours.
 **Closed without merging** reads "Closed on GitHub", with **Land Again** while the queue still
 serves the project; a repository it no longer serves shows no Land at all, even on an old closed
 request. Land Again also shows while a request is open, or a branch pushed, once the branch has
-newer commits.
+newer commits that hold real work.
 
 **New commits: added on top, never rewritten.** Land Again on a branch whose request is open,
 waiting for review or closed puts the same entry back in line (it keeps its request). It checks it

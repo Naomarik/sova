@@ -59,7 +59,7 @@
   "§chat.merge-queue/card-states": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§chat.merge-queue/chat-card",
       "§chat.merge-queue/decision",
@@ -85,15 +85,15 @@
       "src/lib/merge-review-card.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-08T16:24Z",
-      "source": "pi-session:01a1b862-ad81-7407-83a5-0f6d7690b353#e02f04cc"
+      "by": "naomarik",
+      "at": "2026-11-09T00:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
     }
   },
   "§chat.merge-queue/chat-card": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app.merge-queue/approve",
       "§chat.transcript-cards/placement",
@@ -142,9 +142,9 @@
       "src/lib/branch-place.ts"
     ],
     "agreed": {
-      "by": "the user (al_2 go)",
-      "at": "2026-11-09T10:27Z",
-      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#b9a60247"
+      "by": "naomarik",
+      "at": "2026-11-09T15:52Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#02c2fa31"
     }
   },
   "§chat.merge-queue/chat-turns": {
@@ -184,9 +184,9 @@
       "server/merge-queue/review-record.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-08T16:24Z",
-      "source": "pi-session:01a1b862-ad81-7407-83a5-0f6d7690b353#e02f04cc"
+      "by": "naomarik",
+      "at": "2026-11-09T00:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
     }
   },
   "§chat.merge-queue/decision": {

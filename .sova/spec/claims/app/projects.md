@@ -163,7 +163,8 @@ and a chat in any of them is one press away.
     while approved branches wait or are being checked. It opens the Merge Queue tab at Ready to land,
     `#/projects/<pid>/merge-queue`. A muted `…` while the queue serves the project but its first
     view since Sova started is still being read. `—` for a project the merge queue doesn't serve,
-    and then the row is not a link.
+    and then the row is not a link. A branch with nothing left is never counted here
+    (§chat.worktrees/nothing-left).
   - **Copies**: one pip per usable place of this project (the slots of 1 to 16 its port numbering
     can use, §app.project-services/instances, so normally 16; a place the numbering rules out is
     never drawn), and a figure. The pips are grouped, not in slot order: running first, then

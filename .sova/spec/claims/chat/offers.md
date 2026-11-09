@@ -111,7 +111,7 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   - `no-open-alignment`: no open alignment question. Enforced only for an offer that names it: any other
     offer shows beside an open question.
   - `specs-promoted`: the worktree holds no spec draft left unpromoted, counted as the Worktrees row
-    counts them (§chat.worktrees/readiness): a draft marked landed is promoted, and `{drafts}`
+    counts them (§chat.worktrees/readiness): a draft proved landed (§chat.worktrees/nothing-left) is promoted, and `{drafts}`
     leaves it out.
   An offer shown for one worktree reads these, its branch and its commit from that worktree;
   otherwise from the session's folder.

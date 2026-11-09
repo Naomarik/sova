@@ -226,7 +226,7 @@
   "§chat.composer/land-confirm": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§chat.composer/worktrees-control",
       "§chat.worktrees/pane",
@@ -245,9 +245,9 @@
       "server/merge-queue/wire.ts"
     ],
     "agreed": {
-      "by": "the user (al_2 go)",
-      "at": "2026-11-09T10:27Z",
-      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#b9a60247"
+      "by": "naomarik",
+      "at": "2026-11-09T15:52Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#02c2fa31"
     }
   },
   "§chat.composer/memory-status": {
@@ -393,7 +393,7 @@
   "§chat.composer/worktrees-control": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§chat/worktrees",
       "§chat.worktrees/pane",
@@ -409,12 +409,13 @@
       "§chat.worktrees/ready-to-land",
       "§app.merge-queue/owner",
       "§app.merge-queue/branch-summary",
-      "§chat.worktrees/place"
+      "§chat.worktrees/place",
+      "§chat.worktrees/nothing-left"
     ],
     "agreed": {
-      "by": "the user (al_2 go)",
-      "at": "2026-11-09T10:27Z",
-      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#b9a60247"
+      "by": "naomarik",
+      "at": "2026-11-09T15:52Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#02c2fa31"
     },
     "code": [
       "src/components/WorktreesControl.tsx",
@@ -447,7 +448,8 @@
       "server/merge-queue/verbs.test.ts",
       "src/lib/merge-standing.ts",
       "src/lib/branch-place.ts",
-      "src/components/BranchPlaceLine.tsx"
+      "src/components/BranchPlaceLine.tsx",
+      "server/landed-branch-agreement.integration.test.ts"
     ]
   },
   "§chat/composer": {

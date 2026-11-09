@@ -1,15 +1,17 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { adoptedService, CONTRACT_FILE, parseDefinition } from "../../shared/project-contract";
+import { adoptedService, CONTRACT_FILE, parseDefinition, type ProjectDef } from "../../shared/project-contract";
 import type { ProjectGlance, ProjectGlanceList, ProjectGlanceQueue, ProjectGlanceRelease, ProjectSummary } from "../../shared/projects";
 import type { ReleaseRecord } from "../../shared/release";
+import { countsAsRunning } from "../project-services/copy-limit";
+import { countPlaces } from "../project-services/places";
 
 /**
  * The project cards' runtime figures (§app.projects/home-glance): for every listed project at once, Ready to merge and
  * what is in line or landing from the merge queue's newest kept view (a served project's first view read once, in the
  * background, then kept), its release from the releaser's kept records,
- * Running slots from the copies' records and the copy limit, and the memory its chats and running copies use now.
- * It gathers what Sova keeps: past that one first view of a served project it builds no queue view, makes no queue for a
+ * its copies and places from the copies' records, the copy limit and one look at the listening ports, and the memory its chats and running copies use now.
+ * It gathers what Sova keeps (and that one look): past that one first view of a served project it builds no queue view, makes no queue for a
  * project the queue doesn't serve, runs no git, spawns nothing and probes no service. `buildGlance` is pure over its deps; `readGlance` wires the server's and shares one answer for 10 s.
  */
 
@@ -20,6 +22,7 @@ export interface GlanceInstance {
   slot: number;
   createdBy: string;
   desired: Record<string, "running" | "stopped">;
+  ports: Record<string, Record<string, number>>;
 }
 
 export interface GlanceDeps {
@@ -30,12 +33,14 @@ export interface GlanceDeps {
   queueOf(root: string): { state: "served"; cut: ProjectGlanceQueue } | { state: "reading" | "unserved" };
   /** The releaser's kept records of a root: undefined when it keeps none. */
   releaseOf(root: string): { open: ReleaseRecord | null; last: ReleaseRecord | null } | undefined;
-  /** The project's own file at its root (the unit its main checkout adopts, and for which service), or null: none. */
-  definitionOf(root: string): { adoptedUnit: string | null; adoptedService: string | null } | null;
+  /** The project's own file at its root (the unit its main checkout adopts, for which service, and the file itself; def null: it doesn't parse), or null: none. */
+  definitionOf(root: string): { adoptedUnit: string | null; adoptedService: string | null; def: Pick<ProjectDef, "services"> | null } | null;
   /** The copy limit in force (§app.project-services/instances). */
   capOf(root: string): number;
   instances: readonly GlanceInstance[];
-  shared: readonly { id: string; project: string; desired: Record<string, "running" | "stopped"> }[];
+  shared: readonly { id: string; project: string; desired: Record<string, "running" | "stopped">; ports: Record<string, Record<string, number>> }[];
+  /** The ports something on this host listens on, from the read's one look; null: the host has no such list. */
+  listeningPorts: ReadonlySet<number> | null;
   /** A Sova service's unit name (without `.service`). */
   unitOf(scopeId: string, service: string): string;
   /** Sova's own server's units (whole names): never counted on any card, Sova's own included. */
@@ -51,9 +56,6 @@ export interface GlanceDeps {
   hostTotalBytes: number | null;
   now: Date;
 }
-
-/** Counts as one of the copy limit's running copies: not the main checkout's, not conformance's, a service wanted running. */
-const countsAsRunning = (i: GlanceInstance): boolean => i.slot !== 0 && !i.createdBy.startsWith("conform:") && Object.values(i.desired).some((d) => d === "running");
 
 const unsettled = (s: { state: string }): boolean => s.state === "waiting" || s.state === "running" || s.state === "failed" || s.state === "held";
 
@@ -102,11 +104,12 @@ export function buildGlance(d: GlanceDeps): ProjectGlanceList {
         copiesBytes += d.ownMemory(pid) ?? 0;
       }
     const q = d.queueOf(p.root);
+    const places = def && countPlaces({ registry: d, project: p.root, isProject: (x) => d.sameRoot(x, p.root), def: def.def, numbering: def.def, listening: d.listeningPorts });
     return {
       projectId: p.id,
       merge: q.state,
       queue: q.state === "served" ? q.cut : null,
-      slots: def ? { running: mine.filter(countsAsRunning).length, cap: d.capOf(p.root) } : null,
+      slots: places ? { running: mine.filter(countsAsRunning).length, cap: d.capOf(p.root), usable: places.usable, runningPlaces: places.running, stopped: places.stopped, elsewhere: places.elsewhere, free: places.free } : null,
       memory: { chatsBytes: chats.get(p.id) ?? 0, copiesBytes },
       release: releaseGlanceOf(d.releaseOf(p.root)),
     };
@@ -114,17 +117,17 @@ export function buildGlance(d: GlanceDeps): ProjectGlanceList {
   return { glances, hostTotalBytes: d.hostTotalBytes, at: d.now.toISOString() };
 }
 
-/** A project's file at its root: whether there is one, and the unit its main checkout adopts (and which service). */
-export function definitionAtRoot(root: string): { adoptedUnit: string | null; adoptedService: string | null } | null {
+/** A project's file at its root: whether there is one, the unit its main checkout adopts (and which service), and the definition. */
+export function definitionAtRoot(root: string): { adoptedUnit: string | null; adoptedService: string | null; def: ProjectDef | null } | null {
   const file = join(root, CONTRACT_FILE);
   if (!existsSync(file)) return null;
   try {
     const def = parseDefinition(readFileSync(file, "utf8"));
     const a = adoptedService(def);
-    return { adoptedUnit: a?.adopt?.unit ?? null, adoptedService: a?.name ?? null };
+    return { adoptedUnit: a?.adopt?.unit ?? null, adoptedService: a?.name ?? null, def };
   } catch {
     // A file that doesn't parse is still the project's file: its copies are counted, nothing adopted.
-    return { adoptedUnit: null, adoptedService: null };
+    return { adoptedUnit: null, adoptedService: null, def: null };
   }
 }
 
@@ -149,7 +152,7 @@ export function readGlance(now = Date.now()): Promise<ProjectGlanceList> {
 }
 
 async function gatherGlance(): Promise<ProjectGlanceList> {
-  const [{ listProjects }, { queueGlanceState }, { keptReleases }, { readRegistry, stateHash }, { copyLimitOf }, { machineCopyLimit }, drivers, { resourceMonitor }, { lastListedRows }, { canonicalPath }, os, { SOVA_LIVE_UNIT }, { unitOfCgroup }] = await Promise.all([
+  const [{ listProjects }, { queueGlanceState }, { keptReleases }, { readRegistry, stateHash }, { copyLimitOf }, { machineCopyLimit }, drivers, { resourceMonitor }, { lastListedRows }, { canonicalPath }, os, { SOVA_LIVE_UNIT }, { unitOfCgroup }, { listeningPortTable }] = await Promise.all([
     import("./spaces"),
     import("../merge-queue/wire"),
     import("../project-services/release-wire"),
@@ -163,6 +166,7 @@ async function gatherGlance(): Promise<ProjectGlanceList> {
     import("node:os"),
     import("../tours/runner-header"),
     import("../project-services/leftovers"),
+    import("../port-owner"),
   ]);
   // Sova's own server is left out: the live unit by name, and whatever unit this server itself runs in.
   let self: string | null = null;
@@ -184,6 +188,8 @@ async function gatherGlance(): Promise<ProjectGlanceList> {
     return v;
   };
   const manager = drivers.userManagerCgroup();
+  // The one look at the listening ports, for every project of this read.
+  const listeningPorts = listeningPortTable();
   return buildGlance({
     projects: listProjects(),
     sameRoot: (a, b) => c(a) === c(b),
@@ -193,6 +199,7 @@ async function gatherGlance(): Promise<ProjectGlanceList> {
     capOf: (root) => copyLimitOf(c(root), { machine: machineCopyLimit(c(root)) }).cap,
     instances: reg.instances,
     shared: reg.shared,
+    listeningPorts,
     unitOf: (scopeId, service) => `sova-svc-${stateHash()}-${scopeId}-${service}`,
     // Linux with a user manager: the unit's own cgroup.procs. Elsewhere copies' processes aren't read (nothing is spawned).
     ownUnits: [SOVA_LIVE_UNIT, ...(self?.endsWith(".service") ? [self] : [])],

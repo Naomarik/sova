@@ -3,11 +3,11 @@ import { freemem, totalmem } from "node:os";
 import { basename, join } from "node:path";
 import type { Context, Hono } from "hono";
 import { adoptedService, CONTRACT_FILE, httpStatusOf, parseDefinition, type InstanceSummary, type ProjectDef, type ServiceView } from "../../shared/project-contract";
-import { COPY_SLOT_TOP } from "../../shared/project-contract";
 import { copyLimitOf, overLimitSentence, slotLayoutOf, unavailableSentence } from "../../shared/project-slots";
 import { isStarting, SERVICES_UI_VERBS, type CopyLimitView, type CopyView, type EntryView, type HostServicesView, type ProjectServicesView, type RunningProject, type ServiceRowView } from "../../shared/services-view";
 import { OrgError } from "../org-error";
 import { canonicalPath } from "../paths";
+import { listeningPortTable } from "../port-owner";
 import { listProjects, readProject } from "../projects/spaces";
 import { projectEngine } from "./routes";
 import { notPageNorProven } from "../mesh/click-proof";
@@ -20,6 +20,7 @@ import { parseMeminfo } from "../resource-monitor-proc";
 import { stampsOf, type Stamp } from "./conform";
 import { countsAsRunning, machineCopyLimit } from "./copy-limit";
 import { defHashOf } from "./def-hash";
+import { countPlaces, placeSlots } from "./places";
 import { readRegistry, type Registry } from "./store";
 
 /**
@@ -143,24 +144,26 @@ function hostMemory(): CopyLimitView["host"] {
 }
 
 /** The tab's copy limit for the project at `root`: the limit in force (one rule, copyLimitOf), its copies and their cost. */
-export function limitView(root: string, registry: Registry, opts: { host?: CopyLimitView["host"]; stamps?: Record<string, Stamp> } = {}): CopyLimitView {
+export function limitView(root: string, registry: Registry, opts: { host?: CopyLimitView["host"]; stamps?: Record<string, Stamp>; listening?: ReadonlySet<number> | null } = {}): CopyLimitView {
   const project = canonicalPath(root);
   const limit = copyLimitOf(project, { machine: machineCopyLimit(project) });
   const mine = registry.instances.filter((i) => canonicalPath(i.project) === project && i.slot !== 0 && !i.createdBy.startsWith("conform:"));
   const running = mine.filter(countsAsRunning).length;
   const main = definitionAt(project);
+  const layout = main ? slotLayoutOf(main, limit.numbering) : null;
+  const places = countPlaces({ registry, project, isProject: (p) => canonicalPath(p) === project, def: main, numbering: limit.numbering, listening: opts.listening !== undefined ? opts.listening : listeningPortTable() });
+  const usableSlots = new Set(placeSlots(layout));
   const stamps = opts.stamps ?? { ...stampsOf(root), ...stampsOf(project) };
   return {
     value: limit.cap,
     source: limit.source === "machine" ? "machine" : "file",
     file: limit.fileCap,
-    copies: mine.length,
+    copies: mine.filter((i) => usableSlots.has(i.slot)).length,
     running,
     over: running > limit.cap ? overLimitSentence(running, limit.cap) : null,
-    ...(() => {
-      const layout = main ? slotLayoutOf(main, limit.numbering) : null;
-      return { usable: layout ? layout.ordinary.length : COPY_SLOT_TOP, unavailable: (layout?.unavailable ?? []).map(unavailableSentence) };
-    })(),
+    usable: places.usable,
+    unavailable: (layout?.unavailable ?? []).map(unavailableSentence),
+    places: { stopped: places.stopped, elsewhere: places.elsewhere, ...(places.free === null ? {} : { free: places.free }) },
     estimate: copyEstimate(stamps, main ? defHashOf(main) : null),
     host: opts.host !== undefined ? opts.host : hostMemory(),
   };

@@ -20,6 +20,7 @@ import {
   limitHint,
   limitInputProblem,
   limitLine,
+  placesLine,
   limitSource,
   memoryOf,
   usableLine,
@@ -183,6 +184,7 @@ function CopyLimit(props: { projectId: string; limit: CopyLimitView; archived: b
       <Show when={props.limit.over}>{(o) => <p class="banner banner-warn services-limit-over">{o()}</p>}</Show>
       <Show when={usableLine(props.limit)}>{(u) => <p class="field-hint services-limit-places">{u()}</p>}</Show>
       <For each={props.limit.unavailable ?? []}>{(line) => <p class="field-hint services-limit-places">{line}</p>}</For>
+      <Show when={props.limit.places}>{(places) => <p class="field-hint services-limit-places">{placesLine({ usable: props.limit.usable, places: places() })}</p>}</Show>
       <p class={`field-hint services-limit-cost${cost().warn ? " services-limit-cost-warn" : ""}`}>{cost().text}</p>
     </div>
   );

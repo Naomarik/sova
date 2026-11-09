@@ -27,6 +27,9 @@ const { saveMine, deleteMine, duplicateMine, saveCurrentAsProfile, updateFromCha
 const { chooseDefaultProfile, resolveDefaultProfile } = await import("./default-profile");
 const { joinedProfiles, pickJoined } = await import("./joined-profiles");
 const { DEFAULT_LIMITS } = await import("../shared/profiles");
+const { saveSubagentProfiles, rebaseProfiles } = await import("./subagent-profiles");
+const { DocSync } = await import("./sync/docs");
+const { LIBRARY_KEY } = await import("./sync/kept");
 
 // No model list: every worker is "not verified", a warning, never a refusal.
 const sources = {
@@ -181,6 +184,88 @@ describe("a saved Members value (retired, kept for older hosts)", () => {
     assert.ok((await saveCurrentAsProfile("From chat", { helpers: "house" }, deps)).ok);
     for (const id of ["fresh", "house-copy", "from-chat"]) assert.equal(lib(id).members, null, id);
     assert.deepEqual(lib("house").members, value);
+  });
+});
+
+describe("a library change that arrives while a save checks its models", () => {
+  type Sources = typeof sources;
+  let n = 0;
+  /** Host o is this library; host a, a device whose clock runs ahead, has added Z and edited Shared. `sources` delivers that mid-save. */
+  function arrival() {
+    const base = join(agentDir, `arrival-${++n}`);
+    const device = (id: string, dir: string, ahead = 0) => {
+      const stateDirOf = join(base, `state-${id}`);
+      mkdirSync(stateDirOf, { recursive: true });
+      return new DocSync({ hostId: id, agentDir: dir, stateDir: stateDirOf, sidecarPath: join(stateDirOf, "doc-sync.json"), categoryEnabled: () => true, now: () => Date.now() + ahead, log: () => {} });
+    };
+    const aDir = join(base, "a");
+    mkdirSync(aDir, { recursive: true });
+    const o = device("o", agentDir);
+    const a = device("a", aDir, 60_000);
+    writeFileSync(join(aDir, "subagent-profiles.json"), read(libFile));
+    o.observe();
+    a.observe();
+    const library = sp.readSubagentProfiles(aDir) as { state: "ok"; value: { version: 1; profiles: { id: string }[] } };
+    const profiles = library.value.profiles.map((p) => (p.id === "shared" ? { ...p, alignment: { style: "pm" } } : p));
+    sp.writeSubagentProfiles(aDir, { version: 1, profiles: [...profiles, sp.legacyProfile(aDir, "z", "Z")] });
+    a.observe();
+    let delivered = false;
+    const during: Sources = {
+      ...sources,
+      piModels: async () => {
+        if (!delivered) {
+          delivered = true;
+          assert.equal(o.apply(LIBRARY_KEY, a.doc(LIBRARY_KEY)!), null, "the arrival is taken");
+        }
+        throw new Error("offline");
+      },
+    };
+    return { during, o, a, aDir, wasDelivered: () => delivered };
+  }
+  const lib = (id: string) => json<Lib>(libFile).profiles.find((p) => p.id === id);
+  const paths: [string, (s: Sources) => Promise<{ ok?: boolean; error?: string }>, () => void][] = [
+    ["an edit", (s) => saveMine({ key: "user:house", name: "House", helpers: { ...helpers(lib("house")!), alignment: { eagerness: "careful" } } as never }, { sources: s }), () => assert.deepEqual(lib("house")!.alignment, { eagerness: "careful" })],
+    ["a rename with an edit", (s) => saveMine({ key: "user:house", name: "Home", helpers: { ...helpers(lib("house")!), alignment: { eagerness: "careful" } } as never }, { sources: s }), () => assert.equal(lib("house")!.name, "Home")],
+    ["a new profile", (s) => saveMine({ name: "Fresh", helpers: helpers(lib("house")!) as never }, { sources: s }), () => assert.ok(lib("fresh"))],
+    ["a Duplicate", (s) => duplicateMine("user:house", { sources: s }), () => assert.ok(lib("house-copy"))],
+    ["Save Current As Profile", (s) => saveCurrentAsProfile("From chat", { helpers: "house" }, { sources: s }), () => assert.ok(lib("from-chat"))],
+    ["a whole-library save", (s) => saveSubagentProfiles({ version: 1, profiles: json<Lib>(libFile).profiles.map((p) => (p.id === "house" ? { ...p, alignment: { eagerness: "careful" } } : p)) }, s, agentDir), () => assert.deepEqual(lib("house")!.alignment, { eagerness: "careful" })],
+  ];
+  for (const [what, save, saved] of paths) {
+    test(`${what}: what arrived stays, no deletion is stamped or synced, and the save still lands`, async () => {
+      const { during, o, a, aDir, wasDelivered } = arrival();
+      const r = await save(during);
+      assert.ok(r.ok !== false && !r.error, r.error ?? "");
+      assert.ok(wasDelivered(), "the model check ran, and the arrival came during it");
+      saved();
+      assert.ok(lib("z"), "the profile that arrived is still in the file");
+      assert.deepEqual(lib("shared")!.alignment, { style: "pm" }, "another profile's arriving edit stays");
+      o.observe();
+      const stamp = o.recordsSnapshot()[LIBRARY_KEY]!.items!.z!;
+      assert.notEqual(stamp.hash, null, "no deletion stamp");
+      assert.equal(stamp.origin, "a", "z is still the other device's, untouched here");
+      a.apply(LIBRARY_KEY, o.doc(LIBRARY_KEY)!);
+      assert.ok(sp.readSubagentProfiles(aDir).state === "ok" && JSON.parse(read(join(aDir, "subagent-profiles.json"))).profiles.some((p: { id: string }) => p.id === "z"), "and none reaches the other device");
+    });
+  }
+
+  test("a whole-library save that leaves a profile out still deletes it, and nothing else", async () => {
+    const { during, o } = arrival();
+    const r = await saveSubagentProfiles({ version: 1, profiles: json<Lib>(libFile).profiles.filter((p) => p.id !== "shared") }, during, agentDir);
+    assert.ok(!("error" in r));
+    assert.equal(lib("shared"), undefined);
+    assert.ok(lib("z"));
+    o.observe();
+    assert.equal(o.recordsSnapshot()[LIBRARY_KEY]!.items!.shared!.hash, null);
+  });
+
+  test("the rule, per profile: the save's own changes go on top of the library as it stands now", () => {
+    const p = (id: string, name = id) => ({ ...sp.legacyProfile(agentDir, id, name) });
+    const ids = (l: { id: string; name: string }[]) => l.map((x) => `${x.id}:${x.name}`);
+    const base = [p("kept"), p("edited"), p("gone"), p("deleted-there")];
+    const saved = [p("kept"), p("edited", "New name"), p("deleted-there"), p("added")];
+    const now = [p("kept", "Changed there"), p("edited"), p("gone"), p("arrived")];
+    assert.deepEqual(ids(rebaseProfiles(base, saved, now)), ["kept:Changed there", "edited:New name", "added:added", "arrived:arrived"]);
   });
 });
 

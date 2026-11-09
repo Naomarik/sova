@@ -11,7 +11,7 @@ import type { DelegateSources } from "./delegate";
 import { joinedProfiles, pickJoined } from "./joined-profiles";
 import { changeProfiles } from "./profiles-store";
 import { agentRoot } from "./state-root";
-import { checkSubagentProfiles } from "./subagent-profiles";
+import { checkSubagentProfiles, writeCheckedProfiles } from "./subagent-profiles";
 
 /**
  * Settings → Profiles' writes (§chat.profiles/joined, §app.settings-dialog/profile-editor): save,
@@ -112,7 +112,7 @@ async function run(plan: Plan, deps: EditorDeps): Promise<EditorAnswer> {
       if ("error" in checked) return fail(400, checked.error);
       warnings = checked.warnings;
       try {
-        writeSubagentProfiles(dir, checked.value);
+        writeCheckedProfiles(checked, dir);
       } catch (err) {
         return fail(409, message(err));
       }

@@ -16,6 +16,7 @@ import { writeOverride } from "./merge-queue/strategy";
 import { computeBranches, computeReadiness, configureReadiness } from "./merge-readiness";
 import { branchLeft } from "./nothing-left";
 import { treeBucket } from "./overseer-roundup";
+import { setOfferDeps, showOffer } from "./session-offers";
 import { execGit, worktreeInsights } from "./worktrees";
 import { goneTreeState } from "./removed-worktrees";
 import { rowKeyOf, type RowKeyInput } from "../src/lib/merge-queue";
@@ -559,6 +560,35 @@ describe("every reader, one answer", () => {
     });
   }
 
+  /** The draft count on the branch status line, for the merge this chat made last. */
+  async function statusLineDrafts(fx: Fixture, b: B): Promise<number | undefined> {
+    const card = { id: "merge-1", at: 1, path: b.checkout, branch: b.branch, target: fx.target, sha: git(b.checkout, ["rev-parse", "HEAD"]), commits: 1, added: 0, removed: 0, fastForward: false };
+    const r = await computeReadiness(SUMMARY(fx, b), { trees: [trackedBy(fx, b)], merges: [card] } as unknown as Parameters<typeof computeReadiness>[1], () => false, true);
+    return r?.status?.specDrafts;
+  }
+
+  let offerChats = 0;
+  /** The buttons a chat's offer shows when "specs-promoted" decides one of them: real git, on the branch's folder. */
+  async function offerButtons(fx: Fixture, b: B): Promise<string[]> {
+    const go = { label: "Go", about: "Go on.", send: "go", onlyIf: ["specs-promoted"] };
+    const later = { label: "Later", about: "Later on.", send: "later" };
+    writeFileSync(join(fx.project, ".sova/offers.json"), JSON.stringify({ version: 1, offers: { spec: { when: "When it is time.", title: "Land?", shownBy: "agent", buttons: [go, later] } } }));
+    const id = `01a00000-0000-7000-8000-${String(++offerChats).padStart(12, "0")}`; // an open card holds its chat, so one chat per call
+    const path = join(fx.state, `x_${id}.jsonl`);
+    setOfferDeps({
+      summary: async () => ({ id, path, cwd: b.checkout, title: "Offers", lastActiveAt: 1 }) as unknown as SessionSummary,
+      readiness: async () => undefined,
+      sessions: async () => [],
+      head: async () => ({ id, cwd: b.checkout }),
+      projects: async () => [{ id: "p_1", root: fx.project }],
+    });
+    try {
+      return (await showOffer({ path, offer: "spec", tree: b.checkout, by: "agent" })).buttons.map((x) => x.label);
+    } finally {
+      setOfferDeps(null);
+    }
+  }
+
   // Whichever branch the queue lands on is the one a draft is proved against, whatever master or main hold.
   for (const target of ["master", "develop"]) {
     test(`a draft that matches ${target}, the target, with no receipt: proved, for every reader`, async () => {
@@ -571,6 +601,8 @@ describe("every reader, one answer", () => {
       await land(h, carrier.branch);
       fx.draft(b.checkout, "twin-draft");
       assertAgree("matches the target, not main", "nothing", await readAll(fx, h, b));
+      assert.equal(await statusLineDrafts(fx, b), 0, "the branch status line counts none");
+      assert.deepEqual(await offerButtons(fx, b), ["Go", "Later"], "an offer reads it as promoted");
     });
   }
 
@@ -588,6 +620,8 @@ describe("every reader, one answer", () => {
     git(fx.project, ["push", "-qf", "origin", fx.target]);
     fx.draft(b.checkout, "twin-draft");
     assertAgree("matches main, not the target", "drafts", await readAll(fx, h, b));
+    assert.equal(await statusLineDrafts(fx, b), 1, "the branch status line counts it");
+    assert.deepEqual(await offerButtons(fx, b), ["Later"], "an offer reads it as not promoted");
   });
 
   test("a commit on main but not on develop, the target: work, for every reader", async () => {

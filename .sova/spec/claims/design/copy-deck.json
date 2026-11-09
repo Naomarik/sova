@@ -191,7 +191,9 @@
       "src/components/BranchSummary.tsx",
       "src/components/SummarizerSettings.tsx",
       "src/lib/merge-review-card.ts",
-      "src/components/MergeReviewCard.tsx"
+      "src/components/MergeReviewCard.tsx",
+      "src/lib/branch-place.ts",
+      "src/components/BranchPlaceLine.tsx"
     ]
   },
   "§design.copy-deck/merge-queue-chats": {
@@ -544,7 +546,8 @@
       "src/lib/needs-you-row.ts",
       "src/components/NeedsYouRow.tsx",
       "src/lib/branch-status.ts",
-      "src/lib/session-row.test.ts"
+      "src/lib/session-row.test.ts",
+      "src/lib/branch-place.ts"
     ]
   },
   "§design.copy-deck/slash-commands": {

@@ -605,16 +605,17 @@ conversations, workers' own sessions, project overseers' conversations and organ
 sessions are left out, and the coverage line counts them as skipped.
 
 - **Rows.** One row per session in a section: `- [title](sova://s/<id>) · <age> · <facts>`, the
-  facts joined by "; ", a session's worktrees comma-joined, each as its branch and a short state
-  ("feat/steer-keys conflicts 7 files"). The folder is named only when it is not the most common
-  folder of the rows, and never on a row that shows a branch; "idle" and reading ages are not
+  facts joined by "; ", a session's worktrees comma-joined, each as its branch in its place
+  (§chat.worktrees/place) and a short state ("feat/steer-keys in AmalMoney conflicts 7 files"). The
+  session's folder is named only when it is not the most common folder of the rows, and never on a
+  row that shows a branch, whose place already says where it is; "idle" and reading ages are not
   shown, nor "archived" on a Can't confirm merged row. A session is in as many sections as apply,
   once in each. Every row is listed, except in Can't confirm merged and Not checked yet: at most
   40 rows each, then "and {n} more".
 - **Sections**, in this order, each only when it has rows:
   - **Lost (on no branch)**: a session's own launch worktree (below) whose folder and branch are
     gone while a commit its transcript names is on no branch and not on the main branch: "branch
-    sova/<name> and its worktree are gone; newest commit <sha8> (<date>, '<subject>') is on no
+    sova/<name> in <place> and its worktree are gone; newest commit <sha8> (<date>, '<subject>') is on no
     branch and not on <main>, N commits past <main>; recover with `git branch <name> <sha8>` before
     gc prunes it". Each such row also names up to 2 other sessions of the window whose user or
     assistant message holds the branch name's 6 hex digits and a word of its name, with that
@@ -648,7 +649,7 @@ sessions are left out, and the coverage line counts them as skipped.
     after it, whether or not anyone has seen it: "last turn aborted" or "last turn error: <message>",
     with its age and "nothing since".
   - **Can't confirm merged**: a worktree whose folder is gone with no record of a merge, or whose
-    folder git can't read, by session and branch name. It is never counted as not merged. When
+    folder git can't read, by session, branch name and place. It is never counted as not merged. When
     the branch is gone too and no main subject names it, the commit ids the session's transcript
     (its last 8 MB) names within 300 characters of the branch name, less any that begins a
     worktree record's `base` commit there, that git still has: at least one, and every one on the

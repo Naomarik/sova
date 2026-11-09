@@ -1225,7 +1225,9 @@
       "server/overseer-roundup.test.ts",
       "server/overseer-runtime.test.ts",
       "server/overseer-roundup-git.ts",
-      "server/sessions-index.ts"
+      "server/sessions-index.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/place.ts"
     ],
     "requires": [
       "§app.overseer/tools",
@@ -1234,12 +1236,13 @@
       "§chat.worktrees/cleanup",
       "§chat.alignment/session-mark",
       "§app.overseer/session-truth",
-      "§app.project-overseer/coding-worktrees"
+      "§app.project-overseer/coding-worktrees",
+      "§chat.worktrees/place"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-25T22:33Z",
-      "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+      "by": "the user (al_2 go)",
+      "at": "2026-11-09T10:27Z",
+      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#b9a60247"
     },
     "evidence": "verified"
   },

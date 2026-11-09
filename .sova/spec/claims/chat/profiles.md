@@ -383,8 +383,8 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
 - While queued in the target, its row carries the same sender header, **From {title}** (the queue
   snapshot's `fromSession`).
 - **The merge queue is not a session.** Its requests never arrive this way: they come as batches on
-  the chat queue Sova opens for it (§chat.merge-queue/requests), drawn as "Merge queue · {branch} ·
-  {n} requests", never as "From a session" and never with a hop. A `[merge-queue]` message written
+  the chat queue Sova opens for it (§chat.merge-queue/requests), drawn as "Merge queue · {branch} in {place}
+  · {n} requests", never as "From a session" and never with a hop. A `[merge-queue]` message written
   before that still reads with the author "Merge queue", never "From a session".
 - **The sender's transcript** shows each `session_send` as a card naming the target (a link) and
   how it went: "Sent to {title}", "Queued in {title}" or the refusal.

@@ -543,8 +543,9 @@ label a person reads says "sessions pane".
   The figure is the headline's own number: 2 for "2 ready", 1 for "1 checking", the count of
   branches for the fallback. The symbol and figure are `aria-hidden`. The status's `title`, and the
   row link's accessible name, carry it in words: the chat's words first ("2 ready", "1 needs a
-  fix"), then each branch in the Worktrees window's words, its branch, state and detail or reason
-  ("feat/x: Queued · 2nd", "feat/y: Needs a fix · {reason}"), then the after-merge lines
+  fix"), then each branch in the Worktrees window's words, its branch in its place
+  (§chat.worktrees/place), state and detail or reason ("feat/x in AmalMoney: Queued · 2nd", "feat/y
+  in ~/code/tools: Needs a fix · {reason}"), then the after-merge lines
   the row carried before: the branch status line and each routine follow-up in words
   (§chat.worktrees/readiness). The status replaces the "{merged} of {total}" count rows used to
   show; nothing on the row counts merged worktrees any more. A session with no such worktree shows

@@ -175,8 +175,9 @@ with its `pairing`). Knowing the name is not
   paired topic's (with its reply line, §chat.topics/delivery) or one written before pairings
   existed, which still reads as the same card. The thread draws it as a compact collapsed card, **Queue ·
   {topic} · {n} notes**, followed by its senders' titles. A merge queue batch draws as one folded row
-  with a branch icon, **Merge queue · {branch} · {n} requests** ("… · {n} branches · {n} requests"
-  when it holds several branches'), opening to each request with its id and text, never a link to
+  with a branch icon, **Merge queue · {branch} in {place} · {n} requests** (§chat.worktrees/place; "… · {n} branches ·
+  {n} requests" when it holds several branches'), opening to each request with its id, its branch
+  in its place and its text, never a link to
   a session (§chat.merge-queue/requests). Expanded, the card lists each note's
   sender (a link to that session), its time and its text; a paired topic's card also says
   **Paired**, and expanded it shows that the notes may be acted on with this chat's own user first,

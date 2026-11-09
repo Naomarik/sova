@@ -103,7 +103,8 @@
       "§app.project-services/merge-verbs",
       "§chat.changes/entry",
       "§app.merge-queue/owner",
-      "§chat.merge-queue/card-states"
+      "§chat.merge-queue/card-states",
+      "§chat.worktrees/place"
     ],
     "code": [
       "src/lib/merge-queue-card.ts",
@@ -136,12 +137,14 @@
       "src/components/WatchView.tsx",
       "src/lib/outside-card-rows.ts",
       "src/lib/review-jump.ts",
-      "src/lib/review-jump.test.ts"
+      "src/lib/review-jump.test.ts",
+      "src/components/BranchPlaceLine.tsx",
+      "src/lib/branch-place.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-07T16:57Z",
-      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
+      "by": "the user (al_2 go)",
+      "at": "2026-11-09T10:27Z",
+      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#b9a60247"
     }
   },
   "§chat.merge-queue/chat-turns": {
@@ -196,12 +199,13 @@
       "§app.merge-queue/landing-bar-states",
       "§app.notifications/delivery",
       "§app.access/your-click",
-      "§chat.merge-queue/asks"
+      "§chat.merge-queue/asks",
+      "§chat.worktrees/place"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-07T17:12Z",
-      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
+      "by": "the user (al_2 go)",
+      "at": "2026-11-09T10:27Z",
+      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#b9a60247"
     },
     "code": [
       "server/merge-queue/queue.ts",
@@ -216,7 +220,10 @@
       "src/lib/send-frame.ts",
       "server/held-note-landing.test.ts",
       "src/lib/merge-decision-pick.ts",
-      "src/components/ChatView.tsx"
+      "src/components/ChatView.tsx",
+      "src/lib/merge-standing.ts",
+      "src/lib/merge-standing.test.ts",
+      "src/lib/branch-place.ts"
     ]
   },
   "§chat.merge-queue/names-interview": {
@@ -254,12 +261,13 @@
       "§chat.merge-queue/chat-card",
       "§chat.merge-queue/chat-turns",
       "§chat.worktrees/land-own-word",
-      "§app.decisions/attention-signals"
+      "§app.decisions/attention-signals",
+      "§chat.worktrees/place"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-08T16:24Z",
-      "source": "pi-session:01a1b862-ad81-7407-83a5-0f6d7690b353#e02f04cc"
+      "by": "the user (al_2 go)",
+      "at": "2026-11-09T10:27Z",
+      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#b9a60247"
     },
     "code": [
       "server/merge-queue/channel.ts",
@@ -277,7 +285,12 @@
       "server/merge-queue/queue.ts",
       "server/merge-queue/review-record.ts",
       "server/merge-queue/rulings.ts",
-      "server/merge-queue/queue-review.test.ts"
+      "server/merge-queue/queue-review.test.ts",
+      "server/merge-queue/cards.ts",
+      "server/merge-queue/wire.ts",
+      "src/lib/merge-queue-card.ts",
+      "src/lib/merge-queue-card.test.ts",
+      "src/lib/branch-place.ts"
     ]
   },
   "§chat.merge-queue/review-card": {

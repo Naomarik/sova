@@ -185,12 +185,13 @@ export function readyRowChip(r: Pick<MergeReady, "session" | "sessionArchived" |
   if (r.draftsOnly) return { label: "Drafts to land", tone: "info", title: `${draftsLeftWords(r.draftsOnly)}. Land lands just the drafts.` };
   if (!r.session) return { label: "No chat", tone: "neutral", title: "No chat works on this branch: nothing reads it as finished or not." };
   const t = trees?.find((x) => x.path === r.worktree) ?? trees?.find((x) => x.branch === r.branch);
-  if (!t) return { label: "No reading", tone: "neutral", title: `Sova has no reading of this branch from its chat${r.sessionArchived ? " (archived)" : ""}.` };
+  const noReading = { label: "No reading", tone: "neutral" as const, title: `Sova has no reading of this branch from its chat${r.sessionArchived ? " (archived)" : ""}.` };
+  if (!t) return noReading;
   const conflict = t.reason && /^Conflicts with /.test(t.reason) ? t.reason.split(" · ")[0]! : null;
   if (conflict) return { label: conflict, tone: "warn", title: `${t.reason}.` };
   const chip = readinessChip({ readiness: t });
   // Its chat's reading lags: the row is listed, so something is left (§chat.worktrees/nothing-left), whatever it says.
-  if (!chip) return { label: "No reading", tone: "neutral", title: `Sova has no current reading of this branch from its chat${r.sessionArchived ? " (archived)" : ""}.` };
+  if (!chip) return noReading;
   return { label: chip.label, tone: chip.tone, title: chip.title };
 }
 

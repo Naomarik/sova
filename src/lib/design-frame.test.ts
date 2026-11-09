@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DESIGN_PAGE_CSP, DESIGN_SHELL_ATTRS, DESIGN_STREAM_ATTRS, DESIGN_STREAM_CSP, designHasStyles, designPageDoc, designShellDoc, designStreamDoc, fromDesignFrame, versionLabel } from "./design-frame";
+import { DESIGN_NONCE_SLOT, DESIGN_PAGE_CSP, DESIGN_SHELL_ATTRS, DESIGN_STREAM_ATTRS, DESIGN_STREAM_CSP, designHasStyles, designPageCsp, designPageDoc, designShellDoc, designStreamDoc, fromDesignFrame, stripResourceHints, versionLabel } from "./design-frame";
 
 const directives = (csp: string) => new Map(csp.split("; ").map((d) => [d.split(" ")[0], d.split(" ").slice(1)] as const));
 
@@ -17,6 +17,21 @@ test("a page's network is Google Fonts and its own data, in every state of a pag
     assert.ok(!d.get("img-src")!.some((s) => s.startsWith("http")), "no image from the web");
   }
   assert.equal(directives(DESIGN_STREAM_CSP).get("script-src"), undefined, "no scripts while it is written");
+  assert.deepEqual(directives(designPageCsp("n")).get("script-src"), ["'nonce-n'", "'unsafe-eval'"], "only the nonce's boot runs inline");
+});
+
+test("only the seal carries the nonce, so a script the page wrote or a frame it made runs nothing by itself", () => {
+  const doc = designPageDoc("<script>one</script><iframe srcdoc='<script>two</script>'></iframe>", { motion: true });
+  assert.equal(doc.split(`nonce="${DESIGN_NONCE_SLOT}"`).length, 2, "one script with the nonce");
+  assert.match(doc, /querySelectorAll\("script:not\(\[src\]\)"\)/, "the seal runs the page's scripts itself");
+  assert.match(doc, /meta\[http-equiv\]/, "and takes its policy tag out of view");
+  assert.equal(designShellDoc(doc).includes(`crypto.getRandomValues`), true, "a fresh nonce for each document");
+});
+
+test("resource hints leave only for Google Fonts", () => {
+  const keep = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel=preconnect href=https://fonts.gstatic.com crossorigin>';
+  const out = stripResourceHints(`${keep}<link rel="preconnect" href="https://evil.example"><link href="https://x.example" rel="dns-prefetch"><link rel="stylesheet" href="https://fonts.googleapis.com/css2">`);
+  assert.equal(out, `${keep}<link rel="stylesheet" href="https://fonts.googleapis.com/css2">`);
 });
 
 test("the policy and the seal come before anything the page wrote", () => {
@@ -26,7 +41,6 @@ test("the policy and the seal come before anything the page wrote", () => {
   const rtc = doc.indexOf("RTC");
   const mine = doc.indexOf("window.X");
   assert.ok(csp >= 0 && rtc > csp && mine > rtc);
-  assert.ok(doc.indexOf("MutationObserver") < mine, "its child frames are watched from before it runs");
 });
 
 test("a grid card holds motion and the full view runs it", () => {
@@ -40,7 +54,7 @@ test("a grid card holds motion and the full view runs it", () => {
 
 test("the streaming document runs nothing and the empty sandbox says so", () => {
   assert.equal(DESIGN_STREAM_ATTRS.sandbox, "");
-  assert.equal(DESIGN_SHELL_ATTRS.sandbox, "allow-scripts");
+  assert.equal(DESIGN_SHELL_ATTRS.sandbox, "allow-scripts allow-forms");
   assert.ok(designStreamDoc("<p>so far").endsWith("<p>so far"));
   assert.doesNotMatch(designStreamDoc("<p>"), /<script/);
 });

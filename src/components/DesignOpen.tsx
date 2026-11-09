@@ -95,7 +95,9 @@ function PageFrame(props: { d: DesignRecord; version: number; store: DesignStore
   return (
     <div class="design-open-frame">
       <Show when={props.d.live && props.version === 0}>
-        <DesignStreamFrame text={props.store.live(props.d.label)?.text ?? ""} title={title()} />
+        <div inert class="design-frame-layer">
+          <DesignStreamFrame text={props.store.live(props.d.label)?.text ?? ""} title={title()} />
+        </div>
       </Show>
       <Show when={html() !== null}>
         <DesignSealedFrame html={html()!} motion title={title()} />

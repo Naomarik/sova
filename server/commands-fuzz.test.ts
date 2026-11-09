@@ -875,7 +875,7 @@ const FIXTURES: Record<string, Fixture> = {
     status: 200,
   },
   "session.worktree.summary": { values: () => ({ session: session()[0] }), status: 200 },
-  "session.worktree.cleanup": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.worktree.status": { values: () => ({ session: session()[0] }), status: 200 },
   "session.worktree.retirement": { values: () => ({ root: "/nowhere/project" }), status: 200 },
   "session.cleanup": {
     // An archived session last written an hour ago, past the guard on files a process may still be writing.

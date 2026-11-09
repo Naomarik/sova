@@ -49,7 +49,7 @@ export type CommandId =
   | "session.title.auto"
   | "session.title.shorten"
   | "session.worktree.summary"
-  | "session.worktree.cleanup"
+  | "session.worktree.status"
   | "session.worktree.retirement"
   | "session.worktree.remove"
   | "session.worktree.restore"
@@ -582,7 +582,7 @@ export interface CommandParams {
     "session"?: string;
   };
   /** The status of a session's repository's worktrees. Finished ones retire by themselves. (only looks; needs the card's owner trusted) */
-  "session.worktree.cleanup": {
+  "session.worktree.status": {
     /** The session, by id or by path */
     "session"?: string;
   };
@@ -4448,7 +4448,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "session.title.auto": "changes",
   "session.title.shorten": "changes",
   "session.worktree.summary": "looks",
-  "session.worktree.cleanup": "looks",
+  "session.worktree.status": "looks",
   "session.worktree.retirement": "looks",
   "session.worktree.remove": "changes",
   "session.worktree.restore": "changes",

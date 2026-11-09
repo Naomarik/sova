@@ -87,7 +87,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.title.auto` | Name Sessions | changes | `POST /api/sessions/auto-title` | sessions |
 | `session.title.shorten` | Shorten Long Titles | changes | `POST /api/sessions/shorten-titles` | sessions |
 | `session.worktree.summary` | Count Worktrees | looks | `GET /api/worktrees/summary` | sessions |
-| `session.worktree.cleanup` | Worktree Status | looks | `GET /api/worktrees/summary` | sessions |
+| `session.worktree.status` | Worktree Status | looks | `GET /api/worktrees/summary` | sessions |
 | `session.worktree.retirement` | Retired and Held Worktrees | looks | `GET /api/worktrees/retirement` | sessions |
 | `session.worktree.remove` | Remove Finished Worktree | changes | `POST /api/worktrees/remove` | sessions |
 | `session.worktree.restore` | Restore Retired Worktree | changes | `POST /api/worktrees/restore` | sessions |
@@ -999,7 +999,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/worktrees/remove` | sessions | `session.worktree.remove` |
 | `POST /api/worktrees/restore` | sessions | `session.worktree.restore` |
 | `GET /api/worktrees/retirement` | sessions | `session.worktree.retirement` |
-| `GET /api/worktrees/summary` | sessions | `session.worktree.cleanup`, `session.worktree.summary` |
+| `GET /api/worktrees/summary` | sessions | `session.worktree.status`, `session.worktree.summary` |
 
 ## Chat socket frames
 

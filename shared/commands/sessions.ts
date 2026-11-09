@@ -609,8 +609,7 @@ export const SESSION_ENTRIES: CommandEntry[] = [
     meshNeed: "sessions",
   },
   {
-    // Ids are append-only: this one now reads the same status. Nothing lists or removes worktrees by name.
-    id: "session.worktree.cleanup",
+    id: "session.worktree.status",
     label: "Worktree Status",
     summary: "The status of a session's repository's worktrees. Finished ones retire by themselves.",
     effect: "looks",

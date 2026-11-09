@@ -15,6 +15,7 @@ import { closeSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, o
 import { basename, dirname, extname, join, sep } from "node:path";
 import type { Git, GitResult } from "../pi-config/extensions/worktrees/git.ts";
 import { NO_BACKGROUND_CLEANUP } from "./git-no-background";
+import { draftNamesIn } from "./spec-drafts-state";
 import { type FinishedFacts, type Leftovers, leftoversOfFolder, leftoversReason } from "./worktree-leftovers";
 
 /** A removal deletes a whole node_modules: well past the tool git's two minutes. Killed at this, it reads as a partial delete. */
@@ -275,10 +276,12 @@ export async function leftoverProof(i: LeftoverInput): Promise<LeftoverProof> {
     const why = chatInUse(u, i.now);
     if (why) return no(why);
   }
+  // The names are listed before the proof is asked, so a draft that appears in between isn't taken for one it proved.
+  const named = draftNamesIn(real) ?? [];
   const unproved = existsSync(join(real, ...DRAFTS_DIR.split("/"))) ? await i.draftsUnproved(real).catch(() => ["unknown"]) : [];
   if (unproved.length) return no(`${unproved.length} spec draft${unproved.length === 1 ? "" : "s"} not proved landed.`);
   const run = (args: readonly string[], o: { cwd: string }) => i.git([...args], o.cwd);
-  const left = await leftoversOfFolder(real, i.main, run, { unprovedDrafts: [], ...(i.finished ? { finished: i.finished } : {}) });
+  const left = await leftoversOfFolder(real, i.main, run, { provedDrafts: named, ...(i.finished ? { finished: i.finished } : {}) });
   if (left.unreadable) return no(left.unreadable);
   const missing = [...left.dirty, ...left.ignored];
   if (missing.length) return no(missingWords(missing));

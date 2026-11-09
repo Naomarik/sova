@@ -118,8 +118,10 @@ export function retirementCounts(commonDir: string, now: number, opts: { pending
   return { ...(held ? { held } : {}), ...(retired ? { retired } : {}) };
 }
 
-/** The project card's line: every retired and held worktree of one main checkout, with no git. */
-export function retirementGlance(main: string, opts: { pending?: PendingFile; ledger?: readonly RemovedWorktree[] } = {}): { retired: number; held: number } {
-  const view = retirementViewOf(main, opts);
-  return { retired: view.retiredTotal, held: view.held.length };
+/** The project card's line: the worktrees held and those retired in the last 7 days of one main checkout, as a new session's line counts them. No git. */
+export function retirementGlance(main: string, opts: { pending?: PendingFile; ledger?: readonly RemovedWorktree[]; now?: number } = {}): { retired: number; held: number } {
+  const pending = opts.pending ?? readPending();
+  const commonDir = reportOf(pending, main)?.commonDir ?? join(main, ".git");
+  const counts = retirementCounts(commonDir, opts.now ?? Date.now(), { pending, ...(opts.ledger ? { ledger: opts.ledger } : {}) });
+  return { retired: counts.retired ?? 0, held: reportOf(pending, main)?.held.length ?? 0 };
 }

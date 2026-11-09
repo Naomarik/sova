@@ -266,7 +266,7 @@
     "GET /api/usage/today": {"need":"sessions","is":"command","ids":["usage.today"]},
     "GET /api/visitor-logging": {"need":"sessions","is":"opted-out"},
     "GET /api/voice": {"need":"sessions","is":"opted-out"},
-    "GET /api/worktrees/summary": {"need":"sessions","is":"command","ids":["session.worktree.cleanup","session.worktree.summary"]},
+    "GET /api/worktrees/summary": {"need":"sessions","is":"command","ids":["session.worktree.status","session.worktree.summary"]},
     "GET /api/worktrees/retirement": {"need":"sessions","is":"command","ids":["session.worktree.retirement"]},
     "GET /design/base.css": {"need":"full","is":"assets"},
     "GET /design/tokens.css": {"need":"full","is":"assets"},

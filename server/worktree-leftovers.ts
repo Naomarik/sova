@@ -99,8 +99,8 @@ export interface FinishedFacts {
 }
 
 export interface LeftoversOpts {
-  /** The spec drafts in the tree not proved landed, by name. Absent: none was proved, so every draft keeps it. */
-  unprovedDrafts?: readonly string[];
+  /** The spec drafts in the tree proved landed, by name: only these go. A draft named nowhere here keeps the tree. */
+  provedDrafts?: readonly string[];
   /** The tree is finished or empty: what a test copy left doesn't keep it. Absent: it does. */
   finished?: FinishedFacts;
 }
@@ -335,7 +335,7 @@ async function sorted(dir: string, listing: GitListing, opts: LeftoversOpts): Pr
 async function letGo(w: Walk, opts: LeftoversOpts): Promise<void> {
   const out = w.out;
   const kept: string[] = [];
-  const unproved = opts.unprovedDrafts ? new Set(opts.unprovedDrafts) : null;
+  const proved = new Set(opts.provedDrafts ?? []);
   for (const rel of out.ignored) {
     if (SPEC_REVIEW_DIRS.some((d) => rel.startsWith(d))) {
       out.rebuildable.push(rel);
@@ -343,7 +343,7 @@ async function letGo(w: Walk, opts: LeftoversOpts): Promise<void> {
     }
     const draft = draftOf(rel);
     if (draft !== null) {
-      if (unproved && !unproved.has(draft)) out.rebuildable.push(rel);
+      if (proved.has(draft)) out.rebuildable.push(rel);
       else kept.push(rel);
       continue;
     }
@@ -375,6 +375,10 @@ export async function leftovers(dir: string, git: GitRunner = execGit, opts: Lef
   if (st.code !== 0) return { ...empty, unreadable: `Git couldn't read it: ${firstLine(st.stderr || st.stdout, st.code)}` };
   const ig = await git(["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"], { cwd: dir });
   if (ig.code !== 0) return { ...empty, unreadable: `Git couldn't list its ignored files: ${firstLine(ig.stderr || ig.stdout, ig.code)}` };
+  // A skip-worktree or assume-unchanged file is invisible to status, and an edit under the flag would go with the tree.
+  const flags = await git(["ls-files", "-v", "-z"], { cwd: dir });
+  if (flags.code !== 0) return { ...empty, unreadable: `Git couldn't read it: ${firstLine(flags.stderr || flags.stdout, flags.code)}` };
+  const flagged = flags.stdout.split("\0").filter((e) => e.length > 2 && (e[0] === "S" || /[a-z]/.test(e[0]!))).map((e) => e.slice(2));
   // Initialised submodules: clean ones show nowhere else, and --force takes their git dirs with the tree.
   const sub = await git(["submodule", "status", "--recursive"], { cwd: dir });
   if (sub.code !== 0) return { ...empty, unreadable: `Git couldn't read its submodules: ${firstLine(sub.stderr || sub.stdout, sub.code)}` };
@@ -383,7 +387,7 @@ export async function leftovers(dir: string, git: GitRunner = execGit, opts: Lef
     const m = /^([ +U])[0-9a-f]+ (.+?)(?: \(.*\))?$/.exec(line);
     if (m) submodules.push({ path: m[2]!, kind: "repository" });
   }
-  return sorted(dir, { status: porcelainPaths(st.stdout), ignored: ig.stdout.split("\0"), submodules }, opts);
+  return sorted(dir, { status: [...porcelainPaths(st.stdout), ...flagged], ignored: ig.stdout.split("\0"), submodules }, opts);
 }
 
 /** check-ignore's argv at one go. */

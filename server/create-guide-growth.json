@@ -637,7 +637,7 @@
    "session.pairs.resume": "scripts",
    "session.title.auto": "scripts",
    "session.title.shorten": "scripts",
-   "session.worktree.cleanup": "scripts",
+   "session.worktree.status": "scripts",
    "session.worktree.retirement": "scripts",
    "session.worktree.restore": "scripts",
    "session.worktree.remove": "scripts",

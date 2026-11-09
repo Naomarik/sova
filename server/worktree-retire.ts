@@ -17,6 +17,7 @@ import { type Git, runGit } from "../pi-config/extensions/worktrees/git.ts";
 import type { HeldRow } from "../shared/protocol";
 import { openQueueEntry } from "./nothing-left";
 import { registeredCopyOf } from "./project-services/checkout-teardown";
+import { draftNamesIn } from "./spec-drafts-state";
 import { linksOf } from "./project-services/share";
 import { agentRoot, stateRoot } from "./state-root";
 import { type Gate, retirementAllowed } from "./worktree-retire-gate";
@@ -201,7 +202,7 @@ const sessionOfUse = (u: ChatUse): HeldRow["session"] => ({ ...(u.id ? { id: u.i
  * Why one tree does or doesn't retire now: every condition of §chat.worktrees/retirement. What holds is
  * asked before what only waits, so the Held list says what needs someone even while a chat is busy.
  */
-export async function judge(d: Pick<RetireDeps, "git" | "copies" | "openEntry" | "alive" | "gitWrite" | "now">, repo: Pick<RepoTrees, "main">, t: ClassifiedTree, f: JudgeFacts): Promise<Verdict> {
+export async function judge(d: Pick<RetireDeps, "git" | "copies" | "openEntry" | "alive" | "gitWrite" | "now" | "draftsUnproved">, repo: Pick<RepoTrees, "main">, t: ClassifiedTree, f: JudgeFacts): Promise<Verdict> {
   if (t.branch && f.protectedBranches.has(t.branch)) return { do: "skip" };
   if (!t.branch || !t.head) return { do: "skip" };
   if (t.unknown) return { do: "hold", kind: "other", why: t.why ?? "Sova can't read what this branch has left." };
@@ -217,7 +218,11 @@ export async function judge(d: Pick<RetireDeps, "git" | "copies" | "openEntry" |
   // Its files, by the one keep rule. A folder already gone has none.
   let left: Leftovers | undefined;
   if (!t.gone) {
-    left = await leftovers(t.path, d.git, { unprovedDrafts: [], finished: f.finished }).catch(unreadableLeftovers);
+    // The names are listed before the proof is asked: only a draft proved now goes, never one merely not named as unproved.
+    const named = draftNamesIn(t.path) ?? [];
+    const unproved = named.length ? await d.draftsUnproved(repo.main, t.path, t.branch).catch(() => ["unknown"]) : [];
+    if (unproved.length) return { do: "hold", kind: "drafts", why: `${unproved.length} spec draft${unproved.length === 1 ? "" : "s"} not proved landed` };
+    left = await leftovers(t.path, d.git, { provedDrafts: named, finished: f.finished }).catch(unreadableLeftovers);
     const why = leftoversReason(left);
     if (why !== null) return { do: "hold", kind: left.unreadable ? "other" : "files", why };
   }

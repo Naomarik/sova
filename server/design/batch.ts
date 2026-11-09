@@ -231,6 +231,7 @@ function fail(parent: DesignParent, label: string, why: string): void {
     d.status = "failed";
     d.error = why;
     delete d.live;
+    delete d.thinking;
     d.workerState = d.sessionEnded ? "ended" : "idle";
   });
   finishRun(parent, label);
@@ -355,6 +356,7 @@ async function settled(parent: DesignParent, label: string, state: WorkerState):
       changeDesign(sid, label, (x) => {
         x.status = "ready";
         delete x.live;
+        delete x.thinking;
       });
     } else {
       const s = state.lastSettled;
@@ -410,6 +412,7 @@ function commitVersion(parent: DesignParent, label: string, html: string, note: 
     d.status = "ready";
     delete d.error;
     delete d.live;
+    delete d.thinking;
   });
   if (note) for (const fn of handInListeners) fn({ sessionId: sid, label, version: n, note });
   return version;
@@ -446,7 +449,7 @@ export function handIn(parent: DesignParent, label: string, html: string, note: 
 }
 
 /** A slice of the page being written, as its session's process sent it. */
-export function onLiveFrame(chatId: string, f: { gen: number; at: number; text: string }): void {
+export function onLiveFrame(chatId: string, f: { thinking?: true; gen: number; at: number; text: string }): void {
   const owner = host?.owner(chatId);
   const label = owner && labelOf(owner.workerId);
   if (!owner || !label) return;
@@ -454,12 +457,17 @@ export function onLiveFrame(chatId: string, f: { gen: number; at: number; text: 
   const d = designOf(sid, label);
   if (!d) return;
   heard(owner.parent, label);
+  if (f.thinking) {
+    if (!d.thinking && !d.live) changeDesign(sid, label, (x) => void (x.thinking = true));
+    return;
+  }
   const version = (d.versions.at(-1)?.n ?? 0) + 1;
   const began = applySlice(sid, label, version, f);
   if (began)
     changeDesign(sid, label, (x) => {
       x.status = "writing";
       x.live = { version, chars: 0 };
+      delete x.thinking;
     });
 }
 

@@ -59,6 +59,8 @@ export interface DesignRecord {
   route: DesignStreamRoute;
   /** Finished versions, oldest first; empty until the first hand-in. */
   versions: DesignVersion[];
+  /** Its session is thinking and hasn't begun the page: draw that instead of an empty Writing. */
+  thinking?: true;
   /** The page being written now, while there is one. */
   live?: { version: number; chars: number };
   /** The session's id once it has one; absent while queued. */

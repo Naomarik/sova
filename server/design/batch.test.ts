@@ -334,6 +334,11 @@ test("a session that goes quiet stops claiming to write, and hears any sign of l
       onLiveFrame(fakes[0]!.rec.chatId, { gen: 1, at: i, text: "x" });
     }
     assert.notEqual(stat("A").status, "failed");
+    // Thinking is a sign of life too, and the card can say so.
+    await new Promise((r) => setTimeout(r, 15));
+    onLiveFrame(fakes[0]!.rec.chatId, { thinking: true, gen: 1, at: 0, text: "" });
+    await new Promise((r) => setTimeout(r, 15));
+    assert.notEqual(stat("A").status, "failed");
     // ...and silence ends it.
     await waitFor(() => stat("A").status === "failed");
     assert.match(stat("A").error ?? "", /quiet/);

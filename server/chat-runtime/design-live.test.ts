@@ -14,6 +14,7 @@ function harness() {
   return {
     live,
     frames,
+    fire,
     start: () => fire({ type: "message.start", role: "assistant", handle: undefined }),
     tool: (delta: string, index = 0) => fire({ type: "message.update", role: "assistant", handle: undefined, stream: { kind: "tool-call", index, delta } }),
     text: (delta: string) => fire({ type: "message.update", role: "assistant", handle: undefined, stream: { kind: "text", delta } }),
@@ -74,4 +75,17 @@ test("after the link comes back the whole page so far is said again from the sta
   h.timer();
   h.live.resync();
   assert.deepEqual(h.frames.at(-1), { gen: 1, at: 0, text: "abcdef" });
+});
+
+test("thinking says so at once and then once an interval, with no page text", () => {
+  const h = harness();
+  h.start();
+  const think = () => h.fire({ type: "message.update", role: "assistant", handle: undefined, stream: { kind: "thinking", delta: "hm" } });
+  think();
+  think();
+  think();
+  assert.deepEqual(h.frames.map((f) => [f.thinking, f.text]), [[true, ""]]);
+  h.timer();
+  think();
+  assert.equal(h.frames.length, 2);
 });

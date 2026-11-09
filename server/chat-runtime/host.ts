@@ -971,9 +971,9 @@ export class ChatRuntimeHost {
   }
 
   /** A design session's page slice, to a server that speaks proto 4 (an older one draws the page when it is finished). */
-  private sendDesignLive(f: { gen: number; at: number; text: string }): void {
+  private sendDesignLive(f: { thinking?: true; gen: number; at: number; text: string }): void {
     const link = this.link;
-    if (link?.isOpen && link.compatible && link.peerProto >= DESIGN_PROTO) link.send({ t: "design.live", gen: f.gen, at: f.at, text: f.text });
+    if (link?.isOpen && link.compatible && link.peerProto >= DESIGN_PROTO) link.send({ t: "design.live", ...(f.thinking ? { thinking: true as const } : {}), gen: f.gen, at: f.at, text: f.text });
   }
 
   // ---- code ---------------------------------------------------------------------------------------

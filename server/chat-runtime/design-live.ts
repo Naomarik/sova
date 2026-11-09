@@ -9,7 +9,12 @@ import { HtmlArgDecoder, ReplyPageDecoder } from "../design/stream-decode";
 /** Slices sent per second: the card redraws at about 3 Hz (t10, E3). */
 export const DESIGN_LIVE_EVERY_MS = 300;
 
+/** How often a session that is thinking says so: a model can think for minutes before its first page character. */
+export const DESIGN_THINKING_EVERY_MS = 5_000;
+
 export interface DesignLiveFrame {
+  /** It is thinking and has no page text yet: a sign of life, with nothing to draw. */
+  thinking?: true;
   /** Numbers the page within this process: each page written starts a new one. */
   gen: number;
   /** Where in the page `text` starts. A receiver not holding exactly `at` characters resyncs. */
@@ -64,9 +69,20 @@ export class DesignLive {
       this.add(d.feed(s.delta));
     } else if (s.kind === "text" && this.reply) {
       this.add(this.reply.feed(s.delta));
+    } else if (s.kind === "thinking") {
+      this.thinkingSeen();
     } else if (s.kind === "tool-call.end" || s.kind === "text.end") {
       this.endPage();
     }
+  }
+
+  private thinkingTimer: unknown = null;
+
+  /** One sign of life at once, then at most one per interval while the thinking goes on. */
+  private thinkingSeen(): void {
+    if (this.thinkingTimer !== null) return;
+    this.send({ thinking: true, gen: this.gen, at: 0, text: "" });
+    this.thinkingTimer = this.clock.setTimeout(() => void (this.thinkingTimer = null), DESIGN_THINKING_EVERY_MS);
   }
 
   private add(text: string): void {

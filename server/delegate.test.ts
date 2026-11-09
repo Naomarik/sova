@@ -5,14 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, beforeEach, describe, test } from "node:test";
 import type { DelegateSettings, ModelPolicy } from "../shared/protocol";
-import type { ClaudeModel } from "./claude-models";
 import { claudeOffer } from "../pi-config/extensions/claude-code/catalog.ts";
 import {
-  cachedClaudeModels,
   checkChoice,
   delegateInfo,
   delegateOptions,
-  resetClaudeCache,
   saveDelegateSettings,
   workerDenial,
   type DelegateSources,
@@ -25,22 +22,12 @@ const file = () => join(dir, `mode-delegate-${++n}.json`);
 
 const EMPTY: ModelPolicy = { disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] };
 const ALL_CLAUDE = ["low", "medium", "high", "xhigh", "max"];
-/** The CLI's initialize list (claude 2.1.289): read for drift only, never offered. */
-const cliList: ClaudeModel[] = [
-  { id: "default", name: "Default (recommended)", resolvedModel: "claude-opus-5-5", efforts: ALL_CLAUDE },
-  { id: "opus", name: "Opus", resolvedModel: "claude-opus-5-5", efforts: ALL_CLAUDE },
-  { id: "fable", name: "Fable", resolvedModel: "claude-fable-5-1", efforts: ALL_CLAUDE },
-  { id: "sonnet", name: "Sonnet", resolvedModel: "claude-sonnet-5-5", efforts: ALL_CLAUDE },
-  { id: "haiku", name: "Haiku", resolvedModel: "claude-haiku-5-5" },
-  { id: "claude-opus-4-8", name: "Opus 4.8", resolvedModel: "claude-opus-4-8", efforts: ALL_CLAUDE },
-];
 const piModels = [
   { ref: "zai/glm-5.3", id: "glm-5.3", provider: "zai", thinkingLevels: ["off", "minimal", "low", "medium", "high"] },
   { ref: "ollama/qwen3", id: "qwen3", provider: "ollama", thinkingLevels: ["off"] },
 ];
 const sources = (over: Partial<DelegateSources> = {}): DelegateSources => ({
   piModels: async () => piModels,
-  claudeModels: async () => cliList,
   policy: () => EMPTY,
   ...over,
 });
@@ -87,21 +74,7 @@ describe("GET /api/settings/delegate/options", () => {
     assert.deepEqual(claude!.models!.find((m) => m.id === "claude-opus-4-6")!.efforts, ["low", "medium", "high", "max"]);
     assert.deepEqual(claude!.models!.find((m) => m.id === "claude-haiku-4-5")!.efforts, ALL_CLAUDE, "a model taking no effort control: what the backend accepts");
     for (const alias of ["opus", "opus[1m]", "sonnet", "haiku", "default"]) assert.ok(!claude!.models!.some((m) => m.id === alias), alias);
-    assert.equal(claude!.drift, undefined, "the CLI's list of today agrees with the catalog");
     assert.deepEqual(pi!.sessionScopedProviders, ["claude-code-cli"]);
-  });
-
-  test("the CLI's list never removes, adds or renames a model; it only reports drift", async () => {
-    for (const failing of [async () => Promise.reject(new Error("The Claude Code CLI did not list its models within 15s.")), async () => [] as ClaudeModel[]]) {
-      const claude = (await delegateOptions(sources({ claudeModels: failing }))).backends.find((b) => b.id === "claude-code")!;
-      assert.deepEqual(claude.models!.map((m) => m.id), claudeOffer().map((m) => m.id));
-      assert.equal(claude.error, undefined);
-      assert.equal(claude.drift, undefined);
-    }
-    const drifted = await delegateOptions(sources({ claudeModels: async () => [...cliList, { id: "claude-opus-6", name: "Opus 6" }, { id: "sonnet[1m]", name: "S", resolvedModel: "claude-sonnet-6" }] }));
-    const claude = drifted.backends.find((b) => b.id === "claude-code")!;
-    assert.deepEqual(claude.models!.map((m) => m.id), claudeOffer().map((m) => m.id), "a model it doesn't know is not offered");
-    assert.deepEqual(claude.drift, { unknown: [{ id: "claude-opus-6", name: "Opus 6" }], moved: [{ family: "sonnet", id: "claude-sonnet-6", current: "claude-sonnet-5-5" }] });
   });
 
   test("the policy marks models (shown, still selectable)", async () => {
@@ -121,33 +94,9 @@ describe("GET /api/settings/delegate/options", () => {
     assert.equal(workerDenial({ ...EMPTY, disabledProviders: ["zai"] }, "claude-code", "zai"), null, "a pi provider never covers a Claude model");
   });
 
-  test("the CLI's list (drift only) is cached, shared while in flight, and failures are not cached", async () => {
-    resetClaudeCache();
-    let runs = 0;
-    const discover = async () => {
-      runs++;
-      return cliList;
-    };
-    await Promise.all([cachedClaudeModels(discover), cachedClaudeModels(discover)]);
-    await cachedClaudeModels(discover);
-    assert.equal(runs, 1);
-    assert.deepEqual(await cachedClaudeModels(discover), cliList, "kept as listed, resolvedModel included");
-    resetClaudeCache();
-    let fails = 0;
-    const failing = async () => {
-      fails++;
-      throw new Error("nope");
-    };
-    await assert.rejects(cachedClaudeModels(failing));
-    await assert.rejects(cachedClaudeModels(failing));
-    assert.equal(fails, 2);
-    resetClaudeCache();
-  });
 });
 
 describe("PUT /api/settings/delegate", () => {
-  beforeEach(() => resetClaudeCache());
-
   test("a valid routing is saved and read back; the file is the extension's shape", async () => {
     const f = file();
     const next = defaults();
@@ -213,7 +162,7 @@ describe("PUT /api/settings/delegate", () => {
     const result = await saveDelegateSettings(next, sources({ piModels: async () => Promise.reject(new Error("no registry")) }), file());
     assert.ok(!("error" in result), JSON.stringify(result));
     assert.deepEqual(result.warnings, ["Not verified, because pi couldn't list its models (no registry): Complex implementation primary"], "one sentence per backend that couldn't answer, naming every slot on it");
-    const cli = await saveDelegateSettings(defaults(), sources({ claudeModels: async () => Promise.reject(new Error("Could not run the Claude Code CLI; is it installed?")) }), file());
+    const cli = await saveDelegateSettings(defaults(), sources(), file());
     assert.ok(!("error" in cli), JSON.stringify(cli));
     assert.deepEqual(cli.warnings, []);
   });

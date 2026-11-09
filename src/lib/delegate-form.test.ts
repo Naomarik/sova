@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { DelegateOptions, DelegateSettings, DelegateSettingsInfo } from "../../shared/protocol";
 import {
-  claudeDriftNotes,
   cloneSettings,
   draftComplete,
   draftConflicts,
@@ -160,14 +159,3 @@ test("an old Claude id counts as listed when the catalog lists the model it mean
   assert.equal(modelSelectOptions(listsBase, pi)[0]!.label, "zai/glm-5.3[1m] — not offered");
 });
 
-test("the CLI's drift is one quiet sentence each; nothing when it agrees or wasn't read", () => {
-  assert.deepEqual(claudeDriftNotes(undefined), []);
-  assert.deepEqual(claudeDriftNotes(options), []);
-  const drifted: DelegateOptions = {
-    backends: [options.backends[0]!, { ...options.backends[1]!, drift: { unknown: [{ id: "claude-opus-6", name: "Opus 6" }], moved: [{ family: "opus", id: "claude-opus-6", current: "claude-opus-5-5" }] } }],
-  };
-  assert.deepEqual(claudeDriftNotes(drifted), [
-    "Claude Code offers Opus 6 (claude-opus-6), which Sova's catalog doesn't know yet.",
-    "Claude Code now runs opus as claude-opus-6; Sova's catalog still says Opus 5.5.",
-  ]);
-});

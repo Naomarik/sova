@@ -25,7 +25,6 @@ import type { ProfileWriteAnswer } from "../shared/profiles";
 
 const sources = {
   piModels: async () => { throw new Error("offline"); },
-  claudeModels: async () => { throw new Error("offline"); },
   policy: () => ({ version: 1 as const, disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }),
 };
 const app = new Hono();

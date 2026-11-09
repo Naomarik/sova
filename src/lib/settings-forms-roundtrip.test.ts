@@ -27,10 +27,6 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 
 const { testApp } = await import("../../server/mesh/app-test-fixtures");
 const app = await testApp();
-const { cachedClaudeModels } = await import("../../server/delegate");
-/** Primes the Claude list cache (60 s) so no save asks the CLI for it. */
-const primeClaude = () => cachedClaudeModels(async () => []);
-await primeClaude();
 const { AUTH_COOKIE, initAuthToken, setAuthPort, sovaToken } = await import("../../server/auth");
 /** The port this listener would be bound to: no socket is opened (as server/auth-gate.test.ts). */
 const port = 47_914;
@@ -466,7 +462,6 @@ for (const row of ROWS) {
 
     for (const [path, field] of Object.entries(row.fields)) {
       if (!field.fixed && !field.elsewhere) test(`${path}: a valid edit is dirty, saves, and reads back`, async () => {
-        await primeClaude();
         const f = form(row.label);
         const edit = patched(row.draft(), { [path]: field.valid, ...(field.with ?? {}) });
         const changed = JSON.stringify(edit) !== JSON.stringify(row.draft());
@@ -635,7 +630,6 @@ describe("Profiles: every team number inside a profile's library half", () => {
   };
   const load = async () => {
     resetAllDrafts();
-    await primeClaude();
     profiles.takeListing(await api.fetchProfiles(null), true);
   };
 
@@ -673,7 +667,6 @@ describe("Profiles: every team number inside a profile's library half", () => {
       }
       for (const v of [min, max]) {
         profiles.profilesDraft.setDraft(at0(String(v)));
-        await primeClaude();
         await f.save();
         assert.equal(f.error(), null, `${path} = ${v}: the save failed`);
         f.reset();

@@ -81,6 +81,7 @@ import { readBranch, unknownEntries } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
 import { appendToClosedFile, createSessionFile, type NewSessionFile } from "./harness/pi/state";
 import { modelCheck, modelCheckStatus } from "./harness/pi/model-sync";
+import { claudeCatalogInfo } from "./claude-models-sync";
 import { reapplyModelLevels } from "./harness/pi/open";
 import { LINK_MEMBER, SUBAGENT_PROFILE } from "./harness/state-kinds";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
@@ -106,7 +107,7 @@ import { startOnDefault } from "./default-start";
 import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
 import type { ProfilePick } from "./profile-sources";
 import { CREATE_NO_DEFAULT, createNotNamed, singletonRunningText, THINKING_LEVELS } from "../shared/profiles";
-import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
+import { delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
 import { subagentProfilesInfo, requireSubagentProfile, restoreReplacedProfiles, saveSubagentProfileDefault, saveSubagentProfiles } from "./subagent-profiles";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
 import { saveTeamDefaults, teamDefaultsInfo, teamOptions } from "./team-defaults";
@@ -1103,6 +1104,7 @@ export function buildApp(deps: AppDeps) {
   app.get("/api/settings/models", (c) => c.json(readModelPolicy()));
   // Ollama Cloud's model list check (§app.model-levels/server-check): its status for Settings → Models'
   // line, and Check now, which answers once the check is done (the model list has then been re-applied).
+  app.get("/api/claude/catalog", (c) => c.json(claudeCatalogInfo(), 200, { "Cache-Control": "no-store" }));
   app.get("/api/settings/models/check", (c) => c.json(modelCheckStatus(), 200, { "Cache-Control": "no-store" }));
   app.post("/api/settings/models/check", async (c) => {
     // The round checks the Ollama Cloud key too (linkOllamaReading): one record, read by Accounts as well.
@@ -1193,7 +1195,6 @@ export function buildApp(deps: AppDeps) {
   // at its next turn boundary.
   const delegateSources: DelegateSources = {
     piModels: () => listRegistryModels(),
-    claudeModels: () => cachedClaudeModels(),
     policy: () => readModelPolicy(),
   };
   setSovaSettingsDeps({ sources: delegateSources, titlesChanged: () => autoTitleSweep.reschedule() });

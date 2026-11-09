@@ -23,7 +23,6 @@ const { currentUsageContext } = await import("../../pi-config/extensions/llm-inf
 const EMPTY: ModelPolicy = { disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] };
 const sources: DelegateSources = {
   piModels: async () => [{ ref: "zai/glm-5.3", id: "glm-5.3", provider: "zai", thinkingLevels: ["off", "low", "medium", "high"] }],
-  claudeModels: async () => [{ id: "claude-haiku-5-5", name: "Haiku", efforts: ["low", "medium", "high"] }],
   policy: () => EMPTY,
 };
 const haiku: WorkerChoice = { backend: "claude-code", model: "claude-haiku-5-5", effort: "low" };

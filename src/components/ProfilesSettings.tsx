@@ -6,7 +6,8 @@ import { approveProfile, fetchProfiles, getDelegateOptions, getDelegateSettings,
 import { tildePath } from "../lib/format";
 import { home, toast } from "../lib/ui-state";
 import { loadModels, modelList } from "../lib/models";
-import { claudeDriftNotes, modelEfforts } from "../lib/delegate-form";
+import { modelEfforts } from "../lib/delegate-form";
+import { claudeCatalogChanges } from "../lib/claude-catalog";
 import { replacedNotice } from "../lib/subagent-replaced";
 import { teamsSeed } from "../lib/subagent-editor";
 import { clearProfilesRequest, clearSettingsSection, profilesRequest, settingsSection, subagentSettingsPath, type ProfilesPart } from "../lib/settings-nav";
@@ -52,7 +53,7 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
   setProfilesCwd(props.cwd);
   const [listing, { refetch }] = createResource(() => props.cwd ?? "", (cwd) => fetchProfiles(cwd || null));
   const [library, { refetch: refetchLibrary }] = createResource(() => getSubagentProfiles(subagentSettingsPath()));
-  const [options, { refetch: refetchOptions }] = createResource(getDelegateOptions);
+  const [options, { refetch: refetchOptions }] = createResource(claudeCatalogChanges, () => getDelegateOptions());
   const [rows] = createResource(getDelegateSettings);
   const [teams] = createResource(getTeamDefaults);
   onMount(() => {
@@ -290,7 +291,6 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
       <h3 class="settings-section-title" id="profiles-title">
         Profiles
       </h3>
-      <For each={claudeDriftNotes(optionsReady())}>{(note) => <p class="settings-intro">{note}</p>}</For>
       <Show when={listing.error}>
         <Banner tone="error" title="Couldn't load profiles." body={`${sentence(String(listing.error?.message ?? listing.error))} Your profiles are unchanged.`} action={<RetryButton label="Try Again" onClick={() => void refetch()} />} />
       </Show>

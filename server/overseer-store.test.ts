@@ -180,7 +180,7 @@ describe("overseer settings", () => {
     assert.deepEqual(store.readOverseerSettings(join(agentDir, "none.json")).explorer, { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" });
     const tolerant = store.parseSettings({ explorer: { backend: "pi", model: "no-slash", effort: "low" } }, false);
     assert.ok(!("error" in tolerant));
-    assert.deepEqual(tolerant.explorer, store.DEFAULT_EXPLORER);
+    assert.deepEqual(tolerant.explorer, store.defaultExplorer());
     assert.match((store.parseSettings({ explorer: { backend: "claude-code", model: "opus", effort: "off" } }, true) as { error: string }).error, /^explorer: effort/);
     const ok = store.parseSettings({ explorer: { backend: "pi", model: "ollama-cloud/glm-5.3", effort: "low" }, caps: { explorePerTurn: 1 } }, true);
     assert.ok(!("error" in ok));
@@ -188,7 +188,7 @@ describe("overseer settings", () => {
     assert.equal(ok.caps.explorePerTurn, 1);
     for (const model of ["claude-opus-5", "claude-opus-5[1m]", "Claude-Opus-5"]) {
       assert.match((store.parseSettings({ explorer: { backend: "claude-code", model, effort: "medium" } }, true) as { error: string }).error, /not allowed for the exploratory agent/, model);
-      assert.deepEqual((store.parseSettings({ explorer: { backend: "claude-code", model, effort: "medium" } }, false) as { explorer: unknown }).explorer, store.DEFAULT_EXPLORER, `${model} on read → the default`);
+      assert.deepEqual((store.parseSettings({ explorer: { backend: "claude-code", model, effort: "medium" } }, false) as { explorer: unknown }).explorer, store.defaultExplorer(), `${model} on read → the default`);
     }
     assert.match((store.parseSettings({ explorer: { backend: "pi", model: "anthropic/claude-opus-5", effort: "low" } }, true) as { error: string }).error, /not allowed/);
     const ok55 = store.parseSettings({ explorer: { backend: "claude-code", model: "claude-opus-5-5[1m]", effort: "high" } }, true);

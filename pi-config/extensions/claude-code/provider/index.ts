@@ -15,7 +15,8 @@
  */
 import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import type { ThinkingLevelMap } from "@earendil-works/pi-ai";
-import { claudeContextWindow, claudeModel, claudeName, claudeOffer, isClaudeIdShape, resolveClaude } from "../catalog.ts";
+import { claudeContextWindow, claudeModel, claudeName, claudeRegistered, isClaudeIdShape, resolveClaude } from "../catalog.ts";
+import { claudeStateRoot, loadClaudeModels, watchClaudeModelsFile } from "../catalog-store.ts";
 import { CLAUDE_LOGIN_ENTRY, hostLogins, loginContextFromEnv, recordedLogin } from "../accounts.ts";
 import { registerAutoCompact } from "./auto-compact.ts";
 import { CLAUDE_LOGIN_COMMAND, pickChatLogin } from "./login-command.ts";
@@ -83,6 +84,10 @@ interface ProviderRegistration {
 	registered?: string;
 	/** Shape-valid ids a worker asked for (CLAUDE_MODEL_FLAG), kept for the life of the process. */
 	extras: Set<string>;
+	/** Registers the provider through the newest session's API, when the list differs. */
+	register?: () => void;
+	/** The watch on the learned list, started once per process. */
+	stopWatch?: () => void;
 }
 function registration(): ProviderRegistration {
 	const host = globalThis as unknown as Record<symbol, ProviderRegistration | undefined>;
@@ -92,11 +97,12 @@ function registration(): ProviderRegistration {
 /**
  * The provider's models now: Sova's Claude catalog as this process knows it (catalog.ts,
  * §app.claude-code-provider/catalog), one model per real model, with no aliases and no `[1m]` forms,
- * plus any id a worker named. Read on every call, so a model learned while the process runs is here
+ * a model Claude Code dropped (an old chat still opens on it; the pickers filter it out), plus any id
+ * a worker named. Read on every call, so a model learned while the process runs is here
  * with no restart. No subprocess runs, ever.
  */
 export function providerModels(): ProviderModelConfig[] {
-	const models = claudeOffer().map((m) => toProviderModel(m));
+	const models = claudeRegistered().map((m) => toProviderModel(m));
 	for (const extra of registration().extras) {
 		if (!models.some((m) => m.id === extra)) models.push(toProviderModel({ id: extra, name: claudeName(extra) ?? extra }));
 	}
@@ -105,7 +111,7 @@ export function providerModels(): ProviderModelConfig[] {
 
 /** Keep a worker's model id (CLAUDE_MODEL_FLAG): a shape-valid id the catalog doesn't offer. */
 function noteExtraModel(extra: unknown): void {
-	if (typeof extra === "string" && isClaudeIdShape(extra) && !claudeOffer().some((m) => m.id === extra)) registration().extras.add(extra);
+	if (typeof extra === "string" && isClaudeIdShape(extra) && !claudeRegistered().some((m) => m.id === extra)) registration().extras.add(extra);
 }
 
 /** The catalog, for pi's refreshModels: the same list online and offline. */
@@ -165,15 +171,33 @@ export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessio
 			});
 		}
 		noteExtraModel(pi.getFlag(CLAUDE_MODEL_FLAG));
-		if (!needsRegistering()) return;
-		pi.registerProvider(CLAUDE_PROVIDER_ID, {
-			name: "Claude Code CLI",
-			baseUrl: CLAUDE_PROVIDER_BASE_URL,
-			apiKey: CLAUDE_PROVIDER_API_KEY,
-			api: CLAUDE_PROVIDER_ID,
-			models: providerModels(),
-			refreshModels: refreshClaudeModels,
-			streamSimple: createClaudeStreamSimple(bridge),
+		const state = registration();
+		const root = claudeStateRoot();
+		loadClaudeModels(root);
+		state.register = () => {
+			if (!needsRegistering()) return;
+			try {
+				pi.registerProvider(CLAUDE_PROVIDER_ID, {
+					name: "Claude Code CLI",
+					baseUrl: CLAUDE_PROVIDER_BASE_URL,
+					apiKey: CLAUDE_PROVIDER_API_KEY,
+					api: CLAUDE_PROVIDER_ID,
+					models: providerModels(),
+					refreshModels: refreshClaudeModels,
+					streamSimple: createClaudeStreamSimple(bridge),
+				});
+			} catch (err) {
+				// This session's API has gone (a throwaway warm-up): the next session registers, and a
+				// host's own watch refreshes the runtime meanwhile.
+				state.registered = undefined;
+				if (!state.stopWatch) throw err;
+			}
+		};
+		state.register();
+		// A model learned while this process runs (a host's own watch does the same for its runtime).
+		state.stopWatch ??= watchClaudeModelsFile(root, () => {
+			loadClaudeModels(root);
+			state.register?.();
 		});
 	});
 	// Move this chat to another Claude login (§app.claude-logins/switch-login). Sova's composer calls

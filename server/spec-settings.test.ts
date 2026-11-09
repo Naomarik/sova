@@ -18,10 +18,6 @@ const EMPTY: ModelPolicy = { disabledProviders: [], disabledModels: [], subagent
 const ALL_CLAUDE = ["low", "medium", "high", "xhigh", "max"];
 const sources = (over: Partial<DelegateSources> = {}): DelegateSources => ({
   piModels: async () => [{ ref: "zai/glm-5.3", id: "glm-5.3", provider: "zai", thinkingLevels: ["off", "low", "medium", "high"] }],
-  claudeModels: async () => [
-    { id: "claude-opus-5-5", name: "Opus", efforts: ALL_CLAUDE },
-    { id: "claude-sonnet-5-5", name: "Sonnet", efforts: ["low", "medium"] },
-  ],
   policy: () => EMPTY,
   ...over,
 });
@@ -73,7 +69,7 @@ describe("PUT /api/settings/spec", () => {
   test("writer null clears it, without asking discovery", async () => {
     const f = file();
     await saveSpecSettings(writer(opus), sources(), f);
-    const result = await saveSpecSettings({ version: 1, writer: null }, sources({ claudeModels: async () => { throw new Error("must not be asked"); } }), f);
+    const result = await saveSpecSettings({ version: 1, writer: null }, sources(), f);
     assert.ok(!("error" in result));
     assert.deepEqual(result.settings, { version: 1, writer: null });
     assert.deepEqual(JSON.parse(readFileSync(f, "utf8")), { version: 1, writer: null });
@@ -116,7 +112,7 @@ describe("PUT /api/settings/spec", () => {
   test("unverifiable backends and policy denials save with a warning", async () => {
     const f = file();
     // The CLI's own list failing changes nothing: Claude Code's list is the catalog.
-    const cliDown = await saveSpecSettings(writer(opus, glm), sources({ claudeModels: async () => { throw new Error("CLI missing"); } }), f);
+    const cliDown = await saveSpecSettings(writer(opus, glm), sources(), f);
     assert.ok(!("error" in cliDown));
     assert.deepEqual(cliDown.warnings, []);
     const down = await saveSpecSettings(writer(glm, opus), sources({ piModels: async () => { throw new Error("no registry"); } }), file());

@@ -89,22 +89,18 @@ export function findListedModel<M extends { id: string }>(models: readonly M[], 
   const own = models.find((m) => m.id === model);
   if (own || backend !== "claude-code") return own;
   const id = canonicalClaudeId(model);
-  return id !== model ? models.find((m) => m.id === id) : undefined;
+  const listed = id !== model ? models.find((m) => m.id === id) : undefined;
+  return listed ?? (retainedClaudeOption(model) as unknown as M | undefined);
 }
 
 /**
- * What the Claude Code CLI's own list says that Sova's catalog doesn't (§app.claude-code-provider/catalog-drift):
- * one quiet sentence per model it names that the catalog doesn't know, and per family it now runs
- * as another model. Nothing when it agrees, or couldn't be read.
+ * A saved Claude choice Claude Code no longer offers: out of the list, still known by name and
+ * efforts, so its row reads like any other (§app.claude-code-provider/model-table). A model taking
+ * no effort control is unconstrained, as the server's options say.
  */
-export function claudeDriftNotes(options: DelegateOptions | undefined): string[] {
-  const drift = options?.backends.find((b) => b.id === "claude-code")?.drift;
-  if (!drift) return [];
-  const current = (id: string) => claudeModel(id)?.name ?? id;
-  return [
-    ...drift.unknown.map((m) => `Claude Code offers ${m.name ?? m.id} (${m.id}), which Sova's catalog doesn't know yet.`),
-    ...drift.moved.map((m) => `Claude Code now runs ${m.family} as ${m.id}; Sova's catalog still says ${current(m.current)}.`),
-  ];
+function retainedClaudeOption(model: string): { id: string; name: string; efforts: string[] } | undefined {
+  const m = claudeModel(canonicalClaudeId(model));
+  return m ? { id: m.id, name: m.name, efforts: m.efforts.length ? [...m.efforts] : ["low", "medium", "high", "xhigh", "max"] } : undefined;
 }
 
 /** The efforts this model takes, or null when discovery can't say. */

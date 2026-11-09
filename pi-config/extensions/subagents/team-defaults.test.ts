@@ -5,7 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-	DEFAULT_TEAM_DEFAULTS,
+	defaultTeamDefaults,
 	TEAM_DEFAULTS_FILE_NAME,
 	defaultAgentDir,
 	describeTeamDefaults,
@@ -37,7 +37,7 @@ test("the pinned contract parses to exactly itself, and equals the built-in defa
 	const parsed = parseTeamDefaults(CONTRACT);
 	assert.ok(parsed.ok, JSON.stringify(parsed));
 	assert.deepEqual(parsed.value, JSON.parse(CONTRACT));
-	assert.deepEqual(parsed.value, DEFAULT_TEAM_DEFAULTS);
+	assert.deepEqual(parsed.value, defaultTeamDefaults());
 });
 
 test("missing keys take the defaults; stated keys win", () => {
@@ -93,7 +93,7 @@ test("readTeamDefaults: absent, malformed (never rewritten) and ok", () => {
 		fs.writeFileSync(file, CONTRACT);
 		const ok = readTeamDefaults(dir);
 		assert.equal(ok.state, "ok");
-		assert.deepEqual(ok.state === "ok" ? ok.value : undefined, DEFAULT_TEAM_DEFAULTS);
+		assert.deepEqual(ok.state === "ok" ? ok.value : undefined, defaultTeamDefaults());
 	} finally {
 		fs.rmSync(dir, { recursive: true, force: true });
 	}
@@ -136,14 +136,14 @@ test("effectiveTeamDefaults always gives a full value: no settings or malformed 
 	for (const state of [{ state: "absent", file: "/a/team-defaults.json" } as const, { state: "malformed", file: "/a/t.json", errors: ["x: bad"] } as const]) {
 		const now = effectiveTeamDefaults(state, chat);
 		assert.equal(now.chatsOwn, true, state.state);
-		assert.deepEqual(now.value.coordinator, { ...DEFAULT_TEAM_DEFAULTS.coordinator, primary: chat, fallback: null });
-		assert.deepEqual(now.value.monitor, { ...DEFAULT_TEAM_DEFAULTS.monitor, primary: chat, fallback: null });
+		assert.deepEqual(now.value.coordinator, { ...defaultTeamDefaults().coordinator, primary: chat, fallback: null });
+		assert.deepEqual(now.value.monitor, { ...defaultTeamDefaults().monitor, primary: chat, fallback: null });
 		assert.deepEqual([now.value.monitor.contextPct, now.value.monitor.everyMinutes, now.value.monitor.usage, now.value.handover], [60, 10, { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, { retireTimeoutMinutes: 10 }]);
 	}
 	assert.equal(effectiveTeamDefaults({ state: "absent", file: "/a" }, chat).warning, undefined);
 	assert.match(effectiveTeamDefaults({ state: "malformed", file: "/a/t.json", errors: ["x: bad", "y: worse"] }, chat).warning ?? "", /^Warning: \/a\/t\.json is malformed \(x: bad; y: worse\), so this team's coordinator and monitor run on this chat's own model/);
-	const ok = effectiveTeamDefaults({ state: "ok", file: "/a/t.json", value: DEFAULT_TEAM_DEFAULTS }, chat);
-	assert.deepEqual([ok.chatsOwn, ok.value, ok.warning], [false, DEFAULT_TEAM_DEFAULTS, undefined], "named settings are used as they are");
+	const ok = effectiveTeamDefaults({ state: "ok", file: "/a/t.json", value: defaultTeamDefaults() }, chat);
+	assert.deepEqual([ok.chatsOwn, ok.value, ok.warning], [false, defaultTeamDefaults(), undefined], "named settings are used as they are");
 });
 
 test("describeTeamDefaults names both roles and the model each uses, never says off", () => {
@@ -156,7 +156,7 @@ test("describeTeamDefaults names both roles and the model each uses, never says 
 	const malformed = describeTeamDefaults(effectiveTeamDefaults({ state: "malformed", file: "/a/t.json", errors: ["x: bad", "y: worse"] }, chat));
 	assert.match(malformed, /\/a\/t\.json is malformed .*this chat's own model/);
 	assert.match(malformed, /- x: bad\n {2}- y: worse\n/);
-	const on = describeTeamDefaults(effectiveTeamDefaults({ state: "ok", file: "/a/t.json", value: DEFAULT_TEAM_DEFAULTS }, chat));
+	const on = describeTeamDefaults(effectiveTeamDefaults({ state: "ok", file: "/a/t.json", value: defaultTeamDefaults() }, chat));
 	assert.match(on, /Coordinator: role "coordinator", primary claude-code · claude-opus-5-5 · medium, fallback none/);
 	assert.match(on, /Monitor: role "monitor", primary pi · ollama-cloud\/deepseek-v4\.1-flash · low, fallback claude-code · claude-sonnet-5-5 · low/);
 	assert.match(on, /after 10 min/);

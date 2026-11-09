@@ -2091,6 +2091,18 @@ export interface DelegateBackendOptions {
   drift?: ClaudeCatalogDrift;
 }
 
+/** GET /api/claude/catalog: the Claude models Sova has learned, for the web app's lookups. */
+export interface ClaudeCatalogInfo {
+  /** What claude-code/catalog.ts merges (mergeClaudeCatalog); all empty before anything is learned. */
+  data: {
+    models: { id: string; window?: number; maxOutput?: number; efforts?: string[]; apiIds?: string[] }[];
+    dropped?: string[];
+    tested?: string[];
+  };
+  /** Claude Code's model table couldn't be read: the list is the last one Sova knows. */
+  lastKnown: boolean;
+}
+
 export interface ClaudeCatalogDrift {
   unknown: { id: string; name?: string }[];
   moved: { family: string; id: string; current: string }[];
@@ -5322,6 +5334,9 @@ export type SessionFeedMessage =
       payload: the client re-reads GET /api/session-groups and the list. Never on connect. Additive:
       a client that predates it ignores it. */
   | { type: "groups_changed" }
+  /** Sova's Claude model list changed (server/claude-models-sync.ts). No payload: the client re-reads
+      GET /api/claude/catalog and its model list. Additive: a client that predates it ignores it. */
+  | { type: "claude_models_changed" }
   /** The logical LLM calls in flight on this host and every connected host: sent once on every
       connect, then on each change of the total or its coverage. Never a reason to re-read the
       list. */

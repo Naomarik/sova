@@ -37,10 +37,10 @@ test("one entry per real model: catalog ids, CLI names, no aliases and no [1m] f
 test("the names the user reads", () => {
 	assert.equal(latestClaude("opus").name, "Opus 5.5");
 	assert.equal(latestClaude("sonnet").name, "Sonnet 5.5");
-	assert.equal(latestClaude("fable").name, "Fable 5.1");
+	assert.equal(latestClaude("fable").name, "Fable 5.2");
 	assert.equal(latestClaude("haiku").name, "Haiku 5.5");
 	assert.equal(claudeModel("claude-haiku-4-5")?.status, "previous", "Haiku 4.5 is still offered");
-	assert.deepEqual(["opus", "sonnet", "fable", "haiku"].map((f) => latestClaude(f as "opus").id), ["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-haiku-5-5"]);
+	assert.deepEqual(["opus", "sonnet", "fable", "haiku"].map((f) => latestClaude(f as "opus").id), ["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-2", "claude-haiku-5-5"]);
 	// Under any provider, by any id the API or an old file uses.
 	for (const [id, name] of [
 		["claude-opus-5-5", "Opus 5.5"], ["claude-code-cli/claude-opus-5-5", "Opus 5.5"], ["anthropic/claude-haiku-4-5-20251001", "Haiku 4.5"],
@@ -99,7 +99,7 @@ test("an id the catalog doesn't know is only noted", () => {
 test("drift: the CLI's list only notifies, by its resolved models", () => {
 	// claude 2.1.295's initialize list: no drift.
 	const today = [
-		{ id: "default", resolvedModel: "claude-opus-5-5" }, { id: "opus", resolvedModel: "claude-opus-5-5" }, { id: "fable", resolvedModel: "claude-fable-5-1" },
+		{ id: "default", resolvedModel: "claude-opus-5-5" }, { id: "opus", resolvedModel: "claude-opus-5-5" }, { id: "fable", resolvedModel: "claude-fable-5-2" },
 		{ id: "sonnet", resolvedModel: "claude-sonnet-5-5" }, { id: "haiku", resolvedModel: "claude-haiku-5-5" },
 		{ id: "claude-sonnet-5" }, { id: "claude-opus-5" }, { id: "claude-fable-5" }, { id: "claude-opus-4-8" }, { id: "claude-opus-4-7" }, { id: "claude-opus-4-6" }, { id: "claude-sonnet-4-6" },
 	];

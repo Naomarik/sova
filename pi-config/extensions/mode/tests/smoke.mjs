@@ -100,7 +100,7 @@ function makeCtx(store) {
 
 // claude-code's model list (in place of Sova's catalog), swappable per scenario.
 let offered = [
-	{ id: "claude-fable-5-1", name: "Fable" },
+	{ id: "claude-fable-5-2", name: "Fable" },
 	{ id: "claude-opus-5-5", name: "Opus" },
 ];
 
@@ -172,7 +172,7 @@ assert.equal(store.status.get("mode"), "<accent>delegate</accent>", "heavy statu
 const heavyPrompt = await beforeAgentStart({ systemPrompt: "base" }, ctx);
 assert.match(heavyPrompt.systemPrompt, /^base\n/);
 assert.match(heavyPrompt.systemPrompt, /# Mode: delegate/);
-assert.match(heavyPrompt.systemPrompt, /claude-fable-5-1/);
+assert.match(heavyPrompt.systemPrompt, /claude-fable-5-2/);
 assert.ok(entries.some((e) => e.type === "mode" && e.data.mode === "delegate"), "transcript marker appended");
 const modeEntries = () => entries.filter((e) => e.type === "mode");
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -215,12 +215,12 @@ assert.deepEqual(getTools(), ["read", "bash", "edit", "write", "grep"], "removed
 
 // Planner fallback: fable listed without medium → warning status + prompt names opus/high.
 // (An alias the CLI's varying list omits is unverified and stays in use; see the routing tests.)
-offered = [{ id: "claude-fable-5-1", name: "Fable", efforts: ["low"] }, { id: "claude-opus-5-5", name: "Opus" }];
+offered = [{ id: "claude-fable-5-2", name: "Fable", efforts: ["low"] }, { id: "claude-opus-5-5", name: "Opus" }];
 await commands.get("mode").handler("delegate", ctx);
 assert.equal(store.status.get("mode"), "<warning>delegate · fallback:plan · strict</warning>", "fallback reflected in status (strict is still on from the previous scenario)");
 const fallbackPrompt = await beforeAgentStart({ systemPrompt: "base" }, ctx);
 assert.match(fallbackPrompt.systemPrompt, /- Planning & specs .* → backend "claude-code", model "claude-opus-5-5", effort "high"\. This is the configured FALLBACK/);
-assert.match(store.notices.at(-1).message, /^Delegate routing:\nPlanning & specs: fallback claude-code · claude-opus-5-5 · high \(claude-fable-5-1 does not support effort "medium" \(supports: low\)\)$/, "fallback is disclosed");
+assert.match(store.notices.at(-1).message, /^Delegate routing:\nPlanning & specs: fallback claude-code · claude-opus-5-5 · high \(claude-fable-5-2 does not support effort "medium" \(supports: low\)\)$/, "fallback is disclosed");
 assert.equal(store.notices.at(-1).level, "warning");
 
 // Toggling via the shortcut flips modes
@@ -268,7 +268,7 @@ assert.match(renderers.get("mode")({ data: { mode: "delegate" } }, {}, ctx.ui.th
 
 // Switching to heavy keeps align; the heavy block precedes the align block
 offered = [
-	{ id: "claude-fable-5-1", name: "Fable" },
+	{ id: "claude-fable-5-2", name: "Fable" },
 	{ id: "claude-opus-5-5", name: "Opus" },
 ];
 await commands.get("mode").handler("delegate", ctx);
@@ -817,7 +817,7 @@ const reseed = () => { rmSync(profilesFile, { force: true }); rmSync(profilesDef
 const policyFile = path.join(process.env.PI_CODING_AGENT_DIR, "model-policy.json");
 const writeRouting = (mutate) => {
 	const settings = { version: 1, profiles: {
-		planning: { primary: { backend: "claude-code", model: "claude-fable-5-1", effort: "medium" }, fallback: { backend: "claude-code", model: "claude-opus-5-5", effort: "high" } },
+		planning: { primary: { backend: "claude-code", model: "claude-fable-5-2", effort: "medium" }, fallback: { backend: "claude-code", model: "claude-opus-5-5", effort: "high" } },
 		investigation: { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "low" }, fallback: null },
 		routine: { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "low" }, fallback: null },
 		complex: { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" }, fallback: null },
@@ -829,7 +829,7 @@ const writeRouting = (mutate) => {
 	reseed();
 };
 offered = [
-	{ id: "claude-fable-5-1", name: "Fable", efforts: ["low", "medium", "high", "xhigh", "max"] },
+	{ id: "claude-fable-5-2", name: "Fable", efforts: ["low", "medium", "high", "xhigh", "max"] },
 	{ id: "claude-opus-5-5", name: "Opus", efforts: ["low", "medium", "high", "xhigh", "max"] },
 ];
 const delegateEntriesBefore = modeEntries().length;
@@ -865,7 +865,7 @@ assert.equal(await beforeAgentStart({ systemPrompt: "base" }, ctx), undefined, "
 await commands.get("mode").handler("delegate", piCtx);
 
 // The subagent policy is re-read per turn too: a denied primary reroutes to the configured fallback, disclosed.
-writeFileSync(policyFile, JSON.stringify({ version: 1, disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: ["claude-code/claude-fable-5-1"] }));
+writeFileSync(policyFile, JSON.stringify({ version: 1, disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: ["claude-code/claude-fable-5-2"] }));
 turn = (await beforeAgentStart({ systemPrompt: "base" }, piCtx)).systemPrompt;
 assert.match(turn, /- Planning & specs .* → backend "claude-code", model "claude-opus-5-5", effort "high"\. This is the configured FALLBACK: .* is disabled as a subagent model by user settings\./);
 assert.equal(store.status.get("mode"), "<warning>delegate · fallback:plan</warning>");
@@ -888,13 +888,13 @@ await flush();
 await flush();
 assert.equal(store.status.get("mode"), "<accent>delegate</accent>", "a failed discovery degrades nothing");
 turn = (await beforeAgentStart({ systemPrompt: "base" }, piCtx)).systemPrompt;
-assert.match(turn, /- Planning & specs .* → backend "claude-code", model "claude-fable-5-1", effort "high"; fallback/);
+assert.match(turn, /- Planning & specs .* → backend "claude-code", model "claude-fable-5-2", effort "high"; fallback/);
 await commands.get("mode").handler("status", piCtx);
 assert.match(store.notices.at(-1).message, /^  Planning & specs: .* — using primary \(not verified\)$/m);
 
 // Discovered but without the configured effort: unavailable, so the fallback, disclosed.
 offered = [
-	{ id: "claude-fable-5-1", name: "Fable", efforts: ["low", "medium"] },
+	{ id: "claude-fable-5-2", name: "Fable", efforts: ["low", "medium"] },
 	{ id: "claude-opus-5-5", name: "Opus", efforts: ["low", "medium", "high"] },
 ];
 writeRouting(() => {});
@@ -905,13 +905,13 @@ await beforeAgentStart({ systemPrompt: "base" }, piCtx);
 await flush();
 await flush();
 assert.equal(store.status.get("mode"), "<warning>delegate · fallback:plan</warning>", "an unsupported effort is not clamped silently");
-assert.match(store.notices.at(-1).message, /Planning & specs: fallback claude-code · claude-opus-5-5 · high \(claude-fable-5-1 does not support effort "max"/, "a routing change that degrades a profile is announced");
+assert.match(store.notices.at(-1).message, /Planning & specs: fallback claude-code · claude-opus-5-5 · high \(claude-fable-5-2 does not support effort "max"/, "a routing change that degrades a profile is announced");
 rmSync(delegateFile);
 reseed();
 await commands.get("mode").handler("normal", ctx);
 
 // ── A turn during the entry probe joins it: no restart, and the entry's fallback notice survives ──
-offered = [{ id: "claude-fable-5-1", name: "Fable", efforts: ["low"] }, { id: "claude-opus-5-5", name: "Opus" }]; // planning will be on its fallback
+offered = [{ id: "claude-fable-5-2", name: "Fable", efforts: ["low"] }, { id: "claude-opus-5-5", name: "Opus" }]; // planning will be on its fallback
 let releaseProbe;
 gate = new Promise((resolve) => (releaseProbe = resolve));
 listCalls = 0;
@@ -977,7 +977,7 @@ await commands.get("mode").handler("normal", ctx);
 		reseed();
 	};
 	const all = ["low", "medium", "high", "xhigh", "max"];
-	offered = [{ id: "claude-fable-5-1", name: "Fable", efforts: all }, { id: "claude-opus-5-5", name: "Opus", efforts: ["low"] }];
+	offered = [{ id: "claude-fable-5-2", name: "Fable", efforts: all }, { id: "claude-opus-5-5", name: "Opus", efforts: ["low"] }];
 	await commands.get("mode").handler("normal", ctx);
 	await commands.get("mode").handler("spec on", ctx);
 	await rebuildHead();
@@ -988,7 +988,7 @@ await commands.get("mode").handler("normal", ctx);
 	await flush();
 	assert.equal(listCalls, 0, "no writer, not in delegate: nothing to probe");
 
-	writeSpec({ version: 1, writer: { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" }, fallback: { backend: "claude-code", model: "claude-fable-5-1", effort: "high" } } });
+	writeSpec({ version: 1, writer: { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" }, fallback: { backend: "claude-code", model: "claude-fable-5-2", effort: "high" } } });
 	const noticesBefore = store.notices.length;
 	prompt = (await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt;
 	assert.match(prompt, /# Minor mode: spec\n[\s\S]*\n\nSpec writer: .* → backend "claude-code", model "claude-opus-5-5", effort "medium";/, "re-read at the turn boundary, on the last discovery until this probe lands");
@@ -998,13 +998,13 @@ await commands.get("mode").handler("normal", ctx);
 	assert.equal(listCalls, 1, "outside delegate, spec on probes the writer's backend");
 	assert.equal(store.status.get("mode"), "<warning>normal · spec · writer:fallback</warning>");
 	assert.ok(
-		store.notices.slice(noticesBefore).some((n) => n.level === "warning" && /^Spec writer: fallback claude-code · claude-fable-5-1 · high \(claude-opus-5-5 does not support effort "medium"/.test(n.message)),
+		store.notices.slice(noticesBefore).some((n) => n.level === "warning" && /^Spec writer: fallback claude-code · claude-fable-5-2 · high \(claude-opus-5-5 does not support effort "medium"/.test(n.message)),
 		"a writer on its fallback is announced",
 	);
 	prompt = (await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt;
-	assert.match(prompt, /Spec writer: .* → backend "claude-code", model "claude-fable-5-1", effort "high"\. This is the configured FALLBACK/);
+	assert.match(prompt, /Spec writer: .* → backend "claude-code", model "claude-fable-5-2", effort "high"\. This is the configured FALLBACK/);
 	await commands.get("mode").handler("status", ctx);
-	assert.match(store.notices.at(-1).message, /^spec writer: claude-code · claude-opus-5-5 · medium, fallback claude-code · claude-fable-5-1 · high — using FALLBACK/m);
+	assert.match(store.notices.at(-1).message, /^spec writer: claude-code · claude-opus-5-5 · medium, fallback claude-code · claude-fable-5-2 · high — using FALLBACK/m);
 
 	// Spec off mid-session: the head keeps its spec block, writer paragraph included, byte for byte;
 	// the note says it no longer applies. Rebuilt (as after a compaction): no block, no paragraph.

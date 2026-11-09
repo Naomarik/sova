@@ -77,6 +77,19 @@ describe("editing Sova's own project file in place", () => {
     assert.equal(isEmptyChange({ reuse: true }), false);
   });
 
+  test("Delete branches: on writes merge.deleteBranches true and changes no other byte; off removes the key, the bytes back as they were", () => {
+    assert.ok(!SOVA.includes("deleteBranches"), "the control: the file doesn't already say it");
+    const on = editSettingsText(SOVA, { deleteBranches: true });
+    assert.deepEqual(lineDiff(SOVA, on), { removed: [], added: ['"deleteBranches": true'] });
+    assert.deepEqual(JSON.parse(on).merge.deleteBranches, true);
+    assert.equal(editSettingsText(on, { deleteBranches: false }), SOVA, "turning it off removes the key and leaves the file as it was");
+    assert.equal(editSettingsText(SOVA, { deleteBranches: false }), SOVA, "off where it's absent changes nothing");
+  });
+
+  test("Delete branches takes only a boolean", () => {
+    for (const v of ["true", 1, null]) assert.throws(() => parseChange({ deleteBranches: v }), SettingsEditError, String(v));
+  });
+
   test("How it lands (al_3): github-pr adds merge.land, local removes it: the round trip is the same bytes", () => {
     const pr = editSettingsText(SOVA, { land: "github-pr" });
     assert.equal(JSON.parse(pr).merge.land, "github-pr");

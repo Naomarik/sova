@@ -373,7 +373,8 @@ export function buildApp(deps: AppDeps) {
     if (!start && useDefault && !linkMember) {
       const r = await startOnDefault(made.path, cwd, useDefault === "overseer", subagentProfile);
       if (!r.ok) console.warn(`[profiles] ${made.path}: ${r.error}`);
-      return c.json((await getSessionSummary(made.path)) ?? made, 201);
+      const summary = (await getSessionSummary(made.path)) ?? made;
+      return c.json(r.ok ? summary : { ...summary, defaultNotApplied: r.error }, 201);
     }
     if (!start || !pick) return c.json(made, 201);
     // The model and effort it starts on, instead of the new-chat default (the merge queue's reviewer and thread),
@@ -446,7 +447,13 @@ export function buildApp(deps: AppDeps) {
     if (body.model !== undefined && (typeof body.model !== "string" || !/^[^/\s]+\/\S+$/.test(body.model) || body.model.length > 200)) return c.json({ error: 'model is "provider/model"' }, 400);
     if (body.thinking !== undefined && !(THINKING_LEVELS as readonly unknown[]).includes(body.thinking)) return c.json({ error: `thinking is one of ${THINKING_LEVELS.join(", ")}` }, 400);
     if ((body.model !== undefined || body.thinking !== undefined) && body.profile === undefined) return c.json({ error: "model and thinking come with a profile" }, 400);
+    if (body.byOverseer !== undefined && typeof body.byOverseer !== "boolean") return c.json({ error: "byOverseer must be true or false" }, 400);
     const linkMember = body.link === true;
+    const byOverseer = !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER));
+    // An Overseer's start: this host's own (the sender header), or another host's, which can only say so in the
+    // body (the header never crosses hosts). The mark only narrows what the default gives, so a peer may send it.
+    // With helpers named, any other starter's stays off the default.
+    const useDefault = byOverseer || body.byOverseer === true ? "overseer" : subagentProfile === undefined ? "user" : false;
     if (body.target !== undefined) {
       if (!isTargetName(body.target)) return c.json({ error: "target must be a target name" }, 400);
       const remoteCwd = normalizeRemotePath(typeof body.remoteCwd === "string" ? body.remoteCwd.trim() : "");
@@ -455,14 +462,11 @@ export function buildApp(deps: AppDeps) {
       if (!target) return c.json({ error: `Unknown target: ${body.target}` }, 404);
       const dir = targetDir(body.target, remoteCwd);
       mkdirSync(dir, { recursive: true });
-      return createWebSession(c, dir, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))), subagentProfile, linkMember);
+      return createWebSession(c, dir, startOf(body, byOverseer), subagentProfile, linkMember, useDefault);
     }
     const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
     const cwdError = await validateNewSessionCwd(cwd);
     if (cwdError) return c.json({ error: cwdError }, 400);
-    const byOverseer = !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER));
-    // With helpers named, only an Overseer's start follows the default; any other starter's stays off it.
-    const useDefault = byOverseer ? "overseer" : subagentProfile === undefined ? "user" : false;
     return createWebSession(c, cwd, startOf(body, byOverseer), subagentProfile, linkMember, useDefault);
   });
 

@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, w
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { after, test } from "node:test";
+import { after, before, describe, test } from "node:test";
 import { piSession } from "./harness/pi/testing/handle";
 
 const dir = mkdtempSync(join(tmpdir(), "sova-fork-routes-"));
@@ -233,36 +233,78 @@ test("create route: a session made with a subagent profile opens at once, its pi
   assert.equal(recentForeignWriteAgeSec(path), null);
 });
 
-test("create route: an Overseer's start naming only helpers follows the default, with the named helpers and only the grants it may have", async () => {
-  const sp = await import("../pi-config/extensions/subagents/subagent-profiles.ts");
-  const { OVERSEER_SENDER_HEADER, senderSecret } = await import("./overseer-sender");
-  const { PROFILE_ENTRY } = await import("../shared/profiles");
-  const { acquireChatHandle } = await import("./chat-handle");
-  (await import("./overseer-store")).writeOverseerState({ version: 1, current: "overseer-chat", history: [] }); // the sender mark counts only while an Overseer exists
-  sp.writeSubagentProfiles(dir, { version: 1, profiles: [sp.legacyProfile(dir, "theirs", "Default's helpers"), sp.legacyProfile(dir, "named", "Named helpers")] });
+describe("create route: an Overseer's start on this computer's default", () => {
   const state = join(dir, "sova");
-  mkdirSync(state, { recursive: true });
-  writeFileSync(join(state, "default-profile.json"), JSON.stringify({ version: 1, profile: "reader" }));
   const reader = { id: "reader", label: "Reader", model: "openai/gpt-5.5", thinking: "high", mode: "delegate", minorModes: ["spec"], grant: ["sessions.read"], subagents: "theirs" };
-  const overseer = { [OVERSEER_SENDER_HEADER]: senderSecret() };
-  const start = async (headers: Record<string, string>) => {
-    const res = await app.request("/api/sessions", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ cwd: dir, subagent_profile: "named" }) });
+  const defaultIs = (marks: object) => writeFileSync(join(state, "session-profiles.json"), JSON.stringify({ version: 1, profiles: [{ ...reader, ...marks }] }));
+  let overseer: Record<string, string>;
+  let PROFILE_ENTRY: string;
+  let acquireChatHandle: typeof import("./chat-handle").acquireChatHandle;
+  before(async () => {
+    const sp = await import("../pi-config/extensions/subagents/subagent-profiles.ts");
+    const { OVERSEER_SENDER_HEADER, senderSecret } = await import("./overseer-sender");
+    ({ PROFILE_ENTRY } = await import("../shared/profiles"));
+    ({ acquireChatHandle } = await import("./chat-handle"));
+    (await import("./overseer-store")).writeOverseerState({ version: 1, current: "overseer-chat", history: [] }); // the sender mark counts only while an Overseer exists
+    sp.writeSubagentProfiles(dir, { version: 1, profiles: [sp.legacyProfile(dir, "theirs", "Default's helpers"), sp.legacyProfile(dir, "named", "Named helpers")] });
+    mkdirSync(state, { recursive: true });
+    writeFileSync(join(state, "default-profile.json"), JSON.stringify({ version: 1, profile: "reader" }));
+    writeFileSync(join(dir, "targets.json"), JSON.stringify({ version: 1, targets: [{ name: "box", kind: "docker", docker: { container: "box" } }] }));
+    overseer = { [OVERSEER_SENDER_HEADER]: senderSecret() };
+  });
+  const create = (headers: Record<string, string>, body: object) =>
+    app.request("/api/sessions", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+  const start = async (headers: Record<string, string>, body: object) => {
+    const res = await create(headers, body);
     assert.equal(res.status, 201);
     const { path } = (await res.json()) as { path: string };
     const grants = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((e) => e.customType === PROFILE_ENTRY).map((e) => e.data.profile.grant);
     const { mirror } = await acquireChatHandle(path);
-    return { path, grants, on: [mirror.model?.ref, mirror.thinking, mirror.mode.mode, mirror.mode.minorModes, mirror.subagentPick] };
+    return { grants, on: [mirror.model?.ref, mirror.thinking, mirror.mode.mode, mirror.mode.minorModes], pick: mirror.subagentPick };
   };
-  const defaultsAndNamed = ["openai/gpt-5.5", "high", "delegate", ["spec"], "named"];
-  for (const [marks, grants] of [[{}, []], [{ overseerMayStart: true }, [["sessions.read"]]]] as const) {
-    writeFileSync(join(state, "session-profiles.json"), JSON.stringify({ version: 1, profiles: [{ ...reader, ...marks }] }));
-    const made = await start(overseer);
-    assert.deepEqual(made.on, defaultsAndNamed, `marks ${JSON.stringify(marks)}`);
-    assert.deepEqual(made.grants, grants, "powers only when the profile is marked for an Overseer");
-  }
-  // A person's call naming helpers stays off the default, as it was.
-  const person = await start({});
-  assert.equal(person.grants.length, 0);
-  assert.notDeepEqual(person.on.slice(0, 4), defaultsAndNamed.slice(0, 4));
-  assert.equal(person.on[4], "named");
+  const onDefault = ["openai/gpt-5.5", "high", "delegate", ["spec"]];
+  const here = { cwd: dir };
+  const onTarget = { target: "box", remoteCwd: "/work" };
+
+  test("however it arrives: the default's model and mode, its powers only when marked, the named helpers kept", async () => {
+    const starts: [string, () => Record<string, string>, object][] = [
+      ["this host's Overseer", () => overseer, here],
+      ["this host's Overseer, on a target", () => overseer, onTarget],
+      ["another host's Overseer", () => ({}), { ...here, byOverseer: true }],
+      ["another host's Overseer, on a target", () => ({}), { ...onTarget, byOverseer: true }],
+    ];
+    for (const [who, headers, where] of starts)
+      for (const [marks, grants] of [[{}, []], [{ overseerMayStart: true }, [["sessions.read"]]]] as const)
+        for (const [named, pick] of [[{ subagent_profile: "named" }, "named"], [{}, "theirs"]] as const) {
+          defaultIs(marks);
+          const made = await start(headers(), { ...where, ...named });
+          const label = `${who}, marks ${JSON.stringify(marks)}, helpers ${JSON.stringify(named)}`;
+          assert.deepEqual(made.on, onDefault, label);
+          assert.deepEqual(made.grants, grants, label);
+          assert.equal(made.pick, pick, label);
+        }
+  });
+
+  test("a person's start is what the Overseer's mark narrows: no mark, the whole default; helpers named, off it", async () => {
+    defaultIs({});
+    assert.deepEqual((await start({}, here)).grants, [["sessions.read"]], "unmarked: only the body's mark stands between a peer's start and these");
+    const named = await start({}, { ...here, subagent_profile: "named" });
+    assert.deepEqual(named.grants, []);
+    assert.notDeepEqual(named.on, onDefault);
+    assert.equal(named.pick, "named");
+    assert.equal((await create({}, { ...here, byOverseer: "yes" })).status, 400, "a mark that can't be read never falls back to the whole default");
+  });
+
+  test("a default that can't be fully applied says so on the 201", async () => {
+    defaultIs({});
+    const policy = join(dir, "model-policy.json");
+    writeFileSync(policy, JSON.stringify({ version: 1, disabledProviders: ["openai"], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }));
+    try {
+      const res = await create(overseer, here);
+      assert.equal(res.status, 201);
+      assert.match(((await res.json()) as { defaultNotApplied?: string }).defaultNotApplied ?? "", /openai is turned off/);
+    } finally {
+      rmSync(policy, { force: true });
+    }
+  });
 });

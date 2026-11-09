@@ -804,7 +804,7 @@ describe("sandbox on sova_set_session and sova_create_session (§app.overseer/to
   type State = "off" | "subagents" | "on";
   /** Sessions `a` and `b` with a sandbox each; the route sets it as the extension would. `card`: the
       items of the card whose click opened this turn (null: none did). */
-  function harness(o: { states?: Record<string, State | null>; card?: { kind: "session"; id: string }[] | null; attended?: boolean; permit?: boolean; defaultState?: State } = {}) {
+  function harness(o: { states?: Record<string, State | null>; card?: { kind: "session"; id: string }[] | null; attended?: boolean; permit?: boolean; defaultState?: State; created?: object } = {}) {
     const states = new Map<string, State | null>(Object.entries(o.states ?? { a: "subagents", b: "on" }) as [string, State | null][]);
     const calls: { path: string; body: any }[] = [];
     const summary = (id: string) => ({ id, path: `/s/${id}.jsonl`, title: `Session ${id}`, cwd: "/w" }) as SessionSummary;
@@ -816,7 +816,7 @@ describe("sandbox on sova_set_session and sova_create_session (§app.overseer/to
         if (path === "/api/settings/subagents") return Response.json({ profiles: [{ id: "off" }] });
         if (path === "/api/sessions") {
           states.set("new", "subagents");
-          return Response.json(summary("new"), { status: 201 });
+          return Response.json({ ...summary("new"), ...o.created }, { status: 201 });
         }
         const m = /^\/api\/sandbox\?path=%2Fs%2F(\w+)\.jsonl$/.exec(path);
         if (m) {
@@ -842,6 +842,13 @@ describe("sandbox on sova_set_session and sova_create_session (§app.overseer/to
       },
       sandboxDefault: () => o.defaultState ?? "subagents",
       started: () => {},
+      startedOnPeer: () => {},
+      peer: async (id: string) => ({ id, label: "Far", state: "up" }),
+      peerIds: () => ["peer"],
+      peerRequest: async (_id: string, path: string, init?: RequestInit) => {
+        calls.push({ path: `peer:${path}`, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+        return Response.json({ ...summary("new"), ...o.created }, { status: 201 });
+      },
       runningStarted: () => 0,
       counted: () => false,
     } as unknown as OverseerToolHost;
@@ -859,6 +866,19 @@ describe("sandbox on sova_set_session and sova_create_session (§app.overseer/to
     const h = harness();
     assert.doesNotMatch(await h.run("sova_create_session", { cwd: "/w", profile: "off" }), /^ERROR/);
     assert.deepEqual(h.calls.find((c) => c.path === "/api/sessions")?.body, { cwd: "/w", subagent_profile: "off" });
+  });
+
+  test("a default the route couldn't fully apply reaches the Overseer, here and on a peer", async () => {
+    for (const where of [{}, { host: "peer" }]) {
+      const r = await harness({ created: { defaultNotApplied: "the default profile's model (Provider openai is turned off) weren't applied" } }).run("sova_create_session", { cwd: "/w", ...where });
+      assert.match(r, /Provider openai is turned off/);
+    }
+  });
+
+  test("a create on a peer says it is an Overseer's, since the sender header stays on this host", async () => {
+    const h = harness();
+    assert.doesNotMatch(await h.run("sova_create_session", { host: "peer", cwd: "/w" }), /^ERROR/);
+    assert.equal(h.calls.find((c) => c.path === "peer:/api/sessions")?.body.byOverseer, true);
   });
 
   test("raising runs like any act; the result names the state and what running subagents keep", async () => {

@@ -111,6 +111,8 @@ export interface NewSessionBody {
   profile?: string | { source: string; id: string };
   prompt?: string;
   subagent_profile?: string;
+  /** Another host's Overseer started it: takes only what an Overseer's start may of this host's default. */
+  byOverseer?: boolean;
   link?: boolean;
   model?: string;
   thinking?: string;

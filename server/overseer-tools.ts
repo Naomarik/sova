@@ -909,6 +909,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
     const created = await call("POST", "/api/sessions", body);
     if (created.status !== 201) throw failed(created, "Creating the session");
     const s = created.json as SessionSummary;
+    if (typeof created.json?.defaultNotApplied === "string") notes.push(`Not fully on this computer's default profile: ${created.json.defaultNotApplied}.`);
     host.started(s.path);
     if (typeof p.title === "string" && p.title.trim()) {
       const r = await call("POST", "/api/sessions/title", { path: s.path, title: p.title.trim(), source: "overseer" });
@@ -982,9 +983,11 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
     if (p.subagent_profile !== undefined) body.subagent_profile = p.subagent_profile;
     // A peer on an earlier build ignores it: every session there has the link tools.
     if (p.link === true) body.link = true;
+    body.byOverseer = true; // the sender header never crosses hosts, and without this the peer's default applies whole
     const created = await peerCall(peer, "POST", "/api/sessions", body);
     if (created.status !== 201) throw failed(created, `Creating the session ${on}`);
     const s = created.json as SessionSummary;
+    if (typeof created.json?.defaultNotApplied === "string") notes.push(`Not fully on ${peer.label}'s default profile: ${created.json.defaultNotApplied}.`);
     host.startedOnPeer(peer.id, s.id, false);
     const where = `${on}, in ${whereOf(s)}`;
     const named = (title: string) => `"${cut(title.replace(/"/g, "'"), 60)}" (${s.id})`;

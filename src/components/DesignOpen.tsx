@@ -7,6 +7,7 @@ import { designStatusTone, DesignTile, designGrid, type DesignOpenTarget } from 
 import { DesignCoordinatorPanel, DesignDeliveryLine, designKey, DesignMessageBox } from "./DesignCoordinator";
 import { DesignSealedFrame, DesignStreamFrame } from "./DesignFrame";
 import { WorkerTranscript } from "./SubagentPane";
+import { Select, TextArea } from "./form";
 import { Chip, Icon } from "./ui";
 
 /** Refine: your words and quick prompts go back to the design's own session, which looks and fixes. */
@@ -41,7 +42,7 @@ export function DesignRefinePanel(props: { d: DesignRecord; store: DesignStore; 
       }}
     >
       <strong>Refine {props.d.label}</strong>
-      <textarea class="input textarea" rows="2" aria-label={`What should ${props.d.label} change?`} placeholder="What should it change?" value={text()} onInput={(e) => setText(e.currentTarget.value)} />
+      <TextArea label={`What should ${props.d.label} change?`} hideLabel rows="2" placeholder="What should it change?" value={text()} onInput={setText} />
       <div class="design-refine-quick" role="group" aria-label="Quick prompts">
         <For each={QUICK_PROMPTS}>
           {(q) => (
@@ -176,12 +177,7 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
                 {STATUS_WORD[x().status]}
               </Chip>
               <Show when={x().versions.length > 1}>
-                <label class="design-open-version">
-                  <span class="visually-hidden">Version</span>
-                  <select class="select" value={version()} onChange={(e) => setPick(Number(e.currentTarget.value))}>
-                    <For each={x().versions}>{(v) => <option value={v.n}>{versionLabel(x().label, v.n)}</option>}</For>
-                  </select>
-                </label>
+                <Select class="design-open-version" label="Version" hideLabel value={String(version())} options={x().versions.map((v) => ({ value: String(v.n), label: versionLabel(x().label, v.n) }))} onChange={(v) => setPick(Number(v))} />
               </Show>
               <button type="button" class="button button-sm" disabled={!designCanRefine(x())} onClick={() => setRefine(!refine())}>
                 Refine

@@ -29,6 +29,7 @@ import { designPageText } from "../lib/design-store";
 import { DesignCoordinatorPanel } from "./DesignCoordinator";
 import { createNearViewport, DesignScale, DesignSealedFrame, DesignStreamFrame } from "./DesignFrame";
 import { DesignOpen, DesignRefinePanel } from "./DesignOpen";
+import { TextArea, Toggle } from "./form";
 import { Chip, Icon } from "./ui";
 import "./DesignCard.css";
 
@@ -175,10 +176,7 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
         <Chip>Setup</Chip>
       </div>
       <div class="design-card-body design-setup">
-        <label class="field">
-          <span class="field-label">Brief</span>
-          <textarea class="input textarea" rows="2" value={draft().brief} onInput={(e) => change({ ...draft(), brief: e.currentTarget.value })} />
-        </label>
+        <TextArea label="Brief" rows="2" value={draft().brief} onInput={(brief) => change({ ...draft(), brief })} />
         <div class="stack-2">
           <h4 class="design-setup-label">Models</h4>
           <div class="design-setup-groups" role="group" aria-label="Model groups">
@@ -186,16 +184,7 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
               {(id) => {
                 const g = () => groups().find((x) => x.id === id)!;
                 return (
-                  <label class="toggle design-toggle-inline">
-                    <input
-                      type="checkbox"
-                      checked={g().on === g().count}
-                      ref={(el) => createEffect(() => (el.indeterminate = g().on > 0 && g().on < g().count))}
-                      onChange={(e) => change(toggleGroup(draft(), id, e.currentTarget.checked))}
-                    />
-                    <span class="toggle-box" />
-                    <span>{g().name}</span>
-                  </label>
+                  <Toggle class="design-toggle-inline" label={g().name} checked={g().on === g().count} mixed={g().on > 0 && g().on < g().count} onChange={(on) => change(toggleGroup(draft(), id, on))} />
                 );
               }}
             </For>
@@ -215,23 +204,18 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
                         </span>
                       </Show>
                     </span>
-                    <label class="toggle toggle-switch design-model-toggle">
-                      <span>Design</span>
-                      <input type="checkbox" checked={m().design} onChange={(e) => change(toggleModel(draft(), ref, e.currentTarget.checked))} />
-                      <span class="toggle-box" />
-                    </label>
-                    <label class="toggle design-model-toggle" title="1 model coordinates the team. It can coordinate without designing.">
-                      <span>Coordinator</span>
-                      <input
-                        type="checkbox"
-                        checked={m().coordinator}
-                        onChange={(e) => {
-                          e.currentTarget.checked = true;
-                          change(moveCoordinator(draft(), ref));
-                        }}
-                      />
-                      <span class="toggle-box" />
-                    </label>
+                    <Toggle switch class="design-model-toggle" label="Design" ariaLabel={`${m().name}: design`} checked={m().design} onChange={(on) => change(toggleModel(draft(), ref, on))} />
+                    <Toggle
+                      class="design-model-toggle"
+                      label="Coordinator"
+                      ariaLabel={`${m().name}: coordinator`}
+                      title="1 model coordinates the team. It can coordinate without designing."
+                      checked={m().coordinator}
+                      onChange={(_on, el) => {
+                        el.checked = true;
+                        change(moveCoordinator(draft(), ref));
+                      }}
+                    />
                   </li>
                 );
               }}
@@ -245,11 +229,7 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
               {(name) => {
                 const d = () => draft().directions.find((x) => x.name === name)!;
                 return (
-                  <label class="toggle design-toggle-inline">
-                    <input type="checkbox" checked={d().on} onChange={(e) => change(toggleDirection(draft(), name, e.currentTarget.checked))} />
-                    <span class="toggle-box" />
-                    <span>{name}</span>
-                  </label>
+                  <Toggle class="design-toggle-inline" label={name} checked={d().on} onChange={(on) => change(toggleDirection(draft(), name, on))} />
                 );
               }}
             </For>
@@ -399,10 +379,7 @@ function DesignConfirmPanel(props: { run: DesignRunView; confirm: NonNullable<De
       <Show when={props.confirm.url}>{(u) => <code class="design-confirm-url">{u()}</code>}</Show>
       <For each={props.confirm.screenshots}>{(src) => <img class="design-confirm-shot" src={props.store.api.shotUrl(src)} alt="The screen the coordinator found" />}</For>
       <Show when={props.confirm.outline}>{(o) => <pre class="design-confirm-outline">{o()}</pre>}</Show>
-      <label class="field">
-        <span class="field-label">Or tell it which screen or address to use</span>
-        <textarea class="input textarea" rows="2" value={text()} onInput={(e) => setText(e.currentTarget.value)} />
-      </label>
+      <TextArea label="Or tell it which screen or address to use" rows="2" value={text()} onInput={setText} />
       <Show when={error()}>
         <p class="field-error" role="alert">
           {error()}

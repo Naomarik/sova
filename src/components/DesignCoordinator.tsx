@@ -3,6 +3,7 @@ import type { DesignAsk, DesignChatView, DesignDelivery } from "../../shared/des
 import type { DesignStore } from "../lib/design-store";
 import type { DesignCoordinatorInfo } from "../lib/design-ui";
 import { Markdown } from "./Markdown";
+import { TextArea, TextField } from "./form";
 import { Chip } from "./ui";
 
 const STATUS_WORD = { starting: "Starting", running: "Working", idle: "Idle", ended: "Stopped" } as const;
@@ -54,13 +55,13 @@ export function DesignMessageBox(props: { placeholder: string; label: string; se
         void submit();
       }}
     >
-      <textarea
-        class="input textarea"
+      <TextArea
+        label={props.label}
+        hideLabel
         rows="2"
-        aria-label={props.label}
         placeholder={props.placeholder}
         value={text()}
-        onInput={(e) => setText(e.currentTarget.value)}
+        onInput={setText}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
             e.preventDefault();
@@ -130,16 +131,13 @@ function DesignAskPanel(props: { ask: DesignAsk; store: DesignStore }) {
           >
             <For each={sign()}>
               {(f) => (
-                <label class="field">
-                  <span class="field-label">{f === "code" ? "One-Time Code" : `${f[0]!.toUpperCase()}${f.slice(1)}`}</span>
-                  <input
-                    class="input"
-                    autocomplete="off"
-                    type={secret(f) ? "password" : "text"}
-                    value={fields()[f] ?? ""}
-                    onInput={(e) => setFields({ ...fields(), [f]: e.currentTarget.value })}
-                  />
-                </label>
+                <TextField
+                  label={f === "code" ? "One-Time Code" : `${f[0]!.toUpperCase()}${f.slice(1)}`}
+                  autocomplete="off"
+                  type={secret(f) ? "password" : "text"}
+                  value={fields()[f] ?? ""}
+                  onInput={(raw) => setFields({ ...fields(), [f]: raw })}
+                />
               )}
             </For>
             <p class="field-hint">These go straight to the browser, never to a model or a transcript.</p>

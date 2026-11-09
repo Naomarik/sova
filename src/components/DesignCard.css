@@ -75,6 +75,7 @@
 .design-open-title { margin: 0; font-size: var(--fs-heading-s); font-weight: var(--fw-semibold); }
 .design-open-meta { min-width: 0; }
 .design-open-spacer { flex: 1 1 0; }
+.design-open-version { margin: 0; }
 .design-open-version .select { min-height: 36px; }
 .design-open-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 2fr 1fr; }
 .design-open-body[data-chat="hidden"] { grid-template-columns: 1fr; }

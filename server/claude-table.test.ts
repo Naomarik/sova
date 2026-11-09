@@ -102,9 +102,9 @@ test("from each real table: only what is newer in a current family comes in", as
 test("a table row's limits parse as the program states them", () => {
   const r = (body: string) => `{id:"claude-nova-1",family:"nova",display_name:"Nova 1",${body}}`;
   const one = (body: string) => {
-    const p = parseClaudeTable(text([r(body)], '{nova:"claude-nova-1"}'));
+    const p = parseClaudeTable(text([...newest.rows, r(body)], latestOf({ nova: "claude-nova-1" })));
     assert.ok(p.ok, body);
-    return p.table.rows[0]!;
+    return p.table.rows.find((x) => x.id === "claude-nova-1")!;
   };
   assert.equal(one("context:{window:2e5}").window, 200_000, "a number in exponent form");
   assert.equal(one("context:{maximum_window:1e6,window:200000}").window, 200_000, "not the maximum, in either order");
@@ -113,9 +113,9 @@ test("a table row's limits parse as the program states them", () => {
   assert.deepEqual(one('capabilities:["thinking_disabled_effort_cap","per_turn_effort"]').efforts, [], "a word that only contains effort");
   assert.deepEqual(one('capabilities:["effort","max_effort"]').efforts, ["low", "medium", "high", "max"]);
   assert.equal(one("max_output_tokens:{default:128000,upper:128000}").maxOutput, 128_000);
-  const twoRows = parseClaudeTable(text([r("pricing:\"x\""), `{id:"claude-nova-2",family:"nova",display_name:"Nova 2",context:{window:1e6,native_1m:!0}}`], '{nova:"claude-nova-2"}'));
+  const twoRows = parseClaudeTable(text([...newest.rows, r("pricing:\"x\""), `{id:"claude-nova-2",family:"nova",display_name:"Nova 2",context:{window:1e6,native_1m:!0}}`], latestOf({ nova: "claude-nova-2" })));
   assert.ok(twoRows.ok);
-  assert.equal(twoRows.table.rows[0]!.window, CLAUDE_DEFAULT_WINDOW, "a row with no context doesn't borrow the next row's");
+  assert.equal(twoRows.table.rows.find((x) => x.id === "claude-nova-1")!.window, CLAUDE_DEFAULT_WINDOW, "a row with no context doesn't borrow the next row's");
 });
 
 test("each real table's rows agree with the built-in list", () => {

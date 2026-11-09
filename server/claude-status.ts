@@ -25,7 +25,7 @@ export function claudeCliStatus(given?: string): Promise<ClaudeCliStatus> {
     } catch (error) {
       return resolve({ error: (error as Error).message });
     }
-    // The same env hygiene the extension uses (pi-config/extensions/claude-code/models.ts): these
+    // The same env hygiene the extension uses (pi-config/extensions/claude-code/transport.ts): these
     // two make the CLI think it is running inside Claude Code, which changes how it behaves.
     // On this host's first usable Claude login, like every `claude` (§app.claude-logins/spawn-selection).
     const env = { ...claudeBaseSpawnEnv(), ...claudeLoginEnv() };

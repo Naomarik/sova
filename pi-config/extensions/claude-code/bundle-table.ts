@@ -11,6 +11,11 @@ import { CLAUDE_1M_WINDOW, CLAUDE_DEFAULT_WINDOW, CLAUDE_MODELS, parseClaudeId, 
 const DEFAULT_MAX_OUTPUT = 64_000;
 /** A row longer than this isn't a row: the closing brace was lost, or the shape changed. */
 const MAX_ROW = 6000;
+/**
+ * More than this share of Sova's built-in ids must be rows for a table to count as whole. An older
+ * Claude Code legitimately lacks a few of the newest; a read that found far fewer found a fragment.
+ */
+export const MIN_BUILT_IN_SHARE = 0.5;
 
 export interface ClaudeTableRow {
 	id: string;
@@ -36,6 +41,7 @@ export type ClaudeTableParse = { ok: true; table: ClaudeTable } | { ok: false; r
 const NUMBER = "(\\d+(?:\\.\\d+)?(?:e\\d+)?)";
 const WINDOW = new RegExp(`(?:^|,)window:${NUMBER}`);
 const MAX_OUTPUT = new RegExp(`max_output_tokens:\\{default:${NUMBER}`);
+const CAPABILITIES = /[,{]capabilities:\[/;
 const ROW_START = /\{id:"(claude-[a-z0-9-]+)",family:"([a-z]+)",display_name:"([^"]+)"/g;
 
 /** The balanced `{…}` at `from`, strings respected; undefined when it doesn't close within MAX_ROW. */
@@ -89,9 +95,25 @@ function rowOf(m: RegExpMatchArray, row: string): ClaudeTableRow | string {
 	return { id, family: m[2]!, name: m[3]!, window, maxOutput, efforts: effortsOf(row), ...(firstParty ? { firstParty } : {}) };
 }
 
+/**
+ * Why `table` isn't a whole table, or undefined when it is: only a whole table may take a model away.
+ * It names a latest for at least one family, each one a row, and lists most of the built-in ids.
+ */
+export function partialTableProblem(table: ClaudeTable): string | undefined {
+	const listed = new Set(table.rows.map((r) => r.id));
+	const latest = Object.entries(table.latest);
+	if (!latest.length) return "the table has no latest_per_family";
+	for (const [family, id] of latest) if (!listed.has(id)) return `the latest ${family} model, ${id}, is not a row of the table`;
+	const covered = CLAUDE_MODELS.filter((m) => listed.has(m.id)).length;
+	if (covered <= CLAUDE_MODELS.length * MIN_BUILT_IN_SHARE) return `only ${covered} of Sova's ${CLAUDE_MODELS.length} built-in models are rows of the table`;
+	return undefined;
+}
+
 /** The table in `text`, or why there is none to trust. Never throws. */
 export function parseClaudeTable(text: string): ClaudeTableParse {
 	const rows = new Map<string, ClaudeTableRow>();
+	let anyCapabilities = false;
+	let anyOutputCap = false;
 	for (const m of text.matchAll(ROW_START)) {
 		if (rows.has(m[1]!)) continue;
 		const object = objectAt(text, m.index);
@@ -99,8 +121,13 @@ export function parseClaudeTable(text: string): ClaudeTableParse {
 		const row = rowOf(m, object);
 		if (typeof row === "string") return { ok: false, reason: row };
 		rows.set(row.id, row);
+		anyCapabilities ||= CAPABILITIES.test(object);
+		anyOutputCap ||= MAX_OUTPUT.test(object);
 	}
 	if (!rows.size) return { ok: false, reason: "no model rows found" };
+	// One row may lack either; a whole table lacking one means the field was renamed.
+	if (!anyCapabilities) return { ok: false, reason: "no row has a capabilities list" };
+	if (!anyOutputCap) return { ok: false, reason: "no row has an output cap" };
 	const body = /latest_per_family:\{([^{}]*)\}/.exec(text)?.[1] ?? "";
 	const latest: Record<string, string> = {};
 	for (const m of body.matchAll(/(\w+):"([^"]+)"/g)) {
@@ -110,7 +137,9 @@ export function parseClaudeTable(text: string): ClaudeTableParse {
 		latest[m[1]!] = id;
 	}
 	const cliVersion = /VERSION:"(\d+\.\d+\.\d+)"/.exec(text)?.[1];
-	return { ok: true, table: { rows: [...rows.values()], latest, ...(cliVersion ? { cliVersion } : {}) } };
+	const table: ClaudeTable = { rows: [...rows.values()], latest, ...(cliVersion ? { cliVersion } : {}) };
+	const partial = partialTableProblem(table);
+	return partial ? { ok: false, reason: partial } : { ok: true, table };
 }
 
 const versionOf = (id: string) => (parseClaudeId(id)?.version ?? "0").split(".").map(Number);
@@ -146,9 +175,11 @@ function newestPerFamily(ids: Iterable<string>): Map<string, string> {
  * that may be unreleased); a family the built-in list lacks contributes its latest only. Only a
  * family `latest_per_family` names counts, and only under a standard id of that same family: an
  * old-order value names nothing. Mythos and old rows stay out, so an id typed by hand is unknown.
- * What Sova knows always stays known: a model a full table no longer has is listed as dropped.
+ * What Sova knows always stays known: a model a whole table no longer has is listed as dropped. A
+ * table that isn't whole changes nothing, whoever hands it in.
  */
 export function offerFromTable(table: ClaudeTable, prev?: ClaudeCatalogData | null): ClaudeCatalogData {
+	if (partialTableProblem(table)) return { models: [...(prev?.models ?? [])], ...(prev?.dropped ? { dropped: [...prev.dropped] } : {}), ...(prev?.tested ? { tested: [...prev.tested] } : {}) };
 	const rows = new Map(table.rows.filter((r) => parseClaudeId(r.id)?.id === r.id).map((r) => [r.id, r]));
 	const kept = new Map((prev?.models ?? []).map((m) => [m.id, m]));
 	const known = new Set([...CLAUDE_MODELS.map((m) => m.id), ...kept.keys()].filter((id) => parseClaudeId(id)));

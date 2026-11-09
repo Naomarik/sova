@@ -32,8 +32,7 @@ Use `agent_models` with `backend: "claude-code"`. The models are Sova's own Clau
 window, output cap and efforts. No aliases and no `[1m]` forms: an old id typed into `agent_spawn`
 or `team_create` (`opus[1m]`, `claude-opus-5-5[1m]`) quietly runs as its catalog id, and an id the
 catalog doesn't know still runs, with a note. Every `--model` is a catalog id; an old id from a file (`opus[1m]`) is read through the
-catalog's frozen legacy table. No CLI process runs to list them. `models.ts`'s initialize-only
-discovery (no model request, account details never kept) is used by Sova only to report drift;
+catalog's frozen legacy table. No CLI process runs to list them.
 `pnpm run claude:catalog` (in Sova) diffs the catalog against an installed CLI's own table.
 
 ## Logins

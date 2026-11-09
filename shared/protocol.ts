@@ -2085,10 +2085,6 @@ export interface DelegateBackendOptions {
       provider, `claude-code-cli`, registered only in sessions started with it on). A model of one
       of these that `models` doesn't list is NOT VERIFIED, never "not offered". */
   sessionScopedProviders?: string[];
-  /** claude-code only: what the CLI's own list says that Sova's Claude catalog doesn't (models it
-      names that the catalog doesn't know; a family alias it now runs as another model). Absent when
-      the list agrees or couldn't be read. Never changes `models`. */
-  drift?: ClaudeCatalogDrift;
 }
 
 /** GET /api/claude/catalog: the Claude models Sova has learned, for the web app's lookups. */
@@ -2101,11 +2097,6 @@ export interface ClaudeCatalogInfo {
   };
   /** Claude Code's model table couldn't be read: the list is the last one Sova knows. */
   lastKnown: boolean;
-}
-
-export interface ClaudeCatalogDrift {
-  unknown: { id: string; name?: string }[];
-  moved: { family: string; id: string; current: string }[];
 }
 
 export interface DelegateOptions {

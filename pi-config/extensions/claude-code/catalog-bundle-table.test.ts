@@ -99,9 +99,26 @@ test("a newer model in a family the table calls current comes in; older and unna
 	for (const out of ["claude-opus-3-5", "claude-mythos-5", "claude-3-5-sonnet"]) assert.ok(!ids(d).includes(out), out);
 });
 
-test("every row newer than the built-in list's newest comes in", () => {
+test("adoption stops at the table's own latest; a model adopted earlier stays", () => {
 	const d = offerFromTable(T([r("claude-opus-9"), r("claude-opus-9-5"), r("claude-opus-10")], { opus: "claude-opus-9-5" }));
-	for (const id of ["claude-opus-9", "claude-opus-9-5", "claude-opus-10"]) assert.ok(ids(d).includes(id), id);
+	for (const id of ["claude-opus-9", "claude-opus-9-5"]) assert.ok(ids(d).includes(id), id);
+	assert.ok(!ids(d).includes("claude-opus-10"), "past the family's latest");
+	const earlier = { models: [{ id: "claude-opus-10", window: 5 }] };
+	const kept = offerFromTable(T([r("claude-opus-9-5"), r("claude-opus-10")], { opus: "claude-opus-9-5" }), earlier);
+	assert.ok(ids(kept).includes("claude-opus-10"));
+});
+
+test("versions compare as numbers, and 5 is 5-0", () => {
+	const d = offerFromTable(T([r("claude-opus-90-9"), r("claude-opus-90-10")], { opus: "claude-opus-90-10" }));
+	assert.ok(ids(d).includes("claude-opus-90-9"), "90.9 is below the latest 90.10, as a string it would be above");
+	assert.ok(ids(d).includes("claude-opus-90-10"));
+	const past = offerFromTable(T([r("claude-opus-90-9"), r("claude-opus-90-10")], { opus: "claude-opus-90-9" }));
+	assert.ok(ids(past).includes("claude-opus-90-9"));
+	assert.ok(!ids(past).includes("claude-opus-90-10"), "90.10 is past 90.9, as a string it would be below");
+	for (const latest of ["claude-opus-90", "claude-opus-90-0"]) {
+		const tie = offerFromTable(T([r("claude-opus-90"), r("claude-opus-90-0")], { opus: latest }));
+		for (const id of ["claude-opus-90", "claude-opus-90-0"]) assert.ok(ids(tie).includes(id), `latest ${latest}: ${id} is that same version, not past it`);
+	}
 });
 
 test("a family new to Sova contributes its latest only", () => {
@@ -110,10 +127,27 @@ test("a family new to Sova contributes its latest only", () => {
 	assert.ok(!ids(d).includes("claude-nova-1"));
 });
 
-test("with no latest_per_family, known families follow their highest row and no family is added", () => {
-	const d = offerFromTable(T([r("claude-opus-9"), r("claude-nova-1")], {}));
-	assert.ok(ids(d).includes("claude-opus-9"));
-	assert.ok(!ids(d).includes("claude-nova-1"));
+test("a family latest_per_family doesn't name adopts nothing, a table with no latest at all included", () => {
+	const none = offerFromTable(T([r("claude-opus-9"), r("claude-nova-1")], {}));
+	const onlyHaiku = offerFromTable(T([r("claude-opus-9"), r("claude-haiku-9")], { haiku: "claude-haiku-9" }));
+	assert.ok(!ids(none).includes("claude-opus-9"));
+	assert.ok(!ids(none).includes("claude-nova-1"));
+	assert.ok(!ids(onlyHaiku).includes("claude-opus-9"));
+	assert.ok(ids(onlyHaiku).includes("claude-haiku-9"));
+});
+
+test("a latest value that is no standard id of its family names nothing: no adoption, no crash", () => {
+	const cases: Record<string, string>[] = [{ sonnet: "claude-3-7-sonnet" }, { nova: "claude-3-7-sonnet" }, { opus: "claude-haiku-9" }, { nova: "claude-haiku-9" }];
+	for (const latest of cases) {
+		const d = offerFromTable(T([r("claude-3-7-sonnet"), r("claude-sonnet-9"), r("claude-opus-9"), r("claude-haiku-9"), r("claude-nova-1")], latest));
+		for (const out of ["claude-3-7-sonnet", "claude-sonnet-9", "claude-opus-9", "claude-haiku-9", "claude-nova-1"]) assert.ok(!ids(d).includes(out), `${JSON.stringify(latest)}: ${out}`);
+	}
+});
+
+test("a dated or [1m] latest is its row; a value that is no row at all makes the table unread", () => {
+	const text = (value: string) => `${row("claude-opus-9", "")};x={latest_per_family:{opus:"${value}"}}`;
+	for (const value of ["claude-opus-9-20260101", "claude-opus-9[1m]"]) assert.equal(ok(parseClaudeTable(text(value))).latest.opus, "claude-opus-9", value);
+	for (const value of ["claude-opus-10", "claude-opus-10-20260101", "not-an-id", "claude-3-7-sonnet"]) assert.equal(parseClaudeTable(text(value)).ok, false, value);
 });
 
 test("the table's fields win for a model Sova ships", () => {

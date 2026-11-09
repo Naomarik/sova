@@ -104,8 +104,10 @@ export function parseClaudeTable(text: string): ClaudeTableParse {
 	const body = /latest_per_family:\{([^{}]*)\}/.exec(text)?.[1] ?? "";
 	const latest: Record<string, string> = {};
 	for (const m of body.matchAll(/(\w+):"([^"]+)"/g)) {
-		if (!rows.has(m[2]!)) return { ok: false, reason: `the latest ${m[1]} model, ${m[2]}, is not a row of the table` };
-		latest[m[1]!] = m[2]!;
+		// A dated or `[1m]` spelling of a row is that row.
+		const id = rows.has(m[2]!) ? m[2]! : parseClaudeId(m[2]!)?.id;
+		if (!id || !rows.has(id)) return { ok: false, reason: `the latest ${m[1]} model, ${m[2]}, is not a row of the table` };
+		latest[m[1]!] = id;
 	}
 	const cliVersion = /VERSION:"(\d+\.\d+\.\d+)"/.exec(text)?.[1];
 	return { ok: true, table: { rows: [...rows.values()], latest, ...(cliVersion ? { cliVersion } : {}) } };
@@ -140,9 +142,10 @@ function newestPerFamily(ids: Iterable<string>): Map<string, string> {
 
 /**
  * What Sova takes from a table it trusts, over what it had. Comes in: a standard id newer than the
- * newest of the built-in list in a family the table names current; a family the built-in list lacks
- * contributes its latest only. Mythos and old rows stay out, so an id typed by hand is simply unknown.
- * With no `latest_per_family`, each known family's highest row is its latest and no family is added.
+ * newest of the built-in list and no newer than the table's own latest for its family (a row past
+ * that may be unreleased); a family the built-in list lacks contributes its latest only. Only a
+ * family `latest_per_family` names counts, and only under a standard id of that same family: an
+ * old-order value names nothing. Mythos and old rows stay out, so an id typed by hand is unknown.
  * What Sova knows always stays known: a model a full table no longer has is listed as dropped.
  */
 export function offerFromTable(table: ClaudeTable, prev?: ClaudeCatalogData | null): ClaudeCatalogData {
@@ -151,14 +154,7 @@ export function offerFromTable(table: ClaudeTable, prev?: ClaudeCatalogData | nu
 	const known = new Set([...CLAUDE_MODELS.map((m) => m.id), ...kept.keys()].filter((id) => parseClaudeId(id)));
 	const newestBuiltIn = newestPerFamily(CLAUDE_MODELS.map((m) => m.id));
 
-	const named = new Map(Object.entries(table.latest).filter(([, id]) => rows.has(id)));
-	if (!Object.keys(table.latest).length) {
-		const highest = newestPerFamily(rows.keys());
-		for (const family of newestBuiltIn.keys()) {
-			const id = highest.get(family);
-			if (id) named.set(family, id);
-		}
-	}
+	const named = Object.entries(table.latest).filter(([family, id]) => rows.has(id) && parseClaudeId(id)!.family === family);
 
 	const adopted = new Set<string>();
 	for (const [family, latest] of named) {
@@ -168,7 +164,7 @@ export function offerFromTable(table: ClaudeTable, prev?: ClaudeCatalogData | nu
 			continue;
 		}
 		for (const id of rows.keys()) {
-			if (parseClaudeId(id)!.family === family && newer(id, floor) > 0) adopted.add(id);
+			if (parseClaudeId(id)!.family === family && newer(id, floor) > 0 && newer(id, latest) <= 0) adopted.add(id);
 		}
 	}
 

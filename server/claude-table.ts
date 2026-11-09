@@ -85,8 +85,8 @@ export function createClaudeTableCheck(deps: ClaudeTableDeps): ClaudeTableCheck 
   let timer: unknown;
   let started = false;
   let inflight: Promise<void> | null = null;
-  /** A server start counts as a read of the table: an unchanged file with a good read needs no second 342 MB. */
-  let startSeen = false;
+  /** Every server start reads the table once, changed or not. */
+  let readThisStart = false;
 
   const update = (change: (file: ClaudeModelsFile) => ClaudeModelsFile) => {
     const root = deps.root();
@@ -110,9 +110,8 @@ export function createClaudeTableCheck(deps: ClaudeTableDeps): ClaudeTableCheck 
     const { mtimeMs } = fs.statSync(realPath);
     const held = readClaudeModelsFile(deps.root());
     const same = held?.cli?.realPath === realPath && held.cli.mtimeMs === mtimeMs;
-    const atStart = !startSeen;
-    startSeen = true;
-    if (same && !(atStart && held?.unreadable)) return atStart;
+    if (same && readThisStart) return false;
+    readThisStart = true;
     const result = await deps.read(realPath);
     const at = clock.now();
     const fromName = /^\d+\.\d+\.\d+$/.test(path.basename(realPath)) ? path.basename(realPath) : undefined;

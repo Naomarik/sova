@@ -12,7 +12,7 @@
 //
 // Env: SOVA_E2E_PORT (default 4810) when 4810 is held by another worktree's server and this one
 // runs the same command on another port; SOVA_E2E_SHOTS, a folder for the footer screenshots.
-// The playwright skill needs its node_modules (`npm ci` in .claude/skills/playwright/scripts, or a
+// The playwright skill needs its node_modules (`npm ci` in .agents/skills/playwright/scripts, or a
 // symlink to another checkout's).
 
 import { execFileSync } from "node:child_process";
@@ -26,7 +26,7 @@ const AGENT = join(ROOT, ".agent");
 const PORT = Number(process.env.SOVA_E2E_PORT ?? 4810);
 const BASE = `http://127.0.0.1:${PORT}`;
 const SHOTS = process.env.SOVA_E2E_SHOTS ?? null;
-const SKILL = join(ROOT, ".claude/skills/playwright/scripts");
+const SKILL = join(ROOT, ".agents/skills/playwright/scripts");
 
 let passed = 0;
 const failures = [];

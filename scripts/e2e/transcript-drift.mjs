@@ -18,7 +18,7 @@
 // Env: SOVA_E2E_PORT (default 4810); SOVA_E2E_AGENT, the server's agent dir when it isn't this
 // worktree's .agent (a baseline build's own copy); SOVA_E2E_CDP, a browser already running (CDP
 // URL) instead of starting one. The playwright skill needs its node_modules (`npm ci` in
-// .claude/skills/playwright/scripts, or a symlink to another checkout's).
+// .agents/skills/playwright/scripts, or a symlink to another checkout's).
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
@@ -32,7 +32,7 @@ const ROOT = resolve(import.meta.dirname, "../..");
 const AGENT = resolve(process.env.SOVA_E2E_AGENT ?? join(ROOT, ".agent"));
 const PORT = Number(process.env.SOVA_E2E_PORT ?? 4810);
 const BASE = `http://127.0.0.1:${PORT}`;
-const SKILL = join(ROOT, ".claude/skills/playwright/scripts");
+const SKILL = join(ROOT, ".agents/skills/playwright/scripts");
 
 let passed = 0;
 const failures = [];

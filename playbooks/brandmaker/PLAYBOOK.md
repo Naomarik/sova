@@ -117,7 +117,7 @@ load-bearing default that ships unmarked.
 | 04 Build core | `phases/04-build.md` | `tokens.css`, `<brand>.css`, fonts, assets |
 | 05 References & site | `phases/05-references-and-site.md` | `reference/**` MDs, rendered `site/`, then `SKILL.md` |
 | 06 QA & handoff | `phases/06-qa.md` | Parity audit against `PARITY.md`, contrast checks, sign-off |
-| 07 Install (optional) | `phases/07-install.md` | Skill installed to `.claude/skills/<brand>-design-skill/` and registered for pi, CSS wired into however the project loads styles |
+| 07 Install (optional) | `phases/07-install.md` | Skill installed to `.agents/skills/<brand>-design-skill/`, CSS wired into however the project loads styles |
 
 ## Global rules
 

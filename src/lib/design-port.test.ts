@@ -13,10 +13,10 @@ import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-const SKILL_MD = fileURLToPath(new URL("../../.claude/skills/fold-ai-dev-design/SKILL.md", import.meta.url));
+const SKILL_MD = fileURLToPath(new URL("../../.agents/skills/fold-ai-dev-design/SKILL.md", import.meta.url));
 const BASE_CSS = fileURLToPath(new URL("../design/base.css", import.meta.url));
-const SKILL_CSS = fileURLToPath(new URL("../../.claude/skills/fold-ai-dev-design/fold-ai-dev.css", import.meta.url));
-const COMPONENTS_DIR = fileURLToPath(new URL("../../.claude/skills/fold-ai-dev-design/reference/components/", import.meta.url));
+const SKILL_CSS = fileURLToPath(new URL("../../.agents/skills/fold-ai-dev-design/fold-ai-dev.css", import.meta.url));
+const COMPONENTS_DIR = fileURLToPath(new URL("../../.agents/skills/fold-ai-dev-design/reference/components/", import.meta.url));
 // 25 components (one reference file and one class-index row each) in 27 table rows:
 // the Components table splits Overlay into Modal, Sheet and Popover.
 const EXPECTED_COMPONENTS = 25;

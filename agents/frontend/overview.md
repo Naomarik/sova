@@ -1,5 +1,5 @@
 ---
-watches: ["src/vis/parse.ts", "src/vis/registry.ts", "src/vis/core/**", "src/vis/kinds/*/parse.ts", "src/share/markdown.ts", "src/lib/message.ts", "src/lib/tool-diff-stats.ts", "src/lib/diff/parse.ts", "src/lib/format.ts", ".claude/skills/**"]
+watches: ["src/vis/parse.ts", "src/vis/registry.ts", "src/vis/core/**", "src/vis/kinds/*/parse.ts", "src/share/markdown.ts", "src/lib/message.ts", "src/lib/tool-diff-stats.ts", "src/lib/diff/parse.ts", "src/lib/format.ts", ".agents/skills/**"]
 alsoUpdate: ["agents/frontend/overview.md"]
 ---
 # Frontend
@@ -11,14 +11,13 @@ must stay DOM- and Solid-free), browser testing, and the project skills.
 
 - `src/`: SolidJS + TS (Vite, vite-plugin-solid; HMR = live reload). Owned by **frontend**, except
   `src/design/` (design tokens, base CSS), which with `public/` (fonts/icons) is owned by **designer**.
-- `.claude/skills/`: project skills, registered for pi by `.pi/settings.json`
-  (`"skills": ["../.claude/skills"]`; the folder is also trusted in `~/.pi/agent/trust.json`, or pi
-  prompts each session).
-  - `.claude/skills/fold-ai-dev-design/`: the design system skill (copied from foldaidev). READ IT
-    ([SKILL.md](../../.claude/skills/fold-ai-dev-design/SKILL.md)).
-  - `.claude/skills/playwright/`: CDP browser automation via
-    `.claude/skills/playwright/scripts/start-browser.sh` + `.claude/skills/playwright/scripts/pw.sh`;
-    read its [SKILL.md](../../.claude/skills/playwright/SKILL.md) before any browser work (own browser
+- `.agents/skills/`: project skills, which pi finds on its own in `.agents/skills/` from the working
+  directory up to the git root (no registration).
+  - `.agents/skills/fold-ai-dev-design/`: the design system skill (copied from foldaidev). READ IT
+    ([SKILL.md](../../.agents/skills/fold-ai-dev-design/SKILL.md)).
+  - `.agents/skills/playwright/`: CDP browser automation via
+    `.agents/skills/playwright/scripts/start-browser.sh` + `.agents/skills/playwright/scripts/pw.sh`;
+    read its [SKILL.md](../../.agents/skills/playwright/SKILL.md) before any browser work (own browser
     per caller, `resize` must follow `navigate`, a bare `console` reloads the page).
 - Related guides: the wire and the pi boundary [agents/server/harness/overview.md](../server/harness/overview.md);
   the vis kinds [agents/modes/vis/overview.md](../modes/vis/overview.md); the pi-config files `src/`
@@ -76,7 +75,7 @@ for the browser, so each imports nothing at all; the rules are in
 ### Browser testing
 
 - Playwright in a fresh worktree: symlink the live tree's
-  `.claude/skills/playwright/scripts/node_modules` and remove it afterwards. If port 4810 is taken by
+  `.agents/skills/playwright/scripts/node_modules` and remove it afterwards. If port 4810 is taken by
   another worktree, never kill it: run `PORT=481x PI_CODING_AGENT_DIR=<wt>/.agent pnpm exec tsx server/index.ts`.
   After a rebuild, unregister the app's service worker and clear its caches, or the page keeps the
   previous build.

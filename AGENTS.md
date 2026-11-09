@@ -35,9 +35,9 @@ also update Y" list live in its guide: read the guide of every area your task to
 - `src/design/`, `public/`, `.sova/spec/claims/` + `.sova/spec/manifest.json`: design tokens, base CSS,
   fonts/icons and the product documentation (the UX spec). Owned by **designer**.
 - `.sova/spec/`: the product documentation and its tools (**Product documentation** below).
-- `.claude/skills/`: project skills, registered for pi by `.pi/settings.json`. READ
-  `.claude/skills/fold-ai-dev-design/` (the design system) for UI work and
-  `.claude/skills/playwright/SKILL.md` before any browser work (frontend guide).
+- `.agents/skills/`: project skills, found by pi on its own. READ
+  `.agents/skills/fold-ai-dev-design/` (the design system) for UI work and
+  `.agents/skills/playwright/SKILL.md` before any browser work (frontend guide).
 - `pi-config/`: the user's pi config and extensions, in this repo with no separate home (`~/pi-config`
   is a compat symlink). Shared, owned by no team. Self-contained: its `install.sh` and README work on
   a plain copy, importing nothing from Sova. `~/.pi/agent` symlinks into it, so an edit changes the

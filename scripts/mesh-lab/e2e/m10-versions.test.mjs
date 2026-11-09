@@ -30,7 +30,7 @@ import { link, linksFile, releaseLock, send, takeLock, unlink, waitIdle } from "
 import { commitOf, list, sameOnHost } from "./versions-builds.mjs";
 
 const REPO = fileURLToPath(new URL("../../..", import.meta.url));
-const PW = process.env.PLAYWRIGHT_MODULE ?? join(REPO, ".claude/skills/playwright/scripts/node_modules/playwright/index.mjs");
+const PW = process.env.PLAYWRIGHT_MODULE ?? join(REPO, ".agents/skills/playwright/scripts/node_modules/playwright/index.mjs");
 const SHOTS = process.env.SHOTS ?? join(REPO, ".sova/spec/drafts/al_1-shots");
 const COMPOSER_HEADER = "X-Sova-Composer";
 const MODEL = process.env.LAB_MODEL ?? FAKE_MODEL;

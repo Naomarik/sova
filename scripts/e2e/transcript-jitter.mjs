@@ -35,7 +35,7 @@ const ROOT = resolve(import.meta.dirname, "../..");
 const AGENT = resolve(process.env.SOVA_E2E_AGENT ?? join(ROOT, ".agent"));
 const PORT = Number(process.env.SOVA_E2E_PORT ?? 4810);
 const BASE = `http://127.0.0.1:${PORT}`;
-const SKILL = join(ROOT, ".claude/skills/playwright/scripts");
+const SKILL = join(ROOT, ".agents/skills/playwright/scripts");
 const SCALE = process.env.SOVA_E2E_SCALE ?? "1.25";
 
 let passed = 0;

@@ -371,35 +371,3 @@ export function claudeContextWindow(id: string, resolvedModel?: string): number 
 export function unverifiedClaudeNote(id: string): string | undefined {
 	return resolveClaude(id) ? undefined : `Not verified: ${id} is not in Sova's Claude catalog. It will still be used.`;
 }
-
-/** What the CLI's initialize list says that the catalog doesn't (§app.claude-code-provider/catalog-drift). */
-export interface ClaudeDrift {
-	/** Listed models the catalog doesn't know. */
-	unknown: { id: string; name?: string }[];
-	/** A family alias the CLI resolves to another model than the catalog's current one. */
-	moved: { family: ClaudeFamily; id: string; current: string }[];
-}
-export function claudeDrift(listed: readonly { id: string; name?: string; resolvedModel?: string }[]): ClaudeDrift {
-	const unknown: ClaudeDrift["unknown"] = [];
-	const moved: ClaudeDrift["moved"] = [];
-	const seen = new Set<string>();
-	for (const l of listed) {
-		const id = norm(l.id);
-		const resolved = l.resolvedModel ? norm(strip1m(l.resolvedModel)) : undefined;
-		if (id === "default") continue;
-		const family = (["opus", "sonnet", "fable", "haiku"] as const).find((f) => id === f || id === `${f}[1m]`);
-		if (family) {
-			const current = latestClaude(family);
-			if (resolved && claudeByAnswer(resolved)?.id !== current.id && !seen.has(`m:${family}`)) {
-				seen.add(`m:${family}`);
-				moved.push({ family, id: resolved, current: current.id });
-			}
-			continue;
-		}
-		const target = resolved ?? strip1m(id);
-		if (claudeByAnswer(target) || seen.has(target)) continue;
-		seen.add(target);
-		unknown.push({ id: target, ...(l.name ? { name: l.name } : {}) });
-	}
-	return { unknown, moved };
-}

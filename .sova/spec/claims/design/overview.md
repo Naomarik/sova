@@ -3,7 +3,7 @@
 The UX spec for the Sova MVP. The frontend builds exactly this with plain SolidJS and two
 stylesheets — no component library.
 
-- **System.** fold-ai-dev design system (`.claude/skills/fold-ai-dev-design/`), rebranded as
+- **System.** fold-ai-dev design system (`.agents/skills/fold-ai-dev-design/`), rebranded as
   Sova. Where these notes don't say otherwise, the skill's rules apply: `SKILL.md` for anything
   that spans components, `reference/components/*.md` for how each component is built.
 - **Stylesheets.** `src/design/tokens.css`, then `src/design/base.css`. Import both once, in that

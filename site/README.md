@@ -2,7 +2,7 @@
 
 A static [Astro](https://astro.build) site for Sova, styled with the app's own design system:
 `src/styles/tokens.css` is a copy of `src/design/tokens.css`, and `src/styles/components.css` is a
-subset of `.claude/skills/fold-ai-dev-design/fold-ai-dev.css`. The home page's product screens
+subset of `.agents/skills/fold-ai-dev-design/fold-ai-dev.css`. The home page's product screens
 and its hero video are real Sova, captured on demo data (see Screens and video below); the
 Mesh and Organizations pages, and the phone lock screen beside the Overseer, are CSS
 illustrations built from those classes.

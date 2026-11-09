@@ -1,7 +1,7 @@
 /* =============================================================================
    Sova — tokens.css
    Every design decision as a custom property. Derived from the fold-ai-dev
-   design system (v1.8.0, .claude/skills/fold-ai-dev-design/tokens.css);
+   design system (v1.8.0, .agents/skills/fold-ai-dev-design/tokens.css);
    values are unchanged, only the theme model differs (see §3).
 
    The ONLY file in src/ permitted to contain raw hex values. Components and

@@ -18,7 +18,7 @@ decision and the rejected candidates are in
 [naming.md](naming.md); the exploratory sheets stay on disk as history.
 
 The visual system is not here. It lives in the design skill at
-`.claude/skills/fold-ai-dev-design/SKILL.md` and its product-specific deviations in
+`.agents/skills/fold-ai-dev-design/SKILL.md` and its product-specific deviations in
 [`.sova/spec/claims/design/deviations.md`](../../.sova/spec/claims/design/deviations.md). These pages link to it and do not restate it.
 
 | Read | When |

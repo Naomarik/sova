@@ -207,7 +207,7 @@ const FORBIDDEN_CLICK = /\b(land|publish|apply|save|retry|cancel|hold|restart|re
 
 // ---- run --------------------------------------------------------------------------------------
 
-const PW_DIR = process.env.PLAYWRIGHT_DIR ?? join(REPO, ".claude", "skills", "playwright", "scripts");
+const PW_DIR = process.env.PLAYWRIGHT_DIR ?? join(REPO, ".agents", "skills", "playwright", "scripts");
 const { chromium } = createRequire(join(PW_DIR, "package.json"))("playwright");
 const token = readFileSync(join(AGENT_DIR, "sova", "auth-token"), "utf8").trim();
 const cookieName = `sova_token_${createHash("sha256").update(AGENT_DIR).digest("hex").slice(0, 8)}`;

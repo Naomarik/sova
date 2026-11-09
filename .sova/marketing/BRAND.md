@@ -60,7 +60,7 @@ Rules every piece of prose follows:
 
 ## Visual direction
 
-**Color.** Sova's visual system already exists: the fold-ai-dev design skill (`.claude/skills/fold-ai-dev-design/SKILL.md`, Color) as amended by `.sova/spec/claims/design/deviations.md`, implemented in `src/design/tokens.css`. Dark by default, with a complete and equal light theme. Near-neutral paper, surface and ink; one saturated accent, Fold Indigo, spent on the primary action, the live indicator, and focus, and on nothing decorative. Status carries a word, never a hue alone. No gradients, no blur, no tinted shadows.
+**Color.** Sova's visual system already exists: the fold-ai-dev design skill (`.agents/skills/fold-ai-dev-design/SKILL.md`, Color) as amended by `.sova/spec/claims/design/deviations.md`, implemented in `src/design/tokens.css`. Dark by default, with a complete and equal light theme. Near-neutral paper, surface and ink; one saturated accent, Fold Indigo, spent on the primary action, the live indicator, and focus, and on nothing decorative. Status carries a word, never a hue alone. No gradients, no blur, no tinted shadows.
 
 **Type.** Inter for everything a person reads; JetBrains Mono for machine facts (paths, ids, diffs, timestamps, counts). Both variable and shipped locally. Weights 400, 530, 600 and 640 only. The wordmark is `sova`, lowercase, in Inter 640 at -0.03em (`--ls-wordmark`); no other face.
 
@@ -88,7 +88,7 @@ Font files: `public/fonts/Inter-Variable.woff2` (Inter 100 900), `public/fonts/J
 Weights: 400, 530, 600, 640, and no others.
 Wordmark: `sova` at weight 640, tracking `-0.03em`.
 Design system: `src/design/tokens.css`. Every palette value above appears in it; it wins wherever the two are read differently.
-More of the design system: `.claude/skills/fold-ai-dev-design/SKILL.md`, `.sova/spec/claims/design/deviations.md`.
+More of the design system: `.agents/skills/fold-ai-dev-design/SKILL.md`, `.sova/spec/claims/design/deviations.md`.
 
 ## The mark
 

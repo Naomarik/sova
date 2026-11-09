@@ -117,7 +117,7 @@ export interface ProcHolder {
   unreadable?: string;
 }
 
-const realOr = (p: string): string => {
+export const realOr = (p: string): string => {
   try {
     return realpathSync(p);
   } catch {
@@ -357,7 +357,7 @@ async function registered(git: Git, main: string, path: string): Promise<boolean
   return r.stdout.split("\n").some((l) => l.startsWith("worktree ") && (l.slice(9) === path || realOr(l.slice(9)) === real));
 }
 
-const lexists = (p: string): boolean => {
+export const lexists = (p: string): boolean => {
   try {
     lstatSync(p);
     return true;

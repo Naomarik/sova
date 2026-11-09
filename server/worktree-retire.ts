@@ -9,7 +9,7 @@
 // Reads: server/worktree-cleanup.ts (classification, chats, processes), server/nothing-left.ts (the shared
 // answer). The one removal step: server/worktree-remove.ts. The merge queue only wakes it and answers "is
 // there an open entry".
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { open as openFile, readdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { canonical, isWithin } from "../pi-config/extensions/worktrees/state.ts";
@@ -24,7 +24,7 @@ import { agentRoot, stateRoot } from "./state-root";
 import { type Gate, retirementAllowed } from "./worktree-retire-gate";
 
 export { type Gate, retirementAllowed };
-import { chatInUse, type CutOffKind, QUIET_MS, type LeftoverInput, type LeftoverProof, leftoverProof, deleteProvedFolder, finishCutOff, gitPointer, keepTestChats, liveRecordPid, longGit, pinRef, pinTip, removeTree, retireBranch } from "./worktree-remove";
+import { chatInUse, type CutOffKind, QUIET_MS, type LeftoverInput, type LeftoverProof, leftoverProof, deleteProvedFolder, finishCutOff, gitPointer, keepTestChats, lexists, liveRecordPid, longGit, pinRef, pinTip, realOr, removeTree, retireBranch } from "./worktree-remove";
 import { type FinishedFacts, type Leftovers, leftovers, leftoversReason, reachableBlobs, rebuildableDir, RECORDING, type TestCopyLeft, unreadableLeftovers } from "./worktree-leftovers";
 import { appendLedger, besideGone, markLedger, readLedger, type RemovedWorktree, retiredEntryCovering } from "./removed-worktrees";
 import { scratchCopiesIn } from "./merge-queue/scratch";
@@ -42,16 +42,6 @@ export const PERIOD_MS = 5 * 60_000;
 export const PASS_GAP_MS = 60_000;
 /** Removals running at once. */
 export const CONCURRENCY = 3;
-
-// --- the gate ----------------------------------------------------------------------------------
-
-const realOr = (p: string): string => {
-  try {
-    return realpathSync(p);
-  } catch {
-    return p;
-  }
-};
 
 // --- locks -------------------------------------------------------------------------------------
 
@@ -221,8 +211,6 @@ export interface JudgeFacts {
   protectedBranches: ReadonlySet<string>;
   /** Archive's: at once. The archived chat is out of `chats`, and a fresh folder doesn't wait. */
   atOnce?: boolean;
-  /** Leave live processes for after a copy's teardown or a caller's own stop. */
-  ignoreProcesses?: boolean;
 }
 
 export const NO_DOT_GIT = "Git still lists it, but its folder has no working .git, and no removal of Sova's explains that, so nothing was touched. To keep it, run git worktree repair <path> from the main checkout; to drop it, delete the folder yourself.";
@@ -297,7 +285,7 @@ export async function judge(d: Pick<RetireDeps, "git" | "copies" | "openEntry" |
   }
 
   // What's running in it; a registered copy's processes are stopped first, then this is asked again.
-  if (!t.gone && !f.ignoreProcesses && !copy) {
+  if (!t.gone && !copy) {
     const root = canonical(t.path);
     for (const p of f.procs) if (p.unreadable) return { do: "hold", kind: "process", why: p.unreadable };
     for (const p of f.procs) if (p.paths.some((x) => isWithin(x, root))) return { do: "hold", kind: "process", why: `A process is running in it: ${p.command} (${p.pid}).` };
@@ -586,14 +574,14 @@ export async function retireTree(d: RetireDeps, root: string, path: string, o: {
   const t = repo?.trees.find((x) => x.path === path);
   if (!repo || !t) return { state: "skip" };
   if (o.expectHead && t.head !== o.expectHead) return { state: "waiting", row: { path, ...(t.branch ? { branch: t.branch } : {}), why: "Its branch just moved." } };
-  const facts = async (ignoreProcesses: boolean): Promise<JudgeFacts> => {
-    const [chats, procs, protectedBranches] = await Promise.all([d.chats([path], o.exclude), ignoreProcesses ? Promise.resolve([] as ProcFacts[]) : d.processes(), protectedOf(d, repo)]);
-    return { chats, procs, ledger: d.ledger(), finished: finishedFacts(d, repo.main, path), sandboxHolds: sandboxHolds(d), protectedBranches, ...(o.atOnce ? { atOnce: true } : {}), ...(ignoreProcesses ? { ignoreProcesses: true } : {}) };
+  const facts = async (): Promise<JudgeFacts> => {
+    const [chats, procs, protectedBranches] = await Promise.all([d.chats([path], o.exclude), d.processes(), protectedOf(d, repo)]);
+    return { chats, procs, ledger: d.ledger(), finished: finishedFacts(d, repo.main, path), sandboxHolds: sandboxHolds(d), protectedBranches, ...(o.atOnce ? { atOnce: true } : {}) };
   };
   let claimed = false;
   const decideAndClaim = (r: Pick<RepoTrees, "main">, tree: ClassifiedTree): Promise<Verdict> =>
     turnIn(repo.commonDir, async () => {
-      const v = await judge(d, r, tree, await facts(false));
+      const v = await judge(d, r, tree, await facts());
       if (v.do === "retire" && !v.copy) {
         claim(repo.commonDir, path);
         claimed = true;
@@ -665,15 +653,6 @@ export async function retireTree(d: RetireDeps, root: string, path: string, o: {
 }
 
 // --- leftover folders --------------------------------------------------------------------------
-
-const lexists = (p: string): boolean => {
-  try {
-    lstatSync(p);
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 /**
  * Folders left behind with no working branch: found only from chats' worktree records and the ledger,
